@@ -96,6 +96,54 @@ Batch 19 已新增 P2 manifest 链 preflight 审计定位闭环：前端新增 `
 
 Batch 20 已新增 P2 readiness acceptance 产品内生成入口：后端把顶层 readiness acceptance 聚合器下沉到 `quant_core.p2_readiness_acceptance`，新增 `POST /api/p2/readiness/acceptance`，读取并严格校验本地 `data/p1-acceptance.json`、`data/p2-paper-replay.json` 和 `data/p2-pre-live-acceptance.json` 后写出 `data/p2-readiness-acceptance.json`，再返回 validated `aiqt.p2ReadinessAcceptanceStatus`。前端新增 `generateP2ReadinessAcceptance` 和 Execution 顶层 P2 验收卡的“生成验收”动作，让本地/Docker 部署可以在产品内完成 P2 readiness manifest 聚合，而不必手动运行 smoke 命令。该动作不会创建缺失上游证据、不运行 Docker、不连接券商、不提交订单，仍固定 `orderSubmissionEnabled=false / liveTradingAllowed=false / liveOrderSubmitted=false / routeExecuted=false`。
 
+Batch 21 已新增 P2 readiness acceptance 生成审计事件：`POST /api/p2/readiness/acceptance` 现在会把生成后的 `aiqt.p2ReadinessAcceptanceManifest` 转成 `p2_readiness_acceptance_generated` 审计事件，metadata 保存 manifest 状态、run id、上游 manifest 路径、criteria 覆盖、manifest sha256 和所有安全字段；前端 typed client 会保留返回的 `auditEvent`，Execution 的 P2 顶层验收卡生成后会显示对应审计事件 id。该事件只证明“这次顶层验收 manifest 由产品服务生成并入账”，不会伪造上游证据、不运行 Docker、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
+Batch 22 已新增 P2 readiness acceptance 生成事件的 Audit 定位闭环：Audit 报告台账现在会拉取并识别 `p2_readiness_acceptance_generated`，按 manifest hash、source path、验收状态、criteria 覆盖、run id 和标的上下文建立稳定搜索；前端新增 `buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery`，Execution 顶层 P2 验收卡的“审计”动作会切到 Audit 并写入确定性查询，分页尚未回读时也能用当前 readback 构造 fallback 查询。该事件在 Audit 行内显示为只读审计辅助证据，签名、验签、撤销控件保持禁用，不进入签名链、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 23 已新增 P2 readiness acceptance 复核事件的 Audit 定位闭环：前端新增 `buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery`，把 review event id、短 hash、Markdown 文件名、标的上下文、验收状态和 criteria 覆盖组合成稳定查询；Audit 工作区的 P2 顶层验收复核面板在入账成功后会保留并显示返回的 `p2_readiness_acceptance_review` 事件 id，点击“审计”会写入该查询并定位台账行，分页尚未回读时也会用保存响应 metadata 和当前 readback 构造 fallback 查询。该能力只增强人工复核备注的追踪性，不重新生成 manifest、不进入实盘授权、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 24 已新增 P2 readiness acceptance 审计事件 id 回填：前端新增 `findLatestP2ReadinessAcceptanceAuditLedgerRow`，从已加载 Audit 台账行中按 `reportKind`、run id、market、symbol 和 timeframe 查找当前 readiness 上下文最近的 generated/review 事件。Execution 顶层验收卡和 Audit 复核面板现在会优先显示本次操作返回的事件 id，若页面刷新后 transient state 丢失，则回退到 ledger 中最近匹配的事件 id，并让“审计”按钮继续使用对应稳定 query。该回填只读取前端已加载的台账，不自动生成或写入事件，不跨标的/旧上下文误匹配，也不改变 live-blocked 边界。
+
+Batch 25 已新增 P2 readiness acceptance 事件来源标记和 review 搜索语义收口：前端新增 `resolveP2ReadinessAcceptanceAuditEventReference`，把 generated/review 事件 id 的来源明确区分为本次响应、Audit 台账回填或未定位；Execution 顶层验收卡与 Audit 复核面板会在事件 id 旁显示对应来源，避免把刷新后回填的既有证据误解为新授权。`p2_readiness_acceptance_review` 台账行的 `searchText` 也补齐 review 类型、run id、上下文、criteria、上游 audit ids 和 live-blocked 边界，Audit 搜索与回填语义保持同源。该能力只增强证据解释和检索，不写新账本、不进入签名链、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 26 已收紧 P2 readiness acceptance review 的签名边界：前端抽出统一的 `auditReportLedgerRowIsSigningEligible` 规则，`buildAuditEvidenceReportLedgerSummary`、证据包控制室的 signature state 和 Audit 报告行级签名/验签/撤销按钮现在都会把 `p2_readiness_acceptance_review` 排除出签名资格。即使旧 review 事件 metadata 携带 signature 字段，也不会让 signing eligible 计数、签名链状态或证据包归档状态被误提升。该修正只修复审计辅助材料的签名边界，不修改事件内容、不撤销历史事件、不触发订单或实盘授权。
+
+Batch 27 已把 Audit 报告行级签名控件彻底收口到同一条 `auditReportLedgerRowIsSigningEligible` 规则：页面上的签名、验签和撤销按钮不再维护独立的 report kind 排除列表，因此 `operator_runbook_report`、P2 generated/review、pre-live runbook、research context readiness 和 P0 readiness 这类审计辅助行会和模型层、证据包控制室保持一致地不可签名。该修正只减少前端签名边界漂移，不改变任何审计事件 metadata、不撤销历史签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 28 已收紧 P2 readiness acceptance 审计事件回填的上下文匹配：`findLatestP2ReadinessAcceptanceAuditLedgerRow` 现在把 row id、run id、文件名、focus query 和 search text 规范化为 token 后做精确匹配，避免 `600000` 被较新的 `6000001` 事件用子串方式误命中。该修正只影响 Execution 顶层验收卡和 Audit 复核面板刷新后的既有事件 id 定位，不生成 manifest、不写新账本、不修改签名链、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 29 已把 P2 readiness acceptance 的“本次响应”事件 id 也纳入同一套上下文校验：`resolveP2ReadinessAcceptanceAuditEventReference` 接收当前 readback 的 run、market、symbol 和 timeframe，只有 response event 的 metadata/run/detail/search token 与当前上下文匹配时才显示为 `response` 来源。这样用户生成或入账一个标的后切到另一组 readiness readback 时，旧 response id 不会继续压过当前 ledger 回填或未定位状态。该修正只防止前端 stale event id 误展示，不修改审计事件、不生成新证据、不触发签名或订单，也不放宽 live-blocked 边界。
+
+Batch 30 已统一 P2 readiness acceptance 事件回填和 response 校验的 token 化规则：row id、run id、文件名、focus query、search text、response summary/detail 和 metadata 现在会按逗号、斜杠、分号等常见分隔符拆成精确 token，保留 `run-p2-readiness` 这类带连字符的 id。这样旧事件把上下文写成 `ashare,600000,1d` 仍可被回填，同时继续避免 `600000` 子串误匹配 `6000001`。该修正只提升旧审计文本兼容性，不修改账本、不生成新证据、不触发签名或订单，也不放宽 live-blocked 边界。
+
+Batch 31 已把 P2 readiness acceptance ledger row 的 `detail` 文本纳入同一套回填 token：`findLatestP2ReadinessAcceptanceAuditLedgerRow` 现在会从 row id、run id、文件名、focus query、search text 和 detail 中提取精确 token。这样早期或手工恢复的 generated/review 行即使只在 detail 中保留 `run-p2-readiness,ashare,600000,1d`，也能被当前上下文回填；缺字段的 legacy row 会被安全忽略空值。该修正只提升旧审计行可定位性，不修改账本、不生成新证据、不触发签名或订单，也不放宽 live-blocked 边界。
+
+Batch 32 已让 P2 readiness acceptance generated/review 的 ledger query builder 与回填 token 保持一致：`buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery` 和 `buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery` 会在稳定前缀后追加 row detail 与 search text。这样顶层验收卡和 Audit 复核面板生成的台账查询可以携带 live-blocked、criterion、旧上下文等可搜索 token，减少跳转后漏定位；该修正只影响前端查询字符串，不修改审计事件、不生成证据、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 33 已把 P2 readiness acceptance generated/review 的 ledger query builder 输出做成按 token 去重：稳定前缀仍先写入 report kind、事件 id、hash、文件名和 focus query，后续 detail/search text 只补充尚未出现过的 token。这样 Audit 按钮查询不会重复写入 `ashare`、`run-p2-readiness` 等上下文词，查询更短、更易读，同时仍能定位包含 live-blocked 和 criterion 证据的同一行；该修正只影响前端查询字符串，不修改账本、不生成证据、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 34 已把 P2 readiness acceptance generated/review 的 ledger 回填函数补成缺 `runId` 容错：`findLatestP2ReadinessAcceptanceAuditLedgerRow` 现在会安全读取 row 顶层 `runId`，如果旧行没有该字段，则继续依赖 row id、文件名、focus query、search text 和 detail 的精确 token 来匹配当前 run。这样手工恢复或早期生成的旧 ledger row 不会因为缺字段导致界面崩溃，也不会放宽 `600000` 等上下文 token 的精确匹配；该修正只影响前端既有审计行定位，不修改账本、不生成证据、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 35 已把 P2 readiness acceptance generated/review 的 ledger 回填状态判断改为大小写无关的 `ready` 规范化：`findLatestP2ReadinessAcceptanceAuditLedgerRow` 会安全读取 row status 并 trim/lowercase 后比较，所以手工恢复的 `READY` 行仍可回填；其它状态仍被排除。该修正只提升 legacy ready 行兼容性，不修改账本、不生成证据、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 36 已把 P2 readiness acceptance generated/review 的 ledger token 化改为 legacy 字段类型安全：`auditReportSearchTokenSet` 现在只跳过 null/undefined，其它 token 来源会先 `String(value)` 再按同一套分隔符拆分。这样旧账本行如果把 detail/searchText 等字段保存成数字或布尔，不会让 Execution/Audit 回填崩溃；匹配仍要求 run、market、symbol 和 timeframe 的精确 token。该修正只影响前端既有审计行定位，不修改账本、不生成证据、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 37 已把同一套 primitive-safe token 转换推广到 P2 readiness acceptance 的 response event 来源解析：`resolveP2ReadinessAcceptanceAuditEventReference` 现在会安全读取 response event id、run id、summary/detail 和 metadata，即使旧响应把 event id 写成数字、run id 写成布尔或 symbol 写成数字，也会先文本化再用精确 token 校验当前上下文。这样 malformed response 不会让 Execution/Audit 事件 id 来源显示崩溃，也不会绕过 run、market、symbol、timeframe 匹配；该修正只影响前端 transient response/ledger 定位，不修改账本、不生成证据、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 38 已把同样的来源解析能力补到 P2 manifest 链路预检面板：`findLatestP2ManifestChainPreflightAuditLedgerRow` 会按 source path、preflight 状态、stage 计数、下一步动作和 blocker ids 从 Audit 报告台账回填当前上下文的 `p2_manifest_chain_preflight` 事件，`resolveP2ManifestChainPreflightAuditEventReference` 会优先使用匹配的本次响应，否则回落到 ledger row，并把来源标成“本次响应”或“台账回填”。preflight 查询串也会追加 detail/searchText 并去重，便于旧台账行携带 blocker 和 live-blocked 证据词；该修正只影响前端审计定位和可解释性，不修改账本、不生成 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 39 已新增 P2 manifest 链路预检复核入账：Audit 工作区新增独立复核面板，可把当前 preflight readback 生成 Markdown 并复制、下载或保存为 `p2_manifest_chain_preflight_review` 事件。事件 metadata 只记录 artifact kind、文件名、内容 hash、source path、stage id/status、valid/total、blockers、下一步动作和强制 live-blocked 边界，不保存 Markdown 正文；Audit 报告台账会识别该 review 行，提供稳定查询和来源回填，但继续排除签名资格。该能力只服务人工复核和证据追踪，不重新生成 preflight、不修改 manifest、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
+Batch 40 已把 P2 manifest 链路预检复核纳入 P2 evidence coverage：`buildP2ReadinessEvidenceCoverage` 现在可接收当前 `P2ManifestChainPreflightSummary` 和匹配的 `p2_manifest_chain_preflight_review` 台账行，并在证据矩阵中新增 `p2-manifest-chain-preflight-review` 覆盖项。匹配 review 行存在且 hash ready 时显示 `Review audited · <short hash>` 并计入 covered；当前预检已有 readback 但 review 未入账时显示 `Review not recorded`，让 coverage 从 7/7 降为 6/7；无效或 unsafe preflight 仍会阻断该覆盖项。该能力只让 Execution 直接暴露人工复核是否可追踪，不自动写 review、不重新生成 preflight、不修改签名链、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 41 已把 P2 evidence coverage 的 audit-backed 行接入行级审计定位：Execution 证据矩阵会在 `operator-runbook-audit` 和 `p2-manifest-chain-preflight-review` 两类审计来源行显示“审计 / Audit”动作，分别复用 Operator runbook audit 查询和 P2 manifest preflight review 查询，点击即可进入 Audit 工作区定位对应台账行。该能力只让操作者从 readiness claim 直接跳到只读审计证据，不创建新 review、不修改 manifest、不改变签名资格、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
+Batch 42 已把 P2 evidence coverage 从 audit-backed 行扩展为全行证据导航：`paper-replay-manifest`、`p2-acceptance-manifest`、`pre-live-checklist`、`adapter-chain-health` 和 `safety-boundary` 也会显示行级动作，分别以“清单 / Manifest”“工作区 / Workspace”或“边界 / Boundary”进入 Execution 或 Settings 的对应证据上下文；两类 audit 行仍进入 Audit 工作区并写入稳定查询。该能力只恢复只读工作区上下文和状态提示，不补造 manifest、不写审计事件、不签名、不提交订单，也不改变 live-blocked 边界。
+
+Batch 43 已新增 P2 evidence coverage 复核入账闭环：Audit 工作区新增“P2 证据覆盖复核”面板，可把当前 coverage matrix 生成 Markdown、复制、下载或保存为 `p2_readiness_evidence_coverage_review` 审计事件；事件 metadata 只保存内容 hash、覆盖状态、covered/total/blocking 计数、row ids/statuses、source types/source ids 和 live-blocked 边界，不保存 Markdown 正文。Audit 报告台账现在识别该 report kind，提供稳定查询、搜索文本和不可签名边界。该能力只让 P2 readiness coverage 成为便携复核证据，不创建缺失证据、不进入签名链、不提交订单，也不放宽 live-blocked 边界。
+
+Batch 44 已把 P2 evidence coverage 复核事件接入上下文回填：`findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow` 会用当前 coverage 的状态、covered/total、row ids/statuses、source types/source ids 精确匹配 `p2_readiness_evidence_coverage_review` 台账行，`resolveP2ReadinessEvidenceCoverageReviewAuditEventReference` 会优先接受匹配的本次响应，否则回落到匹配 ledger row。Audit 面板现在能标出“本次响应 / 台账回填 / 未定位”，避免刷新或旧响应把不同 coverage 阶段的 review id 显示到当前复核卡上。该能力只提升已有审计事件定位，不创建 review、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

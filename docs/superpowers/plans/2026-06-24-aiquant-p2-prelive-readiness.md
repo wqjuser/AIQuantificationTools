@@ -649,6 +649,666 @@ This generation endpoint only aggregates already archived manifest evidence and 
 
 ---
 
+## Batch 21: P2 Readiness Acceptance Generation Audit Event
+
+**Outcome:** A local operator can generate the top-level P2 readiness acceptance manifest from the product and immediately see the audit event id for that generation action.
+
+Scope:
+- Convert the generated `aiqt.p2ReadinessAcceptanceManifest` into a compact `p2_readiness_acceptance_generated` audit event.
+- Store the generated manifest status, run ids, criterion counts, manifest paths, manifest SHA-256, and forced live-blocked safety fields in audit metadata.
+- Return the audit event from `POST /api/p2/readiness/acceptance` and display its id in the Execution P2 acceptance card.
+- Keep the event evidence-only: it must not create missing upstream manifests, run Docker, connect brokers, submit orders, or authorize live trading.
+
+### Progress
+
+- [x] Added `p2_readiness_acceptance_to_audit_event_payload` with deterministic manifest hash metadata.
+- [x] Updated `POST /api/p2/readiness/acceptance` to record and return `auditEvent`.
+- [x] Updated the typed frontend generation client to preserve the returned audit event.
+- [x] Added Execution panel state and a compact audit event id line after generation.
+- [x] Added focused backend/API and frontend layout coverage.
+
+### Verification
+
+```powershell
+python -m unittest discover -s services/quant_core/tests -t services/quant_core -k "p2_readiness_acceptance_generate_api"
+npm run test --workspace @aiqt/web -- src/lib/terminal-api.test.ts -t "generates the P2 readiness acceptance"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 top-level readiness acceptance"
+```
+
+This audit event is a traceability marker for the product-side readiness acceptance generation. It does not enter the signed research package by itself and does not relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 22: P2 Readiness Acceptance Generation Audit Focus
+
+**Outcome:** A local operator can jump from the Execution P2 top-level acceptance card directly to the Audit ledger row for the product-generated readiness acceptance manifest.
+
+Scope:
+- Include `p2_readiness_acceptance_generated` in the Audit report event fetch and ledger row builder.
+- Build a stable Audit query from the generated event id, short manifest hash, source path, acceptance status, criterion coverage, run id, and market/symbol/timeframe context.
+- Add an Audit action to the P2 readiness acceptance card with a fallback query when pagination has not yet loaded the generated row.
+- Keep the generated event report-only: no signing-chain entry, no broker connection, no order submission, and no live boundary relaxation.
+
+### Progress
+
+- [x] Added `p2_readiness_acceptance_generated` to Audit ledger recognition, search text, package counts, policy detail, and report-only signing exclusions.
+- [x] Added `buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery`.
+- [x] Updated the Audit fetch event list and the Execution P2 top-level acceptance card Audit action.
+- [x] Added focused ledger and layout coverage for generated-event search and UI focus wiring.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance generated events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 top-level readiness acceptance|research context readiness reports"
+```
+
+This Audit focus action only improves traceability for the product-side readiness acceptance generation. It does not make readiness acceptance a signed research package artifact and does not relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 23: P2 Readiness Acceptance Review Audit Focus
+
+**Outcome:** A local operator can record the P2 readiness acceptance review Markdown and immediately jump to the matching Audit ledger row.
+
+Scope:
+- Add a stable ledger query helper for `p2_readiness_acceptance_review` events.
+- Preserve the `saveAuditEvent` response for the review panel so the saved event id remains visible after recording.
+- Add an Audit action to the P2 readiness acceptance review panel with a fallback query when pagination has not yet loaded the saved review row.
+- Keep the review event audit-only: no manifest regeneration, no signing-chain entry, no broker connection, no order submission, and no live boundary relaxation.
+
+### Progress
+
+- [x] Added `buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery`.
+- [x] Stored the saved `p2_readiness_acceptance_review` event after successful review ledger recording.
+- [x] Added a P2 review panel Audit action and compact audit event id display.
+- [x] Added focused ledger and layout coverage for review-event query and UI focus wiring.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance review events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness acceptance manifest review"
+```
+
+This Audit focus action only improves traceability for the manual readiness acceptance review. It does not make the review a live authorization artifact and does not relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 24: P2 Readiness Acceptance Audit Event Rehydration
+
+**Outcome:** A local operator can reload the app after generating or recording P2 readiness acceptance audit evidence and still see the latest matching event id once the Audit ledger rows are loaded.
+
+Scope:
+- Resolve the latest matching `p2_readiness_acceptance_generated` or `p2_readiness_acceptance_review` ledger row by report kind plus run id, market, symbol, and timeframe.
+- Use the resolved ledger row as a fallback event id for the Execution P2 readiness acceptance card and the Audit P2 readiness acceptance review panel.
+- Keep the existing transient event response as the highest-priority source immediately after generation or review recording.
+- Keep the resolver read-only: no event creation, no manifest generation, no cross-context matching, and no live boundary relaxation.
+
+### Progress
+
+- [x] Added `findLatestP2ReadinessAcceptanceAuditLedgerRow`.
+- [x] Added focused coverage that ignores newer rows from other symbols while selecting the current generated/review rows.
+- [x] Rehydrated generated/review event ids from the loaded Audit ledger when transient state is empty.
+- [x] Updated layout coverage for the generated and review panels to use the rehydrated event ids.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "latest P2 readiness acceptance audit ledger row"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness acceptance manifest review|P2 top-level readiness acceptance"
+```
+
+This rehydration only improves continuity after reloads or workspace navigation. It reads the current Audit ledger and does not create evidence, submit orders, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 25: P2 Readiness Acceptance Audit Event Source Labels
+
+**Outcome:** A local operator can tell whether a displayed P2 readiness acceptance audit event id came from the latest product response or from a rehydrated Audit ledger row.
+
+Scope:
+- Resolve generated/review audit event references as `response`, `ledger`, or `none`, preserving the product response as the highest-priority source.
+- Show the event id source beside the Execution top-level acceptance card and Audit review panel event id.
+- Add review-specific Audit ledger search text for `p2_readiness_acceptance_review` rows, including run id, context, criteria, upstream audit ids, and live-blocked boundary terms.
+- Keep this read-only: no event creation, no signature status changes, no order submission, and no live boundary relaxation.
+
+### Progress
+
+- [x] Added `resolveP2ReadinessAcceptanceAuditEventReference`.
+- [x] Added model coverage for response-first source resolution, ledger fallback, and missing event state.
+- [x] Added review-specific search text for `p2_readiness_acceptance_review` rows.
+- [x] Added generated/review panel source labels for response and ledger-rehydrated event ids.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance review rows|P2 readiness acceptance audit event id source"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness acceptance manifest review|P2 top-level readiness acceptance"
+```
+
+This source label only explains where existing audit evidence was found. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 26: P2 Readiness Acceptance Review Signature Boundary
+
+**Outcome:** P2 readiness acceptance review events remain audit-aid evidence and cannot satisfy report signing readiness, even if legacy metadata includes a signature object.
+
+Scope:
+- Exclude `p2_readiness_acceptance_review` from Audit report ledger signing-eligible counts.
+- Reuse the same signable-row rule for Evidence Package Control Room signature state.
+- Disable Audit report row sign, verify, and revoke actions for P2 readiness acceptance review rows.
+- Keep historical review events readable and searchable without changing their metadata, revoking anything, or altering live/order boundaries.
+
+### Progress
+
+- [x] Added regression coverage for review rows not affecting signing eligible counts or chain status.
+- [x] Added regression coverage for P2 review-only evidence packages staying unsigned/missing-signature instead of ready for archive.
+- [x] Extracted shared signing eligibility logic for ledger summary and evidence package signature state.
+- [x] Disabled row-level sign, verify, and revoke actions for P2 readiness acceptance review rows.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "includes P2 readiness acceptance review events"
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance review rows out of evidence package signature readiness"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history from the backend ledger"
+```
+
+This boundary only keeps P2 readiness review evidence out of report signing and archive readiness. It does not delete evidence, mutate old events, submit orders, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 27: Audit Report Row Signing Eligibility Reuse
+
+**Outcome:** Audit report row actions now use the same signing eligibility rule as the ledger summary and evidence package control room.
+
+Scope:
+- Export the shared `auditReportLedgerRowIsSigningEligible` helper for UI use.
+- Replace the Audit report row sign, verify, and revoke report-kind exclusion lists with the shared helper.
+- Keep audit-aid rows such as `operator_runbook_report`, P2 generated/review, pre-live runbook, research context readiness, and P0 readiness out of row-level signing actions.
+- Keep historical rows readable and searchable without mutating event metadata, revoking old signatures, or altering live/order boundaries.
+
+### Progress
+
+- [x] Added focused model coverage for the exact report kinds that remain signing eligible.
+- [x] Added layout coverage that the Audit report row action buttons call the shared eligibility helper.
+- [x] Reused the shared helper in the row-level sign, verify, and revoke disabled states.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "marks only primary report ledger rows as signing eligible|P2 readiness acceptance review|evidence package signature readiness"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history from the backend ledger"
+```
+
+This reuse only prevents signing-boundary drift between the UI and model. It does not delete evidence, mutate old events, submit orders, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 28: P2 Readiness Acceptance Ledger Rehydration Exact Context Match
+
+**Outcome:** P2 readiness acceptance generated/review event rehydration does not choose a newer row whose context only contains the requested symbol as a substring.
+
+Scope:
+- Keep `findLatestP2ReadinessAcceptanceAuditLedgerRow` read-only and limited to generated/review P2 readiness acceptance rows.
+- Normalize row id, run id, file name, focus query, and search text into exact tokens before matching run id, market, symbol, and timeframe.
+- Preserve current fallback behavior for legacy rows whose context appears in focus/search tokens.
+- Keep this as an event-id rehydration fix only: no manifest generation, no new audit event, no signing change, and no live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage where `600000` must not match a newer `6000001` P2 readiness acceptance generated event.
+- [x] Replaced substring haystack matching with normalized token matching in the P2 readiness acceptance ledger resolver.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "finds the latest P2 readiness acceptance audit ledger row"
+```
+
+This exact matching only improves existing audit event lookup after reloads or workspace navigation. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 29: P2 Readiness Acceptance Response Event Context Guard
+
+**Outcome:** A stale generated/review response event id no longer overrides the current P2 readiness acceptance readback context.
+
+Scope:
+- Pass the current P2 readiness acceptance run id, market, symbol, and timeframe into `resolveP2ReadinessAcceptanceAuditEventReference`.
+- Keep response events highest priority only when their event/run/metadata tokens match the current readback context.
+- Fall back to the matching ledger row or `none` when the response event belongs to another context.
+- Keep this as a front-end event-id source fix only: no manifest generation, no audit mutation, no signing change, and no live/order boundary relaxation.
+
+### Progress
+
+- [x] Added model coverage where a stale response event for another symbol resolves to `none` instead of `response`.
+- [x] Added layout coverage that generated and review reference resolution passes `p2ReadinessAcceptanceAuditContext`.
+- [x] Added response-event token matching over event id, run id, summary, detail, and metadata values.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "resolves P2 readiness acceptance audit event id source|finds the latest P2 readiness acceptance audit ledger row"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness acceptance manifest review|P2 top-level readiness acceptance"
+```
+
+This guard only prevents stale response ids from being shown as current-context evidence. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 30: P2 Readiness Acceptance Token Delimiter Compatibility
+
+**Outcome:** Legacy generated/review evidence whose context was written with comma or similar separators can still be matched without falling back to unsafe substring matching.
+
+Scope:
+- Reuse one tokenization path for P2 readiness acceptance ledger row rehydration and response-event context checks.
+- Split tokens on common separators such as commas, slashes, semicolons, and whitespace while preserving hyphenated ids such as `run-p2-readiness`.
+- Keep exact token matching so `600000` still does not match `6000001`.
+- Keep this as lookup compatibility only: no manifest generation, no audit mutation, no signing change, and no live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage where a legacy ledger row with `accepted,6/6,run-p2-readiness,ashare,600000,1d` wins as the latest matching row.
+- [x] Added response-event coverage where metadata `context: "ashare,600000,1d"` still matches the current readback context.
+- [x] Centralized token creation for row and response-event matching.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "finds the latest P2 readiness acceptance audit ledger row|resolves P2 readiness acceptance audit event id source"
+```
+
+This compatibility only helps locate existing audit evidence across older text formats. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 31: P2 Readiness Acceptance Ledger Detail Token Fallback
+
+**Outcome:** Legacy P2 readiness acceptance ledger rows can be rehydrated when their context only appears in the row detail text.
+
+Scope:
+- Include `AuditEvidenceReportLedgerRow.detail` in the token set used by `findLatestP2ReadinessAcceptanceAuditLedgerRow`.
+- Keep exact token matching and common delimiter compatibility from Batch 30.
+- Tolerate legacy/manual rows with missing optional text fields by filtering empty token sources.
+- Keep this as lookup compatibility only: no manifest generation, no audit mutation, no signing change, and no live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage where a newer detail-only legacy generated row with `run-p2-readiness,ashare,600000,1d` is selected.
+- [x] Added `detail` to the ledger row token set.
+- [x] Hardened token creation against missing legacy row text fields.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "finds the latest P2 readiness acceptance audit ledger row|resolves P2 readiness acceptance audit event id source"
+```
+
+This fallback only helps locate existing audit evidence across older ledger row shapes. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 32: P2 Readiness Acceptance Ledger Query Text Parity
+
+**Outcome:** P2 readiness acceptance generated/review ledger buttons carry the same searchable detail text that row filtering and rehydration already understand.
+
+Scope:
+- Append `AuditEvidenceReportLedgerRow.detail` and `searchText` to generated/review query builders after the stable kind/id/hash/file/focus prefix.
+- Preserve the existing query prefix so current deep-link and filter behavior remains familiar.
+- Keep the change frontend-only: no ledger mutation, manifest generation, signing eligibility change, or live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage that review queries include detail-only `live blocked true` text.
+- [x] Added regression coverage that generated queries include search-indexed `live-blocked-boundary` evidence text.
+- [x] Updated generated/review query builders to append detail and search text.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "includes P2 readiness acceptance (review|generated) events in the audit report ledger"
+```
+
+This parity only improves Audit ledger navigation from existing UI buttons. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 33: P2 Readiness Acceptance Ledger Query Token Dedupe
+
+**Outcome:** P2 readiness acceptance generated/review ledger button queries stay compact while retaining the extra detail/search evidence terms added in Batch 32.
+
+Scope:
+- Deduplicate generated/review query tokens by first occurrence after splitting on whitespace.
+- Preserve the stable prefix order: report kind, event id, short hash, file name, and focus query appear before supplemental detail/search text.
+- Keep the change frontend-only: no ledger mutation, manifest generation, signing eligibility change, or live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage that review queries include `ashare` only once after adding detail/search text.
+- [x] Added regression coverage that generated queries include `run-p2-readiness` only once after adding detail/search text.
+- [x] Added a small deduplicated query text helper for P2 readiness acceptance generated/review query builders.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "includes P2 readiness acceptance (review|generated) events in the audit report ledger"
+```
+
+This dedupe only shortens Audit ledger navigation queries. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 34: P2 Readiness Acceptance Missing RunId Ledger Fallback
+
+**Outcome:** Legacy P2 readiness acceptance generated/review ledger rows can still be rehydrated when their top-level `runId` field is missing but the current run context appears in detail/search tokens.
+
+Scope:
+- Treat missing row `runId` as an empty token source rather than throwing during current-context matching.
+- Continue to require exact token matches for the requested run, market, symbol, and timeframe.
+- Keep the change frontend-only: no ledger mutation, manifest generation, signing eligibility change, or live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage where a newer generated ledger row lacks top-level `runId` but includes `run-p2-readiness,ashare,600000,1d` in detail.
+- [x] Updated `findLatestP2ReadinessAcceptanceAuditLedgerRow` to normalize row `runId` safely before comparing.
+- [x] Preserved exact token matching for all context fields.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "finds the latest P2 readiness acceptance audit ledger row for the current context"
+```
+
+This fallback only prevents legacy ledger rows from crashing Audit/Execution rehydration. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 35: P2 Readiness Acceptance Ledger Ready Status Normalization
+
+**Outcome:** Legacy P2 readiness acceptance generated/review ledger rows with uppercase or padded ready status can still be rehydrated when their context matches exactly.
+
+Scope:
+- Normalize row status with trim/lowercase before checking for `ready`.
+- Keep non-ready states excluded from current-context rehydration.
+- Keep the change frontend-only: no ledger mutation, manifest generation, signing eligibility change, or live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage where a newer review ledger row has `status: "READY"`, lacks top-level `runId`, and still matches via detail tokens.
+- [x] Updated `findLatestP2ReadinessAcceptanceAuditLedgerRow` to normalize row status safely.
+- [x] Preserved exact token matching for run, market, symbol, and timeframe.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "finds the latest P2 readiness acceptance audit ledger row for the current context"
+```
+
+This normalization only helps legacy ready rows rehydrate correctly. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 36: P2 Readiness Acceptance Legacy Token Source Coercion
+
+**Outcome:** Legacy P2 readiness acceptance ledger rows no longer crash rehydration when a searchable text field is stored as a non-string primitive.
+
+Scope:
+- Coerce non-null token sources with `String(value)` before applying the existing token splitter.
+- Continue skipping only null/undefined token sources.
+- Keep exact token matching for run, market, symbol, and timeframe.
+- Keep the change frontend-only: no ledger mutation, manifest generation, signing eligibility change, or live/order boundary relaxation.
+
+### Progress
+
+- [x] Added regression coverage where a generated legacy row has numeric `detail` and still matches via focus-query context tokens.
+- [x] Updated `auditReportSearchTokenSet` to accept unknown token sources safely.
+- [x] Preserved the existing delimiter-based exact tokenization.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "finds the latest P2 readiness acceptance audit ledger row for the current context"
+```
+
+This coercion only prevents malformed legacy search fields from crashing Audit/Execution rehydration. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 37: P2 Readiness Acceptance Response And Ledger Primitive-Safe Context Matching
+
+**Outcome:** P2 readiness acceptance response-event and ledger-row context matching now share the same primitive-safe text coercion path before exact token checks.
+
+Scope:
+- Add response-event regression coverage for numeric `eventId`, boolean `runId`, numeric metadata `symbol`, and detail-only current-context tokens.
+- Use the shared token source coercion helper for response event id/runId and event token extraction.
+- Preserve exact context matching for run, market, symbol, and timeframe, so malformed or stale response events cannot override the current ledger fallback.
+- Keep the change frontend-only: no ledger mutation, manifest generation, signing eligibility change, or live/order boundary relaxation.
+
+### Progress
+
+- [x] Added RED coverage where a malformed legacy response event previously crashed on `eventId.trim`.
+- [x] Added primitive-safe response event id/run id normalization.
+- [x] Reused the same token source coercion path for response metadata/detail/search values and ledger row token values.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "resolves P2 readiness acceptance audit event id source from response before ledger fallback"
+```
+
+This phase only hardens frontend evidence id resolution across malformed legacy response and ledger shapes. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 38: P2 Manifest Chain Preflight Audit Source Rehydration
+
+**Outcome:** The P2 manifest chain preflight panel can explain whether its audit event id came from the latest generation response or from a matching Audit ledger row after refresh/navigation.
+
+Scope:
+- Add current-context ledger matching for `p2_manifest_chain_preflight` rows using source path, preflight status, valid/total stage count, next action, and blocker ids.
+- Add response-event source resolution with primitive-safe event id/detail/summary/metadata tokenization, so malformed legacy responses do not crash or override the current preflight readback.
+- Append row detail/search text to the preflight Audit query builder with token dedupe, giving blocker/live-blocked evidence terms the same navigation parity as readiness acceptance rows.
+- Keep this as frontend audit source rehydration only: no manifest generation changes, no audit mutation, no signing change, and no live/order boundary relaxation.
+
+### Progress
+
+- [x] Added model coverage for current preflight response-vs-ledger source resolution, stale response fallback, primitive-safe response fields, and detail/search query terms.
+- [x] Added App/static coverage that the Execution preflight panel wires the resolver and displays the audit id source label.
+- [x] Added `findLatestP2ManifestChainPreflightAuditLedgerRow` and `resolveP2ManifestChainPreflightAuditEventReference`, then connected the Execution panel and Audit button to the resolved reference.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 manifest chain preflight"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "lets operators generate the P2 manifest chain preflight"
+```
+
+This source rehydration only helps locate and explain existing preflight audit evidence. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 39: P2 Manifest Chain Preflight Review Evidence
+
+**Outcome:** Audit workspace operators can create a portable review artifact for the current P2 manifest-chain preflight readback and record its hash as searchable audit evidence.
+
+Scope:
+- Add a Markdown builder for `P2 Manifest Chain Preflight Review` that summarizes status, source path, stage coverage, blockers, next action/command, and the live-blocked execution boundary.
+- Add a frontend audit-event builder for `p2_manifest_chain_preflight_review` that records only metadata and SHA-256, not the Markdown body.
+- Add Audit ledger recognition, query construction, latest-row rehydration, and signing exclusion for the review event type.
+- Add an Audit workspace review panel with copy, download, record, refresh, and Audit query actions.
+- Keep the change frontend-only: no manifest generation changes, no backend preflight mutation, no signing eligibility, no order submission, and no live-trading relaxation.
+
+### Progress
+
+- [x] Added review Markdown and audit-event builders with hash-only metadata.
+- [x] Added ledger row recognition for `p2_manifest_chain_preflight_review`, including blocker/stage search text and a stable query helper.
+- [x] Extended P2 manifest-chain preflight ledger rehydration to support generated and review report kinds.
+- [x] Added the Audit workspace review panel and responsive grid/CSS coverage.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 manifest chain preflight review|P2 manifest chain preflight events"
+npm run test --workspace @aiqt/web -- src/lib/terminal-api.test.ts -t "P2 manifest chain preflight review audit event"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 manifest chain preflight review"
+npm run build
+```
+
+This review evidence only helps humans archive and locate the current P2 preflight readback. It does not create missing manifests, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 40: P2 Preflight Review Evidence Coverage
+
+**Outcome:** The Execution P2 evidence coverage matrix now shows whether the current manifest-chain preflight readback has been manually reviewed and recorded in the Audit ledger.
+
+Scope:
+- Add `p2-manifest-chain-preflight-review` as an optional P2 readiness evidence coverage row.
+- Feed the current `P2ManifestChainPreflightSummary` and matching `p2_manifest_chain_preflight_review` ledger row into `buildP2ReadinessEvidenceCoverage`.
+- Mark the row covered when the matching review hash is ready, missing when the current preflight has not been reviewed, and blocked when the preflight boundary is invalid or unsafe.
+- Add UI labels for the new evidence row in English and Chinese.
+- Keep the change read-only: no automatic review recording, no manifest mutation, no signing eligibility change, no order submission, and no live-trading relaxation.
+
+### Progress
+
+- [x] Added RED coverage for covered and missing P2 preflight review evidence states.
+- [x] Added the `p2-manifest-chain-preflight-review` coverage row builder and optional coverage input fields.
+- [x] Wired App state so the P2 evidence coverage matrix receives the current preflight summary and latest matching review ledger row.
+- [x] Added static UI coverage for the new input wiring and labels.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 manifest chain preflight review coverage|P2 readiness evidence coverage"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness evidence coverage"
+npm run build
+```
+
+This coverage row only makes review traceability visible in Execution. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 41: P2 Evidence Coverage Audit Focus Actions
+
+**Outcome:** Audit-backed rows in the Execution P2 evidence coverage matrix now open the exact Audit workspace evidence query for that readiness claim.
+
+Scope:
+- Add a shared `openP2ReadinessEvidenceCoverage` row action dispatcher in `App.tsx`.
+- Route `operator-runbook-audit` rows to the existing Operator runbook audit focus action.
+- Route `p2-manifest-chain-preflight-review` rows to the existing P2 preflight review audit focus action.
+- Render a compact row-level `Audit` action only for audit-sourced evidence rows.
+- Keep the change frontend-only and read-only: no review recording, no manifest mutation, no signing eligibility change, no order submission, and no live-trading relaxation.
+
+### Progress
+
+- [x] Added RED static coverage for the row action dispatcher, audit row condition, button labels, and CSS class.
+- [x] Wired the P2 evidence coverage panel to receive and call the row-level audit focus action.
+- [x] Added responsive styling for the audit action column without changing the coverage model.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness evidence coverage"
+```
+
+These actions only restore read-only Audit context for existing evidence. They do not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 42: P2 Evidence Coverage Row Navigation
+
+**Outcome:** Every row in the Execution P2 evidence coverage matrix now has an explicit evidence-navigation action, not only audit-backed rows.
+
+Scope:
+- Extend `openP2ReadinessEvidenceCoverage` to handle all seven P2 evidence coverage row ids.
+- Route manifest, checklist, and safety-boundary rows back to Execution with a clear status message.
+- Route adapter-chain rows to Settings, where the detailed adapter evidence ledgers live.
+- Keep audit-backed rows on their stable Audit queries from Batch 41.
+- Render one compact row action for every coverage row, using source-specific labels: Audit, Manifest, Workspace, and Boundary.
+- Keep the change frontend-only and read-only: no manifest generation, no audit mutation, no signing eligibility change, no order submission, and no live-trading relaxation.
+
+### Progress
+
+- [x] Added RED static coverage for all seven row ids, source-specific labels, and unified action rendering.
+- [x] Added row navigation cases with explicit workspace/status outcomes.
+- [x] Reworked the coverage row action rendering to use shared label and icon helpers.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness evidence coverage"
+npm run build
+```
+
+These actions only restore read-only product workspace context for existing evidence. They do not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 43: P2 Evidence Coverage Review Pack
+
+**Outcome:** Audit users can turn the current P2 evidence coverage matrix into a portable review artifact and record it in the audit ledger without changing any execution boundary.
+
+Scope:
+- Add a Markdown review builder for `P2ReadinessEvidenceCoverage`.
+- Add `p2_readiness_evidence_coverage_review` audit event metadata with content hash, coverage counts, row ids/statuses, source types/source ids, and live-blocked boundary.
+- Teach Audit report ledger to recognize, search, query, and exclude the review from signing.
+- Add an Audit workspace panel to copy, download, record, and open the review row.
+- Keep it frontend/audit only; no manifest generation, no backend route changes, no order submission, no live trading.
+
+### Progress
+
+- [x] Added `buildP2ReadinessEvidenceCoverageReviewMarkdown`.
+- [x] Added `buildP2ReadinessEvidenceCoverageReviewAuditEvent` without storing markdown body.
+- [x] Added `p2_readiness_evidence_coverage_review` ledger recognition, query builder, progress counts, search text, deep-link status, status label, and signing exclusion.
+- [x] Added `P2ReadinessEvidenceCoverageReviewPanel` in Audit with copy/download/record/audit actions and row-level coverage readout.
+- [x] Added focused RED/GREEN tests for markdown, audit event metadata, ledger recognition/query, and UI/CSS wiring.
+- [x] Kept `orderSubmissionEnabled=false`, `liveTradingAllowed=false`, `liveOrderSubmitted=false`, and `routeExecuted=false`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness evidence coverage review"
+npm run test --workspace @aiqt/web -- src/lib/terminal-api.test.ts -t "P2 readiness evidence coverage review audit event"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness evidence coverage review"
+```
+
+This review pack only makes the current evidence coverage matrix portable and auditable. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 44: P2 Evidence Coverage Review Ledger Rehydration
+
+**Outcome:** The P2 evidence coverage review panel now rehydrates the matching audit event for the current coverage matrix after refresh or cross-workspace navigation.
+
+Scope:
+- Add a current-coverage ledger matcher for `p2_readiness_evidence_coverage_review`.
+- Match by coverage status, covered/total count, row ids/statuses, source types, and source ids.
+- Add a response/ledger/none event-reference resolver so stale response events cannot override the current coverage context.
+- Wire the Audit panel event id/source display and Audit button through the resolver.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added `findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow`.
+- [x] Added `resolveP2ReadinessEvidenceCoverageReviewAuditEventReference`.
+- [x] Updated the Audit workspace wiring to prefer matching response events, then matching ledger rows, then `none`.
+- [x] Added RED/GREEN coverage for stale newer ledger rows and stale response events.
+- [x] Added static UI coverage that requires App wiring through the new matcher/resolver.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness evidence coverage review"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness evidence coverage review"
+```
+
+This rehydration only improves event id/source accuracy for existing review evidence. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

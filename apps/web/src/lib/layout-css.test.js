@@ -65,13 +65,16 @@ function i18nSnippet(zh, en) {
 
 describe("terminal layout css", () => {
   test("splits production vendor dependencies instead of emitting one large entry chunk", () => {
-    expect(viteConfig).toContain("manualChunks: vendorChunkName");
-    expect(viteConfig).toContain('return "app-audit-panels";');
-    expect(viteConfig).toContain('return "app-i18n";');
-    expect(viteConfig).toContain('return "vendor-charts";');
-    expect(viteConfig).toContain('return "vendor-icons";');
-    expect(viteConfig).toContain('return "vendor-react";');
-    expect(viteConfig).toContain("chunkSizeWarningLimit: 600");
+    expect(viteConfig).toContain("rolldownOptions");
+    expect(viteConfig).toContain("codeSplitting");
+    expect(viteConfig).toContain('name: "app-workbench"');
+    expect(viteConfig).toContain('name: "app-terminal-api"');
+    expect(viteConfig).toContain('name: "app-audit-panels"');
+    expect(viteConfig).toContain('name: "app-i18n"');
+    expect(viteConfig).toContain('name: "vendor-charts"');
+    expect(viteConfig).toContain('name: "vendor-icons"');
+    expect(viteConfig).toContain('name: "vendor-react"');
+    expect(viteConfig).toContain("chunkSizeWarningLimit: 650");
   });
 
   test("uses product work areas as the primary left navigation", () => {
@@ -189,13 +192,18 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("generateP2ManifestChainPreflight");
     expect(appSource).toContain("generateP2ManifestChainPreflightReport");
     expect(appSource).toContain("p2ManifestChainPreflightAuditEvent");
+    expect(appSource).toContain("p2ManifestChainPreflightAuditReference");
+    expect(appSource).toContain("findLatestP2ManifestChainPreflightAuditLedgerRow");
+    expect(appSource).toContain("resolveP2ManifestChainPreflightAuditEventReference");
     expect(appSource).toContain("openP2ManifestChainPreflightAudit");
     expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery");
     expect(panelSource).toContain("onGeneratePreflight");
     expect(panelSource).toContain("onOpenAudit");
     expect(panelSource).toContain("isGenerating");
     expect(panelSource).toContain("auditEventId");
+    expect(panelSource).toContain("auditEventSource");
     expect(panelSource).toContain('"审计事件"');
+    expect(panelSource).toContain("台账回填");
     expect(panelSource).toContain('"生成预检"');
     expect(panelSource).toContain('"Generate"');
     expect(cssBlock(".p2-chain-preflight-actions")).toContain("display: flex;");
@@ -700,7 +708,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const copyLatestResearchContextReportLink = useCallback");
     expect(appSource).toContain("buildResearchContextReadinessReportAuditEvent");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(currentReadinessReportSource).toContain("contextLink: buildResearchContextDeepLink(");
     expect(currentReadinessReportSource).toContain("researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId");
@@ -853,23 +861,43 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function P2ReadinessAcceptanceReviewPanel");
     expect(appSource).toContain("buildP2ReadinessAcceptanceReviewMarkdown");
     expect(appSource).toContain("buildP2ReadinessAcceptanceReviewAuditEvent");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery");
+    expect(appSource).toContain("findLatestP2ReadinessAcceptanceAuditLedgerRow");
+    expect(appSource).toContain("resolveP2ReadinessAcceptanceAuditEventReference");
     expect(appSource).toContain("const p2ReadinessAcceptanceReviewMarkdown = useMemo");
+    expect(appSource).toContain("p2ReadinessAcceptanceReviewAuditEvent");
+    expect(appSource).toContain("const latestP2ReadinessAcceptanceReviewAuditRow = useMemo");
+    expect(appSource).toContain("const p2ReadinessAcceptanceReviewAuditEventReference = useMemo");
+    expect(appSource).toContain("context: p2ReadinessAcceptanceAuditContext");
+    expect(appSource).toContain("const p2ReadinessAcceptanceReviewAuditEventId =");
+    expect(appSource).toContain("const p2ReadinessAcceptanceReviewAuditEventSource =");
     expect(appSource).toContain("const copyP2ReadinessAcceptanceReview = useCallback");
     expect(appSource).toContain("const downloadP2ReadinessAcceptanceReview = useCallback");
     expect(appSource).toContain("const saveP2ReadinessAcceptanceReview = useCallback");
+    expect(appSource).toContain("const openP2ReadinessAcceptanceReviewAudit = useCallback");
+    expect(appSource).toContain("setP2ReadinessAcceptanceReviewAuditEvent(result.event)");
     expect(auditWorkspaceSource).toContain("<P2ReadinessAcceptanceReviewPanel");
     expect(auditWorkspaceSource).toContain("acceptance={p2ReadinessAcceptanceLatestState.acceptance ?? null}");
+    expect(auditWorkspaceSource).toContain("auditEventId={p2ReadinessAcceptanceReviewAuditEventId}");
+    expect(auditWorkspaceSource).toContain("auditEventSource={p2ReadinessAcceptanceReviewAuditEventSource}");
     expect(auditWorkspaceSource).toContain("summary={p2ReadinessAcceptanceSummary}");
     expect(auditWorkspaceSource).toContain("isRefreshing={isLoadingP2ReadinessAcceptance}");
     expect(auditWorkspaceSource).toContain("isRecordingAudit={savingP2ReadinessAcceptanceReview}");
     expect(auditWorkspaceSource).toContain("isCopied={copiedP2ReadinessAcceptanceReview}");
     expect(auditWorkspaceSource).toContain("onCopy={() => void copyP2ReadinessAcceptanceReview()}");
     expect(auditWorkspaceSource).toContain("onDownload={downloadP2ReadinessAcceptanceReview}");
+    expect(auditWorkspaceSource).toContain("onOpenAudit={openP2ReadinessAcceptanceReviewAudit}");
     expect(auditWorkspaceSource).toContain("onRecordAudit={() => void saveP2ReadinessAcceptanceReview()}");
     expect(auditWorkspaceSource).toContain("onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}");
+    expect(reviewPanelSource).toContain("auditEventId");
+    expect(reviewPanelSource).toContain("auditEventSource");
+    expect(reviewPanelSource).toContain("p2ReadinessAcceptanceAuditEventSourceLabel(i18n, auditEventSource)");
     expect(reviewPanelSource).toContain("acceptance?.criterionIds.map");
+    expect(reviewPanelSource).toContain("onOpenAudit");
     expect(reviewPanelSource).toContain("onRecordAudit");
     expect(reviewPanelSource).toContain("isRecordingAudit");
+    expect(reviewPanelSource).toContain('"审计"');
+    expect(reviewPanelSource).toContain('"Audit"');
     expect(reviewPanelSource).toContain("readinessCoverageStatus");
     expect(reviewPanelSource).toContain("p2ReadinessAcceptanceStatusLabel(i18n, summary.status)");
     expect(reviewPanelSource).toContain('className={`p2-readiness-acceptance-review ${summary.tone}`}');
@@ -882,6 +910,100 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p2-readiness-acceptance-review-criterion")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(hasCssBlockWith(".audit-layout", ['"p2-acceptance p2-acceptance"', '"p2-readiness-review p2-readiness-review"', '"acceptance acceptance"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"p2-acceptance"', '"p2-readiness-review"', '"acceptance"'])).toBe(true);
+  });
+
+  test("renders P2 readiness evidence coverage review inside the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const reviewPanelSource = sourceBetween("function P2ReadinessEvidenceCoverageReviewPanel", "function P0AcceptanceReviewPanel");
+
+    expect(appSource).toContain("function P2ReadinessEvidenceCoverageReviewPanel");
+    expect(appSource).toContain("buildP2ReadinessEvidenceCoverageReviewMarkdown");
+    expect(appSource).toContain("buildP2ReadinessEvidenceCoverageReviewAuditEvent");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery");
+    expect(appSource).toContain("findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow");
+    expect(appSource).toContain("resolveP2ReadinessEvidenceCoverageReviewAuditEventReference");
+    expect(appSource).toContain("const p2ReadinessEvidenceCoverageReviewMarkdown = useMemo");
+    expect(appSource).toContain("p2ReadinessEvidenceCoverageReviewAuditEvent");
+    expect(appSource).toContain("const p2ReadinessEvidenceCoverageReviewAuditEventReference = useMemo");
+    expect(appSource).toContain("const copyP2ReadinessEvidenceCoverageReview = useCallback");
+    expect(appSource).toContain("const downloadP2ReadinessEvidenceCoverageReview = useCallback");
+    expect(appSource).toContain("const saveP2ReadinessEvidenceCoverageReview = useCallback");
+    expect(appSource).toContain("const openP2ReadinessEvidenceCoverageReviewAudit = useCallback");
+    expect(appSource).toContain("setP2ReadinessEvidenceCoverageReviewAuditEvent(result.event)");
+    expect(auditWorkspaceSource).toContain("<P2ReadinessEvidenceCoverageReviewPanel");
+    expect(auditWorkspaceSource).toContain("auditEventId={p2ReadinessEvidenceCoverageReviewAuditEventId}");
+    expect(auditWorkspaceSource).toContain("coverage={p2ReadinessEvidenceCoverage}");
+    expect(auditWorkspaceSource).toContain("isRecordingAudit={savingP2ReadinessEvidenceCoverageReview}");
+    expect(auditWorkspaceSource).toContain("isCopied={copiedP2ReadinessEvidenceCoverageReview}");
+    expect(auditWorkspaceSource).toContain("onCopy={() => void copyP2ReadinessEvidenceCoverageReview()}");
+    expect(auditWorkspaceSource).toContain("onDownload={downloadP2ReadinessEvidenceCoverageReview}");
+    expect(auditWorkspaceSource).toContain("onOpenAudit={openP2ReadinessEvidenceCoverageReviewAudit}");
+    expect(auditWorkspaceSource).toContain("onRecordAudit={() => void saveP2ReadinessEvidenceCoverageReview()}");
+    expect(reviewPanelSource).toContain("coverage.rows.map");
+    expect(reviewPanelSource).toContain("auditEventId");
+    expect(reviewPanelSource).toContain("onOpenAudit");
+    expect(reviewPanelSource).toContain("onRecordAudit");
+    expect(reviewPanelSource).toContain("isRecordingAudit");
+    expect(reviewPanelSource).toContain("p2EvidenceCoverageRowLabel(i18n, row.id)");
+    expect(reviewPanelSource).toContain("p2EvidenceCoverageSourceLabel(i18n, row.sourceType)");
+    expect(reviewPanelSource).toContain('className={`p2-readiness-evidence-coverage-review ${coverage.tone}`}');
+    expect(cssBlock(".p2-readiness-evidence-coverage-review-actions")).toContain("display: flex;");
+    expect(cssBlock(".p2-readiness-evidence-coverage-review-actions button")).toContain("display: inline-flex;");
+    expect(cssBlock(".workflow-p2-evidence-coverage-review-panel")).toContain("grid-area: p2-coverage-review;");
+    expect(cssBlock(".p2-readiness-evidence-coverage-review")).toContain("display: grid;");
+    expect(cssBlock(".p2-readiness-evidence-coverage-review")).not.toContain("overflow: auto;");
+    expect(cssBlock(".p2-readiness-evidence-coverage-review-rows")).toContain("display: grid;");
+    expect(cssBlock(".p2-readiness-evidence-coverage-review-row")).toContain("grid-template-columns: minmax(0, 1fr) minmax(120px, 0.5fr) minmax(120px, 0.75fr);");
+    expect(hasCssBlockWith(".audit-layout", ['"p2-readiness-review p2-readiness-review"', '"p2-coverage-review p2-coverage-review"', '"acceptance acceptance"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"p2-readiness-review"', '"p2-coverage-review"', '"acceptance"'])).toBe(true);
+  });
+
+  test("renders P2 manifest chain preflight review inside the audit work area", () => {
+    const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const reviewPanelSource = sourceBetween("function P2ManifestChainPreflightReviewPanel", "function P2ReadinessAcceptanceReviewPanel");
+
+    expect(appSource).toContain("function P2ManifestChainPreflightReviewPanel");
+    expect(appSource).toContain("buildP2ManifestChainPreflightReviewMarkdown");
+    expect(appSource).toContain("buildP2ManifestChainPreflightReviewAuditEvent");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery");
+    expect(appSource).toContain("const p2ManifestChainPreflightReviewMarkdown = useMemo");
+    expect(appSource).toContain("p2ManifestChainPreflightReviewAuditEvent");
+    expect(appSource).toContain("const latestP2ManifestChainPreflightReviewAuditRow = useMemo");
+    expect(appSource).toContain("const p2ManifestChainPreflightReviewAuditEventReference = useMemo");
+    expect(appSource).toContain("const copyP2ManifestChainPreflightReview = useCallback");
+    expect(appSource).toContain("const downloadP2ManifestChainPreflightReview = useCallback");
+    expect(appSource).toContain("const saveP2ManifestChainPreflightReview = useCallback");
+    expect(appSource).toContain("const openP2ManifestChainPreflightReviewAudit = useCallback");
+    expect(appSource).toContain("setP2ManifestChainPreflightReviewAuditEvent(result.event)");
+    expect(auditWorkspaceSource).toContain("<P2ManifestChainPreflightReviewPanel");
+    expect(auditWorkspaceSource).toContain("preflight={p2ManifestChainPreflightLatestState.preflight ?? null}");
+    expect(auditWorkspaceSource).toContain("auditEventId={p2ManifestChainPreflightReviewAuditEventId}");
+    expect(auditWorkspaceSource).toContain("summary={p2ManifestChainPreflightSummary}");
+    expect(auditWorkspaceSource).toContain("isRefreshing={isLoadingP2ManifestChainPreflight}");
+    expect(auditWorkspaceSource).toContain("isRecordingAudit={savingP2ManifestChainPreflightReview}");
+    expect(auditWorkspaceSource).toContain("isCopied={copiedP2ManifestChainPreflightReview}");
+    expect(auditWorkspaceSource).toContain("onCopy={() => void copyP2ManifestChainPreflightReview()}");
+    expect(auditWorkspaceSource).toContain("onDownload={downloadP2ManifestChainPreflightReview}");
+    expect(auditWorkspaceSource).toContain("onOpenAudit={openP2ManifestChainPreflightReviewAudit}");
+    expect(auditWorkspaceSource).toContain("onRecordAudit={() => void saveP2ManifestChainPreflightReview()}");
+    expect(auditWorkspaceSource).toContain("onRefresh={() => void refreshP2ManifestChainPreflightLatest()}");
+    expect(reviewPanelSource).toContain("preflight?.stages.map");
+    expect(reviewPanelSource).toContain("auditEventId");
+    expect(reviewPanelSource).toContain("onOpenAudit");
+    expect(reviewPanelSource).toContain("onRecordAudit");
+    expect(reviewPanelSource).toContain("isRecordingAudit");
+    expect(reviewPanelSource).toContain('"审计"');
+    expect(reviewPanelSource).toContain('"Audit"');
+    expect(reviewPanelSource).toContain('className={`p2-manifest-chain-preflight-review ${summary.tone}`}');
+    expect(cssBlock(".p2-manifest-chain-preflight-review-actions")).toContain("display: flex;");
+    expect(cssBlock(".p2-manifest-chain-preflight-review-actions button")).toContain("display: inline-flex;");
+    expect(cssBlock(".workflow-p2-chain-preflight-review-panel")).toContain("grid-area: p2-chain-preflight-review;");
+    expect(cssBlock(".p2-manifest-chain-preflight-review")).toContain("display: grid;");
+    expect(cssBlock(".p2-manifest-chain-preflight-review")).not.toContain("overflow: auto;");
+    expect(cssBlock(".p2-manifest-chain-preflight-review-stages")).toContain("display: grid;");
+    expect(cssBlock(".p2-manifest-chain-preflight-review-stage")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(hasCssBlockWith(".audit-layout", ['"p2-chain-preflight-review p2-chain-preflight-review"', '"p2-readiness-review p2-readiness-review"'])).toBe(true);
+    expect(hasCssBlockWith("  .audit-layout", ['"p2-chain-preflight-review"', '"p2-readiness-review"'])).toBe(true);
   });
 
   test("renders risk approval references in the AI review audit trail", () => {
@@ -1342,7 +1464,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
@@ -1664,6 +1786,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("signingEventId === row.id");
     expect(reportLedgerPanelSource).toContain("verifyingEventId === row.id");
     expect(reportLedgerPanelSource).toContain("revokingEventId === row.id");
+    expect(appSource).toContain("auditReportLedgerRowIsSigningEligible");
+    expect(reportLedgerPanelSource).toContain("!auditReportLedgerRowIsSigningEligible(row)");
     expect(reportLedgerPanelSource).toContain('row.signatureStatus === "revoked"');
     expect(signingKeyPanelSource).toContain("audit-signing-key-rotation-plan");
     expect(signingKeyPanelSource).toContain("rotationPlan.environmentUpdates");
@@ -2934,20 +3058,59 @@ describe("terminal layout css", () => {
   });
 
   test("renders P2 readiness evidence coverage between acceptance and operator runbook", () => {
+    const panelSource = sourceBetween("function P2ReadinessEvidenceCoveragePanel", "function P2ReadinessAcceptancePanel");
+
     expect(appSource).toContain("buildP2ReadinessEvidenceCoverage({");
     expect(appSource).toContain("operatorRunbookAuditCoverage,");
+    expect(appSource).toContain("p2ManifestChainPreflight: p2ManifestChainPreflightSummary");
+    expect(appSource).toContain("p2ManifestChainPreflightReviewAuditRow: latestP2ManifestChainPreflightReviewAuditRow");
     expect(appSource).toContain("p2PaperReplay: p2PaperReplaySummary");
     expect(appSource).toContain("p2PreLiveAcceptance: p2PreLiveAcceptanceSummary");
     expect(appSource).toContain("preLiveChecklist: preLiveReadinessChecklist");
+    expect(appSource).toContain('"p2-manifest-chain-preflight-review": "P2 preflight review"');
+    expect(appSource).toContain('"p2-manifest-chain-preflight-review": "P2 预检复核"');
+    expect(appSource).toContain("const openP2ReadinessEvidenceCoverage = useCallback");
+    expect(appSource).toContain('case "paper-replay-manifest":');
+    expect(appSource).toContain('"P2 paper replay evidence selected"');
+    expect(appSource).toContain('case "p2-acceptance-manifest":');
+    expect(appSource).toContain('"P2 pre-live acceptance evidence selected"');
+    expect(appSource).toContain('case "operator-runbook-audit":');
+    expect(appSource).toContain("focusOperatorRunbookAudit();");
+    expect(appSource).toContain('case "p2-manifest-chain-preflight-review":');
+    expect(appSource).toContain("openP2ManifestChainPreflightReviewAudit();");
+    expect(appSource).toContain('case "pre-live-checklist":');
+    expect(appSource).toContain('"P2 pre-live checklist evidence selected"');
+    expect(appSource).toContain('case "adapter-chain-health":');
+    expect(appSource).toContain('"P2 adapter chain evidence selected"');
+    expect(appSource).toContain('case "safety-boundary":');
+    expect(appSource).toContain('"P2 safety boundary evidence selected"');
     expect(appSource).toContain("<P2ReadinessEvidenceCoveragePanel");
+    expect(appSource).toContain("onOpenEvidence={openP2ReadinessEvidenceCoverage}");
     expect(appSource).toContain('className="workflow-p2-evidence-coverage-panel"');
     expect(appSource).toContain('className={`p2-evidence-coverage ${coverage.tone}`}');
     expect(appSource).toContain('className="p2-evidence-coverage-grid"');
     expect(appSource).toContain('className={`p2-evidence-coverage-row ${row.tone}`}');
+    expect(panelSource).toContain("onOpenEvidence");
+    expect(panelSource).toContain("onClick={() => onOpenEvidence(row)}");
+    expect(panelSource).toContain("p2EvidenceCoverageRowActionIcon(row)");
+    expect(panelSource).toContain("p2EvidenceCoverageRowActionLabel(i18n, row)");
+    expect(appSource).toContain('case "manifest":');
+    expect(appSource).toContain('"清单"');
+    expect(appSource).toContain('"Manifest"');
+    expect(appSource).toContain('case "audit":');
+    expect(appSource).toContain('"审计"');
+    expect(appSource).toContain('"Audit"');
+    expect(appSource).toContain('case "local-state":');
+    expect(appSource).toContain('"工作区"');
+    expect(appSource).toContain('"Workspace"');
+    expect(appSource).toContain('case "safety-boundary":');
+    expect(appSource).toContain('"边界"');
+    expect(appSource).toContain('"Boundary"');
     expect(styles).toContain(".workflow-p2-evidence-coverage-panel");
     expect(styles).toContain(".p2-evidence-coverage");
     expect(styles).toContain(".p2-evidence-coverage-grid");
     expect(styles).toContain(".p2-evidence-coverage-row");
+    expect(cssBlock(".p2-evidence-coverage-row-action")).toContain("display: inline-flex;");
     expect(cssBlock(".workflow-p2-evidence-coverage-panel")).toContain("grid-area: p2-coverage;");
     expect(
       hasCssBlockWith(".execution-layout", [
@@ -2959,24 +3122,45 @@ describe("terminal layout css", () => {
   });
 
   test("renders P2 top-level readiness acceptance gate before the evidence matrix", () => {
+    const panelSource = sourceBetween("function P2ReadinessAcceptancePanel", "function P2ManifestChainPreflightPanel");
+
     expect(appSource).toContain("loadP2ReadinessAcceptanceLatest");
     expect(appSource).toContain("generateP2ReadinessAcceptance");
     expect(appSource).toContain("initialP2ReadinessAcceptanceLatestState");
+    expect(appSource).toContain("p2ReadinessAcceptanceAuditEvent");
+    expect(appSource).toContain("const latestP2ReadinessAcceptanceGeneratedAuditRow = useMemo");
+    expect(appSource).toContain("const p2ReadinessAcceptanceGeneratedAuditEventReference = useMemo");
+    expect(appSource).toContain("context: p2ReadinessAcceptanceAuditContext");
+    expect(appSource).toContain("const p2ReadinessAcceptanceGeneratedAuditEventId =");
+    expect(appSource).toContain("const p2ReadinessAcceptanceGeneratedAuditEventSource =");
+    expect(appSource).toContain("openP2ReadinessAcceptanceGeneratedAudit");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery");
     expect(appSource).toContain("refreshP2ReadinessAcceptanceLatest");
     expect(appSource).toContain("generateP2ReadinessAcceptanceReport");
+    expect(appSource).toContain("setP2ReadinessAcceptanceAuditEvent(result.auditEvent ?? null)");
     expect(appSource).toContain("setP2ReadinessAcceptanceLatestState(await loadP2ReadinessAcceptanceLatest(quantCoreBaseUrl))");
     expect(appSource).toContain("buildP2ReadinessAcceptanceSummary({");
     expect(appSource).toContain("evidenceCoverage: p2ReadinessEvidenceCoverage");
     expect(appSource).toContain("p1Acceptance: p1AcceptanceSummary");
     expect(appSource).toContain("<P2ReadinessAcceptancePanel");
+    expect(appSource).toContain("auditEventId={p2ReadinessAcceptanceGeneratedAuditEventId}");
+    expect(appSource).toContain("auditEventSource={p2ReadinessAcceptanceGeneratedAuditEventSource}");
     expect(appSource).toContain('className="workflow-p2-readiness-acceptance-panel"');
     expect(appSource).toContain("readback={p2ReadinessAcceptanceLatestState.acceptance ?? null}");
     expect(appSource).toContain("isRefreshing={isLoadingP2ReadinessAcceptance}");
     expect(appSource).toContain("isGenerating={isGeneratingP2ReadinessAcceptance}");
     expect(appSource).toContain("onGenerateAcceptance={() => void generateP2ReadinessAcceptanceReport()}");
+    expect(appSource).toContain("onOpenAudit={openP2ReadinessAcceptanceGeneratedAudit}");
     expect(appSource).toContain("onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}");
+    expect(panelSource).toContain("onOpenAudit");
+    expect(panelSource).toContain("auditEventSource");
+    expect(panelSource).toContain("p2ReadinessAcceptanceAuditEventSourceLabel(i18n, auditEventSource)");
+    expect(panelSource).toContain("<ShieldCheck size={13} />");
+    expect(panelSource).toContain('"审计"');
+    expect(panelSource).toContain('"Audit"');
     expect(appSource).toContain('className={`p2-readiness-acceptance ${summary.tone}`}');
     expect(appSource).toContain('className={`p2-readiness-acceptance-readback ${readbackTone}`}');
+    expect(appSource).toContain('className="p2-readiness-acceptance-audit"');
     expect(appSource).toContain('className="p2-readiness-acceptance-grid"');
     expect(appSource).toContain('className={`p2-readiness-acceptance-row ${row.tone}`}');
     expect(styles).toContain(".workflow-p2-readiness-acceptance-panel");

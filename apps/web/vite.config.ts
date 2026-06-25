@@ -1,59 +1,6 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-function vendorChunkName(id: string) {
-  const normalizedId = id.split("\\").join("/");
-
-  if (normalizedId.includes("/src/lib/terminal-workbench")) {
-    return "app-workbench";
-  }
-
-  if (normalizedId.includes("/src/lib/terminal-api")) {
-    return "app-terminal-api";
-  }
-
-  if (normalizedId.includes("/src/lib/i18n")) {
-    return "app-i18n";
-  }
-
-  if (normalizedId.includes("/src/lib/backtest-report") || normalizedId.includes("/src/lib/chart-")) {
-    return "app-research-models";
-  }
-
-  if (
-    normalizedId.includes("/src/components/PortfolioPaperOrderAuditLedgerPanel") ||
-    normalizedId.includes("/src/components/ExecutionAdapterPaperExecutionAuditLedgerPanel")
-  ) {
-    return "app-audit-panels";
-  }
-
-  if (!normalizedId.includes("node_modules/")) {
-    return undefined;
-  }
-
-  if (normalizedId.includes("/klinecharts/")) {
-    return "vendor-charts";
-  }
-
-  if (normalizedId.includes("/lucide-react/") || normalizedId.includes("/lucide/")) {
-    return "vendor-icons";
-  }
-
-  if (normalizedId.includes("/@tauri-apps/")) {
-    return "vendor-tauri";
-  }
-
-  if (
-    normalizedId.includes("/react/") ||
-    normalizedId.includes("/react-dom/") ||
-    normalizedId.includes("/scheduler/")
-  ) {
-    return "vendor-react";
-  }
-
-  return "vendor";
-}
-
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -65,10 +12,26 @@ export default defineConfig({
     }
   },
   build: {
-    chunkSizeWarningLimit: 600,
-    rollupOptions: {
+    chunkSizeWarningLimit: 650,
+    rolldownOptions: {
       output: {
-        manualChunks: vendorChunkName
+        codeSplitting: {
+          groups: [
+            { name: "app-workbench", test: /src\/lib\/terminal-workbench/ },
+            { name: "app-terminal-api", test: /src\/lib\/terminal-api/ },
+            { name: "app-i18n", test: /src\/lib\/i18n/ },
+            { name: "app-research-models", test: /src\/lib\/(?:backtest-report|chart-)/ },
+            {
+              name: "app-audit-panels",
+              test: /src\/components\/(?:PortfolioPaperOrderAuditLedgerPanel|ExecutionAdapterPaperExecutionAuditLedgerPanel)/,
+            },
+            { name: "vendor-charts", test: /node_modules\/klinecharts/ },
+            { name: "vendor-icons", test: /node_modules\/(?:lucide-react|lucide)\// },
+            { name: "vendor-tauri", test: /node_modules\/@tauri-apps\// },
+            { name: "vendor-react", test: /node_modules\/(?:react|react-dom|scheduler)\// },
+            { name: "vendor", test: /node_modules\// },
+          ],
+        },
       }
     }
   },

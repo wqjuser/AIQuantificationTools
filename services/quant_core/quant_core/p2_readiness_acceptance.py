@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -206,6 +207,70 @@ def write_p2_readiness_acceptance_report(path: Path, manifest: dict[str, Any]) -
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return destination
+
+
+def p2_readiness_acceptance_to_audit_event_payload(
+    manifest: dict[str, Any],
+    *,
+    source_path: Path = DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH,
+    created_at: datetime | None = None,
+) -> dict[str, Any]:
+    validate_p2_readiness_acceptance_manifest(manifest)
+    normalized = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    manifest_sha256 = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    digest = manifest_sha256[:16]
+    generated_at = created_at or datetime.now(timezone.utc)
+    run_id = _string_field(manifest, "runId") or "run-p2-readiness"
+    status = _string_field(manifest, "status") or "accepted"
+    accepted_criteria = _int_field(manifest, "acceptedCriterionCount")
+    total_criteria = _int_field(manifest, "totalCriterionCount")
+    blocking_criteria = _int_field(manifest, "blockingCriterionCount")
+    return {
+        "schemaVersion": 1,
+        "eventId": f"p2-readiness-acceptance-generated-{digest}",
+        "eventType": "p2_readiness_acceptance_generated",
+        "runId": run_id,
+        "createdAt": generated_at.isoformat(),
+        "stage": "p2",
+        "source": "core-service",
+        "summary": (
+            f"P2 readiness acceptance generated {status} "
+            f"{accepted_criteria}/{total_criteria} blockers={blocking_criteria}"
+        ),
+        "detail": (
+            f"Generated report: {source_path}; "
+            "live trading and direct order submission remain blocked."
+        ),
+        "metadata": {
+            "reportKind": "p2_readiness_acceptance_generated",
+            "manifestKind": _string_field(manifest, "kind") or "aiqt.p2ReadinessAcceptanceManifest",
+            "sourcePath": str(source_path),
+            "acceptanceStatus": status,
+            "runId": run_id,
+            "market": _string_field(manifest, "market") or "",
+            "symbol": _string_field(manifest, "symbol") or "",
+            "timeframe": _string_field(manifest, "timeframe") or "",
+            "adapterId": _string_field(manifest, "adapterId") or "",
+            "p1AcceptanceRunId": _string_field(manifest, "p1AcceptanceRunId") or "",
+            "p2PreLiveAcceptanceRunId": _string_field(manifest, "p2PreLiveAcceptanceRunId") or "",
+            "p2PaperReplayRunId": _string_field(manifest, "p2PaperReplayRunId") or "",
+            "operatorRunbookAuditEventId": _string_field(manifest, "operatorRunbookAuditEventId") or "",
+            "readinessCoverageStatus": _string_field(manifest, "readinessCoverageStatus") or "",
+            "acceptedCriterionCount": accepted_criteria,
+            "totalCriterionCount": total_criteria,
+            "blockingCriterionCount": blocking_criteria,
+            "criterionIds": _string_list(manifest.get("criterionIds")),
+            "auditEventIds": _string_list(manifest.get("auditEventIds")),
+            "manifestPaths": _manifest_paths_payload(manifest.get("manifestPaths")),
+            "paperOnly": bool(manifest.get("paperOnly")),
+            "orderSubmissionEnabled": bool(manifest.get("orderSubmissionEnabled")),
+            "liveTradingAllowed": bool(manifest.get("liveTradingAllowed")),
+            "liveOrderSubmitted": bool(manifest.get("liveOrderSubmitted")),
+            "routeExecuted": bool(manifest.get("routeExecuted")),
+            "liveBlockedBoundary": bool(manifest.get("liveBlockedBoundary")),
+            "manifestSha256": manifest_sha256,
+        },
+    }
 
 
 def load_p2_readiness_acceptance_report(

@@ -518,6 +518,7 @@ export type P2ReadinessEvidenceCoverageTone = "positive" | "warning" | "risk";
 export type P2ReadinessEvidenceCoverageRowId =
   | "paper-replay-manifest"
   | "p2-acceptance-manifest"
+  | "p2-manifest-chain-preflight-review"
   | "operator-runbook-audit"
   | "pre-live-checklist"
   | "adapter-chain-health"
@@ -552,6 +553,8 @@ export interface P2ReadinessEvidenceCoverage {
 export interface P2ReadinessEvidenceCoverageInput {
   adapterChainHealthRollups?: ReadonlyArray<ExecutionAdapterChainHealthRollup>;
   operatorRunbookAuditCoverage: OperatorRunbookAuditCoverage;
+  p2ManifestChainPreflight?: P2ManifestChainPreflightSummary | null;
+  p2ManifestChainPreflightReviewAuditRow?: AuditEvidenceReportLedgerRow | null;
   p2PaperReplay: P2PaperReplaySummary;
   p2PreLiveAcceptance: P2PreLiveAcceptanceSummary;
   preLiveChecklist: PreLiveReadinessChecklist;
@@ -2434,6 +2437,9 @@ export interface AuditEvidenceReportLedgerRow {
     | "portfolio_report"
     | "p0_readiness_report"
     | "p2_manifest_chain_preflight"
+    | "p2_manifest_chain_preflight_review"
+    | "p2_readiness_evidence_coverage_review"
+    | "p2_readiness_acceptance_generated"
     | "p2_readiness_acceptance_review"
     | "operator_runbook_report"
     | "pre_live_runbook_report"
@@ -7840,6 +7846,8 @@ function emptyP2PaperReplayMetrics(): P2PaperReplayMetrics {
 export function buildP2ReadinessEvidenceCoverage({
   adapterChainHealthRollups = [],
   operatorRunbookAuditCoverage,
+  p2ManifestChainPreflight = null,
+  p2ManifestChainPreflightReviewAuditRow = null,
   p2PaperReplay,
   p2PreLiveAcceptance,
   preLiveChecklist
@@ -7853,6 +7861,14 @@ export function buildP2ReadinessEvidenceCoverage({
   const rows: P2ReadinessEvidenceCoverageRow[] = [
     buildP2PaperReplayEvidenceCoverageRow(p2PaperReplay),
     buildP2AcceptanceEvidenceCoverageRow(p2PreLiveAcceptance),
+    ...(p2ManifestChainPreflight
+      ? [
+          buildP2ManifestChainPreflightReviewEvidenceCoverageRow(
+            p2ManifestChainPreflight,
+            p2ManifestChainPreflightReviewAuditRow
+          )
+        ]
+      : []),
     buildP2OperatorRunbookEvidenceCoverageRow(operatorRunbookAuditCoverage),
     buildP2PreLiveChecklistEvidenceCoverageRow(preLiveChecklist),
     buildP2AdapterChainEvidenceCoverageRow(primaryAdapterChain),
@@ -7890,6 +7906,43 @@ export function buildP2ReadinessEvidenceCoverage({
     orderSubmissionEnabled: false,
     liveTradingAllowed: false,
     rows
+  };
+}
+
+function buildP2ManifestChainPreflightReviewEvidenceCoverageRow(
+  preflight: P2ManifestChainPreflightSummary,
+  reviewRow: AuditEvidenceReportLedgerRow | null | undefined
+): P2ReadinessEvidenceCoverageRow {
+  const unsafe =
+    preflight.state === "invalid" ||
+    !preflight.liveBlockedBoundary ||
+    preflight.reportedOrderSubmissionEnabled ||
+    preflight.reportedLiveTradingAllowed ||
+    preflight.reportedLiveOrderSubmitted ||
+    preflight.reportedRouteExecuted;
+  const validReviewRow =
+    reviewRow?.reportKind === "p2_manifest_chain_preflight_review" && reviewRow.status === "ready";
+  const status: P2ReadinessEvidenceCoverageStatus = unsafe ? "blocked" : validReviewRow ? "covered" : "missing";
+
+  return {
+    id: "p2-manifest-chain-preflight-review",
+    label: "P2 manifest chain preflight review",
+    status,
+    tone: p2EvidenceCoverageTone(status),
+    evidence:
+      status === "covered"
+        ? `Review audited · ${reviewRow?.shortHash ?? "missing"}`
+        : status === "blocked"
+          ? "Review blocked by unsafe preflight boundary"
+          : "Review not recorded",
+    detail:
+      status === "covered"
+        ? `P2 manifest-chain preflight review is recorded for ${preflight.sourcePath} and preserves the live-blocked boundary.`
+        : status === "blocked"
+          ? "P2 manifest-chain preflight review cannot cover an invalid or unsafe preflight boundary."
+          : "Record the P2 manifest-chain preflight review from the Audit workspace before treating the preflight readback as fully reviewed.",
+    sourceType: "audit",
+    sourceId: status === "covered" ? reviewRow?.id ?? null : null
   };
 }
 
@@ -8400,6 +8453,101 @@ export function buildP2ReadinessAcceptanceReviewMarkdown({
     "",
     "## Review Notes",
     `- Reason: ${reason}`,
+    "- This review is audit evidence only and does not authorize live trading.",
+    ""
+  ].join("\n");
+}
+
+export function buildP2ManifestChainPreflightReviewMarkdown({
+  preflight,
+  summary
+}: {
+  preflight: P2ManifestChainPreflightSummarySource | null | undefined;
+  summary: P2ManifestChainPreflightSummary;
+}): string {
+  const stages = preflight?.stages.length
+    ? preflight.stages
+    : summary.stages.length
+      ? summary.stages
+      : [
+          {
+            id: "p2_manifest_chain_preflight_missing",
+            label: "P2 manifest chain preflight",
+            status: summary.state === "missing" ? "missing" : "invalid",
+            path: summary.sourcePath,
+            summary: "",
+            reason: summary.detail,
+            nextAction: summary.nextAction,
+            nextCommand: summary.nextCommand
+          } satisfies P2ManifestChainPreflightStageSource
+        ];
+  const reason = preflight?.reason || preflight?.summary || summary.detail;
+  const nextAction = preflight?.nextAction ?? summary.nextAction;
+  const nextCommand = preflight?.nextCommand ?? summary.nextCommand;
+
+  return [
+    "# P2 Manifest Chain Preflight Review",
+    "",
+    "## Summary",
+    `- Status: ${preflight?.status ?? summary.state}`,
+    `- Headline: ${summary.headline}`,
+    `- Detail: ${summary.detail}`,
+    `- Source: ${preflight?.sourcePath ?? summary.sourcePath}`,
+    `- Available: ${Boolean(preflight?.available)}`,
+    `- Ready: ${Boolean(preflight?.ready ?? summary.ready)}`,
+    `- Stages: ${preflight?.validStageCount ?? summary.validStageCount}/${preflight?.totalStageCount ?? summary.totalStageCount}`,
+    `- Next action: ${nextAction || "none"}`,
+    `- Next command: ${nextCommand || "none"}`,
+    `- Blockers: ${(preflight?.blockerIds.length ? preflight.blockerIds : summary.blockerIds).join(", ") || "none"}`,
+    "",
+    "## Manifest Stages",
+    ...stages.map(
+      (stage) =>
+        `- ${stage.id}: ${stage.status} · ${stage.path} · ${stage.summary || stage.reason || "no detail"}`
+    ),
+    "",
+    "## Execution Boundary",
+    `- paperOnly: ${Boolean(preflight?.paperOnly)}`,
+    `- orderSubmissionEnabled: ${Boolean(preflight?.orderSubmissionEnabled)}`,
+    `- liveTradingAllowed: ${Boolean(preflight?.liveTradingAllowed)}`,
+    `- liveOrderSubmitted: ${Boolean(preflight?.liveOrderSubmitted)}`,
+    `- routeExecuted: ${Boolean(preflight?.routeExecuted)}`,
+    `- liveBlockedBoundary: ${Boolean(preflight?.liveBlockedBoundary ?? summary.liveBlockedBoundary)}`,
+    "- Platform decision: live trading and real order routing remain blocked.",
+    "",
+    "## Review Notes",
+    `- Reason: ${reason}`,
+    "- This review is audit evidence only and does not authorize live trading.",
+    ""
+  ].join("\n");
+}
+
+export function buildP2ReadinessEvidenceCoverageReviewMarkdown({
+  coverage
+}: {
+  coverage: P2ReadinessEvidenceCoverage;
+}): string {
+  return [
+    "# P2 Readiness Evidence Coverage Review",
+    "",
+    "## Summary",
+    `- Status: ${coverage.status}`,
+    `- Headline: ${coverage.headline}`,
+    `- Detail: ${coverage.detail}`,
+    `- Claims: ${coverage.coveredCount}/${coverage.totalCount}`,
+    `- Blocking claims: ${coverage.blockingCount}`,
+    "",
+    "## Execution Boundary",
+    `- orderSubmissionEnabled: ${coverage.orderSubmissionEnabled}`,
+    `- liveTradingAllowed: ${coverage.liveTradingAllowed}`,
+    "- Platform decision: live trading and real order routing remain blocked.",
+    "",
+    "## Coverage Rows",
+    ...coverage.rows.map(
+      (row) => `- ${row.id}: ${row.status} · ${row.sourceType} · ${row.sourceId ?? "n/a"} · ${row.evidence}`
+    ),
+    "",
+    "## Review Notes",
     "- This review is audit evidence only and does not authorize live trading.",
     ""
   ].join("\n");
@@ -12860,6 +13008,9 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
       operator_runbook_report: "Operator runbook report",
       p0_readiness_report: "P0 readiness report",
       p2_manifest_chain_preflight: "P2 manifest chain preflight",
+      p2_manifest_chain_preflight_review: "P2 manifest chain preflight review",
+      p2_readiness_evidence_coverage_review: "P2 readiness evidence coverage review",
+      p2_readiness_acceptance_generated: "P2 readiness acceptance generation",
       p2_readiness_acceptance_review: "P2 readiness acceptance review",
       pre_live_runbook_report: "Pre-live runbook report",
       portfolio_report: "Portfolio report",
@@ -12996,15 +13147,481 @@ export function buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(
   if (!row || row.reportKind !== "p2_manifest_chain_preflight") {
     return "";
   }
-  return [
+  return auditReportLedgerDeduplicatedQueryText([
     row.reportKind,
     row.id,
     row.shortHash,
     row.fileName,
-    row.focusQuery
-  ]
-    .filter(Boolean)
+    row.focusQuery,
+    row.detail,
+    row.searchText
+  ]);
+}
+
+export function buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p2_manifest_chain_preflight_review") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.fileName,
+    row.focusQuery,
+    row.detail,
+    row.searchText
+  ]);
+}
+
+export function buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p2_readiness_evidence_coverage_review") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.fileName,
+    row.focusQuery,
+    row.detail,
+    row.searchText
+  ]);
+}
+
+export function buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p2_readiness_acceptance_generated") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.fileName,
+    row.focusQuery,
+    row.detail,
+    row.searchText
+  ]);
+}
+
+export function buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "p2_readiness_acceptance_review") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.fileName,
+    row.focusQuery,
+    row.detail,
+    row.searchText
+  ]);
+}
+
+function auditReportLedgerDeduplicatedQueryText(values: unknown[]): string {
+  const seen = new Set<string>();
+  return values
+    .flatMap((value) => {
+      const text = auditReportSearchValueText(value).trim();
+      return text ? text.split(/\s+/u) : [];
+    })
+    .filter((token) => {
+      const normalizedToken = token.toLowerCase();
+      if (!normalizedToken || seen.has(normalizedToken)) {
+        return false;
+      }
+      seen.add(normalizedToken);
+      return true;
+    })
     .join(" ");
+}
+
+export function findLatestP2ManifestChainPreflightAuditLedgerRow(
+  rows: AuditEvidenceReportLedgerRow[],
+  context: P2ManifestChainPreflightAuditContext = {},
+  reportKind: "p2_manifest_chain_preflight" | "p2_manifest_chain_preflight_review" = "p2_manifest_chain_preflight"
+): AuditEvidenceReportLedgerRow | null {
+  const contextTokenGroups = p2ManifestChainPreflightAuditContextTokenGroups(context);
+  return rows
+    .filter((row) => {
+      const rowStatus = row.status?.trim().toLowerCase() ?? "";
+      if (row.reportKind !== reportKind || rowStatus !== "ready") {
+        return false;
+      }
+      if (!contextTokenGroups.length) {
+        return true;
+      }
+      return auditReportSearchTokenGroupsMatch(auditReportLedgerRowSearchTokenSet(row), contextTokenGroups);
+    })
+    .reduce<AuditEvidenceReportLedgerRow | null>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      const latestTime = Date.parse(latest.createdAt) || 0;
+      const rowTime = Date.parse(row.createdAt) || 0;
+      return rowTime > latestTime ? row : latest;
+    }, null);
+}
+
+export function findLatestP2ReadinessAcceptanceAuditLedgerRow(
+  rows: AuditEvidenceReportLedgerRow[],
+  reportKind: "p2_readiness_acceptance_generated" | "p2_readiness_acceptance_review",
+  context: {
+    market?: string | null;
+    runId?: string | null;
+    symbol?: string | null;
+    timeframe?: string | null;
+  } = {}
+): AuditEvidenceReportLedgerRow | null {
+  const terms = [context.market, context.symbol, context.timeframe]
+    .map((term) => term?.trim().toLowerCase() ?? "")
+    .filter(Boolean);
+  const runId = context.runId?.trim().toLowerCase() ?? "";
+  return rows
+    .filter((row) => {
+      const rowStatus = row.status?.trim().toLowerCase() ?? "";
+      if (row.reportKind !== reportKind || rowStatus !== "ready") {
+        return false;
+      }
+      const tokens = auditReportLedgerRowSearchTokenSet(row);
+      const rowRunId = row.runId?.trim().toLowerCase() ?? "";
+      if (runId && rowRunId !== runId && !tokens.has(runId)) {
+        return false;
+      }
+      return terms.every((term) => tokens.has(term));
+    })
+    .reduce<AuditEvidenceReportLedgerRow | null>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      const latestTime = Date.parse(latest.createdAt) || 0;
+      const rowTime = Date.parse(row.createdAt) || 0;
+      return rowTime > latestTime ? row : latest;
+    }, null);
+}
+
+export function findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow(
+  rows: AuditEvidenceReportLedgerRow[],
+  coverage: P2ReadinessEvidenceCoverage | null | undefined
+): AuditEvidenceReportLedgerRow | null {
+  const contextTokenGroups = p2ReadinessEvidenceCoverageReviewContextTokenGroups(coverage);
+  return rows
+    .filter((row) => {
+      const rowStatus = row.status?.trim().toLowerCase() ?? "";
+      if (row.reportKind !== "p2_readiness_evidence_coverage_review" || rowStatus !== "ready") {
+        return false;
+      }
+      if (!contextTokenGroups.length) {
+        return true;
+      }
+      return auditReportSearchTokenGroupsMatch(auditReportLedgerRowSearchTokenSet(row), contextTokenGroups);
+    })
+    .reduce<AuditEvidenceReportLedgerRow | null>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      const latestTime = Date.parse(latest.createdAt) || 0;
+      const rowTime = Date.parse(row.createdAt) || 0;
+      return rowTime > latestTime ? row : latest;
+    }, null);
+}
+
+function auditReportLedgerRowSearchTokenSet(row: AuditEvidenceReportLedgerRow): Set<string> {
+  return auditReportSearchTokenSet([row.id, row.runId, row.fileName, row.focusQuery, row.searchText, row.detail]);
+}
+
+export type P2ManifestChainPreflightAuditEventReferenceSource = "none" | "response" | "ledger";
+
+export interface P2ManifestChainPreflightAuditEventReference {
+  eventId: string;
+  ledgerRow: AuditEvidenceReportLedgerRow | null;
+  source: P2ManifestChainPreflightAuditEventReferenceSource;
+}
+
+type P2ManifestChainPreflightAuditContext = {
+  blockerIds?: unknown[] | null;
+  nextAction?: unknown;
+  sourcePath?: unknown;
+  status?: unknown;
+  totalStageCount?: unknown;
+  validStageCount?: unknown;
+};
+
+type P2ManifestChainPreflightAuditEventLike = {
+  detail?: unknown;
+  eventId?: unknown;
+  metadata?: Record<string, unknown> | null;
+  runId?: unknown;
+  summary?: unknown;
+};
+
+export function resolveP2ManifestChainPreflightAuditEventReference({
+  context = {},
+  event,
+  ledgerRow
+}: {
+  context?: P2ManifestChainPreflightAuditContext;
+  event?: P2ManifestChainPreflightAuditEventLike | null;
+  ledgerRow?: AuditEvidenceReportLedgerRow | null;
+}): P2ManifestChainPreflightAuditEventReference {
+  const responseEventId = auditReportSearchValueText(event?.eventId).trim();
+  if (responseEventId && event && p2ManifestChainPreflightAuditEventMatchesContext(event, context)) {
+    return {
+      eventId: responseEventId,
+      ledgerRow: null,
+      source: "response"
+    };
+  }
+  if (ledgerRow?.id) {
+    return {
+      eventId: ledgerRow.id,
+      ledgerRow,
+      source: "ledger"
+    };
+  }
+  return {
+    eventId: "",
+    ledgerRow: null,
+    source: "none"
+  };
+}
+
+function p2ManifestChainPreflightAuditEventMatchesContext(
+  event: P2ManifestChainPreflightAuditEventLike,
+  context: P2ManifestChainPreflightAuditContext
+): boolean {
+  const contextTokenGroups = p2ManifestChainPreflightAuditContextTokenGroups(context);
+  if (!contextTokenGroups.length) {
+    return true;
+  }
+  return auditReportSearchTokenGroupsMatch(auditReportEventSearchTokenSet(event), contextTokenGroups);
+}
+
+function p2ManifestChainPreflightAuditContextTokenGroups(
+  context: P2ManifestChainPreflightAuditContext
+): string[][] {
+  const stageCount =
+    auditReportSearchValueText(context.validStageCount).trim() && auditReportSearchValueText(context.totalStageCount).trim()
+      ? `${auditReportSearchValueText(context.validStageCount).trim()}/${auditReportSearchValueText(context.totalStageCount).trim()}`
+      : "";
+  return auditReportSearchTokenGroups([
+    context.status,
+    stageCount,
+    context.nextAction,
+    context.sourcePath,
+    ...(Array.isArray(context.blockerIds) ? context.blockerIds : [])
+  ]);
+}
+
+export type P2ReadinessEvidenceCoverageReviewAuditEventReferenceSource = "none" | "response" | "ledger";
+
+export interface P2ReadinessEvidenceCoverageReviewAuditEventReference {
+  eventId: string;
+  ledgerRow: AuditEvidenceReportLedgerRow | null;
+  source: P2ReadinessEvidenceCoverageReviewAuditEventReferenceSource;
+}
+
+type P2ReadinessEvidenceCoverageReviewAuditEventLike = {
+  detail?: unknown;
+  eventId?: unknown;
+  metadata?: Record<string, unknown> | null;
+  runId?: unknown;
+  summary?: unknown;
+};
+
+export function resolveP2ReadinessEvidenceCoverageReviewAuditEventReference({
+  coverage,
+  event,
+  ledgerRow
+}: {
+  coverage?: P2ReadinessEvidenceCoverage | null;
+  event?: P2ReadinessEvidenceCoverageReviewAuditEventLike | null;
+  ledgerRow?: AuditEvidenceReportLedgerRow | null;
+}): P2ReadinessEvidenceCoverageReviewAuditEventReference {
+  const responseEventId = auditReportSearchValueText(event?.eventId).trim();
+  if (responseEventId && event && p2ReadinessEvidenceCoverageReviewAuditEventMatchesContext(event, coverage)) {
+    return {
+      eventId: responseEventId,
+      ledgerRow: null,
+      source: "response"
+    };
+  }
+  if (ledgerRow?.id) {
+    return {
+      eventId: ledgerRow.id,
+      ledgerRow,
+      source: "ledger"
+    };
+  }
+  return {
+    eventId: "",
+    ledgerRow: null,
+    source: "none"
+  };
+}
+
+function p2ReadinessEvidenceCoverageReviewAuditEventMatchesContext(
+  event: P2ReadinessEvidenceCoverageReviewAuditEventLike,
+  coverage: P2ReadinessEvidenceCoverage | null | undefined
+): boolean {
+  const contextTokenGroups = p2ReadinessEvidenceCoverageReviewContextTokenGroups(coverage);
+  if (!contextTokenGroups.length) {
+    return true;
+  }
+  return auditReportSearchTokenGroupsMatch(auditReportEventSearchTokenSet(event), contextTokenGroups);
+}
+
+function p2ReadinessEvidenceCoverageReviewContextTokenGroups(
+  coverage: P2ReadinessEvidenceCoverage | null | undefined
+): string[][] {
+  if (!coverage) {
+    return [];
+  }
+  return auditReportSearchTokenGroups([
+    coverage.status,
+    `${coverage.coveredCount}/${coverage.totalCount}`,
+    ...coverage.rows.map((row) => row.id),
+    ...coverage.rows.map((row) => row.status),
+    ...coverage.rows.map((row) => row.sourceType),
+    ...coverage.rows.map((row) => row.sourceId ?? "")
+  ]);
+}
+
+export type P2ReadinessAcceptanceAuditEventReferenceSource = "none" | "response" | "ledger";
+
+export interface P2ReadinessAcceptanceAuditEventReference {
+  eventId: string;
+  ledgerRow: AuditEvidenceReportLedgerRow | null;
+  source: P2ReadinessAcceptanceAuditEventReferenceSource;
+}
+
+type P2ReadinessAcceptanceAuditContext = {
+  market?: string | null;
+  runId?: string | null;
+  symbol?: string | null;
+  timeframe?: string | null;
+};
+
+type P2ReadinessAcceptanceAuditEventLike = {
+  detail?: unknown;
+  eventId?: unknown;
+  metadata?: Record<string, unknown> | null;
+  runId?: unknown;
+  summary?: unknown;
+};
+
+export function resolveP2ReadinessAcceptanceAuditEventReference({
+  context = {},
+  event,
+  ledgerRow
+}: {
+  context?: P2ReadinessAcceptanceAuditContext;
+  event?: P2ReadinessAcceptanceAuditEventLike | null;
+  ledgerRow?: AuditEvidenceReportLedgerRow | null;
+}): P2ReadinessAcceptanceAuditEventReference {
+  const responseEventId = auditReportSearchValueText(event?.eventId).trim();
+  if (responseEventId && event && p2ReadinessAcceptanceAuditEventMatchesContext(event, context)) {
+    return {
+      eventId: responseEventId,
+      ledgerRow: null,
+      source: "response"
+    };
+  }
+  if (ledgerRow?.id) {
+    return {
+      eventId: ledgerRow.id,
+      ledgerRow,
+      source: "ledger"
+    };
+  }
+  return {
+    eventId: "",
+    ledgerRow: null,
+    source: "none"
+  };
+}
+
+function p2ReadinessAcceptanceAuditEventMatchesContext(
+  event: P2ReadinessAcceptanceAuditEventLike,
+  context: P2ReadinessAcceptanceAuditContext
+): boolean {
+  const terms = [context.market, context.symbol, context.timeframe]
+    .map((term) => term?.trim().toLowerCase() ?? "")
+    .filter(Boolean);
+  const runId = context.runId?.trim().toLowerCase() ?? "";
+  if (!runId && terms.length === 0) {
+    return true;
+  }
+  const tokens = auditReportEventSearchTokenSet(event);
+  const eventRunId = auditReportSearchValueText(event.runId).trim().toLowerCase();
+  const metadataRunId =
+    event.metadata && Object.prototype.hasOwnProperty.call(event.metadata, "runId")
+      ? auditReportSearchValueText(event.metadata.runId).trim().toLowerCase()
+      : "";
+  if (runId && eventRunId !== runId && metadataRunId !== runId && !tokens.has(runId)) {
+    return false;
+  }
+  return terms.every((term) => tokens.has(term));
+}
+
+function auditReportEventSearchTokenSet(event: P2ReadinessAcceptanceAuditEventLike): Set<string> {
+  return auditReportSearchTokenSet([
+    event.eventId ?? "",
+    event.runId ?? "",
+    event.summary ?? "",
+    event.detail ?? "",
+    ...auditReportEventMetadataSearchValues(event.metadata)
+  ]);
+}
+
+function auditReportSearchTokenSet(values: unknown[]): Set<string> {
+  return new Set(
+    values.flatMap((value) =>
+      value === null || value === undefined ? [] : auditReportSearchTokens(auditReportSearchValueText(value))
+    )
+  );
+}
+
+function auditReportSearchTokenGroups(values: unknown[]): string[][] {
+  return values
+    .map((value) => (value === null || value === undefined ? [] : auditReportSearchTokens(auditReportSearchValueText(value))))
+    .filter((tokens) => tokens.length > 0);
+}
+
+function auditReportSearchTokenGroupsMatch(tokens: Set<string>, groups: string[][]): boolean {
+  return groups.every((group) => group.every((token) => tokens.has(token)));
+}
+
+function auditReportSearchValueText(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function auditReportSearchTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9._-]+/iu)
+    .filter(Boolean);
+}
+
+function auditReportEventMetadataSearchValues(value: unknown): string[] {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return [String(value)];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => auditReportEventMetadataSearchValues(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).flatMap((item) => auditReportEventMetadataSearchValues(item));
+  }
+  return [];
 }
 
 function auditReportLedgerLatestResearchContextReportQuery(row: AuditEvidenceReportLedgerRow | undefined): string {
@@ -13741,6 +14358,9 @@ export function buildAuditEvidenceReportLedgerRows(
         event.eventType === "portfolio_report" ||
         event.eventType === "p0_readiness_report" ||
         event.eventType === "p2_manifest_chain_preflight" ||
+        event.eventType === "p2_manifest_chain_preflight_review" ||
+        event.eventType === "p2_readiness_evidence_coverage_review" ||
+        event.eventType === "p2_readiness_acceptance_generated" ||
         event.eventType === "p2_readiness_acceptance_review" ||
         event.eventType === "operator_runbook_report" ||
         event.eventType === "pre_live_runbook_report" ||
@@ -13752,6 +14372,12 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "p0_readiness_report"
           : event.eventType === "p2_manifest_chain_preflight"
           ? "p2_manifest_chain_preflight"
+          : event.eventType === "p2_manifest_chain_preflight_review"
+          ? "p2_manifest_chain_preflight_review"
+          : event.eventType === "p2_readiness_evidence_coverage_review"
+          ? "p2_readiness_evidence_coverage_review"
+          : event.eventType === "p2_readiness_acceptance_generated"
+          ? "p2_readiness_acceptance_generated"
           : event.eventType === "p2_readiness_acceptance_review"
           ? "p2_readiness_acceptance_review"
           : event.eventType === "operator_runbook_report"
@@ -13767,7 +14393,7 @@ export function buildAuditEvidenceReportLedgerRows(
             : "audit_evidence_report";
       const contentSha256 =
         auditReportLedgerMetadataText(event.metadata, "contentSha256") ||
-        (reportKind === "p2_manifest_chain_preflight"
+        (reportKind === "p2_manifest_chain_preflight" || reportKind === "p2_readiness_acceptance_generated"
           ? auditReportLedgerMetadataText(event.metadata, "manifestSha256")
           : "");
       const artifactKind =
@@ -13776,6 +14402,12 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "aiqt.p0ReadinessReport"
           : reportKind === "p2_manifest_chain_preflight"
           ? "aiqt.p2ManifestChainPreflight"
+          : reportKind === "p2_manifest_chain_preflight_review"
+          ? "aiqt.p2ManifestChainPreflightReview"
+          : reportKind === "p2_readiness_evidence_coverage_review"
+          ? "aiqt.p2ReadinessEvidenceCoverageReview"
+          : reportKind === "p2_readiness_acceptance_generated"
+          ? "aiqt.p2ReadinessAcceptanceManifest"
           : reportKind === "p2_readiness_acceptance_review"
           ? "aiqt.p2ReadinessAcceptanceReview"
           : reportKind === "operator_runbook_report"
@@ -13795,6 +14427,12 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "p0-readiness-report.md"
           : reportKind === "p2_manifest_chain_preflight"
           ? auditReportLedgerMetadataText(event.metadata, "sourcePath") || "p2-chain-preflight.json"
+          : reportKind === "p2_manifest_chain_preflight_review"
+          ? "p2-manifest-chain-preflight-review.md"
+          : reportKind === "p2_readiness_evidence_coverage_review"
+          ? "p2-readiness-evidence-coverage-review.md"
+          : reportKind === "p2_readiness_acceptance_generated"
+          ? auditReportLedgerMetadataText(event.metadata, "sourcePath") || "p2-readiness-acceptance.json"
           : reportKind === "p2_readiness_acceptance_review"
           ? "p2-readiness-acceptance-review.md"
           : reportKind === "operator_runbook_report"
@@ -13871,6 +14509,50 @@ export function buildAuditEvidenceReportLedgerRows(
             ]
               .filter(Boolean)
               .join(" ")
+          : reportKind === "p2_manifest_chain_preflight_review"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "preflightStatus") ||
+                auditReportLedgerMetadataText(event.metadata, "state") ||
+                event.stage,
+              `${auditReportLedgerMetadataNumber(event.metadata, "validStageCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalStageCount"
+              )}`,
+              auditReportLedgerMetadataText(event.metadata, "nextAction"),
+              auditReportLedgerMetadataStringList(event.metadata, "blockerIds").join(" ")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "p2_readiness_evidence_coverage_review"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "coverageStatus") ||
+                auditReportLedgerMetadataText(event.metadata, "state") ||
+                event.stage,
+              `${auditReportLedgerMetadataNumber(event.metadata, "coveredCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalCount"
+              )}`,
+              auditReportLedgerMetadataStringList(event.metadata, "rowIds").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "sourceTypes").join(" ")
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : reportKind === "p2_readiness_acceptance_generated"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "acceptanceStatus") ||
+                auditReportLedgerMetadataText(event.metadata, "status") ||
+                auditReportLedgerMetadataText(event.metadata, "state"),
+              `${auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalCriterionCount"
+              )}`,
+              auditReportLedgerMetadataText(event.metadata, "runId") || event.runId || "",
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe")
+            ]
+              .filter(Boolean)
+              .join(" ")
           : reportKind === "p2_readiness_acceptance_review"
           ? [
               auditReportLedgerMetadataText(event.metadata, "market"),
@@ -13912,6 +14594,9 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "operator_runbook_report" ||
         reportKind === "p0_readiness_report" ||
         reportKind === "p2_manifest_chain_preflight" ||
+        reportKind === "p2_manifest_chain_preflight_review" ||
+        reportKind === "p2_readiness_evidence_coverage_review" ||
+        reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
@@ -13922,6 +14607,9 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "operator_runbook_report" ||
         reportKind === "p0_readiness_report" ||
         reportKind === "p2_manifest_chain_preflight" ||
+        reportKind === "p2_manifest_chain_preflight_review" ||
+        reportKind === "p2_readiness_evidence_coverage_review" ||
+        reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
@@ -13932,6 +14620,9 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "operator_runbook_report" ||
         reportKind === "p0_readiness_report" ||
         reportKind === "p2_manifest_chain_preflight" ||
+        reportKind === "p2_manifest_chain_preflight_review" ||
+        reportKind === "p2_readiness_evidence_coverage_review" ||
+        reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
@@ -14330,33 +15021,162 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataText(event.metadata, "nextStepId") : "";
       const preLiveRunbookEvidenceIds =
         reportKind === "pre_live_runbook_report" ? auditReportLedgerMetadataStringList(event.metadata, "evidenceIds") : [];
-      const p2ManifestChainPreflightStatus =
-        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataText(event.metadata, "preflightStatus") : "";
-      const p2ManifestChainPreflightNextAction =
-        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataText(event.metadata, "nextAction") : "";
-      const p2ManifestChainPreflightBlockers =
-        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataStringList(event.metadata, "blockerIds") : [];
-      const p2ManifestChainPreflightValidStages =
-        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataNumber(event.metadata, "validStageCount") : 0;
-      const p2ManifestChainPreflightTotalStages =
-        reportKind === "p2_manifest_chain_preflight" ? auditReportLedgerMetadataNumber(event.metadata, "totalStageCount") : 0;
+      const isP2ManifestChainPreflightReport =
+        reportKind === "p2_manifest_chain_preflight" || reportKind === "p2_manifest_chain_preflight_review";
+      const p2ManifestChainPreflightStatus = isP2ManifestChainPreflightReport
+        ? auditReportLedgerMetadataText(event.metadata, "preflightStatus") ||
+          auditReportLedgerMetadataText(event.metadata, "state") ||
+          event.stage
+        : "";
+      const p2ManifestChainPreflightNextAction = isP2ManifestChainPreflightReport
+        ? auditReportLedgerMetadataText(event.metadata, "nextAction")
+        : "";
+      const p2ManifestChainPreflightBlockers = isP2ManifestChainPreflightReport
+        ? auditReportLedgerMetadataStringList(event.metadata, "blockerIds")
+        : [];
+      const p2ManifestChainPreflightValidStages = isP2ManifestChainPreflightReport
+        ? auditReportLedgerMetadataNumber(event.metadata, "validStageCount")
+        : 0;
+      const p2ManifestChainPreflightTotalStages = isP2ManifestChainPreflightReport
+        ? auditReportLedgerMetadataNumber(event.metadata, "totalStageCount")
+        : 0;
       const p2ManifestChainPreflightSafeBoundary =
-        reportKind !== "p2_manifest_chain_preflight" ||
+        !isP2ManifestChainPreflightReport ||
         (auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") &&
           !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
           !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
           !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
           !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted"));
       const p2ManifestChainPreflightSearchText =
-        reportKind === "p2_manifest_chain_preflight"
+        isP2ManifestChainPreflightReport
           ? [
-              "p2_manifest_chain_preflight",
+              reportKind,
               p2ManifestChainPreflightStatus,
               `${p2ManifestChainPreflightValidStages}/${p2ManifestChainPreflightTotalStages}`,
               p2ManifestChainPreflightNextAction,
               p2ManifestChainPreflightBlockers.join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "stageIds").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "stageStatuses").join(" "),
               auditReportLedgerMetadataText(event.metadata, "sourcePath"),
               p2ManifestChainPreflightSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
+      const p2ReadinessEvidenceCoverageReviewStatus =
+        reportKind === "p2_readiness_evidence_coverage_review"
+          ? auditReportLedgerMetadataText(event.metadata, "coverageStatus") ||
+            auditReportLedgerMetadataText(event.metadata, "state") ||
+            event.stage
+          : "";
+      const p2ReadinessEvidenceCoverageReviewSafeBoundary =
+        reportKind !== "p2_readiness_evidence_coverage_review" ||
+        (auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed"));
+      const p2ReadinessEvidenceCoverageReviewSearchText =
+        reportKind === "p2_readiness_evidence_coverage_review"
+          ? [
+              "p2_readiness_evidence_coverage_review",
+              p2ReadinessEvidenceCoverageReviewStatus,
+              `${auditReportLedgerMetadataNumber(event.metadata, "coveredCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalCount"
+              )}`,
+              auditReportLedgerMetadataStringList(event.metadata, "rowIds").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "rowStatuses").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "sourceTypes").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "sourceIds").join(" "),
+              p2ReadinessEvidenceCoverageReviewSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
+      const p2ReadinessAcceptanceGeneratedStatus =
+        reportKind === "p2_readiness_acceptance_generated"
+          ? auditReportLedgerMetadataText(event.metadata, "acceptanceStatus") ||
+            auditReportLedgerMetadataText(event.metadata, "status") ||
+            auditReportLedgerMetadataText(event.metadata, "state")
+          : "";
+      const p2ReadinessAcceptanceGeneratedRunId =
+        reportKind === "p2_readiness_acceptance_generated"
+          ? auditReportLedgerMetadataText(event.metadata, "runId") || event.runId || ""
+          : "";
+      const p2ReadinessAcceptanceGeneratedAcceptedCriteria =
+        reportKind === "p2_readiness_acceptance_generated"
+          ? auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")
+          : 0;
+      const p2ReadinessAcceptanceGeneratedTotalCriteria =
+        reportKind === "p2_readiness_acceptance_generated"
+          ? auditReportLedgerMetadataNumber(event.metadata, "totalCriterionCount")
+          : 0;
+      const p2ReadinessAcceptanceGeneratedMarket =
+        reportKind === "p2_readiness_acceptance_generated" ? auditReportLedgerMetadataText(event.metadata, "market") : "";
+      const p2ReadinessAcceptanceGeneratedSymbol =
+        reportKind === "p2_readiness_acceptance_generated" ? auditReportLedgerMetadataText(event.metadata, "symbol") : "";
+      const p2ReadinessAcceptanceGeneratedTimeframe =
+        reportKind === "p2_readiness_acceptance_generated" ? auditReportLedgerMetadataText(event.metadata, "timeframe") : "";
+      const p2ReadinessAcceptanceGeneratedSafeBoundary =
+        reportKind !== "p2_readiness_acceptance_generated" ||
+        (auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted"));
+      const p2ReadinessAcceptanceGeneratedSearchText =
+        reportKind === "p2_readiness_acceptance_generated"
+          ? [
+              "p2_readiness_acceptance_generated",
+              p2ReadinessAcceptanceGeneratedStatus,
+              `${p2ReadinessAcceptanceGeneratedAcceptedCriteria}/${p2ReadinessAcceptanceGeneratedTotalCriteria}`,
+              p2ReadinessAcceptanceGeneratedRunId,
+              p2ReadinessAcceptanceGeneratedMarket,
+              p2ReadinessAcceptanceGeneratedSymbol,
+              p2ReadinessAcceptanceGeneratedTimeframe,
+              auditReportLedgerMetadataText(event.metadata, "adapterId"),
+              auditReportLedgerMetadataText(event.metadata, "sourcePath"),
+              auditReportLedgerMetadataStringList(event.metadata, "criterionIds").join(" "),
+              auditReportLedgerMetadataBoolean(event.metadata, "paperOnly") ? "paper-only" : "",
+              p2ReadinessAcceptanceGeneratedSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
+      const p2ReadinessAcceptanceReviewStatus =
+        reportKind === "p2_readiness_acceptance_review"
+          ? auditReportLedgerMetadataText(event.metadata, "state") ||
+            auditReportLedgerMetadataText(event.metadata, "status") ||
+            event.stage
+          : "";
+      const p2ReadinessAcceptanceReviewRunId =
+        reportKind === "p2_readiness_acceptance_review"
+          ? auditReportLedgerMetadataText(event.metadata, "runId") || event.runId || ""
+          : "";
+      const p2ReadinessAcceptanceReviewSafeBoundary =
+        reportKind !== "p2_readiness_acceptance_review" ||
+        (auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
+          !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted"));
+      const p2ReadinessAcceptanceReviewSearchText =
+        reportKind === "p2_readiness_acceptance_review"
+          ? [
+              "p2_readiness_acceptance_review",
+              p2ReadinessAcceptanceReviewStatus,
+              `${auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalCriterionCount"
+              )}`,
+              p2ReadinessAcceptanceReviewRunId,
+              auditReportLedgerMetadataText(event.metadata, "market"),
+              auditReportLedgerMetadataText(event.metadata, "symbol"),
+              auditReportLedgerMetadataText(event.metadata, "timeframe"),
+              auditReportLedgerMetadataText(event.metadata, "adapterId"),
+              auditReportLedgerMetadataText(event.metadata, "sourcePath"),
+              auditReportLedgerMetadataStringList(event.metadata, "criterionIds").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "auditEventIds").join(" "),
+              p2ReadinessAcceptanceReviewSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
             ]
               .filter(Boolean)
               .join(" ")
@@ -14378,8 +15198,12 @@ export function buildAuditEvidenceReportLedgerRows(
         packageMatched:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "passedSteps")
-            : reportKind === "p2_manifest_chain_preflight"
+            : isP2ManifestChainPreflightReport
             ? p2ManifestChainPreflightValidStages
+            : reportKind === "p2_readiness_evidence_coverage_review"
+            ? auditReportLedgerMetadataNumber(event.metadata, "coveredCount")
+            : reportKind === "p2_readiness_acceptance_generated"
+            ? p2ReadinessAcceptanceGeneratedAcceptedCriteria
             : reportKind === "p2_readiness_acceptance_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")
             : reportKind === "operator_runbook_report"
@@ -14396,8 +15220,12 @@ export function buildAuditEvidenceReportLedgerRows(
         packageTotal:
           reportKind === "p0_readiness_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalSteps")
-            : reportKind === "p2_manifest_chain_preflight"
+            : isP2ManifestChainPreflightReport
             ? p2ManifestChainPreflightTotalStages
+            : reportKind === "p2_readiness_evidence_coverage_review"
+            ? auditReportLedgerMetadataNumber(event.metadata, "totalCount")
+            : reportKind === "p2_readiness_acceptance_generated"
+            ? p2ReadinessAcceptanceGeneratedTotalCriteria
             : reportKind === "p2_readiness_acceptance_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalCriterionCount")
             : reportKind === "operator_runbook_report"
@@ -14419,6 +15247,9 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "operator_runbook_report" ||
           reportKind === "p0_readiness_report" ||
           reportKind === "p2_manifest_chain_preflight" ||
+          reportKind === "p2_manifest_chain_preflight_review" ||
+          reportKind === "p2_readiness_evidence_coverage_review" ||
+          reportKind === "p2_readiness_acceptance_generated" ||
           reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
@@ -14430,6 +15261,9 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "operator_runbook_report" ||
           reportKind === "p0_readiness_report" ||
           reportKind === "p2_manifest_chain_preflight" ||
+          reportKind === "p2_manifest_chain_preflight_review" ||
+          reportKind === "p2_readiness_evidence_coverage_review" ||
+          reportKind === "p2_readiness_acceptance_generated" ||
           reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
@@ -14513,6 +15347,12 @@ export function buildAuditEvidenceReportLedgerRows(
             ? "p0-readiness-report"
             : reportKind === "p2_manifest_chain_preflight"
             ? "p2-manifest-chain-preflight"
+            : reportKind === "p2_manifest_chain_preflight_review"
+            ? "p2-manifest-chain-preflight-review"
+            : reportKind === "p2_readiness_evidence_coverage_review"
+            ? "p2-readiness-evidence-coverage-review"
+            : reportKind === "p2_readiness_acceptance_generated"
+            ? "p2-readiness-acceptance-generated"
             : reportKind === "p2_readiness_acceptance_review"
             ? "p2-readiness-acceptance-review"
             : reportKind === "operator_runbook_report"
@@ -14532,7 +15372,13 @@ export function buildAuditEvidenceReportLedgerRows(
             ? reportKind === "p0_readiness_report"
             ? "P0 readiness report hash recorded"
             : reportKind === "p2_manifest_chain_preflight"
-              ? "P2 manifest chain preflight hash recorded"
+            ? "P2 manifest chain preflight hash recorded"
+            : reportKind === "p2_manifest_chain_preflight_review"
+              ? "P2 manifest chain preflight review hash recorded"
+            : reportKind === "p2_readiness_evidence_coverage_review"
+              ? "P2 readiness evidence coverage review hash recorded"
+            : reportKind === "p2_readiness_acceptance_generated"
+              ? "P2 readiness acceptance generation hash recorded"
             : reportKind === "p2_readiness_acceptance_review"
               ? "P2 readiness acceptance review hash recorded"
             : reportKind === "operator_runbook_report"
@@ -14562,6 +15408,9 @@ export function buildAuditEvidenceReportLedgerRows(
         searchText: [
           p0SearchText,
           p2ManifestChainPreflightSearchText,
+          p2ReadinessEvidenceCoverageReviewSearchText,
+          p2ReadinessAcceptanceGeneratedSearchText,
+          p2ReadinessAcceptanceReviewSearchText,
           operatorRunbookSearchText,
           preLiveRunbookSearchText,
           researchContextSearchText
@@ -14569,8 +15418,16 @@ export function buildAuditEvidenceReportLedgerRows(
           .filter(Boolean)
           .join(" "),
         tone:
-          reportKind === "p2_manifest_chain_preflight"
+          isP2ManifestChainPreflightReport
             ? p2ManifestChainPreflightStatus === "ready" && p2ManifestChainPreflightSafeBoundary
+              ? "positive"
+              : "risk"
+            : reportKind === "p2_readiness_evidence_coverage_review"
+            ? p2ReadinessEvidenceCoverageReviewStatus === "covered" && p2ReadinessEvidenceCoverageReviewSafeBoundary
+              ? "positive"
+              : "risk"
+            : reportKind === "p2_readiness_acceptance_generated"
+            ? p2ReadinessAcceptanceGeneratedStatus === "accepted" && p2ReadinessAcceptanceGeneratedSafeBoundary
               ? "positive"
               : "risk"
             : auditReportLedgerSignatureTone(signatureStatus)
@@ -14609,14 +15466,7 @@ function auditReportLedgerPaperPreflightLabel({
 export function buildAuditEvidenceReportLedgerSummary(
   rows: AuditEvidenceReportLedgerRow[]
 ): AuditEvidenceReportLedgerSummary {
-  const signingEligibleRows = rows.filter(
-    (row) =>
-      row.reportKind !== "p0_readiness_report" &&
-      row.reportKind !== "operator_runbook_report" &&
-      row.reportKind !== "p2_manifest_chain_preflight" &&
-      row.reportKind !== "pre_live_runbook_report" &&
-      row.reportKind !== "research_context_readiness_report"
-  );
+  const signingEligibleRows = rows.filter(auditReportLedgerRowIsSigningEligible);
   const readyRows = rows.filter((row) => row.status === "ready");
   const ready = readyRows.length;
   const invalid = rows.filter((row) => row.status === "invalid").length;
@@ -14775,6 +15625,20 @@ export function buildAuditEvidenceReportLedgerSummary(
     unsigned,
     verified
   };
+}
+
+export function auditReportLedgerRowIsSigningEligible(row: AuditEvidenceReportLedgerRow): boolean {
+  return (
+    row.reportKind !== "p0_readiness_report" &&
+    row.reportKind !== "operator_runbook_report" &&
+    row.reportKind !== "p2_manifest_chain_preflight" &&
+    row.reportKind !== "p2_manifest_chain_preflight_review" &&
+    row.reportKind !== "p2_readiness_evidence_coverage_review" &&
+    row.reportKind !== "p2_readiness_acceptance_generated" &&
+    row.reportKind !== "p2_readiness_acceptance_review" &&
+    row.reportKind !== "pre_live_runbook_report" &&
+    row.reportKind !== "research_context_readiness_report"
+  );
 }
 
 export function buildEvidencePackageControlRoomRows({
@@ -15075,13 +15939,7 @@ function evidencePackageSignatureState(rows: AuditEvidenceReportLedgerRow[]): {
   stale: boolean;
   detail: string;
 } {
-  const signingRows = rows.filter(
-    (row) =>
-      row.reportKind !== "p0_readiness_report" &&
-      row.reportKind !== "operator_runbook_report" &&
-      row.reportKind !== "pre_live_runbook_report" &&
-      row.reportKind !== "research_context_readiness_report"
-  );
+  const signingRows = rows.filter(auditReportLedgerRowIsSigningEligible);
   if (!signingRows.length) {
     return {
       status: "missing",

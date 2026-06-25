@@ -1658,11 +1658,16 @@ class QuantCoreContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
+            from quant_core.audit_events import AuditEventStore
+
+            audit_store = AuditEventStore(root / "data" / "audit_events.sqlite")
+
             class TestHandler(QuantApiHandler):
                 p1_acceptance_report_path = p1_path
                 p2_paper_replay_report_path = replay_path
                 p2_pre_live_acceptance_report_path = pre_live_path
                 p2_readiness_acceptance_report_path = readiness_path
+                audit_event_store = audit_store
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -1672,6 +1677,8 @@ class QuantCoreContractTest(unittest.TestCase):
                 connection.request("POST", "/api/p2/readiness/acceptance")
                 response = connection.getresponse()
                 payload = json.loads(response.read().decode("utf-8"))
+                audit_event_id = str(payload["auditEvent"]["eventId"])
+                stored_event = audit_store.get(audit_event_id)
             finally:
                 connection.close()
                 server.shutdown()
@@ -1691,6 +1698,20 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
         self.assertFalse(payload["orderSubmissionEnabled"])
         self.assertFalse(payload["liveTradingAllowed"])
+        self.assertEqual(payload["auditEvent"]["eventType"], "p2_readiness_acceptance_generated")
+        self.assertEqual(payload["auditEvent"]["stage"], "p2")
+        self.assertEqual(payload["auditEvent"]["metadata"]["reportKind"], "p2_readiness_acceptance_generated")
+        self.assertEqual(payload["auditEvent"]["metadata"]["acceptanceStatus"], "accepted")
+        self.assertEqual(payload["auditEvent"]["metadata"]["acceptedCriterionCount"], 6)
+        self.assertEqual(payload["auditEvent"]["metadata"]["totalCriterionCount"], 6)
+        self.assertEqual(payload["auditEvent"]["metadata"]["sourcePath"], str(readiness_path))
+        self.assertFalse(payload["auditEvent"]["metadata"]["orderSubmissionEnabled"])
+        self.assertFalse(payload["auditEvent"]["metadata"]["liveTradingAllowed"])
+        self.assertFalse(payload["auditEvent"]["metadata"]["liveOrderSubmitted"])
+        self.assertFalse(payload["auditEvent"]["metadata"]["routeExecuted"])
+        self.assertTrue(payload["auditEvent"]["metadata"]["liveBlockedBoundary"])
+        self.assertIsNotNone(stored_event)
+        self.assertEqual(stored_event.event_type, "p2_readiness_acceptance_generated")
         self.assertEqual(written_manifest["kind"], "aiqt.p2ReadinessAcceptanceManifest")
         self.assertEqual(written_manifest["p1AcceptanceRunId"], "run-p1-ready")
         self.assertEqual(written_manifest["p2PaperReplayRunId"], "run-p2-paper-replay")
@@ -2647,10 +2668,11 @@ class QuantCoreContractTest(unittest.TestCase):
 
         package_json = json.loads((Path(__file__).resolve().parents[3] / "package.json").read_text(encoding="utf-8"))
         scripts = package_json["scripts"]
+        python_launcher = "node tools/run_python.mjs"
 
         self.assertEqual(
             scripts["docker:smoke:p2:preflight"],
-            "python tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
+            f"{python_launcher} tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
         )
         self.assertIn("--p2-paper-replay", scripts["docker:smoke:p2:chain"])
         self.assertIn("--p2-pre-live-acceptance", scripts["docker:smoke:p2:chain"])
@@ -2660,11 +2682,11 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertIn("data/p2-readiness-acceptance.json", scripts["docker:smoke:p2:chain"])
         self.assertEqual(
             scripts["docker:smoke:p2:paper-replay:validate"],
-            "python tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",
+            f"{python_launcher} tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",
         )
         self.assertEqual(
             scripts["docker:smoke:p2:pre-live:validate"],
-            "python tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
+            f"{python_launcher} tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
         )
 
     def test_docker_smoke_p2_chain_preflight_reports_missing_next_action(self):
@@ -2744,7 +2766,7 @@ class QuantCoreContractTest(unittest.TestCase):
             docker_smoke.run_smoke = fail_run_smoke
             output = io.StringIO()
             try:
-                with contextlib.redirect_stdout(output):
+                with contextlib.chdir(root), contextlib.redirect_stdout(output):
                     exit_code = docker_smoke.main(["--p2-chain-preflight-report", str(report_path)])
             finally:
                 docker_smoke.run_smoke = original_run_smoke
@@ -14970,8 +14992,11 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(recorded_payload["auditEvent"]["eventType"], "audit_signing_key_environment_binding")
         self.assertEqual(history_response.status, 200)
         self.assertEqual(len(history_payload["environmentBindings"]), 2)
-        self.assertEqual(history_payload["environmentBindings"][0]["status"], "binding_recorded")
-        self.assertEqual(history_payload["environmentBindings"][1]["status"], "blocked")
+        history_by_status = {item["status"]: item for item in history_payload["environmentBindings"]}
+        self.assertIn("binding_recorded", history_by_status)
+        self.assertIn("blocked", history_by_status)
+        self.assertEqual(history_by_status["binding_recorded"]["materializationId"], materialization_id)
+        self.assertEqual(history_by_status["blocked"]["blockedReasons"], blocked_payload["environmentBinding"]["blockedReasons"])
         self.assertNotIn("active-audit-secret", serialized)
         self.assertNotIn("blocked-binding-secret-should-not-leak", serialized)
         self.assertNotIn("binding-api-key-should-not-leak", serialized)
@@ -20350,6 +20375,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(incomplete["ready"])
         self.assertEqual(incomplete["status"], "blocked")
         self.assertEqual(complete_package["manifest"]["artifactCounts"]["auditEvents"], 1)
+        self.assertTrue(complete_package["manifest"]["paperOnly"])
+        self.assertFalse(complete_package["manifest"]["liveTradingAllowed"])
+        self.assertTrue(complete_package["manifest"]["liveBlockedBoundary"])
+        self.assertFalse(complete_package["manifest"]["orderSubmissionEnabled"])
+        self.assertFalse(complete_package["manifest"]["liveOrderSubmitted"])
+        self.assertFalse(complete_package["manifest"]["routeExecuted"])
         self.assertEqual(complete_package["auditEvents"][0]["eventType"], "p0_paper_simulation")
         self.assertTrue(complete_package["p0PackageCompleteness"]["ready"])
         self.assertEqual(complete_package["p0PackageCompleteness"]["status"], "complete")

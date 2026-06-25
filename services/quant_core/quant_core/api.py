@@ -205,6 +205,7 @@ from quant_core.p2_readiness_acceptance import (
     DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH,
     build_p2_readiness_acceptance_manifest_from_reports,
     load_p2_readiness_acceptance_status,
+    p2_readiness_acceptance_to_audit_event_payload,
     write_p2_readiness_acceptance_report,
 )
 from quant_core.p2_manifest_chain_preflight import (
@@ -462,6 +463,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     Path(self.p2_readiness_acceptance_report_path),
                     manifest,
                 )
+                audit_event = self.audit_event_store.record(
+                    p2_readiness_acceptance_to_audit_event_payload(
+                        manifest,
+                        source_path=Path(self.p2_readiness_acceptance_report_path),
+                    )
+                )
                 acceptance = load_p2_readiness_acceptance_status(
                     Path(self.p2_readiness_acceptance_report_path)
                 )
@@ -472,6 +479,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {
                     "status": "acceptance_generated",
                     "acceptance": acceptance,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
                     "paperOnly": True,
                     "orderSubmissionEnabled": False,
                     "liveTradingAllowed": False,

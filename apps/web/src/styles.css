@@ -2504,7 +2504,9 @@ em {
     "portfolio-orders portfolio-orders"
     "adapter-paper-executions adapter-paper-executions"
     "p2-acceptance p2-acceptance"
+    "p2-chain-preflight-review p2-chain-preflight-review"
     "p2-readiness-review p2-readiness-review"
+    "p2-coverage-review p2-coverage-review"
     "acceptance acceptance"
     "reports reports"
     "signing-keys signing-keys"
@@ -3069,9 +3071,19 @@ em {
   grid-area: p2-acceptance;
 }
 
+.workflow-p2-chain-preflight-review-panel {
+  align-self: start;
+  grid-area: p2-chain-preflight-review;
+}
+
 .workflow-p2-readiness-acceptance-audit-panel {
   align-self: start;
   grid-area: p2-readiness-review;
+}
+
+.workflow-p2-evidence-coverage-review-panel {
+  align-self: start;
+  grid-area: p2-coverage-review;
 }
 
 .workflow-operator-runbook-panel {
@@ -4729,6 +4741,253 @@ em {
   opacity: 0.58;
 }
 
+.p2-manifest-chain-preflight-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.p2-manifest-chain-preflight-review-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(125, 211, 252, 0.34);
+  border-radius: 7px;
+  background: rgba(14, 165, 233, 0.14);
+  color: #c8f2ff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 840;
+  padding: 7px 9px;
+}
+
+.p2-manifest-chain-preflight-review-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.p2-readiness-evidence-coverage-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.p2-readiness-evidence-coverage-review-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(45, 212, 191, 0.34);
+  border-radius: 7px;
+  background: rgba(20, 184, 166, 0.14);
+  color: #a8ffee;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 840;
+  padding: 7px 9px;
+}
+
+.p2-readiness-evidence-coverage-review-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.p2-manifest-chain-preflight-review {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-left: 3px solid #56657c;
+  border-radius: 7px;
+  background: rgba(11, 18, 30, 0.58);
+  padding: 10px;
+}
+
+.p2-manifest-chain-preflight-review.positive {
+  border-left-color: #34d399;
+  background: rgba(12, 54, 45, 0.32);
+}
+
+.p2-manifest-chain-preflight-review.warning {
+  border-left-color: #e8be62;
+  background: rgba(54, 42, 12, 0.32);
+}
+
+.p2-manifest-chain-preflight-review.risk {
+  border-left-color: #ff7f6d;
+  background: rgba(58, 24, 28, 0.36);
+}
+
+.p2-manifest-chain-preflight-review-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+
+.p2-manifest-chain-preflight-review-head > div {
+  min-width: 0;
+}
+
+.p2-manifest-chain-preflight-review-head span,
+.p2-manifest-chain-preflight-review-head strong,
+.p2-manifest-chain-preflight-review-head p,
+.p2-manifest-chain-preflight-review-head em,
+.p2-manifest-chain-preflight-review-command,
+.p2-manifest-chain-preflight-review-command code,
+.p2-manifest-chain-preflight-review-audit,
+.p2-manifest-chain-preflight-review-audit code,
+.p2-manifest-chain-preflight-review-audit span,
+.p2-manifest-chain-preflight-review-meta span,
+.p2-manifest-chain-preflight-review-stage span,
+.p2-manifest-chain-preflight-review-stage em {
+  min-width: 0;
+  margin: 0;
+}
+
+.p2-manifest-chain-preflight-review-head span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 840;
+}
+
+.p2-manifest-chain-preflight-review-head strong {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.p2-manifest-chain-preflight-review-head p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.p2-manifest-chain-preflight-review-head em {
+  color: #bae6fd;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.p2-manifest-chain-preflight-review-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.p2-manifest-chain-preflight-review-meta span,
+.p2-manifest-chain-preflight-review-command {
+  overflow: hidden;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-radius: 7px;
+  background: rgba(14, 24, 38, 0.74);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  padding: 7px 8px;
+  text-overflow: ellipsis;
+}
+
+.p2-manifest-chain-preflight-review-meta span {
+  white-space: nowrap;
+}
+
+.p2-manifest-chain-preflight-review-command {
+  display: grid;
+  gap: 4px;
+}
+
+.p2-manifest-chain-preflight-review-command code {
+  overflow-wrap: anywhere;
+  color: #d6f7ff;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.p2-manifest-chain-preflight-review-audit {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  border-radius: 7px;
+  background: rgba(14, 165, 233, 0.1);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  padding: 7px 8px;
+}
+
+.p2-manifest-chain-preflight-review-audit span,
+.p2-manifest-chain-preflight-review-audit em {
+  color: #bae6fd;
+  font-style: normal;
+}
+
+.p2-manifest-chain-preflight-review-audit code {
+  overflow-wrap: anywhere;
+  color: #d6f7ff;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.p2-manifest-chain-preflight-review-stages {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.p2-manifest-chain-preflight-review-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-left: 3px solid #38bdf8;
+  border-radius: 7px;
+  background: rgba(14, 24, 38, 0.74);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  padding: 7px 8px;
+  text-overflow: ellipsis;
+}
+
+.p2-manifest-chain-preflight-review-stage.missing,
+.p2-manifest-chain-preflight-review-stage.invalid,
+.p2-manifest-chain-preflight-review-stage.blocked {
+  border-left-color: #ff7f6d;
+}
+
+.p2-manifest-chain-preflight-review-stage.valid,
+.p2-manifest-chain-preflight-review-stage.ready {
+  border-left-color: #34d399;
+}
+
+.p2-manifest-chain-preflight-review-stage span,
+.p2-manifest-chain-preflight-review-stage em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p2-manifest-chain-preflight-review-stage em {
+  color: #bae6fd;
+  font-style: normal;
+}
+
 .p2-readiness-acceptance-review {
   display: grid;
   gap: 10px;
@@ -4771,6 +5030,9 @@ em {
 .p2-readiness-acceptance-review-head strong,
 .p2-readiness-acceptance-review-head p,
 .p2-readiness-acceptance-review-head em,
+.p2-readiness-acceptance-review-audit,
+.p2-readiness-acceptance-review-audit code,
+.p2-readiness-acceptance-review-audit span,
 .p2-readiness-acceptance-review-meta span,
 .p2-readiness-acceptance-review-manifests span,
 .p2-readiness-acceptance-review-criterion span,
@@ -4829,6 +5091,34 @@ em {
   white-space: nowrap;
 }
 
+.p2-readiness-acceptance-review-audit {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 7px;
+  background: rgba(20, 184, 166, 0.1);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  padding: 7px 8px;
+}
+
+.p2-readiness-acceptance-review-audit span {
+  color: #83e6ce;
+}
+
+.p2-readiness-acceptance-review-audit code {
+  overflow-wrap: anywhere;
+  color: #d6fff6;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.p2-readiness-acceptance-review-audit em {
+  color: #83e6ce;
+  font-style: normal;
+}
+
 .p2-readiness-acceptance-review-criteria {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4862,6 +5152,189 @@ em {
 .p2-readiness-acceptance-review-criterion em {
   color: #83e6ce;
   font-style: normal;
+}
+
+.p2-readiness-evidence-coverage-review {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-left: 3px solid #56657c;
+  border-radius: 7px;
+  background: rgba(11, 18, 30, 0.58);
+  padding: 10px;
+}
+
+.p2-readiness-evidence-coverage-review.positive {
+  border-left-color: #34d399;
+  background: rgba(12, 54, 45, 0.32);
+}
+
+.p2-readiness-evidence-coverage-review.warning {
+  border-left-color: #e8be62;
+  background: rgba(54, 42, 12, 0.32);
+}
+
+.p2-readiness-evidence-coverage-review.risk {
+  border-left-color: #ff7f6d;
+  background: rgba(58, 24, 28, 0.36);
+}
+
+.p2-readiness-evidence-coverage-review-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+
+.p2-readiness-evidence-coverage-review-head > div {
+  min-width: 0;
+}
+
+.p2-readiness-evidence-coverage-review-head span,
+.p2-readiness-evidence-coverage-review-head strong,
+.p2-readiness-evidence-coverage-review-head p,
+.p2-readiness-evidence-coverage-review-head em,
+.p2-readiness-evidence-coverage-review-audit,
+.p2-readiness-evidence-coverage-review-audit code,
+.p2-readiness-evidence-coverage-review-audit span,
+.p2-readiness-evidence-coverage-review-meta span,
+.p2-readiness-evidence-coverage-review-row span,
+.p2-readiness-evidence-coverage-review-row strong,
+.p2-readiness-evidence-coverage-review-row em,
+.p2-readiness-evidence-coverage-review-row small,
+.p2-readiness-evidence-coverage-review-row p {
+  min-width: 0;
+  margin: 0;
+}
+
+.p2-readiness-evidence-coverage-review-head span,
+.p2-readiness-evidence-coverage-review-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 840;
+}
+
+.p2-readiness-evidence-coverage-review-head strong {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.p2-readiness-evidence-coverage-review-head p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.p2-readiness-evidence-coverage-review-head em {
+  color: #83e6ce;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.p2-readiness-evidence-coverage-review-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.p2-readiness-evidence-coverage-review-meta span {
+  overflow: hidden;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-radius: 7px;
+  background: rgba(14, 24, 38, 0.74);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  padding: 7px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p2-readiness-evidence-coverage-review-audit {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 7px;
+  background: rgba(20, 184, 166, 0.1);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  padding: 7px 8px;
+}
+
+.p2-readiness-evidence-coverage-review-audit span,
+.p2-readiness-evidence-coverage-review-audit em {
+  color: #83e6ce;
+  font-style: normal;
+}
+
+.p2-readiness-evidence-coverage-review-audit code {
+  overflow-wrap: anywhere;
+  color: #d6fff6;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.p2-readiness-evidence-coverage-review-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+.p2-readiness-evidence-coverage-review-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.5fr) minmax(120px, 0.75fr);
+  gap: 7px 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.82);
+  border-left: 3px solid #56657c;
+  border-radius: 7px;
+  background: rgba(14, 24, 38, 0.74);
+  padding: 8px;
+}
+
+.p2-readiness-evidence-coverage-review-row.positive {
+  border-left-color: #34d399;
+}
+
+.p2-readiness-evidence-coverage-review-row.warning {
+  border-left-color: #e8be62;
+}
+
+.p2-readiness-evidence-coverage-review-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.p2-readiness-evidence-coverage-review-row strong,
+.p2-readiness-evidence-coverage-review-row em,
+.p2-readiness-evidence-coverage-review-row small,
+.p2-readiness-evidence-coverage-review-row p {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p2-readiness-evidence-coverage-review-row strong,
+.p2-readiness-evidence-coverage-review-row em {
+  color: #83e6ce;
+  font-style: normal;
+}
+
+.p2-readiness-evidence-coverage-review-row p {
+  grid-column: 1 / -1;
 }
 
 .p2-pre-live-acceptance-actions,
@@ -5124,6 +5597,43 @@ em {
   white-space: nowrap;
 }
 
+.p2-chain-preflight-audit em {
+  color: #83e6ce;
+  font-style: normal;
+  font-weight: 820;
+}
+
+.p2-readiness-acceptance-audit {
+  align-items: center;
+  color: #9fb0c3;
+  display: flex;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.p2-readiness-acceptance-audit code {
+  border: 1px solid rgba(48, 70, 96, 0.76);
+  border-radius: 999px;
+  background: rgba(7, 12, 20, 0.62);
+  color: #a8ffee;
+  font-size: 10px;
+  font-weight: 820;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 3px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.p2-readiness-acceptance-audit em {
+  color: #83e6ce;
+  font-style: normal;
+  font-weight: 820;
+}
+
 .p2-chain-preflight-stages {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5185,7 +5695,7 @@ em {
 
 .p2-evidence-coverage-row {
   display: grid;
-  grid-template-columns: minmax(110px, 0.75fr) minmax(130px, 1fr) minmax(120px, 0.9fr);
+  grid-template-columns: minmax(110px, 0.75fr) minmax(130px, 1fr) minmax(120px, 0.9fr) auto;
   gap: 8px;
   align-items: center;
   min-width: 0;
@@ -5194,6 +5704,34 @@ em {
   border-radius: 7px;
   background: rgba(14, 24, 38, 0.74);
   padding: 8px;
+}
+
+.p2-evidence-coverage-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid rgba(80, 118, 155, 0.74);
+  border-radius: 6px;
+  background: rgba(12, 24, 38, 0.78);
+  color: #dce6ee;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 840;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+.p2-evidence-coverage-row-action:hover {
+  border-color: rgba(131, 230, 206, 0.72);
+  color: #83e6ce;
+}
+
+.p2-evidence-coverage-row-action span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .p2-evidence-coverage-row.positive {
@@ -14714,7 +15252,9 @@ button.ai-review-record {
       "portfolio-orders"
       "adapter-paper-executions"
       "p2-acceptance"
+      "p2-chain-preflight-review"
       "p2-readiness-review"
+      "p2-coverage-review"
       "acceptance"
       "reports"
       "signing-keys"
@@ -14773,8 +15313,14 @@ button.ai-review-record {
   .p2-chain-preflight-command,
   .p2-chain-preflight-stages,
   .p2-chain-preflight-stage,
+  .p2-manifest-chain-preflight-review-meta,
+  .p2-manifest-chain-preflight-review-stages,
+  .p2-manifest-chain-preflight-review-stage,
   .p2-evidence-coverage-grid,
   .p2-evidence-coverage-row,
+  .p2-readiness-evidence-coverage-review-meta,
+  .p2-readiness-evidence-coverage-review-rows,
+  .p2-readiness-evidence-coverage-review-row,
   .p2-readiness-acceptance-review-meta,
   .p2-readiness-acceptance-review-manifests,
   .p2-readiness-acceptance-review-criteria,
@@ -15026,7 +15572,9 @@ button.ai-review-record {
       "portfolio-orders"
       "adapter-paper-executions"
       "p2-acceptance"
+      "p2-chain-preflight-review"
       "p2-readiness-review"
+      "p2-coverage-review"
       "acceptance"
       "reports"
       "signing-keys"

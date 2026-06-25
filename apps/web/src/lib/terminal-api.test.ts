@@ -7,7 +7,10 @@ import {
   buildP1AcceptanceSummary,
   buildP2PaperReplaySummary,
   buildP2PreLiveAcceptanceSummary,
+  buildP2ManifestChainPreflightReviewMarkdown,
+  buildP2ManifestChainPreflightSummary,
   buildP2ReadinessAcceptanceReviewMarkdown,
+  buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP0CompletionChecklist,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
@@ -30,6 +33,7 @@ import {
   workspaceWithStrategyField,
   type OperatorRunbookSummary,
   type P0AcceptanceSummarySource,
+  type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
   type P2ReadinessAcceptanceSummary,
   type ResearchRunAudit
@@ -246,6 +250,8 @@ import {
   buildBacktestReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
   buildP0AcceptanceReviewAuditEvent,
+  buildP2ManifestChainPreflightReviewAuditEvent,
+  buildP2ReadinessEvidenceCoverageReviewAuditEvent,
   buildP2ReadinessAcceptanceReviewAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildExecutionAdapterPreLiveRunbookAuditEvent,
@@ -1472,7 +1478,27 @@ describe("terminal workspace API client", () => {
           orderSubmissionEnabled: false,
           liveTradingAllowed: false,
           liveOrderSubmitted: false,
-          routeExecuted: false
+          routeExecuted: false,
+          auditEvent: {
+            schemaVersion: 1,
+            eventId: "p2-readiness-acceptance-generated-abc123",
+            eventType: "p2_readiness_acceptance_generated",
+            runId: "run-p2-readiness",
+            createdAt: "2026-06-24T00:00:00Z",
+            stage: "p2",
+            source: "core-service",
+            summary: "P2 readiness acceptance generated accepted 6/6",
+            detail: "data/p2-readiness-acceptance.json",
+            metadata: {
+              reportKind: "p2_readiness_acceptance_generated",
+              acceptanceStatus: "accepted",
+              orderSubmissionEnabled: false,
+              liveTradingAllowed: false,
+              liveOrderSubmitted: false,
+              routeExecuted: false,
+              liveBlockedBoundary: true
+            }
+          }
         })
       };
     };
@@ -1496,6 +1522,9 @@ describe("terminal workspace API client", () => {
     expect(result.liveTradingAllowed).toBe(false);
     expect(result.liveOrderSubmitted).toBe(false);
     expect(result.routeExecuted).toBe(false);
+    expect(result.auditEvent?.eventType).toBe("p2_readiness_acceptance_generated");
+    expect(result.auditEvent?.metadata.acceptanceStatus).toBe("accepted");
+    expect(result.auditEvent?.metadata.liveBlockedBoundary).toBe(true);
   });
 
   test("falls back when latest P2 readiness acceptance readback is missing or malformed", async () => {
@@ -14988,6 +15017,227 @@ describe("terminal workspace API client", () => {
     );
     expect(event.detail).toContain("run-p2-readiness-p2-readiness-acceptance-review.md");
     expect(event.detail).toContain("6/6 criteria");
+    expect(event.detail).toContain("live blocked true");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds a P2 readiness evidence coverage review audit event without storing markdown", async () => {
+    const coverage: P2ReadinessEvidenceCoverage = {
+      status: "covered",
+      tone: "positive",
+      headline: "P2 readiness evidence fully covered",
+      detail:
+        "3/3 readiness claims have audit events or local manifests; 0 rows still block pre-live confidence. Direct order submission remains disabled.",
+      coveredCount: 3,
+      totalCount: 3,
+      blockingCount: 0,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      rows: [
+        {
+          id: "paper-replay-manifest",
+          label: "Paper replay manifest",
+          status: "covered",
+          tone: "positive",
+          evidence: "8/8 checks",
+          detail: "P2 paper replay manifest is present.",
+          sourceType: "manifest",
+          sourceId: "data/p2-paper-replay.json"
+        },
+        {
+          id: "p2-manifest-chain-preflight-review",
+          label: "P2 manifest chain preflight review",
+          status: "covered",
+          tone: "positive",
+          evidence: "Review audited · aaaaaaaaaaaa",
+          detail: "P2 manifest-chain preflight review is recorded.",
+          sourceType: "audit",
+          sourceId: "p2-chain-preflight-review-aaaaaaaaaaaaaaaa"
+        },
+        {
+          id: "safety-boundary",
+          label: "Safety boundary",
+          status: "covered",
+          tone: "positive",
+          evidence: "Live blocked · direct order submission disabled",
+          detail: "All P2 readiness evidence keeps live routing blocked.",
+          sourceType: "safety-boundary",
+          sourceId: "paper-exec"
+        }
+      ]
+    };
+    const markdown = buildP2ReadinessEvidenceCoverageReviewMarkdown({ coverage });
+
+    const event = await buildP2ReadinessEvidenceCoverageReviewAuditEvent({
+      coverage,
+      generatedAt: "2026-06-24T09:25:00.000Z",
+      markdown
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "p2_readiness_evidence_coverage_review",
+      runId: "p2-readiness-evidence-coverage",
+      createdAt: "2026-06-24T09:25:00.000Z",
+      stage: "covered",
+      source: "web",
+      summary: "P2 readiness evidence coverage review recorded",
+      metadata: {
+        artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+        fileName: "p2-readiness-evidence-coverage-review.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "covered",
+        coverageStatus: "covered",
+        coveredCount: 3,
+        totalCount: 3,
+        blockingCount: 0,
+        rowIds: ["paper-replay-manifest", "p2-manifest-chain-preflight-review", "safety-boundary"],
+        rowStatuses: ["covered", "covered", "covered"],
+        sourceTypes: ["manifest", "audit", "safety-boundary"],
+        sourceIds: [
+          "data/p2-paper-replay.json",
+          "p2-chain-preflight-review-aaaaaaaaaaaaaaaa",
+          "paper-exec"
+        ],
+        orderSubmissionEnabled: false,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true,
+        boundary:
+          "P2 readiness evidence coverage review is audit evidence only; live trading remains blocked and no investment advice"
+      }
+    });
+    expect(typeof event.metadata.contentSha256).toBe("string");
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(
+      `p2-readiness-evidence-coverage-review-${String(event.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event.detail).toContain("p2-readiness-evidence-coverage-review.md");
+    expect(event.detail).toContain("covered 3/3 claims");
+    expect(event.detail).toContain("live blocked true");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds a P2 manifest chain preflight review audit event without storing markdown", async () => {
+    const preflight = {
+      kind: "aiqt.p2ManifestChainPreflightStatus",
+      schemaVersion: 1,
+      status: "blocked" as const,
+      available: true,
+      sourcePath: "data/p2-chain-preflight.json",
+      summary: "p2 manifest chain preflight status=blocked valid=3/4 next=run-p2-readiness",
+      reason: "",
+      ready: false,
+      validStageCount: 3,
+      totalStageCount: 4,
+      blockerIds: ["p2-readiness-acceptance"],
+      nextAction: "run-p2-readiness",
+      nextCommand: "npm run docker:smoke:p2 -- --no-build",
+      stages: [
+        {
+          id: "p1-acceptance",
+          label: "P1 acceptance",
+          status: "valid" as const,
+          path: "data/p1-acceptance.json",
+          summary: "p1 acceptance manifest run=run-p1 liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-paper-replay",
+          label: "P2 paper replay",
+          status: "valid" as const,
+          path: "data/p2-paper-replay.json",
+          summary: "p2 paper replay manifest run=run-p2-replay liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-pre-live-acceptance",
+          label: "P2 pre-live acceptance",
+          status: "valid" as const,
+          path: "data/p2-pre-live-acceptance.json",
+          summary: "p2 pre-live acceptance manifest run=run-p2-prelive liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-readiness-acceptance",
+          label: "P2 readiness acceptance",
+          status: "missing" as const,
+          path: "data/p2-readiness-acceptance.json",
+          summary: "",
+          reason: "P2 readiness acceptance report not found at data/p2-readiness-acceptance.json",
+          nextAction: "run-p2-readiness",
+          nextCommand: "npm run docker:smoke:p2 -- --no-build"
+        }
+      ],
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    };
+    const summary = buildP2ManifestChainPreflightSummary(preflight);
+    const markdown = buildP2ManifestChainPreflightReviewMarkdown({ preflight, summary });
+
+    const event = await buildP2ManifestChainPreflightReviewAuditEvent({
+      generatedAt: "2026-06-24T09:20:00.000Z",
+      markdown,
+      preflight,
+      summary
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "p2_manifest_chain_preflight_review",
+      runId: "p2-manifest-chain-preflight",
+      createdAt: "2026-06-24T09:20:00.000Z",
+      stage: "blocked",
+      source: "web",
+      summary: "P2 manifest chain preflight review recorded",
+      metadata: {
+        artifactKind: "aiqt.p2ManifestChainPreflightReview",
+        fileName: "p2-manifest-chain-preflight-review.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "blocked",
+        sourcePath: "data/p2-chain-preflight.json",
+        manifestAvailable: true,
+        ready: false,
+        validStageCount: 3,
+        totalStageCount: 4,
+        blockerIds: ["p2-readiness-acceptance"],
+        nextAction: "run-p2-readiness",
+        nextCommand: "npm run docker:smoke:p2 -- --no-build",
+        stageIds: ["p1-acceptance", "p2-paper-replay", "p2-pre-live-acceptance", "p2-readiness-acceptance"],
+        stageStatuses: ["valid", "valid", "valid", "missing"],
+        paperOnly: true,
+        reportedOrderSubmissionEnabled: false,
+        reportedLiveTradingAllowed: false,
+        reportedLiveOrderSubmitted: false,
+        reportedRouteExecuted: false,
+        reportedLiveBlockedBoundary: true,
+        orderSubmissionEnabled: false,
+        liveTradingAllowed: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
+        liveBlockedBoundary: true,
+        boundary: "P2 manifest chain preflight review is audit evidence only; live trading remains blocked and no investment advice"
+      }
+    });
+    expect(typeof event.metadata.contentSha256).toBe("string");
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(
+      `p2-manifest-chain-preflight-review-${String(event.metadata.contentSha256).slice(0, 16)}`
+    );
+    expect(event.detail).toContain("p2-manifest-chain-preflight-review.md");
+    expect(event.detail).toContain("blocked 3/4");
     expect(event.detail).toContain("live blocked true");
     expect(event.detail).not.toContain(markdown);
   });

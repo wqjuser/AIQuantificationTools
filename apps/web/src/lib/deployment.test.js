@@ -39,17 +39,33 @@ describe("docker deployment contract", () => {
 
   test("exposes Docker lifecycle and smoke test commands from the root package", () => {
     const packageJson = JSON.parse(readRepoFile("package.json"));
+    const pythonLauncher = "node tools/run_python.mjs";
 
     expect(packageJson.scripts["docker:up"]).toBe("docker compose up --build");
     expect(packageJson.scripts["docker:down"]).toBe("docker compose down");
-    expect(packageJson.scripts["docker:smoke"]).toBe("python tools/docker_smoke.py");
+    expect(packageJson.scripts["docker:smoke"]).toBe(`${pythonLauncher} tools/docker_smoke.py`);
     expect(packageJson.scripts["docker:smoke:p0"]).toBe(
-      "python tools/docker_smoke.py --p0-acceptance --p0-import-check --p0-acceptance-report data/p0-acceptance.json",
+      `${pythonLauncher} tools/docker_smoke.py --p0-acceptance --p0-import-check --p0-acceptance-report data/p0-acceptance.json`,
     );
     expect(packageJson.scripts["docker:smoke:p0:validate"]).toBe(
-      "python tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+      `${pythonLauncher} tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json`,
     );
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
+  });
+
+  test("runs Python entrypoints through a cross-platform launcher", () => {
+    const packageJson = JSON.parse(readRepoFile("package.json"));
+    const launcher = readRepoFile("tools/run_python.mjs");
+
+    expect(packageJson.scripts["test:python"]).toBe(
+      "node tools/run_python.mjs -m unittest discover -s services/quant_core/tests -t services/quant_core",
+    );
+    expect(packageJson.scripts.api).toBe("node tools/run_python.mjs tools/run_quant_api.py");
+    expect(packageJson.scripts["docker:smoke"]).toBe("node tools/run_python.mjs tools/docker_smoke.py");
+    expect(launcher).toContain('"python3"');
+    expect(launcher).toContain('"python"');
+    expect(launcher).toContain('"py"');
+    expect(launcher).toContain('"-3"');
   });
 
   test("ships a compose file with web and api services, health checks, and a persisted data volume", () => {

@@ -130,6 +130,8 @@ import {
   withVerifiedResearchRunExportPackageReportSignatures,
   withResearchRunExportReportSignatures,
   buildP0AcceptanceReviewAuditEvent,
+  buildP2ManifestChainPreflightReviewAuditEvent,
+  buildP2ReadinessEvidenceCoverageReviewAuditEvent,
   buildP2ReadinessAcceptanceReviewAuditEvent,
   MarketCalendarResult,
   MarketCalendarStatus,
@@ -249,11 +251,22 @@ import {
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
   buildEvidencePackageControlRoomRows,
+  auditReportLedgerRowIsSigningEligible,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
   buildAuditEvidenceReportLedgerRowResearchContextReportQuery,
   buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery,
   buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery,
+  buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery,
+  findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
+  findLatestP2ManifestChainPreflightAuditLedgerRow,
+  findLatestP2ReadinessAcceptanceAuditLedgerRow,
+  resolveP2ReadinessEvidenceCoverageReviewAuditEventReference,
+  resolveP2ManifestChainPreflightAuditEventReference,
+  resolveP2ReadinessAcceptanceAuditEventReference,
   buildAuditEvidenceReportLedgerRowCurrentGapActionDescriptor,
   buildAuditEvidenceReportLedgerRowCurrentGapActionReadiness,
   buildAuditEvidenceReportLedgerRowCurrentGapReadinessQuery,
@@ -330,7 +343,9 @@ import {
   buildP2PaperReplaySummary,
   buildP2PreLiveAcceptanceSummary,
   buildP2ManifestChainPreflightSummary,
+  buildP2ManifestChainPreflightReviewMarkdown,
   buildP2ReadinessAcceptanceReviewMarkdown,
+  buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessAcceptanceSummary,
   buildP2ReadinessEvidenceCoverage,
   buildOperatorRunbookSummary,
@@ -439,6 +454,9 @@ import {
   EvidencePackageControlRoom,
   EvidencePackageControlRoomRow,
   P0CurrentGapActionReadiness,
+  P2ManifestChainPreflightAuditEventReferenceSource,
+  P2ReadinessEvidenceCoverageReviewAuditEventReferenceSource,
+  P2ReadinessAcceptanceAuditEventReferenceSource,
   MarketDataRefreshOverrideAuditLedgerRow,
   ExecutionAdapterPaperExecutionAuditLedgerRow,
   AuditSigningKeyRotationChainSummary,
@@ -502,6 +520,7 @@ import {
   P2ManifestChainPreflightSummary,
   P2ReadinessAcceptanceSummary,
   P2ReadinessEvidenceCoverage,
+  P2ReadinessEvidenceCoverageRow,
   OperatorRunbookAuditCoverage,
   OperatorRunbookSummary,
   P0GoldenPathJourney,
@@ -1932,9 +1951,17 @@ export function App() {
     useState<P2PreLiveAcceptanceLatestResult>(initialP2PreLiveAcceptanceLatestState);
   const [p2ReadinessAcceptanceLatestState, setP2ReadinessAcceptanceLatestState] =
     useState<P2ReadinessAcceptanceLatestResult>(initialP2ReadinessAcceptanceLatestState);
+  const [p2ReadinessAcceptanceAuditEvent, setP2ReadinessAcceptanceAuditEvent] =
+    useState<AuditEventRecord | null>(null);
+  const [p2ReadinessAcceptanceReviewAuditEvent, setP2ReadinessAcceptanceReviewAuditEvent] =
+    useState<AuditEventRecord | null>(null);
+  const [p2ReadinessEvidenceCoverageReviewAuditEvent, setP2ReadinessEvidenceCoverageReviewAuditEvent] =
+    useState<AuditEventRecord | null>(null);
   const [p2ManifestChainPreflightLatestState, setP2ManifestChainPreflightLatestState] =
     useState<P2ManifestChainPreflightLatestResult>(initialP2ManifestChainPreflightLatestState);
   const [p2ManifestChainPreflightAuditEvent, setP2ManifestChainPreflightAuditEvent] =
+    useState<AuditEventRecord | null>(null);
+  const [p2ManifestChainPreflightReviewAuditEvent, setP2ManifestChainPreflightReviewAuditEvent] =
     useState<AuditEventRecord | null>(null);
   const [portfolioBacktestState, setPortfolioBacktestState] =
     useState<PortfolioBacktestResult>(initialPortfolioBacktestState);
@@ -2084,6 +2111,8 @@ export function App() {
   const [copiedP0ActionOutcomeEvidenceId, setCopiedP0ActionOutcomeEvidenceId] = useState<string | null>(null);
   const [copiedP0AcceptanceReview, setCopiedP0AcceptanceReview] = useState(false);
   const [copiedP2ReadinessAcceptanceReview, setCopiedP2ReadinessAcceptanceReview] = useState(false);
+  const [copiedP2ReadinessEvidenceCoverageReview, setCopiedP2ReadinessEvidenceCoverageReview] = useState(false);
+  const [copiedP2ManifestChainPreflightReview, setCopiedP2ManifestChainPreflightReview] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
   const [copiedOperatorRunbook, setCopiedOperatorRunbook] = useState(false);
   const [copiedPreLiveRunbook, setCopiedPreLiveRunbook] = useState(false);
@@ -2092,6 +2121,8 @@ export function App() {
   const [savingP0ReadinessReport, setSavingP0ReadinessReport] = useState(false);
   const [savingP0AcceptanceReview, setSavingP0AcceptanceReview] = useState(false);
   const [savingP2ReadinessAcceptanceReview, setSavingP2ReadinessAcceptanceReview] = useState(false);
+  const [savingP2ReadinessEvidenceCoverageReview, setSavingP2ReadinessEvidenceCoverageReview] = useState(false);
+  const [savingP2ManifestChainPreflightReview, setSavingP2ManifestChainPreflightReview] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [copiedResearchContextLink, setCopiedResearchContextLink] = useState(false);
@@ -2604,13 +2635,62 @@ export function App() {
     operatorRunbookSummary,
     workspace
   );
+  const p2ManifestChainPreflightSummary = useMemo(
+    () => buildP2ManifestChainPreflightSummary(p2ManifestChainPreflightLatestState.preflight),
+    [p2ManifestChainPreflightLatestState.preflight]
+  );
+  const p2ManifestChainPreflightAuditContext = useMemo(
+    () => ({
+      blockerIds: p2ManifestChainPreflightSummary.blockerIds,
+      nextAction: p2ManifestChainPreflightSummary.nextAction,
+      sourcePath: p2ManifestChainPreflightSummary.sourcePath,
+      status: p2ManifestChainPreflightSummary.state,
+      totalStageCount: p2ManifestChainPreflightSummary.totalStageCount,
+      validStageCount: p2ManifestChainPreflightSummary.validStageCount
+    }),
+    [
+      p2ManifestChainPreflightSummary.blockerIds,
+      p2ManifestChainPreflightSummary.nextAction,
+      p2ManifestChainPreflightSummary.sourcePath,
+      p2ManifestChainPreflightSummary.state,
+      p2ManifestChainPreflightSummary.totalStageCount,
+      p2ManifestChainPreflightSummary.validStageCount
+    ]
+  );
+  const latestP2ManifestChainPreflightAuditRow = useMemo(
+    () =>
+      findLatestP2ManifestChainPreflightAuditLedgerRow(
+        auditEvidenceReportLedgerRows,
+        p2ManifestChainPreflightAuditContext
+      ),
+    [auditEvidenceReportLedgerRows, p2ManifestChainPreflightAuditContext]
+  );
+  const latestP2ManifestChainPreflightReviewAuditRow = useMemo(
+    () =>
+      findLatestP2ManifestChainPreflightAuditLedgerRow(
+        auditEvidenceReportLedgerRows,
+        p2ManifestChainPreflightAuditContext,
+        "p2_manifest_chain_preflight_review"
+      ),
+    [auditEvidenceReportLedgerRows, p2ManifestChainPreflightAuditContext]
+  );
   const p2ReadinessEvidenceCoverage = buildP2ReadinessEvidenceCoverage({
     adapterChainHealthRollups: executionAdapterChainHealthRollups,
     operatorRunbookAuditCoverage,
+    p2ManifestChainPreflight: p2ManifestChainPreflightSummary,
+    p2ManifestChainPreflightReviewAuditRow: latestP2ManifestChainPreflightReviewAuditRow,
     p2PaperReplay: p2PaperReplaySummary,
     p2PreLiveAcceptance: p2PreLiveAcceptanceSummary,
     preLiveChecklist: preLiveReadinessChecklist
   });
+  const latestP2ReadinessEvidenceCoverageReviewAuditRow = useMemo(
+    () =>
+      findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow(
+        auditEvidenceReportLedgerRows,
+        p2ReadinessEvidenceCoverage
+      ),
+    [auditEvidenceReportLedgerRows, p2ReadinessEvidenceCoverage]
+  );
   const p2ReadinessAcceptanceSummary = buildP2ReadinessAcceptanceSummary({
     evidenceCoverage: p2ReadinessEvidenceCoverage,
     p1Acceptance: p1AcceptanceSummary,
@@ -2618,11 +2698,127 @@ export function App() {
     p2PreLiveAcceptance: p2PreLiveAcceptanceSummary,
     preLiveChecklist: preLiveReadinessChecklist
   });
-  const p2ManifestChainPreflightSummary = useMemo(
-    () => buildP2ManifestChainPreflightSummary(p2ManifestChainPreflightLatestState.preflight),
-    [p2ManifestChainPreflightLatestState.preflight]
+  const p2ReadinessAcceptanceAuditContext = useMemo(
+    () => ({
+      market: p2ReadinessAcceptanceLatestState.acceptance?.market ?? null,
+      runId: p2ReadinessAcceptanceLatestState.acceptance?.runId ?? null,
+      symbol: p2ReadinessAcceptanceLatestState.acceptance?.symbol ?? null,
+      timeframe: p2ReadinessAcceptanceLatestState.acceptance?.timeframe ?? null
+    }),
+    [
+      p2ReadinessAcceptanceLatestState.acceptance?.market,
+      p2ReadinessAcceptanceLatestState.acceptance?.runId,
+      p2ReadinessAcceptanceLatestState.acceptance?.symbol,
+      p2ReadinessAcceptanceLatestState.acceptance?.timeframe
+    ]
   );
+  const latestP2ReadinessAcceptanceGeneratedAuditRow = useMemo(
+    () =>
+      findLatestP2ReadinessAcceptanceAuditLedgerRow(
+        auditEvidenceReportLedgerRows,
+        "p2_readiness_acceptance_generated",
+        p2ReadinessAcceptanceAuditContext
+      ),
+    [auditEvidenceReportLedgerRows, p2ReadinessAcceptanceAuditContext]
+  );
+  const latestP2ReadinessAcceptanceReviewAuditRow = useMemo(
+    () =>
+      findLatestP2ReadinessAcceptanceAuditLedgerRow(
+        auditEvidenceReportLedgerRows,
+        "p2_readiness_acceptance_review",
+        p2ReadinessAcceptanceAuditContext
+      ),
+    [auditEvidenceReportLedgerRows, p2ReadinessAcceptanceAuditContext]
+  );
+  const p2ReadinessAcceptanceGeneratedAuditEventReference = useMemo(
+    () =>
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        context: p2ReadinessAcceptanceAuditContext,
+        event: p2ReadinessAcceptanceAuditEvent,
+        ledgerRow: latestP2ReadinessAcceptanceGeneratedAuditRow
+      }),
+    [latestP2ReadinessAcceptanceGeneratedAuditRow, p2ReadinessAcceptanceAuditContext, p2ReadinessAcceptanceAuditEvent]
+  );
+  const p2ReadinessAcceptanceReviewAuditEventReference = useMemo(
+    () =>
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        context: p2ReadinessAcceptanceAuditContext,
+        event: p2ReadinessAcceptanceReviewAuditEvent,
+        ledgerRow: latestP2ReadinessAcceptanceReviewAuditRow
+      }),
+    [
+      latestP2ReadinessAcceptanceReviewAuditRow,
+      p2ReadinessAcceptanceAuditContext,
+      p2ReadinessAcceptanceReviewAuditEvent
+    ]
+  );
+  const p2ReadinessAcceptanceGeneratedAuditEventId = p2ReadinessAcceptanceGeneratedAuditEventReference.eventId;
+  const p2ReadinessAcceptanceGeneratedAuditEventSource = p2ReadinessAcceptanceGeneratedAuditEventReference.source;
+  const p2ReadinessAcceptanceReviewAuditEventId = p2ReadinessAcceptanceReviewAuditEventReference.eventId;
+  const p2ReadinessAcceptanceReviewAuditEventSource = p2ReadinessAcceptanceReviewAuditEventReference.source;
+  const p2ManifestChainPreflightAuditReference = useMemo(
+    () =>
+      resolveP2ManifestChainPreflightAuditEventReference({
+        context: p2ManifestChainPreflightAuditContext,
+        event: p2ManifestChainPreflightAuditEvent,
+        ledgerRow: latestP2ManifestChainPreflightAuditRow
+      }),
+    [
+      latestP2ManifestChainPreflightAuditRow,
+      p2ManifestChainPreflightAuditContext,
+      p2ManifestChainPreflightAuditEvent
+    ]
+  );
+  const p2ManifestChainPreflightReviewAuditEventReference = useMemo(
+    () =>
+      resolveP2ManifestChainPreflightAuditEventReference({
+        context: p2ManifestChainPreflightAuditContext,
+        event: p2ManifestChainPreflightReviewAuditEvent,
+        ledgerRow: latestP2ManifestChainPreflightReviewAuditRow
+      }),
+    [
+      latestP2ManifestChainPreflightReviewAuditRow,
+      p2ManifestChainPreflightAuditContext,
+      p2ManifestChainPreflightReviewAuditEvent
+    ]
+  );
+  const p2ManifestChainPreflightAuditEventId = p2ManifestChainPreflightAuditReference.eventId;
+  const p2ManifestChainPreflightAuditEventSource = p2ManifestChainPreflightAuditReference.source;
+  const p2ManifestChainPreflightReviewAuditEventId = p2ManifestChainPreflightReviewAuditEventReference.eventId;
+  const p2ManifestChainPreflightReviewAuditEventSource = p2ManifestChainPreflightReviewAuditEventReference.source;
+  const p2ReadinessEvidenceCoverageReviewAuditEventReference = useMemo(
+    () =>
+      resolveP2ReadinessEvidenceCoverageReviewAuditEventReference({
+        coverage: p2ReadinessEvidenceCoverage,
+        event: p2ReadinessEvidenceCoverageReviewAuditEvent,
+        ledgerRow: latestP2ReadinessEvidenceCoverageReviewAuditRow
+      }),
+    [
+      latestP2ReadinessEvidenceCoverageReviewAuditRow,
+      p2ReadinessEvidenceCoverage,
+      p2ReadinessEvidenceCoverageReviewAuditEvent
+    ]
+  );
+  const p2ReadinessEvidenceCoverageReviewAuditEventId =
+    p2ReadinessEvidenceCoverageReviewAuditEventReference.eventId;
+  const p2ReadinessEvidenceCoverageReviewAuditEventSource =
+    p2ReadinessEvidenceCoverageReviewAuditEventReference.source;
   const p2PreLiveAcceptanceSummaryHeadlineText = p2PreLiveAcceptanceSummaryHeadline(i18n, p2PreLiveAcceptanceSummary);
+  const p2ManifestChainPreflightReviewMarkdown = useMemo(
+    () =>
+      buildP2ManifestChainPreflightReviewMarkdown({
+        preflight: p2ManifestChainPreflightLatestState.preflight ?? null,
+        summary: p2ManifestChainPreflightSummary
+      }),
+    [p2ManifestChainPreflightLatestState.preflight, p2ManifestChainPreflightSummary]
+  );
+  const p2ReadinessEvidenceCoverageReviewMarkdown = useMemo(
+    () =>
+      buildP2ReadinessEvidenceCoverageReviewMarkdown({
+        coverage: p2ReadinessEvidenceCoverage
+      }),
+    [p2ReadinessEvidenceCoverage]
+  );
   const p2ReadinessAcceptanceReviewMarkdown = useMemo(
     () =>
       buildP2ReadinessAcceptanceReviewMarkdown({
@@ -2746,6 +2942,14 @@ export function App() {
   useEffect(() => {
     setCopiedP2ReadinessAcceptanceReview(false);
   }, [p2ReadinessAcceptanceReviewMarkdown]);
+
+  useEffect(() => {
+    setCopiedP2ReadinessEvidenceCoverageReview(false);
+  }, [p2ReadinessEvidenceCoverageReviewMarkdown]);
+
+  useEffect(() => {
+    setCopiedP2ManifestChainPreflightReview(false);
+  }, [p2ManifestChainPreflightReviewMarkdown]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -2903,6 +3107,7 @@ export function App() {
     setIsGeneratingP2ReadinessAcceptance(true);
     try {
       const result = await generateP2ReadinessAcceptance(quantCoreBaseUrl);
+      setP2ReadinessAcceptanceAuditEvent(result.auditEvent ?? null);
       setP2ReadinessAcceptanceLatestState({
         acceptance: result.acceptance,
         source: result.source,
@@ -3008,7 +3213,7 @@ export function App() {
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
       eventType:
-        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report",
+        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined
@@ -7799,11 +8004,166 @@ export function App() {
     }));
   }, [operatorRunbookAuditCoverage.query, selectProductWorkArea, updateAuditEvidenceReportQuery]);
 
+  const openP2ReadinessAcceptanceGeneratedAudit = useCallback(() => {
+    const auditEventId = p2ReadinessAcceptanceGeneratedAuditEventId;
+    const matchingRow =
+      p2ReadinessAcceptanceGeneratedAuditEventReference.ledgerRow ??
+      (auditEventId ? auditEvidenceReportLedgerRows.find((row) => row.id === auditEventId) : undefined) ??
+      latestP2ReadinessAcceptanceGeneratedAuditRow ??
+      undefined;
+    const ledgerQuery = buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery(matchingRow);
+    const readback = p2ReadinessAcceptanceLatestState.acceptance ?? null;
+    const fallbackQuery = [
+      "p2_readiness_acceptance_generated",
+      auditEventId,
+      readback?.sourcePath ?? "data/p2-readiness-acceptance.json",
+      readback?.status ?? p2ReadinessAcceptanceSummary.status,
+      `${readback?.acceptedCriterionCount ?? p2ReadinessAcceptanceSummary.acceptedCount}/${
+        readback?.totalCriterionCount ?? p2ReadinessAcceptanceSummary.totalCount
+      }`,
+      readback?.runId ?? "",
+      readback?.market ?? "",
+      readback?.symbol ?? "",
+      readback?.timeframe ?? ""
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const query = ledgerQuery || fallbackQuery;
+
+    selectProductWorkArea("audit");
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: auditEventId
+        ? "P2 readiness acceptance generation audit event selected"
+        : "P2 readiness acceptance generation audit query prepared",
+      error: query ? undefined : "Generate the P2 readiness acceptance before opening its audit event."
+    }));
+  }, [
+    auditEvidenceReportLedgerRows,
+    latestP2ReadinessAcceptanceGeneratedAuditRow,
+    p2ReadinessAcceptanceGeneratedAuditEventReference,
+    p2ReadinessAcceptanceGeneratedAuditEventId,
+    p2ReadinessAcceptanceLatestState.acceptance,
+    p2ReadinessAcceptanceSummary.acceptedCount,
+    p2ReadinessAcceptanceSummary.status,
+    p2ReadinessAcceptanceSummary.totalCount,
+    selectProductWorkArea,
+    updateAuditEvidenceReportQuery
+  ]);
+
+  const openP2ReadinessAcceptanceReviewAudit = useCallback(() => {
+    const auditEventId = p2ReadinessAcceptanceReviewAuditEventId;
+    const matchingRow =
+      p2ReadinessAcceptanceReviewAuditEventReference.ledgerRow ??
+      (auditEventId ? auditEvidenceReportLedgerRows.find((row) => row.id === auditEventId) : undefined) ??
+      latestP2ReadinessAcceptanceReviewAuditRow ??
+      undefined;
+    const ledgerQuery = buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery(matchingRow);
+    const readback = p2ReadinessAcceptanceLatestState.acceptance ?? null;
+    const savedFileName =
+      typeof p2ReadinessAcceptanceReviewAuditEvent?.metadata?.fileName === "string"
+        ? p2ReadinessAcceptanceReviewAuditEvent.metadata.fileName
+        : "";
+    const savedHash =
+      typeof p2ReadinessAcceptanceReviewAuditEvent?.metadata?.contentSha256 === "string"
+        ? p2ReadinessAcceptanceReviewAuditEvent.metadata.contentSha256.slice(0, 12)
+        : "";
+    const fallbackQuery = [
+      "p2_readiness_acceptance_review",
+      auditEventId,
+      savedHash,
+      savedFileName,
+      readback?.market ?? "",
+      readback?.symbol ?? "",
+      readback?.timeframe ?? "",
+      readback?.status ?? p2ReadinessAcceptanceSummary.status,
+      `${readback?.acceptedCriterionCount ?? p2ReadinessAcceptanceSummary.acceptedCount}/${
+        readback?.totalCriterionCount ?? p2ReadinessAcceptanceSummary.totalCount
+      }`
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const query = ledgerQuery || fallbackQuery;
+
+    selectProductWorkArea("audit");
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: auditEventId
+        ? "P2 readiness acceptance review audit event selected"
+        : "P2 readiness acceptance review audit query prepared",
+      error: query ? undefined : "Record the P2 readiness acceptance review before opening its audit event."
+    }));
+  }, [
+    auditEvidenceReportLedgerRows,
+    latestP2ReadinessAcceptanceReviewAuditRow,
+    p2ReadinessAcceptanceReviewAuditEventReference,
+    p2ReadinessAcceptanceLatestState.acceptance,
+    p2ReadinessAcceptanceReviewAuditEventId,
+    p2ReadinessAcceptanceReviewAuditEvent,
+    p2ReadinessAcceptanceSummary.acceptedCount,
+    p2ReadinessAcceptanceSummary.status,
+    p2ReadinessAcceptanceSummary.totalCount,
+    selectProductWorkArea,
+    updateAuditEvidenceReportQuery
+  ]);
+
+  const openP2ReadinessEvidenceCoverageReviewAudit = useCallback(() => {
+    const auditEventId = p2ReadinessEvidenceCoverageReviewAuditEventId;
+    const matchingRow =
+      p2ReadinessEvidenceCoverageReviewAuditEventReference.ledgerRow ??
+      (auditEventId ? auditEvidenceReportLedgerRows.find((row) => row.id === auditEventId) : undefined) ??
+      latestP2ReadinessEvidenceCoverageReviewAuditRow ??
+      undefined;
+    const ledgerQuery = buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery(matchingRow);
+    const savedFileName =
+      typeof p2ReadinessEvidenceCoverageReviewAuditEvent?.metadata?.fileName === "string"
+        ? p2ReadinessEvidenceCoverageReviewAuditEvent.metadata.fileName
+        : "";
+    const savedHash =
+      typeof p2ReadinessEvidenceCoverageReviewAuditEvent?.metadata?.contentSha256 === "string"
+        ? p2ReadinessEvidenceCoverageReviewAuditEvent.metadata.contentSha256.slice(0, 12)
+        : "";
+    const fallbackQuery = [
+      "p2_readiness_evidence_coverage_review",
+      auditEventId,
+      savedHash,
+      savedFileName,
+      p2ReadinessEvidenceCoverage.status,
+      `${p2ReadinessEvidenceCoverage.coveredCount}/${p2ReadinessEvidenceCoverage.totalCount}`,
+      p2ReadinessEvidenceCoverage.rows.map((row) => row.id).join(" "),
+      p2ReadinessEvidenceCoverage.rows.map((row) => row.sourceType).join(" ")
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const query = ledgerQuery || fallbackQuery;
+
+    selectProductWorkArea("audit");
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: auditEventId
+        ? "P2 readiness evidence coverage review audit event selected"
+        : "P2 readiness evidence coverage review audit query prepared",
+      error: query ? undefined : "Record the P2 readiness evidence coverage review before opening its audit event."
+    }));
+  }, [
+    auditEvidenceReportLedgerRows,
+    latestP2ReadinessEvidenceCoverageReviewAuditRow,
+    p2ReadinessEvidenceCoverage,
+    p2ReadinessEvidenceCoverageReviewAuditEventReference,
+    p2ReadinessEvidenceCoverageReviewAuditEvent,
+    p2ReadinessEvidenceCoverageReviewAuditEventId,
+    selectProductWorkArea,
+    updateAuditEvidenceReportQuery
+  ]);
+
   const openP2ManifestChainPreflightAudit = useCallback(() => {
-    const auditEventId = p2ManifestChainPreflightAuditEvent?.eventId ?? "";
-    const matchingRow = auditEventId
-      ? auditEvidenceReportLedgerRows.find((row) => row.id === auditEventId)
-      : undefined;
+    const auditEventId = p2ManifestChainPreflightAuditReference.eventId;
+    const matchingRow =
+      p2ManifestChainPreflightAuditReference.ledgerRow ??
+      (auditEventId ? auditEvidenceReportLedgerRows.find((row) => row.id === auditEventId) : undefined);
     const ledgerQuery = buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(matchingRow);
     const fallbackQuery = [
       "p2_manifest_chain_preflight",
@@ -7829,7 +8189,8 @@ export function App() {
     }));
   }, [
     auditEvidenceReportLedgerRows,
-    p2ManifestChainPreflightAuditEvent?.eventId,
+    p2ManifestChainPreflightAuditReference.eventId,
+    p2ManifestChainPreflightAuditReference.ledgerRow,
     p2ManifestChainPreflightSummary.blockerIds,
     p2ManifestChainPreflightSummary.nextAction,
     p2ManifestChainPreflightSummary.sourcePath,
@@ -7839,6 +8200,116 @@ export function App() {
     selectProductWorkArea,
     updateAuditEvidenceReportQuery
   ]);
+
+  const openP2ManifestChainPreflightReviewAudit = useCallback(() => {
+    const auditEventId = p2ManifestChainPreflightReviewAuditEventId;
+    const matchingRow =
+      p2ManifestChainPreflightReviewAuditEventReference.ledgerRow ??
+      (auditEventId ? auditEvidenceReportLedgerRows.find((row) => row.id === auditEventId) : undefined) ??
+      latestP2ManifestChainPreflightReviewAuditRow ??
+      undefined;
+    const ledgerQuery = buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery(matchingRow);
+    const savedFileName =
+      typeof p2ManifestChainPreflightReviewAuditEvent?.metadata?.fileName === "string"
+        ? p2ManifestChainPreflightReviewAuditEvent.metadata.fileName
+        : "";
+    const savedHash =
+      typeof p2ManifestChainPreflightReviewAuditEvent?.metadata?.contentSha256 === "string"
+        ? p2ManifestChainPreflightReviewAuditEvent.metadata.contentSha256.slice(0, 12)
+        : "";
+    const fallbackQuery = [
+      "p2_manifest_chain_preflight_review",
+      auditEventId,
+      savedHash,
+      savedFileName,
+      p2ManifestChainPreflightSummary.sourcePath,
+      p2ManifestChainPreflightSummary.state,
+      `${p2ManifestChainPreflightSummary.validStageCount}/${p2ManifestChainPreflightSummary.totalStageCount}`,
+      p2ManifestChainPreflightSummary.nextAction,
+      p2ManifestChainPreflightSummary.blockerIds.join(" ")
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const query = ledgerQuery || fallbackQuery;
+
+    selectProductWorkArea("audit");
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: auditEventId
+        ? "P2 manifest chain preflight review audit event selected"
+        : "P2 manifest chain preflight review audit query prepared",
+      error: query ? undefined : "Record the P2 manifest chain preflight review before opening its audit event."
+    }));
+  }, [
+    auditEvidenceReportLedgerRows,
+    latestP2ManifestChainPreflightReviewAuditRow,
+    p2ManifestChainPreflightReviewAuditEvent,
+    p2ManifestChainPreflightReviewAuditEventId,
+    p2ManifestChainPreflightReviewAuditEventReference,
+    p2ManifestChainPreflightSummary.blockerIds,
+    p2ManifestChainPreflightSummary.nextAction,
+    p2ManifestChainPreflightSummary.sourcePath,
+    p2ManifestChainPreflightSummary.state,
+    p2ManifestChainPreflightSummary.totalStageCount,
+    p2ManifestChainPreflightSummary.validStageCount,
+    selectProductWorkArea,
+    updateAuditEvidenceReportQuery
+  ]);
+
+  const openP2ReadinessEvidenceCoverage = useCallback(
+    (row: P2ReadinessEvidenceCoverageRow) => {
+      switch (row.id) {
+        case "paper-replay-manifest":
+          selectProductWorkArea("execution");
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "P2 paper replay evidence selected",
+            error: undefined
+          }));
+          return;
+        case "p2-acceptance-manifest":
+          selectProductWorkArea("execution");
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "P2 pre-live acceptance evidence selected",
+            error: undefined
+          }));
+          return;
+        case "operator-runbook-audit":
+          focusOperatorRunbookAudit();
+          return;
+        case "p2-manifest-chain-preflight-review":
+          openP2ManifestChainPreflightReviewAudit();
+          return;
+        case "pre-live-checklist":
+          selectProductWorkArea("execution");
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "P2 pre-live checklist evidence selected",
+            error: undefined
+          }));
+          return;
+        case "adapter-chain-health":
+          selectProductWorkArea("settings");
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "P2 adapter chain evidence selected",
+            error: undefined
+          }));
+          return;
+        case "safety-boundary":
+          selectProductWorkArea("execution");
+          setWorkspaceState((current) => ({
+            ...current,
+            statusLabel: "P2 safety boundary evidence selected",
+            error: undefined
+          }));
+          return;
+      }
+    },
+    [focusOperatorRunbookAudit, openP2ManifestChainPreflightReviewAudit, selectProductWorkArea]
+  );
 
   const openExecutionAdapterPaperExecutionEvidence = useCallback(
     (row: ExecutionAdapterPaperExecutionAuditLedgerRow) => {
@@ -8349,6 +8820,7 @@ export function App() {
       });
       const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
       if (result.source === "core" && result.event) {
+        setP2ReadinessAcceptanceReviewAuditEvent(result.event);
         setAuditEvidenceReportEvents((current) =>
           mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
         );
@@ -8372,6 +8844,152 @@ export function App() {
     p2ReadinessAcceptanceLatestState.acceptance,
     p2ReadinessAcceptanceReviewMarkdown,
     p2ReadinessAcceptanceSummary,
+    quantCoreBaseUrl
+  ]);
+
+  const copyP2ReadinessEvidenceCoverageReview = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P2 readiness evidence coverage review copy failed",
+        error: "Clipboard is unavailable"
+      }));
+      return;
+    }
+
+    await navigator.clipboard.writeText(p2ReadinessEvidenceCoverageReviewMarkdown);
+    setCopiedP2ReadinessEvidenceCoverageReview(true);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P2 readiness evidence coverage review copied",
+      error: undefined
+    }));
+  }, [p2ReadinessEvidenceCoverageReviewMarkdown]);
+
+  const downloadP2ReadinessEvidenceCoverageReview = useCallback(() => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([p2ReadinessEvidenceCoverageReviewMarkdown], { type: "text/markdown;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "p2-readiness-evidence-coverage-review.md";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P2 readiness evidence coverage review download ready",
+      error: undefined
+    }));
+  }, [p2ReadinessEvidenceCoverageReviewMarkdown]);
+
+  const saveP2ReadinessEvidenceCoverageReview = useCallback(async () => {
+    setSavingP2ReadinessEvidenceCoverageReview(true);
+    try {
+      const auditEvent = await buildP2ReadinessEvidenceCoverageReviewAuditEvent({
+        coverage: p2ReadinessEvidenceCoverage,
+        markdown: p2ReadinessEvidenceCoverageReviewMarkdown
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setP2ReadinessEvidenceCoverageReviewAuditEvent(result.event);
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "P2 readiness evidence coverage review saved to audit ledger",
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P2 readiness evidence coverage review ledger save failed",
+        error: result.error ?? "P2 readiness evidence coverage review ledger save failed"
+      }));
+    } finally {
+      setSavingP2ReadinessEvidenceCoverageReview(false);
+    }
+  }, [
+    p2ReadinessEvidenceCoverage,
+    p2ReadinessEvidenceCoverageReviewMarkdown,
+    quantCoreBaseUrl
+  ]);
+
+  const copyP2ManifestChainPreflightReview = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P2 manifest chain preflight review copy failed",
+        error: "Clipboard is unavailable"
+      }));
+      return;
+    }
+
+    await navigator.clipboard.writeText(p2ManifestChainPreflightReviewMarkdown);
+    setCopiedP2ManifestChainPreflightReview(true);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P2 manifest chain preflight review copied",
+      error: undefined
+    }));
+  }, [p2ManifestChainPreflightReviewMarkdown]);
+
+  const downloadP2ManifestChainPreflightReview = useCallback(() => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([p2ManifestChainPreflightReviewMarkdown], { type: "text/markdown;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "p2-manifest-chain-preflight-review.md";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "P2 manifest chain preflight review download ready",
+      error: undefined
+    }));
+  }, [p2ManifestChainPreflightReviewMarkdown]);
+
+  const saveP2ManifestChainPreflightReview = useCallback(async () => {
+    setSavingP2ManifestChainPreflightReview(true);
+    try {
+      const auditEvent = await buildP2ManifestChainPreflightReviewAuditEvent({
+        markdown: p2ManifestChainPreflightReviewMarkdown,
+        preflight: p2ManifestChainPreflightLatestState.preflight ?? null,
+        summary: p2ManifestChainPreflightSummary
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setP2ManifestChainPreflightReviewAuditEvent(result.event);
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "P2 manifest chain preflight review saved to audit ledger",
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "P2 manifest chain preflight review ledger save failed",
+        error: result.error ?? "P2 manifest chain preflight review ledger save failed"
+      }));
+    } finally {
+      setSavingP2ManifestChainPreflightReview(false);
+    }
+  }, [
+    p2ManifestChainPreflightLatestState.preflight,
+    p2ManifestChainPreflightReviewMarkdown,
+    p2ManifestChainPreflightSummary,
     quantCoreBaseUrl
   ]);
 
@@ -9487,17 +10105,21 @@ export function App() {
             summary={p2PreLiveAcceptanceSummary}
           />
           <P2ReadinessAcceptancePanel
+            auditEventId={p2ReadinessAcceptanceGeneratedAuditEventId}
+            auditEventSource={p2ReadinessAcceptanceGeneratedAuditEventSource}
             className="workflow-p2-readiness-acceptance-panel"
             i18n={i18n}
             isGenerating={isGeneratingP2ReadinessAcceptance}
             isRefreshing={isLoadingP2ReadinessAcceptance}
             onGenerateAcceptance={() => void generateP2ReadinessAcceptanceReport()}
+            onOpenAudit={openP2ReadinessAcceptanceGeneratedAudit}
             onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}
             readback={p2ReadinessAcceptanceLatestState.acceptance ?? null}
             summary={p2ReadinessAcceptanceSummary}
           />
           <P2ManifestChainPreflightPanel
-            auditEventId={p2ManifestChainPreflightAuditEvent?.eventId ?? ""}
+            auditEventId={p2ManifestChainPreflightAuditEventId}
+            auditEventSource={p2ManifestChainPreflightAuditEventSource}
             className="workflow-p2-chain-preflight-panel"
             i18n={i18n}
             isGenerating={isGeneratingP2ManifestChainPreflight}
@@ -9511,6 +10133,7 @@ export function App() {
             className="workflow-p2-evidence-coverage-panel"
             coverage={p2ReadinessEvidenceCoverage}
             i18n={i18n}
+            onOpenEvidence={openP2ReadinessEvidenceCoverage}
           />
           <OperatorRunbookPanel
             auditCoverage={operatorRunbookAuditCoverage}
@@ -9639,8 +10262,26 @@ export function App() {
             onRefresh={() => void refreshP2PreLiveAcceptanceLatest()}
             summary={p2PreLiveAcceptanceSummary}
           />
+          <P2ManifestChainPreflightReviewPanel
+            preflight={p2ManifestChainPreflightLatestState.preflight ?? null}
+            auditEventId={p2ManifestChainPreflightReviewAuditEventId}
+            auditEventSource={p2ManifestChainPreflightReviewAuditEventSource}
+            className="workflow-p2-chain-preflight-review-panel"
+            i18n={i18n}
+            isCopied={copiedP2ManifestChainPreflightReview}
+            isRecordingAudit={savingP2ManifestChainPreflightReview}
+            isRefreshing={isLoadingP2ManifestChainPreflight}
+            onCopy={() => void copyP2ManifestChainPreflightReview()}
+            onDownload={downloadP2ManifestChainPreflightReview}
+            onOpenAudit={openP2ManifestChainPreflightReviewAudit}
+            onRecordAudit={() => void saveP2ManifestChainPreflightReview()}
+            onRefresh={() => void refreshP2ManifestChainPreflightLatest()}
+            summary={p2ManifestChainPreflightSummary}
+          />
           <P2ReadinessAcceptanceReviewPanel
             acceptance={p2ReadinessAcceptanceLatestState.acceptance ?? null}
+            auditEventId={p2ReadinessAcceptanceReviewAuditEventId}
+            auditEventSource={p2ReadinessAcceptanceReviewAuditEventSource}
             className="workflow-p2-readiness-acceptance-audit-panel"
             i18n={i18n}
             isCopied={copiedP2ReadinessAcceptanceReview}
@@ -9648,9 +10289,23 @@ export function App() {
             isRefreshing={isLoadingP2ReadinessAcceptance}
             onCopy={() => void copyP2ReadinessAcceptanceReview()}
             onDownload={downloadP2ReadinessAcceptanceReview}
+            onOpenAudit={openP2ReadinessAcceptanceReviewAudit}
             onRecordAudit={() => void saveP2ReadinessAcceptanceReview()}
             onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}
             summary={p2ReadinessAcceptanceSummary}
+          />
+          <P2ReadinessEvidenceCoverageReviewPanel
+            auditEventId={p2ReadinessEvidenceCoverageReviewAuditEventId}
+            auditEventSource={p2ReadinessEvidenceCoverageReviewAuditEventSource}
+            className="workflow-p2-evidence-coverage-review-panel"
+            coverage={p2ReadinessEvidenceCoverage}
+            i18n={i18n}
+            isCopied={copiedP2ReadinessEvidenceCoverageReview}
+            isRecordingAudit={savingP2ReadinessEvidenceCoverageReview}
+            onCopy={() => void copyP2ReadinessEvidenceCoverageReview()}
+            onDownload={downloadP2ReadinessEvidenceCoverageReview}
+            onOpenAudit={openP2ReadinessEvidenceCoverageReviewAudit}
+            onRecordAudit={() => void saveP2ReadinessEvidenceCoverageReview()}
           />
           <P0AcceptanceReviewPanel
             acceptance={p0AcceptanceLatestState.acceptance ?? null}
@@ -11480,6 +12135,7 @@ function p2EvidenceCoverageRowLabel(
         "adapter-chain-health": "Adapter chain",
         "operator-runbook-audit": "Operator runbook",
         "p2-acceptance-manifest": "P2 acceptance",
+        "p2-manifest-chain-preflight-review": "P2 preflight review",
         "paper-replay-manifest": "Paper replay",
         "pre-live-checklist": "Pre-live checklist",
         "safety-boundary": "Safety boundary"
@@ -11491,6 +12147,7 @@ function p2EvidenceCoverageRowLabel(
       "adapter-chain-health": "适配器链路",
       "operator-runbook-audit": "操作手册审计",
       "p2-acceptance-manifest": "P2 验收清单",
+      "p2-manifest-chain-preflight-review": "P2 预检复核",
       "paper-replay-manifest": "纸面回放清单",
       "pre-live-checklist": "预实盘 checklist",
       "safety-boundary": "安全边界"
@@ -11508,6 +12165,31 @@ function p2EvidenceCoverageSourceLabel(
   return { audit: "审计", "local-state": "本地状态", manifest: "manifest", "safety-boundary": "边界" }[
     sourceType
   ];
+}
+
+function p2EvidenceCoverageRowActionLabel(i18n: AppI18n, row: P2ReadinessEvidenceCoverageRow): string {
+  switch (row.sourceType) {
+    case "manifest":
+      return i18n.locale === "zh-CN" ? "清单" : "Manifest";
+    case "audit":
+      return i18n.locale === "zh-CN" ? "审计" : "Audit";
+    case "local-state":
+      return i18n.locale === "zh-CN" ? "工作区" : "Workspace";
+    case "safety-boundary":
+      return i18n.locale === "zh-CN" ? "边界" : "Boundary";
+  }
+}
+
+function p2EvidenceCoverageRowActionIcon(row: P2ReadinessEvidenceCoverageRow): typeof ShieldCheck {
+  switch (row.sourceType) {
+    case "audit":
+    case "safety-boundary":
+      return ShieldCheck;
+    case "manifest":
+      return Database;
+    case "local-state":
+      return Search;
+  }
 }
 
 function p2ReadinessAcceptanceStatusLabel(
@@ -11548,6 +12230,24 @@ function p2ReadinessAcceptanceDetail(i18n: AppI18n, summary: P2ReadinessAcceptan
     return summary.detail;
   }
   return `${summary.acceptedCount}/${summary.totalCount} 项 P2 验收定义通过；${summary.blockingCount} 项仍阻断最终预实盘验收。直接下单和实盘交易仍关闭。`;
+}
+
+function p2ReadinessAcceptanceAuditEventSourceLabel(
+  i18n: AppI18n,
+  source: P2ReadinessAcceptanceAuditEventReferenceSource
+): string {
+  if (i18n.locale === "en-US") {
+    return {
+      ledger: "Source · ledger rehydrated",
+      none: "Source · not linked",
+      response: "Source · latest response"
+    }[source];
+  }
+  return {
+    ledger: "来源 · 台账回填",
+    none: "来源 · 未定位",
+    response: "来源 · 本次响应"
+  }[source];
 }
 
 function p2ReadinessAcceptanceRowLabel(
@@ -17909,11 +18609,13 @@ function P2PaperReplayManifestPanel({
 function P2ReadinessEvidenceCoveragePanel({
   className,
   coverage,
-  i18n
+  i18n,
+  onOpenEvidence
 }: {
   className?: string;
   coverage: P2ReadinessEvidenceCoverage;
   i18n: AppI18n;
+  onOpenEvidence: (row: P2ReadinessEvidenceCoverageRow) => void;
 }) {
   return (
     <Panel
@@ -17933,18 +18635,25 @@ function P2ReadinessEvidenceCoveragePanel({
           </em>
         </div>
         <div className="p2-evidence-coverage-grid">
-          {coverage.rows.map((row) => (
-            <div className={`p2-evidence-coverage-row ${row.tone}`} key={row.id}>
-              <div>
-                <span>{p2EvidenceCoverageRowLabel(i18n, row.id)}</span>
-                <strong>{p2EvidenceCoverageStatusLabel(i18n, row.status)}</strong>
+          {coverage.rows.map((row) => {
+            const EvidenceActionIcon = p2EvidenceCoverageRowActionIcon(row);
+            return (
+              <div className={`p2-evidence-coverage-row ${row.tone}`} key={row.id}>
+                <div>
+                  <span>{p2EvidenceCoverageRowLabel(i18n, row.id)}</span>
+                  <strong>{p2EvidenceCoverageStatusLabel(i18n, row.status)}</strong>
+                </div>
+                <p>{row.evidence}</p>
+                <small title={row.sourceId ?? row.detail}>
+                  {p2EvidenceCoverageSourceLabel(i18n, row.sourceType)} · {row.sourceId || "n/a"}
+                </small>
+                <button className="p2-evidence-coverage-row-action" onClick={() => onOpenEvidence(row)} type="button">
+                  <EvidenceActionIcon size={13} />
+                  <span>{p2EvidenceCoverageRowActionLabel(i18n, row)}</span>
+                </button>
               </div>
-              <p>{row.evidence}</p>
-              <small title={row.sourceId ?? row.detail}>
-                {p2EvidenceCoverageSourceLabel(i18n, row.sourceType)} · {row.sourceId || "n/a"}
-              </small>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </Panel>
@@ -17952,20 +18661,26 @@ function P2ReadinessEvidenceCoveragePanel({
 }
 
 function P2ReadinessAcceptancePanel({
+  auditEventId,
+  auditEventSource,
   className,
   i18n,
   isGenerating,
   isRefreshing,
   onGenerateAcceptance,
+  onOpenAudit,
   onRefresh,
   readback,
   summary
 }: {
+  auditEventId: string;
+  auditEventSource: P2ReadinessAcceptanceAuditEventReferenceSource;
   className?: string;
   i18n: AppI18n;
   isGenerating: boolean;
   isRefreshing: boolean;
   onGenerateAcceptance: () => void;
+  onOpenAudit: () => void;
   onRefresh: () => void;
   readback: NonNullable<P2ReadinessAcceptanceLatestResult["acceptance"]> | null;
   summary: P2ReadinessAcceptanceSummary;
@@ -18033,6 +18748,10 @@ function P2ReadinessAcceptancePanel({
             <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
             <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
           </button>
+          <button onClick={onOpenAudit} type="button">
+            <ShieldCheck size={13} />
+            <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
+          </button>
         </div>
       }
     >
@@ -18069,6 +18788,13 @@ function P2ReadinessAcceptancePanel({
             </p>
           </div>
         </div>
+        {auditEventId ? (
+          <small className="p2-readiness-acceptance-audit">
+            <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
+            <code>{auditEventId}</code>
+            <em>{p2ReadinessAcceptanceAuditEventSourceLabel(i18n, auditEventSource)}</em>
+          </small>
+        ) : null}
         <div className="p2-readiness-acceptance-grid">
           {summary.rows.map((row) => (
             <div className={`p2-readiness-acceptance-row ${row.tone}`} key={row.id}>
@@ -18085,6 +18811,7 @@ function P2ReadinessAcceptancePanel({
 
 function P2ManifestChainPreflightPanel({
   auditEventId,
+  auditEventSource,
   className,
   i18n,
   isGenerating,
@@ -18095,6 +18822,7 @@ function P2ManifestChainPreflightPanel({
   summary
 }: {
   auditEventId: string;
+  auditEventSource: P2ManifestChainPreflightAuditEventReferenceSource;
   className?: string;
   i18n: AppI18n;
   isGenerating: boolean;
@@ -18115,6 +18843,18 @@ function P2ManifestChainPreflightPanel({
       : i18n.locale === "zh-CN"
         ? "预检声明了不安全执行字段，平台继续阻断"
         : "Preflight reports unsafe execution fields; platform keeps blocking";
+  const auditEventSourceLabel =
+    i18n.locale === "zh-CN"
+      ? {
+          ledger: "来源 · 台账回填",
+          none: "来源 · 未定位",
+          response: "来源 · 本次响应"
+        }[auditEventSource]
+      : {
+          ledger: "Source · ledger rehydrated",
+          none: "Source · not linked",
+          response: "Source · latest response"
+        }[auditEventSource];
 
   return (
     <Panel
@@ -18166,6 +18906,7 @@ function P2ManifestChainPreflightPanel({
           <small className="p2-chain-preflight-audit">
             <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
             <code>{auditEventId}</code>
+            <em>{auditEventSourceLabel}</em>
           </small>
         ) : null}
         <div className="p2-chain-preflight-stages">
@@ -18188,6 +18929,162 @@ function P2ManifestChainPreflightPanel({
           )}
         </div>
         <small className="p2-chain-preflight-boundary">{boundaryLabel}</small>
+      </div>
+    </Panel>
+  );
+}
+
+function P2ManifestChainPreflightReviewPanel({
+  auditEventId,
+  auditEventSource,
+  className,
+  i18n,
+  isCopied,
+  isRecordingAudit,
+  isRefreshing,
+  onCopy,
+  onDownload,
+  onOpenAudit,
+  onRecordAudit,
+  onRefresh,
+  preflight,
+  summary
+}: {
+  auditEventId: string;
+  auditEventSource: P2ManifestChainPreflightAuditEventReferenceSource;
+  className?: string;
+  i18n: AppI18n;
+  isCopied: boolean;
+  isRecordingAudit: boolean;
+  isRefreshing: boolean;
+  onCopy: () => void;
+  onDownload: () => void;
+  onOpenAudit: () => void;
+  onRecordAudit: () => void;
+  onRefresh: () => void;
+  preflight: P2ManifestChainPreflightLatestResult["preflight"] | null;
+  summary: P2ManifestChainPreflightSummary;
+}) {
+  const sourcePath = preflight?.sourcePath ?? summary.sourcePath;
+  const stages = preflight?.stages.length ? preflight.stages : summary.stages;
+  const blockerText = (preflight?.blockerIds.length ? preflight.blockerIds : summary.blockerIds).join(", ") || "none";
+  const nextAction = preflight?.nextAction ?? summary.nextAction;
+  const nextCommand = preflight?.nextCommand ?? summary.nextCommand;
+  const boundaryLabel =
+    Boolean(preflight?.liveBlockedBoundary ?? summary.liveBlockedBoundary) &&
+    !Boolean(preflight?.orderSubmissionEnabled ?? summary.reportedOrderSubmissionEnabled) &&
+    !Boolean(preflight?.liveTradingAllowed ?? summary.reportedLiveTradingAllowed) &&
+    !Boolean(preflight?.liveOrderSubmitted ?? summary.reportedLiveOrderSubmitted) &&
+    !Boolean(preflight?.routeExecuted ?? summary.reportedRouteExecuted)
+      ? i18n.locale === "zh-CN"
+        ? "实盘边界关闭"
+        : "live boundary closed"
+      : i18n.locale === "zh-CN"
+        ? "实盘边界需复核"
+        : "live boundary needs review";
+  const auditEventSourceLabel =
+    i18n.locale === "zh-CN"
+      ? {
+          ledger: "来源 · 台账回填",
+          none: "来源 · 未定位",
+          response: "来源 · 本次响应"
+        }[auditEventSource]
+      : {
+          ledger: "Source · ledger rehydrated",
+          none: "Source · not linked",
+          response: "Source · latest response"
+        }[auditEventSource];
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 manifest 链路预检复核" : "P2 Manifest Chain Preflight Review"}
+      subtitle={i18n.locale === "zh-CN" ? "复核预检 manifest、blocker 与审计边界" : "Review preflight manifest, blockers, and audit boundary"}
+      className={className}
+      action={
+        <div className="p2-manifest-chain-preflight-review-actions">
+          <button onClick={onCopy} type="button">
+            {isCopied ? <Check size={13} /> : <Copy size={13} />}
+            <span>
+              {isCopied
+                ? i18n.locale === "zh-CN"
+                  ? "已复制"
+                  : "Copied"
+                : i18n.locale === "zh-CN"
+                  ? "复制"
+                  : "Copy"}
+            </span>
+          </button>
+          <button onClick={onDownload} type="button">
+            <Download size={13} />
+            <span>{i18n.locale === "zh-CN" ? "下载" : "Download"}</span>
+          </button>
+          <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+            {isRecordingAudit ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+            <span>
+              {isRecordingAudit
+                ? i18n.locale === "zh-CN"
+                  ? "入账中"
+                  : "Recording"
+                : i18n.locale === "zh-CN"
+                  ? "入账"
+                  : "Record"}
+            </span>
+          </button>
+          <button onClick={onOpenAudit} type="button">
+            <ShieldCheck size={13} />
+            <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
+          </button>
+          <button disabled={isRefreshing} onClick={onRefresh} type="button">
+            <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
+            <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p2-manifest-chain-preflight-review ${summary.tone}`}>
+        <div className="p2-manifest-chain-preflight-review-head">
+          <div>
+            <span>{p2ManifestChainPreflightStatusLabel(i18n, preflight?.status ?? summary.state)}</span>
+            <strong>{p2ManifestChainPreflightHeadline(i18n, summary)}</strong>
+            <p>{p2ManifestChainPreflightDetail(i18n, summary)}</p>
+          </div>
+          <em>
+            {preflight?.validStageCount ?? summary.validStageCount}/
+            {preflight?.totalStageCount ?? summary.totalStageCount}
+          </em>
+        </div>
+        <div className="p2-manifest-chain-preflight-review-meta">
+          <span title={sourcePath}>{i18n.locale === "zh-CN" ? "来源" : "Source"} · {sourcePath}</span>
+          <span>{i18n.locale === "zh-CN" ? "状态" : "Status"} · {preflight?.status ?? summary.state}</span>
+          <span>{i18n.locale === "zh-CN" ? "下一步" : "Next"} · {nextAction || "none"}</span>
+          <span>{i18n.locale === "zh-CN" ? "阻断项" : "Blockers"} · {blockerText}</span>
+          <span>{boundaryLabel}</span>
+        </div>
+        <div className="p2-manifest-chain-preflight-review-command">
+          <span>{i18n.locale === "zh-CN" ? "推荐命令" : "Command"}</span>
+          <code>{nextCommand || "none"}</code>
+        </div>
+        {auditEventId ? (
+          <small className="p2-manifest-chain-preflight-review-audit">
+            <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
+            <code>{auditEventId}</code>
+            <em>{auditEventSourceLabel}</em>
+          </small>
+        ) : null}
+        <div className="p2-manifest-chain-preflight-review-stages">
+          {preflight?.stages.map((stage) => (
+            <div className={`p2-manifest-chain-preflight-review-stage ${stage.status}`} key={stage.id}>
+              <span title={stage.path}>{stage.id}</span>
+              <em>{stage.status}</em>
+            </div>
+          )) ??
+            stages.map((stage) => (
+              <div className={`p2-manifest-chain-preflight-review-stage ${stage.status}`} key={stage.id}>
+                <span title={stage.path}>{stage.id}</span>
+                <em>{stage.status}</em>
+              </div>
+            ))}
+        </div>
       </div>
     </Panel>
   );
@@ -18477,6 +19374,8 @@ function P2PreLiveAcceptancePanel({
 
 function P2ReadinessAcceptanceReviewPanel({
   acceptance,
+  auditEventId,
+  auditEventSource,
   className,
   i18n,
   isCopied,
@@ -18484,11 +19383,14 @@ function P2ReadinessAcceptanceReviewPanel({
   isRefreshing,
   onCopy,
   onDownload,
+  onOpenAudit,
   onRecordAudit,
   onRefresh,
   summary
 }: {
   acceptance: P2ReadinessAcceptanceLatestResult["acceptance"] | null;
+  auditEventId: string;
+  auditEventSource: P2ReadinessAcceptanceAuditEventReferenceSource;
   className?: string;
   i18n: AppI18n;
   isCopied: boolean;
@@ -18496,6 +19398,7 @@ function P2ReadinessAcceptanceReviewPanel({
   isRefreshing: boolean;
   onCopy: () => void;
   onDownload: () => void;
+  onOpenAudit: () => void;
   onRecordAudit: () => void;
   onRefresh: () => void;
   summary: P2ReadinessAcceptanceSummary;
@@ -18555,8 +19458,12 @@ function P2ReadinessAcceptanceReviewPanel({
                   : "Recording"
                 : i18n.locale === "zh-CN"
                   ? "入账"
-                  : "Record"}
+                : "Record"}
             </span>
+          </button>
+          <button onClick={onOpenAudit} type="button">
+            <ShieldCheck size={13} />
+            <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
           </button>
           <button disabled={isRefreshing} onClick={onRefresh} type="button">
             <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
@@ -18589,6 +19496,13 @@ function P2ReadinessAcceptanceReviewPanel({
           <span>{i18n.locale === "zh-CN" ? "阻断项" : "Blockers"} · {acceptance?.blockingCriterionCount ?? summary.blockingCount}</span>
           <span>{boundaryLabel}</span>
         </div>
+        {auditEventId ? (
+          <small className="p2-readiness-acceptance-review-audit">
+            <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
+            <code>{auditEventId}</code>
+            <em>{p2ReadinessAcceptanceAuditEventSourceLabel(i18n, auditEventSource)}</em>
+          </small>
+        ) : null}
         <div className="p2-readiness-acceptance-review-manifests">
           <span>{i18n.locale === "zh-CN" ? "P1 验收" : "P1 acceptance"} · {acceptance?.manifestPaths.p1Acceptance ?? "n/a"}</span>
           <span>{i18n.locale === "zh-CN" ? "P2 pre-live" : "P2 pre-live"} · {acceptance?.manifestPaths.p2PreLiveAcceptance ?? "n/a"}</span>
@@ -18605,6 +19519,135 @@ function P2ReadinessAcceptanceReviewPanel({
                     : "passed"
                   : p2ReadinessAcceptanceStatusLabel(i18n, summary.status)}
               </em>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function P2ReadinessEvidenceCoverageReviewPanel({
+  auditEventId,
+  auditEventSource,
+  className,
+  coverage,
+  i18n,
+  isCopied,
+  isRecordingAudit,
+  onCopy,
+  onDownload,
+  onOpenAudit,
+  onRecordAudit
+}: {
+  auditEventId: string;
+  auditEventSource: P2ReadinessEvidenceCoverageReviewAuditEventReferenceSource;
+  className?: string;
+  coverage: P2ReadinessEvidenceCoverage;
+  i18n: AppI18n;
+  isCopied: boolean;
+  isRecordingAudit: boolean;
+  onCopy: () => void;
+  onDownload: () => void;
+  onOpenAudit: () => void;
+  onRecordAudit: () => void;
+}) {
+  const auditEventSourceLabel =
+    i18n.locale === "zh-CN"
+      ? {
+          ledger: "来源 · 台账回填",
+          none: "来源 · 未定位",
+          response: "来源 · 本次响应"
+        }[auditEventSource]
+      : {
+          ledger: "Source · ledger rehydrated",
+          none: "Source · not linked",
+          response: "Source · latest response"
+        }[auditEventSource];
+  const boundaryLabel =
+    !coverage.orderSubmissionEnabled && !coverage.liveTradingAllowed
+      ? i18n.locale === "zh-CN"
+        ? "实盘边界关闭"
+        : "live boundary closed"
+      : i18n.locale === "zh-CN"
+        ? "实盘边界需复核"
+        : "live boundary needs review";
+
+  return (
+    <Panel
+      title={i18n.locale === "zh-CN" ? "P2 证据覆盖复核" : "P2 Evidence Coverage Review"}
+      subtitle={i18n.locale === "zh-CN" ? "覆盖矩阵的可留档审计报告" : "Portable audit report for the coverage matrix"}
+      className={className}
+      action={
+        <div className="p2-readiness-evidence-coverage-review-actions">
+          <button onClick={onCopy} type="button">
+            {isCopied ? <Check size={13} /> : <Copy size={13} />}
+            <span>
+              {isCopied
+                ? i18n.locale === "zh-CN"
+                  ? "已复制"
+                  : "Copied"
+                : i18n.locale === "zh-CN"
+                  ? "复制"
+                  : "Copy"}
+            </span>
+          </button>
+          <button onClick={onDownload} type="button">
+            <Download size={13} />
+            <span>{i18n.locale === "zh-CN" ? "下载" : "Download"}</span>
+          </button>
+          <button disabled={isRecordingAudit} onClick={onRecordAudit} type="button">
+            {isRecordingAudit ? <RefreshCw className="spin" size={13} /> : <ShieldCheck size={13} />}
+            <span>
+              {isRecordingAudit
+                ? i18n.locale === "zh-CN"
+                  ? "入账中"
+                  : "Recording"
+                : i18n.locale === "zh-CN"
+                  ? "入账"
+                  : "Record"}
+            </span>
+          </button>
+          <button onClick={onOpenAudit} type="button">
+            <ShieldCheck size={13} />
+            <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
+          </button>
+        </div>
+      }
+    >
+      <div className={`p2-readiness-evidence-coverage-review ${coverage.tone}`}>
+        <div className="p2-readiness-evidence-coverage-review-head">
+          <div>
+            <span>{p2EvidenceCoverageStatusLabel(i18n, coverage.status)}</span>
+            <strong>{p2EvidenceCoverageHeadline(i18n, coverage)}</strong>
+            <p>{p2EvidenceCoverageDetail(i18n, coverage)}</p>
+          </div>
+          <em>
+            {coverage.coveredCount}/{coverage.totalCount}
+          </em>
+        </div>
+        <div className="p2-readiness-evidence-coverage-review-meta">
+          <span>{i18n.locale === "zh-CN" ? "状态" : "Status"} · {coverage.status}</span>
+          <span>{i18n.locale === "zh-CN" ? "阻断项" : "Blockers"} · {coverage.blockingCount}</span>
+          <span>{boundaryLabel}</span>
+        </div>
+        {auditEventId ? (
+          <small className="p2-readiness-evidence-coverage-review-audit">
+            <span>{i18n.locale === "zh-CN" ? "审计事件" : "Audit event"}</span>
+            <code>{auditEventId}</code>
+            <em>{auditEventSourceLabel}</em>
+          </small>
+        ) : null}
+        <div className="p2-readiness-evidence-coverage-review-rows">
+          {coverage.rows.map((row) => (
+            <div className={`p2-readiness-evidence-coverage-review-row ${row.tone}`} key={row.id}>
+              <div>
+                <span>{p2EvidenceCoverageRowLabel(i18n, row.id)}</span>
+                <strong>{p2EvidenceCoverageStatusLabel(i18n, row.status)}</strong>
+              </div>
+              <em>{p2EvidenceCoverageSourceLabel(i18n, row.sourceType)}</em>
+              <small title={row.sourceId ?? row.detail}>{row.sourceId || "n/a"}</small>
+              <p>{row.evidence}</p>
             </div>
           ))}
         </div>
@@ -19444,10 +20487,7 @@ function AuditEvidenceReportLedgerPanel({
                         revokingEventId === row.id ||
                         row.status === "invalid" ||
                         row.importVerificationInvalid > 0 ||
-                        row.reportKind === "p0_readiness_report" ||
-                        row.reportKind === "p2_manifest_chain_preflight" ||
-                        row.reportKind === "pre_live_runbook_report" ||
-                        row.reportKind === "research_context_readiness_report" ||
+                        !auditReportLedgerRowIsSigningEligible(row) ||
                         row.signatureStatus === "revoked"
                       }
                       onClick={() => onSignReport(row.id)}
@@ -19460,10 +20500,7 @@ function AuditEvidenceReportLedgerPanel({
                         signingEventId === row.id ||
                         verifyingEventId === row.id ||
                         revokingEventId === row.id ||
-                        row.reportKind === "p0_readiness_report" ||
-                        row.reportKind === "p2_manifest_chain_preflight" ||
-                        row.reportKind === "pre_live_runbook_report" ||
-                        row.reportKind === "research_context_readiness_report" ||
+                        !auditReportLedgerRowIsSigningEligible(row) ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "revoked"
                       }
@@ -19485,10 +20522,7 @@ function AuditEvidenceReportLedgerPanel({
                         revokingEventId === row.id ||
                         row.signatureStatus === "unsigned" ||
                         row.signatureStatus === "invalid" ||
-                        row.reportKind === "p0_readiness_report" ||
-                        row.reportKind === "p2_manifest_chain_preflight" ||
-                        row.reportKind === "pre_live_runbook_report" ||
-                        row.reportKind === "research_context_readiness_report" ||
+                        !auditReportLedgerRowIsSigningEligible(row) ||
                         row.signatureStatus === "revoked"
                       }
                       onClick={() => onRevokeReport(row.id)}
@@ -19540,6 +20574,11 @@ function auditReportLedgerSigningPolicyDetail(i18n: AppI18n, row: AuditEvidenceR
     return i18n.locale === "zh-CN"
       ? "P2 manifest 链路预检只作为操作员审计辅助材料入账，不进入签名链或实盘授权"
       : "P2 manifest chain preflights are operator audit aids only; they do not enter the signing chain or live authorization";
+  }
+  if (row.reportKind === "p2_readiness_acceptance_generated") {
+    return i18n.locale === "zh-CN"
+      ? "P2 顶层验收生成事件只作为审计辅助材料入账，不进入签名链或实盘授权"
+      : "P2 readiness acceptance generation events are audit aids only; they do not enter the signing chain or live authorization";
   }
   if (row.reportKind === "pre_live_runbook_report") {
     return i18n.locale === "zh-CN"

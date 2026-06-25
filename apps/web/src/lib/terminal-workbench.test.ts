@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type {
+  AuditEvidenceReportLedgerRow,
   ExecutionAdapterChainHealthRollup,
   OperatorRunbookAuditCoverage,
   OperatorRunbookSummary,
@@ -24,12 +25,23 @@ import {
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
   buildEvidencePackageControlRoomRows,
+  auditReportLedgerRowIsSigningEligible,
   buildAuditEvidenceReportLedgerRows,
   buildAuditEvidenceReportLedgerSummary,
   buildAuditEvidenceReportLedgerRowResearchContextReportQuery,
   buildAuditEvidenceReportLedgerRowOperatorRunbookQuery,
   buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery,
   buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery,
+  buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery,
+  findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
+  findLatestP2ManifestChainPreflightAuditLedgerRow,
+  findLatestP2ReadinessAcceptanceAuditLedgerRow,
+  resolveP2ReadinessEvidenceCoverageReviewAuditEventReference,
+  resolveP2ManifestChainPreflightAuditEventReference,
+  resolveP2ReadinessAcceptanceAuditEventReference,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessLabel,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessQuery,
   buildAuditEvidenceReportLedgerRowP0BacklogReadinessTitle,
@@ -123,8 +135,10 @@ import {
   buildP1AcceptanceSummary,
   buildP2PaperReplaySummary,
   buildP2PreLiveAcceptanceSummary,
+  buildP2ManifestChainPreflightReviewMarkdown,
   buildP2ManifestChainPreflightSummary,
   buildP2ReadinessAcceptanceReviewMarkdown,
+  buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessEvidenceCoverage,
   buildP2ReadinessAcceptanceSummary,
   buildOperatorRunbookMarkdown,
@@ -2925,6 +2939,86 @@ describe("terminal workbench model", () => {
     expect(invalid.liveTradingAllowed).toBe(false);
   });
 
+  test("builds a portable P2 manifest chain preflight review markdown without live authorization", () => {
+    const preflight = {
+      kind: "aiqt.p2ManifestChainPreflightStatus",
+      schemaVersion: 1,
+      status: "blocked" as const,
+      available: true,
+      sourcePath: "data/p2-chain-preflight.json",
+      summary: "p2 manifest chain preflight status=blocked valid=3/4 next=run-p2-readiness",
+      reason: "",
+      ready: false,
+      validStageCount: 3,
+      totalStageCount: 4,
+      blockerIds: ["p2-readiness-acceptance"],
+      nextAction: "run-p2-readiness",
+      nextCommand: "npm run docker:smoke:p2 -- --no-build",
+      stages: [
+        {
+          id: "p1-acceptance",
+          label: "P1 acceptance",
+          status: "valid" as const,
+          path: "data/p1-acceptance.json",
+          summary: "p1 acceptance manifest run=run-p1 liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-paper-replay",
+          label: "P2 paper replay",
+          status: "valid" as const,
+          path: "data/p2-paper-replay.json",
+          summary: "p2 paper replay manifest run=run-p2-replay liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-pre-live-acceptance",
+          label: "P2 pre-live acceptance",
+          status: "valid" as const,
+          path: "data/p2-pre-live-acceptance.json",
+          summary: "p2 pre-live acceptance manifest run=run-p2-prelive liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-readiness-acceptance",
+          label: "P2 readiness acceptance",
+          status: "missing" as const,
+          path: "data/p2-readiness-acceptance.json",
+          summary: "",
+          reason: "P2 readiness acceptance report not found at data/p2-readiness-acceptance.json",
+          nextAction: "run-p2-readiness",
+          nextCommand: "npm run docker:smoke:p2 -- --no-build"
+        }
+      ],
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    };
+    const summary = buildP2ManifestChainPreflightSummary(preflight);
+    const markdown = buildP2ManifestChainPreflightReviewMarkdown({ preflight, summary });
+
+    expect(markdown).toContain("# P2 Manifest Chain Preflight Review");
+    expect(markdown).toContain("- Status: blocked");
+    expect(markdown).toContain("- Source: data/p2-chain-preflight.json");
+    expect(markdown).toContain("- Stages: 3/4");
+    expect(markdown).toContain("- Next action: run-p2-readiness");
+    expect(markdown).toContain("- Next command: npm run docker:smoke:p2 -- --no-build");
+    expect(markdown).toContain("- p2-readiness-acceptance: missing");
+    expect(markdown).toContain("- liveBlockedBoundary: true");
+    expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
+    expect(markdown).toContain("- This review is audit evidence only and does not authorize live trading.");
+  });
+
   test("builds P2 readiness evidence coverage from manifests, audit events, and local gates", () => {
     const coverage = buildP2ReadinessEvidenceCoverage({
       adapterChainHealthRollups: [adapterChainHealthRollupFixture()],
@@ -2966,6 +3060,249 @@ describe("terminal workbench model", () => {
     expect(coverage.rows.find((row) => row.id === "safety-boundary")).toMatchObject({
       status: "covered",
       evidence: "Live blocked · direct order submission disabled"
+    });
+  });
+
+  test("adds P2 manifest chain preflight review audit evidence to readiness coverage", () => {
+    const p2ManifestChainPreflight = buildP2ManifestChainPreflightSummary({
+      kind: "aiqt.p2ManifestChainPreflightStatus",
+      schemaVersion: 1,
+      status: "ready",
+      available: true,
+      sourcePath: "data/p2-chain-preflight.json",
+      summary: "p2 manifest chain preflight status=ready valid=4/4 next=none",
+      reason: "",
+      ready: true,
+      validStageCount: 4,
+      totalStageCount: 4,
+      blockerIds: [],
+      nextAction: "",
+      nextCommand: "",
+      stages: [
+        {
+          id: "p1-acceptance",
+          label: "P1 acceptance",
+          status: "valid",
+          path: "data/p1-acceptance.json",
+          summary: "p1 acceptance manifest liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-paper-replay",
+          label: "P2 paper replay",
+          status: "valid",
+          path: "data/p2-paper-replay.json",
+          summary: "p2 paper replay manifest liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-pre-live-acceptance",
+          label: "P2 pre-live acceptance",
+          status: "valid",
+          path: "data/p2-pre-live-acceptance.json",
+          summary: "p2 pre-live acceptance manifest liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        },
+        {
+          id: "p2-readiness-acceptance",
+          label: "P2 readiness acceptance",
+          status: "valid",
+          path: "data/p2-readiness-acceptance.json",
+          summary: "p2 readiness acceptance manifest liveBlocked=True",
+          reason: "",
+          nextAction: "",
+          nextCommand: ""
+        }
+      ],
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-chain-preflight-review-aaaaaaaaaaaaaaaa",
+        eventType: "p2_manifest_chain_preflight_review",
+        runId: "p2-manifest-chain-preflight",
+        createdAt: "2026-06-24T10:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "P2 manifest chain preflight review recorded",
+        detail: "p2-manifest-chain-preflight-review.md · sha256 aaaaaaaaaaaa · ready 4/4 · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.p2ManifestChainPreflightReview",
+          blockerIds: [],
+          contentSha256: "a".repeat(64),
+          contentSha256Algorithm: "sha256",
+          fileName: "p2-manifest-chain-preflight-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          nextAction: "",
+          nextCommand: "",
+          orderSubmissionEnabled: false,
+          preflightStatus: "ready",
+          ready: true,
+          routeExecuted: false,
+          sourcePath: "data/p2-chain-preflight.json",
+          stageIds: ["p1-acceptance", "p2-paper-replay", "p2-pre-live-acceptance", "p2-readiness-acceptance"],
+          stageStatuses: ["valid", "valid", "valid", "valid"],
+          totalStageCount: 4,
+          validStageCount: 4
+        }
+      }
+    ]);
+    const reviewRow = findLatestP2ManifestChainPreflightAuditLedgerRow(
+      rows,
+      {
+        blockerIds: [],
+        nextAction: "",
+        sourcePath: "data/p2-chain-preflight.json",
+        status: "ready",
+        totalStageCount: 4,
+        validStageCount: 4
+      },
+      "p2_manifest_chain_preflight_review"
+    );
+
+    const coverage = buildP2ReadinessEvidenceCoverage({
+      adapterChainHealthRollups: [adapterChainHealthRollupFixture()],
+      operatorRunbookAuditCoverage: operatorRunbookAuditCoverageFixture(),
+      p2ManifestChainPreflight,
+      p2ManifestChainPreflightReviewAuditRow: reviewRow,
+      p2PaperReplay: p2PaperReplaySummaryFixture(),
+      p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture(),
+      preLiveChecklist: preLiveReadinessChecklistFixture()
+    });
+
+    expect(coverage).toMatchObject({
+      status: "covered",
+      coveredCount: 7,
+      totalCount: 7,
+      blockingCount: 0
+    });
+    expect(coverage.detail).toContain("7/7 readiness claims");
+    expect(coverage.rows.map((row) => `${row.id}:${row.status}`)).toContain(
+      "p2-manifest-chain-preflight-review:covered"
+    );
+    expect(coverage.rows.find((row) => row.id === "p2-manifest-chain-preflight-review")).toMatchObject({
+      detail: "P2 manifest-chain preflight review is recorded for data/p2-chain-preflight.json and preserves the live-blocked boundary.",
+      evidence: "Review audited · aaaaaaaaaaaa",
+      sourceId: "p2-chain-preflight-review-aaaaaaaaaaaaaaaa",
+      sourceType: "audit",
+      status: "covered"
+    });
+  });
+
+  test("builds a P2 readiness evidence coverage review markdown packet", () => {
+    const baseCoverage = p2ReadinessEvidenceCoverageFixture();
+    const coverage = p2ReadinessEvidenceCoverageFixture({
+      detail:
+        "7/7 readiness claims have audit events or local manifests; 0 rows still block pre-live confidence. Direct order submission remains disabled.",
+      coveredCount: 7,
+      totalCount: 7,
+      rows: [
+        baseCoverage.rows[0],
+        baseCoverage.rows[1],
+        {
+          id: "p2-manifest-chain-preflight-review",
+          label: "P2 manifest chain preflight review",
+          status: "covered",
+          tone: "positive",
+          evidence: "Review audited · aaaaaaaaaaaa",
+          detail:
+            "P2 manifest-chain preflight review is recorded for data/p2-chain-preflight.json and preserves the live-blocked boundary.",
+          sourceType: "audit",
+          sourceId: "p2-chain-preflight-review-aaaaaaaaaaaaaaaa"
+        },
+        ...baseCoverage.rows.slice(2)
+      ]
+    });
+
+    const markdown = buildP2ReadinessEvidenceCoverageReviewMarkdown({ coverage });
+
+    expect(markdown).toContain("# P2 Readiness Evidence Coverage Review");
+    expect(markdown).toContain("- Status: covered");
+    expect(markdown).toContain("- Headline: P2 readiness evidence fully covered");
+    expect(markdown).toContain("- Claims: 7/7");
+    expect(markdown).toContain("- Blocking claims: 0");
+    expect(markdown).toContain("- orderSubmissionEnabled: false");
+    expect(markdown).toContain("- liveTradingAllowed: false");
+    expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
+    expect(markdown).toContain(
+      "- paper-replay-manifest: covered · manifest · data/p2-paper-replay.json · 8/8 checks · latest adapter-paper-execution-ready"
+    );
+    expect(markdown).toContain(
+      "- p2-manifest-chain-preflight-review: covered · audit · p2-chain-preflight-review-aaaaaaaaaaaaaaaa · Review audited · aaaaaaaaaaaa"
+    );
+    expect(markdown).toContain(
+      "- operator-runbook-audit: covered · audit · operator-runbook-report-ashare-live-600000-1d-7777777777777777 · Audited · 777777777777"
+    );
+    expect(markdown).toContain(
+      "- safety-boundary: covered · safety-boundary · paper-exec · Live blocked · direct order submission disabled"
+    );
+    expect(markdown).toContain("- This review is audit evidence only and does not authorize live trading.");
+  });
+
+  test("marks P2 manifest chain preflight review coverage missing until the review is recorded", () => {
+    const p2ManifestChainPreflight = buildP2ManifestChainPreflightSummary({
+      kind: "aiqt.p2ManifestChainPreflightStatus",
+      schemaVersion: 1,
+      status: "ready",
+      available: true,
+      sourcePath: "data/p2-chain-preflight.json",
+      summary: "p2 manifest chain preflight status=ready valid=4/4 next=none",
+      reason: "",
+      ready: true,
+      validStageCount: 4,
+      totalStageCount: 4,
+      blockerIds: [],
+      nextAction: "",
+      nextCommand: "",
+      stages: [],
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+
+    const coverage = buildP2ReadinessEvidenceCoverage({
+      adapterChainHealthRollups: [adapterChainHealthRollupFixture()],
+      operatorRunbookAuditCoverage: operatorRunbookAuditCoverageFixture(),
+      p2ManifestChainPreflight,
+      p2ManifestChainPreflightReviewAuditRow: null,
+      p2PaperReplay: p2PaperReplaySummaryFixture(),
+      p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture(),
+      preLiveChecklist: preLiveReadinessChecklistFixture()
+    });
+
+    expect(coverage).toMatchObject({
+      status: "missing",
+      tone: "warning",
+      coveredCount: 6,
+      totalCount: 7,
+      blockingCount: 1
+    });
+    expect(coverage.rows.find((row) => row.id === "p2-manifest-chain-preflight-review")).toMatchObject({
+      detail: "Record the P2 manifest-chain preflight review from the Audit workspace before treating the preflight readback as fully reviewed.",
+      evidence: "Review not recorded",
+      sourceId: null,
+      sourceType: "audit",
+      status: "missing"
     });
   });
 
@@ -10951,6 +11288,98 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("keeps P2 readiness acceptance review rows out of evidence package signature readiness", () => {
+    const runId = "run-p2-review-only";
+    const reviewHash = "8".repeat(64);
+    const controlRoom = buildEvidencePackageControlRoomRows({
+      acceptanceReviewEvents: [
+        {
+          schemaVersion: 1,
+          eventId: `${runId}-p0-acceptance-review`,
+          eventType: "p0_acceptance_review",
+          runId,
+          createdAt: "2026-06-10T09:00:00.000Z",
+          stage: "passed",
+          source: "web",
+          summary: "P0 acceptance review recorded",
+          detail: `${runId}-p0-acceptance-review.md`,
+          metadata: {
+            state: "passed",
+            checkCount: 4,
+            requiredCheckCount: 4,
+            liveBlockedBoundary: true
+          }
+        }
+      ],
+      auditLedgerRows: buildAuditEvidenceReportLedgerRows([
+        {
+          schemaVersion: 1,
+          eventId: `${runId}-p2-readiness-acceptance-review`,
+          eventType: "p2_readiness_acceptance_review",
+          runId,
+          createdAt: "2026-06-10T08:30:00.000Z",
+          stage: "accepted",
+          source: "web",
+          summary: "P2 readiness acceptance review recorded",
+          detail: `${runId}-p2-readiness-acceptance-review.md · sha256 888888888888 · 6/6 criteria`,
+          metadata: {
+            acceptedCriterionCount: 6,
+            artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+            contentSha256: reviewHash,
+            fileName: `${runId}-p2-readiness-acceptance-review.md`,
+            liveBlockedBoundary: true,
+            market: "ashare",
+            orderSubmissionEnabled: false,
+            signature: {
+              chainId: "audit-chain-local",
+              keyId: "local-audit-key",
+              signer: "Local Audit Key",
+              status: "verified"
+            },
+            state: "accepted",
+            symbol: "600000",
+            timeframe: "1d",
+            totalCriterionCount: 6
+          }
+        }
+      ]),
+      exportIndexRows: [
+        {
+          id: `${runId}-package`,
+          runId,
+          context: `ashare 600000 1d ${runId}`,
+          strategyRevision: "rev-p2-review-only",
+          exportedAt: "2026-06-10T08:00:00.000Z",
+          status: "ready",
+          integrity: "manifest hash ok",
+          dataHash: "data hash ok",
+          artifacts: "9/9 artifacts",
+          execution: "handoff ready",
+          detail: "Package can be reproduced locally",
+          exportPath: `manifest:${runId}`,
+          tone: "positive"
+        }
+      ],
+      importAuditEvents: []
+    });
+
+    expect(controlRoom.rows[0]).toEqual(
+      expect.objectContaining({
+        nextActionId: "open-signature-ledger",
+        signatureDetail: "No signable audit/backtest/portfolio report has been recorded.",
+        signatureStatus: "missing",
+        status: "unsigned"
+      })
+    );
+    expect(controlRoom.summary).toEqual(
+      expect.objectContaining({
+        readyForArchive: 0,
+        signedRuns: 0,
+        unsigned: 1
+      })
+    );
+  });
+
   test("includes backtest markdown report events in the audit report ledger", () => {
     const backtestHash = "e".repeat(64);
     const rows = buildAuditEvidenceReportLedgerRows([
@@ -11937,6 +12366,34 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("marks only primary report ledger rows as signing eligible", () => {
+    const rowFor = (reportKind: AuditEvidenceReportLedgerRow["reportKind"]) =>
+      ({
+        reportKind
+      }) as AuditEvidenceReportLedgerRow;
+
+    const reportKinds: AuditEvidenceReportLedgerRow["reportKind"][] = [
+      "audit_evidence_report",
+      "backtest_report",
+      "portfolio_report",
+      "p0_readiness_report",
+      "operator_runbook_report",
+      "p2_manifest_chain_preflight",
+      "p2_manifest_chain_preflight_review",
+      "p2_readiness_evidence_coverage_review",
+      "p2_readiness_acceptance_generated",
+      "p2_readiness_acceptance_review",
+      "pre_live_runbook_report",
+      "research_context_readiness_report"
+    ];
+
+    expect(reportKinds.filter((reportKind) => auditReportLedgerRowIsSigningEligible(rowFor(reportKind)))).toEqual([
+      "audit_evidence_report",
+      "backtest_report",
+      "portfolio_report"
+    ]);
+  });
+
   test("includes P2 readiness acceptance review events in the audit report ledger", () => {
     const reviewHash = "8".repeat(64);
     const rows = buildAuditEvidenceReportLedgerRows([
@@ -12008,6 +12465,712 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "p2_readiness_acceptance_review 600000 accepted").map((row) => row.id)).toEqual([
       "p2-readiness-acceptance-review-run-p2-8888888888888888"
     ]);
+    const reviewLedgerQuery = buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery(rows[0]);
+    expect(reviewLedgerQuery).toContain(
+      "p2_readiness_acceptance_review p2-readiness-acceptance-review-run-p2-8888888888888888 888888888888 run-p2-p2-readiness-acceptance-review.md ashare 600000 1d accepted 6/6"
+    );
+    expect(reviewLedgerQuery).toContain("live blocked true");
+    expect(reviewLedgerQuery.split(/\s+/u).filter((token) => token === "ashare")).toHaveLength(1);
+    expect(
+      filterAuditEvidenceReportLedgerRows(
+        rows,
+        reviewLedgerQuery
+      ).map((row) => row.id)
+    ).toEqual(["p2-readiness-acceptance-review-run-p2-8888888888888888"]);
+    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+      expect.objectContaining({
+        chainStatus: "empty",
+        revoked: 0,
+        signed: 0,
+        signingEligible: 0,
+        unsigned: 0,
+        verified: 0
+      })
+    );
+  });
+
+  test("includes P2 readiness evidence coverage review events in the audit report ledger", () => {
+    const reviewHash = "9".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-evidence-coverage-review-9999999999999999",
+        eventType: "p2_readiness_evidence_coverage_review",
+        runId: "p2-readiness-evidence-coverage",
+        createdAt: "2026-06-24T09:20:00.000Z",
+        stage: "covered",
+        source: "web",
+        summary: "P2 readiness evidence coverage review recorded",
+        detail: "p2-readiness-evidence-coverage-review.md · sha256 999999999999 · covered 7/7 claims · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+          blockingCount: 0,
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          coverageStatus: "covered",
+          coveredCount: 7,
+          fileName: "p2-readiness-evidence-coverage-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          rowIds: [
+            "paper-replay-manifest",
+            "p2-acceptance-manifest",
+            "p2-manifest-chain-preflight-review",
+            "operator-runbook-audit",
+            "pre-live-checklist",
+            "adapter-chain-health",
+            "safety-boundary"
+          ],
+          rowStatuses: ["covered", "covered", "covered", "covered", "covered", "covered", "covered"],
+          sourceIds: [
+            "data/p2-paper-replay.json",
+            "data/p2-pre-live-acceptance.json",
+            "p2-chain-preflight-review-aaaaaaaaaaaaaaaa",
+            "operator-runbook-report-ashare-live-600000-1d-7777777777777777",
+            "manual-route-ready",
+            "paper-exec",
+            "paper-exec"
+          ],
+          sourceTypes: ["manifest", "manifest", "audit", "audit", "local-state", "local-state", "safety-boundary"],
+          state: "covered",
+          totalCount: 7
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+        contentSha256: reviewHash,
+        fileName: "p2-readiness-evidence-coverage-review.md",
+        focusQuery:
+          "covered 7/7 paper-replay-manifest p2-acceptance-manifest p2-manifest-chain-preflight-review operator-runbook-audit pre-live-checklist adapter-chain-health safety-boundary manifest manifest audit audit local-state local-state safety-boundary",
+        packageMatched: 7,
+        packageTotal: 7,
+        reportKind: "p2_readiness_evidence_coverage_review",
+        status: "ready",
+        statusLabel: "P2 readiness evidence coverage review hash recorded",
+        tone: "positive"
+      })
+    );
+    expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
+    const coverageQuery = buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery(rows[0]);
+    expect(coverageQuery).toContain(
+      "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-9999999999999999 999999999999 p2-readiness-evidence-coverage-review.md covered 7/7"
+    );
+    expect(coverageQuery).toContain("paper-replay-manifest");
+    expect(coverageQuery).toContain("live blocked true");
+    expect(filterAuditEvidenceReportLedgerRows(rows, coverageQuery).map((row) => row.id)).toEqual([
+      "p2-readiness-evidence-coverage-review-9999999999999999"
+    ]);
+    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+      expect.objectContaining({
+        chainStatus: "empty",
+        signingEligible: 0,
+        total: 1
+      })
+    );
+  });
+
+  test("matches the current P2 readiness evidence coverage review ledger row before falling back to latest", () => {
+    const baseCoverage = p2ReadinessEvidenceCoverageFixture();
+    const coverage = p2ReadinessEvidenceCoverageFixture({
+      coveredCount: 7,
+      totalCount: 7,
+      rows: [
+        baseCoverage.rows[0],
+        baseCoverage.rows[1],
+        {
+          id: "p2-manifest-chain-preflight-review",
+          label: "P2 preflight review",
+          status: "covered",
+          tone: "positive",
+          evidence: "Review audited · aaaaaaaaaaaa",
+          detail: "P2 manifest-chain preflight review is recorded.",
+          sourceType: "audit",
+          sourceId: "p2-chain-preflight-review-aaaaaaaaaaaaaaaa"
+        },
+        ...baseCoverage.rows.slice(2)
+      ]
+    });
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-evidence-coverage-review-current",
+        eventType: "p2_readiness_evidence_coverage_review",
+        runId: "p2-readiness-evidence-coverage",
+        createdAt: "2026-06-24T09:20:00.000Z",
+        stage: "covered",
+        source: "web",
+        summary: "P2 readiness evidence coverage review recorded",
+        detail: "p2-readiness-evidence-coverage-review.md · sha256 aaaaaaaaaaaa · covered 7/7 claims · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+          blockingCount: 0,
+          contentSha256: "a".repeat(64),
+          contentSha256Algorithm: "sha256",
+          coverageStatus: "covered",
+          coveredCount: 7,
+          fileName: "p2-readiness-evidence-coverage-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          rowIds: coverage.rows.map((row) => row.id),
+          rowStatuses: coverage.rows.map((row) => row.status),
+          sourceIds: coverage.rows.map((row) => row.sourceId ?? "n/a"),
+          sourceTypes: coverage.rows.map((row) => row.sourceType),
+          state: "covered",
+          totalCount: 7
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-evidence-coverage-review-newer-stale",
+        eventType: "p2_readiness_evidence_coverage_review",
+        runId: "p2-readiness-evidence-coverage",
+        createdAt: "2026-06-24T09:40:00.000Z",
+        stage: "missing",
+        source: "web",
+        summary: "P2 readiness evidence coverage review recorded",
+        detail: "p2-readiness-evidence-coverage-review.md · sha256 bbbbbbbbbbbb · missing 6/7 claims · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+          blockingCount: 1,
+          contentSha256: "b".repeat(64),
+          contentSha256Algorithm: "sha256",
+          coverageStatus: "missing",
+          coveredCount: 6,
+          fileName: "p2-readiness-evidence-coverage-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          rowIds: coverage.rows.map((row) => row.id),
+          rowStatuses: coverage.rows.map((row, index) => (index === 2 ? "missing" : row.status)),
+          sourceIds: coverage.rows.map((row, index) => (index === 2 ? "n/a" : row.sourceId ?? "n/a")),
+          sourceTypes: coverage.rows.map((row) => row.sourceType),
+          state: "missing",
+          totalCount: 7
+        }
+      }
+    ]);
+
+    const ledgerRow = findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow(rows, coverage);
+
+    expect(ledgerRow?.id).toBe("p2-readiness-evidence-coverage-review-current");
+    expect(
+      resolveP2ReadinessEvidenceCoverageReviewAuditEventReference({
+        coverage,
+        event: {
+          detail:
+            "legacy response detail covered,7/7,p2-chain-preflight-review-aaaaaaaaaaaaaaaa,paper-replay-manifest,p2-acceptance-manifest",
+          eventId: 123456789 as unknown as string,
+          metadata: {
+            coverageStatus: "covered",
+            coveredCount: 7,
+            rowIds: coverage.rows.map((row) => row.id),
+            rowStatuses: coverage.rows.map((row) => row.status),
+            sourceIds: coverage.rows.map((row) => row.sourceId ?? "n/a"),
+            sourceTypes: coverage.rows.map((row) => row.sourceType),
+            totalCount: 7
+          },
+          summary: true as unknown as string
+        },
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "123456789",
+      source: "response"
+    });
+    expect(
+      resolveP2ReadinessEvidenceCoverageReviewAuditEventReference({
+        coverage,
+        event: {
+          eventId: "p2-readiness-evidence-coverage-review-stale-response",
+          metadata: {
+            coverageStatus: "missing",
+            coveredCount: 6,
+            rowIds: coverage.rows.map((row) => row.id),
+            rowStatuses: coverage.rows.map((row, index) => (index === 2 ? "missing" : row.status)),
+            sourceIds: coverage.rows.map((row, index) => (index === 2 ? "n/a" : row.sourceId ?? "n/a")),
+            sourceTypes: coverage.rows.map((row) => row.sourceType),
+            totalCount: 7
+          }
+        },
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "p2-readiness-evidence-coverage-review-current",
+      source: "ledger"
+    });
+    expect(
+      resolveP2ReadinessEvidenceCoverageReviewAuditEventReference({
+        coverage,
+        event: null,
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "p2-readiness-evidence-coverage-review-current",
+      source: "ledger"
+    });
+  });
+
+  test("includes P2 readiness acceptance generated events in the audit report ledger", () => {
+    const manifestHash = "7".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-generated-7777777777777777",
+        eventType: "p2_readiness_acceptance_generated",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:15:00.000Z",
+        stage: "p2",
+        source: "core-service",
+        summary: "P2 readiness acceptance generated accepted 6/6 blockers=0",
+        detail: "data/p2-readiness-acceptance.json · sha256 777777777777 · accepted 6/6",
+        metadata: {
+          acceptanceStatus: "accepted",
+          acceptedCriterionCount: 6,
+          adapterId: "ashare-live",
+          artifactKind: "aiqt.p2ReadinessAcceptanceManifest",
+          blockingCriterionCount: 0,
+          criterionIds: [
+            "p1-acceptance",
+            "paper-execution-replay",
+            "pre-live-checklist",
+            "p2-pre-live-manifest",
+            "readiness-evidence-coverage",
+            "live-blocked-boundary"
+          ],
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          manifestPaths: {
+            p1Acceptance: "data/p1-acceptance.json",
+            p2PaperReplay: "data/p2-paper-replay.json",
+            p2PreLiveAcceptance: "data/p2-pre-live-acceptance.json"
+          },
+          manifestSha256: manifestHash,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          paperOnly: true,
+          routeExecuted: false,
+          runId: "run-p2-readiness",
+          sourcePath: "data/p2-readiness-acceptance.json",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.p2ReadinessAcceptanceManifest",
+        contentSha256: manifestHash,
+        fileName: "data/p2-readiness-acceptance.json",
+        focusQuery: "accepted 6/6 run-p2-readiness ashare 600000 1d",
+        packageMatched: 6,
+        packageTotal: 6,
+        reportKind: "p2_readiness_acceptance_generated",
+        status: "ready",
+        statusLabel: "P2 readiness acceptance generation hash recorded",
+        tone: "positive"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "p2_readiness_acceptance_generated 600000 accepted").map((row) => row.id)).toEqual([
+      "p2-readiness-acceptance-generated-7777777777777777"
+    ]);
+    const generatedLedgerQuery = buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery(rows[0]);
+    expect(generatedLedgerQuery).toContain(
+      "p2_readiness_acceptance_generated p2-readiness-acceptance-generated-7777777777777777 777777777777 data/p2-readiness-acceptance.json accepted 6/6 run-p2-readiness ashare 600000 1d"
+    );
+    expect(generatedLedgerQuery).toContain("live-blocked-boundary");
+    expect(generatedLedgerQuery.split(/\s+/u).filter((token) => token === "run-p2-readiness")).toHaveLength(1);
+    expect(
+      filterAuditEvidenceReportLedgerRows(
+        rows,
+        generatedLedgerQuery
+      ).map((row) => row.id)
+    ).toEqual(["p2-readiness-acceptance-generated-7777777777777777"]);
+  });
+
+  test("finds the latest P2 readiness acceptance audit ledger row for the current context", () => {
+    const matchingGeneratedHash = "7".repeat(64);
+    const otherGeneratedHash = "9".repeat(64);
+    const substringGeneratedHash = "6".repeat(64);
+    const matchingReviewHash = "8".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-generated-substring-6666666666666666",
+        eventType: "p2_readiness_acceptance_generated",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:35:00.000Z",
+        stage: "p2",
+        source: "core-service",
+        summary: "P2 readiness acceptance generated accepted 6/6 blockers=0",
+        detail: "data/p2-readiness-acceptance.json · sha256 666666666666 · accepted 6/6",
+        metadata: {
+          acceptanceStatus: "accepted",
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceManifest",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          manifestSha256: substringGeneratedHash,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          runId: "run-p2-readiness",
+          sourcePath: "data/p2-readiness-acceptance.json",
+          symbol: "6000001",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-generated-other-9999999999999999",
+        eventType: "p2_readiness_acceptance_generated",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:30:00.000Z",
+        stage: "p2",
+        source: "core-service",
+        summary: "P2 readiness acceptance generated accepted 6/6 blockers=0",
+        detail: "data/p2-readiness-acceptance.json · sha256 999999999999 · accepted 6/6",
+        metadata: {
+          acceptanceStatus: "accepted",
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceManifest",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          manifestSha256: otherGeneratedHash,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          runId: "run-p2-readiness",
+          sourcePath: "data/p2-readiness-acceptance.json",
+          symbol: "000001",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-generated-current-7777777777777777",
+        eventType: "p2_readiness_acceptance_generated",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:20:00.000Z",
+        stage: "p2",
+        source: "core-service",
+        summary: "P2 readiness acceptance generated accepted 6/6 blockers=0",
+        detail: "data/p2-readiness-acceptance.json · sha256 777777777777 · accepted 6/6",
+        metadata: {
+          acceptanceStatus: "accepted",
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceManifest",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          manifestSha256: matchingGeneratedHash,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          runId: "run-p2-readiness",
+          sourcePath: "data/p2-readiness-acceptance.json",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-current-8888888888888888",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:25:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-readiness-p2-readiness-acceptance-review.md · sha256 888888888888 · 6/6 criteria · live blocked true",
+        metadata: {
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          contentSha256: matchingReviewHash,
+          contentSha256Algorithm: "sha256",
+          fileName: "run-p2-readiness-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          market: "ashare",
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      }
+    ]);
+    rows.push({
+      createdAt: "2026-06-24T09:40:00.000Z",
+      fileName: "legacy-p2-readiness-acceptance.md",
+      focusQuery: "accepted,6/6,run-p2-readiness,ashare,600000,1d",
+      id: "p2-readiness-acceptance-generated-legacy-comma-context",
+      reportKind: "p2_readiness_acceptance_generated",
+      runId: "run-p2-readiness",
+      searchText: "",
+      status: "ready"
+    } as AuditEvidenceReportLedgerRow);
+    rows.push({
+      createdAt: "2026-06-24T09:45:00.000Z",
+      detail: "legacy detail accepted,6/6,run-p2-readiness,ashare,600000,1d",
+      fileName: "legacy-p2-readiness-acceptance-detail.md",
+      focusQuery: "",
+      id: "p2-readiness-acceptance-generated-legacy-detail-context",
+      reportKind: "p2_readiness_acceptance_generated",
+      runId: "run-p2-readiness",
+      searchText: "",
+      status: "ready"
+    } as AuditEvidenceReportLedgerRow);
+    rows.push({
+      createdAt: "2026-06-24T09:50:00.000Z",
+      detail: "legacy detail accepted,6/6,run-p2-readiness,ashare,600000,1d",
+      fileName: "legacy-p2-readiness-acceptance-missing-run.md",
+      focusQuery: "",
+      id: "p2-readiness-acceptance-generated-legacy-missing-run-context",
+      reportKind: "p2_readiness_acceptance_generated",
+      searchText: "",
+      status: "ready"
+    } as AuditEvidenceReportLedgerRow);
+    rows.push({
+      createdAt: "2026-06-24T09:52:00.000Z",
+      detail: 600000,
+      fileName: "legacy-p2-readiness-acceptance-numeric-detail.md",
+      focusQuery: "accepted,6/6,run-p2-readiness,ashare,600000,1d",
+      id: "p2-readiness-acceptance-generated-legacy-numeric-detail-context",
+      reportKind: "p2_readiness_acceptance_generated",
+      searchText: "",
+      status: "ready"
+    } as unknown as AuditEvidenceReportLedgerRow);
+    rows.push({
+      createdAt: "2026-06-24T09:55:00.000Z",
+      detail: "legacy review accepted,6/6,run-p2-readiness,ashare,600000,1d",
+      fileName: "legacy-p2-readiness-acceptance-review-missing-run.md",
+      focusQuery: "",
+      id: "p2-readiness-acceptance-review-legacy-missing-run-context",
+      reportKind: "p2_readiness_acceptance_review",
+      searchText: "",
+      status: "READY"
+    } as unknown as AuditEvidenceReportLedgerRow);
+
+    expect(
+      findLatestP2ReadinessAcceptanceAuditLedgerRow(rows, "p2_readiness_acceptance_generated", {
+        market: "ashare",
+        runId: "run-p2-readiness",
+        symbol: "600000",
+        timeframe: "1d"
+      })?.id
+    ).toBe("p2-readiness-acceptance-generated-legacy-numeric-detail-context");
+    expect(
+      findLatestP2ReadinessAcceptanceAuditLedgerRow(rows, "p2_readiness_acceptance_review", {
+        market: "ashare",
+        runId: "run-p2-readiness",
+        symbol: "600000",
+        timeframe: "1d"
+      })?.id
+    ).toBe("p2-readiness-acceptance-review-legacy-missing-run-context");
+    expect(
+      findLatestP2ReadinessAcceptanceAuditLedgerRow(rows, "p2_readiness_acceptance_generated", {
+        market: "ashare",
+        runId: "run-p2-readiness",
+        symbol: "600519",
+        timeframe: "1d"
+      })
+    ).toBeNull();
+  });
+
+  test("indexes P2 readiness acceptance review rows with review-specific search terms", () => {
+    const reviewHash = "8".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-search-8888888888888888",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:25:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-readiness-p2-readiness-acceptance-review.md · sha256 888888888888 · 6/6 criteria · live blocked true",
+        metadata: {
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          auditEventIds: ["p1-audit", "prelive-audit", "replay-audit", "operator-audit"],
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          criterionIds: [
+            "p1-acceptance",
+            "paper-execution-replay",
+            "pre-live-checklist",
+            "p2-pre-live-manifest",
+            "readiness-evidence-coverage",
+            "live-blocked-boundary"
+          ],
+          fileName: "run-p2-readiness-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          sourcePath: "data/p2-readiness-acceptance.json",
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      }
+    ]);
+
+    expect(rows[0].searchText).toContain("p2_readiness_acceptance_review");
+    expect(rows[0].searchText).toContain("run-p2-readiness");
+    expect(rows[0].searchText).toContain("600000");
+    expect(rows[0].searchText).toContain("live-blocked-boundary");
+    expect(filterAuditEvidenceReportLedgerRows(rows, "p2_readiness_acceptance_review live-blocked-boundary").map((row) => row.id)).toEqual([
+      "p2-readiness-acceptance-review-search-8888888888888888"
+    ]);
+  });
+
+  test("resolves P2 readiness acceptance audit event id source from response before ledger fallback", () => {
+    const reviewHash = "8".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-ledger-8888888888888888",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:25:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-readiness-p2-readiness-acceptance-review.md · sha256 888888888888 · 6/6 criteria · live blocked true",
+        metadata: {
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          fileName: "run-p2-readiness-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          market: "ashare",
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      }
+    ]);
+
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        event: { eventId: "p2-readiness-acceptance-review-response-1111111111111111" },
+        ledgerRow: rows[0]
+      })
+    ).toMatchObject({
+      eventId: "p2-readiness-acceptance-review-response-1111111111111111",
+      source: "response"
+    });
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        context: {
+          market: "ashare",
+          runId: "run-p2-readiness",
+          symbol: "600000",
+          timeframe: "1d"
+        },
+        event: {
+          eventId: "p2-readiness-acceptance-review-stale-1111111111111111",
+          metadata: {
+            market: "ashare",
+            runId: "run-p2-readiness",
+            symbol: "000001",
+            timeframe: "1d"
+          },
+          runId: "run-p2-readiness"
+        },
+        ledgerRow: null
+      })
+    ).toMatchObject({
+      eventId: "",
+      source: "none"
+    });
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        context: {
+          market: "ashare",
+          runId: "run-p2-readiness",
+          symbol: "600000",
+          timeframe: "1d"
+        },
+        event: {
+          eventId: "p2-readiness-acceptance-review-response-legacy-context",
+          metadata: {
+            context: "ashare,600000,1d",
+            runId: "run-p2-readiness"
+          },
+          runId: "run-p2-readiness"
+        },
+        ledgerRow: null
+      })
+    ).toMatchObject({
+      eventId: "p2-readiness-acceptance-review-response-legacy-context",
+      source: "response"
+    });
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        context: {
+          market: "ashare",
+          runId: "run-p2-readiness",
+          symbol: "600000",
+          timeframe: "1d"
+        },
+        event: {
+          detail: "legacy response detail accepted,6/6,run-p2-readiness,ashare,600000,1d",
+          eventId: 987654321 as unknown as string,
+          metadata: {
+            market: "ashare",
+            symbol: 600000,
+            timeframe: "1d"
+          },
+          runId: true as unknown as string
+        },
+        ledgerRow: null
+      })
+    ).toMatchObject({
+      eventId: "987654321",
+      source: "response"
+    });
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        event: null,
+        ledgerRow: rows[0]
+      })
+    ).toMatchObject({
+      eventId: "p2-readiness-acceptance-review-ledger-8888888888888888",
+      source: "ledger"
+    });
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        event: null,
+        ledgerRow: null
+      })
+    ).toMatchObject({
+      eventId: "",
+      source: "none"
+    });
   });
 
   test("includes P2 manifest chain preflight events in the audit report ledger", () => {
@@ -12060,14 +13223,204 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "p2_manifest_chain_preflight run-p2-readiness").map((row) => row.id)).toEqual([
       "p2-chain-preflight-6666666666666666"
     ]);
-    expect(buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(rows[0])).toBe(
+    const preflightLedgerQuery = buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(rows[0]);
+    expect(preflightLedgerQuery).toContain(
       "p2_manifest_chain_preflight p2-chain-preflight-6666666666666666 666666666666 data/p2-chain-preflight.json blocked 3/4 run-p2-readiness p2-readiness-acceptance"
     );
+    expect(preflightLedgerQuery).toContain("First blocker p2-readiness-acceptance:");
+    expect(preflightLedgerQuery).toContain("live-blocked-boundary");
+    expect(preflightLedgerQuery.split(/\s+/u).filter((token) => token === "p2_manifest_chain_preflight")).toHaveLength(1);
     expect(
       filterAuditEvidenceReportLedgerRows(rows, buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightQuery(rows[0])).map(
         (row) => row.id
       )
     ).toEqual(["p2-chain-preflight-6666666666666666"]);
+  });
+
+  test("resolves P2 manifest chain preflight audit event id source from current response or ledger", () => {
+    const manifestHash = "6".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-chain-preflight-current-6666666666666666",
+        eventType: "p2_manifest_chain_preflight",
+        runId: "p2-manifest-chain-preflight",
+        createdAt: "2026-06-24T09:20:00.000Z",
+        stage: "p2",
+        source: "core-service",
+        summary: "P2 manifest chain preflight blocked 3/4 next=run-p2-readiness",
+        detail: "First blocker p2-readiness-acceptance: Missing data/p2-readiness-acceptance.json",
+        metadata: {
+          artifactKind: "aiqt.p2ManifestChainPreflight",
+          blockerIds: ["p2-readiness-acceptance"],
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          manifestSha256: manifestHash,
+          nextAction: "run-p2-readiness",
+          orderSubmissionEnabled: false,
+          preflightStatus: "blocked",
+          ready: false,
+          routeExecuted: false,
+          sourcePath: "data/p2-chain-preflight.json",
+          totalStageCount: 4,
+          validStageCount: 3
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-chain-preflight-other-9999999999999999",
+        eventType: "p2_manifest_chain_preflight",
+        runId: "p2-manifest-chain-preflight",
+        createdAt: "2026-06-24T09:25:00.000Z",
+        stage: "p2",
+        source: "core-service",
+        summary: "P2 manifest chain preflight blocked 2/4 next=run-p2-pre-live",
+        detail: "First blocker p2-pre-live-acceptance: Missing data/p2-pre-live-acceptance.json",
+        metadata: {
+          artifactKind: "aiqt.p2ManifestChainPreflight",
+          blockerIds: ["p2-pre-live-acceptance", "p2-readiness-acceptance"],
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          manifestSha256: "9".repeat(64),
+          nextAction: "run-p2-pre-live",
+          orderSubmissionEnabled: false,
+          preflightStatus: "blocked",
+          ready: false,
+          routeExecuted: false,
+          sourcePath: "data/p2-chain-preflight.json",
+          totalStageCount: 4,
+          validStageCount: 2
+        }
+      }
+    ]);
+
+    const context = {
+      blockerIds: ["p2-readiness-acceptance"],
+      nextAction: "run-p2-readiness",
+      sourcePath: "data/p2-chain-preflight.json",
+      status: "blocked",
+      totalStageCount: 4,
+      validStageCount: 3
+    };
+    const ledgerRow = findLatestP2ManifestChainPreflightAuditLedgerRow(rows, context);
+
+    expect(ledgerRow?.id).toBe("p2-chain-preflight-current-6666666666666666");
+    expect(
+      resolveP2ManifestChainPreflightAuditEventReference({
+        context,
+        event: {
+          detail: "legacy response detail blocked,3/4,run-p2-readiness,p2-readiness-acceptance,data/p2-chain-preflight.json",
+          eventId: 123456789 as unknown as string,
+          metadata: {
+            blockerIds: ["p2-readiness-acceptance"],
+            nextAction: "run-p2-readiness",
+            sourcePath: "data/p2-chain-preflight.json",
+            totalStageCount: 4,
+            validStageCount: 3
+          },
+          summary: true as unknown as string
+        },
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "123456789",
+      source: "response"
+    });
+    expect(
+      resolveP2ManifestChainPreflightAuditEventReference({
+        context,
+        event: {
+          eventId: "p2-chain-preflight-stale-response",
+          metadata: {
+            blockerIds: ["p2-pre-live-acceptance"],
+            nextAction: "run-p2-pre-live",
+            sourcePath: "data/p2-chain-preflight.json",
+            totalStageCount: 4,
+            validStageCount: 2
+          }
+        },
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "p2-chain-preflight-current-6666666666666666",
+      source: "ledger"
+    });
+    expect(
+      resolveP2ManifestChainPreflightAuditEventReference({
+        context,
+        event: null,
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "p2-chain-preflight-current-6666666666666666",
+      source: "ledger"
+    });
+  });
+
+  test("includes P2 manifest chain preflight review events in the audit report ledger", () => {
+    const reviewHash = "5".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-chain-preflight-review-5555555555555555",
+        eventType: "p2_manifest_chain_preflight_review",
+        runId: "p2-manifest-chain-preflight",
+        createdAt: "2026-06-24T09:30:00.000Z",
+        stage: "blocked",
+        source: "web",
+        summary: "P2 manifest chain preflight review recorded",
+        detail: "p2-chain-preflight-review.md · sha256 555555555555 · blocked 3/4 next=run-p2-readiness · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.p2ManifestChainPreflightReview",
+          blockerIds: ["p2-readiness-acceptance"],
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          fileName: "p2-chain-preflight-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          nextAction: "run-p2-readiness",
+          nextCommand: "npm run docker:smoke:p2 -- --no-build",
+          orderSubmissionEnabled: false,
+          preflightStatus: "blocked",
+          ready: false,
+          routeExecuted: false,
+          sourcePath: "data/p2-chain-preflight.json",
+          stageIds: ["p1-acceptance", "p2-paper-replay", "p2-pre-live-acceptance", "p2-readiness-acceptance"],
+          stageStatuses: ["valid", "valid", "valid", "missing"],
+          totalStageCount: 4,
+          validStageCount: 3
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.p2ManifestChainPreflightReview",
+        contentSha256: reviewHash,
+        fileName: "p2-chain-preflight-review.md",
+        focusQuery: "blocked 3/4 run-p2-readiness p2-readiness-acceptance",
+        packageMatched: 3,
+        packageTotal: 4,
+        reportKind: "p2_manifest_chain_preflight_review",
+        status: "ready",
+        statusLabel: "P2 manifest chain preflight review hash recorded",
+        tone: "risk"
+      })
+    );
+    expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
+    const reviewQuery = buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery(rows[0]);
+    expect(reviewQuery).toContain(
+      "p2_manifest_chain_preflight_review p2-chain-preflight-review-5555555555555555 555555555555 p2-chain-preflight-review.md blocked 3/4 run-p2-readiness p2-readiness-acceptance"
+    );
+    expect(reviewQuery).toContain("live-blocked-boundary");
+    expect(filterAuditEvidenceReportLedgerRows(rows, reviewQuery).map((row) => row.id)).toEqual([
+      "p2-chain-preflight-review-5555555555555555"
+    ]);
   });
 
   test("includes portfolio markdown report events in the audit report ledger", () => {

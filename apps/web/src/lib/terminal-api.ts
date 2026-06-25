@@ -28,6 +28,7 @@ import {
   type P2PaperReplaySummarySource,
   type P2PreLiveAcceptanceSummarySource,
   type P2ManifestChainPreflightStageSource,
+  type P2ManifestChainPreflightSummary,
   type P2ManifestChainPreflightSummarySource,
   type P0PlatformActionOutcome,
   type P0PlatformActionOutcomeEvidenceLink,
@@ -35,6 +36,7 @@ import {
   type P0CompletionChecklist,
   type P0PaperExecutionPreflight,
   type P0PlatformReadinessSummary,
+  type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
   type P2ReadinessAcceptanceSummary,
   type ResearchContextReadinessReportArchive,
@@ -862,6 +864,7 @@ export interface P2ReadinessAcceptanceLatestResult {
 
 export interface P2ReadinessAcceptanceGenerateResult {
   acceptance?: P2ReadinessAcceptanceReadbackStatus;
+  auditEvent?: AuditEventRecord;
   status: "acceptance_generated" | "acceptance_failed";
   source: WorkspaceSource;
   paperOnly: boolean;
@@ -5973,6 +5976,127 @@ export async function buildP2ReadinessAcceptanceReviewAuditEvent({
   };
 }
 
+export async function buildP2ReadinessEvidenceCoverageReviewAuditEvent({
+  coverage,
+  generatedAt = new Date().toISOString(),
+  markdown
+}: {
+  coverage: P2ReadinessEvidenceCoverage;
+  generatedAt?: string;
+  markdown: string;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const fileName = "p2-readiness-evidence-coverage-review.md";
+
+  return {
+    schemaVersion: 1,
+    eventId: `p2-readiness-evidence-coverage-review-${shortHash}`,
+    eventType: "p2_readiness_evidence_coverage_review",
+    runId: "p2-readiness-evidence-coverage",
+    createdAt: generatedAt,
+    stage: coverage.status,
+    source: "web",
+    summary: "P2 readiness evidence coverage review recorded",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${coverage.status} ${coverage.coveredCount}/${
+      coverage.totalCount
+    } claims · live blocked true`,
+    metadata: {
+      artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state: coverage.status,
+      coverageStatus: coverage.status,
+      coveredCount: coverage.coveredCount,
+      totalCount: coverage.totalCount,
+      blockingCount: coverage.blockingCount,
+      rowIds: coverage.rows.map((row) => row.id),
+      rowStatuses: coverage.rows.map((row) => row.status),
+      sourceTypes: coverage.rows.map((row) => row.sourceType),
+      sourceIds: coverage.rows.map((row) => row.sourceId ?? "n/a"),
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      boundary:
+        "P2 readiness evidence coverage review is audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
+export async function buildP2ManifestChainPreflightReviewAuditEvent({
+  generatedAt = new Date().toISOString(),
+  markdown,
+  preflight,
+  summary
+}: {
+  generatedAt?: string;
+  markdown: string;
+  preflight: P2ManifestChainPreflightSummarySource | null | undefined;
+  summary: P2ManifestChainPreflightSummary;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const fileName = "p2-manifest-chain-preflight-review.md";
+  const stages = preflight?.stages.length ? preflight.stages : summary.stages;
+  const state = preflight?.status ?? summary.state;
+  const validStageCount = preflight?.validStageCount ?? summary.validStageCount;
+  const totalStageCount = preflight?.totalStageCount ?? summary.totalStageCount;
+  const blockerIds = preflight?.blockerIds.length ? preflight.blockerIds : summary.blockerIds;
+  const nextAction = preflight?.nextAction ?? summary.nextAction;
+  const nextCommand = preflight?.nextCommand ?? summary.nextCommand;
+  const liveBlockedBoundary = Boolean(preflight?.liveBlockedBoundary ?? summary.liveBlockedBoundary);
+
+  return {
+    schemaVersion: 1,
+    eventId: `p2-manifest-chain-preflight-review-${shortHash}`,
+    eventType: "p2_manifest_chain_preflight_review",
+    runId: "p2-manifest-chain-preflight",
+    createdAt: generatedAt,
+    stage: state,
+    source: "web",
+    summary: "P2 manifest chain preflight review recorded",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${state} ${validStageCount}/${totalStageCount} · next=${
+      nextAction || "none"
+    } · live blocked ${liveBlockedBoundary}`,
+    metadata: {
+      artifactKind: "aiqt.p2ManifestChainPreflightReview",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state,
+      preflightStatus: state,
+      sourcePath: preflight?.sourcePath ?? summary.sourcePath,
+      manifestAvailable: Boolean(preflight?.available),
+      ready: Boolean(preflight?.ready ?? summary.ready),
+      validStageCount,
+      totalStageCount,
+      blockerIds,
+      nextAction,
+      nextCommand,
+      stageIds: stages.map((stage) => stage.id),
+      stageStatuses: stages.map((stage) => stage.status),
+      paperOnly: Boolean(preflight?.paperOnly),
+      reportedOrderSubmissionEnabled: Boolean(preflight?.orderSubmissionEnabled ?? summary.reportedOrderSubmissionEnabled),
+      reportedLiveTradingAllowed: Boolean(preflight?.liveTradingAllowed ?? summary.reportedLiveTradingAllowed),
+      reportedLiveOrderSubmitted: Boolean(preflight?.liveOrderSubmitted ?? summary.reportedLiveOrderSubmitted),
+      reportedRouteExecuted: Boolean(preflight?.routeExecuted ?? summary.reportedRouteExecuted),
+      reportedLiveBlockedBoundary: liveBlockedBoundary,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary,
+      boundary:
+        "P2 manifest chain preflight review is audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
 export function buildMarketDataRefreshOverrideAuditEvent({
   actionScope = "manual_cache_refresh",
   createdAt = new Date().toISOString(),
@@ -7443,6 +7567,7 @@ export async function generateP2ReadinessAcceptance(
     }
     return {
       acceptance: payload.acceptance,
+      auditEvent: payload.auditEvent,
       status: payload.status,
       source: "core",
       paperOnly: payload.paperOnly,
@@ -11496,6 +11621,7 @@ function isP2ReadinessAcceptanceLatestPayload(
 function isP2ReadinessAcceptanceGeneratePayload(value: unknown): value is {
   status: "acceptance_generated";
   acceptance: P2ReadinessAcceptanceReadbackStatus;
+  auditEvent: AuditEventRecord;
   paperOnly: boolean;
   orderSubmissionEnabled: boolean;
   liveTradingAllowed: boolean;
@@ -11509,6 +11635,7 @@ function isP2ReadinessAcceptanceGeneratePayload(value: unknown): value is {
   return (
     payload.status === "acceptance_generated" &&
     isP2ReadinessAcceptanceStatusPayload(payload.acceptance) &&
+    isAuditEventRecord(payload.auditEvent) &&
     payload.paperOnly === true &&
     payload.orderSubmissionEnabled === false &&
     payload.liveTradingAllowed === false &&
