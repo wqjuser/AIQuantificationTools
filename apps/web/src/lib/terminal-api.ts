@@ -5948,6 +5948,7 @@ export async function buildP2ReadinessAcceptanceReviewAuditEvent({
       p2PreLiveAcceptanceRunId: acceptance?.p2PreLiveAcceptanceRunId ?? "",
       p2PaperReplayRunId: acceptance?.p2PaperReplayRunId ?? "",
       operatorRunbookAuditEventId: acceptance?.operatorRunbookAuditEventId ?? "",
+      currentEvidenceCoverageReviewAuditEventId: summary.evidenceCoverageReviewAuditEventId ?? "",
       readinessCoverageStatus: acceptance?.readinessCoverageStatus ?? "",
       acceptedCriterionCount: acceptance?.acceptedCriterionCount ?? summary.acceptedCount,
       totalCriterionCount: acceptance?.totalCriterionCount ?? summary.totalCount,

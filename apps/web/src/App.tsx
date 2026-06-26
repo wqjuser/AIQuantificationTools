@@ -260,7 +260,9 @@ import {
   buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
   findLatestP2ManifestChainPreflightAuditLedgerRow,
   findLatestP2ReadinessAcceptanceAuditLedgerRow,
@@ -2691,8 +2693,26 @@ export function App() {
       ),
     [auditEvidenceReportLedgerRows, p2ReadinessEvidenceCoverage]
   );
+  const p2ReadinessEvidenceCoverageReviewAuditEventReference = useMemo(
+    () =>
+      resolveP2ReadinessEvidenceCoverageReviewAuditEventReference({
+        coverage: p2ReadinessEvidenceCoverage,
+        event: p2ReadinessEvidenceCoverageReviewAuditEvent,
+        ledgerRow: latestP2ReadinessEvidenceCoverageReviewAuditRow
+      }),
+    [
+      latestP2ReadinessEvidenceCoverageReviewAuditRow,
+      p2ReadinessEvidenceCoverage,
+      p2ReadinessEvidenceCoverageReviewAuditEvent
+    ]
+  );
+  const p2ReadinessEvidenceCoverageReviewAuditEventId =
+    p2ReadinessEvidenceCoverageReviewAuditEventReference.eventId;
+  const p2ReadinessEvidenceCoverageReviewAuditEventSource =
+    p2ReadinessEvidenceCoverageReviewAuditEventReference.source;
   const p2ReadinessAcceptanceSummary = buildP2ReadinessAcceptanceSummary({
     evidenceCoverage: p2ReadinessEvidenceCoverage,
+    evidenceCoverageReviewAuditEventId: p2ReadinessEvidenceCoverageReviewAuditEventId,
     p1Acceptance: p1AcceptanceSummary,
     p2PaperReplay: p2PaperReplaySummary,
     p2PreLiveAcceptance: p2PreLiveAcceptanceSummary,
@@ -2712,6 +2732,13 @@ export function App() {
       p2ReadinessAcceptanceLatestState.acceptance?.timeframe
     ]
   );
+  const p2ReadinessAcceptanceReviewAuditContext = useMemo(
+    () => ({
+      ...p2ReadinessAcceptanceAuditContext,
+      evidenceCoverageReviewAuditEventId: p2ReadinessEvidenceCoverageReviewAuditEventId
+    }),
+    [p2ReadinessAcceptanceAuditContext, p2ReadinessEvidenceCoverageReviewAuditEventId]
+  );
   const latestP2ReadinessAcceptanceGeneratedAuditRow = useMemo(
     () =>
       findLatestP2ReadinessAcceptanceAuditLedgerRow(
@@ -2726,9 +2753,9 @@ export function App() {
       findLatestP2ReadinessAcceptanceAuditLedgerRow(
         auditEvidenceReportLedgerRows,
         "p2_readiness_acceptance_review",
-        p2ReadinessAcceptanceAuditContext
+        p2ReadinessAcceptanceReviewAuditContext
       ),
-    [auditEvidenceReportLedgerRows, p2ReadinessAcceptanceAuditContext]
+    [auditEvidenceReportLedgerRows, p2ReadinessAcceptanceReviewAuditContext]
   );
   const p2ReadinessAcceptanceGeneratedAuditEventReference = useMemo(
     () =>
@@ -2742,13 +2769,13 @@ export function App() {
   const p2ReadinessAcceptanceReviewAuditEventReference = useMemo(
     () =>
       resolveP2ReadinessAcceptanceAuditEventReference({
-        context: p2ReadinessAcceptanceAuditContext,
+        context: p2ReadinessAcceptanceReviewAuditContext,
         event: p2ReadinessAcceptanceReviewAuditEvent,
         ledgerRow: latestP2ReadinessAcceptanceReviewAuditRow
       }),
     [
       latestP2ReadinessAcceptanceReviewAuditRow,
-      p2ReadinessAcceptanceAuditContext,
+      p2ReadinessAcceptanceReviewAuditContext,
       p2ReadinessAcceptanceReviewAuditEvent
     ]
   );
@@ -2786,23 +2813,6 @@ export function App() {
   const p2ManifestChainPreflightAuditEventSource = p2ManifestChainPreflightAuditReference.source;
   const p2ManifestChainPreflightReviewAuditEventId = p2ManifestChainPreflightReviewAuditEventReference.eventId;
   const p2ManifestChainPreflightReviewAuditEventSource = p2ManifestChainPreflightReviewAuditEventReference.source;
-  const p2ReadinessEvidenceCoverageReviewAuditEventReference = useMemo(
-    () =>
-      resolveP2ReadinessEvidenceCoverageReviewAuditEventReference({
-        coverage: p2ReadinessEvidenceCoverage,
-        event: p2ReadinessEvidenceCoverageReviewAuditEvent,
-        ledgerRow: latestP2ReadinessEvidenceCoverageReviewAuditRow
-      }),
-    [
-      latestP2ReadinessEvidenceCoverageReviewAuditRow,
-      p2ReadinessEvidenceCoverage,
-      p2ReadinessEvidenceCoverageReviewAuditEvent
-    ]
-  );
-  const p2ReadinessEvidenceCoverageReviewAuditEventId =
-    p2ReadinessEvidenceCoverageReviewAuditEventReference.eventId;
-  const p2ReadinessEvidenceCoverageReviewAuditEventSource =
-    p2ReadinessEvidenceCoverageReviewAuditEventReference.source;
   const p2PreLiveAcceptanceSummaryHeadlineText = p2PreLiveAcceptanceSummaryHeadline(i18n, p2PreLiveAcceptanceSummary);
   const p2ManifestChainPreflightReviewMarkdown = useMemo(
     () =>
@@ -8109,6 +8119,49 @@ export function App() {
     updateAuditEvidenceReportQuery
   ]);
 
+  const openP2ReadinessAcceptanceCoverageReviewAudit = useCallback(() => {
+    const linkedCoverageReviewAuditEventId = p2ReadinessAcceptanceSummary.evidenceCoverageReviewAuditEventId ?? "";
+    const matchingAcceptanceReviewRow =
+      p2ReadinessAcceptanceReviewAuditEventReference.ledgerRow ??
+      (p2ReadinessAcceptanceReviewAuditEventId
+        ? auditEvidenceReportLedgerRows.find((row) => row.id === p2ReadinessAcceptanceReviewAuditEventId)
+        : undefined) ??
+      latestP2ReadinessAcceptanceReviewAuditRow ??
+      undefined;
+    const linkedCoverageReviewRow = linkedCoverageReviewAuditEventId
+      ? auditEvidenceReportLedgerRows.find(
+          (row) => row.reportKind === "p2_readiness_evidence_coverage_review" && row.id === linkedCoverageReviewAuditEventId
+        )
+      : undefined;
+    const coverageLedgerQuery = buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery(linkedCoverageReviewRow);
+    const acceptanceLinkedQuery =
+      buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery(matchingAcceptanceReviewRow);
+    const fallbackQuery = linkedCoverageReviewAuditEventId
+      ? ["p2_readiness_evidence_coverage_review", linkedCoverageReviewAuditEventId].join(" ")
+      : "";
+    const query = coverageLedgerQuery || acceptanceLinkedQuery || fallbackQuery;
+
+    selectProductWorkArea("audit");
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: query
+        ? "P2 readiness linked coverage review audit selected"
+        : "P2 readiness linked coverage review unavailable",
+      error: query
+        ? undefined
+        : "Record the P2 evidence coverage review before opening the linked coverage review."
+    }));
+  }, [
+    auditEvidenceReportLedgerRows,
+    latestP2ReadinessAcceptanceReviewAuditRow,
+    p2ReadinessAcceptanceReviewAuditEventId,
+    p2ReadinessAcceptanceReviewAuditEventReference.ledgerRow,
+    p2ReadinessAcceptanceSummary.evidenceCoverageReviewAuditEventId,
+    selectProductWorkArea,
+    updateAuditEvidenceReportQuery
+  ]);
+
   const openP2ReadinessEvidenceCoverageReviewAudit = useCallback(() => {
     const auditEventId = p2ReadinessEvidenceCoverageReviewAuditEventId;
     const matchingRow =
@@ -8154,6 +8207,49 @@ export function App() {
     p2ReadinessEvidenceCoverage,
     p2ReadinessEvidenceCoverageReviewAuditEventReference,
     p2ReadinessEvidenceCoverageReviewAuditEvent,
+    p2ReadinessEvidenceCoverageReviewAuditEventId,
+    selectProductWorkArea,
+    updateAuditEvidenceReportQuery
+  ]);
+
+  const openP2ReadinessEvidenceCoverageLinkedAcceptanceReviewAudit = useCallback(() => {
+    const linkedCoverageReviewAuditEventId = p2ReadinessEvidenceCoverageReviewAuditEventId;
+    const latestMatchingAcceptanceReviewRow =
+      linkedCoverageReviewAuditEventId &&
+      latestP2ReadinessAcceptanceReviewAuditRow?.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ===
+        linkedCoverageReviewAuditEventId
+        ? latestP2ReadinessAcceptanceReviewAuditRow
+        : undefined;
+    const matchingAcceptanceReviewRow =
+      latestMatchingAcceptanceReviewRow ??
+      (linkedCoverageReviewAuditEventId
+        ? auditEvidenceReportLedgerRows.find(
+            (row) =>
+              row.reportKind === "p2_readiness_acceptance_review" &&
+              row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId === linkedCoverageReviewAuditEventId
+          )
+        : undefined);
+    const acceptanceReviewQuery =
+      buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(matchingAcceptanceReviewRow);
+    const fallbackQuery = linkedCoverageReviewAuditEventId
+      ? ["p2_readiness_acceptance_review", linkedCoverageReviewAuditEventId].join(" ")
+      : "";
+    const query = acceptanceReviewQuery || fallbackQuery;
+
+    selectProductWorkArea("audit");
+    updateAuditEvidenceReportQuery(query);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: query
+        ? "P2 readiness linked acceptance review audit selected"
+        : "P2 readiness linked acceptance review unavailable",
+      error: query
+        ? undefined
+        : "Record the P2 readiness acceptance review before opening the linked acceptance review."
+    }));
+  }, [
+    auditEvidenceReportLedgerRows,
+    latestP2ReadinessAcceptanceReviewAuditRow,
     p2ReadinessEvidenceCoverageReviewAuditEventId,
     selectProductWorkArea,
     updateAuditEvidenceReportQuery
@@ -10290,6 +10386,7 @@ export function App() {
             onCopy={() => void copyP2ReadinessAcceptanceReview()}
             onDownload={downloadP2ReadinessAcceptanceReview}
             onOpenAudit={openP2ReadinessAcceptanceReviewAudit}
+            onOpenCoverageReview={openP2ReadinessAcceptanceCoverageReviewAudit}
             onRecordAudit={() => void saveP2ReadinessAcceptanceReview()}
             onRefresh={() => void refreshP2ReadinessAcceptanceLatest()}
             summary={p2ReadinessAcceptanceSummary}
@@ -10305,6 +10402,7 @@ export function App() {
             onCopy={() => void copyP2ReadinessEvidenceCoverageReview()}
             onDownload={downloadP2ReadinessEvidenceCoverageReview}
             onOpenAudit={openP2ReadinessEvidenceCoverageReviewAudit}
+            onOpenAcceptanceReview={openP2ReadinessEvidenceCoverageLinkedAcceptanceReviewAudit}
             onRecordAudit={() => void saveP2ReadinessEvidenceCoverageReview()}
           />
           <P0AcceptanceReviewPanel
@@ -19384,6 +19482,7 @@ function P2ReadinessAcceptanceReviewPanel({
   onCopy,
   onDownload,
   onOpenAudit,
+  onOpenCoverageReview,
   onRecordAudit,
   onRefresh,
   summary
@@ -19399,6 +19498,7 @@ function P2ReadinessAcceptanceReviewPanel({
   onCopy: () => void;
   onDownload: () => void;
   onOpenAudit: () => void;
+  onOpenCoverageReview: () => void;
   onRecordAudit: () => void;
   onRefresh: () => void;
   summary: P2ReadinessAcceptanceSummary;
@@ -19465,6 +19565,10 @@ function P2ReadinessAcceptanceReviewPanel({
             <ShieldCheck size={13} />
             <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
           </button>
+          <button onClick={onOpenCoverageReview} type="button">
+            <Search size={13} />
+            <span>{i18n.locale === "zh-CN" ? "覆盖复核" : "Coverage review"}</span>
+          </button>
           <button disabled={isRefreshing} onClick={onRefresh} type="button">
             <RefreshCw className={isRefreshing ? "spin" : ""} size={13} />
             <span>{isRefreshing ? (i18n.locale === "zh-CN" ? "刷新中" : "Refreshing") : i18n.locale === "zh-CN" ? "刷新" : "Refresh"}</span>
@@ -19493,6 +19597,10 @@ function P2ReadinessAcceptanceReviewPanel({
           <span>{i18n.locale === "zh-CN" ? "上下文" : "Context"} · {context || "n/a"}</span>
           <span>{i18n.locale === "zh-CN" ? "适配器" : "Adapter"} · {acceptance?.adapterId ?? "n/a"}</span>
           <span>{i18n.locale === "zh-CN" ? "覆盖" : "Coverage"} · {readinessCoverageStatus}</span>
+          <span>
+            {i18n.locale === "zh-CN" ? "覆盖复核" : "Coverage review"} ·{" "}
+            {summary.evidenceCoverageReviewAuditEventId || "n/a"}
+          </span>
           <span>{i18n.locale === "zh-CN" ? "阻断项" : "Blockers"} · {acceptance?.blockingCriterionCount ?? summary.blockingCount}</span>
           <span>{boundaryLabel}</span>
         </div>
@@ -19537,6 +19645,7 @@ function P2ReadinessEvidenceCoverageReviewPanel({
   isRecordingAudit,
   onCopy,
   onDownload,
+  onOpenAcceptanceReview,
   onOpenAudit,
   onRecordAudit
 }: {
@@ -19549,6 +19658,7 @@ function P2ReadinessEvidenceCoverageReviewPanel({
   isRecordingAudit: boolean;
   onCopy: () => void;
   onDownload: () => void;
+  onOpenAcceptanceReview: () => void;
   onOpenAudit: () => void;
   onRecordAudit: () => void;
 }) {
@@ -19611,6 +19721,10 @@ function P2ReadinessEvidenceCoverageReviewPanel({
           <button onClick={onOpenAudit} type="button">
             <ShieldCheck size={13} />
             <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
+          </button>
+          <button onClick={onOpenAcceptanceReview} type="button">
+            <Search size={13} />
+            <span>{i18n.locale === "zh-CN" ? "顶层复核" : "Acceptance review"}</span>
           </button>
         </div>
       }
@@ -20235,6 +20349,15 @@ function AuditEvidenceReportLedgerPanel({
                       {row.researchContextLinkLabel}
                     </span>
                   ) : null}
+                  {row.p2ReadinessAcceptanceCoverageReviewLinkLabel ? (
+                    <span
+                      className="audit-report-ledger-p2-coverage-review"
+                      title={row.p2ReadinessAcceptanceCoverageReviewLinkQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "覆盖复核" : "Coverage review"} ·{" "}
+                      {row.p2ReadinessAcceptanceCoverageReviewLinkLabel}
+                    </span>
+                  ) : null}
                   {rowP0ProgressLabel ? (
                     <span
                       className="audit-report-ledger-p0-progress"
@@ -20443,6 +20566,22 @@ function AuditEvidenceReportLedgerPanel({
                     {rowPreLiveRunbookQuery ? (
                       <button onClick={() => onCopyQueryLink(rowPreLiveRunbookQuery)} type="button">
                         {i18n.locale === "zh-CN" ? "复制运行手册链接" : "Copy runbook link"}
+                      </button>
+                    ) : null}
+                    {row.p2ReadinessAcceptanceCoverageReviewLinkQuery ? (
+                      <button
+                        onClick={() => focusAuditReportQuery(row.p2ReadinessAcceptanceCoverageReviewLinkQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "定位覆盖复核" : "Focus coverage review"}
+                      </button>
+                    ) : null}
+                    {row.p2ReadinessAcceptanceCoverageReviewLinkQuery ? (
+                      <button
+                        onClick={() => onCopyQueryLink(row.p2ReadinessAcceptanceCoverageReviewLinkQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制覆盖复核链接" : "Copy coverage link"}
                       </button>
                     ) : null}
                     {rowP0BacklogReadinessQuery ? (

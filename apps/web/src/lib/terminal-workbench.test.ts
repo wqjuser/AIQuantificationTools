@@ -35,7 +35,9 @@ import {
   buildAuditEvidenceReportLedgerRowP2ManifestChainPreflightReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
   findLatestP2ManifestChainPreflightAuditLedgerRow,
   findLatestP2ReadinessAcceptanceAuditLedgerRow,
@@ -3365,8 +3367,10 @@ describe("terminal workbench model", () => {
   });
 
   test("builds P2 readiness acceptance summary from all accepted evidence while keeping live routes closed", () => {
+    const coverageReviewAuditEventId = "p2-readiness-evidence-coverage-review-aaaaaaaaaaaaaaaa";
     const summary = buildP2ReadinessAcceptanceSummary({
       evidenceCoverage: p2ReadinessEvidenceCoverageFixture(),
+      evidenceCoverageReviewAuditEventId: coverageReviewAuditEventId,
       p1Acceptance: p1AcceptanceSummaryFixture(),
       p2PaperReplay: p2PaperReplaySummaryFixture(),
       p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture(),
@@ -3385,6 +3389,7 @@ describe("terminal workbench model", () => {
       liveOrderSubmitted: false,
       routeExecuted: false
     });
+    expect(summary.evidenceCoverageReviewAuditEventId).toBe(coverageReviewAuditEventId);
     expect(summary.detail).toContain("6/6 P2 acceptance criteria");
     expect(summary.rows.map((row) => `${row.id}:${row.status}`)).toEqual([
       "p1-acceptance:passed",
@@ -3395,8 +3400,10 @@ describe("terminal workbench model", () => {
       "live-blocked-boundary:passed"
     ]);
     expect(summary.rows.find((row) => row.id === "readiness-evidence-coverage")).toMatchObject({
-      evidence: "6/6 claims covered",
-      sourceId: "P2 evidence coverage matrix"
+      detail:
+        "Every P2 readiness claim is traceable and the current coverage review is recorded in Audit.",
+      evidence: "6/6 claims covered · review aaaaaaaaaaaa",
+      sourceId: coverageReviewAuditEventId
     });
   });
 
@@ -3523,6 +3530,7 @@ describe("terminal workbench model", () => {
     };
     const summary = buildP2ReadinessAcceptanceSummary({
       evidenceCoverage: p2ReadinessEvidenceCoverageFixture(),
+      evidenceCoverageReviewAuditEventId: "p2-readiness-evidence-coverage-review-bbbbbbbbbbbbbbbb",
       p1Acceptance: p1AcceptanceSummaryFixture(),
       p2PaperReplay: p2PaperReplaySummaryFixture(),
       p2PreLiveAcceptance: p2PreLiveAcceptanceSummaryFixture(),
@@ -3540,6 +3548,9 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("- Criteria: 6/6");
     expect(markdown).toContain("- Blocking criteria: 0");
     expect(markdown).toContain("- readinessCoverageStatus: covered");
+    expect(markdown).toContain(
+      "- Current evidence coverage review: p2-readiness-evidence-coverage-review-bbbbbbbbbbbbbbbb"
+    );
     expect(markdown).toContain("- p2PaperReplay: data/p2-paper-replay.json");
     expect(markdown).toContain("- paperOnly: true");
     expect(markdown).toContain("- orderSubmissionEnabled: false");
@@ -3549,6 +3560,7 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("- liveBlockedBoundary: true");
     expect(markdown).toContain("- p1-acceptance");
     expect(markdown).toContain("- operator-runbook-report-ashare-live-600000-1d-7777777777777777");
+    expect(markdown).toContain("- p2-readiness-evidence-coverage-review-bbbbbbbbbbbbbbbb");
     expect(markdown).toContain("This review is audit evidence only and does not authorize live trading.");
   });
 
@@ -12422,6 +12434,7 @@ describe("terminal workbench model", () => {
             "readiness-evidence-coverage",
             "live-blocked-boundary"
           ],
+          currentEvidenceCoverageReviewAuditEventId: "p2-readiness-evidence-coverage-review-current",
           fileName: "run-p2-p2-readiness-acceptance-review.md",
           format: "text/markdown",
           liveBlockedBoundary: true,
@@ -12457,6 +12470,11 @@ describe("terminal workbench model", () => {
         artifactKind: "aiqt.p2ReadinessAcceptanceReview",
         fileName: "run-p2-p2-readiness-acceptance-review.md",
         focusQuery: "ashare 600000 1d accepted 6/6",
+        p2ReadinessAcceptanceCoverageReviewLinkLabel:
+          "linked coverage review · p2-readiness-evidence-coverage-review-current",
+        p2ReadinessAcceptanceCoverageReviewLinkQuery:
+          "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-current",
+        p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId: "p2-readiness-evidence-coverage-review-current",
         reportKind: "p2_readiness_acceptance_review",
         status: "ready",
         tone: "positive"
@@ -12465,11 +12483,32 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "p2_readiness_acceptance_review 600000 accepted").map((row) => row.id)).toEqual([
       "p2-readiness-acceptance-review-run-p2-8888888888888888"
     ]);
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, "p2-readiness-evidence-coverage-review-current").map((row) => row.id)
+    ).toEqual(["p2-readiness-acceptance-review-run-p2-8888888888888888"]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "linked coverage review").map((row) => row.id)).toEqual([
+      "p2-readiness-acceptance-review-run-p2-8888888888888888"
+    ]);
     const reviewLedgerQuery = buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery(rows[0]);
     expect(reviewLedgerQuery).toContain(
       "p2_readiness_acceptance_review p2-readiness-acceptance-review-run-p2-8888888888888888 888888888888 run-p2-p2-readiness-acceptance-review.md ashare 600000 1d accepted 6/6"
     );
+    expect(reviewLedgerQuery).toContain("p2-readiness-evidence-coverage-review-current");
     expect(reviewLedgerQuery).toContain("live blocked true");
+    expect(buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery(rows[0])).toBe(
+      "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-current"
+    );
+    expect(buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery(null)).toBe("");
+    const coverageBacklinkQuery =
+      buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(rows[0]);
+    expect(coverageBacklinkQuery).toContain(
+      "p2_readiness_acceptance_review p2-readiness-acceptance-review-run-p2-8888888888888888"
+    );
+    expect(coverageBacklinkQuery).toContain("p2-readiness-evidence-coverage-review-current");
+    expect(filterAuditEvidenceReportLedgerRows(rows, coverageBacklinkQuery).map((row) => row.id)).toEqual([
+      "p2-readiness-acceptance-review-run-p2-8888888888888888"
+    ]);
+    expect(buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(null)).toBe("");
     expect(reviewLedgerQuery.split(/\s+/u).filter((token) => token === "ashare")).toHaveLength(1);
     expect(
       filterAuditEvidenceReportLedgerRows(
@@ -12993,6 +13032,117 @@ describe("terminal workbench model", () => {
     ).toBeNull();
   });
 
+  test("matches P2 readiness acceptance review rows against the linked evidence coverage review", () => {
+    const currentCoverageReviewId = "p2-readiness-evidence-coverage-review-current";
+    const staleCoverageReviewId = "p2-readiness-evidence-coverage-review-stale";
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-stale-9999999999999999",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:45:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-readiness-p2-readiness-acceptance-review.md · sha256 999999999999 · 6/6 criteria · live blocked true",
+        metadata: {
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          contentSha256: "9".repeat(64),
+          contentSha256Algorithm: "sha256",
+          currentEvidenceCoverageReviewAuditEventId: staleCoverageReviewId,
+          fileName: "run-p2-readiness-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          market: "ashare",
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-current-8888888888888888",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-readiness",
+        createdAt: "2026-06-24T09:25:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-readiness-p2-readiness-acceptance-review.md · sha256 888888888888 · 6/6 criteria · live blocked true",
+        metadata: {
+          acceptedCriterionCount: 6,
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          contentSha256: "8".repeat(64),
+          contentSha256Algorithm: "sha256",
+          currentEvidenceCoverageReviewAuditEventId: currentCoverageReviewId,
+          fileName: "run-p2-readiness-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          market: "ashare",
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d",
+          totalCriterionCount: 6
+        }
+      }
+    ]);
+    const context = {
+      evidenceCoverageReviewAuditEventId: currentCoverageReviewId,
+      market: "ashare",
+      runId: "run-p2-readiness",
+      symbol: "600000",
+      timeframe: "1d"
+    };
+    const ledgerRow = findLatestP2ReadinessAcceptanceAuditLedgerRow(
+      rows,
+      "p2_readiness_acceptance_review",
+      context
+    );
+
+    expect(ledgerRow?.id).toBe("p2-readiness-acceptance-review-current-8888888888888888");
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        context,
+        event: {
+          eventId: "p2-readiness-acceptance-review-response-stale",
+          metadata: {
+            currentEvidenceCoverageReviewAuditEventId: staleCoverageReviewId,
+            market: "ashare",
+            runId: "run-p2-readiness",
+            symbol: "600000",
+            timeframe: "1d"
+          },
+          runId: "run-p2-readiness"
+        },
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "p2-readiness-acceptance-review-current-8888888888888888",
+      source: "ledger"
+    });
+    expect(
+      resolveP2ReadinessAcceptanceAuditEventReference({
+        context,
+        event: {
+          eventId: "p2-readiness-acceptance-review-response-current",
+          metadata: {
+            currentEvidenceCoverageReviewAuditEventId: currentCoverageReviewId,
+            market: "ashare",
+            runId: "run-p2-readiness",
+            symbol: "600000",
+            timeframe: "1d"
+          },
+          runId: "run-p2-readiness"
+        },
+        ledgerRow
+      })
+    ).toMatchObject({
+      eventId: "p2-readiness-acceptance-review-response-current",
+      source: "response"
+    });
+  });
+
   test("indexes P2 readiness acceptance review rows with review-specific search terms", () => {
     const reviewHash = "8".repeat(64);
     const rows = buildAuditEvidenceReportLedgerRows([
@@ -13020,6 +13170,7 @@ describe("terminal workbench model", () => {
             "readiness-evidence-coverage",
             "live-blocked-boundary"
           ],
+          currentEvidenceCoverageReviewAuditEventId: "p2-readiness-evidence-coverage-review-search",
           fileName: "run-p2-readiness-p2-readiness-acceptance-review.md",
           liveBlockedBoundary: true,
           liveOrderSubmitted: false,
@@ -13039,6 +13190,7 @@ describe("terminal workbench model", () => {
     expect(rows[0].searchText).toContain("p2_readiness_acceptance_review");
     expect(rows[0].searchText).toContain("run-p2-readiness");
     expect(rows[0].searchText).toContain("600000");
+    expect(rows[0].searchText).toContain("p2-readiness-evidence-coverage-review-search");
     expect(rows[0].searchText).toContain("live-blocked-boundary");
     expect(filterAuditEvidenceReportLedgerRows(rows, "p2_readiness_acceptance_review live-blocked-boundary").map((row) => row.id)).toEqual([
       "p2-readiness-acceptance-review-search-8888888888888888"

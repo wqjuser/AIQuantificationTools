@@ -7142,6 +7142,7 @@ em {
 .audit-report-ledger-preflight,
 .audit-report-ledger-preparation,
 .audit-report-ledger-pre-live,
+.audit-report-ledger-p2-coverage-review,
 .audit-report-ledger-p0-progress,
 .audit-report-ledger-p0-completion,
 .audit-report-ledger-p0-backlog {
@@ -7174,6 +7175,12 @@ em {
   border: 1px solid rgba(232, 190, 98, 0.28);
   background: rgba(70, 48, 18, 0.38);
   color: #ffd36d;
+}
+
+.audit-report-ledger-p2-coverage-review {
+  border: 1px solid rgba(116, 214, 195, 0.35);
+  background: rgba(18, 57, 53, 0.58);
+  color: #8cefd8;
 }
 
 .audit-report-ledger-p0-progress {

@@ -171,6 +171,16 @@ Audit 工作区现在也有“P2 证据覆盖复核”面板，可以把当前 7
 
 刷新页面或重新进入 Audit 工作区后，“P2 证据覆盖复核”也会按当前 coverage matrix 的状态、covered/total、row ids、row statuses、source types 和 source ids 从 Audit 报告台账回填匹配的 `p2_readiness_evidence_coverage_review` 事件 id；如果本次响应事件与当前 coverage 不一致，则会自动回落到匹配台账行或显示未定位。这个回填只避免旧复核或旧响应误占当前上下文，不生成新 review、不改写台账、不签名、不提交订单，也不改变 live-blocked 边界。
 
+P2 顶层验收复核现在会引用当前匹配的 `p2_readiness_evidence_coverage_review` 事件 id：summary 的 `readiness-evidence-coverage` criterion 会把该 review id 当作 source，Markdown 复核包会在 Summary 和 Audit Evidence 中列出它，review audit event metadata 也会保存 `currentEvidenceCoverageReviewAuditEventId`。这个链路只让顶层验收复核能追溯到最新 coverage review，不自动生成 coverage review、不修改后端 readiness manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+刷新页面或重新进入 Audit 工作区后，P2 顶层验收复核的回填现在也会校验当前链接的 `p2_readiness_evidence_coverage_review` 事件 id。相同 run、market、symbol、timeframe 但引用旧 coverage review 的 `p2_readiness_acceptance_review` 行不会再抢占当前复核；本次响应事件如果引用的 coverage review 不一致，也会回落到匹配台账行或显示未定位。这个回填只提升既有 review 的定位准确性，不重新生成 coverage review 或 acceptance review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+P2 顶层验收复核面板现在还可以直接定位被引用的 coverage review：`p2_readiness_acceptance_review` 台账行会回读 `currentEvidenceCoverageReviewAuditEventId`，面板的“覆盖复核 / Coverage review”按钮会切到 Audit 工作区并写入 `p2_readiness_evidence_coverage_review <event id>` 查询；如果台账已回读到完整 coverage review 行，则复用更完整的 coverage review 查询。这个入口只恢复只读审计上下文，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+P2 证据覆盖复核面板现在也能反向定位引用它的顶层验收复核：面板的“顶层复核 / Acceptance review”按钮会查找 `currentEvidenceCoverageReviewAuditEventId` 指向当前 coverage review 的 `p2_readiness_acceptance_review` 台账行，并写入完整 acceptance review 查询；如果尚未回读到匹配行，则降级为 `p2_readiness_acceptance_review <coverage review id>` 查询。这个入口只恢复只读审计上下文，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
+Audit 报告台账中的 `p2_readiness_acceptance_review` 行现在也会直接显示 linked coverage review：台账模型新增 `p2ReadinessAcceptanceCoverageReviewLinkLabel` 和 `p2ReadinessAcceptanceCoverageReviewLinkQuery`，行内会显示“覆盖复核 / Coverage review”标签，并提供“定位覆盖复核 / Focus coverage review”和“复制覆盖复核链接 / Copy coverage link”动作。这个台账级入口只是把已存在的 `currentEvidenceCoverageReviewAuditEventId` 变成可见、可复制、可搜索的只读链接，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

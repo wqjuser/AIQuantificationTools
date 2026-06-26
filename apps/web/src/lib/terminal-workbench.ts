@@ -587,6 +587,7 @@ export interface P2ReadinessAcceptanceSummary {
   tone: P2ReadinessAcceptanceTone;
   headline: string;
   detail: string;
+  evidenceCoverageReviewAuditEventId?: string;
   acceptedCount: number;
   totalCount: number;
   blockingCount: number;
@@ -599,6 +600,7 @@ export interface P2ReadinessAcceptanceSummary {
 
 export interface P2ReadinessAcceptanceSummaryInput {
   evidenceCoverage: P2ReadinessEvidenceCoverage;
+  evidenceCoverageReviewAuditEventId?: string | null;
   p1Acceptance: P1AcceptanceSummary;
   p2PaperReplay: P2PaperReplaySummary;
   p2PreLiveAcceptance: P2PreLiveAcceptanceSummary;
@@ -2417,6 +2419,9 @@ export interface AuditEvidenceReportLedgerRow {
   preLiveRunbookSymbol: string;
   preLiveRunbookTimeframe: string;
   preLiveRunbookTotalSteps: number;
+  p2ReadinessAcceptanceCoverageReviewLinkLabel: string;
+  p2ReadinessAcceptanceCoverageReviewLinkQuery: string;
+  p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId: string;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
   statusLabel: string;
@@ -8173,17 +8178,22 @@ function p2AcceptanceHasUnsafeExecutionClaim(acceptance: P2PreLiveAcceptanceSumm
 
 export function buildP2ReadinessAcceptanceSummary({
   evidenceCoverage,
+  evidenceCoverageReviewAuditEventId,
   p1Acceptance,
   p2PaperReplay,
   p2PreLiveAcceptance,
   preLiveChecklist
 }: P2ReadinessAcceptanceSummaryInput): P2ReadinessAcceptanceSummary {
+  const normalizedEvidenceCoverageReviewAuditEventId = evidenceCoverageReviewAuditEventId?.trim() ?? "";
   const rows: P2ReadinessAcceptanceRow[] = [
     buildP2AcceptanceP1Row(p1Acceptance),
     buildP2AcceptancePaperReplayRow(p2PaperReplay),
     buildP2AcceptancePreLiveChecklistRow(preLiveChecklist),
     buildP2AcceptancePreLiveManifestRow(p2PreLiveAcceptance),
-    buildP2ReadinessAcceptanceEvidenceCoverageRow(evidenceCoverage),
+    buildP2ReadinessAcceptanceEvidenceCoverageRow(
+      evidenceCoverage,
+      normalizedEvidenceCoverageReviewAuditEventId
+    ),
     buildP2AcceptanceLiveBoundaryRow({
       evidenceCoverage,
       p1Acceptance,
@@ -8211,6 +8221,7 @@ export function buildP2ReadinessAcceptanceSummary({
           ? "P2 pre-live readiness blocked"
           : "P2 pre-live readiness incomplete",
     detail: `${acceptedCount}/${totalCount} P2 acceptance criteria passed; ${blockingCount} criteria still block final pre-live acceptance. Direct order submission and live trading remain disabled.`,
+    evidenceCoverageReviewAuditEventId: normalizedEvidenceCoverageReviewAuditEventId,
     acceptedCount,
     totalCount,
     blockingCount,
@@ -8331,7 +8342,8 @@ function buildP2AcceptancePreLiveManifestRow(
 }
 
 function buildP2ReadinessAcceptanceEvidenceCoverageRow(
-  coverage: P2ReadinessEvidenceCoverage
+  coverage: P2ReadinessEvidenceCoverage,
+  coverageReviewAuditEventId = ""
 ): P2ReadinessAcceptanceRow {
   const status: P2ReadinessAcceptanceRowStatus =
     coverage.status === "covered" && coverage.blockingCount === 0
@@ -8339,17 +8351,23 @@ function buildP2ReadinessAcceptanceEvidenceCoverageRow(
       : coverage.status === "blocked" || coverage.status === "stale"
         ? "blocked"
         : "missing";
+  const claimsEvidence = `${coverage.coveredCount}/${coverage.totalCount} claims covered`;
   return {
     id: "readiness-evidence-coverage",
     label: "Readiness evidence coverage",
     status,
     tone: p2ReadinessAcceptanceRowTone(status),
-    evidence: `${coverage.coveredCount}/${coverage.totalCount} claims covered`,
+    evidence:
+      status === "passed" && coverageReviewAuditEventId
+        ? `${claimsEvidence} · review ${coverageReviewAuditEventId.slice(-12)}`
+        : claimsEvidence,
     detail:
       status === "passed"
-        ? "Every P2 readiness claim is traceable to audit evidence, a manifest, or local state."
+        ? coverageReviewAuditEventId
+          ? "Every P2 readiness claim is traceable and the current coverage review is recorded in Audit."
+          : "Every P2 readiness claim is traceable to audit evidence, a manifest, or local state."
         : coverage.detail,
-    sourceId: "P2 evidence coverage matrix"
+    sourceId: coverageReviewAuditEventId || "P2 evidence coverage matrix"
   };
 }
 
@@ -8414,6 +8432,10 @@ export function buildP2ReadinessAcceptanceReviewMarkdown({
   const acceptedCriterionCount = acceptance?.acceptedCriterionCount ?? summary.acceptedCount;
   const totalCriterionCount = acceptance?.totalCriterionCount ?? summary.totalCount;
   const blockingCriterionCount = acceptance?.blockingCriterionCount ?? summary.blockingCount;
+  const currentEvidenceCoverageReviewAuditEventId = summary.evidenceCoverageReviewAuditEventId ?? "";
+  const reviewAuditEventIds = currentEvidenceCoverageReviewAuditEventId
+    ? [...new Set([...auditEventIds, currentEvidenceCoverageReviewAuditEventId])]
+    : auditEventIds;
 
   return [
     "# P2 Readiness Acceptance Review",
@@ -8430,6 +8452,7 @@ export function buildP2ReadinessAcceptanceReviewMarkdown({
     `- Criteria: ${acceptedCriterionCount}/${totalCriterionCount}`,
     `- Blocking criteria: ${blockingCriterionCount}`,
     `- readinessCoverageStatus: ${acceptance?.readinessCoverageStatus || "n/a"}`,
+    `- Current evidence coverage review: ${currentEvidenceCoverageReviewAuditEventId || "n/a"}`,
     "",
     "## Linked Manifests",
     `- p1Acceptance: ${acceptance?.manifestPaths.p1Acceptance || "n/a"}`,
@@ -8449,7 +8472,7 @@ export function buildP2ReadinessAcceptanceReviewMarkdown({
     ...criterionIds.map((criterionId) => `- ${criterionId}`),
     "",
     "## Audit Evidence",
-    ...auditEventIds.map((eventId) => `- ${eventId}`),
+    ...reviewAuditEventIds.map((eventId) => `- ${eventId}`),
     "",
     "## Review Notes",
     `- Reason: ${reason}`,
@@ -13226,6 +13249,44 @@ export function buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuer
   ]);
 }
 
+export function buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const linkedCoverageReviewAuditEventId =
+    row?.reportKind === "p2_readiness_acceptance_review"
+      ? row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim()
+      : "";
+  if (!linkedCoverageReviewAuditEventId) {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    "p2_readiness_evidence_coverage_review",
+    linkedCoverageReviewAuditEventId
+  ]);
+}
+
+export function buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const linkedCoverageReviewAuditEventId =
+    row?.reportKind === "p2_readiness_acceptance_review"
+      ? row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim()
+      : "";
+  if (!row || row.reportKind !== "p2_readiness_acceptance_review" || !linkedCoverageReviewAuditEventId) {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    linkedCoverageReviewAuditEventId,
+    row.shortHash,
+    row.fileName,
+    row.focusQuery,
+    row.detail,
+    row.searchText
+  ]);
+}
+
 function auditReportLedgerDeduplicatedQueryText(values: unknown[]): string {
   const seen = new Set<string>();
   return values
@@ -13275,6 +13336,7 @@ export function findLatestP2ReadinessAcceptanceAuditLedgerRow(
   rows: AuditEvidenceReportLedgerRow[],
   reportKind: "p2_readiness_acceptance_generated" | "p2_readiness_acceptance_review",
   context: {
+    evidenceCoverageReviewAuditEventId?: string | null;
     market?: string | null;
     runId?: string | null;
     symbol?: string | null;
@@ -13285,6 +13347,7 @@ export function findLatestP2ReadinessAcceptanceAuditLedgerRow(
     .map((term) => term?.trim().toLowerCase() ?? "")
     .filter(Boolean);
   const runId = context.runId?.trim().toLowerCase() ?? "";
+  const evidenceCoverageReviewAuditEventId = context.evidenceCoverageReviewAuditEventId?.trim().toLowerCase() ?? "";
   return rows
     .filter((row) => {
       const rowStatus = row.status?.trim().toLowerCase() ?? "";
@@ -13294,6 +13357,13 @@ export function findLatestP2ReadinessAcceptanceAuditLedgerRow(
       const tokens = auditReportLedgerRowSearchTokenSet(row);
       const rowRunId = row.runId?.trim().toLowerCase() ?? "";
       if (runId && rowRunId !== runId && !tokens.has(runId)) {
+        return false;
+      }
+      if (
+        reportKind === "p2_readiness_acceptance_review" &&
+        evidenceCoverageReviewAuditEventId &&
+        !tokens.has(evidenceCoverageReviewAuditEventId)
+      ) {
         return false;
       }
       return terms.every((term) => tokens.has(term));
@@ -13504,6 +13574,7 @@ export interface P2ReadinessAcceptanceAuditEventReference {
 }
 
 type P2ReadinessAcceptanceAuditContext = {
+  evidenceCoverageReviewAuditEventId?: string | null;
   market?: string | null;
   runId?: string | null;
   symbol?: string | null;
@@ -13557,7 +13628,8 @@ function p2ReadinessAcceptanceAuditEventMatchesContext(
     .map((term) => term?.trim().toLowerCase() ?? "")
     .filter(Boolean);
   const runId = context.runId?.trim().toLowerCase() ?? "";
-  if (!runId && terms.length === 0) {
+  const evidenceCoverageReviewAuditEventId = context.evidenceCoverageReviewAuditEventId?.trim().toLowerCase() ?? "";
+  if (!runId && terms.length === 0 && !evidenceCoverageReviewAuditEventId) {
     return true;
   }
   const tokens = auditReportEventSearchTokenSet(event);
@@ -13567,6 +13639,9 @@ function p2ReadinessAcceptanceAuditEventMatchesContext(
       ? auditReportSearchValueText(event.metadata.runId).trim().toLowerCase()
       : "";
   if (runId && eventRunId !== runId && metadataRunId !== runId && !tokens.has(runId)) {
+    return false;
+  }
+  if (evidenceCoverageReviewAuditEventId && !tokens.has(evidenceCoverageReviewAuditEventId)) {
     return false;
   }
   return terms.every((term) => tokens.has(term));
@@ -15159,6 +15234,19 @@ export function buildAuditEvidenceReportLedgerRows(
           !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
           !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
           !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted"));
+      const p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId =
+        reportKind === "p2_readiness_acceptance_review"
+          ? auditReportLedgerMetadataText(event.metadata, "currentEvidenceCoverageReviewAuditEventId")
+          : "";
+      const p2ReadinessAcceptanceCoverageReviewLinkLabel = p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
+        ? `linked coverage review · ${p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId}`
+        : "";
+      const p2ReadinessAcceptanceCoverageReviewLinkQuery = p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
+        ? auditReportLedgerDeduplicatedQueryText([
+            "p2_readiness_evidence_coverage_review",
+            p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
+          ])
+        : "";
       const p2ReadinessAcceptanceReviewSearchText =
         reportKind === "p2_readiness_acceptance_review"
           ? [
@@ -15174,6 +15262,9 @@ export function buildAuditEvidenceReportLedgerRows(
               auditReportLedgerMetadataText(event.metadata, "timeframe"),
               auditReportLedgerMetadataText(event.metadata, "adapterId"),
               auditReportLedgerMetadataText(event.metadata, "sourcePath"),
+              p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
+              p2ReadinessAcceptanceCoverageReviewLinkLabel,
+              p2ReadinessAcceptanceCoverageReviewLinkQuery,
               auditReportLedgerMetadataStringList(event.metadata, "criterionIds").join(" "),
               auditReportLedgerMetadataStringList(event.metadata, "auditEventIds").join(" "),
               p2ReadinessAcceptanceReviewSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
@@ -15342,6 +15433,9 @@ export function buildAuditEvidenceReportLedgerRows(
         preLiveRunbookSymbol,
         preLiveRunbookTimeframe,
         preLiveRunbookTotalSteps,
+        p2ReadinessAcceptanceCoverageReviewLinkLabel,
+        p2ReadinessAcceptanceCoverageReviewLinkQuery,
+        p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
         deepLinkStatus:
           reportKind === "p0_readiness_report"
             ? "p0-readiness-report"
@@ -16360,6 +16454,8 @@ export function filterAuditEvidenceReportLedgerRows(
       row.researchContextNextAction,
       row.researchContextPreflightStatus,
       row.researchContextPreparationEvidenceRunId,
+      row.p2ReadinessAcceptanceCoverageReviewLinkLabel,
+      row.p2ReadinessAcceptanceCoverageReviewLinkQuery,
       row.searchText,
       String(row.importVerificationVerified),
       String(row.importVerificationInvalid),

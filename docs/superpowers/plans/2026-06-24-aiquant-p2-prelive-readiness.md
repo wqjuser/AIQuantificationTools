@@ -1309,6 +1309,152 @@ This rehydration only improves event id/source accuracy for existing review evid
 
 ---
 
+## Batch 45: P2 Acceptance Coverage Review Linkage
+
+**Outcome:** P2 readiness acceptance review evidence now points back to the current P2 evidence coverage review audit event.
+
+Scope:
+- Allow `buildP2ReadinessAcceptanceSummary` to receive the current coverage review audit event id.
+- Use that id as the `readiness-evidence-coverage` criterion source when it matches the current coverage matrix.
+- Include the id in P2 readiness acceptance review Markdown and review audit event metadata.
+- Show the linked coverage review id in the Audit workspace P2 readiness acceptance review panel.
+- Keep the change frontend/audit only; no backend manifest mutation, no automatic review generation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN coverage for summary rows, Markdown, audit event metadata, and static UI wiring.
+- [x] Added `evidenceCoverageReviewAuditEventId` to P2 readiness acceptance summaries.
+- [x] Updated the readiness evidence coverage criterion to source from the current coverage review audit event when present.
+- [x] Added `currentEvidenceCoverageReviewAuditEventId` to P2 readiness acceptance review audit event metadata.
+- [x] Added an Audit panel meta readout for the linked coverage review event id.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance"
+npm run test --workspace @aiqt/web -- src/lib/terminal-api.test.ts -t "P2 readiness acceptance review audit event"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness acceptance manifest review"
+```
+
+This linkage only improves traceability between existing P2 review artifacts. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 46: P2 Acceptance Review Coverage-Aware Rehydration
+
+**Outcome:** P2 readiness acceptance review ledger rehydration now requires the linked P2 evidence coverage review id to match the current context.
+
+Scope:
+- Add `currentEvidenceCoverageReviewAuditEventId` to `p2_readiness_acceptance_review` search/query tokens.
+- Extend P2 readiness acceptance review ledger matching with `evidenceCoverageReviewAuditEventId`.
+- Reject stale response events when their linked coverage review id differs from the current coverage context.
+- Wire the Audit workspace review matcher through a review-specific context while leaving generated manifest matching unchanged.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN coverage for acceptance review search/query tokens, latest ledger matching, stale response fallback, and static App wiring.
+- [x] Updated `findLatestP2ReadinessAcceptanceAuditLedgerRow` to require matching coverage review ids for review rows when present.
+- [x] Updated `resolveP2ReadinessAcceptanceAuditEventReference` to reject stale response events with mismatched coverage review ids.
+- [x] Added `p2ReadinessAcceptanceReviewAuditContext` in `App.tsx` so review rehydration receives the current coverage review id without affecting generated manifest rehydration.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness acceptance manifest review"
+```
+
+This rehydration only improves event id/source accuracy for existing acceptance review evidence. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 47: P2 Acceptance Linked Coverage Review Focus
+
+**Outcome:** The P2 readiness acceptance review panel can open the linked P2 evidence coverage review audit evidence directly.
+
+Scope:
+- Rehydrate `currentEvidenceCoverageReviewAuditEventId` as a structured `AuditEvidenceReportLedgerRow` field for `p2_readiness_acceptance_review`.
+- Add a query helper that maps an acceptance review row to its linked `p2_readiness_evidence_coverage_review` query.
+- Add a read-only Audit action in the P2 readiness acceptance review panel for the linked coverage review.
+- Prefer the full coverage review ledger query when the linked coverage row is available, with an event-id fallback when it is not.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for the linked coverage review id and query helper.
+- [x] Added static UI coverage for the helper import, open handler, panel prop, and button labels.
+- [x] Added `buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery`.
+- [x] Added `openP2ReadinessAcceptanceCoverageReviewAudit` in `App.tsx` and wired it into `P2ReadinessAcceptanceReviewPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance review events"
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness acceptance manifest review"
+```
+
+This focus action only restores read-only Audit context for the linked coverage review evidence. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 48: P2 Coverage Review Linked Acceptance Review Focus
+
+**Outcome:** The P2 evidence coverage review panel can open the top-level P2 readiness acceptance review that references the current coverage review audit evidence.
+
+Scope:
+- Add a query helper that maps a `p2_readiness_acceptance_review` row back to its linked coverage review id and searchable acceptance review context.
+- Add a read-only Audit action in the P2 evidence coverage review panel for the linked top-level acceptance review.
+- Match only acceptance review rows whose `currentEvidenceCoverageReviewAuditEventId` points to the current coverage review, with an event-id fallback when the full row is not loaded.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for the reverse acceptance review query helper.
+- [x] Added static UI coverage for the helper import, open handler, panel prop, and button labels.
+- [x] Added `buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery`.
+- [x] Added `openP2ReadinessEvidenceCoverageLinkedAcceptanceReviewAudit` in `App.tsx` and wired it into `P2ReadinessEvidenceCoverageReviewPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance review events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "P2 readiness evidence coverage review"
+```
+
+This focus action only restores read-only Audit context for the linked top-level acceptance review evidence. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
+## Batch 49: P2 Acceptance Linked Coverage Review Ledger Visibility
+
+**Outcome:** Audit report ledger rows for P2 readiness acceptance reviews expose the linked P2 evidence coverage review as a visible, searchable, copyable row-level link.
+
+Scope:
+- Add row-level label/query fields derived from `currentEvidenceCoverageReviewAuditEventId`.
+- Include the linked coverage review label and query in ledger filtering.
+- Render a compact coverage review tag and focus/copy actions on matching `p2_readiness_acceptance_review` rows.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for linked coverage review label/query fields and search tokens.
+- [x] Added static UI coverage for the ledger row tag and focus/copy actions.
+- [x] Added `p2ReadinessAcceptanceCoverageReviewLinkLabel` and `p2ReadinessAcceptanceCoverageReviewLinkQuery` to `AuditEvidenceReportLedgerRow`.
+- [x] Rendered the coverage review tag and row-level focus/copy actions in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "P2 readiness acceptance review events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This visibility pass only exposes an existing linked coverage review id as a read-only Audit query. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:
