@@ -11107,6 +11107,11 @@ describe("terminal workbench model", () => {
       latestAuditAidRunId: "",
       latestAuditAidShortHash: "",
       latestHash: reportHash,
+      latestP2ReadinessLinkedAcceptanceReviewEventId: "",
+      latestP2ReadinessLinkedAcceptanceReviewQuery: "",
+      latestP2ReadinessLinkedCoverageReviewEventId: "",
+      latestP2ReadinessLinkedCoverageReviewLabel: "",
+      latestP2ReadinessLinkedCoverageReviewQuery: "",
       latestReportKind: "audit_evidence_report",
       latestReportLabel: "Audit evidence report",
       latestReportQuery:
@@ -12709,6 +12714,21 @@ describe("terminal workbench model", () => {
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, "linked acceptance review").map((row) => row.id)).toContain(
       "p2-readiness-evidence-coverage-review-linked-9999999999999999"
+    );
+    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+      expect.objectContaining({
+        latestP2ReadinessLinkedAcceptanceReviewEventId:
+          "p2-readiness-acceptance-review-linked-8888888888888888",
+        latestP2ReadinessLinkedAcceptanceReviewQuery: expect.stringContaining(
+          "p2_readiness_acceptance_review p2-readiness-acceptance-review-linked-8888888888888888"
+        ),
+        latestP2ReadinessLinkedCoverageReviewEventId:
+          "p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        latestP2ReadinessLinkedCoverageReviewLabel:
+          "linked coverage review · p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        latestP2ReadinessLinkedCoverageReviewQuery:
+          "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-linked-9999999999999999"
+      })
     );
   });
 

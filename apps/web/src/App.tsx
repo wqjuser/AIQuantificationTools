@@ -19963,6 +19963,54 @@ function AuditEvidenceReportLedgerPanel({
             <span>
               {i18n.locale === "zh-CN" ? "审计辅助" : "Audit aids"} <strong>{summary.auditAid}</strong>
             </span>
+            {summary.latestP2ReadinessLinkedAcceptanceReviewEventId ? (
+              <span
+                title={[
+                  summary.latestP2ReadinessLinkedAcceptanceReviewEventId,
+                  summary.latestP2ReadinessLinkedCoverageReviewEventId
+                ]
+                  .filter(Boolean)
+                  .join(" -> ")}
+              >
+                {i18n.locale === "zh-CN" ? "P2 复核链" : "P2 review chain"}{" "}
+                <strong>{summary.latestP2ReadinessLinkedAcceptanceReviewEventId}</strong>
+                {summary.latestP2ReadinessLinkedCoverageReviewLabel ? (
+                  <small>{summary.latestP2ReadinessLinkedCoverageReviewLabel}</small>
+                ) : null}
+                {summary.latestP2ReadinessLinkedAcceptanceReviewQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestP2ReadinessLinkedAcceptanceReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位顶层复核" : "Focus acceptance review"}
+                  </button>
+                ) : null}
+                {summary.latestP2ReadinessLinkedAcceptanceReviewQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestP2ReadinessLinkedAcceptanceReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制顶层复核链接" : "Copy acceptance link"}
+                  </button>
+                ) : null}
+                {summary.latestP2ReadinessLinkedCoverageReviewQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestP2ReadinessLinkedCoverageReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位覆盖复核" : "Focus coverage review"}
+                  </button>
+                ) : null}
+                {summary.latestP2ReadinessLinkedCoverageReviewQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestP2ReadinessLinkedCoverageReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制覆盖复核链接" : "Copy coverage link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
             {summary.latestAuditAidRunId ? (
               <span title={summary.latestAuditAidEvidenceLink || summary.latestAuditAidEvidenceLabel}>
                 {i18n.locale === "zh-CN" ? "最新辅助" : "Latest aid"}{" "}

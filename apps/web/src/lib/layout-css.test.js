@@ -1651,6 +1651,17 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.latestReportLabel");
     expect(reportLedgerPanelSource).toContain("summary.latestReportKind");
     expect(reportLedgerPanelSource).toContain("summary.latestReportQuery");
+    expect(reportLedgerPanelSource).toContain("summary.latestP2ReadinessLinkedAcceptanceReviewEventId");
+    expect(reportLedgerPanelSource).toContain("summary.latestP2ReadinessLinkedAcceptanceReviewQuery");
+    expect(reportLedgerPanelSource).toContain("summary.latestP2ReadinessLinkedCoverageReviewEventId");
+    expect(reportLedgerPanelSource).toContain("summary.latestP2ReadinessLinkedCoverageReviewLabel");
+    expect(reportLedgerPanelSource).toContain("summary.latestP2ReadinessLinkedCoverageReviewQuery");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestP2ReadinessLinkedAcceptanceReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestP2ReadinessLinkedCoverageReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestP2ReadinessLinkedAcceptanceReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestP2ReadinessLinkedCoverageReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("P2 复核链");
+    expect(reportLedgerPanelSource).toContain("P2 review chain");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestReportQuery)");
     expect(reportLedgerPanelSource).toContain("需签名");
     expect(reportLedgerPanelSource).toContain("Audit aids");

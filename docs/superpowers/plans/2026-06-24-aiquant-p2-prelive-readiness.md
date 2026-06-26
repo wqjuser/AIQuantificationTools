@@ -1485,6 +1485,34 @@ This visibility pass only exposes an existing linked acceptance review as a read
 
 ---
 
+## Batch 51: P2 Review Chain Ledger Summary Controls
+
+**Outcome:** The Audit ledger toolbar can surface the latest linked P2 readiness acceptance review and evidence coverage review pair without requiring row-level scanning.
+
+Scope:
+- Add latest linked P2 readiness acceptance/coverage review fields to `AuditEvidenceReportLedgerSummary`.
+- Compute the latest ready `p2_readiness_acceptance_review` row that references a coverage review event.
+- Render a compact "P2 review chain" summary item with focus/copy actions for both acceptance and coverage review queries.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for latest linked P2 review chain summary fields.
+- [x] Added static UI coverage for toolbar summary fields and focus/copy actions.
+- [x] Added `latestP2ReadinessLinkedAcceptanceReview*` and `latestP2ReadinessLinkedCoverageReview*` fields to `AuditEvidenceReportLedgerSummary`.
+- [x] Rendered the latest P2 review chain controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This summary pass only exposes an existing linked P2 review pair as read-only Audit queries. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

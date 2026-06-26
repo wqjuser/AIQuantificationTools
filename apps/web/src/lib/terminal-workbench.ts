@@ -2572,6 +2572,11 @@ export interface AuditEvidenceReportLedgerSummary {
   latestPreLiveRunbookQuery: string;
   latestPreLiveRunbookShortHash: string;
   latestPreLiveRunbookStatus: string;
+  latestP2ReadinessLinkedAcceptanceReviewEventId: string;
+  latestP2ReadinessLinkedAcceptanceReviewQuery: string;
+  latestP2ReadinessLinkedCoverageReviewEventId: string;
+  latestP2ReadinessLinkedCoverageReviewLabel: string;
+  latestP2ReadinessLinkedCoverageReviewQuery: string;
   latestResearchContextReportEventId: string;
   latestResearchContextReportLabel: string;
   latestResearchContextReportLinkSearch: string;
@@ -15647,6 +15652,19 @@ export function buildAuditEvidenceReportLedgerSummary(
       }
       return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
     }, undefined);
+  const latestP2ReadinessLinkedAcceptanceReviewRow = rows
+    .filter(
+      (row) =>
+        row.reportKind === "p2_readiness_acceptance_review" &&
+        row.status === "ready" &&
+        Boolean(row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim())
+    )
+    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+    }, undefined);
   const latestReadyRow = readyRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
     if (!latest) {
       return row;
@@ -15738,6 +15756,17 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestPreLiveRunbookQuery: buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery(latestPreLiveRunbookRow),
     latestPreLiveRunbookShortHash: latestPreLiveRunbookRow?.shortHash ?? "",
     latestPreLiveRunbookStatus: latestPreLiveRunbookRow?.preLiveRunbookStatus ?? "",
+    latestP2ReadinessLinkedAcceptanceReviewEventId: latestP2ReadinessLinkedAcceptanceReviewRow?.id ?? "",
+    latestP2ReadinessLinkedAcceptanceReviewQuery:
+      buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(
+        latestP2ReadinessLinkedAcceptanceReviewRow
+      ),
+    latestP2ReadinessLinkedCoverageReviewEventId:
+      latestP2ReadinessLinkedAcceptanceReviewRow?.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ?? "",
+    latestP2ReadinessLinkedCoverageReviewLabel:
+      latestP2ReadinessLinkedAcceptanceReviewRow?.p2ReadinessAcceptanceCoverageReviewLinkLabel ?? "",
+    latestP2ReadinessLinkedCoverageReviewQuery:
+      latestP2ReadinessLinkedAcceptanceReviewRow?.p2ReadinessAcceptanceCoverageReviewLinkQuery ?? "",
     latestResearchContextReportEventId: latestResearchContextReportRow?.id ?? "",
     latestResearchContextReportLabel: latestResearchContextReportRow?.researchContextLinkLabel ?? "",
     latestResearchContextReportLinkSearch:
