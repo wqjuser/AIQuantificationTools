@@ -20358,6 +20358,15 @@ function AuditEvidenceReportLedgerPanel({
                       {row.p2ReadinessAcceptanceCoverageReviewLinkLabel}
                     </span>
                   ) : null}
+                  {row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel ? (
+                    <span
+                      className="audit-report-ledger-p2-acceptance-review"
+                      title={row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "顶层复核" : "Acceptance review"} ·{" "}
+                      {row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel}
+                    </span>
+                  ) : null}
                   {rowP0ProgressLabel ? (
                     <span
                       className="audit-report-ledger-p0-progress"
@@ -20582,6 +20591,22 @@ function AuditEvidenceReportLedgerPanel({
                         type="button"
                       >
                         {i18n.locale === "zh-CN" ? "复制覆盖复核链接" : "Copy coverage link"}
+                      </button>
+                    ) : null}
+                    {row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery ? (
+                      <button
+                        onClick={() => focusAuditReportQuery(row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "定位顶层复核" : "Focus acceptance review"}
+                      </button>
+                    ) : null}
+                    {row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery ? (
+                      <button
+                        onClick={() => onCopyQueryLink(row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制顶层复核链接" : "Copy acceptance link"}
                       </button>
                     ) : null}
                     {rowP0BacklogReadinessQuery ? (

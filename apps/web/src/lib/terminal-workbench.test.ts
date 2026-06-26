@@ -12614,6 +12614,104 @@ describe("terminal workbench model", () => {
     );
   });
 
+  test("links P2 readiness evidence coverage review ledger rows back to acceptance review rows", () => {
+    const coverageReviewHash = "9".repeat(64);
+    const acceptanceReviewHash = "8".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        eventType: "p2_readiness_evidence_coverage_review",
+        runId: "run-p2-linked",
+        createdAt: "2026-06-24T09:20:00.000Z",
+        stage: "covered",
+        source: "web",
+        summary: "P2 readiness evidence coverage review recorded",
+        detail: "p2-readiness-evidence-coverage-review.md · sha256 999999999999 · covered 7/7 claims · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+          blockingCount: 0,
+          contentSha256: coverageReviewHash,
+          coverageStatus: "covered",
+          coveredCount: 7,
+          fileName: "p2-readiness-evidence-coverage-review.md",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          rowIds: ["paper-replay-manifest", "p2-acceptance-manifest", "safety-boundary"],
+          rowStatuses: ["covered", "covered", "covered"],
+          sourceIds: ["data/p2-paper-replay.json", "data/p2-pre-live-acceptance.json", "paper-exec"],
+          sourceTypes: ["manifest", "manifest", "safety-boundary"],
+          state: "covered",
+          totalCount: 7
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-linked-8888888888888888",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-linked",
+        createdAt: "2026-06-24T09:30:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-linked-p2-readiness-acceptance-review.md · sha256 888888888888 · 6/6 criteria · live blocked true",
+        metadata: {
+          adapterId: "paper-sim",
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          auditEventIds: ["p1-audit", "prelive-audit", "replay-audit"],
+          contentSha256: acceptanceReviewHash,
+          currentEvidenceCoverageReviewAuditEventId:
+            "p2-readiness-evidence-coverage-review-linked-9999999999999999",
+          acceptedCriterionCount: 6,
+          totalCriterionCount: 6,
+          blockingCriterionCount: 0,
+          criterionIds: [
+            "p1-acceptance",
+            "paper-execution-replay",
+            "pre-live-checklist",
+            "p2-pre-live-manifest",
+            "readiness-evidence-coverage",
+            "live-blocked-boundary"
+          ],
+          fileName: "run-p2-linked-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          readinessCoverageStatus: "accepted",
+          routeExecuted: false,
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d"
+        }
+      }
+    ]);
+
+    const coverageRow = rows.find((row) => row.reportKind === "p2_readiness_evidence_coverage_review");
+    const acceptanceRow = rows.find((row) => row.reportKind === "p2_readiness_acceptance_review");
+
+    expect(coverageRow).toEqual(
+      expect.objectContaining({
+        p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel:
+          "linked acceptance review · p2-readiness-acceptance-review-linked-8888888888888888",
+        p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: expect.stringContaining(
+          "p2_readiness_acceptance_review p2-readiness-acceptance-review-linked-8888888888888888"
+        )
+      })
+    );
+    expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toContain(
+      "p2-readiness-evidence-coverage-review-linked-9999999999999999"
+    );
+    expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toBe(
+      buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(acceptanceRow)
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "linked acceptance review").map((row) => row.id)).toContain(
+      "p2-readiness-evidence-coverage-review-linked-9999999999999999"
+    );
+  });
+
   test("matches the current P2 readiness evidence coverage review ledger row before falling back to latest", () => {
     const baseCoverage = p2ReadinessEvidenceCoverageFixture();
     const coverage = p2ReadinessEvidenceCoverageFixture({

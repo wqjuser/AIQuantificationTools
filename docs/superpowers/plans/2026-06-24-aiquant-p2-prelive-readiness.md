@@ -1455,6 +1455,36 @@ This visibility pass only exposes an existing linked coverage review id as a rea
 
 ---
 
+## Batch 50: P2 Coverage Review Linked Acceptance Review Ledger Visibility
+
+**Outcome:** Audit report ledger rows for P2 evidence coverage reviews expose the top-level P2 readiness acceptance review that references them.
+
+Scope:
+- Enrich coverage review rows after ledger row construction by scanning acceptance review rows that point to the coverage review id.
+- Add row-level label/query fields for the linked top-level acceptance review.
+- Include the reverse link label and query in ledger filtering.
+- Render a compact acceptance review tag and focus/copy actions on matching `p2_readiness_evidence_coverage_review` rows.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for coverage review rows linking back to acceptance review rows.
+- [x] Added static UI coverage for the ledger row tag and focus/copy actions.
+- [x] Added `p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel` and `p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery` to `AuditEvidenceReportLedgerRow`.
+- [x] Added post-construction ledger row enrichment for coverage review rows.
+- [x] Rendered the acceptance review tag and row-level focus/copy actions in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This visibility pass only exposes an existing linked acceptance review as a read-only Audit query. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

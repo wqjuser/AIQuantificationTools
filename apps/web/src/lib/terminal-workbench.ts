@@ -2421,6 +2421,8 @@ export interface AuditEvidenceReportLedgerRow {
   preLiveRunbookTotalSteps: number;
   p2ReadinessAcceptanceCoverageReviewLinkLabel: string;
   p2ReadinessAcceptanceCoverageReviewLinkQuery: string;
+  p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: string;
+  p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: string;
   p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId: string;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
@@ -14425,7 +14427,7 @@ function portfolioPaperOrderAuditMetadataSearchParts(metadata: Record<string, un
 export function buildAuditEvidenceReportLedgerRows(
   events: AuditEvidenceReportLedgerEventRecord[]
 ): AuditEvidenceReportLedgerRow[] {
-  return events
+  const rows = events
     .filter(
       (event) =>
         event.eventType === "audit_evidence_report" ||
@@ -15435,6 +15437,8 @@ export function buildAuditEvidenceReportLedgerRows(
         preLiveRunbookTotalSteps,
         p2ReadinessAcceptanceCoverageReviewLinkLabel,
         p2ReadinessAcceptanceCoverageReviewLinkQuery,
+        p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: "",
+        p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: "",
         p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
         deepLinkStatus:
           reportKind === "p0_readiness_report"
@@ -15524,9 +15528,48 @@ export function buildAuditEvidenceReportLedgerRows(
             ? p2ReadinessAcceptanceGeneratedStatus === "accepted" && p2ReadinessAcceptanceGeneratedSafeBoundary
               ? "positive"
               : "risk"
-            : auditReportLedgerSignatureTone(signatureStatus)
+          : auditReportLedgerSignatureTone(signatureStatus)
       };
     });
+  return linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(rows);
+}
+
+function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
+  rows: AuditEvidenceReportLedgerRow[]
+): AuditEvidenceReportLedgerRow[] {
+  const latestAcceptanceReviewByCoverageReviewId = new Map<string, AuditEvidenceReportLedgerRow>();
+  rows.forEach((row) => {
+    const linkedCoverageReviewAuditEventId =
+      row.reportKind === "p2_readiness_acceptance_review"
+        ? row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim()
+        : "";
+    if (!linkedCoverageReviewAuditEventId) {
+      return;
+    }
+    const current = latestAcceptanceReviewByCoverageReviewId.get(linkedCoverageReviewAuditEventId);
+    if (!current || Date.parse(row.createdAt) > Date.parse(current.createdAt)) {
+      latestAcceptanceReviewByCoverageReviewId.set(linkedCoverageReviewAuditEventId, row);
+    }
+  });
+
+  return rows.map((row) => {
+    if (row.reportKind !== "p2_readiness_evidence_coverage_review") {
+      return row;
+    }
+    const acceptanceReviewRow = latestAcceptanceReviewByCoverageReviewId.get(row.id);
+    if (!acceptanceReviewRow) {
+      return row;
+    }
+    const linkLabel = `linked acceptance review · ${acceptanceReviewRow.id}`;
+    const linkQuery =
+      buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(acceptanceReviewRow);
+    return {
+      ...row,
+      p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: linkLabel,
+      p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: linkQuery,
+      searchText: [row.searchText, linkLabel, linkQuery].filter(Boolean).join(" ")
+    };
+  });
 }
 
 function auditReportLedgerPaperPreflightLabel({
@@ -16456,6 +16499,8 @@ export function filterAuditEvidenceReportLedgerRows(
       row.researchContextPreparationEvidenceRunId,
       row.p2ReadinessAcceptanceCoverageReviewLinkLabel,
       row.p2ReadinessAcceptanceCoverageReviewLinkQuery,
+      row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel,
+      row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery,
       row.searchText,
       String(row.importVerificationVerified),
       String(row.importVerificationInvalid),
