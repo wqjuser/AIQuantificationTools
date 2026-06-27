@@ -1513,6 +1513,34 @@ This summary pass only exposes an existing linked P2 review pair as read-only Au
 
 ---
 
+## Batch 52: P2 Review Chain Combined Ledger Query
+
+**Outcome:** The Audit ledger toolbar can filter the latest P2 readiness acceptance review and its linked evidence coverage review together with one short query.
+
+Scope:
+- Add `buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery` for acceptance review rows that link to a coverage review event.
+- Add `latestP2ReadinessReviewChainLabel` and `latestP2ReadinessReviewChainQuery` to `AuditEvidenceReportLedgerSummary`.
+- Render "Focus review chain" and "Copy review chain link" controls in the Audit ledger toolbar.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage proving the chain query filters both linked P2 review rows.
+- [x] Added static UI coverage for summary chain fields and focus/copy controls.
+- [x] Added the chain query helper and summary fields.
+- [x] Rendered combined chain focus/copy actions in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This combined query only filters existing linked P2 review rows. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

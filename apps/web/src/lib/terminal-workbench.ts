@@ -2577,6 +2577,8 @@ export interface AuditEvidenceReportLedgerSummary {
   latestP2ReadinessLinkedCoverageReviewEventId: string;
   latestP2ReadinessLinkedCoverageReviewLabel: string;
   latestP2ReadinessLinkedCoverageReviewQuery: string;
+  latestP2ReadinessReviewChainLabel: string;
+  latestP2ReadinessReviewChainQuery: string;
   latestResearchContextReportEventId: string;
   latestResearchContextReportLabel: string;
   latestResearchContextReportLinkSearch: string;
@@ -13294,6 +13296,19 @@ export function buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLink
   ]);
 }
 
+export function buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const linkedCoverageReviewAuditEventId =
+    row?.reportKind === "p2_readiness_acceptance_review"
+      ? row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim()
+      : "";
+  if (!row || row.reportKind !== "p2_readiness_acceptance_review" || !linkedCoverageReviewAuditEventId) {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([row.id, linkedCoverageReviewAuditEventId]);
+}
+
 function auditReportLedgerDeduplicatedQueryText(values: unknown[]): string {
   const seen = new Set<string>();
   return values
@@ -15767,6 +15782,12 @@ export function buildAuditEvidenceReportLedgerSummary(
       latestP2ReadinessLinkedAcceptanceReviewRow?.p2ReadinessAcceptanceCoverageReviewLinkLabel ?? "",
     latestP2ReadinessLinkedCoverageReviewQuery:
       latestP2ReadinessLinkedAcceptanceReviewRow?.p2ReadinessAcceptanceCoverageReviewLinkQuery ?? "",
+    latestP2ReadinessReviewChainLabel: latestP2ReadinessLinkedAcceptanceReviewRow
+      ? `linked review chain · ${latestP2ReadinessLinkedAcceptanceReviewRow.id} -> ${latestP2ReadinessLinkedAcceptanceReviewRow.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId}`
+      : "",
+    latestP2ReadinessReviewChainQuery: buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(
+      latestP2ReadinessLinkedAcceptanceReviewRow
+    ),
     latestResearchContextReportEventId: latestResearchContextReportRow?.id ?? "",
     latestResearchContextReportLabel: latestResearchContextReportRow?.researchContextLinkLabel ?? "",
     latestResearchContextReportLinkSearch:

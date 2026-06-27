@@ -19965,17 +19965,36 @@ function AuditEvidenceReportLedgerPanel({
             </span>
             {summary.latestP2ReadinessLinkedAcceptanceReviewEventId ? (
               <span
-                title={[
-                  summary.latestP2ReadinessLinkedAcceptanceReviewEventId,
-                  summary.latestP2ReadinessLinkedCoverageReviewEventId
-                ]
-                  .filter(Boolean)
-                  .join(" -> ")}
+                title={
+                  summary.latestP2ReadinessReviewChainLabel ||
+                  [
+                    summary.latestP2ReadinessLinkedAcceptanceReviewEventId,
+                    summary.latestP2ReadinessLinkedCoverageReviewEventId
+                  ]
+                    .filter(Boolean)
+                    .join(" -> ")
+                }
               >
                 {i18n.locale === "zh-CN" ? "P2 复核链" : "P2 review chain"}{" "}
                 <strong>{summary.latestP2ReadinessLinkedAcceptanceReviewEventId}</strong>
                 {summary.latestP2ReadinessLinkedCoverageReviewLabel ? (
                   <small>{summary.latestP2ReadinessLinkedCoverageReviewLabel}</small>
+                ) : null}
+                {summary.latestP2ReadinessReviewChainQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestP2ReadinessReviewChainQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位复核链" : "Focus review chain"}
+                  </button>
+                ) : null}
+                {summary.latestP2ReadinessReviewChainQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestP2ReadinessReviewChainQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制复核链链接" : "Copy review chain link"}
+                  </button>
                 ) : null}
                 {summary.latestP2ReadinessLinkedAcceptanceReviewQuery ? (
                   <button

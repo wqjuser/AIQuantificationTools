@@ -36,6 +36,7 @@ import {
   buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceGeneratedQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery,
+  buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
@@ -11112,6 +11113,8 @@ describe("terminal workbench model", () => {
       latestP2ReadinessLinkedCoverageReviewEventId: "",
       latestP2ReadinessLinkedCoverageReviewLabel: "",
       latestP2ReadinessLinkedCoverageReviewQuery: "",
+      latestP2ReadinessReviewChainLabel: "",
+      latestP2ReadinessReviewChainQuery: "",
       latestReportKind: "audit_evidence_report",
       latestReportLabel: "Audit evidence report",
       latestReportQuery:
@@ -12712,6 +12715,16 @@ describe("terminal workbench model", () => {
     expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toBe(
       buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(acceptanceRow)
     );
+    const reviewChainQuery = buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(acceptanceRow);
+    expect(reviewChainQuery).toBe(
+      "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999"
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, reviewChainQuery).map((row) => row.id)).toEqual([
+      "p2-readiness-evidence-coverage-review-linked-9999999999999999",
+      "p2-readiness-acceptance-review-linked-8888888888888888"
+    ]);
+    expect(buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(coverageRow)).toBe("");
+    expect(buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(null)).toBe("");
     expect(filterAuditEvidenceReportLedgerRows(rows, "linked acceptance review").map((row) => row.id)).toContain(
       "p2-readiness-evidence-coverage-review-linked-9999999999999999"
     );
@@ -12727,7 +12740,11 @@ describe("terminal workbench model", () => {
         latestP2ReadinessLinkedCoverageReviewLabel:
           "linked coverage review · p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessLinkedCoverageReviewQuery:
-          "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-linked-9999999999999999"
+          "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        latestP2ReadinessReviewChainLabel:
+          "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        latestP2ReadinessReviewChainQuery:
+          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999"
       })
     );
   });
