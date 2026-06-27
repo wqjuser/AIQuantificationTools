@@ -1541,6 +1541,34 @@ This combined query only filters existing linked P2 review rows. It does not cre
 
 ---
 
+## Batch 53: P2 Review Chain All-Links Ledger Query
+
+**Outcome:** The Audit ledger toolbar can count and filter every linked P2 readiness review chain currently loaded in the ledger page, not only the latest pair.
+
+Scope:
+- Add all-chain summary fields to `AuditEvidenceReportLedgerSummary`.
+- Mark linked acceptance review rows and linked coverage review rows with a shared `linked review chain` search token.
+- Render an "All review chains" count with focus/copy actions in the Audit ledger toolbar.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for two linked P2 review chains and the all-chain query.
+- [x] Added static UI coverage for all-chain count, focus action, and copy action.
+- [x] Added `p2ReadinessReviewChainCount` and `p2ReadinessReviewChainsQuery` to `AuditEvidenceReportLedgerSummary`.
+- [x] Rendered all-chain controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This all-chain query only filters existing linked P2 review rows on the loaded page. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

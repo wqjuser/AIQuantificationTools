@@ -2579,6 +2579,8 @@ export interface AuditEvidenceReportLedgerSummary {
   latestP2ReadinessLinkedCoverageReviewQuery: string;
   latestP2ReadinessReviewChainLabel: string;
   latestP2ReadinessReviewChainQuery: string;
+  p2ReadinessReviewChainCount: number;
+  p2ReadinessReviewChainsQuery: string;
   latestResearchContextReportEventId: string;
   latestResearchContextReportLabel: string;
   latestResearchContextReportLinkSearch: string;
@@ -15287,6 +15289,7 @@ export function buildAuditEvidenceReportLedgerRows(
               p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
               p2ReadinessAcceptanceCoverageReviewLinkLabel,
               p2ReadinessAcceptanceCoverageReviewLinkQuery,
+              p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ? "linked review chain" : "",
               auditReportLedgerMetadataStringList(event.metadata, "criterionIds").join(" "),
               auditReportLedgerMetadataStringList(event.metadata, "auditEventIds").join(" "),
               p2ReadinessAcceptanceReviewSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
@@ -15587,7 +15590,7 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
       ...row,
       p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: linkLabel,
       p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: linkQuery,
-      searchText: [row.searchText, linkLabel, linkQuery].filter(Boolean).join(" ")
+      searchText: [row.searchText, linkLabel, linkQuery, "linked review chain"].filter(Boolean).join(" ")
     };
   });
 }
@@ -15667,19 +15670,20 @@ export function buildAuditEvidenceReportLedgerSummary(
       }
       return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
     }, undefined);
-  const latestP2ReadinessLinkedAcceptanceReviewRow = rows
-    .filter(
-      (row) =>
-        row.reportKind === "p2_readiness_acceptance_review" &&
-        row.status === "ready" &&
-        Boolean(row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim())
-    )
-    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
-      if (!latest) {
-        return row;
-      }
-      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
-    }, undefined);
+  const p2ReadinessLinkedAcceptanceReviewRows = rows.filter(
+    (row) =>
+      row.reportKind === "p2_readiness_acceptance_review" &&
+      row.status === "ready" &&
+      Boolean(row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim())
+  );
+  const latestP2ReadinessLinkedAcceptanceReviewRow = p2ReadinessLinkedAcceptanceReviewRows.reduce<
+    AuditEvidenceReportLedgerRow | undefined
+  >((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, undefined);
   const latestReadyRow = readyRows.reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
     if (!latest) {
       return row;
@@ -15788,6 +15792,8 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestP2ReadinessReviewChainQuery: buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(
       latestP2ReadinessLinkedAcceptanceReviewRow
     ),
+    p2ReadinessReviewChainCount: p2ReadinessLinkedAcceptanceReviewRows.length,
+    p2ReadinessReviewChainsQuery: p2ReadinessLinkedAcceptanceReviewRows.length > 0 ? "linked review chain" : "",
     latestResearchContextReportEventId: latestResearchContextReportRow?.id ?? "",
     latestResearchContextReportLabel: latestResearchContextReportRow?.researchContextLinkLabel ?? "",
     latestResearchContextReportLinkSearch:

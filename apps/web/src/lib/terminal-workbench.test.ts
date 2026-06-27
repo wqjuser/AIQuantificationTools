@@ -11115,6 +11115,8 @@ describe("terminal workbench model", () => {
       latestP2ReadinessLinkedCoverageReviewQuery: "",
       latestP2ReadinessReviewChainLabel: "",
       latestP2ReadinessReviewChainQuery: "",
+      p2ReadinessReviewChainCount: 0,
+      p2ReadinessReviewChainsQuery: "",
       latestReportKind: "audit_evidence_report",
       latestReportLabel: "Audit evidence report",
       latestReportQuery:
@@ -12694,6 +12696,75 @@ describe("terminal workbench model", () => {
           symbol: "600000",
           timeframe: "1d"
         }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-evidence-coverage-review-linked-6666666666666666",
+        eventType: "p2_readiness_evidence_coverage_review",
+        runId: "run-p2-linked-older",
+        createdAt: "2026-06-24T09:00:00.000Z",
+        stage: "covered",
+        source: "web",
+        summary: "P2 readiness evidence coverage review recorded",
+        detail: "p2-readiness-evidence-coverage-review-older.md · sha256 666666666666 · covered 7/7 claims · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.p2ReadinessEvidenceCoverageReview",
+          blockingCount: 0,
+          contentSha256: "6".repeat(64),
+          coverageStatus: "covered",
+          coveredCount: 7,
+          fileName: "p2-readiness-evidence-coverage-review-older.md",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          rowIds: ["paper-replay-manifest", "p2-acceptance-manifest", "safety-boundary"],
+          rowStatuses: ["covered", "covered", "covered"],
+          sourceIds: ["data/p2-paper-replay.json", "data/p2-pre-live-acceptance.json", "paper-exec"],
+          sourceTypes: ["manifest", "manifest", "safety-boundary"],
+          state: "covered",
+          totalCount: 7
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-linked-7777777777777777",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-linked-older",
+        createdAt: "2026-06-24T09:10:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-linked-older-p2-readiness-acceptance-review.md · sha256 777777777777 · 6/6 criteria · live blocked true",
+        metadata: {
+          adapterId: "paper-sim",
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          auditEventIds: ["p1-audit", "prelive-audit", "replay-audit"],
+          contentSha256: "7".repeat(64),
+          currentEvidenceCoverageReviewAuditEventId:
+            "p2-readiness-evidence-coverage-review-linked-6666666666666666",
+          acceptedCriterionCount: 6,
+          totalCriterionCount: 6,
+          blockingCriterionCount: 0,
+          criterionIds: [
+            "p1-acceptance",
+            "paper-execution-replay",
+            "pre-live-checklist",
+            "p2-pre-live-manifest",
+            "readiness-evidence-coverage",
+            "live-blocked-boundary"
+          ],
+          fileName: "run-p2-linked-older-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          readinessCoverageStatus: "accepted",
+          routeExecuted: false,
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d"
+        }
       }
     ]);
 
@@ -12728,6 +12799,12 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "linked acceptance review").map((row) => row.id)).toContain(
       "p2-readiness-evidence-coverage-review-linked-9999999999999999"
     );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "linked review chain").map((row) => row.id)).toEqual([
+      "p2-readiness-evidence-coverage-review-linked-9999999999999999",
+      "p2-readiness-acceptance-review-linked-8888888888888888",
+      "p2-readiness-evidence-coverage-review-linked-6666666666666666",
+      "p2-readiness-acceptance-review-linked-7777777777777777"
+    ]);
     expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
       expect.objectContaining({
         latestP2ReadinessLinkedAcceptanceReviewEventId:
@@ -12744,7 +12821,9 @@ describe("terminal workbench model", () => {
         latestP2ReadinessReviewChainLabel:
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessReviewChainQuery:
-          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999"
+          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        p2ReadinessReviewChainCount: 2,
+        p2ReadinessReviewChainsQuery: "linked review chain"
       })
     );
   });

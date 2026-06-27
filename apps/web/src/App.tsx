@@ -19980,6 +19980,28 @@ function AuditEvidenceReportLedgerPanel({
                 {summary.latestP2ReadinessLinkedCoverageReviewLabel ? (
                   <small>{summary.latestP2ReadinessLinkedCoverageReviewLabel}</small>
                 ) : null}
+                {summary.p2ReadinessReviewChainCount > 0 ? (
+                  <small title={summary.p2ReadinessReviewChainsQuery}>
+                    {i18n.locale === "zh-CN" ? "全部复核链" : "All review chains"}{" "}
+                    {summary.p2ReadinessReviewChainCount}
+                  </small>
+                ) : null}
+                {summary.p2ReadinessReviewChainsQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainsQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位全部复核链" : "Focus all chains"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainsQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.p2ReadinessReviewChainsQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制全部复核链链接" : "Copy all chains link"}
+                  </button>
+                ) : null}
                 {summary.latestP2ReadinessReviewChainQuery ? (
                   <button
                     onClick={() => focusAuditReportQuery(summary.latestP2ReadinessReviewChainQuery)}

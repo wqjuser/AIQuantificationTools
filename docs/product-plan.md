@@ -160,6 +160,8 @@ Batch 51 已把最新 P2 复核链提升到 Audit 报告台账 summary：`buildA
 
 Batch 52 已给最新 P2 复核链补上组合查询：新增 `buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery`，用 acceptance review event id 与 linked coverage review event id 生成能同时命中两条 row 的短查询；summary 新增 `latestP2ReadinessReviewChainLabel/Query`，Audit toolbar 提供“定位复核链 / Focus review chain”和“复制复核链链接 / Copy review chain link”。该能力只把已存在的双向审计关系一次性筛出，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 53 已把 P2 复核链从“最新一条”扩展到“当前页全部链路”：`buildAuditEvidenceReportLedgerSummary` 新增 `p2ReadinessReviewChainCount` 和 `p2ReadinessReviewChainsQuery`，统计 ready acceptance review 中已链接 coverage review 的行数；linked acceptance/coverage review 行都会带上 `linked review chain` token。Audit toolbar 现在显示“全部复核链 / All review chains”数量，并可 focus/copy 全部链路查询。该能力只筛选已有审计行，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。
