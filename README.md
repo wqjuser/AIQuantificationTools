@@ -207,6 +207,8 @@ Audit 台账 summary 还新增了 P2 复核链健康上下文查询：`filterAud
 
 Audit 台账行级操作现在也支持 P2 复核链健康上下文：`AuditEvidenceReportLedgerRow` 新增 `p2ReadinessReviewChainHealthContextQuery`，任何 loaded 或 gap 状态行都会带 `review-chain-health`，行内提供“定位行复核链健康上下文 / Focus row chain health context”和“复制行复核链健康上下文链接 / Copy row chain health context link”。这个入口让操作者从任一状态行回到整页健康上下文，同时保留原始 row-level status query 的精确筛选语义；它仍只读，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Audit 台账现在还会解释 P2 复核链健康上下文：`AuditEvidenceReportLedgerRow` 新增 `p2ReadinessReviewChainHealthContextTitle`，loaded、缺 coverage、缺顶层 acceptance 等状态行会带上对应的 `health-context-*` 说明；summary 新增 `p2ReadinessReviewChainHealthContextTitle`，在“健康上下文 / Health context” tooltip 中展示 context rows、loaded chains、gaps、missing coverage、missing acceptance 与最新缺口 event id 分解。该 title 也参与只读过滤，便于直接定位 `health-context-missing-acceptance` 等上下文行；它不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

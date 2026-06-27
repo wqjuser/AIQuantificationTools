@@ -1830,6 +1830,36 @@ These row-level health context actions only filter existing P2 review-chain stat
 
 ---
 
+## Batch 63: P2 Review Chain Health Context Titles
+
+**Outcome:** The Audit ledger can explain what the current-page P2 review-chain health context contains at both toolbar and row level.
+
+Scope:
+- Add `p2ReadinessReviewChainHealthContextTitle` to `AuditEvidenceReportLedgerRow` and `AuditEvidenceReportLedgerSummary`.
+- Mark loaded, missing-coverage, and missing-acceptance rows with `health-context-loaded`, `health-context-missing-coverage`, or `health-context-missing-acceptance` title text.
+- Summarize context rows, loaded chains, gaps, missing coverage, missing acceptance, and latest gap event id in the toolbar health-context title.
+- Use the title for Audit toolbar and row-level health-context tooltips while keeping focus/copy queries unchanged.
+- Include the row title in read-only ledger filtering so operators can search the health-context subtype directly.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for row and summary health-context titles.
+- [x] Added RED/GREEN filtering coverage for `health-context-missing-acceptance`.
+- [x] Added static UI coverage for toolbar and row-level title usage.
+- [x] Rendered the health-context titles in `AuditEvidenceReportLedgerPanel` tooltips.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+These health-context titles only explain and filter existing P2 review-chain status diagnostics. They do not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

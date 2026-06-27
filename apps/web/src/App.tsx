@@ -20000,7 +20000,12 @@ function AuditEvidenceReportLedgerPanel({
                   </small>
                 ) : null}
                 {summary.p2ReadinessReviewChainHealthContextCount > 0 ? (
-                  <small title={summary.p2ReadinessReviewChainHealthContextQuery}>
+                  <small
+                    title={
+                      summary.p2ReadinessReviewChainHealthContextTitle ||
+                      summary.p2ReadinessReviewChainHealthContextQuery
+                    }
+                  >
                     {i18n.locale === "zh-CN" ? "健康上下文" : "Health context"}{" "}
                     {summary.p2ReadinessReviewChainHealthContextCount}
                   </small>
@@ -20088,6 +20093,10 @@ function AuditEvidenceReportLedgerPanel({
                 {summary.p2ReadinessReviewChainHealthContextQuery ? (
                   <button
                     onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainHealthContextQuery)}
+                    title={
+                      summary.p2ReadinessReviewChainHealthContextTitle ||
+                      summary.p2ReadinessReviewChainHealthContextQuery
+                    }
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "定位复核链健康上下文" : "Focus chain health context"}
@@ -20096,6 +20105,10 @@ function AuditEvidenceReportLedgerPanel({
                 {summary.p2ReadinessReviewChainHealthContextQuery ? (
                   <button
                     onClick={() => onCopyQueryLink(summary.p2ReadinessReviewChainHealthContextQuery)}
+                    title={
+                      summary.p2ReadinessReviewChainHealthContextTitle ||
+                      summary.p2ReadinessReviewChainHealthContextQuery
+                    }
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制复核链健康上下文链接" : "Copy chain health context link"}
@@ -20895,6 +20908,10 @@ function AuditEvidenceReportLedgerPanel({
                     {row.p2ReadinessReviewChainHealthContextQuery ? (
                       <button
                         onClick={() => focusAuditReportQuery(row.p2ReadinessReviewChainHealthContextQuery)}
+                        title={
+                          row.p2ReadinessReviewChainHealthContextTitle ||
+                          row.p2ReadinessReviewChainHealthContextQuery
+                        }
                         type="button"
                       >
                         {i18n.locale === "zh-CN" ? "定位行复核链健康上下文" : "Focus row chain health context"}
@@ -20903,6 +20920,10 @@ function AuditEvidenceReportLedgerPanel({
                     {row.p2ReadinessReviewChainHealthContextQuery ? (
                       <button
                         onClick={() => onCopyQueryLink(row.p2ReadinessReviewChainHealthContextQuery)}
+                        title={
+                          row.p2ReadinessReviewChainHealthContextTitle ||
+                          row.p2ReadinessReviewChainHealthContextQuery
+                        }
                         type="button"
                       >
                         {i18n.locale === "zh-CN"

@@ -1666,6 +1666,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainGapsQuery");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthContextCount");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthContextQuery");
+    expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthContextTitle");
+    expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthContextTitle ||");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthLabel");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthQuery");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthState");
@@ -1832,6 +1834,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("row.p2ReadinessReviewChainStatusLabel");
     expect(reportLedgerPanelSource).toContain("row.p2ReadinessReviewChainStatusQuery");
     expect(reportLedgerPanelSource).toContain("row.p2ReadinessReviewChainHealthContextQuery");
+    expect(reportLedgerPanelSource).toContain("row.p2ReadinessReviewChainHealthContextTitle");
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-p2-coverage-review"');
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-p2-acceptance-review"');
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-p2-review-chain"');
@@ -1846,6 +1849,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.p2ReadinessReviewChainStatusQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.p2ReadinessReviewChainHealthContextQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.p2ReadinessReviewChainHealthContextQuery)");
+    expect(reportLedgerPanelSource).toContain("row.p2ReadinessReviewChainHealthContextTitle ||");
     expect(reportLedgerPanelSource).toContain("整条复核链");
     expect(reportLedgerPanelSource).toContain("Review chain");
     expect(reportLedgerPanelSource).toContain("复核链已加载");

@@ -11124,6 +11124,7 @@ describe("terminal workbench model", () => {
       p2ReadinessReviewChainHealthLabel: "",
       p2ReadinessReviewChainHealthContextCount: 0,
       p2ReadinessReviewChainHealthContextQuery: "",
+      p2ReadinessReviewChainHealthContextTitle: "",
       p2ReadinessReviewChainHealthQuery: "",
       p2ReadinessReviewChainHealthState: "empty",
       p2ReadinessReviewChainLoadedCount: 0,
@@ -12871,6 +12872,8 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain loaded",
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
+        p2ReadinessReviewChainHealthContextTitle:
+          "review-chain-health · health-context-loaded · acceptance p2-readiness-acceptance-review-linked-8888888888888888 · coverage p2-readiness-evidence-coverage-review-linked-9999999999999999",
         p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded"),
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel:
           "linked acceptance review · p2-readiness-acceptance-review-linked-8888888888888888",
@@ -12889,6 +12892,8 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain loaded",
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
+        p2ReadinessReviewChainHealthContextTitle:
+          "review-chain-health · health-context-loaded · acceptance p2-readiness-acceptance-review-linked-8888888888888888 · coverage p2-readiness-evidence-coverage-review-linked-9999999999999999",
         p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded")
       })
     );
@@ -12902,6 +12907,8 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain coverage missing",
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
+        p2ReadinessReviewChainHealthContextTitle:
+          "review-chain-health · health-context-missing-coverage · acceptance p2-readiness-acceptance-review-missing-5555555555555555 · coverage p2-readiness-evidence-coverage-review-missing-5555555555555555",
         p2ReadinessReviewChainStatusQuery:
           "review-chain-gap review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555"
       })
@@ -12912,6 +12919,8 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainAcceptanceLoaded: false,
         p2ReadinessReviewChainStatusLabel: "review chain acceptance missing",
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
+        p2ReadinessReviewChainHealthContextTitle:
+          "review-chain-health · health-context-missing-acceptance · coverage p2-readiness-evidence-coverage-review-orphan-4444444444444444",
         p2ReadinessReviewChainStatusQuery:
           "review-chain-gap review-chain-acceptance-missing p2-readiness-evidence-coverage-review-orphan-4444444444444444"
       })
@@ -12962,6 +12971,9 @@ describe("terminal workbench model", () => {
       "p2-readiness-evidence-coverage-review-orphan-4444444444444444",
       "p2-readiness-acceptance-review-missing-5555555555555555"
     ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "health-context-missing-acceptance").map((row) => row.id)).toEqual([
+      "p2-readiness-evidence-coverage-review-orphan-4444444444444444"
+    ]);
     const loadedReviewChainRows = rows.filter((row) =>
       [
         "p2-readiness-evidence-coverage-review-linked-9999999999999999",
@@ -12980,6 +12992,8 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainHealthLabel: "review chain loaded · 1",
         p2ReadinessReviewChainHealthContextCount: 2,
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
+        p2ReadinessReviewChainHealthContextTitle:
+          "review-chain-health · health context rows 2 · loaded chains 1 · gaps 0 · missing coverage 0 · missing acceptance 0",
         p2ReadinessReviewChainHealthQuery: "review-chain-loaded",
         p2ReadinessReviewChainHealthState: "loaded",
         p2ReadinessReviewChainLoadedCount: 1
@@ -13012,6 +13026,8 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainHealthLabel: "review chain gaps · 2",
         p2ReadinessReviewChainHealthContextCount: 6,
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
+        p2ReadinessReviewChainHealthContextTitle:
+          "review-chain-health · health context rows 6 · loaded chains 2 · gaps 2 · missing coverage 1 · missing acceptance 1 · latest gap p2-readiness-acceptance-review-missing-5555555555555555",
         p2ReadinessReviewChainHealthQuery: "review-chain-gap",
         p2ReadinessReviewChainHealthState: "gaps",
         p2ReadinessReviewChainLoadedCount: 2,
