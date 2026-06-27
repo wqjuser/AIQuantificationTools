@@ -246,6 +246,7 @@ export interface P0AcceptanceSummary {
   runId: string | null;
   checkCount: number;
   requiredCheckCount: number;
+  importExportRoundTripReady: boolean;
   liveTradingAllowed: false;
   reportedLiveTradingAllowed: boolean;
   liveBlockedBoundary: boolean;
@@ -294,6 +295,7 @@ export interface P1AcceptanceSummary {
   watchlistCount: number;
   checkCount: number;
   requiredCheckCount: number;
+  importExportRoundTripReady: boolean;
   liveTradingAllowed: false;
   reportedLiveTradingAllowed: boolean;
   liveBlockedBoundary: boolean;
@@ -645,6 +647,7 @@ export interface PersonalTeamUsabilityReadinessSummary {
 
 export interface PersonalTeamUsabilityReadinessSummaryInput {
   auditEvidenceReportLedgerSummary: AuditEvidenceReportLedgerSummary;
+  handoffNoteCount?: number;
   p0AcceptanceSummary: P0AcceptanceSummary;
   p0PlatformReadinessSummary: P0PlatformReadinessSummary;
   p1AcceptanceSummary: P1AcceptanceSummary;
@@ -7410,6 +7413,7 @@ export function buildP0AcceptanceSummary(
       runId: acceptance?.runId ?? null,
       checkCount: acceptance?.checkCount ?? 0,
       requiredCheckCount: acceptance?.requiredCheckCount ?? 4,
+      importExportRoundTripReady: false,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: Boolean(acceptance?.liveTradingAllowed),
       liveBlockedBoundary: Boolean(acceptance?.liveBlockedBoundary)
@@ -7430,6 +7434,7 @@ export function buildP0AcceptanceSummary(
       runId: acceptance.runId,
       checkCount: acceptance.checkCount,
       requiredCheckCount: acceptance.requiredCheckCount,
+      importExportRoundTripReady: false,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
       liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
@@ -7449,6 +7454,7 @@ export function buildP0AcceptanceSummary(
     runId: acceptance.runId,
     checkCount: acceptance.checkCount,
     requiredCheckCount: acceptance.requiredCheckCount,
+    importExportRoundTripReady: acceptanceHasImportExportRoundTrip(acceptance.checkIds),
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
     liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
@@ -7477,6 +7483,7 @@ export function buildP1AcceptanceSummary(
       watchlistCount: acceptance?.watchlistCount ?? 0,
       checkCount: acceptance?.checkCount ?? 0,
       requiredCheckCount: acceptance?.requiredCheckCount ?? 8,
+      importExportRoundTripReady: false,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: Boolean(acceptance?.liveTradingAllowed),
       liveBlockedBoundary: Boolean(acceptance?.liveBlockedBoundary)
@@ -7502,6 +7509,7 @@ export function buildP1AcceptanceSummary(
       watchlistCount: acceptance.watchlistCount,
       checkCount: acceptance.checkCount,
       requiredCheckCount: acceptance.requiredCheckCount,
+      importExportRoundTripReady: false,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
       liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
@@ -7528,10 +7536,15 @@ export function buildP1AcceptanceSummary(
     watchlistCount: acceptance.watchlistCount,
     checkCount: acceptance.checkCount,
     requiredCheckCount: acceptance.requiredCheckCount,
+    importExportRoundTripReady: acceptanceHasImportExportRoundTrip(acceptance.checkIds),
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: Boolean(acceptance.liveTradingAllowed),
     liveBlockedBoundary: Boolean(acceptance.liveBlockedBoundary)
   };
+}
+
+function acceptanceHasImportExportRoundTrip(checkIds: ReadonlyArray<string>): boolean {
+  return ["export", "import", "imported-export"].every((checkId) => checkIds.includes(checkId));
 }
 
 export function buildP2PreLiveAcceptanceSummary(
@@ -8493,6 +8506,7 @@ function p1AcceptanceHasUnsafeExecutionClaim(acceptance: P1AcceptanceSummary): b
 
 export function buildPersonalTeamUsabilityReadinessSummary({
   auditEvidenceReportLedgerSummary,
+  handoffNoteCount = 0,
   p0AcceptanceSummary,
   p0PlatformReadinessSummary,
   p1AcceptanceSummary,
@@ -8530,6 +8544,9 @@ export function buildPersonalTeamUsabilityReadinessSummary({
     auditEvidenceReportLedgerSummary.latestAuditAidEventId ||
       p2ReadinessAcceptanceSummary.evidenceCoverageReviewAuditEventId
   );
+  const handoffReady = handoffNoteCount > 0;
+  const backupRestoreReady =
+    p1AcceptanceSummary.importExportRoundTripReady || p0AcceptanceSummary.importExportRoundTripReady;
 
   const items: PersonalTeamUsabilityReadinessItem[] = [
     {
@@ -8581,18 +8598,22 @@ export function buildPersonalTeamUsabilityReadinessSummary({
     {
       id: "team-handoff-runbook",
       label: "Team handoff runbook",
-      status: "review",
-      detail: "Write the operator handoff, incident owner, and review cadence before small-team beta.",
-      actionLabel: "Create handoff runbook",
-      targetWorkspaceId: "audit"
+      status: handoffReady ? "ready" : "review",
+      detail: handoffReady
+        ? `${handoffNoteCount} local handoff note${handoffNoteCount === 1 ? "" : "s"} recorded for the current audited run.`
+        : "Write the operator handoff, incident owner, and review cadence before small-team beta.",
+      actionLabel: handoffReady ? "Open handoff notes" : "Create handoff runbook",
+      targetWorkspaceId: "research"
     },
     {
       id: "backup-restore-drill",
       label: "Backup restore drill",
-      status: "review",
-      detail: "Add a repeatable local data backup and restore drill before relying on shared use.",
-      actionLabel: "Plan backup drill",
-      targetWorkspaceId: "settings"
+      status: backupRestoreReady ? "ready" : "review",
+      detail: backupRestoreReady
+        ? "Latest P0/P1 acceptance includes export, import, and imported-export restore checks."
+        : "Run a repeatable export/import/imported-export restore drill before relying on shared use.",
+      actionLabel: backupRestoreReady ? "Review restore evidence" : "Plan backup drill",
+      targetWorkspaceId: "audit"
     }
   ];
 

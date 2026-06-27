@@ -2723,6 +2723,7 @@ export function App() {
   });
   const personalTeamUsabilityReadiness = buildPersonalTeamUsabilityReadinessSummary({
     auditEvidenceReportLedgerSummary,
+    handoffNoteCount: handoffNotesState.pagination?.total ?? handoffNotesState.handoffNotes.length,
     p0AcceptanceSummary,
     p0PlatformReadinessSummary,
     p1AcceptanceSummary,
@@ -12178,11 +12179,11 @@ function personalTeamUsabilityReadinessItemAction(
   return (
     {
       "audit-traceability": item.status === "ready" ? "打开审计台账" : "记录审计复核",
-      "backup-restore-drill": "规划备份演练",
+      "backup-restore-drill": item.status === "ready" ? "复核恢复证据" : "规划备份演练",
       "p0-local-loop": item.status === "ready" ? "复核已验收闭环" : item.actionLabel,
       "p1-research-ops": item.status === "ready" ? "复核研究运营" : item.actionLabel,
       "p2-prelive-chain": item.status === "ready" ? "复核 P2 readiness" : item.actionLabel,
-      "team-handoff-runbook": "创建交接手册"
+      "team-handoff-runbook": item.status === "ready" ? "打开交接备注" : "创建交接手册"
     } satisfies Record<PersonalTeamUsabilityReadinessItem["id"], string>
   )[item.id];
 }
@@ -12195,10 +12196,14 @@ function personalTeamUsabilityReadinessItemDetail(
     return item.detail;
   }
   if (item.id === "team-handoff-runbook") {
-    return "小团队内测前补齐交接、事故负责人和复核节奏。";
+    return item.status === "ready"
+      ? "当前审计运行已经记录本地交接备注。"
+      : "小团队内测前补齐交接、事故负责人和复核节奏。";
   }
   if (item.id === "backup-restore-drill") {
-    return "共享使用前补齐本地数据备份与恢复演练。";
+    return item.status === "ready"
+      ? "P0/P1 验收已覆盖导出、导入和导入后再导出。"
+      : "共享使用前补齐本地数据备份与恢复演练。";
   }
   if (item.id === "audit-traceability") {
     return item.status === "ready"

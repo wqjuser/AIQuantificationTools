@@ -641,6 +641,7 @@ function p1AcceptanceSummaryFixture(overrides: Partial<P1AcceptanceSummary> = {}
     watchlistCount: 3,
     checkCount: 7,
     requiredCheckCount: 7,
+    importExportRoundTripReady: true,
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: false,
     liveBlockedBoundary: true,
@@ -683,6 +684,7 @@ function p0AcceptanceSummaryFixture(overrides: Partial<P0AcceptanceSummary> = {}
     runId: "run-p0-smoke",
     checkCount: 6,
     requiredCheckCount: 6,
+    importExportRoundTripReady: true,
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: false,
     liveBlockedBoundary: true,
@@ -2476,6 +2478,7 @@ describe("terminal workbench model", () => {
       sourcePath: "data/p0-acceptance.json",
       runId: "run-smoke",
       checkCount: 6,
+      importExportRoundTripReady: true,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: false
     });
@@ -2512,14 +2515,16 @@ describe("terminal workbench model", () => {
       tone: "warning",
       headline: "P0 acceptance manifest missing",
       liveTradingAllowed: false,
-      reportedLiveTradingAllowed: false
+      reportedLiveTradingAllowed: false,
+      importExportRoundTripReady: false
     });
     expect(invalid).toMatchObject({
       state: "invalid",
       tone: "risk",
       headline: "P0 acceptance manifest invalid",
       liveTradingAllowed: false,
-      reportedLiveTradingAllowed: true
+      reportedLiveTradingAllowed: true,
+      importExportRoundTripReady: false
     });
     expect(invalid.detail).toContain("live-blocked boundary is not enforced");
     expect(invalid.detail).toContain("Live trading remains blocked");
@@ -2569,6 +2574,7 @@ describe("terminal workbench model", () => {
       watchlistRefreshRunId: "cache-refresh-p1",
       watchlistCount: 3,
       checkCount: 8,
+      importExportRoundTripReady: true,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: false
     });
@@ -2608,14 +2614,16 @@ describe("terminal workbench model", () => {
       tone: "warning",
       headline: "P1 acceptance manifest missing",
       liveTradingAllowed: false,
-      reportedLiveTradingAllowed: false
+      reportedLiveTradingAllowed: false,
+      importExportRoundTripReady: false
     });
     expect(invalid).toMatchObject({
       state: "invalid",
       tone: "risk",
       headline: "P1 acceptance manifest invalid",
       liveTradingAllowed: false,
-      reportedLiveTradingAllowed: true
+      reportedLiveTradingAllowed: true,
+      importExportRoundTripReady: false
     });
     expect(invalid.detail).toContain("live-blocked boundary is not enforced");
     expect(invalid.detail).toContain("Live trading remains blocked");
@@ -3597,15 +3605,51 @@ describe("terminal workbench model", () => {
       tone: "warning",
       headline: "Personal paper loop ready; team handoff pending",
       personalPercent: 100,
-      teamPercent: 67,
-      readyCount: 4,
+      teamPercent: 83,
+      readyCount: 5,
       totalCount: 6,
       nextActionLabel: "Create handoff runbook",
-      nextActionWorkspaceId: "audit",
+      nextActionWorkspaceId: "research",
       liveBoundaryLabel: "Paper-only · live blocked · no order submission"
     });
-    expect(summary.detail).toContain("4/6 usability gates ready");
-    expect(summary.openItems.map((item) => item.id)).toEqual(["team-handoff-runbook", "backup-restore-drill"]);
+    expect(summary.detail).toContain("5/6 usability gates ready");
+    expect(summary.openItems.map((item) => item.id)).toEqual(["team-handoff-runbook"]);
+  });
+
+  test("marks small-team usability ready when handoff and restore evidence exist", () => {
+    const summary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready"
+      }),
+      handoffNoteCount: 2,
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+
+    expect(summary).toMatchObject({
+      state: "ready",
+      tone: "positive",
+      headline: "Personal and small-team beta ready",
+      personalPercent: 100,
+      teamPercent: 100,
+      readyCount: 6,
+      totalCount: 6
+    });
+    expect(summary.openItems).toEqual([]);
+    expect(summary.items.find((item) => item.id === "team-handoff-runbook")).toMatchObject({
+      actionLabel: "Open handoff notes",
+      status: "ready",
+      targetWorkspaceId: "research"
+    });
+    expect(summary.items.find((item) => item.id === "backup-restore-drill")).toMatchObject({
+      actionLabel: "Review restore evidence",
+      status: "ready",
+      targetWorkspaceId: "audit"
+    });
   });
 
   test("builds a portable P2 readiness acceptance review markdown without live authorization", () => {

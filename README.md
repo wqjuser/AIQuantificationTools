@@ -209,7 +209,7 @@ Audit 台账行级操作现在也支持 P2 复核链健康上下文：`AuditEvid
 
 Audit 台账现在还会解释 P2 复核链健康上下文：`AuditEvidenceReportLedgerRow` 新增 `p2ReadinessReviewChainHealthContextTitle`，loaded、缺 coverage、缺顶层 acceptance 等状态行会带上对应的 `health-context-*` 说明；summary 新增 `p2ReadinessReviewChainHealthContextTitle`，在“健康上下文 / Health context” tooltip 中展示 context rows、loaded chains、gaps、missing coverage、missing acceptance 与最新缺口 event id 分解。该 title 也参与只读过滤，便于直接定位 `health-context-missing-acceptance` 等上下文行；它不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
-首页现在也会把 P0/P1/P2/Audit 证据聚合成“个人/小团队可用性”摘要：`buildPersonalTeamUsabilityReadinessSummary` 会把 P0 本地纸面闭环、P1 研究运营、P2 预实盘证据链和 Audit 可追溯性折算为个人本地 paper-only readiness 与小团队 internal-beta readiness，并把团队交接 runbook、备份/恢复演练作为显式缺口按钮展示。该摘要只读、不生成证据、不运行 Docker、不连接券商、不提交订单，仍固定 `Paper-only · live blocked · no order submission` 边界。
+首页现在也会把 P0/P1/P2/Audit 证据聚合成“个人/小团队可用性”摘要：`buildPersonalTeamUsabilityReadinessSummary` 会把 P0 本地纸面闭环、P1 研究运营、P2 预实盘证据链和 Audit 可追溯性折算为个人本地 paper-only readiness 与小团队 internal-beta readiness。团队交接 readiness 由当前审计 run 的本地 handoff notes 数量驱动；备份/恢复 readiness 由 P0/P1 acceptance 中的 `export`、`import`、`imported-export` round-trip 检查驱动。该摘要只读、不生成证据、不运行 Docker、不连接券商、不提交订单，仍固定 `Paper-only · live blocked · no order submission` 边界。
 
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
