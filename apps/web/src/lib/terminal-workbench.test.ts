@@ -11116,6 +11116,9 @@ describe("terminal workbench model", () => {
       latestP2ReadinessReviewChainLabel: "",
       latestP2ReadinessReviewChainQuery: "",
       p2ReadinessReviewChainCount: 0,
+      p2ReadinessReviewChainLoadedCount: 0,
+      p2ReadinessReviewChainMissingCoverageCount: 0,
+      p2ReadinessReviewChainMissingCoverageQuery: "",
       p2ReadinessReviewChainsQuery: "",
       latestReportKind: "audit_evidence_report",
       latestReportLabel: "Audit evidence report",
@@ -12765,11 +12768,55 @@ describe("terminal workbench model", () => {
           symbol: "600000",
           timeframe: "1d"
         }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "p2-readiness-acceptance-review-missing-5555555555555555",
+        eventType: "p2_readiness_acceptance_review",
+        runId: "run-p2-linked-missing",
+        createdAt: "2026-06-24T08:50:00.000Z",
+        stage: "accepted",
+        source: "web",
+        summary: "P2 readiness acceptance review recorded",
+        detail: "run-p2-linked-missing-p2-readiness-acceptance-review.md · sha256 555555555555 · 6/6 criteria · live blocked true",
+        metadata: {
+          adapterId: "paper-sim",
+          artifactKind: "aiqt.p2ReadinessAcceptanceReview",
+          auditEventIds: ["p1-audit", "prelive-audit", "replay-audit"],
+          contentSha256: "5".repeat(64),
+          currentEvidenceCoverageReviewAuditEventId:
+            "p2-readiness-evidence-coverage-review-missing-5555555555555555",
+          acceptedCriterionCount: 6,
+          totalCriterionCount: 6,
+          blockingCriterionCount: 0,
+          criterionIds: [
+            "p1-acceptance",
+            "paper-execution-replay",
+            "pre-live-checklist",
+            "p2-pre-live-manifest",
+            "readiness-evidence-coverage",
+            "live-blocked-boundary"
+          ],
+          fileName: "run-p2-linked-missing-p2-readiness-acceptance-review.md",
+          liveBlockedBoundary: true,
+          liveOrderSubmitted: false,
+          liveTradingAllowed: false,
+          market: "ashare",
+          orderSubmissionEnabled: false,
+          readinessCoverageStatus: "accepted",
+          routeExecuted: false,
+          state: "accepted",
+          symbol: "600000",
+          timeframe: "1d"
+        }
       }
     ]);
 
     const coverageRow = rows.find((row) => row.reportKind === "p2_readiness_evidence_coverage_review");
     const acceptanceRow = rows.find((row) => row.reportKind === "p2_readiness_acceptance_review");
+    const missingAcceptanceRow = rows.find(
+      (row) => row.id === "p2-readiness-acceptance-review-missing-5555555555555555"
+    );
 
     expect(coverageRow).toEqual(
       expect.objectContaining({
@@ -12777,6 +12824,9 @@ describe("terminal workbench model", () => {
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
         p2ReadinessReviewChainQuery:
           "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        p2ReadinessReviewChainCoverageLoaded: true,
+        p2ReadinessReviewChainStatusLabel: "review chain loaded",
+        p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded"),
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel:
           "linked acceptance review · p2-readiness-acceptance-review-linked-8888888888888888",
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: expect.stringContaining(
@@ -12789,7 +12839,22 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainLabel:
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
         p2ReadinessReviewChainQuery:
-          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999"
+          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        p2ReadinessReviewChainCoverageLoaded: true,
+        p2ReadinessReviewChainStatusLabel: "review chain loaded",
+        p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded")
+      })
+    );
+    expect(missingAcceptanceRow).toEqual(
+      expect.objectContaining({
+        p2ReadinessReviewChainLabel:
+          "linked review chain · p2-readiness-acceptance-review-missing-5555555555555555 -> p2-readiness-evidence-coverage-review-missing-5555555555555555",
+        p2ReadinessReviewChainQuery:
+          "p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555",
+        p2ReadinessReviewChainCoverageLoaded: false,
+        p2ReadinessReviewChainStatusLabel: "review chain coverage missing",
+        p2ReadinessReviewChainStatusQuery:
+          "review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555"
       })
     );
     expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toContain(
@@ -12817,7 +12882,11 @@ describe("terminal workbench model", () => {
       "p2-readiness-evidence-coverage-review-linked-9999999999999999",
       "p2-readiness-acceptance-review-linked-8888888888888888",
       "p2-readiness-evidence-coverage-review-linked-6666666666666666",
-      "p2-readiness-acceptance-review-linked-7777777777777777"
+      "p2-readiness-acceptance-review-linked-7777777777777777",
+      "p2-readiness-acceptance-review-missing-5555555555555555"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "review-chain-coverage-missing").map((row) => row.id)).toEqual([
+      "p2-readiness-acceptance-review-missing-5555555555555555"
     ]);
     expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
       expect.objectContaining({
@@ -12836,7 +12905,10 @@ describe("terminal workbench model", () => {
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessReviewChainQuery:
           "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
-        p2ReadinessReviewChainCount: 2,
+        p2ReadinessReviewChainCount: 3,
+        p2ReadinessReviewChainLoadedCount: 2,
+        p2ReadinessReviewChainMissingCoverageCount: 1,
+        p2ReadinessReviewChainMissingCoverageQuery: "review-chain-coverage-missing",
         p2ReadinessReviewChainsQuery: "linked review chain"
       })
     );

@@ -191,6 +191,8 @@ Audit 台账 summary 还会统计当前分页内的全部 P2 复核链：`buildA
 
 Audit 台账行现在也会显示整条 P2 复核链：linked acceptance review 行与反向回填的 coverage review 行都会暴露 `p2ReadinessReviewChainLabel` 和 `p2ReadinessReviewChainQuery`，行内显示“整条复核链 / Review chain”，并提供“定位整条复核链 / Focus row chain”和“复制整条复核链链接 / Copy row chain link”。这个行级入口只复用已存在的两个 event id 做只读筛选，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Audit 台账现在还会诊断 P2 复核链是否在当前页完整加载：linked acceptance review 行会标记 `p2ReadinessReviewChainCoverageLoaded`，并暴露 `p2ReadinessReviewChainStatusLabel/Query`。如果它引用的 `p2_readiness_evidence_coverage_review` 行不在当前 ledger rows 中，行内会显示“复核链缺 coverage / Review chain missing coverage”，Toolbar 会统计“复核链缺口 / Chain gaps”并提供 `review-chain-coverage-missing` 的 focus/copy 入口。这个诊断只说明当前页缺少已引用的 coverage row，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

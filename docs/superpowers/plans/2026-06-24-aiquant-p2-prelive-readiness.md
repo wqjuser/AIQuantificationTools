@@ -1598,6 +1598,35 @@ This row-level chain action only filters existing linked P2 review rows. It does
 
 ---
 
+## Batch 55: P2 Review Chain Missing Coverage Diagnostics
+
+**Outcome:** The Audit ledger can tell operators whether linked P2 readiness review chains are fully loaded in the current ledger page, and can focus/copy chains whose referenced coverage review row is missing from the loaded rows.
+
+Scope:
+- Add row-level `p2ReadinessReviewChainCoverageLoaded`, `p2ReadinessReviewChainStatusLabel`, and `p2ReadinessReviewChainStatusQuery` fields.
+- Mark linked acceptance review rows as loaded when their referenced `p2_readiness_evidence_coverage_review` row is present in the current rows, or missing when it is not.
+- Propagate loaded status to reverse-linked coverage review rows.
+- Add summary counts for loaded chains and missing-coverage chains, plus a `review-chain-coverage-missing` query.
+- Render compact toolbar and row-level diagnostics without creating reviews, mutating manifests, changing signing eligibility, submitting orders, or relaxing the live-blocked boundary.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for a linked acceptance review that references a missing coverage review row.
+- [x] Added summary coverage for loaded chain count, missing coverage count, and the missing-coverage query.
+- [x] Added static UI coverage for toolbar chain gaps and row-level loaded/missing status pills.
+- [x] Rendered "Chain gaps" focus/copy controls and row-level review-chain loaded/missing status in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This diagnostic only flags whether the already-referenced coverage review row is loaded in the current Audit ledger rows. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

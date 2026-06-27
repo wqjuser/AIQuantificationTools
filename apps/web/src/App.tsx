@@ -19986,6 +19986,21 @@ function AuditEvidenceReportLedgerPanel({
                     {summary.p2ReadinessReviewChainCount}
                   </small>
                 ) : null}
+                {summary.p2ReadinessReviewChainLoadedCount > 0 ? (
+                  <small title="review-chain-loaded">
+                    {i18n.locale === "zh-CN" ? "已加载链" : "Loaded chains"}{" "}
+                    {summary.p2ReadinessReviewChainLoadedCount}
+                  </small>
+                ) : null}
+                {summary.p2ReadinessReviewChainMissingCoverageCount > 0 ? (
+                  <small
+                    className="audit-report-ledger-p2-review-chain-gap"
+                    title={summary.p2ReadinessReviewChainMissingCoverageQuery}
+                  >
+                    {i18n.locale === "zh-CN" ? "复核链缺口" : "Chain gaps"}{" "}
+                    {summary.p2ReadinessReviewChainMissingCoverageCount}
+                  </small>
+                ) : null}
                 {summary.p2ReadinessReviewChainsQuery ? (
                   <button
                     onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainsQuery)}
@@ -20000,6 +20015,22 @@ function AuditEvidenceReportLedgerPanel({
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制全部复核链链接" : "Copy all chains link"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainMissingCoverageQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainMissingCoverageQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位复核链缺口" : "Focus chain gaps"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainMissingCoverageQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.p2ReadinessReviewChainMissingCoverageQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制复核链缺口链接" : "Copy chain gaps link"}
                   </button>
                 ) : null}
                 {summary.latestP2ReadinessReviewChainQuery ? (
@@ -20463,6 +20494,22 @@ function AuditEvidenceReportLedgerPanel({
                     >
                       {i18n.locale === "zh-CN" ? "整条复核链" : "Review chain"} ·{" "}
                       {row.p2ReadinessReviewChainLabel}
+                    </span>
+                  ) : null}
+                  {row.p2ReadinessReviewChainStatusLabel ? (
+                    <span
+                      className={`audit-report-ledger-p2-review-chain-status ${
+                        row.p2ReadinessReviewChainCoverageLoaded ? "loaded" : "missing"
+                      }`}
+                      title={row.p2ReadinessReviewChainStatusQuery}
+                    >
+                      {row.p2ReadinessReviewChainCoverageLoaded
+                        ? i18n.locale === "zh-CN"
+                          ? "复核链已加载"
+                          : "Review chain loaded"
+                        : i18n.locale === "zh-CN"
+                          ? "复核链缺 coverage"
+                          : "Review chain missing coverage"}
                     </span>
                   ) : null}
                   {rowP0ProgressLabel ? (

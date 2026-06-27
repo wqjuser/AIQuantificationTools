@@ -7144,6 +7144,8 @@ em {
 .audit-report-ledger-pre-live,
 .audit-report-ledger-p2-coverage-review,
 .audit-report-ledger-p2-acceptance-review,
+.audit-report-ledger-p2-review-chain,
+.audit-report-ledger-p2-review-chain-status,
 .audit-report-ledger-p0-progress,
 .audit-report-ledger-p0-completion,
 .audit-report-ledger-p0-backlog {
@@ -7188,6 +7190,28 @@ em {
   border: 1px solid rgba(139, 126, 255, 0.42);
   background: rgba(43, 36, 85, 0.62);
   color: #cfc8ff;
+}
+
+.audit-report-ledger-p2-review-chain {
+  border: 1px solid rgba(82, 162, 232, 0.44);
+  background: rgba(16, 42, 74, 0.62);
+  color: #a9d6ff;
+}
+
+.audit-report-ledger-p2-review-chain-status.loaded {
+  border: 1px solid rgba(116, 214, 195, 0.35);
+  background: rgba(18, 57, 53, 0.58);
+  color: #8cefd8;
+}
+
+.audit-report-ledger-p2-review-chain-status.missing,
+.audit-report-ledger-p2-review-chain-gap {
+  border-color: rgba(232, 190, 98, 0.72);
+  color: #ffd36d;
+}
+
+.audit-report-ledger-p2-review-chain-status.missing {
+  background: rgba(70, 48, 18, 0.62);
 }
 
 .audit-report-ledger-p0-progress {

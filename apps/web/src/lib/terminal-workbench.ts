@@ -2425,6 +2425,9 @@ export interface AuditEvidenceReportLedgerRow {
   p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: string;
   p2ReadinessReviewChainLabel: string;
   p2ReadinessReviewChainQuery: string;
+  p2ReadinessReviewChainCoverageLoaded: boolean;
+  p2ReadinessReviewChainStatusLabel: string;
+  p2ReadinessReviewChainStatusQuery: string;
   p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId: string;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
@@ -2582,6 +2585,9 @@ export interface AuditEvidenceReportLedgerSummary {
   latestP2ReadinessReviewChainLabel: string;
   latestP2ReadinessReviewChainQuery: string;
   p2ReadinessReviewChainCount: number;
+  p2ReadinessReviewChainLoadedCount: number;
+  p2ReadinessReviewChainMissingCoverageCount: number;
+  p2ReadinessReviewChainMissingCoverageQuery: string;
   p2ReadinessReviewChainsQuery: string;
   latestResearchContextReportEventId: string;
   latestResearchContextReportLabel: string;
@@ -15474,6 +15480,9 @@ export function buildAuditEvidenceReportLedgerRows(
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: "",
         p2ReadinessReviewChainLabel,
         p2ReadinessReviewChainQuery,
+        p2ReadinessReviewChainCoverageLoaded: false,
+        p2ReadinessReviewChainStatusLabel: "",
+        p2ReadinessReviewChainStatusQuery: "",
         p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
         deepLinkStatus:
           reportKind === "p0_readiness_report"
@@ -15572,6 +15581,9 @@ export function buildAuditEvidenceReportLedgerRows(
 function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
   rows: AuditEvidenceReportLedgerRow[]
 ): AuditEvidenceReportLedgerRow[] {
+  const coverageReviewIds = new Set(
+    rows.filter((row) => row.reportKind === "p2_readiness_evidence_coverage_review").map((row) => row.id)
+  );
   const latestAcceptanceReviewByCoverageReviewId = new Map<string, AuditEvidenceReportLedgerRow>();
   rows.forEach((row) => {
     const linkedCoverageReviewAuditEventId =
@@ -15588,6 +15600,25 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
   });
 
   return rows.map((row) => {
+    if (row.reportKind === "p2_readiness_acceptance_review") {
+      const linkedCoverageReviewAuditEventId = row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim();
+      if (!linkedCoverageReviewAuditEventId) {
+        return row;
+      }
+      const coverageLoaded = coverageReviewIds.has(linkedCoverageReviewAuditEventId);
+      const statusLabel = coverageLoaded ? "review chain loaded" : "review chain coverage missing";
+      const statusQuery = auditReportLedgerDeduplicatedQueryText([
+        coverageLoaded ? "review-chain-loaded" : "review-chain-coverage-missing",
+        row.id,
+        linkedCoverageReviewAuditEventId
+      ]);
+      return {
+        ...row,
+        p2ReadinessReviewChainCoverageLoaded: coverageLoaded,
+        p2ReadinessReviewChainStatusLabel: statusLabel,
+        p2ReadinessReviewChainStatusQuery: statusQuery
+      };
+    }
     if (row.reportKind !== "p2_readiness_evidence_coverage_review") {
       return row;
     }
@@ -15604,13 +15635,29 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
     const reviewChainQuery =
       acceptanceReviewRow.p2ReadinessReviewChainQuery ||
       buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(acceptanceReviewRow);
+    const statusLabel = "review chain loaded";
+    const statusQuery = auditReportLedgerDeduplicatedQueryText([
+      "review-chain-loaded",
+      row.id,
+      acceptanceReviewRow.id
+    ]);
     return {
       ...row,
       p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: linkLabel,
       p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: linkQuery,
       p2ReadinessReviewChainLabel: reviewChainLabel,
       p2ReadinessReviewChainQuery: reviewChainQuery,
-      searchText: [row.searchText, linkLabel, linkQuery, reviewChainLabel, reviewChainQuery, "linked review chain"]
+      p2ReadinessReviewChainCoverageLoaded: true,
+      p2ReadinessReviewChainStatusLabel: statusLabel,
+      p2ReadinessReviewChainStatusQuery: statusQuery,
+      searchText: [
+        row.searchText,
+        linkLabel,
+        linkQuery,
+        reviewChainLabel,
+        reviewChainQuery,
+        "linked review chain"
+      ]
         .filter(Boolean)
         .join(" ")
     };
@@ -15697,6 +15744,12 @@ export function buildAuditEvidenceReportLedgerSummary(
       row.reportKind === "p2_readiness_acceptance_review" &&
       row.status === "ready" &&
       Boolean(row.p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId.trim())
+  );
+  const p2ReadinessReviewChainLoadedRows = p2ReadinessLinkedAcceptanceReviewRows.filter(
+    (row) => row.p2ReadinessReviewChainCoverageLoaded
+  );
+  const p2ReadinessReviewChainMissingCoverageRows = p2ReadinessLinkedAcceptanceReviewRows.filter(
+    (row) => !row.p2ReadinessReviewChainCoverageLoaded
   );
   const latestP2ReadinessLinkedAcceptanceReviewRow = p2ReadinessLinkedAcceptanceReviewRows.reduce<
     AuditEvidenceReportLedgerRow | undefined
@@ -15815,6 +15868,10 @@ export function buildAuditEvidenceReportLedgerSummary(
       latestP2ReadinessLinkedAcceptanceReviewRow
     ),
     p2ReadinessReviewChainCount: p2ReadinessLinkedAcceptanceReviewRows.length,
+    p2ReadinessReviewChainLoadedCount: p2ReadinessReviewChainLoadedRows.length,
+    p2ReadinessReviewChainMissingCoverageCount: p2ReadinessReviewChainMissingCoverageRows.length,
+    p2ReadinessReviewChainMissingCoverageQuery:
+      p2ReadinessReviewChainMissingCoverageRows.length > 0 ? "review-chain-coverage-missing" : "",
     p2ReadinessReviewChainsQuery: p2ReadinessLinkedAcceptanceReviewRows.length > 0 ? "linked review chain" : "",
     latestResearchContextReportEventId: latestResearchContextReportRow?.id ?? "",
     latestResearchContextReportLabel: latestResearchContextReportRow?.researchContextLinkLabel ?? "",
@@ -16581,6 +16638,9 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery,
       row.p2ReadinessReviewChainLabel,
       row.p2ReadinessReviewChainQuery,
+      row.p2ReadinessReviewChainStatusLabel,
+      row.p2ReadinessReviewChainStatusQuery,
+      String(row.p2ReadinessReviewChainCoverageLoaded),
       row.searchText,
       String(row.importVerificationVerified),
       String(row.importVerificationInvalid),
