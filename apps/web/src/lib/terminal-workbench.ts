@@ -2423,6 +2423,8 @@ export interface AuditEvidenceReportLedgerRow {
   p2ReadinessAcceptanceCoverageReviewLinkQuery: string;
   p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: string;
   p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: string;
+  p2ReadinessReviewChainLabel: string;
+  p2ReadinessReviewChainQuery: string;
   p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId: string;
   deepLinkStatus: string;
   status: AuditEvidenceReportLedgerStatus;
@@ -15271,6 +15273,12 @@ export function buildAuditEvidenceReportLedgerRows(
             p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
           ])
         : "";
+      const p2ReadinessReviewChainLabel = p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
+        ? `linked review chain · ${event.eventId} -> ${p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId}`
+        : "";
+      const p2ReadinessReviewChainQuery = p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
+        ? auditReportLedgerDeduplicatedQueryText([event.eventId, p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId])
+        : "";
       const p2ReadinessAcceptanceReviewSearchText =
         reportKind === "p2_readiness_acceptance_review"
           ? [
@@ -15290,6 +15298,8 @@ export function buildAuditEvidenceReportLedgerRows(
               p2ReadinessAcceptanceCoverageReviewLinkLabel,
               p2ReadinessAcceptanceCoverageReviewLinkQuery,
               p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ? "linked review chain" : "",
+              p2ReadinessReviewChainLabel,
+              p2ReadinessReviewChainQuery,
               auditReportLedgerMetadataStringList(event.metadata, "criterionIds").join(" "),
               auditReportLedgerMetadataStringList(event.metadata, "auditEventIds").join(" "),
               p2ReadinessAcceptanceReviewSafeBoundary ? "live-blocked-boundary" : "unsafe-boundary"
@@ -15462,6 +15472,8 @@ export function buildAuditEvidenceReportLedgerRows(
         p2ReadinessAcceptanceCoverageReviewLinkQuery,
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: "",
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: "",
+        p2ReadinessReviewChainLabel,
+        p2ReadinessReviewChainQuery,
         p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
         deepLinkStatus:
           reportKind === "p0_readiness_report"
@@ -15586,11 +15598,21 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
     const linkLabel = `linked acceptance review · ${acceptanceReviewRow.id}`;
     const linkQuery =
       buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(acceptanceReviewRow);
+    const reviewChainLabel =
+      acceptanceReviewRow.p2ReadinessReviewChainLabel ||
+      `linked review chain · ${acceptanceReviewRow.id} -> ${row.id}`;
+    const reviewChainQuery =
+      acceptanceReviewRow.p2ReadinessReviewChainQuery ||
+      buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(acceptanceReviewRow);
     return {
       ...row,
       p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: linkLabel,
       p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: linkQuery,
-      searchText: [row.searchText, linkLabel, linkQuery, "linked review chain"].filter(Boolean).join(" ")
+      p2ReadinessReviewChainLabel: reviewChainLabel,
+      p2ReadinessReviewChainQuery: reviewChainQuery,
+      searchText: [row.searchText, linkLabel, linkQuery, reviewChainLabel, reviewChainQuery, "linked review chain"]
+        .filter(Boolean)
+        .join(" ")
     };
   });
 }
@@ -16557,6 +16579,8 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p2ReadinessAcceptanceCoverageReviewLinkQuery,
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel,
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery,
+      row.p2ReadinessReviewChainLabel,
+      row.p2ReadinessReviewChainQuery,
       row.searchText,
       String(row.importVerificationVerified),
       String(row.importVerificationInvalid),

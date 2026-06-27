@@ -20456,6 +20456,15 @@ function AuditEvidenceReportLedgerPanel({
                       {row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel}
                     </span>
                   ) : null}
+                  {row.p2ReadinessReviewChainLabel ? (
+                    <span
+                      className="audit-report-ledger-p2-review-chain"
+                      title={row.p2ReadinessReviewChainQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "整条复核链" : "Review chain"} ·{" "}
+                      {row.p2ReadinessReviewChainLabel}
+                    </span>
+                  ) : null}
                   {rowP0ProgressLabel ? (
                     <span
                       className="audit-report-ledger-p0-progress"
@@ -20664,6 +20673,22 @@ function AuditEvidenceReportLedgerPanel({
                     {rowPreLiveRunbookQuery ? (
                       <button onClick={() => onCopyQueryLink(rowPreLiveRunbookQuery)} type="button">
                         {i18n.locale === "zh-CN" ? "复制运行手册链接" : "Copy runbook link"}
+                      </button>
+                    ) : null}
+                    {row.p2ReadinessReviewChainQuery ? (
+                      <button
+                        onClick={() => focusAuditReportQuery(row.p2ReadinessReviewChainQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "定位整条复核链" : "Focus row chain"}
+                      </button>
+                    ) : null}
+                    {row.p2ReadinessReviewChainQuery ? (
+                      <button
+                        onClick={() => onCopyQueryLink(row.p2ReadinessReviewChainQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制整条复核链链接" : "Copy row chain link"}
                       </button>
                     ) : null}
                     {row.p2ReadinessAcceptanceCoverageReviewLinkQuery ? (

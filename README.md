@@ -189,6 +189,8 @@ Audit 报告台账顶部现在也会显示最新 P2 复核链：`buildAuditEvide
 
 Audit 台账 summary 还会统计当前分页内的全部 P2 复核链：`buildAuditEvidenceReportLedgerSummary` 会计算已链接 coverage review 的 ready `p2_readiness_acceptance_review` 行数，并暴露 `p2ReadinessReviewChainCount` 与 `p2ReadinessReviewChainsQuery`。Acceptance review 行和被反向回填的 coverage review 行都会带上 `linked review chain` 搜索 token，因此 Toolbar 的“定位全部复核链 / Focus all chains”和“复制全部复核链链接 / Copy all chains link”可以一次筛出当前页所有链路行。这个入口仍只读，不记录新 review、不改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Audit 台账行现在也会显示整条 P2 复核链：linked acceptance review 行与反向回填的 coverage review 行都会暴露 `p2ReadinessReviewChainLabel` 和 `p2ReadinessReviewChainQuery`，行内显示“整条复核链 / Review chain”，并提供“定位整条复核链 / Focus row chain”和“复制整条复核链链接 / Copy row chain link”。这个行级入口只复用已存在的两个 event id 做只读筛选，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

@@ -1569,6 +1569,35 @@ This all-chain query only filters existing linked P2 review rows on the loaded p
 
 ---
 
+## Batch 54: P2 Review Chain Row-Level Controls
+
+**Outcome:** Every linked P2 readiness review row can focus or copy its own acceptance-review plus coverage-review chain without relying on the toolbar summary.
+
+Scope:
+- Add row-level `p2ReadinessReviewChainLabel` and `p2ReadinessReviewChainQuery` fields.
+- Populate acceptance review rows directly from `currentEvidenceCoverageReviewAuditEventId`.
+- Propagate the same chain label/query to linked coverage review rows during reverse-link enrichment.
+- Render row-level "Review chain" tags with focus/copy controls.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for row-level chain label/query fields on both acceptance and coverage review rows.
+- [x] Added static UI coverage for the row-level tag and focus/copy actions.
+- [x] Added `p2ReadinessReviewChainLabel` and `p2ReadinessReviewChainQuery` to `AuditEvidenceReportLedgerRow`.
+- [x] Rendered row-level review-chain controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This row-level chain action only filters existing linked P2 review rows. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

@@ -12773,11 +12773,23 @@ describe("terminal workbench model", () => {
 
     expect(coverageRow).toEqual(
       expect.objectContaining({
+        p2ReadinessReviewChainLabel:
+          "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        p2ReadinessReviewChainQuery:
+          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel:
           "linked acceptance review · p2-readiness-acceptance-review-linked-8888888888888888",
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: expect.stringContaining(
           "p2_readiness_acceptance_review p2-readiness-acceptance-review-linked-8888888888888888"
         )
+      })
+    );
+    expect(acceptanceRow).toEqual(
+      expect.objectContaining({
+        p2ReadinessReviewChainLabel:
+          "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        p2ReadinessReviewChainQuery:
+          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999"
       })
     );
     expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toContain(
@@ -12790,6 +12802,8 @@ describe("terminal workbench model", () => {
     expect(reviewChainQuery).toBe(
       "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999"
     );
+    expect(coverageRow?.p2ReadinessReviewChainQuery).toBe(reviewChainQuery);
+    expect(acceptanceRow?.p2ReadinessReviewChainQuery).toBe(reviewChainQuery);
     expect(filterAuditEvidenceReportLedgerRows(rows, reviewChainQuery).map((row) => row.id)).toEqual([
       "p2-readiness-evidence-coverage-review-linked-9999999999999999",
       "p2-readiness-acceptance-review-linked-8888888888888888"
