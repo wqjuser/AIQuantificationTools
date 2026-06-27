@@ -1809,6 +1809,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.p2ReadinessReviewChainQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.p2ReadinessReviewChainQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.p2ReadinessReviewChainStatusQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.p2ReadinessReviewChainStatusQuery)");
     expect(reportLedgerPanelSource).toContain("整条复核链");
     expect(reportLedgerPanelSource).toContain("Review chain");
     expect(reportLedgerPanelSource).toContain("复核链已加载");
@@ -1821,6 +1823,10 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Focus row chain");
     expect(reportLedgerPanelSource).toContain("复制整条复核链链接");
     expect(reportLedgerPanelSource).toContain("Copy row chain link");
+    expect(reportLedgerPanelSource).toContain("定位复核链状态");
+    expect(reportLedgerPanelSource).toContain("Focus chain status");
+    expect(reportLedgerPanelSource).toContain("复制复核链状态链接");
+    expect(reportLedgerPanelSource).toContain("Copy chain status link");
     expect(reportLedgerPanelSource).toContain("定位覆盖复核");
     expect(reportLedgerPanelSource).toContain("Focus coverage review");
     expect(reportLedgerPanelSource).toContain("复制覆盖复核链接");

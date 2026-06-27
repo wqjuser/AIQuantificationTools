@@ -170,6 +170,8 @@ Batch 56 已把 P2 复核链缺口诊断补成双向闭环：coverage review 行
 
 Batch 57 已给 P2 复核链缺口增加总览入口：所有缺 coverage 或缺顶层 acceptance 的 row 都会带 `review-chain-gap` token，summary 新增 `p2ReadinessReviewChainGapCount` 与 `p2ReadinessReviewChainGapsQuery`。Audit toolbar 现在显示“全部复核链缺口 / All chain gaps”，可一次 focus/copy 当前页全部不闭环复核链，同时保留 coverage-missing 与 acceptance-missing 细分入口。该能力只聚合既有只读诊断，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 58 已把 P2 复核链状态查询下沉到 Audit row 操作区：任何带 `p2ReadinessReviewChainStatusQuery` 的行现在都有“定位复核链状态 / Focus chain status”和“复制复核链状态链接 / Copy chain status link”按钮，可直接按 loaded、coverage-missing、acceptance-missing 或 all-gap 状态筛选当前台账。该能力只复用既有只读状态 query，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

@@ -20794,6 +20794,22 @@ function AuditEvidenceReportLedgerPanel({
                         {i18n.locale === "zh-CN" ? "复制整条复核链链接" : "Copy row chain link"}
                       </button>
                     ) : null}
+                    {row.p2ReadinessReviewChainStatusQuery ? (
+                      <button
+                        onClick={() => focusAuditReportQuery(row.p2ReadinessReviewChainStatusQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "定位复核链状态" : "Focus chain status"}
+                      </button>
+                    ) : null}
+                    {row.p2ReadinessReviewChainStatusQuery ? (
+                      <button
+                        onClick={() => onCopyQueryLink(row.p2ReadinessReviewChainStatusQuery)}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制复核链状态链接" : "Copy chain status link"}
+                      </button>
+                    ) : null}
                     {row.p2ReadinessAcceptanceCoverageReviewLinkQuery ? (
                       <button
                         onClick={() => focusAuditReportQuery(row.p2ReadinessAcceptanceCoverageReviewLinkQuery)}

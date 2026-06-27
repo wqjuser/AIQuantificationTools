@@ -1686,6 +1686,31 @@ This all-gaps query only filters existing P2 review-chain diagnostics. It does n
 
 ---
 
+## Batch 58: P2 Review Chain Row-Level Status Controls
+
+**Outcome:** Every Audit ledger row with a P2 review-chain status query can focus or copy that exact status query directly from the row.
+
+Scope:
+- Render row-level focus/copy actions for `p2ReadinessReviewChainStatusQuery`.
+- Keep these controls next to the existing row-level review-chain controls.
+- Support loaded, missing-coverage, missing-acceptance, and all-gap status tokens without changing the row model.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN static UI coverage for row-level chain status focus/copy actions.
+- [x] Rendered "Focus chain status" and "Copy chain status link" controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This row-level status action only filters existing P2 review-chain status diagnostics. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:
