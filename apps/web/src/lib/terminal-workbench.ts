@@ -2586,6 +2586,8 @@ export interface AuditEvidenceReportLedgerSummary {
   latestP2ReadinessReviewChainLabel: string;
   latestP2ReadinessReviewChainQuery: string;
   p2ReadinessReviewChainCount: number;
+  p2ReadinessReviewChainGapCount: number;
+  p2ReadinessReviewChainGapsQuery: string;
   p2ReadinessReviewChainLoadedCount: number;
   p2ReadinessReviewChainMissingAcceptanceCount: number;
   p2ReadinessReviewChainMissingAcceptanceQuery: string;
@@ -15613,6 +15615,7 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
       const coverageLoaded = coverageReviewIds.has(linkedCoverageReviewAuditEventId);
       const statusLabel = coverageLoaded ? "review chain loaded" : "review chain coverage missing";
       const statusQuery = auditReportLedgerDeduplicatedQueryText([
+        coverageLoaded ? "" : "review-chain-gap",
         coverageLoaded ? "review-chain-loaded" : "review-chain-coverage-missing",
         row.id,
         linkedCoverageReviewAuditEventId
@@ -15632,6 +15635,7 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
     if (!acceptanceReviewRow) {
       const statusLabel = "review chain acceptance missing";
       const statusQuery = auditReportLedgerDeduplicatedQueryText([
+        "review-chain-gap",
         "review-chain-acceptance-missing",
         row.id
       ]);
@@ -15777,6 +15781,8 @@ export function buildAuditEvidenceReportLedgerSummary(
       row.p2ReadinessReviewChainCoverageLoaded &&
       !row.p2ReadinessReviewChainAcceptanceLoaded
   );
+  const p2ReadinessReviewChainGapCount =
+    p2ReadinessReviewChainMissingCoverageRows.length + p2ReadinessReviewChainMissingAcceptanceRows.length;
   const latestP2ReadinessLinkedAcceptanceReviewRow = p2ReadinessLinkedAcceptanceReviewRows.reduce<
     AuditEvidenceReportLedgerRow | undefined
   >((latest, row) => {
@@ -15894,6 +15900,8 @@ export function buildAuditEvidenceReportLedgerSummary(
       latestP2ReadinessLinkedAcceptanceReviewRow
     ),
     p2ReadinessReviewChainCount: p2ReadinessLinkedAcceptanceReviewRows.length,
+    p2ReadinessReviewChainGapCount,
+    p2ReadinessReviewChainGapsQuery: p2ReadinessReviewChainGapCount > 0 ? "review-chain-gap" : "",
     p2ReadinessReviewChainLoadedCount: p2ReadinessReviewChainLoadedRows.length,
     p2ReadinessReviewChainMissingAcceptanceCount: p2ReadinessReviewChainMissingAcceptanceRows.length,
     p2ReadinessReviewChainMissingAcceptanceQuery:

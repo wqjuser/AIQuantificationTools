@@ -1657,6 +1657,35 @@ This diagnostic only flags orphan coverage review rows already loaded in the Aud
 
 ---
 
+## Batch 57: P2 Review Chain All-Gaps Query
+
+**Outcome:** The Audit ledger can focus or copy one query that shows every currently loaded P2 review-chain gap, while preserving the more specific missing-coverage and missing-acceptance queries.
+
+Scope:
+- Add `review-chain-gap` to both missing coverage and missing acceptance row status queries.
+- Add `p2ReadinessReviewChainGapCount` and `p2ReadinessReviewChainGapsQuery` to `AuditEvidenceReportLedgerSummary`.
+- Render an "All chain gaps" count with focus/copy controls in the Audit ledger toolbar.
+- Keep `review-chain-coverage-missing` and `review-chain-acceptance-missing` as the specific drilldown queries.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage proving `review-chain-gap` filters both missing-coverage and missing-acceptance rows.
+- [x] Added summary coverage for total review-chain gap count and query.
+- [x] Added static UI coverage for all-gap toolbar fields, focus action, copy action, and labels.
+- [x] Rendered "All chain gaps" controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This all-gaps query only filters existing P2 review-chain diagnostics. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

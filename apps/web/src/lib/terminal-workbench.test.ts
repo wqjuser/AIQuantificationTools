@@ -11116,6 +11116,8 @@ describe("terminal workbench model", () => {
       latestP2ReadinessReviewChainLabel: "",
       latestP2ReadinessReviewChainQuery: "",
       p2ReadinessReviewChainCount: 0,
+      p2ReadinessReviewChainGapCount: 0,
+      p2ReadinessReviewChainGapsQuery: "",
       p2ReadinessReviewChainLoadedCount: 0,
       p2ReadinessReviewChainMissingAcceptanceCount: 0,
       p2ReadinessReviewChainMissingAcceptanceQuery: "",
@@ -12890,7 +12892,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain coverage missing",
         p2ReadinessReviewChainStatusQuery:
-          "review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555"
+          "review-chain-gap review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555"
       })
     );
     expect(orphanCoverageRow).toEqual(
@@ -12899,7 +12901,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainAcceptanceLoaded: false,
         p2ReadinessReviewChainStatusLabel: "review chain acceptance missing",
         p2ReadinessReviewChainStatusQuery:
-          "review-chain-acceptance-missing p2-readiness-evidence-coverage-review-orphan-4444444444444444"
+          "review-chain-gap review-chain-acceptance-missing p2-readiness-evidence-coverage-review-orphan-4444444444444444"
       })
     );
     expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toContain(
@@ -12936,6 +12938,10 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "review-chain-acceptance-missing").map((row) => row.id)).toEqual([
       "p2-readiness-evidence-coverage-review-orphan-4444444444444444"
     ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "review-chain-gap").map((row) => row.id)).toEqual([
+      "p2-readiness-evidence-coverage-review-orphan-4444444444444444",
+      "p2-readiness-acceptance-review-missing-5555555555555555"
+    ]);
     expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
       expect.objectContaining({
         latestP2ReadinessLinkedAcceptanceReviewEventId:
@@ -12954,6 +12960,8 @@ describe("terminal workbench model", () => {
         latestP2ReadinessReviewChainQuery:
           "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
         p2ReadinessReviewChainCount: 3,
+        p2ReadinessReviewChainGapCount: 2,
+        p2ReadinessReviewChainGapsQuery: "review-chain-gap",
         p2ReadinessReviewChainLoadedCount: 2,
         p2ReadinessReviewChainMissingAcceptanceCount: 1,
         p2ReadinessReviewChainMissingAcceptanceQuery: "review-chain-acceptance-missing",
