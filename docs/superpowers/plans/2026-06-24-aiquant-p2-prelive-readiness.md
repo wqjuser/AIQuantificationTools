@@ -1711,6 +1711,36 @@ This row-level status action only filters existing P2 review-chain status diagno
 
 ---
 
+## Batch 59: P2 Review Chain Latest Gap Summary
+
+**Outcome:** The Audit ledger toolbar can highlight the newest currently loaded P2 review-chain gap and focus or copy its exact diagnostic query.
+
+Scope:
+- Add `latestP2ReadinessReviewChainGapEventId`, `latestP2ReadinessReviewChainGapLabel`, and `latestP2ReadinessReviewChainGapQuery` to `AuditEvidenceReportLedgerSummary`.
+- Select the latest gap from both missing-coverage acceptance rows and missing-acceptance coverage rows by `createdAt`.
+- Render a "Latest gap" marker with focus/copy controls in the Audit ledger toolbar.
+- Preserve the existing all-gap, missing-coverage, and missing-acceptance queries as broader drilldowns.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage proving the latest gap summary points at the newest missing P2 review-chain row.
+- [x] Added default summary coverage for empty latest-gap fields.
+- [x] Added static UI coverage for latest-gap toolbar fields, focus action, copy action, and labels.
+- [x] Rendered "Latest gap" controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "builds an audit report ledger from persisted report events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This latest-gap summary only filters existing P2 review-chain diagnostics. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

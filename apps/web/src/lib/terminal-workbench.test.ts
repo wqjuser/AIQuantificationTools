@@ -11115,6 +11115,9 @@ describe("terminal workbench model", () => {
       latestP2ReadinessLinkedCoverageReviewQuery: "",
       latestP2ReadinessReviewChainLabel: "",
       latestP2ReadinessReviewChainQuery: "",
+      latestP2ReadinessReviewChainGapEventId: "",
+      latestP2ReadinessReviewChainGapLabel: "",
+      latestP2ReadinessReviewChainGapQuery: "",
       p2ReadinessReviewChainCount: 0,
       p2ReadinessReviewChainGapCount: 0,
       p2ReadinessReviewChainGapsQuery: "",
@@ -12959,6 +12962,10 @@ describe("terminal workbench model", () => {
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessReviewChainQuery:
           "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        latestP2ReadinessReviewChainGapEventId: "p2-readiness-acceptance-review-missing-5555555555555555",
+        latestP2ReadinessReviewChainGapLabel: "review chain coverage missing",
+        latestP2ReadinessReviewChainGapQuery:
+          "review-chain-gap review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555",
         p2ReadinessReviewChainCount: 3,
         p2ReadinessReviewChainGapCount: 2,
         p2ReadinessReviewChainGapsQuery: "review-chain-gap",

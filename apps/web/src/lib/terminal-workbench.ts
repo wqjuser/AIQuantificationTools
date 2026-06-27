@@ -2585,6 +2585,9 @@ export interface AuditEvidenceReportLedgerSummary {
   latestP2ReadinessLinkedCoverageReviewQuery: string;
   latestP2ReadinessReviewChainLabel: string;
   latestP2ReadinessReviewChainQuery: string;
+  latestP2ReadinessReviewChainGapEventId: string;
+  latestP2ReadinessReviewChainGapLabel: string;
+  latestP2ReadinessReviewChainGapQuery: string;
   p2ReadinessReviewChainCount: number;
   p2ReadinessReviewChainGapCount: number;
   p2ReadinessReviewChainGapsQuery: string;
@@ -15781,8 +15784,19 @@ export function buildAuditEvidenceReportLedgerSummary(
       row.p2ReadinessReviewChainCoverageLoaded &&
       !row.p2ReadinessReviewChainAcceptanceLoaded
   );
-  const p2ReadinessReviewChainGapCount =
-    p2ReadinessReviewChainMissingCoverageRows.length + p2ReadinessReviewChainMissingAcceptanceRows.length;
+  const p2ReadinessReviewChainGapRows = [
+    ...p2ReadinessReviewChainMissingCoverageRows,
+    ...p2ReadinessReviewChainMissingAcceptanceRows
+  ];
+  const p2ReadinessReviewChainGapCount = p2ReadinessReviewChainGapRows.length;
+  const latestP2ReadinessReviewChainGapRow = p2ReadinessReviewChainGapRows.reduce<
+    AuditEvidenceReportLedgerRow | undefined
+  >((latest, row) => {
+    if (!latest) {
+      return row;
+    }
+    return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+  }, undefined);
   const latestP2ReadinessLinkedAcceptanceReviewRow = p2ReadinessLinkedAcceptanceReviewRows.reduce<
     AuditEvidenceReportLedgerRow | undefined
   >((latest, row) => {
@@ -15899,6 +15913,9 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestP2ReadinessReviewChainQuery: buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(
       latestP2ReadinessLinkedAcceptanceReviewRow
     ),
+    latestP2ReadinessReviewChainGapEventId: latestP2ReadinessReviewChainGapRow?.id ?? "",
+    latestP2ReadinessReviewChainGapLabel: latestP2ReadinessReviewChainGapRow?.p2ReadinessReviewChainStatusLabel ?? "",
+    latestP2ReadinessReviewChainGapQuery: latestP2ReadinessReviewChainGapRow?.p2ReadinessReviewChainStatusQuery ?? "",
     p2ReadinessReviewChainCount: p2ReadinessLinkedAcceptanceReviewRows.length,
     p2ReadinessReviewChainGapCount,
     p2ReadinessReviewChainGapsQuery: p2ReadinessReviewChainGapCount > 0 ? "review-chain-gap" : "",

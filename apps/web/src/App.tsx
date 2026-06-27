@@ -20001,6 +20001,21 @@ function AuditEvidenceReportLedgerPanel({
                     {summary.p2ReadinessReviewChainGapCount}
                   </small>
                 ) : null}
+                {summary.latestP2ReadinessReviewChainGapEventId ? (
+                  <small
+                    className="audit-report-ledger-p2-review-chain-gap"
+                    title={
+                      summary.latestP2ReadinessReviewChainGapQuery ||
+                      summary.latestP2ReadinessReviewChainGapLabel
+                    }
+                  >
+                    {i18n.locale === "zh-CN" ? "最新缺口" : "Latest gap"}{" "}
+                    <strong>{summary.latestP2ReadinessReviewChainGapEventId}</strong>
+                    {summary.latestP2ReadinessReviewChainGapLabel ? (
+                      <span>{summary.latestP2ReadinessReviewChainGapLabel}</span>
+                    ) : null}
+                  </small>
+                ) : null}
                 {summary.p2ReadinessReviewChainMissingCoverageCount > 0 ? (
                   <small
                     className="audit-report-ledger-p2-review-chain-gap"
@@ -20049,6 +20064,22 @@ function AuditEvidenceReportLedgerPanel({
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制全部复核链缺口链接" : "Copy all chain gaps link"}
+                  </button>
+                ) : null}
+                {summary.latestP2ReadinessReviewChainGapQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestP2ReadinessReviewChainGapQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位最新复核链缺口" : "Focus latest chain gap"}
+                  </button>
+                ) : null}
+                {summary.latestP2ReadinessReviewChainGapQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestP2ReadinessReviewChainGapQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制最新复核链缺口链接" : "Copy latest chain gap link"}
                   </button>
                 ) : null}
                 {summary.p2ReadinessReviewChainMissingCoverageQuery ? (
