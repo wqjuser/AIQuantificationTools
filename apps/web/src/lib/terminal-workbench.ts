@@ -2427,6 +2427,7 @@ export interface AuditEvidenceReportLedgerRow {
   p2ReadinessReviewChainQuery: string;
   p2ReadinessReviewChainAcceptanceLoaded: boolean;
   p2ReadinessReviewChainCoverageLoaded: boolean;
+  p2ReadinessReviewChainHealthContextQuery: string;
   p2ReadinessReviewChainStatusLabel: string;
   p2ReadinessReviewChainStatusQuery: string;
   p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId: string;
@@ -15496,6 +15497,7 @@ export function buildAuditEvidenceReportLedgerRows(
         p2ReadinessReviewChainQuery,
         p2ReadinessReviewChainAcceptanceLoaded: false,
         p2ReadinessReviewChainCoverageLoaded: false,
+        p2ReadinessReviewChainHealthContextQuery: "",
         p2ReadinessReviewChainStatusLabel: "",
         p2ReadinessReviewChainStatusQuery: "",
         p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
@@ -15632,6 +15634,7 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
         ...row,
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainCoverageLoaded: coverageLoaded,
+        p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainStatusLabel: statusLabel,
         p2ReadinessReviewChainStatusQuery: statusQuery
       };
@@ -15651,6 +15654,7 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
         ...row,
         p2ReadinessReviewChainAcceptanceLoaded: false,
         p2ReadinessReviewChainCoverageLoaded: true,
+        p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainStatusLabel: statusLabel,
         p2ReadinessReviewChainStatusQuery: statusQuery
       };
@@ -15678,6 +15682,7 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
       p2ReadinessReviewChainQuery: reviewChainQuery,
       p2ReadinessReviewChainAcceptanceLoaded: true,
       p2ReadinessReviewChainCoverageLoaded: true,
+      p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
       p2ReadinessReviewChainStatusLabel: statusLabel,
       p2ReadinessReviewChainStatusQuery: statusQuery,
       searchText: [
@@ -15794,7 +15799,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     ...p2ReadinessReviewChainMissingAcceptanceRows
   ];
   const p2ReadinessReviewChainHealthContextRows = rows.filter((row) =>
-    Boolean(row.p2ReadinessReviewChainStatusQuery.trim())
+    Boolean(row.p2ReadinessReviewChainHealthContextQuery.trim())
   );
   const p2ReadinessReviewChainGapCount = p2ReadinessReviewChainGapRows.length;
   const latestP2ReadinessReviewChainGapRow = p2ReadinessReviewChainGapRows.reduce<
@@ -16724,9 +16729,9 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery,
       row.p2ReadinessReviewChainLabel,
       row.p2ReadinessReviewChainQuery,
+      row.p2ReadinessReviewChainHealthContextQuery,
       row.p2ReadinessReviewChainStatusLabel,
       row.p2ReadinessReviewChainStatusQuery,
-      row.p2ReadinessReviewChainStatusQuery ? "review-chain-health" : "",
       String(row.p2ReadinessReviewChainAcceptanceLoaded),
       String(row.p2ReadinessReviewChainCoverageLoaded),
       row.searchText,

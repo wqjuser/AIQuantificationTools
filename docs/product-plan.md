@@ -178,6 +178,8 @@ Batch 60 已给 P2 复核链增加自适应健康摘要：summary 新增 `p2Read
 
 Batch 61 已补上 P2 复核链健康上下文入口：`filterAuditEvidenceReportLedgerRows` 会为任何带 `p2ReadinessReviewChainStatusQuery` 的 row 派生 `review-chain-health` 搜索 token，summary 新增 `p2ReadinessReviewChainHealthContextCount/Query`。Audit toolbar 的“健康上下文 / Health context”可一次 focus/copy 当前页所有 loaded 与 gap 状态行，同时不把 token 写回 row searchText、不改变 row-level status query。该能力仍只读，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 62 已把 P2 复核链健康上下文下沉到 Audit row 操作区：`AuditEvidenceReportLedgerRow` 新增 `p2ReadinessReviewChainHealthContextQuery`，loaded、缺 coverage、缺顶层 acceptance 等状态行都会暴露 `review-chain-health`，并提供“定位行复核链健康上下文 / Focus row chain health context”和“复制行复核链健康上下文链接 / Copy row chain health context link”。该能力只让任意状态行跳回当前页全部健康上下文，不改变原始 row-level status query，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

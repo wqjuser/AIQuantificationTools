@@ -1801,6 +1801,35 @@ This health context query only filters existing P2 review-chain status diagnosti
 
 ---
 
+## Batch 62: P2 Review Chain Row-Level Health Context Controls
+
+**Outcome:** Every Audit ledger row with a P2 review-chain status query can focus or copy the full current-page review-chain health context directly from the row.
+
+Scope:
+- Add `p2ReadinessReviewChainHealthContextQuery` to `AuditEvidenceReportLedgerRow`.
+- Set the query to `review-chain-health` for loaded, missing-coverage, and missing-acceptance P2 review-chain status rows.
+- Keep `p2ReadinessReviewChainStatusQuery` unchanged for exact row status drilldowns.
+- Render "Focus row chain health context" and "Copy row chain health context link" controls next to the existing row-level status controls.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for row-level health context query on loaded and gap rows.
+- [x] Added static UI coverage for row-level health context fields, focus action, copy action, and labels.
+- [x] Rendered row-level health context controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "builds an audit report ledger from persisted report events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+These row-level health context actions only filter existing P2 review-chain status diagnostics. They do not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

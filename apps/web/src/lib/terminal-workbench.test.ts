@@ -12870,6 +12870,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainCoverageLoaded: true,
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain loaded",
+        p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded"),
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel:
           "linked acceptance review · p2-readiness-acceptance-review-linked-8888888888888888",
@@ -12887,6 +12888,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainCoverageLoaded: true,
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain loaded",
+        p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded")
       })
     );
@@ -12899,6 +12901,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainCoverageLoaded: false,
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain coverage missing",
+        p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainStatusQuery:
           "review-chain-gap review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555"
       })
@@ -12908,6 +12911,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainCoverageLoaded: true,
         p2ReadinessReviewChainAcceptanceLoaded: false,
         p2ReadinessReviewChainStatusLabel: "review chain acceptance missing",
+        p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainStatusQuery:
           "review-chain-gap review-chain-acceptance-missing p2-readiness-evidence-coverage-review-orphan-4444444444444444"
       })
