@@ -1664,6 +1664,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainCount");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainGapCount");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainGapsQuery");
+    expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthContextCount");
+    expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthContextQuery");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthLabel");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthQuery");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthState");
@@ -1675,6 +1677,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainsQuery");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestP2ReadinessReviewChainQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestP2ReadinessReviewChainGapQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.p2ReadinessReviewChainHealthContextQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.p2ReadinessReviewChainHealthQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.p2ReadinessReviewChainGapsQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.p2ReadinessReviewChainMissingAcceptanceQuery)");
@@ -1684,6 +1687,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.p2ReadinessReviewChainsQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestP2ReadinessReviewChainQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestP2ReadinessReviewChainGapQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.p2ReadinessReviewChainHealthContextQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.p2ReadinessReviewChainHealthQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.p2ReadinessReviewChainGapsQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.p2ReadinessReviewChainMissingAcceptanceQuery)");
@@ -1697,6 +1701,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("All review chains");
     expect(reportLedgerPanelSource).toContain("复核链健康");
     expect(reportLedgerPanelSource).toContain("Chain health");
+    expect(reportLedgerPanelSource).toContain("健康上下文");
+    expect(reportLedgerPanelSource).toContain("Health context");
     expect(reportLedgerPanelSource).toContain("已加载链");
     expect(reportLedgerPanelSource).toContain("Loaded chains");
     expect(reportLedgerPanelSource).toContain("全部复核链缺口");
@@ -1715,6 +1721,10 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Focus chain health");
     expect(reportLedgerPanelSource).toContain("复制复核链健康链接");
     expect(reportLedgerPanelSource).toContain("Copy chain health link");
+    expect(reportLedgerPanelSource).toContain("定位复核链健康上下文");
+    expect(reportLedgerPanelSource).toContain("Focus chain health context");
+    expect(reportLedgerPanelSource).toContain("复制复核链健康上下文链接");
+    expect(reportLedgerPanelSource).toContain("Copy chain health context link");
     expect(reportLedgerPanelSource).toContain("定位全部复核链缺口");
     expect(reportLedgerPanelSource).toContain("Focus all chain gaps");
     expect(reportLedgerPanelSource).toContain("复制全部复核链缺口链接");

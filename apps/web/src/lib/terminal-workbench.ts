@@ -2591,6 +2591,8 @@ export interface AuditEvidenceReportLedgerSummary {
   p2ReadinessReviewChainCount: number;
   p2ReadinessReviewChainGapCount: number;
   p2ReadinessReviewChainGapsQuery: string;
+  p2ReadinessReviewChainHealthContextCount: number;
+  p2ReadinessReviewChainHealthContextQuery: string;
   p2ReadinessReviewChainHealthLabel: string;
   p2ReadinessReviewChainHealthQuery: string;
   p2ReadinessReviewChainHealthState: "empty" | "loaded" | "gaps";
@@ -15791,6 +15793,9 @@ export function buildAuditEvidenceReportLedgerSummary(
     ...p2ReadinessReviewChainMissingCoverageRows,
     ...p2ReadinessReviewChainMissingAcceptanceRows
   ];
+  const p2ReadinessReviewChainHealthContextRows = rows.filter((row) =>
+    Boolean(row.p2ReadinessReviewChainStatusQuery.trim())
+  );
   const p2ReadinessReviewChainGapCount = p2ReadinessReviewChainGapRows.length;
   const latestP2ReadinessReviewChainGapRow = p2ReadinessReviewChainGapRows.reduce<
     AuditEvidenceReportLedgerRow | undefined
@@ -15940,6 +15945,9 @@ export function buildAuditEvidenceReportLedgerSummary(
     p2ReadinessReviewChainCount: p2ReadinessLinkedAcceptanceReviewRows.length,
     p2ReadinessReviewChainGapCount,
     p2ReadinessReviewChainGapsQuery: p2ReadinessReviewChainGapCount > 0 ? "review-chain-gap" : "",
+    p2ReadinessReviewChainHealthContextCount: p2ReadinessReviewChainHealthContextRows.length,
+    p2ReadinessReviewChainHealthContextQuery:
+      p2ReadinessReviewChainHealthContextRows.length > 0 ? "review-chain-health" : "",
     p2ReadinessReviewChainHealthLabel,
     p2ReadinessReviewChainHealthQuery,
     p2ReadinessReviewChainHealthState,
@@ -16718,6 +16726,7 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p2ReadinessReviewChainQuery,
       row.p2ReadinessReviewChainStatusLabel,
       row.p2ReadinessReviewChainStatusQuery,
+      row.p2ReadinessReviewChainStatusQuery ? "review-chain-health" : "",
       String(row.p2ReadinessReviewChainAcceptanceLoaded),
       String(row.p2ReadinessReviewChainCoverageLoaded),
       row.searchText,

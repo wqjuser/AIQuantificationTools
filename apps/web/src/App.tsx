@@ -19999,6 +19999,12 @@ function AuditEvidenceReportLedgerPanel({
                     <strong>{summary.p2ReadinessReviewChainHealthLabel}</strong>
                   </small>
                 ) : null}
+                {summary.p2ReadinessReviewChainHealthContextCount > 0 ? (
+                  <small title={summary.p2ReadinessReviewChainHealthContextQuery}>
+                    {i18n.locale === "zh-CN" ? "健康上下文" : "Health context"}{" "}
+                    {summary.p2ReadinessReviewChainHealthContextCount}
+                  </small>
+                ) : null}
                 {summary.p2ReadinessReviewChainLoadedCount > 0 ? (
                   <small title="review-chain-loaded">
                     {i18n.locale === "zh-CN" ? "已加载链" : "Loaded chains"}{" "}
@@ -20077,6 +20083,22 @@ function AuditEvidenceReportLedgerPanel({
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制复核链健康链接" : "Copy chain health link"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainHealthContextQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainHealthContextQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位复核链健康上下文" : "Focus chain health context"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainHealthContextQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.p2ReadinessReviewChainHealthContextQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制复核链健康上下文链接" : "Copy chain health context link"}
                   </button>
                 ) : null}
                 {summary.p2ReadinessReviewChainGapsQuery ? (

@@ -176,6 +176,8 @@ Batch 59 已把 P2 复核链缺口总览补成“最新缺口”入口：`buildA
 
 Batch 60 已给 P2 复核链增加自适应健康摘要：summary 新增 `p2ReadinessReviewChainHealthState/Label/Query`，有缺口时显示 `gaps` 并指向 `review-chain-gap`，没有缺口但有完整链时显示 `loaded` 并指向 `review-chain-loaded`，没有链路时保持 `empty`。Audit toolbar 的“复核链健康 / Chain health”可 focus/copy 当前页最需要复核的健康查询。该能力只复用既有 status token，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 61 已补上 P2 复核链健康上下文入口：`filterAuditEvidenceReportLedgerRows` 会为任何带 `p2ReadinessReviewChainStatusQuery` 的 row 派生 `review-chain-health` 搜索 token，summary 新增 `p2ReadinessReviewChainHealthContextCount/Query`。Audit toolbar 的“健康上下文 / Health context”可一次 focus/copy 当前页所有 loaded 与 gap 状态行，同时不把 token 写回 row searchText、不改变 row-level status query。该能力仍只读，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

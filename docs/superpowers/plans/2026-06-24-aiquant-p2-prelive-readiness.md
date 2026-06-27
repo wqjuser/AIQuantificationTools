@@ -1771,6 +1771,36 @@ This health summary only filters existing P2 review-chain status diagnostics. It
 
 ---
 
+## Batch 61: P2 Review Chain Health Context Query
+
+**Outcome:** The Audit ledger toolbar can focus or copy one context query that shows every currently loaded P2 review-chain status row, including loaded pairs and gap rows.
+
+Scope:
+- Add `p2ReadinessReviewChainHealthContextCount` and `p2ReadinessReviewChainHealthContextQuery` to `AuditEvidenceReportLedgerSummary`.
+- Derive the `review-chain-health` search token at filter time for rows with `p2ReadinessReviewChainStatusQuery`.
+- Keep row-level status queries unchanged so existing loaded, missing-coverage, and missing-acceptance links remain precise.
+- Render a "Health context" count with focus/copy controls in the Audit ledger toolbar.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage proving `review-chain-health` filters loaded review-chain rows and gap rows together.
+- [x] Added summary coverage for health context count and query.
+- [x] Added static UI coverage for health context fields, focus action, copy action, and labels.
+- [x] Rendered "Health context" controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "builds an audit report ledger from persisted report events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This health context query only filters existing P2 review-chain status diagnostics. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:
