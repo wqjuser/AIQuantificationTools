@@ -1,12 +1,17 @@
 import { describe, expect, test } from "vitest";
 import type {
+  AuditEvidenceReportLedgerSummary,
   AuditEvidenceReportLedgerRow,
   ExecutionAdapterChainHealthRollup,
   OperatorRunbookAuditCoverage,
   OperatorRunbookSummary,
+  P0AcceptanceSummary,
+  P0PlatformReadinessSummary,
   P1AcceptanceSummary,
+  P2ManifestChainPreflightSummary,
   P2PaperReplaySummary,
   P2PreLiveAcceptanceSummary,
+  P2ReadinessAcceptanceSummary,
   P2ReadinessEvidenceCoverage,
   PaperExecutionReplayGate,
   PreLiveReadinessChecklist
@@ -144,6 +149,7 @@ import {
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessEvidenceCoverage,
   buildP2ReadinessAcceptanceSummary,
+  buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookMarkdown,
   buildOperatorRunbookSummary,
   buildP0CompletionChecklist,
@@ -638,6 +644,110 @@ function p1AcceptanceSummaryFixture(overrides: Partial<P1AcceptanceSummary> = {}
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: false,
     liveBlockedBoundary: true,
+    ...overrides
+  };
+}
+
+function p0PlatformReadinessSummaryFixture(
+  overrides: Partial<P0PlatformReadinessSummary> = {}
+): P0PlatformReadinessSummary {
+  return {
+    state: "paper_ready",
+    headline: "P0 paper workflow ready",
+    detail: "All P0 paper checks are ready; live trading remains blocked.",
+    progressPct: 100,
+    passedSteps: 6,
+    totalSteps: 6,
+    reviewSteps: 0,
+    blockedSteps: 0,
+    openStepCount: 0,
+    currentGap: null,
+    liveBoundary: {
+      liveTradingAllowed: false,
+      label: "Paper-only boundary",
+      detail: "Live trading remains blocked."
+    },
+    ...overrides
+  };
+}
+
+function p0AcceptanceSummaryFixture(overrides: Partial<P0AcceptanceSummary> = {}): P0AcceptanceSummary {
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "P0 acceptance passed",
+    detail: "Run run-p0-smoke · ashare 600000 1d · 6 checks · live blocked.",
+    actionLabel: "Open acceptance manifest",
+    targetWorkspaceId: "audit",
+    sourcePath: "data/p0-acceptance.json",
+    runId: "run-p0-smoke",
+    checkCount: 6,
+    requiredCheckCount: 6,
+    liveTradingAllowed: false,
+    reportedLiveTradingAllowed: false,
+    liveBlockedBoundary: true,
+    ...overrides
+  };
+}
+
+function p2ManifestChainPreflightSummaryFixture(
+  overrides: Partial<P2ManifestChainPreflightSummary> = {}
+): P2ManifestChainPreflightSummary {
+  return {
+    state: "ready",
+    tone: "positive",
+    headline: "P2 manifest chain ready",
+    detail: "4/4 manifest stages valid; archived evidence chain can be reviewed without enabling live trading.",
+    actionLabel: "Open P2 readiness review",
+    targetWorkspaceId: "audit",
+    sourcePath: "data/p2-chain-preflight.json",
+    ready: true,
+    validStageCount: 4,
+    totalStageCount: 4,
+    blockerIds: [],
+    nextAction: "",
+    nextCommand: "",
+    stages: [],
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    reportedOrderSubmissionEnabled: false,
+    reportedLiveTradingAllowed: false,
+    reportedLiveOrderSubmitted: false,
+    reportedRouteExecuted: false,
+    liveBlockedBoundary: true,
+    ...overrides
+  };
+}
+
+function p2ReadinessAcceptanceSummaryFixture(
+  overrides: Partial<P2ReadinessAcceptanceSummary> = {}
+): P2ReadinessAcceptanceSummary {
+  return {
+    status: "accepted",
+    tone: "positive",
+    headline: "P2 pre-live readiness accepted",
+    detail:
+      "6/6 P2 acceptance criteria passed; 0 criteria still block final pre-live acceptance. Direct order submission and live trading remain disabled.",
+    evidenceCoverageReviewAuditEventId: "p2-readiness-evidence-coverage-review-aaaaaaaaaaaaaaaa",
+    acceptedCount: 6,
+    totalCount: 6,
+    blockingCount: 0,
+    orderSubmissionEnabled: false,
+    liveTradingAllowed: false,
+    liveOrderSubmitted: false,
+    routeExecuted: false,
+    rows: [],
+    ...overrides
+  };
+}
+
+function auditEvidenceReportLedgerSummaryFixture(
+  overrides: Partial<AuditEvidenceReportLedgerSummary> = {}
+): AuditEvidenceReportLedgerSummary {
+  return {
+    ...buildAuditEvidenceReportLedgerSummary([]),
     ...overrides
   };
 }
@@ -3467,6 +3577,35 @@ describe("terminal workbench model", () => {
     expect(summary.rows.find((row) => row.id === "live-blocked-boundary")?.detail).toContain(
       "unsafe execution flags"
     );
+  });
+
+  test("summarizes personal and small-team usability readiness from accepted evidence", () => {
+    const summary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready"
+      }),
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+
+    expect(summary).toMatchObject({
+      state: "attention",
+      tone: "warning",
+      headline: "Personal paper loop ready; team handoff pending",
+      personalPercent: 100,
+      teamPercent: 67,
+      readyCount: 4,
+      totalCount: 6,
+      nextActionLabel: "Create handoff runbook",
+      nextActionWorkspaceId: "audit",
+      liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+    });
+    expect(summary.detail).toContain("4/6 usability gates ready");
+    expect(summary.openItems.map((item) => item.id)).toEqual(["team-handoff-runbook", "backup-restore-drill"]);
   });
 
   test("builds a portable P2 readiness acceptance review markdown without live authorization", () => {

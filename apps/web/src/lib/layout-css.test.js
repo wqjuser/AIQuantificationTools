@@ -287,6 +287,24 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-acceptance-actions")).toContain("justify-content: flex-end;");
   });
 
+  test("renders personal and small-team usability readiness on the overview card", () => {
+    const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
+
+    expect(appSource).toContain("buildPersonalTeamUsabilityReadinessSummary({");
+    expect(overviewSource).toContain('className={`personal-team-readiness ${personalTeamUsabilityReadiness.state}`}');
+    expect(overviewSource).toContain("personalTeamUsabilityReadiness.personalPercent");
+    expect(overviewSource).toContain("personalTeamUsabilityReadiness.teamPercent");
+    expect(overviewSource).toContain("personalTeamUsabilityReadiness.openItems.slice(0, 3).map");
+    expect(overviewSource).toContain("selectProductWorkArea(item.targetWorkspaceId)");
+    expect(cssBlock(".personal-team-readiness")).toContain("display: grid;");
+    expect(cssBlock(".personal-team-readiness")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".personal-team-readiness-score")).toContain("grid-template-columns: repeat(2, auto);");
+    expect(cssBlock(".personal-team-readiness-open")).toContain(
+      "grid-template-columns: repeat(2, minmax(0, 1fr));"
+    );
+    expect(cssBlock(".personal-team-readiness-item")).toContain("cursor: pointer;");
+  });
+
   test("renders one P0 golden path journey before detailed readiness evidence", () => {
     const overviewGridSource = sourceBetween('<section className="terminal-overview-grid market-tape">', '<div className="metrics-row">');
 

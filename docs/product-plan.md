@@ -182,6 +182,8 @@ Batch 62 已把 P2 复核链健康上下文下沉到 Audit row 操作区：`Audi
 
 Batch 63 已给 P2 复核链健康上下文补上说明 title 与分解：row 新增 `p2ReadinessReviewChainHealthContextTitle`，会标明 `health-context-loaded`、`health-context-missing-coverage` 或 `health-context-missing-acceptance` 以及对应 event id；summary 新增 `p2ReadinessReviewChainHealthContextTitle`，展示 context rows、loaded chains、gaps、missing coverage、missing acceptance 和最新缺口 event id。Audit toolbar 与 row 操作按钮会优先用该 title 做 tooltip，title 也参与只读搜索过滤。该能力仅解释和筛选既有审计行，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 64 已新增个人/小团队可用性首屏摘要：`terminal-workbench` 新增 `buildPersonalTeamUsabilityReadinessSummary`，把 P0 本地纸面闭环、P1 研究运营、P2 预实盘证据链和 Audit 可追溯性聚合成个人本地 paper-only readiness 与小团队 internal-beta readiness。首页 P0 readiness 卡会在 P1 acceptance 后显示个人/团队百分比、强制 live-blocked 边界，以及最多 3 个当前缺口按钮；当前团队化缺口明确落在交接 runbook 与备份/恢复演练。该能力只解释和导航已有 P0/P1/P2/Audit 证据，不生成新 manifest、不运行 Docker、不记录审计事件、不连接券商、不提交订单，也不放宽 `orderSubmissionEnabled=false`、`liveTradingAllowed=false`。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

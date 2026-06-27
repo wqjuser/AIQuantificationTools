@@ -1444,6 +1444,119 @@ em {
   opacity: 0.55;
 }
 
+.personal-team-readiness {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #26354a;
+  border-radius: 6px;
+  background: #0d1825;
+}
+
+.personal-team-readiness.ready {
+  border-color: #266c60;
+  background: #0d241f;
+}
+
+.personal-team-readiness.attention {
+  border-color: #735f2b;
+  background: #211c0d;
+}
+
+.personal-team-readiness.blocked {
+  border-color: #7f3d39;
+  background: #241313;
+}
+
+.personal-team-readiness-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.personal-team-readiness-head > div {
+  min-width: 0;
+}
+
+.personal-team-readiness span,
+.personal-team-readiness strong,
+.personal-team-readiness small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-team-readiness span {
+  color: #8fa0b2;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.personal-team-readiness strong {
+  color: #dce6ee;
+  font-size: 11px;
+}
+
+.personal-team-readiness small {
+  color: #8fa0b2;
+}
+
+.personal-team-readiness-score {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 2px 7px;
+  align-items: center;
+  justify-items: end;
+  padding: 4px 6px;
+  border: 1px solid #26354a;
+  border-radius: 5px;
+  background: #101b29;
+}
+
+.personal-team-readiness-score strong {
+  color: #71dfc5;
+  font-size: 12px;
+}
+
+.personal-team-readiness-boundary {
+  color: #e8be62;
+}
+
+.personal-team-readiness-open {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.personal-team-readiness-item {
+  display: block;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid #2b3f59;
+  border-radius: 5px;
+  background: #132033;
+  color: #b8c8d8;
+  cursor: pointer;
+  text-align: left;
+}
+
+.personal-team-readiness-item.review {
+  border-color: #735f2b;
+}
+
+.personal-team-readiness-item.blocked {
+  border-color: #7f3d39;
+}
+
+.personal-team-readiness-item strong {
+  color: #dce6ee;
+}
+
 .p0-completion-checklist {
   display: grid;
   grid-column: 1 / -1;

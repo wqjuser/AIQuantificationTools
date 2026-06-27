@@ -607,6 +607,52 @@ export interface P2ReadinessAcceptanceSummaryInput {
   preLiveChecklist: PreLiveReadinessChecklist;
 }
 
+export type PersonalTeamUsabilityReadinessState = "ready" | "attention" | "blocked";
+export type PersonalTeamUsabilityReadinessTone = "positive" | "warning" | "risk";
+export type PersonalTeamUsabilityReadinessItemStatus = "ready" | "review" | "blocked";
+export type PersonalTeamUsabilityReadinessItemId =
+  | "p0-local-loop"
+  | "p1-research-ops"
+  | "p2-prelive-chain"
+  | "audit-traceability"
+  | "team-handoff-runbook"
+  | "backup-restore-drill";
+
+export interface PersonalTeamUsabilityReadinessItem {
+  id: PersonalTeamUsabilityReadinessItemId;
+  label: string;
+  status: PersonalTeamUsabilityReadinessItemStatus;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
+export interface PersonalTeamUsabilityReadinessSummary {
+  state: PersonalTeamUsabilityReadinessState;
+  tone: PersonalTeamUsabilityReadinessTone;
+  headline: string;
+  detail: string;
+  personalPercent: number;
+  teamPercent: number;
+  readyCount: number;
+  totalCount: number;
+  items: PersonalTeamUsabilityReadinessItem[];
+  openItems: PersonalTeamUsabilityReadinessItem[];
+  nextActionLabel: string;
+  nextActionWorkspaceId: ProductWorkAreaId;
+  liveBoundaryLabel: string;
+}
+
+export interface PersonalTeamUsabilityReadinessSummaryInput {
+  auditEvidenceReportLedgerSummary: AuditEvidenceReportLedgerSummary;
+  p0AcceptanceSummary: P0AcceptanceSummary;
+  p0PlatformReadinessSummary: P0PlatformReadinessSummary;
+  p1AcceptanceSummary: P1AcceptanceSummary;
+  p2ManifestChainPreflightSummary: P2ManifestChainPreflightSummary;
+  p2ReadinessAcceptanceSummary: P2ReadinessAcceptanceSummary;
+  p2ReadinessEvidenceCoverage: P2ReadinessEvidenceCoverage;
+}
+
 export type P2ReadinessAcceptanceReviewStatus = "accepted" | "missing" | "invalid";
 
 export interface P2ReadinessAcceptanceReviewSource {
@@ -8443,6 +8489,152 @@ function p2ReadinessAcceptanceRowTone(status: P2ReadinessAcceptanceRowStatus): P
 
 function p1AcceptanceHasUnsafeExecutionClaim(acceptance: P1AcceptanceSummary): boolean {
   return acceptance.state === "invalid" || acceptance.reportedLiveTradingAllowed || !acceptance.liveBlockedBoundary;
+}
+
+export function buildPersonalTeamUsabilityReadinessSummary({
+  auditEvidenceReportLedgerSummary,
+  p0AcceptanceSummary,
+  p0PlatformReadinessSummary,
+  p1AcceptanceSummary,
+  p2ManifestChainPreflightSummary,
+  p2ReadinessAcceptanceSummary,
+  p2ReadinessEvidenceCoverage
+}: PersonalTeamUsabilityReadinessSummaryInput): PersonalTeamUsabilityReadinessSummary {
+  const p0Unsafe =
+    p0AcceptanceSummary.state === "invalid" ||
+    p0AcceptanceSummary.reportedLiveTradingAllowed ||
+    !p0AcceptanceSummary.liveBlockedBoundary ||
+    p0PlatformReadinessSummary.liveBoundary.liveTradingAllowed;
+  const p0Ready =
+    !p0Unsafe &&
+    (p0PlatformReadinessSummary.state === "paper_ready" || p0PlatformReadinessSummary.state === "live_ready") &&
+    p0AcceptanceSummary.state === "passed";
+  const p1Unsafe = p1AcceptanceHasUnsafeExecutionClaim(p1AcceptanceSummary);
+  const p1Ready = !p1Unsafe && p1AcceptanceSummary.state === "passed";
+  const p2Unsafe =
+    p2ManifestChainPreflightSummary.state === "invalid" ||
+    p2ManifestChainPreflightSummary.reportedOrderSubmissionEnabled ||
+    p2ManifestChainPreflightSummary.reportedLiveTradingAllowed ||
+    p2ManifestChainPreflightSummary.reportedLiveOrderSubmitted ||
+    p2ManifestChainPreflightSummary.reportedRouteExecuted ||
+    !p2ManifestChainPreflightSummary.liveBlockedBoundary ||
+    p2ReadinessAcceptanceSummary.status === "blocked" ||
+    p2ReadinessEvidenceCoverage.status === "blocked";
+  const p2Ready =
+    !p2Unsafe &&
+    p2ManifestChainPreflightSummary.state === "ready" &&
+    p2ReadinessAcceptanceSummary.status === "accepted" &&
+    p2ReadinessEvidenceCoverage.status === "covered" &&
+    p2ReadinessEvidenceCoverage.blockingCount === 0;
+  const auditReady = Boolean(
+    auditEvidenceReportLedgerSummary.latestAuditAidEventId ||
+      p2ReadinessAcceptanceSummary.evidenceCoverageReviewAuditEventId
+  );
+
+  const items: PersonalTeamUsabilityReadinessItem[] = [
+    {
+      id: "p0-local-loop",
+      label: "P0 local paper loop",
+      status: p0Ready ? "ready" : p0Unsafe || p0PlatformReadinessSummary.state === "blocked" ? "blocked" : "review",
+      detail: p0Ready
+        ? "Single-symbol research to paper execution is accepted for local paper-only use."
+        : p0Unsafe
+          ? "P0 evidence has unsafe live-trading claims or lacks the live-blocked boundary."
+          : p0PlatformReadinessSummary.detail,
+      actionLabel: p0Ready ? "Review accepted loop" : p0AcceptanceSummary.actionLabel,
+      targetWorkspaceId: p0AcceptanceSummary.targetWorkspaceId
+    },
+    {
+      id: "p1-research-ops",
+      label: "P1 research ops",
+      status: p1Ready ? "ready" : p1Unsafe ? "blocked" : "review",
+      detail: p1Ready
+        ? "Watchlist research operations are accepted and still paper-only."
+        : p1Unsafe
+          ? "P1 acceptance has unsafe live-trading claims or lacks the live-blocked boundary."
+          : p1AcceptanceSummary.detail,
+      actionLabel: p1Ready ? "Review research ops" : p1AcceptanceSummary.actionLabel,
+      targetWorkspaceId: p1AcceptanceSummary.targetWorkspaceId
+    },
+    {
+      id: "p2-prelive-chain",
+      label: "P2 pre-live chain",
+      status: p2Ready ? "ready" : p2Unsafe ? "blocked" : "review",
+      detail: p2Ready
+        ? "P2 paper replay, manifest chain, evidence coverage, and live boundary are accepted."
+        : p2Unsafe
+          ? "P2 readiness has unsafe execution claims or blocked evidence."
+          : p2ReadinessAcceptanceSummary.detail,
+      actionLabel: p2Ready ? "Review P2 readiness" : p2ManifestChainPreflightSummary.actionLabel,
+      targetWorkspaceId: p2Ready ? "audit" : p2ManifestChainPreflightSummary.targetWorkspaceId
+    },
+    {
+      id: "audit-traceability",
+      label: "Audit traceability",
+      status: auditReady ? "ready" : "review",
+      detail: auditReady
+        ? "Latest acceptance or audit-aid evidence is traceable from the Audit workspace."
+        : "Record a current audit-aid or P2 readiness review event before team handoff.",
+      actionLabel: auditReady ? "Open audit ledger" : "Record audit review",
+      targetWorkspaceId: "audit"
+    },
+    {
+      id: "team-handoff-runbook",
+      label: "Team handoff runbook",
+      status: "review",
+      detail: "Write the operator handoff, incident owner, and review cadence before small-team beta.",
+      actionLabel: "Create handoff runbook",
+      targetWorkspaceId: "audit"
+    },
+    {
+      id: "backup-restore-drill",
+      label: "Backup restore drill",
+      status: "review",
+      detail: "Add a repeatable local data backup and restore drill before relying on shared use.",
+      actionLabel: "Plan backup drill",
+      targetWorkspaceId: "settings"
+    }
+  ];
+
+  const personalItems = items.slice(0, 3);
+  const readyCount = items.filter((item) => item.status === "ready").length;
+  const totalCount = items.length;
+  const openItems = items.filter((item) => item.status !== "ready");
+  const personalPercent = readinessPercent(personalItems.filter((item) => item.status === "ready").length, personalItems.length);
+  const teamPercent = readinessPercent(readyCount, totalCount);
+  const state: PersonalTeamUsabilityReadinessState = items.some((item) => item.status === "blocked")
+    ? "blocked"
+    : openItems.length
+      ? "attention"
+      : "ready";
+  const tone: PersonalTeamUsabilityReadinessTone =
+    state === "ready" ? "positive" : state === "blocked" ? "risk" : "warning";
+  const nextAction = openItems[0] ?? items[0];
+
+  return {
+    state,
+    tone,
+    headline:
+      state === "ready"
+        ? "Personal and small-team beta ready"
+        : state === "blocked"
+          ? "Personal paper loop blocked"
+          : "Personal paper loop ready; team handoff pending",
+    detail: `${readyCount}/${totalCount} usability gates ready; personal local paper loop ${personalPercent}%; small-team internal beta ${teamPercent}%. Live trading remains blocked.`,
+    personalPercent,
+    teamPercent,
+    readyCount,
+    totalCount,
+    items,
+    openItems,
+    nextActionLabel: nextAction.actionLabel,
+    nextActionWorkspaceId: nextAction.targetWorkspaceId,
+    liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+  };
+}
+
+function readinessPercent(readyCount: number, totalCount: number): number {
+  return totalCount > 0 ? Math.round((Math.max(0, Math.min(readyCount, totalCount)) / totalCount) * 100) : 0;
 }
 
 export function buildP2ReadinessAcceptanceReviewMarkdown({

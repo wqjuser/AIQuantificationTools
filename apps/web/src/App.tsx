@@ -350,6 +350,7 @@ import {
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessAcceptanceSummary,
   buildP2ReadinessEvidenceCoverage,
+  buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookSummary,
   buildP0CompletionChecklist,
   buildP0CompletionGapUrlSearch,
@@ -523,6 +524,8 @@ import {
   P2ReadinessAcceptanceSummary,
   P2ReadinessEvidenceCoverage,
   P2ReadinessEvidenceCoverageRow,
+  PersonalTeamUsabilityReadinessItem,
+  PersonalTeamUsabilityReadinessSummary,
   OperatorRunbookAuditCoverage,
   OperatorRunbookSummary,
   P0GoldenPathJourney,
@@ -2717,6 +2720,15 @@ export function App() {
     p2PaperReplay: p2PaperReplaySummary,
     p2PreLiveAcceptance: p2PreLiveAcceptanceSummary,
     preLiveChecklist: preLiveReadinessChecklist
+  });
+  const personalTeamUsabilityReadiness = buildPersonalTeamUsabilityReadinessSummary({
+    auditEvidenceReportLedgerSummary,
+    p0AcceptanceSummary,
+    p0PlatformReadinessSummary,
+    p1AcceptanceSummary,
+    p2ManifestChainPreflightSummary,
+    p2ReadinessAcceptanceSummary,
+    p2ReadinessEvidenceCoverage
   });
   const p2ReadinessAcceptanceAuditContext = useMemo(
     () => ({
@@ -11025,6 +11037,40 @@ export function App() {
                     </button>
                   </div>
                 </div>
+                <div className={`personal-team-readiness ${personalTeamUsabilityReadiness.state}`}>
+                  <div className="personal-team-readiness-head">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "个人/小团队可用性" : "Personal / Team Readiness"}</span>
+                      <strong>{personalTeamUsabilityReadinessHeadline(i18n, personalTeamUsabilityReadiness)}</strong>
+                      <small>{personalTeamUsabilityReadinessDetail(i18n, personalTeamUsabilityReadiness)}</small>
+                    </div>
+                    <div className="personal-team-readiness-score" aria-label="Personal and team readiness scores">
+                      <span>{i18n.locale === "zh-CN" ? "个人" : "Personal"}</span>
+                      <strong>{personalTeamUsabilityReadiness.personalPercent}%</strong>
+                      <span>{i18n.locale === "zh-CN" ? "团队" : "Team"}</span>
+                      <strong>{personalTeamUsabilityReadiness.teamPercent}%</strong>
+                    </div>
+                  </div>
+                  <small className="personal-team-readiness-boundary">
+                    {personalTeamUsabilityReadinessLiveBoundary(i18n, personalTeamUsabilityReadiness)}
+                  </small>
+                  {personalTeamUsabilityReadiness.openItems.length ? (
+                    <div className="personal-team-readiness-open">
+                      {personalTeamUsabilityReadiness.openItems.slice(0, 3).map((item) => (
+                        <button
+                          className={`personal-team-readiness-item ${item.status}`}
+                          key={item.id}
+                          onClick={() => selectProductWorkArea(item.targetWorkspaceId)}
+                          type="button"
+                        >
+                          <span>{personalTeamUsabilityReadinessItemLabel(i18n, item)}</span>
+                          <strong>{personalTeamUsabilityReadinessItemAction(i18n, item)}</strong>
+                          <small>{personalTeamUsabilityReadinessItemDetail(i18n, item)}</small>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 <div
                   className={`p0-completion-checklist ${
                     p0CompletionChecklist.currentGap?.status ?? "passed"
@@ -12065,6 +12111,113 @@ function p1AcceptanceSummaryDetail(i18n: AppI18n, summary: P1AcceptanceSummary):
       .replace(". Live trading remains blocked.", "")}；实盘仍阻断。`;
   }
   return `运行 P1 验收后会在这里读取 ${summary.sourcePath}；缺失时仍保持实盘阻断。`;
+}
+
+function personalTeamUsabilityReadinessHeadline(
+  i18n: AppI18n,
+  summary: PersonalTeamUsabilityReadinessSummary
+): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  return (
+    {
+      attention: "个人纸面闭环可用，团队交接待补",
+      blocked: "个人纸面闭环仍被阻断",
+      ready: "个人与小团队内测已就绪"
+    } satisfies Record<PersonalTeamUsabilityReadinessSummary["state"], string>
+  )[summary.state];
+}
+
+function personalTeamUsabilityReadinessDetail(
+  i18n: AppI18n,
+  summary: PersonalTeamUsabilityReadinessSummary
+): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  return `${summary.readyCount}/${summary.totalCount} 个可用性闸门已就绪 · 个人本地纸面 ${summary.personalPercent}% · 小团队内测 ${summary.teamPercent}% · 实盘仍阻断`;
+}
+
+function personalTeamUsabilityReadinessLiveBoundary(
+  i18n: AppI18n,
+  summary: PersonalTeamUsabilityReadinessSummary
+): string {
+  if (i18n.locale === "en-US") {
+    return summary.liveBoundaryLabel;
+  }
+  return "仅纸面盘 · 实盘阻断 · 不提交订单";
+}
+
+function personalTeamUsabilityReadinessItemLabel(
+  i18n: AppI18n,
+  item: PersonalTeamUsabilityReadinessItem
+): string {
+  if (i18n.locale === "en-US") {
+    return item.label;
+  }
+  return (
+    {
+      "audit-traceability": "审计可追溯",
+      "backup-restore-drill": "备份恢复演练",
+      "p0-local-loop": "P0 本地纸面闭环",
+      "p1-research-ops": "P1 研究运营",
+      "p2-prelive-chain": "P2 预实盘链路",
+      "team-handoff-runbook": "团队交接手册"
+    } satisfies Record<PersonalTeamUsabilityReadinessItem["id"], string>
+  )[item.id];
+}
+
+function personalTeamUsabilityReadinessItemAction(
+  i18n: AppI18n,
+  item: PersonalTeamUsabilityReadinessItem
+): string {
+  if (i18n.locale === "en-US") {
+    return item.actionLabel;
+  }
+  return (
+    {
+      "audit-traceability": item.status === "ready" ? "打开审计台账" : "记录审计复核",
+      "backup-restore-drill": "规划备份演练",
+      "p0-local-loop": item.status === "ready" ? "复核已验收闭环" : item.actionLabel,
+      "p1-research-ops": item.status === "ready" ? "复核研究运营" : item.actionLabel,
+      "p2-prelive-chain": item.status === "ready" ? "复核 P2 readiness" : item.actionLabel,
+      "team-handoff-runbook": "创建交接手册"
+    } satisfies Record<PersonalTeamUsabilityReadinessItem["id"], string>
+  )[item.id];
+}
+
+function personalTeamUsabilityReadinessItemDetail(
+  i18n: AppI18n,
+  item: PersonalTeamUsabilityReadinessItem
+): string {
+  if (i18n.locale === "en-US") {
+    return item.detail;
+  }
+  if (item.id === "team-handoff-runbook") {
+    return "小团队内测前补齐交接、事故负责人和复核节奏。";
+  }
+  if (item.id === "backup-restore-drill") {
+    return "共享使用前补齐本地数据备份与恢复演练。";
+  }
+  if (item.id === "audit-traceability") {
+    return item.status === "ready"
+      ? "最新验收或审计辅助证据可从 Audit 工作区追溯。"
+      : "团队交接前先记录当前审计复核事件。";
+  }
+  if (item.status === "ready") {
+    return (
+      {
+        "p0-local-loop": "单标的研究到纸面执行已经可用于个人本地 paper-only。",
+        "p1-research-ops": "自选列表研究运营已验收，仍保持 paper-only。",
+        "p2-prelive-chain": "P2 回放、清单、证据覆盖和 live 边界已验收。",
+        "audit-traceability": "",
+        "backup-restore-drill": "",
+        "team-handoff-runbook": ""
+      } satisfies Record<PersonalTeamUsabilityReadinessItem["id"], string>
+    )[item.id];
+  }
+  return item.detail;
 }
 
 function p2PreLiveAcceptanceSummaryStatusLabel(
