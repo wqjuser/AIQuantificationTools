@@ -19986,6 +19986,19 @@ function AuditEvidenceReportLedgerPanel({
                     {summary.p2ReadinessReviewChainCount}
                   </small>
                 ) : null}
+                {summary.p2ReadinessReviewChainHealthLabel ? (
+                  <small
+                    className={
+                      summary.p2ReadinessReviewChainHealthState === "gaps"
+                        ? "audit-report-ledger-p2-review-chain-gap"
+                        : undefined
+                    }
+                    title={summary.p2ReadinessReviewChainHealthQuery}
+                  >
+                    {i18n.locale === "zh-CN" ? "复核链健康" : "Chain health"}{" "}
+                    <strong>{summary.p2ReadinessReviewChainHealthLabel}</strong>
+                  </small>
+                ) : null}
                 {summary.p2ReadinessReviewChainLoadedCount > 0 ? (
                   <small title="review-chain-loaded">
                     {i18n.locale === "zh-CN" ? "已加载链" : "Loaded chains"}{" "}
@@ -20048,6 +20061,22 @@ function AuditEvidenceReportLedgerPanel({
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制全部复核链链接" : "Copy all chains link"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainHealthQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainHealthQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位复核链健康" : "Focus chain health"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainHealthQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.p2ReadinessReviewChainHealthQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制复核链健康链接" : "Copy chain health link"}
                   </button>
                 ) : null}
                 {summary.p2ReadinessReviewChainGapsQuery ? (

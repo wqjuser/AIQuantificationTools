@@ -11121,6 +11121,9 @@ describe("terminal workbench model", () => {
       p2ReadinessReviewChainCount: 0,
       p2ReadinessReviewChainGapCount: 0,
       p2ReadinessReviewChainGapsQuery: "",
+      p2ReadinessReviewChainHealthLabel: "",
+      p2ReadinessReviewChainHealthQuery: "",
+      p2ReadinessReviewChainHealthState: "empty",
       p2ReadinessReviewChainLoadedCount: 0,
       p2ReadinessReviewChainMissingAcceptanceCount: 0,
       p2ReadinessReviewChainMissingAcceptanceQuery: "",
@@ -12945,6 +12948,27 @@ describe("terminal workbench model", () => {
       "p2-readiness-evidence-coverage-review-orphan-4444444444444444",
       "p2-readiness-acceptance-review-missing-5555555555555555"
     ]);
+    const loadedReviewChainRows = rows.filter((row) =>
+      [
+        "p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        "p2-readiness-acceptance-review-linked-8888888888888888"
+      ].includes(row.id)
+    );
+    expect(
+      filterAuditEvidenceReportLedgerRows(loadedReviewChainRows, "review-chain-loaded").map((row) => row.id)
+    ).toEqual([
+      "p2-readiness-evidence-coverage-review-linked-9999999999999999",
+      "p2-readiness-acceptance-review-linked-8888888888888888"
+    ]);
+    expect(buildAuditEvidenceReportLedgerSummary(loadedReviewChainRows)).toEqual(
+      expect.objectContaining({
+        p2ReadinessReviewChainGapCount: 0,
+        p2ReadinessReviewChainHealthLabel: "review chain loaded · 1",
+        p2ReadinessReviewChainHealthQuery: "review-chain-loaded",
+        p2ReadinessReviewChainHealthState: "loaded",
+        p2ReadinessReviewChainLoadedCount: 1
+      })
+    );
     expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
       expect.objectContaining({
         latestP2ReadinessLinkedAcceptanceReviewEventId:
@@ -12969,6 +12993,9 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainCount: 3,
         p2ReadinessReviewChainGapCount: 2,
         p2ReadinessReviewChainGapsQuery: "review-chain-gap",
+        p2ReadinessReviewChainHealthLabel: "review chain gaps · 2",
+        p2ReadinessReviewChainHealthQuery: "review-chain-gap",
+        p2ReadinessReviewChainHealthState: "gaps",
         p2ReadinessReviewChainLoadedCount: 2,
         p2ReadinessReviewChainMissingAcceptanceCount: 1,
         p2ReadinessReviewChainMissingAcceptanceQuery: "review-chain-acceptance-missing",

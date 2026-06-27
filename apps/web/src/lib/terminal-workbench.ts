@@ -2591,6 +2591,9 @@ export interface AuditEvidenceReportLedgerSummary {
   p2ReadinessReviewChainCount: number;
   p2ReadinessReviewChainGapCount: number;
   p2ReadinessReviewChainGapsQuery: string;
+  p2ReadinessReviewChainHealthLabel: string;
+  p2ReadinessReviewChainHealthQuery: string;
+  p2ReadinessReviewChainHealthState: "empty" | "loaded" | "gaps";
   p2ReadinessReviewChainLoadedCount: number;
   p2ReadinessReviewChainMissingAcceptanceCount: number;
   p2ReadinessReviewChainMissingAcceptanceQuery: string;
@@ -15797,6 +15800,24 @@ export function buildAuditEvidenceReportLedgerSummary(
     }
     return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
   }, undefined);
+  const p2ReadinessReviewChainHealthState: AuditEvidenceReportLedgerSummary["p2ReadinessReviewChainHealthState"] =
+    p2ReadinessReviewChainGapCount > 0
+      ? "gaps"
+      : p2ReadinessReviewChainLoadedRows.length > 0
+        ? "loaded"
+        : "empty";
+  const p2ReadinessReviewChainHealthLabel =
+    p2ReadinessReviewChainHealthState === "gaps"
+      ? `review chain gaps · ${p2ReadinessReviewChainGapCount}`
+      : p2ReadinessReviewChainHealthState === "loaded"
+        ? `review chain loaded · ${p2ReadinessReviewChainLoadedRows.length}`
+        : "";
+  const p2ReadinessReviewChainHealthQuery =
+    p2ReadinessReviewChainHealthState === "gaps"
+      ? "review-chain-gap"
+      : p2ReadinessReviewChainHealthState === "loaded"
+        ? "review-chain-loaded"
+        : "";
   const latestP2ReadinessLinkedAcceptanceReviewRow = p2ReadinessLinkedAcceptanceReviewRows.reduce<
     AuditEvidenceReportLedgerRow | undefined
   >((latest, row) => {
@@ -15919,6 +15940,9 @@ export function buildAuditEvidenceReportLedgerSummary(
     p2ReadinessReviewChainCount: p2ReadinessLinkedAcceptanceReviewRows.length,
     p2ReadinessReviewChainGapCount,
     p2ReadinessReviewChainGapsQuery: p2ReadinessReviewChainGapCount > 0 ? "review-chain-gap" : "",
+    p2ReadinessReviewChainHealthLabel,
+    p2ReadinessReviewChainHealthQuery,
+    p2ReadinessReviewChainHealthState,
     p2ReadinessReviewChainLoadedCount: p2ReadinessReviewChainLoadedRows.length,
     p2ReadinessReviewChainMissingAcceptanceCount: p2ReadinessReviewChainMissingAcceptanceRows.length,
     p2ReadinessReviewChainMissingAcceptanceQuery:

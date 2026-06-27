@@ -1741,6 +1741,36 @@ This latest-gap summary only filters existing P2 review-chain diagnostics. It do
 
 ---
 
+## Batch 60: P2 Review Chain Health Summary
+
+**Outcome:** The Audit ledger toolbar can show one adaptive P2 review-chain health entry that points operators to the most relevant current-page diagnostic query.
+
+Scope:
+- Add `p2ReadinessReviewChainHealthState`, `p2ReadinessReviewChainHealthLabel`, and `p2ReadinessReviewChainHealthQuery` to `AuditEvidenceReportLedgerSummary`.
+- Report `gaps` with `review-chain-gap` when any missing-coverage or missing-acceptance row is loaded.
+- Report `loaded` with `review-chain-loaded` when there are loaded review chains and no current-page gaps.
+- Report `empty` without a query when no P2 review-chain rows are loaded.
+- Render a "Chain health" marker with focus/copy controls in the Audit ledger toolbar.
+- Keep the change frontend/audit only; no review generation, no ledger mutation, no signing eligibility, no order submission, and no live trading.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for empty, gaps, and loaded health summary states.
+- [x] Added static UI coverage for health summary fields, focus action, copy action, and labels.
+- [x] Rendered "Chain health" controls in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "builds an audit report ledger from persisted report events"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This health summary only filters existing P2 review-chain status diagnostics. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:

@@ -201,6 +201,8 @@ Audit 台账行级操作现在也支持 P2 复核链状态查询：任何带 `p2
 
 Audit 台账 summary 现在还会突出最新一个 P2 复核链缺口：`buildAuditEvidenceReportLedgerSummary` 会在缺 coverage 与缺顶层复核的 row 中按 `createdAt` 选出最新缺口，暴露 `latestP2ReadinessReviewChainGapEventId/Label/Query`。Toolbar 的“最新缺口 / Latest gap”会显示对应 event id，并提供“定位最新复核链缺口 / Focus latest chain gap”和“复制最新复核链缺口链接 / Copy latest chain gap link”。该入口仍只复用既有只读诊断 query，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Audit 台账 summary 现在还会给 P2 复核链一个自适应健康入口：`buildAuditEvidenceReportLedgerSummary` 新增 `p2ReadinessReviewChainHealthState/Label/Query`。如果当前页存在缺 coverage 或缺顶层复核，健康状态为 `gaps` 并指向 `review-chain-gap`；如果没有缺口但有完整链路，健康状态为 `loaded` 并指向 `review-chain-loaded`；没有链路时保持 `empty`。Toolbar 的“复核链健康 / Chain health”可一键定位或复制当前页最需要查看的健康查询。该入口只复用既有 status token，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell
