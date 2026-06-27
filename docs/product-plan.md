@@ -166,6 +166,8 @@ Batch 54 已把整条 P2 复核链入口下沉到 Audit row：`AuditEvidenceRepo
 
 Batch 55 已给 P2 复核链增加当前页缺口诊断：linked acceptance review 行现在会标记 `p2ReadinessReviewChainCoverageLoaded` 与 `p2ReadinessReviewChainStatusLabel/Query`；如果被引用的 coverage review row 不在当前台账 rows 中，行内显示“复核链缺 coverage / Review chain missing coverage”，summary 统计 `p2ReadinessReviewChainMissingCoverageCount` 并提供 `review-chain-coverage-missing` 查询。该能力只帮助操作者发现当前页未完整加载的既有审计链，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 56 已把 P2 复核链缺口诊断补成双向闭环：coverage review 行如果没有当前页顶层 acceptance review 引用，会标记 `p2ReadinessReviewChainAcceptanceLoaded=false`、显示“复核链缺顶层复核 / Review chain missing acceptance”，summary 新增 `p2ReadinessReviewChainMissingAcceptanceCount/Query`，Toolbar 可用 `review-chain-acceptance-missing` 定位 orphan coverage review。全部已链接复核链的 query 也收紧为 `linked-review-chain`，降低空格分词和 run id 子串误命中。该能力仍只做只读诊断和过滤，不记录新事件、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

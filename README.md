@@ -193,6 +193,8 @@ Audit 台账行现在也会显示整条 P2 复核链：linked acceptance review 
 
 Audit 台账现在还会诊断 P2 复核链是否在当前页完整加载：linked acceptance review 行会标记 `p2ReadinessReviewChainCoverageLoaded`，并暴露 `p2ReadinessReviewChainStatusLabel/Query`。如果它引用的 `p2_readiness_evidence_coverage_review` 行不在当前 ledger rows 中，行内会显示“复核链缺 coverage / Review chain missing coverage”，Toolbar 会统计“复核链缺口 / Chain gaps”并提供 `review-chain-coverage-missing` 的 focus/copy 入口。这个诊断只说明当前页缺少已引用的 coverage row，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Audit 台账的 P2 复核链诊断现在也会反向发现 orphan coverage review：`p2_readiness_evidence_coverage_review` 行如果没有任何当前页 `p2_readiness_acceptance_review` 引用，会标记 `p2ReadinessReviewChainAcceptanceLoaded=false`，行内显示“复核链缺顶层复核 / Review chain missing acceptance”，Toolbar 会统计“缺顶层复核 / Missing acceptance”并提供 `review-chain-acceptance-missing` 的 focus/copy 入口。全部已链接复核链 summary 查询也收紧为单 token `linked-review-chain`，避免缺口状态和 run id 子串误命中。该能力仍只诊断既有审计行，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

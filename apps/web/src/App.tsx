@@ -20001,6 +20001,15 @@ function AuditEvidenceReportLedgerPanel({
                     {summary.p2ReadinessReviewChainMissingCoverageCount}
                   </small>
                 ) : null}
+                {summary.p2ReadinessReviewChainMissingAcceptanceCount > 0 ? (
+                  <small
+                    className="audit-report-ledger-p2-review-chain-gap"
+                    title={summary.p2ReadinessReviewChainMissingAcceptanceQuery}
+                  >
+                    {i18n.locale === "zh-CN" ? "缺顶层复核" : "Missing acceptance"}{" "}
+                    {summary.p2ReadinessReviewChainMissingAcceptanceCount}
+                  </small>
+                ) : null}
                 {summary.p2ReadinessReviewChainsQuery ? (
                   <button
                     onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainsQuery)}
@@ -20031,6 +20040,22 @@ function AuditEvidenceReportLedgerPanel({
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制复核链缺口链接" : "Copy chain gaps link"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainMissingAcceptanceQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainMissingAcceptanceQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位顶层复核缺口" : "Focus missing acceptance"}
+                  </button>
+                ) : null}
+                {summary.p2ReadinessReviewChainMissingAcceptanceQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.p2ReadinessReviewChainMissingAcceptanceQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制顶层复核缺口链接" : "Copy missing acceptance link"}
                   </button>
                 ) : null}
                 {summary.latestP2ReadinessReviewChainQuery ? (
@@ -20499,14 +20524,20 @@ function AuditEvidenceReportLedgerPanel({
                   {row.p2ReadinessReviewChainStatusLabel ? (
                     <span
                       className={`audit-report-ledger-p2-review-chain-status ${
-                        row.p2ReadinessReviewChainCoverageLoaded ? "loaded" : "missing"
+                        row.p2ReadinessReviewChainCoverageLoaded && row.p2ReadinessReviewChainAcceptanceLoaded
+                          ? "loaded"
+                          : "missing"
                       }`}
                       title={row.p2ReadinessReviewChainStatusQuery}
                     >
-                      {row.p2ReadinessReviewChainCoverageLoaded
+                      {row.p2ReadinessReviewChainCoverageLoaded && row.p2ReadinessReviewChainAcceptanceLoaded
                         ? i18n.locale === "zh-CN"
                           ? "复核链已加载"
                           : "Review chain loaded"
+                        : !row.p2ReadinessReviewChainAcceptanceLoaded
+                          ? i18n.locale === "zh-CN"
+                            ? "复核链缺顶层复核"
+                            : "Review chain missing acceptance"
                         : i18n.locale === "zh-CN"
                           ? "复核链缺 coverage"
                           : "Review chain missing coverage"}

@@ -1627,6 +1627,36 @@ This diagnostic only flags whether the already-referenced coverage review row is
 
 ---
 
+## Batch 56: P2 Review Chain Missing Acceptance Diagnostics
+
+**Outcome:** The Audit ledger can also identify coverage review rows that are loaded but not referenced by any top-level P2 readiness acceptance review in the current ledger page.
+
+Scope:
+- Add row-level `p2ReadinessReviewChainAcceptanceLoaded` alongside the existing coverage-loaded diagnostic.
+- Mark linked acceptance rows as having the acceptance side loaded, and mark linked coverage rows as fully loaded.
+- Mark orphan `p2_readiness_evidence_coverage_review` rows with `review-chain-acceptance-missing`.
+- Add summary counts and focus/copy query for missing-acceptance coverage rows.
+- Tighten the all-linked-chain query to the single token `linked-review-chain` so gap diagnostics and incidental run id substrings do not pollute the all-chain filter.
+
+### Progress
+
+- [x] Added RED/GREEN model coverage for a coverage review row with no current-page acceptance review reference.
+- [x] Added `p2ReadinessReviewChainAcceptanceLoaded` to ledger rows.
+- [x] Added `p2ReadinessReviewChainMissingAcceptanceCount` and `p2ReadinessReviewChainMissingAcceptanceQuery` to the ledger summary.
+- [x] Added static UI coverage for missing-acceptance toolbar controls and row-level status text.
+- [x] Rendered "Missing acceptance" focus/copy controls and row-level missing acceptance status in `AuditEvidenceReportLedgerPanel`.
+
+### Verification
+
+```powershell
+npm run test --workspace @aiqt/web -- src/lib/terminal-workbench.test.ts -t "links P2 readiness evidence coverage review ledger rows"
+npm run test --workspace @aiqt/web -- src/lib/layout-css.test.js -t "renders audit evidence report history"
+```
+
+This diagnostic only flags orphan coverage review rows already loaded in the Audit ledger. It does not create evidence, submit orders, sign reports, or relax the paper-only/live-blocked boundary.
+
+---
+
 ## P2 Acceptance Definition
 
 P2 is accepted only when a local user can:
