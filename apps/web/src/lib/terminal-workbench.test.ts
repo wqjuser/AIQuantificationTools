@@ -165,6 +165,7 @@ import {
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookMarkdown,
   buildOperatorRunbookSummary,
+  buildLocalReviewCoverageNextActionUrlSearch,
   buildP0CompletionChecklist,
   buildP0GoldenPathJourney,
   buildP0PlatformActionOutcome,
@@ -209,6 +210,7 @@ import {
   resolveResearchContextUrlState,
   researchWorkspaceStateMatchesDraft,
   resolveProductWorkAreaSelection,
+  resolveLocalReviewCoverageNextActionDeepLinkState,
   resolveP0CompletionGapDeepLinkState,
   resolveP0CurrentGapActionDeepLinkState,
   buildResearchRunComparisonRows,
@@ -16743,6 +16745,71 @@ describe("terminal workbench model", () => {
         targetWorkspaceId: "ai-review"
       })
     ).toBeNull();
+  });
+
+  test("builds normalized local review coverage next-action URL search params", () => {
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery:
+          "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing",
+        targetWorkspaceId: "research"
+      })
+    ).toBe(
+      "workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing"
+    );
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery:
+          "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
+        targetWorkspaceId: "unknown"
+      })
+    ).toBeNull();
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery: "local-review-bundle-gap local-review-bundle-personal-missing",
+        targetWorkspaceId: "research"
+      })
+    ).toBeNull();
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery: " ",
+        targetWorkspaceId: "research"
+      })
+    ).toBeNull();
+  });
+
+  test("resolves local review coverage next-action deep links from URL search params", () => {
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing"
+      )
+    ).toEqual({
+      auditReportQuery:
+        "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing",
+      targetWorkspaceId: "research"
+    });
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        new URLSearchParams(
+          "workspace=research&auditReportQuery=local-review-bundle-next-action+record-personal-team-review+local-review-bundle-personal-missing"
+        )
+      )
+    ).toEqual({
+      auditReportQuery:
+        "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
+      targetWorkspaceId: "research"
+    });
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=unknown&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review"
+      )
+    ).toBeNull();
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&auditReportQuery=local-review-bundle-gap+local-review-bundle-daily-ops-missing"
+      )
+    ).toBeNull();
+    expect(resolveLocalReviewCoverageNextActionDeepLinkState("?workspace=research")).toBeNull();
   });
 
   test("resolves P0 completion gap deep links from URL search params", () => {

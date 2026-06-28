@@ -347,6 +347,7 @@ import {
   createDefaultExecutionAdapterCertificationApplyConfirmations,
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
+  buildLocalReviewCoverageNextActionUrlSearch,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
@@ -8858,6 +8859,34 @@ export function App() {
     []
   );
 
+  const copyLocalReviewCoverageNextActionLink = useCallback(
+    async (targetWorkspaceId: ProductWorkAreaId | null | undefined, auditReportQuery: string) => {
+      const normalizedSearch = buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery,
+        targetWorkspaceId
+      });
+      if (!normalizedSearch || !navigator.clipboard?.writeText) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Local review coverage next-step link copy failed",
+          error: "Clipboard is unavailable or the local review coverage next-step link is incomplete."
+        }));
+        return;
+      }
+
+      const url = new URL(window.location.href);
+      url.search = `?${normalizedSearch}`;
+      url.hash = "";
+      await navigator.clipboard.writeText(url.toString());
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Local review coverage next-step link copied",
+        error: undefined
+      }));
+    },
+    []
+  );
+
   const openP0CurrentGapActionLink = useCallback(
     (search: string) => {
       const state = resolveP0CurrentGapActionDeepLinkState(search);
@@ -10716,6 +10745,7 @@ export function App() {
             onNextPage={nextAuditEvidenceReportPage}
             onCopyEvidenceLink={copyAuditReportLedgerEvidenceLink}
             onCopyCompletionGapLink={copyP0CompletionGapLink}
+            onCopyLocalReviewCoverageNextActionLink={copyLocalReviewCoverageNextActionLink}
             onCopyP0ActionLink={copyP0CurrentGapActionLink}
             onCopyQueryLink={copyAuditReportLedgerQueryLink}
             onOpenCompletionGap={selectProductWorkArea}
@@ -10723,6 +10753,16 @@ export function App() {
             onOpenLocalReviewCoverageNextAction={(workspaceId, auditReportQuery) => {
               updateAuditEvidenceReportQuery(auditReportQuery);
               selectProductWorkArea(workspaceId);
+              const normalizedSearch = buildLocalReviewCoverageNextActionUrlSearch({
+                auditReportQuery,
+                targetWorkspaceId: workspaceId
+              });
+              if (normalizedSearch && typeof window !== "undefined") {
+                const url = new URL(window.location.href);
+                url.search = `?${normalizedSearch}`;
+                url.hash = "";
+                window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+              }
             }}
             onOpenP0ActionLink={openP0CurrentGapActionLink}
             onOpenResearchContextLink={openAuditReportLedgerResearchContextLink}
@@ -20668,6 +20708,7 @@ function AuditEvidenceReportLedgerPanel({
   onNextPage,
   onCopyEvidenceLink,
   onCopyCompletionGapLink,
+  onCopyLocalReviewCoverageNextActionLink,
   onCopyP0ActionLink,
   onCopyQueryLink,
   onOpenCompletionGap,
@@ -20693,6 +20734,7 @@ function AuditEvidenceReportLedgerPanel({
   onNextPage: () => void;
   onCopyEvidenceLink: (search: string) => void;
   onCopyCompletionGapLink: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;
+  onCopyLocalReviewCoverageNextActionLink: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;
   onCopyP0ActionLink: (search: string) => void;
   onCopyQueryLink: (query: string) => void;
   onOpenCompletionGap: (workspaceId: ProductWorkAreaId) => void;
@@ -21294,9 +21336,9 @@ function AuditEvidenceReportLedgerPanel({
                     {i18n.locale === "zh-CN" ? "定位覆盖下一步" : "Focus coverage next"}
                   </button>
                 ) : null}
-                {summary.localReviewBundleCoverageNextActionQuery ? (
+                {localReviewCoverageNextActionWorkspaceId ? (
                   <button
-                    onClick={() => onCopyQueryLink(summary.localReviewBundleCoverageNextActionQuery)}
+                    onClick={() => onCopyLocalReviewCoverageNextActionLink(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)}
                     title={
                       summary.localReviewBundleCoverageNextActionTitle ||
                       summary.localReviewBundleCoverageNextActionQuery
@@ -22004,9 +22046,9 @@ function AuditEvidenceReportLedgerPanel({
                         {i18n.locale === "zh-CN" ? "定位行覆盖下一步" : "Focus row coverage next"}
                       </button>
                     ) : null}
-                    {row.localReviewBundleCoverageNextActionQuery ? (
+                    {rowLocalReviewCoverageNextActionWorkspaceId ? (
                       <button
-                        onClick={() => onCopyQueryLink(row.localReviewBundleCoverageNextActionQuery)}
+                        onClick={() => onCopyLocalReviewCoverageNextActionLink(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)}
                         title={
                           row.localReviewBundleCoverageNextActionTitle ||
                           row.localReviewBundleCoverageNextActionQuery

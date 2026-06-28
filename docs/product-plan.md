@@ -212,6 +212,8 @@ Batch 77 已把本地复核覆盖缺口转成显式下一步动作：`AuditEvide
 
 Batch 78 已让本地复核覆盖下一步可以打开目标工作区：`AuditEvidenceReportLedgerSummary` 和本地复核 row 新增 `localReviewBundleCoverageNextActionTargetWorkspaceId`，当覆盖为 partial 时指向承载个人/小团队复核与 Daily Ops 复核按钮的 `research` 工作区；Audit toolbar 与 row 操作区新增“打开覆盖下一步 / Open coverage next”，点击会先保留对应 next-action Audit 查询，再切回人工复核上下文。该能力只缩短从 Audit 缺口到手动复核入口的导航，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 79 已把覆盖下一步做成可复制、可恢复的目标工作区深链：新增 `buildLocalReviewCoverageNextActionUrlSearch` 与 `resolveLocalReviewCoverageNextActionDeepLinkState`，只接受合法工作区和包含 `local-review-bundle-next-action` 的 Audit 查询，并规范化为 `workspace=research&auditReportQuery=...`；Audit toolbar 与本地复核 row 的“复制覆盖下一步链接 / Copy coverage next link”现在使用该深链，而不是普通 Audit-only 查询链接。打开链接会恢复人工复核入口和对应 Audit 查询上下文，方便小团队交接覆盖缺口；它仍不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

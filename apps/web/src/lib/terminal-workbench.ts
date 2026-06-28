@@ -2852,6 +2852,11 @@ export interface P0CompletionGapDeepLinkState {
   targetWorkspaceId: ProductWorkAreaId;
 }
 
+export interface LocalReviewCoverageNextActionDeepLinkState {
+  auditReportQuery: string;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
 export type P0CurrentGapActionReadinessReason =
   | "missing-action"
   | "missing-workspace"
@@ -3222,6 +3227,42 @@ export function buildP0CompletionGapUrlSearch(input: {
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
   const auditReportQuery = input.auditReportQuery?.trim() ?? "";
   if (!targetWorkspaceId || !auditReportQuery || !auditReportQuery.includes("p0-completion-focus")) {
+    return null;
+  }
+  const params = new URLSearchParams();
+  params.set("workspace", targetWorkspaceId);
+  params.set("auditReportQuery", auditReportQuery);
+  return params.toString();
+}
+
+export function resolveLocalReviewCoverageNextActionDeepLinkState(
+  search: string | URLSearchParams | null | undefined
+): LocalReviewCoverageNextActionDeepLinkState | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
+  const auditReportQuery = params.get("auditReportQuery")?.trim() ?? "";
+  if (!targetWorkspaceId || !auditReportQuery.includes("local-review-bundle-next-action")) {
+    return null;
+  }
+  return {
+    auditReportQuery,
+    targetWorkspaceId
+  };
+}
+
+export function buildLocalReviewCoverageNextActionUrlSearch(input: {
+  auditReportQuery: string | null | undefined;
+  targetWorkspaceId: ProductWorkAreaId | string | null | undefined;
+}): string | null {
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
+  const auditReportQuery = input.auditReportQuery?.trim() ?? "";
+  if (!targetWorkspaceId || !auditReportQuery.includes("local-review-bundle-next-action")) {
     return null;
   }
   const params = new URLSearchParams();
