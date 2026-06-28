@@ -152,6 +152,7 @@ import {
   buildP2ReadinessEvidenceCoverage,
   buildP2ReadinessAcceptanceSummary,
   buildDailyOpsControlRoomSummary,
+  buildDailyOpsControlRoomReviewMarkdown,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookMarkdown,
@@ -3751,6 +3752,42 @@ describe("terminal workbench model", () => {
       "team-handoff:review:Create handoff runbook",
       "backup-restore:ready:Review restore evidence"
     ]);
+  });
+
+  test("builds a portable daily ops control room review markdown", () => {
+    const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+    const summary = buildDailyOpsControlRoomSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      personalTeamUsabilityReadiness: personalTeamSummary,
+      p0CompletionChecklist: p0CompletionChecklistFixture()
+    });
+
+    const markdown = buildDailyOpsControlRoomReviewMarkdown({ summary });
+
+    expect(markdown).toContain("# Daily Ops Control Room Review");
+    expect(markdown).toContain("- State: attention");
+    expect(markdown).toContain("- Ready ops gates: 2/4");
+    expect(markdown).toContain("- Primary action: Run AI review (ai-review)");
+    expect(markdown).toContain("- Audit query: p0_readiness_report p0-completion-focus run-p0-smoke");
+    expect(markdown).toContain("- current-action: review");
+    expect(markdown).toContain("- audit-context: ready");
+    expect(markdown).toContain("- team-handoff: review");
+    expect(markdown).toContain("- backup-restore: ready");
+    expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
   });
 
   test("builds a portable P2 readiness acceptance review markdown without live authorization", () => {
@@ -12706,6 +12743,7 @@ describe("terminal workbench model", () => {
       "p2_readiness_acceptance_generated",
       "p2_readiness_acceptance_review",
       "personal_team_readiness_review",
+      "daily_ops_control_room_review",
       "pre_live_runbook_report",
       "research_context_readiness_report"
     ];
@@ -12776,6 +12814,65 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "personal_team_readiness_review ready").map((row) => row.id)).toEqual([
       "personal-team-readiness-review-7777777777777777"
     ]);
+    expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
+  });
+
+  test("includes daily ops control room review events in the audit report ledger", () => {
+    const reviewHash = "6".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "daily-ops-control-room-review-6666666666666666",
+        eventType: "daily_ops_control_room_review",
+        runId: "daily-ops-control-room",
+        createdAt: "2026-06-28T10:00:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Daily ops control room review recorded",
+        detail:
+          "daily-ops-control-room-review.md · sha256 666666666666 · attention 2/4 gates · review 2 · blocked 0 · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.dailyOpsControlRoomReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          auditQueryLabel: "Latest P0 audit evidence",
+          blockingCount: 0,
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          fileName: "daily-ops-control-room-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          openItemIds: ["current-action", "team-handoff"],
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Run AI review",
+          primaryActionWorkspaceId: "ai-review",
+          queueItemIds: ["current-action", "audit-context", "team-handoff", "backup-restore"],
+          queueItemStatuses: ["review", "ready", "review", "ready"],
+          readyCount: 2,
+          reviewCount: 2,
+          routeExecuted: false,
+          state: "attention",
+          totalCount: 4
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.dailyOpsControlRoomReview",
+        contentSha256: reviewHash,
+        fileName: "daily-ops-control-room-review.md",
+        reportKind: "daily_ops_control_room_review",
+        status: "ready",
+        tone: "positive"
+      })
+    );
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, "daily_ops_control_room_review attention Run AI review").map(
+        (row) => row.id
+      )
+    ).toEqual(["daily-ops-control-room-review-6666666666666666"]);
     expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
   });
 

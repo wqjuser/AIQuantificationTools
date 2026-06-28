@@ -11,6 +11,7 @@ import {
   buildP2ManifestChainPreflightSummary,
   buildP2ReadinessAcceptanceReviewMarkdown,
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
+  buildDailyOpsControlRoomReviewMarkdown,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildP0CompletionChecklist,
   buildP0PlatformActionOutcome,
@@ -32,6 +33,7 @@ import {
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithBacktestAssumption,
   workspaceWithStrategyField,
+  type DailyOpsControlRoomSummary,
   type OperatorRunbookSummary,
   type P0AcceptanceSummarySource,
   type PersonalTeamUsabilityReadinessSummary,
@@ -255,6 +257,7 @@ import {
   buildP2ManifestChainPreflightReviewAuditEvent,
   buildP2ReadinessEvidenceCoverageReviewAuditEvent,
   buildP2ReadinessAcceptanceReviewAuditEvent,
+  buildDailyOpsControlRoomReviewAuditEvent,
   buildPersonalTeamUsabilityReadinessReviewAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildExecutionAdapterPreLiveRunbookAuditEvent,
@@ -15184,7 +15187,24 @@ describe("terminal workspace API client", () => {
           targetWorkspaceId: "audit"
         }
       ],
-      openItems: [],
+      openItems: [
+        {
+          id: "p2-prelive-chain",
+          label: "P2 pre-live chain",
+          status: "review",
+          detail: "Run the AI committee review after the audited backtest is selected.",
+          actionLabel: "Run AI review",
+          targetWorkspaceId: "ai-review"
+        },
+        {
+          id: "team-handoff-runbook",
+          label: "Team handoff runbook",
+          status: "review",
+          detail: "Write the operator handoff, incident owner, and review cadence before small-team beta.",
+          actionLabel: "Create handoff runbook",
+          targetWorkspaceId: "research"
+        }
+      ],
       nextActionLabel: "Review accepted loop",
       nextActionWorkspaceId: "audit",
       liveBoundaryLabel: "Paper-only · live blocked · no order submission"
@@ -15215,7 +15235,7 @@ describe("terminal workspace API client", () => {
         teamPercent: 100,
         readyCount: 6,
         totalCount: 6,
-        openItemIds: [],
+        openItemIds: ["p2-prelive-chain", "team-handoff-runbook"],
         itemIds: [
           "p0-local-loop",
           "p1-research-ops",
@@ -15240,6 +15260,137 @@ describe("terminal workspace API client", () => {
     expect(event.eventId).toBe(`personal-team-readiness-review-${String(event.metadata.contentSha256).slice(0, 16)}`);
     expect(event.detail).toContain("personal-team-readiness-review.md");
     expect(event.detail).toContain("ready 6/6 gates");
+    expect(event.detail).toContain("live blocked true");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds a daily ops control room review audit event without storing markdown", async () => {
+    const summary: DailyOpsControlRoomSummary = {
+      state: "attention",
+      tone: "warning",
+      headline: "Daily ops needs 2 reviews",
+      detail: "2/4 ops gates ready; 2 need review; 0 blocked. Live trading remains blocked.",
+      primaryActionLabel: "Run AI review",
+      primaryActionWorkspaceId: "ai-review",
+      auditQueryLabel: "Latest P0 audit evidence",
+      auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+      readyCount: 2,
+      reviewCount: 2,
+      blockingCount: 0,
+      totalCount: 4,
+      queueItems: [
+        {
+          id: "current-action",
+          label: "Current action",
+          status: "review",
+          tone: "warning",
+          detail: "Run the AI committee review after the audited backtest is selected.",
+          actionLabel: "Run AI review",
+          targetWorkspaceId: "ai-review",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+        },
+        {
+          id: "audit-context",
+          label: "Audit context",
+          status: "ready",
+          tone: "positive",
+          detail: "Latest P0 audit evidence is available for read-only review.",
+          actionLabel: "Open audit evidence",
+          targetWorkspaceId: "audit",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+        },
+        {
+          id: "team-handoff",
+          label: "Team handoff runbook",
+          status: "review",
+          tone: "warning",
+          detail: "Write the operator handoff, incident owner, and review cadence before small-team beta.",
+          actionLabel: "Create handoff runbook",
+          targetWorkspaceId: "research",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+        },
+        {
+          id: "backup-restore",
+          label: "Backup restore drill",
+          status: "ready",
+          tone: "positive",
+          detail: "Latest P0/P1 acceptance includes export, import, and imported-export restore checks.",
+          actionLabel: "Review restore evidence",
+          targetWorkspaceId: "audit",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+        }
+      ],
+      openItems: [
+        {
+          id: "current-action",
+          label: "Current action",
+          status: "review",
+          tone: "warning",
+          detail: "Run the AI committee review after the audited backtest is selected.",
+          actionLabel: "Run AI review",
+          targetWorkspaceId: "ai-review",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+        },
+        {
+          id: "team-handoff",
+          label: "Team handoff runbook",
+          status: "review",
+          tone: "warning",
+          detail: "Write the operator handoff, incident owner, and review cadence before small-team beta.",
+          actionLabel: "Create handoff runbook",
+          targetWorkspaceId: "research",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+        }
+      ],
+      liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+    };
+    const markdown = buildDailyOpsControlRoomReviewMarkdown({ summary });
+
+    const event = await buildDailyOpsControlRoomReviewAuditEvent({
+      generatedAt: "2026-06-28T10:00:00.000Z",
+      markdown,
+      summary
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "daily_ops_control_room_review",
+      runId: "daily-ops-control-room",
+      createdAt: "2026-06-28T10:00:00.000Z",
+      stage: "attention",
+      source: "web",
+      summary: "Daily ops control room review recorded",
+      metadata: {
+        artifactKind: "aiqt.dailyOpsControlRoomReview",
+        fileName: "daily-ops-control-room-review.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "attention",
+        readyCount: 2,
+        reviewCount: 2,
+        blockingCount: 0,
+        totalCount: 4,
+        queueItemIds: ["current-action", "audit-context", "team-handoff", "backup-restore"],
+        queueItemStatuses: ["review", "ready", "review", "ready"],
+        openItemIds: ["current-action", "team-handoff"],
+        primaryActionLabel: "Run AI review",
+        primaryActionWorkspaceId: "ai-review",
+        auditQueryLabel: "Latest P0 audit evidence",
+        auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+        orderSubmissionEnabled: false,
+        liveTradingAllowed: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
+        liveBlockedBoundary: true,
+        boundary:
+          "Daily ops control room review is audit evidence only; live trading remains blocked and no investment advice"
+      }
+    });
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(`daily-ops-control-room-review-${String(event.metadata.contentSha256).slice(0, 16)}`);
+    expect(event.detail).toContain("daily-ops-control-room-review.md");
+    expect(event.detail).toContain("attention 2/4 gates");
+    expect(event.detail).toContain("blocked 0");
     expect(event.detail).toContain("live blocked true");
     expect(event.detail).not.toContain(markdown);
   });

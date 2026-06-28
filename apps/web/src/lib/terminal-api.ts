@@ -36,6 +36,7 @@ import {
   type P0CompletionChecklist,
   type P0PaperExecutionPreflight,
   type P0PlatformReadinessSummary,
+  type DailyOpsControlRoomSummary,
   type PersonalTeamUsabilityReadinessSummary,
   type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
@@ -6080,6 +6081,63 @@ export async function buildPersonalTeamUsabilityReadinessReviewAuditEvent({
       liveBlockedBoundary: true,
       boundary:
         "Personal and small-team readiness review is audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
+export async function buildDailyOpsControlRoomReviewAuditEvent({
+  generatedAt = new Date().toISOString(),
+  markdown,
+  summary
+}: {
+  generatedAt?: string;
+  markdown: string;
+  summary: DailyOpsControlRoomSummary;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const fileName = "daily-ops-control-room-review.md";
+
+  return {
+    schemaVersion: 1,
+    eventId: `daily-ops-control-room-review-${shortHash}`,
+    eventType: "daily_ops_control_room_review",
+    runId: "daily-ops-control-room",
+    createdAt: generatedAt,
+    stage: summary.state,
+    source: "web",
+    summary: "Daily ops control room review recorded",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${summary.state} ${summary.readyCount}/${
+      summary.totalCount
+    } gates · review ${summary.reviewCount} · blocked ${summary.blockingCount} · live blocked true`,
+    metadata: {
+      artifactKind: "aiqt.dailyOpsControlRoomReview",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state: summary.state,
+      tone: summary.tone,
+      headline: summary.headline,
+      readyCount: summary.readyCount,
+      reviewCount: summary.reviewCount,
+      blockingCount: summary.blockingCount,
+      totalCount: summary.totalCount,
+      queueItemIds: summary.queueItems.map((item) => item.id),
+      queueItemStatuses: summary.queueItems.map((item) => item.status),
+      openItemIds: summary.openItems.map((item) => item.id),
+      primaryActionLabel: summary.primaryActionLabel,
+      primaryActionWorkspaceId: summary.primaryActionWorkspaceId,
+      auditQueryLabel: summary.auditQueryLabel,
+      auditQuery: summary.auditQuery,
+      liveBoundaryLabel: summary.liveBoundaryLabel,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      boundary:
+        "Daily ops control room review is audit evidence only; live trading remains blocked and no investment advice"
     }
   };
 }

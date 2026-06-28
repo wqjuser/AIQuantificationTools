@@ -2546,6 +2546,7 @@ export interface AuditEvidenceReportLedgerRow {
     | "p2_readiness_acceptance_generated"
     | "p2_readiness_acceptance_review"
     | "personal_team_readiness_review"
+    | "daily_ops_control_room_review"
     | "operator_runbook_report"
     | "pre_live_runbook_report"
     | "research_context_readiness_report";
@@ -8905,6 +8906,49 @@ function dailyOpsAuditQueryLabel(summary: AuditEvidenceReportLedgerSummary): str
   return "Audit ledger";
 }
 
+export function buildDailyOpsControlRoomReviewMarkdown({
+  summary
+}: {
+  summary: DailyOpsControlRoomSummary;
+}): string {
+  return [
+    "# Daily Ops Control Room Review",
+    "",
+    "## Summary",
+    `- State: ${summary.state}`,
+    `- Headline: ${summary.headline}`,
+    `- Detail: ${summary.detail}`,
+    `- Ready ops gates: ${summary.readyCount}/${summary.totalCount}`,
+    `- Review gates: ${summary.reviewCount}`,
+    `- Blocking gates: ${summary.blockingCount}`,
+    `- Primary action: ${summary.primaryActionLabel} (${summary.primaryActionWorkspaceId})`,
+    `- Audit query label: ${summary.auditQueryLabel}`,
+    `- Audit query: ${summary.auditQuery || "none"}`,
+    `- Live boundary: ${summary.liveBoundaryLabel}`,
+    "",
+    "## Daily Ops Queue",
+    ...summary.queueItems.map((item) =>
+      [
+        `- ${item.id}: ${item.status}`,
+        `  - Label: ${item.label}`,
+        `  - Detail: ${item.detail}`,
+        `  - Action: ${item.actionLabel}`,
+        `  - Target workspace: ${item.targetWorkspaceId}`,
+        `  - Audit query: ${item.auditQuery || "none"}`
+      ].join("\n")
+    ),
+    "",
+    "## Open Items",
+    summary.openItems.length ? summary.openItems.map((item) => `- ${item.id}: ${item.actionLabel}`) : "- none",
+    "",
+    "## Boundary",
+    "- Platform decision: live trading and real order routing remain blocked.",
+    "- This review is a local daily-ops audit aid only; it does not authorize live trading or investment advice."
+  ]
+    .flat()
+    .join("\n");
+}
+
 export function buildPersonalTeamUsabilityReadinessReviewMarkdown({
   summary
 }: {
@@ -13573,6 +13617,7 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
       p2_readiness_acceptance_generated: "P2 readiness acceptance generation",
       p2_readiness_acceptance_review: "P2 readiness acceptance review",
       personal_team_readiness_review: "Personal and small-team readiness review",
+      daily_ops_control_room_review: "Daily ops control room review",
       pre_live_runbook_report: "Pre-live runbook report",
       portfolio_report: "Portfolio report",
       research_context_readiness_report: "Research context readiness report",
@@ -14989,6 +15034,7 @@ export function buildAuditEvidenceReportLedgerRows(
         event.eventType === "p2_readiness_acceptance_generated" ||
         event.eventType === "p2_readiness_acceptance_review" ||
         event.eventType === "personal_team_readiness_review" ||
+        event.eventType === "daily_ops_control_room_review" ||
         event.eventType === "operator_runbook_report" ||
         event.eventType === "pre_live_runbook_report" ||
         event.eventType === "research_context_readiness_report"
@@ -15009,6 +15055,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "p2_readiness_acceptance_review"
           : event.eventType === "personal_team_readiness_review"
           ? "personal_team_readiness_review"
+          : event.eventType === "daily_ops_control_room_review"
+          ? "daily_ops_control_room_review"
           : event.eventType === "operator_runbook_report"
           ? "operator_runbook_report"
           : event.eventType === "pre_live_runbook_report"
@@ -15041,6 +15089,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "aiqt.p2ReadinessAcceptanceReview"
           : reportKind === "personal_team_readiness_review"
           ? "aiqt.personalTeamReadinessReview"
+          : reportKind === "daily_ops_control_room_review"
+          ? "aiqt.dailyOpsControlRoomReview"
           : reportKind === "operator_runbook_report"
           ? "aiqt.operatorRunbookReport"
           : reportKind === "pre_live_runbook_report"
@@ -15068,6 +15118,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "p2-readiness-acceptance-review.md"
           : reportKind === "personal_team_readiness_review"
           ? "personal-team-readiness-review.md"
+          : reportKind === "daily_ops_control_room_review"
+          ? "daily-ops-control-room-review.md"
           : reportKind === "operator_runbook_report"
           ? "operator-runbook-report.md"
           : reportKind === "pre_live_runbook_report"
@@ -15843,6 +15895,29 @@ export function buildAuditEvidenceReportLedgerRows(
               .filter(Boolean)
               .join(" ")
           : "";
+      const dailyOpsControlRoomReviewSearchText =
+        reportKind === "daily_ops_control_room_review"
+          ? [
+              "daily_ops_control_room_review",
+              auditReportLedgerMetadataText(event.metadata, "state") || event.stage,
+              `${auditReportLedgerMetadataNumber(event.metadata, "readyCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalCount"
+              )}`,
+              `review ${auditReportLedgerMetadataNumber(event.metadata, "reviewCount")}`,
+              `blocked ${auditReportLedgerMetadataNumber(event.metadata, "blockingCount")}`,
+              auditReportLedgerMetadataText(event.metadata, "primaryActionLabel"),
+              auditReportLedgerMetadataText(event.metadata, "primaryActionWorkspaceId"),
+              auditReportLedgerMetadataText(event.metadata, "auditQueryLabel"),
+              auditReportLedgerMetadataText(event.metadata, "auditQuery"),
+              auditReportLedgerMetadataStringList(event.metadata, "queueItemIds").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "queueItemStatuses").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "openItemIds").join(" "),
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
       return {
         id: event.eventId,
         artifactKind,
@@ -15868,6 +15943,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? p2ReadinessAcceptanceGeneratedAcceptedCriteria
             : reportKind === "p2_readiness_acceptance_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")
+            : reportKind === "daily_ops_control_room_review"
+            ? auditReportLedgerMetadataNumber(event.metadata, "readyCount")
             : reportKind === "operator_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "completedSections")
             : reportKind === "pre_live_runbook_report"
@@ -15890,6 +15967,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? p2ReadinessAcceptanceGeneratedTotalCriteria
             : reportKind === "p2_readiness_acceptance_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalCriterionCount")
+            : reportKind === "daily_ops_control_room_review"
+            ? auditReportLedgerMetadataNumber(event.metadata, "totalCount")
             : reportKind === "operator_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalSections")
             : reportKind === "pre_live_runbook_report"
@@ -15914,6 +15993,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "p2_readiness_acceptance_generated" ||
           reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "personal_team_readiness_review" ||
+          reportKind === "daily_ops_control_room_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -15929,6 +16009,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "p2_readiness_acceptance_generated" ||
           reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "personal_team_readiness_review" ||
+          reportKind === "daily_ops_control_room_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -16034,6 +16115,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? "p2-readiness-acceptance-review"
             : reportKind === "personal_team_readiness_review"
             ? "personal-team-readiness-review"
+            : reportKind === "daily_ops_control_room_review"
+            ? "daily-ops-control-room-review"
             : reportKind === "operator_runbook_report"
             ? "operator-runbook-report"
             : reportKind === "pre_live_runbook_report"
@@ -16062,6 +16145,8 @@ export function buildAuditEvidenceReportLedgerRows(
               ? "P2 readiness acceptance review hash recorded"
             : reportKind === "personal_team_readiness_review"
               ? "Personal/team readiness review hash recorded"
+            : reportKind === "daily_ops_control_room_review"
+              ? "Daily ops control room review hash recorded"
             : reportKind === "operator_runbook_report"
               ? "Operator runbook report hash recorded"
             : reportKind === "pre_live_runbook_report"
@@ -16092,6 +16177,7 @@ export function buildAuditEvidenceReportLedgerRows(
           p2ReadinessEvidenceCoverageReviewSearchText,
           p2ReadinessAcceptanceGeneratedSearchText,
           p2ReadinessAcceptanceReviewSearchText,
+          dailyOpsControlRoomReviewSearchText,
           operatorRunbookSearchText,
           preLiveRunbookSearchText,
           researchContextSearchText
@@ -16114,6 +16200,14 @@ export function buildAuditEvidenceReportLedgerRows(
             : reportKind === "personal_team_readiness_review"
             ? auditReportLedgerMetadataText(event.metadata, "state") === "ready" &&
               !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted") &&
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary")
+              ? "positive"
+              : "risk"
+            : reportKind === "daily_ops_control_room_review"
+            ? !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
               !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
               !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
               !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted") &&
@@ -16611,6 +16705,7 @@ export function auditReportLedgerRowIsSigningEligible(row: AuditEvidenceReportLe
     row.reportKind !== "p2_readiness_acceptance_generated" &&
     row.reportKind !== "p2_readiness_acceptance_review" &&
     row.reportKind !== "personal_team_readiness_review" &&
+    row.reportKind !== "daily_ops_control_room_review" &&
     row.reportKind !== "pre_live_runbook_report" &&
     row.reportKind !== "research_context_readiness_report"
   );
