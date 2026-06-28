@@ -21206,6 +21206,88 @@ function AuditEvidenceReportLedgerPanel({
                 ) : null}
               </span>
             ) : null}
+            {summary.latestPersonalTeamReadinessReviewEventId ? (
+              <span
+                title={
+                  summary.latestPersonalTeamReadinessReviewTitle ||
+                  summary.latestPersonalTeamReadinessReviewEventId
+                }
+              >
+                {i18n.locale === "zh-CN" ? "最新可用性复核" : "Latest readiness review"}{" "}
+                <strong>
+                  {summary.latestPersonalTeamReadinessReviewShortHash ||
+                    summary.latestPersonalTeamReadinessReviewEventId}
+                </strong>
+                {summary.latestPersonalTeamReadinessReviewLabel ? (
+                  <span
+                    className="audit-report-ledger-personal-team-review"
+                    title={
+                      summary.latestPersonalTeamReadinessReviewTitle ||
+                      summary.latestPersonalTeamReadinessReviewQuery
+                    }
+                  >
+                    {summary.latestPersonalTeamReadinessReviewLabel}
+                  </span>
+                ) : null}
+                {summary.latestPersonalTeamReadinessReviewQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestPersonalTeamReadinessReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位最新可用性复核" : "Focus latest readiness review"}
+                  </button>
+                ) : null}
+                {summary.latestPersonalTeamReadinessReviewQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestPersonalTeamReadinessReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制最新可用性复核链接" : "Copy latest readiness review link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
+            {summary.latestDailyOpsControlRoomReviewEventId ? (
+              <span
+                title={
+                  summary.latestDailyOpsControlRoomReviewTitle ||
+                  summary.latestDailyOpsControlRoomReviewEventId
+                }
+              >
+                {i18n.locale === "zh-CN" ? "最新每日复核" : "Latest daily review"}{" "}
+                <strong>
+                  {summary.latestDailyOpsControlRoomReviewShortHash ||
+                    summary.latestDailyOpsControlRoomReviewEventId}
+                </strong>
+                {summary.latestDailyOpsControlRoomReviewLabel ? (
+                  <span
+                    className="audit-report-ledger-daily-ops-review"
+                    title={
+                      summary.latestDailyOpsControlRoomReviewTitle ||
+                      summary.latestDailyOpsControlRoomReviewQuery
+                    }
+                  >
+                    {summary.latestDailyOpsControlRoomReviewLabel}
+                  </span>
+                ) : null}
+                {summary.latestDailyOpsControlRoomReviewQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestDailyOpsControlRoomReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位最新每日复核" : "Focus latest daily review"}
+                  </button>
+                ) : null}
+                {summary.latestDailyOpsControlRoomReviewQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestDailyOpsControlRoomReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制最新每日复核链接" : "Copy latest daily review link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
             {summary.latestAuditAidPreparationEvidenceLabel ? (
               <span title={summary.latestAuditAidPreparationEvidenceRunId}>
                 {i18n.locale === "zh-CN" ? "数据准备" : "Data prep"}{" "}

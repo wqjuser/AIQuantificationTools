@@ -11433,12 +11433,22 @@ describe("terminal workbench model", () => {
       latestAuditAidProgressQuery: "",
       latestAuditAidPreparationEvidenceLabel: "",
       latestAuditAidPreparationEvidenceRunId: "",
-      latestAuditAidReportQuery: "",
-      latestAuditAidRunId: "",
-      latestAuditAidShortHash: "",
-      latestHash: reportHash,
-      latestP2ReadinessLinkedAcceptanceReviewEventId: "",
-      latestP2ReadinessLinkedAcceptanceReviewQuery: "",
+        latestAuditAidReportQuery: "",
+        latestAuditAidRunId: "",
+        latestAuditAidShortHash: "",
+        latestDailyOpsControlRoomReviewEventId: "",
+        latestDailyOpsControlRoomReviewLabel: "",
+        latestDailyOpsControlRoomReviewQuery: "",
+        latestDailyOpsControlRoomReviewShortHash: "",
+        latestDailyOpsControlRoomReviewTitle: "",
+        latestHash: reportHash,
+        latestPersonalTeamReadinessReviewEventId: "",
+        latestPersonalTeamReadinessReviewLabel: "",
+        latestPersonalTeamReadinessReviewQuery: "",
+        latestPersonalTeamReadinessReviewShortHash: "",
+        latestPersonalTeamReadinessReviewTitle: "",
+        latestP2ReadinessLinkedAcceptanceReviewEventId: "",
+        latestP2ReadinessLinkedAcceptanceReviewQuery: "",
       latestP2ReadinessLinkedCoverageReviewEventId: "",
       latestP2ReadinessLinkedCoverageReviewLabel: "",
       latestP2ReadinessLinkedCoverageReviewQuery: "",
@@ -13119,6 +13129,140 @@ describe("terminal workbench model", () => {
     );
     expect(buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(rows[0])).toBe(
       "daily_ops_control_room_review daily-ops-control-room-review-6666666666666666 666666666666 attention 2/4 review 2 blocked 0 Run AI ai-review p0_readiness_report p0-completion-focus run-p0-smoke current-action team-handoff"
+    );
+  });
+
+  test("surfaces the latest personal and daily ops reviews in the audit report ledger summary", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-old-5555555555555555",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T08:00:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail: "old personal review",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "5".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Collect handoff note",
+          nextActionWorkspaceId: "audit",
+          openItemIds: ["team-handoff-runbook"],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 5,
+          routeExecuted: false,
+          state: "attention",
+          teamPercent: 80,
+          totalCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-new-7777777777777777",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail: "new personal review",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "7".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Review accepted loop",
+          nextActionWorkspaceId: "audit",
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "daily-ops-control-room-review-old-4444444444444444",
+        eventType: "daily_ops_control_room_review",
+        runId: "daily-ops-control-room",
+        createdAt: "2026-06-28T08:30:00.000Z",
+        stage: "blocked",
+        source: "web",
+        summary: "Daily ops control room review recorded",
+        detail: "old daily ops review",
+        metadata: {
+          artifactKind: "aiqt.dailyOpsControlRoomReview",
+          auditQuery: "p0_readiness_report old",
+          blockingCount: 1,
+          contentSha256: "4".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          openItemIds: ["backup-restore"],
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Review backup",
+          primaryActionWorkspaceId: "audit",
+          readyCount: 1,
+          reviewCount: 2,
+          routeExecuted: false,
+          state: "blocked",
+          totalCount: 4
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "daily-ops-control-room-review-new-6666666666666666",
+        eventType: "daily_ops_control_room_review",
+        runId: "daily-ops-control-room",
+        createdAt: "2026-06-28T10:00:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Daily ops control room review recorded",
+        detail: "new daily ops review",
+        metadata: {
+          artifactKind: "aiqt.dailyOpsControlRoomReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          blockingCount: 0,
+          contentSha256: "6".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          openItemIds: ["current-action", "team-handoff"],
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Run AI review",
+          primaryActionWorkspaceId: "ai-review",
+          readyCount: 2,
+          reviewCount: 2,
+          routeExecuted: false,
+          state: "attention",
+          totalCount: 4
+        }
+      }
+    ]);
+
+    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+      expect.objectContaining({
+        latestDailyOpsControlRoomReviewEventId: "daily-ops-control-room-review-new-6666666666666666",
+        latestDailyOpsControlRoomReviewLabel: "attention 2/4 · review 2 · blocked 0",
+        latestDailyOpsControlRoomReviewQuery:
+          "daily_ops_control_room_review daily-ops-control-room-review-new-6666666666666666 666666666666 attention 2/4 review 2 blocked 0 Run AI ai-review p0_readiness_report p0-completion-focus run-p0-smoke current-action team-handoff",
+        latestDailyOpsControlRoomReviewShortHash: "666666666666",
+        latestDailyOpsControlRoomReviewTitle:
+          "Daily ops review: attention 2/4 · review 2 · blocked 0 · open current-action, team-handoff · primary Run AI review -> ai-review",
+        latestPersonalTeamReadinessReviewEventId: "personal-team-readiness-review-new-7777777777777777",
+        latestPersonalTeamReadinessReviewLabel: "ready 6/6 · personal 100% · team 100%",
+        latestPersonalTeamReadinessReviewQuery:
+          "personal_team_readiness_review personal-team-readiness-review-new-7777777777777777 777777777777 ready 6/6 personal 100% team Review accepted loop audit",
+        latestPersonalTeamReadinessReviewShortHash: "777777777777",
+        latestPersonalTeamReadinessReviewTitle:
+          "Personal/team readiness review: ready 6/6 · personal 100% · team 100% · open none · next Review accepted loop -> audit"
+      })
     );
   });
 

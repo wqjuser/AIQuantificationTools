@@ -215,6 +215,8 @@ Audit 台账现在还会解释 P2 复核链健康上下文：`AuditEvidenceRepor
 
 Audit 报告台账行现在也能直接解释 `personal_team_readiness_review` 和 `daily_ops_control_room_review`：模型层新增行级 label/title/query helper，页面会显示个人/小团队复核和每日操作复核 chip，并提供“定位复核 / 复制复核链接”动作。这样从首页跳转到 Audit 后，不需要打开 Markdown 或手工拼搜索词，也能看见复核状态、ready/total、open items 和下一动作；这些动作只过滤既有台账行，不新建复核、不签名、不运行流水线、不连接券商、不提交订单。
 
+Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_review` 和 `daily_ops_control_room_review`：`buildAuditEvidenceReportLedgerSummary` 会选出两类最新 ready 复核行，暴露 event id、短 hash、label、title 和稳定查询；Toolbar 会显示“最新可用性复核 / Latest readiness review”和“最新每日复核 / Latest daily review”，并提供定位/复制链接。这个入口只复用既有复核行和只读 Audit 查询，不新建复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

@@ -2708,6 +2708,16 @@ export interface AuditEvidenceReportLedgerSummary {
   latestAuditAidReportQuery: string;
   latestAuditAidRunId: string;
   latestAuditAidShortHash: string;
+  latestDailyOpsControlRoomReviewEventId: string;
+  latestDailyOpsControlRoomReviewLabel: string;
+  latestDailyOpsControlRoomReviewQuery: string;
+  latestDailyOpsControlRoomReviewShortHash: string;
+  latestDailyOpsControlRoomReviewTitle: string;
+  latestPersonalTeamReadinessReviewEventId: string;
+  latestPersonalTeamReadinessReviewLabel: string;
+  latestPersonalTeamReadinessReviewQuery: string;
+  latestPersonalTeamReadinessReviewShortHash: string;
+  latestPersonalTeamReadinessReviewTitle: string;
   latestPreLiveRunbookAdapterId: string;
   latestPreLiveRunbookContextLabel: string;
   latestPreLiveRunbookEvidenceCount: number;
@@ -16868,6 +16878,22 @@ export function buildAuditEvidenceReportLedgerSummary(
       }
       return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
     }, undefined);
+  const latestPersonalTeamReadinessReviewRow = rows
+    .filter((row) => row.reportKind === "personal_team_readiness_review" && row.status === "ready")
+    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+    }, undefined);
+  const latestDailyOpsControlRoomReviewRow = rows
+    .filter((row) => row.reportKind === "daily_ops_control_room_review" && row.status === "ready")
+    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+    }, undefined);
   const p2ReadinessLinkedAcceptanceReviewRows = rows.filter(
     (row) =>
       row.reportKind === "p2_readiness_acceptance_review" &&
@@ -17008,6 +17034,22 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestAuditAidReportQuery: auditReportLedgerLatestAuditAidReportQuery(latestAuditAidRow),
     latestAuditAidRunId: latestAuditAidRow?.runId ?? "",
     latestAuditAidShortHash: latestAuditAidRow?.shortHash ?? "",
+    latestDailyOpsControlRoomReviewEventId: latestDailyOpsControlRoomReviewRow?.id ?? "",
+    latestDailyOpsControlRoomReviewLabel:
+      buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel(latestDailyOpsControlRoomReviewRow),
+    latestDailyOpsControlRoomReviewQuery:
+      buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(latestDailyOpsControlRoomReviewRow),
+    latestDailyOpsControlRoomReviewShortHash: latestDailyOpsControlRoomReviewRow?.shortHash ?? "",
+    latestDailyOpsControlRoomReviewTitle:
+      buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle(latestDailyOpsControlRoomReviewRow),
+    latestPersonalTeamReadinessReviewEventId: latestPersonalTeamReadinessReviewRow?.id ?? "",
+    latestPersonalTeamReadinessReviewLabel:
+      buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel(latestPersonalTeamReadinessReviewRow),
+    latestPersonalTeamReadinessReviewQuery:
+      buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery(latestPersonalTeamReadinessReviewRow),
+    latestPersonalTeamReadinessReviewShortHash: latestPersonalTeamReadinessReviewRow?.shortHash ?? "",
+    latestPersonalTeamReadinessReviewTitle:
+      buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle(latestPersonalTeamReadinessReviewRow),
     latestPreLiveRunbookAdapterId: latestPreLiveRunbookRow?.preLiveRunbookAdapterId ?? "",
     latestPreLiveRunbookContextLabel: latestPreLiveRunbookRow
       ? [
