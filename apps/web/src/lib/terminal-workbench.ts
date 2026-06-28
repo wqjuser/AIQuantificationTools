@@ -656,6 +656,46 @@ export interface PersonalTeamUsabilityReadinessSummaryInput {
   p2ReadinessEvidenceCoverage: P2ReadinessEvidenceCoverage;
 }
 
+export type DailyOpsControlRoomState = "ready" | "attention" | "blocked";
+export type DailyOpsControlRoomTone = "positive" | "warning" | "risk";
+export type DailyOpsControlRoomQueueItemStatus = "ready" | "review" | "blocked";
+export type DailyOpsControlRoomQueueItemId = "current-action" | "audit-context" | "team-handoff" | "backup-restore";
+
+export interface DailyOpsControlRoomQueueItem {
+  id: DailyOpsControlRoomQueueItemId;
+  label: string;
+  status: DailyOpsControlRoomQueueItemStatus;
+  tone: DailyOpsControlRoomTone;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  auditQuery: string;
+}
+
+export interface DailyOpsControlRoomSummary {
+  state: DailyOpsControlRoomState;
+  tone: DailyOpsControlRoomTone;
+  headline: string;
+  detail: string;
+  primaryActionLabel: string;
+  primaryActionWorkspaceId: ProductWorkAreaId;
+  auditQueryLabel: string;
+  auditQuery: string;
+  readyCount: number;
+  reviewCount: number;
+  blockingCount: number;
+  totalCount: number;
+  queueItems: DailyOpsControlRoomQueueItem[];
+  openItems: DailyOpsControlRoomQueueItem[];
+  liveBoundaryLabel: string;
+}
+
+export interface DailyOpsControlRoomSummaryInput {
+  auditEvidenceReportLedgerSummary: AuditEvidenceReportLedgerSummary;
+  personalTeamUsabilityReadiness: PersonalTeamUsabilityReadinessSummary;
+  p0CompletionChecklist: P0CompletionChecklist;
+}
+
 export type P2ReadinessAcceptanceReviewStatus = "accepted" | "missing" | "invalid";
 
 export interface P2ReadinessAcceptanceReviewSource {
@@ -8657,6 +8697,212 @@ export function buildPersonalTeamUsabilityReadinessSummary({
 
 function readinessPercent(readyCount: number, totalCount: number): number {
   return totalCount > 0 ? Math.round((Math.max(0, Math.min(readyCount, totalCount)) / totalCount) * 100) : 0;
+}
+
+export function buildDailyOpsControlRoomSummary({
+  auditEvidenceReportLedgerSummary,
+  personalTeamUsabilityReadiness,
+  p0CompletionChecklist
+}: DailyOpsControlRoomSummaryInput): DailyOpsControlRoomSummary {
+  const auditQuery =
+    auditEvidenceReportLedgerSummary.latestAuditAidReportQuery ||
+    auditEvidenceReportLedgerSummary.latestP2ReadinessReviewChainQuery ||
+    auditEvidenceReportLedgerSummary.latestP2ReadinessLinkedAcceptanceReviewQuery ||
+    auditEvidenceReportLedgerSummary.p2ReadinessReviewChainHealthQuery ||
+    "";
+  const auditQueryLabel = dailyOpsAuditQueryLabel(auditEvidenceReportLedgerSummary);
+  const currentActionItem = buildDailyOpsCurrentActionItem({
+    auditQuery,
+    personalTeamUsabilityReadiness,
+    p0CompletionChecklist
+  });
+  const teamHandoffItem = buildDailyOpsPersonalTeamItem({
+    auditQuery,
+    fallbackActionLabel: "Create handoff runbook",
+    fallbackDetail: "Write the operator handoff, incident owner, and review cadence before small-team beta.",
+    fallbackLabel: "Team handoff runbook",
+    fallbackWorkspaceId: "research",
+    id: "team-handoff",
+    sourceItem: personalTeamUsabilityReadiness.items.find((item) => item.id === "team-handoff-runbook")
+  });
+  const backupRestoreItem = buildDailyOpsPersonalTeamItem({
+    auditQuery,
+    fallbackActionLabel: "Plan backup drill",
+    fallbackDetail: "Run a repeatable export/import/imported-export restore drill before shared use.",
+    fallbackLabel: "Backup restore drill",
+    fallbackWorkspaceId: "audit",
+    id: "backup-restore",
+    sourceItem: personalTeamUsabilityReadiness.items.find((item) => item.id === "backup-restore-drill")
+  });
+  const auditContextReady = Boolean(auditQuery || auditEvidenceReportLedgerSummary.latestAuditAidEventId);
+  const auditContextItem: DailyOpsControlRoomQueueItem = {
+    id: "audit-context",
+    label: "Audit context",
+    status: auditContextReady ? "ready" : "review",
+    tone: auditContextReady ? "positive" : "warning",
+    detail: auditContextReady
+      ? `${auditQueryLabel} is available for read-only review.`
+      : "Record or load a current audit-aid report before sharing daily status.",
+    actionLabel: auditContextReady ? "Open audit evidence" : "Open audit ledger",
+    targetWorkspaceId: "audit",
+    auditQuery
+  };
+  const queueItems = [currentActionItem, auditContextItem, teamHandoffItem, backupRestoreItem];
+  const readyCount = queueItems.filter((item) => item.status === "ready").length;
+  const reviewCount = queueItems.filter((item) => item.status === "review").length;
+  const blockingCount = queueItems.filter((item) => item.status === "blocked").length;
+  const totalCount = queueItems.length;
+  const state: DailyOpsControlRoomState = blockingCount > 0 ? "blocked" : reviewCount > 0 ? "attention" : "ready";
+  const tone: DailyOpsControlRoomTone = dailyOpsTone(state);
+  const openItems = queueItems.filter((item) => item.status !== "ready");
+  const primaryAction = openItems[0] ?? currentActionItem;
+
+  return {
+    state,
+    tone,
+    headline:
+      state === "ready"
+        ? "Daily ops ready for paper review"
+        : state === "blocked"
+          ? `Daily ops has ${blockingCount} blocker${blockingCount === 1 ? "" : "s"}`
+          : `Daily ops needs ${reviewCount} review${reviewCount === 1 ? "" : "s"}`,
+    detail: `${readyCount}/${totalCount} ops gates ready; ${reviewCount} need review; ${blockingCount} blocked. Live trading remains blocked.`,
+    primaryActionLabel: primaryAction.actionLabel,
+    primaryActionWorkspaceId: primaryAction.targetWorkspaceId,
+    auditQueryLabel,
+    auditQuery,
+    readyCount,
+    reviewCount,
+    blockingCount,
+    totalCount,
+    queueItems,
+    openItems,
+    liveBoundaryLabel: personalTeamUsabilityReadiness.liveBoundaryLabel
+  };
+}
+
+function buildDailyOpsCurrentActionItem({
+  auditQuery,
+  personalTeamUsabilityReadiness,
+  p0CompletionChecklist
+}: {
+  auditQuery: string;
+  personalTeamUsabilityReadiness: PersonalTeamUsabilityReadinessSummary;
+  p0CompletionChecklist: P0CompletionChecklist;
+}): DailyOpsControlRoomQueueItem {
+  const personalBlocker = personalTeamUsabilityReadiness.openItems.find((item) => item.status === "blocked");
+  const completionGap = p0CompletionChecklist.currentGap;
+  const personalOpenItem = personalTeamUsabilityReadiness.openItems[0] ?? null;
+
+  if (personalBlocker) {
+    const status = dailyOpsStatusFromPersonalTeamItem(personalBlocker);
+    return {
+      id: "current-action",
+      label: "Current action",
+      status,
+      tone: dailyOpsTone(status),
+      detail: personalBlocker.detail,
+      actionLabel: personalBlocker.actionLabel,
+      targetWorkspaceId: personalBlocker.targetWorkspaceId,
+      auditQuery
+    };
+  }
+
+  if (completionGap) {
+    const status = dailyOpsStatusFromP0Completion(completionGap.status);
+    return {
+      id: "current-action",
+      label: "Current action",
+      status,
+      tone: dailyOpsTone(status),
+      detail: completionGap.detail,
+      actionLabel: completionGap.actionLabel ?? "Open completion gap",
+      targetWorkspaceId: completionGap.targetWorkspaceId,
+      auditQuery
+    };
+  }
+
+  if (personalOpenItem) {
+    const status = dailyOpsStatusFromPersonalTeamItem(personalOpenItem);
+    return {
+      id: "current-action",
+      label: "Current action",
+      status,
+      tone: dailyOpsTone(status),
+      detail: personalOpenItem.detail,
+      actionLabel: personalOpenItem.actionLabel,
+      targetWorkspaceId: personalOpenItem.targetWorkspaceId,
+      auditQuery
+    };
+  }
+
+  return {
+    id: "current-action",
+    label: "Current action",
+    status: "ready",
+    tone: "positive",
+    detail: "Daily paper-only operations are ready for read-only audit review.",
+    actionLabel: "Open audit ledger",
+    targetWorkspaceId: "audit",
+    auditQuery
+  };
+}
+
+function buildDailyOpsPersonalTeamItem({
+  auditQuery,
+  fallbackActionLabel,
+  fallbackDetail,
+  fallbackLabel,
+  fallbackWorkspaceId,
+  id,
+  sourceItem
+}: {
+  auditQuery: string;
+  fallbackActionLabel: string;
+  fallbackDetail: string;
+  fallbackLabel: string;
+  fallbackWorkspaceId: ProductWorkAreaId;
+  id: Exclude<DailyOpsControlRoomQueueItemId, "audit-context" | "current-action">;
+  sourceItem: PersonalTeamUsabilityReadinessItem | undefined;
+}): DailyOpsControlRoomQueueItem {
+  const status = sourceItem ? dailyOpsStatusFromPersonalTeamItem(sourceItem) : "review";
+  return {
+    id,
+    label: sourceItem?.label ?? fallbackLabel,
+    status,
+    tone: dailyOpsTone(status),
+    detail: sourceItem?.detail ?? fallbackDetail,
+    actionLabel: sourceItem?.actionLabel ?? fallbackActionLabel,
+    targetWorkspaceId: sourceItem?.targetWorkspaceId ?? fallbackWorkspaceId,
+    auditQuery
+  };
+}
+
+function dailyOpsStatusFromPersonalTeamItem(
+  item: PersonalTeamUsabilityReadinessItem
+): DailyOpsControlRoomQueueItemStatus {
+  return item.status === "ready" ? "ready" : item.status === "blocked" ? "blocked" : "review";
+}
+
+function dailyOpsStatusFromP0Completion(status: P0CompletionCriterionStatus): DailyOpsControlRoomQueueItemStatus {
+  return status === "passed" ? "ready" : status === "blocked" ? "blocked" : "review";
+}
+
+function dailyOpsTone(status: DailyOpsControlRoomState | DailyOpsControlRoomQueueItemStatus): DailyOpsControlRoomTone {
+  return status === "ready" ? "positive" : status === "blocked" ? "risk" : "warning";
+}
+
+function dailyOpsAuditQueryLabel(summary: AuditEvidenceReportLedgerSummary): string {
+  if (summary.latestAuditAidReportQuery) {
+    return "Latest P0 audit evidence";
+  }
+  if (summary.latestP2ReadinessReviewChainQuery || summary.latestP2ReadinessLinkedAcceptanceReviewQuery) {
+    return "Latest P2 review chain";
+  }
+  if (summary.p2ReadinessReviewChainHealthQuery) {
+    return "P2 review chain health";
+  }
+  return "Audit ledger";
 }
 
 export function buildPersonalTeamUsabilityReadinessReviewMarkdown({

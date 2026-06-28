@@ -351,6 +351,7 @@ import {
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessAcceptanceSummary,
   buildP2ReadinessEvidenceCoverage,
+  buildDailyOpsControlRoomSummary,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookSummary,
@@ -458,6 +459,8 @@ import {
   AuditEvidenceReportLedgerRow,
   EvidencePackageControlRoom,
   EvidencePackageControlRoomRow,
+  DailyOpsControlRoomQueueItem,
+  DailyOpsControlRoomSummary,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
   P2ReadinessEvidenceCoverageReviewAuditEventReferenceSource,
@@ -2921,6 +2924,11 @@ export function App() {
       workspace.researchRun?.strategyConfig
     ]
   );
+  const dailyOpsControlRoom = buildDailyOpsControlRoomSummary({
+    auditEvidenceReportLedgerSummary,
+    personalTeamUsabilityReadiness,
+    p0CompletionChecklist
+  });
   const p0GoldenPathJourney = useMemo(
     () =>
       buildP0GoldenPathJourney({
@@ -8689,6 +8697,28 @@ export function App() {
     }));
   }, []);
 
+  const openAuditReportLedgerQuery = useCallback(
+    (query: string, statusLabel = "Audit report query selected") => {
+      const normalizedQuery = query.trim();
+      if (!normalizedQuery) {
+        selectProductWorkArea("audit");
+        return;
+      }
+      setAuditEvidenceReportQuery(normalizedQuery);
+      setAuditEvidenceReportOffset(0);
+      replaceAuditEvidenceReportQueryUrlParam(normalizedQuery);
+      setActiveWorkAreaId("audit");
+      setActiveLoopStepId("backtest");
+      setActiveWorkflowStageId("execution");
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel,
+        error: undefined
+      }));
+    },
+    [selectProductWorkArea]
+  );
+
   const copyExecutionAdapterPreLiveRunbookAuditLink = useCallback(async () => {
     const query = executionAdapterPreLiveRunbookAuditCoverage.query;
     if (!query) {
@@ -11183,6 +11213,61 @@ export function App() {
                     </div>
                   ) : null}
                 </div>
+                <div className={`daily-ops-control-room ${dailyOpsControlRoom.state}`}>
+                  <div className="daily-ops-head">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "每日操作台" : "Daily Ops"}</span>
+                      <strong>{dailyOpsControlRoomHeadline(i18n, dailyOpsControlRoom)}</strong>
+                      <small>{dailyOpsControlRoomDetail(i18n, dailyOpsControlRoom)}</small>
+                    </div>
+                    <em>
+                      {dailyOpsControlRoom.readyCount}/{dailyOpsControlRoom.totalCount}
+                    </em>
+                  </div>
+                  <small className="daily-ops-boundary">
+                    {dailyOpsControlRoomLiveBoundary(i18n, dailyOpsControlRoom)}
+                  </small>
+                  <div className="daily-ops-actions">
+                    <button onClick={() => selectProductWorkArea(dailyOpsControlRoom.primaryActionWorkspaceId)} type="button">
+                      <Play size={11} />
+                      {dailyOpsControlRoomPrimaryAction(i18n, dailyOpsControlRoom)}
+                    </button>
+                    <button
+                      disabled={!dailyOpsControlRoom.auditQuery}
+                      onClick={() => openAuditReportLedgerQuery(dailyOpsControlRoom.auditQuery, "Daily ops audit query selected")}
+                      type="button"
+                    >
+                      <Search size={11} />
+                      {dailyOpsControlRoomAuditAction(i18n, dailyOpsControlRoom)}
+                    </button>
+                    <button
+                      disabled={!dailyOpsControlRoom.auditQuery}
+                      onClick={() => void copyAuditReportLedgerQueryLink(dailyOpsControlRoom.auditQuery)}
+                      type="button"
+                    >
+                      <Copy size={11} />
+                      {i18n.locale === "zh-CN" ? "复制审计链接" : "Copy audit link"}
+                    </button>
+                  </div>
+                  <div className="daily-ops-queue">
+                    {dailyOpsControlRoom.queueItems.map((item) => (
+                      <button
+                        className={`daily-ops-item ${item.status}`}
+                        key={item.id}
+                        onClick={() =>
+                          item.id === "audit-context" && item.auditQuery
+                            ? openAuditReportLedgerQuery(item.auditQuery, "Daily ops queue audit query selected")
+                            : selectProductWorkArea(item.targetWorkspaceId)
+                        }
+                        type="button"
+                      >
+                        <span>{dailyOpsControlRoomItemLabel(i18n, item)}</span>
+                        <strong>{dailyOpsControlRoomItemAction(i18n, item)}</strong>
+                        <small>{dailyOpsControlRoomItemDetail(i18n, item)}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div
                   className={`p0-completion-checklist ${
                     p0CompletionChecklist.currentGap?.status ?? "passed"
@@ -12332,6 +12417,105 @@ function personalTeamUsabilityReadinessItemDetail(
         "team-handoff-runbook": ""
       } satisfies Record<PersonalTeamUsabilityReadinessItem["id"], string>
     )[item.id];
+  }
+  return item.detail;
+}
+
+function dailyOpsControlRoomHeadline(i18n: AppI18n, summary: DailyOpsControlRoomSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.headline;
+  }
+  if (summary.state === "ready") {
+    return "每日纸面复核已就绪";
+  }
+  if (summary.state === "blocked") {
+    return `${summary.blockingCount} 个阻断需要先处理`;
+  }
+  return `${summary.reviewCount} 个事项需要复核`;
+}
+
+function dailyOpsControlRoomDetail(i18n: AppI18n, summary: DailyOpsControlRoomSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.detail;
+  }
+  return `${summary.readyCount}/${summary.totalCount} 个操作闸门已就绪 · ${summary.reviewCount} 个待复核 · ${summary.blockingCount} 个阻断 · 实盘仍阻断`;
+}
+
+function dailyOpsControlRoomLiveBoundary(i18n: AppI18n, summary: DailyOpsControlRoomSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.liveBoundaryLabel;
+  }
+  return "仅整理每日操作证据 · 不提交订单 · 不启用实盘";
+}
+
+function dailyOpsControlRoomPrimaryAction(i18n: AppI18n, summary: DailyOpsControlRoomSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.primaryActionLabel;
+  }
+  return (
+    {
+      "Create handoff runbook": "继续交接手册",
+      "Open audit ledger": "打开审计台账",
+      "Plan backup drill": "规划备份演练",
+      "Record audit review": "记录审计复核",
+      "Review accepted loop": "复核纸面闭环",
+      "Review P2 readiness": "复核 P2 readiness",
+      "Review research ops": "复核研究运营",
+      "Run AI review": "继续 AI 评审"
+    }[summary.primaryActionLabel] ?? summary.primaryActionLabel
+  );
+}
+
+function dailyOpsControlRoomAuditAction(i18n: AppI18n, summary: DailyOpsControlRoomSummary): string {
+  if (i18n.locale === "en-US") {
+    return summary.auditQuery ? "Open audit query" : "No audit query";
+  }
+  return summary.auditQuery ? "打开审计定位" : "暂无审计定位";
+}
+
+function dailyOpsControlRoomItemLabel(i18n: AppI18n, item: DailyOpsControlRoomQueueItem): string {
+  if (i18n.locale === "en-US") {
+    return item.label;
+  }
+  return (
+    {
+      "audit-context": "审计定位",
+      "backup-restore": "备份恢复",
+      "current-action": "当前动作",
+      "team-handoff": "团队交接"
+    } satisfies Record<DailyOpsControlRoomQueueItem["id"], string>
+  )[item.id];
+}
+
+function dailyOpsControlRoomItemAction(i18n: AppI18n, item: DailyOpsControlRoomQueueItem): string {
+  if (i18n.locale === "en-US") {
+    return item.actionLabel;
+  }
+  return (
+    {
+      "Open audit evidence": "打开审计证据",
+      "Open audit ledger": "打开审计台账",
+      "Create handoff runbook": "创建交接手册",
+      "Open handoff notes": "打开交接备注",
+      "Plan backup drill": "规划备份演练",
+      "Review restore evidence": "复核恢复证据",
+      "Run AI review": "继续 AI 评审"
+    }[item.actionLabel] ?? item.actionLabel
+  );
+}
+
+function dailyOpsControlRoomItemDetail(i18n: AppI18n, item: DailyOpsControlRoomQueueItem): string {
+  if (i18n.locale === "en-US") {
+    return item.detail;
+  }
+  if (item.id === "audit-context") {
+    return item.status === "ready" ? "当前审计查询可只读定位。" : "先记录或加载当前审计辅助报告。";
+  }
+  if (item.id === "team-handoff") {
+    return item.status === "ready" ? "本地交接备注已存在。" : "补齐负责人、交接说明和复核节奏。";
+  }
+  if (item.id === "backup-restore") {
+    return item.status === "ready" ? "验收已覆盖导出、导入和再导出。" : "补齐可重复的备份恢复演练。";
   }
   return item.detail;
 }

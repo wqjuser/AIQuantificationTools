@@ -188,6 +188,8 @@ Batch 65 已把小团队 readiness 的两个团队化缺口接入真实本地证
 
 Batch 66 已把个人/小团队 readiness 摘要推进为可留档复核材料：`terminal-workbench` 新增 `buildPersonalTeamUsabilityReadinessReviewMarkdown`，把首页同源 summary 输出为 Markdown；`terminal-api` 新增 `buildPersonalTeamUsabilityReadinessReviewAuditEvent`，以 `personal_team_readiness_review` 入账 SHA-256、ready/open gate、个人/团队百分比、next action 和强制 live-blocked metadata；首页个人/小团队卡新增复制、下载和入账复核动作，Audit history 查询也会回读这类事件。该能力只记录本地复核证据，不改变 readiness 判定、不生成缺失 handoff/restore 证据、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 67 已把个人/小团队 readiness 推进成首页 Daily Ops 控制台：`terminal-workbench` 新增 `buildDailyOpsControlRoomSummary`，把 P0 completion 当前缺口、个人/团队 readiness、最新 Audit 查询、团队交接和备份恢复状态派生为 4 条每日操作队列。首页新增“每日操作台”，提供当前主动作、打开 Audit 查询、复制 Audit 查询链接和行级跳转；Audit 定位复用既有 `workspace=audit&auditReportQuery=...` 深链。该能力只组织本地纸面操作和只读审计复核，不生成新事件、不运行 Docker、不运行流水线、不提交模拟或真实订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

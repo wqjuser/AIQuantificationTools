@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import type {
   AuditEvidenceReportLedgerSummary,
   AuditEvidenceReportLedgerRow,
+  DailyOpsControlRoomSummary,
   ExecutionAdapterChainHealthRollup,
   OperatorRunbookAuditCoverage,
   OperatorRunbookSummary,
   P0AcceptanceSummary,
+  P0CompletionChecklist,
   P0PlatformReadinessSummary,
   P1AcceptanceSummary,
   P2ManifestChainPreflightSummary,
@@ -149,6 +151,7 @@ import {
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessEvidenceCoverage,
   buildP2ReadinessAcceptanceSummary,
+  buildDailyOpsControlRoomSummary,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookMarkdown,
@@ -689,6 +692,32 @@ function p0AcceptanceSummaryFixture(overrides: Partial<P0AcceptanceSummary> = {}
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: false,
     liveBlockedBoundary: true,
+    ...overrides
+  };
+}
+
+function p0CompletionChecklistFixture(overrides: Partial<P0CompletionChecklist> = {}): P0CompletionChecklist {
+  const currentGap = {
+    id: "ai-evidence" as const,
+    label: "AI review is bound to audit evidence",
+    status: "review" as const,
+    detail: "Run the AI committee review after the audited backtest is selected.",
+    evidence: "AI review not recorded",
+    actionLabel: "Run AI review",
+    targetWorkspaceId: "ai-review" as const
+  };
+
+  return {
+    total: 10,
+    passed: 8,
+    review: 2,
+    blocked: 0,
+    progressPct: 80,
+    headline: "P0 completion needs review",
+    detail: "8/10 completion criteria passed; 2 need review.",
+    criteria: [currentGap],
+    openCriteria: [currentGap],
+    currentGap,
     ...overrides
   };
 }
@@ -3676,6 +3705,52 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("- p0-local-loop: ready");
     expect(markdown).toContain("- team-handoff-runbook: ready");
     expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
+  });
+
+  test("builds a daily ops control room from completion, audit, handoff, and restore evidence", () => {
+    const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+
+    const summary: DailyOpsControlRoomSummary = buildDailyOpsControlRoomSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      personalTeamUsabilityReadiness: personalTeamSummary,
+      p0CompletionChecklist: p0CompletionChecklistFixture()
+    });
+
+    expect(summary).toMatchObject({
+      state: "attention",
+      tone: "warning",
+      headline: "Daily ops needs 2 reviews",
+      primaryActionLabel: "Run AI review",
+      primaryActionWorkspaceId: "ai-review",
+      auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+      auditQueryLabel: "Latest P0 audit evidence",
+      readyCount: 2,
+      reviewCount: 2,
+      blockingCount: 0,
+      totalCount: 4,
+      liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+    });
+    expect(summary.detail).toContain("2/4 ops gates ready");
+    expect(summary.queueItems.map((item) => `${item.id}:${item.status}:${item.actionLabel}`)).toEqual([
+      "current-action:review:Run AI review",
+      "audit-context:ready:Open audit evidence",
+      "team-handoff:review:Create handoff runbook",
+      "backup-restore:ready:Review restore evidence"
+    ]);
   });
 
   test("builds a portable P2 readiness acceptance review markdown without live authorization", () => {

@@ -291,6 +291,7 @@ describe("terminal layout css", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 
     expect(appSource).toContain("buildPersonalTeamUsabilityReadinessSummary({");
+    expect(appSource).toContain("buildDailyOpsControlRoomSummary({");
     expect(appSource).toContain("buildPersonalTeamUsabilityReadinessReviewMarkdown({");
     expect(appSource).toContain("copyPersonalTeamReadinessReview");
     expect(appSource).toContain("downloadPersonalTeamReadinessReview");
@@ -301,6 +302,9 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain('className="personal-team-readiness-actions"');
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.openItems.slice(0, 3).map");
     expect(overviewSource).toContain("selectProductWorkArea(item.targetWorkspaceId)");
+    expect(overviewSource).toContain('className={`daily-ops-control-room ${dailyOpsControlRoom.state}`}');
+    expect(overviewSource).toContain("dailyOpsControlRoom.queueItems.map");
+    expect(overviewSource).toContain("dailyOpsControlRoom.auditQuery");
     expect(cssBlock(".personal-team-readiness")).toContain("display: grid;");
     expect(cssBlock(".personal-team-readiness")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".personal-team-readiness-score")).toContain("grid-template-columns: repeat(2, auto);");
@@ -310,6 +314,10 @@ describe("terminal layout css", () => {
       "grid-template-columns: repeat(2, minmax(0, 1fr));"
     );
     expect(cssBlock(".personal-team-readiness-item")).toContain("cursor: pointer;");
+    expect(cssBlock(".daily-ops-control-room")).toContain("display: grid;");
+    expect(cssBlock(".daily-ops-control-room")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".daily-ops-queue")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(cssBlock(".daily-ops-item")).toContain("cursor: pointer;");
   });
 
   test("renders one P0 golden path journey before detailed readiness evidence", () => {
