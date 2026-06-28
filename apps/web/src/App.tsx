@@ -21575,6 +21575,15 @@ function AuditEvidenceReportLedgerPanel({
                       {rowDailyOpsControlRoomReviewLabel}
                     </span>
                   ) : null}
+                  {row.localReviewBundleContextQuery ? (
+                    <span
+                      className="audit-report-ledger-local-review-bundle"
+                      title={row.localReviewBundleContextTitle || row.localReviewBundleContextQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "本地复核集" : "Local review bundle"} ·{" "}
+                      {row.localReviewBundleContextQuery}
+                    </span>
+                  ) : null}
                   {rowP0ProgressLabel ? (
                     <span
                       className="audit-report-ledger-p0-progress"
@@ -21803,6 +21812,24 @@ function AuditEvidenceReportLedgerPanel({
                     {rowDailyOpsControlRoomReviewQuery ? (
                       <button onClick={() => onCopyQueryLink(rowDailyOpsControlRoomReviewQuery)} type="button">
                         {i18n.locale === "zh-CN" ? "复制每日复核链接" : "Copy daily review link"}
+                      </button>
+                    ) : null}
+                    {row.localReviewBundleContextQuery ? (
+                      <button
+                        onClick={() => focusAuditReportQuery(row.localReviewBundleContextQuery)}
+                        title={row.localReviewBundleContextTitle || row.localReviewBundleContextQuery}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "定位行本地复核集" : "Focus row local reviews"}
+                      </button>
+                    ) : null}
+                    {row.localReviewBundleContextQuery ? (
+                      <button
+                        onClick={() => onCopyQueryLink(row.localReviewBundleContextQuery)}
+                        title={row.localReviewBundleContextTitle || row.localReviewBundleContextQuery}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制行本地复核集链接" : "Copy row local reviews link"}
                       </button>
                     ) : null}
                     {row.p2ReadinessReviewChainQuery ? (

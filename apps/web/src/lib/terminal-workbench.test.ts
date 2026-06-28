@@ -13279,9 +13279,30 @@ describe("terminal workbench model", () => {
           "Personal/team readiness review: ready 6/6 · personal 100% · team 100% · open none · next Review accepted loop -> audit"
       })
     );
+    expect(rows[1]).toEqual(
+      expect.objectContaining({
+        localReviewBundleContextQuery: "local-review-bundle",
+        localReviewBundleContextTitle:
+          "local-review-bundle · personal/team readiness review · personal-team-readiness-review-new-7777777777777777"
+      })
+    );
+    expect(rows[3]).toEqual(
+      expect.objectContaining({
+        localReviewBundleContextQuery: "local-review-bundle",
+        localReviewBundleContextTitle:
+          "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666"
+      })
+    );
     expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleQuery).map((row) => row.id)).toEqual([
       "personal-team-readiness-review-old-5555555555555555",
       "personal-team-readiness-review-new-7777777777777777",
+      "daily-ops-control-room-review-old-4444444444444444",
+      "daily-ops-control-room-review-new-6666666666666666"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, rows[1].localReviewBundleContextTitle).map((row) => row.id)).toEqual([
+      "personal-team-readiness-review-new-7777777777777777"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle daily ops review").map((row) => row.id)).toEqual([
       "daily-ops-control-room-review-old-4444444444444444",
       "daily-ops-control-room-review-new-6666666666666666"
     ]);

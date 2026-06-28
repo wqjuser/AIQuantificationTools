@@ -202,6 +202,8 @@ Batch 72 已把最新个人/小团队复核和最新 Daily Ops 复核上浮到 A
 
 Batch 73 已把个人/小团队复核与 Daily Ops 复核聚合为 Audit 台账顶部的“本地复核集”：两类复核行的前端 `searchText` 会派生共享 `local-review-bundle` token；`AuditEvidenceReportLedgerSummary` 新增 `localReviewBundleCount`、个人/小团队计数、Daily Ops 计数、最新复核 event id、总查询和 title；Audit toolbar 新增“定位本地复核集 / 复制本地复核集链接”。该入口只对当前页既有 `personal_team_readiness_review` 与 `daily_ops_control_room_review` 行做只读过滤和统计，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 74 已把本地复核集入口下沉到每条本地复核 row：`AuditEvidenceReportLedgerRow` 新增 `localReviewBundleContextQuery` 和 `localReviewBundleContextTitle`，个人/小团队复核与 Daily Ops 复核行都会暴露同一条 `local-review-bundle` 上下文查询，并把 title 纳入只读搜索。Audit 行操作区新增“定位行本地复核集 / 复制行本地复核集链接”，让操作者从任意复核证据返回整页本地复核集；该能力不写新复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

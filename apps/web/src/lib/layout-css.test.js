@@ -2003,12 +2003,20 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("rowPersonalTeamReadinessReviewQuery");
     expect(reportLedgerPanelSource).toContain("rowDailyOpsControlRoomReviewLabel");
     expect(reportLedgerPanelSource).toContain("rowDailyOpsControlRoomReviewQuery");
+    expect(reportLedgerPanelSource).toContain("row.localReviewBundleContextQuery");
+    expect(reportLedgerPanelSource).toContain("row.localReviewBundleContextTitle");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleContextQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleContextQuery)");
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-personal-team-review"');
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-daily-ops-review"');
     expect(reportLedgerPanelSource).toContain("个人/小团队复核");
     expect(reportLedgerPanelSource).toContain("Personal/team review");
     expect(reportLedgerPanelSource).toContain("每日操作复核");
     expect(reportLedgerPanelSource).toContain("Daily ops review");
+    expect(reportLedgerPanelSource).toContain("定位行本地复核集");
+    expect(reportLedgerPanelSource).toContain("Focus row local reviews");
+    expect(reportLedgerPanelSource).toContain("复制行本地复核集链接");
+    expect(reportLedgerPanelSource).toContain("Copy row local reviews link");
     expect(reportLedgerPanelSource).toContain("row.p0CompletionCurrentCriterionTargetWorkspaceId");
     expect(reportLedgerPanelSource).toContain(
       "const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId"
