@@ -690,6 +690,18 @@ export interface DailyOpsControlRoomSummary {
   liveBoundaryLabel: string;
 }
 
+export type DailyOpsControlRoomReviewReferenceStatus = "current" | "stale" | "missing";
+
+export interface DailyOpsControlRoomReviewReference {
+  createdAt: string;
+  detail: string;
+  eventId: string;
+  label: string;
+  query: string;
+  row: AuditEvidenceReportLedgerRow | null;
+  status: DailyOpsControlRoomReviewReferenceStatus;
+}
+
 export interface DailyOpsControlRoomSummaryInput {
   auditEvidenceReportLedgerSummary: AuditEvidenceReportLedgerSummary;
   personalTeamUsabilityReadiness: PersonalTeamUsabilityReadinessSummary;
@@ -2508,6 +2520,18 @@ export interface AuditEvidenceReportLedgerRow {
   preLiveRunbookSymbol: string;
   preLiveRunbookTimeframe: string;
   preLiveRunbookTotalSteps: number;
+  dailyOpsControlRoomReviewState: string;
+  dailyOpsControlRoomReviewReadyCount: number;
+  dailyOpsControlRoomReviewReviewCount: number;
+  dailyOpsControlRoomReviewBlockingCount: number;
+  dailyOpsControlRoomReviewTotalCount: number;
+  dailyOpsControlRoomReviewQueueItemIds: string[];
+  dailyOpsControlRoomReviewQueueItemStatuses: string[];
+  dailyOpsControlRoomReviewOpenItemIds: string[];
+  dailyOpsControlRoomReviewPrimaryActionLabel: string;
+  dailyOpsControlRoomReviewPrimaryActionWorkspaceId: string;
+  dailyOpsControlRoomReviewAuditQueryLabel: string;
+  dailyOpsControlRoomReviewAuditQuery: string;
   p2ReadinessAcceptanceCoverageReviewLinkLabel: string;
   p2ReadinessAcceptanceCoverageReviewLinkQuery: string;
   p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: string;
@@ -8947,6 +8971,88 @@ export function buildDailyOpsControlRoomReviewMarkdown({
   ]
     .flat()
     .join("\n");
+}
+
+export function buildDailyOpsControlRoomReviewReference({
+  ledgerRows,
+  summary
+}: {
+  ledgerRows: AuditEvidenceReportLedgerRow[];
+  summary: DailyOpsControlRoomSummary;
+}): DailyOpsControlRoomReviewReference {
+  const latestRow =
+    ledgerRows
+      .filter((row) => row.reportKind === "daily_ops_control_room_review" && row.status === "ready")
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null;
+
+  if (!latestRow) {
+    return {
+      createdAt: "",
+      detail: "No daily ops control room review has been recorded yet.",
+      eventId: "",
+      label: "No daily ops review recorded",
+      query: "",
+      row: null,
+      status: "missing"
+    };
+  }
+
+  const query = auditReportLedgerDeduplicatedQueryText([
+    "daily_ops_control_room_review",
+    latestRow.id,
+    latestRow.dailyOpsControlRoomReviewState,
+    `${latestRow.dailyOpsControlRoomReviewReadyCount}/${latestRow.dailyOpsControlRoomReviewTotalCount}`
+  ]);
+  const isCurrent = dailyOpsControlRoomReviewRowMatchesSummary(latestRow, summary);
+  const stateLabel = `${latestRow.dailyOpsControlRoomReviewState || latestRow.focusQuery} ${
+    latestRow.dailyOpsControlRoomReviewReadyCount
+  }/${latestRow.dailyOpsControlRoomReviewTotalCount}`;
+
+  return {
+    createdAt: latestRow.createdAt,
+    detail: isCurrent
+      ? `Latest review ${latestRow.id} matches current daily ops queue (${stateLabel}).`
+      : `Latest review ${latestRow.id} no longer matches current daily ops queue (${stateLabel}); record a fresh review.`,
+    eventId: latestRow.id,
+    label: isCurrent ? "Daily ops review current" : "Daily ops review stale",
+    query,
+    row: latestRow,
+    status: isCurrent ? "current" : "stale"
+  };
+}
+
+function dailyOpsControlRoomReviewRowMatchesSummary(
+  row: AuditEvidenceReportLedgerRow,
+  summary: DailyOpsControlRoomSummary
+): boolean {
+  return (
+    row.reportKind === "daily_ops_control_room_review" &&
+    row.status === "ready" &&
+    row.dailyOpsControlRoomReviewState === summary.state &&
+    row.dailyOpsControlRoomReviewReadyCount === summary.readyCount &&
+    row.dailyOpsControlRoomReviewReviewCount === summary.reviewCount &&
+    row.dailyOpsControlRoomReviewBlockingCount === summary.blockingCount &&
+    row.dailyOpsControlRoomReviewTotalCount === summary.totalCount &&
+    row.dailyOpsControlRoomReviewPrimaryActionLabel === summary.primaryActionLabel &&
+    row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId === summary.primaryActionWorkspaceId &&
+    row.dailyOpsControlRoomReviewAuditQuery === summary.auditQuery &&
+    sameDailyOpsStringList(
+      row.dailyOpsControlRoomReviewQueueItemIds,
+      summary.queueItems.map((item) => item.id)
+    ) &&
+    sameDailyOpsStringList(
+      row.dailyOpsControlRoomReviewQueueItemStatuses,
+      summary.queueItems.map((item) => item.status)
+    ) &&
+    sameDailyOpsStringList(
+      row.dailyOpsControlRoomReviewOpenItemIds,
+      summary.openItems.map((item) => item.id)
+    )
+  );
+}
+
+function sameDailyOpsStringList(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
 export function buildPersonalTeamUsabilityReadinessReviewMarkdown({
@@ -15895,24 +16001,53 @@ export function buildAuditEvidenceReportLedgerRows(
               .filter(Boolean)
               .join(" ")
           : "";
+      const dailyOpsControlRoomReviewState =
+        reportKind === "daily_ops_control_room_review"
+          ? auditReportLedgerMetadataText(event.metadata, "state") || event.stage
+          : "";
+      const dailyOpsControlRoomReviewReadyCount =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataNumber(event.metadata, "readyCount") : 0;
+      const dailyOpsControlRoomReviewReviewCount =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataNumber(event.metadata, "reviewCount") : 0;
+      const dailyOpsControlRoomReviewBlockingCount =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataNumber(event.metadata, "blockingCount") : 0;
+      const dailyOpsControlRoomReviewTotalCount =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataNumber(event.metadata, "totalCount") : 0;
+      const dailyOpsControlRoomReviewQueueItemIds =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataStringList(event.metadata, "queueItemIds") : [];
+      const dailyOpsControlRoomReviewQueueItemStatuses =
+        reportKind === "daily_ops_control_room_review"
+          ? auditReportLedgerMetadataStringList(event.metadata, "queueItemStatuses")
+          : [];
+      const dailyOpsControlRoomReviewOpenItemIds =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataStringList(event.metadata, "openItemIds") : [];
+      const dailyOpsControlRoomReviewPrimaryActionLabel =
+        reportKind === "daily_ops_control_room_review"
+          ? auditReportLedgerMetadataText(event.metadata, "primaryActionLabel")
+          : "";
+      const dailyOpsControlRoomReviewPrimaryActionWorkspaceId =
+        reportKind === "daily_ops_control_room_review"
+          ? auditReportLedgerMetadataText(event.metadata, "primaryActionWorkspaceId")
+          : "";
+      const dailyOpsControlRoomReviewAuditQueryLabel =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataText(event.metadata, "auditQueryLabel") : "";
+      const dailyOpsControlRoomReviewAuditQuery =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataText(event.metadata, "auditQuery") : "";
       const dailyOpsControlRoomReviewSearchText =
         reportKind === "daily_ops_control_room_review"
           ? [
               "daily_ops_control_room_review",
-              auditReportLedgerMetadataText(event.metadata, "state") || event.stage,
-              `${auditReportLedgerMetadataNumber(event.metadata, "readyCount")}/${auditReportLedgerMetadataNumber(
-                event.metadata,
-                "totalCount"
-              )}`,
-              `review ${auditReportLedgerMetadataNumber(event.metadata, "reviewCount")}`,
-              `blocked ${auditReportLedgerMetadataNumber(event.metadata, "blockingCount")}`,
-              auditReportLedgerMetadataText(event.metadata, "primaryActionLabel"),
-              auditReportLedgerMetadataText(event.metadata, "primaryActionWorkspaceId"),
-              auditReportLedgerMetadataText(event.metadata, "auditQueryLabel"),
-              auditReportLedgerMetadataText(event.metadata, "auditQuery"),
-              auditReportLedgerMetadataStringList(event.metadata, "queueItemIds").join(" "),
-              auditReportLedgerMetadataStringList(event.metadata, "queueItemStatuses").join(" "),
-              auditReportLedgerMetadataStringList(event.metadata, "openItemIds").join(" "),
+              dailyOpsControlRoomReviewState,
+              `${dailyOpsControlRoomReviewReadyCount}/${dailyOpsControlRoomReviewTotalCount}`,
+              `review ${dailyOpsControlRoomReviewReviewCount}`,
+              `blocked ${dailyOpsControlRoomReviewBlockingCount}`,
+              dailyOpsControlRoomReviewPrimaryActionLabel,
+              dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
+              dailyOpsControlRoomReviewAuditQueryLabel,
+              dailyOpsControlRoomReviewAuditQuery,
+              dailyOpsControlRoomReviewQueueItemIds.join(" "),
+              dailyOpsControlRoomReviewQueueItemStatuses.join(" "),
+              dailyOpsControlRoomReviewOpenItemIds.join(" "),
               auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") ? "live-blocked-boundary" : "unsafe-boundary"
             ]
               .filter(Boolean)
@@ -16087,6 +16222,18 @@ export function buildAuditEvidenceReportLedgerRows(
         preLiveRunbookSymbol,
         preLiveRunbookTimeframe,
         preLiveRunbookTotalSteps,
+        dailyOpsControlRoomReviewState,
+        dailyOpsControlRoomReviewReadyCount,
+        dailyOpsControlRoomReviewReviewCount,
+        dailyOpsControlRoomReviewBlockingCount,
+        dailyOpsControlRoomReviewTotalCount,
+        dailyOpsControlRoomReviewQueueItemIds,
+        dailyOpsControlRoomReviewQueueItemStatuses,
+        dailyOpsControlRoomReviewOpenItemIds,
+        dailyOpsControlRoomReviewPrimaryActionLabel,
+        dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
+        dailyOpsControlRoomReviewAuditQueryLabel,
+        dailyOpsControlRoomReviewAuditQuery,
         p2ReadinessAcceptanceCoverageReviewLinkLabel,
         p2ReadinessAcceptanceCoverageReviewLinkQuery,
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: "",

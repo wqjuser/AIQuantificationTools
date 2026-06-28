@@ -293,6 +293,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildPersonalTeamUsabilityReadinessSummary({");
     expect(appSource).toContain("buildDailyOpsControlRoomSummary({");
     expect(appSource).toContain("buildDailyOpsControlRoomReviewMarkdown({");
+    expect(appSource).toContain("buildDailyOpsControlRoomReviewReference({");
     expect(appSource).toContain("buildPersonalTeamUsabilityReadinessReviewMarkdown({");
     expect(appSource).toContain("copyPersonalTeamReadinessReview");
     expect(appSource).toContain("downloadPersonalTeamReadinessReview");
@@ -300,6 +301,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("copyDailyOpsControlRoomReview");
     expect(appSource).toContain("downloadDailyOpsControlRoomReview");
     expect(appSource).toContain("recordDailyOpsControlRoomReview");
+    expect(appSource).toContain("openDailyOpsControlRoomReviewInAudit");
+    expect(appSource).toContain("copyDailyOpsControlRoomReviewAuditLink");
     expect(overviewSource).toContain('className={`personal-team-readiness ${personalTeamUsabilityReadiness.state}`}');
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.personalPercent");
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.teamPercent");
@@ -311,6 +314,9 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("dailyOpsControlRoom.auditQuery");
     expect(overviewSource).toContain("copiedDailyOpsControlRoomReview");
     expect(overviewSource).toContain("savingDailyOpsControlRoomReview");
+    expect(overviewSource).toContain('className={`daily-ops-review-reference ${dailyOpsControlRoomReviewReference.status}`}');
+    expect(overviewSource).toContain("dailyOpsControlRoomReviewReferenceLabel(i18n, dailyOpsControlRoomReviewReference)");
+    expect(overviewSource).toContain("dailyOpsControlRoomReviewReference.query");
     expect(cssBlock(".personal-team-readiness")).toContain("display: grid;");
     expect(cssBlock(".personal-team-readiness")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".personal-team-readiness-score")).toContain("grid-template-columns: repeat(2, auto);");
@@ -322,6 +328,8 @@ describe("terminal layout css", () => {
     expect(cssBlock(".personal-team-readiness-item")).toContain("cursor: pointer;");
     expect(cssBlock(".daily-ops-control-room")).toContain("display: grid;");
     expect(cssBlock(".daily-ops-control-room")).toContain("grid-column: 1 / -1;");
+    expect(cssBlock(".daily-ops-review-reference")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".daily-ops-review-reference-actions")).toContain("display: flex;");
     expect(cssBlock(".daily-ops-queue")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
     expect(cssBlock(".daily-ops-item")).toContain("cursor: pointer;");
   });

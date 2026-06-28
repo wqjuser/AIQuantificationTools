@@ -354,6 +354,7 @@ import {
   buildP2ReadinessEvidenceCoverage,
   buildDailyOpsControlRoomSummary,
   buildDailyOpsControlRoomReviewMarkdown,
+  buildDailyOpsControlRoomReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookSummary,
@@ -462,6 +463,7 @@ import {
   EvidencePackageControlRoom,
   EvidencePackageControlRoomRow,
   DailyOpsControlRoomQueueItem,
+  DailyOpsControlRoomReviewReference,
   DailyOpsControlRoomSummary,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
@@ -2936,6 +2938,14 @@ export function App() {
   const dailyOpsControlRoomReviewMarkdown = useMemo(
     () => buildDailyOpsControlRoomReviewMarkdown({ summary: dailyOpsControlRoom }),
     [dailyOpsControlRoom]
+  );
+  const dailyOpsControlRoomReviewReference = useMemo(
+    () =>
+      buildDailyOpsControlRoomReviewReference({
+        ledgerRows: auditEvidenceReportLedgerRows,
+        summary: dailyOpsControlRoom
+      }),
+    [auditEvidenceReportLedgerRows, dailyOpsControlRoom]
   );
   const p0GoldenPathJourney = useMemo(
     () =>
@@ -9008,6 +9018,32 @@ export function App() {
     }
   }, [personalTeamReadinessReviewMarkdown, personalTeamUsabilityReadiness, quantCoreBaseUrl]);
 
+  const openDailyOpsControlRoomReviewInAudit = useCallback(() => {
+    if (!dailyOpsControlRoomReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Daily ops review audit reference missing",
+        error: "No daily ops review has been recorded yet."
+      }));
+      return;
+    }
+
+    openAuditReportLedgerQuery(dailyOpsControlRoomReviewReference.query, "Daily ops review audit query selected");
+  }, [dailyOpsControlRoomReviewReference.query, openAuditReportLedgerQuery]);
+
+  const copyDailyOpsControlRoomReviewAuditLink = useCallback(() => {
+    if (!dailyOpsControlRoomReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Daily ops review link copy failed",
+        error: "No daily ops review has been recorded yet."
+      }));
+      return;
+    }
+
+    void copyAuditReportLedgerQueryLink(dailyOpsControlRoomReviewReference.query);
+  }, [copyAuditReportLedgerQueryLink, dailyOpsControlRoomReviewReference.query]);
+
   const copyDailyOpsControlRoomReview = useCallback(async () => {
     if (!navigator.clipboard?.writeText) {
       setWorkspaceState((current) => ({
@@ -11362,6 +11398,41 @@ export function App() {
                           : "Record"}
                     </button>
                   </div>
+                  <div className={`daily-ops-review-reference ${dailyOpsControlRoomReviewReference.status}`}>
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "最新复核" : "Latest review"}</span>
+                      <strong>
+                        {dailyOpsControlRoomReviewReferenceLabel(i18n, dailyOpsControlRoomReviewReference)}
+                      </strong>
+                      <small>
+                        {dailyOpsControlRoomReviewReferenceDetail(i18n, dailyOpsControlRoomReviewReference)}
+                      </small>
+                      {dailyOpsControlRoomReviewReference.eventId ? (
+                        <small>
+                          {dailyOpsControlRoomReviewReference.eventId} ·{" "}
+                          {dailyOpsControlRoomReviewReference.createdAt.slice(0, 19)}
+                        </small>
+                      ) : null}
+                    </div>
+                    <div className="daily-ops-review-reference-actions">
+                      <button
+                        disabled={!dailyOpsControlRoomReviewReference.query}
+                        onClick={openDailyOpsControlRoomReviewInAudit}
+                        type="button"
+                      >
+                        <Search size={11} />
+                        {i18n.locale === "zh-CN" ? "定位复核" : "Focus review"}
+                      </button>
+                      <button
+                        disabled={!dailyOpsControlRoomReviewReference.query}
+                        onClick={copyDailyOpsControlRoomReviewAuditLink}
+                        type="button"
+                      >
+                        <Copy size={11} />
+                        {i18n.locale === "zh-CN" ? "复制复核链接" : "Copy review link"}
+                      </button>
+                    </div>
+                  </div>
                   <div className="daily-ops-queue">
                     {dailyOpsControlRoom.queueItems.map((item) => (
                       <button
@@ -12584,6 +12655,38 @@ function dailyOpsControlRoomAuditAction(i18n: AppI18n, summary: DailyOpsControlR
     return summary.auditQuery ? "Open audit query" : "No audit query";
   }
   return summary.auditQuery ? "打开审计定位" : "暂无审计定位";
+}
+
+function dailyOpsControlRoomReviewReferenceLabel(
+  i18n: AppI18n,
+  reference: DailyOpsControlRoomReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.label;
+  }
+  return (
+    {
+      current: "复核已匹配当前队列",
+      missing: "尚未入账每日复核",
+      stale: "最近复核已过期"
+    } satisfies Record<DailyOpsControlRoomReviewReference["status"], string>
+  )[reference.status];
+}
+
+function dailyOpsControlRoomReviewReferenceDetail(
+  i18n: AppI18n,
+  reference: DailyOpsControlRoomReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.detail;
+  }
+  if (reference.status === "current") {
+    return "最近一次 Daily Ops 复核与当前队列、主动作和审计查询一致。";
+  }
+  if (reference.status === "stale") {
+    return "最近一次 Daily Ops 复核与当前队列不一致，请重新入账复核。";
+  }
+  return "点击入账复核后，这里会显示可定位的 Daily Ops 审计事件。";
 }
 
 function dailyOpsControlRoomItemLabel(i18n: AppI18n, item: DailyOpsControlRoomQueueItem): string {
