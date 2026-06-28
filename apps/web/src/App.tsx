@@ -356,6 +356,7 @@ import {
   buildDailyOpsControlRoomReviewMarkdown,
   buildDailyOpsControlRoomReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
+  buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookSummary,
   buildP0CompletionChecklist,
@@ -465,6 +466,7 @@ import {
   DailyOpsControlRoomQueueItem,
   DailyOpsControlRoomReviewReference,
   DailyOpsControlRoomSummary,
+  PersonalTeamUsabilityReadinessReviewReference,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
   P2ReadinessEvidenceCoverageReviewAuditEventReferenceSource,
@@ -2747,6 +2749,14 @@ export function App() {
   const personalTeamReadinessReviewMarkdown = useMemo(
     () => buildPersonalTeamUsabilityReadinessReviewMarkdown({ summary: personalTeamUsabilityReadiness }),
     [personalTeamUsabilityReadiness]
+  );
+  const personalTeamReadinessReviewReference = useMemo(
+    () =>
+      buildPersonalTeamUsabilityReadinessReviewReference({
+        ledgerRows: auditEvidenceReportLedgerRows,
+        summary: personalTeamUsabilityReadiness
+      }),
+    [auditEvidenceReportLedgerRows, personalTeamUsabilityReadiness]
   );
   const p2ReadinessAcceptanceAuditContext = useMemo(
     () => ({
@@ -9018,6 +9028,32 @@ export function App() {
     }
   }, [personalTeamReadinessReviewMarkdown, personalTeamUsabilityReadiness, quantCoreBaseUrl]);
 
+  const openPersonalTeamReadinessReviewInAudit = useCallback(() => {
+    if (!personalTeamReadinessReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Personal/team readiness review audit reference missing",
+        error: "No personal/team readiness review has been recorded yet."
+      }));
+      return;
+    }
+
+    openAuditReportLedgerQuery(personalTeamReadinessReviewReference.query, "Personal/team readiness review audit query selected");
+  }, [openAuditReportLedgerQuery, personalTeamReadinessReviewReference.query]);
+
+  const copyPersonalTeamReadinessReviewAuditLink = useCallback(() => {
+    if (!personalTeamReadinessReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Personal/team readiness review link copy failed",
+        error: "No personal/team readiness review has been recorded yet."
+      }));
+      return;
+    }
+
+    void copyAuditReportLedgerQueryLink(personalTeamReadinessReviewReference.query);
+  }, [copyAuditReportLedgerQueryLink, personalTeamReadinessReviewReference.query]);
+
   const openDailyOpsControlRoomReviewInAudit = useCallback(() => {
     if (!dailyOpsControlRoomReviewReference.query) {
       setWorkspaceState((current) => ({
@@ -11317,6 +11353,41 @@ export function App() {
                           : "Record"}
                     </button>
                   </div>
+                  <div className={`personal-team-readiness-review-reference ${personalTeamReadinessReviewReference.status}`}>
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "最新复核" : "Latest review"}</span>
+                      <strong>
+                        {personalTeamReadinessReviewReferenceLabel(i18n, personalTeamReadinessReviewReference)}
+                      </strong>
+                      <small>
+                        {personalTeamReadinessReviewReferenceDetail(i18n, personalTeamReadinessReviewReference)}
+                      </small>
+                      {personalTeamReadinessReviewReference.eventId ? (
+                        <small>
+                          {personalTeamReadinessReviewReference.eventId} ·{" "}
+                          {personalTeamReadinessReviewReference.createdAt.slice(0, 19)}
+                        </small>
+                      ) : null}
+                    </div>
+                    <div className="personal-team-readiness-review-reference-actions">
+                      <button
+                        disabled={!personalTeamReadinessReviewReference.query}
+                        onClick={openPersonalTeamReadinessReviewInAudit}
+                        type="button"
+                      >
+                        <Search size={11} />
+                        {i18n.locale === "zh-CN" ? "定位复核" : "Focus review"}
+                      </button>
+                      <button
+                        disabled={!personalTeamReadinessReviewReference.query}
+                        onClick={copyPersonalTeamReadinessReviewAuditLink}
+                        type="button"
+                      >
+                        <Copy size={11} />
+                        {i18n.locale === "zh-CN" ? "复制复核链接" : "Copy review link"}
+                      </button>
+                    </div>
+                  </div>
                   {personalTeamUsabilityReadiness.openItems.length ? (
                     <div className="personal-team-readiness-open">
                       {personalTeamUsabilityReadiness.openItems.slice(0, 3).map((item) => (
@@ -12528,6 +12599,38 @@ function personalTeamUsabilityReadinessLiveBoundary(
     return summary.liveBoundaryLabel;
   }
   return "仅纸面盘 · 实盘阻断 · 不提交订单";
+}
+
+function personalTeamReadinessReviewReferenceLabel(
+  i18n: AppI18n,
+  reference: PersonalTeamUsabilityReadinessReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.label;
+  }
+  return (
+    {
+      current: "复核已匹配当前可用性",
+      missing: "尚未入账可用性复核",
+      stale: "最近复核已过期"
+    } satisfies Record<PersonalTeamUsabilityReadinessReviewReference["status"], string>
+  )[reference.status];
+}
+
+function personalTeamReadinessReviewReferenceDetail(
+  i18n: AppI18n,
+  reference: PersonalTeamUsabilityReadinessReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.detail;
+  }
+  if (reference.status === "current") {
+    return "最近一次个人/小团队复核与当前 readiness、打开项和下一步一致。";
+  }
+  if (reference.status === "stale") {
+    return "最近一次个人/小团队复核与当前 readiness 不一致，请重新入账复核。";
+  }
+  return "点击入账复核后，这里会显示可定位的个人/小团队审计事件。";
 }
 
 function personalTeamUsabilityReadinessItemLabel(

@@ -656,6 +656,18 @@ export interface PersonalTeamUsabilityReadinessSummaryInput {
   p2ReadinessEvidenceCoverage: P2ReadinessEvidenceCoverage;
 }
 
+export type PersonalTeamUsabilityReadinessReviewReferenceStatus = "current" | "stale" | "missing";
+
+export interface PersonalTeamUsabilityReadinessReviewReference {
+  createdAt: string;
+  detail: string;
+  eventId: string;
+  label: string;
+  query: string;
+  row: AuditEvidenceReportLedgerRow | null;
+  status: PersonalTeamUsabilityReadinessReviewReferenceStatus;
+}
+
 export type DailyOpsControlRoomState = "ready" | "attention" | "blocked";
 export type DailyOpsControlRoomTone = "positive" | "warning" | "risk";
 export type DailyOpsControlRoomQueueItemStatus = "ready" | "review" | "blocked";
@@ -2520,6 +2532,16 @@ export interface AuditEvidenceReportLedgerRow {
   preLiveRunbookSymbol: string;
   preLiveRunbookTimeframe: string;
   preLiveRunbookTotalSteps: number;
+  personalTeamReadinessReviewState: string;
+  personalTeamReadinessReviewPersonalPercent: number;
+  personalTeamReadinessReviewTeamPercent: number;
+  personalTeamReadinessReviewReadyCount: number;
+  personalTeamReadinessReviewTotalCount: number;
+  personalTeamReadinessReviewItemIds: string[];
+  personalTeamReadinessReviewItemStatuses: string[];
+  personalTeamReadinessReviewOpenItemIds: string[];
+  personalTeamReadinessReviewNextActionLabel: string;
+  personalTeamReadinessReviewNextActionWorkspaceId: string;
   dailyOpsControlRoomReviewState: string;
   dailyOpsControlRoomReviewReadyCount: number;
   dailyOpsControlRoomReviewReviewCount: number;
@@ -9021,6 +9043,83 @@ export function buildDailyOpsControlRoomReviewReference({
   };
 }
 
+export function buildPersonalTeamUsabilityReadinessReviewReference({
+  ledgerRows,
+  summary
+}: {
+  ledgerRows: AuditEvidenceReportLedgerRow[];
+  summary: PersonalTeamUsabilityReadinessSummary;
+}): PersonalTeamUsabilityReadinessReviewReference {
+  const latestRow =
+    ledgerRows
+      .filter((row) => row.reportKind === "personal_team_readiness_review" && row.status === "ready")
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null;
+
+  if (!latestRow) {
+    return {
+      createdAt: "",
+      detail: "No personal/team readiness review has been recorded yet.",
+      eventId: "",
+      label: "No personal/team readiness review recorded",
+      query: "",
+      row: null,
+      status: "missing"
+    };
+  }
+
+  const query = auditReportLedgerDeduplicatedQueryText([
+    "personal_team_readiness_review",
+    latestRow.id,
+    latestRow.personalTeamReadinessReviewState,
+    `${latestRow.personalTeamReadinessReviewReadyCount}/${latestRow.personalTeamReadinessReviewTotalCount}`
+  ]);
+  const isCurrent = personalTeamReadinessReviewRowMatchesSummary(latestRow, summary);
+  const stateLabel = `${latestRow.personalTeamReadinessReviewState || latestRow.focusQuery} ${
+    latestRow.personalTeamReadinessReviewReadyCount
+  }/${latestRow.personalTeamReadinessReviewTotalCount}`;
+
+  return {
+    createdAt: latestRow.createdAt,
+    detail: isCurrent
+      ? `Latest review ${latestRow.id} matches current personal/team readiness (${stateLabel}).`
+      : `Latest review ${latestRow.id} no longer matches current personal/team readiness (${stateLabel}); record a fresh review.`,
+    eventId: latestRow.id,
+    label: isCurrent ? "Personal/team readiness review current" : "Personal/team readiness review stale",
+    query,
+    row: latestRow,
+    status: isCurrent ? "current" : "stale"
+  };
+}
+
+function personalTeamReadinessReviewRowMatchesSummary(
+  row: AuditEvidenceReportLedgerRow,
+  summary: PersonalTeamUsabilityReadinessSummary
+): boolean {
+  return (
+    row.reportKind === "personal_team_readiness_review" &&
+    row.status === "ready" &&
+    row.personalTeamReadinessReviewState === summary.state &&
+    row.personalTeamReadinessReviewPersonalPercent === summary.personalPercent &&
+    row.personalTeamReadinessReviewTeamPercent === summary.teamPercent &&
+    row.personalTeamReadinessReviewReadyCount === summary.readyCount &&
+    row.personalTeamReadinessReviewTotalCount === summary.totalCount &&
+    row.personalTeamReadinessReviewNextActionLabel === summary.nextActionLabel &&
+    row.personalTeamReadinessReviewNextActionWorkspaceId === summary.nextActionWorkspaceId &&
+    sameAuditStringList(
+      row.personalTeamReadinessReviewItemIds,
+      summary.items.map((item) => item.id)
+    ) &&
+    sameAuditStringList(
+      row.personalTeamReadinessReviewItemStatuses,
+      summary.items.map((item) => item.status)
+    ) &&
+    sameAuditStringList(
+      row.personalTeamReadinessReviewOpenItemIds,
+      summary.openItems.map((item) => item.id)
+    )
+  );
+}
+
 function dailyOpsControlRoomReviewRowMatchesSummary(
   row: AuditEvidenceReportLedgerRow,
   summary: DailyOpsControlRoomSummary
@@ -9036,22 +9135,22 @@ function dailyOpsControlRoomReviewRowMatchesSummary(
     row.dailyOpsControlRoomReviewPrimaryActionLabel === summary.primaryActionLabel &&
     row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId === summary.primaryActionWorkspaceId &&
     row.dailyOpsControlRoomReviewAuditQuery === summary.auditQuery &&
-    sameDailyOpsStringList(
+    sameAuditStringList(
       row.dailyOpsControlRoomReviewQueueItemIds,
       summary.queueItems.map((item) => item.id)
     ) &&
-    sameDailyOpsStringList(
+    sameAuditStringList(
       row.dailyOpsControlRoomReviewQueueItemStatuses,
       summary.queueItems.map((item) => item.status)
     ) &&
-    sameDailyOpsStringList(
+    sameAuditStringList(
       row.dailyOpsControlRoomReviewOpenItemIds,
       summary.openItems.map((item) => item.id)
     )
   );
 }
 
-function sameDailyOpsStringList(left: string[], right: string[]): boolean {
+function sameAuditStringList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
@@ -16001,6 +16100,48 @@ export function buildAuditEvidenceReportLedgerRows(
               .filter(Boolean)
               .join(" ")
           : "";
+      const personalTeamReadinessReviewState =
+        reportKind === "personal_team_readiness_review"
+          ? auditReportLedgerMetadataText(event.metadata, "state") || event.stage
+          : "";
+      const personalTeamReadinessReviewPersonalPercent =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataNumber(event.metadata, "personalPercent") : 0;
+      const personalTeamReadinessReviewTeamPercent =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataNumber(event.metadata, "teamPercent") : 0;
+      const personalTeamReadinessReviewReadyCount =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataNumber(event.metadata, "readyCount") : 0;
+      const personalTeamReadinessReviewTotalCount =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataNumber(event.metadata, "totalCount") : 0;
+      const personalTeamReadinessReviewItemIds =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataStringList(event.metadata, "itemIds") : [];
+      const personalTeamReadinessReviewItemStatuses =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataStringList(event.metadata, "itemStatuses") : [];
+      const personalTeamReadinessReviewOpenItemIds =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataStringList(event.metadata, "openItemIds") : [];
+      const personalTeamReadinessReviewNextActionLabel =
+        reportKind === "personal_team_readiness_review" ? auditReportLedgerMetadataText(event.metadata, "nextActionLabel") : "";
+      const personalTeamReadinessReviewNextActionWorkspaceId =
+        reportKind === "personal_team_readiness_review"
+          ? auditReportLedgerMetadataText(event.metadata, "nextActionWorkspaceId")
+          : "";
+      const personalTeamReadinessReviewSearchText =
+        reportKind === "personal_team_readiness_review"
+          ? [
+              "personal_team_readiness_review",
+              personalTeamReadinessReviewState,
+              `${personalTeamReadinessReviewReadyCount}/${personalTeamReadinessReviewTotalCount}`,
+              `personal ${personalTeamReadinessReviewPersonalPercent}`,
+              `team ${personalTeamReadinessReviewTeamPercent}`,
+              personalTeamReadinessReviewNextActionLabel,
+              personalTeamReadinessReviewNextActionWorkspaceId,
+              personalTeamReadinessReviewItemIds.join(" "),
+              personalTeamReadinessReviewItemStatuses.join(" "),
+              personalTeamReadinessReviewOpenItemIds.join(" "),
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
       const dailyOpsControlRoomReviewState =
         reportKind === "daily_ops_control_room_review"
           ? auditReportLedgerMetadataText(event.metadata, "state") || event.stage
@@ -16078,6 +16219,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? p2ReadinessAcceptanceGeneratedAcceptedCriteria
             : reportKind === "p2_readiness_acceptance_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "acceptedCriterionCount")
+            : reportKind === "personal_team_readiness_review"
+            ? personalTeamReadinessReviewReadyCount
             : reportKind === "daily_ops_control_room_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "readyCount")
             : reportKind === "operator_runbook_report"
@@ -16102,6 +16245,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? p2ReadinessAcceptanceGeneratedTotalCriteria
             : reportKind === "p2_readiness_acceptance_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalCriterionCount")
+            : reportKind === "personal_team_readiness_review"
+            ? personalTeamReadinessReviewTotalCount
             : reportKind === "daily_ops_control_room_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalCount")
             : reportKind === "operator_runbook_report"
@@ -16222,6 +16367,16 @@ export function buildAuditEvidenceReportLedgerRows(
         preLiveRunbookSymbol,
         preLiveRunbookTimeframe,
         preLiveRunbookTotalSteps,
+        personalTeamReadinessReviewState,
+        personalTeamReadinessReviewPersonalPercent,
+        personalTeamReadinessReviewTeamPercent,
+        personalTeamReadinessReviewReadyCount,
+        personalTeamReadinessReviewTotalCount,
+        personalTeamReadinessReviewItemIds,
+        personalTeamReadinessReviewItemStatuses,
+        personalTeamReadinessReviewOpenItemIds,
+        personalTeamReadinessReviewNextActionLabel,
+        personalTeamReadinessReviewNextActionWorkspaceId,
         dailyOpsControlRoomReviewState,
         dailyOpsControlRoomReviewReadyCount,
         dailyOpsControlRoomReviewReviewCount,
@@ -16324,6 +16479,7 @@ export function buildAuditEvidenceReportLedgerRows(
           p2ReadinessEvidenceCoverageReviewSearchText,
           p2ReadinessAcceptanceGeneratedSearchText,
           p2ReadinessAcceptanceReviewSearchText,
+          personalTeamReadinessReviewSearchText,
           dailyOpsControlRoomReviewSearchText,
           operatorRunbookSearchText,
           preLiveRunbookSearchText,

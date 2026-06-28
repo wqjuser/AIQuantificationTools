@@ -295,9 +295,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildDailyOpsControlRoomReviewMarkdown({");
     expect(appSource).toContain("buildDailyOpsControlRoomReviewReference({");
     expect(appSource).toContain("buildPersonalTeamUsabilityReadinessReviewMarkdown({");
+    expect(appSource).toContain("buildPersonalTeamUsabilityReadinessReviewReference({");
     expect(appSource).toContain("copyPersonalTeamReadinessReview");
     expect(appSource).toContain("downloadPersonalTeamReadinessReview");
     expect(appSource).toContain("recordPersonalTeamReadinessReview");
+    expect(appSource).toContain("openPersonalTeamReadinessReviewInAudit");
+    expect(appSource).toContain("copyPersonalTeamReadinessReviewAuditLink");
     expect(appSource).toContain("copyDailyOpsControlRoomReview");
     expect(appSource).toContain("downloadDailyOpsControlRoomReview");
     expect(appSource).toContain("recordDailyOpsControlRoomReview");
@@ -307,6 +310,13 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.personalPercent");
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.teamPercent");
     expect(overviewSource).toContain('className="personal-team-readiness-actions"');
+    expect(overviewSource).toContain(
+      'className={`personal-team-readiness-review-reference ${personalTeamReadinessReviewReference.status}`}'
+    );
+    expect(overviewSource).toContain(
+      "personalTeamReadinessReviewReferenceLabel(i18n, personalTeamReadinessReviewReference)"
+    );
+    expect(overviewSource).toContain("personalTeamReadinessReviewReference.query");
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.openItems.slice(0, 3).map");
     expect(overviewSource).toContain("selectProductWorkArea(item.targetWorkspaceId)");
     expect(overviewSource).toContain('className={`daily-ops-control-room ${dailyOpsControlRoom.state}`}');
@@ -322,6 +332,8 @@ describe("terminal layout css", () => {
     expect(cssBlock(".personal-team-readiness-score")).toContain("grid-template-columns: repeat(2, auto);");
     expect(cssBlock(".personal-team-readiness-actions")).toContain("display: flex;");
     expect(cssBlock(".personal-team-readiness-actions button")).toContain("min-height: 32px;");
+    expect(cssBlock(".personal-team-readiness-review-reference")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".personal-team-readiness-review-reference-actions")).toContain("display: flex;");
     expect(cssBlock(".personal-team-readiness-open")).toContain(
       "grid-template-columns: repeat(2, minmax(0, 1fr));"
     );

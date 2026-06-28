@@ -194,6 +194,8 @@ Batch 68 已把 Daily Ops 控制台推进为可交接、可留档的每日复核
 
 Batch 69 已给 Daily Ops 复核补上首页回填和新鲜度判断：`AuditEvidenceReportLedgerRow` 新增 Daily Ops 复核的 state、ready/review/blocking/total、queue item、open item、主动作和 Audit 查询字段；`buildDailyOpsControlRoomReviewReference` 会从台账中取最新 `daily_ops_control_room_review`，并与当前 Daily Ops summary 比较为 `current`、`stale` 或 `missing`。首页 Daily Ops 卡现在显示最新复核状态、event id 和时间，并可直接定位或复制该复核的 Audit 查询链接。该能力只解释既有复核事件是否仍匹配当前队列，不自动入账、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 70 已给个人/小团队 readiness 复核补上首页回填和新鲜度判断：`AuditEvidenceReportLedgerRow` 新增 `personal_team_readiness_review` 的 state、个人/团队百分比、ready/total、item ids/statuses、open items、下一动作和目标工作区字段；`buildPersonalTeamUsabilityReadinessReviewReference` 会从台账中取最新复核，并与当前 personal/team summary 比较为 `current`、`stale` 或 `missing`。首页个人/小团队可用性卡现在显示最新复核状态、event id 和时间，并可直接定位或复制该复核的 Audit 查询链接。该能力只解释既有复核事件是否仍匹配当前 readiness，不自动生成 handoff/restore 证据、不自动入账、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

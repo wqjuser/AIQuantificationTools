@@ -154,6 +154,7 @@ import {
   buildDailyOpsControlRoomSummary,
   buildDailyOpsControlRoomReviewMarkdown,
   buildDailyOpsControlRoomReviewReference,
+  buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookMarkdown,
@@ -12816,6 +12817,139 @@ describe("terminal workbench model", () => {
       "personal-team-readiness-review-7777777777777777"
     ]);
     expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
+  });
+
+  test("resolves the latest personal and team readiness review as current when it matches readiness", () => {
+    const summary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready"
+      }),
+      handoffNoteCount: 2,
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-7777777777777777",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail:
+          "personal-team-readiness-review.md · sha256 777777777777 · ready 6/6 gates · personal 100% · team 100% · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "7".repeat(64),
+          contentSha256Algorithm: "sha256",
+          fileName: "personal-team-readiness-review.md",
+          format: "text/markdown",
+          itemIds: [
+            "p0-local-loop",
+            "p1-research-ops",
+            "p2-prelive-chain",
+            "audit-traceability",
+            "team-handoff-runbook",
+            "backup-restore-drill"
+          ],
+          itemStatuses: ["ready", "ready", "ready", "ready", "ready", "ready"],
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: summary.nextActionLabel,
+          nextActionWorkspaceId: summary.nextActionWorkspaceId,
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      }
+    ]);
+
+    const reference = buildPersonalTeamUsabilityReadinessReviewReference({ ledgerRows: rows, summary });
+
+    expect(reference).toEqual(
+      expect.objectContaining({
+        createdAt: "2026-06-28T09:00:00.000Z",
+        eventId: "personal-team-readiness-review-7777777777777777",
+        query: "personal_team_readiness_review personal-team-readiness-review-7777777777777777 ready 6/6",
+        status: "current"
+      })
+    );
+    expect(reference.detail).toContain("matches current personal/team readiness");
+  });
+
+  test("marks the latest personal and team readiness review as stale when readiness changes", () => {
+    const summary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready"
+      }),
+      handoffNoteCount: 0,
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-stale",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail:
+          "personal-team-readiness-review.md · sha256 777777777777 · ready 6/6 gates · personal 100% · team 100% · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "7".repeat(64),
+          itemIds: [
+            "p0-local-loop",
+            "p1-research-ops",
+            "p2-prelive-chain",
+            "audit-traceability",
+            "team-handoff-runbook",
+            "backup-restore-drill"
+          ],
+          itemStatuses: ["ready", "ready", "ready", "ready", "ready", "ready"],
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Review accepted loop",
+          nextActionWorkspaceId: "audit",
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      }
+    ]);
+
+    const reference = buildPersonalTeamUsabilityReadinessReviewReference({ ledgerRows: rows, summary });
+
+    expect(reference).toEqual(
+      expect.objectContaining({
+        eventId: "personal-team-readiness-review-stale",
+        status: "stale"
+      })
+    );
+    expect(reference.detail).toContain("no longer matches current personal/team readiness");
   });
 
   test("includes daily ops control room review events in the audit report ledger", () => {
