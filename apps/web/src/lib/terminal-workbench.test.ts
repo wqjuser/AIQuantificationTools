@@ -11496,6 +11496,9 @@ describe("terminal workbench model", () => {
       localReviewBundleCount: 0,
       localReviewBundleDailyOpsCount: 0,
       localReviewBundleLatestEventId: "",
+      localReviewBundleLatestLabel: "",
+      localReviewBundleLatestQuery: "",
+      localReviewBundleLatestTitle: "",
       localReviewBundlePersonalTeamCount: 0,
       localReviewBundleQuery: "",
       localReviewBundleTitle: "",
@@ -13259,6 +13262,11 @@ describe("terminal workbench model", () => {
         localReviewBundleCount: 4,
         localReviewBundleDailyOpsCount: 2,
         localReviewBundleLatestEventId: "daily-ops-control-room-review-new-6666666666666666",
+        localReviewBundleLatestLabel: "latest local review · daily ops review",
+        localReviewBundleLatestQuery:
+          "local-review-bundle-latest daily-ops-control-room-review-new-6666666666666666",
+        localReviewBundleLatestTitle:
+          "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z",
         localReviewBundlePersonalTeamCount: 2,
         localReviewBundleQuery: "local-review-bundle",
         localReviewBundleTitle:
@@ -13290,7 +13298,12 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
-          "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666"
+          "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666",
+        localReviewBundleLatestLabel: "latest local review · daily ops review",
+        localReviewBundleLatestQuery:
+          "local-review-bundle-latest daily-ops-control-room-review-new-6666666666666666",
+        localReviewBundleLatestTitle:
+          "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z"
       })
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleQuery).map((row) => row.id)).toEqual([
@@ -13304,6 +13317,15 @@ describe("terminal workbench model", () => {
     ]);
     expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle daily ops review").map((row) => row.id)).toEqual([
       "daily-ops-control-room-review-old-4444444444444444",
+      "daily-ops-control-room-review-new-6666666666666666"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleLatestQuery).map((row) => row.id)).toEqual([
+      "daily-ops-control-room-review-new-6666666666666666"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleLatestTitle).map((row) => row.id)).toEqual([
+      "daily-ops-control-room-review-new-6666666666666666"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle-latest").map((row) => row.id)).toEqual([
       "daily-ops-control-room-review-new-6666666666666666"
     ]);
   });

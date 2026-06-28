@@ -21216,6 +21216,12 @@ function AuditEvidenceReportLedgerPanel({
                   {i18n.locale === "zh-CN" ? "每日复核" : "Daily reviews"}{" "}
                   {summary.localReviewBundleDailyOpsCount}
                 </small>
+                {summary.localReviewBundleLatestLabel ? (
+                  <small title={summary.localReviewBundleLatestTitle || summary.localReviewBundleLatestQuery}>
+                    {i18n.locale === "zh-CN" ? "最新本地复核" : "Latest local review"} ·{" "}
+                    {summary.localReviewBundleLatestEventId}
+                  </small>
+                ) : null}
                 {summary.localReviewBundleQuery ? (
                   <button onClick={() => focusAuditReportQuery(summary.localReviewBundleQuery)} type="button">
                     {i18n.locale === "zh-CN" ? "定位本地复核集" : "Focus local reviews"}
@@ -21224,6 +21230,24 @@ function AuditEvidenceReportLedgerPanel({
                 {summary.localReviewBundleQuery ? (
                   <button onClick={() => onCopyQueryLink(summary.localReviewBundleQuery)} type="button">
                     {i18n.locale === "zh-CN" ? "复制本地复核集链接" : "Copy local reviews link"}
+                  </button>
+                ) : null}
+                {summary.localReviewBundleLatestQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.localReviewBundleLatestQuery)}
+                    title={summary.localReviewBundleLatestTitle || summary.localReviewBundleLatestQuery}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位最新本地复核" : "Focus latest local review"}
+                  </button>
+                ) : null}
+                {summary.localReviewBundleLatestQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.localReviewBundleLatestQuery)}
+                    title={summary.localReviewBundleLatestTitle || summary.localReviewBundleLatestQuery}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制最新本地复核链接" : "Copy latest local review link"}
                   </button>
                 ) : null}
               </span>
@@ -21584,6 +21608,15 @@ function AuditEvidenceReportLedgerPanel({
                       {row.localReviewBundleContextQuery}
                     </span>
                   ) : null}
+                  {row.localReviewBundleLatestLabel ? (
+                    <span
+                      className="audit-report-ledger-local-review-latest"
+                      title={row.localReviewBundleLatestTitle || row.localReviewBundleLatestQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "最新本地复核" : "Latest local review"} ·{" "}
+                      {row.localReviewBundleLatestLabel}
+                    </span>
+                  ) : null}
                   {rowP0ProgressLabel ? (
                     <span
                       className="audit-report-ledger-p0-progress"
@@ -21830,6 +21863,24 @@ function AuditEvidenceReportLedgerPanel({
                         type="button"
                       >
                         {i18n.locale === "zh-CN" ? "复制行本地复核集链接" : "Copy row local reviews link"}
+                      </button>
+                    ) : null}
+                    {row.localReviewBundleLatestQuery ? (
+                      <button
+                        onClick={() => focusAuditReportQuery(row.localReviewBundleLatestQuery)}
+                        title={row.localReviewBundleLatestTitle || row.localReviewBundleLatestQuery}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "定位最新本地复核" : "Focus latest local review"}
+                      </button>
+                    ) : null}
+                    {row.localReviewBundleLatestQuery ? (
+                      <button
+                        onClick={() => onCopyQueryLink(row.localReviewBundleLatestQuery)}
+                        title={row.localReviewBundleLatestTitle || row.localReviewBundleLatestQuery}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制最新本地复核链接" : "Copy latest local review link"}
                       </button>
                     ) : null}
                     {row.p2ReadinessReviewChainQuery ? (

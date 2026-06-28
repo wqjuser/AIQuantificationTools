@@ -2556,6 +2556,9 @@ export interface AuditEvidenceReportLedgerRow {
   dailyOpsControlRoomReviewAuditQuery: string;
   localReviewBundleContextQuery: string;
   localReviewBundleContextTitle: string;
+  localReviewBundleLatestLabel: string;
+  localReviewBundleLatestQuery: string;
+  localReviewBundleLatestTitle: string;
   p2ReadinessAcceptanceCoverageReviewLinkLabel: string;
   p2ReadinessAcceptanceCoverageReviewLinkQuery: string;
   p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: string;
@@ -2765,6 +2768,9 @@ export interface AuditEvidenceReportLedgerSummary {
   localReviewBundleCount: number;
   localReviewBundleDailyOpsCount: number;
   localReviewBundleLatestEventId: string;
+  localReviewBundleLatestLabel: string;
+  localReviewBundleLatestQuery: string;
+  localReviewBundleLatestTitle: string;
   localReviewBundlePersonalTeamCount: number;
   localReviewBundleQuery: string;
   localReviewBundleTitle: string;
@@ -14205,16 +14211,39 @@ function auditReportLedgerLocalReviewBundleContextTitle(
   reportKind: AuditEvidenceReportLedgerRow["reportKind"],
   eventId: string
 ): string {
-  const reviewLabel =
-    reportKind === "personal_team_readiness_review"
-      ? "personal/team readiness review"
-      : reportKind === "daily_ops_control_room_review"
-        ? "daily ops review"
-        : "";
+  const reviewLabel = auditReportLedgerLocalReviewBundleReviewLabel(reportKind);
   if (!reviewLabel) {
     return "";
   }
   return ["local-review-bundle", reviewLabel, eventId].filter(Boolean).join(" · ");
+}
+
+function auditReportLedgerLocalReviewBundleReviewLabel(reportKind: AuditEvidenceReportLedgerRow["reportKind"]): string {
+  return reportKind === "personal_team_readiness_review"
+    ? "personal/team readiness review"
+    : reportKind === "daily_ops_control_room_review"
+      ? "daily ops review"
+      : "";
+}
+
+function auditReportLedgerLocalReviewBundleLatestLabel(row: AuditEvidenceReportLedgerRow | null | undefined): string {
+  const reviewLabel = row ? auditReportLedgerLocalReviewBundleReviewLabel(row.reportKind) : "";
+  return reviewLabel ? `latest local review · ${reviewLabel}` : "";
+}
+
+function auditReportLedgerLocalReviewBundleLatestQuery(row: AuditEvidenceReportLedgerRow | null | undefined): string {
+  if (!row || !auditReportLedgerLocalReviewBundleReviewLabel(row.reportKind)) {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText(["local-review-bundle-latest", row.id]);
+}
+
+function auditReportLedgerLocalReviewBundleLatestTitle(row: AuditEvidenceReportLedgerRow | null | undefined): string {
+  const reviewLabel = row ? auditReportLedgerLocalReviewBundleReviewLabel(row.reportKind) : "";
+  if (!row || !reviewLabel) {
+    return "";
+  }
+  return ["local-review-bundle-latest", reviewLabel, row.id, row.createdAt].filter(Boolean).join(" · ");
 }
 
 function auditReportLedgerDeduplicatedQueryText(values: unknown[]): string {
@@ -16529,6 +16558,9 @@ export function buildAuditEvidenceReportLedgerRows(
         dailyOpsControlRoomReviewAuditQuery,
         localReviewBundleContextQuery,
         localReviewBundleContextTitle,
+        localReviewBundleLatestLabel: "",
+        localReviewBundleLatestQuery: "",
+        localReviewBundleLatestTitle: "",
         p2ReadinessAcceptanceCoverageReviewLinkLabel,
         p2ReadinessAcceptanceCoverageReviewLinkQuery,
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel: "",
@@ -16662,7 +16694,50 @@ export function buildAuditEvidenceReportLedgerRows(
           : auditReportLedgerSignatureTone(signatureStatus)
       };
     });
-  return linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(rows);
+  return markLatestLocalReviewBundleLedgerRow(linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(rows));
+}
+
+function markLatestLocalReviewBundleLedgerRow(rows: AuditEvidenceReportLedgerRow[]): AuditEvidenceReportLedgerRow[] {
+  const latestLocalReviewBundleRow = rows
+    .filter(
+      (row) =>
+        row.status === "ready" &&
+        (row.reportKind === "personal_team_readiness_review" || row.reportKind === "daily_ops_control_room_review")
+    )
+    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      const rowCreatedAt = Date.parse(row.createdAt);
+      const latestCreatedAt = Date.parse(latest.createdAt);
+      if (rowCreatedAt > latestCreatedAt) {
+        return row;
+      }
+      if (rowCreatedAt === latestCreatedAt && row.id.localeCompare(latest.id) > 0) {
+        return row;
+      }
+      return latest;
+    }, undefined);
+
+  if (!latestLocalReviewBundleRow) {
+    return rows;
+  }
+
+  const latestLabel = auditReportLedgerLocalReviewBundleLatestLabel(latestLocalReviewBundleRow);
+  const latestQuery = auditReportLedgerLocalReviewBundleLatestQuery(latestLocalReviewBundleRow);
+  const latestTitle = auditReportLedgerLocalReviewBundleLatestTitle(latestLocalReviewBundleRow);
+  return rows.map((row) => {
+    if (row.id !== latestLocalReviewBundleRow.id) {
+      return row;
+    }
+    return {
+      ...row,
+      localReviewBundleLatestLabel: latestLabel,
+      localReviewBundleLatestQuery: latestQuery,
+      localReviewBundleLatestTitle: latestTitle,
+      searchText: [row.searchText, latestLabel, latestQuery, latestTitle].filter(Boolean).join(" ")
+    };
+  });
 }
 
 function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
@@ -17203,6 +17278,15 @@ export function buildAuditEvidenceReportLedgerSummary(
     localReviewBundleCount: localReviewBundleRows.length,
     localReviewBundleDailyOpsCount,
     localReviewBundleLatestEventId: latestLocalReviewBundleRow?.id ?? "",
+    localReviewBundleLatestLabel:
+      latestLocalReviewBundleRow?.localReviewBundleLatestLabel ||
+      auditReportLedgerLocalReviewBundleLatestLabel(latestLocalReviewBundleRow),
+    localReviewBundleLatestQuery:
+      latestLocalReviewBundleRow?.localReviewBundleLatestQuery ||
+      auditReportLedgerLocalReviewBundleLatestQuery(latestLocalReviewBundleRow),
+    localReviewBundleLatestTitle:
+      latestLocalReviewBundleRow?.localReviewBundleLatestTitle ||
+      auditReportLedgerLocalReviewBundleLatestTitle(latestLocalReviewBundleRow),
     localReviewBundlePersonalTeamCount,
     localReviewBundleQuery: localReviewBundleRows.length > 0 ? "local-review-bundle" : "",
     localReviewBundleTitle: auditReportLedgerLocalReviewBundleTitle({
@@ -17966,6 +18050,9 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery,
       row.localReviewBundleContextQuery,
       row.localReviewBundleContextTitle,
+      row.localReviewBundleLatestLabel,
+      row.localReviewBundleLatestQuery,
+      row.localReviewBundleLatestTitle,
       row.p2ReadinessReviewChainLabel,
       row.p2ReadinessReviewChainQuery,
       row.p2ReadinessReviewChainHealthContextQuery,
