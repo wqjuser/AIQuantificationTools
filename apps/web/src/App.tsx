@@ -10720,6 +10720,10 @@ export function App() {
             onCopyQueryLink={copyAuditReportLedgerQueryLink}
             onOpenCompletionGap={selectProductWorkArea}
             onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}
+            onOpenLocalReviewCoverageNextAction={(workspaceId, auditReportQuery) => {
+              updateAuditEvidenceReportQuery(auditReportQuery);
+              selectProductWorkArea(workspaceId);
+            }}
             onOpenP0ActionLink={openP0CurrentGapActionLink}
             onOpenResearchContextLink={openAuditReportLedgerResearchContextLink}
             onPreviousPage={previousAuditEvidenceReportPage}
@@ -20668,6 +20672,7 @@ function AuditEvidenceReportLedgerPanel({
   onCopyQueryLink,
   onOpenCompletionGap,
   onOpenEvidenceLink,
+  onOpenLocalReviewCoverageNextAction,
   onOpenP0ActionLink,
   onOpenResearchContextLink,
   onPreviousPage,
@@ -20692,6 +20697,7 @@ function AuditEvidenceReportLedgerPanel({
   onCopyQueryLink: (query: string) => void;
   onOpenCompletionGap: (workspaceId: ProductWorkAreaId) => void;
   onOpenEvidenceLink: (search: string) => void;
+  onOpenLocalReviewCoverageNextAction: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;
   onOpenP0ActionLink: (search: string) => void;
   onOpenResearchContextLink: (search: string) => void;
   onPreviousPage: () => void;
@@ -20710,6 +20716,8 @@ function AuditEvidenceReportLedgerPanel({
   const latestAuditAidCurrentGapAction = buildLatestAuditAidCurrentGapActionDescriptor(summary);
   const latestAuditAidCurrentGapActionReadiness = buildLatestAuditAidCurrentGapActionReadiness(summary);
   const latestCompletionGapWorkspaceId = summary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId;
+  const localReviewCoverageNextActionWorkspaceId =
+    summary.localReviewBundleCoverageNextActionTargetWorkspaceId;
   const visibleRows = filterAuditEvidenceReportLedgerRows(rows, query);
   const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
   const pageEnd = pagination ? Math.min(pagination.offset + rows.length, pagination.total) : visibleRows.length;
@@ -21298,6 +21306,18 @@ function AuditEvidenceReportLedgerPanel({
                     {i18n.locale === "zh-CN" ? "复制覆盖下一步链接" : "Copy coverage next link"}
                   </button>
                 ) : null}
+                {localReviewCoverageNextActionWorkspaceId ? (
+                  <button
+                    onClick={() => onOpenLocalReviewCoverageNextAction(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)}
+                    title={
+                      summary.localReviewBundleCoverageNextActionTitle ||
+                      summary.localReviewBundleCoverageNextActionQuery
+                    }
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "打开覆盖下一步" : "Open coverage next"}
+                  </button>
+                ) : null}
                 {summary.localReviewBundleLatestQuery ? (
                   <button
                     onClick={() => focusAuditReportQuery(summary.localReviewBundleLatestQuery)}
@@ -21570,6 +21590,8 @@ function AuditEvidenceReportLedgerPanel({
               const rowDailyOpsControlRoomReviewQuery =
                 buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(row);
               const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId;
+              const rowLocalReviewCoverageNextActionWorkspaceId =
+                row.localReviewBundleCoverageNextActionTargetWorkspaceId;
               const preparationEvidenceRunId =
                 row.p0PreparationEvidenceRunId || row.researchContextPreparationEvidenceRunId;
 
@@ -21992,6 +22014,18 @@ function AuditEvidenceReportLedgerPanel({
                         type="button"
                       >
                         {i18n.locale === "zh-CN" ? "复制行覆盖下一步链接" : "Copy row coverage next link"}
+                      </button>
+                    ) : null}
+                    {rowLocalReviewCoverageNextActionWorkspaceId ? (
+                      <button
+                        onClick={() => onOpenLocalReviewCoverageNextAction(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)}
+                        title={
+                          row.localReviewBundleCoverageNextActionTitle ||
+                          row.localReviewBundleCoverageNextActionQuery
+                        }
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "打开行覆盖下一步" : "Open row coverage next"}
                       </button>
                     ) : null}
                     {row.localReviewBundleLatestQuery ? (

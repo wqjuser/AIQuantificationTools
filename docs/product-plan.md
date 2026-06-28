@@ -210,6 +210,8 @@ Batch 76 已给本地复核集补上覆盖健康度：`AuditEvidenceReportLedger
 
 Batch 77 已把本地复核覆盖缺口转成显式下一步动作：`AuditEvidenceReportLedgerSummary` 新增 `localReviewBundleCoverageNextActionLabel/Query/Title`，partial 状态会按缺失类型生成 `record-daily-ops-review` 或 `record-personal-team-review`，并组合成 `local-review-bundle-next-action` 稳定查询；本地复核 row 也会回填同一条 next-action query/title，并把 query token 纳入只读搜索。Audit toolbar 与 row 操作区新增“定位覆盖下一步 / Focus coverage next”和复制入口，使个人或小团队能直接把覆盖缺口交给下一轮人工复核。该能力只解释现有台账覆盖缺口，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 78 已让本地复核覆盖下一步可以打开目标工作区：`AuditEvidenceReportLedgerSummary` 和本地复核 row 新增 `localReviewBundleCoverageNextActionTargetWorkspaceId`，当覆盖为 partial 时指向承载个人/小团队复核与 Daily Ops 复核按钮的 `research` 工作区；Audit toolbar 与 row 操作区新增“打开覆盖下一步 / Open coverage next”，点击会先保留对应 next-action Audit 查询，再切回人工复核上下文。该能力只缩短从 Audit 缺口到手动复核入口的导航，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

@@ -227,6 +227,8 @@ Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_
 
 覆盖健康度出现 `partial` 时，Audit 顶部摘要和本地复核行现在还会给出明确的覆盖下一步：缺少 Daily Ops 时生成 `local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing`，缺少个人/小团队复核时生成 `local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing`。Toolbar 与 row 操作区提供“定位覆盖下一步 / Focus coverage next”和复制入口，让操作者把缺口动作作为稳定 Audit 查询交给下一轮复核；它仍只解释并过滤现有台账行，不自动记录缺失复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单。
 
+覆盖下一步现在也能从 Audit 直接打开承载复核按钮的工作区：`localReviewBundleCoverageNextActionTargetWorkspaceId` 会在覆盖 `partial` 时指向 `research`，Toolbar 与 row 操作区提供“打开覆盖下一步 / Open coverage next”。点击时只会保留当前 next-action Audit 查询并切回首页复核上下文，方便手动执行“入账复核”；它不会自动点击记录按钮、不写新事件、不签名、不运行流水线、不连接券商、不提交订单。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

@@ -1721,6 +1721,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageLabel");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionLabel");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionQuery");
+    expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionTargetWorkspaceId");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionTitle");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageQuery");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageState");
@@ -1884,6 +1885,13 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.localReviewBundleCoverageQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.localReviewBundleCoverageNextActionQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.localReviewBundleCoverageNextActionQuery)");
+    expect(reportLedgerPanelSource).toContain("localReviewCoverageNextActionWorkspaceId");
+    expect(reportLedgerPanelSource).toContain(
+      "onOpenLocalReviewCoverageNextAction(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)"
+    );
+    expect(reportLedgerPanelSource).toContain(
+      "onOpenLocalReviewCoverageNextAction: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;"
+    );
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.localReviewBundleLatestQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.localReviewBundleLatestQuery)");
     expect(reportLedgerPanelSource).toContain("本地复核集");
@@ -1906,6 +1914,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Copy local coverage link");
     expect(reportLedgerPanelSource).toContain("定位覆盖下一步");
     expect(reportLedgerPanelSource).toContain("Focus coverage next");
+    expect(reportLedgerPanelSource).toContain("打开覆盖下一步");
+    expect(reportLedgerPanelSource).toContain("Open coverage next");
     expect(reportLedgerPanelSource).toContain("复制覆盖下一步链接");
     expect(reportLedgerPanelSource).toContain("Copy coverage next link");
     expect(reportLedgerPanelSource).toContain("最新本地复核");
@@ -2042,6 +2052,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleCoverageQuery");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleCoverageTitle");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleCoverageNextActionQuery");
+    expect(reportLedgerPanelSource).toContain("row.localReviewBundleCoverageNextActionTargetWorkspaceId");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleCoverageNextActionTitle");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleLatestLabel");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleLatestQuery");
@@ -2052,6 +2063,10 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleCoverageQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleCoverageNextActionQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleCoverageNextActionQuery)");
+    expect(reportLedgerPanelSource).toContain("rowLocalReviewCoverageNextActionWorkspaceId");
+    expect(reportLedgerPanelSource).toContain(
+      "onOpenLocalReviewCoverageNextAction(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)"
+    );
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleLatestQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleLatestQuery)");
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-personal-team-review"');
@@ -2071,6 +2086,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Copy row local coverage link");
     expect(reportLedgerPanelSource).toContain("定位行覆盖下一步");
     expect(reportLedgerPanelSource).toContain("Focus row coverage next");
+    expect(reportLedgerPanelSource).toContain("打开行覆盖下一步");
+    expect(reportLedgerPanelSource).toContain("Open row coverage next");
     expect(reportLedgerPanelSource).toContain("复制行覆盖下一步链接");
     expect(reportLedgerPanelSource).toContain("Copy row coverage next link");
     expect(reportLedgerPanelSource).toContain("row.p0CompletionCurrentCriterionTargetWorkspaceId");

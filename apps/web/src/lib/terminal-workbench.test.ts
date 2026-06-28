@@ -11497,6 +11497,7 @@ describe("terminal workbench model", () => {
       localReviewBundleCoverageLabel: "",
       localReviewBundleCoverageNextActionLabel: "",
       localReviewBundleCoverageNextActionQuery: "",
+      localReviewBundleCoverageNextActionTargetWorkspaceId: null,
       localReviewBundleCoverageNextActionTitle: "",
       localReviewBundleCoverageQuery: "",
       localReviewBundleCoverageState: "empty",
@@ -13270,6 +13271,7 @@ describe("terminal workbench model", () => {
         localReviewBundleCoverageLabel: "local review bundle complete · personal/team 2 · daily ops 2",
         localReviewBundleCoverageNextActionLabel: "",
         localReviewBundleCoverageNextActionQuery: "",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: null,
         localReviewBundleCoverageNextActionTitle: "",
         localReviewBundleCoverageQuery: "local-review-bundle-complete",
         localReviewBundleCoverageState: "complete",
@@ -13308,6 +13310,7 @@ describe("terminal workbench model", () => {
         localReviewBundleContextTitle:
           "local-review-bundle · personal/team readiness review · personal-team-readiness-review-new-7777777777777777",
         localReviewBundleCoverageNextActionQuery: "",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: null,
         localReviewBundleCoverageNextActionTitle: "",
         localReviewBundleCoverageQuery: "local-review-bundle-complete",
         localReviewBundleCoverageTitle:
@@ -13320,6 +13323,7 @@ describe("terminal workbench model", () => {
         localReviewBundleContextTitle:
           "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666",
         localReviewBundleCoverageNextActionQuery: "",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: null,
         localReviewBundleCoverageNextActionTitle: "",
         localReviewBundleCoverageQuery: "local-review-bundle-complete",
         localReviewBundleCoverageTitle:
@@ -13401,6 +13405,7 @@ describe("terminal workbench model", () => {
         localReviewBundleCoverageNextActionLabel: "record daily ops review",
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
           "local-review-bundle-next-action · record daily ops review · missing daily ops review · personal/team 1 · daily ops 0",
         localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-ops-missing",
@@ -13415,6 +13420,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
           "local-review-bundle-next-action · record daily ops review · missing daily ops review · personal/team 1 · daily ops 0",
         localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-ops-missing",
@@ -13480,6 +13486,7 @@ describe("terminal workbench model", () => {
         localReviewBundleCoverageNextActionLabel: "record personal/team review",
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
           "local-review-bundle-next-action · record personal/team review · missing personal/team review · personal/team 0 · daily ops 1",
         localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-personal-missing",
@@ -13494,6 +13501,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
           "local-review-bundle-next-action · record personal/team review · missing personal/team review · personal/team 0 · daily ops 1",
         localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-personal-missing",

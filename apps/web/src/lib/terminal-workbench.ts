@@ -2559,6 +2559,7 @@ export interface AuditEvidenceReportLedgerRow {
   localReviewBundleCoverageQuery: string;
   localReviewBundleCoverageTitle: string;
   localReviewBundleCoverageNextActionQuery: string;
+  localReviewBundleCoverageNextActionTargetWorkspaceId: ProductWorkAreaId | null;
   localReviewBundleCoverageNextActionTitle: string;
   localReviewBundleLatestLabel: string;
   localReviewBundleLatestQuery: string;
@@ -2775,6 +2776,7 @@ export interface AuditEvidenceReportLedgerSummary {
   localReviewBundleCoverageLabel: string;
   localReviewBundleCoverageNextActionLabel: string;
   localReviewBundleCoverageNextActionQuery: string;
+  localReviewBundleCoverageNextActionTargetWorkspaceId: ProductWorkAreaId | null;
   localReviewBundleCoverageNextActionTitle: string;
   localReviewBundleCoverageQuery: string;
   localReviewBundleCoverageState: AuditEvidenceReportLedgerLocalReviewBundleCoverageState;
@@ -14269,6 +14271,7 @@ function auditReportLedgerLocalReviewBundleCoverage({
   label: string;
   nextActionLabel: string;
   nextActionQuery: string;
+  nextActionTargetWorkspaceId: ProductWorkAreaId | null;
   nextActionTitle: string;
   query: string;
   state: AuditEvidenceReportLedgerLocalReviewBundleCoverageState;
@@ -14280,6 +14283,7 @@ function auditReportLedgerLocalReviewBundleCoverage({
       label: "",
       nextActionLabel: "",
       nextActionQuery: "",
+      nextActionTargetWorkspaceId: null,
       nextActionTitle: "",
       query: "",
       state: "empty",
@@ -14293,6 +14297,7 @@ function auditReportLedgerLocalReviewBundleCoverage({
       label: `local review bundle complete · ${countLabel}`,
       nextActionLabel: "",
       nextActionQuery: "",
+      nextActionTargetWorkspaceId: null,
       nextActionTitle: "",
       query: "local-review-bundle-complete",
       state: "complete",
@@ -14314,6 +14319,7 @@ function auditReportLedgerLocalReviewBundleCoverage({
       nextActionQueryToken,
       missingQueryToken
     ]),
+    nextActionTargetWorkspaceId: "research",
     nextActionTitle: `local-review-bundle-next-action · ${nextActionLabel} · missing ${missingReviewLabel} · ${countLabel}`,
     query: auditReportLedgerDeduplicatedQueryText(["local-review-bundle-gap", missingQueryToken]),
     state: "partial",
@@ -16636,6 +16642,7 @@ export function buildAuditEvidenceReportLedgerRows(
         localReviewBundleCoverageQuery: "",
         localReviewBundleCoverageTitle: "",
         localReviewBundleCoverageNextActionQuery: "",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: null,
         localReviewBundleCoverageNextActionTitle: "",
         localReviewBundleLatestLabel: "",
         localReviewBundleLatestQuery: "",
@@ -16806,6 +16813,7 @@ function markLocalReviewBundleCoverageLedgerRows(rows: AuditEvidenceReportLedger
       localReviewBundleCoverageQuery: coverage.query,
       localReviewBundleCoverageTitle: coverage.title,
       localReviewBundleCoverageNextActionQuery: coverage.nextActionQuery,
+      localReviewBundleCoverageNextActionTargetWorkspaceId: coverage.nextActionTargetWorkspaceId,
       localReviewBundleCoverageNextActionTitle: coverage.nextActionTitle,
       searchText: [row.searchText, coverage.query, coverage.nextActionQuery].filter(Boolean).join(" ")
     };
@@ -17394,6 +17402,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     localReviewBundleCoverageLabel: localReviewBundleCoverage.label,
     localReviewBundleCoverageNextActionLabel: localReviewBundleCoverage.nextActionLabel,
     localReviewBundleCoverageNextActionQuery: localReviewBundleCoverage.nextActionQuery,
+    localReviewBundleCoverageNextActionTargetWorkspaceId: localReviewBundleCoverage.nextActionTargetWorkspaceId,
     localReviewBundleCoverageNextActionTitle: localReviewBundleCoverage.nextActionTitle,
     localReviewBundleCoverageQuery: localReviewBundleCoverage.query,
     localReviewBundleCoverageState: localReviewBundleCoverage.state,
