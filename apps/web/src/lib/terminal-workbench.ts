@@ -2556,6 +2556,8 @@ export interface AuditEvidenceReportLedgerRow {
   dailyOpsControlRoomReviewAuditQuery: string;
   localReviewBundleContextQuery: string;
   localReviewBundleContextTitle: string;
+  localReviewBundleCoverageQuery: string;
+  localReviewBundleCoverageTitle: string;
   localReviewBundleLatestLabel: string;
   localReviewBundleLatestQuery: string;
   localReviewBundleLatestTitle: string;
@@ -2663,6 +2665,8 @@ export interface EvidencePackageControlRoom {
   summary: EvidencePackageControlRoomSummary;
 }
 
+export type AuditEvidenceReportLedgerLocalReviewBundleCoverageState = "empty" | "partial" | "complete";
+
 export interface AuditEvidenceReportLedgerSummary {
   attention: number;
   auditAid: number;
@@ -2766,6 +2770,10 @@ export interface AuditEvidenceReportLedgerSummary {
   latestResearchContextReportRunId: string;
   latestResearchContextReportShortHash: string;
   localReviewBundleCount: number;
+  localReviewBundleCoverageLabel: string;
+  localReviewBundleCoverageQuery: string;
+  localReviewBundleCoverageState: AuditEvidenceReportLedgerLocalReviewBundleCoverageState;
+  localReviewBundleCoverageTitle: string;
   localReviewBundleDailyOpsCount: number;
   localReviewBundleLatestEventId: string;
   localReviewBundleLatestLabel: string;
@@ -14246,6 +14254,49 @@ function auditReportLedgerLocalReviewBundleLatestTitle(row: AuditEvidenceReportL
   return ["local-review-bundle-latest", reviewLabel, row.id, row.createdAt].filter(Boolean).join(" · ");
 }
 
+function auditReportLedgerLocalReviewBundleCoverage({
+  dailyOpsCount,
+  personalTeamCount
+}: {
+  dailyOpsCount: number;
+  personalTeamCount: number;
+}): {
+  label: string;
+  query: string;
+  state: AuditEvidenceReportLedgerLocalReviewBundleCoverageState;
+  title: string;
+} {
+  const totalCount = dailyOpsCount + personalTeamCount;
+  if (totalCount <= 0) {
+    return {
+      label: "",
+      query: "",
+      state: "empty",
+      title: ""
+    };
+  }
+
+  const countLabel = `personal/team ${personalTeamCount} · daily ops ${dailyOpsCount}`;
+  if (personalTeamCount > 0 && dailyOpsCount > 0) {
+    return {
+      label: `local review bundle complete · ${countLabel}`,
+      query: "local-review-bundle-complete",
+      state: "complete",
+      title: `local-review-bundle-complete · local review coverage complete · ${countLabel}`
+    };
+  }
+
+  const missingReviewLabel = personalTeamCount <= 0 ? "personal/team review" : "daily ops review";
+  const missingQueryToken =
+    personalTeamCount <= 0 ? "local-review-bundle-personal-missing" : "local-review-bundle-daily-ops-missing";
+  return {
+    label: `local review bundle gap · ${countLabel}`,
+    query: auditReportLedgerDeduplicatedQueryText(["local-review-bundle-gap", missingQueryToken]),
+    state: "partial",
+    title: `local-review-bundle-gap · missing ${missingReviewLabel} · ${countLabel}`
+  };
+}
+
 function auditReportLedgerDeduplicatedQueryText(values: unknown[]): string {
   const seen = new Set<string>();
   return values
@@ -16558,6 +16609,8 @@ export function buildAuditEvidenceReportLedgerRows(
         dailyOpsControlRoomReviewAuditQuery,
         localReviewBundleContextQuery,
         localReviewBundleContextTitle,
+        localReviewBundleCoverageQuery: "",
+        localReviewBundleCoverageTitle: "",
         localReviewBundleLatestLabel: "",
         localReviewBundleLatestQuery: "",
         localReviewBundleLatestTitle: "",
@@ -16694,16 +16747,46 @@ export function buildAuditEvidenceReportLedgerRows(
           : auditReportLedgerSignatureTone(signatureStatus)
       };
     });
-  return markLatestLocalReviewBundleLedgerRow(linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(rows));
+  return markLatestLocalReviewBundleLedgerRow(
+    markLocalReviewBundleCoverageLedgerRows(linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(rows))
+  );
+}
+
+function auditEvidenceReportLedgerRowIsLocalReviewBundle(row: AuditEvidenceReportLedgerRow): boolean {
+  return (
+    row.status === "ready" &&
+    (row.reportKind === "personal_team_readiness_review" || row.reportKind === "daily_ops_control_room_review")
+  );
+}
+
+function markLocalReviewBundleCoverageLedgerRows(rows: AuditEvidenceReportLedgerRow[]): AuditEvidenceReportLedgerRow[] {
+  const localReviewBundleRows = rows.filter(auditEvidenceReportLedgerRowIsLocalReviewBundle);
+  const personalTeamCount = localReviewBundleRows.filter((row) => row.reportKind === "personal_team_readiness_review")
+    .length;
+  const dailyOpsCount = localReviewBundleRows.filter((row) => row.reportKind === "daily_ops_control_room_review")
+    .length;
+  const coverage = auditReportLedgerLocalReviewBundleCoverage({ dailyOpsCount, personalTeamCount });
+
+  if (!coverage.query) {
+    return rows;
+  }
+
+  return rows.map((row) => {
+    if (!auditEvidenceReportLedgerRowIsLocalReviewBundle(row)) {
+      return row;
+    }
+    return {
+      ...row,
+      localReviewBundleCoverageQuery: coverage.query,
+      localReviewBundleCoverageTitle: coverage.title,
+      searchText: [row.searchText, coverage.query].filter(Boolean).join(" ")
+    };
+  });
 }
 
 function markLatestLocalReviewBundleLedgerRow(rows: AuditEvidenceReportLedgerRow[]): AuditEvidenceReportLedgerRow[] {
   const latestLocalReviewBundleRow = rows
-    .filter(
-      (row) =>
-        row.status === "ready" &&
-        (row.reportKind === "personal_team_readiness_review" || row.reportKind === "daily_ops_control_room_review")
-    )
+    .filter(auditEvidenceReportLedgerRowIsLocalReviewBundle)
     .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
       if (!latest) {
         return row;
@@ -17039,6 +17122,10 @@ export function buildAuditEvidenceReportLedgerSummary(
   const localReviewBundleDailyOpsCount = localReviewBundleRows.filter(
     (row) => row.reportKind === "daily_ops_control_room_review"
   ).length;
+  const localReviewBundleCoverage = auditReportLedgerLocalReviewBundleCoverage({
+    dailyOpsCount: localReviewBundleDailyOpsCount,
+    personalTeamCount: localReviewBundlePersonalTeamCount
+  });
   const latestLocalReviewBundleRow = localReviewBundleRows.reduce<AuditEvidenceReportLedgerRow | undefined>(
     (latest, row) => {
       if (!latest) {
@@ -17276,6 +17363,10 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestResearchContextReportRunId: latestResearchContextReportRow?.runId ?? "",
     latestResearchContextReportShortHash: latestResearchContextReportRow?.shortHash ?? "",
     localReviewBundleCount: localReviewBundleRows.length,
+    localReviewBundleCoverageLabel: localReviewBundleCoverage.label,
+    localReviewBundleCoverageQuery: localReviewBundleCoverage.query,
+    localReviewBundleCoverageState: localReviewBundleCoverage.state,
+    localReviewBundleCoverageTitle: localReviewBundleCoverage.title,
     localReviewBundleDailyOpsCount,
     localReviewBundleLatestEventId: latestLocalReviewBundleRow?.id ?? "",
     localReviewBundleLatestLabel:
@@ -18050,6 +18141,7 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery,
       row.localReviewBundleContextQuery,
       row.localReviewBundleContextTitle,
+      row.localReviewBundleCoverageQuery,
       row.localReviewBundleLatestLabel,
       row.localReviewBundleLatestQuery,
       row.localReviewBundleLatestTitle,

@@ -223,6 +223,8 @@ Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_
 
 本地复核集还会标记当前页最新 ready 复核：`AuditEvidenceReportLedgerRow` 会在最新 `personal_team_readiness_review` 或 `daily_ops_control_room_review` 行上回填 `localReviewBundleLatestLabel/Query/Title`，summary 也暴露同一条 `local-review-bundle-latest` 查询。Toolbar 与最新行都提供“定位最新本地复核 / Focus latest local review”和“复制最新本地复核链接 / Copy latest local review link”，方便从复核集合中直接跳到最新留档；该入口仍只筛选既有台账行，不写事件、不签名、不运行流水线、不连接券商、不提交订单。
 
+本地复核集现在还会显示覆盖健康度：`AuditEvidenceReportLedgerSummary` 会检查当前页是否同时存在 ready 的 `personal_team_readiness_review` 与 `daily_ops_control_room_review`，输出 `complete`、`partial` 或 `empty`，并生成 `local-review-bundle-complete` 或 `local-review-bundle-gap` 查询；缺少 Daily Ops 或个人/小团队复核时会额外带上 `local-review-bundle-daily-ops-missing` 或 `local-review-bundle-personal-missing`。Toolbar 与每条本地复核行都提供“定位本地复核覆盖 / Focus local coverage”和复制入口，帮助小团队确认复核留档是否成对覆盖；该能力只筛选既有台账行，不写事件、不签名、不运行流水线、不连接券商、不提交订单。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

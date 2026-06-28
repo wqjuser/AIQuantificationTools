@@ -206,6 +206,8 @@ Batch 74 已把本地复核集入口下沉到每条本地复核 row：`AuditEvid
 
 Batch 75 已给本地复核集补上“最新本地复核”入口：构造 Audit 台账行后会按 `createdAt` 标记当前页最新 ready 的 `personal_team_readiness_review` 或 `daily_ops_control_room_review`，在该 row 上回填 `localReviewBundleLatestLabel/Query/Title`，并把 `local-review-bundle-latest` 加入只读搜索；summary 同步暴露最新本地复核 label/query/title，Audit toolbar 和最新 row 都提供定位/复制最新本地复核链接。该能力只筛选现有本地复核行，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 76 已给本地复核集补上覆盖健康度：`AuditEvidenceReportLedgerSummary` 新增 `localReviewBundleCoverageLabel/Query/State/Title`，按当前页 ready 的 `personal_team_readiness_review` 与 `daily_ops_control_room_review` 判断 `complete`、`partial` 或 `empty`；构造台账行后也会把同一套 coverage query/title 回填到本地复核 row，并把 `local-review-bundle-complete`、`local-review-bundle-gap`、`local-review-bundle-daily-ops-missing` 或 `local-review-bundle-personal-missing` 纳入只读搜索。Audit toolbar 和本地复核 row 现在都提供定位/复制本地复核覆盖入口，帮助个人和小团队确认 readiness 复核与每日操作复核是否成对留档。该能力只筛选既有复核行，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

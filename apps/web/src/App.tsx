@@ -21222,6 +21222,18 @@ function AuditEvidenceReportLedgerPanel({
                     {summary.localReviewBundleLatestEventId}
                   </small>
                 ) : null}
+                {summary.localReviewBundleCoverageQuery ? (
+                  <small
+                    title={
+                      summary.localReviewBundleCoverageTitle ||
+                      summary.localReviewBundleCoverageLabel ||
+                      summary.localReviewBundleCoverageQuery
+                    }
+                  >
+                    {i18n.locale === "zh-CN" ? "本地复核覆盖" : "Local review coverage"} ·{" "}
+                    {summary.localReviewBundleCoverageState}
+                  </small>
+                ) : null}
                 {summary.localReviewBundleQuery ? (
                   <button onClick={() => focusAuditReportQuery(summary.localReviewBundleQuery)} type="button">
                     {i18n.locale === "zh-CN" ? "定位本地复核集" : "Focus local reviews"}
@@ -21230,6 +21242,24 @@ function AuditEvidenceReportLedgerPanel({
                 {summary.localReviewBundleQuery ? (
                   <button onClick={() => onCopyQueryLink(summary.localReviewBundleQuery)} type="button">
                     {i18n.locale === "zh-CN" ? "复制本地复核集链接" : "Copy local reviews link"}
+                  </button>
+                ) : null}
+                {summary.localReviewBundleCoverageQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.localReviewBundleCoverageQuery)}
+                    title={summary.localReviewBundleCoverageTitle || summary.localReviewBundleCoverageQuery}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位本地复核覆盖" : "Focus local coverage"}
+                  </button>
+                ) : null}
+                {summary.localReviewBundleCoverageQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.localReviewBundleCoverageQuery)}
+                    title={summary.localReviewBundleCoverageTitle || summary.localReviewBundleCoverageQuery}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制本地复核覆盖链接" : "Copy local coverage link"}
                   </button>
                 ) : null}
                 {summary.localReviewBundleLatestQuery ? (
@@ -21608,6 +21638,15 @@ function AuditEvidenceReportLedgerPanel({
                       {row.localReviewBundleContextQuery}
                     </span>
                   ) : null}
+                  {row.localReviewBundleCoverageQuery ? (
+                    <span
+                      className="audit-report-ledger-local-review-coverage"
+                      title={row.localReviewBundleCoverageTitle || row.localReviewBundleCoverageQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "本地复核覆盖" : "Local review coverage"} ·{" "}
+                      {row.localReviewBundleCoverageQuery}
+                    </span>
+                  ) : null}
                   {row.localReviewBundleLatestLabel ? (
                     <span
                       className="audit-report-ledger-local-review-latest"
@@ -21863,6 +21902,24 @@ function AuditEvidenceReportLedgerPanel({
                         type="button"
                       >
                         {i18n.locale === "zh-CN" ? "复制行本地复核集链接" : "Copy row local reviews link"}
+                      </button>
+                    ) : null}
+                    {row.localReviewBundleCoverageQuery ? (
+                      <button
+                        onClick={() => focusAuditReportQuery(row.localReviewBundleCoverageQuery)}
+                        title={row.localReviewBundleCoverageTitle || row.localReviewBundleCoverageQuery}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "定位行本地复核覆盖" : "Focus row local coverage"}
+                      </button>
+                    ) : null}
+                    {row.localReviewBundleCoverageQuery ? (
+                      <button
+                        onClick={() => onCopyQueryLink(row.localReviewBundleCoverageQuery)}
+                        title={row.localReviewBundleCoverageTitle || row.localReviewBundleCoverageQuery}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "复制行本地复核覆盖链接" : "Copy row local coverage link"}
                       </button>
                     ) : null}
                     {row.localReviewBundleLatestQuery ? (
