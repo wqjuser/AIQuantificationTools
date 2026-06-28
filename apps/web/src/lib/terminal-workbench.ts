@@ -2558,6 +2558,8 @@ export interface AuditEvidenceReportLedgerRow {
   localReviewBundleContextTitle: string;
   localReviewBundleCoverageQuery: string;
   localReviewBundleCoverageTitle: string;
+  localReviewBundleCoverageNextActionQuery: string;
+  localReviewBundleCoverageNextActionTitle: string;
   localReviewBundleLatestLabel: string;
   localReviewBundleLatestQuery: string;
   localReviewBundleLatestTitle: string;
@@ -2771,6 +2773,9 @@ export interface AuditEvidenceReportLedgerSummary {
   latestResearchContextReportShortHash: string;
   localReviewBundleCount: number;
   localReviewBundleCoverageLabel: string;
+  localReviewBundleCoverageNextActionLabel: string;
+  localReviewBundleCoverageNextActionQuery: string;
+  localReviewBundleCoverageNextActionTitle: string;
   localReviewBundleCoverageQuery: string;
   localReviewBundleCoverageState: AuditEvidenceReportLedgerLocalReviewBundleCoverageState;
   localReviewBundleCoverageTitle: string;
@@ -14262,6 +14267,9 @@ function auditReportLedgerLocalReviewBundleCoverage({
   personalTeamCount: number;
 }): {
   label: string;
+  nextActionLabel: string;
+  nextActionQuery: string;
+  nextActionTitle: string;
   query: string;
   state: AuditEvidenceReportLedgerLocalReviewBundleCoverageState;
   title: string;
@@ -14270,6 +14278,9 @@ function auditReportLedgerLocalReviewBundleCoverage({
   if (totalCount <= 0) {
     return {
       label: "",
+      nextActionLabel: "",
+      nextActionQuery: "",
+      nextActionTitle: "",
       query: "",
       state: "empty",
       title: ""
@@ -14280,6 +14291,9 @@ function auditReportLedgerLocalReviewBundleCoverage({
   if (personalTeamCount > 0 && dailyOpsCount > 0) {
     return {
       label: `local review bundle complete · ${countLabel}`,
+      nextActionLabel: "",
+      nextActionQuery: "",
+      nextActionTitle: "",
       query: "local-review-bundle-complete",
       state: "complete",
       title: `local-review-bundle-complete · local review coverage complete · ${countLabel}`
@@ -14289,8 +14303,18 @@ function auditReportLedgerLocalReviewBundleCoverage({
   const missingReviewLabel = personalTeamCount <= 0 ? "personal/team review" : "daily ops review";
   const missingQueryToken =
     personalTeamCount <= 0 ? "local-review-bundle-personal-missing" : "local-review-bundle-daily-ops-missing";
+  const nextActionLabel = personalTeamCount <= 0 ? "record personal/team review" : "record daily ops review";
+  const nextActionQueryToken =
+    personalTeamCount <= 0 ? "record-personal-team-review" : "record-daily-ops-review";
   return {
     label: `local review bundle gap · ${countLabel}`,
+    nextActionLabel,
+    nextActionQuery: auditReportLedgerDeduplicatedQueryText([
+      "local-review-bundle-next-action",
+      nextActionQueryToken,
+      missingQueryToken
+    ]),
+    nextActionTitle: `local-review-bundle-next-action · ${nextActionLabel} · missing ${missingReviewLabel} · ${countLabel}`,
     query: auditReportLedgerDeduplicatedQueryText(["local-review-bundle-gap", missingQueryToken]),
     state: "partial",
     title: `local-review-bundle-gap · missing ${missingReviewLabel} · ${countLabel}`
@@ -16611,6 +16635,8 @@ export function buildAuditEvidenceReportLedgerRows(
         localReviewBundleContextTitle,
         localReviewBundleCoverageQuery: "",
         localReviewBundleCoverageTitle: "",
+        localReviewBundleCoverageNextActionQuery: "",
+        localReviewBundleCoverageNextActionTitle: "",
         localReviewBundleLatestLabel: "",
         localReviewBundleLatestQuery: "",
         localReviewBundleLatestTitle: "",
@@ -16779,7 +16805,9 @@ function markLocalReviewBundleCoverageLedgerRows(rows: AuditEvidenceReportLedger
       ...row,
       localReviewBundleCoverageQuery: coverage.query,
       localReviewBundleCoverageTitle: coverage.title,
-      searchText: [row.searchText, coverage.query].filter(Boolean).join(" ")
+      localReviewBundleCoverageNextActionQuery: coverage.nextActionQuery,
+      localReviewBundleCoverageNextActionTitle: coverage.nextActionTitle,
+      searchText: [row.searchText, coverage.query, coverage.nextActionQuery].filter(Boolean).join(" ")
     };
   });
 }
@@ -17364,6 +17392,9 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestResearchContextReportShortHash: latestResearchContextReportRow?.shortHash ?? "",
     localReviewBundleCount: localReviewBundleRows.length,
     localReviewBundleCoverageLabel: localReviewBundleCoverage.label,
+    localReviewBundleCoverageNextActionLabel: localReviewBundleCoverage.nextActionLabel,
+    localReviewBundleCoverageNextActionQuery: localReviewBundleCoverage.nextActionQuery,
+    localReviewBundleCoverageNextActionTitle: localReviewBundleCoverage.nextActionTitle,
     localReviewBundleCoverageQuery: localReviewBundleCoverage.query,
     localReviewBundleCoverageState: localReviewBundleCoverage.state,
     localReviewBundleCoverageTitle: localReviewBundleCoverage.title,
@@ -18142,6 +18173,7 @@ export function filterAuditEvidenceReportLedgerRows(
       row.localReviewBundleContextQuery,
       row.localReviewBundleContextTitle,
       row.localReviewBundleCoverageQuery,
+      row.localReviewBundleCoverageNextActionQuery,
       row.localReviewBundleLatestLabel,
       row.localReviewBundleLatestQuery,
       row.localReviewBundleLatestTitle,

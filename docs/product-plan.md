@@ -208,6 +208,8 @@ Batch 75 已给本地复核集补上“最新本地复核”入口：构造 Audi
 
 Batch 76 已给本地复核集补上覆盖健康度：`AuditEvidenceReportLedgerSummary` 新增 `localReviewBundleCoverageLabel/Query/State/Title`，按当前页 ready 的 `personal_team_readiness_review` 与 `daily_ops_control_room_review` 判断 `complete`、`partial` 或 `empty`；构造台账行后也会把同一套 coverage query/title 回填到本地复核 row，并把 `local-review-bundle-complete`、`local-review-bundle-gap`、`local-review-bundle-daily-ops-missing` 或 `local-review-bundle-personal-missing` 纳入只读搜索。Audit toolbar 和本地复核 row 现在都提供定位/复制本地复核覆盖入口，帮助个人和小团队确认 readiness 复核与每日操作复核是否成对留档。该能力只筛选既有复核行，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 77 已把本地复核覆盖缺口转成显式下一步动作：`AuditEvidenceReportLedgerSummary` 新增 `localReviewBundleCoverageNextActionLabel/Query/Title`，partial 状态会按缺失类型生成 `record-daily-ops-review` 或 `record-personal-team-review`，并组合成 `local-review-bundle-next-action` 稳定查询；本地复核 row 也会回填同一条 next-action query/title，并把 query token 纳入只读搜索。Audit toolbar 与 row 操作区新增“定位覆盖下一步 / Focus coverage next”和复制入口，使个人或小团队能直接把覆盖缺口交给下一轮人工复核。该能力只解释现有台账覆盖缺口，不自动记录复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

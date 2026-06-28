@@ -225,6 +225,8 @@ Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_
 
 本地复核集现在还会显示覆盖健康度：`AuditEvidenceReportLedgerSummary` 会检查当前页是否同时存在 ready 的 `personal_team_readiness_review` 与 `daily_ops_control_room_review`，输出 `complete`、`partial` 或 `empty`，并生成 `local-review-bundle-complete` 或 `local-review-bundle-gap` 查询；缺少 Daily Ops 或个人/小团队复核时会额外带上 `local-review-bundle-daily-ops-missing` 或 `local-review-bundle-personal-missing`。Toolbar 与每条本地复核行都提供“定位本地复核覆盖 / Focus local coverage”和复制入口，帮助小团队确认复核留档是否成对覆盖；该能力只筛选既有台账行，不写事件、不签名、不运行流水线、不连接券商、不提交订单。
 
+覆盖健康度出现 `partial` 时，Audit 顶部摘要和本地复核行现在还会给出明确的覆盖下一步：缺少 Daily Ops 时生成 `local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing`，缺少个人/小团队复核时生成 `local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing`。Toolbar 与 row 操作区提供“定位覆盖下一步 / Focus coverage next”和复制入口，让操作者把缺口动作作为稳定 Audit 查询交给下一轮复核；它仍只解释并过滤现有台账行，不自动记录缺失复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell
