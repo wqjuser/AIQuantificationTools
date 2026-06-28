@@ -449,6 +449,7 @@ import {
   mergeResearchRunImportAuditEvents,
   mergeStrategyReadinessGatesWithLocalAudit,
   researchPipelineDataSnapshotLogLabel,
+  resolveLocalReviewCoverageNextActionDeepLinkState,
   resolveP0CompletionGapDeepLinkState,
   resolveP0CurrentGapActionDeepLinkState,
   researchRunEvidenceLogLabel,
@@ -645,6 +646,8 @@ const initialP0CurrentGapActionDeepLinkState =
   typeof window === "undefined" ? null : resolveP0CurrentGapActionDeepLinkState(window.location.search);
 const initialP0CompletionGapDeepLinkState =
   typeof window === "undefined" ? null : resolveP0CompletionGapDeepLinkState(window.location.search);
+const initialLocalReviewCoverageNextActionDeepLinkState =
+  typeof window === "undefined" ? null : resolveLocalReviewCoverageNextActionDeepLinkState(window.location.search);
 
 const initialWorkspaceState: WorkspaceLoadResult = {
   workspace: buildInitialTerminalWorkspace(),
@@ -11960,6 +11963,47 @@ export function App() {
                         type="button"
                       >
                         {i18n.locale === "zh-CN" ? "继续完成缺口" : "Continue completion gap"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {initialLocalReviewCoverageNextActionDeepLinkState ? (
+                  <div className="p0-current-gap-deep-link local-review-coverage-next-action-deep-link">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "本地复核覆盖下一步" : "Local review coverage next"}</span>
+                      <strong>
+                        {productWorkAreaIdLabelText(
+                          i18n,
+                          initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId
+                        )}
+                      </strong>
+                      <small title={initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery}>
+                        {i18n.locale === "zh-CN" ? "覆盖查询" : "Coverage query"} ·{" "}
+                        {initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery}
+                      </small>
+                    </div>
+                    <div className="p0-current-gap-deep-link-actions">
+                      <button
+                        onClick={() => {
+                          replaceAuditEvidenceReportQueryUrlParam(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportQuery(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportOffset(0);
+                          selectProductWorkArea("audit");
+                        }}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "查看覆盖查询" : "View coverage query"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          replaceAuditEvidenceReportQueryUrlParam(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportQuery(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
+                          setAuditEvidenceReportOffset(0);
+                          selectProductWorkArea(initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId);
+                        }}
+                        type="button"
+                      >
+                        {i18n.locale === "zh-CN" ? "打开复核入口" : "Open review entry"}
                       </button>
                     </div>
                   </div>

@@ -214,6 +214,8 @@ Batch 78 已让本地复核覆盖下一步可以打开目标工作区：`AuditEv
 
 Batch 79 已把覆盖下一步做成可复制、可恢复的目标工作区深链：新增 `buildLocalReviewCoverageNextActionUrlSearch` 与 `resolveLocalReviewCoverageNextActionDeepLinkState`，只接受合法工作区和包含 `local-review-bundle-next-action` 的 Audit 查询，并规范化为 `workspace=research&auditReportQuery=...`；Audit toolbar 与本地复核 row 的“复制覆盖下一步链接 / Copy coverage next link”现在使用该深链，而不是普通 Audit-only 查询链接。打开链接会恢复人工复核入口和对应 Audit 查询上下文，方便小团队交接覆盖缺口；它仍不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 80 已把本地复核覆盖下一步深链补成首屏可见的落地提示：App 初始化时会解析 `resolveLocalReviewCoverageNextActionDeepLinkState(window.location.search)`，当链接包含 `local-review-bundle-next-action` 查询时，首页 P0 readiness 区域显示“本地复核覆盖下一步 / Local review coverage next”、目标工作区和原始 coverage query。提示提供“查看覆盖查询 / View coverage query”切到 Audit 只读定位，以及“打开复核入口 / Open review entry”切回承载手动复核按钮的工作区。该能力只让被派发的覆盖缺口更容易理解和继续处理，不自动记录缺失复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

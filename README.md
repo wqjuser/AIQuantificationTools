@@ -231,6 +231,8 @@ Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_
 
 “复制覆盖下一步链接 / Copy coverage next link”现在会复制同一条可恢复深链：`workspace=research&auditReportQuery=local-review-bundle-next-action...`。打开链接后会直接落到手动复核入口所在工作区，并保留 Audit 查询参数，方便小团队把覆盖缺口派给下一位操作者；链接本身仍只是导航和查询上下文，不自动记录复核、不修改账本、不签名、不触发任何交易路径。
 
+打开覆盖下一步深链时，首页会在 P0 readiness 区域显示“本地复核覆盖下一步 / Local review coverage next”落地提示，列出目标复核工作区和原始 coverage query，并提供“查看覆盖查询 / View coverage query”和“打开复核入口 / Open review entry”两个显式动作。前者切到 Audit 只读定位，后者回到承载手动复核按钮的工作区；两者都只保留查询上下文，不自动点击“入账复核”、不写新事件、不签名、不运行流水线、不连接券商、不提交订单。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

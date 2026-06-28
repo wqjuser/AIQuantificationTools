@@ -615,24 +615,44 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("resolveP0CurrentGapActionDeepLinkState(window.location.search)");
     expect(appSource).toContain("resolveP0CompletionGapDeepLinkState(window.location.search)");
+    expect(appSource).toContain("resolveLocalReviewCoverageNextActionDeepLinkState(window.location.search)");
     expect(appSource).toContain("initialP0CurrentGapActionDeepLinkState");
     expect(appSource).toContain("initialP0CompletionGapDeepLinkState");
+    expect(appSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState");
+    expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState");
     expect(overviewSource).toContain('className="p0-current-gap-deep-link"');
     expect(overviewSource).toContain('className="p0-current-gap-deep-link p0-completion-gap-deep-link"');
+    expect(overviewSource).toContain(
+      'className="p0-current-gap-deep-link local-review-coverage-next-action-deep-link"'
+    );
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.actionId");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.auditReportQuery");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.targetWorkspaceId");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.auditReportQuery");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.targetWorkspaceId");
+    expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery");
+    expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CurrentGapActionDeepLinkState.auditReportQuery)");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CompletionGapDeepLinkState.auditReportQuery)");
+    expect(overviewSource).toContain(
+      "replaceAuditEvidenceReportQueryUrlParam(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery)"
+    );
     expect(overviewSource).toContain("selectProductWorkArea(initialP0CompletionGapDeepLinkState.targetWorkspaceId)");
+    expect(overviewSource).toContain(
+      "selectProductWorkArea(initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId)"
+    );
     expect(overviewSource).toContain("已载入完成缺口链接");
     expect(overviewSource).toContain("Recovered completion gap link");
     expect(overviewSource).toContain("继续完成缺口");
     expect(overviewSource).toContain("Continue completion gap");
+    expect(overviewSource).toContain("本地复核覆盖下一步");
+    expect(overviewSource).toContain("Local review coverage next");
+    expect(overviewSource).toContain("查看覆盖查询");
+    expect(overviewSource).toContain("View coverage query");
+    expect(overviewSource).toContain("打开复核入口");
+    expect(overviewSource).toContain("Open review entry");
     expect(overviewSource).toContain("runGoldenPathActionById(");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.actionId");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.targetWorkspaceId");
