@@ -265,6 +265,12 @@ import {
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery,
+  buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel,
+  buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery,
+  buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle,
+  buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel,
+  buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery,
+  buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
   findLatestP2ManifestChainPreflightAuditLedgerRow,
   findLatestP2ReadinessAcceptanceAuditLedgerRow,
@@ -21357,6 +21363,18 @@ function AuditEvidenceReportLedgerPanel({
               const rowP0PreflightQuery = buildAuditEvidenceReportLedgerRowP0PreflightQuery(row);
               const rowP0ReadinessReportQuery = buildAuditEvidenceReportLedgerRowP0ReadinessReportQuery(row);
               const rowPreLiveRunbookQuery = buildAuditEvidenceReportLedgerRowPreLiveRunbookQuery(row);
+              const rowPersonalTeamReadinessReviewLabel =
+                buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel(row);
+              const rowPersonalTeamReadinessReviewTitle =
+                buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle(row);
+              const rowPersonalTeamReadinessReviewQuery =
+                buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery(row);
+              const rowDailyOpsControlRoomReviewLabel =
+                buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel(row);
+              const rowDailyOpsControlRoomReviewTitle =
+                buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle(row);
+              const rowDailyOpsControlRoomReviewQuery =
+                buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(row);
               const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId;
               const preparationEvidenceRunId =
                 row.p0PreparationEvidenceRunId || row.researchContextPreparationEvidenceRunId;
@@ -21433,6 +21451,24 @@ function AuditEvidenceReportLedgerPanel({
                         : i18n.locale === "zh-CN"
                           ? "复核链缺 coverage"
                           : "Review chain missing coverage"}
+                    </span>
+                  ) : null}
+                  {rowPersonalTeamReadinessReviewLabel ? (
+                    <span
+                      className="audit-report-ledger-personal-team-review"
+                      title={rowPersonalTeamReadinessReviewTitle || rowPersonalTeamReadinessReviewQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "个人/小团队复核" : "Personal/team review"} ·{" "}
+                      {rowPersonalTeamReadinessReviewLabel}
+                    </span>
+                  ) : null}
+                  {rowDailyOpsControlRoomReviewLabel ? (
+                    <span
+                      className="audit-report-ledger-daily-ops-review"
+                      title={rowDailyOpsControlRoomReviewTitle || rowDailyOpsControlRoomReviewQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "每日操作复核" : "Daily ops review"} ·{" "}
+                      {rowDailyOpsControlRoomReviewLabel}
                     </span>
                   ) : null}
                   {rowP0ProgressLabel ? (
@@ -21643,6 +21679,26 @@ function AuditEvidenceReportLedgerPanel({
                     {rowPreLiveRunbookQuery ? (
                       <button onClick={() => onCopyQueryLink(rowPreLiveRunbookQuery)} type="button">
                         {i18n.locale === "zh-CN" ? "复制运行手册链接" : "Copy runbook link"}
+                      </button>
+                    ) : null}
+                    {rowPersonalTeamReadinessReviewQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowPersonalTeamReadinessReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位可用性复核" : "Focus readiness review"}
+                      </button>
+                    ) : null}
+                    {rowPersonalTeamReadinessReviewQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowPersonalTeamReadinessReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制可用性复核链接" : "Copy readiness review link"}
+                      </button>
+                    ) : null}
+                    {rowDailyOpsControlRoomReviewQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowDailyOpsControlRoomReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位每日复核" : "Focus daily review"}
+                      </button>
+                    ) : null}
+                    {rowDailyOpsControlRoomReviewQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowDailyOpsControlRoomReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制每日复核链接" : "Copy daily review link"}
                       </button>
                     ) : null}
                     {row.p2ReadinessReviewChainQuery ? (

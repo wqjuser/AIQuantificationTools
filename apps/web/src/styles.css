@@ -7539,6 +7539,8 @@ em {
 .audit-report-ledger-p2-acceptance-review,
 .audit-report-ledger-p2-review-chain,
 .audit-report-ledger-p2-review-chain-status,
+.audit-report-ledger-personal-team-review,
+.audit-report-ledger-daily-ops-review,
 .audit-report-ledger-p0-progress,
 .audit-report-ledger-p0-completion,
 .audit-report-ledger-p0-backlog {
@@ -7605,6 +7607,18 @@ em {
 
 .audit-report-ledger-p2-review-chain-status.missing {
   background: rgba(70, 48, 18, 0.62);
+}
+
+.audit-report-ledger-personal-team-review {
+  border: 1px solid rgba(116, 214, 195, 0.35);
+  background: rgba(18, 57, 53, 0.58);
+  color: #8cefd8;
+}
+
+.audit-report-ledger-daily-ops-review {
+  border: 1px solid rgba(232, 190, 98, 0.4);
+  background: rgba(70, 48, 18, 0.42);
+  color: #ffd36d;
 }
 
 .audit-report-ledger-p0-progress {

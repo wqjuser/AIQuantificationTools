@@ -14088,6 +14088,101 @@ export function buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(
   return auditReportLedgerDeduplicatedQueryText([row.id, linkedCoverageReviewAuditEventId]);
 }
 
+export function buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "personal_team_readiness_review") {
+    return "";
+  }
+  return `${row.personalTeamReadinessReviewState || "unknown"} ${row.personalTeamReadinessReviewReadyCount}/${row.personalTeamReadinessReviewTotalCount} · personal ${row.personalTeamReadinessReviewPersonalPercent}% · team ${row.personalTeamReadinessReviewTeamPercent}%`;
+}
+
+export function buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const label = buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel(row);
+  if (!row || row.reportKind !== "personal_team_readiness_review" || !label) {
+    return "";
+  }
+  const openItems = row.personalTeamReadinessReviewOpenItemIds.length
+    ? row.personalTeamReadinessReviewOpenItemIds.join(", ")
+    : "none";
+  const nextAction = row.personalTeamReadinessReviewNextActionLabel
+    ? `${row.personalTeamReadinessReviewNextActionLabel} -> ${row.personalTeamReadinessReviewNextActionWorkspaceId || "unknown"}`
+    : "none";
+  return `Personal/team readiness review: ${label} · open ${openItems} · next ${nextAction}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "personal_team_readiness_review") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.personalTeamReadinessReviewState,
+    `${row.personalTeamReadinessReviewReadyCount}/${row.personalTeamReadinessReviewTotalCount}`,
+    "personal",
+    `${row.personalTeamReadinessReviewPersonalPercent}%`,
+    "team",
+    `${row.personalTeamReadinessReviewTeamPercent}%`,
+    row.personalTeamReadinessReviewNextActionLabel,
+    row.personalTeamReadinessReviewNextActionWorkspaceId,
+    row.personalTeamReadinessReviewOpenItemIds.join(" ")
+  ]);
+}
+
+export function buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "daily_ops_control_room_review") {
+    return "";
+  }
+  return `${row.dailyOpsControlRoomReviewState || "unknown"} ${row.dailyOpsControlRoomReviewReadyCount}/${row.dailyOpsControlRoomReviewTotalCount} · review ${row.dailyOpsControlRoomReviewReviewCount} · blocked ${row.dailyOpsControlRoomReviewBlockingCount}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const label = buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel(row);
+  if (!row || row.reportKind !== "daily_ops_control_room_review" || !label) {
+    return "";
+  }
+  const openItems = row.dailyOpsControlRoomReviewOpenItemIds.length
+    ? row.dailyOpsControlRoomReviewOpenItemIds.join(", ")
+    : "none";
+  const primaryAction = row.dailyOpsControlRoomReviewPrimaryActionLabel
+    ? `${row.dailyOpsControlRoomReviewPrimaryActionLabel} -> ${row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId || "unknown"}`
+    : "none";
+  return `Daily ops review: ${label} · open ${openItems} · primary ${primaryAction}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "daily_ops_control_room_review") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.dailyOpsControlRoomReviewState,
+    `${row.dailyOpsControlRoomReviewReadyCount}/${row.dailyOpsControlRoomReviewTotalCount}`,
+    "review",
+    row.dailyOpsControlRoomReviewReviewCount,
+    "blocked",
+    row.dailyOpsControlRoomReviewBlockingCount,
+    row.dailyOpsControlRoomReviewPrimaryActionLabel,
+    row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
+    row.dailyOpsControlRoomReviewAuditQuery,
+    row.dailyOpsControlRoomReviewOpenItemIds.join(" ")
+  ]);
+}
+
 function auditReportLedgerDeduplicatedQueryText(values: unknown[]): string {
   const seen = new Set<string>();
   return values

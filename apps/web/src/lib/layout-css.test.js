@@ -1946,10 +1946,26 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0CompletionTitle");
     expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0CompletionQuery");
     expect(appSource).toContain("buildAuditEvidenceReportLedgerRowP0PreflightQuery");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery");
+    expect(appSource).toContain("buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle");
     expect(reportLedgerPanelSource).toContain("rowP0ProgressLabel");
     expect(reportLedgerPanelSource).toContain("rowP0ProgressQuery");
     expect(reportLedgerPanelSource).toContain("rowP0CompletionLabel");
     expect(reportLedgerPanelSource).toContain("rowP0CompletionQuery");
+    expect(reportLedgerPanelSource).toContain("rowPersonalTeamReadinessReviewLabel");
+    expect(reportLedgerPanelSource).toContain("rowPersonalTeamReadinessReviewQuery");
+    expect(reportLedgerPanelSource).toContain("rowDailyOpsControlRoomReviewLabel");
+    expect(reportLedgerPanelSource).toContain("rowDailyOpsControlRoomReviewQuery");
+    expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-personal-team-review"');
+    expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-daily-ops-review"');
+    expect(reportLedgerPanelSource).toContain("个人/小团队复核");
+    expect(reportLedgerPanelSource).toContain("Personal/team review");
+    expect(reportLedgerPanelSource).toContain("每日操作复核");
+    expect(reportLedgerPanelSource).toContain("Daily ops review");
     expect(reportLedgerPanelSource).toContain("row.p0CompletionCurrentCriterionTargetWorkspaceId");
     expect(reportLedgerPanelSource).toContain(
       "const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId"
@@ -1982,6 +1998,18 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowP0PreflightQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowPreLiveRunbookQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowPreLiveRunbookQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowPersonalTeamReadinessReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowPersonalTeamReadinessReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(rowDailyOpsControlRoomReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(rowDailyOpsControlRoomReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("定位可用性复核");
+    expect(reportLedgerPanelSource).toContain("Focus readiness review");
+    expect(reportLedgerPanelSource).toContain("复制可用性复核链接");
+    expect(reportLedgerPanelSource).toContain("Copy readiness review link");
+    expect(reportLedgerPanelSource).toContain("定位每日复核");
+    expect(reportLedgerPanelSource).toContain("Focus daily review");
+    expect(reportLedgerPanelSource).toContain("复制每日复核链接");
+    expect(reportLedgerPanelSource).toContain("Copy daily review link");
     expect(reportLedgerPanelSource).toContain("打开证据");
     expect(reportLedgerPanelSource).toContain("Open evidence");
     expect(reportLedgerPanelSource).toContain("复制证据链接");
@@ -2010,6 +2038,8 @@ describe("terminal layout css", () => {
     );
     expect(cssBlock(".audit-report-ledger-query-tools button")).toContain("white-space: nowrap;");
     expect(cssBlock(".audit-report-ledger-query-tools button:disabled")).toContain("cursor: not-allowed;");
+    expect(cssBlock(".audit-report-ledger-personal-team-review")).toContain("border: 1px solid rgba(116, 214, 195, 0.35);");
+    expect(cssBlock(".audit-report-ledger-daily-ops-review")).toContain("border: 1px solid rgba(232, 190, 98, 0.4);");
     expect(reportLedgerPanelSource).toContain("signingEventId === row.id");
     expect(reportLedgerPanelSource).toContain("verifyingEventId === row.id");
     expect(reportLedgerPanelSource).toContain("revokingEventId === row.id");

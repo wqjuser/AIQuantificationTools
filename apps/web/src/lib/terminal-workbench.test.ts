@@ -46,6 +46,12 @@ import {
   buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceReviewQuery,
   buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery,
+  buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel,
+  buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery,
+  buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle,
+  buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel,
+  buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery,
+  buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
   findLatestP2ManifestChainPreflightAuditLedgerRow,
   findLatestP2ReadinessAcceptanceAuditLedgerRow,
@@ -12819,6 +12825,61 @@ describe("terminal workbench model", () => {
     expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
   });
 
+  test("builds a personal and team readiness review ledger chip label and query", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-7777777777777777",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail:
+          "personal-team-readiness-review.md · sha256 777777777777 · ready 6/6 gates · personal 100% · team 100% · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "7".repeat(64),
+          contentSha256Algorithm: "sha256",
+          fileName: "personal-team-readiness-review.md",
+          format: "text/markdown",
+          itemIds: [
+            "p0-local-loop",
+            "p1-research-ops",
+            "p2-prelive-chain",
+            "audit-traceability",
+            "team-handoff-runbook",
+            "backup-restore-drill"
+          ],
+          itemStatuses: ["ready", "ready", "ready", "ready", "ready", "ready"],
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Review accepted loop",
+          nextActionWorkspaceId: "audit",
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      }
+    ]);
+
+    expect(buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel(rows[0])).toBe(
+      "ready 6/6 · personal 100% · team 100%"
+    );
+    expect(buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle(rows[0])).toBe(
+      "Personal/team readiness review: ready 6/6 · personal 100% · team 100% · open none · next Review accepted loop -> audit"
+    );
+    expect(buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery(rows[0])).toBe(
+      "personal_team_readiness_review personal-team-readiness-review-7777777777777777 777777777777 ready 6/6 personal 100% team Review accepted loop audit"
+    );
+  });
+
   test("resolves the latest personal and team readiness review as current when it matches readiness", () => {
     const summary = buildPersonalTeamUsabilityReadinessSummary({
       auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
@@ -13009,6 +13070,56 @@ describe("terminal workbench model", () => {
       )
     ).toEqual(["daily-ops-control-room-review-6666666666666666"]);
     expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
+  });
+
+  test("builds a daily ops control room review ledger chip label and query", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "daily-ops-control-room-review-6666666666666666",
+        eventType: "daily_ops_control_room_review",
+        runId: "daily-ops-control-room",
+        createdAt: "2026-06-28T10:00:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Daily ops control room review recorded",
+        detail:
+          "daily-ops-control-room-review.md · sha256 666666666666 · attention 2/4 gates · review 2 · blocked 0 · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.dailyOpsControlRoomReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          auditQueryLabel: "Latest P0 audit evidence",
+          blockingCount: 0,
+          contentSha256: "6".repeat(64),
+          contentSha256Algorithm: "sha256",
+          fileName: "daily-ops-control-room-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          openItemIds: ["current-action", "team-handoff"],
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Run AI review",
+          primaryActionWorkspaceId: "ai-review",
+          queueItemIds: ["current-action", "audit-context", "team-handoff", "backup-restore"],
+          queueItemStatuses: ["review", "ready", "review", "ready"],
+          readyCount: 2,
+          reviewCount: 2,
+          routeExecuted: false,
+          state: "attention",
+          totalCount: 4
+        }
+      }
+    ]);
+
+    expect(buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel(rows[0])).toBe(
+      "attention 2/4 · review 2 · blocked 0"
+    );
+    expect(buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle(rows[0])).toBe(
+      "Daily ops review: attention 2/4 · review 2 · blocked 0 · open current-action, team-handoff · primary Run AI review -> ai-review"
+    );
+    expect(buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(rows[0])).toBe(
+      "daily_ops_control_room_review daily-ops-control-room-review-6666666666666666 666666666666 attention 2/4 review 2 blocked 0 Run AI ai-review p0_readiness_report p0-completion-focus run-p0-smoke current-action team-handoff"
+    );
   });
 
   test("resolves the latest daily ops control room review as current when it matches the queue", () => {
