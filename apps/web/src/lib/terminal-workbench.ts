@@ -2760,6 +2760,12 @@ export interface AuditEvidenceReportLedgerSummary {
   latestResearchContextReportQuery: string;
   latestResearchContextReportRunId: string;
   latestResearchContextReportShortHash: string;
+  localReviewBundleCount: number;
+  localReviewBundleDailyOpsCount: number;
+  localReviewBundleLatestEventId: string;
+  localReviewBundlePersonalTeamCount: number;
+  localReviewBundleQuery: string;
+  localReviewBundleTitle: string;
   latestHash: string;
   latestReportKind: AuditEvidenceReportLedgerRow["reportKind"] | "";
   latestReportLabel: string;
@@ -16233,6 +16239,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "personal_team_readiness_review"
           ? [
               "personal_team_readiness_review",
+              "local-review-bundle",
               personalTeamReadinessReviewState,
               `${personalTeamReadinessReviewReadyCount}/${personalTeamReadinessReviewTotalCount}`,
               `personal ${personalTeamReadinessReviewPersonalPercent}`,
@@ -16283,6 +16290,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "daily_ops_control_room_review"
           ? [
               "daily_ops_control_room_review",
+              "local-review-bundle",
               dailyOpsControlRoomReviewState,
               `${dailyOpsControlRoomReviewReadyCount}/${dailyOpsControlRoomReviewTotalCount}`,
               `review ${dailyOpsControlRoomReviewReviewCount}`,
@@ -16831,6 +16839,30 @@ function auditReportLedgerPaperPreflightLabel({
     .trim();
 }
 
+function auditReportLedgerLocalReviewBundleTitle({
+  dailyOpsCount,
+  latestEventId,
+  personalTeamCount,
+  totalCount
+}: {
+  dailyOpsCount: number;
+  latestEventId: string;
+  personalTeamCount: number;
+  totalCount: number;
+}): string {
+  if (totalCount <= 0) {
+    return "";
+  }
+  return [
+    `Local review bundle: ${totalCount} reviews`,
+    `personal/team ${personalTeamCount}`,
+    `daily ops ${dailyOpsCount}`,
+    latestEventId ? `latest ${latestEventId}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export function buildAuditEvidenceReportLedgerSummary(
   rows: AuditEvidenceReportLedgerRow[]
 ): AuditEvidenceReportLedgerSummary {
@@ -16894,6 +16926,24 @@ export function buildAuditEvidenceReportLedgerSummary(
       }
       return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
     }, undefined);
+  const localReviewBundleRows = readyRows.filter(
+    (row) => row.reportKind === "personal_team_readiness_review" || row.reportKind === "daily_ops_control_room_review"
+  );
+  const localReviewBundlePersonalTeamCount = localReviewBundleRows.filter(
+    (row) => row.reportKind === "personal_team_readiness_review"
+  ).length;
+  const localReviewBundleDailyOpsCount = localReviewBundleRows.filter(
+    (row) => row.reportKind === "daily_ops_control_room_review"
+  ).length;
+  const latestLocalReviewBundleRow = localReviewBundleRows.reduce<AuditEvidenceReportLedgerRow | undefined>(
+    (latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+    },
+    undefined
+  );
   const p2ReadinessLinkedAcceptanceReviewRows = rows.filter(
     (row) =>
       row.reportKind === "p2_readiness_acceptance_review" &&
@@ -17121,6 +17171,17 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestResearchContextReportQuery: auditReportLedgerLatestResearchContextReportQuery(latestResearchContextReportRow),
     latestResearchContextReportRunId: latestResearchContextReportRow?.runId ?? "",
     latestResearchContextReportShortHash: latestResearchContextReportRow?.shortHash ?? "",
+    localReviewBundleCount: localReviewBundleRows.length,
+    localReviewBundleDailyOpsCount,
+    localReviewBundleLatestEventId: latestLocalReviewBundleRow?.id ?? "",
+    localReviewBundlePersonalTeamCount,
+    localReviewBundleQuery: localReviewBundleRows.length > 0 ? "local-review-bundle" : "",
+    localReviewBundleTitle: auditReportLedgerLocalReviewBundleTitle({
+      dailyOpsCount: localReviewBundleDailyOpsCount,
+      latestEventId: latestLocalReviewBundleRow?.id ?? "",
+      personalTeamCount: localReviewBundlePersonalTeamCount,
+      totalCount: localReviewBundleRows.length
+    }),
     latestHash: latestReadyRow?.contentSha256 ?? "",
     latestReportKind: latestReadyRow?.reportKind ?? "",
     latestReportLabel: auditReportLedgerReportKindLabel(latestReadyRow?.reportKind ?? ""),

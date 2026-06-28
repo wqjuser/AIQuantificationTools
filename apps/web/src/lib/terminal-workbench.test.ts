@@ -11433,22 +11433,22 @@ describe("terminal workbench model", () => {
       latestAuditAidProgressQuery: "",
       latestAuditAidPreparationEvidenceLabel: "",
       latestAuditAidPreparationEvidenceRunId: "",
-        latestAuditAidReportQuery: "",
-        latestAuditAidRunId: "",
-        latestAuditAidShortHash: "",
-        latestDailyOpsControlRoomReviewEventId: "",
-        latestDailyOpsControlRoomReviewLabel: "",
-        latestDailyOpsControlRoomReviewQuery: "",
-        latestDailyOpsControlRoomReviewShortHash: "",
-        latestDailyOpsControlRoomReviewTitle: "",
-        latestHash: reportHash,
-        latestPersonalTeamReadinessReviewEventId: "",
-        latestPersonalTeamReadinessReviewLabel: "",
-        latestPersonalTeamReadinessReviewQuery: "",
-        latestPersonalTeamReadinessReviewShortHash: "",
-        latestPersonalTeamReadinessReviewTitle: "",
-        latestP2ReadinessLinkedAcceptanceReviewEventId: "",
-        latestP2ReadinessLinkedAcceptanceReviewQuery: "",
+      latestAuditAidReportQuery: "",
+      latestAuditAidRunId: "",
+      latestAuditAidShortHash: "",
+      latestDailyOpsControlRoomReviewEventId: "",
+      latestDailyOpsControlRoomReviewLabel: "",
+      latestDailyOpsControlRoomReviewQuery: "",
+      latestDailyOpsControlRoomReviewShortHash: "",
+      latestDailyOpsControlRoomReviewTitle: "",
+      latestHash: reportHash,
+      latestPersonalTeamReadinessReviewEventId: "",
+      latestPersonalTeamReadinessReviewLabel: "",
+      latestPersonalTeamReadinessReviewQuery: "",
+      latestPersonalTeamReadinessReviewShortHash: "",
+      latestPersonalTeamReadinessReviewTitle: "",
+      latestP2ReadinessLinkedAcceptanceReviewEventId: "",
+      latestP2ReadinessLinkedAcceptanceReviewQuery: "",
       latestP2ReadinessLinkedCoverageReviewEventId: "",
       latestP2ReadinessLinkedCoverageReviewLabel: "",
       latestP2ReadinessLinkedCoverageReviewQuery: "",
@@ -11493,6 +11493,12 @@ describe("terminal workbench model", () => {
       latestResearchContextReportQuery: "",
       latestResearchContextReportRunId: "",
       latestResearchContextReportShortHash: "",
+      localReviewBundleCount: 0,
+      localReviewBundleDailyOpsCount: 0,
+      localReviewBundleLatestEventId: "",
+      localReviewBundlePersonalTeamCount: 0,
+      localReviewBundleQuery: "",
+      localReviewBundleTitle: "",
       ready: 1,
       revoked: 0,
       signed: 0,
@@ -13246,8 +13252,17 @@ describe("terminal workbench model", () => {
       }
     ]);
 
-    expect(buildAuditEvidenceReportLedgerSummary(rows)).toEqual(
+    const summary = buildAuditEvidenceReportLedgerSummary(rows);
+
+    expect(summary).toEqual(
       expect.objectContaining({
+        localReviewBundleCount: 4,
+        localReviewBundleDailyOpsCount: 2,
+        localReviewBundleLatestEventId: "daily-ops-control-room-review-new-6666666666666666",
+        localReviewBundlePersonalTeamCount: 2,
+        localReviewBundleQuery: "local-review-bundle",
+        localReviewBundleTitle:
+          "Local review bundle: 4 reviews · personal/team 2 · daily ops 2 · latest daily-ops-control-room-review-new-6666666666666666",
         latestDailyOpsControlRoomReviewEventId: "daily-ops-control-room-review-new-6666666666666666",
         latestDailyOpsControlRoomReviewLabel: "attention 2/4 · review 2 · blocked 0",
         latestDailyOpsControlRoomReviewQuery:
@@ -13264,6 +13279,12 @@ describe("terminal workbench model", () => {
           "Personal/team readiness review: ready 6/6 · personal 100% · team 100% · open none · next Review accepted loop -> audit"
       })
     );
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleQuery).map((row) => row.id)).toEqual([
+      "personal-team-readiness-review-old-5555555555555555",
+      "personal-team-readiness-review-new-7777777777777777",
+      "daily-ops-control-room-review-old-4444444444444444",
+      "daily-ops-control-room-review-new-6666666666666666"
+    ]);
   });
 
   test("resolves the latest daily ops control room review as current when it matches the queue", () => {

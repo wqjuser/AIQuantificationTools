@@ -21206,6 +21206,28 @@ function AuditEvidenceReportLedgerPanel({
                 ) : null}
               </span>
             ) : null}
+            {summary.localReviewBundleCount > 0 ? (
+              <span title={summary.localReviewBundleTitle || summary.localReviewBundleQuery}>
+                {i18n.locale === "zh-CN" ? "本地复核集" : "Local review bundle"}{" "}
+                <strong>{summary.localReviewBundleCount}</strong>
+                <small>
+                  {i18n.locale === "zh-CN" ? "个人/小团队" : "Personal/team"}{" "}
+                  {summary.localReviewBundlePersonalTeamCount} ·{" "}
+                  {i18n.locale === "zh-CN" ? "每日复核" : "Daily reviews"}{" "}
+                  {summary.localReviewBundleDailyOpsCount}
+                </small>
+                {summary.localReviewBundleQuery ? (
+                  <button onClick={() => focusAuditReportQuery(summary.localReviewBundleQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "定位本地复核集" : "Focus local reviews"}
+                  </button>
+                ) : null}
+                {summary.localReviewBundleQuery ? (
+                  <button onClick={() => onCopyQueryLink(summary.localReviewBundleQuery)} type="button">
+                    {i18n.locale === "zh-CN" ? "复制本地复核集链接" : "Copy local reviews link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
             {summary.latestPersonalTeamReadinessReviewEventId ? (
               <span
                 title={
