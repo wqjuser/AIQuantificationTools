@@ -11,6 +11,7 @@ import {
   buildP2ManifestChainPreflightSummary,
   buildP2ReadinessAcceptanceReviewMarkdown,
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
+  buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildP0CompletionChecklist,
   buildP0PlatformActionOutcome,
   buildP0PlatformActionOutcomeEvidenceLink,
@@ -33,6 +34,7 @@ import {
   workspaceWithStrategyField,
   type OperatorRunbookSummary,
   type P0AcceptanceSummarySource,
+  type PersonalTeamUsabilityReadinessSummary,
   type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
   type P2ReadinessAcceptanceSummary,
@@ -253,6 +255,7 @@ import {
   buildP2ManifestChainPreflightReviewAuditEvent,
   buildP2ReadinessEvidenceCoverageReviewAuditEvent,
   buildP2ReadinessAcceptanceReviewAuditEvent,
+  buildPersonalTeamUsabilityReadinessReviewAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildExecutionAdapterPreLiveRunbookAuditEvent,
   buildOperatorRunbookAuditEvent,
@@ -15116,6 +15119,127 @@ describe("terminal workspace API client", () => {
     );
     expect(event.detail).toContain("p2-readiness-evidence-coverage-review.md");
     expect(event.detail).toContain("covered 3/3 claims");
+    expect(event.detail).toContain("live blocked true");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds a personal and team readiness review audit event without storing markdown", async () => {
+    const summary: PersonalTeamUsabilityReadinessSummary = {
+      state: "ready",
+      tone: "positive",
+      headline: "Personal and small-team beta ready",
+      detail:
+        "6/6 usability gates ready; personal local paper loop 100%; small-team internal beta 100%. Live trading remains blocked.",
+      personalPercent: 100,
+      teamPercent: 100,
+      readyCount: 6,
+      totalCount: 6,
+      items: [
+        {
+          id: "p0-local-loop",
+          label: "P0 local paper loop",
+          status: "ready",
+          detail: "Single-symbol research to paper execution is accepted for local paper-only use.",
+          actionLabel: "Review accepted loop",
+          targetWorkspaceId: "audit"
+        },
+        {
+          id: "p1-research-ops",
+          label: "P1 research ops",
+          status: "ready",
+          detail: "Watchlist research operations are accepted and still paper-only.",
+          actionLabel: "Review research ops",
+          targetWorkspaceId: "audit"
+        },
+        {
+          id: "p2-prelive-chain",
+          label: "P2 pre-live chain",
+          status: "ready",
+          detail: "P2 paper replay, manifest chain, evidence coverage, and live boundary are accepted.",
+          actionLabel: "Review P2 readiness",
+          targetWorkspaceId: "audit"
+        },
+        {
+          id: "audit-traceability",
+          label: "Audit traceability",
+          status: "ready",
+          detail: "Latest acceptance or audit-aid evidence is traceable from the Audit workspace.",
+          actionLabel: "Open audit ledger",
+          targetWorkspaceId: "audit"
+        },
+        {
+          id: "team-handoff-runbook",
+          label: "Team handoff runbook",
+          status: "ready",
+          detail: "2 local handoff notes recorded for the current audited run.",
+          actionLabel: "Open handoff notes",
+          targetWorkspaceId: "research"
+        },
+        {
+          id: "backup-restore-drill",
+          label: "Backup restore drill",
+          status: "ready",
+          detail: "Latest P0/P1 acceptance includes export, import, and imported-export restore checks.",
+          actionLabel: "Review restore evidence",
+          targetWorkspaceId: "audit"
+        }
+      ],
+      openItems: [],
+      nextActionLabel: "Review accepted loop",
+      nextActionWorkspaceId: "audit",
+      liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+    };
+    const markdown = buildPersonalTeamUsabilityReadinessReviewMarkdown({ summary });
+
+    const event = await buildPersonalTeamUsabilityReadinessReviewAuditEvent({
+      generatedAt: "2026-06-28T09:00:00.000Z",
+      markdown,
+      summary
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "personal_team_readiness_review",
+      runId: "personal-team-readiness",
+      createdAt: "2026-06-28T09:00:00.000Z",
+      stage: "ready",
+      source: "web",
+      summary: "Personal and small-team readiness review recorded",
+      metadata: {
+        artifactKind: "aiqt.personalTeamReadinessReview",
+        fileName: "personal-team-readiness-review.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "ready",
+        personalPercent: 100,
+        teamPercent: 100,
+        readyCount: 6,
+        totalCount: 6,
+        openItemIds: [],
+        itemIds: [
+          "p0-local-loop",
+          "p1-research-ops",
+          "p2-prelive-chain",
+          "audit-traceability",
+          "team-handoff-runbook",
+          "backup-restore-drill"
+        ],
+        itemStatuses: ["ready", "ready", "ready", "ready", "ready", "ready"],
+        nextActionLabel: "Review accepted loop",
+        nextActionWorkspaceId: "audit",
+        orderSubmissionEnabled: false,
+        liveTradingAllowed: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
+        liveBlockedBoundary: true,
+        boundary:
+          "Personal and small-team readiness review is audit evidence only; live trading remains blocked and no investment advice"
+      }
+    });
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(`personal-team-readiness-review-${String(event.metadata.contentSha256).slice(0, 16)}`);
+    expect(event.detail).toContain("personal-team-readiness-review.md");
+    expect(event.detail).toContain("ready 6/6 gates");
     expect(event.detail).toContain("live blocked true");
     expect(event.detail).not.toContain(markdown);
   });

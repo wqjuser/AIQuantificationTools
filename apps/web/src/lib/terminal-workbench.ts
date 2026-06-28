@@ -2505,6 +2505,7 @@ export interface AuditEvidenceReportLedgerRow {
     | "p2_readiness_evidence_coverage_review"
     | "p2_readiness_acceptance_generated"
     | "p2_readiness_acceptance_review"
+    | "personal_team_readiness_review"
     | "operator_runbook_report"
     | "pre_live_runbook_report"
     | "research_context_readiness_report";
@@ -8658,6 +8659,48 @@ function readinessPercent(readyCount: number, totalCount: number): number {
   return totalCount > 0 ? Math.round((Math.max(0, Math.min(readyCount, totalCount)) / totalCount) * 100) : 0;
 }
 
+export function buildPersonalTeamUsabilityReadinessReviewMarkdown({
+  summary
+}: {
+  summary: PersonalTeamUsabilityReadinessSummary;
+}): string {
+  const openItemIds = summary.openItems.map((item) => item.id);
+
+  return [
+    "# Personal And Small-Team Readiness Review",
+    "",
+    "## Summary",
+    `- State: ${summary.state}`,
+    `- Headline: ${summary.headline}`,
+    `- Detail: ${summary.detail}`,
+    `- Personal readiness: ${summary.personalPercent}%`,
+    `- Team readiness: ${summary.teamPercent}%`,
+    `- Ready gates: ${summary.readyCount}/${summary.totalCount}`,
+    `- Open items: ${openItemIds.length ? openItemIds.join(", ") : "none"}`,
+    `- Next action: ${summary.nextActionLabel}`,
+    `- Next workspace: ${summary.nextActionWorkspaceId}`,
+    "",
+    "## Readiness Gates",
+    ...summary.items.map(
+      (item) =>
+        `- ${item.id}: ${item.status} · ${item.label} · ${item.actionLabel} · ${item.detail}`
+    ),
+    "",
+    "## Execution Boundary",
+    `- ${summary.liveBoundaryLabel}`,
+    "- orderSubmissionEnabled: false",
+    "- liveTradingAllowed: false",
+    "- liveOrderSubmitted: false",
+    "- routeExecuted: false",
+    "- Platform decision: live trading and real order routing remain blocked.",
+    "",
+    "## Review Notes",
+    "- This review is local audit evidence only and does not authorize live trading.",
+    "- This review is not investment advice.",
+    ""
+  ].join("\n");
+}
+
 export function buildP2ReadinessAcceptanceReviewMarkdown({
   acceptance,
   summary
@@ -13283,6 +13326,7 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
       p2_readiness_evidence_coverage_review: "P2 readiness evidence coverage review",
       p2_readiness_acceptance_generated: "P2 readiness acceptance generation",
       p2_readiness_acceptance_review: "P2 readiness acceptance review",
+      personal_team_readiness_review: "Personal and small-team readiness review",
       pre_live_runbook_report: "Pre-live runbook report",
       portfolio_report: "Portfolio report",
       research_context_readiness_report: "Research context readiness report",
@@ -14698,6 +14742,7 @@ export function buildAuditEvidenceReportLedgerRows(
         event.eventType === "p2_readiness_evidence_coverage_review" ||
         event.eventType === "p2_readiness_acceptance_generated" ||
         event.eventType === "p2_readiness_acceptance_review" ||
+        event.eventType === "personal_team_readiness_review" ||
         event.eventType === "operator_runbook_report" ||
         event.eventType === "pre_live_runbook_report" ||
         event.eventType === "research_context_readiness_report"
@@ -14716,6 +14761,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "p2_readiness_acceptance_generated"
           : event.eventType === "p2_readiness_acceptance_review"
           ? "p2_readiness_acceptance_review"
+          : event.eventType === "personal_team_readiness_review"
+          ? "personal_team_readiness_review"
           : event.eventType === "operator_runbook_report"
           ? "operator_runbook_report"
           : event.eventType === "pre_live_runbook_report"
@@ -14746,6 +14793,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "aiqt.p2ReadinessAcceptanceManifest"
           : reportKind === "p2_readiness_acceptance_review"
           ? "aiqt.p2ReadinessAcceptanceReview"
+          : reportKind === "personal_team_readiness_review"
+          ? "aiqt.personalTeamReadinessReview"
           : reportKind === "operator_runbook_report"
           ? "aiqt.operatorRunbookReport"
           : reportKind === "pre_live_runbook_report"
@@ -14771,6 +14820,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? auditReportLedgerMetadataText(event.metadata, "sourcePath") || "p2-readiness-acceptance.json"
           : reportKind === "p2_readiness_acceptance_review"
           ? "p2-readiness-acceptance-review.md"
+          : reportKind === "personal_team_readiness_review"
+          ? "personal-team-readiness-review.md"
           : reportKind === "operator_runbook_report"
           ? "operator-runbook-report.md"
           : reportKind === "pre_live_runbook_report"
@@ -14934,6 +14985,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p2_readiness_evidence_coverage_review" ||
         reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
+        reportKind === "personal_team_readiness_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
@@ -14947,6 +14999,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p2_readiness_evidence_coverage_review" ||
         reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
+        reportKind === "personal_team_readiness_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
@@ -14960,6 +15013,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p2_readiness_evidence_coverage_review" ||
         reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
+        reportKind === "personal_team_readiness_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? ""
@@ -15613,6 +15667,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "p2_readiness_evidence_coverage_review" ||
           reportKind === "p2_readiness_acceptance_generated" ||
           reportKind === "p2_readiness_acceptance_review" ||
+          reportKind === "personal_team_readiness_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -15627,6 +15682,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "p2_readiness_evidence_coverage_review" ||
           reportKind === "p2_readiness_acceptance_generated" ||
           reportKind === "p2_readiness_acceptance_review" ||
+          reportKind === "personal_team_readiness_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -15730,6 +15786,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? "p2-readiness-acceptance-generated"
             : reportKind === "p2_readiness_acceptance_review"
             ? "p2-readiness-acceptance-review"
+            : reportKind === "personal_team_readiness_review"
+            ? "personal-team-readiness-review"
             : reportKind === "operator_runbook_report"
             ? "operator-runbook-report"
             : reportKind === "pre_live_runbook_report"
@@ -15756,6 +15814,8 @@ export function buildAuditEvidenceReportLedgerRows(
               ? "P2 readiness acceptance generation hash recorded"
             : reportKind === "p2_readiness_acceptance_review"
               ? "P2 readiness acceptance review hash recorded"
+            : reportKind === "personal_team_readiness_review"
+              ? "Personal/team readiness review hash recorded"
             : reportKind === "operator_runbook_report"
               ? "Operator runbook report hash recorded"
             : reportKind === "pre_live_runbook_report"
@@ -15803,6 +15863,15 @@ export function buildAuditEvidenceReportLedgerRows(
               : "risk"
             : reportKind === "p2_readiness_acceptance_generated"
             ? p2ReadinessAcceptanceGeneratedStatus === "accepted" && p2ReadinessAcceptanceGeneratedSafeBoundary
+              ? "positive"
+              : "risk"
+            : reportKind === "personal_team_readiness_review"
+            ? auditReportLedgerMetadataText(event.metadata, "state") === "ready" &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted") &&
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary")
               ? "positive"
               : "risk"
           : auditReportLedgerSignatureTone(signatureStatus)
@@ -16295,6 +16364,7 @@ export function auditReportLedgerRowIsSigningEligible(row: AuditEvidenceReportLe
     row.reportKind !== "p2_readiness_evidence_coverage_review" &&
     row.reportKind !== "p2_readiness_acceptance_generated" &&
     row.reportKind !== "p2_readiness_acceptance_review" &&
+    row.reportKind !== "personal_team_readiness_review" &&
     row.reportKind !== "pre_live_runbook_report" &&
     row.reportKind !== "research_context_readiness_report"
   );

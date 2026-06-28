@@ -133,6 +133,7 @@ import {
   buildP2ManifestChainPreflightReviewAuditEvent,
   buildP2ReadinessEvidenceCoverageReviewAuditEvent,
   buildP2ReadinessAcceptanceReviewAuditEvent,
+  buildPersonalTeamUsabilityReadinessReviewAuditEvent,
   MarketCalendarResult,
   MarketCalendarStatus,
   MarketDataReadinessResult,
@@ -350,6 +351,7 @@ import {
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessAcceptanceSummary,
   buildP2ReadinessEvidenceCoverage,
+  buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookSummary,
   buildP0CompletionChecklist,
@@ -2118,6 +2120,7 @@ export function App() {
   const [copiedP2ReadinessAcceptanceReview, setCopiedP2ReadinessAcceptanceReview] = useState(false);
   const [copiedP2ReadinessEvidenceCoverageReview, setCopiedP2ReadinessEvidenceCoverageReview] = useState(false);
   const [copiedP2ManifestChainPreflightReview, setCopiedP2ManifestChainPreflightReview] = useState(false);
+  const [copiedPersonalTeamReadinessReview, setCopiedPersonalTeamReadinessReview] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
   const [copiedOperatorRunbook, setCopiedOperatorRunbook] = useState(false);
   const [copiedPreLiveRunbook, setCopiedPreLiveRunbook] = useState(false);
@@ -2128,6 +2131,7 @@ export function App() {
   const [savingP2ReadinessAcceptanceReview, setSavingP2ReadinessAcceptanceReview] = useState(false);
   const [savingP2ReadinessEvidenceCoverageReview, setSavingP2ReadinessEvidenceCoverageReview] = useState(false);
   const [savingP2ManifestChainPreflightReview, setSavingP2ManifestChainPreflightReview] = useState(false);
+  const [savingPersonalTeamReadinessReview, setSavingPersonalTeamReadinessReview] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [copiedResearchContextLink, setCopiedResearchContextLink] = useState(false);
@@ -2731,6 +2735,10 @@ export function App() {
     p2ReadinessAcceptanceSummary,
     p2ReadinessEvidenceCoverage
   });
+  const personalTeamReadinessReviewMarkdown = useMemo(
+    () => buildPersonalTeamUsabilityReadinessReviewMarkdown({ summary: personalTeamUsabilityReadiness }),
+    [personalTeamUsabilityReadiness]
+  );
   const p2ReadinessAcceptanceAuditContext = useMemo(
     () => ({
       market: p2ReadinessAcceptanceLatestState.acceptance?.market ?? null,
@@ -2973,6 +2981,10 @@ export function App() {
   useEffect(() => {
     setCopiedP2ManifestChainPreflightReview(false);
   }, [p2ManifestChainPreflightReviewMarkdown]);
+
+  useEffect(() => {
+    setCopiedPersonalTeamReadinessReview(false);
+  }, [personalTeamReadinessReviewMarkdown]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -3236,7 +3248,7 @@ export function App() {
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
       eventType:
-        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report",
+        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined
@@ -8881,6 +8893,79 @@ export function App() {
     }));
   }, [p0AcceptanceReviewMarkdown, p0AcceptanceSummary.runId]);
 
+  const copyPersonalTeamReadinessReview = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Personal/team readiness review copy failed",
+        error: "Clipboard is unavailable"
+      }));
+      return;
+    }
+
+    await navigator.clipboard.writeText(personalTeamReadinessReviewMarkdown);
+    setCopiedPersonalTeamReadinessReview(true);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Personal/team readiness review copied",
+      error: undefined
+    }));
+  }, [personalTeamReadinessReviewMarkdown]);
+
+  const downloadPersonalTeamReadinessReview = useCallback(() => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([personalTeamReadinessReviewMarkdown], { type: "text/markdown;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "personal-team-readiness-review.md";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Personal/team readiness review download ready",
+      error: undefined
+    }));
+  }, [personalTeamReadinessReviewMarkdown]);
+
+  const recordPersonalTeamReadinessReview = useCallback(async () => {
+    setSavingPersonalTeamReadinessReview(true);
+    try {
+      const auditEvent = await buildPersonalTeamUsabilityReadinessReviewAuditEvent({
+        markdown: personalTeamReadinessReviewMarkdown,
+        summary: personalTeamUsabilityReadiness
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: `Personal/team readiness review audited · ${result.event!.eventId}`,
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Personal/team readiness review ledger save failed",
+        error: result.error ?? "Personal/team readiness review ledger save failed"
+      }));
+    } catch (recordError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Personal/team readiness review ledger save failed",
+        error: recordError instanceof Error ? recordError.message : "Audit ledger save failed"
+      }));
+    } finally {
+      setSavingPersonalTeamReadinessReview(false);
+    }
+  }, [personalTeamReadinessReviewMarkdown, personalTeamUsabilityReadiness, quantCoreBaseUrl]);
+
   const copyP2ReadinessAcceptanceReview = useCallback(async () => {
     if (!navigator.clipboard?.writeText) {
       setWorkspaceState((current) => ({
@@ -11055,6 +11140,32 @@ export function App() {
                   <small className="personal-team-readiness-boundary">
                     {personalTeamUsabilityReadinessLiveBoundary(i18n, personalTeamUsabilityReadiness)}
                   </small>
+                  <div className="personal-team-readiness-actions">
+                    <button onClick={() => void copyPersonalTeamReadinessReview()} type="button">
+                      <Copy size={11} />
+                      {copiedPersonalTeamReadinessReview
+                        ? i18n.locale === "zh-CN"
+                          ? "已复制"
+                          : "Copied"
+                        : i18n.locale === "zh-CN"
+                          ? "复制复核"
+                          : "Copy review"}
+                    </button>
+                    <button onClick={downloadPersonalTeamReadinessReview} type="button">
+                      <Download size={11} />
+                      {i18n.locale === "zh-CN" ? "下载复核" : "Download"}
+                    </button>
+                    <button disabled={savingPersonalTeamReadinessReview} onClick={() => void recordPersonalTeamReadinessReview()} type="button">
+                      {savingPersonalTeamReadinessReview ? <RefreshCw className="spin" size={11} /> : <Save size={11} />}
+                      {savingPersonalTeamReadinessReview
+                        ? i18n.locale === "zh-CN"
+                          ? "入账中"
+                          : "Recording"
+                        : i18n.locale === "zh-CN"
+                          ? "入账复核"
+                          : "Record"}
+                    </button>
+                  </div>
                   {personalTeamUsabilityReadiness.openItems.length ? (
                     <div className="personal-team-readiness-open">
                       {personalTeamUsabilityReadiness.openItems.slice(0, 3).map((item) => (

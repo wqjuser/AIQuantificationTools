@@ -291,14 +291,21 @@ describe("terminal layout css", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 
     expect(appSource).toContain("buildPersonalTeamUsabilityReadinessSummary({");
+    expect(appSource).toContain("buildPersonalTeamUsabilityReadinessReviewMarkdown({");
+    expect(appSource).toContain("copyPersonalTeamReadinessReview");
+    expect(appSource).toContain("downloadPersonalTeamReadinessReview");
+    expect(appSource).toContain("recordPersonalTeamReadinessReview");
     expect(overviewSource).toContain('className={`personal-team-readiness ${personalTeamUsabilityReadiness.state}`}');
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.personalPercent");
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.teamPercent");
+    expect(overviewSource).toContain('className="personal-team-readiness-actions"');
     expect(overviewSource).toContain("personalTeamUsabilityReadiness.openItems.slice(0, 3).map");
     expect(overviewSource).toContain("selectProductWorkArea(item.targetWorkspaceId)");
     expect(cssBlock(".personal-team-readiness")).toContain("display: grid;");
     expect(cssBlock(".personal-team-readiness")).toContain("grid-column: 1 / -1;");
     expect(cssBlock(".personal-team-readiness-score")).toContain("grid-template-columns: repeat(2, auto);");
+    expect(cssBlock(".personal-team-readiness-actions")).toContain("display: flex;");
+    expect(cssBlock(".personal-team-readiness-actions button")).toContain("min-height: 32px;");
     expect(cssBlock(".personal-team-readiness-open")).toContain(
       "grid-template-columns: repeat(2, minmax(0, 1fr));"
     );
@@ -726,7 +733,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const copyLatestResearchContextReportLink = useCallback");
     expect(appSource).toContain("buildResearchContextReadinessReportAuditEvent");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(currentReadinessReportSource).toContain("contextLink: buildResearchContextDeepLink(");
     expect(currentReadinessReportSource).toContain("researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId");
@@ -1499,7 +1506,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');

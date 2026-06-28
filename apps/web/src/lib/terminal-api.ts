@@ -36,6 +36,7 @@ import {
   type P0CompletionChecklist,
   type P0PaperExecutionPreflight,
   type P0PlatformReadinessSummary,
+  type PersonalTeamUsabilityReadinessSummary,
   type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
   type P2ReadinessAcceptanceSummary,
@@ -6024,6 +6025,61 @@ export async function buildP2ReadinessEvidenceCoverageReviewAuditEvent({
       liveBlockedBoundary: true,
       boundary:
         "P2 readiness evidence coverage review is audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
+export async function buildPersonalTeamUsabilityReadinessReviewAuditEvent({
+  generatedAt = new Date().toISOString(),
+  markdown,
+  summary
+}: {
+  generatedAt?: string;
+  markdown: string;
+  summary: PersonalTeamUsabilityReadinessSummary;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const fileName = "personal-team-readiness-review.md";
+
+  return {
+    schemaVersion: 1,
+    eventId: `personal-team-readiness-review-${shortHash}`,
+    eventType: "personal_team_readiness_review",
+    runId: "personal-team-readiness",
+    createdAt: generatedAt,
+    stage: summary.state,
+    source: "web",
+    summary: "Personal and small-team readiness review recorded",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${summary.state} ${summary.readyCount}/${
+      summary.totalCount
+    } gates · personal ${summary.personalPercent}% · team ${summary.teamPercent}% · live blocked true`,
+    metadata: {
+      artifactKind: "aiqt.personalTeamReadinessReview",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state: summary.state,
+      tone: summary.tone,
+      headline: summary.headline,
+      personalPercent: summary.personalPercent,
+      teamPercent: summary.teamPercent,
+      readyCount: summary.readyCount,
+      totalCount: summary.totalCount,
+      openItemIds: summary.openItems.map((item) => item.id),
+      itemIds: summary.items.map((item) => item.id),
+      itemStatuses: summary.items.map((item) => item.status),
+      nextActionLabel: summary.nextActionLabel,
+      nextActionWorkspaceId: summary.nextActionWorkspaceId,
+      liveBoundaryLabel: summary.liveBoundaryLabel,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      boundary:
+        "Personal and small-team readiness review is audit evidence only; live trading remains blocked and no investment advice"
     }
   };
 }

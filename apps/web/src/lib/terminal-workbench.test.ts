@@ -149,6 +149,7 @@ import {
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildP2ReadinessEvidenceCoverage,
   buildP2ReadinessAcceptanceSummary,
+  buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
   buildOperatorRunbookMarkdown,
   buildOperatorRunbookSummary,
@@ -3650,6 +3651,31 @@ describe("terminal workbench model", () => {
       status: "ready",
       targetWorkspaceId: "audit"
     });
+  });
+
+  test("builds a portable personal and team readiness review markdown", () => {
+    const summary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready"
+      }),
+      handoffNoteCount: 2,
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+
+    const markdown = buildPersonalTeamUsabilityReadinessReviewMarkdown({ summary });
+
+    expect(markdown).toContain("# Personal And Small-Team Readiness Review");
+    expect(markdown).toContain("- State: ready");
+    expect(markdown).toContain("- Personal readiness: 100%");
+    expect(markdown).toContain("- Team readiness: 100%");
+    expect(markdown).toContain("- p0-local-loop: ready");
+    expect(markdown).toContain("- team-handoff-runbook: ready");
+    expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
   });
 
   test("builds a portable P2 readiness acceptance review markdown without live authorization", () => {
@@ -12604,6 +12630,7 @@ describe("terminal workbench model", () => {
       "p2_readiness_evidence_coverage_review",
       "p2_readiness_acceptance_generated",
       "p2_readiness_acceptance_review",
+      "personal_team_readiness_review",
       "pre_live_runbook_report",
       "research_context_readiness_report"
     ];
@@ -12613,6 +12640,68 @@ describe("terminal workbench model", () => {
       "backtest_report",
       "portfolio_report"
     ]);
+  });
+
+  test("includes personal and team readiness review events in the audit report ledger", () => {
+    const reviewHash = "7".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-7777777777777777",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail:
+          "personal-team-readiness-review.md · sha256 777777777777 · ready 6/6 gates · personal 100% · team 100% · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          fileName: "personal-team-readiness-review.md",
+          format: "text/markdown",
+          itemIds: [
+            "p0-local-loop",
+            "p1-research-ops",
+            "p2-prelive-chain",
+            "audit-traceability",
+            "team-handoff-runbook",
+            "backup-restore-drill"
+          ],
+          itemStatuses: ["ready", "ready", "ready", "ready", "ready", "ready"],
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Review accepted loop",
+          nextActionWorkspaceId: "audit",
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.personalTeamReadinessReview",
+        contentSha256: reviewHash,
+        fileName: "personal-team-readiness-review.md",
+        reportKind: "personal_team_readiness_review",
+        status: "ready",
+        tone: "positive"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, "personal_team_readiness_review ready").map((row) => row.id)).toEqual([
+      "personal-team-readiness-review-7777777777777777"
+    ]);
+    expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
   });
 
   test("includes P2 readiness acceptance review events in the audit report ledger", () => {

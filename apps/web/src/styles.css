@@ -1527,6 +1527,35 @@ em {
   color: #e8be62;
 }
 
+.personal-team-readiness-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.personal-team-readiness-actions button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #31506b;
+  border-radius: 5px;
+  background: #132133;
+  color: #dce6ee;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 6px 8px;
+}
+
+.personal-team-readiness-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .personal-team-readiness-open {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
