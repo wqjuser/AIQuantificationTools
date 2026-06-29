@@ -682,6 +682,7 @@ export interface DailyOpsControlRoomQueueItem {
   actionLabel: string;
   targetWorkspaceId: ProductWorkAreaId;
   auditQuery: string;
+  auditQueryTitle?: string;
 }
 
 export interface DailyOpsControlRoomSummary {
@@ -693,6 +694,7 @@ export interface DailyOpsControlRoomSummary {
   primaryActionWorkspaceId: ProductWorkAreaId;
   auditQueryLabel: string;
   auditQuery: string;
+  auditQueryTitle?: string;
   readyCount: number;
   reviewCount: number;
   blockingCount: number;
@@ -2615,6 +2617,7 @@ export interface AuditEvidenceReportLedgerRow {
   dailyOpsControlRoomReviewPrimaryActionWorkspaceId: string;
   dailyOpsControlRoomReviewAuditQueryLabel: string;
   dailyOpsControlRoomReviewAuditQuery: string;
+  dailyOpsControlRoomReviewAuditQueryTitle: string;
   dailyStartBriefReviewState: string;
   dailyStartBriefReviewCurrentReviewCount: number;
   dailyStartBriefReviewStaleReviewCount: number;
@@ -9075,13 +9078,16 @@ export function buildDailyOpsControlRoomSummary({
     auditEvidenceReportLedgerSummary.p2ReadinessReviewChainHealthQuery ||
     "";
   const auditQueryLabel = dailyOpsAuditQueryLabel(auditEvidenceReportLedgerSummary);
+  const auditQueryTitle = dailyOpsAuditQueryTitle(auditEvidenceReportLedgerSummary);
   const currentActionItem = buildDailyOpsCurrentActionItem({
     auditQuery,
+    auditQueryTitle,
     personalTeamUsabilityReadiness,
     p0CompletionChecklist
   });
   const teamHandoffItem = buildDailyOpsPersonalTeamItem({
     auditQuery,
+    auditQueryTitle,
     fallbackActionLabel: "Create handoff runbook",
     fallbackDetail: "Write the operator handoff, incident owner, and review cadence before small-team beta.",
     fallbackLabel: "Team handoff runbook",
@@ -9091,6 +9097,7 @@ export function buildDailyOpsControlRoomSummary({
   });
   const backupRestoreItem = buildDailyOpsPersonalTeamItem({
     auditQuery,
+    auditQueryTitle,
     fallbackActionLabel: "Plan backup drill",
     fallbackDetail: "Run a repeatable export/import/imported-export restore drill before shared use.",
     fallbackLabel: "Backup restore drill",
@@ -9105,11 +9112,14 @@ export function buildDailyOpsControlRoomSummary({
     status: auditContextReady ? "ready" : "review",
     tone: auditContextReady ? "positive" : "warning",
     detail: auditContextReady
-      ? `${auditQueryLabel} is available for read-only review.`
+      ? auditQueryTitle
+        ? `${auditQueryLabel} is available for read-only review: ${auditQueryTitle}.`
+        : `${auditQueryLabel} is available for read-only review.`
       : "Record or load a current audit-aid report before sharing daily status.",
     actionLabel: auditContextReady ? "Open audit evidence" : "Open audit ledger",
     targetWorkspaceId: "audit",
-    auditQuery
+    auditQuery,
+    auditQueryTitle
   };
   const queueItems = [currentActionItem, auditContextItem, teamHandoffItem, backupRestoreItem];
   const readyCount = queueItems.filter((item) => item.status === "ready").length;
@@ -9135,6 +9145,7 @@ export function buildDailyOpsControlRoomSummary({
     primaryActionWorkspaceId: primaryAction.targetWorkspaceId,
     auditQueryLabel,
     auditQuery,
+    auditQueryTitle,
     readyCount,
     reviewCount,
     blockingCount,
@@ -9147,10 +9158,12 @@ export function buildDailyOpsControlRoomSummary({
 
 function buildDailyOpsCurrentActionItem({
   auditQuery,
+  auditQueryTitle,
   personalTeamUsabilityReadiness,
   p0CompletionChecklist
 }: {
   auditQuery: string;
+  auditQueryTitle: string;
   personalTeamUsabilityReadiness: PersonalTeamUsabilityReadinessSummary;
   p0CompletionChecklist: P0CompletionChecklist;
 }): DailyOpsControlRoomQueueItem {
@@ -9168,7 +9181,8 @@ function buildDailyOpsCurrentActionItem({
       detail: personalBlocker.detail,
       actionLabel: personalBlocker.actionLabel,
       targetWorkspaceId: personalBlocker.targetWorkspaceId,
-      auditQuery
+      auditQuery,
+      auditQueryTitle
     };
   }
 
@@ -9182,7 +9196,8 @@ function buildDailyOpsCurrentActionItem({
       detail: completionGap.detail,
       actionLabel: completionGap.actionLabel ?? "Open completion gap",
       targetWorkspaceId: completionGap.targetWorkspaceId,
-      auditQuery
+      auditQuery,
+      auditQueryTitle
     };
   }
 
@@ -9196,7 +9211,8 @@ function buildDailyOpsCurrentActionItem({
       detail: personalOpenItem.detail,
       actionLabel: personalOpenItem.actionLabel,
       targetWorkspaceId: personalOpenItem.targetWorkspaceId,
-      auditQuery
+      auditQuery,
+      auditQueryTitle
     };
   }
 
@@ -9208,12 +9224,14 @@ function buildDailyOpsCurrentActionItem({
     detail: "Daily paper-only operations are ready for read-only audit review.",
     actionLabel: "Open audit ledger",
     targetWorkspaceId: "audit",
-    auditQuery
+    auditQuery,
+    auditQueryTitle
   };
 }
 
 function buildDailyOpsPersonalTeamItem({
   auditQuery,
+  auditQueryTitle,
   fallbackActionLabel,
   fallbackDetail,
   fallbackLabel,
@@ -9222,6 +9240,7 @@ function buildDailyOpsPersonalTeamItem({
   sourceItem
 }: {
   auditQuery: string;
+  auditQueryTitle: string;
   fallbackActionLabel: string;
   fallbackDetail: string;
   fallbackLabel: string;
@@ -9238,7 +9257,8 @@ function buildDailyOpsPersonalTeamItem({
     detail: sourceItem?.detail ?? fallbackDetail,
     actionLabel: sourceItem?.actionLabel ?? fallbackActionLabel,
     targetWorkspaceId: sourceItem?.targetWorkspaceId ?? fallbackWorkspaceId,
-    auditQuery
+    auditQuery,
+    auditQueryTitle
   };
 }
 
@@ -9269,6 +9289,22 @@ function dailyOpsAuditQueryLabel(summary: AuditEvidenceReportLedgerSummary): str
   return "Audit ledger";
 }
 
+function dailyOpsAuditQueryTitle(summary: AuditEvidenceReportLedgerSummary): string {
+  if (summary.latestAuditAidReportQuery) {
+    return "";
+  }
+  if (summary.latestP2ReadinessReviewChainQuery) {
+    return summary.latestP2ReadinessReviewChainLabel;
+  }
+  if (summary.latestP2ReadinessLinkedAcceptanceReviewQuery) {
+    return summary.latestP2ReadinessLinkedCoverageReviewLabel;
+  }
+  if (summary.p2ReadinessReviewChainHealthQuery) {
+    return summary.p2ReadinessReviewChainHealthTitle;
+  }
+  return "";
+}
+
 export function buildDailyOpsControlRoomReviewMarkdown({
   summary
 }: {
@@ -9287,6 +9323,7 @@ export function buildDailyOpsControlRoomReviewMarkdown({
     `- Primary action: ${summary.primaryActionLabel} (${summary.primaryActionWorkspaceId})`,
     `- Audit query label: ${summary.auditQueryLabel}`,
     `- Audit query: ${summary.auditQuery || "none"}`,
+    `- Audit query title: ${summary.auditQueryTitle || "none"}`,
     `- Live boundary: ${summary.liveBoundaryLabel}`,
     "",
     "## Daily Ops Queue",
@@ -9297,7 +9334,8 @@ export function buildDailyOpsControlRoomReviewMarkdown({
         `  - Detail: ${item.detail}`,
         `  - Action: ${item.actionLabel}`,
         `  - Target workspace: ${item.targetWorkspaceId}`,
-        `  - Audit query: ${item.auditQuery || "none"}`
+        `  - Audit query: ${item.auditQuery || "none"}`,
+        `  - Audit query title: ${item.auditQueryTitle || "none"}`
       ].join("\n")
     ),
     "",
@@ -9665,6 +9703,7 @@ function dailyOpsControlRoomReviewRowMatchesSummary(
     row.dailyOpsControlRoomReviewPrimaryActionLabel === summary.primaryActionLabel &&
     row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId === summary.primaryActionWorkspaceId &&
     row.dailyOpsControlRoomReviewAuditQuery === summary.auditQuery &&
+    row.dailyOpsControlRoomReviewAuditQueryTitle === (summary.auditQueryTitle || "") &&
     sameAuditStringList(
       row.dailyOpsControlRoomReviewQueueItemIds,
       summary.queueItems.map((item) => item.id)
@@ -14719,7 +14758,10 @@ export function buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle(
   const primaryAction = row.dailyOpsControlRoomReviewPrimaryActionLabel
     ? `${row.dailyOpsControlRoomReviewPrimaryActionLabel} -> ${row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId || "unknown"}`
     : "none";
-  return `Daily ops review: ${label} · open ${openItems} · primary ${primaryAction}`;
+  const auditContext = row.dailyOpsControlRoomReviewAuditQueryTitle
+    ? ` · audit ${row.dailyOpsControlRoomReviewAuditQueryTitle}`
+    : "";
+  return `Daily ops review: ${label} · open ${openItems} · primary ${primaryAction}${auditContext}`;
 }
 
 export function buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(
@@ -14741,6 +14783,7 @@ export function buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(
     row.dailyOpsControlRoomReviewPrimaryActionLabel,
     row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
     row.dailyOpsControlRoomReviewAuditQuery,
+    row.dailyOpsControlRoomReviewAuditQueryTitle,
     row.dailyOpsControlRoomReviewOpenItemIds.join(" ")
   ]);
 }
@@ -17066,6 +17109,8 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataText(event.metadata, "auditQueryLabel") : "";
       const dailyOpsControlRoomReviewAuditQuery =
         reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataText(event.metadata, "auditQuery") : "";
+      const dailyOpsControlRoomReviewAuditQueryTitle =
+        reportKind === "daily_ops_control_room_review" ? auditReportLedgerMetadataText(event.metadata, "auditQueryTitle") : "";
       const dailyOpsControlRoomReviewSearchText =
         reportKind === "daily_ops_control_room_review"
           ? [
@@ -17079,6 +17124,7 @@ export function buildAuditEvidenceReportLedgerRows(
               dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
               dailyOpsControlRoomReviewAuditQueryLabel,
               dailyOpsControlRoomReviewAuditQuery,
+              dailyOpsControlRoomReviewAuditQueryTitle,
               dailyOpsControlRoomReviewQueueItemIds.join(" "),
               dailyOpsControlRoomReviewQueueItemStatuses.join(" "),
               dailyOpsControlRoomReviewOpenItemIds.join(" "),
@@ -17348,6 +17394,7 @@ export function buildAuditEvidenceReportLedgerRows(
         dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
         dailyOpsControlRoomReviewAuditQueryLabel,
         dailyOpsControlRoomReviewAuditQuery,
+        dailyOpsControlRoomReviewAuditQueryTitle,
         dailyStartBriefReviewState,
         dailyStartBriefReviewCurrentReviewCount,
         dailyStartBriefReviewStaleReviewCount,

@@ -282,6 +282,8 @@ Batch 112 已把 P2 复核链健康查询升级为上下文加状态组合查询
 
 Batch 113 已给 P2 复核链健康入口补上 summary 级可解释 title：`p2ReadinessReviewChainHealthTitle` 会输出 `health-state-*`、组合 query、context rows、loaded chains、gaps、missing coverage、missing acceptance 和最新缺口 event id。Audit toolbar 的 Chain health chip、Focus 和 Copy 按钮都会优先使用该 title 做 tooltip，避免只看到裸 query；该能力只增强只读解释文本，不新建 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 114 已把 P2 复核链健康解释延伸到 Daily Ops 本地复核链路：`buildDailyOpsControlRoomSummary` 新增 `auditQueryTitle`，当审计入口来自 `p2ReadinessReviewChainHealthQuery` 时会带上 `p2ReadinessReviewChainHealthTitle`；Daily Ops 队列 detail、Review Markdown、`daily_ops_control_room_review` metadata、Audit ledger row/search 和行级 review query 都会保留这段解释。这样每日复核材料不只记录裸 Audit query，也能说明 health state、gap 分解和最新缺口；该能力只增强只读解释与检索，不自动生成复核、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

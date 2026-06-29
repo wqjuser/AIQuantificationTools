@@ -6131,6 +6131,7 @@ export async function buildDailyOpsControlRoomReviewAuditEvent({
       primaryActionWorkspaceId: summary.primaryActionWorkspaceId,
       auditQueryLabel: summary.auditQueryLabel,
       auditQuery: summary.auditQuery,
+      auditQueryTitle: summary.auditQueryTitle || "",
       liveBoundaryLabel: summary.liveBoundaryLabel,
       orderSubmissionEnabled: false,
       liveTradingAllowed: false,

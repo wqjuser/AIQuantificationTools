@@ -15265,7 +15265,7 @@ describe("terminal workspace API client", () => {
   });
 
   test("builds a daily ops control room review audit event without storing markdown", async () => {
-    const summary: DailyOpsControlRoomSummary = {
+    const summary = {
       state: "attention",
       tone: "warning",
       headline: "Daily ops needs 2 reviews",
@@ -15274,6 +15274,7 @@ describe("terminal workspace API client", () => {
       primaryActionWorkspaceId: "ai-review",
       auditQueryLabel: "Latest P0 audit evidence",
       auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+      auditQueryTitle: "P0 completion focus · current criterion ai-review",
       readyCount: 2,
       reviewCount: 2,
       blockingCount: 0,
@@ -15343,7 +15344,7 @@ describe("terminal workspace API client", () => {
         }
       ],
       liveBoundaryLabel: "Paper-only · live blocked · no order submission"
-    };
+    } as DailyOpsControlRoomSummary & { auditQueryTitle: string };
     const markdown = buildDailyOpsControlRoomReviewMarkdown({ summary });
 
     const event = await buildDailyOpsControlRoomReviewAuditEvent({
@@ -15377,6 +15378,7 @@ describe("terminal workspace API client", () => {
         primaryActionWorkspaceId: "ai-review",
         auditQueryLabel: "Latest P0 audit evidence",
         auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+        auditQueryTitle: "P0 completion focus · current criterion ai-review",
         orderSubmissionEnabled: false,
         liveTradingAllowed: false,
         liveOrderSubmitted: false,

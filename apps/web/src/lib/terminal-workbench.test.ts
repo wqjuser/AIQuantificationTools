@@ -3771,6 +3771,49 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("carries P2 review chain health explanation into the daily ops audit context", () => {
+    const reviewChainHealthTitle =
+      "review-chain-health · health-state-gaps · query review-chain-health review-chain-gap · context rows 6 · loaded chains 2 · gaps 2 · missing coverage 1 · missing acceptance 1 · latest gap p2-readiness-acceptance-review-missing-5555555555555555";
+    const auditSummary = auditEvidenceReportLedgerSummaryFixture({
+      p2ReadinessReviewChainHealthQuery: "review-chain-health review-chain-gap",
+      p2ReadinessReviewChainHealthTitle: reviewChainHealthTitle
+    });
+    const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditSummary,
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+
+    const summary = buildDailyOpsControlRoomSummary({
+      auditEvidenceReportLedgerSummary: auditSummary,
+      personalTeamUsabilityReadiness: personalTeamSummary,
+      p0CompletionChecklist: p0CompletionChecklistFixture()
+    }) as DailyOpsControlRoomSummary & {
+      auditQueryTitle: string;
+      queueItems: Array<{ auditQueryTitle: string; detail: string; id: string }>;
+    };
+    const auditContextItem = summary.queueItems.find((item) => item.id === "audit-context");
+
+    expect(summary.auditQueryLabel).toBe("P2 review chain health");
+    expect(summary.auditQuery).toBe("review-chain-health review-chain-gap");
+    expect(summary.auditQueryTitle).toBe(reviewChainHealthTitle);
+    expect(auditContextItem).toEqual(
+      expect.objectContaining({
+        auditQueryTitle: reviewChainHealthTitle,
+        detail: `P2 review chain health is available for read-only review: ${reviewChainHealthTitle}.`
+      })
+    );
+
+    const markdown = buildDailyOpsControlRoomReviewMarkdown({ summary });
+
+    expect(markdown).toContain(`- Audit query title: ${reviewChainHealthTitle}`);
+    expect(markdown).toContain(`  - Audit query title: ${reviewChainHealthTitle}`);
+  });
+
   test("builds a portable daily ops control room review markdown", () => {
     const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
       auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
@@ -3800,6 +3843,7 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("- Ready ops gates: 2/4");
     expect(markdown).toContain("- Primary action: Run AI review (ai-review)");
     expect(markdown).toContain("- Audit query: p0_readiness_report p0-completion-focus run-p0-smoke");
+    expect(markdown).toContain("- Audit query title: none");
     expect(markdown).toContain("- current-action: review");
     expect(markdown).toContain("- audit-context: ready");
     expect(markdown).toContain("- team-handoff: review");
@@ -13217,6 +13261,7 @@ describe("terminal workbench model", () => {
           artifactKind: "aiqt.dailyOpsControlRoomReview",
           auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
           auditQueryLabel: "Latest P0 audit evidence",
+          auditQueryTitle: "P0 completion focus · current criterion ai-review",
           blockingCount: 0,
           contentSha256: reviewHash,
           contentSha256Algorithm: "sha256",
@@ -13245,15 +13290,17 @@ describe("terminal workbench model", () => {
         artifactKind: "aiqt.dailyOpsControlRoomReview",
         contentSha256: reviewHash,
         fileName: "daily-ops-control-room-review.md",
+        dailyOpsControlRoomReviewAuditQueryTitle: "P0 completion focus · current criterion ai-review",
         reportKind: "daily_ops_control_room_review",
         status: "ready",
         tone: "positive"
       })
     );
     expect(
-      filterAuditEvidenceReportLedgerRows(rows, "daily_ops_control_room_review attention Run AI review").map(
-        (row) => row.id
-      )
+      filterAuditEvidenceReportLedgerRows(
+        rows,
+        "daily_ops_control_room_review attention Run AI review P0 completion focus"
+      ).map((row) => row.id)
     ).toEqual(["daily-ops-control-room-review-6666666666666666"]);
     expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
   });
