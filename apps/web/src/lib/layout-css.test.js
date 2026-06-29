@@ -1942,6 +1942,12 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.localReviewBundleCoverageQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.localReviewBundleCoverageQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.localReviewBundleCoverageNextActionQuery)");
+    expect(reportLedgerPanelSource).toContain(
+      "onFocusLocalReviewCoverageNextAction(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)"
+    );
+    expect(reportLedgerPanelSource).toContain(
+      "onFocusLocalReviewCoverageNextAction: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;"
+    );
     expect(reportLedgerPanelSource).toContain("localReviewCoverageNextActionWorkspaceId");
     expect(reportLedgerPanelSource).toContain("localReviewCoverageNextActionStateFromParts(");
     expect(reportLedgerPanelSource).toContain("const localReviewCoverageNextActionState =");
@@ -1977,8 +1983,13 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Focus local coverage");
     expect(reportLedgerPanelSource).toContain("复制本地复核覆盖链接");
     expect(reportLedgerPanelSource).toContain("Copy local coverage link");
-    expect(reportLedgerPanelSource).toContain("定位覆盖下一步");
-    expect(reportLedgerPanelSource).toContain("Focus coverage next");
+    expect(appSource).toContain("定位覆盖下一步");
+    expect(appSource).toContain("Focus coverage next");
+    expect(reportLedgerPanelSource).toContain("localReviewCoverageNextActionFocusLabel(i18n, localReviewCoverageNextActionState)");
+    expect(appSource).toContain("定位 Daily Ops 覆盖下一步");
+    expect(appSource).toContain("Focus Daily Ops coverage next");
+    expect(appSource).toContain("定位个人/小团队覆盖下一步");
+    expect(appSource).toContain("Focus personal/team coverage next");
     expect(appSource).toContain("打开覆盖下一步");
     expect(appSource).toContain("Open coverage next");
     expect(appSource).toContain("打开 Daily Ops 复核入口");
@@ -2137,6 +2148,9 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleCoverageNextActionQuery)");
     expect(reportLedgerPanelSource).toContain("rowLocalReviewCoverageNextActionWorkspaceId");
     expect(reportLedgerPanelSource).toContain(
+      "onFocusLocalReviewCoverageNextAction(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)"
+    );
+    expect(reportLedgerPanelSource).toContain(
       "onCopyLocalReviewCoverageNextActionLink(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)"
     );
     expect(reportLedgerPanelSource).toContain(
@@ -2160,8 +2174,15 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Focus row local coverage");
     expect(reportLedgerPanelSource).toContain("复制行本地复核覆盖链接");
     expect(reportLedgerPanelSource).toContain("Copy row local coverage link");
-    expect(reportLedgerPanelSource).toContain("定位行覆盖下一步");
-    expect(reportLedgerPanelSource).toContain("Focus row coverage next");
+    expect(appSource).toContain("定位行覆盖下一步");
+    expect(appSource).toContain("Focus row coverage next");
+    expect(reportLedgerPanelSource).toContain(
+      'localReviewCoverageNextActionFocusLabel(i18n, rowLocalReviewCoverageNextActionState, "row")'
+    );
+    expect(appSource).toContain("定位行 Daily Ops 覆盖下一步");
+    expect(appSource).toContain("Focus row Daily Ops coverage next");
+    expect(appSource).toContain("定位行个人/小团队覆盖下一步");
+    expect(appSource).toContain("Focus row personal/team coverage next");
     expect(appSource).toContain("打开行覆盖下一步");
     expect(appSource).toContain("Open row coverage next");
     expect(appSource).toContain("打开行 Daily Ops 复核入口");

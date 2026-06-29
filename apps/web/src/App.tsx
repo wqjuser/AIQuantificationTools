@@ -10757,6 +10757,15 @@ export function App() {
             onCopyLocalReviewCoverageNextActionLink={copyLocalReviewCoverageNextActionLink}
             onCopyP0ActionLink={copyP0CurrentGapActionLink}
             onCopyQueryLink={copyAuditReportLedgerQueryLink}
+            onFocusLocalReviewCoverageNextAction={(workspaceId, auditReportQuery) => {
+              const state = localReviewCoverageNextActionStateFromParts(workspaceId, auditReportQuery);
+              updateAuditEvidenceReportQuery(auditReportQuery);
+              setWorkspaceState((current) => ({
+                ...current,
+                statusLabel: state ? localReviewCoverageNextActionQueryStatusLabel(state) : "Local review coverage query selected",
+                error: undefined
+              }));
+            }}
             onOpenCompletionGap={selectProductWorkArea}
             onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}
             onOpenLocalReviewCoverageNextAction={(workspaceId, auditReportQuery) => {
@@ -12753,6 +12762,38 @@ function localReviewCoverageNextActionOpenLabel(
     return i18n.locale === "zh-CN" ? "打开个人/小团队复核入口" : "Open personal/team review entry";
   }
   return i18n.locale === "zh-CN" ? "打开复核入口" : "Open review entry";
+}
+
+function localReviewCoverageNextActionFocusLabel(
+  i18n: AppI18n,
+  state: LocalReviewCoverageNextActionDeepLinkState | null,
+  scope: "summary" | "row" = "summary"
+): string {
+  if (state?.actionId === "record-daily-ops-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "定位行 Daily Ops 覆盖下一步"
+        : "定位 Daily Ops 覆盖下一步"
+      : scope === "row"
+        ? "Focus row Daily Ops coverage next"
+        : "Focus Daily Ops coverage next";
+  }
+  if (state?.actionId === "record-personal-team-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "定位行个人/小团队覆盖下一步"
+        : "定位个人/小团队覆盖下一步"
+      : scope === "row"
+        ? "Focus row personal/team coverage next"
+        : "Focus personal/team coverage next";
+  }
+  return i18n.locale === "zh-CN"
+    ? scope === "row"
+      ? "定位行覆盖下一步"
+      : "定位覆盖下一步"
+    : scope === "row"
+      ? "Focus row coverage next"
+      : "Focus coverage next";
 }
 
 function localReviewCoverageNextActionCopyLabel(
@@ -20951,6 +20992,7 @@ function AuditEvidenceReportLedgerPanel({
   onCopyLocalReviewCoverageNextActionLink,
   onCopyP0ActionLink,
   onCopyQueryLink,
+  onFocusLocalReviewCoverageNextAction,
   onOpenCompletionGap,
   onOpenEvidenceLink,
   onOpenLocalReviewCoverageNextAction,
@@ -20977,6 +21019,7 @@ function AuditEvidenceReportLedgerPanel({
   onCopyLocalReviewCoverageNextActionLink: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;
   onCopyP0ActionLink: (search: string) => void;
   onCopyQueryLink: (query: string) => void;
+  onFocusLocalReviewCoverageNextAction: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;
   onOpenCompletionGap: (workspaceId: ProductWorkAreaId) => void;
   onOpenEvidenceLink: (search: string) => void;
   onOpenLocalReviewCoverageNextAction: (workspaceId: ProductWorkAreaId, auditReportQuery: string) => void;
@@ -21570,14 +21613,18 @@ function AuditEvidenceReportLedgerPanel({
                 ) : null}
                 {summary.localReviewBundleCoverageNextActionQuery ? (
                   <button
-                    onClick={() => focusAuditReportQuery(summary.localReviewBundleCoverageNextActionQuery)}
+                    onClick={() =>
+                      localReviewCoverageNextActionWorkspaceId
+                        ? onFocusLocalReviewCoverageNextAction(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)
+                        : focusAuditReportQuery(summary.localReviewBundleCoverageNextActionQuery)
+                    }
                     title={
                       summary.localReviewBundleCoverageNextActionTitle ||
                       summary.localReviewBundleCoverageNextActionQuery
                     }
                     type="button"
                   >
-                    {i18n.locale === "zh-CN" ? "定位覆盖下一步" : "Focus coverage next"}
+                    {localReviewCoverageNextActionFocusLabel(i18n, localReviewCoverageNextActionState)}
                   </button>
                 ) : null}
                 {localReviewCoverageNextActionWorkspaceId ? (
@@ -22284,14 +22331,18 @@ function AuditEvidenceReportLedgerPanel({
                     ) : null}
                     {row.localReviewBundleCoverageNextActionQuery ? (
                       <button
-                        onClick={() => focusAuditReportQuery(row.localReviewBundleCoverageNextActionQuery)}
+                        onClick={() =>
+                          rowLocalReviewCoverageNextActionWorkspaceId
+                            ? onFocusLocalReviewCoverageNextAction(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)
+                            : focusAuditReportQuery(row.localReviewBundleCoverageNextActionQuery)
+                        }
                         title={
                           row.localReviewBundleCoverageNextActionTitle ||
                           row.localReviewBundleCoverageNextActionQuery
                         }
                         type="button"
                       >
-                        {i18n.locale === "zh-CN" ? "定位行覆盖下一步" : "Focus row coverage next"}
+                        {localReviewCoverageNextActionFocusLabel(i18n, rowLocalReviewCoverageNextActionState, "row")}
                       </button>
                     ) : null}
                     {rowLocalReviewCoverageNextActionWorkspaceId ? (

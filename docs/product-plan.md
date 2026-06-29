@@ -222,6 +222,8 @@ Batch 82 已把本地复核覆盖下一步的两个落地动作也改成 action-
 
 Batch 83 已把同一套 action-specific 反馈补到 Audit 来源侧：`localReviewCoverageNextActionStateFromParts` 会用目标工作区和 next-action query 还原 `record-daily-ops-review` 或 `record-personal-team-review`，Audit toolbar 与本地复核 row 的复制/打开按钮会显示 Daily Ops 或个人/小团队专属文案；复制成功会写入 `Daily Ops coverage next link copied` 或 `Personal/team coverage next link copied`，打开入口沿用对应 review entry opened 状态。该能力让派发前和接收后的覆盖缺口语义一致，仍只确认导航和查询上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 84 已把 Audit 来源侧的 focus 覆盖下一步也改成 action-specific：新增 `localReviewCoverageNextActionFocusLabel`，顶部摘要和本地复核 row 会按 `record-daily-ops-review` 或 `record-personal-team-review` 显示 Daily Ops / 个人小团队专属定位文案；新增 `onFocusLocalReviewCoverageNextAction` 让点击 focus 时写入对应的 coverage query selected 状态反馈。该能力补齐 focus/copy/open 三个来源侧动作的一致语义，仍只筛选 Audit 台账和确认查询上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。
