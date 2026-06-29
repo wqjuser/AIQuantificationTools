@@ -235,6 +235,8 @@ Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_
 
 覆盖下一步深链现在还会解析具体缺口类型：`resolveLocalReviewCoverageNextActionDeepLinkState` 会从查询中派生 `record-daily-ops-review` 或 `record-personal-team-review`，并标记缺少 Daily Ops 复核还是个人/小团队复核。首页落地提示会显示“Daily Ops 复核缺失”或“个人/小团队复核缺失”，状态栏也会显示已载入的 next-action id；这仍只是解释和导航，不自动入账复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单。
 
+覆盖下一步落地提示的两个动作也会跟随缺口类型变化：查询按钮会显示“查看 Daily Ops 覆盖查询”或“查看个人/小团队覆盖查询”，入口按钮会显示“打开 Daily Ops 复核入口”或“打开个人/小团队复核入口”。点击任一按钮后，状态栏会写入对应的 coverage query selected 或 review entry opened 反馈，方便操作者确认自己已经进入正确上下文；这些反馈仍只来自本地 UI 状态，不写账本、不自动记录复核、不触发交易路径。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

@@ -643,8 +643,18 @@ describe("terminal layout css", () => {
       "localReviewCoverageNextActionLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)"
     );
     expect(overviewSource).toContain(
+      "localReviewCoverageNextActionQueryLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)"
+    );
+    expect(overviewSource).toContain(
       "localReviewCoverageNextActionOpenLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)"
     );
+    expect(overviewSource).toContain(
+      "localReviewCoverageNextActionQueryStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)"
+    );
+    expect(overviewSource).toContain(
+      "localReviewCoverageNextActionOpenStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)"
+    );
+    expect(overviewSource).toContain("setWorkspaceState((current) => ({");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CurrentGapActionDeepLinkState.auditReportQuery)");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CompletionGapDeepLinkState.auditReportQuery)");
     expect(overviewSource).toContain(
@@ -660,10 +670,18 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("Continue completion gap");
     expect(overviewSource).toContain("本地复核覆盖下一步");
     expect(overviewSource).toContain("Local review coverage next");
-    expect(overviewSource).toContain("查看覆盖查询");
-    expect(overviewSource).toContain("View coverage query");
-    expect(overviewSource).toContain("打开复核入口");
-    expect(overviewSource).toContain("Open review entry");
+    expect(appSource).toContain("查看覆盖查询");
+    expect(appSource).toContain("View coverage query");
+    expect(appSource).toContain("打开复核入口");
+    expect(appSource).toContain("Open review entry");
+    expect(appSource).toContain("查看 Daily Ops 覆盖查询");
+    expect(appSource).toContain("View Daily Ops coverage query");
+    expect(appSource).toContain("查看个人/小团队覆盖查询");
+    expect(appSource).toContain("View personal/team coverage query");
+    expect(appSource).toContain("Daily Ops coverage query selected");
+    expect(appSource).toContain("Personal/team coverage query selected");
+    expect(appSource).toContain("Daily Ops review entry opened");
+    expect(appSource).toContain("Personal/team review entry opened");
     expect(appSource).toContain("Daily Ops 复核缺失");
     expect(appSource).toContain("Daily Ops review missing");
     expect(appSource).toContain("个人/小团队复核缺失");

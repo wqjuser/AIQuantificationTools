@@ -11998,10 +11998,15 @@ export function App() {
                           setAuditEvidenceReportQuery(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
                           setAuditEvidenceReportOffset(0);
                           selectProductWorkArea("audit");
+                          setWorkspaceState((current) => ({
+                            ...current,
+                            statusLabel: localReviewCoverageNextActionQueryStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState),
+                            error: undefined
+                          }));
                         }}
                         type="button"
                       >
-                        {i18n.locale === "zh-CN" ? "查看覆盖查询" : "View coverage query"}
+                        {localReviewCoverageNextActionQueryLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)}
                       </button>
                       <button
                         title={localReviewCoverageNextActionOpenLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)}
@@ -12010,10 +12015,15 @@ export function App() {
                           setAuditEvidenceReportQuery(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
                           setAuditEvidenceReportOffset(0);
                           selectProductWorkArea(initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId);
+                          setWorkspaceState((current) => ({
+                            ...current,
+                            statusLabel: localReviewCoverageNextActionOpenStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState),
+                            error: undefined
+                          }));
                         }}
                         type="button"
                       >
-                        {i18n.locale === "zh-CN" ? "打开复核入口" : "Open review entry"}
+                        {localReviewCoverageNextActionOpenLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)}
                       </button>
                     </div>
                   </div>
@@ -12695,6 +12705,19 @@ function localReviewCoverageMissingReviewKindLabel(
   return i18n.locale === "zh-CN" ? "缺少本地复核" : "Missing local review";
 }
 
+function localReviewCoverageNextActionQueryLabel(
+  i18n: AppI18n,
+  state: LocalReviewCoverageNextActionDeepLinkState
+): string {
+  if (state.actionId === "record-daily-ops-review") {
+    return i18n.locale === "zh-CN" ? "查看 Daily Ops 覆盖查询" : "View Daily Ops coverage query";
+  }
+  if (state.actionId === "record-personal-team-review") {
+    return i18n.locale === "zh-CN" ? "查看个人/小团队覆盖查询" : "View personal/team coverage query";
+  }
+  return i18n.locale === "zh-CN" ? "查看覆盖查询" : "View coverage query";
+}
+
 function localReviewCoverageNextActionOpenLabel(
   i18n: AppI18n,
   state: LocalReviewCoverageNextActionDeepLinkState
@@ -12706,6 +12729,30 @@ function localReviewCoverageNextActionOpenLabel(
     return i18n.locale === "zh-CN" ? "打开个人/小团队复核入口" : "Open personal/team review entry";
   }
   return i18n.locale === "zh-CN" ? "打开复核入口" : "Open review entry";
+}
+
+function localReviewCoverageNextActionQueryStatusLabel(
+  state: LocalReviewCoverageNextActionDeepLinkState
+): string {
+  if (state.actionId === "record-daily-ops-review") {
+    return "Daily Ops coverage query selected";
+  }
+  if (state.actionId === "record-personal-team-review") {
+    return "Personal/team coverage query selected";
+  }
+  return "Local review coverage query selected";
+}
+
+function localReviewCoverageNextActionOpenStatusLabel(
+  state: LocalReviewCoverageNextActionDeepLinkState
+): string {
+  if (state.actionId === "record-daily-ops-review") {
+    return "Daily Ops review entry opened";
+  }
+  if (state.actionId === "record-personal-team-review") {
+    return "Personal/team review entry opened";
+  }
+  return "Local review entry opened";
 }
 
 function personalTeamUsabilityReadinessHeadline(
