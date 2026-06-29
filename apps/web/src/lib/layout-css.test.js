@@ -654,6 +654,17 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain(
       "localReviewCoverageNextActionOpenStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)"
     );
+    expect(appSource).toContain("localReviewCoverageNextActionIsEmptyStart(state)");
+    expect(appSource).toContain("本地复核未开始");
+    expect(appSource).toContain("Local reviews not started");
+    expect(appSource).toContain("尚未记录本地复核");
+    expect(appSource).toContain("No local reviews recorded");
+    expect(appSource).toContain("查看本地复核启动查询");
+    expect(appSource).toContain("View local review start query");
+    expect(appSource).toContain("开始个人/小团队复核");
+    expect(appSource).toContain("Start personal/team review");
+    expect(appSource).toContain("Local review start query selected");
+    expect(appSource).toContain("Personal/team review start opened");
     expect(overviewSource).toContain("setWorkspaceState((current) => ({");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CurrentGapActionDeepLinkState.auditReportQuery)");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CompletionGapDeepLinkState.auditReportQuery)");
@@ -1996,6 +2007,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Focus Daily Ops coverage next");
     expect(appSource).toContain("定位个人/小团队覆盖下一步");
     expect(appSource).toContain("Focus personal/team coverage next");
+    expect(appSource).toContain("定位本地复核启动");
+    expect(appSource).toContain("Focus local review start");
     expect(appSource).toContain("打开覆盖下一步");
     expect(appSource).toContain("Open coverage next");
     expect(appSource).toContain("打开 Daily Ops 复核入口");
@@ -2008,6 +2021,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Copy Daily Ops coverage next link");
     expect(appSource).toContain("复制个人/小团队覆盖下一步链接");
     expect(appSource).toContain("Copy personal/team coverage next link");
+    expect(appSource).toContain("复制本地复核启动链接");
+    expect(appSource).toContain("Copy local review start link");
     expect(reportLedgerPanelSource).toContain("最新本地复核");
     expect(reportLedgerPanelSource).toContain("Latest local review");
     expect(reportLedgerPanelSource).toContain("定位最新本地复核");

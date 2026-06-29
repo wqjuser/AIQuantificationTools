@@ -12701,6 +12701,9 @@ function localReviewCoverageNextActionLabel(
   i18n: AppI18n,
   state: LocalReviewCoverageNextActionDeepLinkState
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return i18n.locale === "zh-CN" ? "本地复核未开始" : "Local reviews not started";
+  }
   if (state.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN" ? "Daily Ops 复核缺失" : "Daily Ops review missing";
   }
@@ -12710,10 +12713,19 @@ function localReviewCoverageNextActionLabel(
   return i18n.locale === "zh-CN" ? "本地复核缺失" : "Local review missing";
 }
 
+function localReviewCoverageNextActionIsEmptyStart(
+  state: LocalReviewCoverageNextActionDeepLinkState | null
+): boolean {
+  return state?.missingReviewKind === "empty";
+}
+
 function localReviewCoverageMissingReviewKindLabel(
   i18n: AppI18n,
   missingReviewKind: LocalReviewCoverageNextActionDeepLinkState["missingReviewKind"]
 ): string {
+  if (missingReviewKind === "empty") {
+    return i18n.locale === "zh-CN" ? "尚未记录本地复核" : "No local reviews recorded";
+  }
   if (missingReviewKind === "daily-ops") {
     return i18n.locale === "zh-CN" ? "缺少 Daily Ops 复核" : "Missing Daily Ops review";
   }
@@ -12756,6 +12768,9 @@ function localReviewCoverageNextActionQueryLabel(
   i18n: AppI18n,
   state: LocalReviewCoverageNextActionDeepLinkState
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return i18n.locale === "zh-CN" ? "查看本地复核启动查询" : "View local review start query";
+  }
   if (state.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN" ? "查看 Daily Ops 覆盖查询" : "View Daily Ops coverage query";
   }
@@ -12769,6 +12784,9 @@ function localReviewCoverageNextActionOpenLabel(
   i18n: AppI18n,
   state: LocalReviewCoverageNextActionDeepLinkState
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return i18n.locale === "zh-CN" ? "开始个人/小团队复核" : "Start personal/team review";
+  }
   if (state.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN" ? "打开 Daily Ops 复核入口" : "Open Daily Ops review entry";
   }
@@ -12783,6 +12801,15 @@ function localReviewCoverageNextActionFocusLabel(
   state: LocalReviewCoverageNextActionDeepLinkState | null,
   scope: "summary" | "row" = "summary"
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "定位行本地复核启动"
+        : "定位本地复核启动"
+      : scope === "row"
+        ? "Focus row local review start"
+        : "Focus local review start";
+  }
   if (state?.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN"
       ? scope === "row"
@@ -12815,6 +12842,15 @@ function localReviewCoverageNextActionCopyLabel(
   state: LocalReviewCoverageNextActionDeepLinkState | null,
   scope: "summary" | "row" = "summary"
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "复制行本地复核启动链接"
+        : "复制本地复核启动链接"
+      : scope === "row"
+        ? "Copy row local review start link"
+        : "Copy local review start link";
+  }
   if (state?.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN"
       ? scope === "row"
@@ -12847,6 +12883,15 @@ function localReviewCoverageNextActionOpenSourceLabel(
   state: LocalReviewCoverageNextActionDeepLinkState | null,
   scope: "summary" | "row" = "summary"
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "开始行个人/小团队复核"
+        : "开始个人/小团队复核"
+      : scope === "row"
+        ? "Start row personal/team review"
+        : "Start personal/team review";
+  }
   if (state?.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN"
       ? scope === "row"
@@ -12877,6 +12922,9 @@ function localReviewCoverageNextActionOpenSourceLabel(
 function localReviewCoverageNextActionQueryStatusLabel(
   state: LocalReviewCoverageNextActionDeepLinkState
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return "Local review start query selected";
+  }
   if (state.actionId === "record-daily-ops-review") {
     return "Daily Ops coverage query selected";
   }
@@ -12889,6 +12937,9 @@ function localReviewCoverageNextActionQueryStatusLabel(
 function localReviewCoverageNextActionCopyStatusLabel(
   state: LocalReviewCoverageNextActionDeepLinkState
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return "Local review start link copied";
+  }
   if (state.actionId === "record-daily-ops-review") {
     return "Daily Ops coverage next link copied";
   }
@@ -12901,6 +12952,9 @@ function localReviewCoverageNextActionCopyStatusLabel(
 function localReviewCoverageNextActionOpenStatusLabel(
   state: LocalReviewCoverageNextActionDeepLinkState
 ): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return "Personal/team review start opened";
+  }
   if (state.actionId === "record-daily-ops-review") {
     return "Daily Ops review entry opened";
   }

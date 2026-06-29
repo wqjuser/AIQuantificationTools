@@ -13205,7 +13205,7 @@ describe("terminal workbench model", () => {
       actionId: "record-personal-team-review",
       auditReportQuery:
         "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
-      missingReviewKind: "personal-team",
+      missingReviewKind: "empty",
       targetWorkspaceId: "research"
     });
     expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageQuery).map((row) => row.id)).toEqual([
@@ -16900,7 +16900,7 @@ describe("terminal workbench model", () => {
       actionId: "record-personal-team-review",
       auditReportQuery:
         "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
-      missingReviewKind: "personal-team",
+      missingReviewKind: "empty",
       targetWorkspaceId: "research"
     });
     expect(

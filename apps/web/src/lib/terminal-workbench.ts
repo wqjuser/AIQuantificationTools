@@ -2856,7 +2856,7 @@ export type LocalReviewCoverageNextActionId =
   | "record-daily-ops-review"
   | "record-personal-team-review"
   | "unknown";
-export type LocalReviewCoverageMissingReviewKind = "daily-ops" | "personal-team" | "unknown";
+export type LocalReviewCoverageMissingReviewKind = "daily-ops" | "personal-team" | "empty" | "unknown";
 
 export interface LocalReviewCoverageNextActionDeepLinkState {
   actionId: LocalReviewCoverageNextActionId;
@@ -3279,6 +3279,9 @@ function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): Local
 function resolveLocalReviewCoverageMissingReviewKind(
   auditReportQuery: string
 ): LocalReviewCoverageMissingReviewKind {
+  if (auditReportQuery.includes("local-review-bundle-empty")) {
+    return "empty";
+  }
   if (auditReportQuery.includes("local-review-bundle-daily-ops-missing")) {
     return "daily-ops";
   }
