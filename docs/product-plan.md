@@ -274,6 +274,8 @@ Batch 108 已把 P2 复核链组合查询升级为可解释审计上下文：`bu
 
 Batch 109 已把顶层 acceptance review 指向 coverage review 的定位查询升级为可解释审计上下文：`buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery` 和 acceptance review row 构造逻辑现在会输出 `linked-coverage-review`、目标 `p2_readiness_evidence_coverage_review` event id、来源 acceptance review event id 和 acceptance createdAt。Audit 顶部 latest coverage review 入口、acceptance row 的“覆盖复核 / Coverage review”复制链接因此能保留来源复核语义，同时继续复用只读过滤；该能力不新建 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 110 已把 coverage review 反向指向顶层 acceptance review 的定位查询也升级为可解释审计上下文：`buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery` 现在输出 `linked-acceptance-review`、顶层 `p2_readiness_acceptance_review` event id、coverage review event id 和 acceptance createdAt；acceptance review row 的搜索文本也索引 `linked-acceptance-review`。因此 coverage row 的“顶层复核 / Acceptance review”复制链接和 Audit 顶部 latest acceptance review 入口能继续筛回顶层复核，同时保留反向链路语义；该能力只增强只读过滤，不新建 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

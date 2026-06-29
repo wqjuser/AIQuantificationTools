@@ -14623,14 +14623,11 @@ export function buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLink
     return "";
   }
   return auditReportLedgerDeduplicatedQueryText([
+    "linked-acceptance-review",
     row.reportKind,
     row.id,
     linkedCoverageReviewAuditEventId,
-    row.shortHash,
-    row.fileName,
-    row.focusQuery,
-    row.detail,
-    row.searchText
+    row.createdAt
   ]);
 }
 
@@ -16980,6 +16977,8 @@ export function buildAuditEvidenceReportLedgerRows(
               p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
               p2ReadinessAcceptanceCoverageReviewLinkLabel,
               p2ReadinessAcceptanceCoverageReviewLinkQuery,
+              p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ? "linked acceptance review" : "",
+              p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ? "linked-acceptance-review" : "",
               p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ? "linked review chain" : "",
               p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId ? "linked-review-chain" : "",
               p2ReadinessReviewChainLabel,

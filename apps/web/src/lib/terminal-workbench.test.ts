@@ -14505,10 +14505,9 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery(null)).toBe("");
     const coverageBacklinkQuery =
       buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(rows[0]);
-    expect(coverageBacklinkQuery).toContain(
-      "p2_readiness_acceptance_review p2-readiness-acceptance-review-run-p2-8888888888888888"
+    expect(coverageBacklinkQuery).toBe(
+      "linked-acceptance-review p2_readiness_acceptance_review p2-readiness-acceptance-review-run-p2-8888888888888888 p2-readiness-evidence-coverage-review-current 2026-06-24T09:10:00.000Z"
     );
-    expect(coverageBacklinkQuery).toContain("p2-readiness-evidence-coverage-review-current");
     expect(filterAuditEvidenceReportLedgerRows(rows, coverageBacklinkQuery).map((row) => row.id)).toEqual([
       "p2-readiness-acceptance-review-run-p2-8888888888888888"
     ]);
@@ -14843,6 +14842,8 @@ describe("terminal workbench model", () => {
       "linked-review-chain p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999 2026-06-24T09:30:00.000Z";
     const linkedCoverageReviewQuery =
       "linked-coverage-review p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-linked-9999999999999999 p2-readiness-acceptance-review-linked-8888888888888888 2026-06-24T09:30:00.000Z";
+    const linkedAcceptanceReviewQuery =
+      "linked-acceptance-review p2_readiness_acceptance_review p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999 2026-06-24T09:30:00.000Z";
     const missingCoverageReviewChainQuery =
       "linked-review-chain p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555 2026-06-24T08:50:00.000Z";
 
@@ -14860,9 +14861,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded"),
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel:
           "linked acceptance review · p2-readiness-acceptance-review-linked-8888888888888888",
-        p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: expect.stringContaining(
-          "p2_readiness_acceptance_review p2-readiness-acceptance-review-linked-8888888888888888"
-        )
+        p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: linkedAcceptanceReviewQuery
       })
     );
     expect(acceptanceRow).toEqual(
@@ -14981,9 +14980,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         latestP2ReadinessLinkedAcceptanceReviewEventId:
           "p2-readiness-acceptance-review-linked-8888888888888888",
-        latestP2ReadinessLinkedAcceptanceReviewQuery: expect.stringContaining(
-          "p2_readiness_acceptance_review p2-readiness-acceptance-review-linked-8888888888888888"
-        ),
+        latestP2ReadinessLinkedAcceptanceReviewQuery: linkedAcceptanceReviewQuery,
         latestP2ReadinessLinkedCoverageReviewEventId:
           "p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessLinkedCoverageReviewLabel:
