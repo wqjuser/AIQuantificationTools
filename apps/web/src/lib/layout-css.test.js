@@ -1879,6 +1879,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthLabel");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthQuery");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthState");
+    expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthTitle");
+    expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainHealthTitle ||");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainLoadedCount");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainMissingAcceptanceCount");
     expect(reportLedgerPanelSource).toContain("summary.p2ReadinessReviewChainMissingAcceptanceQuery");

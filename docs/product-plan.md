@@ -280,6 +280,8 @@ Batch 111 已把 P2 复核链 status/gap 查询升级为可解释审计上下文
 
 Batch 112 已把 P2 复核链健康查询升级为上下文加状态组合查询：`buildAuditEvidenceReportLedgerSummary` 现在在 gaps 时输出 `review-chain-health review-chain-gap`，loaded 时输出 `review-chain-health review-chain-loaded`。Toolbar 的 Chain health 入口既保留整页健康上下文语义，又能筛回当前状态行；测试也会把 summary 生成的查询喂回 `filterAuditEvidenceReportLedgerRows`，确认 loaded 与 gap 场景都可复核。该能力只增强只读健康过滤，不新建 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 113 已给 P2 复核链健康入口补上 summary 级可解释 title：`p2ReadinessReviewChainHealthTitle` 会输出 `health-state-*`、组合 query、context rows、loaded chains、gaps、missing coverage、missing acceptance 和最新缺口 event id。Audit toolbar 的 Chain health chip、Focus 和 Copy 按钮都会优先使用该 title 做 tooltip，避免只看到裸 query；该能力只增强只读解释文本，不新建 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

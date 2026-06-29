@@ -11614,6 +11614,7 @@ describe("terminal workbench model", () => {
       p2ReadinessReviewChainHealthContextTitle: "",
       p2ReadinessReviewChainHealthQuery: "",
       p2ReadinessReviewChainHealthState: "empty",
+      p2ReadinessReviewChainHealthTitle: "",
       p2ReadinessReviewChainLoadedCount: 0,
       p2ReadinessReviewChainMissingAcceptanceCount: 0,
       p2ReadinessReviewChainMissingAcceptanceQuery: "",
@@ -14978,6 +14979,8 @@ describe("terminal workbench model", () => {
           "review-chain-health · health context rows 2 · loaded chains 1 · gaps 0 · missing coverage 0 · missing acceptance 0",
         p2ReadinessReviewChainHealthQuery: "review-chain-health review-chain-loaded",
         p2ReadinessReviewChainHealthState: "loaded",
+        p2ReadinessReviewChainHealthTitle:
+          "review-chain-health · health-state-loaded · query review-chain-health review-chain-loaded · context rows 2 · loaded chains 1 · gaps 0 · missing coverage 0 · missing acceptance 0",
         p2ReadinessReviewChainLoadedCount: 1
       })
     );
@@ -15016,6 +15019,8 @@ describe("terminal workbench model", () => {
           "review-chain-health · health context rows 6 · loaded chains 2 · gaps 2 · missing coverage 1 · missing acceptance 1 · latest gap p2-readiness-acceptance-review-missing-5555555555555555",
         p2ReadinessReviewChainHealthQuery: "review-chain-health review-chain-gap",
         p2ReadinessReviewChainHealthState: "gaps",
+        p2ReadinessReviewChainHealthTitle:
+          "review-chain-health · health-state-gaps · query review-chain-health review-chain-gap · context rows 6 · loaded chains 2 · gaps 2 · missing coverage 1 · missing acceptance 1 · latest gap p2-readiness-acceptance-review-missing-5555555555555555",
         p2ReadinessReviewChainLoadedCount: 2,
         p2ReadinessReviewChainMissingAcceptanceCount: 1,
         p2ReadinessReviewChainMissingAcceptanceQuery: "review-chain-acceptance-missing",

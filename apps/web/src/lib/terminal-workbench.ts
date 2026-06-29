@@ -2838,6 +2838,7 @@ export interface AuditEvidenceReportLedgerSummary {
   p2ReadinessReviewChainHealthLabel: string;
   p2ReadinessReviewChainHealthQuery: string;
   p2ReadinessReviewChainHealthState: "empty" | "loaded" | "gaps";
+  p2ReadinessReviewChainHealthTitle: string;
   p2ReadinessReviewChainLoadedCount: number;
   p2ReadinessReviewChainMissingAcceptanceCount: number;
   p2ReadinessReviewChainMissingAcceptanceQuery: string;
@@ -17801,6 +17802,43 @@ function auditReportLedgerP2ReviewChainHealthContextSummaryTitle({
     .join(" · ");
 }
 
+function auditReportLedgerP2ReviewChainHealthSummaryTitle({
+  contextRows,
+  gapRows,
+  latestGapEventId,
+  loadedChains,
+  missingAcceptance,
+  missingCoverage,
+  query,
+  state
+}: {
+  contextRows: number;
+  gapRows: number;
+  latestGapEventId?: string;
+  loadedChains: number;
+  missingAcceptance: number;
+  missingCoverage: number;
+  query: string;
+  state: AuditEvidenceReportLedgerSummary["p2ReadinessReviewChainHealthState"];
+}): string {
+  if (!query || state === "empty") {
+    return "";
+  }
+  return [
+    "review-chain-health",
+    `health-state-${state}`,
+    `query ${query}`,
+    `context rows ${contextRows}`,
+    `loaded chains ${loadedChains}`,
+    `gaps ${gapRows}`,
+    `missing coverage ${missingCoverage}`,
+    `missing acceptance ${missingAcceptance}`,
+    latestGapEventId ? `latest gap ${latestGapEventId}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function auditReportLedgerPaperPreflightLabel({
   actionLabel,
   blocked,
@@ -18018,6 +18056,16 @@ export function buildAuditEvidenceReportLedgerSummary(
       missingAcceptance: p2ReadinessReviewChainMissingAcceptanceRows.length,
       missingCoverage: p2ReadinessReviewChainMissingCoverageRows.length
     });
+  const p2ReadinessReviewChainHealthTitle = auditReportLedgerP2ReviewChainHealthSummaryTitle({
+    contextRows: p2ReadinessReviewChainHealthContextRows.length,
+    gapRows: p2ReadinessReviewChainGapCount,
+    latestGapEventId: latestP2ReadinessReviewChainGapRow?.id,
+    loadedChains: p2ReadinessReviewChainLoadedRows.length,
+    missingAcceptance: p2ReadinessReviewChainMissingAcceptanceRows.length,
+    missingCoverage: p2ReadinessReviewChainMissingCoverageRows.length,
+    query: p2ReadinessReviewChainHealthQuery,
+    state: p2ReadinessReviewChainHealthState
+  });
   const latestP2ReadinessLinkedAcceptanceReviewRow = p2ReadinessLinkedAcceptanceReviewRows.reduce<
     AuditEvidenceReportLedgerRow | undefined
   >((latest, row) => {
@@ -18171,6 +18219,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     p2ReadinessReviewChainHealthLabel,
     p2ReadinessReviewChainHealthQuery,
     p2ReadinessReviewChainHealthState,
+    p2ReadinessReviewChainHealthTitle,
     p2ReadinessReviewChainLoadedCount: p2ReadinessReviewChainLoadedRows.length,
     p2ReadinessReviewChainMissingAcceptanceCount: p2ReadinessReviewChainMissingAcceptanceRows.length,
     p2ReadinessReviewChainMissingAcceptanceQuery:

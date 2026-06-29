@@ -21664,7 +21664,7 @@ function AuditEvidenceReportLedgerPanel({
                         ? "audit-report-ledger-p2-review-chain-gap"
                         : undefined
                     }
-                    title={summary.p2ReadinessReviewChainHealthQuery}
+                    title={summary.p2ReadinessReviewChainHealthTitle || summary.p2ReadinessReviewChainHealthQuery}
                   >
                     {i18n.locale === "zh-CN" ? "复核链健康" : "Chain health"}{" "}
                     <strong>{summary.p2ReadinessReviewChainHealthLabel}</strong>
@@ -21748,6 +21748,7 @@ function AuditEvidenceReportLedgerPanel({
                 {summary.p2ReadinessReviewChainHealthQuery ? (
                   <button
                     onClick={() => focusAuditReportQuery(summary.p2ReadinessReviewChainHealthQuery)}
+                    title={summary.p2ReadinessReviewChainHealthTitle || summary.p2ReadinessReviewChainHealthQuery}
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "定位复核链健康" : "Focus chain health"}
@@ -21756,6 +21757,7 @@ function AuditEvidenceReportLedgerPanel({
                 {summary.p2ReadinessReviewChainHealthQuery ? (
                   <button
                     onClick={() => onCopyQueryLink(summary.p2ReadinessReviewChainHealthQuery)}
+                    title={summary.p2ReadinessReviewChainHealthTitle || summary.p2ReadinessReviewChainHealthQuery}
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制复核链健康链接" : "Copy chain health link"}
