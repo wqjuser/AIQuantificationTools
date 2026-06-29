@@ -3175,6 +3175,9 @@ export function resolveP0CurrentGapActionDeepLinkState(
     search instanceof URLSearchParams
       ? search
       : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  if (!auditDeepLinkSearchParamsHaveSingleValues(params, ["workspace", "auditReportQuery", "p0Action"])) {
+    return null;
+  }
   const actionId = params.get("p0Action")?.trim() ?? "";
   const auditReportQuery = params.get("auditReportQuery")?.trim() ?? "";
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
@@ -3217,6 +3220,9 @@ export function resolveP0CompletionGapDeepLinkState(
     search instanceof URLSearchParams
       ? search
       : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  if (!auditDeepLinkSearchParamsHaveSingleValues(params, ["workspace", "auditReportQuery"])) {
+    return null;
+  }
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
   const auditReportQuery = params.get("auditReportQuery")?.trim() ?? "";
   if (!targetWorkspaceId || !auditReportQuery || !auditReportQuery.includes("p0-completion-focus")) {
@@ -3253,7 +3259,7 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
     search instanceof URLSearchParams
       ? search
       : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
-  if (!localReviewCoverageNextActionSearchParamsHaveSingleEnvelope(params)) {
+  if (!auditDeepLinkSearchParamsHaveSingleValues(params, ["workspace", "auditReportQuery"])) {
     return null;
   }
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
@@ -3278,8 +3284,8 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
   };
 }
 
-function localReviewCoverageNextActionSearchParamsHaveSingleEnvelope(params: URLSearchParams): boolean {
-  return params.getAll("workspace").length === 1 && params.getAll("auditReportQuery").length === 1;
+function auditDeepLinkSearchParamsHaveSingleValues(params: URLSearchParams, keys: string[]): boolean {
+  return keys.every((key) => params.getAll(key).length === 1);
 }
 
 function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): LocalReviewCoverageNextActionId {

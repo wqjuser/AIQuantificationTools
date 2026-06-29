@@ -16783,6 +16783,21 @@ describe("terminal workbench model", () => {
     expect(resolveP0CurrentGapActionDeepLinkState("?workspace=unknown&auditReportQuery=p0&p0Action=submit-paper-order")).toBeNull();
     expect(resolveP0CurrentGapActionDeepLinkState("?workspace=execution&auditReportQuery=p0&p0Action=<script>")).toBeNull();
     expect(resolveP0CurrentGapActionDeepLinkState("?workspace=execution&auditReportQuery=p0&p0Action=unknown-action")).toBeNull();
+    expect(
+      resolveP0CurrentGapActionDeepLinkState(
+        "?workspace=execution&workspace=audit&auditReportQuery=p0_readiness_report+run-new+submit-paper-order+execution&p0Action=submit-paper-order"
+      )
+    ).toBeNull();
+    expect(
+      resolveP0CurrentGapActionDeepLinkState(
+        "?workspace=execution&auditReportQuery=p0_readiness_report+run-new+submit-paper-order+execution&auditReportQuery=p0_readiness_report+run-other+run-ai-committee+ai-review&p0Action=submit-paper-order"
+      )
+    ).toBeNull();
+    expect(
+      resolveP0CurrentGapActionDeepLinkState(
+        "?workspace=execution&auditReportQuery=p0_readiness_report+run-new+submit-paper-order+execution&p0Action=submit-paper-order&p0Action=run-ai-committee"
+      )
+    ).toBeNull();
     expect(resolveP0CurrentGapActionDeepLinkState("?workspace=execution&p0Action=submit-paper-order")).toBeNull();
   });
 
@@ -16795,6 +16810,11 @@ describe("terminal workbench model", () => {
       "workspace=execution&auditReportQuery=p0_readiness_report+run-new+aaaaaaaaaaaa+submit-paper-order+execution&p0Action=submit-paper-order"
     );
     expect(buildP0CurrentGapActionUrlSearch("?workspace=unknown&auditReportQuery=p0&p0Action=submit-paper-order")).toBeNull();
+    expect(
+      buildP0CurrentGapActionUrlSearch(
+        "?workspace=execution&auditReportQuery=p0_readiness_report+run-new+submit-paper-order+execution&p0Action=submit-paper-order&p0Action=run-ai-committee"
+      )
+    ).toBeNull();
   });
 
   test("builds normalized P0 completion gap URL search params", () => {
@@ -17094,6 +17114,16 @@ describe("terminal workbench model", () => {
       auditReportQuery: "p0_readiness_report run-a2 p0-completion-focus portfolio-risk",
       targetWorkspaceId: "portfolio"
     });
+    expect(
+      resolveP0CompletionGapDeepLinkState(
+        "?workspace=ai-review&workspace=audit&auditReportQuery=p0_readiness_report+run-a1+p0-completion-focus+ai-evidence"
+      )
+    ).toBeNull();
+    expect(
+      resolveP0CompletionGapDeepLinkState(
+        "?workspace=ai-review&auditReportQuery=p0_readiness_report+run-a1+p0-completion-focus+ai-evidence&auditReportQuery=p0_readiness_report+run-a2+p0-completion-focus+portfolio-risk"
+      )
+    ).toBeNull();
     expect(resolveP0CompletionGapDeepLinkState("?workspace=unknown&auditReportQuery=p0-completion-focus")).toBeNull();
     expect(resolveP0CompletionGapDeepLinkState("?workspace=ai-review&auditReportQuery=p0_readiness_report+run-a1")).toBeNull();
     expect(resolveP0CompletionGapDeepLinkState("?workspace=ai-review")).toBeNull();

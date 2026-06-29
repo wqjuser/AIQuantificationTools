@@ -250,6 +250,8 @@ Batch 96 已把本地复核覆盖 next-action 的缺口 token 也收紧为精确
 
 Batch 97 已把本地复核覆盖 next-action 深链的 URL 参数外壳也收紧为单一结构：`resolveLocalReviewCoverageNextActionDeepLinkState` 会要求 `workspace` 与 `auditReportQuery` 各恰好出现一次，重复参数的链接不会再被 `URLSearchParams.get()` 静默解释为有效状态。这样 deep link 的入口 token、action token、缺口 token 和 URL envelope 都遵循无歧义校验；该能力仍只保护 URL 解释和只读导航上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 98 已把必需 URL 参数唯一性抽成共享 Audit deep-link 规则：`auditDeepLinkSearchParamsHaveSingleValues` 现在同时保护 P0 current-gap action、P0 completion gap 和本地复核覆盖 next-action。P0 current-gap 链接必须恰好带一个 `workspace`、一个 `auditReportQuery` 和一个 `p0Action`；P0 completion 与本地复核覆盖链接必须恰好带一个 `workspace` 和一个 `auditReportQuery`。重复必需参数的链接不会再被 resolver 或 current-gap URL builder 标准化为有效状态；该能力仍只保护 URL 解释和只读导航上下文，不自动运行 P0 action、不写账本、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。
