@@ -3305,24 +3305,29 @@ function localReviewCoverageNextActionMatchesMissingReviewKind(
   missingReviewKind: LocalReviewCoverageMissingReviewKind,
   auditReportQuery: string
 ): boolean {
-  const hasDailyOpsMissing = localReviewCoverageQueryIncludesToken(
+  const dailyOpsMissingCount = localReviewCoverageQueryTokenCount(
     auditReportQuery,
     "local-review-bundle-daily-ops-missing"
   );
-  const hasPersonalMissing = localReviewCoverageQueryIncludesToken(
+  const personalMissingCount = localReviewCoverageQueryTokenCount(
     auditReportQuery,
     "local-review-bundle-personal-missing"
   );
-  const hasEmptyBundle = localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-empty");
+  const emptyBundleCount = localReviewCoverageQueryTokenCount(auditReportQuery, "local-review-bundle-empty");
 
   if (actionId === "record-daily-ops-review") {
-    return missingReviewKind === "daily-ops" && hasDailyOpsMissing && !hasPersonalMissing && !hasEmptyBundle;
+    return (
+      missingReviewKind === "daily-ops" &&
+      dailyOpsMissingCount === 1 &&
+      personalMissingCount === 0 &&
+      emptyBundleCount === 0
+    );
   }
   if (actionId === "record-personal-team-review" && missingReviewKind === "personal-team") {
-    return hasPersonalMissing && !hasDailyOpsMissing && !hasEmptyBundle;
+    return personalMissingCount === 1 && dailyOpsMissingCount === 0 && emptyBundleCount === 0;
   }
   if (actionId === "record-personal-team-review" && missingReviewKind === "empty") {
-    return hasEmptyBundle && hasPersonalMissing && !hasDailyOpsMissing;
+    return emptyBundleCount === 1 && personalMissingCount === 1 && dailyOpsMissingCount === 0;
   }
   return false;
 }

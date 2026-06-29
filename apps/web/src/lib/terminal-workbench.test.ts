@@ -16890,6 +16890,27 @@ describe("terminal workbench model", () => {
     expect(
       buildLocalReviewCoverageNextActionUrlSearch({
         auditReportQuery:
+          "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing local-review-bundle-daily-ops-missing",
+        targetWorkspaceId: "research"
+      })
+    ).toBeNull();
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery:
+          "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing local-review-bundle-personal-missing",
+        targetWorkspaceId: "research"
+      })
+    ).toBeNull();
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery:
+          "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-empty local-review-bundle-personal-missing",
+        targetWorkspaceId: "research"
+      })
+    ).toBeNull();
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery:
           "local-review-bundle-next-action record-unknown-review local-review-bundle-personal-missing",
         targetWorkspaceId: "research"
       })
@@ -16992,6 +17013,21 @@ describe("terminal workbench model", () => {
     expect(
       resolveLocalReviewCoverageNextActionDeepLinkState(
         "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+record-daily-ops-review+local-review-bundle-daily-ops-missing"
+      )
+    ).toBeNull();
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing+local-review-bundle-daily-ops-missing"
+      )
+    ).toBeNull();
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-personal-team-review+local-review-bundle-personal-missing+local-review-bundle-personal-missing"
+      )
+    ).toBeNull();
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-personal-team-review+local-review-bundle-empty+local-review-bundle-empty+local-review-bundle-personal-missing"
       )
     ).toBeNull();
     expect(
