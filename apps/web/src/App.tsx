@@ -12958,6 +12958,9 @@ function localReviewCoverageNextActionLabel(
   if (state.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN" ? "Daily Ops 复核缺失" : "Daily Ops review missing";
   }
+  if (state.actionId === "record-daily-start-review") {
+    return i18n.locale === "zh-CN" ? "每日启动复核缺失" : "Daily start review missing";
+  }
   if (state.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN" ? "个人/小团队复核缺失" : "Personal/team review missing";
   }
@@ -12979,6 +12982,9 @@ function localReviewCoverageNextActionLoadedStatusLabel(
   if (state.actionId === "record-daily-ops-review") {
     return `Daily Ops coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
   }
+  if (state.actionId === "record-daily-start-review") {
+    return `Daily start coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
+  }
   if (state.actionId === "record-personal-team-review") {
     return `Personal/team coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
   }
@@ -12994,6 +13000,9 @@ function localReviewCoverageMissingReviewKindLabel(
   }
   if (missingReviewKind === "daily-ops") {
     return i18n.locale === "zh-CN" ? "缺少 Daily Ops 复核" : "Missing Daily Ops review";
+  }
+  if (missingReviewKind === "daily-start") {
+    return i18n.locale === "zh-CN" ? "缺少每日启动复核" : "Missing daily start review";
   }
   if (missingReviewKind === "personal-team") {
     return i18n.locale === "zh-CN" ? "缺少个人/小团队复核" : "Missing personal/team review";
@@ -13040,6 +13049,9 @@ function localReviewCoverageNextActionQueryLabel(
   if (state.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN" ? "查看 Daily Ops 覆盖查询" : "View Daily Ops coverage query";
   }
+  if (state.actionId === "record-daily-start-review") {
+    return i18n.locale === "zh-CN" ? "查看每日启动覆盖查询" : "View daily start coverage query";
+  }
   if (state.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN" ? "查看个人/小团队覆盖查询" : "View personal/team coverage query";
   }
@@ -13055,6 +13067,9 @@ function localReviewCoverageNextActionOpenLabel(
   }
   if (state.actionId === "record-daily-ops-review") {
     return i18n.locale === "zh-CN" ? "打开 Daily Ops 复核入口" : "Open Daily Ops review entry";
+  }
+  if (state.actionId === "record-daily-start-review") {
+    return i18n.locale === "zh-CN" ? "打开每日启动复核入口" : "Open daily start review entry";
   }
   if (state.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN" ? "打开个人/小团队复核入口" : "Open personal/team review entry";
@@ -13084,6 +13099,15 @@ function localReviewCoverageNextActionFocusLabel(
       : scope === "row"
         ? "Focus row Daily Ops coverage next"
         : "Focus Daily Ops coverage next";
+  }
+  if (state?.actionId === "record-daily-start-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "定位行每日启动覆盖下一步"
+        : "定位每日启动覆盖下一步"
+      : scope === "row"
+        ? "Focus row daily start coverage next"
+        : "Focus daily start coverage next";
   }
   if (state?.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN"
@@ -13126,6 +13150,15 @@ function localReviewCoverageNextActionCopyLabel(
         ? "Copy row Daily Ops coverage next link"
         : "Copy Daily Ops coverage next link";
   }
+  if (state?.actionId === "record-daily-start-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "复制行每日启动覆盖下一步链接"
+        : "复制每日启动覆盖下一步链接"
+      : scope === "row"
+        ? "Copy row daily start coverage next link"
+        : "Copy daily start coverage next link";
+  }
   if (state?.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN"
       ? scope === "row"
@@ -13167,6 +13200,15 @@ function localReviewCoverageNextActionOpenSourceLabel(
         ? "Open row Daily Ops review entry"
         : "Open Daily Ops review entry";
   }
+  if (state?.actionId === "record-daily-start-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "打开行每日启动复核入口"
+        : "打开每日启动复核入口"
+      : scope === "row"
+        ? "Open row daily start review entry"
+        : "Open daily start review entry";
+  }
   if (state?.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN"
       ? scope === "row"
@@ -13194,6 +13236,9 @@ function localReviewCoverageNextActionQueryStatusLabel(
   if (state.actionId === "record-daily-ops-review") {
     return "Daily Ops coverage query selected";
   }
+  if (state.actionId === "record-daily-start-review") {
+    return "Daily start coverage query selected";
+  }
   if (state.actionId === "record-personal-team-review") {
     return "Personal/team coverage query selected";
   }
@@ -13209,6 +13254,9 @@ function localReviewCoverageNextActionCopyStatusLabel(
   if (state.actionId === "record-daily-ops-review") {
     return "Daily Ops coverage next link copied";
   }
+  if (state.actionId === "record-daily-start-review") {
+    return "Daily start coverage next link copied";
+  }
   if (state.actionId === "record-personal-team-review") {
     return "Personal/team coverage next link copied";
   }
@@ -13223,6 +13271,9 @@ function localReviewCoverageNextActionOpenStatusLabel(
   }
   if (state.actionId === "record-daily-ops-review") {
     return "Daily Ops review entry opened";
+  }
+  if (state.actionId === "record-daily-start-review") {
+    return "Daily start review entry opened";
   }
   if (state.actionId === "record-personal-team-review") {
     return "Personal/team review entry opened";
@@ -22043,7 +22094,9 @@ function AuditEvidenceReportLedgerPanel({
                   {i18n.locale === "zh-CN" ? "个人/小团队" : "Personal/team"}{" "}
                   {summary.localReviewBundlePersonalTeamCount} ·{" "}
                   {i18n.locale === "zh-CN" ? "每日复核" : "Daily reviews"}{" "}
-                  {summary.localReviewBundleDailyOpsCount}
+                  {summary.localReviewBundleDailyOpsCount} ·{" "}
+                  {i18n.locale === "zh-CN" ? "每日启动" : "Daily start"}{" "}
+                  {summary.localReviewBundleDailyStartCount}
                 </small>
                 {summary.localReviewBundleLatestLabel ? (
                   <small title={summary.localReviewBundleLatestTitle || summary.localReviewBundleLatestQuery}>
@@ -22230,6 +22283,47 @@ function AuditEvidenceReportLedgerPanel({
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制最新每日复核链接" : "Copy latest daily review link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
+            {summary.latestDailyStartBriefReviewEventId ? (
+              <span
+                title={
+                  summary.latestDailyStartBriefReviewTitle ||
+                  summary.latestDailyStartBriefReviewEventId
+                }
+              >
+                {i18n.locale === "zh-CN" ? "最新启动复核" : "Latest start review"}{" "}
+                <strong>
+                  {summary.latestDailyStartBriefReviewShortHash ||
+                    summary.latestDailyStartBriefReviewEventId}
+                </strong>
+                {summary.latestDailyStartBriefReviewLabel ? (
+                  <span
+                    className="audit-report-ledger-daily-start-review"
+                    title={
+                      summary.latestDailyStartBriefReviewTitle ||
+                      summary.latestDailyStartBriefReviewQuery
+                    }
+                  >
+                    {summary.latestDailyStartBriefReviewLabel}
+                  </span>
+                ) : null}
+                {summary.latestDailyStartBriefReviewQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestDailyStartBriefReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位最新启动复核" : "Focus latest start review"}
+                  </button>
+                ) : null}
+                {summary.latestDailyStartBriefReviewQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestDailyStartBriefReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制最新启动复核链接" : "Copy latest start review link"}
                   </button>
                 ) : null}
               </span>

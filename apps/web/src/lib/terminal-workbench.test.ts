@@ -11642,18 +11642,24 @@ describe("terminal workbench model", () => {
       latestResearchContextReportRunId: "",
       latestResearchContextReportShortHash: "",
       localReviewBundleCount: 0,
-      localReviewBundleCoverageLabel: "local review bundle empty · personal/team 0 · daily ops 0",
+      latestDailyStartBriefReviewEventId: "",
+      latestDailyStartBriefReviewLabel: "",
+      latestDailyStartBriefReviewQuery: "",
+      latestDailyStartBriefReviewShortHash: "",
+      latestDailyStartBriefReviewTitle: "",
+      localReviewBundleCoverageLabel: "local review bundle empty · personal/team 0 · daily ops 0 · daily start 0",
       localReviewBundleCoverageNextActionLabel: "record personal/team review",
       localReviewBundleCoverageNextActionQuery:
         "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
       localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
       localReviewBundleCoverageNextActionTitle:
-        "local-review-bundle-next-action · record personal/team review · no local reviews recorded · personal/team 0 · daily ops 0",
+        "local-review-bundle-next-action · record personal/team review · no local reviews recorded · personal/team 0 · daily ops 0 · daily start 0",
       localReviewBundleCoverageQuery: "local-review-bundle-empty local-review-bundle-personal-missing",
       localReviewBundleCoverageState: "empty",
       localReviewBundleCoverageTitle:
-        "local-review-bundle-empty · no local reviews recorded · personal/team 0 · daily ops 0",
+        "local-review-bundle-empty · no local reviews recorded · personal/team 0 · daily ops 0 · daily start 0",
       localReviewBundleDailyOpsCount: 0,
+      localReviewBundleDailyStartCount: 0,
       localReviewBundleLatestEventId: "",
       localReviewBundleLatestLabel: "",
       localReviewBundleLatestQuery: "",
@@ -13510,6 +13516,245 @@ describe("terminal workbench model", () => {
     expect(reference.detail).toContain("matches current daily start brief");
   });
 
+  test("counts daily start brief reviews in the local review bundle summary", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-7777777777777777",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail: "personal review",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "7".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Review accepted loop",
+          nextActionWorkspaceId: "audit",
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "daily-ops-control-room-review-6666666666666666",
+        eventType: "daily_ops_control_room_review",
+        runId: "daily-ops-control-room",
+        createdAt: "2026-06-28T10:00:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Daily ops control room review recorded",
+        detail: "daily ops review",
+        metadata: {
+          artifactKind: "aiqt.dailyOpsControlRoomReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          blockingCount: 0,
+          contentSha256: "6".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          openItemIds: ["current-action", "team-handoff"],
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Run AI review",
+          primaryActionWorkspaceId: "ai-review",
+          readyCount: 2,
+          reviewCount: 2,
+          routeExecuted: false,
+          state: "attention",
+          totalCount: 4
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "daily-start-brief-review-8888888888888888",
+        eventType: "daily_start_brief_review",
+        runId: "daily-start-brief",
+        createdAt: "2026-06-28T10:15:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Daily start brief review recorded",
+        detail:
+          "daily-start-brief-review.md · sha256 888888888888 · attention · local reviews 2/2 · open ops 2 · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.dailyStartBriefReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          checkpointIds: ["ops-queue", "personal-team-review", "daily-ops-review", "live-boundary"],
+          checkpointStatuses: ["review", "current", "current", "ready"],
+          contentSha256: "8".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          localReviewActionLabel: "Open local review evidence",
+          localReviewQuery: "daily_ops_control_room_review daily-ops-current",
+          localReviewStatus: "current",
+          missingReviewCount: 0,
+          openOpsItemCount: 2,
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Run AI review",
+          primaryActionWorkspaceId: "ai-review",
+          routeExecuted: false,
+          staleReviewCount: 0,
+          state: "attention",
+          currentReviewCount: 2
+        }
+      }
+    ]);
+
+    const summary = buildAuditEvidenceReportLedgerSummary(rows);
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        latestDailyStartBriefReviewEventId: "daily-start-brief-review-8888888888888888",
+        latestDailyStartBriefReviewLabel: "attention · local reviews 2/2 · open ops 2",
+        latestDailyStartBriefReviewQuery:
+          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary",
+        latestDailyStartBriefReviewShortHash: "888888888888",
+        localReviewBundleCount: 3,
+        localReviewBundleCoverageLabel:
+          "local review bundle complete · personal/team 1 · daily ops 1 · daily start 1",
+        localReviewBundleCoverageQuery: "local-review-bundle-complete",
+        localReviewBundleCoverageState: "complete",
+        localReviewBundleDailyOpsCount: 1,
+        localReviewBundleDailyStartCount: 1,
+        localReviewBundleLatestEventId: "daily-start-brief-review-8888888888888888",
+        localReviewBundleLatestLabel: "latest local review · daily start review",
+        localReviewBundlePersonalTeamCount: 1,
+        localReviewBundleQuery: "local-review-bundle",
+        localReviewBundleTitle:
+          "Local review bundle: 3 reviews · personal/team 1 · daily ops 1 · daily start 1 · latest daily-start-brief-review-8888888888888888"
+      })
+    );
+    expect(rows[2]).toEqual(
+      expect.objectContaining({
+        localReviewBundleContextQuery: "local-review-bundle",
+        localReviewBundleContextTitle:
+          "local-review-bundle · daily start review · daily-start-brief-review-8888888888888888",
+        localReviewBundleCoverageQuery: "local-review-bundle-complete",
+        localReviewBundleLatestLabel: "latest local review · daily start review"
+      })
+    );
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleQuery).map((row) => row.id)).toEqual([
+      "personal-team-readiness-review-7777777777777777",
+      "daily-ops-control-room-review-6666666666666666",
+      "daily-start-brief-review-8888888888888888"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle daily start review").map((row) => row.id)).toEqual([
+      "daily-start-brief-review-8888888888888888"
+    ]);
+  });
+
+  test("points local review bundle coverage gaps at daily start when only the start review is missing", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-7777777777777777",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail: "personal review",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "7".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Review accepted loop",
+          nextActionWorkspaceId: "audit",
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "daily-ops-control-room-review-6666666666666666",
+        eventType: "daily_ops_control_room_review",
+        runId: "daily-ops-control-room",
+        createdAt: "2026-06-28T10:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Daily ops control room review recorded",
+        detail: "daily ops review",
+        metadata: {
+          artifactKind: "aiqt.dailyOpsControlRoomReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          blockingCount: 0,
+          contentSha256: "6".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Ready for handoff",
+          primaryActionWorkspaceId: "audit",
+          readyCount: 4,
+          reviewCount: 0,
+          routeExecuted: false,
+          state: "ready",
+          totalCount: 4
+        }
+      }
+    ]);
+
+    const summary = buildAuditEvidenceReportLedgerSummary(rows);
+    const localReviewCoverageNextActionSearch = buildLocalReviewCoverageNextActionUrlSearch({
+      auditReportQuery: summary.localReviewBundleCoverageNextActionQuery,
+      targetWorkspaceId: summary.localReviewBundleCoverageNextActionTargetWorkspaceId
+    });
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        localReviewBundleCount: 2,
+        localReviewBundleCoverageLabel:
+          "local review bundle gap · personal/team 1 · daily ops 1 · daily start 0",
+        localReviewBundleCoverageNextActionLabel: "record daily start review",
+        localReviewBundleCoverageNextActionQuery:
+          "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
+        localReviewBundleCoverageNextActionTitle:
+          "local-review-bundle-next-action · record daily start review · missing daily start review · personal/team 1 · daily ops 1 · daily start 0",
+        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-start-missing",
+        localReviewBundleCoverageState: "partial",
+        localReviewBundleCoverageTitle:
+          "local-review-bundle-gap · missing daily start review · personal/team 1 · daily ops 1 · daily start 0",
+        localReviewBundleDailyOpsCount: 1,
+        localReviewBundleDailyStartCount: 0,
+        localReviewBundlePersonalTeamCount: 1
+      })
+    );
+    expect(localReviewCoverageNextActionSearch).toBe(
+      "workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-start-review+local-review-bundle-daily-start-missing"
+    );
+    expect(resolveLocalReviewCoverageNextActionDeepLinkState(localReviewCoverageNextActionSearch)).toEqual({
+      actionId: "record-daily-start-review",
+      auditReportQuery:
+        "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
+      missingReviewKind: "daily-start",
+      targetWorkspaceId: "research"
+    });
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageQuery).map((row) => row.id)).toEqual([
+      "personal-team-readiness-review-7777777777777777",
+      "daily-ops-control-room-review-6666666666666666"
+    ]);
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageNextActionQuery).map((row) => row.id)
+    ).toEqual(["personal-team-readiness-review-7777777777777777", "daily-ops-control-room-review-6666666666666666"]);
+  });
+
   test("surfaces an empty local review bundle coverage next action in the audit report ledger summary", () => {
     const rows = buildAuditEvidenceReportLedgerRows([
       {
@@ -13539,18 +13784,19 @@ describe("terminal workbench model", () => {
     expect(summary).toEqual(
       expect.objectContaining({
         localReviewBundleCount: 0,
-        localReviewBundleCoverageLabel: "local review bundle empty · personal/team 0 · daily ops 0",
+        localReviewBundleCoverageLabel: "local review bundle empty · personal/team 0 · daily ops 0 · daily start 0",
         localReviewBundleCoverageNextActionLabel: "record personal/team review",
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
         localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
-          "local-review-bundle-next-action · record personal/team review · no local reviews recorded · personal/team 0 · daily ops 0",
+          "local-review-bundle-next-action · record personal/team review · no local reviews recorded · personal/team 0 · daily ops 0 · daily start 0",
         localReviewBundleCoverageQuery: "local-review-bundle-empty local-review-bundle-personal-missing",
         localReviewBundleCoverageState: "empty",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-empty · no local reviews recorded · personal/team 0 · daily ops 0",
+          "local-review-bundle-empty · no local reviews recorded · personal/team 0 · daily ops 0 · daily start 0",
         localReviewBundleDailyOpsCount: 0,
+        localReviewBundleDailyStartCount: 0,
         localReviewBundlePersonalTeamCount: 0
       })
     );
@@ -13700,16 +13946,19 @@ describe("terminal workbench model", () => {
     expect(summary).toEqual(
       expect.objectContaining({
         localReviewBundleCount: 4,
-        localReviewBundleCoverageLabel: "local review bundle complete · personal/team 2 · daily ops 2",
-        localReviewBundleCoverageNextActionLabel: "",
-        localReviewBundleCoverageNextActionQuery: "",
-        localReviewBundleCoverageNextActionTargetWorkspaceId: null,
-        localReviewBundleCoverageNextActionTitle: "",
-        localReviewBundleCoverageQuery: "local-review-bundle-complete",
-        localReviewBundleCoverageState: "complete",
+        localReviewBundleCoverageLabel: "local review bundle gap · personal/team 2 · daily ops 2 · daily start 0",
+        localReviewBundleCoverageNextActionLabel: "record daily start review",
+        localReviewBundleCoverageNextActionQuery:
+          "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
+        localReviewBundleCoverageNextActionTitle:
+          "local-review-bundle-next-action · record daily start review · missing daily start review · personal/team 2 · daily ops 2 · daily start 0",
+        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-start-missing",
+        localReviewBundleCoverageState: "partial",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-complete · local review coverage complete · personal/team 2 · daily ops 2",
+          "local-review-bundle-gap · missing daily start review · personal/team 2 · daily ops 2 · daily start 0",
         localReviewBundleDailyOpsCount: 2,
+        localReviewBundleDailyStartCount: 0,
         localReviewBundleLatestEventId: "daily-ops-control-room-review-new-6666666666666666",
         localReviewBundleLatestLabel: "latest local review · daily ops review",
         localReviewBundleLatestQuery:
@@ -13719,7 +13968,7 @@ describe("terminal workbench model", () => {
         localReviewBundlePersonalTeamCount: 2,
         localReviewBundleQuery: "local-review-bundle",
         localReviewBundleTitle:
-          "Local review bundle: 4 reviews · personal/team 2 · daily ops 2 · latest daily-ops-control-room-review-new-6666666666666666",
+          "Local review bundle: 4 reviews · personal/team 2 · daily ops 2 · daily start 0 · latest daily-ops-control-room-review-new-6666666666666666",
         latestDailyOpsControlRoomReviewEventId: "daily-ops-control-room-review-new-6666666666666666",
         latestDailyOpsControlRoomReviewLabel: "attention 2/4 · review 2 · blocked 0",
         latestDailyOpsControlRoomReviewQuery:
@@ -13741,12 +13990,14 @@ describe("terminal workbench model", () => {
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
           "local-review-bundle · personal/team readiness review · personal-team-readiness-review-new-7777777777777777",
-        localReviewBundleCoverageNextActionQuery: "",
-        localReviewBundleCoverageNextActionTargetWorkspaceId: null,
-        localReviewBundleCoverageNextActionTitle: "",
-        localReviewBundleCoverageQuery: "local-review-bundle-complete",
+        localReviewBundleCoverageNextActionQuery:
+          "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
+        localReviewBundleCoverageNextActionTitle:
+          "local-review-bundle-next-action · record daily start review · missing daily start review · personal/team 2 · daily ops 2 · daily start 0",
+        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-start-missing",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-complete · local review coverage complete · personal/team 2 · daily ops 2"
+          "local-review-bundle-gap · missing daily start review · personal/team 2 · daily ops 2 · daily start 0"
       })
     );
     expect(rows[3]).toEqual(
@@ -13754,12 +14005,14 @@ describe("terminal workbench model", () => {
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
           "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666",
-        localReviewBundleCoverageNextActionQuery: "",
-        localReviewBundleCoverageNextActionTargetWorkspaceId: null,
-        localReviewBundleCoverageNextActionTitle: "",
-        localReviewBundleCoverageQuery: "local-review-bundle-complete",
+        localReviewBundleCoverageNextActionQuery:
+          "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
+        localReviewBundleCoverageNextActionTitle:
+          "local-review-bundle-next-action · record daily start review · missing daily start review · personal/team 2 · daily ops 2 · daily start 0",
+        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-start-missing",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-complete · local review coverage complete · personal/team 2 · daily ops 2",
+          "local-review-bundle-gap · missing daily start review · personal/team 2 · daily ops 2 · daily start 0",
         localReviewBundleLatestLabel: "latest local review · daily ops review",
         localReviewBundleLatestQuery:
           "local-review-bundle-latest daily-ops-control-room-review-new-6666666666666666",
@@ -13783,6 +14036,8 @@ describe("terminal workbench model", () => {
       "personal-team-readiness-review-new-7777777777777777"
     ]);
     expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle daily ops review").map((row) => row.id)).toEqual([
+      "personal-team-readiness-review-old-5555555555555555",
+      "personal-team-readiness-review-new-7777777777777777",
       "daily-ops-control-room-review-old-4444444444444444",
       "daily-ops-control-room-review-new-6666666666666666"
     ]);
@@ -13833,18 +14088,20 @@ describe("terminal workbench model", () => {
     expect(summary).toEqual(
       expect.objectContaining({
         localReviewBundleCount: 1,
-        localReviewBundleCoverageLabel: "local review bundle gap · personal/team 1 · daily ops 0",
+        localReviewBundleCoverageLabel: "local review bundle gap · personal/team 1 · daily ops 0 · daily start 0",
         localReviewBundleCoverageNextActionLabel: "record daily ops review",
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing",
         localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
-          "local-review-bundle-next-action · record daily ops review · missing daily ops review · personal/team 1 · daily ops 0",
-        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-ops-missing",
+          "local-review-bundle-next-action · record daily ops review · missing daily ops review · personal/team 1 · daily ops 0 · daily start 0",
+        localReviewBundleCoverageQuery:
+          "local-review-bundle-gap local-review-bundle-daily-ops-missing local-review-bundle-daily-start-missing",
         localReviewBundleCoverageState: "partial",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-gap · missing daily ops review · personal/team 1 · daily ops 0",
+          "local-review-bundle-gap · missing daily ops review, daily start review · personal/team 1 · daily ops 0 · daily start 0",
         localReviewBundleDailyOpsCount: 0,
+        localReviewBundleDailyStartCount: 0,
         localReviewBundlePersonalTeamCount: 1
       })
     );
@@ -13854,10 +14111,11 @@ describe("terminal workbench model", () => {
           "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing",
         localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
-          "local-review-bundle-next-action · record daily ops review · missing daily ops review · personal/team 1 · daily ops 0",
-        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-daily-ops-missing",
+          "local-review-bundle-next-action · record daily ops review · missing daily ops review · personal/team 1 · daily ops 0 · daily start 0",
+        localReviewBundleCoverageQuery:
+          "local-review-bundle-gap local-review-bundle-daily-ops-missing local-review-bundle-daily-start-missing",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-gap · missing daily ops review · personal/team 1 · daily ops 0"
+          "local-review-bundle-gap · missing daily ops review, daily start review · personal/team 1 · daily ops 0 · daily start 0"
       })
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle-gap").map((row) => row.id)).toEqual([
@@ -13917,18 +14175,20 @@ describe("terminal workbench model", () => {
     expect(summary).toEqual(
       expect.objectContaining({
         localReviewBundleCount: 1,
-        localReviewBundleCoverageLabel: "local review bundle gap · personal/team 0 · daily ops 1",
+        localReviewBundleCoverageLabel: "local review bundle gap · personal/team 0 · daily ops 1 · daily start 0",
         localReviewBundleCoverageNextActionLabel: "record personal/team review",
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
         localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
-          "local-review-bundle-next-action · record personal/team review · missing personal/team review · personal/team 0 · daily ops 1",
-        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-personal-missing",
+          "local-review-bundle-next-action · record personal/team review · missing personal/team review · personal/team 0 · daily ops 1 · daily start 0",
+        localReviewBundleCoverageQuery:
+          "local-review-bundle-gap local-review-bundle-personal-missing local-review-bundle-daily-start-missing",
         localReviewBundleCoverageState: "partial",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-gap · missing personal/team review · personal/team 0 · daily ops 1",
+          "local-review-bundle-gap · missing personal/team review, daily start review · personal/team 0 · daily ops 1 · daily start 0",
         localReviewBundleDailyOpsCount: 1,
+        localReviewBundleDailyStartCount: 0,
         localReviewBundlePersonalTeamCount: 0
       })
     );
@@ -13938,10 +14198,11 @@ describe("terminal workbench model", () => {
           "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
         localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
         localReviewBundleCoverageNextActionTitle:
-          "local-review-bundle-next-action · record personal/team review · missing personal/team review · personal/team 0 · daily ops 1",
-        localReviewBundleCoverageQuery: "local-review-bundle-gap local-review-bundle-personal-missing",
+          "local-review-bundle-next-action · record personal/team review · missing personal/team review · personal/team 0 · daily ops 1 · daily start 0",
+        localReviewBundleCoverageQuery:
+          "local-review-bundle-gap local-review-bundle-personal-missing local-review-bundle-daily-start-missing",
         localReviewBundleCoverageTitle:
-          "local-review-bundle-gap · missing personal/team review · personal/team 0 · daily ops 1"
+          "local-review-bundle-gap · missing personal/team review, daily start review · personal/team 0 · daily ops 1 · daily start 0"
       })
     );
     expect(
