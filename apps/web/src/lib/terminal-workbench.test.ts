@@ -13632,6 +13632,8 @@ describe("terminal workbench model", () => {
         localReviewBundleDailyStartCount: 1,
         localReviewBundleLatestEventId: "daily-start-brief-review-8888888888888888",
         localReviewBundleLatestLabel: "latest local review · daily start review",
+        localReviewBundleLatestQuery:
+          "local-review-bundle-latest daily start review daily-start-brief-review-8888888888888888 2026-06-28T10:15:00.000Z",
         localReviewBundlePersonalTeamCount: 1,
         localReviewBundleQuery: "local-review-bundle",
         localReviewBundleTitle:
@@ -13968,7 +13970,7 @@ describe("terminal workbench model", () => {
         localReviewBundleLatestEventId: "daily-ops-control-room-review-new-6666666666666666",
         localReviewBundleLatestLabel: "latest local review · daily ops review",
         localReviewBundleLatestQuery:
-          "local-review-bundle-latest daily-ops-control-room-review-new-6666666666666666",
+          "local-review-bundle-latest daily ops review daily-ops-control-room-review-new-6666666666666666 2026-06-28T10:00:00.000Z",
         localReviewBundleLatestTitle:
           "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z",
         localReviewBundlePersonalTeamCount: 2,
@@ -14021,7 +14023,7 @@ describe("terminal workbench model", () => {
           "local-review-bundle-gap · missing daily start review · personal/team 2 · daily ops 2 · daily start 0",
         localReviewBundleLatestLabel: "latest local review · daily ops review",
         localReviewBundleLatestQuery:
-          "local-review-bundle-latest daily-ops-control-room-review-new-6666666666666666",
+          "local-review-bundle-latest daily ops review daily-ops-control-room-review-new-6666666666666666 2026-06-28T10:00:00.000Z",
         localReviewBundleLatestTitle:
           "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z"
       })

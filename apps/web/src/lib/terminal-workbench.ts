@@ -14817,10 +14817,11 @@ function auditReportLedgerLocalReviewBundleLatestLabel(row: AuditEvidenceReportL
 }
 
 function auditReportLedgerLocalReviewBundleLatestQuery(row: AuditEvidenceReportLedgerRow | null | undefined): string {
-  if (!row || !auditReportLedgerLocalReviewBundleReviewLabel(row.reportKind)) {
+  const reviewLabel = row ? auditReportLedgerLocalReviewBundleReviewLabel(row.reportKind) : "";
+  if (!row || !reviewLabel) {
     return "";
   }
-  return auditReportLedgerDeduplicatedQueryText(["local-review-bundle-latest", row.id]);
+  return auditReportLedgerDeduplicatedQueryText(["local-review-bundle-latest", reviewLabel, row.id, row.createdAt]);
 }
 
 function auditReportLedgerLocalReviewBundleLatestTitle(row: AuditEvidenceReportLedgerRow | null | undefined): string {
