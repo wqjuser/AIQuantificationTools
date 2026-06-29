@@ -11496,14 +11496,17 @@ describe("terminal workbench model", () => {
       latestResearchContextReportRunId: "",
       latestResearchContextReportShortHash: "",
       localReviewBundleCount: 0,
-      localReviewBundleCoverageLabel: "",
-      localReviewBundleCoverageNextActionLabel: "",
-      localReviewBundleCoverageNextActionQuery: "",
-      localReviewBundleCoverageNextActionTargetWorkspaceId: null,
-      localReviewBundleCoverageNextActionTitle: "",
-      localReviewBundleCoverageQuery: "",
+      localReviewBundleCoverageLabel: "local review bundle empty · personal/team 0 · daily ops 0",
+      localReviewBundleCoverageNextActionLabel: "record personal/team review",
+      localReviewBundleCoverageNextActionQuery:
+        "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
+      localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
+      localReviewBundleCoverageNextActionTitle:
+        "local-review-bundle-next-action · record personal/team review · no local reviews recorded · personal/team 0 · daily ops 0",
+      localReviewBundleCoverageQuery: "local-review-bundle-empty local-review-bundle-personal-missing",
       localReviewBundleCoverageState: "empty",
-      localReviewBundleCoverageTitle: "",
+      localReviewBundleCoverageTitle:
+        "local-review-bundle-empty · no local reviews recorded · personal/team 0 · daily ops 0",
       localReviewBundleDailyOpsCount: 0,
       localReviewBundleLatestEventId: "",
       localReviewBundleLatestLabel: "",
@@ -13149,6 +13152,62 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(rows[0])).toBe(
       "daily_ops_control_room_review daily-ops-control-room-review-6666666666666666 666666666666 attention 2/4 review 2 blocked 0 Run AI ai-review p0_readiness_report p0-completion-focus run-p0-smoke current-action team-handoff"
     );
+  });
+
+  test("surfaces an empty local review bundle coverage next action in the audit report ledger summary", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "audit-report-without-local-review-aaaaaaaaaaaaaaaa",
+        eventType: "audit_evidence_report",
+        runId: "run-without-local-review",
+        createdAt: "2026-06-28T08:00:00.000Z",
+        stage: "generated",
+        source: "web",
+        summary: "Audit report without local review companions",
+        detail: "run-without-local-review-audit-report.md",
+        metadata: {
+          artifactKind: "aiqt.auditReport",
+          contentSha256: "a".repeat(64),
+          fileName: "run-without-local-review-audit-report.md"
+        }
+      }
+    ]);
+
+    const summary = buildAuditEvidenceReportLedgerSummary(rows);
+    const localReviewCoverageNextActionSearch = buildLocalReviewCoverageNextActionUrlSearch({
+      auditReportQuery: summary.localReviewBundleCoverageNextActionQuery,
+      targetWorkspaceId: summary.localReviewBundleCoverageNextActionTargetWorkspaceId
+    });
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        localReviewBundleCount: 0,
+        localReviewBundleCoverageLabel: "local review bundle empty · personal/team 0 · daily ops 0",
+        localReviewBundleCoverageNextActionLabel: "record personal/team review",
+        localReviewBundleCoverageNextActionQuery:
+          "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
+        localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
+        localReviewBundleCoverageNextActionTitle:
+          "local-review-bundle-next-action · record personal/team review · no local reviews recorded · personal/team 0 · daily ops 0",
+        localReviewBundleCoverageQuery: "local-review-bundle-empty local-review-bundle-personal-missing",
+        localReviewBundleCoverageState: "empty",
+        localReviewBundleCoverageTitle:
+          "local-review-bundle-empty · no local reviews recorded · personal/team 0 · daily ops 0",
+        localReviewBundleDailyOpsCount: 0,
+        localReviewBundlePersonalTeamCount: 0
+      })
+    );
+    expect(localReviewCoverageNextActionSearch).toBe(
+      "workspace=research&auditReportQuery=local-review-bundle-next-action+record-personal-team-review+local-review-bundle-empty+local-review-bundle-personal-missing"
+    );
+    expect(resolveLocalReviewCoverageNextActionDeepLinkState(localReviewCoverageNextActionSearch)).toEqual({
+      actionId: "record-personal-team-review",
+      auditReportQuery:
+        "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
+      missingReviewKind: "personal-team",
+      targetWorkspaceId: "research"
+    });
   });
 
   test("surfaces the latest personal and daily ops reviews in the audit report ledger summary", () => {
@@ -16772,6 +16831,15 @@ describe("terminal workbench model", () => {
     ).toBeNull();
     expect(
       buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery:
+          "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
+        targetWorkspaceId: "research"
+      })
+    ).toBe(
+      "workspace=research&auditReportQuery=local-review-bundle-next-action+record-personal-team-review+local-review-bundle-empty+local-review-bundle-personal-missing"
+    );
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
         auditReportQuery: "local-review-bundle-gap local-review-bundle-personal-missing",
         targetWorkspaceId: "research"
       })
@@ -16806,6 +16874,17 @@ describe("terminal workbench model", () => {
       actionId: "record-personal-team-review",
       auditReportQuery:
         "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
+      missingReviewKind: "personal-team",
+      targetWorkspaceId: "research"
+    });
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-personal-team-review+local-review-bundle-empty+local-review-bundle-personal-missing"
+      )
+    ).toEqual({
+      actionId: "record-personal-team-review",
+      auditReportQuery:
+        "local-review-bundle-next-action record-personal-team-review local-review-bundle-empty local-review-bundle-personal-missing",
       missingReviewKind: "personal-team",
       targetWorkspaceId: "research"
     });

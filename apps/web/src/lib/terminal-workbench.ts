@@ -14351,20 +14351,29 @@ function auditReportLedgerLocalReviewBundleCoverage({
   title: string;
 } {
   const totalCount = dailyOpsCount + personalTeamCount;
+  const countLabel = `personal/team ${personalTeamCount} · daily ops ${dailyOpsCount}`;
   if (totalCount <= 0) {
+    const nextActionLabel = "record personal/team review";
     return {
-      label: "",
-      nextActionLabel: "",
-      nextActionQuery: "",
-      nextActionTargetWorkspaceId: null,
-      nextActionTitle: "",
-      query: "",
+      label: `local review bundle empty · ${countLabel}`,
+      nextActionLabel,
+      nextActionQuery: auditReportLedgerDeduplicatedQueryText([
+        "local-review-bundle-next-action",
+        "record-personal-team-review",
+        "local-review-bundle-empty",
+        "local-review-bundle-personal-missing"
+      ]),
+      nextActionTargetWorkspaceId: "research",
+      nextActionTitle: `local-review-bundle-next-action · ${nextActionLabel} · no local reviews recorded · ${countLabel}`,
+      query: auditReportLedgerDeduplicatedQueryText([
+        "local-review-bundle-empty",
+        "local-review-bundle-personal-missing"
+      ]),
       state: "empty",
-      title: ""
+      title: `local-review-bundle-empty · no local reviews recorded · ${countLabel}`
     };
   }
 
-  const countLabel = `personal/team ${personalTeamCount} · daily ops ${dailyOpsCount}`;
   if (personalTeamCount > 0 && dailyOpsCount > 0) {
     return {
       label: `local review bundle complete · ${countLabel}`,
