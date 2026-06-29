@@ -1791,6 +1791,13 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("summary.latestDailyOpsControlRoomReviewShortHash");
     expect(reportLedgerPanelSource).toContain("summary.latestDailyOpsControlRoomReviewTitle");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCount");
+    expect(reportLedgerPanelSource).toContain("const hasLocalReviewBundleSummary =");
+    expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageQuery ||");
+    expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionQuery");
+    expect(reportLedgerPanelSource).toContain("const localReviewBundleSummaryTitle =");
+    expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionTitle ||");
+    expect(reportLedgerPanelSource).toContain("{hasLocalReviewBundleSummary ? (");
+    expect(reportLedgerPanelSource).not.toContain("{summary.localReviewBundleCount > 0 ? (");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageLabel");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionLabel");
     expect(reportLedgerPanelSource).toContain("summary.localReviewBundleCoverageNextActionQuery");

@@ -21590,6 +21590,19 @@ function AuditEvidenceReportLedgerPanel({
     localReviewCoverageNextActionWorkspaceId,
     summary.localReviewBundleCoverageNextActionQuery
   );
+  const hasLocalReviewBundleSummary =
+    summary.localReviewBundleCount > 0 ||
+    Boolean(
+      summary.localReviewBundleCoverageQuery ||
+        summary.localReviewBundleCoverageNextActionQuery
+    );
+  const localReviewBundleSummaryTitle =
+    summary.localReviewBundleTitle ||
+    summary.localReviewBundleCoverageTitle ||
+    summary.localReviewBundleCoverageNextActionTitle ||
+    summary.localReviewBundleCoverageQuery ||
+    summary.localReviewBundleCoverageNextActionQuery ||
+    summary.localReviewBundleQuery;
   const visibleRows = filterAuditEvidenceReportLedgerRows(rows, query);
   const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
   const pageEnd = pagination ? Math.min(pagination.offset + rows.length, pagination.total) : visibleRows.length;
@@ -22086,8 +22099,8 @@ function AuditEvidenceReportLedgerPanel({
                 ) : null}
               </span>
             ) : null}
-            {summary.localReviewBundleCount > 0 ? (
-              <span title={summary.localReviewBundleTitle || summary.localReviewBundleQuery}>
+            {hasLocalReviewBundleSummary ? (
+              <span title={localReviewBundleSummaryTitle}>
                 {i18n.locale === "zh-CN" ? "本地复核集" : "Local review bundle"}{" "}
                 <strong>{summary.localReviewBundleCount}</strong>
                 <small>
