@@ -9553,15 +9553,7 @@ export function buildDailyStartBriefReviewReference({
     };
   }
 
-  const query = auditReportLedgerDeduplicatedQueryText([
-    "daily_start_brief_review",
-    latestRow.id,
-    latestRow.dailyStartBriefReviewState,
-    "local-reviews",
-    `${latestRow.dailyStartBriefReviewCurrentReviewCount}/2`,
-    "open-ops",
-    latestRow.dailyStartBriefReviewOpenOpsItemCount
-  ]);
+  const query = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(latestRow);
   const isCurrent = dailyStartBriefReviewRowMatchesBrief(latestRow, brief);
   const stateLabel = `${latestRow.dailyStartBriefReviewState || latestRow.focusQuery} local reviews ${
     latestRow.dailyStartBriefReviewCurrentReviewCount
@@ -14783,6 +14775,8 @@ export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(
     row.dailyStartBriefReviewState,
     "local-reviews",
     `${row.dailyStartBriefReviewCurrentReviewCount}/2`,
+    `stale-reviews-${row.dailyStartBriefReviewStaleReviewCount}`,
+    `missing-reviews-${row.dailyStartBriefReviewMissingReviewCount}`,
     "open-ops",
     row.dailyStartBriefReviewOpenOpsItemCount,
     row.dailyStartBriefReviewPrimaryActionLabel,
@@ -14790,7 +14784,9 @@ export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(
     row.dailyStartBriefReviewLocalReviewStatus,
     row.dailyStartBriefReviewLocalReviewActionLabel,
     row.dailyStartBriefReviewLocalReviewQuery,
-    row.dailyStartBriefReviewCheckpointIds.join(" ")
+    row.dailyStartBriefReviewCheckpointIds.join(" "),
+    "checkpoint-statuses",
+    row.dailyStartBriefReviewCheckpointStatuses.join(" ")
   ]);
 }
 
@@ -17107,7 +17103,9 @@ export function buildAuditEvidenceReportLedgerRows(
               dailyStartBriefReviewState,
               `local-reviews ${dailyStartBriefReviewCurrentReviewCount}/2`,
               `stale ${dailyStartBriefReviewStaleReviewCount}`,
+              `stale-reviews-${dailyStartBriefReviewStaleReviewCount}`,
               `missing ${dailyStartBriefReviewMissingReviewCount}`,
+              `missing-reviews-${dailyStartBriefReviewMissingReviewCount}`,
               `open-ops ${dailyStartBriefReviewOpenOpsItemCount}`,
               dailyStartBriefReviewPrimaryActionLabel,
               dailyStartBriefReviewPrimaryActionWorkspaceId,
@@ -17116,6 +17114,7 @@ export function buildAuditEvidenceReportLedgerRows(
               dailyStartBriefReviewLocalReviewActionLabel,
               dailyStartBriefReviewLocalReviewQuery,
               dailyStartBriefReviewCheckpointIds.join(" "),
+              "checkpoint-statuses",
               dailyStartBriefReviewCheckpointStatuses.join(" "),
               auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") ? "live-blocked-boundary" : "unsafe-boundary"
             ]

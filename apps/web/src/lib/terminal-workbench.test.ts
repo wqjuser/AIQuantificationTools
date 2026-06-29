@@ -13414,9 +13414,14 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(rows[0])).toBe(
       "Daily start review: attention · local reviews 2/2 · open ops 2 · primary Run AI review -> ai-review · local Open local review evidence"
     );
-    expect(buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(rows[0])).toBe(
-      "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary"
+    const query = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(rows[0]);
+
+    expect(query).toBe(
+      "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready"
     );
+    expect(filterAuditEvidenceReportLedgerRows(rows, query).map((row) => row.id)).toEqual([
+      "daily-start-brief-review-8888888888888888"
+    ]);
   });
 
   test("resolves the latest daily start brief review as current when it matches the brief", () => {
@@ -13509,7 +13514,8 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         createdAt: "2026-06-28T10:15:00.000Z",
         eventId: "daily-start-brief-review-8888888888888888",
-        query: "daily_start_brief_review daily-start-brief-review-8888888888888888 attention local-reviews 2/2 open-ops 1",
+        query:
+          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 1 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
         status: "current"
       })
     );
@@ -13615,7 +13621,7 @@ describe("terminal workbench model", () => {
         latestDailyStartBriefReviewEventId: "daily-start-brief-review-8888888888888888",
         latestDailyStartBriefReviewLabel: "attention · local reviews 2/2 · open ops 2",
         latestDailyStartBriefReviewQuery:
-          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary",
+          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
         latestDailyStartBriefReviewShortHash: "888888888888",
         localReviewBundleCount: 3,
         localReviewBundleCoverageLabel:

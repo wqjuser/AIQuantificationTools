@@ -266,6 +266,8 @@ Batch 104 已把本地复核覆盖 next-action 的生成端也绑定到同一个
 
 Batch 105 已补齐 Daily Start 覆盖 next-action 的源码与文档一致性守护：`layout-css.test.js` 现在会检查首次载入、查询、打开、复制、focus、row focus 和缺口标签都包含 Daily Start 专属文案，同时检查 README 与产品计划不再把 coverage next-action 描述停留在 Daily Ops/个人小团队两类。该批次不改变运行时行为，只防止后续 UI 或文档改动漏掉 `record-daily-start-review` 这条每日启动人工复核分支；仍不自动记录复核、不修改账本、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 106 已把 Daily Start 复核定位查询升级为完整审计上下文：`buildDailyStartBriefReviewReference` 不再拼一条精简 query，而是复用 `buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery`；该行级 query 现在包含 current/stale/missing 计数、open ops、主动作、本地复核状态与入口、checkpoint id 和 `checkpoint-statuses`。Daily Start 复核行的搜索文本也索引 `checkpoint-statuses`，因此首页最新启动复核、Audit 顶部摘要和行级“定位/复制启动复核”按钮复制出来的查询都能筛回同一条完整复核证据。该能力只增强只读审计定位，不重新生成复核、不修改账本字段、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

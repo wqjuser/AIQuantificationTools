@@ -217,6 +217,8 @@ Audit 台账现在还会解释 P2 复核链健康上下文：`AuditEvidenceRepor
 
 “今日启动摘要 / Daily Start” 现在也可以作为 `daily_start_brief_review` 入账：首页可复制、下载或记录 `daily-start-brief-review.md`，事件 metadata 只保存 Markdown SHA-256、当前摘要状态、本地复核计数、open ops 数、主动作、审计查询、本地复核入口、checkpoint id/status 和强制 live-blocked 边界，不保存完整正文。首页会用 `buildDailyStartBriefReviewReference` 回读最新 Daily Start 复核并标成 current、stale 或 missing；Audit 台账行也会显示“每日启动复核 / Daily start review” chip，并提供定位/复制查询动作。该复核只是每日人工启动留痕，不自动运行 P0 action、不补写其它复核、不修改账本以外状态、不签名、不连接券商、不提交订单。
 
+Daily Start 复核的定位查询现在也会带上完整复核状态：`buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery` 会包含 current/stale/missing 本地复核计数、open ops、主动作、本地复核入口、checkpoint id 和 checkpoint status；首页最新启动复核引用复用同一条行级查询。这样复制“定位启动复核”链接时能同时解释为什么该复核当前、过期或缺失，Audit 搜索也会索引 `checkpoint-statuses` 语义；它仍只过滤既有台账行，不重新生成复核、不修改 manifest、不签名、不连接券商、不提交订单。
+
 Audit 报告台账行现在也能直接解释 `personal_team_readiness_review`、`daily_ops_control_room_review` 和 `daily_start_brief_review`：模型层新增行级 label/title/query helper，页面会显示个人/小团队复核、每日操作复核和每日启动复核 chip，并提供“定位复核 / 复制复核链接”动作。这样从首页跳转到 Audit 后，不需要打开 Markdown 或手工拼搜索词，也能看见复核状态、ready/total、open items、启动摘要和下一动作；这些动作只过滤既有台账行，不新建复核、不签名、不运行流水线、不连接券商、不提交订单。
 
 Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_review`、`daily_ops_control_room_review` 和 `daily_start_brief_review`：`buildAuditEvidenceReportLedgerSummary` 会选出三类最新 ready 复核行，暴露 event id、短 hash、label、title 和稳定查询；Toolbar 会显示“最新可用性复核 / Latest readiness review”、“最新每日复核 / Latest daily review”和“最新启动复核 / Latest start review”，并提供定位/复制链接。这个入口只复用既有复核行和只读 Audit 查询，不新建复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。
