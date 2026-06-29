@@ -14880,12 +14880,54 @@ function auditReportLedgerLocalReviewBundleLatestLabel(row: AuditEvidenceReportL
   return reviewLabel ? `latest local review · ${reviewLabel}` : "";
 }
 
+function auditReportLedgerLocalReviewBundleLatestReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row) {
+    return "";
+  }
+  if (row.reportKind === "personal_team_readiness_review") {
+    return buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewQuery(row);
+  }
+  if (row.reportKind === "daily_ops_control_room_review") {
+    return buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(row);
+  }
+  if (row.reportKind === "daily_start_brief_review") {
+    return buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(row);
+  }
+  return "";
+}
+
+function auditReportLedgerLocalReviewBundleLatestReviewTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row) {
+    return "";
+  }
+  if (row.reportKind === "personal_team_readiness_review") {
+    return buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewTitle(row);
+  }
+  if (row.reportKind === "daily_ops_control_room_review") {
+    return buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle(row);
+  }
+  if (row.reportKind === "daily_start_brief_review") {
+    return buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(row);
+  }
+  return "";
+}
+
 function auditReportLedgerLocalReviewBundleLatestQuery(row: AuditEvidenceReportLedgerRow | null | undefined): string {
   const reviewLabel = row ? auditReportLedgerLocalReviewBundleReviewLabel(row.reportKind) : "";
   if (!row || !reviewLabel) {
     return "";
   }
-  return auditReportLedgerDeduplicatedQueryText(["local-review-bundle-latest", reviewLabel, row.id, row.createdAt]);
+  return auditReportLedgerDeduplicatedQueryText([
+    "local-review-bundle-latest",
+    reviewLabel,
+    row.id,
+    row.createdAt,
+    auditReportLedgerLocalReviewBundleLatestReviewQuery(row)
+  ]);
 }
 
 function auditReportLedgerLocalReviewBundleLatestTitle(row: AuditEvidenceReportLedgerRow | null | undefined): string {
@@ -14893,7 +14935,15 @@ function auditReportLedgerLocalReviewBundleLatestTitle(row: AuditEvidenceReportL
   if (!row || !reviewLabel) {
     return "";
   }
-  return ["local-review-bundle-latest", reviewLabel, row.id, row.createdAt].filter(Boolean).join(" · ");
+  return [
+    "local-review-bundle-latest",
+    reviewLabel,
+    row.id,
+    row.createdAt,
+    auditReportLedgerLocalReviewBundleLatestReviewTitle(row)
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function auditReportLedgerLocalReviewBundleCoverage({

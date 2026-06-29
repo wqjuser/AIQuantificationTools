@@ -13723,6 +13723,7 @@ describe("terminal workbench model", () => {
         metadata: {
           artifactKind: "aiqt.dailyStartBriefReview",
           auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          auditQueryTitle: "P0 completion focus · current criterion ai-review",
           checkpointIds: ["ops-queue", "personal-team-review", "daily-ops-review", "live-boundary"],
           checkpointStatuses: ["review", "current", "current", "ready"],
           contentSha256: "8".repeat(64),
@@ -13751,7 +13752,7 @@ describe("terminal workbench model", () => {
         latestDailyStartBriefReviewEventId: "daily-start-brief-review-8888888888888888",
         latestDailyStartBriefReviewLabel: "attention · local reviews 2/2 · open ops 2",
         latestDailyStartBriefReviewQuery:
-          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current p0_readiness_report p0-completion-focus run-p0-smoke ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
+          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current p0_readiness_report p0-completion-focus run-p0-smoke P0 completion focus · criterion ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
         latestDailyStartBriefReviewShortHash: "888888888888",
         localReviewBundleCount: 3,
         localReviewBundleCoverageLabel:
@@ -13762,8 +13763,10 @@ describe("terminal workbench model", () => {
         localReviewBundleDailyStartCount: 1,
         localReviewBundleLatestEventId: "daily-start-brief-review-8888888888888888",
         localReviewBundleLatestLabel: "latest local review · daily start review",
-        localReviewBundleLatestQuery:
-          "local-review-bundle-latest daily start review daily-start-brief-review-8888888888888888 2026-06-28T10:15:00.000Z",
+        localReviewBundleLatestQuery: expect.stringContaining("daily_start_brief_review"),
+        localReviewBundleLatestTitle: expect.stringContaining(
+          "audit P0 completion focus · current criterion ai-review"
+        ),
         localReviewBundlePersonalTeamCount: 1,
         localReviewBundleQuery: "local-review-bundle",
         localReviewBundleTitle:
@@ -13776,8 +13779,17 @@ describe("terminal workbench model", () => {
         localReviewBundleContextTitle:
           "local-review-bundle · daily start review · daily-start-brief-review-8888888888888888",
         localReviewBundleCoverageQuery: "local-review-bundle-complete",
-        localReviewBundleLatestLabel: "latest local review · daily start review"
+        localReviewBundleLatestLabel: "latest local review · daily start review",
+        localReviewBundleLatestQuery: expect.stringContaining("daily_start_brief_review"),
+        localReviewBundleLatestTitle: expect.stringContaining(
+          "audit P0 completion focus · current criterion ai-review"
+        )
       })
+    );
+    expect(summary.localReviewBundleLatestQuery).toContain("p0_readiness_report");
+    expect(summary.localReviewBundleLatestQuery).toContain("P0 completion focus");
+    expect(summary.localReviewBundleLatestTitle).toContain(
+      "Daily start review: attention · local reviews 2/2 · open ops 2"
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleQuery).map((row) => row.id)).toEqual([
       "personal-team-readiness-review-7777777777777777",
@@ -14100,9 +14112,9 @@ describe("terminal workbench model", () => {
         localReviewBundleLatestEventId: "daily-ops-control-room-review-new-6666666666666666",
         localReviewBundleLatestLabel: "latest local review · daily ops review",
         localReviewBundleLatestQuery:
-          "local-review-bundle-latest daily ops review daily-ops-control-room-review-new-6666666666666666 2026-06-28T10:00:00.000Z",
+          "local-review-bundle-latest daily ops review daily-ops-control-room-review-new-6666666666666666 2026-06-28T10:00:00.000Z daily_ops_control_room_review 666666666666 attention 2/4 2 blocked 0 Run AI ai-review p0_readiness_report p0-completion-focus run-p0-smoke current-action team-handoff",
         localReviewBundleLatestTitle:
-          "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z",
+          "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z · Daily ops review: attention 2/4 · review 2 · blocked 0 · open current-action, team-handoff · primary Run AI review -> ai-review",
         localReviewBundlePersonalTeamCount: 2,
         localReviewBundleQuery: "local-review-bundle",
         localReviewBundleTitle:
@@ -14153,9 +14165,9 @@ describe("terminal workbench model", () => {
           "local-review-bundle-gap · missing daily start review · personal/team 2 · daily ops 2 · daily start 0",
         localReviewBundleLatestLabel: "latest local review · daily ops review",
         localReviewBundleLatestQuery:
-          "local-review-bundle-latest daily ops review daily-ops-control-room-review-new-6666666666666666 2026-06-28T10:00:00.000Z",
+          "local-review-bundle-latest daily ops review daily-ops-control-room-review-new-6666666666666666 2026-06-28T10:00:00.000Z daily_ops_control_room_review 666666666666 attention 2/4 2 blocked 0 Run AI ai-review p0_readiness_report p0-completion-focus run-p0-smoke current-action team-handoff",
         localReviewBundleLatestTitle:
-          "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z"
+          "local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z · Daily ops review: attention 2/4 · review 2 · blocked 0 · open current-action, team-handoff · primary Run AI review -> ai-review"
       })
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleQuery).map((row) => row.id)).toEqual([
