@@ -3258,10 +3258,15 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
   if (!targetWorkspaceId || !auditReportQuery.includes("local-review-bundle-next-action")) {
     return null;
   }
+  const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);
+  const missingReviewKind = resolveLocalReviewCoverageMissingReviewKind(auditReportQuery);
+  if (actionId === "unknown" || missingReviewKind === "unknown") {
+    return null;
+  }
   return {
-    actionId: resolveLocalReviewCoverageNextActionId(auditReportQuery),
+    actionId,
     auditReportQuery,
-    missingReviewKind: resolveLocalReviewCoverageMissingReviewKind(auditReportQuery),
+    missingReviewKind,
     targetWorkspaceId
   };
 }
@@ -3298,6 +3303,11 @@ export function buildLocalReviewCoverageNextActionUrlSearch(input: {
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
   const auditReportQuery = input.auditReportQuery?.trim() ?? "";
   if (!targetWorkspaceId || !auditReportQuery.includes("local-review-bundle-next-action")) {
+    return null;
+  }
+  const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);
+  const missingReviewKind = resolveLocalReviewCoverageMissingReviewKind(auditReportQuery);
+  if (actionId === "unknown" || missingReviewKind === "unknown") {
     return null;
   }
   const params = new URLSearchParams();
