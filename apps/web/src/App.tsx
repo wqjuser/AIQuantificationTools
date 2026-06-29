@@ -133,6 +133,7 @@ import {
   buildP2ManifestChainPreflightReviewAuditEvent,
   buildP2ReadinessEvidenceCoverageReviewAuditEvent,
   buildP2ReadinessAcceptanceReviewAuditEvent,
+  buildDailyStartBriefReviewAuditEvent,
   buildDailyOpsControlRoomReviewAuditEvent,
   buildPersonalTeamUsabilityReadinessReviewAuditEvent,
   MarketCalendarResult,
@@ -271,6 +272,9 @@ import {
   buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel,
   buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery,
   buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle,
+  buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel,
+  buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery,
+  buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
   findLatestP2ManifestChainPreflightAuditLedgerRow,
   findLatestP2ReadinessAcceptanceAuditLedgerRow,
@@ -363,6 +367,8 @@ import {
   buildDailyOpsControlRoomReviewMarkdown,
   buildDailyOpsControlRoomReviewReference,
   buildDailyStartBrief,
+  buildDailyStartBriefMarkdown,
+  buildDailyStartBriefReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessSummary,
@@ -476,6 +482,7 @@ import {
   DailyOpsControlRoomReviewReference,
   DailyOpsControlRoomSummary,
   DailyStartBrief,
+  DailyStartBriefReviewReference,
   PersonalTeamUsabilityReadinessReviewReference,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
@@ -2146,6 +2153,7 @@ export function App() {
   const [copiedP2ManifestChainPreflightReview, setCopiedP2ManifestChainPreflightReview] = useState(false);
   const [copiedPersonalTeamReadinessReview, setCopiedPersonalTeamReadinessReview] = useState(false);
   const [copiedDailyOpsControlRoomReview, setCopiedDailyOpsControlRoomReview] = useState(false);
+  const [copiedDailyStartBriefReview, setCopiedDailyStartBriefReview] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
   const [copiedOperatorRunbook, setCopiedOperatorRunbook] = useState(false);
   const [copiedPreLiveRunbook, setCopiedPreLiveRunbook] = useState(false);
@@ -2158,6 +2166,7 @@ export function App() {
   const [savingP2ManifestChainPreflightReview, setSavingP2ManifestChainPreflightReview] = useState(false);
   const [savingPersonalTeamReadinessReview, setSavingPersonalTeamReadinessReview] = useState(false);
   const [savingDailyOpsControlRoomReview, setSavingDailyOpsControlRoomReview] = useState(false);
+  const [savingDailyStartBriefReview, setSavingDailyStartBriefReview] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [copiedResearchContextLink, setCopiedResearchContextLink] = useState(false);
@@ -2987,6 +2996,14 @@ export function App() {
       personalTeamUsabilityReadiness
     ]
   );
+  const dailyStartBriefReviewMarkdown = useMemo(
+    () => buildDailyStartBriefMarkdown({ brief: dailyStartBrief }),
+    [dailyStartBrief]
+  );
+  const dailyStartBriefReviewReference = useMemo(
+    () => buildDailyStartBriefReviewReference({ brief: dailyStartBrief, ledgerRows: auditEvidenceReportLedgerRows }),
+    [auditEvidenceReportLedgerRows, dailyStartBrief]
+  );
   const p0GoldenPathJourney = useMemo(
     () =>
       buildP0GoldenPathJourney({
@@ -3055,6 +3072,10 @@ export function App() {
   useEffect(() => {
     setCopiedDailyOpsControlRoomReview(false);
   }, [dailyOpsControlRoomReviewMarkdown]);
+
+  useEffect(() => {
+    setCopiedDailyStartBriefReview(false);
+  }, [dailyStartBriefReviewMarkdown]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -9214,6 +9235,105 @@ export function App() {
     }
   }, [dailyOpsControlRoom, dailyOpsControlRoomReviewMarkdown, quantCoreBaseUrl]);
 
+  const openDailyStartBriefReviewInAudit = useCallback(() => {
+    if (!dailyStartBriefReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Daily start review audit reference missing",
+        error: "No daily start review has been recorded yet."
+      }));
+      return;
+    }
+
+    openAuditReportLedgerQuery(dailyStartBriefReviewReference.query, "Daily start review audit query selected");
+  }, [dailyStartBriefReviewReference.query, openAuditReportLedgerQuery]);
+
+  const copyDailyStartBriefReviewAuditLink = useCallback(() => {
+    if (!dailyStartBriefReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Daily start review link copy failed",
+        error: "No daily start review has been recorded yet."
+      }));
+      return;
+    }
+
+    void copyAuditReportLedgerQueryLink(dailyStartBriefReviewReference.query);
+  }, [copyAuditReportLedgerQueryLink, dailyStartBriefReviewReference.query]);
+
+  const copyDailyStartBriefReview = useCallback(async () => {
+    if (!navigator.clipboard?.writeText) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Daily start review copy failed",
+        error: "Clipboard is unavailable"
+      }));
+      return;
+    }
+
+    await navigator.clipboard.writeText(dailyStartBriefReviewMarkdown);
+    setCopiedDailyStartBriefReview(true);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Daily start review copied",
+      error: undefined
+    }));
+  }, [dailyStartBriefReviewMarkdown]);
+
+  const downloadDailyStartBriefReview = useCallback(() => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([dailyStartBriefReviewMarkdown], { type: "text/markdown;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "daily-start-brief-review.md";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Daily start review download ready",
+      error: undefined
+    }));
+  }, [dailyStartBriefReviewMarkdown]);
+
+  const recordDailyStartBriefReview = useCallback(async () => {
+    setSavingDailyStartBriefReview(true);
+    try {
+      const auditEvent = await buildDailyStartBriefReviewAuditEvent({
+        brief: dailyStartBrief,
+        markdown: dailyStartBriefReviewMarkdown
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: `Daily start review audited · ${result.event!.eventId}`,
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Daily start review ledger save failed",
+        error: result.error ?? "Daily start review ledger save failed"
+      }));
+    } catch (recordError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Daily start review ledger save failed",
+        error: recordError instanceof Error ? recordError.message : "Audit ledger save failed"
+      }));
+    } finally {
+      setSavingDailyStartBriefReview(false);
+    }
+  }, [dailyStartBrief, dailyStartBriefReviewMarkdown, quantCoreBaseUrl]);
+
   const copyP2ReadinessAcceptanceReview = useCallback(async () => {
     if (!navigator.clipboard?.writeText) {
       setWorkspaceState((current) => ({
@@ -11437,6 +11557,64 @@ export function App() {
                       <ShieldCheck size={11} />
                       {dailyStartBriefLocalReviewAction(i18n, dailyStartBrief)}
                     </button>
+                    <button onClick={() => void copyDailyStartBriefReview()} type="button">
+                      <Copy size={11} />
+                      {copiedDailyStartBriefReview
+                        ? i18n.locale === "zh-CN"
+                          ? "已复制"
+                          : "Copied"
+                        : i18n.locale === "zh-CN"
+                          ? "复制复核"
+                          : "Copy review"}
+                    </button>
+                    <button onClick={downloadDailyStartBriefReview} type="button">
+                      <Download size={11} />
+                      {i18n.locale === "zh-CN" ? "下载复核" : "Download"}
+                    </button>
+                    <button
+                      disabled={savingDailyStartBriefReview}
+                      onClick={() => void recordDailyStartBriefReview()}
+                      type="button"
+                    >
+                      {savingDailyStartBriefReview ? <RefreshCw className="spin" size={11} /> : <Save size={11} />}
+                      {savingDailyStartBriefReview
+                        ? i18n.locale === "zh-CN"
+                          ? "入账中"
+                          : "Recording"
+                        : i18n.locale === "zh-CN"
+                          ? "入账复核"
+                          : "Record"}
+                    </button>
+                  </div>
+                  <div className={`daily-start-brief-review-reference ${dailyStartBriefReviewReference.status}`}>
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "最新启动复核" : "Latest start review"}</span>
+                      <strong>{dailyStartBriefReviewReferenceLabel(i18n, dailyStartBriefReviewReference)}</strong>
+                      <small>{dailyStartBriefReviewReferenceDetail(i18n, dailyStartBriefReviewReference)}</small>
+                      {dailyStartBriefReviewReference.eventId ? (
+                        <small>
+                          {dailyStartBriefReviewReference.eventId} · {dailyStartBriefReviewReference.createdAt.slice(0, 19)}
+                        </small>
+                      ) : null}
+                    </div>
+                    <div className="daily-start-brief-review-reference-actions">
+                      <button
+                        disabled={!dailyStartBriefReviewReference.query}
+                        onClick={openDailyStartBriefReviewInAudit}
+                        type="button"
+                      >
+                        <Search size={11} />
+                        {i18n.locale === "zh-CN" ? "定位复核" : "Focus review"}
+                      </button>
+                      <button
+                        disabled={!dailyStartBriefReviewReference.query}
+                        onClick={copyDailyStartBriefReviewAuditLink}
+                        type="button"
+                      >
+                        <Copy size={11} />
+                        {i18n.locale === "zh-CN" ? "复制复核链接" : "Copy review link"}
+                      </button>
+                    </div>
                   </div>
                   <div className="daily-start-brief-checkpoints">
                     {dailyStartBrief.checkpoints.map((checkpoint) => (
@@ -13153,6 +13331,38 @@ function dailyStartBriefCheckpointDetail(
     return checkpoint.status === "current" ? "Daily Ops 复核匹配当前队列。" : "补齐今日操作台复核。";
   }
   return checkpoint.detail;
+}
+
+function dailyStartBriefReviewReferenceLabel(
+  i18n: AppI18n,
+  reference: DailyStartBriefReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.label;
+  }
+  return (
+    {
+      current: "每日启动复核匹配当前摘要",
+      missing: "尚未入账每日启动复核",
+      stale: "每日启动复核已过期"
+    } satisfies Record<DailyStartBriefReviewReference["status"], string>
+  )[reference.status];
+}
+
+function dailyStartBriefReviewReferenceDetail(
+  i18n: AppI18n,
+  reference: DailyStartBriefReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.detail;
+  }
+  if (reference.status === "current") {
+    return "最新每日启动复核与当前摘要一致，可从 Audit 定位。";
+  }
+  if (reference.status === "stale") {
+    return "最新每日启动复核已不匹配当前摘要，建议重新入账。";
+  }
+  return "点击入账复核后，这里会显示可定位的 Daily Start 审计事件。";
 }
 
 function dailyStartBriefActionLabelZh(label: string): string {
@@ -22193,6 +22403,9 @@ function AuditEvidenceReportLedgerPanel({
                 buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle(row);
               const rowDailyOpsControlRoomReviewQuery =
                 buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(row);
+              const rowDailyStartBriefReviewLabel = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel(row);
+              const rowDailyStartBriefReviewTitle = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(row);
+              const rowDailyStartBriefReviewQuery = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(row);
               const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId;
               const rowLocalReviewCoverageNextActionWorkspaceId =
                 row.localReviewBundleCoverageNextActionTargetWorkspaceId;
@@ -22293,6 +22506,15 @@ function AuditEvidenceReportLedgerPanel({
                     >
                       {i18n.locale === "zh-CN" ? "每日操作复核" : "Daily ops review"} ·{" "}
                       {rowDailyOpsControlRoomReviewLabel}
+                    </span>
+                  ) : null}
+                  {rowDailyStartBriefReviewLabel ? (
+                    <span
+                      className="audit-report-ledger-daily-start-review"
+                      title={rowDailyStartBriefReviewTitle || rowDailyStartBriefReviewQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "每日启动复核" : "Daily start review"} ·{" "}
+                      {rowDailyStartBriefReviewLabel}
                     </span>
                   ) : null}
                   {row.localReviewBundleContextQuery ? (
@@ -22561,6 +22783,16 @@ function AuditEvidenceReportLedgerPanel({
                     {rowDailyOpsControlRoomReviewQuery ? (
                       <button onClick={() => onCopyQueryLink(rowDailyOpsControlRoomReviewQuery)} type="button">
                         {i18n.locale === "zh-CN" ? "复制每日复核链接" : "Copy daily review link"}
+                      </button>
+                    ) : null}
+                    {rowDailyStartBriefReviewQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowDailyStartBriefReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位启动复核" : "Focus start review"}
+                      </button>
+                    ) : null}
+                    {rowDailyStartBriefReviewQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowDailyStartBriefReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制启动复核链接" : "Copy start review link"}
                       </button>
                     ) : null}
                     {row.localReviewBundleContextQuery ? (

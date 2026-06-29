@@ -254,6 +254,8 @@ Batch 98 已把必需 URL 参数唯一性抽成共享 Audit deep-link 规则：`
 
 Batch 99 已把个人/小团队日常入口压成“今日启动摘要”：新增 `buildDailyStartBrief` 与 `buildDailyStartBriefMarkdown`，把 Daily Ops 队列、个人/小团队 readiness、个人/团队复核引用和 Daily Ops 复核引用聚合成主动作、审计入口、本地复核入口、4 个 checkpoint 和 live-blocked 边界。首页会在 readiness 与 Daily Ops 控制台前显示这张紧凑摘要，优先说明今天该处理当前 ops action、补本地复核、打开审计上下文还是保持 paper-only 边界。该能力只压缩人工操作路径，不自动运行 P0 action、不记录复核、不修改账本、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 100 已把“今日启动摘要”升级为可留档的每日启动复核：`buildDailyStartBriefReviewReference` 会从 Audit 台账回读最新 `daily_start_brief_review`，并按当前摘要状态、主动作、本地复核计数、open ops 和 checkpoint id/status 判断 current、stale 或 missing；首页可复制、下载或入账 `daily-start-brief-review.md`，Audit 行会显示 Daily start review chip 和定位/复制动作。复核事件只保存 Markdown SHA-256 与结构化 metadata，不保存正文；该能力只服务每日人工启动留痕，不自动运行 P0 action、不补写其它复核、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

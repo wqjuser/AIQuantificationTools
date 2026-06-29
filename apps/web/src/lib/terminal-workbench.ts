@@ -756,6 +756,18 @@ export interface DailyStartBrief {
   liveBoundaryLabel: string;
 }
 
+export type DailyStartBriefReviewReferenceStatus = "current" | "stale" | "missing";
+
+export interface DailyStartBriefReviewReference {
+  createdAt: string;
+  detail: string;
+  eventId: string;
+  label: string;
+  query: string;
+  row: AuditEvidenceReportLedgerRow | null;
+  status: DailyStartBriefReviewReferenceStatus;
+}
+
 export interface DailyStartBriefInput {
   dailyOpsControlRoom: DailyOpsControlRoomSummary;
   dailyOpsControlRoomReviewReference: DailyOpsControlRoomReviewReference;
@@ -2603,6 +2615,19 @@ export interface AuditEvidenceReportLedgerRow {
   dailyOpsControlRoomReviewPrimaryActionWorkspaceId: string;
   dailyOpsControlRoomReviewAuditQueryLabel: string;
   dailyOpsControlRoomReviewAuditQuery: string;
+  dailyStartBriefReviewState: string;
+  dailyStartBriefReviewCurrentReviewCount: number;
+  dailyStartBriefReviewStaleReviewCount: number;
+  dailyStartBriefReviewMissingReviewCount: number;
+  dailyStartBriefReviewOpenOpsItemCount: number;
+  dailyStartBriefReviewPrimaryActionLabel: string;
+  dailyStartBriefReviewPrimaryActionWorkspaceId: string;
+  dailyStartBriefReviewAuditQuery: string;
+  dailyStartBriefReviewLocalReviewStatus: string;
+  dailyStartBriefReviewLocalReviewActionLabel: string;
+  dailyStartBriefReviewLocalReviewQuery: string;
+  dailyStartBriefReviewCheckpointIds: string[];
+  dailyStartBriefReviewCheckpointStatuses: string[];
   localReviewBundleContextQuery: string;
   localReviewBundleContextTitle: string;
   localReviewBundleCoverageQuery: string;
@@ -2652,6 +2677,7 @@ export interface AuditEvidenceReportLedgerRow {
     | "p2_readiness_acceptance_review"
     | "personal_team_readiness_review"
     | "daily_ops_control_room_review"
+    | "daily_start_brief_review"
     | "operator_runbook_report"
     | "pre_live_runbook_report"
     | "research_context_readiness_report";
@@ -9457,6 +9483,57 @@ export function buildDailyStartBriefMarkdown({ brief }: { brief: DailyStartBrief
     .join("\n");
 }
 
+export function buildDailyStartBriefReviewReference({
+  brief,
+  ledgerRows
+}: {
+  brief: DailyStartBrief;
+  ledgerRows: AuditEvidenceReportLedgerRow[];
+}): DailyStartBriefReviewReference {
+  const latestRow =
+    ledgerRows
+      .filter((row) => row.reportKind === "daily_start_brief_review" && row.status === "ready")
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null;
+
+  if (!latestRow) {
+    return {
+      createdAt: "",
+      detail: "No daily start brief review has been recorded yet.",
+      eventId: "",
+      label: "No daily start review recorded",
+      query: "",
+      row: null,
+      status: "missing"
+    };
+  }
+
+  const query = auditReportLedgerDeduplicatedQueryText([
+    "daily_start_brief_review",
+    latestRow.id,
+    latestRow.dailyStartBriefReviewState,
+    "local-reviews",
+    `${latestRow.dailyStartBriefReviewCurrentReviewCount}/2`,
+    "open-ops",
+    latestRow.dailyStartBriefReviewOpenOpsItemCount
+  ]);
+  const isCurrent = dailyStartBriefReviewRowMatchesBrief(latestRow, brief);
+  const stateLabel = `${latestRow.dailyStartBriefReviewState || latestRow.focusQuery} local reviews ${
+    latestRow.dailyStartBriefReviewCurrentReviewCount
+  }/2 open ops ${latestRow.dailyStartBriefReviewOpenOpsItemCount}`;
+
+  return {
+    createdAt: latestRow.createdAt,
+    detail: isCurrent
+      ? `Latest review ${latestRow.id} matches current daily start brief (${stateLabel}).`
+      : `Latest review ${latestRow.id} no longer matches current daily start brief (${stateLabel}); record a fresh review.`,
+    eventId: latestRow.id,
+    label: isCurrent ? "Daily start review current" : "Daily start review stale",
+    query,
+    row: latestRow,
+    status: isCurrent ? "current" : "stale"
+  };
+}
+
 export function buildPersonalTeamUsabilityReadinessReviewReference({
   ledgerRows,
   summary
@@ -9560,6 +9637,32 @@ function dailyOpsControlRoomReviewRowMatchesSummary(
     sameAuditStringList(
       row.dailyOpsControlRoomReviewOpenItemIds,
       summary.openItems.map((item) => item.id)
+    )
+  );
+}
+
+function dailyStartBriefReviewRowMatchesBrief(row: AuditEvidenceReportLedgerRow, brief: DailyStartBrief): boolean {
+  return (
+    row.reportKind === "daily_start_brief_review" &&
+    row.status === "ready" &&
+    row.dailyStartBriefReviewState === brief.state &&
+    row.dailyStartBriefReviewCurrentReviewCount === brief.currentReviewCount &&
+    row.dailyStartBriefReviewStaleReviewCount === brief.staleReviewCount &&
+    row.dailyStartBriefReviewMissingReviewCount === brief.missingReviewCount &&
+    row.dailyStartBriefReviewOpenOpsItemCount === brief.openOpsItemCount &&
+    row.dailyStartBriefReviewPrimaryActionLabel === brief.primaryActionLabel &&
+    row.dailyStartBriefReviewPrimaryActionWorkspaceId === brief.primaryActionWorkspaceId &&
+    row.dailyStartBriefReviewAuditQuery === brief.auditQuery &&
+    row.dailyStartBriefReviewLocalReviewStatus === brief.localReviewStatus &&
+    row.dailyStartBriefReviewLocalReviewActionLabel === brief.localReviewActionLabel &&
+    row.dailyStartBriefReviewLocalReviewQuery === brief.localReviewQuery &&
+    sameAuditStringList(
+      row.dailyStartBriefReviewCheckpointIds,
+      brief.checkpoints.map((checkpoint) => checkpoint.id)
+    ) &&
+    sameAuditStringList(
+      row.dailyStartBriefReviewCheckpointStatuses,
+      brief.checkpoints.map((checkpoint) => checkpoint.status)
     )
   );
 }
@@ -14237,6 +14340,7 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
       p2_readiness_acceptance_review: "P2 readiness acceptance review",
       personal_team_readiness_review: "Personal and small-team readiness review",
       daily_ops_control_room_review: "Daily ops control room review",
+      daily_start_brief_review: "Daily start brief review",
       pre_live_runbook_report: "Pre-live runbook report",
       portfolio_report: "Portfolio report",
       research_context_readiness_report: "Research context readiness report",
@@ -14594,6 +14698,53 @@ export function buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(
     row.dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
     row.dailyOpsControlRoomReviewAuditQuery,
     row.dailyOpsControlRoomReviewOpenItemIds.join(" ")
+  ]);
+}
+
+export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "daily_start_brief_review") {
+    return "";
+  }
+  return `${row.dailyStartBriefReviewState || "unknown"} · local reviews ${row.dailyStartBriefReviewCurrentReviewCount}/2 · open ops ${row.dailyStartBriefReviewOpenOpsItemCount}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const label = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel(row);
+  if (!row || row.reportKind !== "daily_start_brief_review" || !label) {
+    return "";
+  }
+  const primaryAction = row.dailyStartBriefReviewPrimaryActionLabel
+    ? `${row.dailyStartBriefReviewPrimaryActionLabel} -> ${row.dailyStartBriefReviewPrimaryActionWorkspaceId || "unknown"}`
+    : "none";
+  const localAction = row.dailyStartBriefReviewLocalReviewActionLabel || "none";
+  return `Daily start review: ${label} · primary ${primaryAction} · local ${localAction}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "daily_start_brief_review") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.dailyStartBriefReviewState,
+    "local-reviews",
+    `${row.dailyStartBriefReviewCurrentReviewCount}/2`,
+    "open-ops",
+    row.dailyStartBriefReviewOpenOpsItemCount,
+    row.dailyStartBriefReviewPrimaryActionLabel,
+    row.dailyStartBriefReviewPrimaryActionWorkspaceId,
+    row.dailyStartBriefReviewLocalReviewStatus,
+    row.dailyStartBriefReviewLocalReviewActionLabel,
+    row.dailyStartBriefReviewLocalReviewQuery,
+    row.dailyStartBriefReviewCheckpointIds.join(" ")
   ]);
 }
 
@@ -15863,6 +16014,7 @@ export function buildAuditEvidenceReportLedgerRows(
         event.eventType === "p2_readiness_acceptance_review" ||
         event.eventType === "personal_team_readiness_review" ||
         event.eventType === "daily_ops_control_room_review" ||
+        event.eventType === "daily_start_brief_review" ||
         event.eventType === "operator_runbook_report" ||
         event.eventType === "pre_live_runbook_report" ||
         event.eventType === "research_context_readiness_report"
@@ -15885,6 +16037,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "personal_team_readiness_review"
           : event.eventType === "daily_ops_control_room_review"
           ? "daily_ops_control_room_review"
+          : event.eventType === "daily_start_brief_review"
+          ? "daily_start_brief_review"
           : event.eventType === "operator_runbook_report"
           ? "operator_runbook_report"
           : event.eventType === "pre_live_runbook_report"
@@ -15919,6 +16073,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "aiqt.personalTeamReadinessReview"
           : reportKind === "daily_ops_control_room_review"
           ? "aiqt.dailyOpsControlRoomReview"
+          : reportKind === "daily_start_brief_review"
+          ? "aiqt.dailyStartBriefReview"
           : reportKind === "operator_runbook_report"
           ? "aiqt.operatorRunbookReport"
           : reportKind === "pre_live_runbook_report"
@@ -15948,6 +16104,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "personal-team-readiness-review.md"
           : reportKind === "daily_ops_control_room_review"
           ? "daily-ops-control-room-review.md"
+          : reportKind === "daily_start_brief_review"
+          ? "daily-start-brief-review.md"
           : reportKind === "operator_runbook_report"
           ? "operator-runbook-report.md"
           : reportKind === "pre_live_runbook_report"
@@ -16079,6 +16237,17 @@ export function buildAuditEvidenceReportLedgerRows(
             ]
               .filter(Boolean)
               .join(" ")
+          : reportKind === "daily_start_brief_review"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "state") || event.stage,
+              "local-reviews",
+              `${auditReportLedgerMetadataNumber(event.metadata, "currentReviewCount")}/2`,
+              "open-ops",
+              auditReportLedgerMetadataNumber(event.metadata, "openOpsItemCount"),
+              auditReportLedgerMetadataText(event.metadata, "primaryActionLabel")
+            ]
+              .filter(Boolean)
+              .join(" ")
           : reportKind === "portfolio_report"
           ? [
               auditReportLedgerMetadataText(event.metadata, "market"),
@@ -16112,6 +16281,8 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "personal_team_readiness_review" ||
+        reportKind === "daily_ops_control_room_review" ||
+        reportKind === "daily_start_brief_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
@@ -16126,6 +16297,8 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "personal_team_readiness_review" ||
+        reportKind === "daily_ops_control_room_review" ||
+        reportKind === "daily_start_brief_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
@@ -16140,6 +16313,8 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "p2_readiness_acceptance_generated" ||
         reportKind === "p2_readiness_acceptance_review" ||
         reportKind === "personal_team_readiness_review" ||
+        reportKind === "daily_ops_control_room_review" ||
+        reportKind === "daily_start_brief_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? ""
@@ -16819,6 +16994,54 @@ export function buildAuditEvidenceReportLedgerRows(
               .filter(Boolean)
               .join(" ")
           : "";
+      const dailyStartBriefReviewState =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "state") || event.stage : "";
+      const dailyStartBriefReviewCurrentReviewCount =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataNumber(event.metadata, "currentReviewCount") : 0;
+      const dailyStartBriefReviewStaleReviewCount =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataNumber(event.metadata, "staleReviewCount") : 0;
+      const dailyStartBriefReviewMissingReviewCount =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataNumber(event.metadata, "missingReviewCount") : 0;
+      const dailyStartBriefReviewOpenOpsItemCount =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataNumber(event.metadata, "openOpsItemCount") : 0;
+      const dailyStartBriefReviewPrimaryActionLabel =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "primaryActionLabel") : "";
+      const dailyStartBriefReviewPrimaryActionWorkspaceId =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "primaryActionWorkspaceId") : "";
+      const dailyStartBriefReviewAuditQuery =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "auditQuery") : "";
+      const dailyStartBriefReviewLocalReviewStatus =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "localReviewStatus") : "";
+      const dailyStartBriefReviewLocalReviewActionLabel =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "localReviewActionLabel") : "";
+      const dailyStartBriefReviewLocalReviewQuery =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "localReviewQuery") : "";
+      const dailyStartBriefReviewCheckpointIds =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataStringList(event.metadata, "checkpointIds") : [];
+      const dailyStartBriefReviewCheckpointStatuses =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataStringList(event.metadata, "checkpointStatuses") : [];
+      const dailyStartBriefReviewSearchText =
+        reportKind === "daily_start_brief_review"
+          ? [
+              "daily_start_brief_review",
+              dailyStartBriefReviewState,
+              `local-reviews ${dailyStartBriefReviewCurrentReviewCount}/2`,
+              `stale ${dailyStartBriefReviewStaleReviewCount}`,
+              `missing ${dailyStartBriefReviewMissingReviewCount}`,
+              `open-ops ${dailyStartBriefReviewOpenOpsItemCount}`,
+              dailyStartBriefReviewPrimaryActionLabel,
+              dailyStartBriefReviewPrimaryActionWorkspaceId,
+              dailyStartBriefReviewAuditQuery,
+              dailyStartBriefReviewLocalReviewStatus,
+              dailyStartBriefReviewLocalReviewActionLabel,
+              dailyStartBriefReviewLocalReviewQuery,
+              dailyStartBriefReviewCheckpointIds.join(" "),
+              dailyStartBriefReviewCheckpointStatuses.join(" "),
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
       const localReviewBundleContextQuery =
         reportKind === "personal_team_readiness_review" || reportKind === "daily_ops_control_room_review"
           ? "local-review-bundle"
@@ -16855,6 +17078,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? personalTeamReadinessReviewReadyCount
             : reportKind === "daily_ops_control_room_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "readyCount")
+            : reportKind === "daily_start_brief_review"
+            ? dailyStartBriefReviewCurrentReviewCount
             : reportKind === "operator_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "completedSections")
             : reportKind === "pre_live_runbook_report"
@@ -16881,6 +17106,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? personalTeamReadinessReviewTotalCount
             : reportKind === "daily_ops_control_room_review"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalCount")
+            : reportKind === "daily_start_brief_review"
+            ? 2
             : reportKind === "operator_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalSections")
             : reportKind === "pre_live_runbook_report"
@@ -16906,6 +17133,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "personal_team_readiness_review" ||
           reportKind === "daily_ops_control_room_review" ||
+          reportKind === "daily_start_brief_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -16922,6 +17150,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "p2_readiness_acceptance_review" ||
           reportKind === "personal_team_readiness_review" ||
           reportKind === "daily_ops_control_room_review" ||
+          reportKind === "daily_start_brief_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -17021,6 +17250,19 @@ export function buildAuditEvidenceReportLedgerRows(
         dailyOpsControlRoomReviewPrimaryActionWorkspaceId,
         dailyOpsControlRoomReviewAuditQueryLabel,
         dailyOpsControlRoomReviewAuditQuery,
+        dailyStartBriefReviewState,
+        dailyStartBriefReviewCurrentReviewCount,
+        dailyStartBriefReviewStaleReviewCount,
+        dailyStartBriefReviewMissingReviewCount,
+        dailyStartBriefReviewOpenOpsItemCount,
+        dailyStartBriefReviewPrimaryActionLabel,
+        dailyStartBriefReviewPrimaryActionWorkspaceId,
+        dailyStartBriefReviewAuditQuery,
+        dailyStartBriefReviewLocalReviewStatus,
+        dailyStartBriefReviewLocalReviewActionLabel,
+        dailyStartBriefReviewLocalReviewQuery,
+        dailyStartBriefReviewCheckpointIds,
+        dailyStartBriefReviewCheckpointStatuses,
         localReviewBundleContextQuery,
         localReviewBundleContextTitle,
         localReviewBundleCoverageQuery: "",
@@ -17061,6 +17303,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? "personal-team-readiness-review"
             : reportKind === "daily_ops_control_room_review"
             ? "daily-ops-control-room-review"
+            : reportKind === "daily_start_brief_review"
+            ? "daily-start-brief-review"
             : reportKind === "operator_runbook_report"
             ? "operator-runbook-report"
             : reportKind === "pre_live_runbook_report"
@@ -17091,6 +17335,8 @@ export function buildAuditEvidenceReportLedgerRows(
               ? "Personal/team readiness review hash recorded"
             : reportKind === "daily_ops_control_room_review"
               ? "Daily ops control room review hash recorded"
+            : reportKind === "daily_start_brief_review"
+              ? "Daily start brief review hash recorded"
             : reportKind === "operator_runbook_report"
               ? "Operator runbook report hash recorded"
             : reportKind === "pre_live_runbook_report"
@@ -17123,6 +17369,7 @@ export function buildAuditEvidenceReportLedgerRows(
           p2ReadinessAcceptanceReviewSearchText,
           personalTeamReadinessReviewSearchText,
           dailyOpsControlRoomReviewSearchText,
+          dailyStartBriefReviewSearchText,
           localReviewBundleContextQuery,
           localReviewBundleContextTitle,
           operatorRunbookSearchText,
@@ -17154,6 +17401,14 @@ export function buildAuditEvidenceReportLedgerRows(
               ? "positive"
               : "risk"
             : reportKind === "daily_ops_control_room_review"
+            ? !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted") &&
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary")
+              ? "positive"
+              : "risk"
+            : reportKind === "daily_start_brief_review"
             ? !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
               !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
               !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
@@ -17856,6 +18111,7 @@ export function auditReportLedgerRowIsSigningEligible(row: AuditEvidenceReportLe
     row.reportKind !== "p2_readiness_acceptance_review" &&
     row.reportKind !== "personal_team_readiness_review" &&
     row.reportKind !== "daily_ops_control_room_review" &&
+    row.reportKind !== "daily_start_brief_review" &&
     row.reportKind !== "pre_live_runbook_report" &&
     row.reportKind !== "research_context_readiness_report"
   );

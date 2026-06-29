@@ -53,6 +53,9 @@ import {
   buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewLabel,
   buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery,
   buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewTitle,
+  buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel,
+  buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery,
+  buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
   findLatestP2ManifestChainPreflightAuditLedgerRow,
   findLatestP2ReadinessAcceptanceAuditLedgerRow,
@@ -162,6 +165,7 @@ import {
   buildDailyOpsControlRoomReviewMarkdown,
   buildDailyOpsControlRoomReviewReference,
   buildDailyStartBrief,
+  buildDailyStartBriefReviewReference,
   buildDailyStartBriefMarkdown,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
@@ -12926,6 +12930,7 @@ describe("terminal workbench model", () => {
       "p2_readiness_acceptance_review",
       "personal_team_readiness_review",
       "daily_ops_control_room_review",
+      "daily_start_brief_review",
       "pre_live_runbook_report",
       "research_context_readiness_report"
     ];
@@ -13294,6 +13299,215 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerRowDailyOpsControlRoomReviewQuery(rows[0])).toBe(
       "daily_ops_control_room_review daily-ops-control-room-review-6666666666666666 666666666666 attention 2/4 review 2 blocked 0 Run AI ai-review p0_readiness_report p0-completion-focus run-p0-smoke current-action team-handoff"
     );
+  });
+
+  test("includes daily start brief review events in the audit report ledger", () => {
+    const reviewHash = "8".repeat(64);
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "daily-start-brief-review-8888888888888888",
+        eventType: "daily_start_brief_review",
+        runId: "daily-start-brief",
+        createdAt: "2026-06-28T10:15:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Daily start brief review recorded",
+        detail:
+          "daily-start-brief-review.md · sha256 888888888888 · attention · local reviews 2/2 · open ops 2 · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.dailyStartBriefReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          checkpointIds: ["ops-queue", "personal-team-review", "daily-ops-review", "live-boundary"],
+          checkpointStatuses: ["review", "current", "current", "ready"],
+          contentSha256: reviewHash,
+          contentSha256Algorithm: "sha256",
+          currentReviewCount: 2,
+          fileName: "daily-start-brief-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          localReviewActionLabel: "Open local review evidence",
+          localReviewQuery: "daily_ops_control_room_review daily-ops-current",
+          localReviewStatus: "current",
+          missingReviewCount: 0,
+          openOpsItemCount: 2,
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Run AI review",
+          primaryActionWorkspaceId: "ai-review",
+          routeExecuted: false,
+          staleReviewCount: 0,
+          state: "attention",
+          tone: "warning"
+        }
+      }
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        artifactKind: "aiqt.dailyStartBriefReview",
+        contentSha256: reviewHash,
+        dailyStartBriefReviewState: "attention",
+        fileName: "daily-start-brief-review.md",
+        reportKind: "daily_start_brief_review",
+        status: "ready",
+        tone: "positive"
+      })
+    );
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, "daily_start_brief_review attention Run AI review").map((row) => row.id)
+    ).toEqual(["daily-start-brief-review-8888888888888888"]);
+    expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
+  });
+
+  test("builds a daily start brief review ledger chip label and query", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "daily-start-brief-review-8888888888888888",
+        eventType: "daily_start_brief_review",
+        runId: "daily-start-brief",
+        createdAt: "2026-06-28T10:15:00.000Z",
+        stage: "attention",
+        source: "web",
+        summary: "Daily start brief review recorded",
+        detail:
+          "daily-start-brief-review.md · sha256 888888888888 · attention · local reviews 2/2 · open ops 2 · live blocked true",
+        metadata: {
+          artifactKind: "aiqt.dailyStartBriefReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          checkpointIds: ["ops-queue", "personal-team-review", "daily-ops-review", "live-boundary"],
+          checkpointStatuses: ["review", "current", "current", "ready"],
+          contentSha256: "8".repeat(64),
+          contentSha256Algorithm: "sha256",
+          currentReviewCount: 2,
+          fileName: "daily-start-brief-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          localReviewActionLabel: "Open local review evidence",
+          localReviewQuery: "daily_ops_control_room_review daily-ops-current",
+          localReviewStatus: "current",
+          missingReviewCount: 0,
+          openOpsItemCount: 2,
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Run AI review",
+          primaryActionWorkspaceId: "ai-review",
+          routeExecuted: false,
+          staleReviewCount: 0,
+          state: "attention",
+          tone: "warning"
+        }
+      }
+    ]);
+
+    expect(buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel(rows[0])).toBe(
+      "attention · local reviews 2/2 · open ops 2"
+    );
+    expect(buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(rows[0])).toBe(
+      "Daily start review: attention · local reviews 2/2 · open ops 2 · primary Run AI review -> ai-review · local Open local review evidence"
+    );
+    expect(buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(rows[0])).toBe(
+      "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary"
+    );
+  });
+
+  test("resolves the latest daily start brief review as current when it matches the brief", () => {
+    const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      handoffNoteCount: 2,
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+    const dailyOpsSummary = buildDailyOpsControlRoomSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      personalTeamUsabilityReadiness: personalTeamSummary,
+      p0CompletionChecklist: p0CompletionChecklistFixture()
+    });
+    const brief = buildDailyStartBrief({
+      dailyOpsControlRoom: dailyOpsSummary,
+      dailyOpsControlRoomReviewReference: {
+        createdAt: "2026-06-28T10:00:00.000Z",
+        detail: "Latest review matches current daily ops queue.",
+        eventId: "daily-ops-current",
+        label: "Daily ops review current",
+        query: "daily_ops_control_room_review daily-ops-current",
+        row: null,
+        status: "current"
+      },
+      personalTeamReadinessReviewReference: {
+        createdAt: "2026-06-28T09:59:00.000Z",
+        detail: "Latest review matches current personal/team readiness.",
+        eventId: "personal-team-current",
+        label: "Personal/team readiness review current",
+        query: "personal_team_readiness_review personal-team-current",
+        row: null,
+        status: "current"
+      },
+      personalTeamUsabilityReadiness: personalTeamSummary
+    });
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "daily-start-brief-review-8888888888888888",
+        eventType: "daily_start_brief_review",
+        runId: "daily-start-brief",
+        createdAt: "2026-06-28T10:15:00.000Z",
+        stage: brief.state,
+        source: "web",
+        summary: "Daily start brief review recorded",
+        detail:
+          `daily-start-brief-review.md · sha256 888888888888 · ${brief.state} · local reviews ${brief.currentReviewCount}/2 · open ops ${brief.openOpsItemCount} · live blocked true`,
+        metadata: {
+          artifactKind: "aiqt.dailyStartBriefReview",
+          auditQuery: brief.auditQuery,
+          checkpointIds: brief.checkpoints.map((checkpoint) => checkpoint.id),
+          checkpointStatuses: brief.checkpoints.map((checkpoint) => checkpoint.status),
+          contentSha256: "8".repeat(64),
+          contentSha256Algorithm: "sha256",
+          currentReviewCount: brief.currentReviewCount,
+          fileName: "daily-start-brief-review.md",
+          format: "text/markdown",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          localReviewActionLabel: brief.localReviewActionLabel,
+          localReviewQuery: brief.localReviewQuery,
+          localReviewStatus: brief.localReviewStatus,
+          missingReviewCount: brief.missingReviewCount,
+          openOpsItemCount: brief.openOpsItemCount,
+          orderSubmissionEnabled: false,
+          primaryActionLabel: brief.primaryActionLabel,
+          primaryActionWorkspaceId: brief.primaryActionWorkspaceId,
+          routeExecuted: false,
+          staleReviewCount: brief.staleReviewCount,
+          state: brief.state,
+          tone: brief.tone
+        }
+      }
+    ]);
+
+    const reference = buildDailyStartBriefReviewReference({ brief, ledgerRows: rows });
+
+    expect(reference).toEqual(
+      expect.objectContaining({
+        createdAt: "2026-06-28T10:15:00.000Z",
+        eventId: "daily-start-brief-review-8888888888888888",
+        query: "daily_start_brief_review daily-start-brief-review-8888888888888888 attention local-reviews 2/2 open-ops 1",
+        status: "current"
+      })
+    );
+    expect(reference.detail).toContain("matches current daily start brief");
   });
 
   test("surfaces an empty local review bundle coverage next action in the audit report ledger summary", () => {

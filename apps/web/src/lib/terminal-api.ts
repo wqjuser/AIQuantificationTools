@@ -37,6 +37,7 @@ import {
   type P0PaperExecutionPreflight,
   type P0PlatformReadinessSummary,
   type DailyOpsControlRoomSummary,
+  type DailyStartBrief,
   type PersonalTeamUsabilityReadinessSummary,
   type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
@@ -6138,6 +6139,63 @@ export async function buildDailyOpsControlRoomReviewAuditEvent({
       liveBlockedBoundary: true,
       boundary:
         "Daily ops control room review is audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
+export async function buildDailyStartBriefReviewAuditEvent({
+  brief,
+  generatedAt = new Date().toISOString(),
+  markdown
+}: {
+  brief: DailyStartBrief;
+  generatedAt?: string;
+  markdown: string;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(markdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const fileName = "daily-start-brief-review.md";
+
+  return {
+    schemaVersion: 1,
+    eventId: `daily-start-brief-review-${shortHash}`,
+    eventType: "daily_start_brief_review",
+    runId: "daily-start-brief",
+    createdAt: generatedAt,
+    stage: brief.state,
+    source: "web",
+    summary: "Daily start brief review recorded",
+    detail: `${fileName} · sha256 ${contentSha256.slice(0, 12)} · ${brief.state} · local reviews ${brief.currentReviewCount}/2 · open ops ${brief.openOpsItemCount} · live blocked true`,
+    metadata: {
+      artifactKind: "aiqt.dailyStartBriefReview",
+      fileName,
+      format: "text/markdown",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      state: brief.state,
+      tone: brief.tone,
+      headline: brief.headline,
+      currentReviewCount: brief.currentReviewCount,
+      staleReviewCount: brief.staleReviewCount,
+      missingReviewCount: brief.missingReviewCount,
+      openOpsItemCount: brief.openOpsItemCount,
+      primaryActionLabel: brief.primaryActionLabel,
+      primaryActionWorkspaceId: brief.primaryActionWorkspaceId,
+      auditActionLabel: brief.auditActionLabel,
+      auditQuery: brief.auditQuery,
+      localReviewStatus: brief.localReviewStatus,
+      localReviewActionLabel: brief.localReviewActionLabel,
+      localReviewQuery: brief.localReviewQuery,
+      checkpointIds: brief.checkpoints.map((checkpoint) => checkpoint.id),
+      checkpointStatuses: brief.checkpoints.map((checkpoint) => checkpoint.status),
+      liveBoundaryLabel: brief.liveBoundaryLabel,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      boundary:
+        "Daily start brief review is audit evidence only; live trading remains blocked and no investment advice"
     }
   };
 }
