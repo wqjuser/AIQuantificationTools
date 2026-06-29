@@ -3253,6 +3253,9 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
     search instanceof URLSearchParams
       ? search
       : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  if (!localReviewCoverageNextActionSearchParamsHaveSingleEnvelope(params)) {
+    return null;
+  }
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
   const auditReportQuery = params.get("auditReportQuery")?.trim() ?? "";
   if (!targetWorkspaceId || !localReviewCoverageNextActionQueryHasSingleStructure(auditReportQuery)) {
@@ -3273,6 +3276,10 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
     missingReviewKind,
     targetWorkspaceId
   };
+}
+
+function localReviewCoverageNextActionSearchParamsHaveSingleEnvelope(params: URLSearchParams): boolean {
+  return params.getAll("workspace").length === 1 && params.getAll("auditReportQuery").length === 1;
 }
 
 function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): LocalReviewCoverageNextActionId {

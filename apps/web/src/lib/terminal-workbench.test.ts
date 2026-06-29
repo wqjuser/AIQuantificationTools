@@ -16987,6 +16987,23 @@ describe("terminal workbench model", () => {
     });
     expect(
       resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&workspace=audit&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing"
+      )
+    ).toBeNull();
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing&auditReportQuery=local-review-bundle-next-action+record-personal-team-review+local-review-bundle-personal-missing"
+      )
+    ).toBeNull();
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        new URLSearchParams(
+          "workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing"
+        )
+      )
+    ).toBeNull();
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
         "?workspace=unknown&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review"
       )
     ).toBeNull();

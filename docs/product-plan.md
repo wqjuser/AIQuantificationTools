@@ -248,6 +248,8 @@ Batch 95 已给本地复核覆盖 next-action 查询增加单结构校验：`loc
 
 Batch 96 已把本地复核覆盖 next-action 的缺口 token 也收紧为精确数量校验：`localReviewCoverageNextActionMatchesMissingReviewKind` 会按 token count 判断 Daily Ops、个人/小团队和 empty 启动态，重复 missing/empty token 会被 builder 与 resolver 拒绝。这样交接链接不仅要求单一入口和单一 action，也要求缺口语义本身无重复歧义；该能力仍只保护 URL 解释和只读导航上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 97 已把本地复核覆盖 next-action 深链的 URL 参数外壳也收紧为单一结构：`resolveLocalReviewCoverageNextActionDeepLinkState` 会要求 `workspace` 与 `auditReportQuery` 各恰好出现一次，重复参数的链接不会再被 `URLSearchParams.get()` 静默解释为有效状态。这样 deep link 的入口 token、action token、缺口 token 和 URL envelope 都遵循无歧义校验；该能力仍只保护 URL 解释和只读导航上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。
