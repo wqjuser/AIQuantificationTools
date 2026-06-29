@@ -232,6 +232,8 @@ Batch 87 已把 Coverage next 的 title 语义纳入 Audit 只读搜索：`markL
 
 Batch 88 已给空本地复核覆盖补上启动下一步：`auditReportLedgerLocalReviewBundleCoverage` 在 `personal/team 0 · daily ops 0` 时不再只返回空 label/query，而是标记 `local-review-bundle-empty`，生成 `record-personal-team-review` next-action，并把目标工作区设为 `research`。这让新环境或导入账本在没有任何本地复核行时，也能从 Audit toolbar 复制/打开一个明确的个人/小团队复核入口；该能力只提供导航和查询上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 89 已给空本地复核覆盖查询补上只读 row 锚点：`markLocalReviewBundleCoverageLedgerRows` 在没有本地复核 row 时，会把 `local-review-bundle-empty`、coverage title、next-action query/title 合入最新 ready `audit_evidence_report` row 的 `searchText`，但不回填 `localReviewBundleCoverage*` row 字段。这样点击“查看覆盖查询”不会得到空结果，同时不会污染 P2 acceptance/review chain 等其他 ready row 的链路查询；该能力仍只提供 Audit 上下文定位，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

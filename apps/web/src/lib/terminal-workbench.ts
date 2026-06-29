@@ -16886,6 +16886,25 @@ function markLocalReviewBundleCoverageLedgerRows(rows: AuditEvidenceReportLedger
     return rows;
   }
 
+  if (localReviewBundleRows.length === 0) {
+    const latestReadyAuditReportRow = latestAuditEvidenceReportLedgerRow(
+      rows.filter((row) => row.reportKind === "audit_evidence_report" && row.status === "ready")
+    );
+    if (!latestReadyAuditReportRow) {
+      return rows;
+    }
+    return rows.map((row) =>
+      row.id === latestReadyAuditReportRow.id
+        ? {
+            ...row,
+            searchText: [row.searchText, coverage.query, coverage.title, coverage.nextActionQuery, coverage.nextActionTitle]
+              .filter(Boolean)
+              .join(" ")
+          }
+        : row
+    );
+  }
+
   return rows.map((row) => {
     if (!auditEvidenceReportLedgerRowIsLocalReviewBundle(row)) {
       return row;

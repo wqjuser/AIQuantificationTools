@@ -13208,6 +13208,21 @@ describe("terminal workbench model", () => {
       missingReviewKind: "personal-team",
       targetWorkspaceId: "research"
     });
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageQuery).map((row) => row.id)).toEqual([
+      "audit-report-without-local-review-aaaaaaaaaaaaaaaa"
+    ]);
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageNextActionQuery).map((row) => row.id)
+    ).toEqual(["audit-report-without-local-review-aaaaaaaaaaaaaaaa"]);
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageNextActionTitle).map((row) => row.id)
+    ).toEqual(["audit-report-without-local-review-aaaaaaaaaaaaaaaa"]);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        localReviewBundleCoverageNextActionQuery: "",
+        localReviewBundleCoverageQuery: ""
+      })
+    );
   });
 
   test("surfaces the latest personal and daily ops reviews in the audit report ledger summary", () => {
