@@ -242,6 +242,8 @@ Batch 92 已收紧本地复核覆盖 next-action 深链解析：`buildLocalRevie
 
 Batch 93 已给本地复核覆盖 next-action 深链增加 action/kind 一致性校验：Daily Ops action 只接受 Daily Ops 缺口 token，个人/小团队 action 只接受个人/小团队缺口 token，empty 启动态必须同时带 `local-review-bundle-empty` 与个人/小团队缺口 token。`buildLocalReviewCoverageNextActionUrlSearch` 和 `resolveLocalReviewCoverageNextActionDeepLinkState` 现在都会拒绝错配组合，避免坏链接导航到错误人工复核入口；该能力仍只解释 URL 上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 94 已把 `local-review-bundle-next-action` 主 token 也收紧为精确匹配：builder 和 resolver 不再使用子串 `includes` 判断 next-action 入口，`not-local-review-bundle-next-action` 这类伪 token 会被拒绝。这样 next-action 主入口、action id、missing kind 和 empty token 都遵循同一套 token 校验；该能力仍只保护 URL 解释和只读导航上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。
