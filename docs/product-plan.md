@@ -236,6 +236,8 @@ Batch 89 已给空本地复核覆盖查询补上只读 row 锚点：`markLocalRe
 
 Batch 90 已把 `local-review-bundle-empty` 解析成独立 empty 缺口类型：`LocalReviewCoverageMissingReviewKind` 新增 `empty`，resolver 会优先识别 empty token；App 的 label/query/open/focus/copy/status helpers 会显示“本地复核未开始 / Local reviews not started”和“开始个人/小团队复核 / Start personal/team review”。这样空账本启动态不会再被描述成普通个人/小团队缺口；该能力仍只解释并导航到 research 手动入口，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 91 已把本地复核覆盖 next-action 深链的首次载入状态栏也改成 action-specific：新增 `localReviewCoverageNextActionLoadedStatusLabel`，empty 会显示 `Local review start link loaded`，Daily Ops 与个人/小团队缺口会显示对应的 coverage next loaded 反馈。这样从分享链接进入页面时，状态栏、落地卡片和 Audit 来源侧动作都使用同一套人工复核语义；该能力仍只解释 URL 上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

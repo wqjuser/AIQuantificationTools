@@ -620,8 +620,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("initialP0CompletionGapDeepLinkState");
     expect(appSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState");
     expect(appSource).toContain(
-      "Local review coverage next link loaded: ${initialLocalReviewCoverageNextActionDeepLinkState.actionId}"
+      "localReviewCoverageNextActionLoadedStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)"
     );
+    expect(appSource).toContain("Local review start link loaded");
+    expect(appSource).toContain("Daily Ops coverage next link loaded");
+    expect(appSource).toContain("Personal/team coverage next link loaded");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState");
     expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState");
@@ -636,7 +639,8 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.auditReportQuery");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.targetWorkspaceId");
     expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery");
-    expect(appSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.actionId");
+    expect(appSource).toContain("localReviewCoverageNextActionIsEmptyStart(state)");
+    expect(appSource).toContain("state.actionId");
     expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.missingReviewKind");
     expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId");
     expect(overviewSource).toContain(

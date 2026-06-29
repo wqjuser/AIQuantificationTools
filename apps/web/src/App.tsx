@@ -658,7 +658,7 @@ const initialWorkspaceState: WorkspaceLoadResult = {
     : initialP0CompletionGapDeepLinkState
       ? `P0 completion gap link loaded -> ${initialP0CompletionGapDeepLinkState.targetWorkspaceId}`
       : initialLocalReviewCoverageNextActionDeepLinkState
-        ? `Local review coverage next link loaded: ${initialLocalReviewCoverageNextActionDeepLinkState.actionId} -> ${initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId}`
+        ? localReviewCoverageNextActionLoadedStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)
         : "Offline snapshot"
 };
 const initialRunHistoryState: ResearchRunHistoryResult = {
@@ -12717,6 +12717,21 @@ function localReviewCoverageNextActionIsEmptyStart(
   state: LocalReviewCoverageNextActionDeepLinkState | null
 ): boolean {
   return state?.missingReviewKind === "empty";
+}
+
+function localReviewCoverageNextActionLoadedStatusLabel(
+  state: LocalReviewCoverageNextActionDeepLinkState
+): string {
+  if (localReviewCoverageNextActionIsEmptyStart(state)) {
+    return `Local review start link loaded: ${state.missingReviewKind} -> ${state.targetWorkspaceId}`;
+  }
+  if (state.actionId === "record-daily-ops-review") {
+    return `Daily Ops coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
+  }
+  if (state.actionId === "record-personal-team-review") {
+    return `Personal/team coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
+  }
+  return `Local review coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
 }
 
 function localReviewCoverageMissingReviewKindLabel(
