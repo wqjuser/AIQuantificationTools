@@ -12,6 +12,7 @@ import {
   buildP2ReadinessAcceptanceReviewMarkdown,
   buildP2ReadinessEvidenceCoverageReviewMarkdown,
   buildDailyOpsControlRoomReviewMarkdown,
+  buildDailyStartBriefMarkdown,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildP0CompletionChecklist,
   buildP0PlatformActionOutcome,
@@ -34,6 +35,7 @@ import {
   workspaceWithBacktestAssumption,
   workspaceWithStrategyField,
   type DailyOpsControlRoomSummary,
+  type DailyStartBrief,
   type OperatorRunbookSummary,
   type P0AcceptanceSummarySource,
   type PersonalTeamUsabilityReadinessSummary,
@@ -258,6 +260,7 @@ import {
   buildP2ReadinessEvidenceCoverageReviewAuditEvent,
   buildP2ReadinessAcceptanceReviewAuditEvent,
   buildDailyOpsControlRoomReviewAuditEvent,
+  buildDailyStartBriefReviewAuditEvent,
   buildPersonalTeamUsabilityReadinessReviewAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildExecutionAdapterPreLiveRunbookAuditEvent,
@@ -15393,6 +15396,108 @@ describe("terminal workspace API client", () => {
     expect(event.detail).toContain("daily-ops-control-room-review.md");
     expect(event.detail).toContain("attention 2/4 gates");
     expect(event.detail).toContain("blocked 0");
+    expect(event.detail).toContain("live blocked true");
+    expect(event.detail).not.toContain(markdown);
+  });
+
+  test("builds a daily start brief review audit event with audit query title metadata", async () => {
+    const brief = {
+      state: "attention",
+      tone: "warning",
+      headline: "Daily start needs fresh local review",
+      detail: "2/4 ops gates ready · 1/2 local reviews current · 1 open ops item. Live trading remains blocked.",
+      primaryActionLabel: "Run AI review",
+      primaryActionWorkspaceId: "ai-review",
+      auditActionLabel: "Open audit context",
+      auditQuery: "review-chain-health review-chain-gap",
+      auditQueryTitle:
+        "review-chain-health · health-state-gaps · query review-chain-health review-chain-gap · context rows 6 · loaded chains 2 · gaps 2",
+      localReviewStatus: "stale",
+      localReviewActionLabel: "Refresh local reviews",
+      localReviewDetail: "Daily ops review is stale; refresh local review evidence before handoff.",
+      localReviewQuery: "daily_ops_control_room_review daily-ops-stale",
+      localReviewWorkspaceId: "research",
+      currentReviewCount: 1,
+      staleReviewCount: 1,
+      missingReviewCount: 0,
+      openOpsItemCount: 1,
+      checkpoints: [
+        {
+          id: "ops-queue",
+          label: "Daily ops queue",
+          status: "review",
+          detail: "Daily ops needs review.",
+          actionLabel: "Run AI review",
+          targetWorkspaceId: "ai-review",
+          query: "review-chain-health review-chain-gap",
+          queryTitle:
+            "review-chain-health · health-state-gaps · query review-chain-health review-chain-gap · context rows 6 · loaded chains 2 · gaps 2"
+        },
+        {
+          id: "daily-ops-review",
+          label: "Daily ops review",
+          status: "stale",
+          detail: "Latest daily ops review is stale.",
+          actionLabel: "Refresh review",
+          targetWorkspaceId: "research",
+          query: "daily_ops_control_room_review daily-ops-stale",
+          queryTitle: ""
+        }
+      ],
+      liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+    } as DailyStartBrief & {
+      auditQueryTitle: string;
+      checkpoints: Array<DailyStartBrief["checkpoints"][number] & { queryTitle: string }>;
+    };
+    const markdown = buildDailyStartBriefMarkdown({ brief });
+
+    const event = await buildDailyStartBriefReviewAuditEvent({
+      generatedAt: "2026-06-28T10:20:00.000Z",
+      markdown,
+      brief
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "daily_start_brief_review",
+      runId: "daily-start-brief",
+      createdAt: "2026-06-28T10:20:00.000Z",
+      stage: "attention",
+      source: "web",
+      summary: "Daily start brief review recorded",
+      metadata: {
+        artifactKind: "aiqt.dailyStartBriefReview",
+        fileName: "daily-start-brief-review.md",
+        format: "text/markdown",
+        contentSha256Algorithm: "sha256",
+        state: "attention",
+        currentReviewCount: 1,
+        staleReviewCount: 1,
+        missingReviewCount: 0,
+        openOpsItemCount: 1,
+        primaryActionLabel: "Run AI review",
+        primaryActionWorkspaceId: "ai-review",
+        auditActionLabel: "Open audit context",
+        auditQuery: "review-chain-health review-chain-gap",
+        auditQueryTitle:
+          "review-chain-health · health-state-gaps · query review-chain-health review-chain-gap · context rows 6 · loaded chains 2 · gaps 2",
+        localReviewStatus: "stale",
+        localReviewActionLabel: "Refresh local reviews",
+        localReviewQuery: "daily_ops_control_room_review daily-ops-stale",
+        checkpointIds: ["ops-queue", "daily-ops-review"],
+        checkpointStatuses: ["review", "stale"],
+        orderSubmissionEnabled: false,
+        liveTradingAllowed: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
+        liveBlockedBoundary: true
+      }
+    });
+    expect(String(event.metadata.contentSha256)).toHaveLength(64);
+    expect(event.eventId).toBe(`daily-start-brief-review-${String(event.metadata.contentSha256).slice(0, 16)}`);
+    expect(event.detail).toContain("daily-start-brief-review.md");
+    expect(event.detail).toContain("local reviews 1/2");
+    expect(event.detail).toContain("open ops 1");
     expect(event.detail).toContain("live blocked true");
     expect(event.detail).not.toContain(markdown);
   });

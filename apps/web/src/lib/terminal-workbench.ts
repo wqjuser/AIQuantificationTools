@@ -734,6 +734,7 @@ export interface DailyStartBriefCheckpoint {
   actionLabel: string;
   targetWorkspaceId: ProductWorkAreaId;
   query: string;
+  queryTitle?: string;
 }
 
 export interface DailyStartBrief {
@@ -745,6 +746,7 @@ export interface DailyStartBrief {
   primaryActionWorkspaceId: ProductWorkAreaId;
   auditActionLabel: string;
   auditQuery: string;
+  auditQueryTitle?: string;
   localReviewStatus: DailyStartBriefLocalReviewStatus;
   localReviewActionLabel: string;
   localReviewDetail: string;
@@ -2626,6 +2628,7 @@ export interface AuditEvidenceReportLedgerRow {
   dailyStartBriefReviewPrimaryActionLabel: string;
   dailyStartBriefReviewPrimaryActionWorkspaceId: string;
   dailyStartBriefReviewAuditQuery: string;
+  dailyStartBriefReviewAuditQueryTitle: string;
   dailyStartBriefReviewLocalReviewStatus: string;
   dailyStartBriefReviewLocalReviewActionLabel: string;
   dailyStartBriefReviewLocalReviewQuery: string;
@@ -9464,7 +9467,8 @@ export function buildDailyStartBrief({
       detail: dailyOpsControlRoom.detail,
       actionLabel: dailyOpsControlRoom.primaryActionLabel,
       targetWorkspaceId: dailyOpsControlRoom.primaryActionWorkspaceId,
-      query: dailyOpsControlRoom.auditQuery
+      query: dailyOpsControlRoom.auditQuery,
+      queryTitle: dailyOpsControlRoom.auditQueryTitle || ""
     },
     ...reviewReferences.map((item): DailyStartBriefCheckpoint => ({
       id: item.id,
@@ -9478,7 +9482,8 @@ export function buildDailyStartBrief({
             ? "Refresh review"
             : "Record review",
       targetWorkspaceId: item.reference.status === "current" && item.reference.query ? "audit" : item.targetWorkspaceId,
-      query: item.reference.query
+      query: item.reference.query,
+      queryTitle: ""
     })),
     {
       id: "live-boundary",
@@ -9487,7 +9492,8 @@ export function buildDailyStartBrief({
       detail: dailyOpsControlRoom.liveBoundaryLabel,
       actionLabel: "Keep paper-only boundary",
       targetWorkspaceId: "execution",
-      query: ""
+      query: "",
+      queryTitle: ""
     }
   ];
 
@@ -9507,6 +9513,7 @@ export function buildDailyStartBrief({
     primaryActionWorkspaceId: dailyOpsControlRoom.primaryActionWorkspaceId,
     auditActionLabel: dailyOpsControlRoom.auditQuery ? "Open audit context" : "Open audit ledger",
     auditQuery: dailyOpsControlRoom.auditQuery,
+    auditQueryTitle: dailyOpsControlRoom.auditQueryTitle || "",
     localReviewStatus,
     localReviewActionLabel,
     localReviewDetail,
@@ -9543,6 +9550,7 @@ export function buildDailyStartBriefMarkdown({ brief }: { brief: DailyStartBrief
     `- Primary action: ${brief.primaryActionLabel} (${brief.primaryActionWorkspaceId})`,
     `- Audit action: ${brief.auditActionLabel}`,
     `- Audit query: ${brief.auditQuery || "none"}`,
+    `- Audit query title: ${brief.auditQueryTitle || "none"}`,
     `- Local review status: ${brief.localReviewStatus}`,
     `- Local review action: ${brief.localReviewActionLabel} (${brief.localReviewWorkspaceId})`,
     `- Local review query: ${brief.localReviewQuery || "none"}`,
@@ -9556,7 +9564,8 @@ export function buildDailyStartBriefMarkdown({ brief }: { brief: DailyStartBrief
         `  - Detail: ${checkpoint.detail}`,
         `  - Action: ${checkpoint.actionLabel}`,
         `  - Target workspace: ${checkpoint.targetWorkspaceId}`,
-        `  - Query: ${checkpoint.query || "none"}`
+        `  - Query: ${checkpoint.query || "none"}`,
+        `  - Query title: ${checkpoint.queryTitle || "none"}`
       ].join("\n")
     ),
     "",
@@ -9731,6 +9740,7 @@ function dailyStartBriefReviewRowMatchesBrief(row: AuditEvidenceReportLedgerRow,
     row.dailyStartBriefReviewPrimaryActionLabel === brief.primaryActionLabel &&
     row.dailyStartBriefReviewPrimaryActionWorkspaceId === brief.primaryActionWorkspaceId &&
     row.dailyStartBriefReviewAuditQuery === brief.auditQuery &&
+    row.dailyStartBriefReviewAuditQueryTitle === (brief.auditQueryTitle || "") &&
     row.dailyStartBriefReviewLocalReviewStatus === brief.localReviewStatus &&
     row.dailyStartBriefReviewLocalReviewActionLabel === brief.localReviewActionLabel &&
     row.dailyStartBriefReviewLocalReviewQuery === brief.localReviewQuery &&
@@ -14808,7 +14818,10 @@ export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(
     ? `${row.dailyStartBriefReviewPrimaryActionLabel} -> ${row.dailyStartBriefReviewPrimaryActionWorkspaceId || "unknown"}`
     : "none";
   const localAction = row.dailyStartBriefReviewLocalReviewActionLabel || "none";
-  return `Daily start review: ${label} · primary ${primaryAction} · local ${localAction}`;
+  const auditContext = row.dailyStartBriefReviewAuditQueryTitle
+    ? ` · audit ${row.dailyStartBriefReviewAuditQueryTitle}`
+    : "";
+  return `Daily start review: ${label} · primary ${primaryAction} · local ${localAction}${auditContext}`;
 }
 
 export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(
@@ -14833,6 +14846,8 @@ export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(
     row.dailyStartBriefReviewLocalReviewStatus,
     row.dailyStartBriefReviewLocalReviewActionLabel,
     row.dailyStartBriefReviewLocalReviewQuery,
+    row.dailyStartBriefReviewAuditQuery,
+    row.dailyStartBriefReviewAuditQueryTitle,
     row.dailyStartBriefReviewCheckpointIds.join(" "),
     "checkpoint-statuses",
     row.dailyStartBriefReviewCheckpointStatuses.join(" ")
@@ -17149,6 +17164,8 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "primaryActionWorkspaceId") : "";
       const dailyStartBriefReviewAuditQuery =
         reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "auditQuery") : "";
+      const dailyStartBriefReviewAuditQueryTitle =
+        reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "auditQueryTitle") : "";
       const dailyStartBriefReviewLocalReviewStatus =
         reportKind === "daily_start_brief_review" ? auditReportLedgerMetadataText(event.metadata, "localReviewStatus") : "";
       const dailyStartBriefReviewLocalReviewActionLabel =
@@ -17173,6 +17190,7 @@ export function buildAuditEvidenceReportLedgerRows(
               dailyStartBriefReviewPrimaryActionLabel,
               dailyStartBriefReviewPrimaryActionWorkspaceId,
               dailyStartBriefReviewAuditQuery,
+              dailyStartBriefReviewAuditQueryTitle,
               dailyStartBriefReviewLocalReviewStatus,
               dailyStartBriefReviewLocalReviewActionLabel,
               dailyStartBriefReviewLocalReviewQuery,
@@ -17403,6 +17421,7 @@ export function buildAuditEvidenceReportLedgerRows(
         dailyStartBriefReviewPrimaryActionLabel,
         dailyStartBriefReviewPrimaryActionWorkspaceId,
         dailyStartBriefReviewAuditQuery,
+        dailyStartBriefReviewAuditQueryTitle,
         dailyStartBriefReviewLocalReviewStatus,
         dailyStartBriefReviewLocalReviewActionLabel,
         dailyStartBriefReviewLocalReviewQuery,

@@ -6184,6 +6184,7 @@ export async function buildDailyStartBriefReviewAuditEvent({
       primaryActionWorkspaceId: brief.primaryActionWorkspaceId,
       auditActionLabel: brief.auditActionLabel,
       auditQuery: brief.auditQuery,
+      auditQueryTitle: brief.auditQueryTitle || "",
       localReviewStatus: brief.localReviewStatus,
       localReviewActionLabel: brief.localReviewActionLabel,
       localReviewQuery: brief.localReviewQuery,

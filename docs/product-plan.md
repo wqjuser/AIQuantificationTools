@@ -284,6 +284,8 @@ Batch 113 已给 P2 复核链健康入口补上 summary 级可解释 title：`p2
 
 Batch 114 已把 P2 复核链健康解释延伸到 Daily Ops 本地复核链路：`buildDailyOpsControlRoomSummary` 新增 `auditQueryTitle`，当审计入口来自 `p2ReadinessReviewChainHealthQuery` 时会带上 `p2ReadinessReviewChainHealthTitle`；Daily Ops 队列 detail、Review Markdown、`daily_ops_control_room_review` metadata、Audit ledger row/search 和行级 review query 都会保留这段解释。这样每日复核材料不只记录裸 Audit query，也能说明 health state、gap 分解和最新缺口；该能力只增强只读解释与检索，不自动生成复核、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 115 已把 Daily Ops 的审计查询解释继续传给 Daily Start：`DailyStartBrief` 新增 `auditQueryTitle`，ops checkpoint 新增 `queryTitle`，`buildDailyStartBriefMarkdown` 会输出 summary 与 checkpoint 级 query title；`buildDailyStartBriefReviewAuditEvent` 会把 `auditQueryTitle` 写入 `daily_start_brief_review` metadata，Audit ledger row/search/title/query 与 current/stale 判断也会保留这段说明。这样从 P2 复核链健康到 Daily Ops 再到 Daily Start 的本地复核材料都能解释同一条只读 Audit 查询；该能力只增强人工复核说明和检索，不自动生成复核、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

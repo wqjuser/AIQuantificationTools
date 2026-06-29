@@ -3904,6 +3904,7 @@ describe("terminal workbench model", () => {
       primaryActionWorkspaceId: "ai-review",
       auditActionLabel: "Open audit context",
       auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+      auditQueryTitle: "",
       localReviewStatus: "missing",
       localReviewActionLabel: "Record local reviews",
       localReviewWorkspaceId: "research",
@@ -3928,9 +3929,85 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("# Daily Start Brief");
     expect(markdown).toContain("- State: attention");
     expect(markdown).toContain("- Primary action: Run AI review (ai-review)");
+    expect(markdown).toContain("- Audit query title: none");
     expect(markdown).toContain("- Local review status: missing");
     expect(markdown).toContain("- Local review action: Record local reviews (research)");
     expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
+  });
+
+  test("carries Daily Ops audit query explanation into the daily start brief", () => {
+    const dailyOpsSummary = {
+      state: "attention",
+      tone: "warning",
+      headline: "Daily ops needs 2 reviews",
+      detail: "2/4 ops gates ready; 2 need review; 0 blocked. Live trading remains blocked.",
+      primaryActionLabel: "Run AI review",
+      primaryActionWorkspaceId: "ai-review",
+      auditQueryLabel: "P2 review chain health",
+      auditQuery: "review-chain-health review-chain-gap",
+      auditQueryTitle:
+        "review-chain-health · health-state-gaps · query review-chain-health review-chain-gap · context rows 6 · loaded chains 2 · gaps 2 · missing coverage 1 · missing acceptance 1 · latest gap p2-readiness-acceptance-review-missing-5555555555555555",
+      readyCount: 2,
+      reviewCount: 2,
+      blockingCount: 0,
+      totalCount: 4,
+      queueItems: [],
+      openItems: [],
+      liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+    } satisfies DailyOpsControlRoomSummary;
+    const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        p2ReadinessReviewChainHealthQuery: dailyOpsSummary.auditQuery,
+        p2ReadinessReviewChainHealthTitle: dailyOpsSummary.auditQueryTitle
+      }),
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+
+    const brief = buildDailyStartBrief({
+      dailyOpsControlRoom: dailyOpsSummary,
+      dailyOpsControlRoomReviewReference: {
+        createdAt: "2026-06-28T10:00:00.000Z",
+        detail: "Latest review matches current daily ops queue.",
+        eventId: "daily-ops-current",
+        label: "Daily ops review current",
+        query: "daily_ops_control_room_review daily-ops-current",
+        row: null,
+        status: "current"
+      },
+      personalTeamReadinessReviewReference: {
+        createdAt: "2026-06-28T09:59:00.000Z",
+        detail: "Latest review matches current personal/team readiness.",
+        eventId: "personal-team-current",
+        label: "Personal/team readiness review current",
+        query: "personal_team_readiness_review personal-team-current",
+        row: null,
+        status: "current"
+      },
+      personalTeamUsabilityReadiness: personalTeamSummary
+    }) as DailyStartBrief & {
+      auditQueryTitle: string;
+      checkpoints: Array<DailyStartBrief["checkpoints"][number] & { queryTitle: string }>;
+    };
+
+    expect(brief.auditQuery).toBe("review-chain-health review-chain-gap");
+    expect(brief.auditQueryTitle).toBe(dailyOpsSummary.auditQueryTitle);
+    expect(brief.checkpoints[0]).toEqual(
+      expect.objectContaining({
+        id: "ops-queue",
+        query: "review-chain-health review-chain-gap",
+        queryTitle: dailyOpsSummary.auditQueryTitle
+      })
+    );
+
+    const markdown = buildDailyStartBriefMarkdown({ brief });
+
+    expect(markdown).toContain(`- Audit query title: ${dailyOpsSummary.auditQueryTitle}`);
+    expect(markdown).toContain(`  - Query title: ${dailyOpsSummary.auditQueryTitle}`);
   });
 
   test("keeps the daily start brief blocked when the current ops action is blocked", () => {
@@ -13372,6 +13449,7 @@ describe("terminal workbench model", () => {
         metadata: {
           artifactKind: "aiqt.dailyStartBriefReview",
           auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          auditQueryTitle: "P0 completion focus · current criterion ai-review",
           checkpointIds: ["ops-queue", "personal-team-review", "daily-ops-review", "live-boundary"],
           checkpointStatuses: ["review", "current", "current", "ready"],
           contentSha256: reviewHash,
@@ -13402,6 +13480,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         artifactKind: "aiqt.dailyStartBriefReview",
         contentSha256: reviewHash,
+        dailyStartBriefReviewAuditQueryTitle: "P0 completion focus · current criterion ai-review",
         dailyStartBriefReviewState: "attention",
         fileName: "daily-start-brief-review.md",
         reportKind: "daily_start_brief_review",
@@ -13410,7 +13489,9 @@ describe("terminal workbench model", () => {
       })
     );
     expect(
-      filterAuditEvidenceReportLedgerRows(rows, "daily_start_brief_review attention Run AI review").map((row) => row.id)
+      filterAuditEvidenceReportLedgerRows(rows, "daily_start_brief_review attention Run AI review P0 completion focus").map(
+        (row) => row.id
+      )
     ).toEqual(["daily-start-brief-review-8888888888888888"]);
     expect(auditReportLedgerRowIsSigningEligible(rows[0])).toBe(false);
   });
@@ -13431,6 +13512,7 @@ describe("terminal workbench model", () => {
         metadata: {
           artifactKind: "aiqt.dailyStartBriefReview",
           auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          auditQueryTitle: "P0 completion focus · current criterion ai-review",
           checkpointIds: ["ops-queue", "personal-team-review", "daily-ops-review", "live-boundary"],
           checkpointStatuses: ["review", "current", "current", "ready"],
           contentSha256: "8".repeat(64),
@@ -13460,12 +13542,12 @@ describe("terminal workbench model", () => {
       "attention · local reviews 2/2 · open ops 2"
     );
     expect(buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(rows[0])).toBe(
-      "Daily start review: attention · local reviews 2/2 · open ops 2 · primary Run AI review -> ai-review · local Open local review evidence"
+      "Daily start review: attention · local reviews 2/2 · open ops 2 · primary Run AI review -> ai-review · local Open local review evidence · audit P0 completion focus · current criterion ai-review"
     );
     const query = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(rows[0]);
 
     expect(query).toBe(
-      "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready"
+      "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current p0_readiness_report p0-completion-focus run-p0-smoke P0 completion focus · criterion ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready"
     );
     expect(filterAuditEvidenceReportLedgerRows(rows, query).map((row) => row.id)).toEqual([
       "daily-start-brief-review-8888888888888888"
@@ -13563,7 +13645,7 @@ describe("terminal workbench model", () => {
         createdAt: "2026-06-28T10:15:00.000Z",
         eventId: "daily-start-brief-review-8888888888888888",
         query:
-          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 1 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
+          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 1 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current p0_readiness_report p0-completion-focus run-p0-smoke ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
         status: "current"
       })
     );
@@ -13669,7 +13751,7 @@ describe("terminal workbench model", () => {
         latestDailyStartBriefReviewEventId: "daily-start-brief-review-8888888888888888",
         latestDailyStartBriefReviewLabel: "attention · local reviews 2/2 · open ops 2",
         latestDailyStartBriefReviewQuery:
-          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
+          "daily_start_brief_review daily-start-brief-review-8888888888888888 888888888888 attention local-reviews 2/2 stale-reviews-0 missing-reviews-0 open-ops 2 Run AI review ai-review current Open local evidence daily_ops_control_room_review daily-ops-current p0_readiness_report p0-completion-focus run-p0-smoke ops-queue personal-team-review daily-ops-review live-boundary checkpoint-statuses ready",
         latestDailyStartBriefReviewShortHash: "888888888888",
         localReviewBundleCount: 3,
         localReviewBundleCoverageLabel:
