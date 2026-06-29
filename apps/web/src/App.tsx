@@ -8884,9 +8884,12 @@ export function App() {
       url.search = `?${normalizedSearch}`;
       url.hash = "";
       await navigator.clipboard.writeText(url.toString());
+      const state = resolveLocalReviewCoverageNextActionDeepLinkState(normalizedSearch);
       setWorkspaceState((current) => ({
         ...current,
-        statusLabel: "Local review coverage next-step link copied",
+        statusLabel: state
+          ? localReviewCoverageNextActionCopyStatusLabel(state)
+          : "Local review coverage next-step link copied",
         error: undefined
       }));
     },
@@ -10757,6 +10760,7 @@ export function App() {
             onOpenCompletionGap={selectProductWorkArea}
             onOpenEvidenceLink={openAuditReportLedgerEvidenceLink}
             onOpenLocalReviewCoverageNextAction={(workspaceId, auditReportQuery) => {
+              const state = localReviewCoverageNextActionStateFromParts(workspaceId, auditReportQuery);
               updateAuditEvidenceReportQuery(auditReportQuery);
               selectProductWorkArea(workspaceId);
               const normalizedSearch = buildLocalReviewCoverageNextActionUrlSearch({
@@ -10769,6 +10773,11 @@ export function App() {
                 url.hash = "";
                 window.history.replaceState({}, "", `${url.pathname}${url.search}`);
               }
+              setWorkspaceState((current) => ({
+                ...current,
+                statusLabel: state ? localReviewCoverageNextActionOpenStatusLabel(state) : "Local review entry opened",
+                error: undefined
+              }));
             }}
             onOpenP0ActionLink={openP0CurrentGapActionLink}
             onOpenResearchContextLink={openAuditReportLedgerResearchContextLink}
@@ -12705,6 +12714,21 @@ function localReviewCoverageMissingReviewKindLabel(
   return i18n.locale === "zh-CN" ? "缺少本地复核" : "Missing local review";
 }
 
+function localReviewCoverageNextActionStateFromParts(
+  targetWorkspaceId: ProductWorkAreaId | null | undefined,
+  auditReportQuery: string | null | undefined
+): LocalReviewCoverageNextActionDeepLinkState | null {
+  if (!targetWorkspaceId || !auditReportQuery?.trim()) {
+    return null;
+  }
+
+  const normalizedSearch = buildLocalReviewCoverageNextActionUrlSearch({
+    auditReportQuery,
+    targetWorkspaceId
+  });
+  return normalizedSearch ? resolveLocalReviewCoverageNextActionDeepLinkState(normalizedSearch) : null;
+}
+
 function localReviewCoverageNextActionQueryLabel(
   i18n: AppI18n,
   state: LocalReviewCoverageNextActionDeepLinkState
@@ -12731,6 +12755,70 @@ function localReviewCoverageNextActionOpenLabel(
   return i18n.locale === "zh-CN" ? "打开复核入口" : "Open review entry";
 }
 
+function localReviewCoverageNextActionCopyLabel(
+  i18n: AppI18n,
+  state: LocalReviewCoverageNextActionDeepLinkState | null,
+  scope: "summary" | "row" = "summary"
+): string {
+  if (state?.actionId === "record-daily-ops-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "复制行 Daily Ops 覆盖下一步链接"
+        : "复制 Daily Ops 覆盖下一步链接"
+      : scope === "row"
+        ? "Copy row Daily Ops coverage next link"
+        : "Copy Daily Ops coverage next link";
+  }
+  if (state?.actionId === "record-personal-team-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "复制行个人/小团队覆盖下一步链接"
+        : "复制个人/小团队覆盖下一步链接"
+      : scope === "row"
+        ? "Copy row personal/team coverage next link"
+        : "Copy personal/team coverage next link";
+  }
+  return i18n.locale === "zh-CN"
+    ? scope === "row"
+      ? "复制行覆盖下一步链接"
+      : "复制覆盖下一步链接"
+    : scope === "row"
+      ? "Copy row coverage next link"
+      : "Copy coverage next link";
+}
+
+function localReviewCoverageNextActionOpenSourceLabel(
+  i18n: AppI18n,
+  state: LocalReviewCoverageNextActionDeepLinkState | null,
+  scope: "summary" | "row" = "summary"
+): string {
+  if (state?.actionId === "record-daily-ops-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "打开行 Daily Ops 复核入口"
+        : "打开 Daily Ops 复核入口"
+      : scope === "row"
+        ? "Open row Daily Ops review entry"
+        : "Open Daily Ops review entry";
+  }
+  if (state?.actionId === "record-personal-team-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "打开行个人/小团队复核入口"
+        : "打开个人/小团队复核入口"
+      : scope === "row"
+        ? "Open row personal/team review entry"
+        : "Open personal/team review entry";
+  }
+  return i18n.locale === "zh-CN"
+    ? scope === "row"
+      ? "打开行覆盖下一步"
+      : "打开覆盖下一步"
+    : scope === "row"
+      ? "Open row coverage next"
+      : "Open coverage next";
+}
+
 function localReviewCoverageNextActionQueryStatusLabel(
   state: LocalReviewCoverageNextActionDeepLinkState
 ): string {
@@ -12741,6 +12829,18 @@ function localReviewCoverageNextActionQueryStatusLabel(
     return "Personal/team coverage query selected";
   }
   return "Local review coverage query selected";
+}
+
+function localReviewCoverageNextActionCopyStatusLabel(
+  state: LocalReviewCoverageNextActionDeepLinkState
+): string {
+  if (state.actionId === "record-daily-ops-review") {
+    return "Daily Ops coverage next link copied";
+  }
+  if (state.actionId === "record-personal-team-review") {
+    return "Personal/team coverage next link copied";
+  }
+  return "Local review coverage next-step link copied";
 }
 
 function localReviewCoverageNextActionOpenStatusLabel(
@@ -20900,6 +21000,10 @@ function AuditEvidenceReportLedgerPanel({
   const latestCompletionGapWorkspaceId = summary.latestAuditAidCompletionCurrentCriterionTargetWorkspaceId;
   const localReviewCoverageNextActionWorkspaceId =
     summary.localReviewBundleCoverageNextActionTargetWorkspaceId;
+  const localReviewCoverageNextActionState = localReviewCoverageNextActionStateFromParts(
+    localReviewCoverageNextActionWorkspaceId,
+    summary.localReviewBundleCoverageNextActionQuery
+  );
   const visibleRows = filterAuditEvidenceReportLedgerRows(rows, query);
   const pageStart = pagination && pagination.total > 0 ? pagination.offset + 1 : 0;
   const pageEnd = pagination ? Math.min(pagination.offset + rows.length, pagination.total) : visibleRows.length;
@@ -21485,7 +21589,7 @@ function AuditEvidenceReportLedgerPanel({
                     }
                     type="button"
                   >
-                    {i18n.locale === "zh-CN" ? "复制覆盖下一步链接" : "Copy coverage next link"}
+                    {localReviewCoverageNextActionCopyLabel(i18n, localReviewCoverageNextActionState)}
                   </button>
                 ) : null}
                 {localReviewCoverageNextActionWorkspaceId ? (
@@ -21497,7 +21601,7 @@ function AuditEvidenceReportLedgerPanel({
                     }
                     type="button"
                   >
-                    {i18n.locale === "zh-CN" ? "打开覆盖下一步" : "Open coverage next"}
+                    {localReviewCoverageNextActionOpenSourceLabel(i18n, localReviewCoverageNextActionState)}
                   </button>
                 ) : null}
                 {summary.localReviewBundleLatestQuery ? (
@@ -21774,6 +21878,10 @@ function AuditEvidenceReportLedgerPanel({
               const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId;
               const rowLocalReviewCoverageNextActionWorkspaceId =
                 row.localReviewBundleCoverageNextActionTargetWorkspaceId;
+              const rowLocalReviewCoverageNextActionState = localReviewCoverageNextActionStateFromParts(
+                rowLocalReviewCoverageNextActionWorkspaceId,
+                row.localReviewBundleCoverageNextActionQuery
+              );
               const preparationEvidenceRunId =
                 row.p0PreparationEvidenceRunId || row.researchContextPreparationEvidenceRunId;
 
@@ -22195,7 +22303,7 @@ function AuditEvidenceReportLedgerPanel({
                         }
                         type="button"
                       >
-                        {i18n.locale === "zh-CN" ? "复制行覆盖下一步链接" : "Copy row coverage next link"}
+                        {localReviewCoverageNextActionCopyLabel(i18n, rowLocalReviewCoverageNextActionState, "row")}
                       </button>
                     ) : null}
                     {rowLocalReviewCoverageNextActionWorkspaceId ? (
@@ -22207,7 +22315,7 @@ function AuditEvidenceReportLedgerPanel({
                         }
                         type="button"
                       >
-                        {i18n.locale === "zh-CN" ? "打开行覆盖下一步" : "Open row coverage next"}
+                        {localReviewCoverageNextActionOpenSourceLabel(i18n, rowLocalReviewCoverageNextActionState, "row")}
                       </button>
                     ) : null}
                     {row.localReviewBundleLatestQuery ? (

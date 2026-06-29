@@ -237,6 +237,8 @@ Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_
 
 覆盖下一步落地提示的两个动作也会跟随缺口类型变化：查询按钮会显示“查看 Daily Ops 覆盖查询”或“查看个人/小团队覆盖查询”，入口按钮会显示“打开 Daily Ops 复核入口”或“打开个人/小团队复核入口”。点击任一按钮后，状态栏会写入对应的 coverage query selected 或 review entry opened 反馈，方便操作者确认自己已经进入正确上下文；这些反馈仍只来自本地 UI 状态，不写账本、不自动记录复核、不触发交易路径。
 
+Audit 来源侧的覆盖下一步按钮现在也会跟随缺口类型变化：顶部摘要和本地复核 row 的复制按钮会显示“复制 Daily Ops 覆盖下一步链接”或“复制个人/小团队覆盖下一步链接”，打开按钮会显示“打开 Daily Ops 复核入口”或“打开个人/小团队复核入口”；行级按钮也会带上“行”前缀，方便从具体证据行交接。复制或打开后状态栏会写入对应的 `Daily Ops coverage next link copied`、`Personal/team coverage next link copied`、`Daily Ops review entry opened` 或 `Personal/team review entry opened`，仍只做导航和查询上下文确认，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell
