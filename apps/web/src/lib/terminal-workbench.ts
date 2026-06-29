@@ -3260,7 +3260,11 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
   }
   const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);
   const missingReviewKind = resolveLocalReviewCoverageMissingReviewKind(auditReportQuery);
-  if (actionId === "unknown" || missingReviewKind === "unknown") {
+  if (
+    actionId === "unknown" ||
+    missingReviewKind === "unknown" ||
+    !localReviewCoverageNextActionMatchesMissingReviewKind(actionId, missingReviewKind, auditReportQuery)
+  ) {
     return null;
   }
   return {
@@ -3272,10 +3276,10 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
 }
 
 function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): LocalReviewCoverageNextActionId {
-  if (auditReportQuery.includes("record-daily-ops-review")) {
+  if (localReviewCoverageQueryIncludesToken(auditReportQuery, "record-daily-ops-review")) {
     return "record-daily-ops-review";
   }
-  if (auditReportQuery.includes("record-personal-team-review")) {
+  if (localReviewCoverageQueryIncludesToken(auditReportQuery, "record-personal-team-review")) {
     return "record-personal-team-review";
   }
   return "unknown";
@@ -3284,16 +3288,47 @@ function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): Local
 function resolveLocalReviewCoverageMissingReviewKind(
   auditReportQuery: string
 ): LocalReviewCoverageMissingReviewKind {
-  if (auditReportQuery.includes("local-review-bundle-empty")) {
+  if (localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-empty")) {
     return "empty";
   }
-  if (auditReportQuery.includes("local-review-bundle-daily-ops-missing")) {
+  if (localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-daily-ops-missing")) {
     return "daily-ops";
   }
-  if (auditReportQuery.includes("local-review-bundle-personal-missing")) {
+  if (localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-personal-missing")) {
     return "personal-team";
   }
   return "unknown";
+}
+
+function localReviewCoverageNextActionMatchesMissingReviewKind(
+  actionId: LocalReviewCoverageNextActionId,
+  missingReviewKind: LocalReviewCoverageMissingReviewKind,
+  auditReportQuery: string
+): boolean {
+  const hasDailyOpsMissing = localReviewCoverageQueryIncludesToken(
+    auditReportQuery,
+    "local-review-bundle-daily-ops-missing"
+  );
+  const hasPersonalMissing = localReviewCoverageQueryIncludesToken(
+    auditReportQuery,
+    "local-review-bundle-personal-missing"
+  );
+  const hasEmptyBundle = localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-empty");
+
+  if (actionId === "record-daily-ops-review") {
+    return missingReviewKind === "daily-ops" && hasDailyOpsMissing && !hasPersonalMissing && !hasEmptyBundle;
+  }
+  if (actionId === "record-personal-team-review" && missingReviewKind === "personal-team") {
+    return hasPersonalMissing && !hasDailyOpsMissing && !hasEmptyBundle;
+  }
+  if (actionId === "record-personal-team-review" && missingReviewKind === "empty") {
+    return hasEmptyBundle && hasPersonalMissing && !hasDailyOpsMissing;
+  }
+  return false;
+}
+
+function localReviewCoverageQueryIncludesToken(auditReportQuery: string, token: string): boolean {
+  return auditReportQuery.split(/\s+/u).includes(token);
 }
 
 export function buildLocalReviewCoverageNextActionUrlSearch(input: {
@@ -3307,7 +3342,11 @@ export function buildLocalReviewCoverageNextActionUrlSearch(input: {
   }
   const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);
   const missingReviewKind = resolveLocalReviewCoverageMissingReviewKind(auditReportQuery);
-  if (actionId === "unknown" || missingReviewKind === "unknown") {
+  if (
+    actionId === "unknown" ||
+    missingReviewKind === "unknown" ||
+    !localReviewCoverageNextActionMatchesMissingReviewKind(actionId, missingReviewKind, auditReportQuery)
+  ) {
     return null;
   }
   const params = new URLSearchParams();
