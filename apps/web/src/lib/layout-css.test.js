@@ -4,6 +4,8 @@ import { describe, expect, test } from "vitest";
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
+const readmeSource = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
+const productPlanSource = readFileSync(new URL("../../../../docs/product-plan.md", import.meta.url), "utf8");
 const portfolioPaperOrderAuditPanelSource = readFileSync(
   new URL("../components/PortfolioPaperOrderAuditLedgerPanel.tsx", import.meta.url),
   "utf8"
@@ -629,6 +631,7 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("Local review start link loaded");
     expect(appSource).toContain("Daily Ops coverage next link loaded");
+    expect(appSource).toContain("Daily start coverage next link loaded");
     expect(appSource).toContain("Personal/team coverage next link loaded");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState");
@@ -696,16 +699,25 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Open review entry");
     expect(appSource).toContain("查看 Daily Ops 覆盖查询");
     expect(appSource).toContain("View Daily Ops coverage query");
+    expect(appSource).toContain("查看每日启动覆盖查询");
+    expect(appSource).toContain("View daily start coverage query");
     expect(appSource).toContain("查看个人/小团队覆盖查询");
     expect(appSource).toContain("View personal/team coverage query");
+    expect(appSource).toContain("打开每日启动复核入口");
+    expect(appSource).toContain("Open daily start review entry");
     expect(appSource).toContain("Daily Ops coverage query selected");
+    expect(appSource).toContain("Daily start coverage query selected");
     expect(appSource).toContain("Personal/team coverage query selected");
     expect(appSource).toContain("Daily Ops review entry opened");
+    expect(appSource).toContain("Daily start review entry opened");
     expect(appSource).toContain("Personal/team review entry opened");
     expect(appSource).toContain("Daily Ops coverage next link copied");
+    expect(appSource).toContain("Daily start coverage next link copied");
     expect(appSource).toContain("Personal/team coverage next link copied");
     expect(appSource).toContain("Daily Ops 复核缺失");
     expect(appSource).toContain("Daily Ops review missing");
+    expect(appSource).toContain("每日启动复核缺失");
+    expect(appSource).toContain("Daily start review missing");
     expect(appSource).toContain("个人/小团队复核缺失");
     expect(appSource).toContain("Personal/team review missing");
     expect(overviewSource).toContain("runGoldenPathActionById(");
@@ -715,6 +727,16 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-current-gap-deep-link")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".p0-current-gap-deep-link-actions")).toContain("display: flex;");
     expect(cssBlock(".p0-current-gap-deep-link-actions button")).toContain("cursor: pointer;");
+  });
+
+  test("documents daily start as a first-class local review coverage next action", () => {
+    expect(readmeSource).toContain("Daily Ops、Daily Start 与个人/小团队缺口");
+    expect(productPlanSource).toContain("Daily Ops、Daily Start 与个人/小团队缺口");
+    expect(productPlanSource).toContain(
+      "`record-daily-ops-review`、`record-daily-start-review` 或 `record-personal-team-review`"
+    );
+    expect(productPlanSource).toContain("Daily Ops / Daily Start / 个人小团队 action token");
+    expect(productPlanSource).toContain("Daily Ops、Daily Start、个人/小团队和 empty 启动链接");
   });
 
   test("keeps local review next-action generation tied to the restored research target", () => {
@@ -2037,6 +2059,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("localReviewCoverageNextActionFocusLabel(i18n, localReviewCoverageNextActionState)");
     expect(appSource).toContain("定位 Daily Ops 覆盖下一步");
     expect(appSource).toContain("Focus Daily Ops coverage next");
+    expect(appSource).toContain("定位每日启动覆盖下一步");
+    expect(appSource).toContain("Focus daily start coverage next");
     expect(appSource).toContain("定位个人/小团队覆盖下一步");
     expect(appSource).toContain("Focus personal/team coverage next");
     expect(appSource).toContain("定位本地复核启动");
@@ -2045,12 +2069,16 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Open coverage next");
     expect(appSource).toContain("打开 Daily Ops 复核入口");
     expect(appSource).toContain("Open Daily Ops review entry");
+    expect(appSource).toContain("打开每日启动复核入口");
+    expect(appSource).toContain("Open daily start review entry");
     expect(appSource).toContain("打开个人/小团队复核入口");
     expect(appSource).toContain("Open personal/team review entry");
     expect(appSource).toContain("复制覆盖下一步链接");
     expect(appSource).toContain("Copy coverage next link");
     expect(appSource).toContain("复制 Daily Ops 覆盖下一步链接");
     expect(appSource).toContain("Copy Daily Ops coverage next link");
+    expect(appSource).toContain("复制每日启动覆盖下一步链接");
+    expect(appSource).toContain("Copy daily start coverage next link");
     expect(appSource).toContain("复制个人/小团队覆盖下一步链接");
     expect(appSource).toContain("Copy personal/team coverage next link");
     expect(appSource).toContain("复制本地复核启动链接");
@@ -2240,18 +2268,24 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("定位行 Daily Ops 覆盖下一步");
     expect(appSource).toContain("Focus row Daily Ops coverage next");
+    expect(appSource).toContain("定位行每日启动覆盖下一步");
+    expect(appSource).toContain("Focus row daily start coverage next");
     expect(appSource).toContain("定位行个人/小团队覆盖下一步");
     expect(appSource).toContain("Focus row personal/team coverage next");
     expect(appSource).toContain("打开行覆盖下一步");
     expect(appSource).toContain("Open row coverage next");
     expect(appSource).toContain("打开行 Daily Ops 复核入口");
     expect(appSource).toContain("Open row Daily Ops review entry");
+    expect(appSource).toContain("打开行每日启动复核入口");
+    expect(appSource).toContain("Open row daily start review entry");
     expect(appSource).toContain("打开行个人/小团队复核入口");
     expect(appSource).toContain("Open row personal/team review entry");
     expect(appSource).toContain("复制行覆盖下一步链接");
     expect(appSource).toContain("Copy row coverage next link");
     expect(appSource).toContain("复制行 Daily Ops 覆盖下一步链接");
     expect(appSource).toContain("Copy row Daily Ops coverage next link");
+    expect(appSource).toContain("复制行每日启动覆盖下一步链接");
+    expect(appSource).toContain("Copy row daily start coverage next link");
     expect(appSource).toContain("复制行个人/小团队覆盖下一步链接");
     expect(appSource).toContain("Copy row personal/team coverage next link");
     expect(reportLedgerPanelSource).toContain("row.p0CompletionCurrentCriterionTargetWorkspaceId");
