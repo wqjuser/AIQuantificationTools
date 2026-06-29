@@ -17650,10 +17650,12 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
       const coverageLoaded = coverageReviewIds.has(linkedCoverageReviewAuditEventId);
       const statusLabel = coverageLoaded ? "review chain loaded" : "review chain coverage missing";
       const statusQuery = auditReportLedgerDeduplicatedQueryText([
+        "review-chain-status",
         coverageLoaded ? "" : "review-chain-gap",
         coverageLoaded ? "review-chain-loaded" : "review-chain-coverage-missing",
         row.id,
-        linkedCoverageReviewAuditEventId
+        linkedCoverageReviewAuditEventId,
+        row.createdAt
       ]);
       return {
         ...row,
@@ -17676,9 +17678,11 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
     if (!acceptanceReviewRow) {
       const statusLabel = "review chain acceptance missing";
       const statusQuery = auditReportLedgerDeduplicatedQueryText([
+        "review-chain-status",
         "review-chain-gap",
         "review-chain-acceptance-missing",
-        row.id
+        row.id,
+        row.createdAt
       ]);
       return {
         ...row,
@@ -17704,9 +17708,11 @@ function linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(
       buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(acceptanceReviewRow);
     const statusLabel = "review chain loaded";
     const statusQuery = auditReportLedgerDeduplicatedQueryText([
+      "review-chain-status",
       "review-chain-loaded",
+      acceptanceReviewRow.id,
       row.id,
-      acceptanceReviewRow.id
+      acceptanceReviewRow.createdAt
     ]);
     return {
       ...row,

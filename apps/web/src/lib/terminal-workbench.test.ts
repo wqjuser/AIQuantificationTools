@@ -14846,6 +14846,12 @@ describe("terminal workbench model", () => {
       "linked-acceptance-review p2_readiness_acceptance_review p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999 2026-06-24T09:30:00.000Z";
     const missingCoverageReviewChainQuery =
       "linked-review-chain p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555 2026-06-24T08:50:00.000Z";
+    const loadedStatusQuery =
+      "review-chain-status review-chain-loaded p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999 2026-06-24T09:30:00.000Z";
+    const missingCoverageStatusQuery =
+      "review-chain-status review-chain-gap review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555 2026-06-24T08:50:00.000Z";
+    const missingAcceptanceStatusQuery =
+      "review-chain-status review-chain-gap review-chain-acceptance-missing p2-readiness-evidence-coverage-review-orphan-4444444444444444 2026-06-24T08:40:00.000Z";
 
     expect(coverageRow).toEqual(
       expect.objectContaining({
@@ -14858,7 +14864,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainHealthContextTitle:
           "review-chain-health · health-context-loaded · acceptance p2-readiness-acceptance-review-linked-8888888888888888 · coverage p2-readiness-evidence-coverage-review-linked-9999999999999999",
-        p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded"),
+        p2ReadinessReviewChainStatusQuery: loadedStatusQuery,
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel:
           "linked acceptance review · p2-readiness-acceptance-review-linked-8888888888888888",
         p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery: linkedAcceptanceReviewQuery
@@ -14875,7 +14881,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainHealthContextTitle:
           "review-chain-health · health-context-loaded · acceptance p2-readiness-acceptance-review-linked-8888888888888888 · coverage p2-readiness-evidence-coverage-review-linked-9999999999999999",
-        p2ReadinessReviewChainStatusQuery: expect.stringContaining("review-chain-loaded")
+        p2ReadinessReviewChainStatusQuery: loadedStatusQuery
       })
     );
     expect(missingAcceptanceRow).toEqual(
@@ -14889,8 +14895,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainHealthContextTitle:
           "review-chain-health · health-context-missing-coverage · acceptance p2-readiness-acceptance-review-missing-5555555555555555 · coverage p2-readiness-evidence-coverage-review-missing-5555555555555555",
-        p2ReadinessReviewChainStatusQuery:
-          "review-chain-gap review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555"
+        p2ReadinessReviewChainStatusQuery: missingCoverageStatusQuery
       })
     );
     expect(orphanCoverageRow).toEqual(
@@ -14901,8 +14906,7 @@ describe("terminal workbench model", () => {
         p2ReadinessReviewChainHealthContextQuery: "review-chain-health",
         p2ReadinessReviewChainHealthContextTitle:
           "review-chain-health · health-context-missing-acceptance · coverage p2-readiness-evidence-coverage-review-orphan-4444444444444444",
-        p2ReadinessReviewChainStatusQuery:
-          "review-chain-gap review-chain-acceptance-missing p2-readiness-evidence-coverage-review-orphan-4444444444444444"
+        p2ReadinessReviewChainStatusQuery: missingAcceptanceStatusQuery
       })
     );
     expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toContain(
@@ -14991,8 +14995,7 @@ describe("terminal workbench model", () => {
         latestP2ReadinessReviewChainQuery: reviewChainQuery,
         latestP2ReadinessReviewChainGapEventId: "p2-readiness-acceptance-review-missing-5555555555555555",
         latestP2ReadinessReviewChainGapLabel: "review chain coverage missing",
-        latestP2ReadinessReviewChainGapQuery:
-          "review-chain-gap review-chain-coverage-missing p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555",
+        latestP2ReadinessReviewChainGapQuery: missingCoverageStatusQuery,
         p2ReadinessReviewChainCount: 3,
         p2ReadinessReviewChainGapCount: 2,
         p2ReadinessReviewChainGapsQuery: "review-chain-gap",
