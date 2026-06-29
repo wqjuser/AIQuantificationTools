@@ -14866,7 +14866,7 @@ function auditReportLedgerLocalReviewBundleCoverage({
         "local-review-bundle-empty",
         "local-review-bundle-personal-missing"
       ]),
-      nextActionTargetWorkspaceId: "research",
+      nextActionTargetWorkspaceId: LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID,
       nextActionTitle: `local-review-bundle-next-action · ${nextActionLabel} · no local reviews recorded · ${countLabel}`,
       query: auditReportLedgerDeduplicatedQueryText([
         "local-review-bundle-empty",
@@ -14931,7 +14931,7 @@ function auditReportLedgerLocalReviewBundleCoverage({
       firstMissingReview.nextActionQueryToken,
       firstMissingReview.queryToken
     ]),
-    nextActionTargetWorkspaceId: "research",
+    nextActionTargetWorkspaceId: LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID,
     nextActionTitle: `local-review-bundle-next-action · ${firstMissingReview.nextActionLabel} · missing ${firstMissingReview.label} · ${countLabel}`,
     query: auditReportLedgerDeduplicatedQueryText([
       "local-review-bundle-gap",

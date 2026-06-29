@@ -262,6 +262,8 @@ Batch 102 已让 Audit 顶部摘要在空本地复核覆盖时也暴露启动动
 
 Batch 103 已收紧本地复核覆盖 next-action 的目标工作区：`buildLocalReviewCoverageNextActionUrlSearch` 与 `resolveLocalReviewCoverageNextActionDeepLinkState` 现在会拒绝任何不是 `workspace=research` 的本地复核 next-action 链接，即使该 workspace 本身是合法产品区。这样 `record-daily-start-review`、Daily Ops、个人/小团队和 empty 启动链接都只能落到承载手动复核按钮的 research 工作区，不会被错误包装成 Audit 或其它工作区深链；该能力只保护导航恢复语义，不自动记录复核、不修改账本、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 104 已把本地复核覆盖 next-action 的生成端也绑定到同一个 research target 常量：`auditReportLedgerLocalReviewBundleCoverage` 不再在 empty/partial 分支里硬编码 `nextActionTargetWorkspaceId: "research"`，而是复用 `LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID`，并用 source-level 测试防止生成端和 deep-link builder/resolver 以后分叉。该能力不改变现有链接输出，只收口生成、复制和恢复三段的同源约束；仍不自动记录复核、不修改账本、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

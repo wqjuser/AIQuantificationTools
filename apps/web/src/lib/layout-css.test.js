@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
 const portfolioPaperOrderAuditPanelSource = readFileSync(
   new URL("../components/PortfolioPaperOrderAuditLedgerPanel.tsx", import.meta.url),
   "utf8"
@@ -51,12 +52,16 @@ function hasCssBlockWith(selector, declarations) {
 }
 
 function sourceBetween(startMarker, endMarker) {
-  const start = appSource.indexOf(startMarker);
+  return sourceBetweenText(appSource, startMarker, endMarker);
+}
+
+function sourceBetweenText(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
   if (start < 0) {
     return "";
   }
-  const end = appSource.indexOf(endMarker, start);
-  return end < 0 ? appSource.slice(start) : appSource.slice(start, end + endMarker.length);
+  const end = source.indexOf(endMarker, start);
+  return end < 0 ? source.slice(start) : source.slice(start, end + endMarker.length);
 }
 
 function i18nSnippet(zh, en) {
@@ -710,6 +715,22 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-current-gap-deep-link")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".p0-current-gap-deep-link-actions")).toContain("display: flex;");
     expect(cssBlock(".p0-current-gap-deep-link-actions button")).toContain("cursor: pointer;");
+  });
+
+  test("keeps local review next-action generation tied to the restored research target", () => {
+    const coverageSource = sourceBetweenText(
+      terminalWorkbenchSource,
+      "function auditReportLedgerLocalReviewBundleCoverage",
+      "function auditReportLedgerDeduplicatedQueryText"
+    );
+
+    expect(terminalWorkbenchSource).toContain(
+      'const LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID: ProductWorkAreaId = "research";'
+    );
+    expect(coverageSource).toContain(
+      "nextActionTargetWorkspaceId: LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID"
+    );
+    expect(coverageSource).not.toContain('nextActionTargetWorkspaceId: "research"');
   });
 
   test("copies P0 action outcome evidence links without changing the evidence open path", () => {
