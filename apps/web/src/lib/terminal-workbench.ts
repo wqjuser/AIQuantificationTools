@@ -18005,9 +18005,9 @@ export function buildAuditEvidenceReportLedgerSummary(
         : "";
   const p2ReadinessReviewChainHealthQuery =
     p2ReadinessReviewChainHealthState === "gaps"
-      ? "review-chain-gap"
+      ? "review-chain-health review-chain-gap"
       : p2ReadinessReviewChainHealthState === "loaded"
-        ? "review-chain-loaded"
+        ? "review-chain-health review-chain-loaded"
         : "";
   const p2ReadinessReviewChainHealthContextTitle =
     auditReportLedgerP2ReviewChainHealthContextSummaryTitle({
