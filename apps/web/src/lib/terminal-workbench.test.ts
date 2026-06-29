@@ -13442,6 +13442,9 @@ describe("terminal workbench model", () => {
     expect(
       filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageNextActionQuery).map((row) => row.id)
     ).toEqual(["personal-team-readiness-review-only-7777777777777777"]);
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageNextActionTitle).map((row) => row.id)
+    ).toEqual(["personal-team-readiness-review-only-7777777777777777"]);
     expect(filterAuditEvidenceReportLedgerRows(rows, "record-daily-ops-review").map((row) => row.id)).toEqual([
       "personal-team-readiness-review-only-7777777777777777"
     ]);
@@ -13513,6 +13516,9 @@ describe("terminal workbench model", () => {
     );
     expect(
       filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageNextActionQuery).map((row) => row.id)
+    ).toEqual(["daily-ops-control-room-review-only-6666666666666666"]);
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleCoverageNextActionTitle).map((row) => row.id)
     ).toEqual(["daily-ops-control-room-review-only-6666666666666666"]);
     expect(filterAuditEvidenceReportLedgerRows(rows, "record-personal-team-review").map((row) => row.id)).toEqual([
       "daily-ops-control-room-review-only-6666666666666666"

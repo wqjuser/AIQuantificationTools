@@ -228,6 +228,8 @@ Batch 85 已把 Audit 来源侧的 Coverage next 标签本体也改成 action-sp
 
 Batch 86 已把 Audit 来源侧 Coverage next 的 tooltip/title 也改成 action-specific：新增 `localReviewCoverageNextActionTitle`，顶部摘要、本地复核 row 以及 focus/copy/open 来源侧按钮都会先显示 Daily Ops 或个人/小团队缺口，再保留原始 next-action title/query/label。该能力让悬停提示和可见标签保持同一套人工复核语义，仍只解释已有 Audit 上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 87 已把 Coverage next 的 title 语义纳入 Audit 只读搜索：`markLocalReviewBundleCoverageLedgerRows` 会把 next-action title 合入 row `searchText`，`filterAuditEvidenceReportLedgerRows` 也显式索引 `localReviewBundleCoverageNextActionTitle`。现在粘贴完整 `local-review-bundle-next-action · record ... · missing ...` tooltip/title 也能筛回对应缺口行，方便个人或小团队用可读描述复查交接来源；该能力仍只过滤现有台账，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

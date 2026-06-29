@@ -16888,7 +16888,9 @@ function markLocalReviewBundleCoverageLedgerRows(rows: AuditEvidenceReportLedger
       localReviewBundleCoverageNextActionQuery: coverage.nextActionQuery,
       localReviewBundleCoverageNextActionTargetWorkspaceId: coverage.nextActionTargetWorkspaceId,
       localReviewBundleCoverageNextActionTitle: coverage.nextActionTitle,
-      searchText: [row.searchText, coverage.query, coverage.nextActionQuery].filter(Boolean).join(" ")
+      searchText: [row.searchText, coverage.query, coverage.nextActionQuery, coverage.nextActionTitle]
+        .filter(Boolean)
+        .join(" ")
     };
   });
 }
@@ -18256,6 +18258,7 @@ export function filterAuditEvidenceReportLedgerRows(
       row.localReviewBundleContextTitle,
       row.localReviewBundleCoverageQuery,
       row.localReviewBundleCoverageNextActionQuery,
+      row.localReviewBundleCoverageNextActionTitle,
       row.localReviewBundleLatestLabel,
       row.localReviewBundleLatestQuery,
       row.localReviewBundleLatestTitle,
