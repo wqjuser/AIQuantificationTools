@@ -233,6 +233,8 @@ Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_
 
 打开覆盖下一步深链时，首页会在 P0 readiness 区域显示“本地复核覆盖下一步 / Local review coverage next”落地提示，列出目标复核工作区和原始 coverage query，并提供“查看覆盖查询 / View coverage query”和“打开复核入口 / Open review entry”两个显式动作。前者切到 Audit 只读定位，后者回到承载手动复核按钮的工作区；两者都只保留查询上下文，不自动点击“入账复核”、不写新事件、不签名、不运行流水线、不连接券商、不提交订单。
 
+覆盖下一步深链现在还会解析具体缺口类型：`resolveLocalReviewCoverageNextActionDeepLinkState` 会从查询中派生 `record-daily-ops-review` 或 `record-personal-team-review`，并标记缺少 Daily Ops 复核还是个人/小团队复核。首页落地提示会显示“Daily Ops 复核缺失”或“个人/小团队复核缺失”，状态栏也会显示已载入的 next-action id；这仍只是解释和导航，不自动入账复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单。
+
 如需做严格的干净数据库验收，可先启动第二个全新实例，再把导入目标传给底层 smoke helper：
 
 ```powershell

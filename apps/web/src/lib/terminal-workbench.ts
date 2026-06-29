@@ -2852,8 +2852,16 @@ export interface P0CompletionGapDeepLinkState {
   targetWorkspaceId: ProductWorkAreaId;
 }
 
+export type LocalReviewCoverageNextActionId =
+  | "record-daily-ops-review"
+  | "record-personal-team-review"
+  | "unknown";
+export type LocalReviewCoverageMissingReviewKind = "daily-ops" | "personal-team" | "unknown";
+
 export interface LocalReviewCoverageNextActionDeepLinkState {
+  actionId: LocalReviewCoverageNextActionId;
   auditReportQuery: string;
+  missingReviewKind: LocalReviewCoverageMissingReviewKind;
   targetWorkspaceId: ProductWorkAreaId;
 }
 
@@ -3251,9 +3259,33 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
     return null;
   }
   return {
+    actionId: resolveLocalReviewCoverageNextActionId(auditReportQuery),
     auditReportQuery,
+    missingReviewKind: resolveLocalReviewCoverageMissingReviewKind(auditReportQuery),
     targetWorkspaceId
   };
+}
+
+function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): LocalReviewCoverageNextActionId {
+  if (auditReportQuery.includes("record-daily-ops-review")) {
+    return "record-daily-ops-review";
+  }
+  if (auditReportQuery.includes("record-personal-team-review")) {
+    return "record-personal-team-review";
+  }
+  return "unknown";
+}
+
+function resolveLocalReviewCoverageMissingReviewKind(
+  auditReportQuery: string
+): LocalReviewCoverageMissingReviewKind {
+  if (auditReportQuery.includes("local-review-bundle-daily-ops-missing")) {
+    return "daily-ops";
+  }
+  if (auditReportQuery.includes("local-review-bundle-personal-missing")) {
+    return "personal-team";
+  }
+  return "unknown";
 }
 
 export function buildLocalReviewCoverageNextActionUrlSearch(input: {

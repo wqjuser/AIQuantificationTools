@@ -16784,8 +16784,10 @@ describe("terminal workbench model", () => {
         "?workspace=research&auditReportQuery=local-review-bundle-next-action+record-daily-ops-review+local-review-bundle-daily-ops-missing"
       )
     ).toEqual({
+      actionId: "record-daily-ops-review",
       auditReportQuery:
         "local-review-bundle-next-action record-daily-ops-review local-review-bundle-daily-ops-missing",
+      missingReviewKind: "daily-ops",
       targetWorkspaceId: "research"
     });
     expect(
@@ -16795,8 +16797,10 @@ describe("terminal workbench model", () => {
         )
       )
     ).toEqual({
+      actionId: "record-personal-team-review",
       auditReportQuery:
         "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
+      missingReviewKind: "personal-team",
       targetWorkspaceId: "research"
     });
     expect(

@@ -619,6 +619,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("initialP0CurrentGapActionDeepLinkState");
     expect(appSource).toContain("initialP0CompletionGapDeepLinkState");
     expect(appSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState");
+    expect(appSource).toContain(
+      "Local review coverage next link loaded: ${initialLocalReviewCoverageNextActionDeepLinkState.actionId}"
+    );
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState");
     expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState");
@@ -633,7 +636,15 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.auditReportQuery");
     expect(overviewSource).toContain("initialP0CompletionGapDeepLinkState.targetWorkspaceId");
     expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery");
+    expect(appSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.actionId");
+    expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.missingReviewKind");
     expect(overviewSource).toContain("initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId");
+    expect(overviewSource).toContain(
+      "localReviewCoverageNextActionLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)"
+    );
+    expect(overviewSource).toContain(
+      "localReviewCoverageNextActionOpenLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)"
+    );
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CurrentGapActionDeepLinkState.auditReportQuery)");
     expect(overviewSource).toContain("replaceAuditEvidenceReportQueryUrlParam(initialP0CompletionGapDeepLinkState.auditReportQuery)");
     expect(overviewSource).toContain(
@@ -653,6 +664,10 @@ describe("terminal layout css", () => {
     expect(overviewSource).toContain("View coverage query");
     expect(overviewSource).toContain("打开复核入口");
     expect(overviewSource).toContain("Open review entry");
+    expect(appSource).toContain("Daily Ops 复核缺失");
+    expect(appSource).toContain("Daily Ops review missing");
+    expect(appSource).toContain("个人/小团队复核缺失");
+    expect(appSource).toContain("Personal/team review missing");
     expect(overviewSource).toContain("runGoldenPathActionById(");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.actionId");
     expect(overviewSource).toContain("initialP0CurrentGapActionDeepLinkState.targetWorkspaceId");

@@ -533,6 +533,7 @@ import {
   PreLiveRunbookAuditCoverage,
   GoldenPathWorkspaceContext,
   GoldenPathRunbookPreviewItem,
+  LocalReviewCoverageNextActionDeepLinkState,
   P0CompletionChecklist,
   P0CompletionCriterion,
   P0AcceptanceSummary,
@@ -656,7 +657,9 @@ const initialWorkspaceState: WorkspaceLoadResult = {
     ? `P0 next-step link loaded: ${initialP0CurrentGapActionDeepLinkState.actionId} -> ${initialP0CurrentGapActionDeepLinkState.targetWorkspaceId}`
     : initialP0CompletionGapDeepLinkState
       ? `P0 completion gap link loaded -> ${initialP0CompletionGapDeepLinkState.targetWorkspaceId}`
-    : "Offline snapshot"
+      : initialLocalReviewCoverageNextActionDeepLinkState
+        ? `Local review coverage next link loaded: ${initialLocalReviewCoverageNextActionDeepLinkState.actionId} -> ${initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId}`
+        : "Offline snapshot"
 };
 const initialRunHistoryState: ResearchRunHistoryResult = {
   runs: [],
@@ -11972,13 +11975,19 @@ export function App() {
                     <div>
                       <span>{i18n.locale === "zh-CN" ? "本地复核覆盖下一步" : "Local review coverage next"}</span>
                       <strong>
+                        {localReviewCoverageNextActionLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)}
+                        {" -> "}
                         {productWorkAreaIdLabelText(
                           i18n,
                           initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId
                         )}
                       </strong>
                       <small title={initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery}>
-                        {i18n.locale === "zh-CN" ? "覆盖查询" : "Coverage query"} ·{" "}
+                        {localReviewCoverageMissingReviewKindLabel(
+                          i18n,
+                          initialLocalReviewCoverageNextActionDeepLinkState.missingReviewKind
+                        )}{" "}
+                        · {i18n.locale === "zh-CN" ? "覆盖查询" : "Coverage query"} ·{" "}
                         {initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery}
                       </small>
                     </div>
@@ -11995,6 +12004,7 @@ export function App() {
                         {i18n.locale === "zh-CN" ? "查看覆盖查询" : "View coverage query"}
                       </button>
                       <button
+                        title={localReviewCoverageNextActionOpenLabel(i18n, initialLocalReviewCoverageNextActionDeepLinkState)}
                         onClick={() => {
                           replaceAuditEvidenceReportQueryUrlParam(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
                           setAuditEvidenceReportQuery(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
@@ -12657,6 +12667,45 @@ function p1AcceptanceSummaryDetail(i18n: AppI18n, summary: P1AcceptanceSummary):
       .replace(". Live trading remains blocked.", "")}；实盘仍阻断。`;
   }
   return `运行 P1 验收后会在这里读取 ${summary.sourcePath}；缺失时仍保持实盘阻断。`;
+}
+
+function localReviewCoverageNextActionLabel(
+  i18n: AppI18n,
+  state: LocalReviewCoverageNextActionDeepLinkState
+): string {
+  if (state.actionId === "record-daily-ops-review") {
+    return i18n.locale === "zh-CN" ? "Daily Ops 复核缺失" : "Daily Ops review missing";
+  }
+  if (state.actionId === "record-personal-team-review") {
+    return i18n.locale === "zh-CN" ? "个人/小团队复核缺失" : "Personal/team review missing";
+  }
+  return i18n.locale === "zh-CN" ? "本地复核缺失" : "Local review missing";
+}
+
+function localReviewCoverageMissingReviewKindLabel(
+  i18n: AppI18n,
+  missingReviewKind: LocalReviewCoverageNextActionDeepLinkState["missingReviewKind"]
+): string {
+  if (missingReviewKind === "daily-ops") {
+    return i18n.locale === "zh-CN" ? "缺少 Daily Ops 复核" : "Missing Daily Ops review";
+  }
+  if (missingReviewKind === "personal-team") {
+    return i18n.locale === "zh-CN" ? "缺少个人/小团队复核" : "Missing personal/team review";
+  }
+  return i18n.locale === "zh-CN" ? "缺少本地复核" : "Missing local review";
+}
+
+function localReviewCoverageNextActionOpenLabel(
+  i18n: AppI18n,
+  state: LocalReviewCoverageNextActionDeepLinkState
+): string {
+  if (state.actionId === "record-daily-ops-review") {
+    return i18n.locale === "zh-CN" ? "打开 Daily Ops 复核入口" : "Open Daily Ops review entry";
+  }
+  if (state.actionId === "record-personal-team-review") {
+    return i18n.locale === "zh-CN" ? "打开个人/小团队复核入口" : "Open personal/team review entry";
+  }
+  return i18n.locale === "zh-CN" ? "打开复核入口" : "Open review entry";
 }
 
 function personalTeamUsabilityReadinessHeadline(
