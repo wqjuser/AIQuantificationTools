@@ -3255,10 +3255,7 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
       : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
   const auditReportQuery = params.get("auditReportQuery")?.trim() ?? "";
-  if (
-    !targetWorkspaceId ||
-    !localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-next-action")
-  ) {
+  if (!targetWorkspaceId || !localReviewCoverageNextActionQueryHasSingleStructure(auditReportQuery)) {
     return null;
   }
   const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);
@@ -3330,8 +3327,21 @@ function localReviewCoverageNextActionMatchesMissingReviewKind(
   return false;
 }
 
+function localReviewCoverageNextActionQueryHasSingleStructure(auditReportQuery: string): boolean {
+  return (
+    localReviewCoverageQueryTokenCount(auditReportQuery, "local-review-bundle-next-action") === 1 &&
+    localReviewCoverageQueryTokenCount(auditReportQuery, "record-daily-ops-review") +
+      localReviewCoverageQueryTokenCount(auditReportQuery, "record-personal-team-review") ===
+      1
+  );
+}
+
 function localReviewCoverageQueryIncludesToken(auditReportQuery: string, token: string): boolean {
-  return auditReportQuery.split(/\s+/u).includes(token);
+  return localReviewCoverageQueryTokenCount(auditReportQuery, token) > 0;
+}
+
+function localReviewCoverageQueryTokenCount(auditReportQuery: string, token: string): number {
+  return auditReportQuery.split(/\s+/u).filter((part) => part === token).length;
 }
 
 export function buildLocalReviewCoverageNextActionUrlSearch(input: {
@@ -3340,10 +3350,7 @@ export function buildLocalReviewCoverageNextActionUrlSearch(input: {
 }): string | null {
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
   const auditReportQuery = input.auditReportQuery?.trim() ?? "";
-  if (
-    !targetWorkspaceId ||
-    !localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-next-action")
-  ) {
+  if (!targetWorkspaceId || !localReviewCoverageNextActionQueryHasSingleStructure(auditReportQuery)) {
     return null;
   }
   const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);

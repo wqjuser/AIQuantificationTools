@@ -244,6 +244,8 @@ Batch 93 已给本地复核覆盖 next-action 深链增加 action/kind 一致性
 
 Batch 94 已把 `local-review-bundle-next-action` 主 token 也收紧为精确匹配：builder 和 resolver 不再使用子串 `includes` 判断 next-action 入口，`not-local-review-bundle-next-action` 这类伪 token 会被拒绝。这样 next-action 主入口、action id、missing kind 和 empty token 都遵循同一套 token 校验；该能力仍只保护 URL 解释和只读导航上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 95 已给本地复核覆盖 next-action 查询增加单结构校验：`localReviewCoverageNextActionQueryHasSingleStructure` 要求查询中恰好有一个 `local-review-bundle-next-action` 主 token，且 Daily Ops / 个人小团队 action token 总数必须恰好为 1。重复主 token、多 action token 或重复 action token 的歧义链接现在会被 builder 与 resolver 一起拒绝；该能力仍只保护 URL 解释和只读导航上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。
