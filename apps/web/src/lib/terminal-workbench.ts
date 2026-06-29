@@ -714,6 +714,55 @@ export interface DailyOpsControlRoomReviewReference {
   status: DailyOpsControlRoomReviewReferenceStatus;
 }
 
+export type DailyStartBriefState = "ready" | "attention" | "blocked";
+export type DailyStartBriefTone = "positive" | "warning" | "risk";
+export type DailyStartBriefLocalReviewStatus = "current" | "stale" | "missing";
+export type DailyStartBriefCheckpointStatus = "ready" | "review" | "blocked" | "current" | "stale" | "missing";
+export type DailyStartBriefCheckpointId =
+  | "ops-queue"
+  | "personal-team-review"
+  | "daily-ops-review"
+  | "live-boundary";
+
+export interface DailyStartBriefCheckpoint {
+  id: DailyStartBriefCheckpointId;
+  label: string;
+  status: DailyStartBriefCheckpointStatus;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  query: string;
+}
+
+export interface DailyStartBrief {
+  state: DailyStartBriefState;
+  tone: DailyStartBriefTone;
+  headline: string;
+  detail: string;
+  primaryActionLabel: string;
+  primaryActionWorkspaceId: ProductWorkAreaId;
+  auditActionLabel: string;
+  auditQuery: string;
+  localReviewStatus: DailyStartBriefLocalReviewStatus;
+  localReviewActionLabel: string;
+  localReviewDetail: string;
+  localReviewQuery: string;
+  localReviewWorkspaceId: ProductWorkAreaId;
+  currentReviewCount: number;
+  staleReviewCount: number;
+  missingReviewCount: number;
+  openOpsItemCount: number;
+  checkpoints: DailyStartBriefCheckpoint[];
+  liveBoundaryLabel: string;
+}
+
+export interface DailyStartBriefInput {
+  dailyOpsControlRoom: DailyOpsControlRoomSummary;
+  dailyOpsControlRoomReviewReference: DailyOpsControlRoomReviewReference;
+  personalTeamReadinessReviewReference: PersonalTeamUsabilityReadinessReviewReference;
+  personalTeamUsabilityReadiness: PersonalTeamUsabilityReadinessSummary;
+}
+
 export interface DailyOpsControlRoomSummaryInput {
   auditEvidenceReportLedgerSummary: AuditEvidenceReportLedgerSummary;
   personalTeamUsabilityReadiness: PersonalTeamUsabilityReadinessSummary;
@@ -9236,6 +9285,176 @@ export function buildDailyOpsControlRoomReviewReference({
     row: latestRow,
     status: isCurrent ? "current" : "stale"
   };
+}
+
+export function buildDailyStartBrief({
+  dailyOpsControlRoom,
+  dailyOpsControlRoomReviewReference,
+  personalTeamReadinessReviewReference,
+  personalTeamUsabilityReadiness
+}: DailyStartBriefInput): DailyStartBrief {
+  const reviewReferences = [
+    {
+      id: "personal-team-review" as const,
+      label: "Personal/team readiness review",
+      reference: personalTeamReadinessReviewReference,
+      targetWorkspaceId: "research" as const
+    },
+    {
+      id: "daily-ops-review" as const,
+      label: "Daily ops review",
+      reference: dailyOpsControlRoomReviewReference,
+      targetWorkspaceId: "research" as const
+    }
+  ];
+  const currentReviewCount = reviewReferences.filter((item) => item.reference.status === "current").length;
+  const staleReviewCount = reviewReferences.filter((item) => item.reference.status === "stale").length;
+  const missingReviewCount = reviewReferences.filter((item) => item.reference.status === "missing").length;
+  const localReviewStatus: DailyStartBriefLocalReviewStatus =
+    missingReviewCount > 0 ? "missing" : staleReviewCount > 0 ? "stale" : "current";
+  const state: DailyStartBriefState =
+    dailyOpsControlRoom.state === "blocked" || personalTeamUsabilityReadiness.state === "blocked"
+      ? "blocked"
+      : localReviewStatus !== "current" || dailyOpsControlRoom.state === "attention"
+        ? "attention"
+        : "ready";
+  const tone: DailyStartBriefTone = state === "ready" ? "positive" : state === "blocked" ? "risk" : "warning";
+  const localReviewQuery =
+    reviewReferences.find((item) => item.reference.status !== "missing" && item.reference.query)?.reference.query ||
+    dailyOpsControlRoomReviewReference.query ||
+    personalTeamReadinessReviewReference.query ||
+    "";
+  const currentLocalReviewQuery = dailyOpsControlRoomReviewReference.query || personalTeamReadinessReviewReference.query || "";
+  const localReviewWorkspaceId: ProductWorkAreaId = localReviewStatus === "current" && localReviewQuery ? "audit" : "research";
+  const localReviewActionLabel =
+    localReviewStatus === "missing"
+      ? "Record local reviews"
+      : localReviewStatus === "stale"
+        ? "Refresh local reviews"
+        : "Open local review evidence";
+  const missingLabels = reviewReferences
+    .filter((item) => item.reference.status === "missing")
+    .map((item) => item.label.toLowerCase());
+  const staleLabels = reviewReferences
+    .filter((item) => item.reference.status === "stale")
+    .map((item) => item.label.toLowerCase());
+  const localReviewDetail =
+    localReviewStatus === "current"
+      ? "Personal/team readiness and daily ops reviews match the current model state."
+    : localReviewStatus === "missing"
+        ? `${formatDailyStartBriefReviewList(missingLabels)} ${missingLabels.length === 1 ? "is" : "are"} missing; record fresh local review evidence before handoff.`
+        : `${formatDailyStartBriefReviewList(staleLabels)} ${staleLabels.length === 1 ? "is" : "are"} stale; refresh local review evidence before handoff.`;
+
+  const checkpoints: DailyStartBriefCheckpoint[] = [
+    {
+      id: "ops-queue",
+      label: "Daily ops queue",
+      status: dailyOpsControlRoom.state === "ready" ? "ready" : dailyOpsControlRoom.state === "blocked" ? "blocked" : "review",
+      detail: dailyOpsControlRoom.detail,
+      actionLabel: dailyOpsControlRoom.primaryActionLabel,
+      targetWorkspaceId: dailyOpsControlRoom.primaryActionWorkspaceId,
+      query: dailyOpsControlRoom.auditQuery
+    },
+    ...reviewReferences.map((item): DailyStartBriefCheckpoint => ({
+      id: item.id,
+      label: item.label,
+      status: item.reference.status,
+      detail: item.reference.detail,
+      actionLabel:
+        item.reference.status === "current"
+          ? "Open review evidence"
+          : item.reference.status === "stale"
+            ? "Refresh review"
+            : "Record review",
+      targetWorkspaceId: item.reference.status === "current" && item.reference.query ? "audit" : item.targetWorkspaceId,
+      query: item.reference.query
+    })),
+    {
+      id: "live-boundary",
+      label: "Live boundary",
+      status: "ready",
+      detail: dailyOpsControlRoom.liveBoundaryLabel,
+      actionLabel: "Keep paper-only boundary",
+      targetWorkspaceId: "execution",
+      query: ""
+    }
+  ];
+
+  return {
+    state,
+    tone,
+    headline:
+      state === "blocked"
+        ? "Daily start is blocked"
+        : localReviewStatus !== "current"
+          ? "Daily start needs fresh local review"
+          : dailyOpsControlRoom.state === "attention"
+            ? "Daily start needs an ops action"
+            : "Daily start ready for paper review",
+    detail: `${dailyOpsControlRoom.readyCount}/${dailyOpsControlRoom.totalCount} ops gates ready · ${currentReviewCount}/2 local reviews current · ${dailyOpsControlRoom.openItems.length} open ops item${dailyOpsControlRoom.openItems.length === 1 ? "" : "s"}. Live trading remains blocked.`,
+    primaryActionLabel: dailyOpsControlRoom.primaryActionLabel,
+    primaryActionWorkspaceId: dailyOpsControlRoom.primaryActionWorkspaceId,
+    auditActionLabel: dailyOpsControlRoom.auditQuery ? "Open audit context" : "Open audit ledger",
+    auditQuery: dailyOpsControlRoom.auditQuery,
+    localReviewStatus,
+    localReviewActionLabel,
+    localReviewDetail,
+    localReviewQuery: localReviewStatus === "current" ? currentLocalReviewQuery : localReviewQuery,
+    localReviewWorkspaceId,
+    currentReviewCount,
+    staleReviewCount,
+    missingReviewCount,
+    openOpsItemCount: dailyOpsControlRoom.openItems.length,
+    checkpoints,
+    liveBoundaryLabel: dailyOpsControlRoom.liveBoundaryLabel
+  };
+}
+
+function formatDailyStartBriefReviewList(labels: string[]): string {
+  if (labels.length === 0) {
+    return "local reviews";
+  }
+  const readableLabels = labels.map((label) => label.replace(/\s+review$/u, ""));
+  if (labels.length === 1) {
+    return readableLabels[0];
+  }
+  return `${readableLabels.slice(0, -1).join(", ")} and ${readableLabels[readableLabels.length - 1]} reviews`;
+}
+
+export function buildDailyStartBriefMarkdown({ brief }: { brief: DailyStartBrief }): string {
+  return [
+    "# Daily Start Brief",
+    "",
+    "## Summary",
+    `- State: ${brief.state}`,
+    `- Headline: ${brief.headline}`,
+    `- Detail: ${brief.detail}`,
+    `- Primary action: ${brief.primaryActionLabel} (${brief.primaryActionWorkspaceId})`,
+    `- Audit action: ${brief.auditActionLabel}`,
+    `- Audit query: ${brief.auditQuery || "none"}`,
+    `- Local review status: ${brief.localReviewStatus}`,
+    `- Local review action: ${brief.localReviewActionLabel} (${brief.localReviewWorkspaceId})`,
+    `- Local review query: ${brief.localReviewQuery || "none"}`,
+    `- Live boundary: ${brief.liveBoundaryLabel}`,
+    "",
+    "## Checkpoints",
+    ...brief.checkpoints.map((checkpoint) =>
+      [
+        `- ${checkpoint.id}: ${checkpoint.status}`,
+        `  - Label: ${checkpoint.label}`,
+        `  - Detail: ${checkpoint.detail}`,
+        `  - Action: ${checkpoint.actionLabel}`,
+        `  - Target workspace: ${checkpoint.targetWorkspaceId}`,
+        `  - Query: ${checkpoint.query || "none"}`
+      ].join("\n")
+    ),
+    "",
+    "## Boundary",
+    "- Platform decision: live trading and real order routing remain blocked.",
+    "- This brief only organizes the next local paper-only operating step; it does not authorize live trading or investment advice."
+  ]
+    .flat()
+    .join("\n");
 }
 
 export function buildPersonalTeamUsabilityReadinessReviewReference({

@@ -213,6 +213,8 @@ Audit 台账现在还会解释 P2 复核链健康上下文：`AuditEvidenceRepor
 
 首页现在还新增了 Daily Ops 控制台：`buildDailyOpsControlRoomSummary` 会把 P0 completion 当前缺口、个人/小团队 readiness、最新 Audit 查询和备份/交接状态压成 4 条每日操作队列。主动作会把操作者带到当前最需要处理的工作区，审计动作会写入 `auditReportQuery` 并切到 Audit 只读定位；复制链接复用既有 Audit 查询深链。这个控制台还可以复制、下载或入账为 `daily_ops_control_room_review` 本地复核材料；复核事件只保存 Markdown SHA-256、队列状态、打开项、主动作和强制 live-blocked metadata，不存正文。首页会用 `buildDailyOpsControlRoomReviewReference` 回读最新 Daily Ops 复核，标记为 current、stale 或 missing，并提供定位/复制对应 Audit 查询链接；整个链路不运行流水线、不提交订单，也不放宽 live-blocked 边界。
 
+首页现在还会在个人/小团队 readiness 与 Daily Ops 控制台前显示“今日启动摘要 / Daily Start”：`buildDailyStartBrief` 会把 Daily Ops 队列、个人/小团队可用性、个人/团队复核引用和 Daily Ops 复核引用压成一个主动作、一个审计入口和一个本地复核入口，并把两类本地复核标成 current、stale 或 missing。这样操作者打开首页就能先看到今天该继续 AI 评审、补交接/备份，还是先入账本地复核；该摘要只复用现有导航和只读 Audit 查询，不自动运行 P0 action、不新建复核、不修改账本、不签名、不连接券商、不提交订单。
+
 Audit 报告台账行现在也能直接解释 `personal_team_readiness_review` 和 `daily_ops_control_room_review`：模型层新增行级 label/title/query helper，页面会显示个人/小团队复核和每日操作复核 chip，并提供“定位复核 / 复制复核链接”动作。这样从首页跳转到 Audit 后，不需要打开 Markdown 或手工拼搜索词，也能看见复核状态、ready/total、open items 和下一动作；这些动作只过滤既有台账行，不新建复核、不签名、不运行流水线、不连接券商、不提交订单。
 
 Audit 报告台账顶部摘要现在也会上浮最新 `personal_team_readiness_review` 和 `daily_ops_control_room_review`：`buildAuditEvidenceReportLedgerSummary` 会选出两类最新 ready 复核行，暴露 event id、短 hash、label、title 和稳定查询；Toolbar 会显示“最新可用性复核 / Latest readiness review”和“最新每日复核 / Latest daily review”，并提供定位/复制链接。这个入口只复用既有复核行和只读 Audit 查询，不新建复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。

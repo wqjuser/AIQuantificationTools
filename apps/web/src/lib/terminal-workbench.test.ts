@@ -3,6 +3,7 @@ import type {
   AuditEvidenceReportLedgerSummary,
   AuditEvidenceReportLedgerRow,
   DailyOpsControlRoomSummary,
+  DailyStartBrief,
   ExecutionAdapterChainHealthRollup,
   OperatorRunbookAuditCoverage,
   OperatorRunbookSummary,
@@ -160,6 +161,8 @@ import {
   buildDailyOpsControlRoomSummary,
   buildDailyOpsControlRoomReviewMarkdown,
   buildDailyOpsControlRoomReviewReference,
+  buildDailyStartBrief,
+  buildDailyStartBriefMarkdown,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
@@ -3798,6 +3801,145 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("- team-handoff: review");
     expect(markdown).toContain("- backup-restore: ready");
     expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
+  });
+
+  test("builds a daily start brief that prioritizes missing local reviews after the ops action", () => {
+    const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture(),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture(),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+    const dailyOpsSummary = buildDailyOpsControlRoomSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture({
+        latestAuditAidEventId: "audit-aid-ready",
+        latestAuditAidReportQuery: "p0_readiness_report p0-completion-focus run-p0-smoke"
+      }),
+      personalTeamUsabilityReadiness: personalTeamSummary,
+      p0CompletionChecklist: p0CompletionChecklistFixture()
+    });
+
+    const brief: DailyStartBrief = buildDailyStartBrief({
+      dailyOpsControlRoom: dailyOpsSummary,
+      dailyOpsControlRoomReviewReference: {
+        createdAt: "",
+        detail: "No daily ops review has been recorded yet.",
+        eventId: "",
+        label: "No daily ops review recorded",
+        query: "",
+        row: null,
+        status: "missing"
+      },
+      personalTeamReadinessReviewReference: {
+        createdAt: "",
+        detail: "No personal/team readiness review has been recorded yet.",
+        eventId: "",
+        label: "No personal/team readiness review recorded",
+        query: "",
+        row: null,
+        status: "missing"
+      },
+      personalTeamUsabilityReadiness: personalTeamSummary
+    });
+
+    expect(brief).toMatchObject({
+      state: "attention",
+      tone: "warning",
+      headline: "Daily start needs fresh local review",
+      primaryActionLabel: "Run AI review",
+      primaryActionWorkspaceId: "ai-review",
+      auditActionLabel: "Open audit context",
+      auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+      localReviewStatus: "missing",
+      localReviewActionLabel: "Record local reviews",
+      localReviewWorkspaceId: "research",
+      currentReviewCount: 0,
+      staleReviewCount: 0,
+      missingReviewCount: 2,
+      openOpsItemCount: 2,
+      liveBoundaryLabel: "Paper-only · live blocked · no order submission"
+    });
+    expect(brief.detail).toContain("2/4 ops gates ready");
+    expect(brief.detail).toContain("0/2 local reviews current");
+    expect(brief.localReviewDetail).toContain("personal/team readiness and daily ops reviews are missing");
+    expect(brief.checkpoints.map((checkpoint) => `${checkpoint.id}:${checkpoint.status}`)).toEqual([
+      "ops-queue:review",
+      "personal-team-review:missing",
+      "daily-ops-review:missing",
+      "live-boundary:ready"
+    ]);
+
+    const markdown = buildDailyStartBriefMarkdown({ brief });
+
+    expect(markdown).toContain("# Daily Start Brief");
+    expect(markdown).toContain("- State: attention");
+    expect(markdown).toContain("- Primary action: Run AI review (ai-review)");
+    expect(markdown).toContain("- Local review status: missing");
+    expect(markdown).toContain("- Local review action: Record local reviews (research)");
+    expect(markdown).toContain("- Platform decision: live trading and real order routing remain blocked.");
+  });
+
+  test("keeps the daily start brief blocked when the current ops action is blocked", () => {
+    const personalTeamSummary = buildPersonalTeamUsabilityReadinessSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture(),
+      p0AcceptanceSummary: p0AcceptanceSummaryFixture({ state: "invalid" }),
+      p0PlatformReadinessSummary: p0PlatformReadinessSummaryFixture({ state: "blocked" }),
+      p1AcceptanceSummary: p1AcceptanceSummaryFixture(),
+      p2ManifestChainPreflightSummary: p2ManifestChainPreflightSummaryFixture(),
+      p2ReadinessAcceptanceSummary: p2ReadinessAcceptanceSummaryFixture(),
+      p2ReadinessEvidenceCoverage: p2ReadinessEvidenceCoverageFixture()
+    });
+    const dailyOpsSummary = buildDailyOpsControlRoomSummary({
+      auditEvidenceReportLedgerSummary: auditEvidenceReportLedgerSummaryFixture(),
+      personalTeamUsabilityReadiness: personalTeamSummary,
+      p0CompletionChecklist: p0CompletionChecklistFixture()
+    });
+    const brief = buildDailyStartBrief({
+      dailyOpsControlRoom: dailyOpsSummary,
+      dailyOpsControlRoomReviewReference: {
+        createdAt: "2026-06-28T10:00:00.000Z",
+        detail: "Latest review matches current daily ops queue.",
+        eventId: "daily-ops-review-current",
+        label: "Daily ops review current",
+        query: "daily_ops_control_room_review daily-ops-review-current",
+        row: null,
+        status: "current"
+      },
+      personalTeamReadinessReviewReference: {
+        createdAt: "2026-06-28T10:01:00.000Z",
+        detail: "Latest review matches current personal/team readiness.",
+        eventId: "personal-team-review-current",
+        label: "Personal/team readiness review current",
+        query: "personal_team_readiness_review personal-team-review-current",
+        row: null,
+        status: "current"
+      },
+      personalTeamUsabilityReadiness: personalTeamSummary
+    });
+
+    expect(brief).toMatchObject({
+      state: "blocked",
+      tone: "risk",
+      headline: "Daily start is blocked",
+      primaryActionLabel: "Open acceptance manifest",
+      primaryActionWorkspaceId: "audit",
+      auditActionLabel: "Open audit ledger",
+      auditQuery: "",
+      localReviewStatus: "current",
+      localReviewActionLabel: "Open local review evidence",
+      localReviewWorkspaceId: "audit",
+      currentReviewCount: 2,
+      staleReviewCount: 0,
+      missingReviewCount: 0
+    });
+    expect(brief.detail).toContain("1/4 ops gates ready");
+    expect(brief.localReviewQuery).toBe("daily_ops_control_room_review daily-ops-review-current");
   });
 
   test("builds a portable P2 readiness acceptance review markdown without live authorization", () => {

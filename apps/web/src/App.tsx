@@ -362,6 +362,7 @@ import {
   buildDailyOpsControlRoomSummary,
   buildDailyOpsControlRoomReviewMarkdown,
   buildDailyOpsControlRoomReviewReference,
+  buildDailyStartBrief,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessSummary,
@@ -474,6 +475,7 @@ import {
   DailyOpsControlRoomQueueItem,
   DailyOpsControlRoomReviewReference,
   DailyOpsControlRoomSummary,
+  DailyStartBrief,
   PersonalTeamUsabilityReadinessReviewReference,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
@@ -2969,6 +2971,21 @@ export function App() {
         summary: dailyOpsControlRoom
       }),
     [auditEvidenceReportLedgerRows, dailyOpsControlRoom]
+  );
+  const dailyStartBrief = useMemo(
+    () =>
+      buildDailyStartBrief({
+        dailyOpsControlRoom,
+        dailyOpsControlRoomReviewReference,
+        personalTeamReadinessReviewReference,
+        personalTeamUsabilityReadiness
+      }),
+    [
+      dailyOpsControlRoom,
+      dailyOpsControlRoomReviewReference,
+      personalTeamReadinessReviewReference,
+      personalTeamUsabilityReadiness
+    ]
   );
   const p0GoldenPathJourney = useMemo(
     () =>
@@ -11384,6 +11401,62 @@ export function App() {
                     </button>
                   </div>
                 </div>
+                <div className={`daily-start-brief ${dailyStartBrief.state}`}>
+                  <div className="daily-start-brief-head">
+                    <div>
+                      <span>{i18n.locale === "zh-CN" ? "今日启动摘要" : "Daily Start"}</span>
+                      <strong>{dailyStartBriefHeadline(i18n, dailyStartBrief)}</strong>
+                      <small>{dailyStartBriefDetail(i18n, dailyStartBrief)}</small>
+                    </div>
+                    <em>{dailyStartBrief.currentReviewCount}/2</em>
+                  </div>
+                  <small className="daily-start-brief-boundary">
+                    {dailyStartBriefLiveBoundary(i18n, dailyStartBrief)}
+                  </small>
+                  <div className="daily-start-brief-actions">
+                    <button onClick={() => selectProductWorkArea(dailyStartBrief.primaryActionWorkspaceId)} type="button">
+                      <Play size={11} />
+                      {dailyStartBriefPrimaryAction(i18n, dailyStartBrief)}
+                    </button>
+                    <button
+                      disabled={!dailyStartBrief.auditQuery}
+                      onClick={() => openAuditReportLedgerQuery(dailyStartBrief.auditQuery, "Daily start audit query selected")}
+                      type="button"
+                    >
+                      <Search size={11} />
+                      {dailyStartBriefAuditAction(i18n, dailyStartBrief)}
+                    </button>
+                    <button
+                      onClick={() =>
+                        dailyStartBrief.localReviewQuery
+                          ? openAuditReportLedgerQuery(dailyStartBrief.localReviewQuery, "Daily start local review query selected")
+                          : selectProductWorkArea(dailyStartBrief.localReviewWorkspaceId)
+                      }
+                      type="button"
+                    >
+                      <ShieldCheck size={11} />
+                      {dailyStartBriefLocalReviewAction(i18n, dailyStartBrief)}
+                    </button>
+                  </div>
+                  <div className="daily-start-brief-checkpoints">
+                    {dailyStartBrief.checkpoints.map((checkpoint) => (
+                      <button
+                        className={`daily-start-brief-checkpoint ${checkpoint.status}`}
+                        key={checkpoint.id}
+                        onClick={() =>
+                          checkpoint.query
+                            ? openAuditReportLedgerQuery(checkpoint.query, "Daily start checkpoint query selected")
+                            : selectProductWorkArea(checkpoint.targetWorkspaceId)
+                        }
+                        type="button"
+                      >
+                        <span>{dailyStartBriefCheckpointLabel(i18n, checkpoint)}</span>
+                        <strong>{dailyStartBriefCheckpointAction(i18n, checkpoint)}</strong>
+                        <small>{dailyStartBriefCheckpointDetail(i18n, checkpoint)}</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className={`personal-team-readiness ${personalTeamUsabilityReadiness.state}`}>
                   <div className="personal-team-readiness-head">
                     <div>
@@ -12977,6 +13050,132 @@ function localReviewCoverageNextActionOpenStatusLabel(
     return "Personal/team review entry opened";
   }
   return "Local review entry opened";
+}
+
+function dailyStartBriefHeadline(i18n: AppI18n, brief: DailyStartBrief): string {
+  if (i18n.locale === "en-US") {
+    return brief.headline;
+  }
+  if (brief.state === "blocked") {
+    return "今日启动仍被阻断";
+  }
+  if (brief.localReviewStatus !== "current") {
+    return "先补本地复核，再继续操作";
+  }
+  if (brief.state === "attention") {
+    return "今日还有操作项待处理";
+  }
+  return "今日纸面复核可开始";
+}
+
+function dailyStartBriefDetail(i18n: AppI18n, brief: DailyStartBrief): string {
+  if (i18n.locale === "en-US") {
+    return brief.detail;
+  }
+  return `${brief.currentReviewCount}/2 个本地复核匹配当前状态 · ${brief.openOpsItemCount} 个操作项待处理 · 实盘仍阻断`;
+}
+
+function dailyStartBriefLiveBoundary(i18n: AppI18n, brief: DailyStartBrief): string {
+  if (i18n.locale === "en-US") {
+    return brief.liveBoundaryLabel;
+  }
+  return "今日摘要只组织本地纸面操作 · 不提交订单 · 不启用实盘";
+}
+
+function dailyStartBriefPrimaryAction(i18n: AppI18n, brief: DailyStartBrief): string {
+  if (i18n.locale === "en-US") {
+    return brief.primaryActionLabel;
+  }
+  return dailyStartBriefActionLabelZh(brief.primaryActionLabel);
+}
+
+function dailyStartBriefAuditAction(i18n: AppI18n, brief: DailyStartBrief): string {
+  if (i18n.locale === "en-US") {
+    return brief.auditActionLabel;
+  }
+  return brief.auditQuery ? "打开审计上下文" : "暂无审计上下文";
+}
+
+function dailyStartBriefLocalReviewAction(i18n: AppI18n, brief: DailyStartBrief): string {
+  if (i18n.locale === "en-US") {
+    return brief.localReviewActionLabel;
+  }
+  return (
+    {
+      current: "打开本地复核证据",
+      missing: "入账本地复核",
+      stale: "刷新本地复核"
+    } satisfies Record<DailyStartBrief["localReviewStatus"], string>
+  )[brief.localReviewStatus];
+}
+
+function dailyStartBriefCheckpointLabel(
+  i18n: AppI18n,
+  checkpoint: DailyStartBrief["checkpoints"][number]
+): string {
+  if (i18n.locale === "en-US") {
+    return checkpoint.label;
+  }
+  return (
+    {
+      "daily-ops-review": "每日复核",
+      "live-boundary": "实盘边界",
+      "ops-queue": "操作队列",
+      "personal-team-review": "个人/团队复核"
+    } satisfies Record<DailyStartBrief["checkpoints"][number]["id"], string>
+  )[checkpoint.id];
+}
+
+function dailyStartBriefCheckpointAction(
+  i18n: AppI18n,
+  checkpoint: DailyStartBrief["checkpoints"][number]
+): string {
+  if (i18n.locale === "en-US") {
+    return checkpoint.actionLabel;
+  }
+  return dailyStartBriefActionLabelZh(checkpoint.actionLabel);
+}
+
+function dailyStartBriefCheckpointDetail(
+  i18n: AppI18n,
+  checkpoint: DailyStartBrief["checkpoints"][number]
+): string {
+  if (i18n.locale === "en-US") {
+    return checkpoint.detail;
+  }
+  if (checkpoint.id === "live-boundary") {
+    return "继续保持 paper-only、实盘阻断和不提交订单。";
+  }
+  if (checkpoint.id === "personal-team-review") {
+    return checkpoint.status === "current" ? "个人/小团队复核匹配当前状态。" : "补齐个人/小团队可用性复核。";
+  }
+  if (checkpoint.id === "daily-ops-review") {
+    return checkpoint.status === "current" ? "Daily Ops 复核匹配当前队列。" : "补齐今日操作台复核。";
+  }
+  return checkpoint.detail;
+}
+
+function dailyStartBriefActionLabelZh(label: string): string {
+  return (
+    {
+      "Create handoff runbook": "继续交接手册",
+      "Keep paper-only boundary": "保持纸面边界",
+      "Open acceptance manifest": "打开验收清单",
+      "Open audit evidence": "打开审计证据",
+      "Open audit ledger": "打开审计台账",
+      "Open local review evidence": "打开本地复核证据",
+      "Open review evidence": "打开复核证据",
+      "Plan backup drill": "规划备份演练",
+      "Record local reviews": "入账本地复核",
+      "Record review": "入账复核",
+      "Refresh local reviews": "刷新本地复核",
+      "Refresh review": "刷新复核",
+      "Review accepted loop": "复核纸面闭环",
+      "Review P2 readiness": "复核 P2 readiness",
+      "Review research ops": "复核研究运营",
+      "Run AI review": "继续 AI 评审"
+    }[label] ?? label
+  );
 }
 
 function personalTeamUsabilityReadinessHeadline(
