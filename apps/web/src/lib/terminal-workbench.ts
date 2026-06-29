@@ -14641,7 +14641,12 @@ export function buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(
   if (!row || row.reportKind !== "p2_readiness_acceptance_review" || !linkedCoverageReviewAuditEventId) {
     return "";
   }
-  return auditReportLedgerDeduplicatedQueryText([row.id, linkedCoverageReviewAuditEventId]);
+  return auditReportLedgerDeduplicatedQueryText([
+    "linked-review-chain",
+    row.id,
+    linkedCoverageReviewAuditEventId,
+    row.createdAt
+  ]);
 }
 
 export function buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel(
@@ -16944,7 +16949,12 @@ export function buildAuditEvidenceReportLedgerRows(
         ? `linked review chain · ${event.eventId} -> ${p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId}`
         : "";
       const p2ReadinessReviewChainQuery = p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
-        ? auditReportLedgerDeduplicatedQueryText([event.eventId, p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId])
+        ? auditReportLedgerDeduplicatedQueryText([
+            "linked-review-chain",
+            event.eventId,
+            p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
+            event.createdAt
+          ])
         : "";
       const p2ReadinessAcceptanceReviewSearchText =
         reportKind === "p2_readiness_acceptance_review"

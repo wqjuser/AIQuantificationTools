@@ -185,7 +185,7 @@ Audit 报告台账中的 `p2_readiness_evidence_coverage_review` 行现在也会
 
 Audit 报告台账顶部现在也会显示最新 P2 复核链：`buildAuditEvidenceReportLedgerSummary` 会选取最新带 `currentEvidenceCoverageReviewAuditEventId` 的 `p2_readiness_acceptance_review` 行，暴露 `latestP2ReadinessLinkedAcceptanceReview*` 和 `latestP2ReadinessLinkedCoverageReview*` summary 字段。Toolbar 的“P2 复核链 / P2 review chain”入口可一键定位或复制顶层复核与 coverage review 查询。这个 summary 入口只聚合既有只读审计链路，不记录新 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 
-“P2 复核链 / P2 review chain”入口现在还提供组合查询：`buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery` 会用顶层复核事件 id 和被引用的 coverage review 事件 id 生成短查询，Audit 台账可一次筛出同一条链路中的两行。Toolbar 的“定位复核链 / Focus review chain”和“复制复核链链接 / Copy review chain link”只复用已回填到两行中的 event id，不创建新审计事件、不改变 signing eligible 规则、不提交订单，也不放宽 live-blocked 边界。
+“P2 复核链 / P2 review chain”入口现在还提供组合查询：`buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery` 会用 `linked-review-chain`、顶层复核事件 id、被引用的 coverage review 事件 id 和顶层复核 createdAt 生成可解释查询，Audit 台账可一次筛出同一条链路中的两行。Toolbar 的“定位复核链 / Focus review chain”和“复制复核链链接 / Copy review chain link”只复用已回填到两行中的审计上下文，不创建新审计事件、不改变 signing eligible 规则、不提交订单，也不放宽 live-blocked 边界。
 
 Audit 台账 summary 还会统计当前分页内的全部 P2 复核链：`buildAuditEvidenceReportLedgerSummary` 会计算已链接 coverage review 的 ready `p2_readiness_acceptance_review` 行数，并暴露 `p2ReadinessReviewChainCount` 与 `p2ReadinessReviewChainsQuery`。Acceptance review 行和被反向回填的 coverage review 行都会带上 `linked review chain` 搜索 token，因此 Toolbar 的“定位全部复核链 / Focus all chains”和“复制全部复核链链接 / Copy all chains link”可以一次筛出当前页所有链路行。这个入口仍只读，不记录新 review、不改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
 

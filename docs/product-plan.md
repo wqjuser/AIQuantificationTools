@@ -270,6 +270,8 @@ Batch 106 已把 Daily Start 复核定位查询升级为完整审计上下文：
 
 Batch 107 已把本地复核集的最新复核定位查询升级为可解释审计上下文：`auditReportLedgerLocalReviewBundleLatestQuery` 现在会输出 `local-review-bundle-latest`、复核类型、event id 和 createdAt，而不只是一条精简 event id 查询。这样 Audit 顶部 summary 和最新本地复核 row 复制出的链接能筛回同一条最新 ready 复核，同时保留类型和时间语义，便于个人或小团队交接复盘；该能力只增强只读过滤查询，不新建复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 108 已把 P2 复核链组合查询升级为可解释审计上下文：`buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery` 和 acceptance review row 构造逻辑现在会输出 `linked-review-chain`、顶层复核 event id、coverage review event id 和顶层复核 createdAt。Coverage review 反向回填仍复用同一条 query，所以 Toolbar、summary 和行级“整条复核链 / Review chain”复制出的链接可以继续筛回同一条 acceptance+coverage 双行链路，同时保留链路类型与时间语义；该能力只增强只读过滤查询，不新建 review、不修改 manifest、不签名、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

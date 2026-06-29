@@ -14839,13 +14839,16 @@ describe("terminal workbench model", () => {
     const orphanCoverageRow = rows.find(
       (row) => row.id === "p2-readiness-evidence-coverage-review-orphan-4444444444444444"
     );
+    const reviewChainQuery =
+      "linked-review-chain p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999 2026-06-24T09:30:00.000Z";
+    const missingCoverageReviewChainQuery =
+      "linked-review-chain p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555 2026-06-24T08:50:00.000Z";
 
     expect(coverageRow).toEqual(
       expect.objectContaining({
         p2ReadinessReviewChainLabel:
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
-        p2ReadinessReviewChainQuery:
-          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        p2ReadinessReviewChainQuery: reviewChainQuery,
         p2ReadinessReviewChainCoverageLoaded: true,
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain loaded",
@@ -14864,8 +14867,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         p2ReadinessReviewChainLabel:
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
-        p2ReadinessReviewChainQuery:
-          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        p2ReadinessReviewChainQuery: reviewChainQuery,
         p2ReadinessReviewChainCoverageLoaded: true,
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain loaded",
@@ -14879,8 +14881,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         p2ReadinessReviewChainLabel:
           "linked review chain · p2-readiness-acceptance-review-missing-5555555555555555 -> p2-readiness-evidence-coverage-review-missing-5555555555555555",
-        p2ReadinessReviewChainQuery:
-          "p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555",
+        p2ReadinessReviewChainQuery: missingCoverageReviewChainQuery,
         p2ReadinessReviewChainCoverageLoaded: false,
         p2ReadinessReviewChainAcceptanceLoaded: true,
         p2ReadinessReviewChainStatusLabel: "review chain coverage missing",
@@ -14909,10 +14910,7 @@ describe("terminal workbench model", () => {
     expect(coverageRow?.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery).toBe(
       buildAuditEvidenceReportLedgerRowP2ReadinessEvidenceCoverageLinkedAcceptanceReviewQuery(acceptanceRow)
     );
-    const reviewChainQuery = buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(acceptanceRow);
-    expect(reviewChainQuery).toBe(
-      "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999"
-    );
+    expect(buildAuditEvidenceReportLedgerRowP2ReadinessReviewChainQuery(acceptanceRow)).toBe(reviewChainQuery);
     expect(coverageRow?.p2ReadinessReviewChainQuery).toBe(reviewChainQuery);
     expect(acceptanceRow?.p2ReadinessReviewChainQuery).toBe(reviewChainQuery);
     expect(filterAuditEvidenceReportLedgerRows(rows, reviewChainQuery).map((row) => row.id)).toEqual([
@@ -14992,8 +14990,7 @@ describe("terminal workbench model", () => {
           "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessReviewChainLabel:
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
-        latestP2ReadinessReviewChainQuery:
-          "p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        latestP2ReadinessReviewChainQuery: reviewChainQuery,
         latestP2ReadinessReviewChainGapEventId: "p2-readiness-acceptance-review-missing-5555555555555555",
         latestP2ReadinessReviewChainGapLabel: "review chain coverage missing",
         latestP2ReadinessReviewChainGapQuery:
