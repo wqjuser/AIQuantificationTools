@@ -260,6 +260,8 @@ Batch 101 已把 Daily Start 复核纳入 Audit 本地复核集覆盖：`buildAu
 
 Batch 102 已让 Audit 顶部摘要在空本地复核覆盖时也暴露启动动作：`AuditEvidenceReportLedgerPanel` 不再只用 `localReviewBundleCount > 0` 决定是否渲染本地复核集，而是在存在 `localReviewBundleCoverageQuery` 或 `localReviewBundleCoverageNextActionQuery` 时也显示该区块，并用 coverage/next-action title 作为 tooltip 兜底。这样新账本或导入账本即使本地复核数为 0，也能看到 `local-review-bundle-empty`、复制覆盖查询和“开始个人/小团队复核 / Start personal/team review”入口；该能力只恢复只读 Audit 查询与手动复核导航，不自动记录复核、不修改账本、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 103 已收紧本地复核覆盖 next-action 的目标工作区：`buildLocalReviewCoverageNextActionUrlSearch` 与 `resolveLocalReviewCoverageNextActionDeepLinkState` 现在会拒绝任何不是 `workspace=research` 的本地复核 next-action 链接，即使该 workspace 本身是合法产品区。这样 `record-daily-start-review`、Daily Ops、个人/小团队和 empty 启动链接都只能落到承载手动复核按钮的 research 工作区，不会被错误包装成 Audit 或其它工作区深链；该能力只保护导航恢复语义，不自动记录复核、不修改账本、不签名、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

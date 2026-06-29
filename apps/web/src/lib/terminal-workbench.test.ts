@@ -17477,6 +17477,13 @@ describe("terminal workbench model", () => {
     expect(
       buildLocalReviewCoverageNextActionUrlSearch({
         auditReportQuery:
+          "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
+        targetWorkspaceId: "audit"
+      })
+    ).toBeNull();
+    expect(
+      buildLocalReviewCoverageNextActionUrlSearch({
+        auditReportQuery:
           "local-review-bundle-next-action record-personal-team-review local-review-bundle-personal-missing",
         targetWorkspaceId: "unknown"
       })
@@ -17598,6 +17605,11 @@ describe("terminal workbench model", () => {
       missingReviewKind: "daily-ops",
       targetWorkspaceId: "research"
     });
+    expect(
+      resolveLocalReviewCoverageNextActionDeepLinkState(
+        "?workspace=audit&auditReportQuery=local-review-bundle-next-action+record-daily-start-review+local-review-bundle-daily-start-missing"
+      )
+    ).toBeNull();
     expect(
       resolveLocalReviewCoverageNextActionDeepLinkState(
         new URLSearchParams(

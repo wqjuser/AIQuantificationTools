@@ -3354,6 +3354,9 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
   if (!targetWorkspaceId || !localReviewCoverageNextActionQueryHasSingleStructure(auditReportQuery)) {
     return null;
   }
+  if (targetWorkspaceId !== LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID) {
+    return null;
+  }
   const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);
   const missingReviewKind = resolveLocalReviewCoverageMissingReviewKind(auditReportQuery);
   if (
@@ -3374,6 +3377,8 @@ export function resolveLocalReviewCoverageNextActionDeepLinkState(
 function auditDeepLinkSearchParamsHaveSingleValues(params: URLSearchParams, keys: string[]): boolean {
   return keys.every((key) => params.getAll(key).length === 1);
 }
+
+const LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID: ProductWorkAreaId = "research";
 
 function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): LocalReviewCoverageNextActionId {
   if (localReviewCoverageQueryIncludesToken(auditReportQuery, "record-daily-ops-review")) {
@@ -3482,6 +3487,9 @@ export function buildLocalReviewCoverageNextActionUrlSearch(input: {
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
   const auditReportQuery = input.auditReportQuery?.trim() ?? "";
   if (!targetWorkspaceId || !localReviewCoverageNextActionQueryHasSingleStructure(auditReportQuery)) {
+    return null;
+  }
+  if (targetWorkspaceId !== LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID) {
     return null;
   }
   const actionId = resolveLocalReviewCoverageNextActionId(auditReportQuery);
