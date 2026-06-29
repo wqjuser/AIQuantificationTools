@@ -1952,6 +1952,9 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("localReviewCoverageNextActionStateFromParts(");
     expect(reportLedgerPanelSource).toContain("const localReviewCoverageNextActionState =");
     expect(reportLedgerPanelSource).toContain(
+      "localReviewCoverageNextActionLabel(i18n, localReviewCoverageNextActionState)"
+    );
+    expect(reportLedgerPanelSource).toContain(
       "onCopyLocalReviewCoverageNextActionLink(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)"
     );
     expect(reportLedgerPanelSource).toContain(
@@ -2157,6 +2160,9 @@ describe("terminal layout css", () => {
       "onOpenLocalReviewCoverageNextAction(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)"
     );
     expect(reportLedgerPanelSource).toContain("const rowLocalReviewCoverageNextActionState =");
+    expect(reportLedgerPanelSource).toContain(
+      "localReviewCoverageNextActionLabel(i18n, rowLocalReviewCoverageNextActionState)"
+    );
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleLatestQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleLatestQuery)");
     expect(reportLedgerPanelSource).toContain('className="audit-report-ledger-personal-team-review"');

@@ -21580,7 +21580,9 @@ function AuditEvidenceReportLedgerPanel({
                     }
                   >
                     {i18n.locale === "zh-CN" ? "覆盖下一步" : "Coverage next"} ·{" "}
-                    {summary.localReviewBundleCoverageNextActionLabel}
+                    {localReviewCoverageNextActionState
+                      ? localReviewCoverageNextActionLabel(i18n, localReviewCoverageNextActionState)
+                      : summary.localReviewBundleCoverageNextActionLabel}
                   </small>
                 ) : null}
                 {summary.localReviewBundleQuery ? (
@@ -22051,7 +22053,9 @@ function AuditEvidenceReportLedgerPanel({
                       }
                     >
                       {i18n.locale === "zh-CN" ? "覆盖下一步" : "Coverage next"} ·{" "}
-                      {row.localReviewBundleCoverageNextActionQuery}
+                      {rowLocalReviewCoverageNextActionState
+                        ? localReviewCoverageNextActionLabel(i18n, rowLocalReviewCoverageNextActionState)
+                        : row.localReviewBundleCoverageNextActionQuery}
                     </span>
                   ) : null}
                   {row.localReviewBundleLatestLabel ? (
