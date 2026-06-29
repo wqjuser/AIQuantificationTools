@@ -226,6 +226,8 @@ Batch 84 已把 Audit 来源侧的 focus 覆盖下一步也改成 action-specifi
 
 Batch 85 已把 Audit 来源侧的 Coverage next 标签本体也改成 action-specific：顶部摘要和本地复核 row 会复用 `localReviewCoverageNextActionLabel`，把 next-action query 中解析出的 Daily Ops / 个人小团队缺口显示为“Daily Ops 复核缺失 / Daily Ops review missing”或“个人/小团队复核缺失 / Personal/team review missing”。底层 `localReviewBundleCoverageNextActionLabel/Query/Title` 仍作为搜索、tooltip 与深链上下文保留，UI 只是翻译可见标签，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
 
+Batch 86 已把 Audit 来源侧 Coverage next 的 tooltip/title 也改成 action-specific：新增 `localReviewCoverageNextActionTitle`，顶部摘要、本地复核 row 以及 focus/copy/open 来源侧按钮都会先显示 Daily Ops 或个人/小团队缺口，再保留原始 next-action title/query/label。该能力让悬停提示和可见标签保持同一套人工复核语义，仍只解释已有 Audit 上下文，不自动记录复核、不修改账本、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 paper-only/live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

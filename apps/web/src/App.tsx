@@ -12723,6 +12723,20 @@ function localReviewCoverageMissingReviewKindLabel(
   return i18n.locale === "zh-CN" ? "缺少本地复核" : "Missing local review";
 }
 
+function localReviewCoverageNextActionTitle(
+  i18n: AppI18n,
+  state: LocalReviewCoverageNextActionDeepLinkState | null,
+  title: string | null | undefined,
+  auditReportQuery: string | null | undefined,
+  fallbackLabel?: string | null
+): string {
+  const rawContext = title || auditReportQuery || fallbackLabel || "";
+  if (!state) {
+    return rawContext;
+  }
+  return [localReviewCoverageNextActionLabel(i18n, state), rawContext].filter(Boolean).join(" · ");
+}
+
 function localReviewCoverageNextActionStateFromParts(
   targetWorkspaceId: ProductWorkAreaId | null | undefined,
   auditReportQuery: string | null | undefined
@@ -21573,11 +21587,7 @@ function AuditEvidenceReportLedgerPanel({
                 ) : null}
                 {summary.localReviewBundleCoverageNextActionLabel ? (
                   <small
-                    title={
-                      summary.localReviewBundleCoverageNextActionTitle ||
-                      summary.localReviewBundleCoverageNextActionQuery ||
-                      summary.localReviewBundleCoverageNextActionLabel
-                    }
+                    title={localReviewCoverageNextActionTitle(i18n, localReviewCoverageNextActionState, summary.localReviewBundleCoverageNextActionTitle, summary.localReviewBundleCoverageNextActionQuery, summary.localReviewBundleCoverageNextActionLabel)}
                   >
                     {i18n.locale === "zh-CN" ? "覆盖下一步" : "Coverage next"} ·{" "}
                     {localReviewCoverageNextActionState
@@ -21620,10 +21630,7 @@ function AuditEvidenceReportLedgerPanel({
                         ? onFocusLocalReviewCoverageNextAction(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)
                         : focusAuditReportQuery(summary.localReviewBundleCoverageNextActionQuery)
                     }
-                    title={
-                      summary.localReviewBundleCoverageNextActionTitle ||
-                      summary.localReviewBundleCoverageNextActionQuery
-                    }
+                    title={localReviewCoverageNextActionTitle(i18n, localReviewCoverageNextActionState, summary.localReviewBundleCoverageNextActionTitle, summary.localReviewBundleCoverageNextActionQuery)}
                     type="button"
                   >
                     {localReviewCoverageNextActionFocusLabel(i18n, localReviewCoverageNextActionState)}
@@ -21632,10 +21639,7 @@ function AuditEvidenceReportLedgerPanel({
                 {localReviewCoverageNextActionWorkspaceId ? (
                   <button
                     onClick={() => onCopyLocalReviewCoverageNextActionLink(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)}
-                    title={
-                      summary.localReviewBundleCoverageNextActionTitle ||
-                      summary.localReviewBundleCoverageNextActionQuery
-                    }
+                    title={localReviewCoverageNextActionTitle(i18n, localReviewCoverageNextActionState, summary.localReviewBundleCoverageNextActionTitle, summary.localReviewBundleCoverageNextActionQuery)}
                     type="button"
                   >
                     {localReviewCoverageNextActionCopyLabel(i18n, localReviewCoverageNextActionState)}
@@ -21644,10 +21648,7 @@ function AuditEvidenceReportLedgerPanel({
                 {localReviewCoverageNextActionWorkspaceId ? (
                   <button
                     onClick={() => onOpenLocalReviewCoverageNextAction(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)}
-                    title={
-                      summary.localReviewBundleCoverageNextActionTitle ||
-                      summary.localReviewBundleCoverageNextActionQuery
-                    }
+                    title={localReviewCoverageNextActionTitle(i18n, localReviewCoverageNextActionState, summary.localReviewBundleCoverageNextActionTitle, summary.localReviewBundleCoverageNextActionQuery)}
                     type="button"
                   >
                     {localReviewCoverageNextActionOpenSourceLabel(i18n, localReviewCoverageNextActionState)}
@@ -22047,10 +22048,7 @@ function AuditEvidenceReportLedgerPanel({
                   {row.localReviewBundleCoverageNextActionQuery ? (
                     <span
                       className="audit-report-ledger-local-review-coverage-next"
-                      title={
-                        row.localReviewBundleCoverageNextActionTitle ||
-                        row.localReviewBundleCoverageNextActionQuery
-                      }
+                      title={localReviewCoverageNextActionTitle(i18n, rowLocalReviewCoverageNextActionState, row.localReviewBundleCoverageNextActionTitle, row.localReviewBundleCoverageNextActionQuery)}
                     >
                       {i18n.locale === "zh-CN" ? "覆盖下一步" : "Coverage next"} ·{" "}
                       {rowLocalReviewCoverageNextActionState
@@ -22340,10 +22338,7 @@ function AuditEvidenceReportLedgerPanel({
                             ? onFocusLocalReviewCoverageNextAction(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)
                             : focusAuditReportQuery(row.localReviewBundleCoverageNextActionQuery)
                         }
-                        title={
-                          row.localReviewBundleCoverageNextActionTitle ||
-                          row.localReviewBundleCoverageNextActionQuery
-                        }
+                        title={localReviewCoverageNextActionTitle(i18n, rowLocalReviewCoverageNextActionState, row.localReviewBundleCoverageNextActionTitle, row.localReviewBundleCoverageNextActionQuery)}
                         type="button"
                       >
                         {localReviewCoverageNextActionFocusLabel(i18n, rowLocalReviewCoverageNextActionState, "row")}
@@ -22352,10 +22347,7 @@ function AuditEvidenceReportLedgerPanel({
                     {rowLocalReviewCoverageNextActionWorkspaceId ? (
                       <button
                         onClick={() => onCopyLocalReviewCoverageNextActionLink(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)}
-                        title={
-                          row.localReviewBundleCoverageNextActionTitle ||
-                          row.localReviewBundleCoverageNextActionQuery
-                        }
+                        title={localReviewCoverageNextActionTitle(i18n, rowLocalReviewCoverageNextActionState, row.localReviewBundleCoverageNextActionTitle, row.localReviewBundleCoverageNextActionQuery)}
                         type="button"
                       >
                         {localReviewCoverageNextActionCopyLabel(i18n, rowLocalReviewCoverageNextActionState, "row")}
@@ -22364,10 +22356,7 @@ function AuditEvidenceReportLedgerPanel({
                     {rowLocalReviewCoverageNextActionWorkspaceId ? (
                       <button
                         onClick={() => onOpenLocalReviewCoverageNextAction(rowLocalReviewCoverageNextActionWorkspaceId, row.localReviewBundleCoverageNextActionQuery)}
-                        title={
-                          row.localReviewBundleCoverageNextActionTitle ||
-                          row.localReviewBundleCoverageNextActionQuery
-                        }
+                        title={localReviewCoverageNextActionTitle(i18n, rowLocalReviewCoverageNextActionState, row.localReviewBundleCoverageNextActionTitle, row.localReviewBundleCoverageNextActionQuery)}
                         type="button"
                       >
                         {localReviewCoverageNextActionOpenSourceLabel(i18n, rowLocalReviewCoverageNextActionState, "row")}

@@ -1955,6 +1955,9 @@ describe("terminal layout css", () => {
       "localReviewCoverageNextActionLabel(i18n, localReviewCoverageNextActionState)"
     );
     expect(reportLedgerPanelSource).toContain(
+      "localReviewCoverageNextActionTitle(i18n, localReviewCoverageNextActionState, summary.localReviewBundleCoverageNextActionTitle, summary.localReviewBundleCoverageNextActionQuery, summary.localReviewBundleCoverageNextActionLabel)"
+    );
+    expect(reportLedgerPanelSource).toContain(
       "onCopyLocalReviewCoverageNextActionLink(localReviewCoverageNextActionWorkspaceId, summary.localReviewBundleCoverageNextActionQuery)"
     );
     expect(reportLedgerPanelSource).toContain(
@@ -2162,6 +2165,9 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("const rowLocalReviewCoverageNextActionState =");
     expect(reportLedgerPanelSource).toContain(
       "localReviewCoverageNextActionLabel(i18n, rowLocalReviewCoverageNextActionState)"
+    );
+    expect(reportLedgerPanelSource).toContain(
+      "localReviewCoverageNextActionTitle(i18n, rowLocalReviewCoverageNextActionState, row.localReviewBundleCoverageNextActionTitle, row.localReviewBundleCoverageNextActionQuery)"
     );
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleLatestQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleLatestQuery)");
