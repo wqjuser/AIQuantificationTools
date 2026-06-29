@@ -14604,8 +14604,11 @@ export function buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCove
     return "";
   }
   return auditReportLedgerDeduplicatedQueryText([
+    "linked-coverage-review",
     "p2_readiness_evidence_coverage_review",
-    linkedCoverageReviewAuditEventId
+    linkedCoverageReviewAuditEventId,
+    row?.id,
+    row?.createdAt
   ]);
 }
 
@@ -16941,8 +16944,11 @@ export function buildAuditEvidenceReportLedgerRows(
         : "";
       const p2ReadinessAcceptanceCoverageReviewLinkQuery = p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
         ? auditReportLedgerDeduplicatedQueryText([
+            "linked-coverage-review",
             "p2_readiness_evidence_coverage_review",
-            p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId
+            p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId,
+            event.eventId,
+            event.createdAt
           ])
         : "";
       const p2ReadinessReviewChainLabel = p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId

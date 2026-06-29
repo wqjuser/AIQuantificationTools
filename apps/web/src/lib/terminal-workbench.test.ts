@@ -14477,7 +14477,7 @@ describe("terminal workbench model", () => {
         p2ReadinessAcceptanceCoverageReviewLinkLabel:
           "linked coverage review · p2-readiness-evidence-coverage-review-current",
         p2ReadinessAcceptanceCoverageReviewLinkQuery:
-          "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-current",
+          "linked-coverage-review p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-current p2-readiness-acceptance-review-run-p2-8888888888888888 2026-06-24T09:10:00.000Z",
         p2ReadinessAcceptanceLinkedCoverageReviewAuditEventId: "p2-readiness-evidence-coverage-review-current",
         reportKind: "p2_readiness_acceptance_review",
         status: "ready",
@@ -14500,7 +14500,7 @@ describe("terminal workbench model", () => {
     expect(reviewLedgerQuery).toContain("p2-readiness-evidence-coverage-review-current");
     expect(reviewLedgerQuery).toContain("live blocked true");
     expect(buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery(rows[0])).toBe(
-      "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-current"
+      "linked-coverage-review p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-current p2-readiness-acceptance-review-run-p2-8888888888888888 2026-06-24T09:10:00.000Z"
     );
     expect(buildAuditEvidenceReportLedgerRowP2ReadinessAcceptanceLinkedCoverageReviewQuery(null)).toBe("");
     const coverageBacklinkQuery =
@@ -14841,6 +14841,8 @@ describe("terminal workbench model", () => {
     );
     const reviewChainQuery =
       "linked-review-chain p2-readiness-acceptance-review-linked-8888888888888888 p2-readiness-evidence-coverage-review-linked-9999999999999999 2026-06-24T09:30:00.000Z";
+    const linkedCoverageReviewQuery =
+      "linked-coverage-review p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-linked-9999999999999999 p2-readiness-acceptance-review-linked-8888888888888888 2026-06-24T09:30:00.000Z";
     const missingCoverageReviewChainQuery =
       "linked-review-chain p2-readiness-acceptance-review-missing-5555555555555555 p2-readiness-evidence-coverage-review-missing-5555555555555555 2026-06-24T08:50:00.000Z";
 
@@ -14986,8 +14988,7 @@ describe("terminal workbench model", () => {
           "p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessLinkedCoverageReviewLabel:
           "linked coverage review · p2-readiness-evidence-coverage-review-linked-9999999999999999",
-        latestP2ReadinessLinkedCoverageReviewQuery:
-          "p2_readiness_evidence_coverage_review p2-readiness-evidence-coverage-review-linked-9999999999999999",
+        latestP2ReadinessLinkedCoverageReviewQuery: linkedCoverageReviewQuery,
         latestP2ReadinessReviewChainLabel:
           "linked review chain · p2-readiness-acceptance-review-linked-8888888888888888 -> p2-readiness-evidence-coverage-review-linked-9999999999999999",
         latestP2ReadinessReviewChainQuery: reviewChainQuery,
