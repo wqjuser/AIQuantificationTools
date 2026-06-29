@@ -13769,8 +13769,9 @@ describe("terminal workbench model", () => {
         ),
         localReviewBundlePersonalTeamCount: 1,
         localReviewBundleQuery: "local-review-bundle",
-        localReviewBundleTitle:
-          "Local review bundle: 3 reviews · personal/team 1 · daily ops 1 · daily start 1 · latest daily-start-brief-review-8888888888888888"
+        localReviewBundleTitle: expect.stringContaining(
+          "Daily start review: attention · local reviews 2/2 · open ops 2"
+        )
       })
     );
     expect(rows[2]).toEqual(
@@ -13791,6 +13792,8 @@ describe("terminal workbench model", () => {
     expect(summary.localReviewBundleLatestTitle).toContain(
       "Daily start review: attention · local reviews 2/2 · open ops 2"
     );
+    expect(summary.localReviewBundleTitle).toContain("latest daily-start-brief-review-8888888888888888");
+    expect(summary.localReviewBundleTitle).toContain("audit P0 completion focus · current criterion ai-review");
     expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleQuery).map((row) => row.id)).toEqual([
       "personal-team-readiness-review-7777777777777777",
       "daily-ops-control-room-review-6666666666666666",
@@ -14118,7 +14121,7 @@ describe("terminal workbench model", () => {
         localReviewBundlePersonalTeamCount: 2,
         localReviewBundleQuery: "local-review-bundle",
         localReviewBundleTitle:
-          "Local review bundle: 4 reviews · personal/team 2 · daily ops 2 · daily start 0 · latest daily-ops-control-room-review-new-6666666666666666",
+          "Local review bundle: 4 reviews · personal/team 2 · daily ops 2 · daily start 0 · latest daily-ops-control-room-review-new-6666666666666666 · latest context local-review-bundle-latest · daily ops review · daily-ops-control-room-review-new-6666666666666666 · 2026-06-28T10:00:00.000Z · Daily ops review: attention 2/4 · review 2 · blocked 0 · open current-action, team-handoff · primary Run AI review -> ai-review",
         latestDailyOpsControlRoomReviewEventId: "daily-ops-control-room-review-new-6666666666666666",
         latestDailyOpsControlRoomReviewLabel: "attention 2/4 · review 2 · blocked 0",
         latestDailyOpsControlRoomReviewQuery:

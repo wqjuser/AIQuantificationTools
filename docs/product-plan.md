@@ -288,6 +288,8 @@ Batch 115 已把 Daily Ops 的审计查询解释继续传给 Daily Start：`Dail
 
 Batch 116 已把本地复核集的 latest 入口升级为完整行级上下文：`auditReportLedgerLocalReviewBundleLatestQuery/Title` 现在会复用 `personal_team_readiness_review`、`daily_ops_control_room_review` 或 `daily_start_brief_review` 的行级 query/title，而不只记录复核类型、event id 和 createdAt。最新本地复核是 Daily Ops 或 Daily Start 时，审计 query、审计说明和 P2 复核链健康解释会继续进入 `local-review-bundle-latest` 链接、tooltip、row search 与 summary search；该能力只增强只读定位和人工交接解释，不写新复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。
 
+Batch 117 已把本地复核集总 tooltip/title 也接上 latest 行级上下文：`auditReportLedgerLocalReviewBundleTitle` 会在个人/小团队、Daily Ops、Daily Start 计数和最新 event id 后继续追加 `localReviewBundleLatestTitle`。这样 Audit toolbar 的“本地复核集 / Local review bundle”总提示不用打开最新 row，就能解释最新 Daily Ops 或 Daily Start 复核背后的审计 query、`auditQueryTitle` 与 P2 复核链健康上下文；`localReviewBundleQuery` 仍保持 `local-review-bundle` 宽筛整组复核，不把短查询变窄或变宽。该能力只增强可读提示，不写新复核、不修改 Markdown、不签名、不运行流水线、不连接券商、不提交订单，也不放宽 live-blocked 边界。
+
 ## 2. 产品原则
 
 - 证据优先：AI 解读、策略晋级、模拟委托和未来实盘委托都必须能追溯到数据快照、策略版本、回测参数、风控审批和 run id。

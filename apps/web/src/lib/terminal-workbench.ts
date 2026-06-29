@@ -17987,12 +17987,14 @@ function auditReportLedgerLocalReviewBundleTitle({
   dailyOpsCount,
   dailyStartCount,
   latestEventId,
+  latestTitle,
   personalTeamCount,
   totalCount
 }: {
   dailyOpsCount: number;
   dailyStartCount: number;
   latestEventId: string;
+  latestTitle: string;
   personalTeamCount: number;
   totalCount: number;
 }): string {
@@ -18004,7 +18006,8 @@ function auditReportLedgerLocalReviewBundleTitle({
     `personal/team ${personalTeamCount}`,
     `daily ops ${dailyOpsCount}`,
     `daily start ${dailyStartCount}`,
-    latestEventId ? `latest ${latestEventId}` : ""
+    latestEventId ? `latest ${latestEventId}` : "",
+    latestTitle ? `latest context ${latestTitle}` : ""
   ]
     .filter(Boolean)
     .join(" · ");
@@ -18383,6 +18386,9 @@ export function buildAuditEvidenceReportLedgerSummary(
       dailyOpsCount: localReviewBundleDailyOpsCount,
       dailyStartCount: localReviewBundleDailyStartCount,
       latestEventId: latestLocalReviewBundleRow?.id ?? "",
+      latestTitle:
+        latestLocalReviewBundleRow?.localReviewBundleLatestTitle ||
+        auditReportLedgerLocalReviewBundleLatestTitle(latestLocalReviewBundleRow),
       personalTeamCount: localReviewBundlePersonalTeamCount,
       totalCount: localReviewBundleRows.length
     }),
