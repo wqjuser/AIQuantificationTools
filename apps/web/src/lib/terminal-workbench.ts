@@ -348,6 +348,60 @@ export interface DesktopReleaseSummary {
   liveBlockedBoundary: boolean;
 }
 
+export type Stage1DailyUseSummaryState = "ready" | "review" | "blocked" | "missing" | "invalid";
+export type Stage1DailyUseSummaryTone = P0AcceptanceSummaryTone;
+
+export interface Stage1DailyUseSummaryRowSource {
+  id: string;
+  label: string;
+  status: "ready" | "review" | "blocked";
+  value: string;
+  summary: string;
+  action: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export interface Stage1DailyUseSummarySource {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string | null;
+  status: Stage1DailyUseSummaryState;
+  summary: string;
+  reason?: string;
+  readyCount: number;
+  totalCount: number;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  sourcePath?: string;
+  sourcePaths: {
+    p0Acceptance: string;
+    p1Acceptance: string;
+    desktopRelease: string;
+  };
+  rows: Stage1DailyUseSummaryRowSource[];
+}
+
+export interface Stage1DailyUseSummary {
+  state: Stage1DailyUseSummaryState;
+  tone: Stage1DailyUseSummaryTone;
+  headline: string;
+  detail: string;
+  sourceSummary: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  generatedAt: string | null;
+  readyCount: number;
+  totalCount: number;
+  sourcePath: string;
+  rows: Stage1DailyUseSummaryRowSource[];
+  liveTradingAllowed: boolean;
+  reportedLiveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
 export type P2PreLiveAcceptanceSummaryState = P0AcceptanceSummaryState;
 export type P2PreLiveAcceptanceSummaryTone = P0AcceptanceSummaryTone;
 
@@ -7062,6 +7116,7 @@ export interface Stage1P0DailyUseClosure {
 
 export interface Stage1P0DailyUseClosureInput {
   dailyStartBrief: DailyStartBrief;
+  dailyUseReport?: Stage1DailyUseSummary | null;
   desktopBuildReady?: boolean;
   desktopRelease?: DesktopReleaseSummary | null;
   marketRefreshGuard: MarketDataRefreshGuard;
@@ -7072,6 +7127,7 @@ export interface Stage1P0DailyUseClosureInput {
 
 export function buildStage1P0DailyUseClosure({
   dailyStartBrief,
+  dailyUseReport = null,
   desktopBuildReady = false,
   desktopRelease = null,
   marketRefreshGuard,
@@ -7084,11 +7140,11 @@ export function buildStage1P0DailyUseClosure({
     researchReadinessRows.find((row) => row.status === "review") ??
     null;
   const rows: Stage1P0DailyUseClosureRow[] = [
-    buildDailyUseCleanOpenRow(p0Acceptance, p1Acceptance),
+    buildDailyUseCleanOpenRow(p0Acceptance, p1Acceptance, dailyUseReport),
     buildDailyUseMarketRefreshRecoveryRow(marketRefreshGuard),
     buildDailyUseResearchEntryRow(researchIssue),
     buildDailyUseDailyStartRow(dailyStartBrief),
-    buildDailyUseDesktopReleaseRow(desktopRelease, desktopBuildReady)
+    buildDailyUseDesktopReleaseRow(desktopRelease, desktopBuildReady, dailyUseReport)
   ];
   const readyCount = rows.filter((row) => row.status === "ready").length;
   const primaryRow = rows.find((row) => row.status === "blocked") ?? rows.find((row) => row.status === "review") ?? rows[0];
@@ -7101,7 +7157,9 @@ export function buildStage1P0DailyUseClosure({
     state,
     tone: dailyUseClosureTone(state),
     headline: dailyUseClosureHeadline(primaryRow),
-    detail: rows.map((row) => `${row.label}: ${row.value}`).join(" · "),
+    detail: dailyUseReport
+      ? `${dailyUseReport.headline} · ${rows.map((row) => `${row.label}: ${row.value}`).join(" · ")}`
+      : rows.map((row) => `${row.label}: ${row.value}`).join(" · "),
     readyCount,
     totalCount: rows.length,
     primaryActionId: primaryRow.actionId,
@@ -7113,8 +7171,26 @@ export function buildStage1P0DailyUseClosure({
 
 function buildDailyUseCleanOpenRow(
   p0Acceptance: P0AcceptanceSummary,
-  p1Acceptance: P1AcceptanceSummary
+  p1Acceptance: P1AcceptanceSummary,
+  dailyUseReport: Stage1DailyUseSummary | null
 ): Stage1P0DailyUseClosureRow {
+  const reportRow = dailyUseReport?.rows.find((row) => row.id === "clean-open");
+  if (dailyUseReport && reportRow && dailyUseReport.state !== "missing" && dailyUseReport.state !== "invalid") {
+    const status = reportRow.status;
+    return {
+      id: "clean-open",
+      label: "Clean environment open",
+      value: reportRow.value,
+      detail: dailyUseReport.generatedAt
+        ? `${reportRow.summary} Report generated ${dailyUseReport.generatedAt}.`
+        : reportRow.summary,
+      status,
+      tone: dailyUseClosureTone(status),
+      actionId: status === "blocked" ? "refresh-p0-acceptance" : status === "review" ? "review-p1-acceptance" : "open-research-entry",
+      actionLabel: status === "blocked" ? "Refresh P0 acceptance" : status === "review" ? "Review P1 acceptance" : "Open research",
+      targetWorkspaceId: status === "ready" ? "research" : "audit"
+    };
+  }
   const status: Stage1P0DailyUseClosureStatus =
     p0Acceptance.state !== "passed" ? "blocked" : p1Acceptance.state !== "passed" ? "review" : "ready";
   const actionId: Stage1P0DailyUseClosureActionId =
@@ -7210,8 +7286,26 @@ function buildDailyUseDailyStartRow(brief: DailyStartBrief): Stage1P0DailyUseClo
 
 function buildDailyUseDesktopReleaseRow(
   desktopRelease: DesktopReleaseSummary | null | undefined,
-  desktopBuildReady: boolean
+  desktopBuildReady: boolean,
+  dailyUseReport: Stage1DailyUseSummary | null
 ): Stage1P0DailyUseClosureRow {
+  const reportRow = dailyUseReport?.rows.find((row) => row.id === "desktop-release");
+  if (dailyUseReport && reportRow && dailyUseReport.state !== "missing" && dailyUseReport.state !== "invalid") {
+    const status = reportRow.status;
+    return {
+      id: "desktop-release",
+      label: "Desktop release",
+      value: reportRow.value,
+      detail: dailyUseReport.generatedAt
+        ? `${reportRow.summary} Report generated ${dailyUseReport.generatedAt}.`
+        : reportRow.summary,
+      status,
+      tone: dailyUseClosureTone(status),
+      actionId: "run-desktop-build",
+      actionLabel: status === "ready" ? "Validate daily report" : "Review desktop build",
+      targetWorkspaceId: "settings"
+    };
+  }
   if (desktopRelease) {
     const status: Stage1P0DailyUseClosureStatus =
       desktopRelease.state === "passed" ? "ready" : desktopRelease.state === "invalid" ? "blocked" : "review";
@@ -8336,6 +8430,76 @@ export function buildDesktopReleaseSummary(
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: Boolean(release.liveTradingAllowed),
     liveBlockedBoundary: Boolean(release.liveBlockedBoundary)
+  };
+}
+
+export function buildStage1DailyUseSummary(
+  report: Stage1DailyUseSummarySource | null | undefined
+): Stage1DailyUseSummary | null {
+  if (!report) {
+    return null;
+  }
+  const unsafeBoundary = Boolean(report.liveTradingAllowed) || !report.liveBlockedBoundary || !report.paperOnly;
+  if (report.status === "invalid" || unsafeBoundary) {
+    return {
+      state: "invalid",
+      tone: "risk",
+      headline: "Stage 1 daily report invalid",
+      detail: `${report.reason || report.summary || "Stage 1 daily-use report failed validation."} Live trading remains blocked.`,
+      sourceSummary: report.summary,
+      actionLabel: "Run daily self-check",
+      targetWorkspaceId: "settings",
+      generatedAt: report.generatedAt,
+      readyCount: report.readyCount,
+      totalCount: report.totalCount,
+      sourcePath: report.sourcePath || "data/stage1-daily-use.json",
+      rows: report.rows,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(report.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(report.liveBlockedBoundary)
+    };
+  }
+  if (report.status === "missing") {
+    return {
+      state: "missing",
+      tone: "warning",
+      headline: "Stage 1 daily report missing",
+      detail: report.reason || "Run npm run stage1:daily to generate data/stage1-daily-use.json.",
+      sourceSummary: report.summary,
+      actionLabel: "Run daily self-check",
+      targetWorkspaceId: "settings",
+      generatedAt: report.generatedAt,
+      readyCount: report.readyCount,
+      totalCount: report.totalCount,
+      sourcePath: report.sourcePath || "data/stage1-daily-use.json",
+      rows: report.rows,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(report.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(report.liveBlockedBoundary)
+    };
+  }
+  const state = report.status;
+  return {
+    state,
+    tone: dailyUseClosureTone(state),
+    headline:
+      state === "ready"
+        ? `Stage 1 daily report ready (${report.readyCount}/${report.totalCount})`
+        : state === "blocked"
+          ? `Stage 1 daily report blocked (${report.readyCount}/${report.totalCount})`
+          : `Stage 1 daily report needs review (${report.readyCount}/${report.totalCount})`,
+    detail: report.summary,
+    sourceSummary: report.summary,
+    actionLabel: "Validate daily report",
+    targetWorkspaceId: "settings",
+    generatedAt: report.generatedAt,
+    readyCount: report.readyCount,
+    totalCount: report.totalCount,
+    sourcePath: report.sourcePath || "data/stage1-daily-use.json",
+    rows: report.rows,
+    liveTradingAllowed: false,
+    reportedLiveTradingAllowed: Boolean(report.liveTradingAllowed),
+    liveBlockedBoundary: Boolean(report.liveBlockedBoundary)
   };
 }
 

@@ -60,6 +60,7 @@ import {
   loadResearchNote,
   loadHandoffNotes,
   loadDesktopReleaseLatest,
+  loadStage1DailyUseLatest,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
   loadP2PaperReplayLatest,
@@ -145,6 +146,7 @@ import {
   PaperExecutionRecord,
   P0PaperSimulationResponse,
   DesktopReleaseLatestResult,
+  Stage1DailyUseLatestResult,
   P0AcceptanceLatestResult,
   P1AcceptanceLatestResult,
   P2PaperReplayLatestResult,
@@ -356,6 +358,7 @@ import {
   buildLocalReviewCoverageNextActionUrlSearch,
   buildP0AcceptanceReviewMarkdown,
   buildDesktopReleaseSummary,
+  buildStage1DailyUseSummary,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
   buildP2PaperReplaySummary,
@@ -552,6 +555,7 @@ import {
   P0CompletionCriterion,
   P0AcceptanceSummary,
   P1AcceptanceSummary,
+  Stage1DailyUseSummary,
   P2PaperReplaySummary,
   P2PreLiveAcceptanceSummary,
   P2ManifestChainPreflightSummary,
@@ -774,6 +778,9 @@ const initialGoldenPathStatusState: GoldenPathStatusResult = {
   source: "fallback"
 };
 const initialDesktopReleaseLatestState: DesktopReleaseLatestResult = {
+  source: "fallback"
+};
+const initialStage1DailyUseLatestState: Stage1DailyUseLatestResult = {
   source: "fallback"
 };
 const initialP0AcceptanceLatestState: P0AcceptanceLatestResult = {
@@ -1987,6 +1994,9 @@ export function App() {
   const [desktopReleaseLatestState, setDesktopReleaseLatestState] = useState<DesktopReleaseLatestResult>(
     initialDesktopReleaseLatestState
   );
+  const [stage1DailyUseLatestState, setStage1DailyUseLatestState] = useState<Stage1DailyUseLatestResult>(
+    initialStage1DailyUseLatestState
+  );
   const [p0AcceptanceLatestState, setP0AcceptanceLatestState] = useState<P0AcceptanceLatestResult>(
     initialP0AcceptanceLatestState
   );
@@ -2675,6 +2685,10 @@ export function App() {
     () => buildDesktopReleaseSummary(desktopReleaseLatestState.release),
     [desktopReleaseLatestState.release]
   );
+  const stage1DailyUseSummary = useMemo<Stage1DailyUseSummary | null>(
+    () => buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse),
+    [stage1DailyUseLatestState.dailyUse]
+  );
   const p2PaperReplaySummary = useMemo(
     () => buildP2PaperReplaySummary(p2PaperReplayLatestState.replay),
     [p2PaperReplayLatestState.replay]
@@ -3016,6 +3030,7 @@ export function App() {
     () =>
       buildStage1P0DailyUseClosure({
         dailyStartBrief,
+        dailyUseReport: stage1DailyUseSummary,
         desktopRelease: desktopReleaseSummary,
         marketRefreshGuard: marketDataRefreshGuard,
         p0Acceptance: p0AcceptanceSummary,
@@ -3024,6 +3039,7 @@ export function App() {
       }),
     [
       dailyStartBrief,
+      stage1DailyUseSummary,
       desktopReleaseSummary,
       marketDataRefreshGuard,
       p0AcceptanceSummary,
@@ -3228,6 +3244,10 @@ export function App() {
     }
   }, []);
 
+  const refreshStage1DailyUseLatest = useCallback(async () => {
+    setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));
+  }, []);
+
   const refreshP0AcceptanceLatest = useCallback(async () => {
     setIsLoadingP0Acceptance(true);
     try {
@@ -3338,6 +3358,10 @@ export function App() {
   useEffect(() => {
     void refreshDesktopReleaseLatest();
   }, [refreshDesktopReleaseLatest]);
+
+  useEffect(() => {
+    void refreshStage1DailyUseLatest();
+  }, [refreshStage1DailyUseLatest]);
 
   useEffect(() => {
     void refreshP1AcceptanceLatest();

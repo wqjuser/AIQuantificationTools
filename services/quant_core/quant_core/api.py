@@ -197,6 +197,7 @@ from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg,
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
+from quant_core.stage1_daily_use import DEFAULT_STAGE1_DAILY_USE_REPORT_PATH, load_stage1_daily_use_status
 from quant_core.p2_acceptance import (
     DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH,
     load_p2_pre_live_acceptance_status,
@@ -420,6 +421,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     p2_readiness_acceptance_report_path = DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH
     p2_manifest_chain_preflight_report_path = DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH
     desktop_release_report_path = DEFAULT_DESKTOP_RELEASE_REPORT_PATH
+    stage1_daily_use_report_path = DEFAULT_STAGE1_DAILY_USE_REPORT_PATH
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -2861,6 +2863,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/desktop/release/latest":
             self._send_json({"release": load_desktop_release_status(Path(self.desktop_release_report_path))})
+            return
+        if parsed.path == "/api/stage1/daily-use/latest":
+            self._send_json({"dailyUse": load_stage1_daily_use_status(Path(self.stage1_daily_use_report_path))})
             return
         if parsed.path == "/api/p2/pre-live/acceptance/latest":
             self._send_json(

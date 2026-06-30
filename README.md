@@ -407,6 +407,8 @@ npm run stage1:daily:validate
 
 这两条命令会读入 `data/p0-acceptance.json`、`data/p1-acceptance.json` 和 `data/desktop-release.json`，生成或验证 `data/stage1-daily-use.json`。报告只聚合“干净环境开箱”和“桌面发布”两个日常入口的 ready/review/blocked 状态，不自动运行 smoke、打包桌面端、写审计事件、连接券商或改变 `liveTradingAllowed=false`。
 
+本地核心还提供只读回读接口 `GET /api/stage1/daily-use/latest`，用于前端首页读取 `data/stage1-daily-use.json` 的状态。该接口只返回 passed/missing/invalid/readback 结构，不自动生成报告、不运行 P0/P1/P2 smoke、不构建桌面包，也不改变实盘边界。
+
 ## Product Boundary
 
 产品目标是全功能量化交易平台，但实盘执行必须分阶段解锁。当前版本聚焦行情、研究、回测、AI 评审、组合风控雏形和模拟交易，不连接真实 A 股券商账户。交易工作区默认 `paper_only`，自动化交易能力通过 `ExecutionAdapter` 风格的接口预留；只有在合法券商接口明确、适配器认证通过、风控审批通过、用户人工确认后，才允许接入实盘适配器。

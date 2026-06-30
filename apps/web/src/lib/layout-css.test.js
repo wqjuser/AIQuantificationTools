@@ -374,6 +374,12 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("buildStage1P0DailyUseClosure({");
     expect(appSource).toContain("const stage1P0DailyUseClosure = useMemo(");
+    expect(appSource).toContain("loadStage1DailyUseLatest");
+    expect(appSource).toContain("const [stage1DailyUseLatestState, setStage1DailyUseLatestState]");
+    expect(appSource).toContain("const refreshStage1DailyUseLatest = useCallback");
+    expect(appSource).toContain("setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));");
+    expect(appSource).toContain("buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse)");
+    expect(appSource).toContain("dailyUseReport: stage1DailyUseSummary");
     expect(appSource).toContain("loadDesktopReleaseLatest");
     expect(appSource).toContain("const [desktopReleaseLatestState, setDesktopReleaseLatestState]");
     expect(appSource).toContain("const refreshDesktopReleaseLatest = useCallback");

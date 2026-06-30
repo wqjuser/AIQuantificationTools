@@ -286,6 +286,8 @@ import {
   runTerminalResearch,
   buildDesktopReleaseLatestUrl,
   loadDesktopReleaseLatest,
+  buildStage1DailyUseLatestUrl,
+  loadStage1DailyUseLatest,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
   loadP2PaperReplayLatest,
@@ -999,6 +1001,92 @@ describe("terminal workspace API client", () => {
     expect(result.release?.sourcePath).toBe("data/desktop-release.json");
     expect(result.release?.manifest).toBeNull();
     expect(result.error).toBe("Invalid desktop release status contract");
+  });
+
+  test("loads the latest Stage 1 daily-use readback without enabling live trading", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          dailyUse: {
+            kind: "aiqt.stage1DailyUseReport",
+            schemaVersion: 1,
+            generatedAt: "2026-06-30T10:00:00+00:00",
+            status: "ready",
+            summary: "Stage 1 daily use is ready (2/2 checks ready).",
+            readyCount: 2,
+            totalCount: 2,
+            paperOnly: true,
+            liveTradingAllowed: false,
+            liveBlockedBoundary: true,
+            sourcePaths: {
+              p0Acceptance: "data/p0-acceptance.json",
+              p1Acceptance: "data/p1-acceptance.json",
+              desktopRelease: "data/desktop-release.json"
+            },
+            rows: [
+              {
+                id: "clean-open",
+                label: "Clean environment startup",
+                status: "ready",
+                value: "P0/P1 acceptance evidence is ready",
+                summary: "Clean environment startup has current P0 and P1 acceptance evidence.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "desktop-release",
+                label: "Desktop release",
+                status: "ready",
+                value: "Desktop release manifest is ready",
+                summary: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              }
+            ]
+          }
+        })
+      };
+    };
+
+    const result = await loadStage1DailyUseLatest("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildStage1DailyUseLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/stage1/daily-use/latest"
+    );
+    expect(buildStage1DailyUseLatestUrl("/")).toBe("/api/stage1/daily-use/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/stage1/daily-use/latest");
+    expect(result.source).toBe("core");
+    expect(result.dailyUse?.status).toBe("ready");
+    expect(result.dailyUse?.readyCount).toBe(2);
+    expect(result.dailyUse?.rows.map((row) => row.id)).toEqual(["clean-open", "desktop-release"]);
+    expect(result.dailyUse?.liveTradingAllowed).toBe(false);
+    expect(result.dailyUse?.liveBlockedBoundary).toBe(true);
+  });
+
+  test("falls back when latest Stage 1 daily-use readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ dailyUse: { status: "ready" } })
+    });
+
+    const result = await loadStage1DailyUseLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.dailyUse?.status).toBe("missing");
+    expect(result.dailyUse?.readyCount).toBe(0);
+    expect(result.dailyUse?.totalCount).toBe(2);
+    expect(result.dailyUse?.sourcePaths.p0Acceptance).toBe("data/p0-acceptance.json");
+    expect(result.dailyUse?.liveTradingAllowed).toBe(false);
+    expect(result.error).toBe("Invalid Stage 1 daily-use report contract");
   });
 
   test("loads the latest P2 pre-live acceptance readback and keeps order submission blocked", async () => {

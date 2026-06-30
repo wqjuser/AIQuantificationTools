@@ -719,6 +719,50 @@ export interface DesktopReleaseLatestResult {
   error?: string;
 }
 
+export type Stage1DailyUseReportStatus = "ready" | "review" | "blocked" | "missing" | "invalid";
+export type Stage1DailyUseReportRowStatus = "ready" | "review" | "blocked";
+
+export interface Stage1DailyUseReportSourcePaths {
+  p0Acceptance: string;
+  p1Acceptance: string;
+  desktopRelease: string;
+}
+
+export interface Stage1DailyUseReportRow {
+  id: string;
+  label: string;
+  status: Stage1DailyUseReportRowStatus;
+  value: string;
+  summary: string;
+  action: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export interface Stage1DailyUseReport {
+  kind: "aiqt.stage1DailyUseReport";
+  schemaVersion: 1;
+  generatedAt: string | null;
+  status: Stage1DailyUseReportStatus;
+  summary: string;
+  reason?: string;
+  readyCount: number;
+  totalCount: number;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  sourcePath?: string;
+  sourcePaths: Stage1DailyUseReportSourcePaths;
+  rows: Stage1DailyUseReportRow[];
+}
+
+export interface Stage1DailyUseLatestResult {
+  dailyUse?: Stage1DailyUseReport;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface P2PreLiveAcceptanceManifestCheck {
   id: string;
   status: string;
@@ -4482,6 +4526,10 @@ export function buildDesktopReleaseLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/desktop/release/latest");
 }
 
+export function buildStage1DailyUseLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/stage1/daily-use/latest");
+}
+
 export function buildP2PreLiveAcceptanceLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p2/pre-live/acceptance/latest");
 }
@@ -7666,6 +7714,67 @@ function buildMissingDesktopReleaseStatus(reason: string): DesktopReleaseStatus 
     liveTradingAllowed: false,
     liveBlockedBoundary: false,
     manifest: null
+  };
+}
+
+export async function loadStage1DailyUseLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<Stage1DailyUseLatestResult> {
+  try {
+    const response = await fetcher(buildStage1DailyUseLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStage1DailyUseLatestPayload(payload)) {
+      throw new Error("Invalid Stage 1 daily-use report contract");
+    }
+    return {
+      dailyUse: payload.dailyUse,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Stage 1 daily-use readback error";
+    return {
+      dailyUse: buildMissingStage1DailyUseReport(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+function buildMissingStage1DailyUseReport(reason: string): Stage1DailyUseReport {
+  const row = (id: string, label: string): Stage1DailyUseReportRow => ({
+    id,
+    label,
+    status: "blocked",
+    value: "Stage 1 report unavailable",
+    summary: "Stage 1 daily-use report is missing.",
+    action: "npm run stage1:daily",
+    paperOnly: true,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: true
+  });
+  return {
+    kind: "aiqt.stage1DailyUseReport",
+    schemaVersion: 1,
+    generatedAt: null,
+    status: "missing",
+    summary: "Stage 1 daily-use report is missing.",
+    reason,
+    readyCount: 0,
+    totalCount: 2,
+    paperOnly: true,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: true,
+    sourcePath: "data/stage1-daily-use.json",
+    sourcePaths: {
+      p0Acceptance: "data/p0-acceptance.json",
+      p1Acceptance: "data/p1-acceptance.json",
+      desktopRelease: "data/desktop-release.json"
+    },
+    rows: [row("clean-open", "Clean environment startup"), row("desktop-release", "Desktop release")]
   };
 }
 
@@ -11721,6 +11830,75 @@ function isDesktopReleaseManifestPayload(value: unknown): value is DesktopReleas
     typeof payload.checkCount === "number" &&
     Array.isArray(payload.checks) &&
     payload.checks.every(isDesktopReleaseManifestCheckPayload)
+  );
+}
+
+function isStage1DailyUseLatestPayload(value: unknown): value is { dailyUse: Stage1DailyUseReport } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { dailyUse?: unknown };
+  return isStage1DailyUseReportPayload(payload.dailyUse);
+}
+
+function isStage1DailyUseReportPayload(value: unknown): value is Stage1DailyUseReport {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<Stage1DailyUseReport>;
+  const validStatus =
+    payload.status === "ready" ||
+    payload.status === "review" ||
+    payload.status === "blocked" ||
+    payload.status === "missing" ||
+    payload.status === "invalid";
+  return (
+    payload.kind === "aiqt.stage1DailyUseReport" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    typeof payload.summary === "string" &&
+    (payload.reason === undefined || typeof payload.reason === "string") &&
+    typeof payload.readyCount === "number" &&
+    typeof payload.totalCount === "number" &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.sourcePath === undefined || typeof payload.sourcePath === "string") &&
+    isStage1DailyUseSourcePathsPayload(payload.sourcePaths) &&
+    Array.isArray(payload.rows) &&
+    payload.rows.every(isStage1DailyUseReportRowPayload)
+  );
+}
+
+function isStage1DailyUseSourcePathsPayload(value: unknown): value is Stage1DailyUseReportSourcePaths {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<Stage1DailyUseReportSourcePaths>;
+  return (
+    typeof payload.p0Acceptance === "string" &&
+    typeof payload.p1Acceptance === "string" &&
+    typeof payload.desktopRelease === "string"
+  );
+}
+
+function isStage1DailyUseReportRowPayload(value: unknown): value is Stage1DailyUseReportRow {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const row = value as Partial<Stage1DailyUseReportRow>;
+  const validStatus = row.status === "ready" || row.status === "review" || row.status === "blocked";
+  return (
+    typeof row.id === "string" &&
+    typeof row.label === "string" &&
+    validStatus &&
+    typeof row.value === "string" &&
+    typeof row.summary === "string" &&
+    typeof row.action === "string" &&
+    typeof row.paperOnly === "boolean" &&
+    typeof row.liveTradingAllowed === "boolean" &&
+    typeof row.liveBlockedBoundary === "boolean"
   );
 }
 
