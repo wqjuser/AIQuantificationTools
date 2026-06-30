@@ -6969,6 +6969,233 @@ export function buildMarketDataRefreshGuard(
   };
 }
 
+export type Stage1P0DailyUseClosureRowId =
+  | "clean-open"
+  | "market-refresh-recovery"
+  | "research-entry"
+  | "daily-start"
+  | "desktop-release";
+
+export type Stage1P0DailyUseClosureStatus = "ready" | "review" | "blocked";
+
+export type Stage1P0DailyUseClosureActionId =
+  | "refresh-p0-acceptance"
+  | "review-p1-acceptance"
+  | "review-provider-cooldown"
+  | ResearchContextReadinessAction
+  | "open-research-entry"
+  | "record-daily-start-review"
+  | "open-daily-start"
+  | "run-desktop-build";
+
+export interface Stage1P0DailyUseClosureRow {
+  id: Stage1P0DailyUseClosureRowId;
+  label: string;
+  value: string;
+  detail: string;
+  status: Stage1P0DailyUseClosureStatus;
+  tone: "positive" | "warning" | "risk";
+  actionId: Stage1P0DailyUseClosureActionId;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
+export interface Stage1P0DailyUseClosure {
+  state: Stage1P0DailyUseClosureStatus;
+  tone: "positive" | "warning" | "risk";
+  headline: string;
+  detail: string;
+  readyCount: number;
+  totalCount: number;
+  primaryActionId: Stage1P0DailyUseClosureActionId;
+  primaryActionLabel: string;
+  primaryTargetWorkspaceId: ProductWorkAreaId;
+  rows: Stage1P0DailyUseClosureRow[];
+}
+
+export interface Stage1P0DailyUseClosureInput {
+  dailyStartBrief: DailyStartBrief;
+  desktopBuildReady?: boolean;
+  marketRefreshGuard: MarketDataRefreshGuard;
+  p0Acceptance: P0AcceptanceSummary;
+  p1Acceptance: P1AcceptanceSummary;
+  researchReadinessRows: readonly ResearchContextReadinessRow[];
+}
+
+export function buildStage1P0DailyUseClosure({
+  dailyStartBrief,
+  desktopBuildReady = false,
+  marketRefreshGuard,
+  p0Acceptance,
+  p1Acceptance,
+  researchReadinessRows
+}: Stage1P0DailyUseClosureInput): Stage1P0DailyUseClosure {
+  const researchIssue =
+    researchReadinessRows.find((row) => row.status === "blocked") ??
+    researchReadinessRows.find((row) => row.status === "review") ??
+    null;
+  const rows: Stage1P0DailyUseClosureRow[] = [
+    buildDailyUseCleanOpenRow(p0Acceptance, p1Acceptance),
+    buildDailyUseMarketRefreshRecoveryRow(marketRefreshGuard),
+    buildDailyUseResearchEntryRow(researchIssue),
+    buildDailyUseDailyStartRow(dailyStartBrief),
+    buildDailyUseDesktopReleaseRow(desktopBuildReady)
+  ];
+  const readyCount = rows.filter((row) => row.status === "ready").length;
+  const primaryRow = rows.find((row) => row.status === "blocked") ?? rows.find((row) => row.status === "review") ?? rows[0];
+  const state: Stage1P0DailyUseClosureStatus = rows.some((row) => row.status === "blocked")
+    ? "blocked"
+    : rows.some((row) => row.status === "review")
+      ? "review"
+      : "ready";
+  return {
+    state,
+    tone: dailyUseClosureTone(state),
+    headline: dailyUseClosureHeadline(primaryRow),
+    detail: rows.map((row) => `${row.label}: ${row.value}`).join(" · "),
+    readyCount,
+    totalCount: rows.length,
+    primaryActionId: primaryRow.actionId,
+    primaryActionLabel: primaryRow.actionLabel,
+    primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
+    rows
+  };
+}
+
+function buildDailyUseCleanOpenRow(
+  p0Acceptance: P0AcceptanceSummary,
+  p1Acceptance: P1AcceptanceSummary
+): Stage1P0DailyUseClosureRow {
+  const status: Stage1P0DailyUseClosureStatus =
+    p0Acceptance.state !== "passed" ? "blocked" : p1Acceptance.state !== "passed" ? "review" : "ready";
+  const actionId: Stage1P0DailyUseClosureActionId =
+    p0Acceptance.state !== "passed" ? "refresh-p0-acceptance" : p1Acceptance.state !== "passed" ? "review-p1-acceptance" : "open-research-entry";
+  return {
+    id: "clean-open",
+    label: "Clean environment open",
+    value:
+      status === "ready"
+        ? "P0/P1 acceptance ready"
+        : p0Acceptance.state !== "passed"
+          ? "P0 acceptance missing"
+          : "P1 acceptance needs review",
+    detail:
+      status === "ready"
+        ? "Clean local or Docker environment has recorded P0 and P1 acceptance evidence."
+        : p0Acceptance.detail || p1Acceptance.detail,
+    status,
+    tone: dailyUseClosureTone(status),
+    actionId,
+    actionLabel: p0Acceptance.state !== "passed" ? "Refresh P0 acceptance" : p1Acceptance.state !== "passed" ? "Review P1 acceptance" : "Open research",
+    targetWorkspaceId: p0Acceptance.state !== "passed" || p1Acceptance.state !== "passed" ? "audit" : "research"
+  };
+}
+
+function buildDailyUseMarketRefreshRecoveryRow(
+  guard: MarketDataRefreshGuard
+): Stage1P0DailyUseClosureRow {
+  const status: Stage1P0DailyUseClosureStatus = guard.blocked ? "blocked" : guard.overrideApplied || guard.recentErrorCount > 0 ? "review" : "ready";
+  return {
+    id: "market-refresh-recovery",
+    label: "Market refresh recovery",
+    value: guard.blocked ? "provider cooldown" : guard.overrideApplied ? "override recorded" : "refresh available",
+    detail: guard.detail,
+    status,
+    tone: dailyUseClosureTone(status),
+    actionId: guard.blocked ? "review-provider-cooldown" : "refresh-cache",
+    actionLabel: guard.blocked ? "Review cooldown" : "Refresh cache",
+    targetWorkspaceId: "market"
+  };
+}
+
+function buildDailyUseResearchEntryRow(
+  issue: ResearchContextReadinessRow | null
+): Stage1P0DailyUseClosureRow {
+  const status: Stage1P0DailyUseClosureStatus =
+    issue?.status === "blocked" ? "blocked" : issue?.status === "review" ? "review" : "ready";
+  return {
+    id: "research-entry",
+    label: "Research entry",
+    value: issue ? issue.value : "ready",
+    detail: issue ? issue.detail : "Current symbol, timeframe, cache, calendar, notes, and workspace context are ready.",
+    status,
+    tone: dailyUseClosureTone(status),
+    actionId: issue?.action ?? "open-research-entry",
+    actionLabel: issue?.action ? stage1P0DailyUseResearchActionLabel(issue.action) : "Open research",
+    targetWorkspaceId: "research"
+  };
+}
+
+function stage1P0DailyUseResearchActionLabel(action: ResearchContextReadinessAction): string {
+  if (action === "refresh-cache") {
+    return "Refresh cache";
+  }
+  if (action === "refresh-watchlist-cache") {
+    return "Refresh watchlist";
+  }
+  if (action === "save-workspace") {
+    return "Save workspace";
+  }
+  if (action === "save-watchlist") {
+    return "Save watchlist";
+  }
+  return "Save note";
+}
+
+function buildDailyUseDailyStartRow(brief: DailyStartBrief): Stage1P0DailyUseClosureRow {
+  const status: Stage1P0DailyUseClosureStatus =
+    brief.state === "blocked" ? "blocked" : brief.state === "attention" ? "review" : "ready";
+  const needsReview = brief.localReviewStatus !== "current";
+  return {
+    id: "daily-start",
+    label: "Daily start path",
+    value: brief.headline,
+    detail: brief.detail,
+    status,
+    tone: dailyUseClosureTone(status),
+    actionId: needsReview ? "record-daily-start-review" : "open-daily-start",
+    actionLabel: needsReview ? brief.localReviewActionLabel : brief.primaryActionLabel,
+    targetWorkspaceId: needsReview ? brief.localReviewWorkspaceId : brief.primaryActionWorkspaceId
+  };
+}
+
+function buildDailyUseDesktopReleaseRow(desktopBuildReady: boolean): Stage1P0DailyUseClosureRow {
+  const status: Stage1P0DailyUseClosureStatus = desktopBuildReady ? "ready" : "review";
+  return {
+    id: "desktop-release",
+    label: "Desktop release",
+    value: desktopBuildReady ? "desktop build ready" : "desktop build checklist pending",
+    detail: desktopBuildReady
+      ? "Desktop package has a recorded local build check for the current release."
+      : "Run npm run desktop:build after the local Tauri/Cargo toolchain check passes.",
+    status,
+    tone: dailyUseClosureTone(status),
+    actionId: "run-desktop-build",
+    actionLabel: "Review desktop build",
+    targetWorkspaceId: "settings"
+  };
+}
+
+function dailyUseClosureHeadline(primaryRow: Stage1P0DailyUseClosureRow): string {
+  if (primaryRow.id === "clean-open") {
+    return primaryRow.status === "ready" ? "Clean environment is ready" : "Clean environment acceptance is missing";
+  }
+  if (primaryRow.id === "market-refresh-recovery") {
+    return primaryRow.status === "ready" ? "Market refresh is ready" : "Market refresh recovery needs attention";
+  }
+  if (primaryRow.id === "research-entry") {
+    return primaryRow.status === "ready" ? "Research entry is ready" : "Research entry needs preparation";
+  }
+  if (primaryRow.id === "daily-start") {
+    return primaryRow.status === "ready" ? "Daily start path is ready" : "Daily start path needs review";
+  }
+  return primaryRow.status === "ready" ? "Desktop release is ready" : "Desktop release checklist needs review";
+}
+
+function dailyUseClosureTone(status: Stage1P0DailyUseClosureStatus): "positive" | "warning" | "risk" {
+  return status === "ready" ? "positive" : status === "blocked" ? "risk" : "warning";
+}
+
 export interface ResearchContextEvidenceRow {
   id: "audit-run";
   label: string;

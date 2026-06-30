@@ -16,3 +16,4 @@ artifacts/
 .codex-artifacts/
 .tmp/
 *.tsbuildinfo
+apps/web/src-tauri/gen/

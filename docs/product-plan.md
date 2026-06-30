@@ -1023,3 +1023,5 @@ P0 完成时必须满足：
 最新更新：P0 completion 当前缺口现在也有可复制的跨会话链接。新增 `buildP0CompletionGapUrlSearch`，只在目标工作区合法且 completion 审计查询非空时生成 `workspace=<目标>&auditReportQuery=<completion-query>`；首页“最近入账报告”、Audit 顶部摘要和单条 P0 报告行都会显示“复制完成缺口链接 / Copy completion gap link”。打开该链接会利用现有 URL 恢复逻辑进入对应工作区并保留 Audit 查询上下文，方便小团队把“哪份报告、哪个完成标准、该去哪个工作区处理”一起分享。该链接仍只恢复页面上下文，不自动运行任何 P0 action、不写入新事件、不改变签名链、模拟委托或实盘边界。
 
 最新更新：P0 completion 当前缺口链接现在具备明确的恢复语义。新增 `resolveP0CompletionGapDeepLinkState`，只有合法工作区且 `auditReportQuery` 含 `p0-completion-focus` 的链接才会被识别为 completion gap；首页 P0 卡片会显示“已载入完成缺口链接 / Recovered completion gap link”，并提供“打开审计定位 / Open Audit query”和“继续完成缺口 / Continue completion gap”两个手动动作。生成函数也同步拒绝不含 completion 定位 token 的查询，避免复制出无法恢复的链接。该恢复入口仍只切换页面上下文和只读 Audit 查询，不自动执行流水线、AI 辩论、回测、模拟委托或实盘路由。
+
+最新更新：Stage 1/P0 日常使用收口已经进入首页第一屏。新增 `buildStage1P0DailyUseClosure`，把干净环境开箱、行情刷新失败恢复、研究入口、每日启动路径和桌面发布检查聚合成 5 项 `ready/review/blocked` 行；首页在 P0 Golden Path 后展示同源卡片，行级点击只跳转到 Audit、Market、Research 或 Settings 工作区。该收口让个人和小团队打开干净环境后先看到“今天能不能用、卡在哪里、该去哪个工作区”，但刷新行情、入账复核、运行桌面构建仍需显式动作；它不自动运行 P0/P1/P2 流水线、不写新审计事件、不提交模拟或真实订单，也不改变 `liveTradingAllowed=false`。

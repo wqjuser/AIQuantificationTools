@@ -153,6 +153,7 @@ import {
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
+  buildStage1P0DailyUseClosure,
   buildP2PaperReplaySummary,
   buildP2PreLiveAcceptanceSummary,
   buildP2ManifestChainPreflightReviewMarkdown,
@@ -2675,6 +2676,119 @@ describe("terminal workbench model", () => {
     });
     expect(invalid.detail).toContain("live-blocked boundary is not enforced");
     expect(invalid.detail).toContain("Live trading remains blocked");
+  });
+
+  test("builds a Stage 1/P0 daily-use closure from clean-open, refresh, research, daily start, and desktop release signals", () => {
+    const closure = buildStage1P0DailyUseClosure({
+      dailyStartBrief: {
+        auditActionLabel: "Open audit context",
+        auditQuery: "review-chain-health review-chain-gap",
+        checkpoints: [],
+        currentReviewCount: 1,
+        detail: "Daily ops has open review work.",
+        headline: "Daily start needs attention",
+        liveBoundaryLabel: "paper-only",
+        localReviewActionLabel: "Record local reviews",
+        localReviewDetail: "Daily ops review is missing.",
+        localReviewQuery: "",
+        localReviewStatus: "missing",
+        localReviewWorkspaceId: "research",
+        missingReviewCount: 1,
+        openOpsItemCount: 2,
+        primaryActionLabel: "Open Daily Ops",
+        primaryActionWorkspaceId: "research",
+        staleReviewCount: 0,
+        state: "attention",
+        tone: "warning"
+      },
+      desktopBuildReady: false,
+      marketRefreshGuard: {
+        affectedContexts: ["ashare:600000:1d"],
+        affectedSymbols: ["600000"],
+        blocked: true,
+        detail: "Provider cooldown for ashare: 3 recent errors; retry after 120s; affected 600000.",
+        overrideApplied: false,
+        overrideReason: null,
+        reason: "provider_cooldown",
+        recentErrorCount: 3,
+        retryAfterSeconds: 120,
+        status: "cooldown"
+      },
+      p0Acceptance: buildP0AcceptanceSummary(null),
+      p1Acceptance: buildP1AcceptanceSummary(null),
+      researchReadinessRows: [
+        {
+          action: "refresh-cache",
+          detail: "K-line cache is empty for 600000 1d.",
+          id: "cache",
+          label: "Local cache",
+          status: "blocked",
+          tone: "risk",
+          value: "empty"
+        },
+        {
+          action: "save-note",
+          detail: "Research note exists but has not been saved.",
+          id: "note",
+          label: "Research note",
+          status: "review",
+          tone: "warning",
+          value: "unsaved"
+        }
+      ]
+    });
+
+    expect(closure).toMatchObject({
+      headline: "Clean environment acceptance is missing",
+      primaryActionId: "refresh-p0-acceptance",
+      primaryTargetWorkspaceId: "audit",
+      readyCount: 0,
+      totalCount: 5,
+      state: "blocked",
+      tone: "risk"
+    });
+    expect(closure.detail).toContain("Clean environment open");
+    expect(closure.detail).toContain("Market refresh recovery");
+    expect(closure.detail).toContain("Research entry");
+    expect(closure.detail).toContain("Daily start");
+    expect(closure.detail).toContain("Desktop release");
+    expect(closure.rows.map((row) => row.id)).toEqual([
+      "clean-open",
+      "market-refresh-recovery",
+      "research-entry",
+      "daily-start",
+      "desktop-release"
+    ]);
+    expect(closure.rows[0]).toMatchObject({
+      actionId: "refresh-p0-acceptance",
+      label: "Clean environment open",
+      status: "blocked",
+      targetWorkspaceId: "audit"
+    });
+    expect(closure.rows[1]).toMatchObject({
+      actionId: "review-provider-cooldown",
+      label: "Market refresh recovery",
+      status: "blocked",
+      targetWorkspaceId: "market"
+    });
+    expect(closure.rows[2]).toMatchObject({
+      actionId: "refresh-cache",
+      label: "Research entry",
+      status: "blocked",
+      targetWorkspaceId: "research"
+    });
+    expect(closure.rows[3]).toMatchObject({
+      actionId: "record-daily-start-review",
+      label: "Daily start path",
+      status: "review",
+      targetWorkspaceId: "research"
+    });
+    expect(closure.rows[4]).toMatchObject({
+      actionId: "run-desktop-build",
+      label: "Desktop release",
+      status: "review",
+      targetWorkspaceId: "settings"
+    });
   });
 
   test("builds P2 pre-live acceptance summary without enabling order submission", () => {

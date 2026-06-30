@@ -369,6 +369,36 @@ describe("terminal layout css", () => {
     expect(cssBlock(".p0-golden-path-step.current")).toContain("border-color: #4cc9ad;");
   });
 
+  test("renders Stage 1/P0 daily-use closure before detailed readiness evidence", () => {
+    const overviewGridSource = sourceBetween('<section className="terminal-overview-grid market-tape">', '<div className="metrics-row">');
+
+    expect(appSource).toContain("buildStage1P0DailyUseClosure({");
+    expect(appSource).toContain("const stage1P0DailyUseClosure = useMemo(");
+    expect(appSource).toContain("function Stage1P0DailyUseClosurePanel");
+    expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
+    expect(overviewGridSource).toContain("<Stage1P0DailyUseClosurePanel");
+    expect(overviewGridSource.indexOf("<Stage1P0DailyUseClosurePanel")).toBeGreaterThan(
+      overviewGridSource.indexOf("<P0GoldenPathJourneyPanel")
+    );
+    expect(overviewGridSource.indexOf("<Stage1P0DailyUseClosurePanel")).toBeLessThan(
+      overviewGridSource.indexOf('className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`')
+    );
+    expect(appSource).toContain('className={`stage1-p0-daily-use-closure ${closure.state}`}');
+    expect(appSource).toContain("closure.rows.map");
+    expect(appSource).toContain("stage1P0DailyUseClosureRowLabel");
+    expect(appSource).toContain("stage1P0DailyUseClosureActionLabel");
+    expect(appSource).toContain("onSelectWorkspace(row.targetWorkspaceId)");
+    expect(appSource).toContain('i18n.locale === "zh-CN" ? "干净环境开箱" : "Clean environment"');
+    expect(appSource).toContain('i18n.locale === "zh-CN" ? "行情刷新恢复" : "Refresh recovery"');
+    expect(appSource).toContain('i18n.locale === "zh-CN" ? "研究入口" : "Research entry"');
+    expect(appSource).toContain('i18n.locale === "zh-CN" ? "每日启动" : "Daily start"');
+    expect(appSource).toContain('i18n.locale === "zh-CN" ? "桌面发布" : "Desktop release"');
+    expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
+    expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
+    expect(cssBlock(".stage1-p0-daily-use-row")).toContain("cursor: pointer;");
+  });
+
   test("moves detailed P0 evidence behind a secondary drawer on the homepage", () => {
     const overviewSource = sourceBetween('<section className={`module-focus-card ${activeWorkflowAccent}`}>', "</section>");
 

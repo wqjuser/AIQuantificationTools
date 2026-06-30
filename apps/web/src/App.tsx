@@ -369,6 +369,7 @@ import {
   buildDailyStartBrief,
   buildDailyStartBriefMarkdown,
   buildDailyStartBriefReviewReference,
+  buildStage1P0DailyUseClosure,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessSummary,
@@ -483,6 +484,7 @@ import {
   DailyOpsControlRoomSummary,
   DailyStartBrief,
   DailyStartBriefReviewReference,
+  Stage1P0DailyUseClosure,
   PersonalTeamUsabilityReadinessReviewReference,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
@@ -2994,6 +2996,24 @@ export function App() {
       dailyOpsControlRoomReviewReference,
       personalTeamReadinessReviewReference,
       personalTeamUsabilityReadiness
+    ]
+  );
+  const stage1P0DailyUseClosure = useMemo(
+    () =>
+      buildStage1P0DailyUseClosure({
+        dailyStartBrief,
+        desktopBuildReady: false,
+        marketRefreshGuard: marketDataRefreshGuard,
+        p0Acceptance: p0AcceptanceSummary,
+        p1Acceptance: p1AcceptanceSummary,
+        researchReadinessRows: researchContextReadinessRows
+      }),
+    [
+      dailyStartBrief,
+      marketDataRefreshGuard,
+      p0AcceptanceSummary,
+      p1AcceptanceSummary,
+      researchContextReadinessRows
     ]
   );
   const dailyStartBriefReviewMarkdown = useMemo(
@@ -11462,6 +11482,11 @@ export function App() {
                 onRunAction={runGoldenPathActionById}
                 onSelectWorkspace={selectProductWorkArea}
               />
+              <Stage1P0DailyUseClosurePanel
+                closure={stage1P0DailyUseClosure}
+                i18n={i18n}
+                onSelectWorkspace={selectProductWorkArea}
+              />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
                 <div>
                   <span>{i18n.locale === "zh-CN" ? "P0 可用性" : "P0 Readiness"}</span>
@@ -12686,6 +12711,7 @@ export function App() {
 }
 
 type AppI18n = ReturnType<typeof createI18n>;
+type Stage1P0DailyUseClosureRowView = Stage1P0DailyUseClosure["rows"][number];
 
 function p0EvidenceDrawerSummary(
   i18n: AppI18n,
@@ -12761,6 +12787,214 @@ function P0GoldenPathJourneyPanel({
       </div>
     </section>
   );
+}
+
+function Stage1P0DailyUseClosurePanel({
+  closure,
+  i18n,
+  onSelectWorkspace
+}: {
+  closure: Stage1P0DailyUseClosure;
+  i18n: AppI18n;
+  onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
+}) {
+  const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
+
+  return (
+    <section
+      className={`stage1-p0-daily-use-closure ${closure.state}`}
+      aria-label={i18n.locale === "zh-CN" ? "Stage 1 P0 日常使用收口" : "Stage 1 P0 daily-use closure"}
+    >
+      <div className="stage1-p0-daily-use-head">
+        <div>
+          <span>{i18n.locale === "zh-CN" ? "Stage 1/P0 日常收口" : "Stage 1/P0 Daily Use"}</span>
+          <strong>{stage1P0DailyUseClosureHeadline(i18n, closure, primaryRow)}</strong>
+          <small>{stage1P0DailyUseClosureDetail(i18n, closure)}</small>
+        </div>
+        <em>
+          {closure.readyCount}/{closure.totalCount}
+        </em>
+      </div>
+      <div className="stage1-p0-daily-use-rows">
+        {closure.rows.map((row) => (
+          <button
+            aria-label={`${stage1P0DailyUseClosureRowLabel(i18n, row)} · ${stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}`}
+            className={`stage1-p0-daily-use-row ${row.status}`}
+            key={row.id}
+            onClick={() => onSelectWorkspace(row.targetWorkspaceId)}
+            type="button"
+          >
+            <span>{stage1P0DailyUseClosureRowLabel(i18n, row)}</span>
+            <strong>{stage1P0DailyUseClosureRowValue(i18n, row)}</strong>
+            <small>{stage1P0DailyUseClosureRowDetail(i18n, row)}</small>
+            <em>{stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}</em>
+          </button>
+        ))}
+      </div>
+      <div className="stage1-p0-daily-use-footer">
+        <small>
+          {i18n.locale === "zh-CN"
+            ? "P0 保持实盘阻断；这里只聚合开箱、恢复、研究入口、每日启动和桌面发布检查。"
+            : "P0 keeps live trading blocked; this card only routes clean-open, recovery, research, daily start, and desktop release checks."}
+        </small>
+        <button type="button" onClick={() => onSelectWorkspace(closure.primaryTargetWorkspaceId)}>
+          <Play size={12} />
+          {stage1P0DailyUseClosureActionLabel(i18n, closure.primaryActionId, closure.primaryActionLabel)}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function stage1P0DailyUseClosurePrimaryRow(
+  closure: Stage1P0DailyUseClosure
+): Stage1P0DailyUseClosureRowView {
+  return (
+    closure.rows.find(
+      (row) => row.actionId === closure.primaryActionId && row.targetWorkspaceId === closure.primaryTargetWorkspaceId
+    ) ??
+    closure.rows.find((row) => row.status !== "ready") ??
+    closure.rows[0]
+  );
+}
+
+function stage1P0DailyUseClosureHeadline(
+  i18n: AppI18n,
+  closure: Stage1P0DailyUseClosure,
+  primaryRow: Stage1P0DailyUseClosureRowView
+): string {
+  if (i18n.locale === "en-US") {
+    return closure.headline;
+  }
+  if (closure.state === "ready") {
+    return "日常使用已就绪";
+  }
+  const rowLabel = stage1P0DailyUseClosureRowLabel(i18n, primaryRow);
+  return closure.state === "blocked" ? `${rowLabel}阻断` : `${rowLabel}待复核`;
+}
+
+function stage1P0DailyUseClosureDetail(i18n: AppI18n, closure: Stage1P0DailyUseClosure): string {
+  if (i18n.locale === "en-US") {
+    return closure.detail;
+  }
+  const pending = closure.totalCount - closure.readyCount;
+  return pending === 0
+    ? "五项日常使用检查均可进入。"
+    : `${closure.readyCount}/${closure.totalCount} 就绪 · ${pending} 项需要处理`;
+}
+
+function stage1P0DailyUseClosureRowLabel(
+  i18n: AppI18n,
+  row: Stage1P0DailyUseClosureRowView
+): string {
+  if (row.id === "clean-open") {
+    return i18n.locale === "zh-CN" ? "干净环境开箱" : "Clean environment";
+  }
+  if (row.id === "market-refresh-recovery") {
+    return i18n.locale === "zh-CN" ? "行情刷新恢复" : "Refresh recovery";
+  }
+  if (row.id === "research-entry") {
+    return i18n.locale === "zh-CN" ? "研究入口" : "Research entry";
+  }
+  if (row.id === "daily-start") {
+    return i18n.locale === "zh-CN" ? "每日启动" : "Daily start";
+  }
+  return i18n.locale === "zh-CN" ? "桌面发布" : "Desktop release";
+}
+
+function stage1P0DailyUseClosureRowValue(
+  i18n: AppI18n,
+  row: Stage1P0DailyUseClosureRowView
+): string {
+  if (i18n.locale === "en-US") {
+    return row.value;
+  }
+  if (row.id === "clean-open") {
+    return row.status === "ready" ? "P0/P1 验收就绪" : row.actionId === "refresh-p0-acceptance" ? "P0 验收缺失" : "P1 待复核";
+  }
+  if (row.id === "market-refresh-recovery") {
+    return row.status === "blocked" ? "Provider 冷却中" : row.status === "review" ? "恢复状态待复核" : "可刷新";
+  }
+  if (row.id === "research-entry") {
+    return row.status === "ready" ? "研究上下文就绪" : row.actionId === "refresh-cache" ? "缓存待刷新" : "上下文待补齐";
+  }
+  if (row.id === "daily-start") {
+    return row.status === "ready" ? "启动路径就绪" : "启动复核待入账";
+  }
+  return row.status === "ready" ? "桌面构建已记录" : "构建清单待完成";
+}
+
+function stage1P0DailyUseClosureRowDetail(
+  i18n: AppI18n,
+  row: Stage1P0DailyUseClosureRowView
+): string {
+  if (i18n.locale === "en-US") {
+    return row.detail;
+  }
+  if (row.id === "clean-open") {
+    return "用 P0/P1 验收确认干净环境可开箱。";
+  }
+  if (row.id === "market-refresh-recovery") {
+    return row.status === "blocked" ? "先复核 provider 冷却，再恢复行情刷新。" : "行情缓存可以从 Market 工作区恢复。";
+  }
+  if (row.id === "research-entry") {
+    return "研究页只保留当前上下文、缓存、笔记和工作区入口。";
+  }
+  if (row.id === "daily-start") {
+    return "每日启动摘要聚合个人/团队可用性和审计复核。";
+  }
+  return "桌面包仍需本地 Tauri/Cargo 构建检查确认。";
+}
+
+function stage1P0DailyUseClosureRowStatusLabel(
+  i18n: AppI18n,
+  status: Stage1P0DailyUseClosureRowView["status"]
+): string {
+  if (i18n.locale === "en-US") {
+    return status === "ready" ? "Ready" : status === "review" ? "Review" : "Blocked";
+  }
+  return status === "ready" ? "就绪" : status === "review" ? "复核" : "阻断";
+}
+
+function stage1P0DailyUseClosureActionLabel(
+  i18n: AppI18n,
+  actionId: Stage1P0DailyUseClosureRowView["actionId"],
+  fallback: string
+): string {
+  if (i18n.locale === "en-US") {
+    return fallback;
+  }
+  if (actionId === "refresh-p0-acceptance") {
+    return "刷新 P0 验收";
+  }
+  if (actionId === "review-p1-acceptance") {
+    return "复核 P1 验收";
+  }
+  if (actionId === "review-provider-cooldown") {
+    return "复核冷却";
+  }
+  if (actionId === "refresh-cache") {
+    return "刷新缓存";
+  }
+  if (actionId === "refresh-watchlist-cache") {
+    return "刷新自选缓存";
+  }
+  if (actionId === "save-note") {
+    return "保存笔记";
+  }
+  if (actionId === "save-watchlist") {
+    return "保存自选";
+  }
+  if (actionId === "save-workspace") {
+    return "保存工作区";
+  }
+  if (actionId === "record-daily-start-review") {
+    return "入账启动复核";
+  }
+  if (actionId === "run-desktop-build") {
+    return "检查桌面构建";
+  }
+  return "打开研究入口";
 }
 
 function p0JourneyStepLabel(i18n: AppI18n, step: P0GoldenPathJourney["steps"][number]): string {
