@@ -7141,9 +7141,51 @@ export function buildStage1P0DailyUseClosure({
     null;
   const rows: Stage1P0DailyUseClosureRow[] = [
     buildDailyUseCleanOpenRow(p0Acceptance, p1Acceptance, dailyUseReport),
-    buildDailyUseMarketRefreshRecoveryRow(marketRefreshGuard),
-    buildDailyUseResearchEntryRow(researchIssue),
-    buildDailyUseDailyStartRow(dailyStartBrief),
+    buildDailyUseReportBackedRow(
+      dailyUseReport,
+      "market-refresh-recovery",
+      () => buildDailyUseMarketRefreshRecoveryRow(marketRefreshGuard),
+      {
+        label: "Market refresh recovery",
+        readyActionId: "refresh-cache",
+        reviewActionId: "refresh-cache",
+        blockedActionId: "review-provider-cooldown",
+        readyActionLabel: "Validate daily report",
+        reviewActionLabel: "Review refresh evidence",
+        blockedActionLabel: "Review cooldown",
+        targetWorkspaceId: "market"
+      }
+    ),
+    buildDailyUseReportBackedRow(
+      dailyUseReport,
+      "research-entry",
+      () => buildDailyUseResearchEntryRow(researchIssue),
+      {
+        label: "Research entry",
+        readyActionId: "open-research-entry",
+        reviewActionId: "refresh-cache",
+        blockedActionId: "refresh-cache",
+        readyActionLabel: "Open research",
+        reviewActionLabel: "Review research entry",
+        blockedActionLabel: "Refresh cache",
+        targetWorkspaceId: "research"
+      }
+    ),
+    buildDailyUseReportBackedRow(
+      dailyUseReport,
+      "daily-start",
+      () => buildDailyUseDailyStartRow(dailyStartBrief),
+      {
+        label: "Daily start path",
+        readyActionId: "open-daily-start",
+        reviewActionId: "record-daily-start-review",
+        blockedActionId: "record-daily-start-review",
+        readyActionLabel: "Open daily start",
+        reviewActionLabel: "Review daily start",
+        blockedActionLabel: "Review daily start",
+        targetWorkspaceId: "research"
+      }
+    ),
     buildDailyUseDesktopReleaseRow(desktopRelease, desktopBuildReady, dailyUseReport)
   ];
   const readyCount = rows.filter((row) => row.status === "ready").length;
@@ -7166,6 +7208,47 @@ export function buildStage1P0DailyUseClosure({
     primaryActionLabel: primaryRow.actionLabel,
     primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
     rows
+  };
+}
+
+function buildDailyUseReportBackedRow(
+  dailyUseReport: Stage1DailyUseSummary | null,
+  rowId: "market-refresh-recovery" | "research-entry" | "daily-start",
+  fallback: () => Stage1P0DailyUseClosureRow,
+  config: {
+    label: string;
+    readyActionId: Stage1P0DailyUseClosureActionId;
+    reviewActionId: Stage1P0DailyUseClosureActionId;
+    blockedActionId: Stage1P0DailyUseClosureActionId;
+    readyActionLabel: string;
+    reviewActionLabel: string;
+    blockedActionLabel: string;
+    targetWorkspaceId: ProductWorkAreaId;
+  }
+): Stage1P0DailyUseClosureRow {
+  const reportRow = dailyUseReport?.rows.find((row) => row.id === rowId);
+  if (!dailyUseReport || !reportRow || dailyUseReport.state === "missing" || dailyUseReport.state === "invalid") {
+    return fallback();
+  }
+  const status = reportRow.status;
+  return {
+    id: rowId,
+    label: config.label,
+    value: reportRow.value,
+    detail: dailyUseReport.generatedAt
+      ? `${reportRow.summary} Report generated ${dailyUseReport.generatedAt}.`
+      : reportRow.summary,
+    status,
+    tone: dailyUseClosureTone(status),
+    actionId:
+      status === "ready" ? config.readyActionId : status === "review" ? config.reviewActionId : config.blockedActionId,
+    actionLabel:
+      status === "ready"
+        ? config.readyActionLabel
+        : status === "review"
+          ? config.reviewActionLabel
+          : config.blockedActionLabel,
+    targetWorkspaceId: config.targetWorkspaceId
   };
 }
 

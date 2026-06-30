@@ -409,6 +409,8 @@ npm run stage1:daily:validate
 
 本地核心还提供接口 `GET /api/stage1/daily-use/latest` 和 `POST /api/stage1/daily-use`。前者用于前端首页读取 `data/stage1-daily-use.json` 的状态，只返回 passed/missing/invalid/readback 结构；后者用于在产品内手动生成同一份报告，只聚合已存在的 P0/P1 验收和桌面发布 manifest，并从 P1 watchlist refresh / queue pipeline 检查推导行情恢复和研究入口状态。两个接口都不运行 P0/P1/P2 smoke、不构建桌面包、不写审计事件、不连接券商、不提交订单，也不改变实盘边界。
 
+首页 Stage 1/P0 日常收口卡会优先使用有效报告里的五行状态；只有报告缺失或无效时，才回退到页面当前的行情、研究、每日启动和桌面发布即时状态。这样刷新自检后，CLI、API 和首页第一屏看到的是同一份日常入口语义。
+
 ## Product Boundary
 
 产品目标是全功能量化交易平台，但实盘执行必须分阶段解锁。当前版本聚焦行情、研究、回测、AI 评审、组合风控雏形和模拟交易，不连接真实 A 股券商账户。交易工作区默认 `paper_only`，自动化交易能力通过 `ExecutionAdapter` 风格的接口预留；只有在合法券商接口明确、适配器认证通过、风控审批通过、用户人工确认后，才允许接入实盘适配器。

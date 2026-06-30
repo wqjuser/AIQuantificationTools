@@ -151,6 +151,7 @@ import {
   buildMarketDataProviderHealthTrendSummary,
   buildModuleNewsEvents,
   buildDesktopReleaseSummary,
+  buildStage1DailyUseSummary,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
@@ -2868,6 +2869,166 @@ describe("terminal workbench model", () => {
       status: "review",
       targetWorkspaceId: "settings"
     });
+  });
+
+  test("uses all valid Stage 1 daily-use report rows before live UI fallback rows", () => {
+    const dailyUseReport = buildStage1DailyUseSummary({
+      kind: "aiqt.stage1DailyUseReport",
+      schemaVersion: 1,
+      generatedAt: "2026-06-30T10:00:00+00:00",
+      status: "ready",
+      summary: "Stage 1 daily use is ready (5/5 checks ready).",
+      readyCount: 5,
+      totalCount: 5,
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      sourcePath: "data/stage1-daily-use.json",
+      sourcePaths: {
+        p0Acceptance: "data/p0-acceptance.json",
+        p1Acceptance: "data/p1-acceptance.json",
+        desktopRelease: "data/desktop-release.json"
+      },
+      rows: [
+        {
+          id: "clean-open",
+          label: "Clean environment startup",
+          status: "ready",
+          value: "report clean ready",
+          summary: "Report says clean-open is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "market-refresh-recovery",
+          label: "Market refresh recovery",
+          status: "ready",
+          value: "report refresh ready",
+          summary: "Report says refresh recovery is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "research-entry",
+          label: "Research entry",
+          status: "ready",
+          value: "report research ready",
+          summary: "Report says research entry is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "daily-start",
+          label: "Daily start path",
+          status: "ready",
+          value: "report daily ready",
+          summary: "Report says daily start is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "desktop-release",
+          label: "Desktop release",
+          status: "ready",
+          value: "report desktop ready",
+          summary: "Report says desktop release is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        }
+      ]
+    });
+    if (!dailyUseReport) {
+      throw new Error("Expected Stage 1 daily-use summary");
+    }
+
+    const closure = buildStage1P0DailyUseClosure({
+      dailyStartBrief: {
+        auditActionLabel: "Open audit context",
+        auditQuery: "review-chain-health review-chain-gap",
+        checkpoints: [],
+        currentReviewCount: 0,
+        detail: "Live fallback says daily start needs attention.",
+        headline: "Live fallback daily start attention",
+        liveBoundaryLabel: "paper-only",
+        localReviewActionLabel: "Record local reviews",
+        localReviewDetail: "Daily ops review is missing.",
+        localReviewQuery: "",
+        localReviewStatus: "missing",
+        localReviewWorkspaceId: "research",
+        missingReviewCount: 1,
+        openOpsItemCount: 2,
+        primaryActionLabel: "Open Daily Ops",
+        primaryActionWorkspaceId: "research",
+        staleReviewCount: 0,
+        state: "attention",
+        tone: "warning"
+      },
+      dailyUseReport,
+      desktopBuildReady: false,
+      marketRefreshGuard: {
+        affectedContexts: ["ashare:600000:1d"],
+        affectedSymbols: ["600000"],
+        blocked: true,
+        detail: "Live fallback says provider cooldown is blocking refresh.",
+        overrideApplied: false,
+        overrideReason: null,
+        reason: "provider_cooldown",
+        recentErrorCount: 3,
+        retryAfterSeconds: 120,
+        status: "cooldown"
+      },
+      p0Acceptance: buildP0AcceptanceSummary(null),
+      p1Acceptance: buildP1AcceptanceSummary(null),
+      researchReadinessRows: [
+        {
+          action: "refresh-cache",
+          detail: "Live fallback says cache is empty.",
+          id: "cache",
+          label: "Local cache",
+          status: "blocked",
+          tone: "risk",
+          value: "empty"
+        }
+      ]
+    });
+
+    expect(closure).toMatchObject({
+      headline: "Clean environment is ready",
+      readyCount: 5,
+      totalCount: 5,
+      state: "ready",
+      tone: "positive"
+    });
+    expect(closure.rows[0]).toMatchObject({ id: "clean-open", status: "ready", value: "report clean ready" });
+    expect(closure.rows[1]).toMatchObject({
+      id: "market-refresh-recovery",
+      status: "ready",
+      value: "report refresh ready",
+      targetWorkspaceId: "market"
+    });
+    expect(closure.rows[2]).toMatchObject({
+      id: "research-entry",
+      status: "ready",
+      value: "report research ready",
+      targetWorkspaceId: "research"
+    });
+    expect(closure.rows[3]).toMatchObject({
+      id: "daily-start",
+      status: "ready",
+      value: "report daily ready",
+      targetWorkspaceId: "research"
+    });
+    expect(closure.rows[4]).toMatchObject({ id: "desktop-release", status: "ready", value: "report desktop ready" });
   });
 
   test("marks Stage 1/P0 daily-use desktop release ready from release readback", () => {
