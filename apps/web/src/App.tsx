@@ -22632,7 +22632,7 @@ function AuditEvidenceReportLedgerPanel({
                       title={row.localReviewBundleContextTitle || row.localReviewBundleContextQuery}
                     >
                       {i18n.locale === "zh-CN" ? "本地复核集" : "Local review bundle"} ·{" "}
-                      {row.localReviewBundleContextQuery}
+                      {row.localReviewBundleContextLabel || row.localReviewBundleContextQuery}
                     </span>
                   ) : null}
                   {row.localReviewBundleCoverageQuery ? (

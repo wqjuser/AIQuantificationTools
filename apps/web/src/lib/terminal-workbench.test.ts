@@ -13776,6 +13776,7 @@ describe("terminal workbench model", () => {
     );
     expect(rows[2]).toEqual(
       expect.objectContaining({
+        localReviewBundleContextLabel: "local review bundle · daily start review",
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
           "local-review-bundle · daily start review · daily-start-brief-review-8888888888888888 · Daily start review: attention · local reviews 2/2 · open ops 2 · primary Run AI review -> ai-review · local Open local review evidence · audit P0 completion focus · current criterion ai-review",
@@ -13802,6 +13803,9 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle daily start review").map((row) => row.id)).toEqual([
       "daily-start-brief-review-8888888888888888"
     ]);
+    expect(
+      filterAuditEvidenceReportLedgerRows(rows, rows[2].localReviewBundleContextLabel).map((row) => row.id)
+    ).toEqual(["daily-start-brief-review-8888888888888888"]);
   });
 
   test("points local review bundle coverage gaps at daily start when only the start review is missing", () => {
@@ -14140,6 +14144,7 @@ describe("terminal workbench model", () => {
     );
     expect(rows[1]).toEqual(
       expect.objectContaining({
+        localReviewBundleContextLabel: "local review bundle · personal/team readiness review",
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
           "local-review-bundle · personal/team readiness review · personal-team-readiness-review-new-7777777777777777 · Personal/team readiness review: ready 6/6 · personal 100% · team 100% · open none · next Review accepted loop -> audit",
@@ -14155,6 +14160,7 @@ describe("terminal workbench model", () => {
     );
     expect(rows[3]).toEqual(
       expect.objectContaining({
+        localReviewBundleContextLabel: "local review bundle · daily ops review",
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
           "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666 · Daily ops review: attention 2/4 · review 2 · blocked 0 · open current-action, team-handoff · primary Run AI review -> ai-review",
@@ -14188,6 +14194,7 @@ describe("terminal workbench model", () => {
     expect(filterAuditEvidenceReportLedgerRows(rows, rows[1].localReviewBundleContextTitle).map((row) => row.id)).toEqual([
       "personal-team-readiness-review-new-7777777777777777"
     ]);
+    expect(rows[3].searchText).toContain(rows[3].localReviewBundleContextLabel);
     expect(filterAuditEvidenceReportLedgerRows(rows, "local-review-bundle daily ops review").map((row) => row.id)).toEqual([
       "personal-team-readiness-review-old-5555555555555555",
       "personal-team-readiness-review-new-7777777777777777",

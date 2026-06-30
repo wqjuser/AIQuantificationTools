@@ -2634,6 +2634,7 @@ export interface AuditEvidenceReportLedgerRow {
   dailyStartBriefReviewLocalReviewQuery: string;
   dailyStartBriefReviewCheckpointIds: string[];
   dailyStartBriefReviewCheckpointStatuses: string[];
+  localReviewBundleContextLabel: string;
   localReviewBundleContextQuery: string;
   localReviewBundleContextTitle: string;
   localReviewBundleCoverageQuery: string;
@@ -14866,6 +14867,13 @@ function auditReportLedgerLocalReviewBundleContextTitle(
   return ["local-review-bundle", reviewLabel, eventId, rowTitle].filter(Boolean).join(" · ");
 }
 
+function auditReportLedgerLocalReviewBundleContextLabel(
+  reportKind: AuditEvidenceReportLedgerRow["reportKind"]
+): string {
+  const reviewLabel = auditReportLedgerLocalReviewBundleReviewLabel(reportKind);
+  return reviewLabel ? `local review bundle · ${reviewLabel}` : "";
+}
+
 function auditReportLedgerLocalReviewBundleReviewLabel(reportKind: AuditEvidenceReportLedgerRow["reportKind"]): string {
   return reportKind === "personal_team_readiness_review"
     ? "personal/team readiness review"
@@ -17259,6 +17267,9 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "daily_start_brief_review"
           ? "local-review-bundle"
           : "";
+      const localReviewBundleContextLabel = localReviewBundleContextQuery
+        ? auditReportLedgerLocalReviewBundleContextLabel(reportKind)
+        : "";
       const localReviewBundleContextTitle = localReviewBundleContextQuery
         ? auditReportLedgerLocalReviewBundleContextTitle(reportKind, event.eventId)
         : "";
@@ -17478,6 +17489,7 @@ export function buildAuditEvidenceReportLedgerRows(
         dailyStartBriefReviewLocalReviewQuery,
         dailyStartBriefReviewCheckpointIds,
         dailyStartBriefReviewCheckpointStatuses,
+        localReviewBundleContextLabel,
         localReviewBundleContextQuery,
         localReviewBundleContextTitle,
         localReviewBundleCoverageQuery: "",
@@ -17585,6 +17597,7 @@ export function buildAuditEvidenceReportLedgerRows(
           personalTeamReadinessReviewSearchText,
           dailyOpsControlRoomReviewSearchText,
           dailyStartBriefReviewSearchText,
+          localReviewBundleContextLabel,
           localReviewBundleContextQuery,
           localReviewBundleContextTitle,
           operatorRunbookSearchText,
@@ -19170,6 +19183,7 @@ export function filterAuditEvidenceReportLedgerRows(
       row.p2ReadinessAcceptanceCoverageReviewLinkQuery,
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkLabel,
       row.p2ReadinessEvidenceCoverageAcceptanceReviewLinkQuery,
+      row.localReviewBundleContextLabel,
       row.localReviewBundleContextQuery,
       row.localReviewBundleContextTitle,
       row.localReviewBundleCoverageQuery,

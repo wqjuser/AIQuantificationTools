@@ -2214,6 +2214,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("rowPersonalTeamReadinessReviewQuery");
     expect(reportLedgerPanelSource).toContain("rowDailyOpsControlRoomReviewLabel");
     expect(reportLedgerPanelSource).toContain("rowDailyOpsControlRoomReviewQuery");
+    expect(reportLedgerPanelSource).toContain("row.localReviewBundleContextLabel");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleContextQuery");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleContextTitle");
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleCoverageQuery");
@@ -2226,6 +2227,7 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("row.localReviewBundleLatestTitle");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleContextQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleContextQuery)");
+    expect(reportLedgerPanelSource).toContain("row.localReviewBundleContextLabel || row.localReviewBundleContextQuery");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleCoverageQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(row.localReviewBundleCoverageQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(row.localReviewBundleCoverageNextActionQuery)");
