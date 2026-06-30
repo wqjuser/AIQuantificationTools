@@ -14856,13 +14856,14 @@ export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(
 
 function auditReportLedgerLocalReviewBundleContextTitle(
   reportKind: AuditEvidenceReportLedgerRow["reportKind"],
-  eventId: string
+  eventId: string,
+  rowTitle = ""
 ): string {
   const reviewLabel = auditReportLedgerLocalReviewBundleReviewLabel(reportKind);
   if (!reviewLabel) {
     return "";
   }
-  return ["local-review-bundle", reviewLabel, eventId].filter(Boolean).join(" · ");
+  return ["local-review-bundle", reviewLabel, eventId, rowTitle].filter(Boolean).join(" · ");
 }
 
 function auditReportLedgerLocalReviewBundleReviewLabel(reportKind: AuditEvidenceReportLedgerRow["reportKind"]): string {
@@ -17634,7 +17635,9 @@ export function buildAuditEvidenceReportLedgerRows(
       };
     });
   return markLatestLocalReviewBundleLedgerRow(
-    markLocalReviewBundleCoverageLedgerRows(linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(rows))
+    markLocalReviewBundleCoverageLedgerRows(
+      markLocalReviewBundleContextTitleLedgerRows(linkP2ReadinessEvidenceCoverageLedgerRowsToAcceptanceReviews(rows))
+    )
   );
 }
 
@@ -17645,6 +17648,27 @@ function auditEvidenceReportLedgerRowIsLocalReviewBundle(row: AuditEvidenceRepor
       row.reportKind === "daily_ops_control_room_review" ||
       row.reportKind === "daily_start_brief_review")
   );
+}
+
+function markLocalReviewBundleContextTitleLedgerRows(rows: AuditEvidenceReportLedgerRow[]): AuditEvidenceReportLedgerRow[] {
+  return rows.map((row) => {
+    if (!auditEvidenceReportLedgerRowIsLocalReviewBundle(row)) {
+      return row;
+    }
+    const contextTitle = auditReportLedgerLocalReviewBundleContextTitle(
+      row.reportKind,
+      row.id,
+      auditReportLedgerLocalReviewBundleLatestReviewTitle(row)
+    );
+    if (!contextTitle || contextTitle === row.localReviewBundleContextTitle) {
+      return row;
+    }
+    return {
+      ...row,
+      localReviewBundleContextTitle: contextTitle,
+      searchText: [row.searchText, contextTitle].filter(Boolean).join(" ")
+    };
+  });
 }
 
 function markLocalReviewBundleCoverageLedgerRows(rows: AuditEvidenceReportLedgerRow[]): AuditEvidenceReportLedgerRow[] {

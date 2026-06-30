@@ -13778,7 +13778,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
-          "local-review-bundle · daily start review · daily-start-brief-review-8888888888888888",
+          "local-review-bundle · daily start review · daily-start-brief-review-8888888888888888 · Daily start review: attention · local reviews 2/2 · open ops 2 · primary Run AI review -> ai-review · local Open local review evidence · audit P0 completion focus · current criterion ai-review",
         localReviewBundleCoverageQuery: "local-review-bundle-complete",
         localReviewBundleLatestLabel: "latest local review · daily start review",
         localReviewBundleLatestQuery: expect.stringContaining("daily_start_brief_review"),
@@ -14142,7 +14142,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
-          "local-review-bundle · personal/team readiness review · personal-team-readiness-review-new-7777777777777777",
+          "local-review-bundle · personal/team readiness review · personal-team-readiness-review-new-7777777777777777 · Personal/team readiness review: ready 6/6 · personal 100% · team 100% · open none · next Review accepted loop -> audit",
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
         localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
@@ -14157,7 +14157,7 @@ describe("terminal workbench model", () => {
       expect.objectContaining({
         localReviewBundleContextQuery: "local-review-bundle",
         localReviewBundleContextTitle:
-          "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666",
+          "local-review-bundle · daily ops review · daily-ops-control-room-review-new-6666666666666666 · Daily ops review: attention 2/4 · review 2 · blocked 0 · open current-action, team-handoff · primary Run AI review -> ai-review",
         localReviewBundleCoverageNextActionQuery:
           "local-review-bundle-next-action record-daily-start-review local-review-bundle-daily-start-missing",
         localReviewBundleCoverageNextActionTargetWorkspaceId: "research",
