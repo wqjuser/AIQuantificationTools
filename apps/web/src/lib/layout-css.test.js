@@ -411,6 +411,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "研究入口" : "Research entry"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "每日启动" : "Daily start"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "桌面发布" : "Desktop release"');
+    expect(appSource).toContain("closure.staleSourceSummary");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");

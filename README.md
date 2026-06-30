@@ -215,7 +215,7 @@ Audit 台账现在还会解释 P2 复核链健康上下文：`AuditEvidenceRepor
 
 首页现在还会在个人/小团队 readiness 与 Daily Ops 控制台前显示“今日启动摘要 / Daily Start”：`buildDailyStartBrief` 会把 Daily Ops 队列、个人/小团队可用性、个人/团队复核引用和 Daily Ops 复核引用压成一个主动作、一个审计入口和一个本地复核入口，并把两类本地复核标成 current、stale 或 missing。Daily Start 还会继承 Daily Ops 的 `auditQueryTitle`，因此 P2 复核链健康解释会继续进入启动摘要、checkpoint tooltip/Markdown、daily_start_brief_review metadata、Audit ledger row/search/query 与 current/stale 判断。这样操作者打开首页就能先看到今天该继续 AI 评审、补交接/备份，还是先入账本地复核；该摘要只复用现有导航和只读 Audit 查询，不自动运行 P0 action、不新建复核、不修改账本、不签名、不连接券商、不提交订单。
 
-首页现在还新增了 Stage 1/P0 日常使用收口卡：`buildStage1P0DailyUseClosure` 会把干净环境 P0/P1 验收、行情刷新失败恢复、研究上下文入口、Daily Start 本地复核和桌面发布状态压成 5 个可点击入口。桌面发布不再是写死的 checklist，核心会通过 `GET /api/desktop/release/latest` 回读 `data/desktop-release.json`，前端用 `buildDesktopReleaseSummary` 显示 passed/missing/invalid。首页刷新动作会调用 `POST /api/stage1/daily-use` 聚合已有 P0/P1/desktop manifest 并写回 `data/stage1-daily-use.json`，随后重新读取日常报告和桌面发布状态；如果 P0/P1/desktop 源 manifest 比日报更新或缺失，readback 会把受影响行降为 review 并提示重新生成日报。该卡位于 P0 Golden Path 之后、详细 readiness 证据之前，主动作只导航到对应工作区；行情刷新、复核入账和桌面构建仍需要用户在对应工作区或本地命令中显式执行，不自动运行流水线、不写新账本、不连接券商、不提交订单，也不放宽 live-blocked 边界。
+首页现在还新增了 Stage 1/P0 日常使用收口卡：`buildStage1P0DailyUseClosure` 会把干净环境 P0/P1 验收、行情刷新失败恢复、研究上下文入口、Daily Start 本地复核和桌面发布状态压成 5 个可点击入口。桌面发布不再是写死的 checklist，核心会通过 `GET /api/desktop/release/latest` 回读 `data/desktop-release.json`，前端用 `buildDesktopReleaseSummary` 显示 passed/missing/invalid。首页刷新动作会调用 `POST /api/stage1/daily-use` 聚合已有 P0/P1/desktop manifest 并写回 `data/stage1-daily-use.json`，随后重新读取日常报告和桌面发布状态；如果 P0/P1/desktop 源 manifest 比日报更新或缺失，readback 会把受影响行降为 review 并提示重新生成日报，首页摘要也会直接显示 `staleSourcePaths` 指向的源文件。该卡位于 P0 Golden Path 之后、详细 readiness 证据之前，主动作只导航到对应工作区；行情刷新、复核入账和桌面构建仍需要用户在对应工作区或本地命令中显式执行，不自动运行流水线、不写新账本、不连接券商、不提交订单，也不放宽 live-blocked 边界。
 
 “今日启动摘要 / Daily Start” 现在也可以作为 `daily_start_brief_review` 入账：首页可复制、下载或记录 `daily-start-brief-review.md`，事件 metadata 只保存 Markdown SHA-256、当前摘要状态、本地复核计数、open ops 数、主动作、审计查询、审计查询说明、本地复核入口、checkpoint id/status 和强制 live-blocked 边界，不保存完整正文。首页会用 `buildDailyStartBriefReviewReference` 回读最新 Daily Start 复核并标成 current、stale 或 missing；Audit 台账行也会显示“每日启动复核 / Daily start review” chip，并提供定位/复制查询动作。该复核只是每日人工启动留痕，不自动运行 P0 action、不补写其它复核、不修改账本以外状态、不签名、不连接券商、不提交订单。
 
@@ -409,7 +409,7 @@ npm run stage1:daily:validate
 
 本地核心还提供接口 `GET /api/stage1/daily-use/latest` 和 `POST /api/stage1/daily-use`。前者用于前端首页读取 `data/stage1-daily-use.json` 的状态，只返回 passed/missing/invalid/readback 结构，并会在源 manifest 新于日报或缺失时返回 `status=review` 与 `staleSourcePaths`；后者用于在产品内手动生成同一份报告，只聚合已存在的 P0/P1 验收和桌面发布 manifest，并从 P1 watchlist refresh / queue pipeline 检查推导行情恢复和研究入口状态。两个接口都不运行 P0/P1/P2 smoke、不构建桌面包、不写审计事件、不连接券商、不提交订单，也不改变实盘边界。
 
-首页 Stage 1/P0 日常收口卡会优先使用有效报告里的五行状态；只有报告缺失或无效时，才回退到页面当前的行情、研究、每日启动和桌面发布即时状态。这样刷新自检后，CLI、API 和首页第一屏看到的是同一份日常入口语义。
+首页 Stage 1/P0 日常收口卡会优先使用有效报告里的五行状态；只有报告缺失或无效时，才回退到页面当前的行情、研究、每日启动和桌面发布即时状态。这样刷新自检后，CLI、API 和首页第一屏看到的是同一份日常入口语义；当 readback 返回 `staleSourcePaths` 时，首页 detail 会显示过期源 manifest 路径，并引导点击“刷新自检”重新生成日报。
 
 ## Product Boundary
 

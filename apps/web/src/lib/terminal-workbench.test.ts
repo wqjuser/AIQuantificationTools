@@ -3031,6 +3031,151 @@ describe("terminal workbench model", () => {
     expect(closure.rows[4]).toMatchObject({ id: "desktop-release", status: "ready", value: "report desktop ready" });
   });
 
+  test("surfaces stale source manifests in the Stage 1 daily-use closure summary", () => {
+    const dailyUseReport = buildStage1DailyUseSummary({
+      kind: "aiqt.stage1DailyUseReport",
+      schemaVersion: 1,
+      generatedAt: "2026-06-30T10:00:00+00:00",
+      status: "review",
+      summary: "Stage 1 daily-use report needs refresh because source manifests changed: data/p1-acceptance.json.",
+      reason: "Stage 1 daily-use report needs refresh because source manifests changed: data/p1-acceptance.json.",
+      readyCount: 1,
+      totalCount: 5,
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      sourcePath: "data/stage1-daily-use.json",
+      staleSourcePaths: ["data/p1-acceptance.json"],
+      sourcePaths: {
+        p0Acceptance: "data/p0-acceptance.json",
+        p1Acceptance: "data/p1-acceptance.json",
+        desktopRelease: "data/desktop-release.json"
+      },
+      rows: [
+        {
+          id: "clean-open",
+          label: "Clean environment startup",
+          status: "review",
+          value: "Daily-use evidence should be refreshed",
+          summary: "Clean environment startup source manifest changed after this daily-use report was generated.",
+          action: "npm run stage1:daily",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "market-refresh-recovery",
+          label: "Market refresh recovery",
+          status: "review",
+          value: "Daily-use evidence should be refreshed",
+          summary: "Market refresh source manifest changed after this daily-use report was generated.",
+          action: "npm run stage1:daily",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "research-entry",
+          label: "Research entry",
+          status: "review",
+          value: "Daily-use evidence should be refreshed",
+          summary: "Research entry source manifest changed after this daily-use report was generated.",
+          action: "npm run stage1:daily",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "daily-start",
+          label: "Daily start path",
+          status: "review",
+          value: "Daily-use evidence should be refreshed",
+          summary: "Daily start source manifest changed after this daily-use report was generated.",
+          action: "npm run stage1:daily",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "desktop-release",
+          label: "Desktop release",
+          status: "ready",
+          value: "Desktop release manifest is ready",
+          summary: "Desktop release manifest remains current.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        }
+      ]
+    });
+    if (!dailyUseReport) {
+      throw new Error("Expected Stage 1 daily-use summary");
+    }
+
+    expect(dailyUseReport.staleSourcePaths).toEqual(["data/p1-acceptance.json"]);
+    expect(dailyUseReport.staleSourceSummary).toBe(
+      "Stale source manifests: data/p1-acceptance.json. Run npm run stage1:daily to refresh."
+    );
+    expect(dailyUseReport.headline).toBe("Stage 1 daily report needs refresh (1/5)");
+    expect(dailyUseReport.detail).toContain("Stale source manifests: data/p1-acceptance.json.");
+
+    const closure = buildStage1P0DailyUseClosure({
+      dailyStartBrief: {
+        auditActionLabel: "Open audit context",
+        auditQuery: "review-chain-health review-chain-gap",
+        checkpoints: [],
+        currentReviewCount: 0,
+        detail: "Live fallback says daily start is ready.",
+        headline: "Live fallback daily start ready",
+        liveBoundaryLabel: "paper-only",
+        localReviewActionLabel: "Open Daily Ops",
+        localReviewDetail: "Daily ops review is current.",
+        localReviewQuery: "",
+        localReviewStatus: "current",
+        localReviewWorkspaceId: "research",
+        missingReviewCount: 0,
+        openOpsItemCount: 0,
+        primaryActionLabel: "Open Daily Ops",
+        primaryActionWorkspaceId: "research",
+        staleReviewCount: 0,
+        state: "ready",
+        tone: "positive"
+      },
+      dailyUseReport,
+      desktopBuildReady: true,
+      marketRefreshGuard: {
+        affectedContexts: [],
+        affectedSymbols: [],
+        blocked: false,
+        detail: "Live fallback says market refresh is ready.",
+        overrideApplied: false,
+        overrideReason: null,
+        reason: "ok",
+        recentErrorCount: 0,
+        retryAfterSeconds: 0,
+        status: "ok"
+      },
+      p0Acceptance: buildP0AcceptanceSummary(null),
+      p1Acceptance: buildP1AcceptanceSummary(null),
+      researchReadinessRows: []
+    });
+
+    expect(closure).toMatchObject({
+      state: "review",
+      readyCount: 1,
+      staleSourcePaths: ["data/p1-acceptance.json"],
+      staleSourceSummary: "Stale source manifests: data/p1-acceptance.json. Run npm run stage1:daily to refresh."
+    });
+    expect(closure.detail).toContain("Run npm run stage1:daily to refresh.");
+    expect(closure.rows[0]).toMatchObject({
+      id: "clean-open",
+      status: "review",
+      value: "Daily-use evidence should be refreshed"
+    });
+    expect(closure.rows[4]).toMatchObject({ id: "desktop-release", status: "ready" });
+  });
+
   test("marks Stage 1/P0 daily-use desktop release ready from release readback", () => {
     const p0Acceptance = buildP0AcceptanceSummary({
       kind: "aiqt.p0AcceptanceStatus",

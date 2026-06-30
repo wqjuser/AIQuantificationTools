@@ -12963,6 +12963,9 @@ function stage1P0DailyUseClosureDetail(i18n: AppI18n, closure: Stage1P0DailyUseC
   if (i18n.locale === "en-US") {
     return closure.detail;
   }
+  if (closure.staleSourceSummary) {
+    return `日报源已更新 · ${closure.staleSourcePaths.join(", ")} · 请刷新自检`;
+  }
   const pending = closure.totalCount - closure.readyCount;
   return pending === 0
     ? "五项日常使用检查均可进入。"

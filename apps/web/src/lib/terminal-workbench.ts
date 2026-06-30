@@ -376,6 +376,7 @@ export interface Stage1DailyUseSummarySource {
   liveTradingAllowed: boolean;
   liveBlockedBoundary: boolean;
   sourcePath?: string;
+  staleSourcePaths?: string[];
   sourcePaths: {
     p0Acceptance: string;
     p1Acceptance: string;
@@ -396,6 +397,8 @@ export interface Stage1DailyUseSummary {
   readyCount: number;
   totalCount: number;
   sourcePath: string;
+  staleSourcePaths: string[];
+  staleSourceSummary: string | null;
   rows: Stage1DailyUseSummaryRowSource[];
   liveTradingAllowed: boolean;
   reportedLiveTradingAllowed: boolean;
@@ -7111,6 +7114,8 @@ export interface Stage1P0DailyUseClosure {
   primaryActionId: Stage1P0DailyUseClosureActionId;
   primaryActionLabel: string;
   primaryTargetWorkspaceId: ProductWorkAreaId;
+  staleSourcePaths: string[];
+  staleSourceSummary: string | null;
   rows: Stage1P0DailyUseClosureRow[];
 }
 
@@ -7195,18 +7200,27 @@ export function buildStage1P0DailyUseClosure({
     : rows.some((row) => row.status === "review")
       ? "review"
       : "ready";
+  const staleSourceSummary = dailyUseReport?.staleSourceSummary ?? null;
   return {
     state,
     tone: dailyUseClosureTone(state),
     headline: dailyUseClosureHeadline(primaryRow),
     detail: dailyUseReport
-      ? `${dailyUseReport.headline} · ${rows.map((row) => `${row.label}: ${row.value}`).join(" · ")}`
+      ? [
+          dailyUseReport.headline,
+          staleSourceSummary,
+          rows.map((row) => `${row.label}: ${row.value}`).join(" · ")
+        ]
+          .filter(Boolean)
+          .join(" · ")
       : rows.map((row) => `${row.label}: ${row.value}`).join(" · "),
     readyCount,
     totalCount: rows.length,
     primaryActionId: primaryRow.actionId,
     primaryActionLabel: primaryRow.actionLabel,
     primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
+    staleSourcePaths: dailyUseReport?.staleSourcePaths ?? [],
+    staleSourceSummary,
     rows
   };
 }
@@ -8522,6 +8536,8 @@ export function buildStage1DailyUseSummary(
   if (!report) {
     return null;
   }
+  const staleSourcePaths = normalizeStage1DailyUseStaleSourcePaths(report);
+  const staleSourceSummary = buildStage1DailyUseStaleSourceSummary(staleSourcePaths);
   const unsafeBoundary = Boolean(report.liveTradingAllowed) || !report.liveBlockedBoundary || !report.paperOnly;
   if (report.status === "invalid" || unsafeBoundary) {
     return {
@@ -8536,6 +8552,8 @@ export function buildStage1DailyUseSummary(
       readyCount: report.readyCount,
       totalCount: report.totalCount,
       sourcePath: report.sourcePath || "data/stage1-daily-use.json",
+      staleSourcePaths,
+      staleSourceSummary,
       rows: report.rows,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: Boolean(report.liveTradingAllowed),
@@ -8555,6 +8573,8 @@ export function buildStage1DailyUseSummary(
       readyCount: report.readyCount,
       totalCount: report.totalCount,
       sourcePath: report.sourcePath || "data/stage1-daily-use.json",
+      staleSourcePaths,
+      staleSourceSummary,
       rows: report.rows,
       liveTradingAllowed: false,
       reportedLiveTradingAllowed: Boolean(report.liveTradingAllowed),
@@ -8562,28 +8582,46 @@ export function buildStage1DailyUseSummary(
     };
   }
   const state = report.status;
+  const detail = staleSourceSummary ? `${report.summary} ${staleSourceSummary}` : report.summary;
   return {
     state,
     tone: dailyUseClosureTone(state),
     headline:
-      state === "ready"
+      staleSourceSummary
+        ? `Stage 1 daily report needs refresh (${report.readyCount}/${report.totalCount})`
+        : state === "ready"
         ? `Stage 1 daily report ready (${report.readyCount}/${report.totalCount})`
         : state === "blocked"
           ? `Stage 1 daily report blocked (${report.readyCount}/${report.totalCount})`
           : `Stage 1 daily report needs review (${report.readyCount}/${report.totalCount})`,
-    detail: report.summary,
-    sourceSummary: report.summary,
+    detail,
+    sourceSummary: detail,
     actionLabel: "Validate daily report",
     targetWorkspaceId: "settings",
     generatedAt: report.generatedAt,
     readyCount: report.readyCount,
     totalCount: report.totalCount,
     sourcePath: report.sourcePath || "data/stage1-daily-use.json",
+    staleSourcePaths,
+    staleSourceSummary,
     rows: report.rows,
     liveTradingAllowed: false,
     reportedLiveTradingAllowed: Boolean(report.liveTradingAllowed),
     liveBlockedBoundary: Boolean(report.liveBlockedBoundary)
   };
+}
+
+function normalizeStage1DailyUseStaleSourcePaths(report: Stage1DailyUseSummarySource): string[] {
+  return Array.isArray(report.staleSourcePaths)
+    ? report.staleSourcePaths.map((sourcePath) => sourcePath.trim()).filter(Boolean)
+    : [];
+}
+
+function buildStage1DailyUseStaleSourceSummary(staleSourcePaths: string[]): string | null {
+  if (staleSourcePaths.length === 0) {
+    return null;
+  }
+  return `Stale source manifests: ${staleSourcePaths.join(", ")}. Run npm run stage1:daily to refresh.`;
 }
 
 export function buildP2PreLiveAcceptanceSummary(
