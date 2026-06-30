@@ -7821,7 +7821,7 @@ function buildMissingStage1DailyUseReport(reason: string): Stage1DailyUseReport 
     summary: "Stage 1 daily-use report is missing.",
     reason,
     readyCount: 0,
-    totalCount: 2,
+    totalCount: 5,
     paperOnly: true,
     liveTradingAllowed: false,
     liveBlockedBoundary: true,
@@ -7831,7 +7831,13 @@ function buildMissingStage1DailyUseReport(reason: string): Stage1DailyUseReport 
       p1Acceptance: "data/p1-acceptance.json",
       desktopRelease: "data/desktop-release.json"
     },
-    rows: [row("clean-open", "Clean environment startup"), row("desktop-release", "Desktop release")]
+    rows: [
+      row("clean-open", "Clean environment startup"),
+      row("market-refresh-recovery", "Market refresh recovery"),
+      row("research-entry", "Research entry"),
+      row("daily-start", "Daily start path"),
+      row("desktop-release", "Desktop release")
+    ]
   };
 }
 

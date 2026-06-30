@@ -1384,19 +1384,23 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(report["schemaVersion"], 1)
         self.assertEqual(report["generatedAt"], "2026-06-30T10:00:00+00:00")
         self.assertEqual(report["status"], "ready")
-        self.assertEqual(report["readyCount"], 2)
-        self.assertEqual(report["totalCount"], 2)
+        self.assertEqual(report["readyCount"], 5)
+        self.assertEqual(report["totalCount"], 5)
         self.assertTrue(report["paperOnly"])
         self.assertFalse(report["liveTradingAllowed"])
         self.assertTrue(report["liveBlockedBoundary"])
-        self.assertEqual([row["id"] for row in report["rows"]], ["clean-open", "desktop-release"])
-        self.assertEqual(report["rows"][0]["status"], "ready")
+        self.assertEqual(
+            [row["id"] for row in report["rows"]],
+            ["clean-open", "market-refresh-recovery", "research-entry", "daily-start", "desktop-release"],
+        )
+        self.assertTrue(all(row["status"] == "ready" for row in report["rows"]))
         self.assertEqual(report["rows"][0]["p0Status"]["status"], "passed")
         self.assertEqual(report["rows"][0]["p1Status"]["status"], "passed")
-        self.assertEqual(report["rows"][1]["status"], "ready")
-        self.assertEqual(report["rows"][1]["desktopReleaseStatus"]["status"], "passed")
+        self.assertEqual(report["rows"][1]["p1Status"]["status"], "passed")
+        self.assertEqual(report["rows"][2]["p1Status"]["status"], "passed")
+        self.assertEqual(report["rows"][4]["desktopReleaseStatus"]["status"], "passed")
         self.assertEqual(reloaded["status"], "ready")
-        self.assertEqual(reloaded["readyCount"], 2)
+        self.assertEqual(reloaded["readyCount"], 5)
 
     def test_stage1_daily_use_report_flags_missing_p0_as_blocked(self):
         reporter = self._load_stage1_daily_use_module()
@@ -1418,6 +1422,34 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(report["rows"][0]["action"], "npm run docker:smoke:p0 -- --no-build --down")
         self.assertFalse(report["liveTradingAllowed"])
 
+    def test_stage1_daily_use_report_marks_p1_dependent_paths_for_review_when_p1_missing(self):
+        import json
+
+        reporter = self._load_stage1_daily_use_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "desktop-release.json").write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+
+            report = reporter.build_stage1_daily_use_report(
+                project_root=project_root,
+                generated_at="2026-06-30T10:00:00+00:00",
+            )
+
+        self.assertEqual(report["status"], "review")
+        self.assertEqual(report["rows"][1]["id"], "market-refresh-recovery")
+        self.assertEqual(report["rows"][1]["status"], "review")
+        self.assertEqual(report["rows"][1]["p1Status"]["status"], "missing")
+        self.assertEqual(report["rows"][2]["id"], "research-entry")
+        self.assertEqual(report["rows"][2]["status"], "review")
+        self.assertEqual(report["rows"][2]["p1Status"]["status"], "missing")
+        self.assertEqual(report["rows"][3]["id"], "daily-start")
+        self.assertEqual(report["rows"][3]["status"], "review")
+        self.assertFalse(report["liveTradingAllowed"])
+
     def test_stage1_daily_use_report_flags_missing_desktop_as_review(self):
         import json
 
@@ -1436,12 +1468,15 @@ class QuantCoreContractTest(unittest.TestCase):
             )
 
         self.assertEqual(report["status"], "review")
-        self.assertEqual(report["readyCount"], 1)
+        self.assertEqual(report["readyCount"], 4)
         self.assertEqual(report["rows"][0]["status"], "ready")
-        self.assertEqual(report["rows"][1]["id"], "desktop-release")
-        self.assertEqual(report["rows"][1]["status"], "review")
-        self.assertEqual(report["rows"][1]["desktopReleaseStatus"]["status"], "missing")
-        self.assertEqual(report["rows"][1]["action"], "npm run desktop:release")
+        self.assertEqual(report["rows"][1]["status"], "ready")
+        self.assertEqual(report["rows"][2]["status"], "ready")
+        self.assertEqual(report["rows"][3]["status"], "ready")
+        self.assertEqual(report["rows"][4]["id"], "desktop-release")
+        self.assertEqual(report["rows"][4]["status"], "review")
+        self.assertEqual(report["rows"][4]["desktopReleaseStatus"]["status"], "missing")
+        self.assertEqual(report["rows"][4]["action"], "npm run desktop:release")
 
     def test_stage1_daily_use_validate_rejects_live_enabled_report(self):
         reporter = self._load_stage1_daily_use_module()
@@ -1499,9 +1534,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["dailyUse"]["kind"], "aiqt.stage1DailyUseReport")
         self.assertEqual(payload["dailyUse"]["status"], "ready")
-        self.assertEqual(payload["dailyUse"]["readyCount"], 2)
-        self.assertEqual(payload["dailyUse"]["totalCount"], 2)
-        self.assertEqual([row["id"] for row in payload["dailyUse"]["rows"]], ["clean-open", "desktop-release"])
+        self.assertEqual(payload["dailyUse"]["readyCount"], 5)
+        self.assertEqual(payload["dailyUse"]["totalCount"], 5)
+        self.assertEqual(
+            [row["id"] for row in payload["dailyUse"]["rows"]],
+            ["clean-open", "market-refresh-recovery", "research-entry", "daily-start", "desktop-release"],
+        )
         self.assertFalse(payload["dailyUse"]["liveTradingAllowed"])
         self.assertTrue(payload["dailyUse"]["liveBlockedBoundary"])
 
@@ -1552,9 +1590,14 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["status"], "daily_use_generated")
         self.assertEqual(payload["dailyUse"]["kind"], "aiqt.stage1DailyUseReport")
         self.assertEqual(payload["dailyUse"]["status"], "ready")
-        self.assertEqual(payload["dailyUse"]["readyCount"], 2)
-        self.assertEqual(payload["dailyUse"]["totalCount"], 2)
+        self.assertEqual(payload["dailyUse"]["readyCount"], 5)
+        self.assertEqual(payload["dailyUse"]["totalCount"], 5)
         self.assertEqual(written_report["status"], "ready")
+        self.assertEqual(written_report["readyCount"], 5)
+        self.assertEqual(
+            [row["id"] for row in written_report["rows"]],
+            ["clean-open", "market-refresh-recovery", "research-entry", "daily-start", "desktop-release"],
+        )
         self.assertTrue(payload["paperOnly"])
         self.assertFalse(payload["orderSubmissionEnabled"])
         self.assertFalse(payload["liveTradingAllowed"])

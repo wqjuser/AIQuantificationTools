@@ -1018,9 +1018,9 @@ describe("terminal workspace API client", () => {
             schemaVersion: 1,
             generatedAt: "2026-06-30T10:00:00+00:00",
             status: "ready",
-            summary: "Stage 1 daily use is ready (2/2 checks ready).",
-            readyCount: 2,
-            totalCount: 2,
+            summary: "Stage 1 daily use is ready (5/5 checks ready).",
+            readyCount: 5,
+            totalCount: 5,
             paperOnly: true,
             liveTradingAllowed: false,
             liveBlockedBoundary: true,
@@ -1036,6 +1036,39 @@ describe("terminal workspace API client", () => {
                 status: "ready",
                 value: "P0/P1 acceptance evidence is ready",
                 summary: "Clean environment startup has current P0 and P1 acceptance evidence.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "market-refresh-recovery",
+                label: "Market refresh recovery",
+                status: "ready",
+                value: "Watchlist refresh recovery evidence is ready",
+                summary: "P1 acceptance includes watchlist refresh cache-refresh-p1 for 3 symbols.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "research-entry",
+                label: "Research entry",
+                status: "ready",
+                value: "Research queue entry evidence is ready",
+                summary: "P1 acceptance includes queued research pipeline run-p1-smoke for 600000 from cache-refresh-p1.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "daily-start",
+                label: "Daily start path",
+                status: "ready",
+                value: "Daily start path is ready",
+                summary: "Daily start has clean-open, refresh recovery, and research entry evidence.",
                 action: "npm run stage1:daily:validate",
                 paperOnly: true,
                 liveTradingAllowed: false,
@@ -1067,8 +1100,14 @@ describe("terminal workspace API client", () => {
     expect(calls[0].url).toBe("http://127.0.0.1:8765/api/stage1/daily-use/latest");
     expect(result.source).toBe("core");
     expect(result.dailyUse?.status).toBe("ready");
-    expect(result.dailyUse?.readyCount).toBe(2);
-    expect(result.dailyUse?.rows.map((row) => row.id)).toEqual(["clean-open", "desktop-release"]);
+    expect(result.dailyUse?.readyCount).toBe(5);
+    expect(result.dailyUse?.rows.map((row) => row.id)).toEqual([
+      "clean-open",
+      "market-refresh-recovery",
+      "research-entry",
+      "daily-start",
+      "desktop-release"
+    ]);
     expect(result.dailyUse?.liveTradingAllowed).toBe(false);
     expect(result.dailyUse?.liveBlockedBoundary).toBe(true);
   });
@@ -1085,7 +1124,14 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("fallback");
     expect(result.dailyUse?.status).toBe("missing");
     expect(result.dailyUse?.readyCount).toBe(0);
-    expect(result.dailyUse?.totalCount).toBe(2);
+    expect(result.dailyUse?.totalCount).toBe(5);
+    expect(result.dailyUse?.rows.map((row) => row.id)).toEqual([
+      "clean-open",
+      "market-refresh-recovery",
+      "research-entry",
+      "daily-start",
+      "desktop-release"
+    ]);
     expect(result.dailyUse?.sourcePaths.p0Acceptance).toBe("data/p0-acceptance.json");
     expect(result.dailyUse?.liveTradingAllowed).toBe(false);
     expect(result.error).toBe("Invalid Stage 1 daily-use report contract");
@@ -1105,9 +1151,9 @@ describe("terminal workspace API client", () => {
             schemaVersion: 1,
             generatedAt: "2026-06-30T10:10:00+00:00",
             status: "ready",
-            summary: "Stage 1 daily use is ready (2/2 checks ready).",
-            readyCount: 2,
-            totalCount: 2,
+            summary: "Stage 1 daily use is ready (5/5 checks ready).",
+            readyCount: 5,
+            totalCount: 5,
             paperOnly: true,
             liveTradingAllowed: false,
             liveBlockedBoundary: true,
@@ -1124,6 +1170,39 @@ describe("terminal workspace API client", () => {
                 status: "ready",
                 value: "P0/P1 acceptance evidence is ready",
                 summary: "Clean environment startup has current P0 and P1 acceptance evidence.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "market-refresh-recovery",
+                label: "Market refresh recovery",
+                status: "ready",
+                value: "Watchlist refresh recovery evidence is ready",
+                summary: "P1 acceptance includes watchlist refresh cache-refresh-p1 for 3 symbols.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "research-entry",
+                label: "Research entry",
+                status: "ready",
+                value: "Research queue entry evidence is ready",
+                summary: "P1 acceptance includes queued research pipeline run-p1-smoke for 600000 from cache-refresh-p1.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "daily-start",
+                label: "Daily start path",
+                status: "ready",
+                value: "Daily start path is ready",
+                summary: "Daily start has clean-open, refresh recovery, and research entry evidence.",
                 action: "npm run stage1:daily:validate",
                 paperOnly: true,
                 liveTradingAllowed: false,
@@ -1164,7 +1243,14 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.status).toBe("daily_use_generated");
     expect(result.dailyUse?.status).toBe("ready");
-    expect(result.dailyUse?.readyCount).toBe(2);
+    expect(result.dailyUse?.readyCount).toBe(5);
+    expect(result.dailyUse?.rows.map((row) => row.id)).toEqual([
+      "clean-open",
+      "market-refresh-recovery",
+      "research-entry",
+      "daily-start",
+      "desktop-release"
+    ]);
     expect(result.orderSubmissionEnabled).toBe(false);
     expect(result.liveTradingAllowed).toBe(false);
     expect(result.liveOrderSubmitted).toBe(false);

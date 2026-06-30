@@ -405,9 +405,9 @@ npm run stage1:daily
 npm run stage1:daily:validate
 ```
 
-这两条命令会读入 `data/p0-acceptance.json`、`data/p1-acceptance.json` 和 `data/desktop-release.json`，生成或验证 `data/stage1-daily-use.json`。报告只聚合“干净环境开箱”和“桌面发布”两个日常入口的 ready/review/blocked 状态，不自动运行 smoke、打包桌面端、写审计事件、连接券商或改变 `liveTradingAllowed=false`。
+这两条命令会读入 `data/p0-acceptance.json`、`data/p1-acceptance.json` 和 `data/desktop-release.json`，生成或验证 `data/stage1-daily-use.json`。报告聚合“干净环境开箱”“行情刷新恢复”“研究入口”“每日启动”和“桌面发布”五个日常入口的 ready/review/blocked 状态，不自动运行 smoke、打包桌面端、写审计事件、连接券商或改变 `liveTradingAllowed=false`。
 
-本地核心还提供接口 `GET /api/stage1/daily-use/latest` 和 `POST /api/stage1/daily-use`。前者用于前端首页读取 `data/stage1-daily-use.json` 的状态，只返回 passed/missing/invalid/readback 结构；后者用于在产品内手动生成同一份报告，只聚合已存在的 P0/P1 验收和桌面发布 manifest。两个接口都不运行 P0/P1/P2 smoke、不构建桌面包、不写审计事件、不连接券商、不提交订单，也不改变实盘边界。
+本地核心还提供接口 `GET /api/stage1/daily-use/latest` 和 `POST /api/stage1/daily-use`。前者用于前端首页读取 `data/stage1-daily-use.json` 的状态，只返回 passed/missing/invalid/readback 结构；后者用于在产品内手动生成同一份报告，只聚合已存在的 P0/P1 验收和桌面发布 manifest，并从 P1 watchlist refresh / queue pipeline 检查推导行情恢复和研究入口状态。两个接口都不运行 P0/P1/P2 smoke、不构建桌面包、不写审计事件、不连接券商、不提交订单，也不改变实盘边界。
 
 ## Product Boundary
 

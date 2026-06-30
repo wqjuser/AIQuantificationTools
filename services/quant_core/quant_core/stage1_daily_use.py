@@ -11,7 +11,13 @@ from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_
 
 
 DEFAULT_STAGE1_DAILY_USE_REPORT_PATH = Path("data") / "stage1-daily-use.json"
-STAGE1_DAILY_USE_ROW_IDS = ["clean-open", "desktop-release"]
+STAGE1_DAILY_USE_ROW_IDS = [
+    "clean-open",
+    "market-refresh-recovery",
+    "research-entry",
+    "daily-start",
+    "desktop-release",
+]
 STAGE1_DAILY_USE_ROW_STATUSES = {"ready", "review", "blocked"}
 STAGE1_DAILY_USE_REPORT_STATUSES = STAGE1_DAILY_USE_ROW_STATUSES
 
@@ -33,10 +39,12 @@ def build_stage1_daily_use_report(
     p1_status = load_p1_acceptance_status(p1_report_path)
     desktop_status = load_desktop_release_status(desktop_report_path)
 
-    rows = [
-        _build_clean_open_row(p0_status, p1_status),
-        _build_desktop_release_row(desktop_status),
-    ]
+    clean_open_row = _build_clean_open_row(p0_status, p1_status)
+    market_refresh_row = _build_market_refresh_recovery_row(p1_status)
+    research_entry_row = _build_research_entry_row(p1_status)
+    daily_start_row = _build_daily_start_row(clean_open_row, market_refresh_row, research_entry_row)
+    desktop_release_row = _build_desktop_release_row(desktop_status)
+    rows = [clean_open_row, market_refresh_row, research_entry_row, daily_start_row, desktop_release_row]
     status = _overall_status(rows)
     report = {
         "kind": "aiqt.stage1DailyUseReport",
@@ -167,7 +175,9 @@ def validate_stage1_daily_use_report(report: Any) -> str:
         row_ids.append(row_id)
 
     if row_ids != STAGE1_DAILY_USE_ROW_IDS:
-        raise ValueError("Stage 1 daily-use report row order must be clean-open, desktop-release")
+        raise ValueError(
+            "Stage 1 daily-use report row order must be clean-open, market-refresh-recovery, research-entry, daily-start, desktop-release"
+        )
     if report.get("readyCount") != ready_count:
         raise ValueError("Stage 1 daily-use report readyCount does not match rows")
     if report.get("totalCount") != len(rows):
@@ -206,6 +216,27 @@ def _stage1_daily_use_status(*, status: str, source_path: Path, summary: str, re
                 action="npm run stage1:daily",
             ),
             _fallback_row(
+                row_id="market-refresh-recovery",
+                label="Market refresh recovery",
+                value="Stage 1 report unavailable",
+                summary=summary,
+                action="npm run stage1:daily",
+            ),
+            _fallback_row(
+                row_id="research-entry",
+                label="Research entry",
+                value="Stage 1 report unavailable",
+                summary=summary,
+                action="npm run stage1:daily",
+            ),
+            _fallback_row(
+                row_id="daily-start",
+                label="Daily start path",
+                value="Stage 1 report unavailable",
+                summary=summary,
+                action="npm run stage1:daily",
+            ),
+            _fallback_row(
                 row_id="desktop-release",
                 label="Desktop release",
                 value="Stage 1 report unavailable",
@@ -227,6 +258,102 @@ def _fallback_row(*, row_id: str, label: str, value: str, summary: str, action: 
         "paperOnly": True,
         "liveTradingAllowed": False,
         "liveBlockedBoundary": True,
+    }
+
+
+def _build_market_refresh_recovery_row(p1_status: dict[str, Any]) -> dict[str, Any]:
+    if _p1_status_has_ready_check(p1_status, "watchlist-refresh"):
+        status = "ready"
+        value = "Watchlist refresh recovery evidence is ready"
+        refresh_run = p1_status.get("watchlistRefreshRunId") or "recorded refresh"
+        watchlist_count = p1_status.get("watchlistCount") or 0
+        summary = f"P1 acceptance includes watchlist refresh {refresh_run} for {watchlist_count} symbols."
+        action = "npm run stage1:daily:validate"
+    elif p1_status.get("status") == "invalid":
+        status = "blocked"
+        value = "P1 refresh recovery evidence is invalid"
+        summary = f"P1 acceptance is invalid: {p1_status['summary']}"
+        action = "npm run docker:smoke:p1 -- --no-build --down"
+    else:
+        status = "review"
+        value = "Refresh recovery evidence should be refreshed"
+        summary = f"P1 acceptance is {p1_status['status']}: {p1_status['summary']}"
+        action = "npm run docker:smoke:p1 -- --no-build --down"
+    return {
+        "id": "market-refresh-recovery",
+        "label": "Market refresh recovery",
+        "status": status,
+        "value": value,
+        "summary": summary,
+        "action": action,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "liveBlockedBoundary": True,
+        "p1Status": p1_status,
+    }
+
+
+def _build_research_entry_row(p1_status: dict[str, Any]) -> dict[str, Any]:
+    if _p1_status_has_ready_check(p1_status, "queue-pipeline"):
+        status = "ready"
+        value = "Research queue entry evidence is ready"
+        run_id = p1_status.get("runId") or "recorded run"
+        symbol = p1_status.get("queuedSymbol") or "queued symbol"
+        refresh_run = p1_status.get("watchlistRefreshRunId") or "recorded refresh"
+        summary = f"P1 acceptance includes queued research pipeline {run_id} for {symbol} from {refresh_run}."
+        action = "npm run stage1:daily:validate"
+    elif p1_status.get("status") == "invalid":
+        status = "blocked"
+        value = "P1 research entry evidence is invalid"
+        summary = f"P1 acceptance is invalid: {p1_status['summary']}"
+        action = "npm run docker:smoke:p1 -- --no-build --down"
+    else:
+        status = "review"
+        value = "Research entry evidence should be refreshed"
+        summary = f"P1 acceptance is {p1_status['status']}: {p1_status['summary']}"
+        action = "npm run docker:smoke:p1 -- --no-build --down"
+    return {
+        "id": "research-entry",
+        "label": "Research entry",
+        "status": status,
+        "value": value,
+        "summary": summary,
+        "action": action,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "liveBlockedBoundary": True,
+        "p1Status": p1_status,
+    }
+
+
+def _build_daily_start_row(*upstream_rows: dict[str, Any]) -> dict[str, Any]:
+    status = _overall_status(list(upstream_rows))
+    blocked_ids = [row["id"] for row in upstream_rows if row["status"] == "blocked"]
+    review_ids = [row["id"] for row in upstream_rows if row["status"] == "review"]
+    if status == "ready":
+        value = "Daily start path is ready"
+        summary = "Daily start has clean-open, refresh recovery, and research entry evidence."
+        action = "npm run stage1:daily:validate"
+    elif status == "blocked":
+        value = "Daily start path is blocked"
+        summary = f"Daily start is blocked by: {', '.join(blocked_ids)}."
+        action = "npm run stage1:daily"
+    else:
+        value = "Daily start path needs review"
+        summary = f"Daily start should review: {', '.join(review_ids)}."
+        action = "npm run stage1:daily:validate"
+    return {
+        "id": "daily-start",
+        "label": "Daily start path",
+        "status": status,
+        "value": value,
+        "summary": summary,
+        "action": action,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "liveBlockedBoundary": True,
+        "blockedRowIds": blocked_ids,
+        "reviewRowIds": review_ids,
     }
 
 
@@ -300,6 +427,10 @@ def _status_passed_with_live_blocked_boundary(status: dict[str, Any]) -> bool:
         and status.get("liveTradingAllowed") is False
         and status.get("liveBlockedBoundary") is True
     )
+
+
+def _p1_status_has_ready_check(p1_status: dict[str, Any], check_id: str) -> bool:
+    return _status_passed_with_live_blocked_boundary(p1_status) and check_id in set(p1_status.get("checkIds") or [])
 
 
 def _overall_status(rows: list[dict[str, Any]]) -> str:
