@@ -1137,6 +1137,109 @@ describe("terminal workspace API client", () => {
     expect(result.error).toBe("Invalid Stage 1 daily-use report contract");
   });
 
+  test("accepts stale Stage 1 daily-use readback as review without enabling live trading", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        dailyUse: {
+          kind: "aiqt.stage1DailyUseReport",
+          schemaVersion: 1,
+          generatedAt: "2026-06-30T10:00:00+00:00",
+          status: "review",
+          summary:
+            "Stage 1 daily-use report needs refresh because source manifests changed: data/p1-acceptance.json.",
+          reason:
+            "Stage 1 daily-use report needs refresh because source manifests changed: data/p1-acceptance.json.",
+          readyCount: 1,
+          totalCount: 5,
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true,
+          staleSourcePaths: ["data/p1-acceptance.json"],
+          sourcePaths: {
+            p0Acceptance: "data/p0-acceptance.json",
+            p1Acceptance: "data/p1-acceptance.json",
+            desktopRelease: "data/desktop-release.json"
+          },
+          rows: [
+            {
+              id: "clean-open",
+              label: "Clean environment startup",
+              status: "review",
+              value: "Daily-use evidence should be refreshed",
+              summary:
+                "Clean environment startup has current P0 and P1 acceptance evidence. Source manifest changed after this daily-use report was generated.",
+              action: "npm run stage1:daily",
+              paperOnly: true,
+              liveTradingAllowed: false,
+              liveBlockedBoundary: true
+            },
+            {
+              id: "market-refresh-recovery",
+              label: "Market refresh recovery",
+              status: "review",
+              value: "Daily-use evidence should be refreshed",
+              summary:
+                "P1 acceptance includes watchlist refresh cache-refresh-p1 for 3 symbols. Source manifest changed after this daily-use report was generated.",
+              action: "npm run stage1:daily",
+              paperOnly: true,
+              liveTradingAllowed: false,
+              liveBlockedBoundary: true
+            },
+            {
+              id: "research-entry",
+              label: "Research entry",
+              status: "review",
+              value: "Daily-use evidence should be refreshed",
+              summary:
+                "P1 acceptance includes queued research pipeline run-p1-smoke for 600000 from cache-refresh-p1. Source manifest changed after this daily-use report was generated.",
+              action: "npm run stage1:daily",
+              paperOnly: true,
+              liveTradingAllowed: false,
+              liveBlockedBoundary: true
+            },
+            {
+              id: "daily-start",
+              label: "Daily start path",
+              status: "review",
+              value: "Daily-use evidence should be refreshed",
+              summary:
+                "Daily start has clean-open, refresh recovery, and research entry evidence. Source manifest changed after this daily-use report was generated.",
+              action: "npm run stage1:daily",
+              paperOnly: true,
+              liveTradingAllowed: false,
+              liveBlockedBoundary: true
+            },
+            {
+              id: "desktop-release",
+              label: "Desktop release",
+              status: "ready",
+              value: "Desktop release manifest is ready",
+              summary: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
+              action: "npm run stage1:daily:validate",
+              paperOnly: true,
+              liveTradingAllowed: false,
+              liveBlockedBoundary: true
+            }
+          ]
+        }
+      })
+    });
+
+    const result = await loadStage1DailyUseLatest("/", fetcher);
+
+    expect(result.source).toBe("core");
+    expect(result.error).toBeUndefined();
+    expect(result.dailyUse?.status).toBe("review");
+    expect(result.dailyUse?.readyCount).toBe(1);
+    expect(result.dailyUse?.staleSourcePaths).toEqual(["data/p1-acceptance.json"]);
+    expect(result.dailyUse?.rows[1]?.status).toBe("review");
+    expect(result.dailyUse?.rows[4]?.status).toBe("ready");
+    expect(result.dailyUse?.liveTradingAllowed).toBe(false);
+    expect(result.dailyUse?.liveBlockedBoundary).toBe(true);
+  });
+
   test("generates the Stage 1 daily-use report without enabling live trading", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetcher = async (url: string, init?: RequestInit) => {

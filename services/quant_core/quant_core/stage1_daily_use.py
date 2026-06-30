@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -105,7 +106,7 @@ def load_stage1_daily_use_report(path: Path = DEFAULT_STAGE1_DAILY_USE_REPORT_PA
 def load_stage1_daily_use_status(path: Path = DEFAULT_STAGE1_DAILY_USE_REPORT_PATH) -> dict[str, Any]:
     source_path = Path(path)
     try:
-        return load_stage1_daily_use_report(source_path)
+        return _project_stale_source_review(load_stage1_daily_use_report(source_path), source_path)
     except FileNotFoundError as error:
         return _stage1_daily_use_status(
             status="missing",
@@ -120,6 +121,81 @@ def load_stage1_daily_use_status(path: Path = DEFAULT_STAGE1_DAILY_USE_REPORT_PA
             summary="Stage 1 daily-use report is invalid.",
             reason=str(error),
         )
+
+
+def _project_stale_source_review(report: dict[str, Any], report_path: Path) -> dict[str, Any]:
+    stale_sources = _stage1_daily_use_stale_source_paths(report, report_path)
+    if not stale_sources:
+        return report
+    projected = deepcopy(report)
+    stale_row_ids = _stage1_daily_use_stale_row_ids(projected, stale_sources)
+    for row in projected["rows"]:
+        if row["id"] not in stale_row_ids or row["status"] != "ready":
+            continue
+        row["status"] = "review"
+        row["value"] = "Daily-use evidence should be refreshed"
+        row["summary"] = f"{row['summary']} Source manifest changed after this daily-use report was generated."
+        row["action"] = "npm run stage1:daily"
+    projected["status"] = _overall_status(projected["rows"])
+    projected["readyCount"] = sum(1 for row in projected["rows"] if row["status"] == "ready")
+    projected["summary"] = (
+        "Stage 1 daily-use report needs refresh because source manifests changed: "
+        f"{', '.join(stale_sources)}."
+    )
+    projected["reason"] = projected["summary"]
+    projected["staleSourcePaths"] = stale_sources
+    validate_stage1_daily_use_report(projected)
+    return projected
+
+
+def _stage1_daily_use_stale_source_paths(report: dict[str, Any], report_path: Path) -> list[str]:
+    try:
+        report_mtime_ns = Path(report_path).stat().st_mtime_ns
+    except OSError:
+        return []
+    project_root = _stage1_daily_use_project_root_for_report(Path(report_path))
+    source_paths = report.get("sourcePaths")
+    if not isinstance(source_paths, dict):
+        return []
+    stale_paths: list[str] = []
+    for value in source_paths.values():
+        source_label = str(value or "").strip()
+        if not source_label:
+            continue
+        source_path = _resolve_under_root(project_root, Path(source_label))
+        try:
+            source_mtime_ns = source_path.stat().st_mtime_ns
+        except OSError:
+            stale_paths.append(source_label)
+            continue
+        if source_mtime_ns > report_mtime_ns:
+            stale_paths.append(source_label)
+    return stale_paths
+
+
+def _stage1_daily_use_project_root_for_report(report_path: Path) -> Path:
+    resolved = report_path.resolve()
+    if resolved.parent.name == "data":
+        return resolved.parent.parent
+    return resolved.parent
+
+
+def _stage1_daily_use_stale_row_ids(report: dict[str, Any], stale_sources: list[str]) -> set[str]:
+    source_paths = report.get("sourcePaths") if isinstance(report.get("sourcePaths"), dict) else {}
+    source_to_rows = {
+        str(source_paths.get("p0Acceptance") or ""): {"clean-open", "daily-start"},
+        str(source_paths.get("p1Acceptance") or ""): {
+            "clean-open",
+            "market-refresh-recovery",
+            "research-entry",
+            "daily-start",
+        },
+        str(source_paths.get("desktopRelease") or ""): {"desktop-release"},
+    }
+    row_ids: set[str] = set()
+    for source in stale_sources:
+        row_ids.update(source_to_rows.get(source, set()))
+    return row_ids
 
 
 def validate_stage1_daily_use_report(report: Any) -> str:

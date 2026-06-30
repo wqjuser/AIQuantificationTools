@@ -20,6 +20,7 @@ from quant_core.stage1_daily_use import (  # noqa: E402
     DEFAULT_STAGE1_DAILY_USE_REPORT_PATH,
     build_stage1_daily_use_report,
     load_stage1_daily_use_report,
+    load_stage1_daily_use_status,
     validate_stage1_daily_use_report,
     write_stage1_daily_use_report,
 )
@@ -38,7 +39,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     project_root = Path(args.project_root).resolve()
     if args.validate:
-        report = load_stage1_daily_use_report(_resolve_under_root(project_root, Path(args.validate)))
+        report = load_stage1_daily_use_status(_resolve_under_root(project_root, Path(args.validate)))
         summary = validate_stage1_daily_use_report(report)
         if args.print_json:
             print(json.dumps(report, ensure_ascii=False, indent=2))

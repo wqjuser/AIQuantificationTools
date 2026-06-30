@@ -1543,6 +1543,64 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["dailyUse"]["liveTradingAllowed"])
         self.assertTrue(payload["dailyUse"]["liveBlockedBoundary"])
 
+    def test_stage1_daily_use_latest_marks_report_review_when_source_manifest_is_newer(self):
+        import json
+        import os
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            p0_path = data_dir / "p0-acceptance.json"
+            p1_path = data_dir / "p1-acceptance.json"
+            desktop_path = data_dir / "desktop-release.json"
+            report_path = data_dir / "stage1-daily-use.json"
+            p0_path.write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            write_stage1_daily_use_report(
+                project_root=project_root,
+                output_path=report_path,
+                generated_at="2026-06-30T10:00:00+00:00",
+            )
+            source_time = report_path.stat().st_mtime + 120
+            os.utime(p1_path, (source_time, source_time))
+
+            class TestHandler(QuantApiHandler):
+                stage1_daily_use_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/stage1/daily-use/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["dailyUse"]["status"], "review")
+        self.assertIn("data/p1-acceptance.json", payload["dailyUse"]["staleSourcePaths"])
+        self.assertEqual(payload["dailyUse"]["readyCount"], 1)
+        self.assertEqual(payload["dailyUse"]["rows"][0]["status"], "review")
+        self.assertEqual(payload["dailyUse"]["rows"][1]["status"], "review")
+        self.assertEqual(payload["dailyUse"]["rows"][2]["status"], "review")
+        self.assertEqual(payload["dailyUse"]["rows"][3]["status"], "review")
+        self.assertEqual(payload["dailyUse"]["rows"][4]["status"], "ready")
+        self.assertFalse(payload["dailyUse"]["liveTradingAllowed"])
+        self.assertTrue(payload["dailyUse"]["liveBlockedBoundary"])
+
     def test_stage1_daily_use_generate_api_writes_report_without_live_trading(self):
         import json
         from http.client import HTTPConnection

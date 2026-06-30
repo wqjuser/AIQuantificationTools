@@ -753,6 +753,7 @@ export interface Stage1DailyUseReport {
   liveTradingAllowed: boolean;
   liveBlockedBoundary: boolean;
   sourcePath?: string;
+  staleSourcePaths?: string[];
   sourcePaths: Stage1DailyUseReportSourcePaths;
   rows: Stage1DailyUseReportRow[];
 }
@@ -11960,6 +11961,8 @@ function isStage1DailyUseReportPayload(value: unknown): value is Stage1DailyUseR
     typeof payload.liveTradingAllowed === "boolean" &&
     typeof payload.liveBlockedBoundary === "boolean" &&
     (payload.sourcePath === undefined || typeof payload.sourcePath === "string") &&
+    (payload.staleSourcePaths === undefined ||
+      (Array.isArray(payload.staleSourcePaths) && payload.staleSourcePaths.every((sourcePath) => typeof sourcePath === "string"))) &&
     isStage1DailyUseSourcePathsPayload(payload.sourcePaths) &&
     Array.isArray(payload.rows) &&
     payload.rows.every(isStage1DailyUseReportRowPayload)
