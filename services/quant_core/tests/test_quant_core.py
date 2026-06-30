@@ -26,6 +26,16 @@ class QuantCoreContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def _load_stage1_daily_use_module(self):
+        root = Path(__file__).resolve().parents[3]
+        module_path = root / "tools" / "stage1_daily_use.py"
+        spec = importlib.util.spec_from_file_location("stage1_daily_use", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     def _sample_p0_acceptance_manifest(self, *, run_id: str = "run-smoke"):
         return {
             "kind": "aiqt.p0AcceptanceManifest",
@@ -1348,6 +1358,103 @@ class QuantCoreContractTest(unittest.TestCase):
             artifact = recorder.discover_desktop_release_artifact(project_root=project_root, platform="darwin-x64")
 
         self.assertEqual(artifact, newer)
+
+    def test_stage1_daily_use_report_reads_acceptance_and_desktop_manifests(self):
+        import json
+
+        reporter = self._load_stage1_daily_use_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "p1-acceptance.json").write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "desktop-release.json").write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            output_path = data_dir / "stage1-daily-use.json"
+
+            report = reporter.write_stage1_daily_use_report(
+                project_root=project_root,
+                output_path=output_path,
+                generated_at="2026-06-30T10:00:00+00:00",
+            )
+            reloaded = reporter.load_stage1_daily_use_report(output_path)
+
+        self.assertEqual(report["kind"], "aiqt.stage1DailyUseReport")
+        self.assertEqual(report["schemaVersion"], 1)
+        self.assertEqual(report["generatedAt"], "2026-06-30T10:00:00+00:00")
+        self.assertEqual(report["status"], "ready")
+        self.assertEqual(report["readyCount"], 2)
+        self.assertEqual(report["totalCount"], 2)
+        self.assertTrue(report["paperOnly"])
+        self.assertFalse(report["liveTradingAllowed"])
+        self.assertTrue(report["liveBlockedBoundary"])
+        self.assertEqual([row["id"] for row in report["rows"]], ["clean-open", "desktop-release"])
+        self.assertEqual(report["rows"][0]["status"], "ready")
+        self.assertEqual(report["rows"][0]["p0Status"]["status"], "passed")
+        self.assertEqual(report["rows"][0]["p1Status"]["status"], "passed")
+        self.assertEqual(report["rows"][1]["status"], "ready")
+        self.assertEqual(report["rows"][1]["desktopReleaseStatus"]["status"], "passed")
+        self.assertEqual(reloaded["status"], "ready")
+        self.assertEqual(reloaded["readyCount"], 2)
+
+    def test_stage1_daily_use_report_flags_missing_p0_as_blocked(self):
+        reporter = self._load_stage1_daily_use_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            (project_root / "data").mkdir()
+
+            report = reporter.build_stage1_daily_use_report(
+                project_root=project_root,
+                generated_at="2026-06-30T10:00:00+00:00",
+            )
+
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(report["readyCount"], 0)
+        self.assertEqual(report["rows"][0]["id"], "clean-open")
+        self.assertEqual(report["rows"][0]["status"], "blocked")
+        self.assertEqual(report["rows"][0]["p0Status"]["status"], "missing")
+        self.assertEqual(report["rows"][0]["action"], "npm run docker:smoke:p0 -- --no-build --down")
+        self.assertFalse(report["liveTradingAllowed"])
+
+    def test_stage1_daily_use_report_flags_missing_desktop_as_review(self):
+        import json
+
+        reporter = self._load_stage1_daily_use_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "p1-acceptance.json").write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+
+            report = reporter.build_stage1_daily_use_report(
+                project_root=project_root,
+                generated_at="2026-06-30T10:00:00+00:00",
+            )
+
+        self.assertEqual(report["status"], "review")
+        self.assertEqual(report["readyCount"], 1)
+        self.assertEqual(report["rows"][0]["status"], "ready")
+        self.assertEqual(report["rows"][1]["id"], "desktop-release")
+        self.assertEqual(report["rows"][1]["status"], "review")
+        self.assertEqual(report["rows"][1]["desktopReleaseStatus"]["status"], "missing")
+        self.assertEqual(report["rows"][1]["action"], "npm run desktop:release")
+
+    def test_stage1_daily_use_validate_rejects_live_enabled_report(self):
+        reporter = self._load_stage1_daily_use_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report = reporter.build_stage1_daily_use_report(
+                project_root=Path(tmp),
+                generated_at="2026-06-30T10:00:00+00:00",
+            )
+        report["liveTradingAllowed"] = True
+
+        with self.assertRaisesRegex(ValueError, "live trading"):
+            reporter.validate_stage1_daily_use_report(report)
 
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json
@@ -2909,6 +3016,14 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             scripts["desktop:release:record"],
             f"{python_launcher} tools/record_desktop_release.py --record-only",
+        )
+        self.assertEqual(
+            scripts["stage1:daily"],
+            f"{python_launcher} tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+        )
+        self.assertEqual(
+            scripts["stage1:daily:validate"],
+            f"{python_launcher} tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
         )
 
     def test_docker_smoke_p2_chain_preflight_reports_missing_next_action(self):
