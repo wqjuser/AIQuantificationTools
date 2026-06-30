@@ -374,6 +374,12 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("buildStage1P0DailyUseClosure({");
     expect(appSource).toContain("const stage1P0DailyUseClosure = useMemo(");
+    expect(appSource).toContain("loadDesktopReleaseLatest");
+    expect(appSource).toContain("const [desktopReleaseLatestState, setDesktopReleaseLatestState]");
+    expect(appSource).toContain("const refreshDesktopReleaseLatest = useCallback");
+    expect(appSource).toContain("setDesktopReleaseLatestState(await loadDesktopReleaseLatest(quantCoreBaseUrl));");
+    expect(appSource).toContain("buildDesktopReleaseSummary(desktopReleaseLatestState.release)");
+    expect(appSource).toContain("desktopRelease: desktopReleaseSummary");
     expect(appSource).toContain("function Stage1P0DailyUseClosurePanel");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
     expect(overviewGridSource).toContain("<Stage1P0DailyUseClosurePanel");
@@ -388,6 +394,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("stage1P0DailyUseClosureRowLabel");
     expect(appSource).toContain("stage1P0DailyUseClosureActionLabel");
     expect(appSource).toContain("onSelectWorkspace(row.targetWorkspaceId)");
+    expect(appSource).toContain("onRefreshRelease={() => void refreshDesktopReleaseLatest()}");
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "干净环境开箱" : "Clean environment"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "行情刷新恢复" : "Refresh recovery"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "研究入口" : "Research entry"');
@@ -397,6 +404,8 @@ describe("terminal layout css", () => {
     expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-row")).toContain("cursor: pointer;");
+    expect(cssBlock(".stage1-p0-daily-use-footer-actions")).toContain("display: flex;");
+    expect(cssBlock(".stage1-p0-daily-use-refresh")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
   });
 
   test("moves detailed P0 evidence behind a secondary drawer on the homepage", () => {

@@ -301,6 +301,53 @@ export interface P1AcceptanceSummary {
   liveBlockedBoundary: boolean;
 }
 
+export type DesktopReleaseSummaryState = P0AcceptanceSummaryState;
+export type DesktopReleaseSummaryTone = P0AcceptanceSummaryTone;
+
+export interface DesktopReleaseSummarySource {
+  kind: string;
+  schemaVersion: number;
+  status: DesktopReleaseSummaryState;
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  platform: string | null;
+  version: string | null;
+  tauriConfigPath: string | null;
+  desktopArtifactPath: string | null;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: unknown;
+}
+
+export interface DesktopReleaseSummary {
+  state: DesktopReleaseSummaryState;
+  tone: DesktopReleaseSummaryTone;
+  headline: string;
+  detail: string;
+  sourceSummary: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  sourcePath: string;
+  generatedAt: string | null;
+  platform: string | null;
+  version: string | null;
+  tauriConfigPath: string | null;
+  artifactPath: string | null;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  liveTradingAllowed: false;
+  reportedLiveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
 export type P2PreLiveAcceptanceSummaryState = P0AcceptanceSummaryState;
 export type P2PreLiveAcceptanceSummaryTone = P0AcceptanceSummaryTone;
 
@@ -7016,6 +7063,7 @@ export interface Stage1P0DailyUseClosure {
 export interface Stage1P0DailyUseClosureInput {
   dailyStartBrief: DailyStartBrief;
   desktopBuildReady?: boolean;
+  desktopRelease?: DesktopReleaseSummary | null;
   marketRefreshGuard: MarketDataRefreshGuard;
   p0Acceptance: P0AcceptanceSummary;
   p1Acceptance: P1AcceptanceSummary;
@@ -7025,6 +7073,7 @@ export interface Stage1P0DailyUseClosureInput {
 export function buildStage1P0DailyUseClosure({
   dailyStartBrief,
   desktopBuildReady = false,
+  desktopRelease = null,
   marketRefreshGuard,
   p0Acceptance,
   p1Acceptance,
@@ -7039,7 +7088,7 @@ export function buildStage1P0DailyUseClosure({
     buildDailyUseMarketRefreshRecoveryRow(marketRefreshGuard),
     buildDailyUseResearchEntryRow(researchIssue),
     buildDailyUseDailyStartRow(dailyStartBrief),
-    buildDailyUseDesktopReleaseRow(desktopBuildReady)
+    buildDailyUseDesktopReleaseRow(desktopRelease, desktopBuildReady)
   ];
   const readyCount = rows.filter((row) => row.status === "ready").length;
   const primaryRow = rows.find((row) => row.status === "blocked") ?? rows.find((row) => row.status === "review") ?? rows[0];
@@ -7159,7 +7208,31 @@ function buildDailyUseDailyStartRow(brief: DailyStartBrief): Stage1P0DailyUseClo
   };
 }
 
-function buildDailyUseDesktopReleaseRow(desktopBuildReady: boolean): Stage1P0DailyUseClosureRow {
+function buildDailyUseDesktopReleaseRow(
+  desktopRelease: DesktopReleaseSummary | null | undefined,
+  desktopBuildReady: boolean
+): Stage1P0DailyUseClosureRow {
+  if (desktopRelease) {
+    const status: Stage1P0DailyUseClosureStatus =
+      desktopRelease.state === "passed" ? "ready" : desktopRelease.state === "invalid" ? "blocked" : "review";
+    return {
+      id: "desktop-release",
+      label: "Desktop release",
+      value:
+        desktopRelease.state === "passed"
+          ? `${desktopRelease.platform || "local"} desktop release ready`
+          : desktopRelease.state === "invalid"
+            ? "desktop release manifest invalid"
+            : "desktop release manifest missing",
+      detail: desktopRelease.sourceSummary || desktopRelease.detail,
+      status,
+      tone: dailyUseClosureTone(status),
+      actionId: "run-desktop-build",
+      actionLabel: desktopRelease.actionLabel,
+      targetWorkspaceId: desktopRelease.targetWorkspaceId
+    };
+  }
+
   const status: Stage1P0DailyUseClosureStatus = desktopBuildReady ? "ready" : "review";
   return {
     id: "desktop-release",
@@ -8184,6 +8257,86 @@ export function buildP1AcceptanceSummary(
 
 function acceptanceHasImportExportRoundTrip(checkIds: ReadonlyArray<string>): boolean {
   return ["export", "import", "imported-export"].every((checkId) => checkIds.includes(checkId));
+}
+
+export function buildDesktopReleaseSummary(
+  release: DesktopReleaseSummarySource | null | undefined
+): DesktopReleaseSummary {
+  if (!release || release.status === "missing") {
+    return {
+      state: "missing",
+      tone: "warning",
+      headline: "Desktop release manifest missing",
+      detail:
+        release?.reason ||
+        "Run npm run desktop:build after the local Tauri/Cargo toolchain check passes, then record data/desktop-release.json.",
+      sourceSummary: release?.summary || "Desktop release manifest is missing.",
+      actionLabel: "Review desktop build",
+      targetWorkspaceId: "settings",
+      sourcePath: release?.sourcePath || "data/desktop-release.json",
+      generatedAt: release?.generatedAt ?? null,
+      platform: release?.platform ?? null,
+      version: release?.version ?? null,
+      tauriConfigPath: release?.tauriConfigPath ?? null,
+      artifactPath: release?.desktopArtifactPath ?? null,
+      checkCount: release?.checkCount ?? 0,
+      requiredCheckCount: release?.requiredCheckCount ?? 5,
+      checkIds: release?.checkIds ?? [],
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(release?.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(release?.liveBlockedBoundary)
+    };
+  }
+
+  if (release.status === "invalid" || release.liveTradingAllowed || !release.liveBlockedBoundary) {
+    return {
+      state: "invalid",
+      tone: "risk",
+      headline: "Desktop release manifest invalid",
+      detail: `Desktop release evidence is invalid: ${
+        release.reason || release.summary || "unknown validation failure"
+      }. Live trading remains blocked.`,
+      sourceSummary: release.summary,
+      actionLabel: "Review desktop build",
+      targetWorkspaceId: "settings",
+      sourcePath: release.sourcePath,
+      generatedAt: release.generatedAt,
+      platform: release.platform,
+      version: release.version,
+      tauriConfigPath: release.tauriConfigPath,
+      artifactPath: release.desktopArtifactPath,
+      checkCount: release.checkCount,
+      requiredCheckCount: release.requiredCheckCount,
+      checkIds: release.checkIds,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: Boolean(release.liveTradingAllowed),
+      liveBlockedBoundary: Boolean(release.liveBlockedBoundary)
+    };
+  }
+
+  const platform = release.platform || "local desktop";
+  const version = release.version ? `v${release.version}` : "current version";
+  return {
+    state: "passed",
+    tone: "positive",
+    headline: "Desktop release passed",
+    detail: `${platform} ${version} · ${release.checkCount} checks · live blocked.`,
+    sourceSummary: release.summary,
+    actionLabel: "Open desktop release manifest",
+    targetWorkspaceId: "settings",
+    sourcePath: release.sourcePath,
+    generatedAt: release.generatedAt,
+    platform: release.platform,
+    version: release.version,
+    tauriConfigPath: release.tauriConfigPath,
+    artifactPath: release.desktopArtifactPath,
+    checkCount: release.checkCount,
+    requiredCheckCount: release.requiredCheckCount,
+    checkIds: release.checkIds,
+    liveTradingAllowed: false,
+    reportedLiveTradingAllowed: Boolean(release.liveTradingAllowed),
+    liveBlockedBoundary: Boolean(release.liveBlockedBoundary)
+  };
 }
 
 export function buildP2PreLiveAcceptanceSummary(

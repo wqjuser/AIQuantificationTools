@@ -284,6 +284,8 @@ import {
   loadTerminalWorkspace,
   resolveQuantCoreBaseUrl,
   runTerminalResearch,
+  buildDesktopReleaseLatestUrl,
+  loadDesktopReleaseLatest,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
   loadP2PaperReplayLatest,
@@ -904,6 +906,99 @@ describe("terminal workspace API client", () => {
     expect(result.acceptance?.available).toBe(false);
     expect(result.acceptance?.manifest).toBeNull();
     expect(result.error).toBe("Invalid P1 acceptance status contract");
+  });
+
+  test("loads the latest desktop release readback without enabling live trading", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const manifest = {
+      kind: "aiqt.desktopReleaseManifest",
+      schemaVersion: 1,
+      generatedAt: "2026-06-30T06:45:00+00:00",
+      status: "passed",
+      platform: "darwin-arm64",
+      version: "0.1.0",
+      tauriConfigPath: "apps/web/src-tauri/tauri.conf.json",
+      desktopArtifactPath: "apps/web/src-tauri/target/release/bundle",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      checkCount: 5,
+      checks: [
+        { id: "web-build", status: "passed", summary: "npm run build passed" },
+        { id: "cargo-check", status: "passed", summary: "cargo check passed" },
+        { id: "tauri-icon", status: "passed", summary: "icons/icon.png present" },
+        { id: "desktop-bundle", status: "passed", summary: "npm run desktop:build passed" },
+        { id: "live-blocked-boundary", status: "passed", summary: "live trading remains blocked" }
+      ]
+    };
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          release: {
+            kind: "aiqt.desktopReleaseStatus",
+            schemaVersion: 1,
+            status: "passed",
+            available: true,
+            sourcePath: "data/desktop-release.json",
+            summary: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
+            reason: "",
+            generatedAt: "2026-06-30T06:45:00+00:00",
+            platform: "darwin-arm64",
+            version: "0.1.0",
+            tauriConfigPath: "apps/web/src-tauri/tauri.conf.json",
+            desktopArtifactPath: "apps/web/src-tauri/target/release/bundle",
+            checkCount: 5,
+            requiredCheckCount: 5,
+            checkIds: ["web-build", "cargo-check", "tauri-icon", "desktop-bundle", "live-blocked-boundary"],
+            paperOnly: true,
+            liveTradingAllowed: false,
+            liveBlockedBoundary: true,
+            manifest
+          }
+        })
+      };
+    };
+
+    const result = await loadDesktopReleaseLatest("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildDesktopReleaseLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/desktop/release/latest"
+    );
+    expect(buildDesktopReleaseLatestUrl("/")).toBe("/api/desktop/release/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/desktop/release/latest");
+    expect(result.source).toBe("core");
+    expect(result.release?.status).toBe("passed");
+    expect(result.release?.platform).toBe("darwin-arm64");
+    expect(result.release?.requiredCheckCount).toBe(5);
+    expect(result.release?.checkIds).toEqual([
+      "web-build",
+      "cargo-check",
+      "tauri-icon",
+      "desktop-bundle",
+      "live-blocked-boundary"
+    ]);
+    expect(result.release?.liveTradingAllowed).toBe(false);
+    expect(result.release?.manifest?.platform).toBe("darwin-arm64");
+  });
+
+  test("falls back when latest desktop release readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ release: { status: "passed" } })
+    });
+
+    const result = await loadDesktopReleaseLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.release?.status).toBe("missing");
+    expect(result.release?.available).toBe(false);
+    expect(result.release?.sourcePath).toBe("data/desktop-release.json");
+    expect(result.release?.manifest).toBeNull();
+    expect(result.error).toBe("Invalid desktop release status contract");
   });
 
   test("loads the latest P2 pre-live acceptance readback and keeps order submission blocked", async () => {

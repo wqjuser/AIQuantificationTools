@@ -669,6 +669,56 @@ export interface P1AcceptanceLatestResult {
   error?: string;
 }
 
+export interface DesktopReleaseManifestCheck {
+  id: string;
+  status: string;
+  summary: string;
+}
+
+export interface DesktopReleaseManifest {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string;
+  status: string;
+  platform: string;
+  version: string;
+  tauriConfigPath: string;
+  desktopArtifactPath: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  checkCount: number;
+  checks: DesktopReleaseManifestCheck[];
+}
+
+export interface DesktopReleaseStatus {
+  kind: "aiqt.desktopReleaseStatus";
+  schemaVersion: 1;
+  status: "passed" | "missing" | "invalid";
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  platform: string | null;
+  version: string | null;
+  tauriConfigPath: string | null;
+  desktopArtifactPath: string | null;
+  checkCount: number;
+  requiredCheckCount: number;
+  checkIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  manifest: DesktopReleaseManifest | null;
+}
+
+export interface DesktopReleaseLatestResult {
+  release?: DesktopReleaseStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface P2PreLiveAcceptanceManifestCheck {
   id: string;
   status: string;
@@ -4428,6 +4478,10 @@ export function buildP1AcceptanceLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p1/acceptance/latest");
 }
 
+export function buildDesktopReleaseLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/desktop/release/latest");
+}
+
 export function buildP2PreLiveAcceptanceLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p2/pre-live/acceptance/latest");
 }
@@ -7556,6 +7610,57 @@ function buildMissingP1AcceptanceStatus(reason: string): P1AcceptanceStatus {
     watchlistCount: 0,
     checkCount: 0,
     requiredCheckCount: 8,
+    checkIds: [],
+    paperOnly: false,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: false,
+    manifest: null
+  };
+}
+
+export async function loadDesktopReleaseLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<DesktopReleaseLatestResult> {
+  try {
+    const response = await fetcher(buildDesktopReleaseLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isDesktopReleaseLatestPayload(payload)) {
+      throw new Error("Invalid desktop release status contract");
+    }
+    return {
+      release: payload.release,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown desktop release readback error";
+    return {
+      release: buildMissingDesktopReleaseStatus(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+function buildMissingDesktopReleaseStatus(reason: string): DesktopReleaseStatus {
+  return {
+    kind: "aiqt.desktopReleaseStatus",
+    schemaVersion: 1,
+    status: "missing",
+    available: false,
+    sourcePath: "data/desktop-release.json",
+    summary: "Desktop release manifest is missing.",
+    reason,
+    generatedAt: null,
+    platform: null,
+    version: null,
+    tauriConfigPath: null,
+    desktopArtifactPath: null,
+    checkCount: 0,
+    requiredCheckCount: 5,
     checkIds: [],
     paperOnly: false,
     liveTradingAllowed: false,
@@ -11555,6 +11660,75 @@ function isP1AcceptanceManifestCheckPayload(value: unknown): value is P1Acceptan
     return false;
   }
   const check = value as Partial<P1AcceptanceManifestCheck>;
+  return typeof check.id === "string" && typeof check.status === "string" && typeof check.summary === "string";
+}
+
+function isDesktopReleaseLatestPayload(value: unknown): value is { release: DesktopReleaseStatus } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { release?: unknown };
+  return isDesktopReleaseStatusPayload(payload.release);
+}
+
+function isDesktopReleaseStatusPayload(value: unknown): value is DesktopReleaseStatus {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<DesktopReleaseStatus>;
+  const validStatus = payload.status === "passed" || payload.status === "missing" || payload.status === "invalid";
+  return (
+    payload.kind === "aiqt.desktopReleaseStatus" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    typeof payload.available === "boolean" &&
+    typeof payload.sourcePath === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.reason === "string" &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    (payload.platform === null || typeof payload.platform === "string") &&
+    (payload.version === null || typeof payload.version === "string") &&
+    (payload.tauriConfigPath === null || typeof payload.tauriConfigPath === "string") &&
+    (payload.desktopArtifactPath === null || typeof payload.desktopArtifactPath === "string") &&
+    typeof payload.checkCount === "number" &&
+    typeof payload.requiredCheckCount === "number" &&
+    Array.isArray(payload.checkIds) &&
+    payload.checkIds.every((id) => typeof id === "string") &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.manifest === null || isDesktopReleaseManifestPayload(payload.manifest))
+  );
+}
+
+function isDesktopReleaseManifestPayload(value: unknown): value is DesktopReleaseManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<DesktopReleaseManifest>;
+  return (
+    typeof payload.kind === "string" &&
+    typeof payload.schemaVersion === "number" &&
+    typeof payload.generatedAt === "string" &&
+    typeof payload.status === "string" &&
+    typeof payload.platform === "string" &&
+    typeof payload.version === "string" &&
+    typeof payload.tauriConfigPath === "string" &&
+    typeof payload.desktopArtifactPath === "string" &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    typeof payload.checkCount === "number" &&
+    Array.isArray(payload.checks) &&
+    payload.checks.every(isDesktopReleaseManifestCheckPayload)
+  );
+}
+
+function isDesktopReleaseManifestCheckPayload(value: unknown): value is DesktopReleaseManifestCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<DesktopReleaseManifestCheck>;
   return typeof check.id === "string" && typeof check.status === "string" && typeof check.summary === "string";
 }
 

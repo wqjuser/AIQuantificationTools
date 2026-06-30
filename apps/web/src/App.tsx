@@ -59,6 +59,7 @@ import {
   loadResearchRunPromotion,
   loadResearchNote,
   loadHandoffNotes,
+  loadDesktopReleaseLatest,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
   loadP2PaperReplayLatest,
@@ -143,6 +144,7 @@ import {
   MarketSearchSuggestion,
   PaperExecutionRecord,
   P0PaperSimulationResponse,
+  DesktopReleaseLatestResult,
   P0AcceptanceLatestResult,
   P1AcceptanceLatestResult,
   P2PaperReplayLatestResult,
@@ -353,6 +355,7 @@ import {
   buildGoldenPathWorkspaceContext,
   buildLocalReviewCoverageNextActionUrlSearch,
   buildP0AcceptanceReviewMarkdown,
+  buildDesktopReleaseSummary,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
   buildP2PaperReplaySummary,
@@ -768,6 +771,9 @@ const initialAuditSigningKeyRotationLedgerStatus: AuditSigningKeyRotationLedgerS
   state: "idle"
 };
 const initialGoldenPathStatusState: GoldenPathStatusResult = {
+  source: "fallback"
+};
+const initialDesktopReleaseLatestState: DesktopReleaseLatestResult = {
   source: "fallback"
 };
 const initialP0AcceptanceLatestState: P0AcceptanceLatestResult = {
@@ -1978,6 +1984,9 @@ export function App() {
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
     useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
+  const [desktopReleaseLatestState, setDesktopReleaseLatestState] = useState<DesktopReleaseLatestResult>(
+    initialDesktopReleaseLatestState
+  );
   const [p0AcceptanceLatestState, setP0AcceptanceLatestState] = useState<P0AcceptanceLatestResult>(
     initialP0AcceptanceLatestState
   );
@@ -2061,6 +2070,7 @@ export function App() {
   const [simulatingPortfolioPaperOrderId, setSimulatingPortfolioPaperOrderId] = useState<string | null>(null);
   const [isSimulatingPortfolioPaperOrderBatch, setIsSimulatingPortfolioPaperOrderBatch] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
+  const [isLoadingDesktopRelease, setIsLoadingDesktopRelease] = useState(false);
   const [isLoadingP0Acceptance, setIsLoadingP0Acceptance] = useState(false);
   const [isLoadingP1Acceptance, setIsLoadingP1Acceptance] = useState(false);
   const [isLoadingP2PaperReplay, setIsLoadingP2PaperReplay] = useState(false);
@@ -2661,6 +2671,10 @@ export function App() {
     () => buildP1AcceptanceSummary(p1AcceptanceLatestState.acceptance),
     [p1AcceptanceLatestState.acceptance]
   );
+  const desktopReleaseSummary = useMemo(
+    () => buildDesktopReleaseSummary(desktopReleaseLatestState.release),
+    [desktopReleaseLatestState.release]
+  );
   const p2PaperReplaySummary = useMemo(
     () => buildP2PaperReplaySummary(p2PaperReplayLatestState.replay),
     [p2PaperReplayLatestState.replay]
@@ -3002,7 +3016,7 @@ export function App() {
     () =>
       buildStage1P0DailyUseClosure({
         dailyStartBrief,
-        desktopBuildReady: false,
+        desktopRelease: desktopReleaseSummary,
         marketRefreshGuard: marketDataRefreshGuard,
         p0Acceptance: p0AcceptanceSummary,
         p1Acceptance: p1AcceptanceSummary,
@@ -3010,6 +3024,7 @@ export function App() {
       }),
     [
       dailyStartBrief,
+      desktopReleaseSummary,
       marketDataRefreshGuard,
       p0AcceptanceSummary,
       p1AcceptanceSummary,
@@ -3204,6 +3219,15 @@ export function App() {
     setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
   }, []);
 
+  const refreshDesktopReleaseLatest = useCallback(async () => {
+    setIsLoadingDesktopRelease(true);
+    try {
+      setDesktopReleaseLatestState(await loadDesktopReleaseLatest(quantCoreBaseUrl));
+    } finally {
+      setIsLoadingDesktopRelease(false);
+    }
+  }, []);
+
   const refreshP0AcceptanceLatest = useCallback(async () => {
     setIsLoadingP0Acceptance(true);
     try {
@@ -3310,6 +3334,10 @@ export function App() {
   useEffect(() => {
     void refreshP0AcceptanceLatest();
   }, [refreshP0AcceptanceLatest]);
+
+  useEffect(() => {
+    void refreshDesktopReleaseLatest();
+  }, [refreshDesktopReleaseLatest]);
 
   useEffect(() => {
     void refreshP1AcceptanceLatest();
@@ -11485,6 +11513,8 @@ export function App() {
               <Stage1P0DailyUseClosurePanel
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
+                isRefreshingRelease={isLoadingDesktopRelease}
+                onRefreshRelease={() => void refreshDesktopReleaseLatest()}
                 onSelectWorkspace={selectProductWorkArea}
               />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
@@ -12792,10 +12822,14 @@ function P0GoldenPathJourneyPanel({
 function Stage1P0DailyUseClosurePanel({
   closure,
   i18n,
+  isRefreshingRelease = false,
+  onRefreshRelease,
   onSelectWorkspace
 }: {
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
+  isRefreshingRelease?: boolean;
+  onRefreshRelease?: () => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
 }) {
   const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
@@ -12837,10 +12871,21 @@ function Stage1P0DailyUseClosurePanel({
             ? "P0 保持实盘阻断；这里只聚合开箱、恢复、研究入口、每日启动和桌面发布检查。"
             : "P0 keeps live trading blocked; this card only routes clean-open, recovery, research, daily start, and desktop release checks."}
         </small>
-        <button type="button" onClick={() => onSelectWorkspace(closure.primaryTargetWorkspaceId)}>
-          <Play size={12} />
-          {stage1P0DailyUseClosureActionLabel(i18n, closure.primaryActionId, closure.primaryActionLabel)}
-        </button>
+        <div className="stage1-p0-daily-use-footer-actions">
+          <button
+            className="stage1-p0-daily-use-refresh"
+            disabled={isRefreshingRelease || !onRefreshRelease}
+            onClick={onRefreshRelease}
+            type="button"
+          >
+            {isRefreshingRelease ? <RefreshCw className="spin" size={12} /> : <RefreshCw size={12} />}
+            {i18n.locale === "zh-CN" ? "刷新发布" : "Refresh release"}
+          </button>
+          <button type="button" onClick={() => onSelectWorkspace(closure.primaryTargetWorkspaceId)}>
+            <Play size={12} />
+            {stage1P0DailyUseClosureActionLabel(i18n, closure.primaryActionId, closure.primaryActionLabel)}
+          </button>
+        </div>
       </div>
     </section>
   );

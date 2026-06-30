@@ -150,6 +150,7 @@ import {
   buildMarketDataProviderHealthTrendRows,
   buildMarketDataProviderHealthTrendSummary,
   buildModuleNewsEvents,
+  buildDesktopReleaseSummary,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
@@ -2678,6 +2679,84 @@ describe("terminal workbench model", () => {
     expect(invalid.detail).toContain("Live trading remains blocked");
   });
 
+  test("builds desktop release summaries from local release readback", () => {
+    const passed = buildDesktopReleaseSummary({
+      kind: "aiqt.desktopReleaseStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/desktop-release.json",
+      summary: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-30T06:45:00+00:00",
+      platform: "darwin-arm64",
+      version: "0.1.0",
+      tauriConfigPath: "apps/web/src-tauri/tauri.conf.json",
+      desktopArtifactPath: "apps/web/src-tauri/target/release/bundle",
+      checkCount: 5,
+      requiredCheckCount: 5,
+      checkIds: ["web-build", "cargo-check", "tauri-icon", "desktop-bundle", "live-blocked-boundary"],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+    const invalid = buildDesktopReleaseSummary({
+      kind: "aiqt.desktopReleaseStatus",
+      schemaVersion: 1,
+      status: "invalid",
+      available: false,
+      sourcePath: "data/desktop-release.json",
+      summary: "Desktop release manifest is invalid.",
+      reason: "live-blocked boundary is not enforced",
+      generatedAt: null,
+      platform: "darwin-arm64",
+      version: "0.1.0",
+      tauriConfigPath: "apps/web/src-tauri/tauri.conf.json",
+      desktopArtifactPath: "apps/web/src-tauri/target/release/bundle",
+      checkCount: 5,
+      requiredCheckCount: 5,
+      checkIds: ["web-build", "cargo-check", "tauri-icon", "desktop-bundle", "live-blocked-boundary"],
+      paperOnly: true,
+      liveTradingAllowed: true,
+      liveBlockedBoundary: false,
+      manifest: null
+    });
+    const missing = buildDesktopReleaseSummary(null);
+
+    expect(passed).toMatchObject({
+      state: "passed",
+      tone: "positive",
+      headline: "Desktop release passed",
+      platform: "darwin-arm64",
+      version: "0.1.0",
+      checkCount: 5,
+      requiredCheckCount: 5,
+      liveTradingAllowed: false,
+      reportedLiveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      artifactPath: "apps/web/src-tauri/target/release/bundle"
+    });
+    expect(passed.detail).toContain("darwin-arm64");
+    expect(passed.detail).toContain("live blocked");
+    expect(invalid).toMatchObject({
+      state: "invalid",
+      tone: "risk",
+      headline: "Desktop release manifest invalid",
+      reportedLiveTradingAllowed: true,
+      liveTradingAllowed: false
+    });
+    expect(invalid.detail).toContain("live-blocked boundary is not enforced");
+    expect(missing).toMatchObject({
+      state: "missing",
+      tone: "warning",
+      headline: "Desktop release manifest missing",
+      checkCount: 0,
+      requiredCheckCount: 5,
+      liveTradingAllowed: false
+    });
+  });
+
   test("builds a Stage 1/P0 daily-use closure from clean-open, refresh, research, daily start, and desktop release signals", () => {
     const closure = buildStage1P0DailyUseClosure({
       dailyStartBrief: {
@@ -2787,6 +2866,140 @@ describe("terminal workbench model", () => {
       actionId: "run-desktop-build",
       label: "Desktop release",
       status: "review",
+      targetWorkspaceId: "settings"
+    });
+  });
+
+  test("marks Stage 1/P0 daily-use desktop release ready from release readback", () => {
+    const p0Acceptance = buildP0AcceptanceSummary({
+      kind: "aiqt.p0AcceptanceStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/p0-acceptance.json",
+      summary: "p0 acceptance manifest run=run-smoke checks=6 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-23T08:00:00+00:00",
+      runId: "run-smoke",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      checkCount: 6,
+      requiredCheckCount: 4,
+      checkIds: ["pipeline", "ai-review", "paper-simulation", "export", "import", "imported-export"],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+    const p1Acceptance = buildP1AcceptanceSummary({
+      kind: "aiqt.p1AcceptanceStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/p1-acceptance.json",
+      summary: "p1 acceptance manifest run=run-p1-smoke watchlist=3 checks=8 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-23T09:00:00+00:00",
+      runId: "run-p1-smoke",
+      timeframe: "1d",
+      watchlistRefreshRunId: "cache-refresh-p1",
+      queuedMarket: "ashare",
+      queuedSymbol: "600000",
+      watchlistCount: 3,
+      checkCount: 8,
+      requiredCheckCount: 8,
+      checkIds: [
+        "workspace",
+        "watchlist-refresh",
+        "queue-pipeline",
+        "ai-review",
+        "paper-simulation",
+        "export",
+        "import",
+        "imported-export"
+      ],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+    const desktopRelease = buildDesktopReleaseSummary({
+      kind: "aiqt.desktopReleaseStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/desktop-release.json",
+      summary: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-30T06:45:00+00:00",
+      platform: "darwin-arm64",
+      version: "0.1.0",
+      tauriConfigPath: "apps/web/src-tauri/tauri.conf.json",
+      desktopArtifactPath: "apps/web/src-tauri/target/release/bundle",
+      checkCount: 5,
+      requiredCheckCount: 5,
+      checkIds: ["web-build", "cargo-check", "tauri-icon", "desktop-bundle", "live-blocked-boundary"],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+
+    const closure = buildStage1P0DailyUseClosure({
+      dailyStartBrief: {
+        auditActionLabel: "Open audit context",
+        auditQuery: "review-chain-health review-chain-gap",
+        checkpoints: [],
+        currentReviewCount: 1,
+        detail: "Daily start is ready.",
+        headline: "Daily start is ready",
+        liveBoundaryLabel: "paper-only",
+        localReviewActionLabel: "Open Daily Ops",
+        localReviewDetail: "Daily ops review is current.",
+        localReviewQuery: "",
+        localReviewStatus: "current",
+        localReviewWorkspaceId: "research",
+        missingReviewCount: 0,
+        openOpsItemCount: 0,
+        primaryActionLabel: "Open research",
+        primaryActionWorkspaceId: "research",
+        staleReviewCount: 0,
+        state: "ready",
+        tone: "positive"
+      },
+      desktopRelease,
+      marketRefreshGuard: {
+        affectedContexts: [],
+        affectedSymbols: [],
+        blocked: false,
+        detail: "Market refresh is available.",
+        overrideApplied: false,
+        overrideReason: null,
+        reason: "ok",
+        recentErrorCount: 0,
+        retryAfterSeconds: 0,
+        status: "ok"
+      },
+      p0Acceptance,
+      p1Acceptance,
+      researchReadinessRows: []
+    });
+
+    expect(closure).toMatchObject({
+      headline: "Clean environment is ready",
+      readyCount: 5,
+      totalCount: 5,
+      state: "ready",
+      tone: "positive"
+    });
+    expect(closure.rows[4]).toMatchObject({
+      id: "desktop-release",
+      actionId: "run-desktop-build",
+      label: "Desktop release",
+      status: "ready",
+      value: "darwin-arm64 desktop release ready",
+      detail: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
       targetWorkspaceId: "settings"
     });
   });

@@ -194,6 +194,7 @@ from quant_core.market_calendar import build_market_calendar_status
 from quant_core.market_klines import QuantDingerKlineAdapter, build_market_data_readiness, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
 from quant_core.p2_acceptance import (
@@ -418,6 +419,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     p2_paper_replay_report_path = DEFAULT_P2_PAPER_REPLAY_REPORT_PATH
     p2_readiness_acceptance_report_path = DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH
     p2_manifest_chain_preflight_report_path = DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH
+    desktop_release_report_path = DEFAULT_DESKTOP_RELEASE_REPORT_PATH
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -2856,6 +2858,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/p1/acceptance/latest":
             self._send_json({"acceptance": load_p1_acceptance_status(Path(self.p1_acceptance_report_path))})
+            return
+        if parsed.path == "/api/desktop/release/latest":
+            self._send_json({"release": load_desktop_release_status(Path(self.desktop_release_report_path))})
             return
         if parsed.path == "/api/p2/pre-live/acceptance/latest":
             self._send_json(

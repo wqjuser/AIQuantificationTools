@@ -101,6 +101,29 @@ class QuantCoreContractTest(unittest.TestCase):
             ],
         }
 
+    def _sample_desktop_release_manifest(self):
+        return {
+            "kind": "aiqt.desktopReleaseManifest",
+            "schemaVersion": 1,
+            "generatedAt": "2026-06-30T06:45:00+00:00",
+            "status": "passed",
+            "platform": "darwin-arm64",
+            "version": "0.1.0",
+            "tauriConfigPath": "apps/web/src-tauri/tauri.conf.json",
+            "desktopArtifactPath": "apps/web/src-tauri/target/release/bundle",
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "liveBlockedBoundary": True,
+            "checkCount": 5,
+            "checks": [
+                {"id": "web-build", "status": "passed", "summary": "npm run build passed"},
+                {"id": "cargo-check", "status": "passed", "summary": "cargo check passed"},
+                {"id": "tauri-icon", "status": "passed", "summary": "icons/icon.png present"},
+                {"id": "desktop-bundle", "status": "passed", "summary": "npm run desktop:build passed"},
+                {"id": "live-blocked-boundary", "status": "passed", "summary": "live trading remains blocked"},
+            ],
+        }
+
     def _sample_p2_pre_live_acceptance_manifest(self, *, run_id: str = "run-p2-pre-live"):
         return {
             "kind": "aiqt.p2PreLiveAcceptanceManifest",
@@ -1131,6 +1154,111 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(payload["acceptance"]["watchlistRefreshRunId"], "cache-refresh-p1")
         self.assertFalse(payload["acceptance"]["liveTradingAllowed"])
+
+    def test_desktop_release_status_reads_latest_report(self):
+        import json
+
+        from quant_core.desktop_release import load_desktop_release_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "data" / "desktop-release.json"
+            report_path.parent.mkdir(parents=True)
+            report_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+
+            status = load_desktop_release_status(report_path)
+
+        self.assertEqual(status["kind"], "aiqt.desktopReleaseStatus")
+        self.assertEqual(status["schemaVersion"], 1)
+        self.assertTrue(status["available"])
+        self.assertEqual(status["status"], "passed")
+        self.assertEqual(status["summary"], "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True")
+        self.assertEqual(status["platform"], "darwin-arm64")
+        self.assertEqual(status["version"], "0.1.0")
+        self.assertEqual(status["tauriConfigPath"], "apps/web/src-tauri/tauri.conf.json")
+        self.assertEqual(status["desktopArtifactPath"], "apps/web/src-tauri/target/release/bundle")
+        self.assertEqual(status["checkCount"], 5)
+        self.assertEqual(status["requiredCheckCount"], 5)
+        self.assertEqual(
+            status["checkIds"],
+            ["web-build", "cargo-check", "tauri-icon", "desktop-bundle", "live-blocked-boundary"],
+        )
+        self.assertTrue(status["paperOnly"])
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertTrue(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["platform"], "darwin-arm64")
+        self.assertTrue(str(status["sourcePath"]).endswith("desktop-release.json"))
+
+    def test_desktop_release_status_reports_missing_file(self):
+        from quant_core.desktop_release import load_desktop_release_status
+
+        with tempfile.TemporaryDirectory() as tmp:
+            status = load_desktop_release_status(Path(tmp) / "data" / "desktop-release.json")
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "missing")
+        self.assertIsNone(status["manifest"])
+        self.assertIn("not found", status["reason"])
+        self.assertFalse(status["liveTradingAllowed"])
+
+    def test_desktop_release_status_rejects_live_enabled_report(self):
+        import json
+
+        from quant_core.desktop_release import load_desktop_release_status
+
+        unsafe_manifest = self._sample_desktop_release_manifest()
+        unsafe_manifest["liveTradingAllowed"] = True
+        unsafe_manifest["liveBlockedBoundary"] = False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "desktop-release.json"
+            report_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
+
+            status = load_desktop_release_status(report_path)
+
+        self.assertFalse(status["available"])
+        self.assertEqual(status["status"], "invalid")
+        self.assertIn("live-blocked boundary", status["reason"])
+        self.assertTrue(status["liveTradingAllowed"])
+        self.assertFalse(status["liveBlockedBoundary"])
+        self.assertEqual(status["manifest"]["platform"], "darwin-arm64")
+
+    def test_desktop_release_latest_api_returns_validated_status(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "desktop-release.json"
+            manifest = self._sample_desktop_release_manifest()
+            manifest["platform"] = "darwin-x64"
+            report_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            class TestHandler(QuantApiHandler):
+                desktop_release_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/desktop/release/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["release"]["kind"], "aiqt.desktopReleaseStatus")
+        self.assertEqual(payload["release"]["status"], "passed")
+        self.assertEqual(payload["release"]["platform"], "darwin-x64")
+        self.assertEqual(payload["release"]["summary"], "desktop release manifest platform=darwin-x64 checks=5 liveBlocked=True")
+        self.assertFalse(payload["release"]["liveTradingAllowed"])
 
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json
