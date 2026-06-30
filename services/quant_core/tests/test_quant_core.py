@@ -16,6 +16,16 @@ class QuantCoreContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def _load_desktop_release_recorder_module(self):
+        root = Path(__file__).resolve().parents[3]
+        module_path = root / "tools" / "record_desktop_release.py"
+        spec = importlib.util.spec_from_file_location("record_desktop_release", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     def _sample_p0_acceptance_manifest(self, *, run_id: str = "run-smoke"):
         return {
             "kind": "aiqt.p0AcceptanceManifest",
@@ -1259,6 +1269,85 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["release"]["platform"], "darwin-x64")
         self.assertEqual(payload["release"]["summary"], "desktop release manifest platform=darwin-x64 checks=5 liveBlocked=True")
         self.assertFalse(payload["release"]["liveTradingAllowed"])
+
+    def test_desktop_release_recorder_writes_validated_manifest(self):
+        from quant_core.desktop_release import load_desktop_release_status
+
+        recorder = self._load_desktop_release_recorder_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            artifact_path = (
+                project_root
+                / "apps"
+                / "web"
+                / "src-tauri"
+                / "target"
+                / "release"
+                / "bundle"
+                / "dmg"
+                / "AIQuantificationTools_0.1.0_x64.dmg"
+            )
+            artifact_path.parent.mkdir(parents=True)
+            artifact_path.write_text("fake dmg", encoding="utf-8")
+            output_path = project_root / "data" / "desktop-release.json"
+
+            manifest = recorder.record_desktop_release(
+                project_root=project_root,
+                output_path=output_path,
+                artifact_path=artifact_path,
+                platform="darwin-x64",
+                version="0.1.0",
+                generated_at="2026-06-30T08:10:00+00:00",
+            )
+            status = load_desktop_release_status(output_path)
+
+        self.assertEqual(manifest["kind"], "aiqt.desktopReleaseManifest")
+        self.assertEqual(manifest["platform"], "darwin-x64")
+        self.assertEqual(manifest["desktopArtifactPath"], "apps/web/src-tauri/target/release/bundle/dmg/AIQuantificationTools_0.1.0_x64.dmg")
+        self.assertEqual(
+            [check["id"] for check in manifest["checks"]],
+            ["web-build", "cargo-check", "tauri-icon", "desktop-bundle", "live-blocked-boundary"],
+        )
+        self.assertTrue(manifest["paperOnly"])
+        self.assertFalse(manifest["liveTradingAllowed"])
+        self.assertTrue(manifest["liveBlockedBoundary"])
+        self.assertEqual(status["status"], "passed")
+
+    def test_desktop_release_recorder_rejects_missing_artifact(self):
+        recorder = self._load_desktop_release_recorder_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            with self.assertRaisesRegex(FileNotFoundError, "Desktop release artifact not found"):
+                recorder.record_desktop_release(
+                    project_root=project_root,
+                    output_path=project_root / "data" / "desktop-release.json",
+                    artifact_path=project_root / "missing.dmg",
+                    platform="darwin-x64",
+                    version="0.1.0",
+                    generated_at="2026-06-30T08:10:00+00:00",
+                )
+
+    def test_desktop_release_recorder_auto_selects_latest_artifact(self):
+        import os
+
+        recorder = self._load_desktop_release_recorder_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            bundle_dir = project_root / "apps" / "web" / "src-tauri" / "target" / "release" / "bundle" / "dmg"
+            bundle_dir.mkdir(parents=True)
+            older = bundle_dir / "AIQuantificationTools_0.1.0_x64.dmg"
+            newer = bundle_dir / "AIQuantificationTools_0.1.1_x64.dmg"
+            older.write_text("old", encoding="utf-8")
+            newer.write_text("new", encoding="utf-8")
+            os.utime(older, (100, 100))
+            os.utime(newer, (200, 200))
+
+            artifact = recorder.discover_desktop_release_artifact(project_root=project_root, platform="darwin-x64")
+
+        self.assertEqual(artifact, newer)
 
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json
@@ -2815,6 +2904,11 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             scripts["docker:smoke:p2:pre-live:validate"],
             f"{python_launcher} tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
+        )
+        self.assertEqual(scripts["desktop:release"], f"{python_launcher} tools/record_desktop_release.py")
+        self.assertEqual(
+            scripts["desktop:release:record"],
+            f"{python_launcher} tools/record_desktop_release.py --record-only",
         )
 
     def test_docker_smoke_p2_chain_preflight_reports_missing_next_action(self):

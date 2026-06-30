@@ -14,6 +14,8 @@
     "test:python": "node tools/run_python.mjs -m unittest discover -s services/quant_core/tests -t services/quant_core",
     "desktop:dev": "npm run tauri:dev --workspace @aiqt/web",
     "desktop:build": "npm run tauri:build --workspace @aiqt/web",
+    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
     "api": "node tools/run_python.mjs tools/run_quant_api.py",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",

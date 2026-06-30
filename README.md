@@ -379,7 +379,19 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-打包完成后可把本机结果记录为 `data/desktop-release.json`。该 manifest 仅用于首页 Stage 1/P0 日常收口和 `/api/desktop/release/latest` 回读，必须保持 `paperOnly=true`、`liveTradingAllowed=false`、`liveBlockedBoundary=true`，并覆盖 `web-build`、`cargo-check`、`tauri-icon`、`desktop-bundle`、`live-blocked-boundary` 五项检查。
+桌面端发布验证并记录首页 readback：
+
+```powershell
+npm run desktop:release
+```
+
+如果已经手动完成打包，可只记录当前最新包：
+
+```powershell
+npm run desktop:release:record
+```
+
+这两条命令会写入 `data/desktop-release.json`。该 manifest 仅用于首页 Stage 1/P0 日常收口和 `/api/desktop/release/latest` 回读，必须保持 `paperOnly=true`、`liveTradingAllowed=false`、`liveBlockedBoundary=true`，并覆盖 `web-build`、`cargo-check`、`tauri-icon`、`desktop-bundle`、`live-blocked-boundary` 五项检查。
 
 ## Product Boundary
 
