@@ -763,6 +763,18 @@ export interface Stage1DailyUseLatestResult {
   error?: string;
 }
 
+export interface Stage1DailyUseGenerateResult {
+  dailyUse?: Stage1DailyUseReport;
+  status: "daily_use_generated" | "daily_use_failed";
+  source: WorkspaceSource;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  error?: string;
+}
+
 export interface P2PreLiveAcceptanceManifestCheck {
   id: string;
   status: string;
@@ -4526,6 +4538,10 @@ export function buildDesktopReleaseLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/desktop/release/latest");
 }
 
+export function buildStage1DailyUseUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/stage1/daily-use");
+}
+
 export function buildStage1DailyUseLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/stage1/daily-use/latest");
 }
@@ -7739,6 +7755,47 @@ export async function loadStage1DailyUseLatest(
     return {
       dailyUse: buildMissingStage1DailyUseReport(message),
       source: "fallback",
+      error: message
+    };
+  }
+}
+
+export async function generateStage1DailyUse(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<Stage1DailyUseGenerateResult> {
+  try {
+    const response = await fetcher(buildStage1DailyUseUrl(baseUrl), {
+      method: "POST"
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStage1DailyUseGeneratePayload(payload)) {
+      throw new Error("Invalid Stage 1 daily-use generation contract");
+    }
+    return {
+      dailyUse: payload.dailyUse,
+      status: payload.status,
+      source: "core",
+      paperOnly: payload.paperOnly,
+      orderSubmissionEnabled: payload.orderSubmissionEnabled,
+      liveTradingAllowed: payload.liveTradingAllowed,
+      liveOrderSubmitted: payload.liveOrderSubmitted,
+      routeExecuted: payload.routeExecuted
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Stage 1 daily-use generation error";
+    return {
+      dailyUse: buildMissingStage1DailyUseReport(message),
+      status: "daily_use_failed",
+      source: "fallback",
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
       error: message
     };
   }
@@ -11839,6 +11896,38 @@ function isStage1DailyUseLatestPayload(value: unknown): value is { dailyUse: Sta
   }
   const payload = value as { dailyUse?: unknown };
   return isStage1DailyUseReportPayload(payload.dailyUse);
+}
+
+function isStage1DailyUseGeneratePayload(value: unknown): value is {
+  dailyUse: Stage1DailyUseReport;
+  status: "daily_use_generated";
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    dailyUse?: unknown;
+    status?: unknown;
+    paperOnly?: unknown;
+    orderSubmissionEnabled?: unknown;
+    liveTradingAllowed?: unknown;
+    liveOrderSubmitted?: unknown;
+    routeExecuted?: unknown;
+  };
+  return (
+    payload.status === "daily_use_generated" &&
+    isStage1DailyUseReportPayload(payload.dailyUse) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean"
+  );
 }
 
 function isStage1DailyUseReportPayload(value: unknown): value is Stage1DailyUseReport {

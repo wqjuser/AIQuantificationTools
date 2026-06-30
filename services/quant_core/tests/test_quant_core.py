@@ -1505,6 +1505,62 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["dailyUse"]["liveTradingAllowed"])
         self.assertTrue(payload["dailyUse"]["liveBlockedBoundary"])
 
+    def test_stage1_daily_use_generate_api_writes_report_without_live_trading(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            p0_path = data_dir / "p0-acceptance.json"
+            p1_path = data_dir / "p1-acceptance.json"
+            desktop_path = data_dir / "desktop-release.json"
+            report_path = data_dir / "stage1-daily-use.json"
+            p0_path.write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+
+            class TestHandler(QuantApiHandler):
+                p0_acceptance_report_path = p0_path
+                p1_acceptance_report_path = p1_path
+                desktop_release_report_path = desktop_path
+                stage1_daily_use_report_path = report_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/stage1/daily-use")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+            file_written = report_path.exists()
+            written_report = json.loads(report_path.read_text(encoding="utf-8")) if file_written else {}
+
+        self.assertEqual(response.status, 201)
+        self.assertTrue(file_written)
+        self.assertEqual(payload["status"], "daily_use_generated")
+        self.assertEqual(payload["dailyUse"]["kind"], "aiqt.stage1DailyUseReport")
+        self.assertEqual(payload["dailyUse"]["status"], "ready")
+        self.assertEqual(payload["dailyUse"]["readyCount"], 2)
+        self.assertEqual(payload["dailyUse"]["totalCount"], 2)
+        self.assertEqual(written_report["status"], "ready")
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["orderSubmissionEnabled"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertFalse(payload["liveOrderSubmitted"])
+        self.assertFalse(payload["routeExecuted"])
+
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json
 

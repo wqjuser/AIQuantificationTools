@@ -286,7 +286,9 @@ import {
   runTerminalResearch,
   buildDesktopReleaseLatestUrl,
   loadDesktopReleaseLatest,
+  buildStage1DailyUseUrl,
   buildStage1DailyUseLatestUrl,
+  generateStage1DailyUse,
   loadStage1DailyUseLatest,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
@@ -1087,6 +1089,86 @@ describe("terminal workspace API client", () => {
     expect(result.dailyUse?.sourcePaths.p0Acceptance).toBe("data/p0-acceptance.json");
     expect(result.dailyUse?.liveTradingAllowed).toBe(false);
     expect(result.error).toBe("Invalid Stage 1 daily-use report contract");
+  });
+
+  test("generates the Stage 1 daily-use report without enabling live trading", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          status: "daily_use_generated",
+          dailyUse: {
+            kind: "aiqt.stage1DailyUseReport",
+            schemaVersion: 1,
+            generatedAt: "2026-06-30T10:10:00+00:00",
+            status: "ready",
+            summary: "Stage 1 daily use is ready (2/2 checks ready).",
+            readyCount: 2,
+            totalCount: 2,
+            paperOnly: true,
+            liveTradingAllowed: false,
+            liveBlockedBoundary: true,
+            sourcePath: "data/stage1-daily-use.json",
+            sourcePaths: {
+              p0Acceptance: "data/p0-acceptance.json",
+              p1Acceptance: "data/p1-acceptance.json",
+              desktopRelease: "data/desktop-release.json"
+            },
+            rows: [
+              {
+                id: "clean-open",
+                label: "Clean environment startup",
+                status: "ready",
+                value: "P0/P1 acceptance evidence is ready",
+                summary: "Clean environment startup has current P0 and P1 acceptance evidence.",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              },
+              {
+                id: "desktop-release",
+                label: "Desktop release",
+                status: "ready",
+                value: "Desktop release manifest is ready",
+                summary: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
+                action: "npm run stage1:daily:validate",
+                paperOnly: true,
+                liveTradingAllowed: false,
+                liveBlockedBoundary: true
+              }
+            ]
+          },
+          paperOnly: true,
+          orderSubmissionEnabled: false,
+          liveTradingAllowed: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false
+        })
+      };
+    };
+
+    const result = await generateStage1DailyUse("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildStage1DailyUseUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/stage1/daily-use");
+    expect(buildStage1DailyUseUrl("/")).toBe("/api/stage1/daily-use");
+    expect(calls[0]).toEqual(
+      expect.objectContaining({
+        url: "http://127.0.0.1:8765/api/stage1/daily-use",
+        init: expect.objectContaining({ method: "POST" })
+      })
+    );
+    expect(result.source).toBe("core");
+    expect(result.status).toBe("daily_use_generated");
+    expect(result.dailyUse?.status).toBe("ready");
+    expect(result.dailyUse?.readyCount).toBe(2);
+    expect(result.orderSubmissionEnabled).toBe(false);
+    expect(result.liveTradingAllowed).toBe(false);
+    expect(result.liveOrderSubmitted).toBe(false);
+    expect(result.routeExecuted).toBe(false);
   });
 
   test("loads the latest P2 pre-live acceptance readback and keeps order submission blocked", async () => {

@@ -197,7 +197,11 @@ from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg,
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
-from quant_core.stage1_daily_use import DEFAULT_STAGE1_DAILY_USE_REPORT_PATH, load_stage1_daily_use_status
+from quant_core.stage1_daily_use import (
+    DEFAULT_STAGE1_DAILY_USE_REPORT_PATH,
+    load_stage1_daily_use_status,
+    write_stage1_daily_use_report,
+)
 from quant_core.p2_acceptance import (
     DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH,
     load_p2_pre_live_acceptance_status,
@@ -383,6 +387,13 @@ def _cache_fallback_warnings(quality: DataQuality | None, upstream_error: str | 
     return [reason, *quality.warnings]
 
 
+def _stage1_daily_use_project_root(report_path: Path) -> Path:
+    resolved = report_path.resolve()
+    if resolved.parent.name == "data":
+        return resolved.parent.parent
+    return Path.cwd()
+
+
 class QuantApiHandler(BaseHTTPRequestHandler):
     cache = MarketDataCache(Path("data/market.sqlite"))
     adapter = DemoMarketDataAdapter()
@@ -454,6 +465,33 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/stage1/daily-use":
+            try:
+                report_path = Path(self.stage1_daily_use_report_path)
+                write_stage1_daily_use_report(
+                    project_root=_stage1_daily_use_project_root(report_path),
+                    output_path=report_path,
+                    p0_path=Path(self.p0_acceptance_report_path),
+                    p1_path=Path(self.p1_acceptance_report_path),
+                    desktop_path=Path(self.desktop_release_report_path),
+                )
+                daily_use = load_stage1_daily_use_status(report_path)
+            except (OSError, ValueError) as error:
+                self._send_json({"error": "invalid_stage1_daily_use", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "status": "daily_use_generated",
+                    "dailyUse": daily_use,
+                    "paperOnly": True,
+                    "orderSubmissionEnabled": False,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+                status=201,
+            )
+            return
         if parsed.path == "/api/p2/readiness/acceptance":
             try:
                 manifest = build_p2_readiness_acceptance_manifest_from_reports(

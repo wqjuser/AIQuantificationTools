@@ -60,6 +60,7 @@ import {
   loadResearchNote,
   loadHandoffNotes,
   loadDesktopReleaseLatest,
+  generateStage1DailyUse,
   loadStage1DailyUseLatest,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
@@ -2081,6 +2082,7 @@ export function App() {
   const [isSimulatingPortfolioPaperOrderBatch, setIsSimulatingPortfolioPaperOrderBatch] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isLoadingDesktopRelease, setIsLoadingDesktopRelease] = useState(false);
+  const [isGeneratingStage1DailyUse, setIsGeneratingStage1DailyUse] = useState(false);
   const [isLoadingP0Acceptance, setIsLoadingP0Acceptance] = useState(false);
   const [isLoadingP1Acceptance, setIsLoadingP1Acceptance] = useState(false);
   const [isLoadingP2PaperReplay, setIsLoadingP2PaperReplay] = useState(false);
@@ -3246,6 +3248,21 @@ export function App() {
 
   const refreshStage1DailyUseLatest = useCallback(async () => {
     setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));
+  }, []);
+
+  const refreshStage1DailyUseReport = useCallback(async () => {
+    setIsGeneratingStage1DailyUse(true);
+    try {
+      const generated = await generateStage1DailyUse(quantCoreBaseUrl);
+      setStage1DailyUseLatestState({
+        dailyUse: generated.dailyUse,
+        source: generated.source,
+        error: generated.error
+      });
+      setDesktopReleaseLatestState(await loadDesktopReleaseLatest(quantCoreBaseUrl));
+    } finally {
+      setIsGeneratingStage1DailyUse(false);
+    }
   }, []);
 
   const refreshP0AcceptanceLatest = useCallback(async () => {
@@ -11537,8 +11554,8 @@ export function App() {
               <Stage1P0DailyUseClosurePanel
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
-                isRefreshingRelease={isLoadingDesktopRelease}
-                onRefreshRelease={() => void refreshDesktopReleaseLatest()}
+                isRefreshingDailyUse={isGeneratingStage1DailyUse || isLoadingDesktopRelease}
+                onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 onSelectWorkspace={selectProductWorkArea}
               />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
@@ -12846,14 +12863,14 @@ function P0GoldenPathJourneyPanel({
 function Stage1P0DailyUseClosurePanel({
   closure,
   i18n,
-  isRefreshingRelease = false,
-  onRefreshRelease,
+  isRefreshingDailyUse = false,
+  onRefreshDailyUse,
   onSelectWorkspace
 }: {
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
-  isRefreshingRelease?: boolean;
-  onRefreshRelease?: () => void;
+  isRefreshingDailyUse?: boolean;
+  onRefreshDailyUse?: () => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
 }) {
   const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
@@ -12898,12 +12915,12 @@ function Stage1P0DailyUseClosurePanel({
         <div className="stage1-p0-daily-use-footer-actions">
           <button
             className="stage1-p0-daily-use-refresh"
-            disabled={isRefreshingRelease || !onRefreshRelease}
-            onClick={onRefreshRelease}
+            disabled={isRefreshingDailyUse || !onRefreshDailyUse}
+            onClick={onRefreshDailyUse}
             type="button"
           >
-            {isRefreshingRelease ? <RefreshCw className="spin" size={12} /> : <RefreshCw size={12} />}
-            {i18n.locale === "zh-CN" ? "刷新发布" : "Refresh release"}
+            {isRefreshingDailyUse ? <RefreshCw className="spin" size={12} /> : <RefreshCw size={12} />}
+            {i18n.locale === "zh-CN" ? "刷新自检" : "Refresh daily"}
           </button>
           <button type="button" onClick={() => onSelectWorkspace(closure.primaryTargetWorkspaceId)}>
             <Play size={12} />

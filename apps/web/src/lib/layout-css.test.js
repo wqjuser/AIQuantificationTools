@@ -378,6 +378,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const [stage1DailyUseLatestState, setStage1DailyUseLatestState]");
     expect(appSource).toContain("const refreshStage1DailyUseLatest = useCallback");
     expect(appSource).toContain("setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));");
+    expect(appSource).toContain("generateStage1DailyUse");
+    expect(appSource).toContain("const refreshStage1DailyUseReport = useCallback");
+    expect(appSource).toContain("const generated = await generateStage1DailyUse(quantCoreBaseUrl);");
+    expect(appSource).toContain("setStage1DailyUseLatestState({");
+    expect(appSource).toContain("onRefreshDailyUse={() => void refreshStage1DailyUseReport()}");
     expect(appSource).toContain("buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse)");
     expect(appSource).toContain("dailyUseReport: stage1DailyUseSummary");
     expect(appSource).toContain("loadDesktopReleaseLatest");
@@ -400,7 +405,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("stage1P0DailyUseClosureRowLabel");
     expect(appSource).toContain("stage1P0DailyUseClosureActionLabel");
     expect(appSource).toContain("onSelectWorkspace(row.targetWorkspaceId)");
-    expect(appSource).toContain("onRefreshRelease={() => void refreshDesktopReleaseLatest()}");
+    expect(appSource).toContain("isRefreshingDailyUse={isGeneratingStage1DailyUse || isLoadingDesktopRelease}");
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "干净环境开箱" : "Clean environment"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "行情刷新恢复" : "Refresh recovery"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "研究入口" : "Research entry"');
