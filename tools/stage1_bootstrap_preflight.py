@@ -18,7 +18,7 @@ ensure_quant_core_import_path()
 
 from quant_core.stage1_bootstrap_preflight import (  # noqa: E402
     DEFAULT_STAGE1_BOOTSTRAP_PREFLIGHT_REPORT_PATH,
-    load_stage1_bootstrap_preflight_report,
+    load_stage1_bootstrap_preflight_status,
     validate_stage1_bootstrap_preflight,
     write_stage1_bootstrap_preflight,
 )
@@ -34,7 +34,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     project_root = Path(args.project_root).resolve()
     if args.validate:
-        preflight = load_stage1_bootstrap_preflight_report(_resolve_under_root(project_root, Path(args.validate)))
+        preflight = load_stage1_bootstrap_preflight_status(_resolve_under_root(project_root, Path(args.validate)))
         summary = validate_stage1_bootstrap_preflight(preflight)
         if args.print_json:
             print(json.dumps(preflight, ensure_ascii=False, indent=2))

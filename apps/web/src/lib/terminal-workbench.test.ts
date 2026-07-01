@@ -3002,6 +3002,49 @@ describe("terminal workbench model", () => {
     expect(blocked?.detail).toContain("P0 acceptance");
   });
 
+  test("surfaces stale Stage 1 bootstrap preflight sources in the homepage summary", () => {
+    const stale = buildStage1BootstrapPreflightSummary({
+      ...sampleStage1BootstrapPreflight("review"),
+      summary:
+        "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
+      reason:
+        "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
+      readyCount: 5,
+      reviewCount: 1,
+      blockedCount: 0,
+      nextAction: "refresh-stage1-bootstrap-preflight",
+      recommendedCommand: "npm run stage1:preflight",
+      staleSourcePaths: ["data/stage1-daily-use.json"],
+      reviewIds: ["stage1-daily-use"],
+      checks: sampleStage1BootstrapPreflight("review").checks.map((check) =>
+        check.id === "stage1-daily-use"
+          ? {
+              ...check,
+              status: "review",
+              summary: "Daily-use source changed after this bootstrap preflight was generated.",
+              recommendedCommand: "npm run stage1:preflight"
+            }
+          : check.id === "p0-acceptance" || check.id === "p1-acceptance" || check.id === "desktop-release"
+            ? { ...check, status: "ready" }
+            : check
+      )
+    });
+
+    expect(stale).toMatchObject({
+      actionLabel: "Refresh bootstrap preflight",
+      currentCheckId: "stage1-daily-use",
+      headline: "Stage 1 bootstrap preflight needs refresh (5/6)",
+      recommendedCommand: "npm run stage1:preflight",
+      staleSourcePaths: ["data/stage1-daily-use.json"],
+      staleSourceSummary:
+        "Stale source files: data/stage1-daily-use.json. Run npm run stage1:preflight to refresh.",
+      state: "review",
+      tone: "warning"
+    });
+    expect(stale?.detail).toContain("Run npm run stage1:preflight to refresh.");
+    expect(stale?.sourceSummary).toContain("Stale source files");
+  });
+
   test("surfaces blocked bootstrap preflight as the Stage 1 clean-open gate", () => {
     const bootstrapPreflight = buildStage1BootstrapPreflightSummary(sampleStage1BootstrapPreflight("blocked"));
     const dailyUseReport = buildStage1DailyUseSummary({

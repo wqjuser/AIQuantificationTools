@@ -1917,6 +1917,118 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(preflight["liveTradingAllowed"])
         self.assertTrue(preflight["liveBlockedBoundary"])
 
+    def test_stage1_bootstrap_preflight_marks_report_review_when_source_is_newer(self):
+        import json
+        import os
+
+        from quant_core.stage1_bootstrap_preflight import (
+            load_stage1_bootstrap_preflight_status,
+            write_stage1_bootstrap_preflight,
+        )
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            p0_path = data_dir / "p0-acceptance.json"
+            p1_path = data_dir / "p1-acceptance.json"
+            desktop_path = data_dir / "desktop-release.json"
+            daily_use_path = data_dir / "stage1-daily-use.json"
+            preflight_path = data_dir / "stage1-bootstrap-preflight.json"
+            p0_path.write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            (project_root / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {
+                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            write_stage1_daily_use_report(project_root=project_root, output_path=daily_use_path)
+            write_stage1_bootstrap_preflight(project_root=project_root, output_path=preflight_path)
+            source_time = preflight_path.stat().st_mtime + 120
+            os.utime(daily_use_path, (source_time, source_time))
+
+            status = load_stage1_bootstrap_preflight_status(preflight_path)
+
+        self.assertEqual(status["status"], "review")
+        self.assertEqual(status["readyCount"], 5)
+        self.assertEqual(status["reviewCount"], 1)
+        self.assertEqual(status["blockedCount"], 0)
+        self.assertFalse(status["ready"])
+        self.assertEqual(status["reviewIds"], ["stage1-daily-use"])
+        self.assertEqual(status["blockerIds"], [])
+        self.assertEqual(status["staleSourcePaths"], ["data/stage1-daily-use.json"])
+        self.assertEqual(status["nextAction"], "refresh-stage1-bootstrap-preflight")
+        self.assertEqual(status["recommendedCommand"], "npm run stage1:preflight")
+        stage1_daily_check = next(check for check in status["checks"] if check["id"] == "stage1-daily-use")
+        self.assertEqual(stage1_daily_check["status"], "review")
+        self.assertIn("Source file changed after this bootstrap preflight was generated.", stage1_daily_check["summary"])
+        self.assertEqual(stage1_daily_check["recommendedCommand"], "npm run stage1:preflight")
+        self.assertFalse(status["liveTradingAllowed"])
+        self.assertTrue(status["liveBlockedBoundary"])
+
+    def test_stage1_bootstrap_preflight_marks_package_scripts_review_when_package_is_newer(self):
+        import json
+        import os
+
+        from quant_core.stage1_bootstrap_preflight import (
+            load_stage1_bootstrap_preflight_status,
+            write_stage1_bootstrap_preflight,
+        )
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            package_path = project_root / "package.json"
+            (data_dir / "p0-acceptance.json").write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "p1-acceptance.json").write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "desktop-release.json").write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            package_path.write_text(
+                json.dumps(
+                    {
+                        "scripts": {
+                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
+            preflight_path = data_dir / "stage1-bootstrap-preflight.json"
+            write_stage1_bootstrap_preflight(project_root=project_root, output_path=preflight_path)
+            source_time = preflight_path.stat().st_mtime + 120
+            os.utime(package_path, (source_time, source_time))
+
+            status = load_stage1_bootstrap_preflight_status(preflight_path)
+
+        self.assertEqual(status["status"], "review")
+        self.assertEqual(status["readyCount"], 5)
+        self.assertEqual(status["reviewIds"], ["package-scripts"])
+        self.assertEqual(status["staleSourcePaths"], ["package.json"])
+        package_check = status["checks"][0]
+        self.assertEqual(package_check["id"], "package-scripts")
+        self.assertEqual(package_check["status"], "review")
+        self.assertEqual(package_check["recommendedCommand"], "npm run stage1:preflight")
+        self.assertEqual(status["recommendedCommand"], "npm run stage1:preflight")
+
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json
 

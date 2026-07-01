@@ -440,6 +440,7 @@ export interface Stage1BootstrapPreflightSummarySource {
   liveTradingAllowed: boolean;
   liveBlockedBoundary: boolean;
   sourcePath?: string;
+  staleSourcePaths?: string[];
   sourcePaths: {
     p0Acceptance: string;
     p1Acceptance: string;
@@ -461,6 +462,8 @@ export interface Stage1BootstrapPreflightSummary {
   readyCount: number;
   totalCount: number;
   sourcePath: string;
+  staleSourcePaths: string[];
+  staleSourceSummary: string | null;
   currentCheckId: string | null;
   nextAction: string;
   recommendedCommand: string;
@@ -8721,6 +8724,8 @@ export function buildStage1BootstrapPreflightSummary(
   if (!preflight) {
     return null;
   }
+  const staleSourcePaths = normalizeStage1BootstrapPreflightStaleSourcePaths(preflight);
+  const staleSourceSummary = buildStage1BootstrapPreflightStaleSourceSummary(staleSourcePaths);
   const unsafeBoundary = Boolean(preflight.liveTradingAllowed) || !preflight.liveBlockedBoundary || !preflight.paperOnly;
   const state: Stage1BootstrapPreflightSummaryState =
     preflight.status === "invalid" || unsafeBoundary ? "invalid" : preflight.status;
@@ -8731,7 +8736,9 @@ export function buildStage1BootstrapPreflightSummary(
     null;
   const actionLabel = stage1BootstrapPreflightActionLabel(preflight.nextAction, currentCheck);
   const statusLabel =
-    state === "ready"
+    staleSourceSummary
+      ? "needs refresh"
+      : state === "ready"
       ? "ready"
       : state === "review"
         ? "needs review"
@@ -8744,12 +8751,16 @@ export function buildStage1BootstrapPreflightSummary(
   const sourceSummary =
     state === "invalid" && unsafeBoundary
       ? "Stage 1 bootstrap preflight failed the paper-only/live-blocked boundary."
-      : preflight.summary;
+      : staleSourceSummary
+        ? `${preflight.summary} ${staleSourceSummary}`
+        : preflight.summary;
   const currentCheckDetail = currentCheck ? ` Current check: ${currentCheck.label}. ${currentCheck.summary}` : "";
   const detail =
-    state === "missing" || state === "invalid"
-      ? `${preflight.reason || sourceSummary} Recommended command: ${preflight.recommendedCommand}.${currentCheckDetail}`
-      : `${sourceSummary} Next action: ${actionLabel} (${preflight.recommendedCommand}).${currentCheckDetail}`;
+    staleSourceSummary
+      ? `${preflight.summary} ${staleSourceSummary}${currentCheckDetail}`
+      : state === "missing" || state === "invalid"
+        ? `${preflight.reason || sourceSummary} Recommended command: ${preflight.recommendedCommand}.${currentCheckDetail}`
+        : `${sourceSummary} Next action: ${actionLabel} (${preflight.recommendedCommand}).${currentCheckDetail}`;
   return {
     state,
     tone: state === "ready" ? "positive" : state === "review" || state === "missing" ? "warning" : "risk",
@@ -8762,6 +8773,8 @@ export function buildStage1BootstrapPreflightSummary(
     readyCount: preflight.readyCount,
     totalCount: preflight.totalCount,
     sourcePath: preflight.sourcePath || "data/stage1-bootstrap-preflight.json",
+    staleSourcePaths,
+    staleSourceSummary,
     currentCheckId: currentCheck?.id ?? null,
     nextAction: preflight.nextAction,
     recommendedCommand: preflight.recommendedCommand,
@@ -8781,6 +8794,9 @@ function stage1BootstrapPreflightActionLabel(
   }
   if (nextAction === "run-stage1-bootstrap-preflight") {
     return "Run bootstrap preflight";
+  }
+  if (nextAction === "refresh-stage1-bootstrap-preflight") {
+    return "Refresh bootstrap preflight";
   }
   if (nextAction === "run-p0-acceptance") {
     return "Run P0 acceptance";
@@ -8817,6 +8833,21 @@ function buildStage1DailyUseStaleSourceSummary(staleSourcePaths: string[]): stri
     return null;
   }
   return `Stale source manifests: ${staleSourcePaths.join(", ")}. Run npm run stage1:daily to refresh.`;
+}
+
+function normalizeStage1BootstrapPreflightStaleSourcePaths(
+  preflight: Stage1BootstrapPreflightSummarySource
+): string[] {
+  return Array.isArray(preflight.staleSourcePaths)
+    ? preflight.staleSourcePaths.map((sourcePath) => sourcePath.trim()).filter(Boolean)
+    : [];
+}
+
+function buildStage1BootstrapPreflightStaleSourceSummary(staleSourcePaths: string[]): string | null {
+  if (staleSourcePaths.length === 0) {
+    return null;
+  }
+  return `Stale source files: ${staleSourcePaths.join(", ")}. Run npm run stage1:preflight to refresh.`;
 }
 
 export function buildP2PreLiveAcceptanceSummary(

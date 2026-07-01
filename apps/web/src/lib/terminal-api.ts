@@ -818,6 +818,7 @@ export interface Stage1BootstrapPreflight {
   liveTradingAllowed: boolean;
   liveBlockedBoundary: boolean;
   sourcePath?: string;
+  staleSourcePaths?: string[];
   sourcePaths: Stage1BootstrapPreflightSourcePaths;
   checks: Stage1BootstrapPreflightCheck[];
 }
@@ -12269,6 +12270,8 @@ function isStage1BootstrapPreflightPayload(value: unknown): value is Stage1Boots
     typeof payload.liveTradingAllowed === "boolean" &&
     typeof payload.liveBlockedBoundary === "boolean" &&
     (payload.sourcePath === undefined || typeof payload.sourcePath === "string") &&
+    (payload.staleSourcePaths === undefined ||
+      (Array.isArray(payload.staleSourcePaths) && payload.staleSourcePaths.every((sourcePath) => typeof sourcePath === "string"))) &&
     isStage1BootstrapPreflightSourcePathsPayload(payload.sourcePaths) &&
     Array.isArray(payload.checks) &&
     payload.checks.every(isStage1BootstrapPreflightCheckPayload)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -137,7 +138,7 @@ def load_stage1_bootstrap_preflight_status(
 ) -> dict[str, Any]:
     source_path = Path(path)
     try:
-        report = load_stage1_bootstrap_preflight_report(source_path)
+        report = _project_stale_source_review(load_stage1_bootstrap_preflight_report(source_path), source_path)
     except FileNotFoundError as error:
         return _stage1_bootstrap_preflight_status(
             status="missing",
@@ -220,6 +221,96 @@ def validate_stage1_bootstrap_preflight(preflight: Any) -> str:
         raise ValueError("Stage 1 bootstrap preflight recommendedCommand is required")
 
     return f"stage1 bootstrap preflight status={status} ready={ready_count}/{len(checks)} next={preflight['nextAction']}"
+
+
+def _project_stale_source_review(report: dict[str, Any], report_path: Path) -> dict[str, Any]:
+    stale_sources = _stage1_bootstrap_preflight_stale_source_paths(report, report_path)
+    if not stale_sources:
+        return report
+
+    projected = deepcopy(report)
+    stale_check_ids = _stage1_bootstrap_preflight_stale_check_ids(projected, stale_sources)
+    for check in projected["checks"]:
+        if check["id"] not in stale_check_ids or check["status"] != "ready":
+            continue
+        check["status"] = "review"
+        check["summary"] = f"{check['summary']} Source file changed after this bootstrap preflight was generated."
+        check["recommendedCommand"] = "npm run stage1:preflight"
+
+    projected["status"] = _overall_status(projected["checks"])
+    projected["ready"] = projected["status"] == "ready"
+    projected["readyCount"] = sum(1 for check in projected["checks"] if check["status"] == "ready")
+    projected["reviewCount"] = sum(1 for check in projected["checks"] if check["status"] == "review")
+    projected["blockedCount"] = sum(1 for check in projected["checks"] if check["status"] == "blocked")
+    projected["blockerIds"] = [check["id"] for check in projected["checks"] if check["status"] == "blocked"]
+    projected["reviewIds"] = [check["id"] for check in projected["checks"] if check["status"] == "review"]
+    projected["summary"] = (
+        "Stage 1 bootstrap preflight needs refresh because source files changed: "
+        f"{', '.join(stale_sources)}."
+    )
+    projected["reason"] = projected["summary"]
+    projected["staleSourcePaths"] = stale_sources
+    if projected["status"] == "review":
+        projected["nextAction"] = "refresh-stage1-bootstrap-preflight"
+        projected["recommendedCommand"] = "npm run stage1:preflight"
+    else:
+        projected["nextAction"], projected["recommendedCommand"] = _next_action(projected["checks"])
+    validate_stage1_bootstrap_preflight(projected)
+    return projected
+
+
+def _stage1_bootstrap_preflight_stale_source_paths(report: dict[str, Any], report_path: Path) -> list[str]:
+    try:
+        report_mtime_ns = Path(report_path).stat().st_mtime_ns
+    except OSError:
+        return []
+    project_root = _stage1_bootstrap_preflight_project_root_for_report(Path(report_path))
+    source_paths = report.get("sourcePaths")
+    if not isinstance(source_paths, dict):
+        source_paths = {}
+    candidate_sources = [
+        "package.json",
+        str(source_paths.get("p0Acceptance") or DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
+        str(source_paths.get("p1Acceptance") or DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+        str(source_paths.get("desktopRelease") or DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
+        str(source_paths.get("stage1DailyUse") or DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
+    ]
+    stale_paths: list[str] = []
+    for source_label in candidate_sources:
+        source_label = str(source_label or "").strip()
+        if not source_label:
+            continue
+        source_path = _resolve_under_root(project_root, Path(source_label))
+        try:
+            source_mtime_ns = source_path.stat().st_mtime_ns
+        except OSError:
+            stale_paths.append(_display_path_for_status(source_path) if Path(source_label).is_absolute() else source_label)
+            continue
+        if source_mtime_ns > report_mtime_ns:
+            stale_paths.append(_display_path_for_status(source_path) if Path(source_label).is_absolute() else source_label)
+    return stale_paths
+
+
+def _stage1_bootstrap_preflight_stale_check_ids(report: dict[str, Any], stale_sources: list[str]) -> set[str]:
+    source_paths = report.get("sourcePaths") if isinstance(report.get("sourcePaths"), dict) else {}
+    source_to_checks = {
+        "package.json": {"package-scripts"},
+        str(source_paths.get("p0Acceptance") or DEFAULT_P0_ACCEPTANCE_REPORT_PATH): {"p0-acceptance"},
+        str(source_paths.get("p1Acceptance") or DEFAULT_P1_ACCEPTANCE_REPORT_PATH): {"p1-acceptance"},
+        str(source_paths.get("desktopRelease") or DEFAULT_DESKTOP_RELEASE_REPORT_PATH): {"desktop-release"},
+        str(source_paths.get("stage1DailyUse") or DEFAULT_STAGE1_DAILY_USE_REPORT_PATH): {"stage1-daily-use"},
+    }
+    check_ids: set[str] = set()
+    for source in stale_sources:
+        check_ids.update(source_to_checks.get(source, set()))
+    return check_ids
+
+
+def _stage1_bootstrap_preflight_project_root_for_report(report_path: Path) -> Path:
+    resolved = report_path.resolve()
+    if resolved.parent.name == "data":
+        return resolved.parent.parent
+    return resolved.parent
 
 
 def _stage1_bootstrap_preflight_status(
