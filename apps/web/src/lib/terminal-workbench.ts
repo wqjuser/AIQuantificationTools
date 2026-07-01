@@ -405,6 +405,71 @@ export interface Stage1DailyUseSummary {
   liveBlockedBoundary: boolean;
 }
 
+export type Stage1BootstrapPreflightSummaryState = "ready" | "review" | "blocked" | "missing" | "invalid";
+export type Stage1BootstrapPreflightSummaryTone = P0AcceptanceSummaryTone;
+
+export interface Stage1BootstrapPreflightSummaryCheckSource {
+  id: string;
+  label: string;
+  status: "ready" | "review" | "blocked";
+  summary: string;
+  recommendedCommand: string;
+  sourcePath: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export interface Stage1BootstrapPreflightSummarySource {
+  kind: string;
+  schemaVersion: number;
+  generatedAt: string | null;
+  status: Stage1BootstrapPreflightSummaryState;
+  summary: string;
+  reason?: string;
+  ready: boolean;
+  readyCount: number;
+  reviewCount: number;
+  blockedCount: number;
+  totalCount: number;
+  nextAction: string;
+  recommendedCommand: string;
+  blockerIds: string[];
+  reviewIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  sourcePath?: string;
+  sourcePaths: {
+    p0Acceptance: string;
+    p1Acceptance: string;
+    desktopRelease: string;
+    stage1DailyUse: string;
+  };
+  checks: Stage1BootstrapPreflightSummaryCheckSource[];
+}
+
+export interface Stage1BootstrapPreflightSummary {
+  state: Stage1BootstrapPreflightSummaryState;
+  tone: Stage1BootstrapPreflightSummaryTone;
+  headline: string;
+  detail: string;
+  sourceSummary: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  generatedAt: string | null;
+  readyCount: number;
+  totalCount: number;
+  sourcePath: string;
+  currentCheckId: string | null;
+  nextAction: string;
+  recommendedCommand: string;
+  checks: Stage1BootstrapPreflightSummaryCheckSource[];
+  liveTradingAllowed: boolean;
+  reportedLiveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
 export type P2PreLiveAcceptanceSummaryState = P0AcceptanceSummaryState;
 export type P2PreLiveAcceptanceSummaryTone = P0AcceptanceSummaryTone;
 
@@ -7085,6 +7150,7 @@ export type Stage1P0DailyUseClosureStatus = "ready" | "review" | "blocked";
 export type Stage1P0DailyUseClosureActionId =
   | "refresh-p0-acceptance"
   | "review-p1-acceptance"
+  | "review-bootstrap-preflight"
   | "review-provider-cooldown"
   | ResearchContextReadinessAction
   | "open-research-entry"
@@ -7120,6 +7186,7 @@ export interface Stage1P0DailyUseClosure {
 }
 
 export interface Stage1P0DailyUseClosureInput {
+  bootstrapPreflight?: Stage1BootstrapPreflightSummary | null;
   dailyStartBrief: DailyStartBrief;
   dailyUseReport?: Stage1DailyUseSummary | null;
   desktopBuildReady?: boolean;
@@ -7131,6 +7198,7 @@ export interface Stage1P0DailyUseClosureInput {
 }
 
 export function buildStage1P0DailyUseClosure({
+  bootstrapPreflight = null,
   dailyStartBrief,
   dailyUseReport = null,
   desktopBuildReady = false,
@@ -7145,7 +7213,7 @@ export function buildStage1P0DailyUseClosure({
     researchReadinessRows.find((row) => row.status === "review") ??
     null;
   const rows: Stage1P0DailyUseClosureRow[] = [
-    buildDailyUseCleanOpenRow(p0Acceptance, p1Acceptance, dailyUseReport),
+    buildDailyUseCleanOpenRow(p0Acceptance, p1Acceptance, dailyUseReport, bootstrapPreflight),
     buildDailyUseReportBackedRow(
       dailyUseReport,
       "market-refresh-recovery",
@@ -7201,19 +7269,23 @@ export function buildStage1P0DailyUseClosure({
       ? "review"
       : "ready";
   const staleSourceSummary = dailyUseReport?.staleSourceSummary ?? null;
+  const bootstrapPreflightSummary = bootstrapPreflight ? bootstrapPreflight.headline : null;
   return {
     state,
     tone: dailyUseClosureTone(state),
     headline: dailyUseClosureHeadline(primaryRow),
     detail: dailyUseReport
       ? [
+          bootstrapPreflightSummary,
           dailyUseReport.headline,
           staleSourceSummary,
           rows.map((row) => `${row.label}: ${row.value}`).join(" · ")
         ]
           .filter(Boolean)
           .join(" · ")
-      : rows.map((row) => `${row.label}: ${row.value}`).join(" · "),
+      : [bootstrapPreflightSummary, rows.map((row) => `${row.label}: ${row.value}`).join(" · ")]
+          .filter(Boolean)
+          .join(" · "),
     readyCount,
     totalCount: rows.length,
     primaryActionId: primaryRow.actionId,
@@ -7269,8 +7341,23 @@ function buildDailyUseReportBackedRow(
 function buildDailyUseCleanOpenRow(
   p0Acceptance: P0AcceptanceSummary,
   p1Acceptance: P1AcceptanceSummary,
-  dailyUseReport: Stage1DailyUseSummary | null
+  dailyUseReport: Stage1DailyUseSummary | null,
+  bootstrapPreflight: Stage1BootstrapPreflightSummary | null
 ): Stage1P0DailyUseClosureRow {
+  if (bootstrapPreflight && bootstrapPreflight.state !== "ready") {
+    const status = stage1BootstrapPreflightClosureStatus(bootstrapPreflight);
+    return {
+      id: "clean-open",
+      label: "Clean environment open",
+      value: bootstrapPreflight.nextAction,
+      detail: `${bootstrapPreflight.headline}. ${bootstrapPreflight.detail}`,
+      status,
+      tone: dailyUseClosureTone(status),
+      actionId: "review-bootstrap-preflight",
+      actionLabel: bootstrapPreflight.actionLabel,
+      targetWorkspaceId: bootstrapPreflight.targetWorkspaceId
+    };
+  }
   const reportRow = dailyUseReport?.rows.find((row) => row.id === "clean-open");
   if (dailyUseReport && reportRow && dailyUseReport.state !== "missing" && dailyUseReport.state !== "invalid") {
     const status = reportRow.status;
@@ -7311,6 +7398,18 @@ function buildDailyUseCleanOpenRow(
     actionLabel: p0Acceptance.state !== "passed" ? "Refresh P0 acceptance" : p1Acceptance.state !== "passed" ? "Review P1 acceptance" : "Open research",
     targetWorkspaceId: p0Acceptance.state !== "passed" || p1Acceptance.state !== "passed" ? "audit" : "research"
   };
+}
+
+function stage1BootstrapPreflightClosureStatus(
+  bootstrapPreflight: Stage1BootstrapPreflightSummary
+): Stage1P0DailyUseClosureStatus {
+  if (bootstrapPreflight.state === "ready") {
+    return "ready";
+  }
+  if (bootstrapPreflight.state === "review") {
+    return "review";
+  }
+  return "blocked";
 }
 
 function buildDailyUseMarketRefreshRecoveryRow(
@@ -7441,6 +7540,11 @@ function buildDailyUseDesktopReleaseRow(
 }
 
 function dailyUseClosureHeadline(primaryRow: Stage1P0DailyUseClosureRow): string {
+  if (primaryRow.actionId === "review-bootstrap-preflight") {
+    return primaryRow.status === "review"
+      ? "Stage 1 bootstrap preflight needs review"
+      : "Stage 1 bootstrap preflight is blocked";
+  }
   if (primaryRow.id === "clean-open") {
     return primaryRow.status === "ready" ? "Clean environment is ready" : "Clean environment acceptance is missing";
   }
@@ -8609,6 +8713,97 @@ export function buildStage1DailyUseSummary(
     reportedLiveTradingAllowed: Boolean(report.liveTradingAllowed),
     liveBlockedBoundary: Boolean(report.liveBlockedBoundary)
   };
+}
+
+export function buildStage1BootstrapPreflightSummary(
+  preflight: Stage1BootstrapPreflightSummarySource | null | undefined
+): Stage1BootstrapPreflightSummary | null {
+  if (!preflight) {
+    return null;
+  }
+  const unsafeBoundary = Boolean(preflight.liveTradingAllowed) || !preflight.liveBlockedBoundary || !preflight.paperOnly;
+  const state: Stage1BootstrapPreflightSummaryState =
+    preflight.status === "invalid" || unsafeBoundary ? "invalid" : preflight.status;
+  const currentCheck =
+    preflight.checks.find((check) => preflight.blockerIds.includes(check.id)) ??
+    preflight.checks.find((check) => preflight.reviewIds.includes(check.id)) ??
+    preflight.checks.find((check) => check.status !== "ready") ??
+    null;
+  const actionLabel = stage1BootstrapPreflightActionLabel(preflight.nextAction, currentCheck);
+  const statusLabel =
+    state === "ready"
+      ? "ready"
+      : state === "review"
+        ? "needs review"
+        : state === "missing"
+          ? "missing"
+          : state === "invalid"
+            ? "invalid"
+            : "blocked";
+  const headline = `Stage 1 bootstrap preflight ${statusLabel} (${preflight.readyCount}/${preflight.totalCount})`;
+  const sourceSummary =
+    state === "invalid" && unsafeBoundary
+      ? "Stage 1 bootstrap preflight failed the paper-only/live-blocked boundary."
+      : preflight.summary;
+  const currentCheckDetail = currentCheck ? ` Current check: ${currentCheck.label}. ${currentCheck.summary}` : "";
+  const detail =
+    state === "missing" || state === "invalid"
+      ? `${preflight.reason || sourceSummary} Recommended command: ${preflight.recommendedCommand}.${currentCheckDetail}`
+      : `${sourceSummary} Next action: ${actionLabel} (${preflight.recommendedCommand}).${currentCheckDetail}`;
+  return {
+    state,
+    tone: state === "ready" ? "positive" : state === "review" || state === "missing" ? "warning" : "risk",
+    headline,
+    detail,
+    sourceSummary,
+    actionLabel,
+    targetWorkspaceId: "settings",
+    generatedAt: preflight.generatedAt,
+    readyCount: preflight.readyCount,
+    totalCount: preflight.totalCount,
+    sourcePath: preflight.sourcePath || "data/stage1-bootstrap-preflight.json",
+    currentCheckId: currentCheck?.id ?? null,
+    nextAction: preflight.nextAction,
+    recommendedCommand: preflight.recommendedCommand,
+    checks: preflight.checks,
+    liveTradingAllowed: false,
+    reportedLiveTradingAllowed: Boolean(preflight.liveTradingAllowed),
+    liveBlockedBoundary: Boolean(preflight.liveBlockedBoundary)
+  };
+}
+
+function stage1BootstrapPreflightActionLabel(
+  nextAction: string,
+  currentCheck: Stage1BootstrapPreflightSummaryCheckSource | null
+): string {
+  if (nextAction === "open-daily-workbench") {
+    return "Open daily workbench";
+  }
+  if (nextAction === "run-stage1-bootstrap-preflight") {
+    return "Run bootstrap preflight";
+  }
+  if (nextAction === "run-p0-acceptance") {
+    return "Run P0 acceptance";
+  }
+  if (nextAction === "run-p1-acceptance") {
+    return "Run P1 acceptance";
+  }
+  if (nextAction === "run-desktop-release") {
+    return "Run desktop release";
+  }
+  if (nextAction === "refresh-stage1-daily-use") {
+    return "Refresh daily report";
+  }
+  if (nextAction === "repair-package-scripts") {
+    return "Repair package scripts";
+  }
+  if (nextAction === "review-live-blocked-boundary") {
+    return "Review live boundary";
+  }
+  if (currentCheck) {
+    return `Review ${currentCheck.label}`;
+  }
+  return "Run bootstrap preflight";
 }
 
 function normalizeStage1DailyUseStaleSourcePaths(report: Stage1DailyUseSummarySource): string[] {

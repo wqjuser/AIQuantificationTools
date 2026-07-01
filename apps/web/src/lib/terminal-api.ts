@@ -776,6 +776,70 @@ export interface Stage1DailyUseGenerateResult {
   error?: string;
 }
 
+export type Stage1BootstrapPreflightStatus = "ready" | "review" | "blocked" | "missing" | "invalid";
+export type Stage1BootstrapPreflightCheckStatus = "ready" | "review" | "blocked";
+
+export interface Stage1BootstrapPreflightSourcePaths {
+  p0Acceptance: string;
+  p1Acceptance: string;
+  desktopRelease: string;
+  stage1DailyUse: string;
+}
+
+export interface Stage1BootstrapPreflightCheck {
+  id: string;
+  label: string;
+  status: Stage1BootstrapPreflightCheckStatus;
+  summary: string;
+  recommendedCommand: string;
+  sourcePath: string;
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+}
+
+export interface Stage1BootstrapPreflight {
+  kind: "aiqt.stage1BootstrapPreflight";
+  schemaVersion: 1;
+  generatedAt: string | null;
+  status: Stage1BootstrapPreflightStatus;
+  summary: string;
+  reason?: string;
+  ready: boolean;
+  readyCount: number;
+  reviewCount: number;
+  blockedCount: number;
+  totalCount: number;
+  nextAction: string;
+  recommendedCommand: string;
+  blockerIds: string[];
+  reviewIds: string[];
+  paperOnly: boolean;
+  liveTradingAllowed: boolean;
+  liveBlockedBoundary: boolean;
+  sourcePath?: string;
+  sourcePaths: Stage1BootstrapPreflightSourcePaths;
+  checks: Stage1BootstrapPreflightCheck[];
+}
+
+export interface Stage1BootstrapPreflightLatestResult {
+  preflight?: Stage1BootstrapPreflight;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface Stage1BootstrapPreflightGenerateResult {
+  preflight?: Stage1BootstrapPreflight;
+  status: "preflight_generated" | "preflight_failed";
+  source: WorkspaceSource;
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+  error?: string;
+}
+
 export interface P2PreLiveAcceptanceManifestCheck {
   id: string;
   status: string;
@@ -4547,6 +4611,14 @@ export function buildStage1DailyUseLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/stage1/daily-use/latest");
 }
 
+export function buildStage1BootstrapPreflightUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/stage1/bootstrap-preflight");
+}
+
+export function buildStage1BootstrapPreflightLatestUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/stage1/bootstrap-preflight/latest");
+}
+
 export function buildP2PreLiveAcceptanceLatestUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p2/pre-live/acceptance/latest");
 }
@@ -7838,6 +7910,130 @@ function buildMissingStage1DailyUseReport(reason: string): Stage1DailyUseReport 
       row("research-entry", "Research entry"),
       row("daily-start", "Daily start path"),
       row("desktop-release", "Desktop release")
+    ]
+  };
+}
+
+export async function loadStage1BootstrapPreflightLatest(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<Stage1BootstrapPreflightLatestResult> {
+  try {
+    const response = await fetcher(buildStage1BootstrapPreflightLatestUrl(baseUrl));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStage1BootstrapPreflightLatestPayload(payload)) {
+      throw new Error("Invalid Stage 1 bootstrap preflight contract");
+    }
+    return {
+      preflight: payload.preflight,
+      source: "core"
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Stage 1 bootstrap preflight readback error";
+    return {
+      preflight: buildMissingStage1BootstrapPreflight(message),
+      source: "fallback",
+      error: message
+    };
+  }
+}
+
+export async function generateStage1BootstrapPreflight(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<Stage1BootstrapPreflightGenerateResult> {
+  try {
+    const response = await fetcher(buildStage1BootstrapPreflightUrl(baseUrl), {
+      method: "POST"
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isStage1BootstrapPreflightGeneratePayload(payload)) {
+      throw new Error("Invalid Stage 1 bootstrap preflight generation contract");
+    }
+    return {
+      preflight: payload.preflight,
+      status: payload.status,
+      source: "core",
+      paperOnly: payload.paperOnly,
+      orderSubmissionEnabled: payload.orderSubmissionEnabled,
+      liveTradingAllowed: payload.liveTradingAllowed,
+      liveOrderSubmitted: payload.liveOrderSubmitted,
+      routeExecuted: payload.routeExecuted
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown Stage 1 bootstrap preflight generation error";
+    return {
+      preflight: buildMissingStage1BootstrapPreflight(message),
+      status: "preflight_failed",
+      source: "fallback",
+      paperOnly: true,
+      orderSubmissionEnabled: false,
+      liveTradingAllowed: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
+      error: message
+    };
+  }
+}
+
+function buildMissingStage1BootstrapPreflight(reason: string): Stage1BootstrapPreflight {
+  const check = (id: string, label: string, sourcePath: string, recommendedCommand: string): Stage1BootstrapPreflightCheck => ({
+    id,
+    label,
+    status: "blocked",
+    summary: "Stage 1 bootstrap preflight report is missing.",
+    recommendedCommand,
+    sourcePath,
+    paperOnly: true,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: true
+  });
+  return {
+    kind: "aiqt.stage1BootstrapPreflight",
+    schemaVersion: 1,
+    generatedAt: null,
+    status: "missing",
+    summary: "Stage 1 bootstrap preflight report is missing.",
+    reason,
+    ready: false,
+    readyCount: 0,
+    reviewCount: 0,
+    blockedCount: 6,
+    totalCount: 6,
+    nextAction: "run-stage1-bootstrap-preflight",
+    recommendedCommand: "npm run stage1:preflight",
+    blockerIds: [
+      "package-scripts",
+      "p0-acceptance",
+      "p1-acceptance",
+      "desktop-release",
+      "stage1-daily-use",
+      "live-blocked-boundary"
+    ],
+    reviewIds: [],
+    paperOnly: true,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: true,
+    sourcePath: "data/stage1-bootstrap-preflight.json",
+    sourcePaths: {
+      p0Acceptance: "data/p0-acceptance.json",
+      p1Acceptance: "data/p1-acceptance.json",
+      desktopRelease: "data/desktop-release.json",
+      stage1DailyUse: "data/stage1-daily-use.json"
+    },
+    checks: [
+      check("package-scripts", "Package scripts", "package.json", "npm install"),
+      check("p0-acceptance", "P0 acceptance", "data/p0-acceptance.json", "npm run docker:smoke:p0 -- --no-build --down"),
+      check("p1-acceptance", "P1 acceptance", "data/p1-acceptance.json", "npm run docker:smoke:p1 -- --no-build --down"),
+      check("desktop-release", "Desktop release", "data/desktop-release.json", "npm run desktop:release"),
+      check("stage1-daily-use", "Stage 1 daily use", "data/stage1-daily-use.json", "npm run stage1:daily"),
+      check("live-blocked-boundary", "Live-blocked boundary", "data", "npm run stage1:preflight:validate")
     ]
   };
 }
@@ -11997,6 +12193,117 @@ function isStage1DailyUseReportRowPayload(value: unknown): value is Stage1DailyU
     typeof row.paperOnly === "boolean" &&
     typeof row.liveTradingAllowed === "boolean" &&
     typeof row.liveBlockedBoundary === "boolean"
+  );
+}
+
+function isStage1BootstrapPreflightLatestPayload(value: unknown): value is { preflight: Stage1BootstrapPreflight } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { preflight?: unknown };
+  return isStage1BootstrapPreflightPayload(payload.preflight);
+}
+
+function isStage1BootstrapPreflightGeneratePayload(value: unknown): value is {
+  preflight: Stage1BootstrapPreflight;
+  status: "preflight_generated";
+  paperOnly: boolean;
+  orderSubmissionEnabled: boolean;
+  liveTradingAllowed: boolean;
+  liveOrderSubmitted: boolean;
+  routeExecuted: boolean;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as {
+    preflight?: unknown;
+    status?: unknown;
+    paperOnly?: unknown;
+    orderSubmissionEnabled?: unknown;
+    liveTradingAllowed?: unknown;
+    liveOrderSubmitted?: unknown;
+    routeExecuted?: unknown;
+  };
+  return (
+    payload.status === "preflight_generated" &&
+    isStage1BootstrapPreflightPayload(payload.preflight) &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.orderSubmissionEnabled === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveOrderSubmitted === "boolean" &&
+    typeof payload.routeExecuted === "boolean"
+  );
+}
+
+function isStage1BootstrapPreflightPayload(value: unknown): value is Stage1BootstrapPreflight {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<Stage1BootstrapPreflight>;
+  const validStatus =
+    payload.status === "ready" ||
+    payload.status === "review" ||
+    payload.status === "blocked" ||
+    payload.status === "missing" ||
+    payload.status === "invalid";
+  return (
+    payload.kind === "aiqt.stage1BootstrapPreflight" &&
+    payload.schemaVersion === 1 &&
+    validStatus &&
+    (payload.generatedAt === null || typeof payload.generatedAt === "string") &&
+    typeof payload.summary === "string" &&
+    (payload.reason === undefined || typeof payload.reason === "string") &&
+    typeof payload.ready === "boolean" &&
+    typeof payload.readyCount === "number" &&
+    typeof payload.reviewCount === "number" &&
+    typeof payload.blockedCount === "number" &&
+    typeof payload.totalCount === "number" &&
+    typeof payload.nextAction === "string" &&
+    typeof payload.recommendedCommand === "string" &&
+    Array.isArray(payload.blockerIds) &&
+    payload.blockerIds.every((id) => typeof id === "string") &&
+    Array.isArray(payload.reviewIds) &&
+    payload.reviewIds.every((id) => typeof id === "string") &&
+    typeof payload.paperOnly === "boolean" &&
+    typeof payload.liveTradingAllowed === "boolean" &&
+    typeof payload.liveBlockedBoundary === "boolean" &&
+    (payload.sourcePath === undefined || typeof payload.sourcePath === "string") &&
+    isStage1BootstrapPreflightSourcePathsPayload(payload.sourcePaths) &&
+    Array.isArray(payload.checks) &&
+    payload.checks.every(isStage1BootstrapPreflightCheckPayload)
+  );
+}
+
+function isStage1BootstrapPreflightSourcePathsPayload(value: unknown): value is Stage1BootstrapPreflightSourcePaths {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<Stage1BootstrapPreflightSourcePaths>;
+  return (
+    typeof payload.p0Acceptance === "string" &&
+    typeof payload.p1Acceptance === "string" &&
+    typeof payload.desktopRelease === "string" &&
+    typeof payload.stage1DailyUse === "string"
+  );
+}
+
+function isStage1BootstrapPreflightCheckPayload(value: unknown): value is Stage1BootstrapPreflightCheck {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const check = value as Partial<Stage1BootstrapPreflightCheck>;
+  const validStatus = check.status === "ready" || check.status === "review" || check.status === "blocked";
+  return (
+    typeof check.id === "string" &&
+    typeof check.label === "string" &&
+    validStatus &&
+    typeof check.summary === "string" &&
+    typeof check.recommendedCommand === "string" &&
+    typeof check.sourcePath === "string" &&
+    typeof check.paperOnly === "boolean" &&
+    typeof check.liveTradingAllowed === "boolean" &&
+    typeof check.liveBlockedBoundary === "boolean"
   );
 }
 

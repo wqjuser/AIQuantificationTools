@@ -374,6 +374,15 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("buildStage1P0DailyUseClosure({");
     expect(appSource).toContain("const stage1P0DailyUseClosure = useMemo(");
+    expect(appSource).toContain("loadStage1BootstrapPreflightLatest");
+    expect(appSource).toContain("const [stage1BootstrapPreflightLatestState, setStage1BootstrapPreflightLatestState]");
+    expect(appSource).toContain("const refreshStage1BootstrapPreflightLatest = useCallback");
+    expect(appSource).toContain("setStage1BootstrapPreflightLatestState(await loadStage1BootstrapPreflightLatest(quantCoreBaseUrl));");
+    expect(appSource).toContain("generateStage1BootstrapPreflight");
+    expect(appSource).toContain("const generatedPreflight = await generateStage1BootstrapPreflight(quantCoreBaseUrl);");
+    expect(appSource).toContain("setStage1BootstrapPreflightLatestState({");
+    expect(appSource).toContain("buildStage1BootstrapPreflightSummary(stage1BootstrapPreflightLatestState.preflight)");
+    expect(appSource).toContain("bootstrapPreflight: stage1BootstrapPreflightSummary");
     expect(appSource).toContain("loadStage1DailyUseLatest");
     expect(appSource).toContain("const [stage1DailyUseLatestState, setStage1DailyUseLatestState]");
     expect(appSource).toContain("const refreshStage1DailyUseLatest = useCallback");
@@ -405,7 +414,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("stage1P0DailyUseClosureRowLabel");
     expect(appSource).toContain("stage1P0DailyUseClosureActionLabel");
     expect(appSource).toContain("onSelectWorkspace(row.targetWorkspaceId)");
-    expect(appSource).toContain("isRefreshingDailyUse={isGeneratingStage1DailyUse || isLoadingDesktopRelease}");
+    expect(appSource).toContain("isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}");
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "干净环境开箱" : "Clean environment"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "行情刷新恢复" : "Refresh recovery"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "研究入口" : "Research entry"');

@@ -202,6 +202,11 @@ from quant_core.stage1_daily_use import (
     load_stage1_daily_use_status,
     write_stage1_daily_use_report,
 )
+from quant_core.stage1_bootstrap_preflight import (
+    DEFAULT_STAGE1_BOOTSTRAP_PREFLIGHT_REPORT_PATH,
+    load_stage1_bootstrap_preflight_status,
+    write_stage1_bootstrap_preflight,
+)
 from quant_core.p2_acceptance import (
     DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH,
     load_p2_pre_live_acceptance_status,
@@ -433,6 +438,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     p2_manifest_chain_preflight_report_path = DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH
     desktop_release_report_path = DEFAULT_DESKTOP_RELEASE_REPORT_PATH
     stage1_daily_use_report_path = DEFAULT_STAGE1_DAILY_USE_REPORT_PATH
+    stage1_bootstrap_preflight_report_path = DEFAULT_STAGE1_BOOTSTRAP_PREFLIGHT_REPORT_PATH
 
     def do_OPTIONS(self) -> None:
         self._send_json({})
@@ -483,6 +489,30 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {
                     "status": "daily_use_generated",
                     "dailyUse": daily_use,
+                    "paperOnly": True,
+                    "orderSubmissionEnabled": False,
+                    "liveTradingAllowed": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+                status=201,
+            )
+            return
+        if parsed.path == "/api/stage1/bootstrap-preflight":
+            try:
+                report_path = Path(self.stage1_bootstrap_preflight_report_path)
+                write_stage1_bootstrap_preflight(
+                    project_root=_stage1_daily_use_project_root(report_path),
+                    output_path=report_path,
+                )
+                preflight = load_stage1_bootstrap_preflight_status(report_path)
+            except (OSError, ValueError) as error:
+                self._send_json({"error": "invalid_stage1_bootstrap_preflight", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {
+                    "status": "preflight_generated",
+                    "preflight": preflight,
                     "paperOnly": True,
                     "orderSubmissionEnabled": False,
                     "liveTradingAllowed": False,
@@ -2904,6 +2934,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/stage1/daily-use/latest":
             self._send_json({"dailyUse": load_stage1_daily_use_status(Path(self.stage1_daily_use_report_path))})
+            return
+        if parsed.path == "/api/stage1/bootstrap-preflight/latest":
+            self._send_json(
+                {"preflight": load_stage1_bootstrap_preflight_status(Path(self.stage1_bootstrap_preflight_report_path))}
+            )
             return
         if parsed.path == "/api/p2/pre-live/acceptance/latest":
             self._send_json(

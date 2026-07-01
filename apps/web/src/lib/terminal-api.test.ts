@@ -286,9 +286,13 @@ import {
   runTerminalResearch,
   buildDesktopReleaseLatestUrl,
   loadDesktopReleaseLatest,
+  buildStage1BootstrapPreflightLatestUrl,
+  buildStage1BootstrapPreflightUrl,
   buildStage1DailyUseUrl,
   buildStage1DailyUseLatestUrl,
+  generateStage1BootstrapPreflight,
   generateStage1DailyUse,
+  loadStage1BootstrapPreflightLatest,
   loadStage1DailyUseLatest,
   loadP0AcceptanceLatest,
   loadP1AcceptanceLatest,
@@ -328,6 +332,104 @@ const sampleCcxtInstallGuidance = {
   packageName: "ccxt",
   packageInstallCommand: "pip install ccxt"
 } as const;
+
+function sampleStage1BootstrapPreflight(status: "ready" | "review" | "blocked" = "ready") {
+  const checkStatus = status === "ready" ? "ready" : status === "review" ? "review" : "blocked";
+  return {
+    kind: "aiqt.stage1BootstrapPreflight",
+    schemaVersion: 1,
+    generatedAt: "2026-07-02T10:00:00+00:00",
+    status,
+    summary: `Stage 1 bootstrap preflight ${status}.`,
+    ready: status === "ready",
+    readyCount: status === "ready" ? 6 : 1,
+    reviewCount: status === "review" ? 5 : 0,
+    blockedCount: status === "blocked" ? 5 : 0,
+    totalCount: 6,
+    nextAction: status === "ready" ? "open-daily-workbench" : "run-p0-acceptance",
+    recommendedCommand: status === "ready" ? "npm run dev" : "npm run docker:smoke:p0 -- --no-build --down",
+    blockerIds: status === "blocked" ? ["p0-acceptance"] : [],
+    reviewIds: status === "review" ? ["p0-acceptance"] : [],
+    paperOnly: true,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: true,
+    sourcePath: "data/stage1-bootstrap-preflight.json",
+    sourcePaths: {
+      p0Acceptance: "data/p0-acceptance.json",
+      p1Acceptance: "data/p1-acceptance.json",
+      desktopRelease: "data/desktop-release.json",
+      stage1DailyUse: "data/stage1-daily-use.json"
+    },
+    checks: [
+      {
+        id: "package-scripts",
+        label: "Package scripts",
+        status: "ready",
+        summary: "Required Stage 1 scripts are present.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "package.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "p0-acceptance",
+        label: "P0 acceptance",
+        status: checkStatus,
+        summary: "P0 acceptance is ready.",
+        recommendedCommand: status === "ready" ? "npm run stage1:preflight:validate" : "npm run docker:smoke:p0 -- --no-build --down",
+        sourcePath: "data/p0-acceptance.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "p1-acceptance",
+        label: "P1 acceptance",
+        status: checkStatus,
+        summary: "P1 acceptance is ready.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data/p1-acceptance.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "desktop-release",
+        label: "Desktop release",
+        status: checkStatus,
+        summary: "Desktop release is ready.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data/desktop-release.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "stage1-daily-use",
+        label: "Stage 1 daily use",
+        status: checkStatus,
+        summary: "Stage 1 daily use is ready.",
+        recommendedCommand: "npm run stage1:daily:validate",
+        sourcePath: "data/stage1-daily-use.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "live-blocked-boundary",
+        label: "Live-blocked boundary",
+        status: "ready",
+        summary: "Recorded evidence keeps live trading blocked.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      }
+    ]
+  } as const;
+}
 
 const sampleYfinanceProviderError = {
   eventId: "adapter-error-yf",
@@ -1354,6 +1456,110 @@ describe("terminal workspace API client", () => {
       "daily-start",
       "desktop-release"
     ]);
+    expect(result.orderSubmissionEnabled).toBe(false);
+    expect(result.liveTradingAllowed).toBe(false);
+    expect(result.liveOrderSubmitted).toBe(false);
+    expect(result.routeExecuted).toBe(false);
+  });
+
+  test("loads the latest Stage 1 bootstrap preflight readback without enabling live trading", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          preflight: sampleStage1BootstrapPreflight("ready")
+        })
+      };
+    };
+
+    const result = await loadStage1BootstrapPreflightLatest("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildStage1BootstrapPreflightLatestUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/stage1/bootstrap-preflight/latest"
+    );
+    expect(buildStage1BootstrapPreflightLatestUrl("/")).toBe("/api/stage1/bootstrap-preflight/latest");
+    expect(calls[0].url).toBe("http://127.0.0.1:8765/api/stage1/bootstrap-preflight/latest");
+    expect(result.source).toBe("core");
+    expect(result.preflight?.status).toBe("ready");
+    expect(result.preflight?.readyCount).toBe(6);
+    expect(result.preflight?.checks.map((check) => check.id)).toEqual([
+      "package-scripts",
+      "p0-acceptance",
+      "p1-acceptance",
+      "desktop-release",
+      "stage1-daily-use",
+      "live-blocked-boundary"
+    ]);
+    expect(result.preflight?.sourcePaths.stage1DailyUse).toBe("data/stage1-daily-use.json");
+    expect(result.preflight?.liveTradingAllowed).toBe(false);
+    expect(result.preflight?.liveBlockedBoundary).toBe(true);
+  });
+
+  test("falls back when latest Stage 1 bootstrap preflight readback is missing or malformed", async () => {
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ preflight: { status: "ready" } })
+    });
+
+    const result = await loadStage1BootstrapPreflightLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.preflight?.status).toBe("missing");
+    expect(result.preflight?.readyCount).toBe(0);
+    expect(result.preflight?.totalCount).toBe(6);
+    expect(result.preflight?.checks.map((check) => check.id)).toEqual([
+      "package-scripts",
+      "p0-acceptance",
+      "p1-acceptance",
+      "desktop-release",
+      "stage1-daily-use",
+      "live-blocked-boundary"
+    ]);
+    expect(result.preflight?.sourcePath).toBe("data/stage1-bootstrap-preflight.json");
+    expect(result.preflight?.sourcePaths.stage1DailyUse).toBe("data/stage1-daily-use.json");
+    expect(result.preflight?.liveTradingAllowed).toBe(false);
+    expect(result.error).toBe("Invalid Stage 1 bootstrap preflight contract");
+  });
+
+  test("generates the Stage 1 bootstrap preflight without enabling live trading", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({
+          status: "preflight_generated",
+          preflight: sampleStage1BootstrapPreflight("ready"),
+          paperOnly: true,
+          orderSubmissionEnabled: false,
+          liveTradingAllowed: false,
+          liveOrderSubmitted: false,
+          routeExecuted: false
+        })
+      };
+    };
+
+    const result = await generateStage1BootstrapPreflight("http://127.0.0.1:8765/", fetcher);
+
+    expect(buildStage1BootstrapPreflightUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/stage1/bootstrap-preflight"
+    );
+    expect(buildStage1BootstrapPreflightUrl("/")).toBe("/api/stage1/bootstrap-preflight");
+    expect(calls[0]).toEqual(
+      expect.objectContaining({
+        url: "http://127.0.0.1:8765/api/stage1/bootstrap-preflight",
+        init: expect.objectContaining({ method: "POST" })
+      })
+    );
+    expect(result.source).toBe("core");
+    expect(result.status).toBe("preflight_generated");
+    expect(result.preflight?.status).toBe("ready");
+    expect(result.preflight?.readyCount).toBe(6);
     expect(result.orderSubmissionEnabled).toBe(false);
     expect(result.liveTradingAllowed).toBe(false);
     expect(result.liveOrderSubmitted).toBe(false);

@@ -1662,6 +1662,163 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["liveOrderSubmitted"])
         self.assertFalse(payload["routeExecuted"])
 
+    def test_stage1_bootstrap_preflight_latest_api_returns_validated_preflight(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.stage1_bootstrap_preflight import write_stage1_bootstrap_preflight
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(
+                json.dumps(self._sample_p0_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "p1-acceptance.json").write_text(
+                json.dumps(self._sample_p1_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "desktop-release.json").write_text(
+                json.dumps(self._sample_desktop_release_manifest()),
+                encoding="utf-8",
+            )
+            (project_root / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {
+                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
+            preflight_path = data_dir / "stage1-bootstrap-preflight.json"
+            write_stage1_bootstrap_preflight(project_root=project_root, output_path=preflight_path)
+
+            class TestHandler(QuantApiHandler):
+                stage1_bootstrap_preflight_report_path = preflight_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("GET", "/api/stage1/bootstrap-preflight/latest")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(payload["preflight"]["kind"], "aiqt.stage1BootstrapPreflight")
+        self.assertEqual(payload["preflight"]["status"], "ready")
+        self.assertEqual(payload["preflight"]["readyCount"], 6)
+        self.assertEqual(payload["preflight"]["totalCount"], 6)
+        self.assertEqual(
+            [check["id"] for check in payload["preflight"]["checks"]],
+            [
+                "package-scripts",
+                "p0-acceptance",
+                "p1-acceptance",
+                "desktop-release",
+                "stage1-daily-use",
+                "live-blocked-boundary",
+            ],
+        )
+        self.assertFalse(payload["preflight"]["liveTradingAllowed"])
+        self.assertTrue(payload["preflight"]["liveBlockedBoundary"])
+
+    def test_stage1_bootstrap_preflight_generate_api_writes_preflight_without_live_trading(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            p0_path = data_dir / "p0-acceptance.json"
+            p1_path = data_dir / "p1-acceptance.json"
+            desktop_path = data_dir / "desktop-release.json"
+            daily_use_path = data_dir / "stage1-daily-use.json"
+            preflight_path = data_dir / "stage1-bootstrap-preflight.json"
+            p0_path.write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            (project_root / "package.json").write_text(
+                json.dumps(
+                    {
+                        "scripts": {
+                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            write_stage1_daily_use_report(project_root=project_root, output_path=daily_use_path)
+
+            class TestHandler(QuantApiHandler):
+                p0_acceptance_report_path = p0_path
+                p1_acceptance_report_path = p1_path
+                desktop_release_report_path = desktop_path
+                stage1_daily_use_report_path = daily_use_path
+                stage1_bootstrap_preflight_report_path = preflight_path
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request("POST", "/api/stage1/bootstrap-preflight")
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+            file_written = preflight_path.exists()
+            written_preflight = json.loads(preflight_path.read_text(encoding="utf-8")) if file_written else {}
+
+        self.assertEqual(response.status, 201)
+        self.assertTrue(file_written)
+        self.assertEqual(payload["status"], "preflight_generated")
+        self.assertEqual(payload["preflight"]["kind"], "aiqt.stage1BootstrapPreflight")
+        self.assertEqual(payload["preflight"]["status"], "ready")
+        self.assertEqual(payload["preflight"]["readyCount"], 6)
+        self.assertEqual(payload["preflight"]["totalCount"], 6)
+        self.assertEqual(written_preflight["status"], "ready")
+        self.assertEqual(written_preflight["nextAction"], "open-daily-workbench")
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["orderSubmissionEnabled"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertFalse(payload["liveOrderSubmitted"])
+        self.assertFalse(payload["routeExecuted"])
+
     def test_stage1_bootstrap_preflight_marks_ready_when_scripts_and_manifests_are_ready(self):
         import json
 

@@ -421,6 +421,8 @@ npm run stage1:preflight:validate
 
 这两条命令会检查 `package.json` 中的 Stage 1 日常入口、`data/p0-acceptance.json`、`data/p1-acceptance.json`、`data/desktop-release.json` 和 `data/stage1-daily-use.json`，并写入或验证 `data/stage1-bootstrap-preflight.json`。预检只读取现有脚本和 manifest，给出第一个阻断项、下一步动作和推荐命令；不会运行 Docker、不会生成缺失 P0/P1 证据、不会打包桌面端、不会写审计事件、不会连接券商或提交订单。
 
+本地核心还提供 `GET /api/stage1/bootstrap-preflight/latest` 和 `POST /api/stage1/bootstrap-preflight`。前者只回读 `data/stage1-bootstrap-preflight.json` 并在缺失/无效时返回安全 fallback；后者在产品内生成同一份 preflight manifest，然后立即用同一套 validator 回读。首页 Stage 1/P0 日常收口卡会读取该 preflight：ready 时把开箱预检摘要合并进卡片详情；blocked/review/missing/invalid 时把“干净环境开箱”行作为总闸门，指向 Settings 复核推荐命令。这个入口仍只读/写 preflight 文件，不运行 Docker、不补造 P0/P1/desktop/daily-use 上游证据、不打包桌面端、不写审计事件、不连接券商或提交订单。
+
 本地核心还提供接口 `GET /api/stage1/daily-use/latest` 和 `POST /api/stage1/daily-use`。前者用于前端首页读取 `data/stage1-daily-use.json` 的状态，只返回 passed/missing/invalid/readback 结构，并会在源 manifest 新于日报或缺失时返回 `status=review` 与 `staleSourcePaths`；后者用于在产品内手动生成同一份报告，只聚合已存在的 P0/P1 验收和桌面发布 manifest，并从 P1 watchlist refresh / queue pipeline 检查推导行情恢复和研究入口状态。两个接口都不运行 P0/P1/P2 smoke、不构建桌面包、不写审计事件、不连接券商、不提交订单，也不改变实盘边界。
 
 首页 Stage 1/P0 日常收口卡会优先使用有效报告里的五行状态；只有报告缺失或无效时，才回退到页面当前的行情、研究、每日启动和桌面发布即时状态。这样刷新自检后，CLI、API 和首页第一屏看到的是同一份日常入口语义；当 readback 返回 `staleSourcePaths` 时，首页 detail 会显示过期源 manifest 路径，并引导点击“刷新自检”重新生成日报。

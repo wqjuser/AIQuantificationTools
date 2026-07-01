@@ -132,6 +132,32 @@ def load_stage1_bootstrap_preflight_report(path: Path = DEFAULT_STAGE1_BOOTSTRAP
     return payload
 
 
+def load_stage1_bootstrap_preflight_status(
+    path: Path = DEFAULT_STAGE1_BOOTSTRAP_PREFLIGHT_REPORT_PATH,
+) -> dict[str, Any]:
+    source_path = Path(path)
+    try:
+        report = load_stage1_bootstrap_preflight_report(source_path)
+    except FileNotFoundError as error:
+        return _stage1_bootstrap_preflight_status(
+            status="missing",
+            source_path=source_path,
+            summary="Stage 1 bootstrap preflight report is missing.",
+            reason=str(error),
+        )
+    except ValueError as error:
+        return _stage1_bootstrap_preflight_status(
+            status="invalid",
+            source_path=source_path,
+            summary="Stage 1 bootstrap preflight report is invalid.",
+            reason=str(error),
+        )
+    return {
+        **report,
+        "sourcePath": _display_path_for_status(source_path),
+    }
+
+
 def validate_stage1_bootstrap_preflight(preflight: Any) -> str:
     if not isinstance(preflight, dict):
         raise ValueError("Stage 1 bootstrap preflight must be an object")
@@ -194,6 +220,54 @@ def validate_stage1_bootstrap_preflight(preflight: Any) -> str:
         raise ValueError("Stage 1 bootstrap preflight recommendedCommand is required")
 
     return f"stage1 bootstrap preflight status={status} ready={ready_count}/{len(checks)} next={preflight['nextAction']}"
+
+
+def _stage1_bootstrap_preflight_status(
+    *,
+    status: str,
+    source_path: Path,
+    summary: str,
+    reason: str,
+) -> dict[str, Any]:
+    checks = [
+        _check(
+            check_id=check_id,
+            label=_default_check_label(check_id),
+            status="blocked",
+            summary=summary,
+            recommended_command=NEXT_ACTIONS.get(check_id, ("review-bootstrap-preflight", "npm run stage1:preflight"))[1],
+            source_path=_default_check_source_path(check_id),
+        )
+        for check_id in STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_IDS
+    ]
+    return {
+        "kind": "aiqt.stage1BootstrapPreflight",
+        "schemaVersion": 1,
+        "generatedAt": None,
+        "status": status,
+        "summary": summary,
+        "reason": reason,
+        "ready": False,
+        "readyCount": 0,
+        "reviewCount": 0,
+        "blockedCount": len(checks),
+        "totalCount": len(checks),
+        "nextAction": "run-stage1-bootstrap-preflight",
+        "recommendedCommand": "npm run stage1:preflight",
+        "blockerIds": STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_IDS.copy(),
+        "reviewIds": [],
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "liveBlockedBoundary": True,
+        "sourcePath": _display_path_for_status(source_path),
+        "sourcePaths": {
+            "p0Acceptance": str(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
+            "p1Acceptance": str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+            "desktopRelease": str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
+            "stage1DailyUse": str(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
+        },
+        "checks": checks,
+    }
 
 
 def _package_scripts_check(project_root: Path) -> dict[str, Any]:
@@ -343,3 +417,34 @@ def _summary_for_status(status: str, ready_count: int, total_count: int) -> str:
 
 def _resolve_under_root(project_root: Path, path: Path) -> Path:
     return path if path.is_absolute() else project_root / path
+
+
+def _display_path_for_status(path: Path) -> str:
+    if not path.is_absolute():
+        return str(path)
+    resolved = path.resolve()
+    if resolved.parent.name == "data":
+        return str(Path("data") / resolved.name)
+    return str(path)
+
+
+def _default_check_label(check_id: str) -> str:
+    return {
+        "package-scripts": "Package scripts",
+        "p0-acceptance": "P0 acceptance",
+        "p1-acceptance": "P1 acceptance",
+        "desktop-release": "Desktop release",
+        "stage1-daily-use": "Stage 1 daily use",
+        "live-blocked-boundary": "Live-blocked boundary",
+    }.get(check_id, check_id)
+
+
+def _default_check_source_path(check_id: str) -> str:
+    return {
+        "package-scripts": "package.json",
+        "p0-acceptance": str(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
+        "p1-acceptance": str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+        "desktop-release": str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
+        "stage1-daily-use": str(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
+        "live-blocked-boundary": "data",
+    }.get(check_id, "data")

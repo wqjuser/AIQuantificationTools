@@ -11,6 +11,7 @@ import type {
   P0CompletionChecklist,
   P0PlatformReadinessSummary,
   P1AcceptanceSummary,
+  Stage1BootstrapPreflightSummarySource,
   P2ManifestChainPreflightSummary,
   P2PaperReplaySummary,
   P2PreLiveAcceptanceSummary,
@@ -151,6 +152,7 @@ import {
   buildMarketDataProviderHealthTrendSummary,
   buildModuleNewsEvents,
   buildDesktopReleaseSummary,
+  buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
@@ -312,6 +314,107 @@ import {
   workspaceWithSelectedInstrument,
   workspaceFromResearchRunAudit
 } from "./terminal-workbench";
+
+function sampleStage1BootstrapPreflight(
+  status: "ready" | "review" | "blocked" | "missing" | "invalid" = "ready"
+): Stage1BootstrapPreflightSummarySource {
+  const checkStatus = status === "ready" ? "ready" : status === "review" ? "review" : "blocked";
+  return {
+    kind: "aiqt.stage1BootstrapPreflight",
+    schemaVersion: 1,
+    generatedAt: status === "missing" ? null : "2026-07-02T10:00:00+00:00",
+    status,
+    summary: `Stage 1 bootstrap preflight ${status}.`,
+    reason: status === "missing" ? "Stage 1 bootstrap preflight report is missing." : undefined,
+    ready: status === "ready",
+    readyCount: status === "ready" ? 6 : 1,
+    reviewCount: status === "review" ? 5 : 0,
+    blockedCount: status === "blocked" || status === "invalid" || status === "missing" ? 5 : 0,
+    totalCount: 6,
+    nextAction: status === "ready" ? "open-daily-workbench" : "run-p0-acceptance",
+    recommendedCommand: status === "ready" ? "npm run dev" : "npm run docker:smoke:p0 -- --no-build --down",
+    blockerIds: status === "blocked" || status === "invalid" || status === "missing" ? ["p0-acceptance"] : [],
+    reviewIds: status === "review" ? ["p0-acceptance"] : [],
+    paperOnly: true,
+    liveTradingAllowed: false,
+    liveBlockedBoundary: true,
+    sourcePath: "data/stage1-bootstrap-preflight.json",
+    sourcePaths: {
+      p0Acceptance: "data/p0-acceptance.json",
+      p1Acceptance: "data/p1-acceptance.json",
+      desktopRelease: "data/desktop-release.json",
+      stage1DailyUse: "data/stage1-daily-use.json"
+    },
+    checks: [
+      {
+        id: "package-scripts",
+        label: "Package scripts",
+        status: "ready",
+        summary: "Required Stage 1 scripts are present.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "package.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "p0-acceptance",
+        label: "P0 acceptance",
+        status: checkStatus,
+        summary: "P0 acceptance manifest status.",
+        recommendedCommand: status === "ready" ? "npm run stage1:preflight:validate" : "npm run docker:smoke:p0 -- --no-build --down",
+        sourcePath: "data/p0-acceptance.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "p1-acceptance",
+        label: "P1 acceptance",
+        status: checkStatus,
+        summary: "P1 acceptance manifest status.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data/p1-acceptance.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "desktop-release",
+        label: "Desktop release",
+        status: checkStatus,
+        summary: "Desktop release manifest status.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data/desktop-release.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "stage1-daily-use",
+        label: "Stage 1 daily use",
+        status: checkStatus,
+        summary: "Daily-use report status.",
+        recommendedCommand: "npm run stage1:daily:validate",
+        sourcePath: "data/stage1-daily-use.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "live-blocked-boundary",
+        label: "Live-blocked boundary",
+        status: "ready",
+        summary: "Live trading remains blocked.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      }
+    ]
+  };
+}
 
 function quantLoopStatuses(workspace: TerminalWorkspace): Record<string, string> {
   return Object.fromEntries(workspace.quantLoop.map((step) => [step.id, step.status]));
@@ -2868,6 +2971,176 @@ describe("terminal workbench model", () => {
       label: "Desktop release",
       status: "review",
       targetWorkspaceId: "settings"
+    });
+  });
+
+  test("builds Stage 1 bootstrap preflight summaries for homepage readback", () => {
+    const ready = buildStage1BootstrapPreflightSummary(sampleStage1BootstrapPreflight("ready"));
+    const blocked = buildStage1BootstrapPreflightSummary(sampleStage1BootstrapPreflight("blocked"));
+
+    expect(ready).toMatchObject({
+      actionLabel: "Open daily workbench",
+      currentCheckId: null,
+      headline: "Stage 1 bootstrap preflight ready (6/6)",
+      readyCount: 6,
+      state: "ready",
+      tone: "positive"
+    });
+    expect(ready?.detail).toContain("npm run dev");
+    expect(ready?.sourcePath).toBe("data/stage1-bootstrap-preflight.json");
+    expect(ready?.liveTradingAllowed).toBe(false);
+    expect(ready?.liveBlockedBoundary).toBe(true);
+
+    expect(blocked).toMatchObject({
+      actionLabel: "Run P0 acceptance",
+      currentCheckId: "p0-acceptance",
+      headline: "Stage 1 bootstrap preflight blocked (1/6)",
+      recommendedCommand: "npm run docker:smoke:p0 -- --no-build --down",
+      state: "blocked",
+      tone: "risk"
+    });
+    expect(blocked?.detail).toContain("P0 acceptance");
+  });
+
+  test("surfaces blocked bootstrap preflight as the Stage 1 clean-open gate", () => {
+    const bootstrapPreflight = buildStage1BootstrapPreflightSummary(sampleStage1BootstrapPreflight("blocked"));
+    const dailyUseReport = buildStage1DailyUseSummary({
+      kind: "aiqt.stage1DailyUseReport",
+      schemaVersion: 1,
+      generatedAt: "2026-06-30T10:00:00+00:00",
+      status: "ready",
+      summary: "Stage 1 daily use is ready (5/5 checks ready).",
+      readyCount: 5,
+      totalCount: 5,
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      sourcePath: "data/stage1-daily-use.json",
+      sourcePaths: {
+        p0Acceptance: "data/p0-acceptance.json",
+        p1Acceptance: "data/p1-acceptance.json",
+        desktopRelease: "data/desktop-release.json"
+      },
+      rows: [
+        {
+          id: "clean-open",
+          label: "Clean environment startup",
+          status: "ready",
+          value: "report clean ready",
+          summary: "Report says clean-open is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "market-refresh-recovery",
+          label: "Market refresh recovery",
+          status: "ready",
+          value: "report refresh ready",
+          summary: "Report says refresh recovery is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "research-entry",
+          label: "Research entry",
+          status: "ready",
+          value: "report research ready",
+          summary: "Report says research entry is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "daily-start",
+          label: "Daily start path",
+          status: "ready",
+          value: "report daily ready",
+          summary: "Report says daily start is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "desktop-release",
+          label: "Desktop release",
+          status: "ready",
+          value: "report desktop ready",
+          summary: "Report says desktop release is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        }
+      ]
+    });
+    if (!dailyUseReport || !bootstrapPreflight) {
+      throw new Error("Expected Stage 1 summaries");
+    }
+
+    const closure = buildStage1P0DailyUseClosure({
+      bootstrapPreflight,
+      dailyStartBrief: {
+        auditActionLabel: "Open audit context",
+        auditQuery: "review-chain-health review-chain-gap",
+        checkpoints: [],
+        currentReviewCount: 0,
+        detail: "Daily start is ready.",
+        headline: "Daily start ready",
+        liveBoundaryLabel: "paper-only",
+        localReviewActionLabel: "Open Daily Ops",
+        localReviewDetail: "Daily ops review is current.",
+        localReviewQuery: "",
+        localReviewStatus: "current",
+        localReviewWorkspaceId: "research",
+        missingReviewCount: 0,
+        openOpsItemCount: 0,
+        primaryActionLabel: "Open Daily Ops",
+        primaryActionWorkspaceId: "research",
+        staleReviewCount: 0,
+        state: "ready",
+        tone: "positive"
+      },
+      dailyUseReport,
+      desktopBuildReady: true,
+      marketRefreshGuard: {
+        affectedContexts: [],
+        affectedSymbols: [],
+        blocked: false,
+        detail: "Market refresh is ready.",
+        overrideApplied: false,
+        overrideReason: null,
+        reason: "ok",
+        recentErrorCount: 0,
+        retryAfterSeconds: 0,
+        status: "ok"
+      },
+      p0Acceptance: buildP0AcceptanceSummary(null),
+      p1Acceptance: buildP1AcceptanceSummary(null),
+      researchReadinessRows: []
+    });
+
+    expect(closure).toMatchObject({
+      headline: "Stage 1 bootstrap preflight is blocked",
+      primaryActionId: "review-bootstrap-preflight",
+      primaryActionLabel: "Run P0 acceptance",
+      primaryTargetWorkspaceId: "settings",
+      readyCount: 4,
+      state: "blocked",
+      totalCount: 5
+    });
+    expect(closure.detail).toContain("Stage 1 bootstrap preflight blocked");
+    expect(closure.rows[0]).toMatchObject({
+      actionId: "review-bootstrap-preflight",
+      id: "clean-open",
+      status: "blocked",
+      targetWorkspaceId: "settings",
+      value: "run-p0-acceptance"
     });
   });
 

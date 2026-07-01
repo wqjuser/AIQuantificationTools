@@ -60,6 +60,8 @@ import {
   loadResearchNote,
   loadHandoffNotes,
   loadDesktopReleaseLatest,
+  generateStage1BootstrapPreflight,
+  loadStage1BootstrapPreflightLatest,
   generateStage1DailyUse,
   loadStage1DailyUseLatest,
   loadP0AcceptanceLatest,
@@ -147,6 +149,7 @@ import {
   PaperExecutionRecord,
   P0PaperSimulationResponse,
   DesktopReleaseLatestResult,
+  Stage1BootstrapPreflightLatestResult,
   Stage1DailyUseLatestResult,
   P0AcceptanceLatestResult,
   P1AcceptanceLatestResult,
@@ -359,6 +362,7 @@ import {
   buildLocalReviewCoverageNextActionUrlSearch,
   buildP0AcceptanceReviewMarkdown,
   buildDesktopReleaseSummary,
+  buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
@@ -556,6 +560,7 @@ import {
   P0CompletionCriterion,
   P0AcceptanceSummary,
   P1AcceptanceSummary,
+  Stage1BootstrapPreflightSummary,
   Stage1DailyUseSummary,
   P2PaperReplaySummary,
   P2PreLiveAcceptanceSummary,
@@ -779,6 +784,9 @@ const initialGoldenPathStatusState: GoldenPathStatusResult = {
   source: "fallback"
 };
 const initialDesktopReleaseLatestState: DesktopReleaseLatestResult = {
+  source: "fallback"
+};
+const initialStage1BootstrapPreflightLatestState: Stage1BootstrapPreflightLatestResult = {
   source: "fallback"
 };
 const initialStage1DailyUseLatestState: Stage1DailyUseLatestResult = {
@@ -1995,6 +2003,8 @@ export function App() {
   const [desktopReleaseLatestState, setDesktopReleaseLatestState] = useState<DesktopReleaseLatestResult>(
     initialDesktopReleaseLatestState
   );
+  const [stage1BootstrapPreflightLatestState, setStage1BootstrapPreflightLatestState] =
+    useState<Stage1BootstrapPreflightLatestResult>(initialStage1BootstrapPreflightLatestState);
   const [stage1DailyUseLatestState, setStage1DailyUseLatestState] = useState<Stage1DailyUseLatestResult>(
     initialStage1DailyUseLatestState
   );
@@ -2082,6 +2092,7 @@ export function App() {
   const [isSimulatingPortfolioPaperOrderBatch, setIsSimulatingPortfolioPaperOrderBatch] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isLoadingDesktopRelease, setIsLoadingDesktopRelease] = useState(false);
+  const [isGeneratingStage1BootstrapPreflight, setIsGeneratingStage1BootstrapPreflight] = useState(false);
   const [isGeneratingStage1DailyUse, setIsGeneratingStage1DailyUse] = useState(false);
   const [isLoadingP0Acceptance, setIsLoadingP0Acceptance] = useState(false);
   const [isLoadingP1Acceptance, setIsLoadingP1Acceptance] = useState(false);
@@ -2687,6 +2698,10 @@ export function App() {
     () => buildDesktopReleaseSummary(desktopReleaseLatestState.release),
     [desktopReleaseLatestState.release]
   );
+  const stage1BootstrapPreflightSummary = useMemo<Stage1BootstrapPreflightSummary | null>(
+    () => buildStage1BootstrapPreflightSummary(stage1BootstrapPreflightLatestState.preflight),
+    [stage1BootstrapPreflightLatestState.preflight]
+  );
   const stage1DailyUseSummary = useMemo<Stage1DailyUseSummary | null>(
     () => buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse),
     [stage1DailyUseLatestState.dailyUse]
@@ -3031,6 +3046,7 @@ export function App() {
   const stage1P0DailyUseClosure = useMemo(
     () =>
       buildStage1P0DailyUseClosure({
+        bootstrapPreflight: stage1BootstrapPreflightSummary,
         dailyStartBrief,
         dailyUseReport: stage1DailyUseSummary,
         desktopRelease: desktopReleaseSummary,
@@ -3041,6 +3057,7 @@ export function App() {
       }),
     [
       dailyStartBrief,
+      stage1BootstrapPreflightSummary,
       stage1DailyUseSummary,
       desktopReleaseSummary,
       marketDataRefreshGuard,
@@ -3250,8 +3267,13 @@ export function App() {
     setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));
   }, []);
 
+  const refreshStage1BootstrapPreflightLatest = useCallback(async () => {
+    setStage1BootstrapPreflightLatestState(await loadStage1BootstrapPreflightLatest(quantCoreBaseUrl));
+  }, []);
+
   const refreshStage1DailyUseReport = useCallback(async () => {
     setIsGeneratingStage1DailyUse(true);
+    setIsGeneratingStage1BootstrapPreflight(true);
     try {
       const generated = await generateStage1DailyUse(quantCoreBaseUrl);
       setStage1DailyUseLatestState({
@@ -3259,8 +3281,15 @@ export function App() {
         source: generated.source,
         error: generated.error
       });
+      const generatedPreflight = await generateStage1BootstrapPreflight(quantCoreBaseUrl);
+      setStage1BootstrapPreflightLatestState({
+        preflight: generatedPreflight.preflight,
+        source: generatedPreflight.source,
+        error: generatedPreflight.error
+      });
       setDesktopReleaseLatestState(await loadDesktopReleaseLatest(quantCoreBaseUrl));
     } finally {
+      setIsGeneratingStage1BootstrapPreflight(false);
       setIsGeneratingStage1DailyUse(false);
     }
   }, []);
@@ -3379,6 +3408,10 @@ export function App() {
   useEffect(() => {
     void refreshStage1DailyUseLatest();
   }, [refreshStage1DailyUseLatest]);
+
+  useEffect(() => {
+    void refreshStage1BootstrapPreflightLatest();
+  }, [refreshStage1BootstrapPreflightLatest]);
 
   useEffect(() => {
     void refreshP1AcceptanceLatest();
@@ -11554,7 +11587,7 @@ export function App() {
               <Stage1P0DailyUseClosurePanel
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
-                isRefreshingDailyUse={isGeneratingStage1DailyUse || isLoadingDesktopRelease}
+                isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 onSelectWorkspace={selectProductWorkArea}
               />
@@ -12999,7 +13032,13 @@ function stage1P0DailyUseClosureRowValue(
     return row.value;
   }
   if (row.id === "clean-open") {
-    return row.status === "ready" ? "P0/P1 验收就绪" : row.actionId === "refresh-p0-acceptance" ? "P0 验收缺失" : "P1 待复核";
+    return row.status === "ready"
+      ? "P0/P1 验收就绪"
+      : row.actionId === "review-bootstrap-preflight"
+        ? "开箱预检阻断"
+        : row.actionId === "refresh-p0-acceptance"
+          ? "P0 验收缺失"
+          : "P1 待复核";
   }
   if (row.id === "market-refresh-recovery") {
     return row.status === "blocked" ? "Provider 冷却中" : row.status === "review" ? "恢复状态待复核" : "可刷新";
@@ -13021,6 +13060,9 @@ function stage1P0DailyUseClosureRowDetail(
     return row.detail;
   }
   if (row.id === "clean-open") {
+    if (row.actionId === "review-bootstrap-preflight") {
+      return "先复核 Stage 1 开箱预检，再进入日常使用路径。";
+    }
     return "用 P0/P1 验收确认干净环境可开箱。";
   }
   if (row.id === "market-refresh-recovery") {
@@ -13058,6 +13100,9 @@ function stage1P0DailyUseClosureActionLabel(
   }
   if (actionId === "review-p1-acceptance") {
     return "复核 P1 验收";
+  }
+  if (actionId === "review-bootstrap-preflight") {
+    return "复核开箱预检";
   }
   if (actionId === "review-provider-cooldown") {
     return "复核冷却";
