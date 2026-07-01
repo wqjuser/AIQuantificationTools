@@ -18,6 +18,8 @@
     "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
     "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
     "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+    "stage1:preflight": "node tools/run_python.mjs tools/stage1_bootstrap_preflight.py --output data/stage1-bootstrap-preflight.json",
+    "stage1:preflight:validate": "node tools/run_python.mjs tools/stage1_bootstrap_preflight.py --validate data/stage1-bootstrap-preflight.json",
     "api": "node tools/run_python.mjs tools/run_quant_api.py",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",

@@ -1662,6 +1662,104 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["liveOrderSubmitted"])
         self.assertFalse(payload["routeExecuted"])
 
+    def test_stage1_bootstrap_preflight_marks_ready_when_scripts_and_manifests_are_ready(self):
+        import json
+
+        from quant_core.stage1_bootstrap_preflight import (
+            build_stage1_bootstrap_preflight,
+            validate_stage1_bootstrap_preflight,
+        )
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(
+                json.dumps(self._sample_p0_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "p1-acceptance.json").write_text(
+                json.dumps(self._sample_p1_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "desktop-release.json").write_text(
+                json.dumps(self._sample_desktop_release_manifest()),
+                encoding="utf-8",
+            )
+            package_json = {
+                "scripts": {
+                    "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+                    "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+                    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+                    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+                    "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+                    "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                }
+            }
+            (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
+            write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
+
+            preflight = build_stage1_bootstrap_preflight(
+                project_root=project_root,
+                generated_at="2026-07-02T10:00:00+00:00",
+            )
+
+        self.assertEqual(preflight["kind"], "aiqt.stage1BootstrapPreflight")
+        self.assertEqual(preflight["schemaVersion"], 1)
+        self.assertEqual(preflight["generatedAt"], "2026-07-02T10:00:00+00:00")
+        self.assertEqual(preflight["status"], "ready")
+        self.assertEqual(preflight["nextAction"], "open-daily-workbench")
+        self.assertEqual(preflight["recommendedCommand"], "npm run dev")
+        self.assertEqual(preflight["readyCount"], preflight["totalCount"])
+        self.assertEqual(
+            [check["id"] for check in preflight["checks"]],
+            [
+                "package-scripts",
+                "p0-acceptance",
+                "p1-acceptance",
+                "desktop-release",
+                "stage1-daily-use",
+                "live-blocked-boundary",
+            ],
+        )
+        self.assertFalse(preflight["liveTradingAllowed"])
+        self.assertTrue(preflight["liveBlockedBoundary"])
+        self.assertIn("stage1 bootstrap preflight status=ready", validate_stage1_bootstrap_preflight(preflight))
+
+    def test_stage1_bootstrap_preflight_blocks_missing_p0_first(self):
+        import json
+
+        from quant_core.stage1_bootstrap_preflight import build_stage1_bootstrap_preflight
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            package_json = {
+                "scripts": {
+                    "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+                    "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+                    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+                    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+                    "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+                    "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                }
+            }
+            (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
+
+            preflight = build_stage1_bootstrap_preflight(
+                project_root=project_root,
+                generated_at="2026-07-02T10:05:00+00:00",
+            )
+
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertEqual(preflight["blockerIds"][0], "p0-acceptance")
+        self.assertEqual(preflight["nextAction"], "run-p0-acceptance")
+        self.assertEqual(preflight["recommendedCommand"], "npm run docker:smoke:p0 -- --no-build --down")
+        self.assertEqual(preflight["readyCount"], 2)
+        self.assertEqual(preflight["totalCount"], 6)
+        self.assertFalse(preflight["liveTradingAllowed"])
+        self.assertTrue(preflight["liveBlockedBoundary"])
+
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json
 
@@ -3230,6 +3328,14 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             scripts["stage1:daily:validate"],
             f"{python_launcher} tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+        )
+        self.assertEqual(
+            scripts["stage1:preflight"],
+            f"{python_launcher} tools/stage1_bootstrap_preflight.py --output data/stage1-bootstrap-preflight.json",
+        )
+        self.assertEqual(
+            scripts["stage1:preflight:validate"],
+            f"{python_launcher} tools/stage1_bootstrap_preflight.py --validate data/stage1-bootstrap-preflight.json",
         )
 
     def test_docker_smoke_p2_chain_preflight_reports_missing_next_action(self):
