@@ -421,6 +421,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "每日启动" : "Daily start"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "桌面发布" : "Desktop release"');
     expect(appSource).toContain("closure.staleSourceSummary");
+    expect(appSource).toContain("closure.bootstrapPreflightStaleSourceSummary");
+    expect(appSource).toContain("开箱预检源已更新");
+    expect(appSource).toContain("开箱预检待刷新");
+    expect(appSource).toContain("开箱预检源已更新；刷新自检会重新生成 preflight。");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");

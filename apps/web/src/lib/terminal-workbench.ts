@@ -7183,6 +7183,8 @@ export interface Stage1P0DailyUseClosure {
   primaryActionId: Stage1P0DailyUseClosureActionId;
   primaryActionLabel: string;
   primaryTargetWorkspaceId: ProductWorkAreaId;
+  bootstrapPreflightStaleSourcePaths: string[];
+  bootstrapPreflightStaleSourceSummary: string | null;
   staleSourcePaths: string[];
   staleSourceSummary: string | null;
   rows: Stage1P0DailyUseClosureRow[];
@@ -7272,6 +7274,8 @@ export function buildStage1P0DailyUseClosure({
       ? "review"
       : "ready";
   const staleSourceSummary = dailyUseReport?.staleSourceSummary ?? null;
+  const bootstrapPreflightStaleSourcePaths = bootstrapPreflight?.staleSourcePaths ?? [];
+  const bootstrapPreflightStaleSourceSummary = bootstrapPreflight?.staleSourceSummary ?? null;
   const bootstrapPreflightSummary = bootstrapPreflight ? bootstrapPreflight.headline : null;
   return {
     state,
@@ -7280,13 +7284,18 @@ export function buildStage1P0DailyUseClosure({
     detail: dailyUseReport
       ? [
           bootstrapPreflightSummary,
+          bootstrapPreflightStaleSourceSummary,
           dailyUseReport.headline,
           staleSourceSummary,
           rows.map((row) => `${row.label}: ${row.value}`).join(" · ")
         ]
           .filter(Boolean)
           .join(" · ")
-      : [bootstrapPreflightSummary, rows.map((row) => `${row.label}: ${row.value}`).join(" · ")]
+      : [
+          bootstrapPreflightSummary,
+          bootstrapPreflightStaleSourceSummary,
+          rows.map((row) => `${row.label}: ${row.value}`).join(" · ")
+        ]
           .filter(Boolean)
           .join(" · "),
     readyCount,
@@ -7294,6 +7303,8 @@ export function buildStage1P0DailyUseClosure({
     primaryActionId: primaryRow.actionId,
     primaryActionLabel: primaryRow.actionLabel,
     primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
+    bootstrapPreflightStaleSourcePaths,
+    bootstrapPreflightStaleSourceSummary,
     staleSourcePaths: dailyUseReport?.staleSourcePaths ?? [],
     staleSourceSummary,
     rows

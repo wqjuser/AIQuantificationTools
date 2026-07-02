@@ -3187,6 +3187,178 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("propagates stale bootstrap preflight sources through the Stage 1 daily-use closure", () => {
+    const bootstrapPreflight = buildStage1BootstrapPreflightSummary({
+      ...sampleStage1BootstrapPreflight("review"),
+      summary:
+        "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
+      reason:
+        "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
+      readyCount: 5,
+      reviewCount: 1,
+      blockedCount: 0,
+      nextAction: "refresh-stage1-bootstrap-preflight",
+      recommendedCommand: "npm run stage1:preflight",
+      staleSourcePaths: ["data/stage1-daily-use.json"],
+      reviewIds: ["stage1-daily-use"],
+      checks: sampleStage1BootstrapPreflight("review").checks.map((check) =>
+        check.id === "stage1-daily-use"
+          ? {
+              ...check,
+              status: "review",
+              summary: "Daily-use source changed after this bootstrap preflight was generated.",
+              recommendedCommand: "npm run stage1:preflight"
+            }
+          : check.id === "p0-acceptance" || check.id === "p1-acceptance" || check.id === "desktop-release"
+            ? { ...check, status: "ready" }
+            : check
+      )
+    });
+    const dailyUseReport = buildStage1DailyUseSummary({
+      kind: "aiqt.stage1DailyUseReport",
+      schemaVersion: 1,
+      generatedAt: "2026-06-30T10:00:00+00:00",
+      status: "ready",
+      summary: "Stage 1 daily use is ready (5/5 checks ready).",
+      readyCount: 5,
+      totalCount: 5,
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      sourcePath: "data/stage1-daily-use.json",
+      sourcePaths: {
+        p0Acceptance: "data/p0-acceptance.json",
+        p1Acceptance: "data/p1-acceptance.json",
+        desktopRelease: "data/desktop-release.json"
+      },
+      rows: [
+        {
+          id: "clean-open",
+          label: "Clean environment startup",
+          status: "ready",
+          value: "report clean ready",
+          summary: "Report says clean-open is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "market-refresh-recovery",
+          label: "Market refresh recovery",
+          status: "ready",
+          value: "report refresh ready",
+          summary: "Report says refresh recovery is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "research-entry",
+          label: "Research entry",
+          status: "ready",
+          value: "report research ready",
+          summary: "Report says research entry is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "daily-start",
+          label: "Daily start path",
+          status: "ready",
+          value: "report daily ready",
+          summary: "Report says daily start is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "desktop-release",
+          label: "Desktop release",
+          status: "ready",
+          value: "report desktop ready",
+          summary: "Report says desktop release is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        }
+      ]
+    });
+    if (!dailyUseReport || !bootstrapPreflight) {
+      throw new Error("Expected Stage 1 summaries");
+    }
+
+    const closure = buildStage1P0DailyUseClosure({
+      bootstrapPreflight,
+      dailyStartBrief: {
+        auditActionLabel: "Open audit context",
+        auditQuery: "review-chain-health review-chain-gap",
+        checkpoints: [],
+        currentReviewCount: 0,
+        detail: "Daily start is ready.",
+        headline: "Daily start ready",
+        liveBoundaryLabel: "paper-only",
+        localReviewActionLabel: "Open Daily Ops",
+        localReviewDetail: "Daily ops review is current.",
+        localReviewQuery: "",
+        localReviewStatus: "current",
+        localReviewWorkspaceId: "research",
+        missingReviewCount: 0,
+        openOpsItemCount: 0,
+        primaryActionLabel: "Open Daily Ops",
+        primaryActionWorkspaceId: "research",
+        staleReviewCount: 0,
+        state: "ready",
+        tone: "positive"
+      },
+      dailyUseReport,
+      desktopBuildReady: true,
+      marketRefreshGuard: {
+        affectedContexts: [],
+        affectedSymbols: [],
+        blocked: false,
+        detail: "Market refresh is ready.",
+        overrideApplied: false,
+        overrideReason: null,
+        reason: "ok",
+        recentErrorCount: 0,
+        retryAfterSeconds: 0,
+        status: "ok"
+      },
+      p0Acceptance: buildP0AcceptanceSummary(null),
+      p1Acceptance: buildP1AcceptanceSummary(null),
+      researchReadinessRows: []
+    });
+    expect(closure).toMatchObject({
+      headline: "Stage 1 bootstrap preflight needs review",
+      primaryActionId: "review-bootstrap-preflight",
+      primaryActionLabel: "Refresh bootstrap preflight",
+      primaryTargetWorkspaceId: "settings",
+      readyCount: 4,
+      state: "review",
+      totalCount: 5
+    });
+    expect(closure.bootstrapPreflightStaleSourcePaths).toEqual(["data/stage1-daily-use.json"]);
+    expect(closure.bootstrapPreflightStaleSourceSummary).toBe(
+      "Stale source files: data/stage1-daily-use.json. Run npm run stage1:preflight to refresh."
+    );
+    expect(closure.detail).toContain("Stage 1 bootstrap preflight needs refresh (5/6)");
+    expect(closure.detail).toContain("Run npm run stage1:preflight to refresh.");
+    expect(closure.rows[0]).toMatchObject({
+      actionId: "review-bootstrap-preflight",
+      actionLabel: "Refresh bootstrap preflight",
+      id: "clean-open",
+      status: "review",
+      targetWorkspaceId: "settings",
+      value: "refresh-stage1-bootstrap-preflight"
+    });
+  });
+
   test("uses all valid Stage 1 daily-use report rows before live UI fallback rows", () => {
     const dailyUseReport = buildStage1DailyUseSummary({
       kind: "aiqt.stage1DailyUseReport",

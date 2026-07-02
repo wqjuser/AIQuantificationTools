@@ -12996,6 +12996,9 @@ function stage1P0DailyUseClosureDetail(i18n: AppI18n, closure: Stage1P0DailyUseC
   if (i18n.locale === "en-US") {
     return closure.detail;
   }
+  if (closure.bootstrapPreflightStaleSourceSummary) {
+    return `开箱预检源已更新 · ${closure.bootstrapPreflightStaleSourcePaths.join(", ")} · 请刷新自检`;
+  }
   if (closure.staleSourceSummary) {
     return `日报源已更新 · ${closure.staleSourcePaths.join(", ")} · 请刷新自检`;
   }
@@ -13035,7 +13038,9 @@ function stage1P0DailyUseClosureRowValue(
     return row.status === "ready"
       ? "P0/P1 验收就绪"
       : row.actionId === "review-bootstrap-preflight"
-        ? "开箱预检阻断"
+        ? row.status === "review"
+          ? "开箱预检待刷新"
+          : "开箱预检阻断"
         : row.actionId === "refresh-p0-acceptance"
           ? "P0 验收缺失"
           : "P1 待复核";
@@ -13061,6 +13066,9 @@ function stage1P0DailyUseClosureRowDetail(
   }
   if (row.id === "clean-open") {
     if (row.actionId === "review-bootstrap-preflight") {
+      if (row.status === "review") {
+        return "开箱预检源已更新；刷新自检会重新生成 preflight。";
+      }
       return "先复核 Stage 1 开箱预检，再进入日常使用路径。";
     }
     return "用 P0/P1 验收确认干净环境可开箱。";
