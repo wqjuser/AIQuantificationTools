@@ -467,6 +467,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onOpenPrimaryAction={openStage1P0DailyUsePrimaryAction}");
     expect(appSource).toContain("onOpenRefreshOutcomeEntry={openStage1P0DailyUseRefreshOutcomeEntry}");
     expect(appSource).toContain("onOpenRefreshOutcomeNextStep={openStage1P0DailyUseRefreshOutcomeNextStep}");
+    expect(appSource).toContain("shareDeepLinkState={initialStage1P0DailyUseShareDeepLinkState}");
     expect(appSource).toContain("buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse)");
     expect(appSource).toContain("dailyUseReport: stage1DailyUseSummary");
     expect(appSource).toContain("loadDesktopReleaseLatest");
@@ -476,6 +477,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildDesktopReleaseSummary(desktopReleaseLatestState.release)");
     expect(appSource).toContain("desktopRelease: desktopReleaseSummary");
     expect(appSource).toContain("function Stage1P0DailyUseClosurePanel");
+    expect(appSource).toContain("shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;");
+    expect(appSource).toContain("function stage1P0DailyUseRowIsSharedFocus");
+    expect(appSource).toContain("function stage1P0DailyUsePrimaryIsSharedFocus");
+    expect(appSource).toContain("function stage1P0DailyUseRefreshEntryIsSharedFocus");
+    expect(appSource).toContain("function stage1P0DailyUseRefreshNextIsSharedFocus");
     expect(appSource).toContain("onCopyPrimaryLink?: () => void;");
     expect(appSource).toContain("onCopyRefreshOutcomeLink?: () => void;");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
@@ -494,6 +500,9 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain('className={`stage1-p0-daily-use-closure ${closure.state}`}');
     expect(appSource).toContain("closure.rows.map");
+    expect(appSource).toContain("stage1P0DailyUseRowIsSharedFocus(shareDeepLinkState, row.id)");
+    expect(appSource).toContain('aria-current={isSharedFocus ? "true" : undefined}');
+    expect(appSource).toContain('className={`stage1-p0-daily-use-row ${row.status}${isSharedFocus ? " shared-focus" : ""}`}');
     expect(appSource).toContain("stage1P0DailyUseClosureRowLabel");
     expect(appSource).toContain("stage1P0DailyUseClosureActionLabel");
     expect(appSource).toContain("onOpenRow(row)");
@@ -520,6 +529,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("下载回执");
     expect(appSource).toContain("Download receipt");
     expect(appSource).toContain("打开下一步");
+    expect(appSource).toContain("stage1P0DailyUsePrimaryIsSharedFocus(shareDeepLinkState)");
+    expect(appSource).toContain("stage1P0DailyUseRefreshEntryIsSharedFocus(shareDeepLinkState, entry.id)");
+    expect(appSource).toContain("stage1P0DailyUseRefreshNextIsSharedFocus(shareDeepLinkState)");
     expect(appSource).toContain("onOpenRefreshOutcomeEntry(entry)");
     expect(appSource).toContain("onOpenRefreshOutcomeNextStep()");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
@@ -529,11 +541,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-row")).toContain("cursor: pointer;");
+    expect(cssBlock(".stage1-p0-daily-use-row.shared-focus")).toContain("box-shadow: 0 0 0 2px rgba(113, 223, 197, 0.36);");
+    expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-entry.shared-focus")).toContain("box-shadow: 0 0 0 2px rgba(113, 223, 197, 0.36);");
     expect(cssBlock(".stage1-p0-daily-use-footer-actions")).toContain("display: flex;");
     expect(cssBlock(".stage1-p0-share-deep-link")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-copy")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-download")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-refresh")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
+    expect(cssBlock(".stage1-p0-daily-use-footer-actions button.shared-focus")).toContain("border-color: #71dfc5;");
+    expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-actions button.shared-focus")).toContain("border-color: #71dfc5;");
   });
 
   test("moves detailed P0 evidence behind a secondary drawer on the homepage", () => {

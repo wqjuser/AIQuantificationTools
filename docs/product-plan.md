@@ -1071,3 +1071,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 首页复制入口链接现在会输出完整浏览器 URL。`buildStage1P0WorkspaceShareUrl` 会把模型里的相对 `?workspace=...` 链接解析到当前 `window.location.href`，清理 hash 后再写入剪贴板；没有浏览器环境或解析失败时回退为相对链接。Markdown 仍保留便携的相对链接，首页直接复制则更适合发到聊天或团队文档；该动作仍只复制前端导航地址，不写审计事件、不运行 Stage 1 命令、不构建桌面端、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 分享链接现在会恢复来源上下文。日常手册链接带 `stage1DailyUseFocus`，刷新回执链接带 `stage1RefreshReceiptFocus`；`resolveStage1P0DailyUseShareDeepLinkState` 会拒绝缺失 workspace、重复 focus 或日常/回执 focus 混用的歧义链接。首页打开有效链接时显示 recovered Stage 1 share banner，解释它来自日常手册还是刷新回执，并只提供“查看日常卡片 / 打开分享工作区”两个手动动作。该能力仍只恢复前端上下文，不自动刷新自检、不写审计事件、不构建桌面端、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 分享链接恢复后现在会在日常收口卡内高亮精确目标。`Stage1P0DailyUseClosurePanel` 接收解析后的 share deep-link state，并用 `.shared-focus` 标记对应的五行日常入口、主动作、刷新回执 entry 或“打开下一步”按钮，同时保留 `aria-current` 便于确认当前分享上下文。该能力只提升前端定位和交接可读性，不自动刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。

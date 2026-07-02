@@ -11932,6 +11932,7 @@ export function App() {
                 onOpenRow={openStage1P0DailyUseRow}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 refreshOutcome={stage1P0DailyUseRefreshOutcome}
+                shareDeepLinkState={initialStage1P0DailyUseShareDeepLinkState}
               />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
                 <div>
@@ -13159,6 +13160,32 @@ export function App() {
 type AppI18n = ReturnType<typeof createI18n>;
 type Stage1P0DailyUseClosureRowView = Stage1P0DailyUseClosure["rows"][number];
 
+function stage1P0DailyUseRowIsSharedFocus(
+  state: Stage1P0DailyUseShareDeepLinkState | null | undefined,
+  rowId: Stage1P0DailyUseClosure["rows"][number]["id"]
+): boolean {
+  return state?.kind === "daily-use" && state.focus === rowId;
+}
+
+function stage1P0DailyUsePrimaryIsSharedFocus(
+  state: Stage1P0DailyUseShareDeepLinkState | null | undefined
+): boolean {
+  return state?.kind === "daily-use" && state.focus === "primary";
+}
+
+function stage1P0DailyUseRefreshEntryIsSharedFocus(
+  state: Stage1P0DailyUseShareDeepLinkState | null | undefined,
+  entryId: Stage1P0DailyUseRefreshOutcome["entries"][number]["id"]
+): boolean {
+  return state?.kind === "refresh-receipt" && state.focus === entryId;
+}
+
+function stage1P0DailyUseRefreshNextIsSharedFocus(
+  state: Stage1P0DailyUseShareDeepLinkState | null | undefined
+): boolean {
+  return state?.kind === "refresh-receipt" && state.focus === "next";
+}
+
 function p0EvidenceDrawerSummary(
   i18n: AppI18n,
   hasSavedReport: boolean,
@@ -13254,7 +13281,8 @@ function Stage1P0DailyUseClosurePanel({
   onOpenRefreshOutcomeNextStep,
   onOpenRow,
   onRefreshDailyUse,
-  refreshOutcome
+  refreshOutcome,
+  shareDeepLinkState
 }: {
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
@@ -13275,8 +13303,11 @@ function Stage1P0DailyUseClosurePanel({
   onOpenRow: (row: Stage1P0DailyUseClosure["rows"][number]) => void;
   onRefreshDailyUse?: () => void;
   refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
+  shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
 }) {
   const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
+  const isPrimarySharedFocus = stage1P0DailyUsePrimaryIsSharedFocus(shareDeepLinkState);
+  const isRefreshNextSharedFocus = stage1P0DailyUseRefreshNextIsSharedFocus(shareDeepLinkState);
 
   return (
     <section
@@ -13294,20 +13325,25 @@ function Stage1P0DailyUseClosurePanel({
         </em>
       </div>
       <div className="stage1-p0-daily-use-rows">
-        {closure.rows.map((row) => (
-          <button
-            aria-label={`${stage1P0DailyUseClosureRowLabel(i18n, row)} · ${stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}`}
-            className={`stage1-p0-daily-use-row ${row.status}`}
-            key={row.id}
-            onClick={() => onOpenRow(row)}
-            type="button"
-          >
-            <span>{stage1P0DailyUseClosureRowLabel(i18n, row)}</span>
-            <strong>{stage1P0DailyUseClosureRowValue(i18n, row)}</strong>
-            <small>{stage1P0DailyUseClosureRowDetail(i18n, row)}</small>
-            <em>{stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}</em>
-          </button>
-        ))}
+        {closure.rows.map((row) => {
+          const isSharedFocus = stage1P0DailyUseRowIsSharedFocus(shareDeepLinkState, row.id);
+
+          return (
+            <button
+              aria-current={isSharedFocus ? "true" : undefined}
+              aria-label={`${stage1P0DailyUseClosureRowLabel(i18n, row)} · ${stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}`}
+              className={`stage1-p0-daily-use-row ${row.status}${isSharedFocus ? " shared-focus" : ""}`}
+              key={row.id}
+              onClick={() => onOpenRow(row)}
+              type="button"
+            >
+              <span>{stage1P0DailyUseClosureRowLabel(i18n, row)}</span>
+              <strong>{stage1P0DailyUseClosureRowValue(i18n, row)}</strong>
+              <small>{stage1P0DailyUseClosureRowDetail(i18n, row)}</small>
+              <em>{stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}</em>
+            </button>
+          );
+        })}
       </div>
       {refreshOutcome ? (
         <div className={`stage1-p0-daily-use-refresh-outcome ${refreshOutcome.state}`}>
@@ -13317,18 +13353,23 @@ function Stage1P0DailyUseClosurePanel({
             <small>{stage1P0DailyUseRefreshOutcomeDetail(i18n, refreshOutcome)}</small>
           </div>
           <div className="stage1-p0-daily-use-refresh-outcome-entries">
-            {refreshOutcome.entries.map((entry) => (
-              <button
-                className={`stage1-p0-daily-use-refresh-outcome-entry ${entry.status}`}
-                key={entry.id}
-                onClick={() => onOpenRefreshOutcomeEntry(entry)}
-                type="button"
-              >
-                <span>{stage1P0DailyUseRefreshOutcomeEntryLabel(i18n, entry)}</span>
-                <strong>{stage1P0DailyUseRefreshOutcomeEntryStatus(i18n, entry)}</strong>
-                <small>{stage1P0DailyUseRefreshOutcomeSourceLabel(i18n, entry.source)}</small>
-              </button>
-            ))}
+            {refreshOutcome.entries.map((entry) => {
+              const isSharedFocus = stage1P0DailyUseRefreshEntryIsSharedFocus(shareDeepLinkState, entry.id);
+
+              return (
+                <button
+                  aria-current={isSharedFocus ? "true" : undefined}
+                  className={`stage1-p0-daily-use-refresh-outcome-entry ${entry.status}${isSharedFocus ? " shared-focus" : ""}`}
+                  key={entry.id}
+                  onClick={() => onOpenRefreshOutcomeEntry(entry)}
+                  type="button"
+                >
+                  <span>{stage1P0DailyUseRefreshOutcomeEntryLabel(i18n, entry)}</span>
+                  <strong>{stage1P0DailyUseRefreshOutcomeEntryStatus(i18n, entry)}</strong>
+                  <small>{stage1P0DailyUseRefreshOutcomeSourceLabel(i18n, entry.source)}</small>
+                </button>
+              );
+            })}
           </div>
           <div className="stage1-p0-daily-use-refresh-outcome-actions">
             <button disabled={!onCopyRefreshOutcome} onClick={onCopyRefreshOutcome} type="button">
@@ -13353,7 +13394,12 @@ function Stage1P0DailyUseClosurePanel({
               <Download size={12} />
               {i18n.locale === "zh-CN" ? "下载回执" : "Download receipt"}
             </button>
-            <button type="button" onClick={() => onOpenRefreshOutcomeNextStep()}>
+            <button
+              aria-current={isRefreshNextSharedFocus ? "true" : undefined}
+              className={isRefreshNextSharedFocus ? "shared-focus" : undefined}
+              type="button"
+              onClick={() => onOpenRefreshOutcomeNextStep()}
+            >
               <Play size={12} />
               {i18n.locale === "zh-CN" ? "打开下一步" : "Open next step"}
             </button>
@@ -13413,7 +13459,12 @@ function Stage1P0DailyUseClosurePanel({
             {isRefreshingDailyUse ? <RefreshCw className="spin" size={12} /> : <RefreshCw size={12} />}
             {i18n.locale === "zh-CN" ? "刷新自检" : "Refresh daily"}
           </button>
-          <button type="button" onClick={onOpenPrimaryAction}>
+          <button
+            aria-current={isPrimarySharedFocus ? "true" : undefined}
+            className={isPrimarySharedFocus ? "shared-focus" : undefined}
+            type="button"
+            onClick={onOpenPrimaryAction}
+          >
             <Play size={12} />
             {stage1P0DailyUseClosureActionLabel(i18n, closure.primaryActionId, closure.primaryActionLabel)}
           </button>
