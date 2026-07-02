@@ -1083,3 +1083,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 分享链接现在会显式提示无效或歧义 URL。新增 `resolveStage1P0DailyUseShareDeepLinkStatus`，在保留旧 `resolveStage1P0DailyUseShareDeepLinkState` 有效状态 API 的同时，返回 `none/ready/invalid` 和稳定 reason；首页会对缺少 workspace、重复 workspace、日常/回执 focus 混用、重复 focus、未知 workspace 或未知目标显示 invalid share banner，并只提供“查看日常卡片”安全动作。该能力只避免小团队交接坏链接静默失败，不自动恢复错误工作区、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 invalid share banner 现在可以复制一条新的当前日常主入口链接。`copyStage1P0DailyUsePrimaryLink` 复用 `stage1P0DailyUseClosure.primaryWorkspaceLink` 和 `buildStage1P0WorkspaceShareUrl`，invalid banner 新增“复制新入口链接 / Copy fresh link”动作并写入 `Stage 1 invalid share replacement link copied` 状态反馈。该能力只写剪贴板和前端状态栏，不自动恢复错误工作区、不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 invalid share banner 现在也能复制诊断交接说明。新增 `buildStage1P0InvalidShareDiagnosticsCopyText`，会输出无效分享链接状态、reason、原始 search、替代主入口 URL、当前安全主动作和 live-blocked 边界；首页新增“复制诊断 / Copy diagnostics”按钮并写入 `Stage 1 invalid share diagnostics copied` 状态反馈。该能力只把坏链接原因和恢复入口写到剪贴板，方便个人或小团队异步排查，不恢复错误工作区、不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。

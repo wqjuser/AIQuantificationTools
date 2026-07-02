@@ -7271,6 +7271,36 @@ export type Stage1P0DailyUseShareDeepLinkStatus =
   | { reason: null; state: Stage1P0DailyUseShareDeepLinkState; status: "ready" }
   | { reason: Stage1P0DailyUseShareDeepLinkIssueReason; state: null; status: "invalid" };
 
+export function buildStage1P0InvalidShareDiagnosticsCopyText({
+  incomingSearch,
+  primaryActionLabel,
+  primaryTargetWorkspaceId,
+  replacementLink,
+  status
+}: {
+  incomingSearch: string | null | undefined;
+  primaryActionLabel: string;
+  primaryTargetWorkspaceId: ProductWorkAreaId;
+  replacementLink: string | null | undefined;
+  status: Stage1P0DailyUseShareDeepLinkStatus;
+}): string {
+  const normalizedIncomingSearch = incomingSearch?.trim() || "none";
+  const normalizedReplacementLink = replacementLink?.trim() || "none";
+  const reason = status.status === "invalid" ? status.reason : "none";
+  return [
+    "# Stage 1/P0 Invalid Share Link Diagnostics",
+    `Status: ${status.status}`,
+    `Reason: ${reason}`,
+    `Incoming search: ${normalizedIncomingSearch}`,
+    `Replacement link: ${normalizedReplacementLink}`,
+    `Safe action: ${primaryActionLabel} -> ${primaryTargetWorkspaceId}`,
+    "",
+    "No workspace was restored from the invalid link.",
+    "Copy/open the replacement link manually after reviewing the daily-use card.",
+    "Live trading remains blocked."
+  ].join("\n");
+}
+
 const stage1P0DailyUseShareFocuses: readonly Stage1P0DailyUseShareFocus[] = [
   "primary",
   "clean-open",

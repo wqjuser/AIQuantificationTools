@@ -155,6 +155,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  buildStage1P0InvalidShareDiagnosticsCopyText,
   resolveStage1P0DailyUseShareDeepLinkStatus,
   resolveStage1P0DailyUseShareDeepLinkState,
   buildP0AcceptanceReviewMarkdown,
@@ -3631,6 +3632,29 @@ describe("terminal workbench model", () => {
       state: null,
       status: "invalid"
     });
+  });
+
+  test("builds Stage 1 invalid share diagnostics copy text", () => {
+    const status = resolveStage1P0DailyUseShareDeepLinkStatus(
+      "?workspace=research&workspace=audit&stage1DailyUseFocus=primary"
+    );
+
+    const copyText = buildStage1P0InvalidShareDiagnosticsCopyText({
+      incomingSearch: "?workspace=research&workspace=audit&stage1DailyUseFocus=primary",
+      primaryActionLabel: "Refresh P0 acceptance",
+      primaryTargetWorkspaceId: "audit",
+      replacementLink: "http://127.0.0.1:5174/?workspace=audit&stage1DailyUseFocus=primary",
+      status
+    });
+
+    expect(copyText).toContain("# Stage 1/P0 Invalid Share Link Diagnostics");
+    expect(copyText).toContain("Status: invalid");
+    expect(copyText).toContain("Reason: duplicate-workspace");
+    expect(copyText).toContain("Incoming search: ?workspace=research&workspace=audit&stage1DailyUseFocus=primary");
+    expect(copyText).toContain("Replacement link: http://127.0.0.1:5174/?workspace=audit&stage1DailyUseFocus=primary");
+    expect(copyText).toContain("Safe action: Refresh P0 acceptance -> audit");
+    expect(copyText).toContain("No workspace was restored from the invalid link.");
+    expect(copyText).toContain("Live trading remains blocked.");
   });
 
   test("builds a blocked Stage 1 daily-use refresh outcome when daily report generation falls back", () => {

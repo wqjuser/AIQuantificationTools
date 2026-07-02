@@ -417,6 +417,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setCopiedStage1P0DailyUseHandoff(false);");
     expect(appSource).toContain("const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink]");
     expect(appSource).toContain("setCopiedStage1P0DailyUsePrimaryLink(false);");
+    expect(appSource).toContain("const [copiedStage1P0InvalidShareDiagnostics, setCopiedStage1P0InvalidShareDiagnostics]");
+    expect(appSource).toContain("setCopiedStage1P0InvalidShareDiagnostics(false);");
+    expect(appSource).toContain("buildStage1P0InvalidShareDiagnosticsCopyText({");
+    expect(appSource).toContain("navigator.clipboard.writeText(diagnosticsCopyText)");
+    expect(appSource).toContain("Stage 1 invalid share diagnostics copied");
+    expect(appSource).toContain("Stage 1 invalid share diagnostics copy failed");
     expect(appSource).toContain("function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string");
     expect(appSource).toContain('if (!normalizedLink || typeof window === "undefined")');
     expect(appSource).toContain("const shareUrl = new URL(normalizedLink, window.location.href);");
@@ -514,6 +520,10 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("copiedStage1P0DailyUsePrimaryLink");
     expect(overviewGridSource).toContain("复制新入口链接");
     expect(overviewGridSource).toContain("Copy fresh link");
+    expect(overviewGridSource).toContain("onClick={() => void copyStage1P0InvalidShareDiagnostics()}");
+    expect(overviewGridSource).toContain("copiedStage1P0InvalidShareDiagnostics");
+    expect(overviewGridSource).toContain("复制诊断");
+    expect(overviewGridSource).toContain("Copy diagnostics");
     expect(overviewGridSource).toContain('i18n.locale === "zh-CN" ? "Stage 1 分享链接不可用" : "Stage 1 share link unavailable"');
     expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link"');
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");

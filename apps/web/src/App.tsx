@@ -365,6 +365,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  buildStage1P0InvalidShareDiagnosticsCopyText,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
   buildP2PaperReplaySummary,
@@ -2233,6 +2234,7 @@ export function App() {
   const [copiedDailyStartBriefReview, setCopiedDailyStartBriefReview] = useState(false);
   const [copiedStage1P0DailyUseHandoff, setCopiedStage1P0DailyUseHandoff] = useState(false);
   const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink] = useState(false);
+  const [copiedStage1P0InvalidShareDiagnostics, setCopiedStage1P0InvalidShareDiagnostics] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcome, setCopiedStage1P0DailyUseRefreshOutcome] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcomeLink, setCopiedStage1P0DailyUseRefreshOutcomeLink] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
@@ -3200,6 +3202,10 @@ export function App() {
   useEffect(() => {
     setCopiedStage1P0DailyUsePrimaryLink(false);
   }, [stage1P0DailyUseClosure.primaryWorkspaceLink]);
+
+  useEffect(() => {
+    setCopiedStage1P0InvalidShareDiagnostics(false);
+  }, [initialStage1P0DailyUseShareDeepLinkStatus, stage1P0DailyUseClosure.primaryWorkspaceLink]);
 
   useEffect(() => {
     setCopiedStage1P0DailyUseRefreshOutcome(false);
@@ -9432,6 +9438,42 @@ export function App() {
     [stage1P0DailyUseClosure.primaryWorkspaceLink]
   );
 
+  const copyStage1P0InvalidShareDiagnostics = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      const replacementLink = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);
+      const incomingSearch = typeof window === "undefined" ? "" : window.location.search;
+      const diagnosticsCopyText = buildStage1P0InvalidShareDiagnosticsCopyText({
+        incomingSearch,
+        primaryActionLabel: stage1P0DailyUseClosure.primaryActionLabel,
+        primaryTargetWorkspaceId: stage1P0DailyUseClosure.primaryTargetWorkspaceId,
+        replacementLink,
+        status: initialStage1P0DailyUseShareDeepLinkStatus
+      });
+      await navigator.clipboard.writeText(diagnosticsCopyText);
+      setCopiedStage1P0InvalidShareDiagnostics(true);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 invalid share diagnostics copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setCopiedStage1P0InvalidShareDiagnostics(false);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 invalid share diagnostics copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [
+    stage1P0DailyUseClosure.primaryActionLabel,
+    stage1P0DailyUseClosure.primaryTargetWorkspaceId,
+    stage1P0DailyUseClosure.primaryWorkspaceLink
+  ]);
+
   const openStage1P0DailyUseRow = useCallback(
     (row: Stage1P0DailyUseClosure["rows"][number]) => {
       selectProductWorkArea(row.targetWorkspaceId);
@@ -11972,6 +12014,16 @@ export function App() {
                       type="button"
                     >
                       {i18n.locale === "zh-CN" ? "查看日常卡片" : "View daily card"}
+                    </button>
+                    <button onClick={() => void copyStage1P0InvalidShareDiagnostics()} type="button">
+                      <Copy size={12} />
+                      {copiedStage1P0InvalidShareDiagnostics
+                        ? i18n.locale === "zh-CN"
+                          ? "诊断已复制"
+                          : "Diagnostics copied"
+                        : i18n.locale === "zh-CN"
+                          ? "复制诊断"
+                          : "Copy diagnostics"}
                     </button>
                     <button
                       onClick={() =>
