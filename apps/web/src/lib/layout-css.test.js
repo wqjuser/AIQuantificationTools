@@ -394,7 +394,13 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("stage1P0DailyUseShareLinkLoadedStatusLabel(initialStage1P0DailyUseShareDeepLinkState)");
     expect(appSource).toContain('const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";');
     expect(appSource).toContain("function focusStage1P0DailyUseShareCardElement");
+    expect(appSource).toContain("function stage1P0DailyUseShareTargetElementId");
+    expect(appSource).toContain("function focusStage1P0DailyUseShareTargetElement");
+    expect(appSource).toContain("stage1P0DailyUseShareTargetElementId(");
+    expect(appSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
+    expect(appSource).toContain("stage1P0DailyUseRefreshOutcome");
     expect(appSource).toContain("document.getElementById(stage1P0DailyUseClosureElementId)");
+    expect(appSource).toContain("document.getElementById(targetElementId) ?? document.getElementById(stage1P0DailyUseClosureElementId)");
     expect(appSource).toContain('element.scrollIntoView({ block: "center", behavior: "smooth" });');
     expect(appSource).toContain("element.focus({ preventScroll: true });");
     expect(appSource).toContain("Stage 1 daily share link loaded");
@@ -496,7 +502,8 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkFocusLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkOpenStatusLabel(initialStage1P0DailyUseShareDeepLinkState)");
-    expect(overviewGridSource).toContain("focusStage1P0DailyUseShareCardElement();");
+    expect(overviewGridSource).toContain("focusStage1P0DailyUseShareTargetElement(");
+    expect(overviewGridSource).toContain("stage1P0DailyUseShareTargetElementId(");
     expect(overviewGridSource).toContain("selectProductWorkArea(initialStage1P0DailyUseShareDeepLinkState.targetWorkspaceId)");
     expect(overviewGridSource).toContain("<Stage1P0DailyUseClosurePanel");
     expect(overviewGridSource.indexOf("<Stage1P0DailyUseClosurePanel")).toBeGreaterThan(
@@ -510,6 +517,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("tabIndex={-1}");
     expect(appSource).toContain("closure.rows.map");
     expect(appSource).toContain("stage1P0DailyUseRowIsSharedFocus(shareDeepLinkState, row.id)");
+    expect(appSource).toContain("id={stage1P0DailyUseRowElementId(row.id)}");
     expect(appSource).toContain('aria-current={isSharedFocus ? "true" : undefined}');
     expect(appSource).toContain('className={`stage1-p0-daily-use-row ${row.status}${isSharedFocus ? " shared-focus" : ""}`}');
     expect(appSource).toContain("stage1P0DailyUseClosureRowLabel");
@@ -541,11 +549,15 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("stage1P0DailyUsePrimaryIsSharedFocus(shareDeepLinkState)");
     expect(appSource).toContain("stage1P0DailyUseRefreshEntryIsSharedFocus(shareDeepLinkState, entry.id)");
     expect(appSource).toContain("stage1P0DailyUseRefreshNextIsSharedFocus(shareDeepLinkState)");
+    expect(appSource).toContain("id={stage1P0DailyUseRefreshEntryElementId(entry.id)}");
+    expect(appSource).toContain("id={stage1P0DailyUseRefreshNextActionElementId}");
     expect(appSource).toContain("const isRefreshReceiptColdStart = stage1P0DailyUseRefreshReceiptIsColdStart(shareDeepLinkState, refreshOutcome);");
     expect(appSource).toContain('className="stage1-p0-daily-use-refresh-recovery"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "已恢复刷新回执链接" : "Recovered refresh receipt link"');
     expect(appSource).toContain("刷新自检会重新生成回执并恢复下一步上下文。");
     expect(appSource).toContain('className={`stage1-p0-daily-use-refresh${isRefreshReceiptColdStart ? " shared-focus" : ""}`}');
+    expect(appSource).toContain("id={stage1P0DailyUseRefreshActionElementId}");
+    expect(appSource).toContain("id={stage1P0DailyUsePrimaryActionElementId}");
     expect(appSource).toContain("onOpenRefreshOutcomeEntry(entry)");
     expect(appSource).toContain("onOpenRefreshOutcomeNextStep()");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");

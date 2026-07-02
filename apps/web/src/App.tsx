@@ -680,6 +680,9 @@ const initialLocalReviewCoverageNextActionDeepLinkState =
 const initialStage1P0DailyUseShareDeepLinkState =
   typeof window === "undefined" ? null : resolveStage1P0DailyUseShareDeepLinkState(window.location.search);
 const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";
+const stage1P0DailyUsePrimaryActionElementId = "stage1-p0-daily-use-primary-action";
+const stage1P0DailyUseRefreshActionElementId = "stage1-p0-daily-use-refresh-action";
+const stage1P0DailyUseRefreshNextActionElementId = "stage1-p0-daily-use-refresh-next-action";
 
 const initialWorkspaceState: WorkspaceLoadResult = {
   workspace: buildInitialTerminalWorkspace(),
@@ -11887,7 +11890,12 @@ export function App() {
                   <div className="stage1-p0-share-deep-link-actions">
                     <button
                       onClick={() => {
-                        focusStage1P0DailyUseShareCardElement();
+                        focusStage1P0DailyUseShareTargetElement(
+                          stage1P0DailyUseShareTargetElementId(
+                            initialStage1P0DailyUseShareDeepLinkState,
+                            stage1P0DailyUseRefreshOutcome
+                          )
+                        );
                         setWorkspaceState((current) => ({
                           ...current,
                           statusLabel: stage1P0DailyUseShareLinkOpenStatusLabel(initialStage1P0DailyUseShareDeepLinkState),
@@ -13195,16 +13203,58 @@ function stage1P0DailyUseRefreshReceiptIsColdStart(
   return state?.kind === "refresh-receipt" && !outcome;
 }
 
-function focusStage1P0DailyUseShareCardElement(): void {
+function stage1P0DailyUseRowElementId(rowId: Stage1P0DailyUseClosure["rows"][number]["id"]): string {
+  return `${stage1P0DailyUseClosureElementId}-row-${rowId}`;
+}
+
+function stage1P0DailyUseRefreshEntryElementId(
+  entryId: Stage1P0DailyUseRefreshOutcome["entries"][number]["id"]
+): string {
+  return `${stage1P0DailyUseClosureElementId}-refresh-${entryId}`;
+}
+
+function stage1P0DailyUseShareTargetElementId(
+  state: Stage1P0DailyUseShareDeepLinkState | null | undefined,
+  outcome: Stage1P0DailyUseRefreshOutcome | null | undefined
+): string {
+  if (!state) {
+    return stage1P0DailyUseClosureElementId;
+  }
+  if (state.kind === "daily-use") {
+    return state.focus === "primary"
+      ? stage1P0DailyUsePrimaryActionElementId
+      : stage1P0DailyUseRowElementId(state.focus as Stage1P0DailyUseClosure["rows"][number]["id"]);
+  }
+  if (!outcome) {
+    return stage1P0DailyUseRefreshActionElementId;
+  }
+  return state.focus === "next"
+    ? stage1P0DailyUseRefreshNextActionElementId
+    : stage1P0DailyUseRefreshEntryElementId(state.focus as Stage1P0DailyUseRefreshOutcome["entries"][number]["id"]);
+}
+
+function focusStage1P0DailyUseElementById(targetElementId: string): void {
   if (typeof document === "undefined") {
     return;
   }
-  const element = document.getElementById(stage1P0DailyUseClosureElementId);
+  const element = document.getElementById(targetElementId) ?? document.getElementById(stage1P0DailyUseClosureElementId);
   if (!element) {
     return;
   }
   element.scrollIntoView({ block: "center", behavior: "smooth" });
   element.focus({ preventScroll: true });
+}
+
+function focusStage1P0DailyUseShareCardElement(): void {
+  focusStage1P0DailyUseElementById(stage1P0DailyUseClosureElementId);
+}
+
+function focusStage1P0DailyUseShareTargetElement(targetElementId: string): void {
+  if (targetElementId === stage1P0DailyUseClosureElementId) {
+    focusStage1P0DailyUseShareCardElement();
+    return;
+  }
+  focusStage1P0DailyUseElementById(targetElementId);
 }
 
 function p0EvidenceDrawerSummary(
@@ -13361,6 +13411,7 @@ function Stage1P0DailyUseClosurePanel({
               aria-current={isSharedFocus ? "true" : undefined}
               aria-label={`${stage1P0DailyUseClosureRowLabel(i18n, row)} · ${stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}`}
               className={`stage1-p0-daily-use-row ${row.status}${isSharedFocus ? " shared-focus" : ""}`}
+              id={stage1P0DailyUseRowElementId(row.id)}
               key={row.id}
               onClick={() => onOpenRow(row)}
               type="button"
@@ -13402,6 +13453,7 @@ function Stage1P0DailyUseClosurePanel({
                 <button
                   aria-current={isSharedFocus ? "true" : undefined}
                   className={`stage1-p0-daily-use-refresh-outcome-entry ${entry.status}${isSharedFocus ? " shared-focus" : ""}`}
+                  id={stage1P0DailyUseRefreshEntryElementId(entry.id)}
                   key={entry.id}
                   onClick={() => onOpenRefreshOutcomeEntry(entry)}
                   type="button"
@@ -13439,6 +13491,7 @@ function Stage1P0DailyUseClosurePanel({
             <button
               aria-current={isRefreshNextSharedFocus ? "true" : undefined}
               className={isRefreshNextSharedFocus ? "shared-focus" : undefined}
+              id={stage1P0DailyUseRefreshNextActionElementId}
               type="button"
               onClick={() => onOpenRefreshOutcomeNextStep()}
             >
@@ -13496,6 +13549,7 @@ function Stage1P0DailyUseClosurePanel({
             aria-current={isRefreshReceiptColdStart ? "true" : undefined}
             className={`stage1-p0-daily-use-refresh${isRefreshReceiptColdStart ? " shared-focus" : ""}`}
             disabled={isRefreshingDailyUse || !onRefreshDailyUse}
+            id={stage1P0DailyUseRefreshActionElementId}
             onClick={onRefreshDailyUse}
             type="button"
           >
@@ -13505,6 +13559,7 @@ function Stage1P0DailyUseClosurePanel({
           <button
             aria-current={isPrimarySharedFocus ? "true" : undefined}
             className={isPrimarySharedFocus ? "shared-focus" : undefined}
+            id={stage1P0DailyUsePrimaryActionElementId}
             type="button"
             onClick={onOpenPrimaryAction}
           >
