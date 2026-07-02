@@ -2194,7 +2194,9 @@ export function App() {
   const [copiedDailyOpsControlRoomReview, setCopiedDailyOpsControlRoomReview] = useState(false);
   const [copiedDailyStartBriefReview, setCopiedDailyStartBriefReview] = useState(false);
   const [copiedStage1P0DailyUseHandoff, setCopiedStage1P0DailyUseHandoff] = useState(false);
+  const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcome, setCopiedStage1P0DailyUseRefreshOutcome] = useState(false);
+  const [copiedStage1P0DailyUseRefreshOutcomeLink, setCopiedStage1P0DailyUseRefreshOutcomeLink] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
   const [copiedOperatorRunbook, setCopiedOperatorRunbook] = useState(false);
   const [copiedPreLiveRunbook, setCopiedPreLiveRunbook] = useState(false);
@@ -3158,8 +3160,16 @@ export function App() {
   }, [stage1P0DailyUseClosure.copyText]);
 
   useEffect(() => {
+    setCopiedStage1P0DailyUsePrimaryLink(false);
+  }, [stage1P0DailyUseClosure.primaryWorkspaceLink]);
+
+  useEffect(() => {
     setCopiedStage1P0DailyUseRefreshOutcome(false);
   }, [stage1P0DailyUseRefreshOutcome?.copyText]);
+
+  useEffect(() => {
+    setCopiedStage1P0DailyUseRefreshOutcomeLink(false);
+  }, [stage1P0DailyUseRefreshOutcome?.targetWorkspaceLink]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -9357,6 +9367,29 @@ export function App() {
     }
   }, [stage1P0DailyUseClosure.copyText]);
 
+  const copyStage1P0DailyUsePrimaryLink = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      await navigator.clipboard.writeText(stage1P0DailyUseClosure.primaryWorkspaceLink);
+      setCopiedStage1P0DailyUsePrimaryLink(true);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily primary link copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setCopiedStage1P0DailyUsePrimaryLink(false);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily primary link copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [stage1P0DailyUseClosure.primaryWorkspaceLink]);
+
   const openStage1P0DailyUseRow = useCallback(
     (row: Stage1P0DailyUseClosure["rows"][number]) => {
       selectProductWorkArea(row.targetWorkspaceId);
@@ -9459,6 +9492,33 @@ export function App() {
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Stage 1 refresh receipt copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [stage1P0DailyUseRefreshOutcome]);
+
+  const copyStage1P0DailyUseRefreshOutcomeLink = useCallback(async () => {
+    if (!stage1P0DailyUseRefreshOutcome) {
+      return;
+    }
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      await navigator.clipboard.writeText(stage1P0DailyUseRefreshOutcome.targetWorkspaceLink);
+      setCopiedStage1P0DailyUseRefreshOutcomeLink(true);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 refresh receipt next link copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setCopiedStage1P0DailyUseRefreshOutcomeLink(false);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 refresh receipt next link copy failed",
         error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
       }));
     }
@@ -11783,11 +11843,15 @@ export function App() {
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
                 isHandoffCopied={copiedStage1P0DailyUseHandoff}
+                isPrimaryLinkCopied={copiedStage1P0DailyUsePrimaryLink}
                 isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}
+                isRefreshOutcomeLinkCopied={copiedStage1P0DailyUseRefreshOutcomeLink}
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
                 onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
+                onCopyPrimaryLink={() => void copyStage1P0DailyUsePrimaryLink()}
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
+                onCopyRefreshOutcomeLink={() => void copyStage1P0DailyUseRefreshOutcomeLink()}
                 onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}
                 onOpenPrimaryAction={openStage1P0DailyUsePrimaryAction}
                 onOpenRefreshOutcomeEntry={openStage1P0DailyUseRefreshOutcomeEntry}
@@ -13102,11 +13166,15 @@ function Stage1P0DailyUseClosurePanel({
   closure,
   i18n,
   isHandoffCopied = false,
+  isPrimaryLinkCopied = false,
   isRefreshOutcomeCopied = false,
+  isRefreshOutcomeLinkCopied = false,
   isRefreshingDailyUse = false,
   onCopyHandoff,
+  onCopyPrimaryLink,
   onDownloadHandoff,
   onCopyRefreshOutcome,
+  onCopyRefreshOutcomeLink,
   onDownloadRefreshOutcome,
   onOpenPrimaryAction,
   onOpenRefreshOutcomeEntry,
@@ -13118,11 +13186,15 @@ function Stage1P0DailyUseClosurePanel({
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
   isHandoffCopied?: boolean;
+  isPrimaryLinkCopied?: boolean;
   isRefreshOutcomeCopied?: boolean;
+  isRefreshOutcomeLinkCopied?: boolean;
   isRefreshingDailyUse?: boolean;
   onCopyHandoff?: () => void;
+  onCopyPrimaryLink?: () => void;
   onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
+  onCopyRefreshOutcomeLink?: () => void;
   onDownloadRefreshOutcome?: () => void;
   onOpenPrimaryAction: () => void;
   onOpenRefreshOutcomeEntry: (entry: Stage1P0DailyUseRefreshOutcome["entries"][number]) => void;
@@ -13196,6 +13268,14 @@ function Stage1P0DailyUseClosurePanel({
                   ? "复制回执"
                   : "Copy receipt"}
             </button>
+            <button disabled={!onCopyRefreshOutcomeLink} onClick={onCopyRefreshOutcomeLink} type="button">
+              <Copy size={12} />
+              {isRefreshOutcomeLinkCopied
+                ? i18n.locale === "zh-CN"
+                  ? "链接已复制"
+                  : "Link copied"
+                : i18n.locale === "zh-CN" ? "复制下一步链接" : "Copy next link"}
+            </button>
             <button disabled={!onDownloadRefreshOutcome} onClick={onDownloadRefreshOutcome} type="button">
               <Download size={12} />
               {i18n.locale === "zh-CN" ? "下载回执" : "Download receipt"}
@@ -13228,6 +13308,19 @@ function Stage1P0DailyUseClosurePanel({
               : i18n.locale === "zh-CN"
                 ? "复制日常手册"
                 : "Copy handoff"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-copy"
+            disabled={!onCopyPrimaryLink}
+            onClick={onCopyPrimaryLink}
+            type="button"
+          >
+            <Copy size={12} />
+            {isPrimaryLinkCopied
+              ? i18n.locale === "zh-CN"
+                ? "链接已复制"
+                : "Link copied"
+              : i18n.locale === "zh-CN" ? "复制入口链接" : "Copy link"}
           </button>
           <button
             className="stage1-p0-daily-use-download"

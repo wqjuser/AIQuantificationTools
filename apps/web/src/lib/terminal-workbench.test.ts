@@ -2926,6 +2926,7 @@ describe("terminal workbench model", () => {
       headline: "Clean environment acceptance is missing",
       primaryActionId: "refresh-p0-acceptance",
       primaryTargetWorkspaceId: "audit",
+      primaryWorkspaceLink: "?workspace=audit",
       readyCount: 0,
       totalCount: 5,
       state: "blocked",
@@ -2947,7 +2948,8 @@ describe("terminal workbench model", () => {
       actionId: "refresh-p0-acceptance",
       label: "Clean environment open",
       status: "blocked",
-      targetWorkspaceId: "audit"
+      targetWorkspaceId: "audit",
+      workspaceLink: "?workspace=audit"
     });
     expect(closure.rows[1]).toMatchObject({
       actionId: "review-provider-cooldown",
@@ -2971,7 +2973,8 @@ describe("terminal workbench model", () => {
       actionId: "run-desktop-build",
       label: "Desktop release",
       status: "review",
-      targetWorkspaceId: "settings"
+      targetWorkspaceId: "settings",
+      workspaceLink: "?workspace=settings"
     });
     expect(closure.copyText).toContain("# Stage 1/P0 Daily Use Handoff");
     expect(closure.copyText).toContain("State: blocked");
@@ -3498,6 +3501,7 @@ describe("terminal workbench model", () => {
       readyCount: 3,
       state: "ready",
       targetWorkspaceId: "research",
+      targetWorkspaceLink: "?workspace=research",
       totalCount: 3
     });
     expect(outcome.detail).toContain("3/3 refresh checks ready");
@@ -3519,6 +3523,8 @@ describe("terminal workbench model", () => {
     expect(outcome.entries.map((entry) => entry.id)).toEqual(["daily-use", "bootstrap-preflight", "desktop-release"]);
     expect(outcome.entries.map((entry) => entry.source)).toEqual(["core", "core", "core"]);
     expect(outcome.entries.every((entry) => entry.status === "ready")).toBe(true);
+    expect(outcome.entries[0]?.workspaceLink).toBe("?workspace=settings");
+    expect(outcome.entries[2]?.workspaceLink).toBe("?workspace=settings");
   });
 
   test("builds a blocked Stage 1 daily-use refresh outcome when daily report generation falls back", () => {

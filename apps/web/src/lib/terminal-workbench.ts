@@ -7171,7 +7171,10 @@ export interface Stage1P0DailyUseClosureRow {
   actionId: Stage1P0DailyUseClosureActionId;
   actionLabel: string;
   targetWorkspaceId: ProductWorkAreaId;
+  workspaceLink: string;
 }
+
+type Stage1P0DailyUseClosureRowDraft = Omit<Stage1P0DailyUseClosureRow, "workspaceLink">;
 
 export interface Stage1P0DailyUseClosure {
   state: Stage1P0DailyUseClosureStatus;
@@ -7184,6 +7187,7 @@ export interface Stage1P0DailyUseClosure {
   primaryActionId: Stage1P0DailyUseClosureActionId;
   primaryActionLabel: string;
   primaryTargetWorkspaceId: ProductWorkAreaId;
+  primaryWorkspaceLink: string;
   bootstrapPreflightStaleSourcePaths: string[];
   bootstrapPreflightStaleSourceSummary: string | null;
   staleSourcePaths: string[];
@@ -7216,6 +7220,7 @@ export interface Stage1P0DailyUseRefreshOutcomeEntry {
   detail: string;
   actionLabel: string;
   targetWorkspaceId: ProductWorkAreaId;
+  workspaceLink: string;
 }
 
 export interface Stage1P0DailyUseRefreshOutcome {
@@ -7228,6 +7233,7 @@ export interface Stage1P0DailyUseRefreshOutcome {
   actionLabel: string;
   copyText: string;
   targetWorkspaceId: ProductWorkAreaId;
+  targetWorkspaceLink: string;
   entries: Stage1P0DailyUseRefreshOutcomeEntry[];
 }
 
@@ -7258,7 +7264,7 @@ export function buildStage1P0DailyUseClosure({
     researchReadinessRows.find((row) => row.status === "blocked") ??
     researchReadinessRows.find((row) => row.status === "review") ??
     null;
-  const rows: Stage1P0DailyUseClosureRow[] = [
+  const rowDrafts: Stage1P0DailyUseClosureRowDraft[] = [
     buildDailyUseCleanOpenRow(p0Acceptance, p1Acceptance, dailyUseReport, bootstrapPreflight),
     buildDailyUseReportBackedRow(
       dailyUseReport,
@@ -7307,6 +7313,7 @@ export function buildStage1P0DailyUseClosure({
     ),
     buildDailyUseDesktopReleaseRow(desktopRelease, desktopBuildReady, dailyUseReport)
   ];
+  const rows = rowDrafts.map(withStage1P0DailyUseWorkspaceLink);
   const readyCount = rows.filter((row) => row.status === "ready").length;
   const primaryRow = rows.find((row) => row.status === "blocked") ?? rows.find((row) => row.status === "review") ?? rows[0];
   const state: Stage1P0DailyUseClosureStatus = rows.some((row) => row.status === "blocked")
@@ -7342,6 +7349,7 @@ export function buildStage1P0DailyUseClosure({
     copyText: buildStage1P0DailyUseClosureCopyText({
       bootstrapPreflightStaleSourcePaths,
       primaryActionLabel: primaryRow.actionLabel,
+      primaryWorkspaceLink: primaryRow.workspaceLink,
       primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
       readyCount,
       rows,
@@ -7354,6 +7362,7 @@ export function buildStage1P0DailyUseClosure({
     primaryActionId: primaryRow.actionId,
     primaryActionLabel: primaryRow.actionLabel,
     primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
+    primaryWorkspaceLink: primaryRow.workspaceLink,
     bootstrapPreflightStaleSourcePaths,
     bootstrapPreflightStaleSourceSummary,
     staleSourcePaths: dailyUseReport?.staleSourcePaths ?? [],
@@ -7366,6 +7375,7 @@ function buildStage1P0DailyUseClosureCopyText({
   bootstrapPreflightStaleSourcePaths,
   primaryActionLabel,
   primaryTargetWorkspaceId,
+  primaryWorkspaceLink,
   readyCount,
   rows,
   staleSourcePaths,
@@ -7375,6 +7385,7 @@ function buildStage1P0DailyUseClosureCopyText({
   bootstrapPreflightStaleSourcePaths: string[];
   primaryActionLabel: string;
   primaryTargetWorkspaceId: ProductWorkAreaId;
+  primaryWorkspaceLink: string;
   readyCount: number;
   rows: Stage1P0DailyUseClosureRow[];
   staleSourcePaths: string[];
@@ -7386,16 +7397,13 @@ function buildStage1P0DailyUseClosureCopyText({
     `State: ${state}`,
     `Ready: ${readyCount}/${totalCount}`,
     `Primary action: ${primaryActionLabel} -> ${primaryTargetWorkspaceId}`,
-    `Primary link: ${stage1P0DailyUseWorkspaceLink(primaryTargetWorkspaceId)}`,
+    `Primary link: ${primaryWorkspaceLink}`,
     `Stale daily-use sources: ${staleSourcePaths.length > 0 ? staleSourcePaths.join(", ") : "none"}`,
     `Stale bootstrap preflight sources: ${
       bootstrapPreflightStaleSourcePaths.length > 0 ? bootstrapPreflightStaleSourcePaths.join(", ") : "none"
     }`,
     "",
-    ...rows.map(
-      (row) =>
-        `- ${row.label} [${row.status}]: ${row.detail} (link: ${stage1P0DailyUseWorkspaceLink(row.targetWorkspaceId)})`
-    ),
+    ...rows.map((row) => `- ${row.label} [${row.status}]: ${row.detail} (link: ${row.workspaceLink})`),
     "",
     "Live trading remains blocked."
   ].join("\n");
@@ -7404,6 +7412,15 @@ function buildStage1P0DailyUseClosureCopyText({
 function stage1P0DailyUseWorkspaceLink(workspaceId: ProductWorkAreaId): string {
   const params = new URLSearchParams({ workspace: workspaceId });
   return `?${params.toString()}`;
+}
+
+function withStage1P0DailyUseWorkspaceLink(
+  row: Stage1P0DailyUseClosureRowDraft
+): Stage1P0DailyUseClosureRow {
+  return {
+    ...row,
+    workspaceLink: stage1P0DailyUseWorkspaceLink(row.targetWorkspaceId)
+  };
 }
 
 export function buildStage1P0DailyUseRefreshOutcome({
@@ -7458,6 +7475,7 @@ export function buildStage1P0DailyUseRefreshOutcome({
   const nextEntry = entries.find((entry) => entry.status === "blocked") ?? entries.find((entry) => entry.status === "review") ?? null;
   const actionLabel = nextEntry?.actionLabel ?? "Open daily workbench";
   const targetWorkspaceId = nextEntry?.targetWorkspaceId ?? "research";
+  const targetWorkspaceLink = stage1P0DailyUseWorkspaceLink(targetWorkspaceId);
   return {
     state,
     tone: dailyUseClosureTone(state),
@@ -7479,9 +7497,11 @@ export function buildStage1P0DailyUseRefreshOutcome({
       readyCount,
       state,
       targetWorkspaceId,
+      targetWorkspaceLink,
       totalCount: entries.length
     }),
     targetWorkspaceId,
+    targetWorkspaceLink,
     entries
   };
 }
@@ -7492,22 +7512,20 @@ function buildStage1P0DailyUseRefreshOutcomeCopyText({
   readyCount,
   state,
   targetWorkspaceId,
+  targetWorkspaceLink,
   totalCount
 }: Pick<
   Stage1P0DailyUseRefreshOutcome,
-  "actionLabel" | "entries" | "readyCount" | "state" | "targetWorkspaceId" | "totalCount"
+  "actionLabel" | "entries" | "readyCount" | "state" | "targetWorkspaceId" | "targetWorkspaceLink" | "totalCount"
 >): string {
   return [
     "# Stage 1 Daily Self-Check Receipt",
     `State: ${state}`,
     `Ready: ${readyCount}/${totalCount}`,
     `Next action: ${actionLabel} -> ${targetWorkspaceId}`,
-    `Next link: ${stage1P0DailyUseWorkspaceLink(targetWorkspaceId)}`,
+    `Next link: ${targetWorkspaceLink}`,
     "",
-    ...entries.map(
-      (entry) =>
-        `- ${entry.label} [${entry.status}/${entry.source}]: ${entry.detail} (link: ${stage1P0DailyUseWorkspaceLink(entry.targetWorkspaceId)})`
-    ),
+    ...entries.map((entry) => `- ${entry.label} [${entry.status}/${entry.source}]: ${entry.detail} (link: ${entry.workspaceLink})`),
     "",
     "Live trading remains blocked."
   ].join("\n");
@@ -7542,7 +7560,8 @@ function buildStage1P0DailyUseRefreshOutcomeEntry({
     sourceLabel: source === "core" ? "Local core" : "Safe fallback",
     detail: source === "fallback" ? error || detail : detail,
     actionLabel,
-    targetWorkspaceId
+    targetWorkspaceId,
+    workspaceLink: stage1P0DailyUseWorkspaceLink(targetWorkspaceId)
   };
 }
 
@@ -7571,7 +7590,7 @@ function stage1RefreshOutcomeStateFromDesktopState(state: DesktopReleaseSummaryS
 function buildDailyUseReportBackedRow(
   dailyUseReport: Stage1DailyUseSummary | null,
   rowId: "market-refresh-recovery" | "research-entry" | "daily-start",
-  fallback: () => Stage1P0DailyUseClosureRow,
+  fallback: () => Stage1P0DailyUseClosureRowDraft,
   config: {
     label: string;
     readyActionId: Stage1P0DailyUseClosureActionId;
@@ -7582,7 +7601,7 @@ function buildDailyUseReportBackedRow(
     blockedActionLabel: string;
     targetWorkspaceId: ProductWorkAreaId;
   }
-): Stage1P0DailyUseClosureRow {
+): Stage1P0DailyUseClosureRowDraft {
   const reportRow = dailyUseReport?.rows.find((row) => row.id === rowId);
   if (!dailyUseReport || !reportRow || dailyUseReport.state === "missing" || dailyUseReport.state === "invalid") {
     return fallback();
@@ -7614,7 +7633,7 @@ function buildDailyUseCleanOpenRow(
   p1Acceptance: P1AcceptanceSummary,
   dailyUseReport: Stage1DailyUseSummary | null,
   bootstrapPreflight: Stage1BootstrapPreflightSummary | null
-): Stage1P0DailyUseClosureRow {
+): Stage1P0DailyUseClosureRowDraft {
   if (bootstrapPreflight && bootstrapPreflight.state !== "ready") {
     const status = stage1BootstrapPreflightClosureStatus(bootstrapPreflight);
     return {
@@ -7685,7 +7704,7 @@ function stage1BootstrapPreflightClosureStatus(
 
 function buildDailyUseMarketRefreshRecoveryRow(
   guard: MarketDataRefreshGuard
-): Stage1P0DailyUseClosureRow {
+): Stage1P0DailyUseClosureRowDraft {
   const status: Stage1P0DailyUseClosureStatus = guard.blocked ? "blocked" : guard.overrideApplied || guard.recentErrorCount > 0 ? "review" : "ready";
   return {
     id: "market-refresh-recovery",
@@ -7702,7 +7721,7 @@ function buildDailyUseMarketRefreshRecoveryRow(
 
 function buildDailyUseResearchEntryRow(
   issue: ResearchContextReadinessRow | null
-): Stage1P0DailyUseClosureRow {
+): Stage1P0DailyUseClosureRowDraft {
   const status: Stage1P0DailyUseClosureStatus =
     issue?.status === "blocked" ? "blocked" : issue?.status === "review" ? "review" : "ready";
   return {
@@ -7734,7 +7753,7 @@ function stage1P0DailyUseResearchActionLabel(action: ResearchContextReadinessAct
   return "Save note";
 }
 
-function buildDailyUseDailyStartRow(brief: DailyStartBrief): Stage1P0DailyUseClosureRow {
+function buildDailyUseDailyStartRow(brief: DailyStartBrief): Stage1P0DailyUseClosureRowDraft {
   const status: Stage1P0DailyUseClosureStatus =
     brief.state === "blocked" ? "blocked" : brief.state === "attention" ? "review" : "ready";
   const needsReview = brief.localReviewStatus !== "current";
@@ -7755,7 +7774,7 @@ function buildDailyUseDesktopReleaseRow(
   desktopRelease: DesktopReleaseSummary | null | undefined,
   desktopBuildReady: boolean,
   dailyUseReport: Stage1DailyUseSummary | null
-): Stage1P0DailyUseClosureRow {
+): Stage1P0DailyUseClosureRowDraft {
   const reportRow = dailyUseReport?.rows.find((row) => row.id === "desktop-release");
   if (dailyUseReport && reportRow && dailyUseReport.state !== "missing" && dailyUseReport.state !== "invalid") {
     const status = reportRow.status;
