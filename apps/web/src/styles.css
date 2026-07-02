@@ -1510,6 +1510,34 @@ em {
   font-weight: 800;
 }
 
+.stage1-p0-daily-use-refresh-outcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stage1-p0-daily-use-refresh-outcome-actions button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 5px;
+  background: #172437;
+  color: #dce6ee;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.stage1-p0-daily-use-refresh-outcome-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .stage1-p0-daily-use-footer {
   display: flex;
   align-items: center;
@@ -16355,6 +16383,14 @@ button.ai-review-record {
 
   .stage1-p0-daily-use-refresh-outcome-entries {
     grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-daily-use-refresh-outcome-actions {
+    flex-direction: column;
+  }
+
+  .stage1-p0-daily-use-refresh-outcome-actions button {
+    width: 100%;
   }
 
   .stage1-p0-daily-use-footer {

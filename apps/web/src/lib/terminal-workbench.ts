@@ -7225,6 +7225,7 @@ export interface Stage1P0DailyUseRefreshOutcome {
   readyCount: number;
   totalCount: number;
   actionLabel: string;
+  copyText: string;
   targetWorkspaceId: ProductWorkAreaId;
   entries: Stage1P0DailyUseRefreshOutcomeEntry[];
 }
@@ -7400,6 +7401,8 @@ export function buildStage1P0DailyUseRefreshOutcome({
       ? "review"
       : "ready";
   const nextEntry = entries.find((entry) => entry.status === "blocked") ?? entries.find((entry) => entry.status === "review") ?? null;
+  const actionLabel = nextEntry?.actionLabel ?? "Open daily workbench";
+  const targetWorkspaceId = nextEntry?.targetWorkspaceId ?? "research";
   return {
     state,
     tone: dailyUseClosureTone(state),
@@ -7414,10 +7417,41 @@ export function buildStage1P0DailyUseRefreshOutcome({
       .join(" · ")}`,
     readyCount,
     totalCount: entries.length,
-    actionLabel: nextEntry?.actionLabel ?? "Open daily workbench",
-    targetWorkspaceId: nextEntry?.targetWorkspaceId ?? "research",
+    actionLabel,
+    copyText: buildStage1P0DailyUseRefreshOutcomeCopyText({
+      actionLabel,
+      entries,
+      readyCount,
+      state,
+      targetWorkspaceId,
+      totalCount: entries.length
+    }),
+    targetWorkspaceId,
     entries
   };
+}
+
+function buildStage1P0DailyUseRefreshOutcomeCopyText({
+  actionLabel,
+  entries,
+  readyCount,
+  state,
+  targetWorkspaceId,
+  totalCount
+}: Pick<
+  Stage1P0DailyUseRefreshOutcome,
+  "actionLabel" | "entries" | "readyCount" | "state" | "targetWorkspaceId" | "totalCount"
+>): string {
+  return [
+    "# Stage 1 Daily Self-Check Receipt",
+    `State: ${state}`,
+    `Ready: ${readyCount}/${totalCount}`,
+    `Next action: ${actionLabel} -> ${targetWorkspaceId}`,
+    "",
+    ...entries.map((entry) => `- ${entry.label} [${entry.status}/${entry.source}]: ${entry.detail}`),
+    "",
+    "Live trading remains blocked."
+  ].join("\n");
 }
 
 function buildStage1P0DailyUseRefreshOutcomeEntry({

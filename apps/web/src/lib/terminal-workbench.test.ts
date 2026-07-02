@@ -3480,6 +3480,14 @@ describe("terminal workbench model", () => {
       totalCount: 3
     });
     expect(outcome.detail).toContain("3/3 refresh checks ready");
+    expect(outcome.copyText).toContain("# Stage 1 Daily Self-Check Receipt");
+    expect(outcome.copyText).toContain("State: ready");
+    expect(outcome.copyText).toContain("Ready: 3/3");
+    expect(outcome.copyText).toContain("Next action: Open daily workbench -> research");
+    expect(outcome.copyText).toContain("- Daily report [ready/core]: Stage 1 daily report ready (5/5)");
+    expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
+    expect(outcome.copyText).toContain("- Desktop release [ready/core]: Desktop release passed");
+    expect(outcome.copyText).toContain("Live trading remains blocked.");
     expect(outcome.entries.map((entry) => entry.id)).toEqual(["daily-use", "bootstrap-preflight", "desktop-release"]);
     expect(outcome.entries.map((entry) => entry.source)).toEqual(["core", "core", "core"]);
     expect(outcome.entries.every((entry) => entry.status === "ready")).toBe(true);
@@ -3511,6 +3519,14 @@ describe("terminal workbench model", () => {
       totalCount: 3
     });
     expect(outcome.detail).toContain("Daily report: HTTP 500");
+    expect(outcome.copyText).toContain("# Stage 1 Daily Self-Check Receipt");
+    expect(outcome.copyText).toContain("State: blocked");
+    expect(outcome.copyText).toContain("Ready: 1/3");
+    expect(outcome.copyText).toContain("Next action: Run daily self-check -> settings");
+    expect(outcome.copyText).toContain("- Daily report [blocked/fallback]: HTTP 500");
+    expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
+    expect(outcome.copyText).toContain("- Desktop release [review/core]: Desktop release manifest missing");
+    expect(outcome.copyText).toContain("Live trading remains blocked.");
     expect(outcome.entries[0]).toMatchObject({
       detail: "HTTP 500",
       id: "daily-use",

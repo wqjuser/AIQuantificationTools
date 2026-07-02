@@ -2193,6 +2193,7 @@ export function App() {
   const [copiedPersonalTeamReadinessReview, setCopiedPersonalTeamReadinessReview] = useState(false);
   const [copiedDailyOpsControlRoomReview, setCopiedDailyOpsControlRoomReview] = useState(false);
   const [copiedDailyStartBriefReview, setCopiedDailyStartBriefReview] = useState(false);
+  const [copiedStage1P0DailyUseRefreshOutcome, setCopiedStage1P0DailyUseRefreshOutcome] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
   const [copiedOperatorRunbook, setCopiedOperatorRunbook] = useState(false);
   const [copiedPreLiveRunbook, setCopiedPreLiveRunbook] = useState(false);
@@ -3150,6 +3151,10 @@ export function App() {
   useEffect(() => {
     setCopiedDailyStartBriefReview(false);
   }, [dailyStartBriefReviewMarkdown]);
+
+  useEffect(() => {
+    setCopiedStage1P0DailyUseRefreshOutcome(false);
+  }, [stage1P0DailyUseRefreshOutcome?.copyText]);
 
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
@@ -9324,6 +9329,33 @@ export function App() {
     }));
   }, [dailyOpsControlRoomReviewMarkdown]);
 
+  const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
+    if (!stage1P0DailyUseRefreshOutcome) {
+      return;
+    }
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      await navigator.clipboard.writeText(stage1P0DailyUseRefreshOutcome.copyText);
+      setCopiedStage1P0DailyUseRefreshOutcome(true);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 refresh receipt copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setCopiedStage1P0DailyUseRefreshOutcome(false);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 refresh receipt copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [stage1P0DailyUseRefreshOutcome]);
+
   const downloadDailyOpsControlRoomReview = useCallback(() => {
     const objectUrl = URL.createObjectURL(
       new Blob([dailyOpsControlRoomReviewMarkdown], { type: "text/markdown;charset=utf-8" })
@@ -11608,7 +11640,9 @@ export function App() {
               <Stage1P0DailyUseClosurePanel
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
+                isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
+                onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 onSelectWorkspace={selectProductWorkArea}
                 refreshOutcome={stage1P0DailyUseRefreshOutcome}
@@ -12918,14 +12952,18 @@ function P0GoldenPathJourneyPanel({
 function Stage1P0DailyUseClosurePanel({
   closure,
   i18n,
+  isRefreshOutcomeCopied = false,
   isRefreshingDailyUse = false,
+  onCopyRefreshOutcome,
   onRefreshDailyUse,
   onSelectWorkspace,
   refreshOutcome
 }: {
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
+  isRefreshOutcomeCopied?: boolean;
   isRefreshingDailyUse?: boolean;
+  onCopyRefreshOutcome?: () => void;
   onRefreshDailyUse?: () => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
   refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
@@ -12983,6 +13021,22 @@ function Stage1P0DailyUseClosurePanel({
                 <small>{stage1P0DailyUseRefreshOutcomeSourceLabel(i18n, entry.source)}</small>
               </button>
             ))}
+          </div>
+          <div className="stage1-p0-daily-use-refresh-outcome-actions">
+            <button disabled={!onCopyRefreshOutcome} onClick={onCopyRefreshOutcome} type="button">
+              <Copy size={12} />
+              {isRefreshOutcomeCopied
+                ? i18n.locale === "zh-CN"
+                  ? "已复制"
+                  : "Copied"
+                : i18n.locale === "zh-CN"
+                  ? "复制回执"
+                  : "Copy receipt"}
+            </button>
+            <button type="button" onClick={() => onSelectWorkspace(refreshOutcome.targetWorkspaceId)}>
+              <Play size={12} />
+              {i18n.locale === "zh-CN" ? "打开下一步" : "Open next step"}
+            </button>
           </div>
         </div>
       ) : null}
