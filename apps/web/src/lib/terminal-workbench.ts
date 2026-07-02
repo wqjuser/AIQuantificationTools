@@ -7249,6 +7249,105 @@ export interface Stage1P0DailyUseRefreshOutcomeInput {
   desktopReleaseSource: Stage1P0DailyUseRefreshOutcomeSource;
 }
 
+export type Stage1P0DailyUseShareFocus = "primary" | Stage1P0DailyUseClosureRowId;
+export type Stage1P0DailyUseRefreshReceiptFocus = "next" | Stage1P0DailyUseRefreshOutcomeEntry["id"];
+
+export interface Stage1P0DailyUseShareDeepLinkState {
+  kind: "daily-use" | "refresh-receipt";
+  focus: Stage1P0DailyUseShareFocus | Stage1P0DailyUseRefreshReceiptFocus;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
+const stage1P0DailyUseShareFocuses: readonly Stage1P0DailyUseShareFocus[] = [
+  "primary",
+  "clean-open",
+  "market-refresh-recovery",
+  "research-entry",
+  "daily-start",
+  "desktop-release"
+];
+
+const stage1P0DailyUseRefreshReceiptFocuses: readonly Stage1P0DailyUseRefreshReceiptFocus[] = [
+  "next",
+  "daily-use",
+  "bootstrap-preflight",
+  "desktop-release"
+];
+
+function stage1P0DailyUseShareFocus(value: string | null | undefined): Stage1P0DailyUseShareFocus | null {
+  const normalized = value?.trim() ?? "";
+  return stage1P0DailyUseShareFocuses.includes(normalized as Stage1P0DailyUseShareFocus)
+    ? (normalized as Stage1P0DailyUseShareFocus)
+    : null;
+}
+
+function stage1P0DailyUseRefreshReceiptFocus(
+  value: string | null | undefined
+): Stage1P0DailyUseRefreshReceiptFocus | null {
+  const normalized = value?.trim() ?? "";
+  return stage1P0DailyUseRefreshReceiptFocuses.includes(normalized as Stage1P0DailyUseRefreshReceiptFocus)
+    ? (normalized as Stage1P0DailyUseRefreshReceiptFocus)
+    : null;
+}
+
+export function buildStage1P0DailyUseShareUrlSearch(input: {
+  focus: Stage1P0DailyUseShareFocus | string | null | undefined;
+  targetWorkspaceId: ProductWorkAreaId | string | null | undefined;
+}): string | null {
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
+  const focus = stage1P0DailyUseShareFocus(input.focus);
+  if (!targetWorkspaceId || !focus) {
+    return null;
+  }
+  const params = new URLSearchParams();
+  params.set("workspace", targetWorkspaceId);
+  params.set("stage1DailyUseFocus", focus);
+  return params.toString();
+}
+
+export function buildStage1P0DailyUseRefreshReceiptUrlSearch(input: {
+  focus: Stage1P0DailyUseRefreshReceiptFocus | string | null | undefined;
+  targetWorkspaceId: ProductWorkAreaId | string | null | undefined;
+}): string | null {
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(input.targetWorkspaceId?.trim() ?? "");
+  const focus = stage1P0DailyUseRefreshReceiptFocus(input.focus);
+  if (!targetWorkspaceId || !focus) {
+    return null;
+  }
+  const params = new URLSearchParams();
+  params.set("workspace", targetWorkspaceId);
+  params.set("stage1RefreshReceiptFocus", focus);
+  return params.toString();
+}
+
+export function resolveStage1P0DailyUseShareDeepLinkState(
+  search: string | URLSearchParams | null | undefined
+): Stage1P0DailyUseShareDeepLinkState | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const dailyFocusValues = params.getAll("stage1DailyUseFocus");
+  const refreshFocusValues = params.getAll("stage1RefreshReceiptFocus");
+  if (params.getAll("workspace").length !== 1 || dailyFocusValues.length + refreshFocusValues.length !== 1) {
+    return null;
+  }
+
+  const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
+  if (!targetWorkspaceId) {
+    return null;
+  }
+  if (dailyFocusValues.length === 1) {
+    const focus = stage1P0DailyUseShareFocus(dailyFocusValues[0]);
+    return focus ? { focus, kind: "daily-use", targetWorkspaceId } : null;
+  }
+  const focus = stage1P0DailyUseRefreshReceiptFocus(refreshFocusValues[0]);
+  return focus ? { focus, kind: "refresh-receipt", targetWorkspaceId } : null;
+}
+
 export function buildStage1P0DailyUseClosure({
   bootstrapPreflight = null,
   dailyStartBrief,
@@ -7349,7 +7448,7 @@ export function buildStage1P0DailyUseClosure({
     copyText: buildStage1P0DailyUseClosureCopyText({
       bootstrapPreflightStaleSourcePaths,
       primaryActionLabel: primaryRow.actionLabel,
-      primaryWorkspaceLink: primaryRow.workspaceLink,
+      primaryWorkspaceLink: stage1P0DailyUseWorkspaceLink(primaryRow.targetWorkspaceId, "primary"),
       primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
       readyCount,
       rows,
@@ -7362,7 +7461,7 @@ export function buildStage1P0DailyUseClosure({
     primaryActionId: primaryRow.actionId,
     primaryActionLabel: primaryRow.actionLabel,
     primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
-    primaryWorkspaceLink: primaryRow.workspaceLink,
+    primaryWorkspaceLink: stage1P0DailyUseWorkspaceLink(primaryRow.targetWorkspaceId, "primary"),
     bootstrapPreflightStaleSourcePaths,
     bootstrapPreflightStaleSourceSummary,
     staleSourcePaths: dailyUseReport?.staleSourcePaths ?? [],
@@ -7409,9 +7508,9 @@ function buildStage1P0DailyUseClosureCopyText({
   ].join("\n");
 }
 
-function stage1P0DailyUseWorkspaceLink(workspaceId: ProductWorkAreaId): string {
-  const params = new URLSearchParams({ workspace: workspaceId });
-  return `?${params.toString()}`;
+function stage1P0DailyUseWorkspaceLink(workspaceId: ProductWorkAreaId, focus: Stage1P0DailyUseShareFocus): string {
+  const search = buildStage1P0DailyUseShareUrlSearch({ focus, targetWorkspaceId: workspaceId });
+  return search ? `?${search}` : `?workspace=${workspaceId}`;
 }
 
 function withStage1P0DailyUseWorkspaceLink(
@@ -7419,8 +7518,16 @@ function withStage1P0DailyUseWorkspaceLink(
 ): Stage1P0DailyUseClosureRow {
   return {
     ...row,
-    workspaceLink: stage1P0DailyUseWorkspaceLink(row.targetWorkspaceId)
+    workspaceLink: stage1P0DailyUseWorkspaceLink(row.targetWorkspaceId, row.id)
   };
+}
+
+function stage1P0DailyUseRefreshReceiptWorkspaceLink(
+  workspaceId: ProductWorkAreaId,
+  focus: Stage1P0DailyUseRefreshReceiptFocus
+): string {
+  const search = buildStage1P0DailyUseRefreshReceiptUrlSearch({ focus, targetWorkspaceId: workspaceId });
+  return search ? `?${search}` : `?workspace=${workspaceId}`;
 }
 
 export function buildStage1P0DailyUseRefreshOutcome({
@@ -7475,7 +7582,7 @@ export function buildStage1P0DailyUseRefreshOutcome({
   const nextEntry = entries.find((entry) => entry.status === "blocked") ?? entries.find((entry) => entry.status === "review") ?? null;
   const actionLabel = nextEntry?.actionLabel ?? "Open daily workbench";
   const targetWorkspaceId = nextEntry?.targetWorkspaceId ?? "research";
-  const targetWorkspaceLink = stage1P0DailyUseWorkspaceLink(targetWorkspaceId);
+  const targetWorkspaceLink = stage1P0DailyUseRefreshReceiptWorkspaceLink(targetWorkspaceId, "next");
   return {
     state,
     tone: dailyUseClosureTone(state),
@@ -7561,7 +7668,7 @@ function buildStage1P0DailyUseRefreshOutcomeEntry({
     detail: source === "fallback" ? error || detail : detail,
     actionLabel,
     targetWorkspaceId,
-    workspaceLink: stage1P0DailyUseWorkspaceLink(targetWorkspaceId)
+    workspaceLink: stage1P0DailyUseRefreshReceiptWorkspaceLink(targetWorkspaceId, id)
   };
 }
 

@@ -389,6 +389,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));");
     expect(appSource).toContain("generateStage1DailyUse");
     expect(appSource).toContain("buildStage1P0DailyUseRefreshOutcome");
+    expect(appSource).toContain("resolveStage1P0DailyUseShareDeepLinkState(window.location.search)");
+    expect(appSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
+    expect(appSource).toContain("stage1P0DailyUseShareLinkLoadedStatusLabel(initialStage1P0DailyUseShareDeepLinkState)");
+    expect(appSource).toContain("Stage 1 daily share link loaded");
+    expect(appSource).toContain("Stage 1 refresh receipt share link loaded");
+    expect(appSource).toContain("Stage 1 shared context opened");
     expect(appSource).toContain("const [stage1P0DailyUseRefreshOutcome, setStage1P0DailyUseRefreshOutcome]");
     expect(appSource).toContain("const [copiedStage1P0DailyUseHandoff, setCopiedStage1P0DailyUseHandoff]");
     expect(appSource).toContain("setCopiedStage1P0DailyUseHandoff(false);");
@@ -473,6 +479,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onCopyPrimaryLink?: () => void;");
     expect(appSource).toContain("onCopyRefreshOutcomeLink?: () => void;");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
+    expect(overviewGridSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
+    expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link"');
+    expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
+    expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkFocusLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
+    expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkOpenStatusLabel(initialStage1P0DailyUseShareDeepLinkState)");
+    expect(overviewGridSource).toContain("selectProductWorkArea(initialStage1P0DailyUseShareDeepLinkState.targetWorkspaceId)");
     expect(overviewGridSource).toContain("<Stage1P0DailyUseClosurePanel");
     expect(overviewGridSource.indexOf("<Stage1P0DailyUseClosurePanel")).toBeGreaterThan(
       overviewGridSource.indexOf("<P0GoldenPathJourneyPanel")
@@ -518,6 +530,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-row")).toContain("cursor: pointer;");
     expect(cssBlock(".stage1-p0-daily-use-footer-actions")).toContain("display: flex;");
+    expect(cssBlock(".stage1-p0-share-deep-link")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-copy")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-download")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-refresh")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");

@@ -155,6 +155,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  resolveStage1P0DailyUseShareDeepLinkState,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
@@ -2926,7 +2927,7 @@ describe("terminal workbench model", () => {
       headline: "Clean environment acceptance is missing",
       primaryActionId: "refresh-p0-acceptance",
       primaryTargetWorkspaceId: "audit",
-      primaryWorkspaceLink: "?workspace=audit",
+      primaryWorkspaceLink: "?workspace=audit&stage1DailyUseFocus=primary",
       readyCount: 0,
       totalCount: 5,
       state: "blocked",
@@ -2949,7 +2950,7 @@ describe("terminal workbench model", () => {
       label: "Clean environment open",
       status: "blocked",
       targetWorkspaceId: "audit",
-      workspaceLink: "?workspace=audit"
+      workspaceLink: "?workspace=audit&stage1DailyUseFocus=clean-open"
     });
     expect(closure.rows[1]).toMatchObject({
       actionId: "review-provider-cooldown",
@@ -2974,25 +2975,25 @@ describe("terminal workbench model", () => {
       label: "Desktop release",
       status: "review",
       targetWorkspaceId: "settings",
-      workspaceLink: "?workspace=settings"
+      workspaceLink: "?workspace=settings&stage1DailyUseFocus=desktop-release"
     });
     expect(closure.copyText).toContain("# Stage 1/P0 Daily Use Handoff");
     expect(closure.copyText).toContain("State: blocked");
     expect(closure.copyText).toContain("Ready: 0/5");
     expect(closure.copyText).toContain("Primary action: Refresh P0 acceptance -> audit");
-    expect(closure.copyText).toContain("Primary link: ?workspace=audit");
+    expect(closure.copyText).toContain("Primary link: ?workspace=audit&stage1DailyUseFocus=primary");
     expect(closure.copyText).toContain(
       "- Clean environment open [blocked]: Run npm run docker:smoke:p0 -- --no-build --down"
     );
     expect(closure.copyText).toContain(
-      "- Clean environment open [blocked]: Run npm run docker:smoke:p0 -- --no-build --down to generate data/p0-acceptance.json. (link: ?workspace=audit)"
+      "- Clean environment open [blocked]: Run npm run docker:smoke:p0 -- --no-build --down to generate data/p0-acceptance.json. (link: ?workspace=audit&stage1DailyUseFocus=clean-open)"
     );
     expect(closure.copyText).toContain("- Market refresh recovery [blocked]: Provider cooldown");
     expect(closure.copyText).toContain("- Research entry [blocked]: K-line cache is empty");
     expect(closure.copyText).toContain("- Daily start path [review]: Daily ops has open review work.");
     expect(closure.copyText).toContain("- Desktop release [review]: Run npm run desktop:build");
     expect(closure.copyText).toContain(
-      "- Desktop release [review]: Run npm run desktop:build after the local Tauri/Cargo toolchain check passes. (link: ?workspace=settings)"
+      "- Desktop release [review]: Run npm run desktop:build after the local Tauri/Cargo toolchain check passes. (link: ?workspace=settings&stage1DailyUseFocus=desktop-release)"
     );
     expect(closure.copyText).toContain("Live trading remains blocked.");
   });
@@ -3501,7 +3502,7 @@ describe("terminal workbench model", () => {
       readyCount: 3,
       state: "ready",
       targetWorkspaceId: "research",
-      targetWorkspaceLink: "?workspace=research",
+      targetWorkspaceLink: "?workspace=research&stage1RefreshReceiptFocus=next",
       totalCount: 3
     });
     expect(outcome.detail).toContain("3/3 refresh checks ready");
@@ -3509,22 +3510,49 @@ describe("terminal workbench model", () => {
     expect(outcome.copyText).toContain("State: ready");
     expect(outcome.copyText).toContain("Ready: 3/3");
     expect(outcome.copyText).toContain("Next action: Open daily workbench -> research");
-    expect(outcome.copyText).toContain("Next link: ?workspace=research");
+    expect(outcome.copyText).toContain("Next link: ?workspace=research&stage1RefreshReceiptFocus=next");
     expect(outcome.copyText).toContain("- Daily report [ready/core]: Stage 1 daily report ready (5/5)");
     expect(outcome.copyText).toContain(
-      "- Daily report [ready/core]: Stage 1 daily report ready (5/5) (link: ?workspace=settings)"
+      "- Daily report [ready/core]: Stage 1 daily report ready (5/5) (link: ?workspace=settings&stage1RefreshReceiptFocus=daily-use)"
     );
     expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
     expect(outcome.copyText).toContain("- Desktop release [ready/core]: Desktop release passed");
     expect(outcome.copyText).toContain(
-      "- Desktop release [ready/core]: Desktop release passed (link: ?workspace=settings)"
+      "- Desktop release [ready/core]: Desktop release passed (link: ?workspace=settings&stage1RefreshReceiptFocus=desktop-release)"
     );
     expect(outcome.copyText).toContain("Live trading remains blocked.");
     expect(outcome.entries.map((entry) => entry.id)).toEqual(["daily-use", "bootstrap-preflight", "desktop-release"]);
     expect(outcome.entries.map((entry) => entry.source)).toEqual(["core", "core", "core"]);
     expect(outcome.entries.every((entry) => entry.status === "ready")).toBe(true);
-    expect(outcome.entries[0]?.workspaceLink).toBe("?workspace=settings");
-    expect(outcome.entries[2]?.workspaceLink).toBe("?workspace=settings");
+    expect(outcome.entries[0]?.workspaceLink).toBe("?workspace=settings&stage1RefreshReceiptFocus=daily-use");
+    expect(outcome.entries[2]?.workspaceLink).toBe("?workspace=settings&stage1RefreshReceiptFocus=desktop-release");
+  });
+
+  test("resolves Stage 1 daily-use share link context", () => {
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkState("?workspace=research&stage1DailyUseFocus=daily-start")
+    ).toEqual({
+      focus: "daily-start",
+      kind: "daily-use",
+      targetWorkspaceId: "research"
+    });
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkState("?workspace=settings&stage1RefreshReceiptFocus=desktop-release")
+    ).toEqual({
+      focus: "desktop-release",
+      kind: "refresh-receipt",
+      targetWorkspaceId: "settings"
+    });
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkState(
+        "?workspace=research&stage1DailyUseFocus=primary&stage1RefreshReceiptFocus=next"
+      )
+    ).toBeNull();
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkState(
+        "?workspace=research&stage1DailyUseFocus=daily-start&stage1DailyUseFocus=primary"
+      )
+    ).toBeNull();
   });
 
   test("builds a blocked Stage 1 daily-use refresh outcome when daily report generation falls back", () => {
@@ -3557,9 +3585,11 @@ describe("terminal workbench model", () => {
     expect(outcome.copyText).toContain("State: blocked");
     expect(outcome.copyText).toContain("Ready: 1/3");
     expect(outcome.copyText).toContain("Next action: Run daily self-check -> settings");
-    expect(outcome.copyText).toContain("Next link: ?workspace=settings");
+    expect(outcome.copyText).toContain("Next link: ?workspace=settings&stage1RefreshReceiptFocus=next");
     expect(outcome.copyText).toContain("- Daily report [blocked/fallback]: HTTP 500");
-    expect(outcome.copyText).toContain("- Daily report [blocked/fallback]: HTTP 500 (link: ?workspace=settings)");
+    expect(outcome.copyText).toContain(
+      "- Daily report [blocked/fallback]: HTTP 500 (link: ?workspace=settings&stage1RefreshReceiptFocus=daily-use)"
+    );
     expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
     expect(outcome.copyText).toContain("- Desktop release [review/core]: Desktop release manifest missing");
     expect(outcome.copyText).toContain("Live trading remains blocked.");

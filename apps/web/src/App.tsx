@@ -472,6 +472,7 @@ import {
   resolveLocalReviewCoverageNextActionDeepLinkState,
   resolveP0CompletionGapDeepLinkState,
   resolveP0CurrentGapActionDeepLinkState,
+  resolveStage1P0DailyUseShareDeepLinkState,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
   resolveResearchPipelinePreparationEvidenceRunId,
@@ -498,6 +499,7 @@ import {
   DailyStartBriefReviewReference,
   Stage1P0DailyUseClosure,
   Stage1P0DailyUseRefreshOutcome,
+  Stage1P0DailyUseShareDeepLinkState,
   PersonalTeamUsabilityReadinessReviewReference,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
@@ -675,6 +677,8 @@ const initialP0CompletionGapDeepLinkState =
   typeof window === "undefined" ? null : resolveP0CompletionGapDeepLinkState(window.location.search);
 const initialLocalReviewCoverageNextActionDeepLinkState =
   typeof window === "undefined" ? null : resolveLocalReviewCoverageNextActionDeepLinkState(window.location.search);
+const initialStage1P0DailyUseShareDeepLinkState =
+  typeof window === "undefined" ? null : resolveStage1P0DailyUseShareDeepLinkState(window.location.search);
 
 const initialWorkspaceState: WorkspaceLoadResult = {
   workspace: buildInitialTerminalWorkspace(),
@@ -683,8 +687,10 @@ const initialWorkspaceState: WorkspaceLoadResult = {
     ? `P0 next-step link loaded: ${initialP0CurrentGapActionDeepLinkState.actionId} -> ${initialP0CurrentGapActionDeepLinkState.targetWorkspaceId}`
     : initialP0CompletionGapDeepLinkState
       ? `P0 completion gap link loaded -> ${initialP0CompletionGapDeepLinkState.targetWorkspaceId}`
-      : initialLocalReviewCoverageNextActionDeepLinkState
-        ? localReviewCoverageNextActionLoadedStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)
+    : initialLocalReviewCoverageNextActionDeepLinkState
+      ? localReviewCoverageNextActionLoadedStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)
+      : initialStage1P0DailyUseShareDeepLinkState
+        ? stage1P0DailyUseShareLinkLoadedStatusLabel(initialStage1P0DailyUseShareDeepLinkState)
         : "Offline snapshot"
 };
 const initialRunHistoryState: ResearchRunHistoryResult = {
@@ -11856,6 +11862,56 @@ export function App() {
                 onRunAction={runGoldenPathActionById}
                 onSelectWorkspace={selectProductWorkArea}
               />
+              {initialStage1P0DailyUseShareDeepLinkState ? (
+                <div className="stage1-p0-share-deep-link">
+                  <div>
+                    <span>
+                      {i18n.locale === "zh-CN" ? "已载入 Stage 1 分享链接" : "Recovered Stage 1 share link"}
+                    </span>
+                    <strong>
+                      {stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)}
+                      {" -> "}
+                      {productWorkAreaIdLabelText(
+                        i18n,
+                        initialStage1P0DailyUseShareDeepLinkState.targetWorkspaceId
+                      )}
+                    </strong>
+                    <small>
+                      {stage1P0DailyUseShareLinkFocusLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)} ·{" "}
+                      {i18n.locale === "zh-CN"
+                        ? "只恢复前端上下文；实盘仍阻断。"
+                        : "Frontend context only; live trading remains blocked."}
+                    </small>
+                  </div>
+                  <div className="stage1-p0-share-deep-link-actions">
+                    <button
+                      onClick={() =>
+                        setWorkspaceState((current) => ({
+                          ...current,
+                          statusLabel: stage1P0DailyUseShareLinkOpenStatusLabel(initialStage1P0DailyUseShareDeepLinkState),
+                          error: undefined
+                        }))
+                      }
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? "查看日常卡片" : "View daily card"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        selectProductWorkArea(initialStage1P0DailyUseShareDeepLinkState.targetWorkspaceId);
+                        setWorkspaceState((current) => ({
+                          ...current,
+                          statusLabel: stage1P0DailyUseShareLinkOpenStatusLabel(initialStage1P0DailyUseShareDeepLinkState),
+                          error: undefined
+                        }));
+                      }}
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? "打开分享工作区" : "Open shared workspace"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <Stage1P0DailyUseClosurePanel
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
@@ -13789,6 +13845,67 @@ function p1AcceptanceSummaryDetail(i18n: AppI18n, summary: P1AcceptanceSummary):
       .replace(". Live trading remains blocked.", "")}；实盘仍阻断。`;
   }
   return `运行 P1 验收后会在这里读取 ${summary.sourcePath}；缺失时仍保持实盘阻断。`;
+}
+
+function stage1P0DailyUseShareLinkLoadedStatusLabel(state: Stage1P0DailyUseShareDeepLinkState): string {
+  if (state.kind === "daily-use") {
+    return `Stage 1 daily share link loaded: ${state.focus} -> ${state.targetWorkspaceId}`;
+  }
+  return `Stage 1 refresh receipt share link loaded: ${state.focus} -> ${state.targetWorkspaceId}`;
+}
+
+function stage1P0DailyUseShareLinkOpenStatusLabel(state: Stage1P0DailyUseShareDeepLinkState): string {
+  return `Stage 1 shared context opened: ${state.kind}/${state.focus} -> ${state.targetWorkspaceId}`;
+}
+
+function stage1P0DailyUseShareLinkLabel(
+  i18n: AppI18n,
+  state: Stage1P0DailyUseShareDeepLinkState
+): string {
+  if (state.kind === "daily-use") {
+    return i18n.locale === "zh-CN" ? "日常手册入口" : "Daily handoff link";
+  }
+  return i18n.locale === "zh-CN" ? "刷新回执入口" : "Refresh receipt link";
+}
+
+function stage1P0DailyUseShareLinkFocusLabel(
+  i18n: AppI18n,
+  state: Stage1P0DailyUseShareDeepLinkState
+): string {
+  const focusLabel =
+    state.kind === "daily-use"
+      ? stage1P0DailyUseShareDailyFocusLabel(i18n, state.focus)
+      : stage1P0DailyUseShareReceiptFocusLabel(i18n, state.focus);
+  const workspace = productWorkAreaIdLabelText(i18n, state.targetWorkspaceId);
+  return i18n.locale === "zh-CN" ? `${focusLabel} -> ${workspace}` : `${focusLabel} -> ${workspace}`;
+}
+
+function stage1P0DailyUseShareDailyFocusLabel(i18n: AppI18n, focus: string): string {
+  if (focus === "primary") {
+    return i18n.locale === "zh-CN" ? "主入口" : "Primary action";
+  }
+  return stage1P0DailyUseShareFocusFallbackLabel(i18n, focus);
+}
+
+function stage1P0DailyUseShareReceiptFocusLabel(i18n: AppI18n, focus: string): string {
+  if (focus === "next") {
+    return i18n.locale === "zh-CN" ? "下一步" : "Next step";
+  }
+  return stage1P0DailyUseShareFocusFallbackLabel(i18n, focus);
+}
+
+function stage1P0DailyUseShareFocusFallbackLabel(i18n: AppI18n, focus: string): string {
+  return (
+    {
+      "bootstrap-preflight": i18n.locale === "zh-CN" ? "开箱预检" : "Bootstrap preflight",
+      "clean-open": i18n.locale === "zh-CN" ? "干净环境开箱" : "Clean environment",
+      "daily-start": i18n.locale === "zh-CN" ? "每日启动" : "Daily start",
+      "daily-use": i18n.locale === "zh-CN" ? "日报" : "Daily report",
+      "desktop-release": i18n.locale === "zh-CN" ? "桌面发布" : "Desktop release",
+      "market-refresh-recovery": i18n.locale === "zh-CN" ? "行情刷新恢复" : "Refresh recovery",
+      "research-entry": i18n.locale === "zh-CN" ? "研究入口" : "Research entry"
+    }[focus] ?? focus
+  );
 }
 
 function localReviewCoverageNextActionLabel(
