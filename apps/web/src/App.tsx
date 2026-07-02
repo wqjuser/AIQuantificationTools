@@ -1709,6 +1709,21 @@ function buildExecutionAdapterPaperExecutionEvidenceUrl(eventId: string): string
   return typeof window === "undefined" ? `?${url.searchParams.toString()}` : url.toString();
 }
 
+function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string {
+  const normalizedLink = workspaceLink.trim();
+  if (!normalizedLink || typeof window === "undefined") {
+    return normalizedLink;
+  }
+
+  try {
+    const shareUrl = new URL(normalizedLink, window.location.href);
+    shareUrl.hash = "";
+    return shareUrl.toString();
+  } catch {
+    return normalizedLink;
+  }
+}
+
 function replaceP0CurrentGapActionUrlSearch(search: string): void {
   if (typeof window === "undefined") {
     return;
@@ -9373,7 +9388,8 @@ export function App() {
         throw new Error("Clipboard API unavailable");
       }
 
-      await navigator.clipboard.writeText(stage1P0DailyUseClosure.primaryWorkspaceLink);
+      const primaryShareUrl = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);
+      await navigator.clipboard.writeText(primaryShareUrl);
       setCopiedStage1P0DailyUsePrimaryLink(true);
       setWorkspaceState((current) => ({
         ...current,
@@ -9507,7 +9523,8 @@ export function App() {
         throw new Error("Clipboard API unavailable");
       }
 
-      await navigator.clipboard.writeText(stage1P0DailyUseRefreshOutcome.targetWorkspaceLink);
+      const nextShareUrl = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseRefreshOutcome.targetWorkspaceLink);
+      await navigator.clipboard.writeText(nextShareUrl);
       setCopiedStage1P0DailyUseRefreshOutcomeLink(true);
       setWorkspaceState((current) => ({
         ...current,

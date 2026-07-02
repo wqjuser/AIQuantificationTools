@@ -394,11 +394,17 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setCopiedStage1P0DailyUseHandoff(false);");
     expect(appSource).toContain("const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink]");
     expect(appSource).toContain("setCopiedStage1P0DailyUsePrimaryLink(false);");
+    expect(appSource).toContain("function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string");
+    expect(appSource).toContain('if (!normalizedLink || typeof window === "undefined")');
+    expect(appSource).toContain("const shareUrl = new URL(normalizedLink, window.location.href);");
+    expect(appSource).toContain('shareUrl.hash = "";');
+    expect(appSource).toContain("return shareUrl.toString();");
     expect(appSource).toContain("const copyStage1P0DailyUseHandoff = useCallback");
     expect(appSource).toContain("navigator.clipboard.writeText(stage1P0DailyUseClosure.copyText)");
     expect(appSource).toContain("Stage 1 daily handoff copy failed");
     expect(appSource).toContain("const copyStage1P0DailyUsePrimaryLink = useCallback");
-    expect(appSource).toContain("navigator.clipboard.writeText(stage1P0DailyUseClosure.primaryWorkspaceLink)");
+    expect(appSource).toContain("const primaryShareUrl = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);");
+    expect(appSource).toContain("navigator.clipboard.writeText(primaryShareUrl)");
     expect(appSource).toContain("Stage 1 daily primary link copied");
     expect(appSource).toContain("Stage 1 daily primary link copy failed");
     expect(appSource).toContain("const downloadStage1P0DailyUseHandoff = useCallback");
@@ -413,7 +419,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("navigator.clipboard.writeText(stage1P0DailyUseRefreshOutcome.copyText)");
     expect(appSource).toContain("Stage 1 refresh receipt copy failed");
     expect(appSource).toContain("const copyStage1P0DailyUseRefreshOutcomeLink = useCallback");
-    expect(appSource).toContain("navigator.clipboard.writeText(stage1P0DailyUseRefreshOutcome.targetWorkspaceLink)");
+    expect(appSource).toContain("const nextShareUrl = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseRefreshOutcome.targetWorkspaceLink);");
+    expect(appSource).toContain("navigator.clipboard.writeText(nextShareUrl)");
     expect(appSource).toContain("Stage 1 refresh receipt next link copied");
     expect(appSource).toContain("Stage 1 refresh receipt next link copy failed");
     expect(appSource).toContain("const downloadStage1P0DailyUseRefreshOutcome = useCallback");
