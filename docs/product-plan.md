@@ -1061,3 +1061,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常手册现在也可直接下载为 Markdown。首页 footer 新增“下载日常手册 / Download handoff”，复用同一份 `stage1P0DailyUseClosure.copyText`，生成 `stage1-p0-daily-use-handoff.md` 并清理临时 object URL；成功或失败只更新本地状态栏。该下载是浏览器本地文件动作，不创建审计事件、不运行 Stage 1 刷新或预检命令、不构建桌面端、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 刷新回执现在也可直接下载为 Markdown。首页回执区新增“下载回执 / Download receipt”，复用 `stage1P0DailyUseRefreshOutcome.copyText`，生成 `stage1-p0-daily-refresh-receipt.md` 并清理临时 object URL；成功或失败只更新本地状态栏。该下载只保存刚才刷新自检的本地结果，不重新运行 Stage 1 命令、不创建审计事件、不构建桌面端、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 日常收口导航现在会写入明确的本地状态反馈。首页五行入口、主动作、刷新回执三段 entry 和回执“打开下一步”都会在切换工作区后写入 `Stage 1 ... opened · ... -> ...` statusLabel，方便操作者确认进入的上下文；该反馈只更新前端状态，不写审计事件、不运行 Stage 1 命令、不构建桌面端、不连接券商、不提交订单。

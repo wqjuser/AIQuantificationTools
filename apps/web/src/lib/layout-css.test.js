@@ -409,6 +409,20 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('anchor.download = "stage1-p0-daily-refresh-receipt.md";');
     expect(appSource).toContain("Stage 1 refresh receipt download failed");
     expect(appSource).toContain('copyError instanceof Error ? copyError.message : "Clipboard copy failed"');
+    expect(appSource).toContain("const openStage1P0DailyUseRow = useCallback");
+    expect(appSource).toContain("statusLabel: `Stage 1 daily row opened · ${row.id} -> ${row.targetWorkspaceId}`");
+    expect(appSource).toContain("const openStage1P0DailyUsePrimaryAction = useCallback");
+    expect(appSource).toContain(
+      "statusLabel: `Stage 1 daily primary action opened · ${stage1P0DailyUseClosure.primaryActionId} -> ${stage1P0DailyUseClosure.primaryTargetWorkspaceId}`"
+    );
+    expect(appSource).toContain("const openStage1P0DailyUseRefreshOutcomeEntry = useCallback");
+    expect(appSource).toContain(
+      "statusLabel: `Stage 1 refresh receipt entry opened · ${entry.id} -> ${entry.targetWorkspaceId}`"
+    );
+    expect(appSource).toContain("const openStage1P0DailyUseRefreshOutcomeNextStep = useCallback");
+    expect(appSource).toContain(
+      "statusLabel: `Stage 1 refresh receipt next step opened · ${stage1P0DailyUseRefreshOutcome.actionLabel} -> ${stage1P0DailyUseRefreshOutcome.targetWorkspaceId}`"
+    );
     expect(appSource).toContain("const refreshStage1DailyUseReport = useCallback");
     expect(appSource).toContain("const generated = await generateStage1DailyUse(quantCoreBaseUrl);");
     expect(appSource).toContain("setStage1DailyUseLatestState({");
@@ -420,6 +434,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}");
     expect(appSource).toContain("onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}");
     expect(appSource).toContain("isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}");
+    expect(appSource).toContain("onOpenRow={openStage1P0DailyUseRow}");
+    expect(appSource).toContain("onOpenPrimaryAction={openStage1P0DailyUsePrimaryAction}");
+    expect(appSource).toContain("onOpenRefreshOutcomeEntry={openStage1P0DailyUseRefreshOutcomeEntry}");
+    expect(appSource).toContain("onOpenRefreshOutcomeNextStep={openStage1P0DailyUseRefreshOutcomeNextStep}");
     expect(appSource).toContain("buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse)");
     expect(appSource).toContain("dailyUseReport: stage1DailyUseSummary");
     expect(appSource).toContain("loadDesktopReleaseLatest");
@@ -441,7 +459,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("closure.rows.map");
     expect(appSource).toContain("stage1P0DailyUseClosureRowLabel");
     expect(appSource).toContain("stage1P0DailyUseClosureActionLabel");
-    expect(appSource).toContain("onSelectWorkspace(row.targetWorkspaceId)");
+    expect(appSource).toContain("onOpenRow(row)");
     expect(appSource).toContain("isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}");
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "干净环境开箱" : "Clean environment"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "行情刷新恢复" : "Refresh recovery"');
@@ -463,7 +481,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("下载回执");
     expect(appSource).toContain("Download receipt");
     expect(appSource).toContain("打开下一步");
-    expect(appSource).toContain("onSelectWorkspace(refreshOutcome.targetWorkspaceId)");
+    expect(appSource).toContain("onOpenRefreshOutcomeEntry(entry)");
+    expect(appSource).toContain("onOpenRefreshOutcomeNextStep()");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-entries")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");

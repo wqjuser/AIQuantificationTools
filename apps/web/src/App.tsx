@@ -9357,6 +9357,56 @@ export function App() {
     }
   }, [stage1P0DailyUseClosure.copyText]);
 
+  const openStage1P0DailyUseRow = useCallback(
+    (row: Stage1P0DailyUseClosure["rows"][number]) => {
+      selectProductWorkArea(row.targetWorkspaceId);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Stage 1 daily row opened · ${row.id} -> ${row.targetWorkspaceId}`,
+        error: undefined
+      }));
+    },
+    [selectProductWorkArea]
+  );
+
+  const openStage1P0DailyUsePrimaryAction = useCallback(() => {
+    selectProductWorkArea(stage1P0DailyUseClosure.primaryTargetWorkspaceId);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: `Stage 1 daily primary action opened · ${stage1P0DailyUseClosure.primaryActionId} -> ${stage1P0DailyUseClosure.primaryTargetWorkspaceId}`,
+      error: undefined
+    }));
+  }, [
+    selectProductWorkArea,
+    stage1P0DailyUseClosure.primaryActionId,
+    stage1P0DailyUseClosure.primaryTargetWorkspaceId
+  ]);
+
+  const openStage1P0DailyUseRefreshOutcomeEntry = useCallback(
+    (entry: Stage1P0DailyUseRefreshOutcome["entries"][number]) => {
+      selectProductWorkArea(entry.targetWorkspaceId);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Stage 1 refresh receipt entry opened · ${entry.id} -> ${entry.targetWorkspaceId}`,
+        error: undefined
+      }));
+    },
+    [selectProductWorkArea]
+  );
+
+  const openStage1P0DailyUseRefreshOutcomeNextStep = useCallback(() => {
+    if (!stage1P0DailyUseRefreshOutcome) {
+      return;
+    }
+
+    selectProductWorkArea(stage1P0DailyUseRefreshOutcome.targetWorkspaceId);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: `Stage 1 refresh receipt next step opened · ${stage1P0DailyUseRefreshOutcome.actionLabel} -> ${stage1P0DailyUseRefreshOutcome.targetWorkspaceId}`,
+      error: undefined
+    }));
+  }, [selectProductWorkArea, stage1P0DailyUseRefreshOutcome]);
+
   const downloadStage1P0DailyUseHandoff = useCallback(() => {
     let objectUrl: string | null = null;
     try {
@@ -11739,8 +11789,11 @@ export function App() {
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}
+                onOpenPrimaryAction={openStage1P0DailyUsePrimaryAction}
+                onOpenRefreshOutcomeEntry={openStage1P0DailyUseRefreshOutcomeEntry}
+                onOpenRefreshOutcomeNextStep={openStage1P0DailyUseRefreshOutcomeNextStep}
+                onOpenRow={openStage1P0DailyUseRow}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
-                onSelectWorkspace={selectProductWorkArea}
                 refreshOutcome={stage1P0DailyUseRefreshOutcome}
               />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
@@ -13055,8 +13108,11 @@ function Stage1P0DailyUseClosurePanel({
   onDownloadHandoff,
   onCopyRefreshOutcome,
   onDownloadRefreshOutcome,
+  onOpenPrimaryAction,
+  onOpenRefreshOutcomeEntry,
+  onOpenRefreshOutcomeNextStep,
+  onOpenRow,
   onRefreshDailyUse,
-  onSelectWorkspace,
   refreshOutcome
 }: {
   closure: Stage1P0DailyUseClosure;
@@ -13068,8 +13124,11 @@ function Stage1P0DailyUseClosurePanel({
   onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
   onDownloadRefreshOutcome?: () => void;
+  onOpenPrimaryAction: () => void;
+  onOpenRefreshOutcomeEntry: (entry: Stage1P0DailyUseRefreshOutcome["entries"][number]) => void;
+  onOpenRefreshOutcomeNextStep: () => void;
+  onOpenRow: (row: Stage1P0DailyUseClosure["rows"][number]) => void;
   onRefreshDailyUse?: () => void;
-  onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
   refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
 }) {
   const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
@@ -13095,7 +13154,7 @@ function Stage1P0DailyUseClosurePanel({
             aria-label={`${stage1P0DailyUseClosureRowLabel(i18n, row)} · ${stage1P0DailyUseClosureRowStatusLabel(i18n, row.status)}`}
             className={`stage1-p0-daily-use-row ${row.status}`}
             key={row.id}
-            onClick={() => onSelectWorkspace(row.targetWorkspaceId)}
+            onClick={() => onOpenRow(row)}
             type="button"
           >
             <span>{stage1P0DailyUseClosureRowLabel(i18n, row)}</span>
@@ -13117,7 +13176,7 @@ function Stage1P0DailyUseClosurePanel({
               <button
                 className={`stage1-p0-daily-use-refresh-outcome-entry ${entry.status}`}
                 key={entry.id}
-                onClick={() => onSelectWorkspace(entry.targetWorkspaceId)}
+                onClick={() => onOpenRefreshOutcomeEntry(entry)}
                 type="button"
               >
                 <span>{stage1P0DailyUseRefreshOutcomeEntryLabel(i18n, entry)}</span>
@@ -13141,7 +13200,7 @@ function Stage1P0DailyUseClosurePanel({
               <Download size={12} />
               {i18n.locale === "zh-CN" ? "下载回执" : "Download receipt"}
             </button>
-            <button type="button" onClick={() => onSelectWorkspace(refreshOutcome.targetWorkspaceId)}>
+            <button type="button" onClick={() => onOpenRefreshOutcomeNextStep()}>
               <Play size={12} />
               {i18n.locale === "zh-CN" ? "打开下一步" : "Open next step"}
             </button>
@@ -13188,7 +13247,7 @@ function Stage1P0DailyUseClosurePanel({
             {isRefreshingDailyUse ? <RefreshCw className="spin" size={12} /> : <RefreshCw size={12} />}
             {i18n.locale === "zh-CN" ? "刷新自检" : "Refresh daily"}
           </button>
-          <button type="button" onClick={() => onSelectWorkspace(closure.primaryTargetWorkspaceId)}>
+          <button type="button" onClick={onOpenPrimaryAction}>
             <Play size={12} />
             {stage1P0DailyUseClosureActionLabel(i18n, closure.primaryActionId, closure.primaryActionLabel)}
           </button>
