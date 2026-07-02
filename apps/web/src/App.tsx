@@ -9405,29 +9405,32 @@ export function App() {
     }
   }, [stage1P0DailyUseClosure.copyText]);
 
-  const copyStage1P0DailyUsePrimaryLink = useCallback(async () => {
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error("Clipboard API unavailable");
-      }
+  const copyStage1P0DailyUsePrimaryLink = useCallback(
+    async (copiedStatusLabel = "Stage 1 daily primary link copied") => {
+      try {
+        if (!navigator.clipboard?.writeText) {
+          throw new Error("Clipboard API unavailable");
+        }
 
-      const primaryShareUrl = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);
-      await navigator.clipboard.writeText(primaryShareUrl);
-      setCopiedStage1P0DailyUsePrimaryLink(true);
-      setWorkspaceState((current) => ({
-        ...current,
-        statusLabel: "Stage 1 daily primary link copied",
-        error: undefined
-      }));
-    } catch (copyError) {
-      setCopiedStage1P0DailyUsePrimaryLink(false);
-      setWorkspaceState((current) => ({
-        ...current,
-        statusLabel: "Stage 1 daily primary link copy failed",
-        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
-      }));
-    }
-  }, [stage1P0DailyUseClosure.primaryWorkspaceLink]);
+        const primaryShareUrl = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);
+        await navigator.clipboard.writeText(primaryShareUrl);
+        setCopiedStage1P0DailyUsePrimaryLink(true);
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: copiedStatusLabel,
+          error: undefined
+        }));
+      } catch (copyError) {
+        setCopiedStage1P0DailyUsePrimaryLink(false);
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: "Stage 1 daily primary link copy failed",
+          error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+        }));
+      }
+    },
+    [stage1P0DailyUseClosure.primaryWorkspaceLink]
+  );
 
   const openStage1P0DailyUseRow = useCallback(
     (row: Stage1P0DailyUseClosure["rows"][number]) => {
@@ -11969,6 +11972,21 @@ export function App() {
                       type="button"
                     >
                       {i18n.locale === "zh-CN" ? "查看日常卡片" : "View daily card"}
+                    </button>
+                    <button
+                      onClick={() =>
+                        void copyStage1P0DailyUsePrimaryLink("Stage 1 invalid share replacement link copied")
+                      }
+                      type="button"
+                    >
+                      <Copy size={12} />
+                      {copiedStage1P0DailyUsePrimaryLink
+                        ? i18n.locale === "zh-CN"
+                          ? "链接已复制"
+                          : "Link copied"
+                        : i18n.locale === "zh-CN"
+                          ? "复制新入口链接"
+                          : "Copy fresh link"}
                     </button>
                   </div>
                 </div>

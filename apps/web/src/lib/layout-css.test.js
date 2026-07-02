@@ -429,6 +429,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const primaryShareUrl = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);");
     expect(appSource).toContain("navigator.clipboard.writeText(primaryShareUrl)");
     expect(appSource).toContain("Stage 1 daily primary link copied");
+    expect(appSource).toContain("Stage 1 invalid share replacement link copied");
     expect(appSource).toContain("Stage 1 daily primary link copy failed");
     expect(appSource).toContain("const downloadStage1P0DailyUseHandoff = useCallback");
     expect(appSource).toContain('new Blob([stage1P0DailyUseClosure.copyText], { type: "text/markdown;charset=utf-8" })');
@@ -509,6 +510,10 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkInvalidReasonLabel(");
     expect(overviewGridSource).toContain("focusStage1P0DailyUseShareCardElement();");
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkInvalidStatusLabel(");
+    expect(overviewGridSource).toContain('copyStage1P0DailyUsePrimaryLink("Stage 1 invalid share replacement link copied")');
+    expect(overviewGridSource).toContain("copiedStage1P0DailyUsePrimaryLink");
+    expect(overviewGridSource).toContain("复制新入口链接");
+    expect(overviewGridSource).toContain("Copy fresh link");
     expect(overviewGridSource).toContain('i18n.locale === "zh-CN" ? "Stage 1 分享链接不可用" : "Stage 1 share link unavailable"');
     expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link"');
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
