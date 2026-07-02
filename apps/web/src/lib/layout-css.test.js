@@ -389,9 +389,15 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));");
     expect(appSource).toContain("generateStage1DailyUse");
     expect(appSource).toContain("buildStage1P0DailyUseRefreshOutcome");
+    expect(appSource).toContain("resolveStage1P0DailyUseShareDeepLinkStatus(window.location.search)");
     expect(appSource).toContain("resolveStage1P0DailyUseShareDeepLinkState(window.location.search)");
+    expect(appSource).toContain("initialStage1P0DailyUseShareDeepLinkStatus");
     expect(appSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
     expect(appSource).toContain("stage1P0DailyUseShareLinkLoadedStatusLabel(initialStage1P0DailyUseShareDeepLinkState)");
+    expect(appSource).toContain("stage1P0DailyUseShareLinkInvalidStatusLabel(initialStage1P0DailyUseShareDeepLinkStatus)");
+    expect(appSource).toContain("function stage1P0DailyUseShareLinkInvalidReasonLabel");
+    expect(appSource).toContain("stage1P0DailyUseShareLinkInvalidReasonLabel(");
+    expect(appSource).toContain("Stage 1 share link invalid");
     expect(appSource).toContain('const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";');
     expect(appSource).toContain("function focusStage1P0DailyUseShareCardElement");
     expect(appSource).toContain("function stage1P0DailyUseShareTargetElementId");
@@ -498,6 +504,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onCopyRefreshOutcomeLink?: () => void;");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
     expect(overviewGridSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
+    expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link invalid"');
+    expect(overviewGridSource).toContain("initialStage1P0DailyUseShareDeepLinkStatus.status === \"invalid\"");
+    expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkInvalidReasonLabel(");
+    expect(overviewGridSource).toContain("focusStage1P0DailyUseShareCardElement();");
+    expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkInvalidStatusLabel(");
+    expect(overviewGridSource).toContain('i18n.locale === "zh-CN" ? "Stage 1 分享链接不可用" : "Stage 1 share link unavailable"');
     expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link"');
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkFocusLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
@@ -574,6 +586,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-entry.shared-focus")).toContain("box-shadow: 0 0 0 2px rgba(113, 223, 197, 0.36);");
     expect(cssBlock(".stage1-p0-daily-use-footer-actions")).toContain("display: flex;");
     expect(cssBlock(".stage1-p0-share-deep-link")).toContain("display: grid;");
+    expect(cssBlock(".stage1-p0-share-deep-link.invalid")).toContain("border-left-color: #ff7f6d;");
     expect(cssBlock(".stage1-p0-daily-use-copy")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-download")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-refresh")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");

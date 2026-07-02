@@ -155,6 +155,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  resolveStage1P0DailyUseShareDeepLinkStatus,
   resolveStage1P0DailyUseShareDeepLinkState,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
@@ -3553,6 +3554,83 @@ describe("terminal workbench model", () => {
         "?workspace=research&stage1DailyUseFocus=daily-start&stage1DailyUseFocus=primary"
       )
     ).toBeNull();
+  });
+
+  test("resolves Stage 1 daily-use share link status", () => {
+    expect(resolveStage1P0DailyUseShareDeepLinkStatus("?workspace=research")).toEqual({
+      reason: null,
+      state: null,
+      status: "none"
+    });
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkStatus("?workspace=research&stage1DailyUseFocus=daily-start")
+    ).toEqual({
+      reason: null,
+      state: {
+        focus: "daily-start",
+        kind: "daily-use",
+        targetWorkspaceId: "research"
+      },
+      status: "ready"
+    });
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkStatus("?workspace=settings&stage1RefreshReceiptFocus=desktop-release")
+    ).toEqual({
+      reason: null,
+      state: {
+        focus: "desktop-release",
+        kind: "refresh-receipt",
+        targetWorkspaceId: "settings"
+      },
+      status: "ready"
+    });
+    expect(resolveStage1P0DailyUseShareDeepLinkStatus("?stage1DailyUseFocus=primary")).toEqual({
+      reason: "missing-workspace",
+      state: null,
+      status: "invalid"
+    });
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkStatus(
+        "?workspace=research&workspace=audit&stage1DailyUseFocus=primary"
+      )
+    ).toEqual({
+      reason: "duplicate-workspace",
+      state: null,
+      status: "invalid"
+    });
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkStatus(
+        "?workspace=research&stage1DailyUseFocus=primary&stage1RefreshReceiptFocus=next"
+      )
+    ).toEqual({
+      reason: "ambiguous-focus",
+      state: null,
+      status: "invalid"
+    });
+    expect(
+      resolveStage1P0DailyUseShareDeepLinkStatus(
+        "?workspace=research&stage1DailyUseFocus=daily-start&stage1DailyUseFocus=primary"
+      )
+    ).toEqual({
+      reason: "ambiguous-focus",
+      state: null,
+      status: "invalid"
+    });
+    expect(resolveStage1P0DailyUseShareDeepLinkStatus("?workspace=unknown&stage1DailyUseFocus=primary")).toEqual({
+      reason: "invalid-workspace",
+      state: null,
+      status: "invalid"
+    });
+    expect(resolveStage1P0DailyUseShareDeepLinkStatus("?workspace=research&stage1DailyUseFocus=oops")).toEqual({
+      reason: "invalid-daily-focus",
+      state: null,
+      status: "invalid"
+    });
+    expect(resolveStage1P0DailyUseShareDeepLinkStatus("?workspace=settings&stage1RefreshReceiptFocus=oops")).toEqual({
+      reason: "invalid-refresh-focus",
+      state: null,
+      status: "invalid"
+    });
   });
 
   test("builds a blocked Stage 1 daily-use refresh outcome when daily report generation falls back", () => {

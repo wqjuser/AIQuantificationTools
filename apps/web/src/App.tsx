@@ -472,6 +472,7 @@ import {
   resolveLocalReviewCoverageNextActionDeepLinkState,
   resolveP0CompletionGapDeepLinkState,
   resolveP0CurrentGapActionDeepLinkState,
+  resolveStage1P0DailyUseShareDeepLinkStatus,
   resolveStage1P0DailyUseShareDeepLinkState,
   researchRunEvidenceLogLabel,
   resolveProductWorkAreaSelection,
@@ -500,6 +501,7 @@ import {
   Stage1P0DailyUseClosure,
   Stage1P0DailyUseRefreshOutcome,
   Stage1P0DailyUseShareDeepLinkState,
+  Stage1P0DailyUseShareDeepLinkStatus,
   PersonalTeamUsabilityReadinessReviewReference,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
@@ -677,6 +679,15 @@ const initialP0CompletionGapDeepLinkState =
   typeof window === "undefined" ? null : resolveP0CompletionGapDeepLinkState(window.location.search);
 const initialLocalReviewCoverageNextActionDeepLinkState =
   typeof window === "undefined" ? null : resolveLocalReviewCoverageNextActionDeepLinkState(window.location.search);
+const emptyStage1P0DailyUseShareDeepLinkStatus: Stage1P0DailyUseShareDeepLinkStatus = {
+  reason: null,
+  state: null,
+  status: "none"
+};
+const initialStage1P0DailyUseShareDeepLinkStatus =
+  typeof window === "undefined"
+    ? emptyStage1P0DailyUseShareDeepLinkStatus
+    : resolveStage1P0DailyUseShareDeepLinkStatus(window.location.search);
 const initialStage1P0DailyUseShareDeepLinkState =
   typeof window === "undefined" ? null : resolveStage1P0DailyUseShareDeepLinkState(window.location.search);
 const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";
@@ -695,6 +706,8 @@ const initialWorkspaceState: WorkspaceLoadResult = {
       ? localReviewCoverageNextActionLoadedStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState)
       : initialStage1P0DailyUseShareDeepLinkState
         ? stage1P0DailyUseShareLinkLoadedStatusLabel(initialStage1P0DailyUseShareDeepLinkState)
+        : initialStage1P0DailyUseShareDeepLinkStatus.status === "invalid"
+          ? stage1P0DailyUseShareLinkInvalidStatusLabel(initialStage1P0DailyUseShareDeepLinkStatus)
         : "Offline snapshot"
 };
 const initialRunHistoryState: ResearchRunHistoryResult = {
@@ -11922,6 +11935,44 @@ export function App() {
                   </div>
                 </div>
               ) : null}
+              {!initialStage1P0DailyUseShareDeepLinkState &&
+              initialStage1P0DailyUseShareDeepLinkStatus.status === "invalid" ? (
+                <div className="stage1-p0-share-deep-link invalid">
+                  <div>
+                    <span>
+                      {i18n.locale === "zh-CN" ? "Stage 1 分享链接不可用" : "Stage 1 share link unavailable"}
+                    </span>
+                    <strong>
+                      {stage1P0DailyUseShareLinkInvalidReasonLabel(
+                        i18n,
+                        initialStage1P0DailyUseShareDeepLinkStatus
+                      )}
+                    </strong>
+                    <small>
+                      {i18n.locale === "zh-CN"
+                        ? "链接没有恢复任何工作区；可先查看日常卡片再重新复制入口。"
+                        : "No workspace was restored; inspect the daily card and copy a fresh link."}
+                    </small>
+                  </div>
+                  <div className="stage1-p0-share-deep-link-actions">
+                    <button
+                      onClick={() => {
+                        focusStage1P0DailyUseShareCardElement();
+                        setWorkspaceState((current) => ({
+                          ...current,
+                          statusLabel: stage1P0DailyUseShareLinkInvalidStatusLabel(
+                            initialStage1P0DailyUseShareDeepLinkStatus
+                          ),
+                          error: undefined
+                        }));
+                      }}
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? "查看日常卡片" : "View daily card"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <Stage1P0DailyUseClosurePanel
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
@@ -14005,6 +14056,41 @@ function stage1P0DailyUseShareLinkLoadedStatusLabel(state: Stage1P0DailyUseShare
 
 function stage1P0DailyUseShareLinkOpenStatusLabel(state: Stage1P0DailyUseShareDeepLinkState): string {
   return `Stage 1 shared context opened: ${state.kind}/${state.focus} -> ${state.targetWorkspaceId}`;
+}
+
+function stage1P0DailyUseShareLinkInvalidStatusLabel(status: Stage1P0DailyUseShareDeepLinkStatus): string {
+  return status.status === "invalid" ? `Stage 1 share link invalid: ${status.reason}` : "Stage 1 share link ignored";
+}
+
+function stage1P0DailyUseShareLinkInvalidReasonLabel(
+  i18n: AppI18n,
+  status: Stage1P0DailyUseShareDeepLinkStatus
+): string {
+  const reason = status.status === "invalid" ? status.reason : "unknown";
+  if (i18n.locale === "en-US") {
+    return (
+      {
+        "ambiguous-focus": "Ambiguous Stage 1 focus",
+        "duplicate-workspace": "Duplicate workspace parameter",
+        "invalid-daily-focus": "Unknown daily handoff focus",
+        "invalid-refresh-focus": "Unknown refresh receipt focus",
+        "invalid-workspace": "Unknown workspace",
+        "missing-workspace": "Missing workspace parameter",
+        unknown: "Unknown Stage 1 share link issue"
+      }[reason] ?? "Unknown Stage 1 share link issue"
+    );
+  }
+  return (
+    {
+      "ambiguous-focus": "Stage 1 聚焦参数有歧义",
+      "duplicate-workspace": "workspace 参数重复",
+      "invalid-daily-focus": "未知日常手册目标",
+      "invalid-refresh-focus": "未知刷新回执目标",
+      "invalid-workspace": "未知工作区",
+      "missing-workspace": "缺少 workspace 参数",
+      unknown: "未知 Stage 1 分享链接问题"
+    }[reason] ?? "未知 Stage 1 分享链接问题"
+  );
 }
 
 function stage1P0DailyUseShareLinkLabel(

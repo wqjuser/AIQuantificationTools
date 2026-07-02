@@ -7258,6 +7258,19 @@ export interface Stage1P0DailyUseShareDeepLinkState {
   targetWorkspaceId: ProductWorkAreaId;
 }
 
+export type Stage1P0DailyUseShareDeepLinkIssueReason =
+  | "missing-workspace"
+  | "duplicate-workspace"
+  | "ambiguous-focus"
+  | "invalid-workspace"
+  | "invalid-daily-focus"
+  | "invalid-refresh-focus";
+
+export type Stage1P0DailyUseShareDeepLinkStatus =
+  | { reason: null; state: null; status: "none" }
+  | { reason: null; state: Stage1P0DailyUseShareDeepLinkState; status: "ready" }
+  | { reason: Stage1P0DailyUseShareDeepLinkIssueReason; state: null; status: "invalid" };
+
 const stage1P0DailyUseShareFocuses: readonly Stage1P0DailyUseShareFocus[] = [
   "primary",
   "clean-open",
@@ -7323,8 +7336,15 @@ export function buildStage1P0DailyUseRefreshReceiptUrlSearch(input: {
 export function resolveStage1P0DailyUseShareDeepLinkState(
   search: string | URLSearchParams | null | undefined
 ): Stage1P0DailyUseShareDeepLinkState | null {
+  const status = resolveStage1P0DailyUseShareDeepLinkStatus(search);
+  return status.status === "ready" ? status.state : null;
+}
+
+export function resolveStage1P0DailyUseShareDeepLinkStatus(
+  search: string | URLSearchParams | null | undefined
+): Stage1P0DailyUseShareDeepLinkStatus {
   if (!search) {
-    return null;
+    return { reason: null, state: null, status: "none" };
   }
   const params =
     search instanceof URLSearchParams
@@ -7332,20 +7352,36 @@ export function resolveStage1P0DailyUseShareDeepLinkState(
       : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   const dailyFocusValues = params.getAll("stage1DailyUseFocus");
   const refreshFocusValues = params.getAll("stage1RefreshReceiptFocus");
-  if (params.getAll("workspace").length !== 1 || dailyFocusValues.length + refreshFocusValues.length !== 1) {
-    return null;
+  const focusCount = dailyFocusValues.length + refreshFocusValues.length;
+  if (focusCount === 0) {
+    return { reason: null, state: null, status: "none" };
+  }
+
+  const workspaceValues = params.getAll("workspace");
+  if (workspaceValues.length === 0) {
+    return { reason: "missing-workspace", state: null, status: "invalid" };
+  }
+  if (workspaceValues.length > 1) {
+    return { reason: "duplicate-workspace", state: null, status: "invalid" };
+  }
+  if (focusCount !== 1) {
+    return { reason: "ambiguous-focus", state: null, status: "invalid" };
   }
 
   const targetWorkspaceId = auditReportLedgerProductWorkAreaId(params.get("workspace")?.trim() ?? "");
   if (!targetWorkspaceId) {
-    return null;
+    return { reason: "invalid-workspace", state: null, status: "invalid" };
   }
   if (dailyFocusValues.length === 1) {
     const focus = stage1P0DailyUseShareFocus(dailyFocusValues[0]);
-    return focus ? { focus, kind: "daily-use", targetWorkspaceId } : null;
+    return focus
+      ? { reason: null, state: { focus, kind: "daily-use", targetWorkspaceId }, status: "ready" }
+      : { reason: "invalid-daily-focus", state: null, status: "invalid" };
   }
   const focus = stage1P0DailyUseRefreshReceiptFocus(refreshFocusValues[0]);
-  return focus ? { focus, kind: "refresh-receipt", targetWorkspaceId } : null;
+  return focus
+    ? { reason: null, state: { focus, kind: "refresh-receipt", targetWorkspaceId }, status: "ready" }
+    : { reason: "invalid-refresh-focus", state: null, status: "invalid" };
 }
 
 export function buildStage1P0DailyUseClosure({

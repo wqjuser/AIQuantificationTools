@@ -1079,3 +1079,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 recovered share banner 现在可以直接定位日常收口卡。“查看日常卡片 / View daily card”会调用 `focusStage1P0DailyUseShareCardElement`，滚动到固定的 `stage1-p0-daily-use-closure` 卡片并设置焦点；卡片本身新增 `tabIndex=-1` 与 `:focus-visible` 轮廓，方便从分享链接进入后确认当前上下文。该动作仍只做前端滚动和焦点定位，不自动刷新自检、不切换工作区、不运行命令、不写审计事件、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 recovered share banner 的“查看日常卡片 / View daily card”现在会优先定位分享链接指向的精确目标。新增 `stage1P0DailyUseShareTargetElementId` 和 `focusStage1P0DailyUseShareTargetElement`，会把日常五行、主动作、刷新回执 entry、回执下一步和冷启动刷新回执分别映射到稳定按钮 id；目标当前未渲染时才回退到 `stage1-p0-daily-use-closure` 卡片。该能力只改善前端恢复后的焦点落点，不自动生成回执、不切换分享工作区、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 分享链接现在会显式提示无效或歧义 URL。新增 `resolveStage1P0DailyUseShareDeepLinkStatus`，在保留旧 `resolveStage1P0DailyUseShareDeepLinkState` 有效状态 API 的同时，返回 `none/ready/invalid` 和稳定 reason；首页会对缺少 workspace、重复 workspace、日常/回执 focus 混用、重复 focus、未知 workspace 或未知目标显示 invalid share banner，并只提供“查看日常卡片”安全动作。该能力只避免小团队交接坏链接静默失败，不自动恢复错误工作区、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。

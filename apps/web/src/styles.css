@@ -1266,6 +1266,11 @@ em {
   background: #0f1d2b;
 }
 
+.stage1-p0-share-deep-link.invalid {
+  border-color: rgba(255, 127, 109, 0.42);
+  border-left-color: #ff7f6d;
+}
+
 .stage1-p0-share-deep-link > div:first-child {
   min-width: 0;
 }
