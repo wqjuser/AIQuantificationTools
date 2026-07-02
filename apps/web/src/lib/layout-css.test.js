@@ -388,10 +388,13 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const refreshStage1DailyUseLatest = useCallback");
     expect(appSource).toContain("setStage1DailyUseLatestState(await loadStage1DailyUseLatest(quantCoreBaseUrl));");
     expect(appSource).toContain("generateStage1DailyUse");
+    expect(appSource).toContain("buildStage1P0DailyUseRefreshOutcome");
+    expect(appSource).toContain("const [stage1P0DailyUseRefreshOutcome, setStage1P0DailyUseRefreshOutcome]");
     expect(appSource).toContain("const refreshStage1DailyUseReport = useCallback");
     expect(appSource).toContain("const generated = await generateStage1DailyUse(quantCoreBaseUrl);");
     expect(appSource).toContain("setStage1DailyUseLatestState({");
     expect(appSource).toContain("onRefreshDailyUse={() => void refreshStage1DailyUseReport()}");
+    expect(appSource).toContain("refreshOutcome={stage1P0DailyUseRefreshOutcome}");
     expect(appSource).toContain("buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse)");
     expect(appSource).toContain("dailyUseReport: stage1DailyUseSummary");
     expect(appSource).toContain("loadDesktopReleaseLatest");
@@ -425,7 +428,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("开箱预检源已更新");
     expect(appSource).toContain("开箱预检待刷新");
     expect(appSource).toContain("开箱预检源已更新；刷新自检会重新生成 preflight。");
+    expect(appSource).toContain("刷新回执");
+    expect(appSource).toContain("本地核心");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
+    expect(cssBlock(".stage1-p0-daily-use-refresh-outcome")).toContain("display: grid;");
+    expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-entries")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-row")).toContain("cursor: pointer;");

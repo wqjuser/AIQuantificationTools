@@ -154,6 +154,7 @@ import {
   buildDesktopReleaseSummary,
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
+  buildStage1P0DailyUseRefreshOutcome,
   buildP0AcceptanceReviewMarkdown,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
@@ -3357,6 +3358,167 @@ describe("terminal workbench model", () => {
       targetWorkspaceId: "settings",
       value: "refresh-stage1-bootstrap-preflight"
     });
+  });
+
+  test("builds a ready Stage 1 daily-use refresh outcome receipt", () => {
+    const dailyUseReport = buildStage1DailyUseSummary({
+      kind: "aiqt.stage1DailyUseReport",
+      schemaVersion: 1,
+      generatedAt: "2026-07-02T10:00:00+00:00",
+      status: "ready",
+      summary: "Stage 1 daily use is ready (5/5 checks ready).",
+      readyCount: 5,
+      totalCount: 5,
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      sourcePath: "data/stage1-daily-use.json",
+      sourcePaths: {
+        p0Acceptance: "data/p0-acceptance.json",
+        p1Acceptance: "data/p1-acceptance.json",
+        desktopRelease: "data/desktop-release.json"
+      },
+      rows: [
+        {
+          id: "clean-open",
+          label: "Clean environment startup",
+          status: "ready",
+          value: "report clean ready",
+          summary: "Report says clean-open is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "market-refresh-recovery",
+          label: "Market refresh recovery",
+          status: "ready",
+          value: "report refresh ready",
+          summary: "Report says refresh recovery is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "research-entry",
+          label: "Research entry",
+          status: "ready",
+          value: "report research ready",
+          summary: "Report says research entry is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "daily-start",
+          label: "Daily start path",
+          status: "ready",
+          value: "report daily ready",
+          summary: "Report says daily start is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        },
+        {
+          id: "desktop-release",
+          label: "Desktop release",
+          status: "ready",
+          value: "report desktop ready",
+          summary: "Report says desktop release is ready.",
+          action: "npm run stage1:daily:validate",
+          paperOnly: true,
+          liveTradingAllowed: false,
+          liveBlockedBoundary: true
+        }
+      ]
+    });
+    const bootstrapPreflight = buildStage1BootstrapPreflightSummary(sampleStage1BootstrapPreflight("ready"));
+    const desktopRelease = buildDesktopReleaseSummary({
+      kind: "aiqt.desktopReleaseStatus",
+      schemaVersion: 1,
+      status: "passed",
+      available: true,
+      sourcePath: "data/desktop-release.json",
+      summary: "desktop release manifest platform=darwin-arm64 checks=5 liveBlocked=True",
+      reason: "",
+      generatedAt: "2026-06-30T06:45:00+00:00",
+      platform: "darwin-arm64",
+      version: "0.1.0",
+      tauriConfigPath: "apps/web/src-tauri/tauri.conf.json",
+      desktopArtifactPath: "apps/web/src-tauri/target/release/bundle",
+      checkCount: 5,
+      requiredCheckCount: 5,
+      checkIds: ["web-build", "cargo-check", "tauri-icon", "desktop-bundle", "live-blocked-boundary"],
+      paperOnly: true,
+      liveTradingAllowed: false,
+      liveBlockedBoundary: true,
+      manifest: null
+    });
+    if (!dailyUseReport || !bootstrapPreflight) {
+      throw new Error("Expected Stage 1 summaries");
+    }
+
+    const outcome = buildStage1P0DailyUseRefreshOutcome({
+      bootstrapPreflight,
+      bootstrapPreflightSource: "core",
+      dailyUseReport,
+      dailyUseSource: "core",
+      desktopRelease,
+      desktopReleaseSource: "core"
+    });
+
+    expect(outcome).toMatchObject({
+      actionLabel: "Open daily workbench",
+      headline: "Stage 1 daily self-check refreshed",
+      readyCount: 3,
+      state: "ready",
+      targetWorkspaceId: "research",
+      totalCount: 3
+    });
+    expect(outcome.detail).toContain("3/3 refresh checks ready");
+    expect(outcome.entries.map((entry) => entry.id)).toEqual(["daily-use", "bootstrap-preflight", "desktop-release"]);
+    expect(outcome.entries.map((entry) => entry.source)).toEqual(["core", "core", "core"]);
+    expect(outcome.entries.every((entry) => entry.status === "ready")).toBe(true);
+  });
+
+  test("builds a blocked Stage 1 daily-use refresh outcome when daily report generation falls back", () => {
+    const bootstrapPreflight = buildStage1BootstrapPreflightSummary(sampleStage1BootstrapPreflight("ready"));
+    const desktopRelease = buildDesktopReleaseSummary(null);
+    if (!bootstrapPreflight) {
+      throw new Error("Expected Stage 1 bootstrap summary");
+    }
+
+    const outcome = buildStage1P0DailyUseRefreshOutcome({
+      bootstrapPreflight,
+      bootstrapPreflightSource: "core",
+      dailyUseError: "HTTP 500",
+      dailyUseReport: null,
+      dailyUseSource: "fallback",
+      desktopRelease,
+      desktopReleaseSource: "core"
+    });
+
+    expect(outcome).toMatchObject({
+      actionLabel: "Run daily self-check",
+      headline: "Stage 1 daily self-check refresh needs attention",
+      readyCount: 1,
+      state: "blocked",
+      targetWorkspaceId: "settings",
+      totalCount: 3
+    });
+    expect(outcome.detail).toContain("Daily report: HTTP 500");
+    expect(outcome.entries[0]).toMatchObject({
+      detail: "HTTP 500",
+      id: "daily-use",
+      source: "fallback",
+      status: "blocked"
+    });
+    expect(outcome.entries[1]).toMatchObject({ id: "bootstrap-preflight", source: "core", status: "ready" });
+    expect(outcome.entries[2]).toMatchObject({ id: "desktop-release", status: "review" });
   });
 
   test("uses all valid Stage 1 daily-use report rows before live UI fallback rows", () => {

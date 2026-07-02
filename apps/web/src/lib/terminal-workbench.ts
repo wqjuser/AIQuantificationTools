@@ -7202,6 +7202,45 @@ export interface Stage1P0DailyUseClosureInput {
   researchReadinessRows: readonly ResearchContextReadinessRow[];
 }
 
+export type Stage1P0DailyUseRefreshOutcomeState = "ready" | "review" | "blocked";
+export type Stage1P0DailyUseRefreshOutcomeSource = "core" | "fallback";
+
+export interface Stage1P0DailyUseRefreshOutcomeEntry {
+  id: "daily-use" | "bootstrap-preflight" | "desktop-release";
+  label: string;
+  status: Stage1P0DailyUseRefreshOutcomeState;
+  tone: "positive" | "warning" | "risk";
+  source: Stage1P0DailyUseRefreshOutcomeSource;
+  sourceLabel: string;
+  detail: string;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+}
+
+export interface Stage1P0DailyUseRefreshOutcome {
+  state: Stage1P0DailyUseRefreshOutcomeState;
+  tone: "positive" | "warning" | "risk";
+  headline: string;
+  detail: string;
+  readyCount: number;
+  totalCount: number;
+  actionLabel: string;
+  targetWorkspaceId: ProductWorkAreaId;
+  entries: Stage1P0DailyUseRefreshOutcomeEntry[];
+}
+
+export interface Stage1P0DailyUseRefreshOutcomeInput {
+  bootstrapPreflight: Stage1BootstrapPreflightSummary | null;
+  bootstrapPreflightError?: string | null;
+  bootstrapPreflightSource: Stage1P0DailyUseRefreshOutcomeSource;
+  dailyUseError?: string | null;
+  dailyUseReport: Stage1DailyUseSummary | null;
+  dailyUseSource: Stage1P0DailyUseRefreshOutcomeSource;
+  desktopRelease: DesktopReleaseSummary | null;
+  desktopReleaseError?: string | null;
+  desktopReleaseSource: Stage1P0DailyUseRefreshOutcomeSource;
+}
+
 export function buildStage1P0DailyUseClosure({
   bootstrapPreflight = null,
   dailyStartBrief,
@@ -7309,6 +7348,131 @@ export function buildStage1P0DailyUseClosure({
     staleSourceSummary,
     rows
   };
+}
+
+export function buildStage1P0DailyUseRefreshOutcome({
+  bootstrapPreflight,
+  bootstrapPreflightError = null,
+  bootstrapPreflightSource,
+  dailyUseError = null,
+  dailyUseReport,
+  dailyUseSource,
+  desktopRelease,
+  desktopReleaseError = null,
+  desktopReleaseSource
+}: Stage1P0DailyUseRefreshOutcomeInput): Stage1P0DailyUseRefreshOutcome {
+  const entries: Stage1P0DailyUseRefreshOutcomeEntry[] = [
+    buildStage1P0DailyUseRefreshOutcomeEntry({
+      actionLabel: dailyUseReport?.actionLabel ?? "Run daily self-check",
+      detail: dailyUseReport?.headline ?? "Stage 1 daily-use report unavailable",
+      error: dailyUseError,
+      id: "daily-use",
+      label: "Daily report",
+      source: dailyUseSource,
+      state: dailyUseReport ? stage1RefreshOutcomeStateFromStage1State(dailyUseReport.state) : "blocked",
+      targetWorkspaceId: dailyUseReport?.targetWorkspaceId ?? "settings"
+    }),
+    buildStage1P0DailyUseRefreshOutcomeEntry({
+      actionLabel: bootstrapPreflight?.actionLabel ?? "Run bootstrap preflight",
+      detail: bootstrapPreflight?.headline ?? "Stage 1 bootstrap preflight unavailable",
+      error: bootstrapPreflightError,
+      id: "bootstrap-preflight",
+      label: "Bootstrap preflight",
+      source: bootstrapPreflightSource,
+      state: bootstrapPreflight ? stage1RefreshOutcomeStateFromStage1State(bootstrapPreflight.state) : "blocked",
+      targetWorkspaceId: bootstrapPreflight?.targetWorkspaceId ?? "settings"
+    }),
+    buildStage1P0DailyUseRefreshOutcomeEntry({
+      actionLabel: desktopRelease?.actionLabel ?? "Review desktop release",
+      detail: desktopRelease?.headline ?? "Desktop release readback unavailable",
+      error: desktopReleaseError,
+      id: "desktop-release",
+      label: "Desktop release",
+      source: desktopReleaseSource,
+      state: desktopRelease ? stage1RefreshOutcomeStateFromDesktopState(desktopRelease.state) : "blocked",
+      targetWorkspaceId: desktopRelease?.targetWorkspaceId ?? "settings"
+    })
+  ];
+  const readyCount = entries.filter((entry) => entry.status === "ready").length;
+  const state: Stage1P0DailyUseRefreshOutcomeState = entries.some((entry) => entry.status === "blocked")
+    ? "blocked"
+    : entries.some((entry) => entry.status === "review")
+      ? "review"
+      : "ready";
+  const nextEntry = entries.find((entry) => entry.status === "blocked") ?? entries.find((entry) => entry.status === "review") ?? null;
+  return {
+    state,
+    tone: dailyUseClosureTone(state),
+    headline:
+      state === "ready"
+        ? "Stage 1 daily self-check refreshed"
+        : state === "review"
+          ? "Stage 1 daily self-check refreshed with review items"
+          : "Stage 1 daily self-check refresh needs attention",
+    detail: `${readyCount}/${entries.length} refresh checks ready · ${entries
+      .map((entry) => `${entry.label}: ${entry.detail}`)
+      .join(" · ")}`,
+    readyCount,
+    totalCount: entries.length,
+    actionLabel: nextEntry?.actionLabel ?? "Open daily workbench",
+    targetWorkspaceId: nextEntry?.targetWorkspaceId ?? "research",
+    entries
+  };
+}
+
+function buildStage1P0DailyUseRefreshOutcomeEntry({
+  actionLabel,
+  detail,
+  error,
+  id,
+  label,
+  source,
+  state,
+  targetWorkspaceId
+}: {
+  actionLabel: string;
+  detail: string;
+  error?: string | null;
+  id: Stage1P0DailyUseRefreshOutcomeEntry["id"];
+  label: string;
+  source: Stage1P0DailyUseRefreshOutcomeSource;
+  state: Stage1P0DailyUseRefreshOutcomeState;
+  targetWorkspaceId: ProductWorkAreaId;
+}): Stage1P0DailyUseRefreshOutcomeEntry {
+  const status = source === "fallback" ? "blocked" : state;
+  return {
+    id,
+    label,
+    status,
+    tone: dailyUseClosureTone(status),
+    source,
+    sourceLabel: source === "core" ? "Local core" : "Safe fallback",
+    detail: source === "fallback" ? error || detail : detail,
+    actionLabel,
+    targetWorkspaceId
+  };
+}
+
+function stage1RefreshOutcomeStateFromStage1State(
+  state: Stage1DailyUseSummaryState | Stage1BootstrapPreflightSummaryState
+): Stage1P0DailyUseRefreshOutcomeState {
+  if (state === "ready") {
+    return "ready";
+  }
+  if (state === "review" || state === "missing") {
+    return "review";
+  }
+  return "blocked";
+}
+
+function stage1RefreshOutcomeStateFromDesktopState(state: DesktopReleaseSummaryState): Stage1P0DailyUseRefreshOutcomeState {
+  if (state === "passed") {
+    return "ready";
+  }
+  if (state === "missing") {
+    return "review";
+  }
+  return "blocked";
 }
 
 function buildDailyUseReportBackedRow(

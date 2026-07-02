@@ -1408,6 +1408,108 @@ em {
   color: #ffad9f;
 }
 
+.stage1-p0-daily-use-refresh-outcome {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #26364d;
+  border-radius: 6px;
+  background: #101c2d;
+}
+
+.stage1-p0-daily-use-refresh-outcome.ready {
+  border-color: #2d6e61;
+}
+
+.stage1-p0-daily-use-refresh-outcome.review {
+  border-color: #735f2b;
+}
+
+.stage1-p0-daily-use-refresh-outcome.blocked {
+  border-color: #6f3934;
+}
+
+.stage1-p0-daily-use-refresh-outcome-head {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stage1-p0-daily-use-refresh-outcome-head span,
+.stage1-p0-daily-use-refresh-outcome-head small {
+  overflow: hidden;
+  color: #8fa0b2;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage1-p0-daily-use-refresh-outcome-head strong {
+  overflow: hidden;
+  color: #dce6ee;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entries {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid #26364d;
+  border-radius: 5px;
+  background: #132033;
+  color: #dce6ee;
+  cursor: pointer;
+  text-align: left;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry.ready {
+  border-color: #2d6e61;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry.review {
+  border-color: #735f2b;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry.blocked {
+  border-color: #6f3934;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry span,
+.stage1-p0-daily-use-refresh-outcome-entry strong,
+.stage1-p0-daily-use-refresh-outcome-entry small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry span {
+  color: #71dfc5;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry strong {
+  font-size: 11px;
+}
+
+.stage1-p0-daily-use-refresh-outcome-entry small {
+  color: #8fa0b2;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .stage1-p0-daily-use-footer {
   display: flex;
   align-items: center;
@@ -16248,6 +16350,10 @@ button.ai-review-record {
   }
 
   .stage1-p0-daily-use-rows {
+    grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-daily-use-refresh-outcome-entries {
     grid-template-columns: 1fr;
   }
 

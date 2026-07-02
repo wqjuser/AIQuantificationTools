@@ -364,6 +364,7 @@ import {
   buildDesktopReleaseSummary,
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
+  buildStage1P0DailyUseRefreshOutcome,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
   buildP2PaperReplaySummary,
@@ -496,6 +497,7 @@ import {
   DailyStartBrief,
   DailyStartBriefReviewReference,
   Stage1P0DailyUseClosure,
+  Stage1P0DailyUseRefreshOutcome,
   PersonalTeamUsabilityReadinessReviewReference,
   P0CurrentGapActionReadiness,
   P2ManifestChainPreflightAuditEventReferenceSource,
@@ -2008,6 +2010,8 @@ export function App() {
   const [stage1DailyUseLatestState, setStage1DailyUseLatestState] = useState<Stage1DailyUseLatestResult>(
     initialStage1DailyUseLatestState
   );
+  const [stage1P0DailyUseRefreshOutcome, setStage1P0DailyUseRefreshOutcome] =
+    useState<Stage1P0DailyUseRefreshOutcome | null>(null);
   const [p0AcceptanceLatestState, setP0AcceptanceLatestState] = useState<P0AcceptanceLatestResult>(
     initialP0AcceptanceLatestState
   );
@@ -3281,13 +3285,30 @@ export function App() {
         source: generated.source,
         error: generated.error
       });
+      const generatedDailyUseSummary = buildStage1DailyUseSummary(generated.dailyUse);
       const generatedPreflight = await generateStage1BootstrapPreflight(quantCoreBaseUrl);
       setStage1BootstrapPreflightLatestState({
         preflight: generatedPreflight.preflight,
         source: generatedPreflight.source,
         error: generatedPreflight.error
       });
-      setDesktopReleaseLatestState(await loadDesktopReleaseLatest(quantCoreBaseUrl));
+      const generatedPreflightSummary = buildStage1BootstrapPreflightSummary(generatedPreflight.preflight);
+      const desktopReleaseLatest = await loadDesktopReleaseLatest(quantCoreBaseUrl);
+      setDesktopReleaseLatestState(desktopReleaseLatest);
+      const refreshedDesktopReleaseSummary = buildDesktopReleaseSummary(desktopReleaseLatest.release);
+      setStage1P0DailyUseRefreshOutcome(
+        buildStage1P0DailyUseRefreshOutcome({
+          bootstrapPreflight: generatedPreflightSummary,
+          bootstrapPreflightError: generatedPreflight.error,
+          bootstrapPreflightSource: generatedPreflight.source,
+          dailyUseError: generated.error,
+          dailyUseReport: generatedDailyUseSummary,
+          dailyUseSource: generated.source,
+          desktopRelease: refreshedDesktopReleaseSummary,
+          desktopReleaseError: desktopReleaseLatest.error,
+          desktopReleaseSource: desktopReleaseLatest.source
+        })
+      );
     } finally {
       setIsGeneratingStage1BootstrapPreflight(false);
       setIsGeneratingStage1DailyUse(false);
@@ -11590,6 +11611,7 @@ export function App() {
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 onSelectWorkspace={selectProductWorkArea}
+                refreshOutcome={stage1P0DailyUseRefreshOutcome}
               />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
                 <div>
@@ -12898,13 +12920,15 @@ function Stage1P0DailyUseClosurePanel({
   i18n,
   isRefreshingDailyUse = false,
   onRefreshDailyUse,
-  onSelectWorkspace
+  onSelectWorkspace,
+  refreshOutcome
 }: {
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
   isRefreshingDailyUse?: boolean;
   onRefreshDailyUse?: () => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
+  refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
 }) {
   const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
 
@@ -12939,6 +12963,29 @@ function Stage1P0DailyUseClosurePanel({
           </button>
         ))}
       </div>
+      {refreshOutcome ? (
+        <div className={`stage1-p0-daily-use-refresh-outcome ${refreshOutcome.state}`}>
+          <div className="stage1-p0-daily-use-refresh-outcome-head">
+            <span>{i18n.locale === "zh-CN" ? "刷新回执" : "Refresh receipt"}</span>
+            <strong>{stage1P0DailyUseRefreshOutcomeHeadline(i18n, refreshOutcome)}</strong>
+            <small>{stage1P0DailyUseRefreshOutcomeDetail(i18n, refreshOutcome)}</small>
+          </div>
+          <div className="stage1-p0-daily-use-refresh-outcome-entries">
+            {refreshOutcome.entries.map((entry) => (
+              <button
+                className={`stage1-p0-daily-use-refresh-outcome-entry ${entry.status}`}
+                key={entry.id}
+                onClick={() => onSelectWorkspace(entry.targetWorkspaceId)}
+                type="button"
+              >
+                <span>{stage1P0DailyUseRefreshOutcomeEntryLabel(i18n, entry)}</span>
+                <strong>{stage1P0DailyUseRefreshOutcomeEntryStatus(i18n, entry)}</strong>
+                <small>{stage1P0DailyUseRefreshOutcomeSourceLabel(i18n, entry.source)}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="stage1-p0-daily-use-footer">
         <small>
           {i18n.locale === "zh-CN"
@@ -12963,6 +13010,71 @@ function Stage1P0DailyUseClosurePanel({
       </div>
     </section>
   );
+}
+
+function stage1P0DailyUseRefreshOutcomeHeadline(
+  i18n: AppI18n,
+  outcome: Stage1P0DailyUseRefreshOutcome
+): string {
+  if (i18n.locale === "en-US") {
+    return outcome.headline;
+  }
+  if (outcome.state === "ready") {
+    return "日常自检刷新完成";
+  }
+  if (outcome.state === "review") {
+    return "日常自检刷新后仍需复核";
+  }
+  return "日常自检刷新需要处理";
+}
+
+function stage1P0DailyUseRefreshOutcomeDetail(
+  i18n: AppI18n,
+  outcome: Stage1P0DailyUseRefreshOutcome
+): string {
+  if (i18n.locale === "en-US") {
+    return outcome.detail;
+  }
+  const pending = outcome.totalCount - outcome.readyCount;
+  return pending === 0
+    ? `${outcome.readyCount}/${outcome.totalCount} 回执就绪 · 未放开实盘`
+    : `${outcome.readyCount}/${outcome.totalCount} 回执就绪 · ${pending} 项需要处理`;
+}
+
+function stage1P0DailyUseRefreshOutcomeEntryLabel(
+  i18n: AppI18n,
+  entry: Stage1P0DailyUseRefreshOutcome["entries"][number]
+): string {
+  if (i18n.locale === "en-US") {
+    return entry.label;
+  }
+  if (entry.id === "daily-use") {
+    return "日报";
+  }
+  if (entry.id === "bootstrap-preflight") {
+    return "开箱预检";
+  }
+  return "桌面发布";
+}
+
+function stage1P0DailyUseRefreshOutcomeEntryStatus(
+  i18n: AppI18n,
+  entry: Stage1P0DailyUseRefreshOutcome["entries"][number]
+): string {
+  if (i18n.locale === "en-US") {
+    return entry.status === "ready" ? "Ready" : entry.status === "review" ? "Review" : "Blocked";
+  }
+  return entry.status === "ready" ? "就绪" : entry.status === "review" ? "待复核" : "需处理";
+}
+
+function stage1P0DailyUseRefreshOutcomeSourceLabel(
+  i18n: AppI18n,
+  source: Stage1P0DailyUseRefreshOutcome["entries"][number]["source"]
+): string {
+  if (i18n.locale === "en-US") {
+    return source === "core" ? "Local core" : "Safe fallback";
+  }
+  return source === "core" ? "本地核心" : "安全 fallback";
 }
 
 function stage1P0DailyUseClosurePrimaryRow(
