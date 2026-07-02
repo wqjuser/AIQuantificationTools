@@ -9357,6 +9357,36 @@ export function App() {
     }
   }, [stage1P0DailyUseClosure.copyText]);
 
+  const downloadStage1P0DailyUseHandoff = useCallback(() => {
+    let objectUrl: string | null = null;
+    try {
+      objectUrl = URL.createObjectURL(
+        new Blob([stage1P0DailyUseClosure.copyText], { type: "text/markdown;charset=utf-8" })
+      );
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "stage1-p0-daily-use-handoff.md";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily handoff download ready",
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily handoff download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Handoff download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [stage1P0DailyUseClosure.copyText]);
+
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
       return;
@@ -11672,6 +11702,7 @@ export function App() {
                 isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
                 onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
+                onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 onSelectWorkspace={selectProductWorkArea}
@@ -12986,6 +13017,7 @@ function Stage1P0DailyUseClosurePanel({
   isRefreshOutcomeCopied = false,
   isRefreshingDailyUse = false,
   onCopyHandoff,
+  onDownloadHandoff,
   onCopyRefreshOutcome,
   onRefreshDailyUse,
   onSelectWorkspace,
@@ -12997,6 +13029,7 @@ function Stage1P0DailyUseClosurePanel({
   isRefreshOutcomeCopied?: boolean;
   isRefreshingDailyUse?: boolean;
   onCopyHandoff?: () => void;
+  onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
   onRefreshDailyUse?: () => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
@@ -13095,6 +13128,15 @@ function Stage1P0DailyUseClosurePanel({
               : i18n.locale === "zh-CN"
                 ? "复制日常手册"
                 : "Copy handoff"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-download"
+            disabled={!onDownloadHandoff}
+            onClick={onDownloadHandoff}
+            type="button"
+          >
+            <Download size={12} />
+            {i18n.locale === "zh-CN" ? "下载日常手册" : "Download handoff"}
           </button>
           <button
             className="stage1-p0-daily-use-refresh"
