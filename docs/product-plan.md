@@ -1073,3 +1073,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 分享链接现在会恢复来源上下文。日常手册链接带 `stage1DailyUseFocus`，刷新回执链接带 `stage1RefreshReceiptFocus`；`resolveStage1P0DailyUseShareDeepLinkState` 会拒绝缺失 workspace、重复 focus 或日常/回执 focus 混用的歧义链接。首页打开有效链接时显示 recovered Stage 1 share banner，解释它来自日常手册还是刷新回执，并只提供“查看日常卡片 / 打开分享工作区”两个手动动作。该能力仍只恢复前端上下文，不自动刷新自检、不写审计事件、不构建桌面端、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 分享链接恢复后现在会在日常收口卡内高亮精确目标。`Stage1P0DailyUseClosurePanel` 接收解析后的 share deep-link state，并用 `.shared-focus` 标记对应的五行日常入口、主动作、刷新回执 entry 或“打开下一步”按钮，同时保留 `aria-current` 便于确认当前分享上下文。该能力只提升前端定位和交接可读性，不自动刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 刷新回执分享链接现在支持冷启动恢复提示。若新会话打开 `stage1RefreshReceiptFocus` 链接但本地还没有本次 `refreshOutcome`，日常收口卡会显示“已恢复刷新回执链接 / Recovered refresh receipt link”提示，并把“刷新自检 / Refresh daily”按钮标为 `.shared-focus`，引导操作者手动重新生成回执后继续下一步。该能力只说明恢复路径，不自动生成回执、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。

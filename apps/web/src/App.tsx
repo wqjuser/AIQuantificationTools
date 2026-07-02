@@ -13186,6 +13186,13 @@ function stage1P0DailyUseRefreshNextIsSharedFocus(
   return state?.kind === "refresh-receipt" && state.focus === "next";
 }
 
+function stage1P0DailyUseRefreshReceiptIsColdStart(
+  state: Stage1P0DailyUseShareDeepLinkState | null | undefined,
+  outcome: Stage1P0DailyUseRefreshOutcome | null | undefined
+): boolean {
+  return state?.kind === "refresh-receipt" && !outcome;
+}
+
 function p0EvidenceDrawerSummary(
   i18n: AppI18n,
   hasSavedReport: boolean,
@@ -13308,6 +13315,11 @@ function Stage1P0DailyUseClosurePanel({
   const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
   const isPrimarySharedFocus = stage1P0DailyUsePrimaryIsSharedFocus(shareDeepLinkState);
   const isRefreshNextSharedFocus = stage1P0DailyUseRefreshNextIsSharedFocus(shareDeepLinkState);
+  const isRefreshReceiptColdStart = stage1P0DailyUseRefreshReceiptIsColdStart(shareDeepLinkState, refreshOutcome);
+  const refreshReceiptColdStartFocusLabel =
+    isRefreshReceiptColdStart && shareDeepLinkState
+      ? stage1P0DailyUseShareLinkFocusLabel(i18n, shareDeepLinkState)
+      : "";
 
   return (
     <section
@@ -13345,6 +13357,20 @@ function Stage1P0DailyUseClosurePanel({
           );
         })}
       </div>
+      {isRefreshReceiptColdStart ? (
+        <div className="stage1-p0-daily-use-refresh-recovery" aria-live="polite">
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "已恢复刷新回执链接" : "Recovered refresh receipt link"}</span>
+            <strong>{refreshReceiptColdStartFocusLabel}</strong>
+            <small>
+              {i18n.locale === "zh-CN"
+                ? "刷新自检会重新生成回执并恢复下一步上下文。"
+                : "Refresh daily regenerates the receipt and restores the next-step context."}
+            </small>
+          </div>
+          <em>{i18n.locale === "zh-CN" ? "手动恢复" : "Manual recovery"}</em>
+        </div>
+      ) : null}
       {refreshOutcome ? (
         <div className={`stage1-p0-daily-use-refresh-outcome ${refreshOutcome.state}`}>
           <div className="stage1-p0-daily-use-refresh-outcome-head">
@@ -13451,7 +13477,8 @@ function Stage1P0DailyUseClosurePanel({
             {i18n.locale === "zh-CN" ? "下载日常手册" : "Download handoff"}
           </button>
           <button
-            className="stage1-p0-daily-use-refresh"
+            aria-current={isRefreshReceiptColdStart ? "true" : undefined}
+            className={`stage1-p0-daily-use-refresh${isRefreshReceiptColdStart ? " shared-focus" : ""}`}
             disabled={isRefreshingDailyUse || !onRefreshDailyUse}
             onClick={onRefreshDailyUse}
             type="button"

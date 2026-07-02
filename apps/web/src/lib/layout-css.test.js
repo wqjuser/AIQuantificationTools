@@ -482,6 +482,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function stage1P0DailyUsePrimaryIsSharedFocus");
     expect(appSource).toContain("function stage1P0DailyUseRefreshEntryIsSharedFocus");
     expect(appSource).toContain("function stage1P0DailyUseRefreshNextIsSharedFocus");
+    expect(appSource).toContain("function stage1P0DailyUseRefreshReceiptIsColdStart");
     expect(appSource).toContain("onCopyPrimaryLink?: () => void;");
     expect(appSource).toContain("onCopyRefreshOutcomeLink?: () => void;");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
@@ -532,12 +533,19 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("stage1P0DailyUsePrimaryIsSharedFocus(shareDeepLinkState)");
     expect(appSource).toContain("stage1P0DailyUseRefreshEntryIsSharedFocus(shareDeepLinkState, entry.id)");
     expect(appSource).toContain("stage1P0DailyUseRefreshNextIsSharedFocus(shareDeepLinkState)");
+    expect(appSource).toContain("const isRefreshReceiptColdStart = stage1P0DailyUseRefreshReceiptIsColdStart(shareDeepLinkState, refreshOutcome);");
+    expect(appSource).toContain('className="stage1-p0-daily-use-refresh-recovery"');
+    expect(appSource).toContain('i18n.locale === "zh-CN" ? "已恢复刷新回执链接" : "Recovered refresh receipt link"');
+    expect(appSource).toContain("刷新自检会重新生成回执并恢复下一步上下文。");
+    expect(appSource).toContain('className={`stage1-p0-daily-use-refresh${isRefreshReceiptColdStart ? " shared-focus" : ""}`}');
     expect(appSource).toContain("onOpenRefreshOutcomeEntry(entry)");
     expect(appSource).toContain("onOpenRefreshOutcomeNextStep()");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-entries")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-actions")).toContain("display: flex;");
+    expect(cssBlock(".stage1-p0-daily-use-refresh-recovery")).toContain("display: grid;");
+    expect(cssBlock(".stage1-p0-daily-use-refresh-recovery")).toContain("border: 1px solid rgba(113, 223, 197, 0.34);");
     expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-row")).toContain("cursor: pointer;");
@@ -548,6 +556,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".stage1-p0-daily-use-copy")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-download")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-refresh")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
+    expect(cssBlock(".stage1-p0-daily-use-refresh.shared-focus")).toContain("border-color: #71dfc5;");
     expect(cssBlock(".stage1-p0-daily-use-footer-actions button.shared-focus")).toContain("border-color: #71dfc5;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-actions button.shared-focus")).toContain("border-color: #71dfc5;");
   });
