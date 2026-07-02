@@ -9414,6 +9414,40 @@ export function App() {
     }
   }, [stage1P0DailyUseRefreshOutcome]);
 
+  const downloadStage1P0DailyUseRefreshOutcome = useCallback(() => {
+    if (!stage1P0DailyUseRefreshOutcome) {
+      return;
+    }
+
+    let objectUrl: string | null = null;
+    try {
+      objectUrl = URL.createObjectURL(
+        new Blob([stage1P0DailyUseRefreshOutcome.copyText], { type: "text/markdown;charset=utf-8" })
+      );
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "stage1-p0-daily-refresh-receipt.md";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 refresh receipt download ready",
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 refresh receipt download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Refresh receipt download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [stage1P0DailyUseRefreshOutcome]);
+
   const downloadDailyOpsControlRoomReview = useCallback(() => {
     const objectUrl = URL.createObjectURL(
       new Blob([dailyOpsControlRoomReviewMarkdown], { type: "text/markdown;charset=utf-8" })
@@ -11704,6 +11738,7 @@ export function App() {
                 onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
+                onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 onSelectWorkspace={selectProductWorkArea}
                 refreshOutcome={stage1P0DailyUseRefreshOutcome}
@@ -13019,6 +13054,7 @@ function Stage1P0DailyUseClosurePanel({
   onCopyHandoff,
   onDownloadHandoff,
   onCopyRefreshOutcome,
+  onDownloadRefreshOutcome,
   onRefreshDailyUse,
   onSelectWorkspace,
   refreshOutcome
@@ -13031,6 +13067,7 @@ function Stage1P0DailyUseClosurePanel({
   onCopyHandoff?: () => void;
   onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
+  onDownloadRefreshOutcome?: () => void;
   onRefreshDailyUse?: () => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
   refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
@@ -13099,6 +13136,10 @@ function Stage1P0DailyUseClosurePanel({
                 : i18n.locale === "zh-CN"
                   ? "复制回执"
                   : "Copy receipt"}
+            </button>
+            <button disabled={!onDownloadRefreshOutcome} onClick={onDownloadRefreshOutcome} type="button">
+              <Download size={12} />
+              {i18n.locale === "zh-CN" ? "下载回执" : "Download receipt"}
             </button>
             <button type="button" onClick={() => onSelectWorkspace(refreshOutcome.targetWorkspaceId)}>
               <Play size={12} />

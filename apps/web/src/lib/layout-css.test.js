@@ -404,6 +404,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const copyStage1P0DailyUseRefreshOutcome = useCallback");
     expect(appSource).toContain("navigator.clipboard.writeText(stage1P0DailyUseRefreshOutcome.copyText)");
     expect(appSource).toContain("Stage 1 refresh receipt copy failed");
+    expect(appSource).toContain("const downloadStage1P0DailyUseRefreshOutcome = useCallback");
+    expect(appSource).toContain('new Blob([stage1P0DailyUseRefreshOutcome.copyText], { type: "text/markdown;charset=utf-8" })');
+    expect(appSource).toContain('anchor.download = "stage1-p0-daily-refresh-receipt.md";');
+    expect(appSource).toContain("Stage 1 refresh receipt download failed");
     expect(appSource).toContain('copyError instanceof Error ? copyError.message : "Clipboard copy failed"');
     expect(appSource).toContain("const refreshStage1DailyUseReport = useCallback");
     expect(appSource).toContain("const generated = await generateStage1DailyUse(quantCoreBaseUrl);");
@@ -414,6 +418,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("isHandoffCopied={copiedStage1P0DailyUseHandoff}");
     expect(appSource).toContain("onDownloadHandoff={downloadStage1P0DailyUseHandoff}");
     expect(appSource).toContain("onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}");
+    expect(appSource).toContain("onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}");
     expect(appSource).toContain("isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}");
     expect(appSource).toContain("buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse)");
     expect(appSource).toContain("dailyUseReport: stage1DailyUseSummary");
@@ -455,6 +460,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("下载日常手册");
     expect(appSource).toContain("Download handoff");
     expect(appSource).toContain("复制回执");
+    expect(appSource).toContain("下载回执");
+    expect(appSource).toContain("Download receipt");
     expect(appSource).toContain("打开下一步");
     expect(appSource).toContain("onSelectWorkspace(refreshOutcome.targetWorkspaceId)");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");

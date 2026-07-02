@@ -1059,3 +1059,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常收口卡现在也能复制当前日常手册。`buildStage1P0DailyUseClosure` 会生成确定性的 Markdown `copyText`，包含总状态、5 个日常入口行、主动作/workspace、daily-use 与 bootstrap preflight 过期源提示，以及 live-blocked 边界；首页 footer 新增“复制日常手册 / Copy handoff”，只写入剪贴板并在状态栏反馈成功或失败。该 handoff 适合每天启动或小团队交接当前状态，不创建审计事件、不运行刷新/预检/构建命令、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 日常手册现在也可直接下载为 Markdown。首页 footer 新增“下载日常手册 / Download handoff”，复用同一份 `stage1P0DailyUseClosure.copyText`，生成 `stage1-p0-daily-use-handoff.md` 并清理临时 object URL；成功或失败只更新本地状态栏。该下载是浏览器本地文件动作，不创建审计事件、不运行 Stage 1 刷新或预检命令、不构建桌面端、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 刷新回执现在也可直接下载为 Markdown。首页回执区新增“下载回执 / Download receipt”，复用 `stage1P0DailyUseRefreshOutcome.copyText`，生成 `stage1-p0-daily-refresh-receipt.md` 并清理临时 object URL；成功或失败只更新本地状态栏。该下载只保存刚才刷新自检的本地结果，不重新运行 Stage 1 命令、不创建审计事件、不构建桌面端、不连接券商、不提交订单。
