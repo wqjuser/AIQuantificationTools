@@ -392,6 +392,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("resolveStage1P0DailyUseShareDeepLinkState(window.location.search)");
     expect(appSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
     expect(appSource).toContain("stage1P0DailyUseShareLinkLoadedStatusLabel(initialStage1P0DailyUseShareDeepLinkState)");
+    expect(appSource).toContain('const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";');
+    expect(appSource).toContain("function focusStage1P0DailyUseShareCardElement");
+    expect(appSource).toContain("document.getElementById(stage1P0DailyUseClosureElementId)");
+    expect(appSource).toContain('element.scrollIntoView({ block: "center", behavior: "smooth" });');
+    expect(appSource).toContain("element.focus({ preventScroll: true });");
     expect(appSource).toContain("Stage 1 daily share link loaded");
     expect(appSource).toContain("Stage 1 refresh receipt share link loaded");
     expect(appSource).toContain("Stage 1 shared context opened");
@@ -491,6 +496,7 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkFocusLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkOpenStatusLabel(initialStage1P0DailyUseShareDeepLinkState)");
+    expect(overviewGridSource).toContain("focusStage1P0DailyUseShareCardElement();");
     expect(overviewGridSource).toContain("selectProductWorkArea(initialStage1P0DailyUseShareDeepLinkState.targetWorkspaceId)");
     expect(overviewGridSource).toContain("<Stage1P0DailyUseClosurePanel");
     expect(overviewGridSource.indexOf("<Stage1P0DailyUseClosurePanel")).toBeGreaterThan(
@@ -500,6 +506,8 @@ describe("terminal layout css", () => {
       overviewGridSource.indexOf('className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`')
     );
     expect(appSource).toContain('className={`stage1-p0-daily-use-closure ${closure.state}`}');
+    expect(appSource).toContain("id={stage1P0DailyUseClosureElementId}");
+    expect(appSource).toContain("tabIndex={-1}");
     expect(appSource).toContain("closure.rows.map");
     expect(appSource).toContain("stage1P0DailyUseRowIsSharedFocus(shareDeepLinkState, row.id)");
     expect(appSource).toContain('aria-current={isSharedFocus ? "true" : undefined}');
@@ -541,6 +549,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onOpenRefreshOutcomeEntry(entry)");
     expect(appSource).toContain("onOpenRefreshOutcomeNextStep()");
     expect(cssBlock(".stage1-p0-daily-use-closure")).toContain("display: grid;");
+    expect(cssBlock(".stage1-p0-daily-use-closure:focus-visible")).toContain("outline: 2px solid #71dfc5;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-entries")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-actions")).toContain("display: flex;");

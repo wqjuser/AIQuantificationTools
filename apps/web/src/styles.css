@@ -1339,6 +1339,11 @@ em {
   border-color: #6f3934;
 }
 
+.stage1-p0-daily-use-closure:focus-visible {
+  outline: 2px solid #71dfc5;
+  outline-offset: 3px;
+}
+
 .stage1-p0-daily-use-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

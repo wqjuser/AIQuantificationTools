@@ -679,6 +679,7 @@ const initialLocalReviewCoverageNextActionDeepLinkState =
   typeof window === "undefined" ? null : resolveLocalReviewCoverageNextActionDeepLinkState(window.location.search);
 const initialStage1P0DailyUseShareDeepLinkState =
   typeof window === "undefined" ? null : resolveStage1P0DailyUseShareDeepLinkState(window.location.search);
+const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";
 
 const initialWorkspaceState: WorkspaceLoadResult = {
   workspace: buildInitialTerminalWorkspace(),
@@ -11885,13 +11886,14 @@ export function App() {
                   </div>
                   <div className="stage1-p0-share-deep-link-actions">
                     <button
-                      onClick={() =>
+                      onClick={() => {
+                        focusStage1P0DailyUseShareCardElement();
                         setWorkspaceState((current) => ({
                           ...current,
                           statusLabel: stage1P0DailyUseShareLinkOpenStatusLabel(initialStage1P0DailyUseShareDeepLinkState),
                           error: undefined
-                        }))
-                      }
+                        }));
+                      }}
                       type="button"
                     >
                       {i18n.locale === "zh-CN" ? "查看日常卡片" : "View daily card"}
@@ -13193,6 +13195,18 @@ function stage1P0DailyUseRefreshReceiptIsColdStart(
   return state?.kind === "refresh-receipt" && !outcome;
 }
 
+function focusStage1P0DailyUseShareCardElement(): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const element = document.getElementById(stage1P0DailyUseClosureElementId);
+  if (!element) {
+    return;
+  }
+  element.scrollIntoView({ block: "center", behavior: "smooth" });
+  element.focus({ preventScroll: true });
+}
+
 function p0EvidenceDrawerSummary(
   i18n: AppI18n,
   hasSavedReport: boolean,
@@ -13325,6 +13339,8 @@ function Stage1P0DailyUseClosurePanel({
     <section
       className={`stage1-p0-daily-use-closure ${closure.state}`}
       aria-label={i18n.locale === "zh-CN" ? "Stage 1 P0 日常使用收口" : "Stage 1 P0 daily-use closure"}
+      id={stage1P0DailyUseClosureElementId}
+      tabIndex={-1}
     >
       <div className="stage1-p0-daily-use-head">
         <div>
