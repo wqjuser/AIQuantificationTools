@@ -2973,6 +2973,18 @@ describe("terminal workbench model", () => {
       status: "review",
       targetWorkspaceId: "settings"
     });
+    expect(closure.copyText).toContain("# Stage 1/P0 Daily Use Handoff");
+    expect(closure.copyText).toContain("State: blocked");
+    expect(closure.copyText).toContain("Ready: 0/5");
+    expect(closure.copyText).toContain("Primary action: Refresh P0 acceptance -> audit");
+    expect(closure.copyText).toContain(
+      "- Clean environment open [blocked]: Run npm run docker:smoke:p0 -- --no-build --down"
+    );
+    expect(closure.copyText).toContain("- Market refresh recovery [blocked]: Provider cooldown");
+    expect(closure.copyText).toContain("- Research entry [blocked]: K-line cache is empty");
+    expect(closure.copyText).toContain("- Daily start path [review]: Daily ops has open review work.");
+    expect(closure.copyText).toContain("- Desktop release [review]: Run npm run desktop:build");
+    expect(closure.copyText).toContain("Live trading remains blocked.");
   });
 
   test("builds Stage 1 bootstrap preflight summaries for homepage readback", () => {
@@ -3358,6 +3370,8 @@ describe("terminal workbench model", () => {
       targetWorkspaceId: "settings",
       value: "refresh-stage1-bootstrap-preflight"
     });
+    expect(closure.copyText).toContain("Stale bootstrap preflight sources: data/stage1-daily-use.json");
+    expect(closure.copyText).toContain("Stale daily-use sources: none");
   });
 
   test("builds a ready Stage 1 daily-use refresh outcome receipt", () => {

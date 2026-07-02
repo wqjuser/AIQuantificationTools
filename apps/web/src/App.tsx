@@ -2193,6 +2193,7 @@ export function App() {
   const [copiedPersonalTeamReadinessReview, setCopiedPersonalTeamReadinessReview] = useState(false);
   const [copiedDailyOpsControlRoomReview, setCopiedDailyOpsControlRoomReview] = useState(false);
   const [copiedDailyStartBriefReview, setCopiedDailyStartBriefReview] = useState(false);
+  const [copiedStage1P0DailyUseHandoff, setCopiedStage1P0DailyUseHandoff] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcome, setCopiedStage1P0DailyUseRefreshOutcome] = useState(false);
   const [copiedP0ReadinessReport, setCopiedP0ReadinessReport] = useState(false);
   const [copiedOperatorRunbook, setCopiedOperatorRunbook] = useState(false);
@@ -3151,6 +3152,10 @@ export function App() {
   useEffect(() => {
     setCopiedDailyStartBriefReview(false);
   }, [dailyStartBriefReviewMarkdown]);
+
+  useEffect(() => {
+    setCopiedStage1P0DailyUseHandoff(false);
+  }, [stage1P0DailyUseClosure.copyText]);
 
   useEffect(() => {
     setCopiedStage1P0DailyUseRefreshOutcome(false);
@@ -9329,6 +9334,29 @@ export function App() {
     }));
   }, [dailyOpsControlRoomReviewMarkdown]);
 
+  const copyStage1P0DailyUseHandoff = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      await navigator.clipboard.writeText(stage1P0DailyUseClosure.copyText);
+      setCopiedStage1P0DailyUseHandoff(true);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily handoff copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setCopiedStage1P0DailyUseHandoff(false);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily handoff copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [stage1P0DailyUseClosure.copyText]);
+
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
       return;
@@ -11640,8 +11668,10 @@ export function App() {
               <Stage1P0DailyUseClosurePanel
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
+                isHandoffCopied={copiedStage1P0DailyUseHandoff}
                 isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
+                onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 onSelectWorkspace={selectProductWorkArea}
@@ -12952,8 +12982,10 @@ function P0GoldenPathJourneyPanel({
 function Stage1P0DailyUseClosurePanel({
   closure,
   i18n,
+  isHandoffCopied = false,
   isRefreshOutcomeCopied = false,
   isRefreshingDailyUse = false,
+  onCopyHandoff,
   onCopyRefreshOutcome,
   onRefreshDailyUse,
   onSelectWorkspace,
@@ -12961,8 +12993,10 @@ function Stage1P0DailyUseClosurePanel({
 }: {
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
+  isHandoffCopied?: boolean;
   isRefreshOutcomeCopied?: boolean;
   isRefreshingDailyUse?: boolean;
+  onCopyHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
   onRefreshDailyUse?: () => void;
   onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
@@ -13047,6 +13081,21 @@ function Stage1P0DailyUseClosurePanel({
             : "P0 keeps live trading blocked; this card only routes clean-open, recovery, research, daily start, and desktop release checks."}
         </small>
         <div className="stage1-p0-daily-use-footer-actions">
+          <button
+            className="stage1-p0-daily-use-copy"
+            disabled={!onCopyHandoff}
+            onClick={onCopyHandoff}
+            type="button"
+          >
+            <Copy size={12} />
+            {isHandoffCopied
+              ? i18n.locale === "zh-CN"
+                ? "已复制"
+                : "Copied"
+              : i18n.locale === "zh-CN"
+                ? "复制日常手册"
+                : "Copy handoff"}
+          </button>
           <button
             className="stage1-p0-daily-use-refresh"
             disabled={isRefreshingDailyUse || !onRefreshDailyUse}

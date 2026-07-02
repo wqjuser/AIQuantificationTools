@@ -390,6 +390,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("generateStage1DailyUse");
     expect(appSource).toContain("buildStage1P0DailyUseRefreshOutcome");
     expect(appSource).toContain("const [stage1P0DailyUseRefreshOutcome, setStage1P0DailyUseRefreshOutcome]");
+    expect(appSource).toContain("const [copiedStage1P0DailyUseHandoff, setCopiedStage1P0DailyUseHandoff]");
+    expect(appSource).toContain("setCopiedStage1P0DailyUseHandoff(false);");
+    expect(appSource).toContain("const copyStage1P0DailyUseHandoff = useCallback");
+    expect(appSource).toContain("navigator.clipboard.writeText(stage1P0DailyUseClosure.copyText)");
+    expect(appSource).toContain("Stage 1 daily handoff copy failed");
     expect(appSource).toContain("const [copiedStage1P0DailyUseRefreshOutcome, setCopiedStage1P0DailyUseRefreshOutcome]");
     expect(appSource).toContain("setCopiedStage1P0DailyUseRefreshOutcome(false);");
     expect(appSource).toContain("const copyStage1P0DailyUseRefreshOutcome = useCallback");
@@ -401,6 +406,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setStage1DailyUseLatestState({");
     expect(appSource).toContain("onRefreshDailyUse={() => void refreshStage1DailyUseReport()}");
     expect(appSource).toContain("refreshOutcome={stage1P0DailyUseRefreshOutcome}");
+    expect(appSource).toContain("onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}");
+    expect(appSource).toContain("isHandoffCopied={copiedStage1P0DailyUseHandoff}");
     expect(appSource).toContain("onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}");
     expect(appSource).toContain("isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}");
     expect(appSource).toContain("buildStage1DailyUseSummary(stage1DailyUseLatestState.dailyUse)");
@@ -438,6 +445,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("开箱预检源已更新；刷新自检会重新生成 preflight。");
     expect(appSource).toContain("刷新回执");
     expect(appSource).toContain("本地核心");
+    expect(appSource).toContain("复制日常手册");
+    expect(appSource).toContain("Copy handoff");
     expect(appSource).toContain("复制回执");
     expect(appSource).toContain("打开下一步");
     expect(appSource).toContain("onSelectWorkspace(refreshOutcome.targetWorkspaceId)");
@@ -449,6 +458,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".stage1-p0-daily-use-rows")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-row")).toContain("cursor: pointer;");
     expect(cssBlock(".stage1-p0-daily-use-footer-actions")).toContain("display: flex;");
+    expect(cssBlock(".stage1-p0-daily-use-copy")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
     expect(cssBlock(".stage1-p0-daily-use-refresh")).toContain("border: 1px solid rgba(148, 163, 184, 0.28);");
   });
 

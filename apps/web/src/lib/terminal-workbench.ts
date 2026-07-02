@@ -7178,6 +7178,7 @@ export interface Stage1P0DailyUseClosure {
   tone: "positive" | "warning" | "risk";
   headline: string;
   detail: string;
+  copyText: string;
   readyCount: number;
   totalCount: number;
   primaryActionId: Stage1P0DailyUseClosureActionId;
@@ -7338,6 +7339,16 @@ export function buildStage1P0DailyUseClosure({
         ]
           .filter(Boolean)
           .join(" · "),
+    copyText: buildStage1P0DailyUseClosureCopyText({
+      bootstrapPreflightStaleSourcePaths,
+      primaryActionLabel: primaryRow.actionLabel,
+      primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
+      readyCount,
+      rows,
+      staleSourcePaths: dailyUseReport?.staleSourcePaths ?? [],
+      state,
+      totalCount: rows.length
+    }),
     readyCount,
     totalCount: rows.length,
     primaryActionId: primaryRow.actionId,
@@ -7349,6 +7360,41 @@ export function buildStage1P0DailyUseClosure({
     staleSourceSummary,
     rows
   };
+}
+
+function buildStage1P0DailyUseClosureCopyText({
+  bootstrapPreflightStaleSourcePaths,
+  primaryActionLabel,
+  primaryTargetWorkspaceId,
+  readyCount,
+  rows,
+  staleSourcePaths,
+  state,
+  totalCount
+}: {
+  bootstrapPreflightStaleSourcePaths: string[];
+  primaryActionLabel: string;
+  primaryTargetWorkspaceId: ProductWorkAreaId;
+  readyCount: number;
+  rows: Stage1P0DailyUseClosureRow[];
+  staleSourcePaths: string[];
+  state: Stage1P0DailyUseClosureStatus;
+  totalCount: number;
+}): string {
+  return [
+    "# Stage 1/P0 Daily Use Handoff",
+    `State: ${state}`,
+    `Ready: ${readyCount}/${totalCount}`,
+    `Primary action: ${primaryActionLabel} -> ${primaryTargetWorkspaceId}`,
+    `Stale daily-use sources: ${staleSourcePaths.length > 0 ? staleSourcePaths.join(", ") : "none"}`,
+    `Stale bootstrap preflight sources: ${
+      bootstrapPreflightStaleSourcePaths.length > 0 ? bootstrapPreflightStaleSourcePaths.join(", ") : "none"
+    }`,
+    "",
+    ...rows.map((row) => `- ${row.label} [${row.status}]: ${row.detail}`),
+    "",
+    "Live trading remains blocked."
+  ].join("\n");
 }
 
 export function buildStage1P0DailyUseRefreshOutcome({
