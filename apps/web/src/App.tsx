@@ -9444,17 +9444,23 @@ export function App() {
     [stage1P0DailyUseClosure.primaryWorkspaceLink]
   );
 
+  const buildStage1P0ShareLinkBundleText = useCallback(
+    () =>
+      buildStage1P0ShareLinkBundleCopyText({
+        closure: stage1P0DailyUseClosure,
+        refreshOutcome: stage1P0DailyUseRefreshOutcome,
+        resolveShareUrl: buildStage1P0WorkspaceShareUrl
+      }),
+    [stage1P0DailyUseClosure, stage1P0DailyUseRefreshOutcome]
+  );
+
   const copyStage1P0ShareLinkBundle = useCallback(async () => {
     try {
       if (!navigator.clipboard?.writeText) {
         throw new Error("Clipboard API unavailable");
       }
 
-      const shareLinkBundleCopyText = buildStage1P0ShareLinkBundleCopyText({
-        closure: stage1P0DailyUseClosure,
-        refreshOutcome: stage1P0DailyUseRefreshOutcome,
-        resolveShareUrl: buildStage1P0WorkspaceShareUrl
-      });
+      const shareLinkBundleCopyText = buildStage1P0ShareLinkBundleText();
       await navigator.clipboard.writeText(shareLinkBundleCopyText);
       setCopiedStage1P0ShareLinkBundle(true);
       setWorkspaceState((current) => ({
@@ -9470,7 +9476,7 @@ export function App() {
         error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
       }));
     }
-  }, [stage1P0DailyUseClosure, stage1P0DailyUseRefreshOutcome]);
+  }, [buildStage1P0ShareLinkBundleText]);
 
   const copyStage1P0InvalidShareDiagnostics = useCallback(async () => {
     try {
@@ -9587,6 +9593,37 @@ export function App() {
       }
     }
   }, [stage1P0DailyUseClosure.copyText]);
+
+  const downloadStage1P0ShareLinkBundle = useCallback(() => {
+    let objectUrl: string | null = null;
+    try {
+      const shareLinkBundleCopyText = buildStage1P0ShareLinkBundleText();
+      objectUrl = URL.createObjectURL(
+        new Blob([shareLinkBundleCopyText], { type: "text/markdown;charset=utf-8" })
+      );
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "stage1-p0-share-link-bundle.md";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 share link bundle download ready",
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 share link bundle download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Share link bundle download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [buildStage1P0ShareLinkBundleText]);
 
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
@@ -12089,6 +12126,7 @@ export function App() {
                 onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
                 onCopyPrimaryLink={() => void copyStage1P0DailyUsePrimaryLink()}
                 onCopyShareLinkBundle={() => void copyStage1P0ShareLinkBundle()}
+                onDownloadShareLinkBundle={downloadStage1P0ShareLinkBundle}
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onCopyRefreshOutcomeLink={() => void copyStage1P0DailyUseRefreshOutcomeLink()}
@@ -13502,6 +13540,7 @@ function Stage1P0DailyUseClosurePanel({
   onCopyHandoff,
   onCopyPrimaryLink,
   onCopyShareLinkBundle,
+  onDownloadShareLinkBundle,
   onDownloadHandoff,
   onCopyRefreshOutcome,
   onCopyRefreshOutcomeLink,
@@ -13525,6 +13564,7 @@ function Stage1P0DailyUseClosurePanel({
   onCopyHandoff?: () => void;
   onCopyPrimaryLink?: () => void;
   onCopyShareLinkBundle?: () => void;
+  onDownloadShareLinkBundle?: () => void;
   onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
   onCopyRefreshOutcomeLink?: () => void;
@@ -13711,6 +13751,15 @@ function Stage1P0DailyUseClosurePanel({
               : i18n.locale === "zh-CN"
                 ? "复制链接包"
                 : "Copy links"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-download"
+            disabled={!onDownloadShareLinkBundle}
+            onClick={onDownloadShareLinkBundle}
+            type="button"
+          >
+            <Download size={12} />
+            {i18n.locale === "zh-CN" ? "下载链接包" : "Download links"}
           </button>
           <button
             className="stage1-p0-daily-use-download"
