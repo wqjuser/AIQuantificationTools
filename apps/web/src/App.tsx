@@ -366,6 +366,7 @@ import {
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
   buildStage1P0InvalidShareDiagnosticsCopyText,
+  buildStage1P0ShareLinkBundleCopyText,
   buildP0AcceptanceSummary,
   buildP1AcceptanceSummary,
   buildP2PaperReplaySummary,
@@ -2234,6 +2235,7 @@ export function App() {
   const [copiedDailyStartBriefReview, setCopiedDailyStartBriefReview] = useState(false);
   const [copiedStage1P0DailyUseHandoff, setCopiedStage1P0DailyUseHandoff] = useState(false);
   const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink] = useState(false);
+  const [copiedStage1P0ShareLinkBundle, setCopiedStage1P0ShareLinkBundle] = useState(false);
   const [copiedStage1P0InvalidShareDiagnostics, setCopiedStage1P0InvalidShareDiagnostics] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcome, setCopiedStage1P0DailyUseRefreshOutcome] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcomeLink, setCopiedStage1P0DailyUseRefreshOutcomeLink] = useState(false);
@@ -3202,6 +3204,10 @@ export function App() {
   useEffect(() => {
     setCopiedStage1P0DailyUsePrimaryLink(false);
   }, [stage1P0DailyUseClosure.primaryWorkspaceLink]);
+
+  useEffect(() => {
+    setCopiedStage1P0ShareLinkBundle(false);
+  }, [stage1P0DailyUseClosure.copyText, stage1P0DailyUseRefreshOutcome?.copyText]);
 
   useEffect(() => {
     setCopiedStage1P0InvalidShareDiagnostics(false);
@@ -9438,6 +9444,34 @@ export function App() {
     [stage1P0DailyUseClosure.primaryWorkspaceLink]
   );
 
+  const copyStage1P0ShareLinkBundle = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      const shareLinkBundleCopyText = buildStage1P0ShareLinkBundleCopyText({
+        closure: stage1P0DailyUseClosure,
+        refreshOutcome: stage1P0DailyUseRefreshOutcome,
+        resolveShareUrl: buildStage1P0WorkspaceShareUrl
+      });
+      await navigator.clipboard.writeText(shareLinkBundleCopyText);
+      setCopiedStage1P0ShareLinkBundle(true);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 share link bundle copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setCopiedStage1P0ShareLinkBundle(false);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 share link bundle copy failed",
+        error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
+      }));
+    }
+  }, [stage1P0DailyUseClosure, stage1P0DailyUseRefreshOutcome]);
+
   const copyStage1P0InvalidShareDiagnostics = useCallback(async () => {
     try {
       if (!navigator.clipboard?.writeText) {
@@ -12048,11 +12082,13 @@ export function App() {
                 i18n={i18n}
                 isHandoffCopied={copiedStage1P0DailyUseHandoff}
                 isPrimaryLinkCopied={copiedStage1P0DailyUsePrimaryLink}
+                isShareLinkBundleCopied={copiedStage1P0ShareLinkBundle}
                 isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}
                 isRefreshOutcomeLinkCopied={copiedStage1P0DailyUseRefreshOutcomeLink}
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
                 onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
                 onCopyPrimaryLink={() => void copyStage1P0DailyUsePrimaryLink()}
+                onCopyShareLinkBundle={() => void copyStage1P0ShareLinkBundle()}
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onCopyRefreshOutcomeLink={() => void copyStage1P0DailyUseRefreshOutcomeLink()}
@@ -13459,11 +13495,13 @@ function Stage1P0DailyUseClosurePanel({
   i18n,
   isHandoffCopied = false,
   isPrimaryLinkCopied = false,
+  isShareLinkBundleCopied = false,
   isRefreshOutcomeCopied = false,
   isRefreshOutcomeLinkCopied = false,
   isRefreshingDailyUse = false,
   onCopyHandoff,
   onCopyPrimaryLink,
+  onCopyShareLinkBundle,
   onDownloadHandoff,
   onCopyRefreshOutcome,
   onCopyRefreshOutcomeLink,
@@ -13480,11 +13518,13 @@ function Stage1P0DailyUseClosurePanel({
   i18n: AppI18n;
   isHandoffCopied?: boolean;
   isPrimaryLinkCopied?: boolean;
+  isShareLinkBundleCopied?: boolean;
   isRefreshOutcomeCopied?: boolean;
   isRefreshOutcomeLinkCopied?: boolean;
   isRefreshingDailyUse?: boolean;
   onCopyHandoff?: () => void;
   onCopyPrimaryLink?: () => void;
+  onCopyShareLinkBundle?: () => void;
   onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
   onCopyRefreshOutcomeLink?: () => void;
@@ -13656,6 +13696,21 @@ function Stage1P0DailyUseClosurePanel({
                 ? "链接已复制"
                 : "Link copied"
               : i18n.locale === "zh-CN" ? "复制入口链接" : "Copy link"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-copy"
+            disabled={!onCopyShareLinkBundle}
+            onClick={onCopyShareLinkBundle}
+            type="button"
+          >
+            <Copy size={12} />
+            {isShareLinkBundleCopied
+              ? i18n.locale === "zh-CN"
+                ? "链接包已复制"
+                : "Links copied"
+              : i18n.locale === "zh-CN"
+                ? "复制链接包"
+                : "Copy links"}
           </button>
           <button
             className="stage1-p0-daily-use-download"

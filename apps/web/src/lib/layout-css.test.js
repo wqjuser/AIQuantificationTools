@@ -417,6 +417,13 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setCopiedStage1P0DailyUseHandoff(false);");
     expect(appSource).toContain("const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink]");
     expect(appSource).toContain("setCopiedStage1P0DailyUsePrimaryLink(false);");
+    expect(appSource).toContain("const [copiedStage1P0ShareLinkBundle, setCopiedStage1P0ShareLinkBundle]");
+    expect(appSource).toContain("setCopiedStage1P0ShareLinkBundle(false);");
+    expect(appSource).toContain("buildStage1P0ShareLinkBundleCopyText({");
+    expect(appSource).toContain("resolveShareUrl: buildStage1P0WorkspaceShareUrl");
+    expect(appSource).toContain("navigator.clipboard.writeText(shareLinkBundleCopyText)");
+    expect(appSource).toContain("Stage 1 share link bundle copied");
+    expect(appSource).toContain("Stage 1 share link bundle copy failed");
     expect(appSource).toContain("const [copiedStage1P0InvalidShareDiagnostics, setCopiedStage1P0InvalidShareDiagnostics]");
     expect(appSource).toContain("setCopiedStage1P0InvalidShareDiagnostics(false);");
     expect(appSource).toContain("buildStage1P0InvalidShareDiagnosticsCopyText({");
@@ -481,6 +488,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("isHandoffCopied={copiedStage1P0DailyUseHandoff}");
     expect(appSource).toContain("isPrimaryLinkCopied={copiedStage1P0DailyUsePrimaryLink}");
     expect(appSource).toContain("onCopyPrimaryLink={() => void copyStage1P0DailyUsePrimaryLink()}");
+    expect(appSource).toContain("isShareLinkBundleCopied={copiedStage1P0ShareLinkBundle}");
+    expect(appSource).toContain("onCopyShareLinkBundle={() => void copyStage1P0ShareLinkBundle()}");
     expect(appSource).toContain("onDownloadHandoff={downloadStage1P0DailyUseHandoff}");
     expect(appSource).toContain("onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}");
     expect(appSource).toContain("onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}");
@@ -508,6 +517,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function stage1P0DailyUseRefreshNextIsSharedFocus");
     expect(appSource).toContain("function stage1P0DailyUseRefreshReceiptIsColdStart");
     expect(appSource).toContain("onCopyPrimaryLink?: () => void;");
+    expect(appSource).toContain("onCopyShareLinkBundle?: () => void;");
     expect(appSource).toContain("onCopyRefreshOutcomeLink?: () => void;");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
     expect(overviewGridSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
@@ -566,6 +576,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("复制日常手册");
     expect(appSource).toContain("Copy handoff");
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "复制入口链接" : "Copy link"');
+    expect(appSource).toContain("复制链接包");
+    expect(appSource).toContain("Copy links");
     expect(appSource).toContain("下载日常手册");
     expect(appSource).toContain("Download handoff");
     expect(appSource).toContain("复制回执");

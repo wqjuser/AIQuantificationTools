@@ -156,6 +156,7 @@ import {
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
   buildStage1P0InvalidShareDiagnosticsCopyText,
+  buildStage1P0ShareLinkBundleCopyText,
   resolveStage1P0DailyUseShareDeepLinkStatus,
   resolveStage1P0DailyUseShareDeepLinkState,
   buildP0AcceptanceReviewMarkdown,
@@ -3654,6 +3655,104 @@ describe("terminal workbench model", () => {
     expect(copyText).toContain("Replacement link: http://127.0.0.1:5174/?workspace=audit&stage1DailyUseFocus=primary");
     expect(copyText).toContain("Safe action: Refresh P0 acceptance -> audit");
     expect(copyText).toContain("No workspace was restored from the invalid link.");
+    expect(copyText).toContain("Live trading remains blocked.");
+  });
+
+  test("builds a Stage 1 share-link bundle copy text", () => {
+    const closure = {
+      bootstrapPreflightStaleSourcePaths: [],
+      bootstrapPreflightStaleSourceSummary: null,
+      copyText: "",
+      detail: "Daily handoff detail",
+      headline: "Daily handoff",
+      primaryActionId: "refresh-p0-acceptance",
+      primaryActionLabel: "Refresh P0 acceptance",
+      primaryTargetWorkspaceId: "audit",
+      primaryWorkspaceLink: "?workspace=audit&stage1DailyUseFocus=primary",
+      readyCount: 0,
+      rows: [
+        {
+          actionId: "refresh-p0-acceptance",
+          actionLabel: "Refresh P0 acceptance",
+          detail: "Run P0 acceptance.",
+          id: "clean-open",
+          label: "Clean environment open",
+          status: "blocked",
+          targetWorkspaceId: "audit",
+          tone: "risk",
+          value: "missing",
+          workspaceLink: "?workspace=audit&stage1DailyUseFocus=clean-open"
+        },
+        {
+          actionId: "open-research-entry",
+          actionLabel: "Open research",
+          detail: "Review research entry.",
+          id: "research-entry",
+          label: "Research entry",
+          status: "review",
+          targetWorkspaceId: "research",
+          tone: "warning",
+          value: "review",
+          workspaceLink: "?workspace=research&stage1DailyUseFocus=research-entry"
+        }
+      ],
+      staleSourcePaths: [],
+      staleSourceSummary: null,
+      state: "blocked",
+      tone: "risk",
+      totalCount: 2
+    };
+    const refreshOutcome = {
+      actionLabel: "Open daily workbench",
+      copyText: "",
+      detail: "Refresh detail",
+      entries: [
+        {
+          actionLabel: "Open daily report",
+          detail: "Daily report ready.",
+          id: "daily-use",
+          label: "Daily report",
+          source: "core",
+          sourceLabel: "Local core",
+          status: "ready",
+          targetWorkspaceId: "settings",
+          tone: "positive",
+          workspaceLink: "?workspace=settings&stage1RefreshReceiptFocus=daily-use"
+        }
+      ],
+      headline: "Refresh ready",
+      readyCount: 1,
+      state: "ready",
+      targetWorkspaceId: "research",
+      targetWorkspaceLink: "?workspace=research&stage1RefreshReceiptFocus=next",
+      tone: "positive",
+      totalCount: 1
+    };
+
+    const copyText = buildStage1P0ShareLinkBundleCopyText({
+      closure,
+      refreshOutcome,
+      resolveShareUrl: (link) => `http://127.0.0.1:5174/${link}`
+    });
+
+    expect(copyText).toContain("# Stage 1/P0 Share Link Bundle");
+    expect(copyText).toContain("Daily state: blocked");
+    expect(copyText).toContain(
+      "Primary link: http://127.0.0.1:5174/?workspace=audit&stage1DailyUseFocus=primary"
+    );
+    expect(copyText).toContain(
+      "- Clean environment open [blocked] -> audit: http://127.0.0.1:5174/?workspace=audit&stage1DailyUseFocus=clean-open"
+    );
+    expect(copyText).toContain(
+      "- Research entry [review] -> research: http://127.0.0.1:5174/?workspace=research&stage1DailyUseFocus=research-entry"
+    );
+    expect(copyText).toContain("Refresh receipt state: ready");
+    expect(copyText).toContain(
+      "Refresh next link: http://127.0.0.1:5174/?workspace=research&stage1RefreshReceiptFocus=next"
+    );
+    expect(copyText).toContain(
+      "- Daily report [ready/core] -> settings: http://127.0.0.1:5174/?workspace=settings&stage1RefreshReceiptFocus=daily-use"
+    );
     expect(copyText).toContain("Live trading remains blocked.");
   });
 

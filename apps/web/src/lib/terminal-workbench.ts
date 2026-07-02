@@ -7301,6 +7301,78 @@ export function buildStage1P0InvalidShareDiagnosticsCopyText({
   ].join("\n");
 }
 
+export function buildStage1P0ShareLinkBundleCopyText({
+  closure,
+  refreshOutcome = null,
+  resolveShareUrl = (workspaceLink) => workspaceLink
+}: {
+  closure: {
+    primaryActionLabel: string;
+    primaryTargetWorkspaceId: string;
+    primaryWorkspaceLink: string;
+    readyCount: number;
+    rows: readonly {
+      label: string;
+      status: string;
+      targetWorkspaceId: string;
+      workspaceLink: string;
+    }[];
+    state: string;
+    totalCount: number;
+  };
+  refreshOutcome?: {
+    actionLabel: string;
+    entries: readonly {
+      label: string;
+      source: string;
+      status: string;
+      targetWorkspaceId: string;
+      workspaceLink: string;
+    }[];
+    state: string;
+    targetWorkspaceId: string;
+    targetWorkspaceLink: string;
+  } | null;
+  resolveShareUrl?: (workspaceLink: string) => string;
+}): string {
+  const linkFor = (workspaceLink: string): string => {
+    try {
+      return resolveShareUrl(workspaceLink)?.trim() || workspaceLink || "none";
+    } catch {
+      return workspaceLink || "none";
+    }
+  };
+  const refreshLines = refreshOutcome
+    ? [
+        `Refresh receipt state: ${refreshOutcome.state}`,
+        `Refresh next action: ${refreshOutcome.actionLabel} -> ${refreshOutcome.targetWorkspaceId}`,
+        `Refresh next link: ${linkFor(refreshOutcome.targetWorkspaceLink)}`,
+        "Refresh receipt links:",
+        ...refreshOutcome.entries.map(
+          (entry) =>
+            `- ${entry.label} [${entry.status}/${entry.source}] -> ${entry.targetWorkspaceId}: ${linkFor(
+              entry.workspaceLink
+            )}`
+        )
+      ]
+    : ["Refresh receipt links: none"];
+  return [
+    "# Stage 1/P0 Share Link Bundle",
+    `Daily state: ${closure.state}`,
+    `Ready: ${closure.readyCount}/${closure.totalCount}`,
+    `Primary action: ${closure.primaryActionLabel} -> ${closure.primaryTargetWorkspaceId}`,
+    `Primary link: ${linkFor(closure.primaryWorkspaceLink)}`,
+    "Daily-use links:",
+    ...closure.rows.map(
+      (row) => `- ${row.label} [${row.status}] -> ${row.targetWorkspaceId}: ${linkFor(row.workspaceLink)}`
+    ),
+    "",
+    ...refreshLines,
+    "",
+    "Live trading remains blocked."
+  ].join("\n");
+}
+
 const stage1P0DailyUseShareFocuses: readonly Stage1P0DailyUseShareFocus[] = [
   "primary",
   "clean-open",
