@@ -7386,15 +7386,24 @@ function buildStage1P0DailyUseClosureCopyText({
     `State: ${state}`,
     `Ready: ${readyCount}/${totalCount}`,
     `Primary action: ${primaryActionLabel} -> ${primaryTargetWorkspaceId}`,
+    `Primary link: ${stage1P0DailyUseWorkspaceLink(primaryTargetWorkspaceId)}`,
     `Stale daily-use sources: ${staleSourcePaths.length > 0 ? staleSourcePaths.join(", ") : "none"}`,
     `Stale bootstrap preflight sources: ${
       bootstrapPreflightStaleSourcePaths.length > 0 ? bootstrapPreflightStaleSourcePaths.join(", ") : "none"
     }`,
     "",
-    ...rows.map((row) => `- ${row.label} [${row.status}]: ${row.detail}`),
+    ...rows.map(
+      (row) =>
+        `- ${row.label} [${row.status}]: ${row.detail} (link: ${stage1P0DailyUseWorkspaceLink(row.targetWorkspaceId)})`
+    ),
     "",
     "Live trading remains blocked."
   ].join("\n");
+}
+
+function stage1P0DailyUseWorkspaceLink(workspaceId: ProductWorkAreaId): string {
+  const params = new URLSearchParams({ workspace: workspaceId });
+  return `?${params.toString()}`;
 }
 
 export function buildStage1P0DailyUseRefreshOutcome({
@@ -7493,8 +7502,12 @@ function buildStage1P0DailyUseRefreshOutcomeCopyText({
     `State: ${state}`,
     `Ready: ${readyCount}/${totalCount}`,
     `Next action: ${actionLabel} -> ${targetWorkspaceId}`,
+    `Next link: ${stage1P0DailyUseWorkspaceLink(targetWorkspaceId)}`,
     "",
-    ...entries.map((entry) => `- ${entry.label} [${entry.status}/${entry.source}]: ${entry.detail}`),
+    ...entries.map(
+      (entry) =>
+        `- ${entry.label} [${entry.status}/${entry.source}]: ${entry.detail} (link: ${stage1P0DailyUseWorkspaceLink(entry.targetWorkspaceId)})`
+    ),
     "",
     "Live trading remains blocked."
   ].join("\n");

@@ -2977,13 +2977,20 @@ describe("terminal workbench model", () => {
     expect(closure.copyText).toContain("State: blocked");
     expect(closure.copyText).toContain("Ready: 0/5");
     expect(closure.copyText).toContain("Primary action: Refresh P0 acceptance -> audit");
+    expect(closure.copyText).toContain("Primary link: ?workspace=audit");
     expect(closure.copyText).toContain(
       "- Clean environment open [blocked]: Run npm run docker:smoke:p0 -- --no-build --down"
+    );
+    expect(closure.copyText).toContain(
+      "- Clean environment open [blocked]: Run npm run docker:smoke:p0 -- --no-build --down to generate data/p0-acceptance.json. (link: ?workspace=audit)"
     );
     expect(closure.copyText).toContain("- Market refresh recovery [blocked]: Provider cooldown");
     expect(closure.copyText).toContain("- Research entry [blocked]: K-line cache is empty");
     expect(closure.copyText).toContain("- Daily start path [review]: Daily ops has open review work.");
     expect(closure.copyText).toContain("- Desktop release [review]: Run npm run desktop:build");
+    expect(closure.copyText).toContain(
+      "- Desktop release [review]: Run npm run desktop:build after the local Tauri/Cargo toolchain check passes. (link: ?workspace=settings)"
+    );
     expect(closure.copyText).toContain("Live trading remains blocked.");
   });
 
@@ -3498,9 +3505,16 @@ describe("terminal workbench model", () => {
     expect(outcome.copyText).toContain("State: ready");
     expect(outcome.copyText).toContain("Ready: 3/3");
     expect(outcome.copyText).toContain("Next action: Open daily workbench -> research");
+    expect(outcome.copyText).toContain("Next link: ?workspace=research");
     expect(outcome.copyText).toContain("- Daily report [ready/core]: Stage 1 daily report ready (5/5)");
+    expect(outcome.copyText).toContain(
+      "- Daily report [ready/core]: Stage 1 daily report ready (5/5) (link: ?workspace=settings)"
+    );
     expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
     expect(outcome.copyText).toContain("- Desktop release [ready/core]: Desktop release passed");
+    expect(outcome.copyText).toContain(
+      "- Desktop release [ready/core]: Desktop release passed (link: ?workspace=settings)"
+    );
     expect(outcome.copyText).toContain("Live trading remains blocked.");
     expect(outcome.entries.map((entry) => entry.id)).toEqual(["daily-use", "bootstrap-preflight", "desktop-release"]);
     expect(outcome.entries.map((entry) => entry.source)).toEqual(["core", "core", "core"]);
@@ -3537,7 +3551,9 @@ describe("terminal workbench model", () => {
     expect(outcome.copyText).toContain("State: blocked");
     expect(outcome.copyText).toContain("Ready: 1/3");
     expect(outcome.copyText).toContain("Next action: Run daily self-check -> settings");
+    expect(outcome.copyText).toContain("Next link: ?workspace=settings");
     expect(outcome.copyText).toContain("- Daily report [blocked/fallback]: HTTP 500");
+    expect(outcome.copyText).toContain("- Daily report [blocked/fallback]: HTTP 500 (link: ?workspace=settings)");
     expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
     expect(outcome.copyText).toContain("- Desktop release [review/core]: Desktop release manifest missing");
     expect(outcome.copyText).toContain("Live trading remains blocked.");
