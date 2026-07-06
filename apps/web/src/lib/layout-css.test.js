@@ -371,6 +371,11 @@ describe("terminal layout css", () => {
 
   test("renders Stage 1/P0 daily-use closure before detailed readiness evidence", () => {
     const overviewGridSource = sourceBetween('<section className="terminal-overview-grid market-tape">', '<div className="metrics-row">');
+    const recoveredShareBannerSource = sourceBetweenText(
+      overviewGridSource,
+      "{initialStage1P0DailyUseShareDeepLinkState ? (",
+      ") : null}\n              {!initialStage1P0DailyUseShareDeepLinkState &&"
+    );
 
     expect(appSource).toContain("buildStage1P0DailyUseClosure({");
     expect(appSource).toContain("const stage1P0DailyUseClosure = useMemo(");
@@ -584,6 +589,15 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("focusStage1P0DailyUseShareTargetElement(");
     expect(overviewGridSource).toContain("stage1P0DailyUseShareTargetElementId(");
     expect(overviewGridSource).toContain("selectProductWorkArea(initialStage1P0DailyUseShareDeepLinkState.targetWorkspaceId)");
+    expect(recoveredShareBannerSource).toContain("onClick={() => void copyStage1P0DailyUseArchive()}");
+    expect(recoveredShareBannerSource).toContain("copiedStage1P0DailyUseArchive");
+    expect(recoveredShareBannerSource).toContain("归档包已复制");
+    expect(recoveredShareBannerSource).toContain("Archive copied");
+    expect(recoveredShareBannerSource).toContain("复制归档包");
+    expect(recoveredShareBannerSource).toContain("Copy archive");
+    expect(recoveredShareBannerSource).toContain("onClick={downloadStage1P0DailyUseArchive}");
+    expect(recoveredShareBannerSource).toContain("下载归档包");
+    expect(recoveredShareBannerSource).toContain("Download archive");
     expect(overviewGridSource).toContain("<Stage1P0DailyUseClosurePanel");
     expect(overviewGridSource.indexOf("<Stage1P0DailyUseClosurePanel")).toBeGreaterThan(
       overviewGridSource.indexOf("<P0GoldenPathJourneyPanel")

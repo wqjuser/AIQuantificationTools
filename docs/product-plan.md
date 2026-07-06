@@ -1097,3 +1097,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常归档包现在带顶部摘要和目录。`buildStage1P0DailyUseArchiveCopyText` 会在详细 section 前输出 daily state/ready 数、主动作、刷新回执状态、无效分享链接诊断状态，以及 Daily Handoff、Share Link Bundle、Refresh Receipt、Invalid Share Diagnostics 四段目录，便于复制或下载后先快速核对归档可用性。该摘要只来自已有前端模型入参，不新增时间戳、不读取额外文件、不触发刷新自检、不写审计事件、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 invalid share banner 现在也能直接导出完整日常归档。坏分享链接提示区复用既有 `copyStage1P0DailyUseArchive` 和 `downloadStage1P0DailyUseArchive` 回调，新增“复制归档包 / Copy archive”和“下载归档包 / Download archive”动作；遇到缺少 workspace、重复参数或目标无效时，操作者可以不滚动到日常卡片底部就把包含日常手册、链接包、刷新回执和坏链接诊断状态的 Markdown 整包交给团队排查。该能力只复制或下载当前本地/前端状态，不恢复错误工作区、不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 recovered share banner 现在也能直接导出完整日常归档。有效分享链接恢复后，banner 除了“查看日常卡片 / View daily card”和“打开分享工作区 / Open shared workspace”，还复用同一组 `copyStage1P0DailyUseArchive` / `downloadStage1P0DailyUseArchive` 动作，提供“复制归档包 / Copy archive”和“下载归档包 / Download archive”；小团队成员打开任意有效日常或刷新回执链接后，可以立即把带摘要、目录、日常手册、链接包、刷新回执和坏链接诊断状态的 Markdown 整包转贴或留档。该能力只复制或下载当前浏览器中的本地/前端上下文，不刷新自检、不运行 Stage 1 命令、不切换交易状态、不写审计事件、不连接券商、不提交订单。
