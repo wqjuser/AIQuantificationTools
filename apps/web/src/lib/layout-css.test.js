@@ -449,6 +449,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Stage 1 invalid share diagnostics copy failed");
     expect(appSource).toContain("const buildStage1P0DailyUseArchiveText = useCallback");
     expect(appSource).toContain("buildStage1P0DailyUseArchiveCopyText({");
+    expect(appSource).toContain("buildStage1P0DailyUseArchiveFileName");
     expect(appSource).toContain("invalidShareDiagnosticsCopyText:");
     expect(appSource).toContain("shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState");
     expect(appSource).toContain("const archiveCopyText = buildStage1P0DailyUseArchiveText();");
@@ -458,7 +459,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Stage 1 daily-use archive copy failed");
     expect(appSource).toContain("const downloadStage1P0DailyUseArchive = useCallback");
     expect(appSource).toContain('new Blob([archiveCopyText], { type: "text/markdown;charset=utf-8" })');
-    expect(appSource).toContain('anchor.download = "stage1-p0-daily-use-archive.md";');
+    expect(appSource).toContain("const archiveFileName = buildStage1P0DailyUseArchiveFileName({");
+    expect(appSource).toContain("invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus");
+    expect(appSource).toContain("anchor.download = archiveFileName;");
     expect(appSource).toContain("Stage 1 daily-use archive download ready");
     expect(appSource).toContain("Stage 1 daily-use archive download failed");
     expect(appSource).toContain("function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string");

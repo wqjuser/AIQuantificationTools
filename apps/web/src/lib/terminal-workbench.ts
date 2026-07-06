@@ -7411,6 +7411,42 @@ function buildStage1P0RecoveredShareContextCopyText({
   ].join("\n");
 }
 
+export function buildStage1P0DailyUseArchiveFileName({
+  closure,
+  invalidShareStatus = null,
+  shareDeepLinkState = null
+}: {
+  closure: Pick<Parameters<typeof buildStage1P0ShareLinkBundleCopyText>[0]["closure"], "readyCount" | "state" | "totalCount">;
+  invalidShareStatus?: Stage1P0DailyUseShareDeepLinkStatus | null;
+  shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
+}): string {
+  const segments = [
+    "stage1",
+    "p0",
+    "daily",
+    "use",
+    "archive",
+    closure.state,
+    `${closure.readyCount}-of-${closure.totalCount}`
+  ];
+  if (shareDeepLinkState) {
+    segments.push(shareDeepLinkState.kind, String(shareDeepLinkState.focus), shareDeepLinkState.targetWorkspaceId);
+  } else if (invalidShareStatus?.status === "invalid") {
+    segments.push("invalid", "share", invalidShareStatus.reason);
+  } else {
+    segments.push("no", "share");
+  }
+  return `${segments.map(stage1P0DailyUseArchiveFileNameToken).join("-")}.md`;
+}
+
+function stage1P0DailyUseArchiveFileNameToken(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "unknown";
+}
+
 export function buildStage1P0DailyUseArchiveCopyText({
   closure,
   invalidShareDiagnosticsCopyText = null,

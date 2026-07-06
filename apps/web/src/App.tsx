@@ -365,6 +365,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  buildStage1P0DailyUseArchiveFileName,
   buildStage1P0DailyUseArchiveCopyText,
   buildStage1P0InvalidShareDiagnosticsCopyText,
   buildStage1P0ShareLinkBundleCopyText,
@@ -9678,12 +9679,17 @@ export function App() {
     let objectUrl: string | null = null;
     try {
       const archiveCopyText = buildStage1P0DailyUseArchiveText();
+      const archiveFileName = buildStage1P0DailyUseArchiveFileName({
+        closure: stage1P0DailyUseClosure,
+        invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus,
+        shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState
+      });
       objectUrl = URL.createObjectURL(
         new Blob([archiveCopyText], { type: "text/markdown;charset=utf-8" })
       );
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = "stage1-p0-daily-use-archive.md";
+      anchor.download = archiveFileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -9703,7 +9709,7 @@ export function App() {
         URL.revokeObjectURL(objectUrl);
       }
     }
-  }, [buildStage1P0DailyUseArchiveText]);
+  }, [buildStage1P0DailyUseArchiveText, stage1P0DailyUseClosure]);
 
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {

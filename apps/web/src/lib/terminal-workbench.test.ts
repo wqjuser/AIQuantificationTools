@@ -155,6 +155,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  buildStage1P0DailyUseArchiveFileName,
   buildStage1P0DailyUseArchiveCopyText,
   buildStage1P0InvalidShareDiagnosticsCopyText,
   buildStage1P0ShareLinkBundleCopyText,
@@ -3843,6 +3844,36 @@ describe("terminal workbench model", () => {
     expect(copyText).toContain("## Invalid Share Diagnostics");
     expect(copyText).toContain("Reason: invalid-workspace");
     expect(copyText).toContain("Live trading remains blocked.");
+  });
+
+  test("builds safe Stage 1/P0 daily-use archive file names", () => {
+    const closure = { readyCount: 1, state: "blocked", totalCount: 2 };
+
+    expect(
+      buildStage1P0DailyUseArchiveFileName({
+        closure,
+        shareDeepLinkState: {
+          focus: "research-entry",
+          kind: "daily-use",
+          targetWorkspaceId: "research"
+        }
+      })
+    ).toBe("stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md");
+
+    expect(
+      buildStage1P0DailyUseArchiveFileName({
+        closure,
+        invalidShareStatus: {
+          reason: "invalid-workspace",
+          state: null,
+          status: "invalid"
+        }
+      })
+    ).toBe("stage1-p0-daily-use-archive-blocked-1-of-2-invalid-share-invalid-workspace.md");
+
+    expect(buildStage1P0DailyUseArchiveFileName({ closure })).toBe(
+      "stage1-p0-daily-use-archive-blocked-1-of-2-no-share.md"
+    );
   });
 
   test("builds a blocked Stage 1 daily-use refresh outcome when daily report generation falls back", () => {
