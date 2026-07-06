@@ -7447,7 +7447,17 @@ function stage1P0DailyUseArchiveFileNameToken(value: string): string {
     .replace(/^-+|-+$/g, "") || "unknown";
 }
 
+export interface Stage1P0DailyUseArchiveBundle {
+  bodySha256: {
+    algorithm: "sha256";
+    hash: string;
+  };
+  contentMarkdown: string;
+  fileName: string;
+}
+
 export function buildStage1P0DailyUseArchiveCopyText({
+  archiveBodySha256 = null,
   closure,
   invalidShareDiagnosticsCopyText = null,
   invalidShareStatus = null,
@@ -7458,6 +7468,7 @@ export function buildStage1P0DailyUseArchiveCopyText({
   closure: Parameters<typeof buildStage1P0ShareLinkBundleCopyText>[0]["closure"] & {
     copyText: string;
   };
+  archiveBodySha256?: string | null;
   invalidShareDiagnosticsCopyText?: string | null;
   invalidShareStatus?: Stage1P0DailyUseShareDeepLinkStatus | null;
   refreshOutcome?: (NonNullable<Parameters<typeof buildStage1P0ShareLinkBundleCopyText>[0]["refreshOutcome"]> & {
@@ -7488,6 +7499,7 @@ export function buildStage1P0DailyUseArchiveCopyText({
     "Archive summary:",
     `- Daily state: ${closure.state} (${closure.readyCount}/${closure.totalCount} ready)`,
     `- Suggested file name: ${suggestedFileName}`,
+    ...(archiveBodySha256 ? [`- Archive body SHA-256: ${archiveBodySha256}`] : []),
     `- Primary action: ${closure.primaryActionLabel} -> ${closure.primaryTargetWorkspaceId}`,
     `- Refresh receipt: ${refreshReceiptState}`,
     `- Recovered share context: ${shareContextState}`,
@@ -7517,6 +7529,28 @@ export function buildStage1P0DailyUseArchiveCopyText({
     "",
     "Live trading remains blocked."
   ].join("\n");
+}
+
+export async function buildStage1P0DailyUseArchiveBundle(
+  input: Parameters<typeof buildStage1P0DailyUseArchiveCopyText>[0]
+): Promise<Stage1P0DailyUseArchiveBundle> {
+  const bodyMarkdown = buildStage1P0DailyUseArchiveCopyText(input);
+  const bodyHash = await sha256TextHex(bodyMarkdown);
+  return {
+    bodySha256: {
+      algorithm: "sha256",
+      hash: bodyHash
+    },
+    contentMarkdown: buildStage1P0DailyUseArchiveCopyText({
+      ...input,
+      archiveBodySha256: bodyHash
+    }),
+    fileName: buildStage1P0DailyUseArchiveFileName({
+      closure: input.closure,
+      invalidShareStatus: input.invalidShareStatus,
+      shareDeepLinkState: input.shareDeepLinkState
+    })
+  };
 }
 
 const stage1P0DailyUseShareFocuses: readonly Stage1P0DailyUseShareFocus[] = [

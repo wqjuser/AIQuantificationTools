@@ -365,8 +365,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
-  buildStage1P0DailyUseArchiveFileName,
-  buildStage1P0DailyUseArchiveCopyText,
+  buildStage1P0DailyUseArchiveBundle as buildStage1P0DailyUseArchiveBundleModel,
   buildStage1P0InvalidShareDiagnosticsCopyText,
   buildStage1P0ShareLinkBundleCopyText,
   buildP0AcceptanceSummary,
@@ -9525,9 +9524,9 @@ export function App() {
     }
   }, [buildStage1P0InvalidShareDiagnosticsText]);
 
-  const buildStage1P0DailyUseArchiveText = useCallback(
-    () =>
-      buildStage1P0DailyUseArchiveCopyText({
+  const buildStage1P0DailyUseArchiveBundle = useCallback(
+    async () =>
+      buildStage1P0DailyUseArchiveBundleModel({
         closure: stage1P0DailyUseClosure,
         invalidShareDiagnosticsCopyText:
           initialStage1P0DailyUseShareDeepLinkStatus.status === "invalid"
@@ -9539,6 +9538,7 @@ export function App() {
         shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState
       }),
     [
+      buildStage1P0DailyUseArchiveBundleModel,
       buildStage1P0InvalidShareDiagnosticsText,
       buildStage1P0WorkspaceShareUrl,
       initialStage1P0DailyUseShareDeepLinkState,
@@ -9554,12 +9554,12 @@ export function App() {
         throw new Error("Clipboard API unavailable");
       }
 
-      const archiveCopyText = buildStage1P0DailyUseArchiveText();
-      await navigator.clipboard.writeText(archiveCopyText);
+      const archive = await buildStage1P0DailyUseArchiveBundle();
+      await navigator.clipboard.writeText(archive.contentMarkdown);
       setCopiedStage1P0DailyUseArchive(true);
       setWorkspaceState((current) => ({
         ...current,
-        statusLabel: "Stage 1 daily-use archive copied",
+        statusLabel: `Stage 1 daily-use archive copied · sha256 ${archive.bodySha256.hash.slice(0, 12)}`,
         error: undefined
       }));
     } catch (copyError) {
@@ -9570,7 +9570,7 @@ export function App() {
         error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
       }));
     }
-  }, [buildStage1P0DailyUseArchiveText]);
+  }, [buildStage1P0DailyUseArchiveBundle]);
 
   const openStage1P0DailyUseRow = useCallback(
     (row: Stage1P0DailyUseClosure["rows"][number]) => {
@@ -9683,27 +9683,22 @@ export function App() {
     }
   }, [buildStage1P0ShareLinkBundleText]);
 
-  const downloadStage1P0DailyUseArchive = useCallback(() => {
+  const downloadStage1P0DailyUseArchive = useCallback(async () => {
     let objectUrl: string | null = null;
     try {
-      const archiveCopyText = buildStage1P0DailyUseArchiveText();
-      const archiveFileName = buildStage1P0DailyUseArchiveFileName({
-        closure: stage1P0DailyUseClosure,
-        invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus,
-        shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState
-      });
+      const archive = await buildStage1P0DailyUseArchiveBundle();
       objectUrl = URL.createObjectURL(
-        new Blob([archiveCopyText], { type: "text/markdown;charset=utf-8" })
+        new Blob([archive.contentMarkdown], { type: "text/markdown;charset=utf-8" })
       );
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      anchor.download = archiveFileName;
+      anchor.download = archive.fileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
       setWorkspaceState((current) => ({
         ...current,
-        statusLabel: `Stage 1 daily-use archive download ready · ${archiveFileName}`,
+        statusLabel: `Stage 1 daily-use archive download ready · ${archive.fileName} · sha256 ${archive.bodySha256.hash.slice(0, 12)}`,
         error: undefined
       }));
     } catch (downloadError) {
@@ -9718,7 +9713,7 @@ export function App() {
       }
     }
   }, [
-    buildStage1P0DailyUseArchiveText,
+    buildStage1P0DailyUseArchiveBundle,
     initialStage1P0DailyUseShareDeepLinkState,
     initialStage1P0DailyUseShareDeepLinkStatus,
     stage1P0DailyUseClosure

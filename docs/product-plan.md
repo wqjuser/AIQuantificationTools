@@ -1105,3 +1105,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常归档下载文件名现在带上下文。新增 `buildStage1P0DailyUseArchiveFileName`，下载文件名会包含 daily state、ready/total 计数，以及有效分享的 kind/focus/workspace、无效分享 reason 或 `no-share` fallback，例如 `stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md`。该能力只改浏览器本地下载文件名，便于离线留档和团队转贴时区分归档来源，不改变 Markdown 正文语义、不刷新自检、不运行 Stage 1 命令、不写审计事件、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 日常归档 Markdown 现在会写出建议文件名。`buildStage1P0DailyUseArchiveCopyText` 复用 `buildStage1P0DailyUseArchiveFileName` 在 Archive summary 中输出 `Suggested file name`，App 生成归档文本时传入当前分享状态，下载成功状态栏也会回显实际文件名。该能力只提升复制/下载后的离线归档可追踪性，不改变 Markdown 正文证据来源、不刷新自检、不运行 Stage 1 命令、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 日常归档现在带正文核对 hash。新增 `buildStage1P0DailyUseArchiveBundle`，会先生成不含 hash 的归档正文，计算 `Archive body SHA-256`，再把完整 hash 写回 Archive summary；首页复制或下载归档包时统一使用该 bundle，剪贴板/下载文件内容、建议文件名和状态栏短 hash 保持一致。该能力只方便个人和小团队确认“同一份归档正文”，不写审计账本、不刷新自检、不运行 Stage 1 命令、不连接券商、不提交订单。

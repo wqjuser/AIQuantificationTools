@@ -155,6 +155,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  buildStage1P0DailyUseArchiveBundle,
   buildStage1P0DailyUseArchiveFileName,
   buildStage1P0DailyUseArchiveCopyText,
   buildStage1P0InvalidShareDiagnosticsCopyText,
@@ -3852,6 +3853,81 @@ describe("terminal workbench model", () => {
     expect(copyText).toContain("## Invalid Share Diagnostics");
     expect(copyText).toContain("Reason: invalid-workspace");
     expect(copyText).toContain("Live trading remains blocked.");
+  });
+
+  test("builds a Stage 1/P0 daily-use archive bundle with a body hash", async () => {
+    const closure = {
+      copyText: "# Stage 1/P0 Daily Use Handoff\nDaily handoff body.\nLive trading remains blocked.",
+      primaryActionLabel: "Fix clean open",
+      primaryTargetWorkspaceId: "audit",
+      primaryWorkspaceLink: "?workspace=audit&stage1DailyUseFocus=primary",
+      readyCount: 1,
+      rows: [
+        {
+          label: "Clean environment open",
+          status: "blocked",
+          targetWorkspaceId: "audit",
+          workspaceLink: "?workspace=audit&stage1DailyUseFocus=clean-open"
+        },
+        {
+          label: "Research entry",
+          status: "review",
+          targetWorkspaceId: "research",
+          workspaceLink: "?workspace=research&stage1DailyUseFocus=research-entry"
+        }
+      ],
+      state: "blocked",
+      totalCount: 2
+    };
+    const refreshOutcome = {
+      actionLabel: "Open daily workbench",
+      copyText: "# Stage 1/P0 Refresh Receipt\nRefresh receipt body.\nLive trading remains blocked.",
+      entries: [
+        {
+          label: "Daily report",
+          source: "core",
+          status: "ready",
+          targetWorkspaceId: "settings",
+          workspaceLink: "?workspace=settings&stage1RefreshReceiptFocus=daily-use"
+        }
+      ],
+      state: "ready",
+      targetWorkspaceId: "research",
+      targetWorkspaceLink: "?workspace=research&stage1RefreshReceiptFocus=next"
+    };
+    const archiveInput = {
+      closure,
+      invalidShareDiagnosticsCopyText:
+        "# Stage 1/P0 Invalid Share Link Diagnostics\nStatus: invalid\nReason: invalid-workspace",
+      invalidShareStatus: {
+        reason: null,
+        state: null,
+        status: "none"
+      },
+      refreshOutcome,
+      resolveShareUrl: (link: string) => `http://127.0.0.1:5174/${link}`,
+      shareDeepLinkState: {
+        focus: "research-entry",
+        kind: "daily-use",
+        targetWorkspaceId: "research"
+      }
+    } as const;
+    const bodyMarkdown = buildStage1P0DailyUseArchiveCopyText(archiveInput);
+    const expectedHash = await sha256TextHexForTest(bodyMarkdown);
+
+    const archive = await buildStage1P0DailyUseArchiveBundle(archiveInput);
+
+    expect(archive.fileName).toBe(
+      "stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md"
+    );
+    expect(archive.bodySha256).toEqual({
+      algorithm: "sha256",
+      hash: expectedHash
+    });
+    expect(archive.contentMarkdown).toContain(`- Archive body SHA-256: ${expectedHash}`);
+    expect(archive.contentMarkdown).toContain(
+      "- Suggested file name: stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md"
+    );
   });
 
   test("builds safe Stage 1/P0 daily-use archive file names", () => {
