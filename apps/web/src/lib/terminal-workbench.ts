@@ -7373,6 +7373,42 @@ export function buildStage1P0ShareLinkBundleCopyText({
   ].join("\n");
 }
 
+export function buildStage1P0DailyUseArchiveCopyText({
+  closure,
+  invalidShareDiagnosticsCopyText = null,
+  refreshOutcome = null,
+  resolveShareUrl = (workspaceLink) => workspaceLink
+}: {
+  closure: Parameters<typeof buildStage1P0ShareLinkBundleCopyText>[0]["closure"] & {
+    copyText: string;
+  };
+  invalidShareDiagnosticsCopyText?: string | null;
+  refreshOutcome?: (NonNullable<Parameters<typeof buildStage1P0ShareLinkBundleCopyText>[0]["refreshOutcome"]> & {
+    copyText: string;
+  }) | null;
+  resolveShareUrl?: (workspaceLink: string) => string;
+}): string {
+  const refreshReceiptText = refreshOutcome?.copyText?.trim() || "Refresh receipt: not generated in this browser session.";
+  const invalidDiagnosticsText = invalidShareDiagnosticsCopyText?.trim() || "No invalid share link is active.";
+  return [
+    "# Stage 1/P0 Daily Use Archive",
+    "",
+    "## Daily Handoff",
+    closure.copyText.trim(),
+    "",
+    "## Share Link Bundle",
+    buildStage1P0ShareLinkBundleCopyText({ closure, refreshOutcome, resolveShareUrl }),
+    "",
+    "## Refresh Receipt",
+    refreshReceiptText,
+    "",
+    "## Invalid Share Diagnostics",
+    invalidDiagnosticsText,
+    "",
+    "Live trading remains blocked."
+  ].join("\n");
+}
+
 const stage1P0DailyUseShareFocuses: readonly Stage1P0DailyUseShareFocus[] = [
   "primary",
   "clean-open",

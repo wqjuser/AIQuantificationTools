@@ -155,6 +155,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  buildStage1P0DailyUseArchiveCopyText,
   buildStage1P0InvalidShareDiagnosticsCopyText,
   buildStage1P0ShareLinkBundleCopyText,
   resolveStage1P0DailyUseShareDeepLinkStatus,
@@ -3753,6 +3754,69 @@ describe("terminal workbench model", () => {
     expect(copyText).toContain(
       "- Daily report [ready/core] -> settings: http://127.0.0.1:5174/?workspace=settings&stage1RefreshReceiptFocus=daily-use"
     );
+    expect(copyText).toContain("Live trading remains blocked.");
+  });
+
+  test("builds a Stage 1/P0 daily-use archive copy text", () => {
+    const closure = {
+      copyText: "# Stage 1/P0 Daily Use Handoff\nDaily handoff body.\nLive trading remains blocked.",
+      primaryActionLabel: "Fix clean open",
+      primaryTargetWorkspaceId: "audit",
+      primaryWorkspaceLink: "?workspace=audit&stage1DailyUseFocus=primary",
+      readyCount: 1,
+      rows: [
+        {
+          label: "Clean environment open",
+          status: "blocked",
+          targetWorkspaceId: "audit",
+          workspaceLink: "?workspace=audit&stage1DailyUseFocus=clean-open"
+        },
+        {
+          label: "Research entry",
+          status: "review",
+          targetWorkspaceId: "research",
+          workspaceLink: "?workspace=research&stage1DailyUseFocus=research-entry"
+        }
+      ],
+      state: "blocked",
+      totalCount: 2
+    };
+    const refreshOutcome = {
+      actionLabel: "Open daily workbench",
+      copyText: "# Stage 1/P0 Refresh Receipt\nRefresh receipt body.\nLive trading remains blocked.",
+      entries: [
+        {
+          label: "Daily report",
+          source: "core",
+          status: "ready",
+          targetWorkspaceId: "settings",
+          workspaceLink: "?workspace=settings&stage1RefreshReceiptFocus=daily-use"
+        }
+      ],
+      state: "ready",
+      targetWorkspaceId: "research",
+      targetWorkspaceLink: "?workspace=research&stage1RefreshReceiptFocus=next"
+    };
+
+    const copyText = buildStage1P0DailyUseArchiveCopyText({
+      closure,
+      invalidShareDiagnosticsCopyText:
+        "# Stage 1/P0 Invalid Share Link Diagnostics\nStatus: invalid\nReason: invalid-workspace",
+      refreshOutcome,
+      resolveShareUrl: (link) => `http://127.0.0.1:5174/${link}`
+    });
+
+    expect(copyText).toContain("# Stage 1/P0 Daily Use Archive");
+    expect(copyText).toContain("## Daily Handoff");
+    expect(copyText).toContain("Daily handoff body.");
+    expect(copyText).toContain("## Share Link Bundle");
+    expect(copyText).toContain(
+      "Primary link: http://127.0.0.1:5174/?workspace=audit&stage1DailyUseFocus=primary"
+    );
+    expect(copyText).toContain("## Refresh Receipt");
+    expect(copyText).toContain("Refresh receipt body.");
+    expect(copyText).toContain("## Invalid Share Diagnostics");
+    expect(copyText).toContain("Reason: invalid-workspace");
     expect(copyText).toContain("Live trading remains blocked.");
   });
 

@@ -365,6 +365,7 @@ import {
   buildStage1BootstrapPreflightSummary,
   buildStage1DailyUseSummary,
   buildStage1P0DailyUseRefreshOutcome,
+  buildStage1P0DailyUseArchiveCopyText,
   buildStage1P0InvalidShareDiagnosticsCopyText,
   buildStage1P0ShareLinkBundleCopyText,
   buildP0AcceptanceSummary,
@@ -9478,21 +9479,29 @@ export function App() {
     }
   }, [buildStage1P0ShareLinkBundleText]);
 
+  const buildStage1P0InvalidShareDiagnosticsText = useCallback(() => {
+    const replacementLink = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);
+    const incomingSearch = typeof window === "undefined" ? "" : window.location.search;
+    return buildStage1P0InvalidShareDiagnosticsCopyText({
+      incomingSearch,
+      primaryActionLabel: stage1P0DailyUseClosure.primaryActionLabel,
+      primaryTargetWorkspaceId: stage1P0DailyUseClosure.primaryTargetWorkspaceId,
+      replacementLink,
+      status: initialStage1P0DailyUseShareDeepLinkStatus
+    });
+  }, [
+    stage1P0DailyUseClosure.primaryActionLabel,
+    stage1P0DailyUseClosure.primaryTargetWorkspaceId,
+    stage1P0DailyUseClosure.primaryWorkspaceLink
+  ]);
+
   const copyStage1P0InvalidShareDiagnostics = useCallback(async () => {
     try {
       if (!navigator.clipboard?.writeText) {
         throw new Error("Clipboard API unavailable");
       }
 
-      const replacementLink = buildStage1P0WorkspaceShareUrl(stage1P0DailyUseClosure.primaryWorkspaceLink);
-      const incomingSearch = typeof window === "undefined" ? "" : window.location.search;
-      const diagnosticsCopyText = buildStage1P0InvalidShareDiagnosticsCopyText({
-        incomingSearch,
-        primaryActionLabel: stage1P0DailyUseClosure.primaryActionLabel,
-        primaryTargetWorkspaceId: stage1P0DailyUseClosure.primaryTargetWorkspaceId,
-        replacementLink,
-        status: initialStage1P0DailyUseShareDeepLinkStatus
-      });
+      const diagnosticsCopyText = buildStage1P0InvalidShareDiagnosticsText();
       await navigator.clipboard.writeText(diagnosticsCopyText);
       setCopiedStage1P0InvalidShareDiagnostics(true);
       setWorkspaceState((current) => ({
@@ -9508,11 +9517,21 @@ export function App() {
         error: copyError instanceof Error ? copyError.message : "Clipboard copy failed"
       }));
     }
-  }, [
-    stage1P0DailyUseClosure.primaryActionLabel,
-    stage1P0DailyUseClosure.primaryTargetWorkspaceId,
-    stage1P0DailyUseClosure.primaryWorkspaceLink
-  ]);
+  }, [buildStage1P0InvalidShareDiagnosticsText]);
+
+  const buildStage1P0DailyUseArchiveText = useCallback(
+    () =>
+      buildStage1P0DailyUseArchiveCopyText({
+        closure: stage1P0DailyUseClosure,
+        invalidShareDiagnosticsCopyText:
+          initialStage1P0DailyUseShareDeepLinkStatus.status === "invalid"
+            ? buildStage1P0InvalidShareDiagnosticsText()
+            : null,
+        refreshOutcome: stage1P0DailyUseRefreshOutcome,
+        resolveShareUrl: buildStage1P0WorkspaceShareUrl
+      }),
+    [buildStage1P0InvalidShareDiagnosticsText, stage1P0DailyUseClosure, stage1P0DailyUseRefreshOutcome]
+  );
 
   const openStage1P0DailyUseRow = useCallback(
     (row: Stage1P0DailyUseClosure["rows"][number]) => {
@@ -9624,6 +9643,37 @@ export function App() {
       }
     }
   }, [buildStage1P0ShareLinkBundleText]);
+
+  const downloadStage1P0DailyUseArchive = useCallback(() => {
+    let objectUrl: string | null = null;
+    try {
+      const archiveCopyText = buildStage1P0DailyUseArchiveText();
+      objectUrl = URL.createObjectURL(
+        new Blob([archiveCopyText], { type: "text/markdown;charset=utf-8" })
+      );
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "stage1-p0-daily-use-archive.md";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily-use archive download ready",
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily-use archive download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Daily-use archive download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [buildStage1P0DailyUseArchiveText]);
 
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
@@ -12126,6 +12176,7 @@ export function App() {
                 onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
                 onCopyPrimaryLink={() => void copyStage1P0DailyUsePrimaryLink()}
                 onCopyShareLinkBundle={() => void copyStage1P0ShareLinkBundle()}
+                onDownloadArchive={downloadStage1P0DailyUseArchive}
                 onDownloadShareLinkBundle={downloadStage1P0ShareLinkBundle}
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
@@ -13540,6 +13591,7 @@ function Stage1P0DailyUseClosurePanel({
   onCopyHandoff,
   onCopyPrimaryLink,
   onCopyShareLinkBundle,
+  onDownloadArchive,
   onDownloadShareLinkBundle,
   onDownloadHandoff,
   onCopyRefreshOutcome,
@@ -13564,6 +13616,7 @@ function Stage1P0DailyUseClosurePanel({
   onCopyHandoff?: () => void;
   onCopyPrimaryLink?: () => void;
   onCopyShareLinkBundle?: () => void;
+  onDownloadArchive?: () => void;
   onDownloadShareLinkBundle?: () => void;
   onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
@@ -13760,6 +13813,15 @@ function Stage1P0DailyUseClosurePanel({
           >
             <Download size={12} />
             {i18n.locale === "zh-CN" ? "下载链接包" : "Download links"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-download"
+            disabled={!onDownloadArchive}
+            onClick={onDownloadArchive}
+            type="button"
+          >
+            <Download size={12} />
+            {i18n.locale === "zh-CN" ? "下载归档包" : "Download archive"}
           </button>
           <button
             className="stage1-p0-daily-use-download"

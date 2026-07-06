@@ -1089,3 +1089,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常收口卡现在可以一次复制完整分享链接包。新增 `buildStage1P0ShareLinkBundleCopyText`，会把日常主入口、五行入口、当前刷新回执下一步和三段回执 entry 统一输出为 Markdown，并由首页传入 `buildStage1P0WorkspaceShareUrl` 解析成完整浏览器 URL；卡片 footer 新增“复制链接包 / Copy links”动作并写入 `Stage 1 share link bundle copied` 状态反馈。该能力只写剪贴板和前端状态栏，不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 分享链接包现在也可下载为 Markdown。首页复用 `buildStage1P0ShareLinkBundleCopyText` 生成同一份完整 URL 文本，footer 新增“下载链接包 / Download links”，生成 `stage1-p0-share-link-bundle.md`，成功或失败只写入本地状态栏。该能力用于剪贴板不可用或需要本地归档的日常交接，不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 日常收口卡现在可以下载整包归档。新增 `buildStage1P0DailyUseArchiveCopyText`，把当前日常手册、完整分享链接包、当前刷新回执和无效分享链接诊断状态组合为一个 Markdown 文本；首页 footer 新增“下载归档包 / Download archive”，生成 `stage1-p0-daily-use-archive.md` 并复用既有 Blob 下载路径。该归档用于每日启动留档或小团队异步交接，只保存当前前端/本地 readback 状态，不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
