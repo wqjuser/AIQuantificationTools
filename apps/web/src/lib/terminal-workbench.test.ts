@@ -3807,6 +3807,16 @@ describe("terminal workbench model", () => {
     });
 
     expect(copyText).toContain("# Stage 1/P0 Daily Use Archive");
+    expect(copyText).toContain("Archive summary:");
+    expect(copyText).toContain("- Daily state: blocked (1/2 ready)");
+    expect(copyText).toContain("- Primary action: Fix clean open -> audit");
+    expect(copyText).toContain("- Refresh receipt: ready");
+    expect(copyText).toContain("- Invalid share diagnostics: included");
+    expect(copyText).toContain("Archive contents:");
+    expect(copyText).toContain("- Daily Handoff");
+    expect(copyText).toContain("- Share Link Bundle");
+    expect(copyText).toContain("- Refresh Receipt");
+    expect(copyText).toContain("- Invalid Share Diagnostics");
     expect(copyText).toContain("## Daily Handoff");
     expect(copyText).toContain("Daily handoff body.");
     expect(copyText).toContain("## Share Link Bundle");

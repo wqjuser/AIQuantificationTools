@@ -7390,8 +7390,22 @@ export function buildStage1P0DailyUseArchiveCopyText({
 }): string {
   const refreshReceiptText = refreshOutcome?.copyText?.trim() || "Refresh receipt: not generated in this browser session.";
   const invalidDiagnosticsText = invalidShareDiagnosticsCopyText?.trim() || "No invalid share link is active.";
+  const refreshReceiptState = refreshOutcome?.state ?? "not-generated";
+  const invalidDiagnosticsState = invalidShareDiagnosticsCopyText?.trim() ? "included" : "none";
   return [
     "# Stage 1/P0 Daily Use Archive",
+    "",
+    "Archive summary:",
+    `- Daily state: ${closure.state} (${closure.readyCount}/${closure.totalCount} ready)`,
+    `- Primary action: ${closure.primaryActionLabel} -> ${closure.primaryTargetWorkspaceId}`,
+    `- Refresh receipt: ${refreshReceiptState}`,
+    `- Invalid share diagnostics: ${invalidDiagnosticsState}`,
+    "",
+    "Archive contents:",
+    "- Daily Handoff",
+    "- Share Link Bundle",
+    "- Refresh Receipt",
+    "- Invalid Share Diagnostics",
     "",
     "## Daily Handoff",
     closure.copyText.trim(),
