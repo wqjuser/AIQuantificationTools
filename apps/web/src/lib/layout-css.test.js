@@ -452,6 +452,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildStage1P0DailyUseArchiveFileName");
     expect(appSource).toContain("invalidShareDiagnosticsCopyText:");
     expect(appSource).toContain("shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState");
+    expect(appSource).toContain("invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus");
     expect(appSource).toContain("const archiveCopyText = buildStage1P0DailyUseArchiveText();");
     expect(appSource).toContain("const copyStage1P0DailyUseArchive = useCallback");
     expect(appSource).toContain("navigator.clipboard.writeText(archiveCopyText)");
@@ -462,7 +463,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const archiveFileName = buildStage1P0DailyUseArchiveFileName({");
     expect(appSource).toContain("invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus");
     expect(appSource).toContain("anchor.download = archiveFileName;");
-    expect(appSource).toContain("Stage 1 daily-use archive download ready");
+    expect(appSource).toContain("statusLabel: `Stage 1 daily-use archive download ready · ${archiveFileName}`");
     expect(appSource).toContain("Stage 1 daily-use archive download failed");
     expect(appSource).toContain("function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string");
     expect(appSource).toContain('if (!normalizedLink || typeof window === "undefined")');

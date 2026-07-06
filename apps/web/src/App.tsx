@@ -9533,11 +9533,19 @@ export function App() {
           initialStage1P0DailyUseShareDeepLinkStatus.status === "invalid"
             ? buildStage1P0InvalidShareDiagnosticsText()
             : null,
+        invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus,
         refreshOutcome: stage1P0DailyUseRefreshOutcome,
         resolveShareUrl: buildStage1P0WorkspaceShareUrl,
         shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState
       }),
-    [buildStage1P0InvalidShareDiagnosticsText, stage1P0DailyUseClosure, stage1P0DailyUseRefreshOutcome]
+    [
+      buildStage1P0InvalidShareDiagnosticsText,
+      buildStage1P0WorkspaceShareUrl,
+      initialStage1P0DailyUseShareDeepLinkState,
+      initialStage1P0DailyUseShareDeepLinkStatus,
+      stage1P0DailyUseClosure,
+      stage1P0DailyUseRefreshOutcome
+    ]
   );
 
   const copyStage1P0DailyUseArchive = useCallback(async () => {
@@ -9695,7 +9703,7 @@ export function App() {
       anchor.remove();
       setWorkspaceState((current) => ({
         ...current,
-        statusLabel: "Stage 1 daily-use archive download ready",
+        statusLabel: `Stage 1 daily-use archive download ready · ${archiveFileName}`,
         error: undefined
       }));
     } catch (downloadError) {
@@ -9709,7 +9717,12 @@ export function App() {
         URL.revokeObjectURL(objectUrl);
       }
     }
-  }, [buildStage1P0DailyUseArchiveText, stage1P0DailyUseClosure]);
+  }, [
+    buildStage1P0DailyUseArchiveText,
+    initialStage1P0DailyUseShareDeepLinkState,
+    initialStage1P0DailyUseShareDeepLinkStatus,
+    stage1P0DailyUseClosure
+  ]);
 
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {

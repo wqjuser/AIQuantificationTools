@@ -7450,6 +7450,7 @@ function stage1P0DailyUseArchiveFileNameToken(value: string): string {
 export function buildStage1P0DailyUseArchiveCopyText({
   closure,
   invalidShareDiagnosticsCopyText = null,
+  invalidShareStatus = null,
   refreshOutcome = null,
   resolveShareUrl = (workspaceLink) => workspaceLink,
   shareDeepLinkState = null
@@ -7458,6 +7459,7 @@ export function buildStage1P0DailyUseArchiveCopyText({
     copyText: string;
   };
   invalidShareDiagnosticsCopyText?: string | null;
+  invalidShareStatus?: Stage1P0DailyUseShareDeepLinkStatus | null;
   refreshOutcome?: (NonNullable<Parameters<typeof buildStage1P0ShareLinkBundleCopyText>[0]["refreshOutcome"]> & {
     copyText: string;
   }) | null;
@@ -7471,6 +7473,11 @@ export function buildStage1P0DailyUseArchiveCopyText({
   const shareContextState = shareDeepLinkState
     ? `${shareDeepLinkState.kind}/${shareDeepLinkState.focus} -> ${shareDeepLinkState.targetWorkspaceId}`
     : "none";
+  const suggestedFileName = buildStage1P0DailyUseArchiveFileName({
+    closure,
+    invalidShareStatus,
+    shareDeepLinkState
+  });
   const recoveredShareContextText = buildStage1P0RecoveredShareContextCopyText({
     resolveShareUrl,
     shareDeepLinkState
@@ -7480,6 +7487,7 @@ export function buildStage1P0DailyUseArchiveCopyText({
     "",
     "Archive summary:",
     `- Daily state: ${closure.state} (${closure.readyCount}/${closure.totalCount} ready)`,
+    `- Suggested file name: ${suggestedFileName}`,
     `- Primary action: ${closure.primaryActionLabel} -> ${closure.primaryTargetWorkspaceId}`,
     `- Refresh receipt: ${refreshReceiptState}`,
     `- Recovered share context: ${shareContextState}`,

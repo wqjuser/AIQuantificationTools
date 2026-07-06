@@ -3803,6 +3803,11 @@ describe("terminal workbench model", () => {
       closure,
       invalidShareDiagnosticsCopyText:
         "# Stage 1/P0 Invalid Share Link Diagnostics\nStatus: invalid\nReason: invalid-workspace",
+      invalidShareStatus: {
+        reason: null,
+        state: null,
+        status: "none"
+      },
       refreshOutcome,
       resolveShareUrl: (link) => `http://127.0.0.1:5174/${link}`,
       shareDeepLinkState: {
@@ -3815,6 +3820,9 @@ describe("terminal workbench model", () => {
     expect(copyText).toContain("# Stage 1/P0 Daily Use Archive");
     expect(copyText).toContain("Archive summary:");
     expect(copyText).toContain("- Daily state: blocked (1/2 ready)");
+    expect(copyText).toContain(
+      "- Suggested file name: stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md"
+    );
     expect(copyText).toContain("- Primary action: Fix clean open -> audit");
     expect(copyText).toContain("- Refresh receipt: ready");
     expect(copyText).toContain("- Recovered share context: daily-use/research-entry -> research");

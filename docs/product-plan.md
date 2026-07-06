@@ -1103,3 +1103,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常归档包现在会记录当前 recovered share 上下文。`buildStage1P0DailyUseArchiveCopyText` 新增可选 `shareDeepLinkState`，当页面是从有效日常手册或刷新回执链接恢复时，归档摘要和 `Recovered Share Context` section 会写入 share kind、focus、目标 workspace 和完整恢复链接；没有有效分享链接时输出稳定的 `No recovered share link is active.`。该能力只让复制/下载后的 Markdown 自带来源说明，不新增刷新、自检、跳转、审计写入、券商连接或订单提交。
 
 最新更新：Stage 1/P0 日常归档下载文件名现在带上下文。新增 `buildStage1P0DailyUseArchiveFileName`，下载文件名会包含 daily state、ready/total 计数，以及有效分享的 kind/focus/workspace、无效分享 reason 或 `no-share` fallback，例如 `stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md`。该能力只改浏览器本地下载文件名，便于离线留档和团队转贴时区分归档来源，不改变 Markdown 正文语义、不刷新自检、不运行 Stage 1 命令、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 日常归档 Markdown 现在会写出建议文件名。`buildStage1P0DailyUseArchiveCopyText` 复用 `buildStage1P0DailyUseArchiveFileName` 在 Archive summary 中输出 `Suggested file name`，App 生成归档文本时传入当前分享状态，下载成功状态栏也会回显实际文件名。该能力只提升复制/下载后的离线归档可追踪性，不改变 Markdown 正文证据来源、不刷新自检、不运行 Stage 1 命令、不写审计事件、不连接券商、不提交订单。
