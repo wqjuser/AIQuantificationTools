@@ -567,6 +567,15 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("copiedStage1P0InvalidShareDiagnostics");
     expect(overviewGridSource).toContain("复制诊断");
     expect(overviewGridSource).toContain("Copy diagnostics");
+    expect(overviewGridSource).toContain("onClick={() => void copyStage1P0DailyUseArchive()}");
+    expect(overviewGridSource).toContain("copiedStage1P0DailyUseArchive");
+    expect(overviewGridSource).toContain("归档包已复制");
+    expect(overviewGridSource).toContain("Archive copied");
+    expect(overviewGridSource).toContain("复制归档包");
+    expect(overviewGridSource).toContain("Copy archive");
+    expect(overviewGridSource).toContain("onClick={downloadStage1P0DailyUseArchive}");
+    expect(overviewGridSource).toContain("下载归档包");
+    expect(overviewGridSource).toContain("Download archive");
     expect(overviewGridSource).toContain('i18n.locale === "zh-CN" ? "Stage 1 分享链接不可用" : "Stage 1 share link unavailable"');
     expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link"');
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");

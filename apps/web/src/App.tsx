@@ -12175,6 +12175,20 @@ export function App() {
                           ? "复制诊断"
                           : "Copy diagnostics"}
                     </button>
+                    <button onClick={() => void copyStage1P0DailyUseArchive()} type="button">
+                      <Copy size={12} />
+                      {copiedStage1P0DailyUseArchive
+                        ? i18n.locale === "zh-CN"
+                          ? "归档包已复制"
+                          : "Archive copied"
+                        : i18n.locale === "zh-CN"
+                          ? "复制归档包"
+                          : "Copy archive"}
+                    </button>
+                    <button onClick={downloadStage1P0DailyUseArchive} type="button">
+                      <Download size={12} />
+                      {i18n.locale === "zh-CN" ? "下载归档包" : "Download archive"}
+                    </button>
                     <button
                       onClick={() =>
                         void copyStage1P0DailyUsePrimaryLink("Stage 1 invalid share replacement link copied")

@@ -1095,3 +1095,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常归档包现在也可直接复制。首页复用同一个 `buildStage1P0DailyUseArchiveCopyText` 生成文本，footer 新增“复制归档包 / Copy archive”，成功时显示“归档包已复制 / Archive copied”并写入 `Stage 1 daily-use archive copied` 状态反馈；失败时保留明确的本地错误状态。该动作只把当前日常手册、完整链接包、刷新回执和无效分享链接诊断状态写入剪贴板，不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 日常归档包现在带顶部摘要和目录。`buildStage1P0DailyUseArchiveCopyText` 会在详细 section 前输出 daily state/ready 数、主动作、刷新回执状态、无效分享链接诊断状态，以及 Daily Handoff、Share Link Bundle、Refresh Receipt、Invalid Share Diagnostics 四段目录，便于复制或下载后先快速核对归档可用性。该摘要只来自已有前端模型入参，不新增时间戳、不读取额外文件、不触发刷新自检、不写审计事件、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 invalid share banner 现在也能直接导出完整日常归档。坏分享链接提示区复用既有 `copyStage1P0DailyUseArchive` 和 `downloadStage1P0DailyUseArchive` 回调，新增“复制归档包 / Copy archive”和“下载归档包 / Download archive”动作；遇到缺少 workspace、重复参数或目标无效时，操作者可以不滚动到日常卡片底部就把包含日常手册、链接包、刷新回执和坏链接诊断状态的 Markdown 整包交给团队排查。该能力只复制或下载当前本地/前端状态，不恢复错误工作区、不跳转、不刷新自检、不运行 Stage 1 命令、不构建桌面端、不写审计事件、不连接券商、不提交订单。
