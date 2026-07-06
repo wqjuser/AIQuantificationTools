@@ -420,6 +420,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setCopiedStage1P0DailyUsePrimaryLink(false);");
     expect(appSource).toContain("const [copiedStage1P0ShareLinkBundle, setCopiedStage1P0ShareLinkBundle]");
     expect(appSource).toContain("setCopiedStage1P0ShareLinkBundle(false);");
+    expect(appSource).toContain("const [copiedStage1P0DailyUseArchive, setCopiedStage1P0DailyUseArchive]");
+    expect(appSource).toContain("setCopiedStage1P0DailyUseArchive(false);");
     expect(appSource).toContain("buildStage1P0ShareLinkBundleCopyText({");
     expect(appSource).toContain("const buildStage1P0ShareLinkBundleText = useCallback");
     expect(appSource).toContain("resolveShareUrl: buildStage1P0WorkspaceShareUrl");
@@ -444,6 +446,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildStage1P0DailyUseArchiveCopyText({");
     expect(appSource).toContain("invalidShareDiagnosticsCopyText:");
     expect(appSource).toContain("const archiveCopyText = buildStage1P0DailyUseArchiveText();");
+    expect(appSource).toContain("const copyStage1P0DailyUseArchive = useCallback");
+    expect(appSource).toContain("navigator.clipboard.writeText(archiveCopyText)");
+    expect(appSource).toContain("Stage 1 daily-use archive copied");
+    expect(appSource).toContain("Stage 1 daily-use archive copy failed");
     expect(appSource).toContain("const downloadStage1P0DailyUseArchive = useCallback");
     expect(appSource).toContain('new Blob([archiveCopyText], { type: "text/markdown;charset=utf-8" })');
     expect(appSource).toContain('anchor.download = "stage1-p0-daily-use-archive.md";');
@@ -509,6 +515,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onCopyPrimaryLink={() => void copyStage1P0DailyUsePrimaryLink()}");
     expect(appSource).toContain("isShareLinkBundleCopied={copiedStage1P0ShareLinkBundle}");
     expect(appSource).toContain("onCopyShareLinkBundle={() => void copyStage1P0ShareLinkBundle()}");
+    expect(appSource).toContain("isArchiveCopied={copiedStage1P0DailyUseArchive}");
+    expect(appSource).toContain("onCopyArchive={() => void copyStage1P0DailyUseArchive()}");
     expect(appSource).toContain("onDownloadShareLinkBundle={downloadStage1P0ShareLinkBundle}");
     expect(appSource).toContain("onDownloadArchive={downloadStage1P0DailyUseArchive}");
     expect(appSource).toContain("onDownloadHandoff={downloadStage1P0DailyUseHandoff}");
@@ -537,7 +545,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function stage1P0DailyUseRefreshEntryIsSharedFocus");
     expect(appSource).toContain("function stage1P0DailyUseRefreshNextIsSharedFocus");
     expect(appSource).toContain("function stage1P0DailyUseRefreshReceiptIsColdStart");
+    expect(appSource).toContain("isArchiveCopied?: boolean;");
     expect(appSource).toContain("onCopyPrimaryLink?: () => void;");
+    expect(appSource).toContain("onCopyArchive?: () => void;");
     expect(appSource).toContain("onCopyShareLinkBundle?: () => void;");
     expect(appSource).toContain("onDownloadArchive?: () => void;");
     expect(appSource).toContain("onDownloadShareLinkBundle?: () => void;");
@@ -601,6 +611,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "复制入口链接" : "Copy link"');
     expect(appSource).toContain("复制链接包");
     expect(appSource).toContain("Copy links");
+    expect(appSource).toContain("复制归档包");
+    expect(appSource).toContain("Copy archive");
     expect(appSource).toContain("下载链接包");
     expect(appSource).toContain("Download links");
     expect(appSource).toContain("下载归档包");
