@@ -7373,11 +7373,50 @@ export function buildStage1P0ShareLinkBundleCopyText({
   ].join("\n");
 }
 
+function buildStage1P0RecoveredShareContextCopyText({
+  resolveShareUrl,
+  shareDeepLinkState
+}: {
+  resolveShareUrl: (workspaceLink: string) => string;
+  shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
+}): string {
+  if (!shareDeepLinkState) {
+    return "No recovered share link is active.";
+  }
+  const search =
+    shareDeepLinkState.kind === "daily-use"
+      ? buildStage1P0DailyUseShareUrlSearch({
+          focus: shareDeepLinkState.focus,
+          targetWorkspaceId: shareDeepLinkState.targetWorkspaceId
+        })
+      : buildStage1P0DailyUseRefreshReceiptUrlSearch({
+          focus: shareDeepLinkState.focus,
+          targetWorkspaceId: shareDeepLinkState.targetWorkspaceId
+        });
+  const workspaceLink = search ? `?${search}` : "";
+  let shareLink = workspaceLink || "none";
+  if (workspaceLink) {
+    try {
+      shareLink = resolveShareUrl(workspaceLink)?.trim() || workspaceLink;
+    } catch {
+      shareLink = workspaceLink;
+    }
+  }
+  return [
+    "Recovered share link: active",
+    `Share kind: ${shareDeepLinkState.kind}`,
+    `Share focus: ${shareDeepLinkState.focus}`,
+    `Share target workspace: ${shareDeepLinkState.targetWorkspaceId}`,
+    `Share link: ${shareLink}`
+  ].join("\n");
+}
+
 export function buildStage1P0DailyUseArchiveCopyText({
   closure,
   invalidShareDiagnosticsCopyText = null,
   refreshOutcome = null,
-  resolveShareUrl = (workspaceLink) => workspaceLink
+  resolveShareUrl = (workspaceLink) => workspaceLink,
+  shareDeepLinkState = null
 }: {
   closure: Parameters<typeof buildStage1P0ShareLinkBundleCopyText>[0]["closure"] & {
     copyText: string;
@@ -7387,11 +7426,19 @@ export function buildStage1P0DailyUseArchiveCopyText({
     copyText: string;
   }) | null;
   resolveShareUrl?: (workspaceLink: string) => string;
+  shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
 }): string {
   const refreshReceiptText = refreshOutcome?.copyText?.trim() || "Refresh receipt: not generated in this browser session.";
   const invalidDiagnosticsText = invalidShareDiagnosticsCopyText?.trim() || "No invalid share link is active.";
   const refreshReceiptState = refreshOutcome?.state ?? "not-generated";
   const invalidDiagnosticsState = invalidShareDiagnosticsCopyText?.trim() ? "included" : "none";
+  const shareContextState = shareDeepLinkState
+    ? `${shareDeepLinkState.kind}/${shareDeepLinkState.focus} -> ${shareDeepLinkState.targetWorkspaceId}`
+    : "none";
+  const recoveredShareContextText = buildStage1P0RecoveredShareContextCopyText({
+    resolveShareUrl,
+    shareDeepLinkState
+  });
   return [
     "# Stage 1/P0 Daily Use Archive",
     "",
@@ -7399,11 +7446,13 @@ export function buildStage1P0DailyUseArchiveCopyText({
     `- Daily state: ${closure.state} (${closure.readyCount}/${closure.totalCount} ready)`,
     `- Primary action: ${closure.primaryActionLabel} -> ${closure.primaryTargetWorkspaceId}`,
     `- Refresh receipt: ${refreshReceiptState}`,
+    `- Recovered share context: ${shareContextState}`,
     `- Invalid share diagnostics: ${invalidDiagnosticsState}`,
     "",
     "Archive contents:",
     "- Daily Handoff",
     "- Share Link Bundle",
+    "- Recovered Share Context",
     "- Refresh Receipt",
     "- Invalid Share Diagnostics",
     "",
@@ -7412,6 +7461,9 @@ export function buildStage1P0DailyUseArchiveCopyText({
     "",
     "## Share Link Bundle",
     buildStage1P0ShareLinkBundleCopyText({ closure, refreshOutcome, resolveShareUrl }),
+    "",
+    "## Recovered Share Context",
+    recoveredShareContextText,
     "",
     "## Refresh Receipt",
     refreshReceiptText,

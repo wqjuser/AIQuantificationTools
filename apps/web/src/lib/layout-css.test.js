@@ -450,6 +450,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const buildStage1P0DailyUseArchiveText = useCallback");
     expect(appSource).toContain("buildStage1P0DailyUseArchiveCopyText({");
     expect(appSource).toContain("invalidShareDiagnosticsCopyText:");
+    expect(appSource).toContain("shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState");
     expect(appSource).toContain("const archiveCopyText = buildStage1P0DailyUseArchiveText();");
     expect(appSource).toContain("const copyStage1P0DailyUseArchive = useCallback");
     expect(appSource).toContain("navigator.clipboard.writeText(archiveCopyText)");

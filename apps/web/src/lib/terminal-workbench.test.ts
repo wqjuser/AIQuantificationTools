@@ -3803,7 +3803,12 @@ describe("terminal workbench model", () => {
       invalidShareDiagnosticsCopyText:
         "# Stage 1/P0 Invalid Share Link Diagnostics\nStatus: invalid\nReason: invalid-workspace",
       refreshOutcome,
-      resolveShareUrl: (link) => `http://127.0.0.1:5174/${link}`
+      resolveShareUrl: (link) => `http://127.0.0.1:5174/${link}`,
+      shareDeepLinkState: {
+        focus: "research-entry",
+        kind: "daily-use",
+        targetWorkspaceId: "research"
+      }
     });
 
     expect(copyText).toContain("# Stage 1/P0 Daily Use Archive");
@@ -3811,10 +3816,12 @@ describe("terminal workbench model", () => {
     expect(copyText).toContain("- Daily state: blocked (1/2 ready)");
     expect(copyText).toContain("- Primary action: Fix clean open -> audit");
     expect(copyText).toContain("- Refresh receipt: ready");
+    expect(copyText).toContain("- Recovered share context: daily-use/research-entry -> research");
     expect(copyText).toContain("- Invalid share diagnostics: included");
     expect(copyText).toContain("Archive contents:");
     expect(copyText).toContain("- Daily Handoff");
     expect(copyText).toContain("- Share Link Bundle");
+    expect(copyText).toContain("- Recovered Share Context");
     expect(copyText).toContain("- Refresh Receipt");
     expect(copyText).toContain("- Invalid Share Diagnostics");
     expect(copyText).toContain("## Daily Handoff");
@@ -3822,6 +3829,14 @@ describe("terminal workbench model", () => {
     expect(copyText).toContain("## Share Link Bundle");
     expect(copyText).toContain(
       "Primary link: http://127.0.0.1:5174/?workspace=audit&stage1DailyUseFocus=primary"
+    );
+    expect(copyText).toContain("## Recovered Share Context");
+    expect(copyText).toContain("Recovered share link: active");
+    expect(copyText).toContain("Share kind: daily-use");
+    expect(copyText).toContain("Share focus: research-entry");
+    expect(copyText).toContain("Share target workspace: research");
+    expect(copyText).toContain(
+      "Share link: http://127.0.0.1:5174/?workspace=research&stage1DailyUseFocus=research-entry"
     );
     expect(copyText).toContain("## Refresh Receipt");
     expect(copyText).toContain("Refresh receipt body.");

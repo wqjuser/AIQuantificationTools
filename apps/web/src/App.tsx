@@ -9533,7 +9533,8 @@ export function App() {
             ? buildStage1P0InvalidShareDiagnosticsText()
             : null,
         refreshOutcome: stage1P0DailyUseRefreshOutcome,
-        resolveShareUrl: buildStage1P0WorkspaceShareUrl
+        resolveShareUrl: buildStage1P0WorkspaceShareUrl,
+        shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState
       }),
     [buildStage1P0InvalidShareDiagnosticsText, stage1P0DailyUseClosure, stage1P0DailyUseRefreshOutcome]
   );
