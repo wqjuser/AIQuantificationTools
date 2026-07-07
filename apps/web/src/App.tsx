@@ -23906,7 +23906,9 @@ function AuditEvidenceReportLedgerPanel({
                   {i18n.locale === "zh-CN" ? "每日复核" : "Daily reviews"}{" "}
                   {summary.localReviewBundleDailyOpsCount} ·{" "}
                   {i18n.locale === "zh-CN" ? "每日启动" : "Daily start"}{" "}
-                  {summary.localReviewBundleDailyStartCount}
+                  {summary.localReviewBundleDailyStartCount} ·{" "}
+                  {i18n.locale === "zh-CN" ? "Stage 1 归档" : "Stage 1 archive"}{" "}
+                  {summary.localReviewBundleStage1ArchiveCount}
                 </small>
                 {summary.localReviewBundleLatestLabel ? (
                   <small title={summary.localReviewBundleLatestTitle || summary.localReviewBundleLatestQuery}>
@@ -24134,6 +24136,47 @@ function AuditEvidenceReportLedgerPanel({
                     type="button"
                   >
                     {i18n.locale === "zh-CN" ? "复制最新启动复核链接" : "Copy latest start review link"}
+                  </button>
+                ) : null}
+              </span>
+            ) : null}
+            {summary.latestStage1DailyArchiveReviewEventId ? (
+              <span
+                title={
+                  summary.latestStage1DailyArchiveReviewTitle ||
+                  summary.latestStage1DailyArchiveReviewEventId
+                }
+              >
+                {i18n.locale === "zh-CN" ? "最新归档复核" : "Latest archive review"}{" "}
+                <strong>
+                  {summary.latestStage1DailyArchiveReviewShortHash ||
+                    summary.latestStage1DailyArchiveReviewEventId}
+                </strong>
+                {summary.latestStage1DailyArchiveReviewLabel ? (
+                  <span
+                    className="audit-report-ledger-stage1-archive-review"
+                    title={
+                      summary.latestStage1DailyArchiveReviewTitle ||
+                      summary.latestStage1DailyArchiveReviewQuery
+                    }
+                  >
+                    {summary.latestStage1DailyArchiveReviewLabel}
+                  </span>
+                ) : null}
+                {summary.latestStage1DailyArchiveReviewQuery ? (
+                  <button
+                    onClick={() => focusAuditReportQuery(summary.latestStage1DailyArchiveReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "定位最新归档复核" : "Focus latest archive review"}
+                  </button>
+                ) : null}
+                {summary.latestStage1DailyArchiveReviewQuery ? (
+                  <button
+                    onClick={() => onCopyQueryLink(summary.latestStage1DailyArchiveReviewQuery)}
+                    type="button"
+                  >
+                    {i18n.locale === "zh-CN" ? "复制最新归档复核链接" : "Copy latest archive review link"}
                   </button>
                 ) : null}
               </span>

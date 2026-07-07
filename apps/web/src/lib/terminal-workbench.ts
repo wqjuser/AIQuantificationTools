@@ -16656,7 +16656,10 @@ export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(
   const rowStatuses = row.stage1DailyArchiveReviewRowStatuses.length
     ? row.stage1DailyArchiveReviewRowStatuses.join(", ")
     : "none";
-  return `Stage 1 archive review: ${label} · primary ${primaryAction} · rows ${rowStatuses} · share ${shareContext}`;
+  const archiveBodyHash = row.stage1DailyArchiveReviewArchiveBodySha256
+    ? ` · Archive body SHA-256 ${row.stage1DailyArchiveReviewArchiveBodySha256.slice(0, 12)}`
+    : "";
+  return `Stage 1 archive review: ${label} · primary ${primaryAction} · rows ${rowStatuses} · share ${shareContext}${archiveBodyHash}`;
 }
 
 export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(

@@ -16240,6 +16240,164 @@ describe("terminal workbench model", () => {
     ]);
   });
 
+  test("marks Stage 1 archive review as the latest local review when it is newest", () => {
+    const rows = buildAuditEvidenceReportLedgerRows([
+      {
+        schemaVersion: 1,
+        eventId: "personal-team-readiness-review-7777777777777777",
+        eventType: "personal_team_readiness_review",
+        runId: "personal-team-readiness",
+        createdAt: "2026-06-28T09:00:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Personal and small-team readiness review recorded",
+        detail: "personal review",
+        metadata: {
+          artifactKind: "aiqt.personalTeamReadinessReview",
+          contentSha256: "7".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          nextActionLabel: "Review accepted loop",
+          nextActionWorkspaceId: "audit",
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          personalPercent: 100,
+          readyCount: 6,
+          routeExecuted: false,
+          state: "ready",
+          teamPercent: 100,
+          totalCount: 6
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "daily-ops-control-room-review-6666666666666666",
+        eventType: "daily_ops_control_room_review",
+        runId: "daily-ops-control-room",
+        createdAt: "2026-06-28T09:15:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Daily ops control room review recorded",
+        detail: "daily ops review",
+        metadata: {
+          artifactKind: "aiqt.dailyOpsControlRoomReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          blockingCount: 0,
+          contentSha256: "6".repeat(64),
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          openItemIds: [],
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Ready for handoff",
+          primaryActionWorkspaceId: "audit",
+          readyCount: 4,
+          reviewCount: 0,
+          routeExecuted: false,
+          state: "ready",
+          totalCount: 4
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "daily-start-brief-review-8888888888888888",
+        eventType: "daily_start_brief_review",
+        runId: "daily-start-brief",
+        createdAt: "2026-06-28T09:30:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Daily start brief review recorded",
+        detail: "daily start review",
+        metadata: {
+          artifactKind: "aiqt.dailyStartBriefReview",
+          auditQuery: "p0_readiness_report p0-completion-focus run-p0-smoke",
+          checkpointIds: ["ops-queue", "personal-team-review", "daily-ops-review", "live-boundary"],
+          checkpointStatuses: ["ready", "current", "current", "ready"],
+          contentSha256: "8".repeat(64),
+          currentReviewCount: 2,
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          localReviewActionLabel: "Open local evidence",
+          localReviewQuery: "daily_ops_control_room_review daily-ops-current",
+          localReviewStatus: "current",
+          missingReviewCount: 0,
+          openOpsItemCount: 0,
+          orderSubmissionEnabled: false,
+          primaryActionLabel: "Ready for handoff",
+          primaryActionWorkspaceId: "audit",
+          routeExecuted: false,
+          staleReviewCount: 0,
+          state: "ready"
+        }
+      },
+      {
+        schemaVersion: 1,
+        eventId: "stage1-daily-archive-review-latest-9999999999999999",
+        eventType: "stage1_daily_archive_review",
+        runId: "stage1-p0-daily-use",
+        createdAt: "2026-06-28T10:30:00.000Z",
+        stage: "ready",
+        source: "web",
+        summary: "Stage 1/P0 daily-use archive recorded",
+        detail: "stage1 archive review",
+        metadata: {
+          archiveBodySha256: "9".repeat(64),
+          artifactKind: "aiqt.stage1P0DailyUseArchiveReview",
+          contentSha256: "5".repeat(64),
+          invalidShareReason: "none",
+          invalidShareStatus: "none",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          primaryActionId: "ready-for-handoff",
+          primaryActionLabel: "Ready for handoff",
+          primaryTargetWorkspaceId: "audit",
+          readyCount: 5,
+          refreshOutcomeState: "ready",
+          routeExecuted: false,
+          rowIds: ["clean-open", "market-refresh-recovery", "research-entry", "daily-start", "desktop-release"],
+          rowLabels: ["Clean open", "Market refresh", "Research entry", "Daily start", "Desktop release"],
+          rowStatuses: ["ready", "ready", "ready", "ready", "ready"],
+          rowTargetWorkspaceIds: ["settings", "market", "research", "research", "settings"],
+          shareFocus: "none",
+          shareKind: "none",
+          shareTargetWorkspaceId: "none",
+          state: "ready",
+          totalCount: 5
+        }
+      }
+    ]);
+    const summary = buildAuditEvidenceReportLedgerSummary(rows);
+
+    expect(summary).toEqual(
+      expect.objectContaining({
+        latestStage1DailyArchiveReviewEventId: "stage1-daily-archive-review-latest-9999999999999999",
+        latestStage1DailyArchiveReviewLabel: "ready 5/5 · refresh ready · share none",
+        latestStage1DailyArchiveReviewQuery: expect.stringContaining("stage1_daily_archive_review"),
+        latestStage1DailyArchiveReviewShortHash: "555555555555",
+        latestStage1DailyArchiveReviewTitle: expect.stringContaining("Archive body SHA-256 999999999999"),
+        localReviewBundleCount: 4,
+        localReviewBundleCoverageLabel:
+          "local review bundle complete · personal/team 1 · daily ops 1 · daily start 1 · stage1 archive 1",
+        localReviewBundleLatestEventId: "stage1-daily-archive-review-latest-9999999999999999",
+        localReviewBundleLatestLabel: "latest local review · stage1 archive review",
+        localReviewBundleLatestQuery: expect.stringContaining("stage1_daily_archive_review"),
+        localReviewBundleLatestTitle: expect.stringContaining("Stage 1 archive review: ready 5/5"),
+        localReviewBundleStage1ArchiveCount: 1
+      })
+    );
+    expect(summary.localReviewBundleLatestQuery).toContain("999999999999");
+    expect(summary.localReviewBundleTitle).toContain(
+      "latest stage1-daily-archive-review-latest-9999999999999999"
+    );
+    expect(summary.localReviewBundleTitle).toContain("Stage 1 archive review: ready 5/5");
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleLatestQuery).map((row) => row.id)).toEqual([
+      "stage1-daily-archive-review-latest-9999999999999999"
+    ]);
+    expect(filterAuditEvidenceReportLedgerRows(rows, summary.localReviewBundleLatestTitle).map((row) => row.id)).toEqual([
+      "stage1-daily-archive-review-latest-9999999999999999"
+    ]);
+  });
+
   test("marks local review bundle coverage gaps when daily ops review is missing", () => {
     const rows = buildAuditEvidenceReportLedgerRows([
       {

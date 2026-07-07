@@ -2382,6 +2382,8 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestPersonalTeamReadinessReviewQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestDailyOpsControlRoomReviewQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestDailyOpsControlRoomReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.latestStage1DailyArchiveReviewQuery)");
+    expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.latestStage1DailyArchiveReviewQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.localReviewBundleQuery)");
     expect(reportLedgerPanelSource).toContain("onCopyQueryLink(summary.localReviewBundleQuery)");
     expect(reportLedgerPanelSource).toContain("focusAuditReportQuery(summary.localReviewBundleCoverageQuery)");
@@ -2426,6 +2428,9 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Personal/team");
     expect(reportLedgerPanelSource).toContain("每日复核");
     expect(reportLedgerPanelSource).toContain("Daily reviews");
+    expect(reportLedgerPanelSource).toContain("summary.localReviewBundleStage1ArchiveCount");
+    expect(reportLedgerPanelSource).toContain("Stage 1 归档");
+    expect(reportLedgerPanelSource).toContain("Stage 1 archive");
     expect(reportLedgerPanelSource).toContain("定位本地复核集");
     expect(reportLedgerPanelSource).toContain("Focus local reviews");
     expect(reportLedgerPanelSource).toContain("复制本地复核集链接");
@@ -2481,6 +2486,16 @@ describe("terminal layout css", () => {
     expect(reportLedgerPanelSource).toContain("Focus latest daily review");
     expect(reportLedgerPanelSource).toContain("复制最新每日复核链接");
     expect(reportLedgerPanelSource).toContain("Copy latest daily review link");
+    expect(reportLedgerPanelSource).toContain("summary.latestStage1DailyArchiveReviewEventId");
+    expect(reportLedgerPanelSource).toContain("latestStage1DailyArchiveReviewShortHash");
+    expect(reportLedgerPanelSource).toContain("latestStage1DailyArchiveReviewLabel");
+    expect(reportLedgerPanelSource).toContain("latestStage1DailyArchiveReviewQuery");
+    expect(reportLedgerPanelSource).toContain("最新归档复核");
+    expect(reportLedgerPanelSource).toContain("Latest archive review");
+    expect(reportLedgerPanelSource).toContain("定位最新归档复核");
+    expect(reportLedgerPanelSource).toContain("Focus latest archive review");
+    expect(reportLedgerPanelSource).toContain("复制最新归档复核链接");
+    expect(reportLedgerPanelSource).toContain("Copy latest archive review link");
     expect(reportLedgerPanelSource).toContain("onOpenCompletionGap(latestCompletionGapWorkspaceId)");
     expect(reportLedgerPanelSource).toContain("onOpenCompletionGap: (workspaceId: ProductWorkAreaId) => void;");
     expect(reportLedgerPanelSource).toContain("onCopyCompletionGapLink(latestCompletionGapWorkspaceId, summary.latestAuditAidCompletionQuery)");

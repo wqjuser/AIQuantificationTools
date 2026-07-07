@@ -429,6 +429,8 @@ npm run stage1:preflight:validate
 
 Stage 1/P0 日常归档入账现在也能被 Audit 台账一等回读。`stage1_daily_archive_review` 行会显示为 “Stage 1 daily-use archive review”，支持按归档状态、五行 ready/total、主动作、分享/刷新上下文、无效分享原因和 `Archive body SHA-256` 搜索，并纳入本地复核集覆盖：本地复核集完整条件现在同时要求个人/小团队、Daily Ops、Daily Start 和 Stage 1 归档四类 ready 证据。首页日常收口卡会显示“最新归档入账 / Latest archive record”，并提供定位或复制 Audit 查询入口；该 readback 只定位既有本地审计证据，不保存归档正文、不签名、不刷新自检、不运行 Docker、不连接券商、不提交订单。
 
+Audit 顶部摘要也会显示 Stage 1 归档覆盖：本地复核集计数会列出 Stage 1 archive 数量，最新 `stage1_daily_archive_review` 会作为“最新归档复核 / Latest archive review”单独显示，并提供“定位最新归档复核 / 复制最新归档复核链接”。这些按钮只复用现有 Audit 查询，不重新生成归档、不写新审计事件、不签名、不刷新自检、不运行 Docker、不连接券商、不提交订单。
+
 ## Product Boundary
 
 产品目标是全功能量化交易平台，但实盘执行必须分阶段解锁。当前版本聚焦行情、研究、回测、AI 评审、组合风控雏形和模拟交易，不连接真实 A 股券商账户。交易工作区默认 `paper_only`，自动化交易能力通过 `ExecutionAdapter` 风格的接口预留；只有在合法券商接口明确、适配器认证通过、风控审批通过、用户人工确认后，才允许接入实盘适配器。
