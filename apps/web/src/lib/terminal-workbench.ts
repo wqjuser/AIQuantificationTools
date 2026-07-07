@@ -944,6 +944,18 @@ export interface DailyStartBriefReviewReference {
   status: DailyStartBriefReviewReferenceStatus;
 }
 
+export type Stage1P0DailyUseArchiveReviewReferenceStatus = "current" | "stale" | "missing";
+
+export interface Stage1P0DailyUseArchiveReviewReference {
+  createdAt: string;
+  detail: string;
+  eventId: string;
+  label: string;
+  query: string;
+  row: AuditEvidenceReportLedgerRow | null;
+  status: Stage1P0DailyUseArchiveReviewReferenceStatus;
+}
+
 export interface DailyStartBriefInput {
   dailyOpsControlRoom: DailyOpsControlRoomSummary;
   dailyOpsControlRoomReviewReference: DailyOpsControlRoomReviewReference;
@@ -2806,6 +2818,23 @@ export interface AuditEvidenceReportLedgerRow {
   dailyStartBriefReviewLocalReviewQuery: string;
   dailyStartBriefReviewCheckpointIds: string[];
   dailyStartBriefReviewCheckpointStatuses: string[];
+  stage1DailyArchiveReviewState: string;
+  stage1DailyArchiveReviewReadyCount: number;
+  stage1DailyArchiveReviewTotalCount: number;
+  stage1DailyArchiveReviewPrimaryActionId: string;
+  stage1DailyArchiveReviewPrimaryActionLabel: string;
+  stage1DailyArchiveReviewPrimaryTargetWorkspaceId: string;
+  stage1DailyArchiveReviewRowIds: string[];
+  stage1DailyArchiveReviewRowLabels: string[];
+  stage1DailyArchiveReviewRowStatuses: string[];
+  stage1DailyArchiveReviewRowTargetWorkspaceIds: string[];
+  stage1DailyArchiveReviewRefreshOutcomeState: string;
+  stage1DailyArchiveReviewShareKind: string;
+  stage1DailyArchiveReviewShareFocus: string;
+  stage1DailyArchiveReviewShareTargetWorkspaceId: string;
+  stage1DailyArchiveReviewInvalidShareStatus: string;
+  stage1DailyArchiveReviewInvalidShareReason: string;
+  stage1DailyArchiveReviewArchiveBodySha256: string;
   localReviewBundleContextLabel: string;
   localReviewBundleContextQuery: string;
   localReviewBundleContextTitle: string;
@@ -2857,6 +2886,7 @@ export interface AuditEvidenceReportLedgerRow {
     | "personal_team_readiness_review"
     | "daily_ops_control_room_review"
     | "daily_start_brief_review"
+    | "stage1_daily_archive_review"
     | "operator_runbook_report"
     | "pre_live_runbook_report"
     | "research_context_readiness_report";
@@ -2984,6 +3014,11 @@ export interface AuditEvidenceReportLedgerSummary {
   latestDailyStartBriefReviewQuery: string;
   latestDailyStartBriefReviewShortHash: string;
   latestDailyStartBriefReviewTitle: string;
+  latestStage1DailyArchiveReviewEventId: string;
+  latestStage1DailyArchiveReviewLabel: string;
+  latestStage1DailyArchiveReviewQuery: string;
+  latestStage1DailyArchiveReviewShortHash: string;
+  latestStage1DailyArchiveReviewTitle: string;
   latestPersonalTeamReadinessReviewEventId: string;
   latestPersonalTeamReadinessReviewLabel: string;
   latestPersonalTeamReadinessReviewQuery: string;
@@ -3043,6 +3078,7 @@ export interface AuditEvidenceReportLedgerSummary {
   localReviewBundleCoverageTitle: string;
   localReviewBundleDailyOpsCount: number;
   localReviewBundleDailyStartCount: number;
+  localReviewBundleStage1ArchiveCount: number;
   localReviewBundleLatestEventId: string;
   localReviewBundleLatestLabel: string;
   localReviewBundleLatestQuery: string;
@@ -3116,11 +3152,13 @@ export interface P0CompletionGapDeepLinkState {
 export type LocalReviewCoverageNextActionId =
   | "record-daily-ops-review"
   | "record-daily-start-review"
+  | "record-stage1-archive-review"
   | "record-personal-team-review"
   | "unknown";
 export type LocalReviewCoverageMissingReviewKind =
   | "daily-ops"
   | "daily-start"
+  | "stage1-archive"
   | "personal-team"
   | "empty"
   | "unknown";
@@ -3567,6 +3605,9 @@ function resolveLocalReviewCoverageNextActionId(auditReportQuery: string): Local
   if (localReviewCoverageQueryIncludesToken(auditReportQuery, "record-daily-start-review")) {
     return "record-daily-start-review";
   }
+  if (localReviewCoverageQueryIncludesToken(auditReportQuery, "record-stage1-archive-review")) {
+    return "record-stage1-archive-review";
+  }
   if (localReviewCoverageQueryIncludesToken(auditReportQuery, "record-personal-team-review")) {
     return "record-personal-team-review";
   }
@@ -3584,6 +3625,9 @@ function resolveLocalReviewCoverageMissingReviewKind(
   }
   if (localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-daily-start-missing")) {
     return "daily-start";
+  }
+  if (localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-stage1-archive-missing")) {
+    return "stage1-archive";
   }
   if (localReviewCoverageQueryIncludesToken(auditReportQuery, "local-review-bundle-personal-missing")) {
     return "personal-team";
@@ -3608,6 +3652,10 @@ function localReviewCoverageNextActionMatchesMissingReviewKind(
     auditReportQuery,
     "local-review-bundle-daily-start-missing"
   );
+  const stage1ArchiveMissingCount = localReviewCoverageQueryTokenCount(
+    auditReportQuery,
+    "local-review-bundle-stage1-archive-missing"
+  );
   const emptyBundleCount = localReviewCoverageQueryTokenCount(auditReportQuery, "local-review-bundle-empty");
 
   if (actionId === "record-daily-ops-review") {
@@ -3616,6 +3664,7 @@ function localReviewCoverageNextActionMatchesMissingReviewKind(
       dailyOpsMissingCount === 1 &&
       personalMissingCount === 0 &&
       dailyStartMissingCount === 0 &&
+      stage1ArchiveMissingCount === 0 &&
       emptyBundleCount === 0
     );
   }
@@ -3623,6 +3672,17 @@ function localReviewCoverageNextActionMatchesMissingReviewKind(
     return (
       missingReviewKind === "daily-start" &&
       dailyStartMissingCount === 1 &&
+      dailyOpsMissingCount === 0 &&
+      personalMissingCount === 0 &&
+      stage1ArchiveMissingCount === 0 &&
+      emptyBundleCount === 0
+    );
+  }
+  if (actionId === "record-stage1-archive-review") {
+    return (
+      missingReviewKind === "stage1-archive" &&
+      stage1ArchiveMissingCount === 1 &&
+      dailyStartMissingCount === 0 &&
       dailyOpsMissingCount === 0 &&
       personalMissingCount === 0 &&
       emptyBundleCount === 0
@@ -3633,11 +3693,18 @@ function localReviewCoverageNextActionMatchesMissingReviewKind(
       personalMissingCount === 1 &&
       dailyOpsMissingCount === 0 &&
       dailyStartMissingCount === 0 &&
+      stage1ArchiveMissingCount === 0 &&
       emptyBundleCount === 0
     );
   }
   if (actionId === "record-personal-team-review" && missingReviewKind === "empty") {
-    return emptyBundleCount === 1 && personalMissingCount === 1 && dailyOpsMissingCount === 0 && dailyStartMissingCount === 0;
+    return (
+      emptyBundleCount === 1 &&
+      personalMissingCount === 1 &&
+      dailyOpsMissingCount === 0 &&
+      dailyStartMissingCount === 0 &&
+      stage1ArchiveMissingCount === 0
+    );
   }
   return false;
 }
@@ -3647,6 +3714,7 @@ function localReviewCoverageNextActionQueryHasSingleStructure(auditReportQuery: 
     localReviewCoverageQueryTokenCount(auditReportQuery, "local-review-bundle-next-action") === 1 &&
     localReviewCoverageQueryTokenCount(auditReportQuery, "record-daily-ops-review") +
       localReviewCoverageQueryTokenCount(auditReportQuery, "record-daily-start-review") +
+      localReviewCoverageQueryTokenCount(auditReportQuery, "record-stage1-archive-review") +
       localReviewCoverageQueryTokenCount(auditReportQuery, "record-personal-team-review") ===
       1
   );
@@ -11224,6 +11292,60 @@ export function buildDailyStartBriefReviewReference({
   };
 }
 
+export function buildStage1P0DailyUseArchiveReviewReference({
+  closure,
+  invalidShareStatus = null,
+  ledgerRows,
+  refreshOutcome = null,
+  shareDeepLinkState = null
+}: {
+  closure: Stage1P0DailyUseClosure;
+  invalidShareStatus?: Stage1P0DailyUseShareDeepLinkStatus | null;
+  ledgerRows: AuditEvidenceReportLedgerRow[];
+  refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
+  shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
+}): Stage1P0DailyUseArchiveReviewReference {
+  const latestRow =
+    ledgerRows
+      .filter((row) => row.reportKind === "stage1_daily_archive_review" && row.status === "ready")
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null;
+
+  if (!latestRow) {
+    return {
+      createdAt: "",
+      detail: "No Stage 1 daily-use archive review has been recorded yet.",
+      eventId: "",
+      label: "No Stage 1 archive review recorded",
+      query: "",
+      row: null,
+      status: "missing"
+    };
+  }
+
+  const query = buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(latestRow);
+  const isCurrent = stage1DailyArchiveReviewRowMatchesContext(latestRow, {
+    closure,
+    invalidShareStatus,
+    refreshOutcome,
+    shareDeepLinkState
+  });
+  const stateLabel = `${latestRow.stage1DailyArchiveReviewState || latestRow.focusQuery} ${
+    latestRow.stage1DailyArchiveReviewReadyCount
+  }/${latestRow.stage1DailyArchiveReviewTotalCount}`;
+
+  return {
+    createdAt: latestRow.createdAt,
+    detail: isCurrent
+      ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
+      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.`,
+    eventId: latestRow.id,
+    label: isCurrent ? "Stage 1 archive review current" : "Stage 1 archive review stale",
+    query,
+    row: latestRow,
+    status: isCurrent ? "current" : "stale"
+  };
+}
+
 export function buildPersonalTeamUsabilityReadinessReviewReference({
   ledgerRows,
   summary
@@ -11355,6 +11477,56 @@ function dailyStartBriefReviewRowMatchesBrief(row: AuditEvidenceReportLedgerRow,
     sameAuditStringList(
       row.dailyStartBriefReviewCheckpointStatuses,
       brief.checkpoints.map((checkpoint) => checkpoint.status)
+    )
+  );
+}
+
+function stage1DailyArchiveReviewRowMatchesContext(
+  row: AuditEvidenceReportLedgerRow,
+  {
+    closure,
+    invalidShareStatus,
+    refreshOutcome,
+    shareDeepLinkState
+  }: {
+    closure: Stage1P0DailyUseClosure;
+    invalidShareStatus?: Stage1P0DailyUseShareDeepLinkStatus | null;
+    refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
+    shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
+  }
+): boolean {
+  const invalidShareStatusValue = invalidShareStatus?.status ?? "none";
+  const invalidShareReason = invalidShareStatus?.status === "invalid" ? invalidShareStatus.reason : "none";
+  return (
+    row.reportKind === "stage1_daily_archive_review" &&
+    row.status === "ready" &&
+    row.stage1DailyArchiveReviewState === closure.state &&
+    row.stage1DailyArchiveReviewReadyCount === closure.readyCount &&
+    row.stage1DailyArchiveReviewTotalCount === closure.totalCount &&
+    row.stage1DailyArchiveReviewPrimaryActionId === closure.primaryActionId &&
+    row.stage1DailyArchiveReviewPrimaryActionLabel === closure.primaryActionLabel &&
+    row.stage1DailyArchiveReviewPrimaryTargetWorkspaceId === closure.primaryTargetWorkspaceId &&
+    row.stage1DailyArchiveReviewRefreshOutcomeState === (refreshOutcome?.state ?? "not-generated") &&
+    row.stage1DailyArchiveReviewShareKind === (shareDeepLinkState?.kind ?? "none") &&
+    row.stage1DailyArchiveReviewShareFocus === (shareDeepLinkState?.focus ?? "none") &&
+    row.stage1DailyArchiveReviewShareTargetWorkspaceId === (shareDeepLinkState?.targetWorkspaceId ?? "none") &&
+    row.stage1DailyArchiveReviewInvalidShareStatus === invalidShareStatusValue &&
+    row.stage1DailyArchiveReviewInvalidShareReason === invalidShareReason &&
+    sameAuditStringList(
+      row.stage1DailyArchiveReviewRowIds,
+      closure.rows.map((item) => item.id)
+    ) &&
+    sameAuditStringList(
+      row.stage1DailyArchiveReviewRowLabels,
+      closure.rows.map((item) => item.label)
+    ) &&
+    sameAuditStringList(
+      row.stage1DailyArchiveReviewRowStatuses,
+      closure.rows.map((item) => item.status)
+    ) &&
+    sameAuditStringList(
+      row.stage1DailyArchiveReviewRowTargetWorkspaceIds,
+      closure.rows.map((item) => item.targetWorkspaceId)
     )
   );
 }
@@ -16033,6 +16205,7 @@ function auditReportLedgerReportKindLabel(kind: AuditEvidenceReportLedgerRow["re
       personal_team_readiness_review: "Personal and small-team readiness review",
       daily_ops_control_room_review: "Daily ops control room review",
       daily_start_brief_review: "Daily start brief review",
+      stage1_daily_archive_review: "Stage 1 daily-use archive review",
       pre_live_runbook_report: "Pre-live runbook report",
       portfolio_report: "Portfolio report",
       research_context_readiness_report: "Research context readiness report",
@@ -16458,6 +16631,66 @@ export function buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(
   ]);
 }
 
+export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewLabel(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "stage1_daily_archive_review") {
+    return "";
+  }
+  return `${row.stage1DailyArchiveReviewState || "unknown"} ${row.stage1DailyArchiveReviewReadyCount}/${row.stage1DailyArchiveReviewTotalCount} · refresh ${row.stage1DailyArchiveReviewRefreshOutcomeState || "unknown"} · share ${row.stage1DailyArchiveReviewShareKind || "none"}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  const label = buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewLabel(row);
+  if (!row || row.reportKind !== "stage1_daily_archive_review" || !label) {
+    return "";
+  }
+  const primaryAction = row.stage1DailyArchiveReviewPrimaryActionLabel
+    ? `${row.stage1DailyArchiveReviewPrimaryActionLabel} -> ${row.stage1DailyArchiveReviewPrimaryTargetWorkspaceId || "unknown"}`
+    : "none";
+  const shareContext = row.stage1DailyArchiveReviewShareKind
+    ? `${row.stage1DailyArchiveReviewShareKind}/${row.stage1DailyArchiveReviewShareFocus || "none"} -> ${row.stage1DailyArchiveReviewShareTargetWorkspaceId || "none"}`
+    : "none";
+  const rowStatuses = row.stage1DailyArchiveReviewRowStatuses.length
+    ? row.stage1DailyArchiveReviewRowStatuses.join(", ")
+    : "none";
+  return `Stage 1 archive review: ${label} · primary ${primaryAction} · rows ${rowStatuses} · share ${shareContext}`;
+}
+
+export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(
+  row: AuditEvidenceReportLedgerRow | null | undefined
+): string {
+  if (!row || row.reportKind !== "stage1_daily_archive_review") {
+    return "";
+  }
+  return auditReportLedgerDeduplicatedQueryText([
+    row.reportKind,
+    row.id,
+    row.shortHash,
+    row.fileName,
+    row.stage1DailyArchiveReviewArchiveBodySha256 ? row.stage1DailyArchiveReviewArchiveBodySha256.slice(0, 12) : "",
+    row.stage1DailyArchiveReviewState,
+    `${row.stage1DailyArchiveReviewReadyCount}/${row.stage1DailyArchiveReviewTotalCount}`,
+    row.stage1DailyArchiveReviewPrimaryActionId,
+    row.stage1DailyArchiveReviewPrimaryActionLabel,
+    row.stage1DailyArchiveReviewPrimaryTargetWorkspaceId,
+    "refresh",
+    row.stage1DailyArchiveReviewRefreshOutcomeState,
+    "share",
+    row.stage1DailyArchiveReviewShareKind,
+    row.stage1DailyArchiveReviewShareFocus,
+    row.stage1DailyArchiveReviewShareTargetWorkspaceId,
+    "invalid-share",
+    row.stage1DailyArchiveReviewInvalidShareStatus,
+    row.stage1DailyArchiveReviewInvalidShareReason,
+    row.stage1DailyArchiveReviewRowIds.join(" "),
+    row.stage1DailyArchiveReviewRowStatuses.join(" "),
+    row.stage1DailyArchiveReviewRowTargetWorkspaceIds.join(" ")
+  ]);
+}
+
 function auditReportLedgerLocalReviewBundleContextTitle(
   reportKind: AuditEvidenceReportLedgerRow["reportKind"],
   eventId: string,
@@ -16484,6 +16717,8 @@ function auditReportLedgerLocalReviewBundleReviewLabel(reportKind: AuditEvidence
       ? "daily ops review"
       : reportKind === "daily_start_brief_review"
         ? "daily start review"
+        : reportKind === "stage1_daily_archive_review"
+          ? "stage1 archive review"
       : "";
 }
 
@@ -16507,6 +16742,9 @@ function auditReportLedgerLocalReviewBundleLatestReviewQuery(
   if (row.reportKind === "daily_start_brief_review") {
     return buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(row);
   }
+  if (row.reportKind === "stage1_daily_archive_review") {
+    return buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(row);
+  }
   return "";
 }
 
@@ -16524,6 +16762,9 @@ function auditReportLedgerLocalReviewBundleLatestReviewTitle(
   }
   if (row.reportKind === "daily_start_brief_review") {
     return buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(row);
+  }
+  if (row.reportKind === "stage1_daily_archive_review") {
+    return buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(row);
   }
   return "";
 }
@@ -16561,11 +16802,13 @@ function auditReportLedgerLocalReviewBundleLatestTitle(row: AuditEvidenceReportL
 function auditReportLedgerLocalReviewBundleCoverage({
   dailyOpsCount,
   dailyStartCount,
-  personalTeamCount
+  personalTeamCount,
+  stage1ArchiveCount
 }: {
   dailyOpsCount: number;
   dailyStartCount: number;
   personalTeamCount: number;
+  stage1ArchiveCount: number;
 }): {
   label: string;
   nextActionLabel: string;
@@ -16576,8 +16819,8 @@ function auditReportLedgerLocalReviewBundleCoverage({
   state: AuditEvidenceReportLedgerLocalReviewBundleCoverageState;
   title: string;
 } {
-  const totalCount = dailyOpsCount + dailyStartCount + personalTeamCount;
-  const countLabel = `personal/team ${personalTeamCount} · daily ops ${dailyOpsCount} · daily start ${dailyStartCount}`;
+  const totalCount = dailyOpsCount + dailyStartCount + personalTeamCount + stage1ArchiveCount;
+  const countLabel = `personal/team ${personalTeamCount} · daily ops ${dailyOpsCount} · daily start ${dailyStartCount} · stage1 archive ${stage1ArchiveCount}`;
   if (totalCount <= 0) {
     const nextActionLabel = "record personal/team review";
     return {
@@ -16600,7 +16843,7 @@ function auditReportLedgerLocalReviewBundleCoverage({
     };
   }
 
-  if (personalTeamCount > 0 && dailyOpsCount > 0 && dailyStartCount > 0) {
+  if (personalTeamCount > 0 && dailyOpsCount > 0 && dailyStartCount > 0 && stage1ArchiveCount > 0) {
     return {
       label: `local review bundle complete · ${countLabel}`,
       nextActionLabel: "",
@@ -16636,6 +16879,14 @@ function auditReportLedgerLocalReviewBundleCoverage({
           nextActionLabel: "record daily start review",
           nextActionQueryToken: "record-daily-start-review",
           queryToken: "local-review-bundle-daily-start-missing"
+        }
+      : null,
+    stage1ArchiveCount <= 0
+      ? {
+          label: "stage1 archive review",
+          nextActionLabel: "record Stage 1 archive review",
+          nextActionQueryToken: "record-stage1-archive-review",
+          queryToken: "local-review-bundle-stage1-archive-missing"
         }
       : null
   ].filter((review): review is {
@@ -17818,6 +18069,7 @@ export function buildAuditEvidenceReportLedgerRows(
         event.eventType === "personal_team_readiness_review" ||
         event.eventType === "daily_ops_control_room_review" ||
         event.eventType === "daily_start_brief_review" ||
+        event.eventType === "stage1_daily_archive_review" ||
         event.eventType === "operator_runbook_report" ||
         event.eventType === "pre_live_runbook_report" ||
         event.eventType === "research_context_readiness_report"
@@ -17842,6 +18094,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "daily_ops_control_room_review"
           : event.eventType === "daily_start_brief_review"
           ? "daily_start_brief_review"
+          : event.eventType === "stage1_daily_archive_review"
+          ? "stage1_daily_archive_review"
           : event.eventType === "operator_runbook_report"
           ? "operator_runbook_report"
           : event.eventType === "pre_live_runbook_report"
@@ -17878,6 +18132,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "aiqt.dailyOpsControlRoomReview"
           : reportKind === "daily_start_brief_review"
           ? "aiqt.dailyStartBriefReview"
+          : reportKind === "stage1_daily_archive_review"
+          ? "aiqt.stage1P0DailyUseArchiveReview"
           : reportKind === "operator_runbook_report"
           ? "aiqt.operatorRunbookReport"
           : reportKind === "pre_live_runbook_report"
@@ -17909,6 +18165,8 @@ export function buildAuditEvidenceReportLedgerRows(
           ? "daily-ops-control-room-review.md"
           : reportKind === "daily_start_brief_review"
           ? "daily-start-brief-review.md"
+          : reportKind === "stage1_daily_archive_review"
+          ? "stage1-p0-daily-use-archive-review.md"
           : reportKind === "operator_runbook_report"
           ? "operator-runbook-report.md"
           : reportKind === "pre_live_runbook_report"
@@ -18051,6 +18309,25 @@ export function buildAuditEvidenceReportLedgerRows(
             ]
               .filter(Boolean)
               .join(" ")
+          : reportKind === "stage1_daily_archive_review"
+          ? [
+              auditReportLedgerMetadataText(event.metadata, "state") || event.stage,
+              `${auditReportLedgerMetadataNumber(event.metadata, "readyCount")}/${auditReportLedgerMetadataNumber(
+                event.metadata,
+                "totalCount"
+              )}`,
+              auditReportLedgerMetadataText(event.metadata, "primaryActionId"),
+              auditReportLedgerMetadataText(event.metadata, "primaryActionLabel"),
+              auditReportLedgerMetadataText(event.metadata, "primaryTargetWorkspaceId"),
+              auditReportLedgerMetadataText(event.metadata, "refreshOutcomeState"),
+              auditReportLedgerMetadataText(event.metadata, "shareKind"),
+              auditReportLedgerMetadataText(event.metadata, "shareFocus"),
+              auditReportLedgerMetadataText(event.metadata, "shareTargetWorkspaceId"),
+              auditReportLedgerMetadataStringList(event.metadata, "rowIds").join(" "),
+              auditReportLedgerMetadataStringList(event.metadata, "rowStatuses").join(" ")
+            ]
+              .filter(Boolean)
+              .join(" ")
           : reportKind === "portfolio_report"
           ? [
               auditReportLedgerMetadataText(event.metadata, "market"),
@@ -18086,6 +18363,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "personal_team_readiness_review" ||
         reportKind === "daily_ops_control_room_review" ||
         reportKind === "daily_start_brief_review" ||
+        reportKind === "stage1_daily_archive_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
@@ -18102,6 +18380,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "personal_team_readiness_review" ||
         reportKind === "daily_ops_control_room_review" ||
         reportKind === "daily_start_brief_review" ||
+        reportKind === "stage1_daily_archive_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? 0
@@ -18118,6 +18397,7 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "personal_team_readiness_review" ||
         reportKind === "daily_ops_control_room_review" ||
         reportKind === "daily_start_brief_review" ||
+        reportKind === "stage1_daily_archive_review" ||
         reportKind === "pre_live_runbook_report" ||
         reportKind === "research_context_readiness_report"
           ? ""
@@ -18864,10 +19144,79 @@ export function buildAuditEvidenceReportLedgerRows(
               .filter(Boolean)
               .join(" ")
           : "";
+      const stage1DailyArchiveReviewState =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "state") || event.stage : "";
+      const stage1DailyArchiveReviewReadyCount =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataNumber(event.metadata, "readyCount") : 0;
+      const stage1DailyArchiveReviewTotalCount =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataNumber(event.metadata, "totalCount") : 0;
+      const stage1DailyArchiveReviewPrimaryActionId =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "primaryActionId") : "";
+      const stage1DailyArchiveReviewPrimaryActionLabel =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "primaryActionLabel") : "";
+      const stage1DailyArchiveReviewPrimaryTargetWorkspaceId =
+        reportKind === "stage1_daily_archive_review"
+          ? auditReportLedgerMetadataText(event.metadata, "primaryTargetWorkspaceId")
+          : "";
+      const stage1DailyArchiveReviewRowIds =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataStringList(event.metadata, "rowIds") : [];
+      const stage1DailyArchiveReviewRowLabels =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataStringList(event.metadata, "rowLabels") : [];
+      const stage1DailyArchiveReviewRowStatuses =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataStringList(event.metadata, "rowStatuses") : [];
+      const stage1DailyArchiveReviewRowTargetWorkspaceIds =
+        reportKind === "stage1_daily_archive_review"
+          ? auditReportLedgerMetadataStringList(event.metadata, "rowTargetWorkspaceIds")
+          : [];
+      const stage1DailyArchiveReviewRefreshOutcomeState =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "refreshOutcomeState") : "";
+      const stage1DailyArchiveReviewShareKind =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "shareKind") : "";
+      const stage1DailyArchiveReviewShareFocus =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "shareFocus") : "";
+      const stage1DailyArchiveReviewShareTargetWorkspaceId =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "shareTargetWorkspaceId") : "";
+      const stage1DailyArchiveReviewInvalidShareStatus =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "invalidShareStatus") : "";
+      const stage1DailyArchiveReviewInvalidShareReason =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "invalidShareReason") : "";
+      const stage1DailyArchiveReviewArchiveBodySha256 =
+        reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "archiveBodySha256") : "";
+      const stage1DailyArchiveReviewSearchText =
+        reportKind === "stage1_daily_archive_review"
+          ? [
+              "stage1_daily_archive_review",
+              "stage1 archive review",
+              "local-review-bundle",
+              stage1DailyArchiveReviewState,
+              `${stage1DailyArchiveReviewReadyCount}/${stage1DailyArchiveReviewTotalCount}`,
+              stage1DailyArchiveReviewPrimaryActionId,
+              stage1DailyArchiveReviewPrimaryActionLabel,
+              stage1DailyArchiveReviewPrimaryTargetWorkspaceId,
+              "refresh",
+              stage1DailyArchiveReviewRefreshOutcomeState,
+              "share",
+              stage1DailyArchiveReviewShareKind,
+              stage1DailyArchiveReviewShareFocus,
+              stage1DailyArchiveReviewShareTargetWorkspaceId,
+              "invalid-share",
+              stage1DailyArchiveReviewInvalidShareStatus,
+              stage1DailyArchiveReviewInvalidShareReason,
+              stage1DailyArchiveReviewArchiveBodySha256,
+              stage1DailyArchiveReviewRowIds.join(" "),
+              stage1DailyArchiveReviewRowLabels.join(" "),
+              stage1DailyArchiveReviewRowStatuses.join(" "),
+              stage1DailyArchiveReviewRowTargetWorkspaceIds.join(" "),
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary") ? "live-blocked-boundary" : "unsafe-boundary"
+            ]
+              .filter(Boolean)
+              .join(" ")
+          : "";
       const localReviewBundleContextQuery =
         reportKind === "personal_team_readiness_review" ||
         reportKind === "daily_ops_control_room_review" ||
-        reportKind === "daily_start_brief_review"
+        reportKind === "daily_start_brief_review" ||
+        reportKind === "stage1_daily_archive_review"
           ? "local-review-bundle"
           : "";
       const localReviewBundleContextLabel = localReviewBundleContextQuery
@@ -18907,6 +19256,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? auditReportLedgerMetadataNumber(event.metadata, "readyCount")
             : reportKind === "daily_start_brief_review"
             ? dailyStartBriefReviewCurrentReviewCount
+            : reportKind === "stage1_daily_archive_review"
+            ? stage1DailyArchiveReviewReadyCount
             : reportKind === "operator_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "completedSections")
             : reportKind === "pre_live_runbook_report"
@@ -18935,6 +19286,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? auditReportLedgerMetadataNumber(event.metadata, "totalCount")
             : reportKind === "daily_start_brief_review"
             ? 2
+            : reportKind === "stage1_daily_archive_review"
+            ? stage1DailyArchiveReviewTotalCount
             : reportKind === "operator_runbook_report"
             ? auditReportLedgerMetadataNumber(event.metadata, "totalSections")
             : reportKind === "pre_live_runbook_report"
@@ -18961,6 +19314,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "personal_team_readiness_review" ||
           reportKind === "daily_ops_control_room_review" ||
           reportKind === "daily_start_brief_review" ||
+          reportKind === "stage1_daily_archive_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -18978,6 +19332,7 @@ export function buildAuditEvidenceReportLedgerRows(
           reportKind === "personal_team_readiness_review" ||
           reportKind === "daily_ops_control_room_review" ||
           reportKind === "daily_start_brief_review" ||
+          reportKind === "stage1_daily_archive_review" ||
           reportKind === "pre_live_runbook_report" ||
           reportKind === "research_context_readiness_report"
             ? 0
@@ -19092,6 +19447,23 @@ export function buildAuditEvidenceReportLedgerRows(
         dailyStartBriefReviewLocalReviewQuery,
         dailyStartBriefReviewCheckpointIds,
         dailyStartBriefReviewCheckpointStatuses,
+        stage1DailyArchiveReviewState,
+        stage1DailyArchiveReviewReadyCount,
+        stage1DailyArchiveReviewTotalCount,
+        stage1DailyArchiveReviewPrimaryActionId,
+        stage1DailyArchiveReviewPrimaryActionLabel,
+        stage1DailyArchiveReviewPrimaryTargetWorkspaceId,
+        stage1DailyArchiveReviewRowIds,
+        stage1DailyArchiveReviewRowLabels,
+        stage1DailyArchiveReviewRowStatuses,
+        stage1DailyArchiveReviewRowTargetWorkspaceIds,
+        stage1DailyArchiveReviewRefreshOutcomeState,
+        stage1DailyArchiveReviewShareKind,
+        stage1DailyArchiveReviewShareFocus,
+        stage1DailyArchiveReviewShareTargetWorkspaceId,
+        stage1DailyArchiveReviewInvalidShareStatus,
+        stage1DailyArchiveReviewInvalidShareReason,
+        stage1DailyArchiveReviewArchiveBodySha256,
         localReviewBundleContextLabel,
         localReviewBundleContextQuery,
         localReviewBundleContextTitle,
@@ -19135,6 +19507,8 @@ export function buildAuditEvidenceReportLedgerRows(
             ? "daily-ops-control-room-review"
             : reportKind === "daily_start_brief_review"
             ? "daily-start-brief-review"
+            : reportKind === "stage1_daily_archive_review"
+            ? "stage1-daily-archive-review"
             : reportKind === "operator_runbook_report"
             ? "operator-runbook-report"
             : reportKind === "pre_live_runbook_report"
@@ -19167,6 +19541,8 @@ export function buildAuditEvidenceReportLedgerRows(
               ? "Daily ops control room review hash recorded"
             : reportKind === "daily_start_brief_review"
               ? "Daily start brief review hash recorded"
+            : reportKind === "stage1_daily_archive_review"
+              ? "Stage 1 daily-use archive review hash recorded"
             : reportKind === "operator_runbook_report"
               ? "Operator runbook report hash recorded"
             : reportKind === "pre_live_runbook_report"
@@ -19200,6 +19576,7 @@ export function buildAuditEvidenceReportLedgerRows(
           personalTeamReadinessReviewSearchText,
           dailyOpsControlRoomReviewSearchText,
           dailyStartBriefReviewSearchText,
+          stage1DailyArchiveReviewSearchText,
           localReviewBundleContextLabel,
           localReviewBundleContextQuery,
           localReviewBundleContextTitle,
@@ -19247,6 +19624,14 @@ export function buildAuditEvidenceReportLedgerRows(
               auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary")
               ? "positive"
               : "risk"
+            : reportKind === "stage1_daily_archive_review"
+            ? !auditReportLedgerMetadataBoolean(event.metadata, "orderSubmissionEnabled") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveTradingAllowed") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "liveOrderSubmitted") &&
+              !auditReportLedgerMetadataBoolean(event.metadata, "routeExecuted") &&
+              auditReportLedgerMetadataBoolean(event.metadata, "liveBlockedBoundary")
+              ? "positive"
+              : "risk"
           : auditReportLedgerSignatureTone(signatureStatus)
       };
     });
@@ -19262,7 +19647,8 @@ function auditEvidenceReportLedgerRowIsLocalReviewBundle(row: AuditEvidenceRepor
     row.status === "ready" &&
     (row.reportKind === "personal_team_readiness_review" ||
       row.reportKind === "daily_ops_control_room_review" ||
-      row.reportKind === "daily_start_brief_review")
+      row.reportKind === "daily_start_brief_review" ||
+      row.reportKind === "stage1_daily_archive_review")
   );
 }
 
@@ -19295,7 +19681,14 @@ function markLocalReviewBundleCoverageLedgerRows(rows: AuditEvidenceReportLedger
     .length;
   const dailyStartCount = localReviewBundleRows.filter((row) => row.reportKind === "daily_start_brief_review")
     .length;
-  const coverage = auditReportLedgerLocalReviewBundleCoverage({ dailyOpsCount, dailyStartCount, personalTeamCount });
+  const stage1ArchiveCount = localReviewBundleRows.filter((row) => row.reportKind === "stage1_daily_archive_review")
+    .length;
+  const coverage = auditReportLedgerLocalReviewBundleCoverage({
+    dailyOpsCount,
+    dailyStartCount,
+    personalTeamCount,
+    stage1ArchiveCount
+  });
 
   if (!coverage.query) {
     return rows;
@@ -19629,6 +20022,7 @@ function auditReportLedgerLocalReviewBundleTitle({
   latestEventId,
   latestTitle,
   personalTeamCount,
+  stage1ArchiveCount,
   totalCount
 }: {
   dailyOpsCount: number;
@@ -19636,6 +20030,7 @@ function auditReportLedgerLocalReviewBundleTitle({
   latestEventId: string;
   latestTitle: string;
   personalTeamCount: number;
+  stage1ArchiveCount: number;
   totalCount: number;
 }): string {
   if (totalCount <= 0) {
@@ -19646,6 +20041,7 @@ function auditReportLedgerLocalReviewBundleTitle({
     `personal/team ${personalTeamCount}`,
     `daily ops ${dailyOpsCount}`,
     `daily start ${dailyStartCount}`,
+    `stage1 archive ${stage1ArchiveCount}`,
     latestEventId ? `latest ${latestEventId}` : "",
     latestTitle ? `latest context ${latestTitle}` : ""
   ]
@@ -19724,11 +20120,20 @@ export function buildAuditEvidenceReportLedgerSummary(
       }
       return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
     }, undefined);
+  const latestStage1DailyArchiveReviewRow = rows
+    .filter((row) => row.reportKind === "stage1_daily_archive_review" && row.status === "ready")
+    .reduce<AuditEvidenceReportLedgerRow | undefined>((latest, row) => {
+      if (!latest) {
+        return row;
+      }
+      return Date.parse(row.createdAt) > Date.parse(latest.createdAt) ? row : latest;
+    }, undefined);
   const localReviewBundleRows = readyRows.filter(
     (row) =>
       row.reportKind === "personal_team_readiness_review" ||
       row.reportKind === "daily_ops_control_room_review" ||
-      row.reportKind === "daily_start_brief_review"
+      row.reportKind === "daily_start_brief_review" ||
+      row.reportKind === "stage1_daily_archive_review"
   );
   const localReviewBundlePersonalTeamCount = localReviewBundleRows.filter(
     (row) => row.reportKind === "personal_team_readiness_review"
@@ -19739,10 +20144,14 @@ export function buildAuditEvidenceReportLedgerSummary(
   const localReviewBundleDailyStartCount = localReviewBundleRows.filter(
     (row) => row.reportKind === "daily_start_brief_review"
   ).length;
+  const localReviewBundleStage1ArchiveCount = localReviewBundleRows.filter(
+    (row) => row.reportKind === "stage1_daily_archive_review"
+  ).length;
   const localReviewBundleCoverage = auditReportLedgerLocalReviewBundleCoverage({
     dailyOpsCount: localReviewBundleDailyOpsCount,
     dailyStartCount: localReviewBundleDailyStartCount,
-    personalTeamCount: localReviewBundlePersonalTeamCount
+    personalTeamCount: localReviewBundlePersonalTeamCount,
+    stage1ArchiveCount: localReviewBundleStage1ArchiveCount
   });
   const latestLocalReviewBundleRow = localReviewBundleRows.reduce<AuditEvidenceReportLedgerRow | undefined>(
     (latest, row) => {
@@ -19919,6 +20328,14 @@ export function buildAuditEvidenceReportLedgerSummary(
     latestDailyStartBriefReviewShortHash: latestDailyStartBriefReviewRow?.shortHash ?? "",
     latestDailyStartBriefReviewTitle:
       buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(latestDailyStartBriefReviewRow),
+    latestStage1DailyArchiveReviewEventId: latestStage1DailyArchiveReviewRow?.id ?? "",
+    latestStage1DailyArchiveReviewLabel:
+      buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewLabel(latestStage1DailyArchiveReviewRow),
+    latestStage1DailyArchiveReviewQuery:
+      buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(latestStage1DailyArchiveReviewRow),
+    latestStage1DailyArchiveReviewShortHash: latestStage1DailyArchiveReviewRow?.shortHash ?? "",
+    latestStage1DailyArchiveReviewTitle:
+      buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(latestStage1DailyArchiveReviewRow),
     latestPersonalTeamReadinessReviewEventId: latestPersonalTeamReadinessReviewRow?.id ?? "",
     latestPersonalTeamReadinessReviewLabel:
       buildAuditEvidenceReportLedgerRowPersonalTeamReadinessReviewLabel(latestPersonalTeamReadinessReviewRow),
@@ -20010,6 +20427,7 @@ export function buildAuditEvidenceReportLedgerSummary(
     localReviewBundleCoverageTitle: localReviewBundleCoverage.title,
     localReviewBundleDailyOpsCount,
     localReviewBundleDailyStartCount,
+    localReviewBundleStage1ArchiveCount,
     localReviewBundleLatestEventId: latestLocalReviewBundleRow?.id ?? "",
     localReviewBundleLatestLabel:
       latestLocalReviewBundleRow?.localReviewBundleLatestLabel ||
@@ -20030,6 +20448,7 @@ export function buildAuditEvidenceReportLedgerSummary(
         latestLocalReviewBundleRow?.localReviewBundleLatestTitle ||
         auditReportLedgerLocalReviewBundleLatestTitle(latestLocalReviewBundleRow),
       personalTeamCount: localReviewBundlePersonalTeamCount,
+      stage1ArchiveCount: localReviewBundleStage1ArchiveCount,
       totalCount: localReviewBundleRows.length
     }),
     latestHash: latestReadyRow?.contentSha256 ?? "",
@@ -20058,6 +20477,7 @@ export function auditReportLedgerRowIsSigningEligible(row: AuditEvidenceReportLe
     row.reportKind !== "personal_team_readiness_review" &&
     row.reportKind !== "daily_ops_control_room_review" &&
     row.reportKind !== "daily_start_brief_review" &&
+    row.reportKind !== "stage1_daily_archive_review" &&
     row.reportKind !== "pre_live_runbook_report" &&
     row.reportKind !== "research_context_readiness_report"
   );

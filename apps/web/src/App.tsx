@@ -284,6 +284,9 @@ import {
   buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel,
   buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery,
   buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle,
+  buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewLabel,
+  buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery,
+  buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle,
   findLatestP2ReadinessEvidenceCoverageReviewAuditLedgerRow,
   findLatestP2ManifestChainPreflightAuditLedgerRow,
   findLatestP2ReadinessAcceptanceAuditLedgerRow,
@@ -386,6 +389,7 @@ import {
   buildDailyStartBriefMarkdown,
   buildDailyStartBriefReviewReference,
   buildStage1P0DailyUseClosure,
+  buildStage1P0DailyUseArchiveReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessSummary,
@@ -503,6 +507,7 @@ import {
   DailyStartBrief,
   DailyStartBriefReviewReference,
   Stage1P0DailyUseClosure,
+  Stage1P0DailyUseArchiveReviewReference,
   Stage1P0DailyUseRefreshOutcome,
   Stage1P0DailyUseShareDeepLinkState,
   Stage1P0DailyUseShareDeepLinkStatus,
@@ -3128,6 +3133,23 @@ export function App() {
     () => buildDailyStartBriefReviewReference({ brief: dailyStartBrief, ledgerRows: auditEvidenceReportLedgerRows }),
     [auditEvidenceReportLedgerRows, dailyStartBrief]
   );
+  const stage1P0DailyUseArchiveReviewReference = useMemo(
+    () =>
+      buildStage1P0DailyUseArchiveReviewReference({
+        closure: stage1P0DailyUseClosure,
+        invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus,
+        ledgerRows: auditEvidenceReportLedgerRows,
+        refreshOutcome: stage1P0DailyUseRefreshOutcome,
+        shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState
+      }),
+    [
+      auditEvidenceReportLedgerRows,
+      initialStage1P0DailyUseShareDeepLinkState,
+      initialStage1P0DailyUseShareDeepLinkStatus,
+      stage1P0DailyUseClosure,
+      stage1P0DailyUseRefreshOutcome
+    ]
+  );
   const p0GoldenPathJourney = useMemo(
     () =>
       buildP0GoldenPathJourney({
@@ -3560,7 +3582,7 @@ export function App() {
     setIsLoadingAuditEvidenceReportEvents(true);
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
       eventType:
-        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report",
+        "audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,daily_start_brief_review,stage1_daily_archive_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report",
       limit: AUDIT_REPORT_EVENTS_PAGE_SIZE,
       offset: auditEvidenceReportOffset,
       query: auditEvidenceReportQuery.trim() || undefined
@@ -9769,6 +9791,35 @@ export function App() {
     stage1P0DailyUseRefreshOutcome
   ]);
 
+  const openStage1P0DailyUseArchiveReviewInAudit = useCallback(() => {
+    if (!stage1P0DailyUseArchiveReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 archive review audit reference missing",
+        error: "No Stage 1 daily-use archive review has been recorded yet."
+      }));
+      return;
+    }
+
+    openAuditReportLedgerQuery(
+      stage1P0DailyUseArchiveReviewReference.query,
+      "Stage 1 archive review audit query selected"
+    );
+  }, [openAuditReportLedgerQuery, stage1P0DailyUseArchiveReviewReference.query]);
+
+  const copyStage1P0DailyUseArchiveReviewAuditLink = useCallback(() => {
+    if (!stage1P0DailyUseArchiveReviewReference.query) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 archive review link copy failed",
+        error: "No Stage 1 daily-use archive review has been recorded yet."
+      }));
+      return;
+    }
+
+    void copyAuditReportLedgerQueryLink(stage1P0DailyUseArchiveReviewReference.query);
+  }, [copyAuditReportLedgerQueryLink, stage1P0DailyUseArchiveReviewReference.query]);
+
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
       return;
@@ -12315,6 +12366,7 @@ export function App() {
                 </div>
               ) : null}
               <Stage1P0DailyUseClosurePanel
+                archiveReviewReference={stage1P0DailyUseArchiveReviewReference}
                 closure={stage1P0DailyUseClosure}
                 i18n={i18n}
                 isHandoffCopied={copiedStage1P0DailyUseHandoff}
@@ -12335,7 +12387,9 @@ export function App() {
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onCopyRefreshOutcomeLink={() => void copyStage1P0DailyUseRefreshOutcomeLink()}
+                onCopyArchiveReviewLink={copyStage1P0DailyUseArchiveReviewAuditLink}
                 onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}
+                onOpenArchiveReview={openStage1P0DailyUseArchiveReviewInAudit}
                 onOpenPrimaryAction={openStage1P0DailyUsePrimaryAction}
                 onOpenRefreshOutcomeEntry={openStage1P0DailyUseRefreshOutcomeEntry}
                 onOpenRefreshOutcomeNextStep={openStage1P0DailyUseRefreshOutcomeNextStep}
@@ -13734,6 +13788,7 @@ function P0GoldenPathJourneyPanel({
 }
 
 function Stage1P0DailyUseClosurePanel({
+  archiveReviewReference,
   closure,
   i18n,
   isArchiveCopied = false,
@@ -13753,7 +13808,9 @@ function Stage1P0DailyUseClosurePanel({
   onDownloadHandoff,
   onCopyRefreshOutcome,
   onCopyRefreshOutcomeLink,
+  onCopyArchiveReviewLink,
   onDownloadRefreshOutcome,
+  onOpenArchiveReview,
   onOpenPrimaryAction,
   onOpenRefreshOutcomeEntry,
   onOpenRefreshOutcomeNextStep,
@@ -13763,6 +13820,7 @@ function Stage1P0DailyUseClosurePanel({
   refreshOutcome,
   shareDeepLinkState
 }: {
+  archiveReviewReference?: Stage1P0DailyUseArchiveReviewReference | null;
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
   isArchiveCopied?: boolean;
@@ -13782,7 +13840,9 @@ function Stage1P0DailyUseClosurePanel({
   onDownloadHandoff?: () => void;
   onCopyRefreshOutcome?: () => void;
   onCopyRefreshOutcomeLink?: () => void;
+  onCopyArchiveReviewLink?: () => void;
   onDownloadRefreshOutcome?: () => void;
+  onOpenArchiveReview?: () => void;
   onOpenPrimaryAction: () => void;
   onOpenRefreshOutcomeEntry: (entry: Stage1P0DailyUseRefreshOutcome["entries"][number]) => void;
   onOpenRefreshOutcomeNextStep: () => void;
@@ -13800,6 +13860,7 @@ function Stage1P0DailyUseClosurePanel({
     isRefreshReceiptColdStart && shareDeepLinkState
       ? stage1P0DailyUseShareLinkFocusLabel(i18n, shareDeepLinkState)
       : "";
+  const archiveReference = archiveReviewReference ?? null;
 
   return (
     <section
@@ -13913,6 +13974,34 @@ function Stage1P0DailyUseClosurePanel({
             >
               <Play size={12} />
               {i18n.locale === "zh-CN" ? "打开下一步" : "Open next step"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {archiveReference ? (
+        <div className={`stage1-p0-daily-use-archive-reference ${archiveReference.status}`}>
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "最新归档入账" : "Latest archive record"}</span>
+            <strong>{stage1P0DailyUseArchiveReviewReferenceLabel(i18n, archiveReference)}</strong>
+            <small>{stage1P0DailyUseArchiveReviewReferenceDetail(i18n, archiveReference)}</small>
+            {archiveReference.eventId ? (
+              <small>
+                {archiveReference.eventId} · {archiveReference.createdAt.slice(0, 19)}
+              </small>
+            ) : null}
+          </div>
+          <div>
+            <button disabled={!archiveReference.query || !onOpenArchiveReview} onClick={onOpenArchiveReview} type="button">
+              <Search size={12} />
+              {i18n.locale === "zh-CN" ? "定位归档" : "Focus archive"}
+            </button>
+            <button
+              disabled={!archiveReference.query || !onCopyArchiveReviewLink}
+              onClick={onCopyArchiveReviewLink}
+              type="button"
+            >
+              <Copy size={12} />
+              {i18n.locale === "zh-CN" ? "复制归档链接" : "Copy archive link"}
             </button>
           </div>
         </div>
@@ -14065,6 +14154,38 @@ function stage1P0DailyUseRefreshOutcomeHeadline(
     return "日常自检刷新后仍需复核";
   }
   return "日常自检刷新需要处理";
+}
+
+function stage1P0DailyUseArchiveReviewReferenceLabel(
+  i18n: AppI18n,
+  reference: Stage1P0DailyUseArchiveReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.label;
+  }
+  return (
+    {
+      current: "归档入账匹配当前日常上下文",
+      missing: "尚未入账归档审计",
+      stale: "最近归档入账已过期"
+    } satisfies Record<Stage1P0DailyUseArchiveReviewReference["status"], string>
+  )[reference.status];
+}
+
+function stage1P0DailyUseArchiveReviewReferenceDetail(
+  i18n: AppI18n,
+  reference: Stage1P0DailyUseArchiveReviewReference
+): string {
+  if (i18n.locale === "en-US") {
+    return reference.detail;
+  }
+  if (reference.status === "current") {
+    return "最近一次 Stage 1/P0 日常归档与当前卡片、刷新回执和分享入口一致。";
+  }
+  if (reference.status === "stale") {
+    return "最近一次 Stage 1/P0 日常归档与当前上下文不一致，请重新入账归档。";
+  }
+  return "点击入账归档后，这里会显示可定位的 Stage 1 归档审计事件。";
 }
 
 function stage1P0DailyUseRefreshOutcomeDetail(
@@ -14584,6 +14705,9 @@ function localReviewCoverageNextActionLabel(
   if (state.actionId === "record-daily-start-review") {
     return i18n.locale === "zh-CN" ? "每日启动复核缺失" : "Daily start review missing";
   }
+  if (state.actionId === "record-stage1-archive-review") {
+    return i18n.locale === "zh-CN" ? "Stage 1 归档复核缺失" : "Stage 1 archive review missing";
+  }
   if (state.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN" ? "个人/小团队复核缺失" : "Personal/team review missing";
   }
@@ -14608,6 +14732,9 @@ function localReviewCoverageNextActionLoadedStatusLabel(
   if (state.actionId === "record-daily-start-review") {
     return `Daily start coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
   }
+  if (state.actionId === "record-stage1-archive-review") {
+    return `Stage 1 archive coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
+  }
   if (state.actionId === "record-personal-team-review") {
     return `Personal/team coverage next link loaded: ${state.actionId} -> ${state.targetWorkspaceId}`;
   }
@@ -14626,6 +14753,9 @@ function localReviewCoverageMissingReviewKindLabel(
   }
   if (missingReviewKind === "daily-start") {
     return i18n.locale === "zh-CN" ? "缺少每日启动复核" : "Missing daily start review";
+  }
+  if (missingReviewKind === "stage1-archive") {
+    return i18n.locale === "zh-CN" ? "缺少 Stage 1 归档复核" : "Missing Stage 1 archive review";
   }
   if (missingReviewKind === "personal-team") {
     return i18n.locale === "zh-CN" ? "缺少个人/小团队复核" : "Missing personal/team review";
@@ -14675,6 +14805,9 @@ function localReviewCoverageNextActionQueryLabel(
   if (state.actionId === "record-daily-start-review") {
     return i18n.locale === "zh-CN" ? "查看每日启动覆盖查询" : "View daily start coverage query";
   }
+  if (state.actionId === "record-stage1-archive-review") {
+    return i18n.locale === "zh-CN" ? "查看 Stage 1 归档覆盖查询" : "View Stage 1 archive coverage query";
+  }
   if (state.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN" ? "查看个人/小团队覆盖查询" : "View personal/team coverage query";
   }
@@ -14693,6 +14826,9 @@ function localReviewCoverageNextActionOpenLabel(
   }
   if (state.actionId === "record-daily-start-review") {
     return i18n.locale === "zh-CN" ? "打开每日启动复核入口" : "Open daily start review entry";
+  }
+  if (state.actionId === "record-stage1-archive-review") {
+    return i18n.locale === "zh-CN" ? "打开 Stage 1 归档入口" : "Open Stage 1 archive entry";
   }
   if (state.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN" ? "打开个人/小团队复核入口" : "Open personal/team review entry";
@@ -14731,6 +14867,15 @@ function localReviewCoverageNextActionFocusLabel(
       : scope === "row"
         ? "Focus row daily start coverage next"
         : "Focus daily start coverage next";
+  }
+  if (state?.actionId === "record-stage1-archive-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "定位行 Stage 1 归档覆盖下一步"
+        : "定位 Stage 1 归档覆盖下一步"
+      : scope === "row"
+        ? "Focus row Stage 1 archive coverage next"
+        : "Focus Stage 1 archive coverage next";
   }
   if (state?.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN"
@@ -14782,6 +14927,15 @@ function localReviewCoverageNextActionCopyLabel(
         ? "Copy row daily start coverage next link"
         : "Copy daily start coverage next link";
   }
+  if (state?.actionId === "record-stage1-archive-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "复制行 Stage 1 归档覆盖下一步链接"
+        : "复制 Stage 1 归档覆盖下一步链接"
+      : scope === "row"
+        ? "Copy row Stage 1 archive coverage next link"
+        : "Copy Stage 1 archive coverage next link";
+  }
   if (state?.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN"
       ? scope === "row"
@@ -14832,6 +14986,15 @@ function localReviewCoverageNextActionOpenSourceLabel(
         ? "Open row daily start review entry"
         : "Open daily start review entry";
   }
+  if (state?.actionId === "record-stage1-archive-review") {
+    return i18n.locale === "zh-CN"
+      ? scope === "row"
+        ? "打开行 Stage 1 归档入口"
+        : "打开 Stage 1 归档入口"
+      : scope === "row"
+        ? "Open row Stage 1 archive entry"
+        : "Open Stage 1 archive entry";
+  }
   if (state?.actionId === "record-personal-team-review") {
     return i18n.locale === "zh-CN"
       ? scope === "row"
@@ -14862,6 +15025,9 @@ function localReviewCoverageNextActionQueryStatusLabel(
   if (state.actionId === "record-daily-start-review") {
     return "Daily start coverage query selected";
   }
+  if (state.actionId === "record-stage1-archive-review") {
+    return "Stage 1 archive coverage query selected";
+  }
   if (state.actionId === "record-personal-team-review") {
     return "Personal/team coverage query selected";
   }
@@ -14880,6 +15046,9 @@ function localReviewCoverageNextActionCopyStatusLabel(
   if (state.actionId === "record-daily-start-review") {
     return "Daily start coverage next link copied";
   }
+  if (state.actionId === "record-stage1-archive-review") {
+    return "Stage 1 archive coverage next link copied";
+  }
   if (state.actionId === "record-personal-team-review") {
     return "Personal/team coverage next link copied";
   }
@@ -14897,6 +15066,9 @@ function localReviewCoverageNextActionOpenStatusLabel(
   }
   if (state.actionId === "record-daily-start-review") {
     return "Daily start review entry opened";
+  }
+  if (state.actionId === "record-stage1-archive-review") {
+    return "Stage 1 archive entry opened";
   }
   if (state.actionId === "record-personal-team-review") {
     return "Personal/team review entry opened";
@@ -24138,6 +24310,9 @@ function AuditEvidenceReportLedgerPanel({
               const rowDailyStartBriefReviewLabel = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewLabel(row);
               const rowDailyStartBriefReviewTitle = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewTitle(row);
               const rowDailyStartBriefReviewQuery = buildAuditEvidenceReportLedgerRowDailyStartBriefReviewQuery(row);
+              const rowStage1DailyArchiveReviewLabel = buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewLabel(row);
+              const rowStage1DailyArchiveReviewTitle = buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(row);
+              const rowStage1DailyArchiveReviewQuery = buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(row);
               const rowCompletionGapWorkspaceId = row.p0CompletionCurrentCriterionTargetWorkspaceId;
               const rowLocalReviewCoverageNextActionWorkspaceId =
                 row.localReviewBundleCoverageNextActionTargetWorkspaceId;
@@ -24247,6 +24422,15 @@ function AuditEvidenceReportLedgerPanel({
                     >
                       {i18n.locale === "zh-CN" ? "每日启动复核" : "Daily start review"} ·{" "}
                       {rowDailyStartBriefReviewLabel}
+                    </span>
+                  ) : null}
+                  {rowStage1DailyArchiveReviewLabel ? (
+                    <span
+                      className="audit-report-ledger-stage1-archive-review"
+                      title={rowStage1DailyArchiveReviewTitle || rowStage1DailyArchiveReviewQuery}
+                    >
+                      {i18n.locale === "zh-CN" ? "Stage 1 归档复核" : "Stage 1 archive review"} ·{" "}
+                      {rowStage1DailyArchiveReviewLabel}
                     </span>
                   ) : null}
                   {row.localReviewBundleContextQuery ? (
@@ -24525,6 +24709,16 @@ function AuditEvidenceReportLedgerPanel({
                     {rowDailyStartBriefReviewQuery ? (
                       <button onClick={() => onCopyQueryLink(rowDailyStartBriefReviewQuery)} type="button">
                         {i18n.locale === "zh-CN" ? "复制启动复核链接" : "Copy start review link"}
+                      </button>
+                    ) : null}
+                    {rowStage1DailyArchiveReviewQuery ? (
+                      <button onClick={() => focusAuditReportQuery(rowStage1DailyArchiveReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "定位归档复核" : "Focus archive review"}
+                      </button>
+                    ) : null}
+                    {rowStage1DailyArchiveReviewQuery ? (
+                      <button onClick={() => onCopyQueryLink(rowStage1DailyArchiveReviewQuery)} type="button">
+                        {i18n.locale === "zh-CN" ? "复制归档复核链接" : "Copy archive review link"}
                       </button>
                     ) : null}
                     {row.localReviewBundleContextQuery ? (

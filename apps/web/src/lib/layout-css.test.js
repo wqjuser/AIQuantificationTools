@@ -482,6 +482,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("statusLabel: `Stage 1 daily-use archive audited · ${result.event!.eventId}`");
     expect(appSource).toContain("Stage 1 daily-use archive ledger save failed");
     expect(appSource).toContain("setSavingStage1P0DailyUseArchive(false);");
+    expect(appSource).toContain("buildStage1P0DailyUseArchiveReviewReference({");
+    expect(appSource).toContain("const stage1P0DailyUseArchiveReviewReference = useMemo(");
+    expect(appSource).toContain("const openStage1P0DailyUseArchiveReviewInAudit = useCallback");
+    expect(appSource).toContain("const copyStage1P0DailyUseArchiveReviewAuditLink = useCallback");
+    expect(appSource).toContain("Stage 1 archive review audit query selected");
+    expect(appSource).toContain("Stage 1 archive review link copy failed");
     expect(appSource).toContain("function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string");
     expect(appSource).toContain('if (!normalizedLink || typeof window === "undefined")');
     expect(appSource).toContain("const shareUrl = new URL(normalizedLink, window.location.href);");
@@ -583,6 +589,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onDownloadArchive?: () => void;");
     expect(appSource).toContain("onDownloadShareLinkBundle?: () => void;");
     expect(appSource).toContain("onCopyRefreshOutcomeLink?: () => void;");
+    expect(appSource).toContain("archiveReviewReference?: Stage1P0DailyUseArchiveReviewReference | null;");
+    expect(appSource).toContain("onOpenArchiveReview?: () => void;");
+    expect(appSource).toContain("onCopyArchiveReviewLink?: () => void;");
+    expect(appSource).toContain("archiveReviewReference={stage1P0DailyUseArchiveReviewReference}");
+    expect(appSource).toContain("onOpenArchiveReview={openStage1P0DailyUseArchiveReviewInAudit}");
+    expect(appSource).toContain("onCopyArchiveReviewLink={copyStage1P0DailyUseArchiveReviewAuditLink}");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
     expect(overviewGridSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
     expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link invalid"');
@@ -682,6 +694,15 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Download handoff");
     expect(appSource).toContain("复制回执");
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "复制下一步链接" : "Copy next link"');
+    expect(appSource).toContain("最新归档入账");
+    expect(appSource).toContain("Latest archive record");
+    expect(appSource).toContain("stage1P0DailyUseArchiveReviewReferenceLabel");
+    expect(appSource).toContain("stage1P0DailyUseArchiveReviewReferenceDetail");
+    expect(appSource).toContain("定位归档");
+    expect(appSource).toContain("Focus archive");
+    expect(appSource).toContain("复制归档链接");
+    expect(appSource).toContain("Copy archive link");
+    expect(appSource).toContain('className={`stage1-p0-daily-use-archive-reference ${archiveReference.status}`}');
     expect(appSource).toContain("下载回执");
     expect(appSource).toContain("Download receipt");
     expect(appSource).toContain("打开下一步");
@@ -704,6 +725,10 @@ describe("terminal layout css", () => {
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-entries")).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
     expect(cssBlock(".stage1-p0-daily-use-refresh-outcome-actions")).toContain("display: flex;");
+    expect(cssBlock(".stage1-p0-daily-use-archive-reference")).toContain("display: grid;");
+    expect(cssBlock(".stage1-p0-daily-use-archive-reference")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(cssBlock(".stage1-p0-daily-use-archive-reference.current")).toContain("border-color: #2d6e61;");
+    expect(cssBlock(".stage1-p0-daily-use-archive-reference button")).toContain("white-space: nowrap;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-recovery")).toContain("display: grid;");
     expect(cssBlock(".stage1-p0-daily-use-refresh-recovery")).toContain("border: 1px solid rgba(113, 223, 197, 0.34);");
     expect(cssBlock(".stage1-p0-daily-use-head")).toContain("grid-template-columns: minmax(0, 1fr) auto;");
@@ -1233,7 +1258,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const copyLatestResearchContextReportLink = useCallback");
     expect(appSource).toContain("buildResearchContextReadinessReportAuditEvent");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,daily_start_brief_review,stage1_daily_archive_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(currentReadinessReportSource).toContain("contextLink: buildResearchContextDeepLink(");
     expect(currentReadinessReportSource).toContain("researchPipelinePreflight.lockedPreparationEvidence?.runId ?? selectedWatchlistCacheRefreshRunId");
@@ -2006,7 +2031,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildAuditSigningKeyRotationApplyAuditEvent");
     expect(appSource).toContain("AuditSigningKeyRegistryPanel");
     expect(appSource).toContain(
-      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
+      '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,daily_start_brief_review,stage1_daily_archive_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');

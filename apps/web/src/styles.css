@@ -1670,6 +1670,82 @@ em {
   box-shadow: 0 0 0 2px rgba(113, 223, 197, 0.28);
 }
 
+.stage1-p0-daily-use-archive-reference {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #26364d;
+  border-radius: 6px;
+  background: #101c2d;
+}
+
+.stage1-p0-daily-use-archive-reference.current {
+  border-color: #2d6e61;
+}
+
+.stage1-p0-daily-use-archive-reference.stale {
+  border-color: #735f2b;
+}
+
+.stage1-p0-daily-use-archive-reference.missing {
+  border-color: #3b4b62;
+}
+
+.stage1-p0-daily-use-archive-reference > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.stage1-p0-daily-use-archive-reference > div:last-child {
+  grid-template-columns: repeat(2, max-content);
+  justify-content: end;
+  gap: 6px;
+}
+
+.stage1-p0-daily-use-archive-reference span,
+.stage1-p0-daily-use-archive-reference small {
+  overflow: hidden;
+  color: #8fa0b2;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage1-p0-daily-use-archive-reference strong {
+  overflow: hidden;
+  color: #dce6ee;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage1-p0-daily-use-archive-reference button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 5px;
+  background: #172437;
+  color: #dce6ee;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.stage1-p0-daily-use-archive-reference button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .stage1-p0-daily-use-footer {
   display: flex;
   align-items: center;
@@ -16557,6 +16633,15 @@ button.ai-review-record {
   }
 
   .stage1-p0-daily-use-refresh-outcome-actions button {
+    width: 100%;
+  }
+
+  .stage1-p0-daily-use-archive-reference,
+  .stage1-p0-daily-use-archive-reference > div:last-child {
+    grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-daily-use-archive-reference button {
     width: 100%;
   }
 
