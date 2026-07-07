@@ -102,6 +102,104 @@ def build_p0_paper_simulation_payload(
     }
 
 
+def _smoke_token(value: str) -> str:
+    token = "".join(ch.lower() if ch.isalnum() else "-" for ch in str(value or "").strip())
+    token = "-".join(part for part in token.split("-") if part)
+    return token or "unknown"
+
+
+def _p2_replay_seed_order_id(run_id: str, symbol: str) -> str:
+    return f"portfolio-paper-{_smoke_token(run_id)}-{_smoke_token(symbol)}-buy"
+
+
+def build_p2_replay_portfolio_order_payload(
+    run_id: str,
+    market: str,
+    symbol: str,
+    *,
+    quantity: int,
+) -> dict[str, Any]:
+    quantity_value = float(max(1, int(quantity)))
+    fill_price = 9.2
+    return {
+        "baseRunId": run_id,
+        "portfolioName": "P2 paper replay smoke basket",
+        "source": "p2_replay_acceptance",
+        "orders": [
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "eventType": "portfolio_paper_order",
+                "orderId": _p2_replay_seed_order_id(run_id, symbol),
+                "symbol": symbol,
+                "sourceRunId": run_id,
+                "side": "buy",
+                "notionalValue": round(quantity_value * fill_price, 2),
+                "quantity": quantity_value,
+                "status": "pending_review",
+                "riskStatus": "passed",
+                "reason": f"{market} {symbol} P2 replay smoke seed; paper simulation only.",
+            }
+        ],
+    }
+
+
+def build_p2_replay_portfolio_approval_payload(run_id: str, batch_id: str, order_id: str) -> dict[str, Any]:
+    return {
+        "baseRunId": run_id,
+        "batchId": batch_id,
+        "orderId": order_id,
+        "approved": True,
+        "reviewer": "p1-smoke-operator",
+        "reviewedAt": datetime.now(timezone.utc).isoformat(),
+        "reason": "Approved for P2 paper replay smoke simulation only.",
+    }
+
+
+def build_p2_replay_portfolio_batch_simulation_payload(
+    run_id: str,
+    batch_id: str,
+    order_id: str,
+    market: str,
+    symbol: str,
+    *,
+    quantity: int,
+) -> dict[str, Any]:
+    quantity_value = float(max(1, int(quantity)))
+    fill_price = 9.2
+    adapter_token = f"{_smoke_token(run_id)}-{_smoke_token(symbol)}"
+    adapter_paper_execution_id = f"execution-adapter-paper-execution-{adapter_token}"
+    adapter_manifest_validation_id = f"execution-adapter-secret-manifest-validation-{adapter_token}"
+    return {
+        "baseRunId": run_id,
+        "batchId": batch_id,
+        "orderIds": [order_id],
+        "simulatedAt": datetime.now(timezone.utc).isoformat(),
+        "routeRisk": {
+            "initialCash": 100000,
+            "minCashAfter": 1000,
+            "maxSymbolNotional": 50000,
+            "maxBatchNotional": 50000,
+        },
+        "adapterPaperExecutionEvidenceByOrderId": {
+            order_id: {
+                "adapterPaperExecutionId": adapter_paper_execution_id,
+                "adapterManifestValidationId": adapter_manifest_validation_id,
+                "adapterPaperExecutionEvidence": {
+                    "adapterPaperExecutionId": adapter_paper_execution_id,
+                    "manifestValidationId": adapter_manifest_validation_id,
+                    "market": market,
+                    "symbol": symbol,
+                    "fillSummary": f"filled buy {int(quantity_value)} {symbol} @ {fill_price}",
+                    "paperFillRecorded": True,
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                },
+            }
+        },
+    }
+
+
 def _require_dict(payload: Any, label: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise RuntimeError(f"Invalid {label} response: body is not an object")
@@ -155,6 +253,76 @@ def validate_p0_paper_simulation_payload(payload: Any, run_id: str) -> str:
     if not isinstance(export_readiness, dict) or export_readiness.get("ready") is not True:
         raise RuntimeError("Invalid P0 paper simulation response: export readiness is not ready")
     return f"p0 paper-simulation run={run_id} liveBlocked=True"
+
+
+def validate_p2_replay_portfolio_order_payload(payload: Any, run_id: str) -> tuple[str, str]:
+    response = _require_dict(payload, "P2 replay portfolio order seed")
+    batch = response.get("portfolioPaperOrderBatch") or response.get("existingBatch")
+    if not isinstance(batch, dict):
+        raise RuntimeError("Invalid P2 replay portfolio order seed response: batch is missing")
+    if str(batch.get("baseRunId") or "").strip() != run_id:
+        raise RuntimeError("Invalid P2 replay portfolio order seed response: baseRunId does not match")
+    batch_id = str(batch.get("batchId") or "").strip()
+    if not batch_id:
+        raise RuntimeError("Invalid P2 replay portfolio order seed response: batchId is missing")
+    orders = batch.get("orders")
+    if not isinstance(orders, list) or len(orders) != 1 or not isinstance(orders[0], dict):
+        raise RuntimeError("Invalid P2 replay portfolio order seed response: exactly one order is required")
+    order_id = str(orders[0].get("orderId") or "").strip()
+    if not order_id:
+        raise RuntimeError("Invalid P2 replay portfolio order seed response: orderId is missing")
+    if orders[0].get("status") != "pending_review" or orders[0].get("riskStatus") != "passed":
+        raise RuntimeError("Invalid P2 replay portfolio order seed response: order is not review-ready")
+    return batch_id, order_id
+
+
+def validate_p2_replay_portfolio_approval_payload(payload: Any, order_id: str) -> None:
+    response = _require_dict(payload, "P2 replay portfolio approval seed")
+    approval = response.get("approval")
+    if not isinstance(approval, dict) or approval.get("approved") is not True:
+        raise RuntimeError("Invalid P2 replay portfolio approval seed response: approval is missing or not approved")
+    if str(approval.get("orderId") or order_id).strip() != order_id:
+        raise RuntimeError("Invalid P2 replay portfolio approval seed response: orderId does not match")
+    lifecycle = response.get("portfolioPaperOrderLifecycle")
+    if not isinstance(lifecycle, list) or not any(
+        isinstance(row, dict)
+        and str(row.get("orderId") or "").strip() == order_id
+        and str(row.get("state") or "").strip() == "ready_for_simulation"
+        and row.get("routable") is True
+        for row in lifecycle
+    ):
+        raise RuntimeError("Invalid P2 replay portfolio approval seed response: order is not simulation-ready")
+
+
+def validate_p2_replay_portfolio_batch_simulation_payload(payload: Any, order_id: str) -> int:
+    response = _require_dict(payload, "P2 replay portfolio batch simulation seed")
+    batch_simulation = response.get("batchSimulation")
+    if not isinstance(batch_simulation, dict):
+        raise RuntimeError("Invalid P2 replay portfolio batch simulation seed response: batchSimulation is missing")
+    if batch_simulation.get("liveExecutionBlocked") is not True:
+        raise RuntimeError("Invalid P2 replay portfolio batch simulation seed response: live execution is not blocked")
+    simulations = response.get("simulations")
+    created_simulations = response.get("createdSimulations")
+    simulation_rows = [
+        row
+        for rows in (simulations, created_simulations)
+        if isinstance(rows, list)
+        for row in rows
+        if isinstance(row, dict)
+        and str(row.get("orderId") or "").strip() == order_id
+        and str(row.get("orderState") or "").strip() == "filled"
+        and str(row.get("fillStatus") or "").strip() == "filled"
+    ]
+    filled_count = int(batch_simulation.get("filledCount") or 0)
+    if filled_count < 1 and simulation_rows:
+        filled_count = len(simulation_rows)
+    if filled_count < 1:
+        raise RuntimeError("Invalid P2 replay portfolio batch simulation seed response: no filled simulation recorded")
+    if not simulation_rows:
+        raise RuntimeError("Invalid P2 replay portfolio batch simulation seed response: filled simulation row is missing")
+    if not all(str(row.get("adapterPaperExecutionId") or "").strip() for row in simulation_rows):
+        raise RuntimeError("Invalid P2 replay portfolio batch simulation seed response: adapter evidence is missing")
+    return filled_count
 
 
 def _p0_export_package_from_payload(payload: Any) -> dict[str, Any]:
@@ -322,6 +490,8 @@ def load_p0_acceptance_report(path: Path) -> dict[str, Any]:
 def _p1_acceptance_check_id(summary: str) -> str:
     if summary.startswith("p1 imported-export"):
         return "imported-export"
+    if summary.startswith("p1 p2-replay-seed"):
+        return "p2-replay-seed"
     if summary.startswith("p1 watchlist-refresh"):
         return "watchlist-refresh"
     if summary.startswith("p1 queue-pipeline"):
@@ -1183,6 +1353,45 @@ def run_p1_import_acceptance(
     return [import_summary, imported_export_summary]
 
 
+def seed_p2_replay_portfolio_evidence(
+    base_url: str,
+    *,
+    run_id: str,
+    market: str,
+    symbol: str,
+    quantity: int,
+    timeout_seconds: int,
+) -> str:
+    order_seed_payload = post_json(
+        join_url(base_url, "/api/portfolio/paper-orders"),
+        build_p2_replay_portfolio_order_payload(run_id, market, symbol, quantity=quantity),
+        timeout_seconds=timeout_seconds,
+    )
+    batch_id, order_id = validate_p2_replay_portfolio_order_payload(order_seed_payload, run_id)
+
+    approval_seed_payload = post_json(
+        join_url(base_url, "/api/portfolio/paper-order-approvals"),
+        build_p2_replay_portfolio_approval_payload(run_id, batch_id, order_id),
+        timeout_seconds=timeout_seconds,
+    )
+    validate_p2_replay_portfolio_approval_payload(approval_seed_payload, order_id)
+
+    simulation_seed_payload = post_json(
+        join_url(base_url, "/api/portfolio/paper-order-simulations/batch"),
+        build_p2_replay_portfolio_batch_simulation_payload(
+            run_id,
+            batch_id,
+            order_id,
+            market,
+            symbol,
+            quantity=quantity,
+        ),
+        timeout_seconds=timeout_seconds,
+    )
+    filled_count = validate_p2_replay_portfolio_batch_simulation_payload(simulation_seed_payload, order_id)
+    return f"p1 p2-replay-seed run={run_id} batch={batch_id} filled={filled_count} liveBlocked=True"
+
+
 def run_p1_acceptance(
     base_url: str,
     *,
@@ -1241,6 +1450,17 @@ def run_p1_acceptance(
             "p0 paper-simulation",
             "p1 paper-simulation",
             1,
+        )
+    )
+
+    summaries.append(
+        seed_p2_replay_portfolio_evidence(
+            base_url,
+            run_id=run_id,
+            market=queued_market,
+            symbol=queued_symbol,
+            quantity=quantity,
+            timeout_seconds=timeout_seconds,
         )
     )
 

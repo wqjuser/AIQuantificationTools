@@ -3158,12 +3158,81 @@ class QuantCoreContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Invalid P1 acceptance manifest"):
             docker_smoke.validate_p1_acceptance_manifest(missing_refresh_manifest)
 
+    def test_docker_smoke_builds_p2_replay_portfolio_seed_payloads_without_live_routing(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        order_payload = docker_smoke.build_p2_replay_portfolio_order_payload(
+            "run-p1-smoke",
+            "ashare",
+            "600000",
+            quantity=2100,
+        )
+        order = order_payload["orders"][0]
+
+        self.assertEqual(order_payload["baseRunId"], "run-p1-smoke")
+        self.assertEqual(order_payload["source"], "p2_replay_acceptance")
+        self.assertEqual(order_payload["portfolioName"], "P2 paper replay smoke basket")
+        self.assertEqual(order["orderId"], "portfolio-paper-run-p1-smoke-600000-buy")
+        self.assertEqual(order["symbol"], "600000")
+        self.assertEqual(order["sourceRunId"], "run-p1-smoke")
+        self.assertEqual(order["side"], "buy")
+        self.assertEqual(order["quantity"], 2100.0)
+        self.assertEqual(order["notionalValue"], 19320.0)
+        self.assertEqual(order["status"], "pending_review")
+        self.assertEqual(order["riskStatus"], "passed")
+
+        approval_payload = docker_smoke.build_p2_replay_portfolio_approval_payload(
+            "run-p1-smoke",
+            "portfolio-paper-batch-p2-replay",
+            "portfolio-paper-run-p1-smoke-600000-buy",
+        )
+        self.assertEqual(approval_payload["baseRunId"], "run-p1-smoke")
+        self.assertEqual(approval_payload["batchId"], "portfolio-paper-batch-p2-replay")
+        self.assertEqual(approval_payload["orderId"], "portfolio-paper-run-p1-smoke-600000-buy")
+        self.assertTrue(approval_payload["approved"])
+        self.assertEqual(approval_payload["reviewer"], "p1-smoke-operator")
+
+        simulation_payload = docker_smoke.build_p2_replay_portfolio_batch_simulation_payload(
+            "run-p1-smoke",
+            "portfolio-paper-batch-p2-replay",
+            "portfolio-paper-run-p1-smoke-600000-buy",
+            "ashare",
+            "600000",
+            quantity=2100,
+        )
+        evidence = simulation_payload["adapterPaperExecutionEvidenceByOrderId"][
+            "portfolio-paper-run-p1-smoke-600000-buy"
+        ]
+
+        self.assertEqual(simulation_payload["baseRunId"], "run-p1-smoke")
+        self.assertEqual(simulation_payload["batchId"], "portfolio-paper-batch-p2-replay")
+        self.assertEqual(simulation_payload["orderIds"], ["portfolio-paper-run-p1-smoke-600000-buy"])
+        self.assertEqual(simulation_payload["routeRisk"]["initialCash"], 100000)
+        self.assertEqual(simulation_payload["routeRisk"]["maxBatchNotional"], 50000)
+        self.assertEqual(
+            evidence["adapterPaperExecutionId"],
+            "execution-adapter-paper-execution-run-p1-smoke-600000",
+        )
+        self.assertEqual(
+            evidence["adapterManifestValidationId"],
+            "execution-adapter-secret-manifest-validation-run-p1-smoke-600000",
+        )
+        self.assertTrue(evidence["adapterPaperExecutionEvidence"]["paperFillRecorded"])
+        self.assertFalse(evidence["adapterPaperExecutionEvidence"]["liveOrderSubmitted"])
+        self.assertFalse(evidence["adapterPaperExecutionEvidence"]["routeExecuted"])
+        self.assertNotIn("privateKey", json.dumps(simulation_payload))
+
     def test_docker_smoke_p1_acceptance_runs_watchlist_queue_path(self):
         import json
 
         docker_smoke = self._load_docker_smoke_module()
         posts = []
         gets = []
+        events = []
+        seed_order_id = "portfolio-paper-run-p1-smoke-600000-buy"
+        seed_batch_id = "portfolio-paper-batch-p2-replay"
 
         source_export = {
             "manifest": {"runId": "run-p1-smoke", "artifactCounts": {"auditEvents": 1}},
@@ -3196,6 +3265,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         def fake_request_json(url, timeout_seconds):
             gets.append((url, timeout_seconds))
+            events.append(("GET", url))
             if url == "http://aiqt.local/api/workspace":
                 return {
                     "schemaVersion": 1,
@@ -3214,6 +3284,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         def fake_post_json(url, payload, timeout_seconds):
             posts.append((url, payload, timeout_seconds))
+            events.append(("POST", url))
             if url.endswith("/api/cache/watchlist-refreshes"):
                 self.assertEqual(len(payload["watchlist"]), 3)
                 self.assertEqual(payload["timeframe"], "1d")
@@ -3258,6 +3329,81 @@ class QuantCoreContractTest(unittest.TestCase):
                     "auditEvent": {"eventType": "p0_paper_simulation"},
                     "exportReadiness": {"ready": True},
                 }
+            if url.endswith("/api/portfolio/paper-orders"):
+                self.assertEqual(payload["baseRunId"], "run-p1-smoke")
+                self.assertEqual(payload["orders"][0]["orderId"], seed_order_id)
+                self.assertEqual(payload["orders"][0]["riskStatus"], "passed")
+                return {
+                    "portfolioPaperOrderBatch": {
+                        "baseRunId": "run-p1-smoke",
+                        "batchId": seed_batch_id,
+                        "orders": [payload["orders"][0]],
+                        "summary": {"statusCounts": {"pending_review": 1}},
+                    },
+                    "portfolioPaperOrderLifecycle": [
+                        {
+                            "orderId": seed_order_id,
+                            "state": "awaiting_operator_review",
+                            "routable": False,
+                        }
+                    ],
+                    "auditEvent": {
+                        "eventType": "portfolio_paper_order_batch",
+                        "runId": "run-p1-smoke",
+                    },
+                }
+            if url.endswith("/api/portfolio/paper-order-approvals"):
+                self.assertEqual(payload["baseRunId"], "run-p1-smoke")
+                self.assertEqual(payload["batchId"], seed_batch_id)
+                self.assertEqual(payload["orderId"], seed_order_id)
+                self.assertTrue(payload["approved"])
+                return {
+                    "approval": {
+                        "approvalId": "portfolio-paper-order-approval-p2-replay",
+                        "approved": True,
+                    },
+                    "portfolioPaperOrderLifecycle": [
+                        {
+                            "orderId": seed_order_id,
+                            "state": "ready_for_simulation",
+                            "routable": True,
+                        }
+                    ],
+                    "auditEvent": {
+                        "eventType": "portfolio_paper_order_approval",
+                        "runId": "run-p1-smoke",
+                    },
+                }
+            if url.endswith("/api/portfolio/paper-order-simulations/batch"):
+                self.assertEqual(payload["baseRunId"], "run-p1-smoke")
+                self.assertEqual(payload["batchId"], seed_batch_id)
+                self.assertEqual(payload["orderIds"], [seed_order_id])
+                evidence = payload["adapterPaperExecutionEvidenceByOrderId"][seed_order_id]
+                self.assertTrue(evidence["adapterPaperExecutionEvidence"]["paperFillRecorded"])
+                self.assertFalse(evidence["adapterPaperExecutionEvidence"]["liveOrderSubmitted"])
+                return {
+                    "batchSimulation": {
+                        "status": "filled",
+                        "filledCount": 1,
+                        "blockedCount": 0,
+                        "liveExecutionBlocked": True,
+                    },
+                    "simulations": [
+                        {
+                            "simulationId": "portfolio-paper-order-simulation-p2-replay",
+                            "orderId": seed_order_id,
+                            "orderState": "filled",
+                            "fillStatus": "filled",
+                            "adapterPaperExecutionId": evidence["adapterPaperExecutionId"],
+                        }
+                    ],
+                    "auditEvents": [
+                        {
+                            "eventType": "portfolio_paper_order_simulation",
+                            "runId": "run-p1-smoke",
+                        }
+                    ],
+                }
             if url.endswith("/api/research/runs/import"):
                 self.assertEqual(url, "http://clean.local/api/research/runs/import")
                 self.assertEqual(payload, source_export)
@@ -3295,22 +3441,34 @@ class QuantCoreContractTest(unittest.TestCase):
             docker_smoke.request_json = original_request_json
 
         self.assertEqual(
-            [url.removeprefix("http://aiqt.local") for url, _, _ in posts[:4]],
+            [url.removeprefix("http://aiqt.local") for url, _, _ in posts[:7]],
             [
                 "/api/cache/watchlist-refreshes",
                 "/api/p0/pipeline",
                 "/api/p0/ai-reviews",
                 "/api/p0/paper-simulations",
+                "/api/portfolio/paper-orders",
+                "/api/portfolio/paper-order-approvals",
+                "/api/portfolio/paper-order-simulations/batch",
             ],
         )
         self.assertEqual(gets[0][0], "http://aiqt.local/api/workspace")
+        self.assertLess(
+            events.index(("POST", "http://aiqt.local/api/portfolio/paper-order-simulations/batch")),
+            events.index(("GET", "http://aiqt.local/api/research/runs/run-p1-smoke/export")),
+        )
         self.assertIn("p1 workspace watchlist=3 selected=600000", summaries)
         self.assertIn("p1 queue-pipeline run=run-p1-smoke symbol=600000 refresh=cache-refresh-p1", summaries)
+        self.assertIn(
+            "p1 p2-replay-seed run=run-p1-smoke batch=portfolio-paper-batch-p2-replay filled=1 liveBlocked=True",
+            summaries,
+        )
         self.assertIn("p1 imported-export run=run-p1-smoke refresh=cache-refresh-p1 liveBlocked=True", summaries)
         self.assertEqual(report_payload["kind"], "aiqt.p1AcceptanceManifest")
         self.assertEqual(report_payload["watchlistRefreshRunId"], "cache-refresh-p1")
         self.assertEqual(report_payload["queuedSymbol"], "600000")
         self.assertEqual(report_payload["status"], "passed")
+        self.assertIn("p2-replay-seed", [check["id"] for check in report_payload["checks"]])
 
     def test_docker_smoke_builds_and_validates_p2_readiness_acceptance_manifest(self):
         docker_smoke = self._load_docker_smoke_module()
