@@ -486,8 +486,14 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const stage1P0DailyUseArchiveReviewReference = useMemo(");
     expect(appSource).toContain("const openStage1P0DailyUseArchiveReviewInAudit = useCallback");
     expect(appSource).toContain("const copyStage1P0DailyUseArchiveReviewAuditLink = useCallback");
+    expect(appSource).toContain("const copyStage1P0DailyUseArchiveReviewSummary = useCallback");
+    expect(appSource).toContain("const downloadStage1P0DailyUseArchiveReviewSummary = useCallback");
+    expect(appSource).toContain("navigator.clipboard.writeText(stage1P0DailyUseArchiveReviewReference.copyText)");
+    expect(appSource).toContain("anchor.download = stage1P0DailyUseArchiveReviewReference.fileName");
     expect(appSource).toContain("Stage 1 archive review audit query selected");
     expect(appSource).toContain("Stage 1 archive review link copy failed");
+    expect(appSource).toContain("Stage 1 archive review summary copied");
+    expect(appSource).toContain("Stage 1 archive review summary download ready");
     expect(appSource).toContain("function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string");
     expect(appSource).toContain('if (!normalizedLink || typeof window === "undefined")');
     expect(appSource).toContain("const shareUrl = new URL(normalizedLink, window.location.href);");
@@ -595,6 +601,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("archiveReviewReference={stage1P0DailyUseArchiveReviewReference}");
     expect(appSource).toContain("onOpenArchiveReview={openStage1P0DailyUseArchiveReviewInAudit}");
     expect(appSource).toContain("onCopyArchiveReviewLink={copyStage1P0DailyUseArchiveReviewAuditLink}");
+    expect(appSource).toContain("onCopyArchiveReviewSummary={copyStage1P0DailyUseArchiveReviewSummary}");
+    expect(appSource).toContain("onDownloadArchiveReviewSummary={downloadStage1P0DailyUseArchiveReviewSummary}");
     expect((appSource.match(/<Stage1P0DailyUseClosurePanel/g) ?? []).length).toBe(1);
     expect(overviewGridSource).toContain("initialStage1P0DailyUseShareDeepLinkState");
     expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link invalid"');
@@ -702,6 +710,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Focus archive");
     expect(appSource).toContain("复制归档链接");
     expect(appSource).toContain("Copy archive link");
+    expect(appSource).toContain("复制归档摘要");
+    expect(appSource).toContain("Download archive summary");
     expect(appSource).toContain('className={`stage1-p0-daily-use-archive-reference ${archiveReference.status}`}');
     expect(appSource).toContain("下载回执");
     expect(appSource).toContain("Download receipt");

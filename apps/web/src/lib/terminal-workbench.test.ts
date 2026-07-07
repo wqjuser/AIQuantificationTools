@@ -15509,11 +15509,17 @@ describe("terminal workbench model", () => {
     expect(reference).toEqual(
       expect.objectContaining({
         eventId: "stage1-daily-archive-review-9999999999999999",
+        fileName: "stage1-p0-daily-use-archive-review-current.md",
         query,
         status: "current"
       })
     );
     expect(reference.detail).toContain("matches current Stage 1 daily-use context");
+    expect(reference.copyText).toContain("# Stage 1 Daily-Use Archive Review Reference");
+    expect(reference.copyText).toContain("- Status: current");
+    expect(reference.copyText).toContain("- Event id: stage1-daily-archive-review-9999999999999999");
+    expect(reference.copyText).toContain("- Archive body SHA-256: aaaaaaaaaaaa");
+    expect(reference.copyText).toContain("- Query: stage1_daily_archive_review");
 
     const staleReference = buildStage1P0DailyUseArchiveReviewReference({
       closure: {
@@ -15529,6 +15535,22 @@ describe("terminal workbench model", () => {
     });
 
     expect(staleReference.status).toBe("stale");
+    expect(staleReference.fileName).toBe("stage1-p0-daily-use-archive-review-stale.md");
+    expect(staleReference.copyText).toContain("- Status: stale");
+    expect(staleReference.copyText).toContain("record a fresh archive");
+
+    const missingReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure,
+      invalidShareStatus,
+      ledgerRows: [],
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(missingReference.fileName).toBe("stage1-p0-daily-use-archive-review-missing.md");
+    expect(missingReference.copyText).toContain("- Status: missing");
+    expect(missingReference.copyText).toContain("- Event id: none");
+    expect(missingReference.copyText).toContain("- Query: none");
   });
 
   test("resolves the latest daily start brief review as current when it matches the brief", () => {

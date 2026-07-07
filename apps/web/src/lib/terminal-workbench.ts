@@ -948,8 +948,10 @@ export type Stage1P0DailyUseArchiveReviewReferenceStatus = "current" | "stale" |
 
 export interface Stage1P0DailyUseArchiveReviewReference {
   createdAt: string;
+  copyText: string;
   detail: string;
   eventId: string;
+  fileName: string;
   label: string;
   query: string;
   row: AuditEvidenceReportLedgerRow | null;
@@ -11311,7 +11313,7 @@ export function buildStage1P0DailyUseArchiveReviewReference({
       .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null;
 
   if (!latestRow) {
-    return {
+    return finalizeStage1P0DailyUseArchiveReviewReference({
       createdAt: "",
       detail: "No Stage 1 daily-use archive review has been recorded yet.",
       eventId: "",
@@ -11319,7 +11321,7 @@ export function buildStage1P0DailyUseArchiveReviewReference({
       query: "",
       row: null,
       status: "missing"
-    };
+    });
   }
 
   const query = buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(latestRow);
@@ -11333,7 +11335,7 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     latestRow.stage1DailyArchiveReviewReadyCount
   }/${latestRow.stage1DailyArchiveReviewTotalCount}`;
 
-  return {
+  return finalizeStage1P0DailyUseArchiveReviewReference({
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
@@ -11343,7 +11345,56 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     query,
     row: latestRow,
     status: isCurrent ? "current" : "stale"
+  });
+}
+
+function finalizeStage1P0DailyUseArchiveReviewReference(
+  reference: Omit<Stage1P0DailyUseArchiveReviewReference, "copyText" | "fileName">
+): Stage1P0DailyUseArchiveReviewReference {
+  const fileName = `stage1-p0-daily-use-archive-review-${reference.status}.md`;
+  return {
+    ...reference,
+    copyText: buildStage1P0DailyUseArchiveReviewReferenceCopyText(reference),
+    fileName
   };
+}
+
+export function buildStage1P0DailyUseArchiveReviewReferenceCopyText(
+  reference: Omit<Stage1P0DailyUseArchiveReviewReference, "copyText" | "fileName">
+): string {
+  const row = reference.row;
+  const rowStatuses =
+    row && row.stage1DailyArchiveReviewRowIds.length > 0
+      ? row.stage1DailyArchiveReviewRowIds
+          .map((id, index) => {
+            const status = row.stage1DailyArchiveReviewRowStatuses[index] || "unknown";
+            const workspace = row.stage1DailyArchiveReviewRowTargetWorkspaceIds[index] || "unknown";
+            return `${id}:${status}->${workspace}`;
+          })
+          .join(", ")
+      : "none";
+  const primaryAction = row?.stage1DailyArchiveReviewPrimaryActionLabel
+    ? `${row.stage1DailyArchiveReviewPrimaryActionLabel} -> ${row.stage1DailyArchiveReviewPrimaryTargetWorkspaceId || "unknown"}`
+    : "none";
+
+  return [
+    "# Stage 1 Daily-Use Archive Review Reference",
+    "",
+    "## Summary",
+    `- Status: ${reference.status}`,
+    `- Label: ${reference.label}`,
+    `- Detail: ${reference.detail}`,
+    `- Event id: ${reference.eventId || "none"}`,
+    `- Created at: ${reference.createdAt || "none"}`,
+    `- Query: ${reference.query || "none"}`,
+    `- Archive body SHA-256: ${row?.stage1DailyArchiveReviewArchiveBodySha256 || "none"}`,
+    `- Primary action: ${primaryAction}`,
+    `- Stage 1 rows: ${rowStatuses}`,
+    "",
+    "## Boundary",
+    "- This summary only describes the latest local Stage 1 archive review reference.",
+    "- It does not record a new audit event, refresh evidence, connect brokers, enable live trading, or submit orders."
+  ].join("\n");
 }
 
 export function buildPersonalTeamUsabilityReadinessReviewReference({

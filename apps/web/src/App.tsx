@@ -9821,6 +9821,57 @@ export function App() {
     void copyAuditReportLedgerQueryLink(stage1P0DailyUseArchiveReviewReference.query);
   }, [copyAuditReportLedgerQueryLink, stage1P0DailyUseArchiveReviewReference.query]);
 
+  const copyStage1P0DailyUseArchiveReviewSummary = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      await navigator.clipboard.writeText(stage1P0DailyUseArchiveReviewReference.copyText);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 archive review summary copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 archive review summary copy failed",
+        error: copyError instanceof Error ? copyError.message : "Archive review summary copy failed"
+      }));
+    }
+  }, [stage1P0DailyUseArchiveReviewReference.copyText]);
+
+  const downloadStage1P0DailyUseArchiveReviewSummary = useCallback(() => {
+    let objectUrl: string | null = null;
+    try {
+      objectUrl = URL.createObjectURL(
+        new Blob([stage1P0DailyUseArchiveReviewReference.copyText], { type: "text/markdown;charset=utf-8" })
+      );
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = stage1P0DailyUseArchiveReviewReference.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Stage 1 archive review summary download ready · ${stage1P0DailyUseArchiveReviewReference.fileName}`,
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 archive review summary download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Archive review summary download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [stage1P0DailyUseArchiveReviewReference.copyText, stage1P0DailyUseArchiveReviewReference.fileName]);
+
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
       return;
@@ -12392,6 +12443,8 @@ export function App() {
                 onCopyRefreshOutcome={() => void copyStage1P0DailyUseRefreshOutcome()}
                 onCopyRefreshOutcomeLink={() => void copyStage1P0DailyUseRefreshOutcomeLink()}
                 onCopyArchiveReviewLink={copyStage1P0DailyUseArchiveReviewAuditLink}
+                onCopyArchiveReviewSummary={copyStage1P0DailyUseArchiveReviewSummary}
+                onDownloadArchiveReviewSummary={downloadStage1P0DailyUseArchiveReviewSummary}
                 onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}
                 onOpenArchiveReview={openStage1P0DailyUseArchiveReviewInAudit}
                 onOpenPrimaryAction={openStage1P0DailyUsePrimaryAction}
@@ -13832,7 +13885,9 @@ function Stage1P0DailyUseClosurePanel({
   onCopyRefreshOutcome,
   onCopyRefreshOutcomeLink,
   onCopyArchiveReviewLink,
+  onCopyArchiveReviewSummary,
   onDownloadRefreshOutcome,
+  onDownloadArchiveReviewSummary,
   onOpenArchiveReview,
   onOpenPrimaryAction,
   onOpenRefreshOutcomeEntry,
@@ -13864,7 +13919,9 @@ function Stage1P0DailyUseClosurePanel({
   onCopyRefreshOutcome?: () => void;
   onCopyRefreshOutcomeLink?: () => void;
   onCopyArchiveReviewLink?: () => void;
+  onCopyArchiveReviewSummary?: () => void;
   onDownloadRefreshOutcome?: () => void;
+  onDownloadArchiveReviewSummary?: () => void;
   onOpenArchiveReview?: () => void;
   onOpenPrimaryAction: () => void;
   onOpenRefreshOutcomeEntry: (entry: Stage1P0DailyUseRefreshOutcome["entries"][number]) => void;
@@ -14025,6 +14082,14 @@ function Stage1P0DailyUseClosurePanel({
             >
               <Copy size={12} />
               {i18n.locale === "zh-CN" ? "复制归档链接" : "Copy archive link"}
+            </button>
+            <button disabled={!onCopyArchiveReviewSummary} onClick={onCopyArchiveReviewSummary} type="button">
+              <Copy size={12} />
+              {i18n.locale === "zh-CN" ? "复制归档摘要" : "Copy archive summary"}
+            </button>
+            <button disabled={!onDownloadArchiveReviewSummary} onClick={onDownloadArchiveReviewSummary} type="button">
+              <Download size={12} />
+              {i18n.locale === "zh-CN" ? "下载归档摘要" : "Download archive summary"}
             </button>
           </div>
         </div>

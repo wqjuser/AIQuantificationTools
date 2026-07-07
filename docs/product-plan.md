@@ -1115,3 +1115,5 @@ P0 完成时必须满足：
 最新更新：Audit 顶部摘要现在也能直接回读 Stage 1 归档复核。Local review bundle 计数会显示 Stage 1 archive 数量；如果当前页存在 ready 的 `stage1_daily_archive_review`，toolbar 会显示“最新归档复核 / Latest archive review”、短 hash、归档状态 label，并提供定位/复制最新归档复核查询。Stage 1 archive 成为当前页最新本地复核时，`local-review-bundle-latest` 也会复用完整的归档行级 query/title，tooltip 中包含 `Archive body SHA-256` 前缀，方便小团队确认归档正文指纹；该入口只筛选既有 Audit 台账，不重新生成归档、不记录新事件、不签名、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单。
 
 最新更新：Stage 1 归档覆盖 next-action 现在会落到精确入账控件。`record-stage1-archive-review` 的恢复链接、Audit 顶部摘要和行级打开入口会在切换到目标 workspace 后调用 `queueStage1P0DailyUseArchiveRecordActionFocus`，滚动并聚焦首页 Stage 1/P0 日常收口卡的“入账归档 / Record archive”按钮；按钮新增稳定 DOM id，方便小团队按 coverage next-action 直接完成缺失归档复核。该能力只改善前端落点，不自动生成归档、不写审计事件、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单。
+
+最新更新：Stage 1 首页现在可以导出“最新归档入账”的复核引用摘要。`Stage1P0DailyUseArchiveReviewReference` 新增稳定 `copyText` 和 `fileName`，current、stale、missing 三种状态都能生成 Markdown，写出状态、event id、Audit 查询、Archive body SHA-256、主动作和五行状态；首页“最新归档入账 / Latest archive record”区新增“复制归档摘要 / 下载归档摘要”。该摘要只解释最新归档复核引用是否匹配当前上下文，不生成新的归档、不写审计事件、不改变 local-review coverage、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单。
