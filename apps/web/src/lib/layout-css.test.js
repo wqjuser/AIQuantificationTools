@@ -711,6 +711,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("stage1P0DailyUseRefreshNextIsSharedFocus(shareDeepLinkState)");
     expect(appSource).toContain("id={stage1P0DailyUseRefreshEntryElementId(entry.id)}");
     expect(appSource).toContain("id={stage1P0DailyUseRefreshNextActionElementId}");
+    expect(appSource).toContain(
+      'const stage1P0DailyUseArchiveRecordActionElementId = "stage1-p0-daily-use-archive-record-action";'
+    );
+    expect(appSource).toContain("function focusStage1P0DailyUseArchiveRecordActionElement()");
+    expect(appSource).toContain("id={stage1P0DailyUseArchiveRecordActionElementId}");
+    expect(appSource).toContain("focusStage1P0DailyUseArchiveRecordActionElement();");
     expect(appSource).toContain("const isRefreshReceiptColdStart = stage1P0DailyUseRefreshReceiptIsColdStart(shareDeepLinkState, refreshOutcome);");
     expect(appSource).toContain('className="stage1-p0-daily-use-refresh-recovery"');
     expect(appSource).toContain('i18n.locale === "zh-CN" ? "已恢复刷新回执链接" : "Recovered refresh receipt link"');
@@ -2468,6 +2474,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Copy personal/team coverage next link");
     expect(appSource).toContain("复制本地复核启动链接");
     expect(appSource).toContain("Copy local review start link");
+    expect(appSource).toContain('state?.actionId === "record-stage1-archive-review"');
+    expect(appSource).toContain("localReviewCoverageNextActionShouldFocusStage1ArchiveEntry(");
+    expect(appSource).toContain("queueStage1P0DailyUseArchiveRecordActionFocus();");
     expect(reportLedgerPanelSource).toContain("最新本地复核");
     expect(reportLedgerPanelSource).toContain("Latest local review");
     expect(reportLedgerPanelSource).toContain("定位最新本地复核");

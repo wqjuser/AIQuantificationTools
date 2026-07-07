@@ -703,6 +703,7 @@ const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";
 const stage1P0DailyUsePrimaryActionElementId = "stage1-p0-daily-use-primary-action";
 const stage1P0DailyUseRefreshActionElementId = "stage1-p0-daily-use-refresh-action";
 const stage1P0DailyUseRefreshNextActionElementId = "stage1-p0-daily-use-refresh-next-action";
+const stage1P0DailyUseArchiveRecordActionElementId = "stage1-p0-daily-use-archive-record-action";
 
 const initialWorkspaceState: WorkspaceLoadResult = {
   workspace: buildInitialTerminalWorkspace(),
@@ -11637,6 +11638,9 @@ export function App() {
               const state = localReviewCoverageNextActionStateFromParts(workspaceId, auditReportQuery);
               updateAuditEvidenceReportQuery(auditReportQuery);
               selectProductWorkArea(workspaceId);
+              if (localReviewCoverageNextActionShouldFocusStage1ArchiveEntry(state)) {
+                queueStage1P0DailyUseArchiveRecordActionFocus();
+              }
               const normalizedSearch = buildLocalReviewCoverageNextActionUrlSearch({
                 auditReportQuery,
                 targetWorkspaceId: workspaceId
@@ -13220,6 +13224,13 @@ export function App() {
                           setAuditEvidenceReportQuery(initialLocalReviewCoverageNextActionDeepLinkState.auditReportQuery);
                           setAuditEvidenceReportOffset(0);
                           selectProductWorkArea(initialLocalReviewCoverageNextActionDeepLinkState.targetWorkspaceId);
+                          if (
+                            localReviewCoverageNextActionShouldFocusStage1ArchiveEntry(
+                              initialLocalReviewCoverageNextActionDeepLinkState
+                            )
+                          ) {
+                            queueStage1P0DailyUseArchiveRecordActionFocus();
+                          }
                           setWorkspaceState((current) => ({
                             ...current,
                             statusLabel: localReviewCoverageNextActionOpenStatusLabel(initialLocalReviewCoverageNextActionDeepLinkState),
@@ -13711,6 +13722,18 @@ function focusStage1P0DailyUseShareTargetElement(targetElementId: string): void 
   focusStage1P0DailyUseElementById(targetElementId);
 }
 
+function focusStage1P0DailyUseArchiveRecordActionElement(): void {
+  focusStage1P0DailyUseElementById(stage1P0DailyUseArchiveRecordActionElementId);
+}
+
+function queueStage1P0DailyUseArchiveRecordActionFocus(): void {
+  if (typeof window === "undefined") {
+    focusStage1P0DailyUseArchiveRecordActionElement();
+    return;
+  }
+  window.requestAnimationFrame(() => focusStage1P0DailyUseArchiveRecordActionElement());
+}
+
 function p0EvidenceDrawerSummary(
   i18n: AppI18n,
   hasSavedReport: boolean,
@@ -14092,6 +14115,7 @@ function Stage1P0DailyUseClosurePanel({
           <button
             className="stage1-p0-daily-use-download"
             disabled={isArchiveSaving || !onRecordArchive}
+            id={stage1P0DailyUseArchiveRecordActionElementId}
             onClick={onRecordArchive}
             type="button"
           >
@@ -14718,6 +14742,12 @@ function localReviewCoverageNextActionIsEmptyStart(
   state: LocalReviewCoverageNextActionDeepLinkState | null
 ): boolean {
   return state?.missingReviewKind === "empty";
+}
+
+function localReviewCoverageNextActionShouldFocusStage1ArchiveEntry(
+  state: LocalReviewCoverageNextActionDeepLinkState | null
+): boolean {
+  return state?.actionId === "record-stage1-archive-review";
 }
 
 function localReviewCoverageNextActionLoadedStatusLabel(

@@ -431,6 +431,8 @@ Stage 1/P0 日常归档入账现在也能被 Audit 台账一等回读。`stage1_
 
 Audit 顶部摘要也会显示 Stage 1 归档覆盖：本地复核集计数会列出 Stage 1 archive 数量，最新 `stage1_daily_archive_review` 会作为“最新归档复核 / Latest archive review”单独显示，并提供“定位最新归档复核 / 复制最新归档复核链接”。这些按钮只复用现有 Audit 查询，不重新生成归档、不写新审计事件、不签名、不刷新自检、不运行 Docker、不连接券商、不提交订单。
 
+当本地复核覆盖缺口指向 `record-stage1-archive-review` 时，覆盖 next-action 的“打开入口”会在切换到目标工作区后直接滚动并聚焦首页日常收口卡里的“入账归档 / Record archive”按钮。这样从 Audit 工具栏、Audit 行级入口或恢复后的 coverage next 链接进入时，操作者会落到需要手动点击的归档入账控件；该焦点动作仍只做前端导航，不自动保存归档、不重新生成日报、不运行 Docker、不构建桌面端、不连接券商、不提交订单。
+
 ## Product Boundary
 
 产品目标是全功能量化交易平台，但实盘执行必须分阶段解锁。当前版本聚焦行情、研究、回测、AI 评审、组合风控雏形和模拟交易，不连接真实 A 股券商账户。交易工作区默认 `paper_only`，自动化交易能力通过 `ExecutionAdapter` 风格的接口预留；只有在合法券商接口明确、适配器认证通过、风控审批通过、用户人工确认后，才允许接入实盘适配器。
