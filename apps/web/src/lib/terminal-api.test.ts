@@ -262,6 +262,7 @@ import {
   buildDailyOpsControlRoomReviewAuditEvent,
   buildDailyStartBriefReviewAuditEvent,
   buildPersonalTeamUsabilityReadinessReviewAuditEvent,
+  buildStage1P0DailyUseArchiveReviewAuditEvent,
   buildP0PlatformReadinessReportAuditEvent,
   buildExecutionAdapterPreLiveRunbookAuditEvent,
   buildOperatorRunbookAuditEvent,
@@ -16211,6 +16212,117 @@ describe("terminal workspace API client", () => {
     expect(event.detail).not.toContain(markdown);
   });
 
+  test("builds a Stage 1 daily-use archive audit event without storing archive markdown", async () => {
+    const archiveMarkdown = [
+      "# Stage 1/P0 Daily Use Archive",
+      "",
+      "Archive summary:",
+      "- Daily state: blocked (1/2 ready)",
+      "- Suggested file name: stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md",
+      "- Archive body SHA-256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "- Primary action: Open research entry -> research",
+      "",
+      "## Daily Handoff",
+      "The full handoff body should not be stored in audit metadata."
+    ].join("\n");
+    const expectedContentHash = await sha256TextHexForTest(archiveMarkdown);
+
+    const event = await buildStage1P0DailyUseArchiveReviewAuditEvent({
+      archive: {
+        bodySha256: {
+          algorithm: "sha256",
+          hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        contentMarkdown: archiveMarkdown,
+        fileName: "stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md"
+      },
+      closure: {
+        primaryActionId: "research-entry",
+        primaryActionLabel: "Open research entry",
+        primaryTargetWorkspaceId: "research",
+        readyCount: 1,
+        rows: [
+          {
+            id: "clean-open",
+            label: "Clean environment",
+            status: "ready",
+            targetWorkspaceId: "overview"
+          },
+          {
+            id: "research-entry",
+            label: "Research entry",
+            status: "blocked",
+            targetWorkspaceId: "research"
+          }
+        ],
+        state: "blocked",
+        totalCount: 2
+      },
+      generatedAt: "2026-07-07T08:00:00.000Z",
+      invalidShareStatus: {
+        reason: "invalid-workspace",
+        state: null,
+        status: "invalid"
+      },
+      refreshOutcome: {
+        state: "review"
+      },
+      shareDeepLinkState: {
+        focus: "research-entry",
+        kind: "daily-use",
+        targetWorkspaceId: "research"
+      }
+    });
+
+    expect(event).toMatchObject({
+      schemaVersion: 1,
+      eventType: "stage1_daily_archive_review",
+      runId: "stage1-p0-daily-use",
+      createdAt: "2026-07-07T08:00:00.000Z",
+      stage: "blocked",
+      source: "web",
+      summary: "Stage 1/P0 daily-use archive recorded",
+      metadata: {
+        archiveBodySha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        archiveBodySha256Algorithm: "sha256",
+        artifactKind: "aiqt.stage1P0DailyUseArchiveReview",
+        contentSha256: expectedContentHash,
+        contentSha256Algorithm: "sha256",
+        fileName: "stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md",
+        format: "text/markdown",
+        invalidShareReason: "invalid-workspace",
+        invalidShareStatus: "invalid",
+        liveBlockedBoundary: true,
+        liveOrderSubmitted: false,
+        liveTradingAllowed: false,
+        orderSubmissionEnabled: false,
+        primaryActionId: "research-entry",
+        primaryActionLabel: "Open research entry",
+        primaryTargetWorkspaceId: "research",
+        readyCount: 1,
+        refreshOutcomeState: "review",
+        routeExecuted: false,
+        rowIds: ["clean-open", "research-entry"],
+        rowLabels: ["Clean environment", "Research entry"],
+        rowStatuses: ["ready", "blocked"],
+        rowTargetWorkspaceIds: ["overview", "research"],
+        shareFocus: "research-entry",
+        shareKind: "daily-use",
+        shareTargetWorkspaceId: "research",
+        state: "blocked",
+        totalCount: 2
+      }
+    });
+    expect(event.eventId).toBe(`stage1-daily-archive-review-${expectedContentHash.slice(0, 16)}`);
+    expect(event.detail).toContain("stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md");
+    expect(event.detail).toContain(`sha256 ${expectedContentHash.slice(0, 12)}`);
+    expect(event.detail).toContain("body bbbbbbbbbbbb");
+    expect(event.detail).toContain("blocked 1/2 ready");
+    expect(event.detail).toContain("live blocked true");
+    expect(JSON.stringify(event.metadata)).not.toContain(archiveMarkdown);
+    expect(event.detail).not.toContain(archiveMarkdown);
+  });
+
   test("builds a P2 manifest chain preflight review audit event without storing markdown", async () => {
     const preflight = {
       kind: "aiqt.p2ManifestChainPreflightStatus",
@@ -19087,3 +19199,8 @@ describe("terminal workspace API client", () => {
     expect(result.error).toBe("offline");
   });
 });
+
+async function sha256TextHexForTest(text: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}

@@ -419,6 +419,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Stage 1 shared context opened");
     expect(appSource).toContain("const [stage1P0DailyUseRefreshOutcome, setStage1P0DailyUseRefreshOutcome]");
     expect(appSource).toContain("buildStage1P0DailyUseArchiveBundle");
+    expect(appSource).toContain("buildStage1P0DailyUseArchiveReviewAuditEvent");
     expect(appSource).toContain("const [copiedStage1P0DailyUseHandoff, setCopiedStage1P0DailyUseHandoff]");
     expect(appSource).toContain("setCopiedStage1P0DailyUseHandoff(false);");
     expect(appSource).toContain("const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink]");
@@ -427,6 +428,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("setCopiedStage1P0ShareLinkBundle(false);");
     expect(appSource).toContain("const [copiedStage1P0DailyUseArchive, setCopiedStage1P0DailyUseArchive]");
     expect(appSource).toContain("setCopiedStage1P0DailyUseArchive(false);");
+    expect(appSource).toContain("const [savingStage1P0DailyUseArchive, setSavingStage1P0DailyUseArchive]");
     expect(appSource).toContain("buildStage1P0ShareLinkBundleCopyText({");
     expect(appSource).toContain("const buildStage1P0ShareLinkBundleText = useCallback");
     expect(appSource).toContain("resolveShareUrl: buildStage1P0WorkspaceShareUrl");
@@ -468,6 +470,18 @@ describe("terminal layout css", () => {
       "statusLabel: `Stage 1 daily-use archive download ready · ${archive.fileName} · sha256 ${archive.bodySha256.hash.slice(0, 12)}`"
     );
     expect(appSource).toContain("Stage 1 daily-use archive download failed");
+    expect(appSource).toContain("const recordStage1P0DailyUseArchive = useCallback");
+    expect(appSource).toContain("setSavingStage1P0DailyUseArchive(true);");
+    expect(appSource).toContain("const auditEvent = await buildStage1P0DailyUseArchiveReviewAuditEvent({");
+    expect(appSource).toContain("archive,");
+    expect(appSource).toContain("closure: stage1P0DailyUseClosure,");
+    expect(appSource).toContain("refreshOutcome: stage1P0DailyUseRefreshOutcome,");
+    expect(appSource).toContain("shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState");
+    expect(appSource).toContain("const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);");
+    expect(appSource).toContain("mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)");
+    expect(appSource).toContain("statusLabel: `Stage 1 daily-use archive audited · ${result.event!.eventId}`");
+    expect(appSource).toContain("Stage 1 daily-use archive ledger save failed");
+    expect(appSource).toContain("setSavingStage1P0DailyUseArchive(false);");
     expect(appSource).toContain("function buildStage1P0WorkspaceShareUrl(workspaceLink: string): string");
     expect(appSource).toContain('if (!normalizedLink || typeof window === "undefined")');
     expect(appSource).toContain("const shareUrl = new URL(normalizedLink, window.location.href);");
@@ -529,7 +543,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("isShareLinkBundleCopied={copiedStage1P0ShareLinkBundle}");
     expect(appSource).toContain("onCopyShareLinkBundle={() => void copyStage1P0ShareLinkBundle()}");
     expect(appSource).toContain("isArchiveCopied={copiedStage1P0DailyUseArchive}");
+    expect(appSource).toContain("isArchiveSaving={savingStage1P0DailyUseArchive}");
     expect(appSource).toContain("onCopyArchive={() => void copyStage1P0DailyUseArchive()}");
+    expect(appSource).toContain("onRecordArchive={() => void recordStage1P0DailyUseArchive()}");
     expect(appSource).toContain("onDownloadShareLinkBundle={downloadStage1P0ShareLinkBundle}");
     expect(appSource).toContain("onDownloadArchive={downloadStage1P0DailyUseArchive}");
     expect(appSource).toContain("onDownloadHandoff={downloadStage1P0DailyUseHandoff}");
@@ -559,8 +575,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("function stage1P0DailyUseRefreshNextIsSharedFocus");
     expect(appSource).toContain("function stage1P0DailyUseRefreshReceiptIsColdStart");
     expect(appSource).toContain("isArchiveCopied?: boolean;");
+    expect(appSource).toContain("isArchiveSaving?: boolean;");
     expect(appSource).toContain("onCopyPrimaryLink?: () => void;");
     expect(appSource).toContain("onCopyArchive?: () => void;");
+    expect(appSource).toContain("onRecordArchive?: () => void;");
     expect(appSource).toContain("onCopyShareLinkBundle?: () => void;");
     expect(appSource).toContain("onDownloadArchive?: () => void;");
     expect(appSource).toContain("onDownloadShareLinkBundle?: () => void;");
@@ -581,6 +599,8 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("复制诊断");
     expect(overviewGridSource).toContain("Copy diagnostics");
     expect(overviewGridSource).toContain("onClick={() => void copyStage1P0DailyUseArchive()}");
+    expect(overviewGridSource).toContain("onClick={() => void recordStage1P0DailyUseArchive()}");
+    expect(overviewGridSource).toContain("savingStage1P0DailyUseArchive");
     expect(overviewGridSource).toContain("copiedStage1P0DailyUseArchive");
     expect(overviewGridSource).toContain("归档包已复制");
     expect(overviewGridSource).toContain("Archive copied");
@@ -589,6 +609,10 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("onClick={downloadStage1P0DailyUseArchive}");
     expect(overviewGridSource).toContain("下载归档包");
     expect(overviewGridSource).toContain("Download archive");
+    expect(overviewGridSource).toContain("入账归档");
+    expect(overviewGridSource).toContain("Record archive");
+    expect(overviewGridSource).toContain("入账中");
+    expect(overviewGridSource).toContain("Recording");
     expect(overviewGridSource).toContain('i18n.locale === "zh-CN" ? "Stage 1 分享链接不可用" : "Stage 1 share link unavailable"');
     expect(overviewGridSource).toContain('className="stage1-p0-share-deep-link"');
     expect(overviewGridSource).toContain("stage1P0DailyUseShareLinkLabel(i18n, initialStage1P0DailyUseShareDeepLinkState)");
@@ -598,6 +622,8 @@ describe("terminal layout css", () => {
     expect(overviewGridSource).toContain("stage1P0DailyUseShareTargetElementId(");
     expect(overviewGridSource).toContain("selectProductWorkArea(initialStage1P0DailyUseShareDeepLinkState.targetWorkspaceId)");
     expect(recoveredShareBannerSource).toContain("onClick={() => void copyStage1P0DailyUseArchive()}");
+    expect(recoveredShareBannerSource).toContain("onClick={() => void recordStage1P0DailyUseArchive()}");
+    expect(recoveredShareBannerSource).toContain("savingStage1P0DailyUseArchive");
     expect(recoveredShareBannerSource).toContain("copiedStage1P0DailyUseArchive");
     expect(recoveredShareBannerSource).toContain("归档包已复制");
     expect(recoveredShareBannerSource).toContain("Archive copied");
@@ -606,6 +632,8 @@ describe("terminal layout css", () => {
     expect(recoveredShareBannerSource).toContain("onClick={downloadStage1P0DailyUseArchive}");
     expect(recoveredShareBannerSource).toContain("下载归档包");
     expect(recoveredShareBannerSource).toContain("Download archive");
+    expect(recoveredShareBannerSource).toContain("入账归档");
+    expect(recoveredShareBannerSource).toContain("Record archive");
     expect(overviewGridSource).toContain("<Stage1P0DailyUseClosurePanel");
     expect(overviewGridSource.indexOf("<Stage1P0DailyUseClosurePanel")).toBeGreaterThan(
       overviewGridSource.indexOf("<P0GoldenPathJourneyPanel")
@@ -644,6 +672,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("Copy links");
     expect(appSource).toContain("复制归档包");
     expect(appSource).toContain("Copy archive");
+    expect(appSource).toContain("入账归档");
+    expect(appSource).toContain("Record archive");
     expect(appSource).toContain("下载链接包");
     expect(appSource).toContain("Download links");
     expect(appSource).toContain("下载归档包");

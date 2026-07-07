@@ -38,6 +38,7 @@ import {
   type P0PlatformReadinessSummary,
   type DailyOpsControlRoomSummary,
   type DailyStartBrief,
+  type Stage1P0DailyUseArchiveBundle,
   type PersonalTeamUsabilityReadinessSummary,
   type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
@@ -6390,6 +6391,104 @@ export async function buildDailyStartBriefReviewAuditEvent({
       liveBlockedBoundary: true,
       boundary:
         "Daily start brief review is audit evidence only; live trading remains blocked and no investment advice"
+    }
+  };
+}
+
+interface Stage1P0DailyUseArchiveReviewClosure {
+  primaryActionId?: string | null;
+  primaryActionLabel: string;
+  primaryTargetWorkspaceId: string;
+  readyCount: number;
+  rows: readonly {
+    id?: string | null;
+    label: string;
+    status: string;
+    targetWorkspaceId: string;
+  }[];
+  state: string;
+  totalCount: number;
+}
+
+interface Stage1P0DailyUseArchiveReviewShareState {
+  focus: string;
+  kind: string;
+  targetWorkspaceId: string;
+}
+
+interface Stage1P0DailyUseArchiveReviewInvalidShareStatus {
+  reason: string | null;
+  state?: unknown;
+  status: string;
+}
+
+interface Stage1P0DailyUseArchiveReviewRefreshOutcome {
+  state: string;
+}
+
+export async function buildStage1P0DailyUseArchiveReviewAuditEvent({
+  archive,
+  closure,
+  generatedAt = new Date().toISOString(),
+  invalidShareStatus = null,
+  refreshOutcome = null,
+  shareDeepLinkState = null
+}: {
+  archive: Stage1P0DailyUseArchiveBundle;
+  closure: Stage1P0DailyUseArchiveReviewClosure;
+  generatedAt?: string;
+  invalidShareStatus?: Stage1P0DailyUseArchiveReviewInvalidShareStatus | null;
+  refreshOutcome?: Stage1P0DailyUseArchiveReviewRefreshOutcome | null;
+  shareDeepLinkState?: Stage1P0DailyUseArchiveReviewShareState | null;
+}): Promise<AuditEventRecord> {
+  const contentSha256 = await sha256TextHex(archive.contentMarkdown);
+  const shortHash = contentSha256.slice(0, 16);
+  const invalidShareReason = invalidShareStatus?.status === "invalid" ? invalidShareStatus.reason : null;
+
+  return {
+    schemaVersion: 1,
+    eventId: `stage1-daily-archive-review-${shortHash}`,
+    eventType: "stage1_daily_archive_review",
+    runId: "stage1-p0-daily-use",
+    createdAt: generatedAt,
+    stage: closure.state,
+    source: "web",
+    summary: "Stage 1/P0 daily-use archive recorded",
+    detail: `${archive.fileName} · sha256 ${contentSha256.slice(0, 12)} · body ${archive.bodySha256.hash.slice(
+      0,
+      12
+    )} · ${closure.state} ${closure.readyCount}/${closure.totalCount} ready · live blocked true`,
+    metadata: {
+      archiveBodySha256: archive.bodySha256.hash,
+      archiveBodySha256Algorithm: archive.bodySha256.algorithm,
+      artifactKind: "aiqt.stage1P0DailyUseArchiveReview",
+      boundary:
+        "Stage 1/P0 daily-use archive is local review evidence only; live trading remains blocked and no investment advice",
+      contentSha256,
+      contentSha256Algorithm: "sha256",
+      fileName: archive.fileName,
+      format: "text/markdown",
+      invalidShareReason: invalidShareReason ?? "none",
+      invalidShareStatus: invalidShareStatus?.status ?? "none",
+      liveBlockedBoundary: true,
+      liveOrderSubmitted: false,
+      liveTradingAllowed: false,
+      orderSubmissionEnabled: false,
+      primaryActionId: closure.primaryActionId ?? "",
+      primaryActionLabel: closure.primaryActionLabel,
+      primaryTargetWorkspaceId: closure.primaryTargetWorkspaceId,
+      readyCount: closure.readyCount,
+      refreshOutcomeState: refreshOutcome?.state ?? "not-generated",
+      routeExecuted: false,
+      rowIds: closure.rows.map((row) => row.id ?? ""),
+      rowLabels: closure.rows.map((row) => row.label),
+      rowStatuses: closure.rows.map((row) => row.status),
+      rowTargetWorkspaceIds: closure.rows.map((row) => row.targetWorkspaceId),
+      shareFocus: shareDeepLinkState?.focus ?? "none",
+      shareKind: shareDeepLinkState?.kind ?? "none",
+      shareTargetWorkspaceId: shareDeepLinkState?.targetWorkspaceId ?? "none",
+      state: closure.state,
+      totalCount: closure.totalCount
     }
   };
 }

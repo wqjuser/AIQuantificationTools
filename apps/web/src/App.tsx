@@ -141,6 +141,7 @@ import {
   buildDailyStartBriefReviewAuditEvent,
   buildDailyOpsControlRoomReviewAuditEvent,
   buildPersonalTeamUsabilityReadinessReviewAuditEvent,
+  buildStage1P0DailyUseArchiveReviewAuditEvent,
   MarketCalendarResult,
   MarketCalendarStatus,
   MarketDataReadinessResult,
@@ -2254,6 +2255,7 @@ export function App() {
   const [savingPersonalTeamReadinessReview, setSavingPersonalTeamReadinessReview] = useState(false);
   const [savingDailyOpsControlRoomReview, setSavingDailyOpsControlRoomReview] = useState(false);
   const [savingDailyStartBriefReview, setSavingDailyStartBriefReview] = useState(false);
+  const [savingStage1P0DailyUseArchive, setSavingStage1P0DailyUseArchive] = useState(false);
   const [copiedAuditEvidenceSummary, setCopiedAuditEvidenceSummary] = useState(false);
   const [copiedAuditEvidenceReport, setCopiedAuditEvidenceReport] = useState(false);
   const [copiedResearchContextLink, setCopiedResearchContextLink] = useState(false);
@@ -9719,6 +9721,54 @@ export function App() {
     stage1P0DailyUseClosure
   ]);
 
+  const recordStage1P0DailyUseArchive = useCallback(async () => {
+    setSavingStage1P0DailyUseArchive(true);
+    try {
+      const archive = await buildStage1P0DailyUseArchiveBundle();
+      const auditEvent = await buildStage1P0DailyUseArchiveReviewAuditEvent({
+        archive,
+        closure: stage1P0DailyUseClosure,
+        generatedAt: new Date().toISOString(),
+        invalidShareStatus: initialStage1P0DailyUseShareDeepLinkStatus,
+        refreshOutcome: stage1P0DailyUseRefreshOutcome,
+        shareDeepLinkState: initialStage1P0DailyUseShareDeepLinkState
+      });
+      const result = await saveAuditEvent(quantCoreBaseUrl, auditEvent);
+      if (result.source === "core" && result.event) {
+        setAuditEvidenceReportEvents((current) =>
+          mergeAuditEvidenceReportEvent(current, result.event!).slice(0, AUDIT_REPORT_EVENTS_PAGE_SIZE)
+        );
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: `Stage 1 daily-use archive audited · ${result.event!.eventId}`,
+          error: undefined
+        }));
+        return;
+      }
+
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily-use archive ledger save failed",
+        error: result.error ?? "Stage 1 daily-use archive ledger save failed"
+      }));
+    } catch (recordError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 daily-use archive ledger save failed",
+        error: recordError instanceof Error ? recordError.message : "Audit ledger save failed"
+      }));
+    } finally {
+      setSavingStage1P0DailyUseArchive(false);
+    }
+  }, [
+    buildStage1P0DailyUseArchiveBundle,
+    initialStage1P0DailyUseShareDeepLinkState,
+    initialStage1P0DailyUseShareDeepLinkStatus,
+    quantCoreBaseUrl,
+    stage1P0DailyUseClosure,
+    stage1P0DailyUseRefreshOutcome
+  ]);
+
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
       return;
@@ -12156,6 +12206,20 @@ export function App() {
                       <Download size={12} />
                       {i18n.locale === "zh-CN" ? "下载归档包" : "Download archive"}
                     </button>
+                    <button
+                      disabled={savingStage1P0DailyUseArchive}
+                      onClick={() => void recordStage1P0DailyUseArchive()}
+                      type="button"
+                    >
+                      {savingStage1P0DailyUseArchive ? <RefreshCw className="spin" size={12} /> : <Save size={12} />}
+                      {savingStage1P0DailyUseArchive
+                        ? i18n.locale === "zh-CN"
+                          ? "入账中"
+                          : "Recording"
+                        : i18n.locale === "zh-CN"
+                          ? "入账归档"
+                          : "Record archive"}
+                    </button>
                   </div>
                 </div>
               ) : null}
@@ -12219,6 +12283,20 @@ export function App() {
                       {i18n.locale === "zh-CN" ? "下载归档包" : "Download archive"}
                     </button>
                     <button
+                      disabled={savingStage1P0DailyUseArchive}
+                      onClick={() => void recordStage1P0DailyUseArchive()}
+                      type="button"
+                    >
+                      {savingStage1P0DailyUseArchive ? <RefreshCw className="spin" size={12} /> : <Save size={12} />}
+                      {savingStage1P0DailyUseArchive
+                        ? i18n.locale === "zh-CN"
+                          ? "入账中"
+                          : "Recording"
+                        : i18n.locale === "zh-CN"
+                          ? "入账归档"
+                          : "Record archive"}
+                    </button>
+                    <button
                       onClick={() =>
                         void copyStage1P0DailyUsePrimaryLink("Stage 1 invalid share replacement link copied")
                       }
@@ -12246,10 +12324,12 @@ export function App() {
                 isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}
                 isRefreshOutcomeLinkCopied={copiedStage1P0DailyUseRefreshOutcomeLink}
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
+                isArchiveSaving={savingStage1P0DailyUseArchive}
                 onCopyHandoff={() => void copyStage1P0DailyUseHandoff()}
                 onCopyArchive={() => void copyStage1P0DailyUseArchive()}
                 onCopyPrimaryLink={() => void copyStage1P0DailyUsePrimaryLink()}
                 onCopyShareLinkBundle={() => void copyStage1P0ShareLinkBundle()}
+                onRecordArchive={() => void recordStage1P0DailyUseArchive()}
                 onDownloadArchive={downloadStage1P0DailyUseArchive}
                 onDownloadShareLinkBundle={downloadStage1P0ShareLinkBundle}
                 onDownloadHandoff={downloadStage1P0DailyUseHandoff}
@@ -13657,6 +13737,7 @@ function Stage1P0DailyUseClosurePanel({
   closure,
   i18n,
   isArchiveCopied = false,
+  isArchiveSaving = false,
   isHandoffCopied = false,
   isPrimaryLinkCopied = false,
   isShareLinkBundleCopied = false,
@@ -13678,12 +13759,14 @@ function Stage1P0DailyUseClosurePanel({
   onOpenRefreshOutcomeNextStep,
   onOpenRow,
   onRefreshDailyUse,
+  onRecordArchive,
   refreshOutcome,
   shareDeepLinkState
 }: {
   closure: Stage1P0DailyUseClosure;
   i18n: AppI18n;
   isArchiveCopied?: boolean;
+  isArchiveSaving?: boolean;
   isHandoffCopied?: boolean;
   isPrimaryLinkCopied?: boolean;
   isShareLinkBundleCopied?: boolean;
@@ -13705,6 +13788,7 @@ function Stage1P0DailyUseClosurePanel({
   onOpenRefreshOutcomeNextStep: () => void;
   onOpenRow: (row: Stage1P0DailyUseClosure["rows"][number]) => void;
   onRefreshDailyUse?: () => void;
+  onRecordArchive?: () => void;
   refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
   shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
 }) {
@@ -13915,6 +13999,21 @@ function Stage1P0DailyUseClosurePanel({
           >
             <Download size={12} />
             {i18n.locale === "zh-CN" ? "下载归档包" : "Download archive"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-download"
+            disabled={isArchiveSaving || !onRecordArchive}
+            onClick={onRecordArchive}
+            type="button"
+          >
+            {isArchiveSaving ? <RefreshCw className="spin" size={12} /> : <Save size={12} />}
+            {isArchiveSaving
+              ? i18n.locale === "zh-CN"
+                ? "入账中"
+                : "Recording"
+              : i18n.locale === "zh-CN"
+                ? "入账归档"
+                : "Record archive"}
           </button>
           <button
             className="stage1-p0-daily-use-download"

@@ -1107,3 +1107,5 @@ P0 完成时必须满足：
 最新更新：Stage 1/P0 日常归档 Markdown 现在会写出建议文件名。`buildStage1P0DailyUseArchiveCopyText` 复用 `buildStage1P0DailyUseArchiveFileName` 在 Archive summary 中输出 `Suggested file name`，App 生成归档文本时传入当前分享状态，下载成功状态栏也会回显实际文件名。该能力只提升复制/下载后的离线归档可追踪性，不改变 Markdown 正文证据来源、不刷新自检、不运行 Stage 1 命令、不写审计事件、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 日常归档现在带正文核对 hash。新增 `buildStage1P0DailyUseArchiveBundle`，会先生成不含 hash 的归档正文，计算 `Archive body SHA-256`，再把完整 hash 写回 Archive summary；首页复制或下载归档包时统一使用该 bundle，剪贴板/下载文件内容、建议文件名和状态栏短 hash 保持一致。该能力只方便个人和小团队确认“同一份归档正文”，不写审计账本、不刷新自检、不运行 Stage 1 命令、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 日常归档现在可以由用户显式入账为审计事件。`terminal-api` 新增 `buildStage1P0DailyUseArchiveReviewAuditEvent`，以前端生成的 archive bundle 为输入，记录 `stage1_daily_archive_review`，metadata 只保存文件名、完整内容 SHA-256、Archive body SHA-256、五行 closure 状态、主动作、分享链接上下文、刷新回执状态、无效分享原因和 live-blocked 安全字段，不保存 Markdown 正文。首页日常收口卡、recovered share banner 和 invalid share banner 都新增“入账归档 / Record archive”动作，保存成功后会把事件合并进 Audit 报告历史并显示 event id；该能力只做用户确认后的本地证据入账，不自动刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单，也不放宽 `liveTradingAllowed=false`。
