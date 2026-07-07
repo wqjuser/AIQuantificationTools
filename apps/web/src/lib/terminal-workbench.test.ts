@@ -188,6 +188,7 @@ import {
   buildDailyStartBriefReviewReference,
   buildDailyStartBriefMarkdown,
   buildStage1P0DailyUseArchiveReviewReference,
+  buildStage1P0DailyUseStartupSnapshot,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessSummary,
@@ -15521,6 +15522,29 @@ describe("terminal workbench model", () => {
     expect(reference.copyText).toContain("- Archive body SHA-256: aaaaaaaaaaaa");
     expect(reference.copyText).toContain("- Query: stage1_daily_archive_review");
 
+    const snapshot = buildStage1P0DailyUseStartupSnapshot({
+      archiveReference: reference,
+      closure,
+      refreshOutcome
+    });
+
+    expect(snapshot).toEqual(
+      expect.objectContaining({
+        archiveReferenceStatus: "current",
+        fileName: "stage1-p0-daily-startup-snapshot-blocked-current-review.md",
+        refreshOutcomeState: "review",
+        state: "blocked"
+      })
+    );
+    expect(snapshot.copyText).toContain("# Stage 1/P0 Daily Startup Snapshot");
+    expect(snapshot.copyText).toContain("- Archive reference: current");
+    expect(snapshot.copyText).toContain(
+      "- Archive reference event id: stage1-daily-archive-review-9999999999999999"
+    );
+    expect(snapshot.copyText).toContain("- Refresh receipt: review");
+    expect(snapshot.copyText).toContain("- research-entry: blocked -> research");
+    expect(snapshot.copyText).toContain("Live trading remains blocked.");
+
     const staleReference = buildStage1P0DailyUseArchiveReviewReference({
       closure: {
         ...closure,
@@ -15551,6 +15575,15 @@ describe("terminal workbench model", () => {
     expect(missingReference.copyText).toContain("- Status: missing");
     expect(missingReference.copyText).toContain("- Event id: none");
     expect(missingReference.copyText).toContain("- Query: none");
+
+    const missingSnapshot = buildStage1P0DailyUseStartupSnapshot({
+      archiveReference: missingReference,
+      closure
+    });
+
+    expect(missingSnapshot.fileName).toBe("stage1-p0-daily-startup-snapshot-blocked-missing-not-generated.md");
+    expect(missingSnapshot.copyText).toContain("- Archive reference: missing");
+    expect(missingSnapshot.copyText).toContain("- Refresh receipt: not-generated");
   });
 
   test("resolves the latest daily start brief review as current when it matches the brief", () => {

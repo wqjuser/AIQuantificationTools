@@ -958,6 +958,19 @@ export interface Stage1P0DailyUseArchiveReviewReference {
   status: Stage1P0DailyUseArchiveReviewReferenceStatus;
 }
 
+export interface Stage1P0DailyUseStartupSnapshot {
+  archiveReferenceStatus: Stage1P0DailyUseArchiveReviewReference["status"];
+  copyText: string;
+  fileName: string;
+  primaryActionId: Stage1P0DailyUseClosure["primaryActionId"];
+  primaryActionLabel: string;
+  primaryTargetWorkspaceId: ProductWorkAreaId;
+  readyCount: number;
+  refreshOutcomeState: Stage1P0DailyUseRefreshOutcome["state"] | "not-generated";
+  state: Stage1P0DailyUseClosure["state"];
+  totalCount: number;
+}
+
 export interface DailyStartBriefInput {
   dailyOpsControlRoom: DailyOpsControlRoomSummary;
   dailyOpsControlRoomReviewReference: DailyOpsControlRoomReviewReference;
@@ -11395,6 +11408,87 @@ export function buildStage1P0DailyUseArchiveReviewReferenceCopyText(
     "- This summary only describes the latest local Stage 1 archive review reference.",
     "- It does not record a new audit event, refresh evidence, connect brokers, enable live trading, or submit orders."
   ].join("\n");
+}
+
+export function buildStage1P0DailyUseStartupSnapshot({
+  archiveReference,
+  closure,
+  refreshOutcome = null
+}: {
+  archiveReference: Stage1P0DailyUseArchiveReviewReference;
+  closure: Stage1P0DailyUseClosure;
+  refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
+}): Stage1P0DailyUseStartupSnapshot {
+  const refreshOutcomeState = refreshOutcome?.state ?? "not-generated";
+  const fileName = [
+    "stage1",
+    "p0",
+    "daily",
+    "startup",
+    "snapshot",
+    closure.state,
+    archiveReference.status,
+    refreshOutcomeState
+  ]
+    .map(stage1P0DailyUseArchiveFileNameToken)
+    .join("-");
+  const refreshLines = refreshOutcome
+    ? [
+        `- Refresh next action: ${refreshOutcome.actionLabel} -> ${refreshOutcome.targetWorkspaceId}`,
+        `- Refresh next link: ${refreshOutcome.targetWorkspaceLink}`,
+        `- Refresh ready: ${refreshOutcome.readyCount}/${refreshOutcome.totalCount}`,
+        ...refreshOutcome.entries.map(
+          (entry) => `- ${entry.id}: ${entry.status}/${entry.source} -> ${entry.targetWorkspaceId}`
+        )
+      ]
+    : ["- Refresh next action: none"];
+
+  return {
+    archiveReferenceStatus: archiveReference.status,
+    copyText: [
+      "# Stage 1/P0 Daily Startup Snapshot",
+      "",
+      "## Summary",
+      `- Daily state: ${closure.state}`,
+      `- Ready: ${closure.readyCount}/${closure.totalCount}`,
+      `- Primary action: ${closure.primaryActionLabel} -> ${closure.primaryTargetWorkspaceId}`,
+      `- Primary action id: ${closure.primaryActionId}`,
+      `- Primary link: ${closure.primaryWorkspaceLink}`,
+      `- Archive reference: ${archiveReference.status}`,
+      `- Archive reference event id: ${archiveReference.eventId || "none"}`,
+      `- Archive reference query: ${archiveReference.query || "none"}`,
+      `- Refresh receipt: ${refreshOutcomeState}`,
+      "",
+      "## Daily Rows",
+      ...closure.rows.map(
+        (row) =>
+          `- ${row.id}: ${row.status} -> ${row.targetWorkspaceId} (${row.actionLabel}; link: ${row.workspaceLink})`
+      ),
+      "",
+      "## Archive Reference",
+      `- Label: ${archiveReference.label}`,
+      `- Detail: ${archiveReference.detail}`,
+      `- Created at: ${archiveReference.createdAt || "none"}`,
+      `- File name: ${archiveReference.fileName}`,
+      `- Archive body SHA-256: ${archiveReference.row?.stage1DailyArchiveReviewArchiveBodySha256 || "none"}`,
+      "",
+      "## Refresh Receipt",
+      ...refreshLines,
+      "",
+      "## Boundary",
+      "- This snapshot only describes the current browser/local Stage 1 startup context.",
+      "- It does not record a new audit event, refresh evidence, run Docker, build the desktop app, connect brokers, enable live trading, or submit orders.",
+      "Live trading remains blocked."
+    ].join("\n"),
+    fileName: `${fileName}.md`,
+    primaryActionId: closure.primaryActionId,
+    primaryActionLabel: closure.primaryActionLabel,
+    primaryTargetWorkspaceId: closure.primaryTargetWorkspaceId,
+    readyCount: closure.readyCount,
+    refreshOutcomeState,
+    state: closure.state,
+    totalCount: closure.totalCount
+  };
 }
 
 export function buildPersonalTeamUsabilityReadinessReviewReference({

@@ -1117,3 +1117,5 @@ P0 完成时必须满足：
 最新更新：Stage 1 归档覆盖 next-action 现在会落到精确入账控件。`record-stage1-archive-review` 的恢复链接、Audit 顶部摘要和行级打开入口会在切换到目标 workspace 后调用 `queueStage1P0DailyUseArchiveRecordActionFocus`，滚动并聚焦首页 Stage 1/P0 日常收口卡的“入账归档 / Record archive”按钮；按钮新增稳定 DOM id，方便小团队按 coverage next-action 直接完成缺失归档复核。该能力只改善前端落点，不自动生成归档、不写审计事件、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单。
 
 最新更新：Stage 1 首页现在可以导出“最新归档入账”的复核引用摘要。`Stage1P0DailyUseArchiveReviewReference` 新增稳定 `copyText` 和 `fileName`，current、stale、missing 三种状态都能生成 Markdown，写出状态、event id、Audit 查询、Archive body SHA-256、主动作和五行状态；首页“最新归档入账 / Latest archive record”区新增“复制归档摘要 / 下载归档摘要”。该摘要只解释最新归档复核引用是否匹配当前上下文，不生成新的归档、不写审计事件、不改变 local-review coverage、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单。
+
+最新更新：Stage 1/P0 首页日常收口卡现在新增“启动快照 / Daily startup snapshot”。`buildStage1P0DailyUseStartupSnapshot` 会把当前 closure、最新归档复核引用和本次刷新回执状态压成稳定 Markdown 与文件名，包含日常状态、主动作、五行 workspace、归档 event id/query、刷新 receipt 状态和 live-blocked 边界；首页 footer 新增“复制启动快照 / 下载启动快照”。该快照面向个人和小团队每天开工前的短交接，不生成新归档、不写审计事件、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单，也不放宽 `liveTradingAllowed=false`。

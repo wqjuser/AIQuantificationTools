@@ -390,6 +390,7 @@ import {
   buildDailyStartBriefReviewReference,
   buildStage1P0DailyUseClosure,
   buildStage1P0DailyUseArchiveReviewReference,
+  buildStage1P0DailyUseStartupSnapshot,
   buildPersonalTeamUsabilityReadinessReviewMarkdown,
   buildPersonalTeamUsabilityReadinessReviewReference,
   buildPersonalTeamUsabilityReadinessSummary,
@@ -508,6 +509,7 @@ import {
   DailyStartBriefReviewReference,
   Stage1P0DailyUseClosure,
   Stage1P0DailyUseArchiveReviewReference,
+  Stage1P0DailyUseStartupSnapshot,
   Stage1P0DailyUseRefreshOutcome,
   Stage1P0DailyUseShareDeepLinkState,
   Stage1P0DailyUseShareDeepLinkStatus,
@@ -2245,6 +2247,7 @@ export function App() {
   const [copiedStage1P0DailyUsePrimaryLink, setCopiedStage1P0DailyUsePrimaryLink] = useState(false);
   const [copiedStage1P0ShareLinkBundle, setCopiedStage1P0ShareLinkBundle] = useState(false);
   const [copiedStage1P0DailyUseArchive, setCopiedStage1P0DailyUseArchive] = useState(false);
+  const [copiedStage1P0DailyUseStartupSnapshot, setCopiedStage1P0DailyUseStartupSnapshot] = useState(false);
   const [copiedStage1P0InvalidShareDiagnostics, setCopiedStage1P0InvalidShareDiagnostics] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcome, setCopiedStage1P0DailyUseRefreshOutcome] = useState(false);
   const [copiedStage1P0DailyUseRefreshOutcomeLink, setCopiedStage1P0DailyUseRefreshOutcomeLink] = useState(false);
@@ -3151,6 +3154,15 @@ export function App() {
       stage1P0DailyUseRefreshOutcome
     ]
   );
+  const stage1P0DailyUseStartupSnapshot = useMemo(
+    () =>
+      buildStage1P0DailyUseStartupSnapshot({
+        archiveReference: stage1P0DailyUseArchiveReviewReference,
+        closure: stage1P0DailyUseClosure,
+        refreshOutcome: stage1P0DailyUseRefreshOutcome
+      }),
+    [stage1P0DailyUseArchiveReviewReference, stage1P0DailyUseClosure, stage1P0DailyUseRefreshOutcome]
+  );
   const p0GoldenPathJourney = useMemo(
     () =>
       buildP0GoldenPathJourney({
@@ -3239,6 +3251,10 @@ export function App() {
   useEffect(() => {
     setCopiedStage1P0DailyUseArchive(false);
   }, [stage1P0DailyUseClosure.copyText, stage1P0DailyUseRefreshOutcome?.copyText]);
+
+  useEffect(() => {
+    setCopiedStage1P0DailyUseStartupSnapshot(false);
+  }, [stage1P0DailyUseStartupSnapshot.copyText]);
 
   useEffect(() => {
     setCopiedStage1P0InvalidShareDiagnostics(false);
@@ -9872,6 +9888,59 @@ export function App() {
     }
   }, [stage1P0DailyUseArchiveReviewReference.copyText, stage1P0DailyUseArchiveReviewReference.fileName]);
 
+  const copyStage1P0DailyUseStartupSnapshot = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable");
+      }
+
+      await navigator.clipboard.writeText(stage1P0DailyUseStartupSnapshot.copyText);
+      setCopiedStage1P0DailyUseStartupSnapshot(true);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 startup snapshot copied",
+        error: undefined
+      }));
+    } catch (copyError) {
+      setCopiedStage1P0DailyUseStartupSnapshot(false);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 startup snapshot copy failed",
+        error: copyError instanceof Error ? copyError.message : "Startup snapshot copy failed"
+      }));
+    }
+  }, [stage1P0DailyUseStartupSnapshot.copyText]);
+
+  const downloadStage1P0DailyUseStartupSnapshot = useCallback(() => {
+    let objectUrl: string | null = null;
+    try {
+      objectUrl = URL.createObjectURL(
+        new Blob([stage1P0DailyUseStartupSnapshot.copyText], { type: "text/markdown;charset=utf-8" })
+      );
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = stage1P0DailyUseStartupSnapshot.fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `Stage 1 startup snapshot download ready · ${stage1P0DailyUseStartupSnapshot.fileName}`,
+        error: undefined
+      }));
+    } catch (downloadError) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Stage 1 startup snapshot download failed",
+        error: downloadError instanceof Error ? downloadError.message : "Startup snapshot download failed"
+      }));
+    } finally {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, [stage1P0DailyUseStartupSnapshot.copyText, stage1P0DailyUseStartupSnapshot.fileName]);
+
   const copyStage1P0DailyUseRefreshOutcome = useCallback(async () => {
     if (!stage1P0DailyUseRefreshOutcome) {
       return;
@@ -12428,6 +12497,7 @@ export function App() {
                 isArchiveCopied={copiedStage1P0DailyUseArchive}
                 isPrimaryLinkCopied={copiedStage1P0DailyUsePrimaryLink}
                 isShareLinkBundleCopied={copiedStage1P0ShareLinkBundle}
+                isStartupSnapshotCopied={copiedStage1P0DailyUseStartupSnapshot}
                 isRefreshOutcomeCopied={copiedStage1P0DailyUseRefreshOutcome}
                 isRefreshOutcomeLinkCopied={copiedStage1P0DailyUseRefreshOutcomeLink}
                 isRefreshingDailyUse={isGeneratingStage1DailyUse || isGeneratingStage1BootstrapPreflight || isLoadingDesktopRelease}
@@ -12445,6 +12515,8 @@ export function App() {
                 onCopyArchiveReviewLink={copyStage1P0DailyUseArchiveReviewAuditLink}
                 onCopyArchiveReviewSummary={copyStage1P0DailyUseArchiveReviewSummary}
                 onDownloadArchiveReviewSummary={downloadStage1P0DailyUseArchiveReviewSummary}
+                onCopyStartupSnapshot={copyStage1P0DailyUseStartupSnapshot}
+                onDownloadStartupSnapshot={downloadStage1P0DailyUseStartupSnapshot}
                 onDownloadRefreshOutcome={downloadStage1P0DailyUseRefreshOutcome}
                 onOpenArchiveReview={openStage1P0DailyUseArchiveReviewInAudit}
                 onOpenPrimaryAction={openStage1P0DailyUsePrimaryAction}
@@ -12454,6 +12526,7 @@ export function App() {
                 onRefreshDailyUse={() => void refreshStage1DailyUseReport()}
                 refreshOutcome={stage1P0DailyUseRefreshOutcome}
                 shareDeepLinkState={initialStage1P0DailyUseShareDeepLinkState}
+                startupSnapshot={stage1P0DailyUseStartupSnapshot}
               />
               <div className={`p0-readiness-summary ${p0PlatformReadinessSummary.state}`}>
                 <div>
@@ -13872,6 +13945,7 @@ function Stage1P0DailyUseClosurePanel({
   isHandoffCopied = false,
   isPrimaryLinkCopied = false,
   isShareLinkBundleCopied = false,
+  isStartupSnapshotCopied = false,
   isRefreshOutcomeCopied = false,
   isRefreshOutcomeLinkCopied = false,
   isRefreshingDailyUse = false,
@@ -13886,8 +13960,10 @@ function Stage1P0DailyUseClosurePanel({
   onCopyRefreshOutcomeLink,
   onCopyArchiveReviewLink,
   onCopyArchiveReviewSummary,
+  onCopyStartupSnapshot,
   onDownloadRefreshOutcome,
   onDownloadArchiveReviewSummary,
+  onDownloadStartupSnapshot,
   onOpenArchiveReview,
   onOpenPrimaryAction,
   onOpenRefreshOutcomeEntry,
@@ -13896,7 +13972,8 @@ function Stage1P0DailyUseClosurePanel({
   onRefreshDailyUse,
   onRecordArchive,
   refreshOutcome,
-  shareDeepLinkState
+  shareDeepLinkState,
+  startupSnapshot
 }: {
   archiveReviewReference?: Stage1P0DailyUseArchiveReviewReference | null;
   closure: Stage1P0DailyUseClosure;
@@ -13906,6 +13983,7 @@ function Stage1P0DailyUseClosurePanel({
   isHandoffCopied?: boolean;
   isPrimaryLinkCopied?: boolean;
   isShareLinkBundleCopied?: boolean;
+  isStartupSnapshotCopied?: boolean;
   isRefreshOutcomeCopied?: boolean;
   isRefreshOutcomeLinkCopied?: boolean;
   isRefreshingDailyUse?: boolean;
@@ -13920,8 +13998,10 @@ function Stage1P0DailyUseClosurePanel({
   onCopyRefreshOutcomeLink?: () => void;
   onCopyArchiveReviewLink?: () => void;
   onCopyArchiveReviewSummary?: () => void;
+  onCopyStartupSnapshot?: () => void;
   onDownloadRefreshOutcome?: () => void;
   onDownloadArchiveReviewSummary?: () => void;
+  onDownloadStartupSnapshot?: () => void;
   onOpenArchiveReview?: () => void;
   onOpenPrimaryAction: () => void;
   onOpenRefreshOutcomeEntry: (entry: Stage1P0DailyUseRefreshOutcome["entries"][number]) => void;
@@ -13931,6 +14011,7 @@ function Stage1P0DailyUseClosurePanel({
   onRecordArchive?: () => void;
   refreshOutcome?: Stage1P0DailyUseRefreshOutcome | null;
   shareDeepLinkState?: Stage1P0DailyUseShareDeepLinkState | null;
+  startupSnapshot?: Stage1P0DailyUseStartupSnapshot | null;
 }) {
   const primaryRow = stage1P0DailyUseClosurePrimaryRow(closure);
   const isPrimarySharedFocus = stage1P0DailyUsePrimaryIsSharedFocus(shareDeepLinkState);
@@ -14118,6 +14199,21 @@ function Stage1P0DailyUseClosurePanel({
           </button>
           <button
             className="stage1-p0-daily-use-copy"
+            disabled={!startupSnapshot || !onCopyStartupSnapshot}
+            onClick={onCopyStartupSnapshot}
+            type="button"
+          >
+            <Copy size={12} />
+            {isStartupSnapshotCopied
+              ? i18n.locale === "zh-CN"
+                ? "启动快照已复制"
+                : "Startup copied"
+              : i18n.locale === "zh-CN"
+                ? "复制启动快照"
+                : "Copy startup snapshot"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-copy"
             disabled={!onCopyArchive}
             onClick={onCopyArchive}
             type="button"
@@ -14201,6 +14297,15 @@ function Stage1P0DailyUseClosurePanel({
           >
             <Download size={12} />
             {i18n.locale === "zh-CN" ? "下载日常手册" : "Download handoff"}
+          </button>
+          <button
+            className="stage1-p0-daily-use-download"
+            disabled={!startupSnapshot || !onDownloadStartupSnapshot}
+            onClick={onDownloadStartupSnapshot}
+            type="button"
+          >
+            <Download size={12} />
+            {i18n.locale === "zh-CN" ? "下载启动快照" : "Download startup snapshot"}
           </button>
           <button
             aria-current={isRefreshReceiptColdStart ? "true" : undefined}
