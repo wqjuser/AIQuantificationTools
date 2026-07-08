@@ -1119,3 +1119,5 @@ P0 完成时必须满足：
 最新更新：Stage 1 首页现在可以导出“最新归档入账”的复核引用摘要。`Stage1P0DailyUseArchiveReviewReference` 新增稳定 `copyText` 和 `fileName`，current、stale、missing 三种状态都能生成 Markdown，写出状态、event id、Audit 查询、Archive body SHA-256、主动作和五行状态；首页“最新归档入账 / Latest archive record”区新增“复制归档摘要 / 下载归档摘要”。该摘要只解释最新归档复核引用是否匹配当前上下文，不生成新的归档、不写审计事件、不改变 local-review coverage、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单。
 
 最新更新：Stage 1/P0 首页日常收口卡现在新增“启动快照 / Daily startup snapshot”。`buildStage1P0DailyUseStartupSnapshot` 会把当前 closure、最新归档复核引用和本次刷新回执状态压成稳定 Markdown 与文件名，包含日常状态、主动作、五行 workspace、归档 event id/query、刷新 receipt 状态和 live-blocked 边界；首页 footer 新增“复制启动快照 / 下载启动快照”。该快照面向个人和小团队每天开工前的短交接，不生成新归档、不写审计事件、不刷新自检、不运行 Docker、不构建桌面端、不连接券商、不提交订单，也不放宽 `liveTradingAllowed=false`。
+
+最新更新：Stage 1 bootstrap preflight 现在把 P2 manifest 链路预检纳入每日启动体检。`quant_core.stage1_bootstrap_preflight` 会读取 `data/p2-chain-preflight.json`，在七项检查中新增 `p2-manifest-chain`，并要求 `package.json` 暴露 `docker:smoke:p2:preflight`；P2 chain 缺失或上游 manifest 链路未齐时会进入 review 并给出 `docker:smoke:p2:preflight` 或 P2 链路自身的下一步命令，P2 chain 无效或安全边界异常时才阻断 Stage 1 预检。该能力只把预实盘证据链状态带入日常开箱路径，不自动运行 Docker、不补造 P2 manifest、不写审计事件、不连接券商、不提交订单，也不放宽 `liveTradingAllowed=false`。

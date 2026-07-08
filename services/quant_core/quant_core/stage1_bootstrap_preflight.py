@@ -9,6 +9,10 @@ from typing import Any
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
+from quant_core.p2_manifest_chain_preflight import (
+    DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH,
+    load_p2_manifest_chain_preflight_status,
+)
 from quant_core.stage1_daily_use import DEFAULT_STAGE1_DAILY_USE_REPORT_PATH, load_stage1_daily_use_status
 
 
@@ -17,6 +21,7 @@ STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_IDS = [
     "package-scripts",
     "p0-acceptance",
     "p1-acceptance",
+    "p2-manifest-chain",
     "desktop-release",
     "stage1-daily-use",
     "live-blocked-boundary",
@@ -29,11 +34,13 @@ REQUIRED_PACKAGE_SCRIPTS = {
     "desktop:release:record",
     "docker:smoke:p0:validate",
     "docker:smoke:p1:validate",
+    "docker:smoke:p2:preflight",
 }
 NEXT_ACTIONS = {
     "package-scripts": ("repair-package-scripts", "npm install"),
     "p0-acceptance": ("run-p0-acceptance", "npm run docker:smoke:p0 -- --no-build --down"),
     "p1-acceptance": ("run-p1-acceptance", "npm run docker:smoke:p1 -- --no-build --down"),
+    "p2-manifest-chain": ("review-p2-manifest-chain", "npm run docker:smoke:p2:preflight"),
     "desktop-release": ("run-desktop-release", "npm run desktop:release"),
     "stage1-daily-use": ("refresh-stage1-daily-use", "npm run stage1:daily"),
     "live-blocked-boundary": ("review-live-blocked-boundary", "npm run stage1:preflight:validate"),
@@ -44,6 +51,9 @@ def build_stage1_bootstrap_preflight(*, project_root: Path, generated_at: str | 
     root = project_root.resolve()
     p0_status = load_p0_acceptance_status(_resolve_under_root(root, DEFAULT_P0_ACCEPTANCE_REPORT_PATH))
     p1_status = load_p1_acceptance_status(_resolve_under_root(root, DEFAULT_P1_ACCEPTANCE_REPORT_PATH))
+    p2_manifest_chain_status = load_p2_manifest_chain_preflight_status(
+        _resolve_under_root(root, DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH)
+    )
     desktop_status = load_desktop_release_status(_resolve_under_root(root, DEFAULT_DESKTOP_RELEASE_REPORT_PATH))
     daily_use_status = load_stage1_daily_use_status(_resolve_under_root(root, DEFAULT_STAGE1_DAILY_USE_REPORT_PATH))
 
@@ -63,6 +73,7 @@ def build_stage1_bootstrap_preflight(*, project_root: Path, generated_at: str | 
             ready_status="passed",
             source_path=str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
         ),
+        _p2_manifest_chain_check(p2_manifest_chain_status),
         _manifest_check(
             check_id="desktop-release",
             label="Desktop release",
@@ -71,7 +82,7 @@ def build_stage1_bootstrap_preflight(*, project_root: Path, generated_at: str | 
             source_path=str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
         ),
         _daily_use_check(daily_use_status),
-        _live_blocked_boundary_check([p0_status, p1_status, desktop_status, daily_use_status]),
+        _live_blocked_boundary_check([p0_status, p1_status, p2_manifest_chain_status, desktop_status, daily_use_status]),
     ]
     status = _overall_status(checks)
     ready_count = sum(1 for check in checks if check["status"] == "ready")
@@ -99,6 +110,7 @@ def build_stage1_bootstrap_preflight(*, project_root: Path, generated_at: str | 
         "sourcePaths": {
             "p0Acceptance": str(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
             "p1Acceptance": str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+            "p2ManifestChainPreflight": str(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
             "desktopRelease": str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
             "stage1DailyUse": str(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
         },
@@ -272,6 +284,7 @@ def _stage1_bootstrap_preflight_stale_source_paths(report: dict[str, Any], repor
         "package.json",
         str(source_paths.get("p0Acceptance") or DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
         str(source_paths.get("p1Acceptance") or DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+        str(source_paths.get("p2ManifestChainPreflight") or DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
         str(source_paths.get("desktopRelease") or DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
         str(source_paths.get("stage1DailyUse") or DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
     ]
@@ -297,6 +310,9 @@ def _stage1_bootstrap_preflight_stale_check_ids(report: dict[str, Any], stale_so
         "package.json": {"package-scripts"},
         str(source_paths.get("p0Acceptance") or DEFAULT_P0_ACCEPTANCE_REPORT_PATH): {"p0-acceptance"},
         str(source_paths.get("p1Acceptance") or DEFAULT_P1_ACCEPTANCE_REPORT_PATH): {"p1-acceptance"},
+        str(source_paths.get("p2ManifestChainPreflight") or DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH): {
+            "p2-manifest-chain"
+        },
         str(source_paths.get("desktopRelease") or DEFAULT_DESKTOP_RELEASE_REPORT_PATH): {"desktop-release"},
         str(source_paths.get("stage1DailyUse") or DEFAULT_STAGE1_DAILY_USE_REPORT_PATH): {"stage1-daily-use"},
     }
@@ -354,6 +370,7 @@ def _stage1_bootstrap_preflight_status(
         "sourcePaths": {
             "p0Acceptance": str(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
             "p1Acceptance": str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+            "p2ManifestChainPreflight": str(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
             "desktopRelease": str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
             "stage1DailyUse": str(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
         },
@@ -385,7 +402,7 @@ def _package_scripts_check(project_root: Path) -> dict[str, Any]:
         check_id="package-scripts",
         label="Package scripts",
         status="ready",
-        summary="Required Stage 1 daily, desktop, and acceptance validation scripts are present.",
+        summary="Required Stage 1 daily, desktop, acceptance, and P2 chain scripts are present.",
         recommended_command="npm run stage1:preflight:validate",
         source_path="package.json",
     )
@@ -407,6 +424,39 @@ def _manifest_check(
         summary=str(status_payload.get("summary") or status_payload.get("reason") or f"{label} status is unavailable."),
         recommended_command=NEXT_ACTIONS[check_id][1] if status == "blocked" else "npm run stage1:preflight:validate",
         source_path=source_path,
+    )
+
+
+def _p2_manifest_chain_check(status_payload: dict[str, Any]) -> dict[str, Any]:
+    report_status = str(status_payload.get("status") or "")
+    is_ready = (
+        report_status == "ready"
+        and status_payload.get("ready") is True
+        and status_payload.get("validStageCount") == status_payload.get("totalStageCount")
+    )
+    if is_ready:
+        status = "ready"
+        recommended_command = "npm run stage1:preflight:validate"
+    elif report_status == "missing":
+        status = "review"
+        recommended_command = NEXT_ACTIONS["p2-manifest-chain"][1]
+    elif report_status == "blocked":
+        status = "review"
+        recommended_command = str(status_payload.get("nextCommand") or "").strip() or NEXT_ACTIONS["p2-manifest-chain"][1]
+    else:
+        status = "blocked"
+        recommended_command = NEXT_ACTIONS["p2-manifest-chain"][1]
+    return _check(
+        check_id="p2-manifest-chain",
+        label="P2 manifest chain",
+        status=status,
+        summary=str(
+            status_payload.get("summary")
+            or status_payload.get("reason")
+            or "P2 manifest chain preflight status is unavailable."
+        ),
+        recommended_command=recommended_command,
+        source_path=str(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
     )
 
 
@@ -457,6 +507,8 @@ def _live_blocked_boundary_check(status_payloads: list[dict[str, Any]]) -> dict[
 def _payload_has_recorded_evidence(payload: dict[str, Any]) -> bool:
     if payload.get("manifest") is not None:
         return True
+    if payload.get("kind") == "aiqt.p2ManifestChainPreflightStatus":
+        return str(payload.get("status") or "") != "missing" and bool(payload.get("sourcePath"))
     return payload.get("kind") == "aiqt.stage1DailyUseReport" and payload.get("generatedAt") is not None
 
 
@@ -494,7 +546,8 @@ def _overall_status(checks: list[dict[str, Any]]) -> str:
 def _next_action(checks: list[dict[str, Any]]) -> tuple[str, str]:
     for check in checks:
         if check["status"] != "ready":
-            return NEXT_ACTIONS[check["id"]]
+            action, default_command = NEXT_ACTIONS[check["id"]]
+            return action, str(check.get("recommendedCommand") or default_command)
     return "open-daily-workbench", "npm run dev"
 
 
@@ -524,6 +577,7 @@ def _default_check_label(check_id: str) -> str:
         "package-scripts": "Package scripts",
         "p0-acceptance": "P0 acceptance",
         "p1-acceptance": "P1 acceptance",
+        "p2-manifest-chain": "P2 manifest chain",
         "desktop-release": "Desktop release",
         "stage1-daily-use": "Stage 1 daily use",
         "live-blocked-boundary": "Live-blocked boundary",
@@ -535,6 +589,7 @@ def _default_check_source_path(check_id: str) -> str:
         "package-scripts": "package.json",
         "p0-acceptance": str(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
         "p1-acceptance": str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+        "p2-manifest-chain": str(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
         "desktop-release": str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
         "stage1-daily-use": str(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
         "live-blocked-boundary": "data",

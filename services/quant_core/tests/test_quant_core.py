@@ -1701,6 +1701,10 @@ class QuantCoreContractTest(unittest.TestCase):
                 json.dumps(self._sample_desktop_release_manifest()),
                 encoding="utf-8",
             )
+            (data_dir / "p2-chain-preflight.json").write_text(
+                json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")),
+                encoding="utf-8",
+            )
             (project_root / "package.json").write_text(
                 json.dumps(
                     {
@@ -1711,6 +1715,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
                             "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
                             "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
                         }
                     }
                 ),
@@ -1740,14 +1745,15 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["preflight"]["kind"], "aiqt.stage1BootstrapPreflight")
         self.assertEqual(payload["preflight"]["status"], "ready")
-        self.assertEqual(payload["preflight"]["readyCount"], 6)
-        self.assertEqual(payload["preflight"]["totalCount"], 6)
+        self.assertEqual(payload["preflight"]["readyCount"], 7)
+        self.assertEqual(payload["preflight"]["totalCount"], 7)
         self.assertEqual(
             [check["id"] for check in payload["preflight"]["checks"]],
             [
                 "package-scripts",
                 "p0-acceptance",
                 "p1-acceptance",
+                "p2-manifest-chain",
                 "desktop-release",
                 "stage1-daily-use",
                 "live-blocked-boundary",
@@ -1774,9 +1780,11 @@ class QuantCoreContractTest(unittest.TestCase):
             desktop_path = data_dir / "desktop-release.json"
             daily_use_path = data_dir / "stage1-daily-use.json"
             preflight_path = data_dir / "stage1-bootstrap-preflight.json"
+            p2_chain_path = data_dir / "p2-chain-preflight.json"
             p0_path.write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
             p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
             desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            p2_chain_path.write_text(json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")), encoding="utf-8")
             (project_root / "package.json").write_text(
                 json.dumps(
                     {
@@ -1787,6 +1795,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
                             "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
                             "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
                         }
                     }
                 ),
@@ -1822,8 +1831,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["status"], "preflight_generated")
         self.assertEqual(payload["preflight"]["kind"], "aiqt.stage1BootstrapPreflight")
         self.assertEqual(payload["preflight"]["status"], "ready")
-        self.assertEqual(payload["preflight"]["readyCount"], 6)
-        self.assertEqual(payload["preflight"]["totalCount"], 6)
+        self.assertEqual(payload["preflight"]["readyCount"], 7)
+        self.assertEqual(payload["preflight"]["totalCount"], 7)
         self.assertEqual(written_preflight["status"], "ready")
         self.assertEqual(written_preflight["nextAction"], "open-daily-workbench")
         self.assertTrue(payload["paperOnly"])
@@ -1857,6 +1866,10 @@ class QuantCoreContractTest(unittest.TestCase):
                 json.dumps(self._sample_desktop_release_manifest()),
                 encoding="utf-8",
             )
+            (data_dir / "p2-chain-preflight.json").write_text(
+                json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")),
+                encoding="utf-8",
+            )
             package_json = {
                 "scripts": {
                     "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
@@ -1865,6 +1878,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
                     "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
                     "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                    "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
                 }
             }
             (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
@@ -1888,6 +1902,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "package-scripts",
                 "p0-acceptance",
                 "p1-acceptance",
+                "p2-manifest-chain",
                 "desktop-release",
                 "stage1-daily-use",
                 "live-blocked-boundary",
@@ -1896,6 +1911,54 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(preflight["liveTradingAllowed"])
         self.assertTrue(preflight["liveBlockedBoundary"])
         self.assertIn("stage1 bootstrap preflight status=ready", validate_stage1_bootstrap_preflight(preflight))
+
+    def test_stage1_bootstrap_preflight_reviews_missing_p2_manifest_chain(self):
+        import json
+
+        from quant_core.stage1_bootstrap_preflight import build_stage1_bootstrap_preflight
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "p1-acceptance.json").write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            (data_dir / "desktop-release.json").write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            package_json = {
+                "scripts": {
+                    "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+                    "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+                    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+                    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+                    "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+                    "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                    "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
+                }
+            }
+            (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
+            write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
+
+            preflight = build_stage1_bootstrap_preflight(
+                project_root=project_root,
+                generated_at="2026-07-09T10:00:00+00:00",
+            )
+
+        p2_chain_check = next(check for check in preflight["checks"] if check["id"] == "p2-manifest-chain")
+        self.assertEqual(preflight["status"], "review")
+        self.assertEqual(preflight["nextAction"], "review-p2-manifest-chain")
+        self.assertEqual(preflight["recommendedCommand"], "npm run docker:smoke:p2:preflight")
+        self.assertEqual(preflight["readyCount"], 6)
+        self.assertEqual(preflight["reviewCount"], 1)
+        self.assertEqual(preflight["blockedCount"], 0)
+        self.assertEqual(preflight["totalCount"], 7)
+        self.assertEqual(preflight["reviewIds"], ["p2-manifest-chain"])
+        self.assertEqual(preflight["blockerIds"], [])
+        self.assertEqual(p2_chain_check["status"], "review")
+        self.assertEqual(p2_chain_check["sourcePath"], "data/p2-chain-preflight.json")
+        self.assertIn("P2 manifest chain preflight is missing.", p2_chain_check["summary"])
+        self.assertFalse(preflight["liveTradingAllowed"])
+        self.assertTrue(preflight["liveBlockedBoundary"])
 
     def test_stage1_bootstrap_preflight_blocks_missing_p0_first(self):
         import json
@@ -1912,6 +1975,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
                     "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
                     "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                    "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
                 }
             }
             (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
@@ -1926,7 +1990,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(preflight["nextAction"], "run-p0-acceptance")
         self.assertEqual(preflight["recommendedCommand"], "npm run docker:smoke:p0 -- --no-build --down")
         self.assertEqual(preflight["readyCount"], 2)
-        self.assertEqual(preflight["totalCount"], 6)
+        self.assertEqual(preflight["totalCount"], 7)
         self.assertFalse(preflight["liveTradingAllowed"])
         self.assertTrue(preflight["liveBlockedBoundary"])
 
@@ -1948,10 +2012,12 @@ class QuantCoreContractTest(unittest.TestCase):
             p1_path = data_dir / "p1-acceptance.json"
             desktop_path = data_dir / "desktop-release.json"
             daily_use_path = data_dir / "stage1-daily-use.json"
+            p2_chain_path = data_dir / "p2-chain-preflight.json"
             preflight_path = data_dir / "stage1-bootstrap-preflight.json"
             p0_path.write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
             p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
             desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            p2_chain_path.write_text(json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")), encoding="utf-8")
             (project_root / "package.json").write_text(
                 json.dumps(
                     {
@@ -1962,6 +2028,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
                             "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
                             "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
                         }
                     }
                 ),
@@ -1975,7 +2042,7 @@ class QuantCoreContractTest(unittest.TestCase):
             status = load_stage1_bootstrap_preflight_status(preflight_path)
 
         self.assertEqual(status["status"], "review")
-        self.assertEqual(status["readyCount"], 5)
+        self.assertEqual(status["readyCount"], 6)
         self.assertEqual(status["reviewCount"], 1)
         self.assertEqual(status["blockedCount"], 0)
         self.assertFalse(status["ready"])
@@ -2009,6 +2076,10 @@ class QuantCoreContractTest(unittest.TestCase):
             (data_dir / "p0-acceptance.json").write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
             (data_dir / "p1-acceptance.json").write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
             (data_dir / "desktop-release.json").write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
+            (data_dir / "p2-chain-preflight.json").write_text(
+                json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")),
+                encoding="utf-8",
+            )
             package_path.write_text(
                 json.dumps(
                     {
@@ -2019,6 +2090,7 @@ class QuantCoreContractTest(unittest.TestCase):
                             "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
                             "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
                             "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
                         }
                     }
                 ),
@@ -2033,7 +2105,7 @@ class QuantCoreContractTest(unittest.TestCase):
             status = load_stage1_bootstrap_preflight_status(preflight_path)
 
         self.assertEqual(status["status"], "review")
-        self.assertEqual(status["readyCount"], 5)
+        self.assertEqual(status["readyCount"], 6)
         self.assertEqual(status["reviewIds"], ["package-scripts"])
         self.assertEqual(status["staleSourcePaths"], ["package.json"])
         package_check = status["checks"][0]
