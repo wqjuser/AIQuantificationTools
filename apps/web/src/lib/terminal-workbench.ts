@@ -2852,6 +2852,10 @@ export interface AuditEvidenceReportLedgerRow {
   stage1DailyArchiveReviewInvalidShareStatus: string;
   stage1DailyArchiveReviewInvalidShareReason: string;
   stage1DailyArchiveReviewArchiveBodySha256: string;
+  stage1DailyArchiveReviewBootstrapPreflightCheckIds: string[];
+  stage1DailyArchiveReviewBootstrapPreflightCheckStatuses: string[];
+  stage1DailyArchiveReviewBootstrapPreflightCheckSourcePaths: string[];
+  stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath: string;
   localReviewBundleContextLabel: string;
   localReviewBundleContextQuery: string;
   localReviewBundleContextTitle: string;
@@ -11422,6 +11426,15 @@ export function buildStage1P0DailyUseArchiveReviewReferenceCopyText(
   const primaryAction = row?.stage1DailyArchiveReviewPrimaryActionLabel
     ? `${row.stage1DailyArchiveReviewPrimaryActionLabel} -> ${row.stage1DailyArchiveReviewPrimaryTargetWorkspaceId || "unknown"}`
     : "none";
+  const bootstrapChecks =
+    row && row.stage1DailyArchiveReviewBootstrapPreflightCheckIds.length > 0
+      ? row.stage1DailyArchiveReviewBootstrapPreflightCheckIds
+          .map((id, index) => {
+            const status = row.stage1DailyArchiveReviewBootstrapPreflightCheckStatuses[index] || "unknown";
+            return `${id}:${status}`;
+          })
+          .join(", ")
+      : "none";
 
   return [
     "# Stage 1 Daily-Use Archive Review Reference",
@@ -11434,6 +11447,10 @@ export function buildStage1P0DailyUseArchiveReviewReferenceCopyText(
     `- Created at: ${reference.createdAt || "none"}`,
     `- Query: ${reference.query || "none"}`,
     `- Archive body SHA-256: ${row?.stage1DailyArchiveReviewArchiveBodySha256 || "none"}`,
+    `- Bootstrap P2 chain source: ${
+      row?.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath || "none"
+    }`,
+    `- Bootstrap checks: ${bootstrapChecks}`,
     `- Primary action: ${primaryAction}`,
     `- Stage 1 rows: ${rowStatuses}`,
     "",
@@ -11682,6 +11699,7 @@ function stage1DailyArchiveReviewRowMatchesContext(
 ): boolean {
   const invalidShareStatusValue = invalidShareStatus?.status ?? "none";
   const invalidShareReason = invalidShareStatus?.status === "invalid" ? invalidShareStatus.reason : "none";
+  const bootstrapChecks = closure.bootstrapPreflightChecks ?? [];
   return (
     row.reportKind === "stage1_daily_archive_review" &&
     row.status === "ready" &&
@@ -11697,6 +11715,20 @@ function stage1DailyArchiveReviewRowMatchesContext(
     row.stage1DailyArchiveReviewShareTargetWorkspaceId === (shareDeepLinkState?.targetWorkspaceId ?? "none") &&
     row.stage1DailyArchiveReviewInvalidShareStatus === invalidShareStatusValue &&
     row.stage1DailyArchiveReviewInvalidShareReason === invalidShareReason &&
+    row.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath ===
+      (closure.bootstrapPreflightSourcePaths?.p2ManifestChainPreflight ?? "") &&
+    sameAuditStringList(
+      row.stage1DailyArchiveReviewBootstrapPreflightCheckIds,
+      bootstrapChecks.map((check) => check.id)
+    ) &&
+    sameAuditStringList(
+      row.stage1DailyArchiveReviewBootstrapPreflightCheckStatuses,
+      bootstrapChecks.map((check) => check.status)
+    ) &&
+    sameAuditStringList(
+      row.stage1DailyArchiveReviewBootstrapPreflightCheckSourcePaths,
+      bootstrapChecks.map((check) => check.sourcePath)
+    ) &&
     sameAuditStringList(
       row.stage1DailyArchiveReviewRowIds,
       closure.rows.map((item) => item.id)
@@ -16844,7 +16876,10 @@ export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(
   const archiveBodyHash = row.stage1DailyArchiveReviewArchiveBodySha256
     ? ` · Archive body SHA-256 ${row.stage1DailyArchiveReviewArchiveBodySha256.slice(0, 12)}`
     : "";
-  return `Stage 1 archive review: ${label} · primary ${primaryAction} · rows ${rowStatuses} · share ${shareContext}${archiveBodyHash}`;
+  const p2ChainSource = row.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath
+    ? ` · P2 chain ${row.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath}`
+    : "";
+  return `Stage 1 archive review: ${label} · primary ${primaryAction} · rows ${rowStatuses} · share ${shareContext}${p2ChainSource}${archiveBodyHash}`;
 }
 
 export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(
@@ -16873,6 +16908,12 @@ export function buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(
     "invalid-share",
     row.stage1DailyArchiveReviewInvalidShareStatus,
     row.stage1DailyArchiveReviewInvalidShareReason,
+    "bootstrap-preflight",
+    row.stage1DailyArchiveReviewBootstrapPreflightCheckIds.join(" "),
+    row.stage1DailyArchiveReviewBootstrapPreflightCheckStatuses.join(" "),
+    row.stage1DailyArchiveReviewBootstrapPreflightCheckSourcePaths.join(" "),
+    "p2-chain",
+    row.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath,
     row.stage1DailyArchiveReviewRowIds.join(" "),
     row.stage1DailyArchiveReviewRowStatuses.join(" "),
     row.stage1DailyArchiveReviewRowTargetWorkspaceIds.join(" ")
@@ -19370,6 +19411,22 @@ export function buildAuditEvidenceReportLedgerRows(
         reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "invalidShareReason") : "";
       const stage1DailyArchiveReviewArchiveBodySha256 =
         reportKind === "stage1_daily_archive_review" ? auditReportLedgerMetadataText(event.metadata, "archiveBodySha256") : "";
+      const stage1DailyArchiveReviewBootstrapPreflightCheckIds =
+        reportKind === "stage1_daily_archive_review"
+          ? auditReportLedgerMetadataStringList(event.metadata, "bootstrapPreflightCheckIds")
+          : [];
+      const stage1DailyArchiveReviewBootstrapPreflightCheckStatuses =
+        reportKind === "stage1_daily_archive_review"
+          ? auditReportLedgerMetadataStringList(event.metadata, "bootstrapPreflightCheckStatuses")
+          : [];
+      const stage1DailyArchiveReviewBootstrapPreflightCheckSourcePaths =
+        reportKind === "stage1_daily_archive_review"
+          ? auditReportLedgerMetadataStringList(event.metadata, "bootstrapPreflightCheckSourcePaths")
+          : [];
+      const stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath =
+        reportKind === "stage1_daily_archive_review"
+          ? auditReportLedgerMetadataText(event.metadata, "bootstrapPreflightP2ManifestChainPreflightSourcePath")
+          : "";
       const stage1DailyArchiveReviewSearchText =
         reportKind === "stage1_daily_archive_review"
           ? [
@@ -19391,6 +19448,12 @@ export function buildAuditEvidenceReportLedgerRows(
               stage1DailyArchiveReviewInvalidShareStatus,
               stage1DailyArchiveReviewInvalidShareReason,
               stage1DailyArchiveReviewArchiveBodySha256,
+              "bootstrap-preflight",
+              stage1DailyArchiveReviewBootstrapPreflightCheckIds.join(" "),
+              stage1DailyArchiveReviewBootstrapPreflightCheckStatuses.join(" "),
+              stage1DailyArchiveReviewBootstrapPreflightCheckSourcePaths.join(" "),
+              "p2-chain",
+              stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath,
               stage1DailyArchiveReviewRowIds.join(" "),
               stage1DailyArchiveReviewRowLabels.join(" "),
               stage1DailyArchiveReviewRowStatuses.join(" "),
@@ -19652,6 +19715,10 @@ export function buildAuditEvidenceReportLedgerRows(
         stage1DailyArchiveReviewInvalidShareStatus,
         stage1DailyArchiveReviewInvalidShareReason,
         stage1DailyArchiveReviewArchiveBodySha256,
+        stage1DailyArchiveReviewBootstrapPreflightCheckIds,
+        stage1DailyArchiveReviewBootstrapPreflightCheckStatuses,
+        stage1DailyArchiveReviewBootstrapPreflightCheckSourcePaths,
+        stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath,
         localReviewBundleContextLabel,
         localReviewBundleContextQuery,
         localReviewBundleContextTitle,

@@ -15481,6 +15481,10 @@ describe("terminal workbench model", () => {
           archiveBodySha256: bodyHash,
           archiveBodySha256Algorithm: "sha256",
           artifactKind: "aiqt.stage1P0DailyUseArchiveReview",
+          bootstrapPreflightCheckIds: ["p2-manifest-chain"],
+          bootstrapPreflightCheckSourcePaths: ["data/p2-chain-preflight.json"],
+          bootstrapPreflightCheckStatuses: ["ready"],
+          bootstrapPreflightP2ManifestChainPreflightSourcePath: "data/p2-chain-preflight.json",
           contentSha256: reviewHash,
           contentSha256Algorithm: "sha256",
           fileName: "stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md",
@@ -15519,6 +15523,11 @@ describe("terminal workbench model", () => {
         packageTotal: 2,
         reportKind: "stage1_daily_archive_review",
         stage1DailyArchiveReviewArchiveBodySha256: bodyHash,
+        stage1DailyArchiveReviewBootstrapPreflightCheckIds: ["p2-manifest-chain"],
+        stage1DailyArchiveReviewBootstrapPreflightCheckSourcePaths: ["data/p2-chain-preflight.json"],
+        stage1DailyArchiveReviewBootstrapPreflightCheckStatuses: ["ready"],
+        stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath:
+          "data/p2-chain-preflight.json",
         stage1DailyArchiveReviewPrimaryActionId: "open-research-entry",
         stage1DailyArchiveReviewRefreshOutcomeState: "review",
         stage1DailyArchiveReviewShareFocus: "research-entry",
@@ -15532,11 +15541,16 @@ describe("terminal workbench model", () => {
     expect(buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(rows[0])).toContain(
       "Stage 1 archive review: blocked 1/2"
     );
+    expect(buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewTitle(rows[0])).toContain(
+      "P2 chain data/p2-chain-preflight.json"
+    );
     const query = buildAuditEvidenceReportLedgerRowStage1DailyArchiveReviewQuery(rows[0]);
 
     expect(query).toContain("stage1_daily_archive_review stage1-daily-archive-review-9999999999999999");
     expect(query).toContain("open-research-entry");
     expect(query).toContain("research-entry");
+    expect(query).toContain("p2-manifest-chain");
+    expect(query).toContain("data/p2-chain-preflight.json");
     expect(filterAuditEvidenceReportLedgerRows(rows, query).map((row) => row.id)).toEqual([
       "stage1-daily-archive-review-9999999999999999"
     ]);
@@ -15563,6 +15577,8 @@ describe("terminal workbench model", () => {
     expect(reference.copyText).toContain("- Status: current");
     expect(reference.copyText).toContain("- Event id: stage1-daily-archive-review-9999999999999999");
     expect(reference.copyText).toContain("- Archive body SHA-256: aaaaaaaaaaaa");
+    expect(reference.copyText).toContain("- Bootstrap P2 chain source: data/p2-chain-preflight.json");
+    expect(reference.copyText).toContain("- Bootstrap checks: p2-manifest-chain:ready");
     expect(reference.copyText).toContain("- Query: stage1_daily_archive_review");
 
     const snapshot = buildStage1P0DailyUseStartupSnapshot({
@@ -15608,6 +15624,23 @@ describe("terminal workbench model", () => {
     expect(staleReference.fileName).toBe("stage1-p0-daily-use-archive-review-stale.md");
     expect(staleReference.copyText).toContain("- Status: stale");
     expect(staleReference.copyText).toContain("record a fresh archive");
+
+    const staleBootstrapReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure: {
+        ...closure,
+        bootstrapPreflightSourcePaths: {
+          ...closure.bootstrapPreflightSourcePaths,
+          p2ManifestChainPreflight: "data/p2-chain-preflight-next.json"
+        }
+      },
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(staleBootstrapReference.status).toBe("stale");
+    expect(staleBootstrapReference.copyText).toContain("- Bootstrap P2 chain source: data/p2-chain-preflight.json");
 
     const missingReference = buildStage1P0DailyUseArchiveReviewReference({
       closure,

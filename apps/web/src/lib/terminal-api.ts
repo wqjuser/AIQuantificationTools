@@ -38,6 +38,8 @@ import {
   type P0PlatformReadinessSummary,
   type DailyOpsControlRoomSummary,
   type DailyStartBrief,
+  type Stage1BootstrapPreflightSummaryCheckSource,
+  type Stage1BootstrapPreflightSummarySource,
   type Stage1P0DailyUseArchiveBundle,
   type PersonalTeamUsabilityReadinessSummary,
   type P2ReadinessEvidenceCoverage,
@@ -6397,6 +6399,8 @@ export async function buildDailyStartBriefReviewAuditEvent({
 }
 
 interface Stage1P0DailyUseArchiveReviewClosure {
+  bootstrapPreflightChecks?: readonly Stage1BootstrapPreflightSummaryCheckSource[];
+  bootstrapPreflightSourcePaths?: Stage1BootstrapPreflightSummarySource["sourcePaths"] | null;
   primaryActionId?: string | null;
   primaryActionLabel: string;
   primaryTargetWorkspaceId: string;
@@ -6445,6 +6449,14 @@ export async function buildStage1P0DailyUseArchiveReviewAuditEvent({
   const contentSha256 = await sha256TextHex(archive.contentMarkdown);
   const shortHash = contentSha256.slice(0, 16);
   const invalidShareReason = invalidShareStatus?.status === "invalid" ? invalidShareStatus.reason : null;
+  const bootstrapPreflightChecks = closure.bootstrapPreflightChecks ?? [];
+  const bootstrapPreflightCheckIds = bootstrapPreflightChecks.map((check) => check.id ?? "");
+  const bootstrapPreflightCheckStatuses = bootstrapPreflightChecks.map((check) => check.status ?? "");
+  const bootstrapPreflightCheckSourcePaths = bootstrapPreflightChecks.map((check) => check.sourcePath ?? "");
+  const p2ManifestChainCheckSourcePath =
+    bootstrapPreflightChecks.find((check) => check.id === "p2-manifest-chain")?.sourcePath ?? "";
+  const bootstrapPreflightP2ManifestChainPreflightSourcePath =
+    closure.bootstrapPreflightSourcePaths?.p2ManifestChainPreflight ?? p2ManifestChainCheckSourcePath;
 
   return {
     schemaVersion: 1,
@@ -6463,6 +6475,10 @@ export async function buildStage1P0DailyUseArchiveReviewAuditEvent({
       archiveBodySha256: archive.bodySha256.hash,
       archiveBodySha256Algorithm: archive.bodySha256.algorithm,
       artifactKind: "aiqt.stage1P0DailyUseArchiveReview",
+      bootstrapPreflightCheckIds,
+      bootstrapPreflightCheckSourcePaths,
+      bootstrapPreflightCheckStatuses,
+      bootstrapPreflightP2ManifestChainPreflightSourcePath,
       boundary:
         "Stage 1/P0 daily-use archive is local review evidence only; live trading remains blocked and no investment advice",
       contentSha256,

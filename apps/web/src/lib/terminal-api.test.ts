@@ -16280,6 +16280,26 @@ describe("terminal workspace API client", () => {
         fileName: "stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md"
       },
       closure: {
+        bootstrapPreflightChecks: [
+          {
+            id: "p2-manifest-chain",
+            label: "P2 manifest chain",
+            liveBlockedBoundary: true,
+            liveTradingAllowed: false,
+            paperOnly: true,
+            recommendedCommand: "npm run docker:smoke:p2:preflight",
+            sourcePath: "data/p2-chain-preflight.json",
+            status: "ready",
+            summary: "P2 manifest chain is ready."
+          }
+        ],
+        bootstrapPreflightSourcePaths: {
+          desktopRelease: "data/desktop-release.json",
+          p0Acceptance: "data/p0-acceptance.json",
+          p1Acceptance: "data/p1-acceptance.json",
+          p2ManifestChainPreflight: "data/p2-chain-preflight.json",
+          stage1DailyUse: "data/stage1-daily-use.json"
+        },
         primaryActionId: "research-entry",
         primaryActionLabel: "Open research entry",
         primaryTargetWorkspaceId: "research",
@@ -16329,6 +16349,10 @@ describe("terminal workspace API client", () => {
         archiveBodySha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         archiveBodySha256Algorithm: "sha256",
         artifactKind: "aiqt.stage1P0DailyUseArchiveReview",
+        bootstrapPreflightCheckIds: ["p2-manifest-chain"],
+        bootstrapPreflightCheckSourcePaths: ["data/p2-chain-preflight.json"],
+        bootstrapPreflightCheckStatuses: ["ready"],
+        bootstrapPreflightP2ManifestChainPreflightSourcePath: "data/p2-chain-preflight.json",
         contentSha256: expectedContentHash,
         contentSha256Algorithm: "sha256",
         fileName: "stage1-p0-daily-use-archive-blocked-1-of-2-daily-use-research-entry-research.md",
@@ -16362,6 +16386,7 @@ describe("terminal workspace API client", () => {
     expect(event.detail).toContain("body bbbbbbbbbbbb");
     expect(event.detail).toContain("blocked 1/2 ready");
     expect(event.detail).toContain("live blocked true");
+    expect(event.metadata.markdown).toBeUndefined();
     expect(JSON.stringify(event.metadata)).not.toContain(archiveMarkdown);
     expect(event.detail).not.toContain(archiveMarkdown);
   });
