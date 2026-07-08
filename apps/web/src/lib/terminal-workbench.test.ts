@@ -344,10 +344,10 @@ function sampleStage1BootstrapPreflight(
     summary: `Stage 1 bootstrap preflight ${status}.`,
     reason: status === "missing" ? "Stage 1 bootstrap preflight report is missing." : undefined,
     ready: status === "ready",
-    readyCount: status === "ready" ? 6 : 1,
-    reviewCount: status === "review" ? 5 : 0,
-    blockedCount: status === "blocked" || status === "invalid" || status === "missing" ? 5 : 0,
-    totalCount: 6,
+    readyCount: status === "ready" ? 7 : 1,
+    reviewCount: status === "review" ? 6 : 0,
+    blockedCount: status === "blocked" || status === "invalid" || status === "missing" ? 6 : 0,
+    totalCount: 7,
     nextAction: status === "ready" ? "open-daily-workbench" : "run-p0-acceptance",
     recommendedCommand: status === "ready" ? "npm run dev" : "npm run docker:smoke:p0 -- --no-build --down",
     blockerIds: status === "blocked" || status === "invalid" || status === "missing" ? ["p0-acceptance"] : [],
@@ -359,6 +359,7 @@ function sampleStage1BootstrapPreflight(
     sourcePaths: {
       p0Acceptance: "data/p0-acceptance.json",
       p1Acceptance: "data/p1-acceptance.json",
+      p2ManifestChainPreflight: "data/p2-chain-preflight.json",
       desktopRelease: "data/desktop-release.json",
       stage1DailyUse: "data/stage1-daily-use.json"
     },
@@ -392,6 +393,17 @@ function sampleStage1BootstrapPreflight(
         summary: "P1 acceptance manifest status.",
         recommendedCommand: "npm run stage1:preflight:validate",
         sourcePath: "data/p1-acceptance.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "p2-manifest-chain",
+        label: "P2 manifest chain",
+        status: checkStatus,
+        summary: "P2 manifest chain preflight status.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data/p2-chain-preflight.json",
         paperOnly: true,
         liveTradingAllowed: false,
         liveBlockedBoundary: true
@@ -3020,12 +3032,17 @@ describe("terminal workbench model", () => {
     expect(ready).toMatchObject({
       actionLabel: "Open daily workbench",
       currentCheckId: null,
-      headline: "Stage 1 bootstrap preflight ready (6/6)",
-      readyCount: 6,
+      headline: "Stage 1 bootstrap preflight ready (7/7)",
+      readyCount: 7,
       state: "ready",
       tone: "positive"
     });
     expect(ready?.detail).toContain("npm run dev");
+    expect(ready?.checks.find((check) => check.id === "p2-manifest-chain")).toMatchObject({
+      label: "P2 manifest chain",
+      sourcePath: "data/p2-chain-preflight.json",
+      status: "ready"
+    });
     expect(ready?.sourcePath).toBe("data/stage1-bootstrap-preflight.json");
     expect(ready?.liveTradingAllowed).toBe(false);
     expect(ready?.liveBlockedBoundary).toBe(true);
@@ -3033,7 +3050,7 @@ describe("terminal workbench model", () => {
     expect(blocked).toMatchObject({
       actionLabel: "Run P0 acceptance",
       currentCheckId: "p0-acceptance",
-      headline: "Stage 1 bootstrap preflight blocked (1/6)",
+      headline: "Stage 1 bootstrap preflight blocked (1/7)",
       recommendedCommand: "npm run docker:smoke:p0 -- --no-build --down",
       state: "blocked",
       tone: "risk"
@@ -3048,7 +3065,7 @@ describe("terminal workbench model", () => {
         "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
       reason:
         "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
-      readyCount: 5,
+      readyCount: 6,
       reviewCount: 1,
       blockedCount: 0,
       nextAction: "refresh-stage1-bootstrap-preflight",
@@ -3063,7 +3080,10 @@ describe("terminal workbench model", () => {
               summary: "Daily-use source changed after this bootstrap preflight was generated.",
               recommendedCommand: "npm run stage1:preflight"
             }
-          : check.id === "p0-acceptance" || check.id === "p1-acceptance" || check.id === "desktop-release"
+              : check.id === "p0-acceptance" ||
+                  check.id === "p1-acceptance" ||
+                  check.id === "p2-manifest-chain" ||
+                  check.id === "desktop-release"
             ? { ...check, status: "ready" }
             : check
       )
@@ -3072,7 +3092,7 @@ describe("terminal workbench model", () => {
     expect(stale).toMatchObject({
       actionLabel: "Refresh bootstrap preflight",
       currentCheckId: "stage1-daily-use",
-      headline: "Stage 1 bootstrap preflight needs refresh (5/6)",
+      headline: "Stage 1 bootstrap preflight needs refresh (6/7)",
       recommendedCommand: "npm run stage1:preflight",
       staleSourcePaths: ["data/stage1-daily-use.json"],
       staleSourceSummary:
@@ -3092,7 +3112,7 @@ describe("terminal workbench model", () => {
       generatedAt: "2026-06-30T10:00:00+00:00",
       status: "ready",
       summary: "Stage 1 daily use is ready (5/5 checks ready).",
-      readyCount: 5,
+      readyCount: 6,
       totalCount: 5,
       paperOnly: true,
       liveTradingAllowed: false,
@@ -3233,7 +3253,7 @@ describe("terminal workbench model", () => {
         "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
       reason:
         "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
-      readyCount: 5,
+      readyCount: 6,
       reviewCount: 1,
       blockedCount: 0,
       nextAction: "refresh-stage1-bootstrap-preflight",
@@ -3248,7 +3268,10 @@ describe("terminal workbench model", () => {
               summary: "Daily-use source changed after this bootstrap preflight was generated.",
               recommendedCommand: "npm run stage1:preflight"
             }
-          : check.id === "p0-acceptance" || check.id === "p1-acceptance" || check.id === "desktop-release"
+          : check.id === "p0-acceptance" ||
+              check.id === "p1-acceptance" ||
+              check.id === "p2-manifest-chain" ||
+              check.id === "desktop-release"
             ? { ...check, status: "ready" }
             : check
       )
@@ -3386,7 +3409,7 @@ describe("terminal workbench model", () => {
     expect(closure.bootstrapPreflightStaleSourceSummary).toBe(
       "Stale source files: data/stage1-daily-use.json. Run npm run stage1:preflight to refresh."
     );
-    expect(closure.detail).toContain("Stage 1 bootstrap preflight needs refresh (5/6)");
+    expect(closure.detail).toContain("Stage 1 bootstrap preflight needs refresh (6/7)");
     expect(closure.detail).toContain("Run npm run stage1:preflight to refresh.");
     expect(closure.rows[0]).toMatchObject({
       actionId: "review-bootstrap-preflight",
@@ -3530,7 +3553,7 @@ describe("terminal workbench model", () => {
     expect(outcome.copyText).toContain(
       "- Daily report [ready/core]: Stage 1 daily report ready (5/5) (link: ?workspace=settings&stage1RefreshReceiptFocus=daily-use)"
     );
-    expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
+    expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (7/7)");
     expect(outcome.copyText).toContain("- Desktop release [ready/core]: Desktop release passed");
     expect(outcome.copyText).toContain(
       "- Desktop release [ready/core]: Desktop release passed (link: ?workspace=settings&stage1RefreshReceiptFocus=desktop-release)"
@@ -4004,7 +4027,7 @@ describe("terminal workbench model", () => {
     expect(outcome.copyText).toContain(
       "- Daily report [blocked/fallback]: HTTP 500 (link: ?workspace=settings&stage1RefreshReceiptFocus=daily-use)"
     );
-    expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (6/6)");
+    expect(outcome.copyText).toContain("- Bootstrap preflight [ready/core]: Stage 1 bootstrap preflight ready (7/7)");
     expect(outcome.copyText).toContain("- Desktop release [review/core]: Desktop release manifest missing");
     expect(outcome.copyText).toContain("Live trading remains blocked.");
     expect(outcome.entries[0]).toMatchObject({
@@ -15344,6 +15367,26 @@ describe("terminal workbench model", () => {
     const reviewHash = "9".repeat(64);
     const bodyHash = "a".repeat(64);
     const closure = {
+      bootstrapPreflightChecks: [
+        {
+          id: "p2-manifest-chain",
+          label: "P2 manifest chain",
+          liveBlockedBoundary: true,
+          liveTradingAllowed: false,
+          paperOnly: true,
+          recommendedCommand: "npm run stage1:preflight:validate",
+          sourcePath: "data/p2-chain-preflight.json",
+          status: "ready",
+          summary: "P2 manifest chain preflight is ready."
+        }
+      ],
+      bootstrapPreflightSourcePaths: {
+        p0Acceptance: "data/p0-acceptance.json",
+        p1Acceptance: "data/p1-acceptance.json",
+        p2ManifestChainPreflight: "data/p2-chain-preflight.json",
+        desktopRelease: "data/desktop-release.json",
+        stage1DailyUse: "data/stage1-daily-use.json"
+      },
       bootstrapPreflightStaleSourcePaths: [],
       bootstrapPreflightStaleSourceSummary: null,
       copyText: "# Stage 1 handoff",
@@ -15543,6 +15586,9 @@ describe("terminal workbench model", () => {
     );
     expect(snapshot.copyText).toContain("- Refresh receipt: review");
     expect(snapshot.copyText).toContain("- research-entry: blocked -> research");
+    expect(snapshot.copyText).toContain("## Bootstrap Preflight Evidence");
+    expect(snapshot.copyText).toContain("- p2-manifest-chain: ready · P2 manifest chain · data/p2-chain-preflight.json");
+    expect(snapshot.copyText).toContain("- P2 chain source: data/p2-chain-preflight.json");
     expect(snapshot.copyText).toContain("Live trading remains blocked.");
 
     const staleReference = buildStage1P0DailyUseArchiveReviewReference({

@@ -444,6 +444,7 @@ export interface Stage1BootstrapPreflightSummarySource {
   sourcePaths: {
     p0Acceptance: string;
     p1Acceptance: string;
+    p2ManifestChainPreflight: string;
     desktopRelease: string;
     stage1DailyUse: string;
   };
@@ -462,6 +463,7 @@ export interface Stage1BootstrapPreflightSummary {
   readyCount: number;
   totalCount: number;
   sourcePath: string;
+  sourcePaths: Stage1BootstrapPreflightSummarySource["sourcePaths"];
   staleSourcePaths: string[];
   staleSourceSummary: string | null;
   currentCheckId: string | null;
@@ -7271,6 +7273,8 @@ export interface Stage1P0DailyUseClosure {
   primaryActionLabel: string;
   primaryTargetWorkspaceId: ProductWorkAreaId;
   primaryWorkspaceLink: string;
+  bootstrapPreflightChecks?: Stage1BootstrapPreflightSummaryCheckSource[];
+  bootstrapPreflightSourcePaths?: Stage1BootstrapPreflightSummarySource["sourcePaths"];
   bootstrapPreflightStaleSourcePaths: string[];
   bootstrapPreflightStaleSourceSummary: string | null;
   staleSourcePaths: string[];
@@ -7847,6 +7851,8 @@ export function buildStage1P0DailyUseClosure({
           .filter(Boolean)
           .join(" · "),
     copyText: buildStage1P0DailyUseClosureCopyText({
+      bootstrapPreflightChecks: bootstrapPreflight?.checks ?? [],
+      bootstrapPreflightSourcePaths: bootstrapPreflight?.sourcePaths ?? null,
       bootstrapPreflightStaleSourcePaths,
       primaryActionLabel: primaryRow.actionLabel,
       primaryWorkspaceLink: stage1P0DailyUseWorkspaceLink(primaryRow.targetWorkspaceId, "primary"),
@@ -7863,6 +7869,8 @@ export function buildStage1P0DailyUseClosure({
     primaryActionLabel: primaryRow.actionLabel,
     primaryTargetWorkspaceId: primaryRow.targetWorkspaceId,
     primaryWorkspaceLink: stage1P0DailyUseWorkspaceLink(primaryRow.targetWorkspaceId, "primary"),
+    bootstrapPreflightChecks: bootstrapPreflight?.checks ?? [],
+    bootstrapPreflightSourcePaths: bootstrapPreflight?.sourcePaths,
     bootstrapPreflightStaleSourcePaths,
     bootstrapPreflightStaleSourceSummary,
     staleSourcePaths: dailyUseReport?.staleSourcePaths ?? [],
@@ -7872,6 +7880,8 @@ export function buildStage1P0DailyUseClosure({
 }
 
 function buildStage1P0DailyUseClosureCopyText({
+  bootstrapPreflightChecks,
+  bootstrapPreflightSourcePaths,
   bootstrapPreflightStaleSourcePaths,
   primaryActionLabel,
   primaryTargetWorkspaceId,
@@ -7882,6 +7892,8 @@ function buildStage1P0DailyUseClosureCopyText({
   state,
   totalCount
 }: {
+  bootstrapPreflightChecks: Stage1BootstrapPreflightSummaryCheckSource[];
+  bootstrapPreflightSourcePaths: Stage1BootstrapPreflightSummarySource["sourcePaths"] | null;
   bootstrapPreflightStaleSourcePaths: string[];
   primaryActionLabel: string;
   primaryTargetWorkspaceId: ProductWorkAreaId;
@@ -7892,6 +7904,10 @@ function buildStage1P0DailyUseClosureCopyText({
   state: Stage1P0DailyUseClosureStatus;
   totalCount: number;
 }): string {
+  const bootstrapEvidenceLines = buildStage1BootstrapPreflightEvidenceLines(
+    bootstrapPreflightChecks,
+    bootstrapPreflightSourcePaths
+  );
   return [
     "# Stage 1/P0 Daily Use Handoff",
     `State: ${state}`,
@@ -7905,8 +7921,24 @@ function buildStage1P0DailyUseClosureCopyText({
     "",
     ...rows.map((row) => `- ${row.label} [${row.status}]: ${row.detail} (link: ${row.workspaceLink})`),
     "",
+    "## Bootstrap Preflight Evidence",
+    ...bootstrapEvidenceLines,
+    "",
     "Live trading remains blocked."
   ].join("\n");
+}
+
+function buildStage1BootstrapPreflightEvidenceLines(
+  checks: readonly Stage1BootstrapPreflightSummaryCheckSource[] = [],
+  sourcePaths?: Stage1BootstrapPreflightSummarySource["sourcePaths"] | null
+): string[] {
+  const checkLines = checks.length
+    ? checks.map((check) => `- ${check.id}: ${check.status} · ${check.label} · ${check.sourcePath}`)
+    : ["- No bootstrap preflight checks loaded."];
+  return [
+    `- P2 chain source: ${sourcePaths?.p2ManifestChainPreflight || "data/p2-chain-preflight.json"}`,
+    ...checkLines
+  ];
 }
 
 function stage1P0DailyUseWorkspaceLink(workspaceId: ProductWorkAreaId, focus: Stage1P0DailyUseShareFocus): string {
@@ -9568,6 +9600,7 @@ export function buildStage1BootstrapPreflightSummary(
     readyCount: preflight.readyCount,
     totalCount: preflight.totalCount,
     sourcePath: preflight.sourcePath || "data/stage1-bootstrap-preflight.json",
+    sourcePaths: preflight.sourcePaths,
     staleSourcePaths,
     staleSourceSummary,
     currentCheckId: currentCheck?.id ?? null,
@@ -11442,6 +11475,10 @@ export function buildStage1P0DailyUseStartupSnapshot({
         )
       ]
     : ["- Refresh next action: none"];
+  const bootstrapEvidenceLines = buildStage1BootstrapPreflightEvidenceLines(
+    closure.bootstrapPreflightChecks ?? [],
+    closure.bootstrapPreflightSourcePaths ?? null
+  );
 
   return {
     archiveReferenceStatus: archiveReference.status,
@@ -11464,6 +11501,9 @@ export function buildStage1P0DailyUseStartupSnapshot({
         (row) =>
           `- ${row.id}: ${row.status} -> ${row.targetWorkspaceId} (${row.actionLabel}; link: ${row.workspaceLink})`
       ),
+      "",
+      "## Bootstrap Preflight Evidence",
+      ...bootstrapEvidenceLines,
       "",
       "## Archive Reference",
       `- Label: ${archiveReference.label}`,

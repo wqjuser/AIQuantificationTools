@@ -343,10 +343,10 @@ function sampleStage1BootstrapPreflight(status: "ready" | "review" | "blocked" =
     status,
     summary: `Stage 1 bootstrap preflight ${status}.`,
     ready: status === "ready",
-    readyCount: status === "ready" ? 6 : 1,
-    reviewCount: status === "review" ? 5 : 0,
-    blockedCount: status === "blocked" ? 5 : 0,
-    totalCount: 6,
+    readyCount: status === "ready" ? 7 : 1,
+    reviewCount: status === "review" ? 6 : 0,
+    blockedCount: status === "blocked" ? 6 : 0,
+    totalCount: 7,
     nextAction: status === "ready" ? "open-daily-workbench" : "run-p0-acceptance",
     recommendedCommand: status === "ready" ? "npm run dev" : "npm run docker:smoke:p0 -- --no-build --down",
     blockerIds: status === "blocked" ? ["p0-acceptance"] : [],
@@ -358,6 +358,7 @@ function sampleStage1BootstrapPreflight(status: "ready" | "review" | "blocked" =
     sourcePaths: {
       p0Acceptance: "data/p0-acceptance.json",
       p1Acceptance: "data/p1-acceptance.json",
+      p2ManifestChainPreflight: "data/p2-chain-preflight.json",
       desktopRelease: "data/desktop-release.json",
       stage1DailyUse: "data/stage1-daily-use.json"
     },
@@ -391,6 +392,17 @@ function sampleStage1BootstrapPreflight(status: "ready" | "review" | "blocked" =
         summary: "P1 acceptance is ready.",
         recommendedCommand: "npm run stage1:preflight:validate",
         sourcePath: "data/p1-acceptance.json",
+        paperOnly: true,
+        liveTradingAllowed: false,
+        liveBlockedBoundary: true
+      },
+      {
+        id: "p2-manifest-chain",
+        label: "P2 manifest chain",
+        status: checkStatus,
+        summary: "P2 manifest chain preflight is ready.",
+        recommendedCommand: "npm run stage1:preflight:validate",
+        sourcePath: "data/p2-chain-preflight.json",
         paperOnly: true,
         liveTradingAllowed: false,
         liveBlockedBoundary: true
@@ -1485,18 +1497,44 @@ describe("terminal workspace API client", () => {
     expect(calls[0].url).toBe("http://127.0.0.1:8765/api/stage1/bootstrap-preflight/latest");
     expect(result.source).toBe("core");
     expect(result.preflight?.status).toBe("ready");
-    expect(result.preflight?.readyCount).toBe(6);
+    expect(result.preflight?.readyCount).toBe(7);
     expect(result.preflight?.checks.map((check) => check.id)).toEqual([
       "package-scripts",
       "p0-acceptance",
       "p1-acceptance",
+      "p2-manifest-chain",
       "desktop-release",
       "stage1-daily-use",
       "live-blocked-boundary"
     ]);
+    expect(result.preflight?.sourcePaths.p2ManifestChainPreflight).toBe("data/p2-chain-preflight.json");
     expect(result.preflight?.sourcePaths.stage1DailyUse).toBe("data/stage1-daily-use.json");
     expect(result.preflight?.liveTradingAllowed).toBe(false);
     expect(result.preflight?.liveBlockedBoundary).toBe(true);
+  });
+
+  test("rejects Stage 1 bootstrap preflight readback without the P2 chain source path", async () => {
+    const incompletePreflight = {
+      ...sampleStage1BootstrapPreflight("ready"),
+      sourcePaths: {
+        p0Acceptance: "data/p0-acceptance.json",
+        p1Acceptance: "data/p1-acceptance.json",
+        desktopRelease: "data/desktop-release.json",
+        stage1DailyUse: "data/stage1-daily-use.json"
+      }
+    };
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ preflight: incompletePreflight })
+    });
+
+    const result = await loadStage1BootstrapPreflightLatest("/", fetcher);
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid Stage 1 bootstrap preflight contract");
+    expect(result.preflight?.checks.map((check) => check.id)).toContain("p2-manifest-chain");
+    expect(result.preflight?.sourcePaths.p2ManifestChainPreflight).toBe("data/p2-chain-preflight.json");
   });
 
   test("falls back when latest Stage 1 bootstrap preflight readback is missing or malformed", async () => {
@@ -1511,16 +1549,18 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("fallback");
     expect(result.preflight?.status).toBe("missing");
     expect(result.preflight?.readyCount).toBe(0);
-    expect(result.preflight?.totalCount).toBe(6);
+    expect(result.preflight?.totalCount).toBe(7);
     expect(result.preflight?.checks.map((check) => check.id)).toEqual([
       "package-scripts",
       "p0-acceptance",
       "p1-acceptance",
+      "p2-manifest-chain",
       "desktop-release",
       "stage1-daily-use",
       "live-blocked-boundary"
     ]);
     expect(result.preflight?.sourcePath).toBe("data/stage1-bootstrap-preflight.json");
+    expect(result.preflight?.sourcePaths.p2ManifestChainPreflight).toBe("data/p2-chain-preflight.json");
     expect(result.preflight?.sourcePaths.stage1DailyUse).toBe("data/stage1-daily-use.json");
     expect(result.preflight?.liveTradingAllowed).toBe(false);
     expect(result.error).toBe("Invalid Stage 1 bootstrap preflight contract");
@@ -1537,7 +1577,7 @@ describe("terminal workspace API client", () => {
             "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
           reason:
             "Stage 1 bootstrap preflight needs refresh because source files changed: data/stage1-daily-use.json.",
-          readyCount: 5,
+          readyCount: 6,
           reviewCount: 1,
           blockedCount: 0,
           nextAction: "refresh-stage1-bootstrap-preflight",
@@ -1553,7 +1593,10 @@ describe("terminal workspace API client", () => {
                     "Stage 1 daily use is ready. Source file changed after this bootstrap preflight was generated.",
                   recommendedCommand: "npm run stage1:preflight"
                 }
-              : check.id === "p0-acceptance" || check.id === "p1-acceptance" || check.id === "desktop-release"
+                : check.id === "p0-acceptance" ||
+                    check.id === "p1-acceptance" ||
+                    check.id === "p2-manifest-chain" ||
+                    check.id === "desktop-release"
                 ? { ...check, status: "ready" }
                 : check
           )
@@ -1566,7 +1609,7 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.error).toBeUndefined();
     expect(result.preflight?.status).toBe("review");
-    expect(result.preflight?.readyCount).toBe(5);
+    expect(result.preflight?.readyCount).toBe(6);
     expect(result.preflight?.staleSourcePaths).toEqual(["data/stage1-daily-use.json"]);
     expect(result.preflight?.nextAction).toBe("refresh-stage1-bootstrap-preflight");
     expect(result.preflight?.recommendedCommand).toBe("npm run stage1:preflight");
@@ -1609,7 +1652,7 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("core");
     expect(result.status).toBe("preflight_generated");
     expect(result.preflight?.status).toBe("ready");
-    expect(result.preflight?.readyCount).toBe(6);
+    expect(result.preflight?.readyCount).toBe(7);
     expect(result.orderSubmissionEnabled).toBe(false);
     expect(result.liveTradingAllowed).toBe(false);
     expect(result.liveOrderSubmitted).toBe(false);

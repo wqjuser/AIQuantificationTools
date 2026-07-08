@@ -783,6 +783,7 @@ export type Stage1BootstrapPreflightCheckStatus = "ready" | "review" | "blocked"
 export interface Stage1BootstrapPreflightSourcePaths {
   p0Acceptance: string;
   p1Acceptance: string;
+  p2ManifestChainPreflight: string;
   desktopRelease: string;
   stage1DailyUse: string;
 }
@@ -8104,14 +8105,15 @@ function buildMissingStage1BootstrapPreflight(reason: string): Stage1BootstrapPr
     ready: false,
     readyCount: 0,
     reviewCount: 0,
-    blockedCount: 6,
-    totalCount: 6,
+    blockedCount: 7,
+    totalCount: 7,
     nextAction: "run-stage1-bootstrap-preflight",
     recommendedCommand: "npm run stage1:preflight",
     blockerIds: [
       "package-scripts",
       "p0-acceptance",
       "p1-acceptance",
+      "p2-manifest-chain",
       "desktop-release",
       "stage1-daily-use",
       "live-blocked-boundary"
@@ -8124,6 +8126,7 @@ function buildMissingStage1BootstrapPreflight(reason: string): Stage1BootstrapPr
     sourcePaths: {
       p0Acceptance: "data/p0-acceptance.json",
       p1Acceptance: "data/p1-acceptance.json",
+      p2ManifestChainPreflight: "data/p2-chain-preflight.json",
       desktopRelease: "data/desktop-release.json",
       stage1DailyUse: "data/stage1-daily-use.json"
     },
@@ -8131,6 +8134,7 @@ function buildMissingStage1BootstrapPreflight(reason: string): Stage1BootstrapPr
       check("package-scripts", "Package scripts", "package.json", "npm install"),
       check("p0-acceptance", "P0 acceptance", "data/p0-acceptance.json", "npm run docker:smoke:p0 -- --no-build --down"),
       check("p1-acceptance", "P1 acceptance", "data/p1-acceptance.json", "npm run docker:smoke:p1 -- --no-build --down"),
+      check("p2-manifest-chain", "P2 manifest chain", "data/p2-chain-preflight.json", "npm run docker:smoke:p2:preflight"),
       check("desktop-release", "Desktop release", "data/desktop-release.json", "npm run desktop:release"),
       check("stage1-daily-use", "Stage 1 daily use", "data/stage1-daily-use.json", "npm run stage1:daily"),
       check("live-blocked-boundary", "Live-blocked boundary", "data", "npm run stage1:preflight:validate")
@@ -12385,6 +12389,7 @@ function isStage1BootstrapPreflightSourcePathsPayload(value: unknown): value is 
   return (
     typeof payload.p0Acceptance === "string" &&
     typeof payload.p1Acceptance === "string" &&
+    typeof payload.p2ManifestChainPreflight === "string" &&
     typeof payload.desktopRelease === "string" &&
     typeof payload.stage1DailyUse === "string"
   );
