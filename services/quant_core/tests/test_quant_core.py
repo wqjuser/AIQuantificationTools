@@ -121,6 +121,19 @@ class QuantCoreContractTest(unittest.TestCase):
             ],
         }
 
+    def _sample_p1_acceptance_manifest_with_p2_seed(self, *, run_id: str = "run-p1-smoke"):
+        manifest = self._sample_p1_acceptance_manifest(run_id=run_id)
+        manifest["checks"].insert(
+            5,
+            {
+                "id": "p2-replay-seed",
+                "status": "passed",
+                "summary": f"p1 p2-replay-seed run={run_id} batch=portfolio-paper-batch-p2-replay filled=1 liveBlocked=True",
+            },
+        )
+        manifest["checkCount"] = len(manifest["checks"])
+        return manifest
+
     def _sample_desktop_release_manifest(self):
         return {
             "kind": "aiqt.desktopReleaseManifest",
@@ -3588,7 +3601,10 @@ class QuantCoreContractTest(unittest.TestCase):
                 root.mkdir(parents=True)
                 p1_path = root / "p1-acceptance.json"
                 replay_path = root / "p2-paper-replay.json"
-                p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+                p1_path.write_text(
+                    json.dumps(self._sample_p1_acceptance_manifest_with_p2_seed(run_id="run-p1-smoke")),
+                    encoding="utf-8",
+                )
 
                 summaries = docker_smoke.run_p2_paper_replay(
                     "http://aiqt.local",
@@ -3609,6 +3625,33 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(report_payload["runId"], "run-p1-smoke")
         self.assertEqual(report_payload["latestEvidenceId"], "adapter-paper-execution-ready")
 
+    def test_docker_smoke_p2_paper_replay_requires_p1_replay_seed_before_export(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        def fail_request_json(url, timeout_seconds):
+            raise AssertionError("run export should not be requested when P1 replay seed is missing")
+
+        original_request_json = docker_smoke.request_json
+        docker_smoke.request_json = fail_request_json
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "data"
+                root.mkdir(parents=True)
+                p1_path = root / "p1-acceptance.json"
+                p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+
+                with self.assertRaisesRegex(RuntimeError, "p2-replay-seed"):
+                    docker_smoke.run_p2_paper_replay(
+                        "http://aiqt.local",
+                        p1_acceptance_report=p1_path,
+                        report_path=root / "p2-paper-replay.json",
+                        timeout_seconds=5,
+                    )
+        finally:
+            docker_smoke.request_json = original_request_json
+
     def test_docker_smoke_p2_pre_live_acceptance_generates_manifest_from_reports(self):
         import json
 
@@ -3620,7 +3663,10 @@ class QuantCoreContractTest(unittest.TestCase):
             p1_path = root / "p1-acceptance.json"
             replay_path = root / "p2-paper-replay.json"
             pre_live_path = root / "p2-pre-live-acceptance.json"
-            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+            p1_path.write_text(
+                json.dumps(self._sample_p1_acceptance_manifest_with_p2_seed(run_id="run-p1-smoke")),
+                encoding="utf-8",
+            )
             replay_path.write_text(
                 json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p1-smoke")),
                 encoding="utf-8",
@@ -3802,7 +3848,7 @@ class QuantCoreContractTest(unittest.TestCase):
             replay_path = root / "p2-paper-replay.json"
             pre_live_path = root / "p2-pre-live-acceptance.json"
             readiness_path = root / "p2-readiness-acceptance.json"
-            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest_with_p2_seed()), encoding="utf-8")
             replay_path.write_text(json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p1-smoke")), encoding="utf-8")
             pre_live_path.write_text(json.dumps(self._sample_p2_pre_live_acceptance_manifest()), encoding="utf-8")
 
@@ -3823,6 +3869,41 @@ class QuantCoreContractTest(unittest.TestCase):
             [stage["status"] for stage in preflight["stages"]],
             ["valid", "valid", "valid", "missing"],
         )
+
+    def test_docker_smoke_p2_chain_preflight_requires_p1_replay_seed(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "data"
+            root.mkdir(parents=True)
+            p1_path = root / "p1-acceptance.json"
+            replay_path = root / "p2-paper-replay.json"
+            pre_live_path = root / "p2-pre-live-acceptance.json"
+            readiness_path = root / "p2-readiness-acceptance.json"
+            p1_path.write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
+            replay_path.write_text(json.dumps(self._sample_p2_paper_replay_manifest(run_id="run-p1-smoke")), encoding="utf-8")
+            pre_live_path.write_text(json.dumps(self._sample_p2_pre_live_acceptance_manifest()), encoding="utf-8")
+
+            preflight = docker_smoke.build_p2_manifest_chain_preflight(
+                p1_acceptance_report=p1_path,
+                p2_paper_replay_report=replay_path,
+                p2_pre_live_acceptance_report=pre_live_path,
+                p2_readiness_acceptance_report=readiness_path,
+            )
+
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertFalse(preflight["ready"])
+        self.assertEqual(preflight["nextAction"], "run-p1-acceptance")
+        self.assertEqual(preflight["nextCommand"], "npm run docker:smoke:p1 -- --no-build")
+        self.assertEqual(preflight["validStageCount"], 2)
+        self.assertEqual(preflight["blockerIds"], ["p1-acceptance", "p2-readiness-acceptance"])
+        self.assertEqual(
+            [stage["status"] for stage in preflight["stages"]],
+            ["invalid", "valid", "valid", "missing"],
+        )
+        self.assertIn("p2-replay-seed", preflight["stages"][0]["reason"])
 
     def test_docker_smoke_cli_writes_p2_chain_preflight_without_compose(self):
         import contextlib

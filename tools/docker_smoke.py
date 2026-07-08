@@ -611,6 +611,20 @@ def validate_p1_acceptance_manifest(manifest: Any) -> str:
     return f"p1 acceptance manifest run={run_id} watchlist={watchlist_count} checks={len(checks)} liveBlocked=True"
 
 
+def validate_p2_chain_p1_acceptance_manifest(manifest: Any) -> str:
+    summary = validate_p1_acceptance_manifest(manifest)
+    checks = manifest.get("checks") if isinstance(manifest, dict) else None
+    check_ids = {
+        str(check.get("id") or "").strip()
+        for check in checks
+        if isinstance(check, dict)
+    } if isinstance(checks, list) else set()
+    missing = sorted({"p2-replay-seed"}.difference(check_ids))
+    if missing:
+        raise RuntimeError(f"Invalid P2 chain P1 acceptance manifest: missing required checks {', '.join(missing)}")
+    return summary.replace("p1 acceptance manifest", "p2 chain p1 acceptance manifest", 1)
+
+
 def write_p1_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -765,7 +779,7 @@ def build_p2_manifest_chain_preflight(
             label="P1 acceptance",
             path=p1_acceptance_report,
             loader=load_p1_acceptance_report,
-            validator=validate_p1_acceptance_manifest,
+            validator=validate_p2_chain_p1_acceptance_manifest,
             next_action="run-p1-acceptance",
             next_command="npm run docker:smoke:p1 -- --no-build",
         ),
@@ -1556,7 +1570,7 @@ def run_p2_paper_replay(
     adapter_id: str | None = None,
 ) -> list[str]:
     p1_acceptance_manifest = load_p1_acceptance_report(p1_acceptance_report)
-    validate_p1_acceptance_manifest(p1_acceptance_manifest)
+    validate_p2_chain_p1_acceptance_manifest(p1_acceptance_manifest)
     source_run_id = str(run_id or p1_acceptance_manifest.get("runId") or "").strip()
     if not source_run_id:
         raise RuntimeError("Invalid P2 paper replay smoke: source run id is missing")

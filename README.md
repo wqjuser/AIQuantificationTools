@@ -82,7 +82,7 @@ npm run docker:smoke:p0:validate
 npm run docker:smoke:p1 -- --no-build --down
 ```
 
-`docker:smoke:p1` 会读取 `/api/workspace` 的自选列表，要求至少 3 个标的，运行 watchlist cache refresh，选择一只刷新成功的 queue-ready 标的运行审计流水线、AI 评审、paper-only 模拟、研究包导出、复现包导入和导入后重导出，并把验收结果写入 `data/p1-acceptance.json`。该 manifest 会记录 `watchlistRefreshRunId`、queued symbol、检查步骤和 `paperOnly=true / liveTradingAllowed=false` 边界，用于证明 P1 研究运营链路可复现；它同样不会触发真实下单。工作台会通过 `GET /api/p1/acceptance/latest` 读取这份报告，并在 P1 研究运营验收卡显示 watchlist 数量、队列标的、检查覆盖和来源路径。
+`docker:smoke:p1` 会读取 `/api/workspace` 的自选列表，要求至少 3 个标的，运行 watchlist cache refresh，选择一只刷新成功的 queue-ready 标的运行审计流水线、AI 评审、paper-only 模拟、P2 replay seed 组合证据、研究包导出、复现包导入和导入后重导出，并把验收结果写入 `data/p1-acceptance.json`。该 manifest 会记录 `watchlistRefreshRunId`、queued symbol、`p2-replay-seed` 检查步骤和 `paperOnly=true / liveTradingAllowed=false` 边界，用于证明 P1 研究运营链路可复现，并为后续 P2 paper replay 准备组合委托、审批、模拟成交和 adapter paper execution 证据；它同样不会触发真实下单。工作台会通过 `GET /api/p1/acceptance/latest` 读取这份报告，并在 P1 研究运营验收卡显示 watchlist 数量、队列标的、检查覆盖和来源路径。
 
 ```powershell
 npm run docker:smoke:p1:validate
@@ -139,7 +139,7 @@ npm run docker:smoke:p2:pre-live -- --no-build
 npm run docker:smoke:p2 -- --no-build --down
 ```
 
-`docker:smoke:p2:paper-replay` 会从 `data/p1-acceptance.json` 推导审计 run id，拉取 `/api/research/runs/{runId}/export`，并只在导出包已经包含 paper execution、组合 paper order、审批、模拟成交、状态回放和 adapter paper execution 证据时生成 `data/p2-paper-replay.json`。它不会替用户创建组合委托或适配器执行证据。
+`docker:smoke:p2:paper-replay` 会先要求 `data/p1-acceptance.json` 包含 `p2-replay-seed` 检查，再从该 manifest 推导审计 run id，拉取 `/api/research/runs/{runId}/export`，并只在导出包已经包含 paper execution、组合 paper order、审批、模拟成交、状态回放和 adapter paper execution 证据时生成 `data/p2-paper-replay.json`。如果 P1 manifest 仍是旧的 8-check 报告，P2 chain preflight 会提前提示重跑 `npm run docker:smoke:p1 -- --no-build`；paper replay 本身不会补造缺失证据或触发真实下单。
 
 `docker:smoke:p2:pre-live` 会读取 `data/p1-acceptance.json` 和 `data/p2-paper-replay.json`，生成 `data/p2-pre-live-acceptance.json`。这份 manifest 会明确记录 `adapter-certification` 与 `human-confirmation` 仍是阻断项，只证明预实盘清单证据可复核，不会开启下单、实盘交易、实盘订单或真实路由。
 
@@ -356,7 +356,7 @@ docker compose down -v
 
 CI 还会运行 `npm run docker:smoke:p0 -- --no-build --down`，把 P0 策略流水线、AI 评审、纸面模拟、导出、导入和重导出作为产品验收门禁，并上传 `data/p0-acceptance.json` 为 `p0-acceptance-manifest` artifact。
 
-CI 同时运行 `npm run docker:smoke:p1 -- --no-build --down`，把自选列表刷新、queue-ready 审计 run、AI 评审、paper-only 模拟、导出/导入和 watchlist refresh provenance 作为 P1 研究运营验收门禁，并上传 `data/p1-acceptance.json`。本地服务会通过 `/api/p1/acceptance/latest` 将同一份 artifact 投影成产品状态，便于工作台直接显示 P1 验收是否可复核。
+CI 同时运行 `npm run docker:smoke:p1 -- --no-build --down`，把自选列表刷新、queue-ready 审计 run、AI 评审、paper-only 模拟、P2 replay seed、导出/导入和 watchlist refresh provenance 作为 P1 研究运营验收门禁，并上传 `data/p1-acceptance.json`。本地服务会通过 `/api/p1/acceptance/latest` 将同一份 artifact 投影成产品状态，便于工作台直接显示 P1 验收是否可复核。
 
 归档产物会再通过 `npm run docker:smoke:p0:validate` 和 `npm run docker:smoke:p1:validate` 离线复核。校验会拒绝缺少核心检查、开启实盘边界或检查数量不一致的 manifest。P2 readiness manifest 生成后也可以用 `npm run docker:smoke:p2:validate` 离线复核；它依赖已归档的 P1/P2 上游证据，目前不作为默认 CI 生成步骤。
 
