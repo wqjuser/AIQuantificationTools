@@ -5328,6 +5328,9 @@ describe("terminal workbench model", () => {
       "adapter-chain-health:blocked",
       "safety-boundary:blocked"
     ]);
+    expect(coverage.detail).toContain(
+      "Blocking rows: paper-replay-manifest missing, p2-acceptance-manifest blocked, operator-runbook-audit stale, pre-live-checklist missing, adapter-chain-health blocked, safety-boundary blocked."
+    );
     expect(coverage.rows.find((row) => row.id === "p2-acceptance-manifest")?.detail).toContain(
       "unsafe execution claims"
     );

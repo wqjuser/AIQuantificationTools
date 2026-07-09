@@ -10110,7 +10110,12 @@ export function buildP2ReadinessEvidenceCoverage({
   ];
   const coveredCount = rows.filter((row) => row.status === "covered").length;
   const totalCount = rows.length;
-  const blockingCount = rows.filter((row) => row.status !== "covered").length;
+  const blockingRows = rows.filter((row) => row.status !== "covered");
+  const blockingCount = blockingRows.length;
+  const blockingDetail =
+    blockingRows.length > 0
+      ? ` Blocking rows: ${blockingRows.map((row) => `${row.id} ${row.status}`).join(", ")}.`
+      : "";
   const status: P2ReadinessEvidenceCoverageStatus = rows.some((row) => row.status === "blocked")
     ? "blocked"
     : rows.some((row) => row.status === "stale")
@@ -10133,7 +10138,7 @@ export function buildP2ReadinessEvidenceCoverage({
     status,
     tone,
     headline,
-    detail: `${coveredCount}/${totalCount} readiness claims have audit events or local manifests; ${blockingCount} rows still block pre-live confidence. Direct order submission remains disabled.`,
+    detail: `${coveredCount}/${totalCount} readiness claims have audit events or local manifests; ${blockingCount} rows still block pre-live confidence.${blockingDetail} Direct order submission remains disabled.`,
     coveredCount,
     totalCount,
     blockingCount,
