@@ -8147,7 +8147,7 @@ function buildMissingStage1BootstrapPreflight(reason: string): Stage1BootstrapPr
       stage1DailyUse: "data/stage1-daily-use.json"
     },
     checks: [
-      check("package-scripts", "Package scripts", "package.json", "npm install"),
+      check("package-scripts", "Package scripts", "package.json", "npm run stage1:prepare:plan"),
       check("p0-acceptance", "P0 acceptance", "data/p0-acceptance.json", "npm run docker:smoke:p0 -- --no-build --down"),
       check("p1-acceptance", "P1 acceptance", "data/p1-acceptance.json", "npm run docker:smoke:p1 -- --no-build --down"),
       check("p2-manifest-chain", "P2 manifest chain", "data/p2-chain-preflight.json", "npm run docker:smoke:p2:preflight"),

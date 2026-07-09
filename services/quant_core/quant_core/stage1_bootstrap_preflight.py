@@ -49,7 +49,7 @@ REQUIRED_PACKAGE_SCRIPTS = {
     "docker:smoke:p2:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
 }
 NEXT_ACTIONS = {
-    "package-scripts": ("repair-package-scripts", "npm install"),
+    "package-scripts": ("repair-package-scripts", "npm run stage1:prepare:plan"),
     "p0-acceptance": ("run-p0-acceptance", "npm run docker:smoke:p0 -- --no-build --down"),
     "p1-acceptance": ("run-p1-acceptance", "npm run docker:smoke:p1 -- --no-build --down"),
     "p2-manifest-chain": ("review-p2-manifest-chain", "npm run docker:smoke:p2:preflight"),
@@ -424,7 +424,7 @@ def _package_scripts_check(project_root: Path) -> dict[str, Any]:
             label="Package scripts",
             status="blocked",
             summary=" ".join(summary_parts),
-            recommended_command="npm install",
+            recommended_command="npm run stage1:prepare:plan",
             source_path="package.json",
         )
     return _check(
