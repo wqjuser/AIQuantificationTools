@@ -17,6 +17,7 @@ def build_stage1_prepare_plan(*, mode: str = "full") -> list[dict[str, object]]:
             _step("p2-paper-replay-validate", "Validate P2 paper replay", ["npm", "run", "docker:smoke:p2:paper-replay:validate"]),
             _step("p2-pre-live-validate", "Validate P2 pre-live acceptance", ["npm", "run", "docker:smoke:p2:pre-live:validate"]),
             _step("p2-readiness-validate", "Validate P2 readiness acceptance", ["npm", "run", "docker:smoke:p2:validate"]),
+            _step("p2-chain-preflight", "Refresh P2 manifest chain preflight", ["npm", "run", "docker:smoke:p2:preflight"]),
             _step("desktop-release-record", "Refresh desktop release manifest", ["npm", "run", "desktop:release:record"]),
             *_stage1_report_steps(),
         ]

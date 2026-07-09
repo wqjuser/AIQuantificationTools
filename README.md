@@ -401,7 +401,7 @@ npm run stage1:prepare
 npm run stage1:prepare:quick
 ```
 
-`stage1:prepare:plan` 只打印将要执行的完整链路，不运行 Docker 或桌面打包；`stage1:prepare` 会依次跑 P0/P1 acceptance、P2 readiness chain、P2 chain preflight、桌面发布和 Stage 1 daily/preflight 报告；`stage1:prepare:quick` 只复核已经存在的 P0/P1/P2 manifest、刷新桌面 release manifest，再生成并验证 Stage 1 daily/preflight 报告。这三个入口都复用下面的单项命令，不连接券商、不提交订单，也不会放宽 `liveTradingAllowed=false`。
+`stage1:prepare:plan` 只打印将要执行的完整链路，不运行 Docker 或桌面打包；`stage1:prepare` 会依次跑 P0/P1 acceptance、P2 readiness chain、P2 chain preflight、桌面发布和 Stage 1 daily/preflight 报告；`stage1:prepare:quick` 会复核已经存在的 P0/P1/P2 manifest、刷新 P2 chain preflight 和桌面 release manifest，再生成并验证 Stage 1 daily/preflight 报告。这三个入口都复用下面的单项命令，不连接券商、不提交订单，也不会放宽 `liveTradingAllowed=false`。
 
 Stage 1 日常启动自检：
 

@@ -1735,6 +1735,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "p2-paper-replay-validate",
                 "p2-pre-live-validate",
                 "p2-readiness-validate",
+                "p2-chain-preflight",
                 "desktop-release-record",
                 "stage1-daily-use",
                 "stage1-bootstrap-preflight",
@@ -1743,7 +1744,8 @@ class QuantCoreContractTest(unittest.TestCase):
             ],
         )
         self.assertEqual(plan[0]["command"], ["npm", "run", "docker:smoke:p0:validate"])
-        self.assertEqual(plan[5]["command"], ["npm", "run", "desktop:release:record"])
+        self.assertEqual(plan[5]["command"], ["npm", "run", "docker:smoke:p2:preflight"])
+        self.assertEqual(plan[6]["command"], ["npm", "run", "desktop:release:record"])
 
     def test_stage1_prepare_dry_run_does_not_execute_commands(self):
         preparer = self._load_stage1_prepare_module()
