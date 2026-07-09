@@ -15648,6 +15648,24 @@ describe("terminal workbench model", () => {
     );
     expect(staleBootstrapReference.copyText).toContain("- Bootstrap P2 chain source: data/p2-chain-preflight.json");
 
+    const staleBootstrapCheckReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure: {
+        ...closure,
+        bootstrapPreflightChecks: closure.bootstrapPreflightChecks?.map((check) =>
+          check.id === "p2-manifest-chain" ? { ...check, status: "review" } : check
+        )
+      },
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(staleBootstrapCheckReference.status).toBe("stale");
+    expect(staleBootstrapCheckReference.detail).toContain(
+      "Bootstrap checks changed from p2-manifest-chain:ready to p2-manifest-chain:review"
+    );
+
     const missingReference = buildStage1P0DailyUseArchiveReviewReference({
       closure,
       invalidShareStatus,

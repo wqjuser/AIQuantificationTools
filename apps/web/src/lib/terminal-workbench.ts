@@ -11390,12 +11390,22 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     !isCurrent && archivedP2ChainSource !== currentP2ChainSource
       ? ` P2 chain source changed from ${archivedP2ChainSource || "none"} to ${currentP2ChainSource || "none"}.`
       : "";
+  const archivedBootstrapChecks = latestRow.stage1DailyArchiveReviewBootstrapPreflightCheckIds
+    .map((id, index) => `${id}:${latestRow.stage1DailyArchiveReviewBootstrapPreflightCheckStatuses[index] || "unknown"}`)
+    .join(", ");
+  const currentBootstrapChecks = (closure.bootstrapPreflightChecks ?? [])
+    .map((check) => `${check.id}:${check.status}`)
+    .join(", ");
+  const bootstrapCheckStaleReason =
+    !isCurrent && archivedBootstrapChecks !== currentBootstrapChecks
+      ? ` Bootstrap checks changed from ${archivedBootstrapChecks || "none"} to ${currentBootstrapChecks || "none"}.`
+      : "";
 
   return finalizeStage1P0DailyUseArchiveReviewReference({
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
-      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${p2ChainStaleReason}`,
+      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${p2ChainStaleReason}${bootstrapCheckStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Stage 1 archive review current" : "Stage 1 archive review stale",
     query,
