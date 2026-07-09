@@ -30672,16 +30672,42 @@ export function buildStrategyExperimentEvidenceSummary(
   experiment: StrategyExperimentDetail | null
 ): StrategyExperimentEvidenceSummary | null {
   const run = workspace.researchRun;
+  const definition = experiment?.definition;
+  const snapshot = experiment?.snapshot;
+  const dataSnapshot = run?.dataSnapshot;
   if (
     !experiment ||
     experiment.status !== "completed" ||
     !run ||
+    !definition ||
+    !snapshot ||
+    dataSnapshot?.hashVersion !== "aiqt-data-v2" ||
     !buildResearchRunContextBinding(workspace).canUseRun ||
     experiment.strategyRevision !== run.strategyRevision ||
+    experiment.strategyRevision !== definition.strategyRevision ||
+    experiment.strategyRevision !== definition.baseStrategy.revision ||
     experiment.sourceRunId !== run.runId ||
+    experiment.sourceRunId !== definition.sourceRunId ||
+    experiment.snapshotId !== definition.snapshotId ||
+    experiment.snapshotId !== snapshot.snapshotId ||
+    dataSnapshot.hash !== definition.canonicalDataHash ||
+    dataSnapshot.hash !== snapshot.canonicalDataHash ||
     experiment.market !== workspace.selectedInstrument.market ||
+    experiment.market !== run.market ||
+    experiment.market !== definition.market ||
+    experiment.market !== definition.baseStrategy.market ||
+    experiment.market !== snapshot.market ||
     experiment.symbol !== workspace.selectedInstrument.symbol ||
+    experiment.symbol !== run.symbol ||
+    experiment.symbol !== definition.symbol ||
+    definition.baseStrategy.symbols.length !== 1 ||
+    experiment.symbol !== definition.baseStrategy.symbols[0] ||
+    experiment.symbol !== snapshot.symbol ||
     experiment.timeframe !== workspace.selectedTimeframe ||
+    experiment.timeframe !== run.timeframe ||
+    experiment.timeframe !== definition.timeframe ||
+    experiment.timeframe !== definition.baseStrategy.timeframe ||
+    experiment.timeframe !== snapshot.timeframe ||
     !experiment.resultHash ||
     !experiment.selectedCandidateId
   ) {
@@ -30709,16 +30735,20 @@ export function buildStrategyExperimentEvidenceSummary(
   };
 }
 
+const strategyExperimentSupportedParameters: Record<
+  string,
+  readonly StrategyExperimentDimension["parameter"][]
+> = {
+  close_above_sma: ["window"],
+  close_below_sma: ["window"],
+  volume_above_sma: ["window"],
+  rsi_below: ["window", "threshold"],
+  rsi_above: ["window", "threshold"]
+};
+
 export function buildDefaultStrategyExperimentDimensions(
   strategyConfig: ResearchRunStrategyConfig
 ): StrategyExperimentDimension[] {
-  const supportedParameters: Record<string, StrategyExperimentDimension["parameter"][]> = {
-    close_above_sma: ["window"],
-    close_below_sma: ["window"],
-    volume_above_sma: ["window"],
-    rsi_below: ["window", "threshold"],
-    rsi_above: ["window", "threshold"]
-  };
   const dimensions: StrategyExperimentDimension[] = [];
 
   const appendDimensions = (
@@ -30726,7 +30756,7 @@ export function buildDefaultStrategyExperimentDimensions(
     conditions: ResearchRunStrategyCondition[]
   ) => {
     conditions.forEach((condition, conditionIndex) => {
-      (supportedParameters[condition.kind] ?? []).forEach((parameter) => {
+      (strategyExperimentSupportedParameters[condition.kind] ?? []).forEach((parameter) => {
         const currentValue = condition.params[parameter];
         if (
           typeof currentValue === "number" &&
@@ -30791,13 +30821,44 @@ export function workspaceWithStrategyExperimentCandidate(
   candidateId: string
 ): TerminalWorkspace {
   const candidate = experiment.candidates.find((item) => item.candidateId === candidateId);
-  if (!candidate) {
+  if (!candidate || !candidate.candidateRevision.trim()) {
     return workspace;
   }
 
   const baseStrategy = experiment.definition.baseStrategy;
+  const targets = new Set<string>();
+  for (const parameterPatch of candidate.parameters) {
+    const conditions =
+      parameterPatch.conditionSide === "entry"
+        ? baseStrategy.entryConditions
+        : parameterPatch.conditionSide === "exit"
+          ? baseStrategy.exitConditions
+          : null;
+    if (
+      !conditions ||
+      !Number.isInteger(parameterPatch.conditionIndex) ||
+      parameterPatch.conditionIndex < 0 ||
+      parameterPatch.conditionIndex >= conditions.length
+    ) {
+      return workspace;
+    }
+    const condition = conditions[parameterPatch.conditionIndex];
+    if (
+      !strategyExperimentSupportedParameters[condition.kind]?.includes(parameterPatch.parameter) ||
+      !isValidStrategyExperimentParameterValue(parameterPatch.parameter, parameterPatch.value)
+    ) {
+      return workspace;
+    }
+    const target = `${parameterPatch.conditionSide}:${parameterPatch.conditionIndex}:${parameterPatch.parameter}`;
+    if (targets.has(target)) {
+      return workspace;
+    }
+    targets.add(target);
+  }
+
   const strategyConfig: ResearchRunStrategyConfig = {
     ...baseStrategy,
+    revision: candidate.candidateRevision,
     entryConditions: baseStrategy.entryConditions.map((condition) => ({
       ...condition,
       params: { ...condition.params }
@@ -30813,11 +30874,11 @@ export function workspaceWithStrategyExperimentCandidate(
       parameterPatch.conditionSide === "entry"
         ? strategyConfig.entryConditions
         : strategyConfig.exitConditions;
-    const condition = conditions[parameterPatch.conditionIndex];
-    if (condition) {
-      condition.params[parameterPatch.parameter] = parameterPatch.value;
-    }
+    conditions[parameterPatch.conditionIndex].params[parameterPatch.parameter] = parameterPatch.value;
   });
+  if (strategyConfig.revision !== candidate.candidateRevision) {
+    return workspace;
+  }
 
   return clearAuditedResearchResults(
     {
@@ -30826,7 +30887,7 @@ export function workspaceWithStrategyExperimentCandidate(
       decisionLog: [
         {
           agent: "Strategy Experiment",
-          message: `Candidate ${candidate.candidateId} staged from persisted experiment ${experiment.experimentId}. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.`,
+          message: `Candidate ${candidate.candidateId} revision ${strategyConfig.revision} staged from persisted experiment ${experiment.experimentId}. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.`,
           tone: "warning"
         }
       ]

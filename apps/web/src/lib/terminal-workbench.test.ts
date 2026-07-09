@@ -312,6 +312,7 @@ import {
   type ResearchRunAudit,
   type ResearchRunStrategyConfig,
   type StrategyExperimentDetail,
+  type StrategyExperimentParameterPatch,
   type PaperExecutionSnapshot,
   type ExecutionAdapterPaperRouteRunbookRow,
   type ExecutionAdapterOpsStateRow,
@@ -673,6 +674,17 @@ function workspaceForStrategyExperiment(experiment: StrategyExperimentDetail): T
     ],
     executionMode: "paper_only",
     strategyConfig: experiment.definition.baseStrategy,
+    dataSnapshot: {
+      hashVersion: "aiqt-data-v2",
+      source: "unit-test",
+      isComplete: true,
+      warnings: [],
+      rows: 0,
+      start: null,
+      end: null,
+      hash: experiment.definition.canonicalDataHash,
+      bars: []
+    },
     backtestTrades: [
       {
         id: "stale-trade",
@@ -1381,6 +1393,86 @@ describe("terminal workbench model", () => {
     expect(buildStrategyExperimentEvidenceSummary(workspace, { ...experiment, status: "failed" })).toBeNull();
   });
 
+  test("rejects broken v2 strategy experiment snapshot chains", () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+    const run = workspace.researchRun!;
+    const dataSnapshot = run.dataSnapshot!;
+    const workspaceWithSnapshot = (
+      snapshot: NonNullable<typeof run.dataSnapshot>,
+      runOverrides: Partial<typeof run> = {}
+    ): TerminalWorkspace => ({
+      ...workspace,
+      researchRun: { ...run, ...runOverrides, dataSnapshot: snapshot }
+    });
+    const brokenExperiments: StrategyExperimentDetail[] = [
+      {
+        ...experiment,
+        definition: { ...experiment.definition, canonicalDataHash: "other-definition-hash" }
+      },
+      {
+        ...experiment,
+        snapshot: { ...experiment.snapshot, canonicalDataHash: "other-detail-hash" }
+      },
+      { ...experiment, snapshotId: "other-experiment-snapshot" },
+      {
+        ...experiment,
+        definition: { ...experiment.definition, snapshotId: "other-definition-snapshot" }
+      },
+      {
+        ...experiment,
+        snapshot: { ...experiment.snapshot, snapshotId: "other-detail-snapshot" }
+      },
+      {
+        ...experiment,
+        definition: { ...experiment.definition, market: "us" }
+      },
+      {
+        ...experiment,
+        snapshot: { ...experiment.snapshot, timeframe: "5m" }
+      },
+      {
+        ...experiment,
+        definition: { ...experiment.definition, strategyRevision: "other-revision" }
+      },
+      {
+        ...experiment,
+        definition: { ...experiment.definition, sourceRunId: "other-run" }
+      }
+    ];
+
+    brokenExperiments.forEach((brokenExperiment) => {
+      expect(buildStrategyExperimentEvidenceSummary(workspace, brokenExperiment)).toBeNull();
+    });
+    expect(
+      buildStrategyExperimentEvidenceSummary(
+        workspaceWithSnapshot({ ...dataSnapshot, hashVersion: undefined }),
+        experiment
+      )
+    ).toBeNull();
+    expect(
+      buildStrategyExperimentEvidenceSummary(
+        workspaceWithSnapshot({
+          ...dataSnapshot,
+          hashVersion: "aiqt-data-v1" as "aiqt-data-v2"
+        }),
+        experiment
+      )
+    ).toBeNull();
+    expect(
+      buildStrategyExperimentEvidenceSummary(
+        workspaceWithSnapshot({ ...dataSnapshot, hash: "other-run-hash" }),
+        experiment
+      )
+    ).toBeNull();
+    expect(
+      buildStrategyExperimentEvidenceSummary(
+        workspaceWithSnapshot(dataSnapshot, { market: "us" }),
+        experiment
+      )
+    ).toBeNull();
+  });
+
   test("builds deterministic capped strategy experiment dimensions", () => {
     const strategyConfig = strategyExperimentFixture().definition.baseStrategy;
 
@@ -1422,6 +1514,7 @@ describe("terminal workbench model", () => {
 
   test("stages a persisted strategy experiment candidate and clears audited evidence", () => {
     const experiment = strategyExperimentFixture();
+    const originalExperiment = structuredClone(experiment);
     const workspace = workspaceForStrategyExperiment(experiment);
 
     const staged = workspaceWithStrategyExperimentCandidate(
@@ -1441,6 +1534,7 @@ describe("terminal workbench model", () => {
       risk: "Stop 6.00% / take profit 12.00% / max drawdown 9.00%"
     });
     expect(experiment.definition.baseStrategy.entryConditions[0].params.window).toBe(10);
+    expect(experiment).toEqual(originalExperiment);
     expect(staged.researchRun).toBeNull();
     expect(staged.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
     expect(staged.backtestTrades).toEqual([]);
@@ -1456,10 +1550,49 @@ describe("terminal workbench model", () => {
       {
         agent: "Strategy Experiment",
         message:
-          "Candidate candidate-a staged from persisted experiment experiment-1. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.",
+          "Candidate candidate-a revision candidate-rev-a staged from persisted experiment experiment-1. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.",
         tone: "warning"
       }
     ]);
+  });
+
+  test("rejects invalid strategy experiment candidate patches atomically", () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+    const validWindowPatch: StrategyExperimentParameterPatch = {
+      conditionSide: "entry",
+      conditionIndex: 0,
+      parameter: "window",
+      value: 15
+    };
+    const invalidPatchSets: StrategyExperimentParameterPatch[][] = [
+      [{ ...validWindowPatch, conditionIndex: -1 }],
+      [{ ...validWindowPatch, conditionIndex: 99 }],
+      [{ ...validWindowPatch, conditionIndex: 0.5 }],
+      [{ ...validWindowPatch, parameter: "threshold" }],
+      [{ ...validWindowPatch, value: 0 }],
+      [{ ...validWindowPatch, value: 251 }],
+      [{ ...validWindowPatch, value: 10.5 }],
+      [{ conditionSide: "entry", conditionIndex: 1, parameter: "threshold", value: Number.NaN }],
+      [{ conditionSide: "entry", conditionIndex: 1, parameter: "threshold", value: Number.POSITIVE_INFINITY }],
+      [{ conditionSide: "entry", conditionIndex: 1, parameter: "threshold", value: -1 }],
+      [{ conditionSide: "entry", conditionIndex: 1, parameter: "threshold", value: 101 }],
+      [validWindowPatch, { ...validWindowPatch, value: 20 }],
+      [validWindowPatch, { ...validWindowPatch, conditionIndex: 99 }]
+    ];
+
+    expect(workspaceWithStrategyExperimentCandidate(workspace, experiment, "missing-candidate")).toBe(workspace);
+    invalidPatchSets.forEach((parameters) => {
+      const invalidExperiment: StrategyExperimentDetail = {
+        ...experiment,
+        candidates: [{ ...experiment.candidates[0], parameters }]
+      };
+      const originalExperiment = structuredClone(invalidExperiment);
+
+      expect(workspaceWithStrategyExperimentCandidate(workspace, invalidExperiment, "candidate-a")).toBe(workspace);
+      expect(invalidExperiment).toEqual(originalExperiment);
+      expect(workspace.researchRun).not.toBeNull();
+    });
   });
 
   test("defines stage-gated product delivery in platform order", () => {
