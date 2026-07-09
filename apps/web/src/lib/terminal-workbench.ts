@@ -11384,12 +11384,18 @@ export function buildStage1P0DailyUseArchiveReviewReference({
   const stateLabel = `${latestRow.stage1DailyArchiveReviewState || latestRow.focusQuery} ${
     latestRow.stage1DailyArchiveReviewReadyCount
   }/${latestRow.stage1DailyArchiveReviewTotalCount}`;
+  const archivedP2ChainSource = latestRow.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath;
+  const currentP2ChainSource = closure.bootstrapPreflightSourcePaths?.p2ManifestChainPreflight ?? "";
+  const p2ChainStaleReason =
+    !isCurrent && archivedP2ChainSource !== currentP2ChainSource
+      ? ` P2 chain source changed from ${archivedP2ChainSource || "none"} to ${currentP2ChainSource || "none"}.`
+      : "";
 
   return finalizeStage1P0DailyUseArchiveReviewReference({
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
-      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.`,
+      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${p2ChainStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Stage 1 archive review current" : "Stage 1 archive review stale",
     query,

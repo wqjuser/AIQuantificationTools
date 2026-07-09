@@ -15643,6 +15643,9 @@ describe("terminal workbench model", () => {
     });
 
     expect(staleBootstrapReference.status).toBe("stale");
+    expect(staleBootstrapReference.detail).toContain(
+      "P2 chain source changed from data/p2-chain-preflight.json to data/p2-chain-preflight-next.json"
+    );
     expect(staleBootstrapReference.copyText).toContain("- Bootstrap P2 chain source: data/p2-chain-preflight.json");
 
     const missingReference = buildStage1P0DailyUseArchiveReviewReference({
