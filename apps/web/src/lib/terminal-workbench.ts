@@ -11390,6 +11390,27 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     !isCurrent && archivedPrimaryAction !== currentPrimaryAction
       ? ` Primary action changed from ${archivedPrimaryAction} to ${currentPrimaryAction}.`
       : "";
+  const archivedRefreshOutcome = latestRow.stage1DailyArchiveReviewRefreshOutcomeState;
+  const currentRefreshOutcome = refreshOutcome?.state ?? "not-generated";
+  const refreshOutcomeStaleReason =
+    !isCurrent && archivedRefreshOutcome !== currentRefreshOutcome
+      ? ` Refresh outcome changed from ${archivedRefreshOutcome || "none"} to ${currentRefreshOutcome || "none"}.`
+      : "";
+  const archivedShareContext = `${latestRow.stage1DailyArchiveReviewShareKind}/${latestRow.stage1DailyArchiveReviewShareFocus}->${latestRow.stage1DailyArchiveReviewShareTargetWorkspaceId}`;
+  const currentShareContext = `${shareDeepLinkState?.kind ?? "none"}/${shareDeepLinkState?.focus ?? "none"}->${
+    shareDeepLinkState?.targetWorkspaceId ?? "none"
+  }`;
+  const shareContextStaleReason =
+    !isCurrent && archivedShareContext !== currentShareContext
+      ? ` Share context changed from ${archivedShareContext} to ${currentShareContext}.`
+      : "";
+  const currentInvalidShareReason = invalidShareStatus?.status === "invalid" ? invalidShareStatus.reason : "none";
+  const archivedInvalidShare = `${latestRow.stage1DailyArchiveReviewInvalidShareStatus}:${latestRow.stage1DailyArchiveReviewInvalidShareReason}`;
+  const currentInvalidShare = `${invalidShareStatus?.status ?? "none"}:${currentInvalidShareReason}`;
+  const invalidShareStaleReason =
+    !isCurrent && archivedInvalidShare !== currentInvalidShare
+      ? ` Invalid share changed from ${archivedInvalidShare} to ${currentInvalidShare}.`
+      : "";
   const archivedP2ChainSource = latestRow.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath;
   const currentP2ChainSource = closure.bootstrapPreflightSourcePaths?.p2ManifestChainPreflight ?? "";
   const p2ChainStaleReason =
@@ -11432,7 +11453,7 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
-      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${primaryActionStaleReason}${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}${stage1RowsStaleReason}`,
+      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${primaryActionStaleReason}${refreshOutcomeStaleReason}${shareContextStaleReason}${invalidShareStaleReason}${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}${stage1RowsStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Stage 1 archive review current" : "Stage 1 archive review stale",
     query,

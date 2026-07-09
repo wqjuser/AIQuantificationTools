@@ -15705,6 +15705,51 @@ describe("terminal workbench model", () => {
       "Stage 1 rows changed from clean-open:ready->market, research-entry:blocked->research to clean-open:ready->market, research-entry:ready->research"
     );
 
+    const staleRefreshReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure,
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome: { ...refreshOutcome, state: "ready" },
+      shareDeepLinkState
+    });
+
+    expect(staleRefreshReference.status).toBe("stale");
+    expect(staleRefreshReference.detail).toContain("Refresh outcome changed from review to ready");
+
+    const staleShareReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure,
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState: {
+        focus: "desktop-release",
+        kind: "refresh-receipt",
+        targetWorkspaceId: "settings"
+      }
+    });
+
+    expect(staleShareReference.status).toBe("stale");
+    expect(staleShareReference.detail).toContain(
+      "Share context changed from daily-use/research-entry->research to refresh-receipt/desktop-release->settings"
+    );
+
+    const staleInvalidShareReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure,
+      invalidShareStatus: {
+        reason: "invalid-workspace",
+        state: null,
+        status: "invalid"
+      },
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(staleInvalidShareReference.status).toBe("stale");
+    expect(staleInvalidShareReference.detail).toContain(
+      "Invalid share changed from ready:none to invalid:invalid-workspace"
+    );
+
     const missingReference = buildStage1P0DailyUseArchiveReviewReference({
       closure,
       invalidShareStatus,
