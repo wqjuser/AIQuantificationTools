@@ -36,6 +36,16 @@ class QuantCoreContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def _load_stage1_prepare_module(self):
+        root = Path(__file__).resolve().parents[3]
+        module_path = root / "tools" / "stage1_prepare.py"
+        spec = importlib.util.spec_from_file_location("stage1_prepare", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
     def _sample_p0_acceptance_manifest(self, *, run_id: str = "run-smoke"):
         return {
             "kind": "aiqt.p0AcceptanceManifest",
@@ -1674,6 +1684,66 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertFalse(payload["liveTradingAllowed"])
         self.assertFalse(payload["liveOrderSubmitted"])
         self.assertFalse(payload["routeExecuted"])
+
+    def test_stage1_prepare_full_plan_runs_acceptance_chain_before_daily_reports(self):
+        preparer = self._load_stage1_prepare_module()
+
+        plan = preparer.build_stage1_prepare_plan(mode="full")
+
+        self.assertEqual(
+            [step["id"] for step in plan],
+            [
+                "p0-acceptance",
+                "p1-acceptance",
+                "p2-readiness-chain",
+                "p2-chain-preflight",
+                "desktop-release",
+                "stage1-daily-use",
+                "stage1-bootstrap-preflight",
+                "stage1-daily-use-validate",
+                "stage1-bootstrap-preflight-validate",
+            ],
+        )
+        self.assertEqual(plan[0]["command"], ["npm", "run", "docker:smoke:p0", "--", "--no-build", "--down"])
+        self.assertEqual(plan[4]["command"], ["npm", "run", "desktop:release"])
+        self.assertEqual(plan[-1]["command"], ["npm", "run", "stage1:preflight:validate"])
+
+    def test_stage1_prepare_quick_plan_reuses_existing_evidence(self):
+        preparer = self._load_stage1_prepare_module()
+
+        plan = preparer.build_stage1_prepare_plan(mode="quick")
+
+        self.assertEqual(
+            [step["id"] for step in plan],
+            [
+                "p0-acceptance-validate",
+                "p1-acceptance-validate",
+                "p2-paper-replay-validate",
+                "p2-pre-live-validate",
+                "p2-readiness-validate",
+                "desktop-release-record",
+                "stage1-daily-use",
+                "stage1-bootstrap-preflight",
+                "stage1-daily-use-validate",
+                "stage1-bootstrap-preflight-validate",
+            ],
+        )
+        self.assertEqual(plan[0]["command"], ["npm", "run", "docker:smoke:p0:validate"])
+        self.assertEqual(plan[5]["command"], ["npm", "run", "desktop:release:record"])
+
+    def test_stage1_prepare_dry_run_does_not_execute_commands(self):
+        preparer = self._load_stage1_prepare_module()
+        calls = []
+
+        exit_code = preparer.run_stage1_prepare(
+            mode="quick",
+            dry_run=True,
+            cwd=Path("/tmp/aiqt"),
+            runner=lambda *args, **kwargs: calls.append((args, kwargs)),
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(calls, [])
 
     def test_stage1_bootstrap_preflight_latest_api_returns_validated_preflight(self):
         import json
@@ -3881,6 +3951,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             scripts["stage1:preflight:validate"],
             f"{python_launcher} tools/stage1_bootstrap_preflight.py --validate data/stage1-bootstrap-preflight.json",
+        )
+        self.assertEqual(scripts["stage1:prepare"], f"{python_launcher} tools/stage1_prepare.py --mode full")
+        self.assertEqual(scripts["stage1:prepare:quick"], f"{python_launcher} tools/stage1_prepare.py --mode quick")
+        self.assertEqual(
+            scripts["stage1:prepare:plan"],
+            f"{python_launcher} tools/stage1_prepare.py --mode full --dry-run",
         )
 
     def test_docker_smoke_p2_chain_preflight_reports_missing_next_action(self):
