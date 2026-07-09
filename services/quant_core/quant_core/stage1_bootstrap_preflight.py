@@ -39,6 +39,9 @@ REQUIRED_PACKAGE_SCRIPTS = {
     "docker:smoke:p0:validate",
     "docker:smoke:p1:validate",
     "docker:smoke:p2:preflight",
+    "docker:smoke:p2:paper-replay:validate",
+    "docker:smoke:p2:pre-live:validate",
+    "docker:smoke:p2:validate",
 }
 NEXT_ACTIONS = {
     "package-scripts": ("repair-package-scripts", "npm install"),
