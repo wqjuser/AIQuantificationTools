@@ -112,6 +112,10 @@ class BacktestEvaluationBoundaryTests(unittest.TestCase):
             ):
                 BacktestEngine().run(self.strategy, self.bars, evaluation_start_index=boundary)
 
+    def test_preserves_empty_bars_error(self):
+        with self.assertRaisesRegex(ValueError, "^backtest requires at least one OHLCV bar$"):
+            BacktestEngine().run(self.strategy, [])
+
 
 class CanonicalContractTests(unittest.TestCase):
     def test_canonical_json_normalizes_integral_float_and_negative_zero(self):

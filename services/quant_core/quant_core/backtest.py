@@ -35,6 +35,8 @@ class BacktestEngine:
         evaluation_start_index: int = 0,
     ) -> BacktestRun:
         ordered_bars = sorted(bars, key=lambda bar: bar.timestamp)
+        if not ordered_bars:
+            raise ValueError("backtest requires at least one OHLCV bar")
         if not 0 <= evaluation_start_index < len(ordered_bars):
             raise ValueError("invalid_evaluation_start_index")
 
