@@ -15,6 +15,7 @@ RUN if [ "$INSTALL_DATA_DEPS" = "true" ]; then \
       pip install --no-cache-dir akshare yfinance ccxt; \
     fi
 
+COPY package.json package.json
 COPY services/quant_core services/quant_core
 COPY tools tools
 

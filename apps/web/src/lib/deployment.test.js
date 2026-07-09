@@ -100,6 +100,7 @@ describe("docker deployment contract", () => {
     const apiDockerfile = readRepoFile("Dockerfile.api");
     expect(apiDockerfile).toContain("FROM python:3.12-slim");
     expect(apiDockerfile).toContain("ENV PYTHONPATH=/app/services/quant_core");
+    expect(apiDockerfile).toContain("COPY package.json package.json");
     expect(apiDockerfile).toContain("EXPOSE 8765");
     expect(apiDockerfile).toContain('CMD ["python", "tools/run_quant_api.py"]');
 
