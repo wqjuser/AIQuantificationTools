@@ -4,8 +4,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from quant_core.canonical import strategy_config_to_payload
 from quant_core.domain import Condition, Market, StrategyConfig, Timeframe
-from quant_core.research import strategy_config_from_snapshot, strategy_config_to_payload
+from quant_core.research import strategy_config_from_snapshot
 from quant_core.terminal import StrategySnapshot
 
 StrategyGateStatus = Literal["passed", "review", "blocked"]

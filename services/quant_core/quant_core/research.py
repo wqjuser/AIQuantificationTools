@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from inspect import Parameter, signature
@@ -14,6 +12,12 @@ from quant_core.adapters import DemoMarketDataAdapter, MarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
+from quant_core.canonical import (
+    DATA_SNAPSHOT_HASH_VERSION,
+    canonical_data_hash,
+    normalize_snapshot_bars,
+    strategy_config_to_payload,
+)
 from quant_core.domain import (
     AiResearchRequest,
     BacktestRun,
@@ -26,7 +30,6 @@ from quant_core.domain import (
     StrategyConfig,
     Timeframe,
 )
-from quant_core.market_klines import bar_to_payload
 from quant_core.market_calendar import build_market_calendar_status
 from quant_core.runs import ResearchRunAudit, ResearchRunStore, build_p0_package_completeness
 from quant_core.terminal import (
@@ -226,52 +229,23 @@ def _data_snapshot_payload(
     preparation_evidence: dict[str, Any] | None = None,
     market_calendar: dict[str, Any] | None = None,
 ) -> dict[str, object]:
-    payload_bars = [bar_to_payload(bar) for bar in bars]
+    normalized_bars = normalize_snapshot_bars(bars)
     snapshot: dict[str, object] = {
         "source": quality.source,
         "isComplete": quality.is_complete,
         "warnings": list(quality.warnings),
-        "rows": len(payload_bars),
-        "start": payload_bars[0]["timestamp"] if payload_bars else None,
-        "end": payload_bars[-1]["timestamp"] if payload_bars else None,
-        "hash": _bars_hash(payload_bars),
-        "bars": payload_bars,
+        "rows": len(normalized_bars),
+        "start": normalized_bars[0]["timestamp"] if normalized_bars else None,
+        "end": normalized_bars[-1]["timestamp"] if normalized_bars else None,
+        "hashVersion": DATA_SNAPSHOT_HASH_VERSION,
+        "hash": canonical_data_hash(normalized_bars),
+        "bars": normalized_bars,
     }
     if preparation_evidence:
         snapshot["preparationEvidence"] = dict(preparation_evidence)
     if market_calendar:
         snapshot["marketCalendar"] = dict(market_calendar)
     return snapshot
-
-
-def _bars_hash(bars: list[dict[str, object]]) -> str:
-    if not bars:
-        return ""
-    raw = json.dumps(bars, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-
-
-def strategy_config_to_payload(strategy: StrategyConfig) -> dict[str, object]:
-    return {
-        "name": strategy.name,
-        "revision": strategy.revision,
-        "market": strategy.market,
-        "symbols": list(strategy.symbols),
-        "timeframe": strategy.timeframe,
-        "version": strategy.version,
-        "entryConditions": [_condition_payload(condition) for condition in strategy.entry_conditions],
-        "exitConditions": [_condition_payload(condition) for condition in strategy.exit_conditions],
-        "risk": {
-            "positionPct": strategy.risk.position_pct,
-            "stopLossPct": strategy.risk.stop_loss_pct,
-            "takeProfitPct": strategy.risk.take_profit_pct,
-            "maxDrawdownPct": strategy.risk.max_drawdown_pct,
-        },
-    }
-
-
-def _condition_payload(condition: Condition) -> dict[str, object]:
-    return {"kind": condition.kind, "params": dict(condition.params)}
 
 
 def _backtest_equity_curve_rows(backtest: BacktestRun) -> list[BacktestEquityPointReplay]:

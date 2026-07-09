@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from quant_core.canonical import strategy_config_to_payload
 from quant_core.domain import StrategyConfig
-from quant_core.research import strategy_config_to_payload
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from quant_core.canonical import DATA_SNAPSHOT_HASH_VERSION, canonical_data_hash, normalize_snapshot_bars
 from quant_core.handoff_notes import normalize_handoff_note_payloads
 
 
@@ -991,6 +992,10 @@ def _validate_manifest_consistency(
     snapshot_hash = str(data_snapshot.get("hash") or "")
     if manifest_hash != snapshot_hash:
         raise ValueError("data_hash_mismatch")
+    if str(data_snapshot.get("hashVersion") or "") == DATA_SNAPSHOT_HASH_VERSION:
+        normalized_bars = normalize_snapshot_bars(bars)
+        if snapshot_hash != canonical_data_hash(normalized_bars):
+            raise ValueError("data_snapshot_hash_mismatch")
 
     bar_count = len(bars)
     manifest_rows = int(_number_or_default(manifest.get("dataRows"), -1))
@@ -1543,14 +1548,20 @@ def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
     bars = snapshot.get("bars")
     if not isinstance(bars, list):
         bars = []
-    normalized_bars = [_normalize_snapshot_bar(bar) for bar in bars if isinstance(bar, dict)]
-    normalized_bars = [bar for bar in normalized_bars if bar is not None]
+    hash_version = str(snapshot.get("hashVersion") or "").strip()
+    if hash_version == DATA_SNAPSHOT_HASH_VERSION:
+        normalized_bars = normalize_snapshot_bars(bars)
+    else:
+        normalized_bars = [_normalize_snapshot_bar(bar) for bar in bars if isinstance(bar, dict)]
+        normalized_bars = [bar for bar in normalized_bars if bar is not None]
     warnings = snapshot.get("warnings")
     if not isinstance(warnings, list):
         warnings = []
     rows = int(_number_or_default(snapshot.get("rows"), len(normalized_bars)))
     source = str(snapshot.get("source") or DEFAULT_DATA_SNAPSHOT["source"]).strip() or DEFAULT_DATA_SNAPSHOT["source"]
     digest = str(snapshot.get("hash") or "").strip() or _snapshot_hash(normalized_bars)
+    if hash_version == DATA_SNAPSHOT_HASH_VERSION and digest != canonical_data_hash(normalized_bars):
+        raise ValueError("data_snapshot_hash_mismatch")
     normalized = {
         "source": source,
         "isComplete": bool(snapshot.get("isComplete", snapshot.get("is_complete", DEFAULT_DATA_SNAPSHOT["isComplete"]))),
@@ -1561,6 +1572,8 @@ def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
         "hash": digest,
         "bars": normalized_bars,
     }
+    if hash_version:
+        normalized["hashVersion"] = hash_version
     preparation_evidence = _normalize_data_preparation_evidence(snapshot.get("preparationEvidence"))
     if preparation_evidence:
         normalized["preparationEvidence"] = preparation_evidence
