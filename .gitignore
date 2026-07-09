@@ -12,6 +12,7 @@ __pycache__/
 .env
 local.properties
 .superpowers/
+.worktrees/
 artifacts/
 .codex-artifacts/
 .tmp/
