@@ -11111,12 +11111,46 @@ export function buildDailyOpsControlRoomReviewReference({
   const stateLabel = `${latestRow.dailyOpsControlRoomReviewState || latestRow.focusQuery} ${
     latestRow.dailyOpsControlRoomReviewReadyCount
   }/${latestRow.dailyOpsControlRoomReviewTotalCount}`;
+  const archivedStateLabel = `${stateLabel} review ${latestRow.dailyOpsControlRoomReviewReviewCount} blocked ${latestRow.dailyOpsControlRoomReviewBlockingCount}`;
+  const currentStateLabel = `${summary.state} ${summary.readyCount}/${summary.totalCount} review ${summary.reviewCount} blocked ${summary.blockingCount}`;
+  const stateStaleReason =
+    !isCurrent && archivedStateLabel !== currentStateLabel
+      ? ` Daily ops state changed from ${archivedStateLabel} to ${currentStateLabel}.`
+      : "";
+  const archivedPrimaryAction = `${latestRow.dailyOpsControlRoomReviewPrimaryActionLabel}->${latestRow.dailyOpsControlRoomReviewPrimaryActionWorkspaceId}`;
+  const currentPrimaryAction = `${summary.primaryActionLabel}->${summary.primaryActionWorkspaceId}`;
+  const primaryActionStaleReason =
+    !isCurrent && archivedPrimaryAction !== currentPrimaryAction
+      ? ` Primary action changed from ${archivedPrimaryAction} to ${currentPrimaryAction}.`
+      : "";
+  const archivedAuditContext = `${latestRow.dailyOpsControlRoomReviewAuditQueryTitle || "none"}->${
+    latestRow.dailyOpsControlRoomReviewAuditQuery || "none"
+  }`;
+  const currentAuditContext = `${summary.auditQueryTitle || "none"}->${summary.auditQuery || "none"}`;
+  const auditContextStaleReason =
+    !isCurrent && archivedAuditContext !== currentAuditContext
+      ? ` Audit context changed from ${archivedAuditContext} to ${currentAuditContext}.`
+      : "";
+  const archivedQueueItems = latestRow.dailyOpsControlRoomReviewQueueItemIds
+    .map((id, index) => `${id}:${latestRow.dailyOpsControlRoomReviewQueueItemStatuses[index] || "unknown"}`)
+    .join(", ");
+  const currentQueueItems = summary.queueItems.map((item) => `${item.id}:${item.status}`).join(", ");
+  const queueItemsStaleReason =
+    !isCurrent && archivedQueueItems !== currentQueueItems
+      ? ` Queue items changed from ${archivedQueueItems || "none"} to ${currentQueueItems || "none"}.`
+      : "";
+  const archivedOpenItems = latestRow.dailyOpsControlRoomReviewOpenItemIds.join(", ");
+  const currentOpenItems = summary.openItems.map((item) => item.id).join(", ");
+  const openItemsStaleReason =
+    !isCurrent && archivedOpenItems !== currentOpenItems
+      ? ` Open items changed from ${archivedOpenItems || "none"} to ${currentOpenItems || "none"}.`
+      : "";
 
   return {
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest review ${latestRow.id} matches current daily ops queue (${stateLabel}).`
-      : `Latest review ${latestRow.id} no longer matches current daily ops queue (${stateLabel}); record a fresh review.`,
+      : `Latest review ${latestRow.id} no longer matches current daily ops queue (${stateLabel}); record a fresh review.${stateStaleReason}${primaryActionStaleReason}${auditContextStaleReason}${queueItemsStaleReason}${openItemsStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Daily ops review current" : "Daily ops review stale",
     query,
@@ -11702,12 +11736,38 @@ export function buildPersonalTeamUsabilityReadinessReviewReference({
   const stateLabel = `${latestRow.personalTeamReadinessReviewState || latestRow.focusQuery} ${
     latestRow.personalTeamReadinessReviewReadyCount
   }/${latestRow.personalTeamReadinessReviewTotalCount}`;
+  const archivedStateLabel = `${stateLabel} personal ${latestRow.personalTeamReadinessReviewPersonalPercent}% team ${latestRow.personalTeamReadinessReviewTeamPercent}%`;
+  const currentStateLabel = `${summary.state} ${summary.readyCount}/${summary.totalCount} personal ${summary.personalPercent}% team ${summary.teamPercent}%`;
+  const stateStaleReason =
+    !isCurrent && archivedStateLabel !== currentStateLabel
+      ? ` Personal/team state changed from ${archivedStateLabel} to ${currentStateLabel}.`
+      : "";
+  const archivedNextAction = `${latestRow.personalTeamReadinessReviewNextActionLabel}->${latestRow.personalTeamReadinessReviewNextActionWorkspaceId}`;
+  const currentNextAction = `${summary.nextActionLabel}->${summary.nextActionWorkspaceId}`;
+  const nextActionStaleReason =
+    !isCurrent && archivedNextAction !== currentNextAction
+      ? ` Next action changed from ${archivedNextAction} to ${currentNextAction}.`
+      : "";
+  const archivedItems = latestRow.personalTeamReadinessReviewItemIds
+    .map((id, index) => `${id}:${latestRow.personalTeamReadinessReviewItemStatuses[index] || "unknown"}`)
+    .join(", ");
+  const currentItems = summary.items.map((item) => `${item.id}:${item.status}`).join(", ");
+  const itemsStaleReason =
+    !isCurrent && archivedItems !== currentItems
+      ? ` Readiness items changed from ${archivedItems || "none"} to ${currentItems || "none"}.`
+      : "";
+  const archivedOpenItems = latestRow.personalTeamReadinessReviewOpenItemIds.join(", ");
+  const currentOpenItems = summary.openItems.map((item) => item.id).join(", ");
+  const openItemsStaleReason =
+    !isCurrent && archivedOpenItems !== currentOpenItems
+      ? ` Open items changed from ${archivedOpenItems || "none"} to ${currentOpenItems || "none"}.`
+      : "";
 
   return {
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest review ${latestRow.id} matches current personal/team readiness (${stateLabel}).`
-      : `Latest review ${latestRow.id} no longer matches current personal/team readiness (${stateLabel}); record a fresh review.`,
+      : `Latest review ${latestRow.id} no longer matches current personal/team readiness (${stateLabel}); record a fresh review.${stateStaleReason}${nextActionStaleReason}${itemsStaleReason}${openItemsStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Personal/team readiness review current" : "Personal/team readiness review stale",
     query,

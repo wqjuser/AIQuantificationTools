@@ -15127,6 +15127,14 @@ describe("terminal workbench model", () => {
       })
     );
     expect(reference.detail).toContain("no longer matches current personal/team readiness");
+    expect(reference.detail).toContain(
+      "Personal/team state changed from ready 6/6 personal 100% team 100% to attention 5/6 personal 100% team 83%"
+    );
+    expect(reference.detail).toContain("Next action changed from Review accepted loop->audit to Create handoff runbook->research");
+    expect(reference.detail).toContain(
+      "Readiness items changed from p0-local-loop:ready, p1-research-ops:ready, p2-prelive-chain:ready, audit-traceability:ready, team-handoff-runbook:ready, backup-restore-drill:ready to p0-local-loop:ready, p1-research-ops:ready, p2-prelive-chain:ready, audit-traceability:ready, team-handoff-runbook:review, backup-restore-drill:ready"
+    );
+    expect(reference.detail).toContain("Open items changed from none to team-handoff-runbook");
   });
 
   test("includes daily ops control room review events in the audit report ledger", () => {
@@ -17051,6 +17059,17 @@ describe("terminal workbench model", () => {
       })
     );
     expect(reference.detail).toContain("no longer matches current daily ops queue");
+    expect(reference.detail).toContain(
+      "Daily ops state changed from attention 2/4 review 2 blocked 0 to ready 4/4 review 0 blocked 0"
+    );
+    expect(reference.detail).toContain("Primary action changed from Run AI review->ai-review to Review audit evidence->audit");
+    expect(reference.detail).toContain(
+      "Audit context changed from none->p0_readiness_report p0-completion-focus run-p0-smoke to none->p0_readiness_report p0-completion-ready run-p0-smoke"
+    );
+    expect(reference.detail).toContain(
+      "Queue items changed from current-action:review, audit-context:ready, team-handoff:review, backup-restore:ready to current-action:ready"
+    );
+    expect(reference.detail).toContain("Open items changed from current-action, team-handoff to none");
   });
 
   test("includes P2 readiness acceptance review events in the audit report ledger", () => {
