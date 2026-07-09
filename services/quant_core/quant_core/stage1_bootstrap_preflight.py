@@ -27,6 +27,7 @@ STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_IDS = [
     "live-blocked-boundary",
 ]
 STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_STATUSES = {"ready", "review", "blocked"}
+STAGE1_PACKAGE_SCRIPT_REPAIR_COMMAND = "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run"
 REQUIRED_PACKAGE_SCRIPTS = {
     "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
     "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
@@ -49,7 +50,7 @@ REQUIRED_PACKAGE_SCRIPTS = {
     "docker:smoke:p2:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
 }
 NEXT_ACTIONS = {
-    "package-scripts": ("repair-package-scripts", "npm run stage1:prepare:plan"),
+    "package-scripts": ("repair-package-scripts", STAGE1_PACKAGE_SCRIPT_REPAIR_COMMAND),
     "p0-acceptance": ("run-p0-acceptance", "npm run docker:smoke:p0 -- --no-build --down"),
     "p1-acceptance": ("run-p1-acceptance", "npm run docker:smoke:p1 -- --no-build --down"),
     "p2-manifest-chain": ("review-p2-manifest-chain", "npm run docker:smoke:p2:preflight"),
@@ -424,7 +425,7 @@ def _package_scripts_check(project_root: Path) -> dict[str, Any]:
             label="Package scripts",
             status="blocked",
             summary=" ".join(summary_parts),
-            recommended_command="npm run stage1:prepare:plan",
+            recommended_command=STAGE1_PACKAGE_SCRIPT_REPAIR_COMMAND,
             source_path="package.json",
         )
     return _check(

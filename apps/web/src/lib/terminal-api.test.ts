@@ -1563,7 +1563,7 @@ describe("terminal workspace API client", () => {
     expect(result.preflight?.sourcePaths.p2ManifestChainPreflight).toBe("data/p2-chain-preflight.json");
     expect(result.preflight?.sourcePaths.stage1DailyUse).toBe("data/stage1-daily-use.json");
     expect(result.preflight?.checks.find((check) => check.id === "package-scripts")?.recommendedCommand).toBe(
-      "npm run stage1:prepare:plan"
+      "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run"
     );
     expect(result.preflight?.liveTradingAllowed).toBe(false);
     expect(result.error).toBe("Invalid Stage 1 bootstrap preflight contract");

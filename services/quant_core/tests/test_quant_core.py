@@ -2117,7 +2117,10 @@ class QuantCoreContractTest(unittest.TestCase):
         package_check = preflight["checks"][0]
         self.assertEqual(preflight["status"], "blocked")
         self.assertEqual(preflight["nextAction"], "repair-package-scripts")
-        self.assertEqual(preflight["recommendedCommand"], "npm run stage1:prepare:plan")
+        self.assertEqual(
+            preflight["recommendedCommand"],
+            "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
+        )
         self.assertEqual(preflight["blockerIds"], ["package-scripts"])
         self.assertEqual(package_check["status"], "blocked")
         self.assertIn("stage1:preflight", package_check["summary"])
