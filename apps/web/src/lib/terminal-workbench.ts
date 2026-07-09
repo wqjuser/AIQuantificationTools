@@ -30667,6 +30667,174 @@ export function buildResearchRunContextBinding(workspace: TerminalWorkspace): Re
   };
 }
 
+export function buildStrategyExperimentEvidenceSummary(
+  workspace: TerminalWorkspace,
+  experiment: StrategyExperimentDetail | null
+): StrategyExperimentEvidenceSummary | null {
+  const run = workspace.researchRun;
+  if (
+    !experiment ||
+    experiment.status !== "completed" ||
+    !run ||
+    !buildResearchRunContextBinding(workspace).canUseRun ||
+    experiment.strategyRevision !== run.strategyRevision ||
+    experiment.sourceRunId !== run.runId ||
+    experiment.market !== workspace.selectedInstrument.market ||
+    experiment.symbol !== workspace.selectedInstrument.symbol ||
+    experiment.timeframe !== workspace.selectedTimeframe ||
+    !experiment.resultHash ||
+    !experiment.selectedCandidateId
+  ) {
+    return null;
+  }
+
+  const candidate = experiment.candidates.find(
+    (item) => item.candidateId === experiment.selectedCandidateId
+  );
+  if (!candidate?.testMetrics) {
+    return null;
+  }
+
+  return {
+    experimentId: experiment.experimentId,
+    definitionHash: experiment.definitionHash,
+    resultHash: experiment.resultHash,
+    selectedCandidateId: experiment.selectedCandidateId,
+    candidateRevision: candidate.candidateRevision,
+    parameters: candidate.parameters,
+    trainMetrics: candidate.trainMetrics,
+    validationMetrics: candidate.validationMetrics,
+    testMetrics: candidate.testMetrics,
+    holdoutStatus: experiment.holdoutStatus
+  };
+}
+
+export function buildDefaultStrategyExperimentDimensions(
+  strategyConfig: ResearchRunStrategyConfig
+): StrategyExperimentDimension[] {
+  const supportedParameters: Record<string, StrategyExperimentDimension["parameter"][]> = {
+    close_above_sma: ["window"],
+    close_below_sma: ["window"],
+    volume_above_sma: ["window"],
+    rsi_below: ["window", "threshold"],
+    rsi_above: ["window", "threshold"]
+  };
+  const dimensions: StrategyExperimentDimension[] = [];
+
+  const appendDimensions = (
+    conditionSide: StrategyExperimentDimension["conditionSide"],
+    conditions: ResearchRunStrategyCondition[]
+  ) => {
+    conditions.forEach((condition, conditionIndex) => {
+      (supportedParameters[condition.kind] ?? []).forEach((parameter) => {
+        const currentValue = condition.params[parameter];
+        if (
+          typeof currentValue === "number" &&
+          isValidStrategyExperimentParameterValue(parameter, currentValue)
+        ) {
+          dimensions.push({ conditionSide, conditionIndex, parameter, values: [currentValue] });
+        }
+      });
+    });
+  };
+
+  appendDimensions("entry", strategyConfig.entryConditions);
+  appendDimensions("exit", strategyConfig.exitConditions);
+
+  let candidateCount = 1;
+  dimensions.forEach((dimension) => {
+    const currentValue = dimension.values[0];
+    [-5, 5].forEach((offset) => {
+      const value = currentValue + offset;
+      const nextCandidateCount = (candidateCount / dimension.values.length) * (dimension.values.length + 1);
+      if (
+        nextCandidateCount <= 81 &&
+        isValidStrategyExperimentParameterValue(dimension.parameter, value) &&
+        !dimension.values.includes(value)
+      ) {
+        dimension.values.push(value);
+        candidateCount = nextCandidateCount;
+      }
+    });
+    dimension.values.sort((left, right) => left - right);
+  });
+
+  return dimensions;
+}
+
+function isValidStrategyExperimentParameterValue(
+  parameter: StrategyExperimentDimension["parameter"],
+  value: number
+): boolean {
+  return Number.isFinite(value) &&
+    (parameter === "window" ? Number.isInteger(value) && value >= 1 && value <= 250 : value >= 0 && value <= 100);
+}
+
+export function strategySnapshotFromStrategyConfig(
+  strategyConfig: ResearchRunStrategyConfig
+): StrategySnapshot {
+  return {
+    name: strategyConfig.name,
+    entry: formatStrategyConditions(strategyConfig.entryConditions),
+    exit: formatStrategyConditions(strategyConfig.exitConditions),
+    position:
+      strategyConfig.risk.positionPct === null
+        ? "Position cap unavailable"
+        : `${formatFractionPct(strategyConfig.risk.positionPct)} position cap`,
+    risk: formatStrategyRisk(strategyConfig.risk)
+  };
+}
+
+export function workspaceWithStrategyExperimentCandidate(
+  workspace: TerminalWorkspace,
+  experiment: StrategyExperimentDetail,
+  candidateId: string
+): TerminalWorkspace {
+  const candidate = experiment.candidates.find((item) => item.candidateId === candidateId);
+  if (!candidate) {
+    return workspace;
+  }
+
+  const baseStrategy = experiment.definition.baseStrategy;
+  const strategyConfig: ResearchRunStrategyConfig = {
+    ...baseStrategy,
+    entryConditions: baseStrategy.entryConditions.map((condition) => ({
+      ...condition,
+      params: { ...condition.params }
+    })),
+    exitConditions: baseStrategy.exitConditions.map((condition) => ({
+      ...condition,
+      params: { ...condition.params }
+    })),
+    risk: { ...baseStrategy.risk }
+  };
+  candidate.parameters.forEach((parameterPatch) => {
+    const conditions =
+      parameterPatch.conditionSide === "entry"
+        ? strategyConfig.entryConditions
+        : strategyConfig.exitConditions;
+    const condition = conditions[parameterPatch.conditionIndex];
+    if (condition) {
+      condition.params[parameterPatch.parameter] = parameterPatch.value;
+    }
+  });
+
+  return clearAuditedResearchResults(
+    {
+      ...workspace,
+      strategy: strategySnapshotFromStrategyConfig(strategyConfig),
+      decisionLog: [
+        {
+          agent: "Strategy Experiment",
+          message: `Candidate ${candidate.candidateId} staged from persisted experiment ${experiment.experimentId}. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.`,
+          tone: "warning"
+        }
+      ]
+    },
+    "strategy"
+  );
+}
+
 function normalizeDiffValue(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -33594,16 +33762,7 @@ function strategySnapshotFromAudit(run: ResearchRunAudit): StrategySnapshot {
       risk: `Strategy revision ${run.strategyRevision}; execution ${run.executionMode}`
     };
   }
-  return {
-    name: run.strategyConfig.name,
-    entry: formatStrategyConditions(run.strategyConfig.entryConditions),
-    exit: formatStrategyConditions(run.strategyConfig.exitConditions),
-    position:
-      run.strategyConfig.risk.positionPct === null
-        ? "Position cap unavailable"
-        : `${formatFractionPct(run.strategyConfig.risk.positionPct)} position cap`,
-    risk: formatStrategyRisk(run.strategyConfig.risk)
-  };
+  return strategySnapshotFromStrategyConfig(run.strategyConfig);
 }
 
 function formatStrategyConditions(conditions: ResearchRunStrategyCondition[]): string {

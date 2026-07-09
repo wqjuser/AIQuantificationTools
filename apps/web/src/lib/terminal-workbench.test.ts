@@ -263,6 +263,8 @@ import {
   buildScannerCandidates,
   buildStrategyReadinessGates,
   buildStrategyGovernanceQueueRows,
+  buildDefaultStrategyExperimentDimensions,
+  buildStrategyExperimentEvidenceSummary,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
   buildStrategyTemplateOptions,
@@ -308,6 +310,8 @@ import {
   type ResearchRunImportAuditEvent,
   type ResearchRunImportDiffRow,
   type ResearchRunAudit,
+  type ResearchRunStrategyConfig,
+  type StrategyExperimentDetail,
   type PaperExecutionSnapshot,
   type ExecutionAdapterPaperRouteRunbookRow,
   type ExecutionAdapterOpsStateRow,
@@ -324,12 +328,14 @@ import {
   workspaceWithPreservedSelection,
   workspaceWithSavedWatchlist,
   workspaceWithStrategyLibraryItem,
+  workspaceWithStrategyExperimentCandidate,
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyTemplate,
   workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
   workspaceWithSelectedInstrument,
-  workspaceFromResearchRunAudit
+  workspaceFromResearchRunAudit,
+  strategySnapshotFromStrategyConfig
 } from "./terminal-workbench";
 
 function sampleStage1BootstrapPreflight(
@@ -534,6 +540,159 @@ function auditedRunFixture(
       slippageBps: 2
     }
   };
+}
+
+function strategyExperimentFixture(
+  overrides: Partial<StrategyExperimentDetail> = {}
+): StrategyExperimentDetail {
+  const metrics = {
+    totalReturnPct: 4.2,
+    annualReturnPct: 12.4,
+    maxDrawdownPct: 3.1,
+    winRatePct: 62.5,
+    profitFactor: 1.8,
+    tradeCount: 8
+  };
+  const baseStrategy: ResearchRunStrategyConfig = {
+    name: "Persisted strategy",
+    revision: "rev-experiment-1",
+    market: "ashare",
+    symbols: ["600000"],
+    timeframe: "1d",
+    version: 1,
+    entryConditions: [
+      { kind: "close_above_sma", params: { window: 10 } },
+      { kind: "rsi_above", params: { window: 14, threshold: 55 } },
+      { kind: "volume_above_sma", params: { window: 20 } }
+    ],
+    exitConditions: [{ kind: "close_below_sma", params: { window: 30 } }],
+    risk: {
+      positionPct: 0.4,
+      stopLossPct: 0.06,
+      takeProfitPct: 0.12,
+      maxDrawdownPct: 0.09
+    }
+  };
+  return {
+    experimentId: "experiment-1",
+    createdAt: "2026-07-10T08:00:00+00:00",
+    status: "completed",
+    definitionHash: "definition-hash-1",
+    holdoutKey: "holdout-key-1",
+    strategyRevision: baseStrategy.revision,
+    sourceRunId: "run-experiment-1",
+    snapshotId: "snapshot-1",
+    market: "ashare",
+    symbol: "600000",
+    timeframe: "1d",
+    definition: {
+      baseStrategy,
+      strategyRevision: baseStrategy.revision,
+      sourceRunId: "run-experiment-1",
+      snapshotId: "snapshot-1",
+      canonicalDataHash: "data-hash-1",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 },
+      split: { trainPct: 60, validationPct: 20, testPct: 20 },
+      dimensions: [{ conditionSide: "entry", conditionIndex: 0, parameter: "window", values: [10, 15] }],
+      guardrails: { minimumTradeCount: 2, maximumDrawdownPct: 20 },
+      walkForward: null,
+      evaluationBudget: 11,
+      engineVersion: "backtest-v1",
+      resultSchemaVersion: 1
+    },
+    evaluationCount: 2,
+    selectedCandidateId: "candidate-a",
+    completionReason: "selected",
+    resultHash: "result-hash-1",
+    errorCode: null,
+    errorDetail: null,
+    holdoutStatus: "consumed",
+    snapshot: {
+      snapshotId: "snapshot-1",
+      createdAt: "2026-07-10T07:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      canonicalDataHash: "data-hash-1",
+      rows: 0,
+      startAt: "2026-07-09T08:00:00+00:00",
+      endAt: "2026-07-09T08:00:00+00:00",
+      bars: [],
+      testDefinitionHash: "definition-hash-1",
+      testOwnerExperimentId: "experiment-1",
+      testConsumedAt: "2026-07-10T08:00:00+00:00"
+    },
+    candidates: [
+      {
+        candidateId: "candidate-a",
+        candidateRevision: "candidate-rev-a",
+        parameters: [
+          { conditionSide: "entry", conditionIndex: 0, parameter: "window", value: 15 },
+          { conditionSide: "entry", conditionIndex: 1, parameter: "window", value: 19 },
+          { conditionSide: "entry", conditionIndex: 1, parameter: "threshold", value: 60 },
+          { conditionSide: "entry", conditionIndex: 2, parameter: "window", value: 25 },
+          { conditionSide: "exit", conditionIndex: 0, parameter: "window", value: 35 }
+        ],
+        trainMetrics: metrics,
+        validationMetrics: metrics,
+        testMetrics: metrics,
+        walkForward: {
+          windows: [],
+          validationWindowCount: 0,
+          positiveReturnCount: 0,
+          medianReturnPct: null,
+          worstDrawdownPct: null
+        },
+        eligible: true,
+        rank: 1
+      }
+    ],
+    ...overrides
+  };
+}
+
+function workspaceForStrategyExperiment(experiment: StrategyExperimentDetail): TerminalWorkspace {
+  return workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+    runId: experiment.sourceRunId,
+    createdAt: "2026-07-10T07:00:00+00:00",
+    market: experiment.market,
+    symbol: experiment.symbol,
+    timeframe: experiment.timeframe,
+    strategyName: experiment.definition.baseStrategy.name,
+    strategyRevision: experiment.strategyRevision,
+    dataRows: 240,
+    metrics: { total_return_pct: 4.2, max_drawdown_pct: 3.1, win_rate_pct: 62.5, trade_count: 8 },
+    decisions: [
+      { agent: "AI Summary", message: "Stale AI evidence", tone: "ai" },
+      { agent: "Audit", message: "Stale audit evidence", tone: "warning" },
+      { agent: "Paper Execution", message: "Stale paper evidence", tone: "warning" },
+      { agent: "Promotion", message: "Stale promotion evidence", tone: "warning" }
+    ],
+    executionMode: "paper_only",
+    strategyConfig: experiment.definition.baseStrategy,
+    backtestTrades: [
+      {
+        id: "stale-trade",
+        timestamp: "2026-07-10T07:00:00+00:00",
+        symbol: experiment.symbol,
+        side: "BUY",
+        status: "filled",
+        price: "9.30",
+        quantity: "100",
+        exposure: "40%",
+        pnl: "+4.20%",
+        reason: "Stale backtest evidence",
+        tone: "positive"
+      }
+    ],
+    backtestEquityCurve: [{ timestamp: "2026-07-10T07:00:00+00:00", equity: 104200 }],
+    backtestDiagnostics: [
+      { id: "stale", label: "Stale", value: "ready", detail: "Stale workflow evidence", tone: "positive" }
+    ]
+  });
 }
 
 function promotionPaperExecutionFixture(
@@ -1189,6 +1348,120 @@ function p2ReadinessEvidenceCoverageFixture(
 }
 
 describe("terminal workbench model", () => {
+  test("summarizes only a matching completed persisted strategy experiment", () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+
+    expect(buildStrategyExperimentEvidenceSummary(workspace, experiment)).toMatchObject({
+      experimentId: "experiment-1",
+      definitionHash: "definition-hash-1",
+      resultHash: "result-hash-1",
+      selectedCandidateId: "candidate-a",
+      candidateRevision: "candidate-rev-a",
+      holdoutStatus: "consumed"
+    });
+    expect(
+      buildStrategyExperimentEvidenceSummary(workspace, {
+        ...experiment,
+        strategyRevision: "other-revision"
+      })
+    ).toBeNull();
+    expect(
+      buildStrategyExperimentEvidenceSummary(workspace, {
+        ...experiment,
+        sourceRunId: "other-run"
+      })
+    ).toBeNull();
+    expect(
+      buildStrategyExperimentEvidenceSummary(workspace, {
+        ...experiment,
+        symbol: "000300"
+      })
+    ).toBeNull();
+    expect(buildStrategyExperimentEvidenceSummary(workspace, { ...experiment, status: "failed" })).toBeNull();
+  });
+
+  test("builds deterministic capped strategy experiment dimensions", () => {
+    const strategyConfig = strategyExperimentFixture().definition.baseStrategy;
+
+    const dimensions = buildDefaultStrategyExperimentDimensions(strategyConfig);
+
+    expect(dimensions.map((dimension) => `${dimension.conditionSide}:${dimension.conditionIndex}:${dimension.parameter}`)).toEqual([
+      "entry:0:window",
+      "entry:1:window",
+      "entry:1:threshold",
+      "entry:2:window",
+      "exit:0:window"
+    ]);
+    expect(dimensions.map((dimension) => dimension.values)).toEqual([
+      [5, 10, 15],
+      [9, 14, 19],
+      [50, 55, 60],
+      [15, 20, 25],
+      [30]
+    ]);
+    expect(dimensions.reduce((count, dimension) => count * dimension.values.length, 1)).toBe(81);
+    expect(
+      dimensions.every(
+        (dimension) =>
+          new Set(dimension.values).size === dimension.values.length &&
+          dimension.values.every((value, index) => index === 0 || dimension.values[index - 1] < value)
+      )
+    ).toBe(true);
+  });
+
+  test("formats a persisted strategy experiment config as a strategy snapshot", () => {
+    expect(strategySnapshotFromStrategyConfig(strategyExperimentFixture().definition.baseStrategy)).toEqual({
+      name: "Persisted strategy",
+      entry: "Close > SMA10 AND RSI14 > 55 AND Volume > VOL20",
+      exit: "Close < SMA30",
+      position: "40.00% position cap",
+      risk: "Stop 6.00% / take profit 12.00% / max drawdown 9.00%"
+    });
+  });
+
+  test("stages a persisted strategy experiment candidate and clears audited evidence", () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+
+    const staged = workspaceWithStrategyExperimentCandidate(
+      {
+        ...workspace,
+        strategy: { ...workspace.strategy, name: "Unrelated current draft", entry: "Close > SMA200" }
+      },
+      experiment,
+      "candidate-a"
+    );
+
+    expect(staged.strategy).toEqual({
+      name: "Persisted strategy",
+      entry: "Close > SMA15 AND RSI19 > 60 AND Volume > VOL25",
+      exit: "Close < SMA35",
+      position: "40.00% position cap",
+      risk: "Stop 6.00% / take profit 12.00% / max drawdown 9.00%"
+    });
+    expect(experiment.definition.baseStrategy.entryConditions[0].params.window).toBe(10);
+    expect(staged.researchRun).toBeNull();
+    expect(staged.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(staged.backtestTrades).toEqual([]);
+    expect(staged.backtestEquityCurve).toEqual([]);
+    expect(staged.backtestDiagnostics).toEqual([]);
+    expect(quantLoopStatuses(staged)).toMatchObject({
+      strategy: "active",
+      backtest: "ready",
+      "agent-review": "ready",
+      paper: "locked"
+    });
+    expect(staged.decisionLog).toEqual([
+      {
+        agent: "Strategy Experiment",
+        message:
+          "Candidate candidate-a staged from persisted experiment experiment-1. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.",
+        tone: "warning"
+      }
+    ]);
+  });
+
   test("defines stage-gated product delivery in platform order", () => {
     const stages = buildProductDevelopmentStages();
 
