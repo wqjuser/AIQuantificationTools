@@ -58,6 +58,13 @@ def run_stage1_prepare(
                     flush=True,
                 )
                 return int(error.returncode or 1)
+            except OSError as error:
+                print(
+                    f"stage1 prepare failed step={step['id']} exit=1 "
+                    f"command={' '.join(str(part) for part in command)} error={error}",
+                    flush=True,
+                )
+                return 1
     return 0
 
 

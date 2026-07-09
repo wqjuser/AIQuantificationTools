@@ -1808,6 +1808,29 @@ class QuantCoreContractTest(unittest.TestCase):
             printed,
         )
 
+    def test_stage1_prepare_reports_command_launch_failure(self):
+        preparer = self._load_stage1_prepare_module()
+        printed = []
+
+        def fake_print(*args, **kwargs):
+            printed.append(" ".join(str(part) for part in args))
+
+        def runner(command, **kwargs):
+            raise FileNotFoundError("npm")
+
+        with patch("builtins.print", fake_print):
+            exit_code = preparer.run_stage1_prepare(
+                mode="quick",
+                cwd=Path("/tmp/aiqt"),
+                runner=runner,
+            )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn(
+            "stage1 prepare failed step=p0-acceptance-validate exit=1 command=npm run docker:smoke:p0:validate error=npm",
+            printed,
+        )
+
     def test_stage1_bootstrap_preflight_latest_api_returns_validated_preflight(self):
         import json
         from http.client import HTTPConnection
