@@ -14022,6 +14022,8 @@ function Stage1P0DailyUseClosurePanel({
       ? stage1P0DailyUseShareLinkFocusLabel(i18n, shareDeepLinkState)
       : "";
   const archiveReference = archiveReviewReference ?? null;
+  const archivedP2ChainSource =
+    archiveReference?.row?.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath ?? "";
 
   return (
     <section
@@ -14148,6 +14150,11 @@ function Stage1P0DailyUseClosurePanel({
             {archiveReference.eventId ? (
               <small>
                 {archiveReference.eventId} · {archiveReference.createdAt.slice(0, 19)}
+              </small>
+            ) : null}
+            {archivedP2ChainSource ? (
+              <small>
+                {i18n.locale === "zh-CN" ? "归档 P2 chain" : "Archived P2 chain"} · {archivedP2ChainSource}
               </small>
             ) : null}
           </div>

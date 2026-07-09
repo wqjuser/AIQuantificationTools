@@ -11496,6 +11496,12 @@ export function buildStage1P0DailyUseStartupSnapshot({
     closure.bootstrapPreflightChecks ?? [],
     closure.bootstrapPreflightSourcePaths ?? null
   );
+  const archiveReferenceRow = archiveReference.row;
+  const archivedBootstrapChecks = archiveReferenceRow?.stage1DailyArchiveReviewBootstrapPreflightCheckIds.length
+    ? archiveReferenceRow.stage1DailyArchiveReviewBootstrapPreflightCheckIds
+        .map((id, index) => `${id}:${archiveReferenceRow.stage1DailyArchiveReviewBootstrapPreflightCheckStatuses[index] || "unknown"}`)
+        .join(", ")
+    : "none";
 
   return {
     archiveReferenceStatus: archiveReference.status,
@@ -11527,7 +11533,11 @@ export function buildStage1P0DailyUseStartupSnapshot({
       `- Detail: ${archiveReference.detail}`,
       `- Created at: ${archiveReference.createdAt || "none"}`,
       `- File name: ${archiveReference.fileName}`,
-      `- Archive body SHA-256: ${archiveReference.row?.stage1DailyArchiveReviewArchiveBodySha256 || "none"}`,
+      `- Archive body SHA-256: ${archiveReferenceRow?.stage1DailyArchiveReviewArchiveBodySha256 || "none"}`,
+      `- Archived P2 chain source: ${
+        archiveReferenceRow?.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath || "none"
+      }`,
+      `- Archived bootstrap checks: ${archivedBootstrapChecks}`,
       "",
       "## Refresh Receipt",
       ...refreshLines,

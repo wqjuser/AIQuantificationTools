@@ -15605,6 +15605,9 @@ describe("terminal workbench model", () => {
     expect(snapshot.copyText).toContain("## Bootstrap Preflight Evidence");
     expect(snapshot.copyText).toContain("- p2-manifest-chain: ready · P2 manifest chain · data/p2-chain-preflight.json");
     expect(snapshot.copyText).toContain("- P2 chain source: data/p2-chain-preflight.json");
+    expect(snapshot.copyText).toContain("## Archive Reference");
+    expect(snapshot.copyText).toContain("- Archived P2 chain source: data/p2-chain-preflight.json");
+    expect(snapshot.copyText).toContain("- Archived bootstrap checks: p2-manifest-chain:ready");
     expect(snapshot.copyText).toContain("Live trading remains blocked.");
 
     const staleReference = buildStage1P0DailyUseArchiveReviewReference({
