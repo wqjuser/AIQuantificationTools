@@ -1202,14 +1202,26 @@ describe("terminal workbench model", () => {
     ]);
     expect(stages.find((stage) => stage.id === "market-research")).toMatchObject({
       label: "Stage 1 · A-share P0 Golden Path",
-      status: "current",
-      workAreaIds: ["market", "research", "strategy", "backtest", "ai-review", "execution"],
-      focus:
-        "Ship the six-week personal/small-team A-share single-symbol loop: real data, chart, strategy, audited backtest, AI review, paper execution, and export."
+      status: "maintenance",
+      workAreaIds: ["market", "research"],
+      focus: "Preserve the accepted market and research golden path as a regression gate while Stage 2 ships."
     });
     expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
-      "market-research"
+      "strategy-backtest"
     ]);
+  });
+
+  test("opens Stage 2 after the Stage 1 exit", () => {
+    const stages = buildProductDevelopmentStages();
+    const areas = buildProductWorkAreas(buildTerminalWorkspace());
+    expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
+      "strategy-backtest"
+    ]);
+    expect(stages.find((stage) => stage.id === "market-research")?.status).toBe("maintenance");
+    expect(stages.find((stage) => stage.id === "strategy-backtest")?.status).toBe("current");
+    expect(areas.find((area) => area.id === "market")?.deliveryStageStatus).toBe("maintenance");
+    expect(areas.find((area) => area.id === "strategy")?.deliveryStageStatus).toBe("current");
+    expect(areas.find((area) => area.id === "backtest")?.deliveryStageStatus).toBe("current");
   });
 
   test("builds a Stage 1 research workspace state draft from the selected context", () => {
@@ -2391,7 +2403,7 @@ describe("terminal workbench model", () => {
     });
     expect(areas.find((area) => area.id === "market")).toMatchObject({
       deliveryStageId: "market-research",
-      deliveryStageStatus: "current"
+      deliveryStageStatus: "maintenance"
     });
     expect(areas.find((area) => area.id === "audit")).toMatchObject({
       deliveryStageId: "foundation",

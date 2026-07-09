@@ -8854,10 +8854,9 @@ const productDevelopmentStageDefinitions = [
   {
     id: "market-research",
     label: "Stage 1 · A-share P0 Golden Path",
-    status: "current",
-    workAreaIds: ["market", "research", "strategy", "backtest", "ai-review", "execution"],
-    focus:
-      "Ship the six-week personal/small-team A-share single-symbol loop: real data, chart, strategy, audited backtest, AI review, paper execution, and export.",
+    status: "maintenance",
+    workAreaIds: ["market", "research"],
+    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 2 ships.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -8867,13 +8866,14 @@ const productDevelopmentStageDefinitions = [
   {
     id: "strategy-backtest",
     label: "Stage 2 · Strategy and Backtest",
-    status: "planned",
+    status: "current",
     workAreaIds: ["strategy", "backtest"],
-    focus: "After the P0 loop is dependable, expand strategy templates, parameter scans, comparisons, and reusable reports.",
+    focus: "Ship canonical, persisted, holdout-safe strategy experiments from audited single-symbol evidence.",
     exitCriteria: [
-      "Strategy drafts are fully structured and versioned.",
-      "Backtests are reproducible from strategy, data snapshot, and assumptions.",
-      "Reports compare runs without creating optimization or trading advice."
+      "Experiments bind to verified aiqt-data-v2 snapshots and canonical strategy revisions.",
+      "Exact replay preserves deterministic definition and result hashes.",
+      "Only the selected candidate receives test evidence after validation-only selection.",
+      "Loading a candidate creates a new unaudited strategy draft without inherited execution approval."
     ]
   },
   {

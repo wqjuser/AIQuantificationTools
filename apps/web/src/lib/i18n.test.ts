@@ -40,7 +40,7 @@ describe("i18n", () => {
       "适配器模拟执行已复用 · ashare-live"
     );
     expect(marketArea ? zh.productWorkAreaDeliveryStage(marketArea) : "").toBe("阶段 1 · 行情与研究");
-    expect(marketArea ? zh.productDevelopmentStageStatus(marketArea.deliveryStageStatus) : "").toBe("当前阶段");
+    expect(marketArea ? zh.productDevelopmentStageStatus(marketArea.deliveryStageStatus) : "").toBe("基础维护");
     expect(auditArea ? zh.productDevelopmentStageStatus(auditArea.deliveryStageStatus) : "").toBe("基础维护");
   });
 
