@@ -4,7 +4,7 @@ import json
 import os
 from dataclasses import asdict
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -263,6 +263,13 @@ from quant_core.strategy_library import (
     strategy_library_record_to_payload,
     strategy_library_records_to_payload,
 )
+from quant_core.strategy_experiment_store import StrategyExperimentStore
+from quant_core.strategy_experiments import (
+    StrategyExperimentError,
+    StrategyExperimentRunner,
+    strategy_experiment_detail_to_payload,
+    strategy_experiment_records_to_payload,
+)
 from quant_core.strategy_validation import strategy_validation_to_payload, validate_strategy_snapshot
 from quant_core.terminal import Instrument, StrategySnapshot, build_terminal_workspace, terminal_workspace_to_payload
 from quant_core.watchlist import WatchlistStore, instrument_to_payload, watchlist_from_payload, workspace_with_watchlist
@@ -414,6 +421,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
+    strategy_experiment_store = StrategyExperimentStore(Path("data/strategy_experiments.sqlite"))
     note_store = ResearchNoteStore(Path("data/research_notes.sqlite"))
     handoff_note_store = HandoffNoteStore(Path("data/handoff_notes.sqlite"))
     watchlist_store = WatchlistStore(Path("data/watchlist.sqlite"))
@@ -471,6 +479,51 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/strategy-experiments":
+            try:
+                payload = self._read_json_body()
+                if "replayOfExperimentId" in payload:
+                    replay_id = payload.get("replayOfExperimentId")
+                    if set(payload) != {"replayOfExperimentId"} or not isinstance(replay_id, str) or not replay_id.strip():
+                        raise ValueError("invalid_strategy_experiment")
+                    detail = self._strategy_experiment_runner().replay(replay_id.strip())
+                else:
+                    if set(payload) != {
+                        "strategyRevision",
+                        "sourceRunId",
+                        "assumptions",
+                        "dimensions",
+                        "guardrails",
+                        "walkForward",
+                    }:
+                        raise ValueError("invalid_strategy_experiment")
+                    detail = self._strategy_experiment_runner().run_new(payload)
+            except StrategyExperimentError as error:
+                error_payload = {"error": error.error, "detail": error.detail}
+                if error.experiment_id:
+                    error_payload["experimentId"] = error.experiment_id
+                self._send_json(error_payload, status=error.status)
+                return
+            except ValueError:
+                self._send_json(
+                    {
+                        "error": "invalid_strategy_experiment",
+                        "detail": "Strategy experiment request fields are invalid.",
+                    },
+                    status=400,
+                )
+                return
+            except Exception:
+                self._send_json(
+                    {
+                        "error": "strategy_experiment_failed",
+                        "detail": "Strategy experiment execution failed.",
+                    },
+                    status=500,
+                )
+                return
+            self._send_json({"experiment": strategy_experiment_detail_to_payload(detail)}, status=201)
+            return
         if parsed.path == "/api/stage1/daily-use":
             try:
                 report_path = Path(self.stage1_daily_use_report_path)
@@ -2894,6 +2947,49 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             self._send_json({"status": "ok", "service": "quant-core"})
             return
+        if parsed.path == "/api/strategy-experiments":
+            query = parse_qs(parsed.query)
+            try:
+                records = self.strategy_experiment_store.list_recent(
+                    strategy_revision=query.get("strategyRevision", [""])[0].strip() or None,
+                    source_run_id=query.get("sourceRunId", [""])[0].strip() or None,
+                    limit=_parse_limit(query.get("limit", ["20"])[0]),
+                )
+            except Exception:
+                self._send_json(
+                    {
+                        "error": "strategy_experiment_failed",
+                        "detail": "Strategy experiment history could not be loaded.",
+                    },
+                    status=500,
+                )
+                return
+            self._send_json({"experiments": strategy_experiment_records_to_payload(records)})
+            return
+        if parsed.path.startswith("/api/strategy-experiments/"):
+            experiment_id = unquote(parsed.path.removeprefix("/api/strategy-experiments/")).strip()
+            try:
+                detail = self.strategy_experiment_store.get(experiment_id) if experiment_id else None
+            except Exception:
+                self._send_json(
+                    {
+                        "error": "strategy_experiment_failed",
+                        "detail": "Strategy experiment could not be loaded.",
+                    },
+                    status=500,
+                )
+                return
+            if detail is None:
+                self._send_json(
+                    {
+                        "error": "strategy_experiment_not_found",
+                        "detail": f"Strategy experiment {experiment_id} was not found.",
+                    },
+                    status=404,
+                )
+                return
+            self._send_json({"experiment": strategy_experiment_detail_to_payload(detail)})
+            return
         if parsed.path == "/api/demo":
             query = parse_qs(parsed.query)
             payload = self._demo_payload(
@@ -4164,6 +4260,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             keys_json=str(self.audit_signing_keys_json or ""),
         )
 
+    def _strategy_experiment_runner(self) -> StrategyExperimentRunner:
+        return StrategyExperimentRunner(
+            strategy_store=self.strategy_store,
+            run_store=self.run_store,
+            experiment_store=self.strategy_experiment_store,
+        )
+
     def _settings_status_payload(self) -> dict[str, object]:
         return build_settings_status(
             cache_path=self.cache.path,
@@ -4283,7 +4386,7 @@ def resolve_api_bind(
 
 def run(host: str | None = None, port: int | str | None = None) -> None:
     bind_host, bind_port = resolve_api_bind(host=host, port=port)
-    server = HTTPServer((bind_host, bind_port), QuantApiHandler)
+    server = ThreadingHTTPServer((bind_host, bind_port), QuantApiHandler)
     print(f"quant-core API listening on http://{bind_host}:{bind_port}")
     server.serve_forever()
 

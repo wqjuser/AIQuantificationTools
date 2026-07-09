@@ -8,9 +8,13 @@ from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
-from threading import Barrier
+from http.client import HTTPConnection
+from http.server import HTTPServer, ThreadingHTTPServer
+from threading import Barrier, Event, Thread
 from unittest.mock import patch
+from urllib.parse import quote
 
+from quant_core.api import QuantApiHandler
 from quant_core.backtest import BacktestEngine
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
@@ -1412,6 +1416,332 @@ class StrategyExperimentRunnerTests(unittest.TestCase):
         encoded = json.dumps(detail_payload, sort_keys=True)
         for forbidden in ("trades", "equityCurve", "auditRunId", "liveTradingAllowed", "orderSubmitted"):
             self.assertNotIn(forbidden, encoded)
+
+
+class StrategyExperimentHttpTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.strategy = runner_strategy()
+        self.strategy_store = StrategyLibraryStore(f"{self.temporary_directory.name}/strategies.sqlite")
+        self.run_store = ResearchRunStore(f"{self.temporary_directory.name}/runs.sqlite")
+        self.experiment_store = StrategyExperimentStore(
+            f"{self.temporary_directory.name}/experiments.sqlite"
+        )
+        self.strategy_store.save(self.strategy, audit_run_id="runner-run")
+        self.run_store.record(runner_audit("runner-run", self.strategy))
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        TestHandler.strategy_store = self.strategy_store
+        TestHandler.run_store = self.run_store
+        TestHandler.strategy_experiment_store = self.experiment_store
+        self.server = HTTPServer(("127.0.0.1", 0), TestHandler)
+        self.thread = Thread(target=self.server.serve_forever, daemon=True)
+        self.engine_patch = patch("quant_core.strategy_experiments.BacktestEngine", RecordingBacktestEngine)
+        RecordingBacktestEngine.calls = []
+        self.engine_patch.start()
+        self.thread.start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+        self.engine_patch.stop()
+        self.temporary_directory.cleanup()
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+    ) -> tuple[int, dict[str, object]]:
+        connection = HTTPConnection(self.server.server_address[0], self.server.server_address[1], timeout=5)
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        headers = {"Content-Type": "application/json"} if body is not None else {}
+        try:
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            response_payload = json.loads(response.read().decode("utf-8"))
+            return response.status, response_payload
+        finally:
+            connection.close()
+
+    def test_create_replay_filtered_list_and_url_decoded_detail(self):
+        create_payload = runner_payload(self.strategy, values=(3, 4))
+
+        create_status, create_response = self.request("POST", "/api/strategy-experiments", create_payload)
+        self.assertEqual(create_status, 201)
+        experiment = create_response["experiment"]
+        assert isinstance(experiment, dict)
+        experiment_id = str(experiment["experimentId"])
+
+        replay_status, replay_response = self.request(
+            "POST",
+            "/api/strategy-experiments",
+            {"replayOfExperimentId": experiment_id},
+        )
+        replay = replay_response["experiment"]
+        assert isinstance(replay, dict)
+
+        revision = quote(self.strategy.revision, safe="")
+        run_id = quote("runner-run", safe="")
+        list_status, list_response = self.request(
+            "GET",
+            f"/api/strategy-experiments?strategyRevision={revision}&sourceRunId={run_id}&limit=5",
+        )
+        detail_status, detail_response = self.request(
+            "GET",
+            f"/api/strategy-experiments/{quote(experiment_id, safe='')}",
+        )
+
+        encoded_id = "experiment/\u4f60\u597d"
+        encoded_snapshot = experiment_snapshot("encoded-snapshot")
+        self.experiment_store.put_snapshot(encoded_snapshot)
+        self.experiment_store.record_completed(
+            experiment_record(encoded_id, snapshot_id=encoded_snapshot.snapshot_id),
+            [candidate_record(experiment_id=encoded_id)],
+        )
+        encoded_status, encoded_response = self.request(
+            "GET",
+            f"/api/strategy-experiments/{quote(encoded_id, safe='')}",
+        )
+
+        self.assertEqual(replay_status, 201)
+        self.assertNotEqual(replay["experimentId"], experiment_id)
+        self.assertEqual(replay["definitionHash"], experiment["definitionHash"])
+        self.assertEqual(list_status, 200)
+        self.assertEqual(len(list_response["experiments"]), 2)
+        self.assertTrue(
+            all(
+                row["strategyRevision"] == self.strategy.revision and row["sourceRunId"] == "runner-run"
+                for row in list_response["experiments"]
+            )
+        )
+        self.assertTrue(all("snapshot" not in row and "candidates" not in row for row in list_response["experiments"]))
+        self.assertEqual(detail_status, 200)
+        self.assertEqual(detail_response["experiment"]["snapshot"]["bars"], experiment["snapshot"]["bars"])
+        self.assertEqual(len(detail_response["experiment"]["candidates"]), 2)
+        self.assertEqual(encoded_status, 200)
+        self.assertEqual(encoded_response["experiment"]["experimentId"], encoded_id)
+
+    def test_rejects_mixed_modes_and_client_supplied_evidence(self):
+        create_payload = runner_payload(self.strategy, values=(3,))
+        invalid_response = {
+            "error": "invalid_strategy_experiment",
+            "detail": "Strategy experiment request fields are invalid.",
+        }
+        requests = [
+            {**create_payload, "replayOfExperimentId": "experiment-a"},
+            *[{**create_payload, field: {}} for field in ("bars", "strategy", "metrics", "rank", "resultHash")],
+        ]
+
+        for payload in requests:
+            with self.subTest(fields=sorted(payload)):
+                status, response = self.request("POST", "/api/strategy-experiments", payload)
+                self.assertEqual((status, response), (400, invalid_response))
+
+        self.assertEqual(self.experiment_store.list_recent(), [])
+
+    def test_maps_missing_and_conflicting_evidence_errors_exactly(self):
+        missing_status, missing_response = self.request(
+            "POST",
+            "/api/strategy-experiments",
+            {"replayOfExperimentId": "missing/id"},
+        )
+        detail_status, detail_response = self.request(
+            "GET",
+            "/api/strategy-experiments/missing%2Fid",
+        )
+
+        legacy = runner_audit("legacy-run", self.strategy)
+        legacy.data_snapshot.pop("hashVersion")
+        self.run_store.record(legacy)
+        reaudit_status, reaudit_response = self.request(
+            "POST",
+            "/api/strategy-experiments",
+            runner_payload(self.strategy, run_id="legacy-run", values=(3,)),
+        )
+
+        first = runner_payload(self.strategy, values=(3,))
+        first_status, _ = self.request("POST", "/api/strategy-experiments", first)
+        conflict_status, conflict_response = self.request(
+            "POST",
+            "/api/strategy-experiments",
+            runner_payload(self.strategy, values=(3,), maximum_drawdown_pct=19),
+        )
+
+        self.assertEqual(
+            (missing_status, missing_response),
+            (
+                404,
+                {
+                    "error": "strategy_experiment_not_found",
+                    "detail": "Strategy experiment missing/id was not found.",
+                },
+            ),
+        )
+        self.assertEqual(
+            (detail_status, detail_response),
+            (
+                404,
+                {
+                    "error": "strategy_experiment_not_found",
+                    "detail": "Strategy experiment missing/id was not found.",
+                },
+            ),
+        )
+        self.assertEqual(
+            (reaudit_status, reaudit_response),
+            (
+                409,
+                {
+                    "error": "source_snapshot_reaudit_required",
+                    "detail": "The source run requires a complete aiqt-data-v2 snapshot.",
+                },
+            ),
+        )
+        self.assertEqual(first_status, 201)
+        self.assertEqual(
+            (conflict_status, conflict_response),
+            (
+                409,
+                {
+                    "error": "test_holdout_consumed",
+                    "detail": "The test holdout is already bound to a different experiment definition.",
+                },
+            ),
+        )
+
+    def test_returns_sanitized_runner_failure_with_persisted_experiment_id(self):
+        class FailingBacktestEngine(RecordingBacktestEngine):
+            def run(self, *args, **kwargs):
+                raise RuntimeError("secret adapter credential")
+
+        self.engine_patch.stop()
+        with patch("quant_core.strategy_experiments.BacktestEngine", FailingBacktestEngine):
+            status, response = self.request(
+                "POST",
+                "/api/strategy-experiments",
+                runner_payload(self.strategy, values=(3,)),
+            )
+        self.engine_patch.start()
+
+        self.assertEqual(status, 500)
+        self.assertEqual(response["error"], "strategy_experiment_failed")
+        self.assertEqual(response["detail"], "Strategy experiment execution failed.")
+        self.assertNotIn("secret", json.dumps(response))
+        experiment_id = response["experimentId"]
+        assert isinstance(experiment_id, str)
+        failed = self.experiment_store.get(experiment_id)
+        assert failed is not None
+        self.assertEqual(failed.experiment.error_detail, "Strategy experiment execution failed.")
+
+    def test_sanitizes_unknown_http_failure_without_fabricating_a_record(self):
+        class FailingRunner:
+            def run_new(self, payload):
+                raise RuntimeError("sqlite path /private/secret failed")
+
+        TestHandler = self.server.RequestHandlerClass
+
+        class FailingHandler(TestHandler):
+            def _strategy_experiment_runner(self):
+                return FailingRunner()
+
+        FailingHandler.strategy_store = self.strategy_store
+        FailingHandler.run_store = self.run_store
+        FailingHandler.strategy_experiment_store = self.experiment_store
+        server = HTTPServer(("127.0.0.1", 0), FailingHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        original_server = self.server
+        self.server = server
+        try:
+            status, response = self.request(
+                "POST",
+                "/api/strategy-experiments",
+                runner_payload(self.strategy, values=(3,)),
+            )
+        finally:
+            self.server = original_server
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+        self.assertEqual(
+            (status, response),
+            (
+                500,
+                {
+                    "error": "strategy_experiment_failed",
+                    "detail": "Strategy experiment execution failed.",
+                },
+            ),
+        )
+        self.assertEqual(self.experiment_store.list_recent(), [])
+
+    def test_threaded_runtime_keeps_health_responsive_during_an_experiment(self):
+        started = Event()
+        release = Event()
+        detail = StrategyExperimentDetail(
+            experiment=experiment_record(),
+            snapshot=experiment_snapshot(),
+            candidates=[candidate_record()],
+        )
+
+        class BlockingRunner:
+            def run_new(self, payload):
+                started.set()
+                release.wait(timeout=5)
+                return detail
+
+        TestHandler = self.server.RequestHandlerClass
+
+        class ThreadedHandler(TestHandler):
+            def _strategy_experiment_runner(self):
+                return BlockingRunner()
+
+        ThreadedHandler.strategy_store = self.strategy_store
+        ThreadedHandler.run_store = self.run_store
+        ThreadedHandler.strategy_experiment_store = self.experiment_store
+        server = ThreadingHTTPServer(("127.0.0.1", 0), ThreadedHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+
+        def post_experiment() -> tuple[int, dict[str, object]]:
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/strategy-experiments",
+                    body=json.dumps(runner_payload(self.strategy, values=(3,))).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response.status, json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(post_experiment)
+            try:
+                self.assertTrue(started.wait(timeout=5))
+                health = HTTPConnection(server.server_address[0], server.server_address[1], timeout=1)
+                try:
+                    health.request("GET", "/health")
+                    health_response = health.getresponse()
+                    health_payload = json.loads(health_response.read().decode("utf-8"))
+                finally:
+                    health.close()
+            finally:
+                release.set()
+            experiment_status, _ = pending.result(timeout=5)
+
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+        self.assertEqual((health_response.status, health_payload), (200, {"status": "ok", "service": "quant-core"}))
+        self.assertEqual(experiment_status, 201)
 
 
 if __name__ == "__main__":
