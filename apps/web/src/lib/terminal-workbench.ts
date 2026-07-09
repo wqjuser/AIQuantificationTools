@@ -21342,16 +21342,18 @@ export function buildPreLiveRunbookAuditCoverage(
     latest.preLiveRunbookTotalSteps === runbook.totalSteps &&
     latest.preLiveRunbookStatus === runbook.status &&
     latest.preLiveRunbookNextStepId === (runbook.nextStepId ?? "");
+  const staleDetail =
+    !gateStateMatches && !evidenceIdsMatch
+      ? "Latest audited runbook is for this adapter context, but its gate state and evidence set differ from the current screen."
+      : !evidenceIdsMatch
+        ? "Latest audited runbook is for this adapter context, but its evidence set differs from the current screen."
+        : "Latest audited runbook is for this adapter context, but its gate state differs from the current screen.";
 
   return {
     currentGateLabel,
     detail: matchesCurrent
       ? "Latest audited runbook matches the current adapter context and gate state."
-      : !gateStateMatches && !evidenceIdsMatch
-        ? "Latest audited runbook is for this adapter context, but its gate state and evidence set differ from the current screen."
-        : !evidenceIdsMatch
-          ? "Latest audited runbook is for this adapter context, but its evidence set differs from the current screen."
-          : "Latest audited runbook is for this adapter context, but its gate state differs from the current screen.",
+      : auditCoverageDetailWithMismatch(staleDetail, mismatchLabel),
     gateLabel: `${latest.preLiveRunbookCompletedSteps}/${latest.preLiveRunbookTotalSteps} gates`,
     latestEventId: latest.id,
     mismatchLabel,
@@ -21464,20 +21466,29 @@ export function buildOperatorRunbookAuditCoverage(
     sameOperatorRunbookValues(latest.operatorRunbookSectionStatuses, operatorRunbookSectionStatuses(runbook)) &&
     sameOperatorRunbookValues(latest.operatorRunbookSectionEvidence, operatorRunbookSectionEvidence(runbook)) &&
     sameOperatorRunbookValues(latest.operatorRunbookControlSnapshot, operatorRunbookControlSnapshot(runbook));
+  const mismatchLabel = matchesCurrent ? "" : buildOperatorRunbookAuditMismatchLabel(latest, runbook);
 
   return {
     currentSectionLabel,
     detail: matchesCurrent
       ? "Latest audited operator runbook matches the current context, controls, and section state."
-      : "Latest audited operator runbook is for this context, but its controls or section state differ from the current screen.",
+      : auditCoverageDetailWithMismatch(
+          "Latest audited operator runbook is for this context, but its controls or section state differ from the current screen.",
+          mismatchLabel
+        ),
     latestEventId: latest.id,
-    mismatchLabel: matchesCurrent ? "" : buildOperatorRunbookAuditMismatchLabel(latest, runbook),
+    mismatchLabel,
     query,
     sectionLabel: `${latest.operatorRunbookCompletedSections}/${latest.operatorRunbookTotalSections} sections`,
     shortHash: latest.shortHash,
     status: matchesCurrent ? "matched" : "stale",
     statusLabel: matchesCurrent ? "Audited" : "Needs re-audit"
   };
+}
+
+function auditCoverageDetailWithMismatch(detail: string, mismatchLabel: string): string {
+  const baseDetail = detail.endsWith(".") ? detail.slice(0, -1) : detail;
+  return mismatchLabel ? `${baseDetail}: ${mismatchLabel}.` : detail;
 }
 
 function operatorRunbookSectionStatuses(runbook: OperatorRunbookSummary): string[] {

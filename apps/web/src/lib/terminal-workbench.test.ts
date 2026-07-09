@@ -14204,7 +14204,8 @@ describe("terminal workbench model", () => {
     expect(coverage).toEqual(
       expect.objectContaining({
         currentGateLabel: "0/7 gates",
-        detail: "Latest audited runbook is for this adapter context, but its gate state differs from the current screen.",
+        detail:
+          "Latest audited runbook is for this adapter context, but its gate state differs from the current screen: status paper_rehearsal_ready -> blocked · next step ready -> adapter-state · gates 7/7 -> 0/7.",
         gateLabel: "7/7 gates",
         latestEventId: "pre-live-runbook-report-ashare-live-600000-1d-stale",
         mismatchLabel: "status paper_rehearsal_ready -> blocked · next step ready -> adapter-state · gates 7/7 -> 0/7",
@@ -14269,7 +14270,8 @@ describe("terminal workbench model", () => {
     expect(coverage).toEqual(
       expect.objectContaining({
         currentGateLabel: "0/7 gates",
-        detail: "Latest audited runbook is for this adapter context, but its evidence set differs from the current screen.",
+        detail:
+          "Latest audited runbook is for this adapter context, but its evidence set differs from the current screen: evidence ids 1 -> 1 changed · removed adapter-state-old · added adapter-state-current.",
         gateLabel: "0/7 gates",
         latestEventId: "pre-live-runbook-report-ashare-live-600000-1d-evidence",
         mismatchLabel: "evidence ids 1 -> 1 changed · removed adapter-state-old · added adapter-state-current",
@@ -14597,6 +14599,8 @@ describe("terminal workbench model", () => {
     expect(coverage).toEqual(
       expect.objectContaining({
         currentSectionLabel: "4/5 sections",
+        detail:
+          "Latest audited operator runbook is for this context, but its controls or section state differ from the current screen: status manual_review_ready -> review_pending · next action ready -> paper-execution-replay · sections 5/5 -> 4/5 · section statuses changed · section evidence changed · controls changed.",
         latestEventId: "operator-runbook-report-ashare-live-600000-1d-stale",
         mismatchLabel:
           "status manual_review_ready -> review_pending · next action ready -> paper-execution-replay · sections 5/5 -> 4/5 · section statuses changed · section evidence changed · controls changed",
