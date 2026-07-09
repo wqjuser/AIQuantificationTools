@@ -57,9 +57,12 @@ class QuantCoreContractTest(unittest.TestCase):
             "stage1:prepare:quick:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick --dry-run",
             "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
             "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+            "docker:smoke:p0": "node tools/run_python.mjs tools/docker_smoke.py --p0-acceptance --p0-import-check --p0-acceptance-report data/p0-acceptance.json",
             "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+            "docker:smoke:p1": "node tools/run_python.mjs tools/docker_smoke.py --p1-acceptance --p1-acceptance-report data/p1-acceptance.json",
             "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
             "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
+            "docker:smoke:p2:chain": "node tools/run_python.mjs tools/docker_smoke.py --p2-paper-replay --p2-pre-live-acceptance --p2-readiness-acceptance --p2-paper-replay-report data/p2-paper-replay.json --p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json --p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
             "docker:smoke:p2:paper-replay:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",
             "docker:smoke:p2:pre-live:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
             "docker:smoke:p2:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
@@ -2092,6 +2095,9 @@ class QuantCoreContractTest(unittest.TestCase):
             scripts.pop("stage1:prepare:quick")
             scripts.pop("stage1:prepare:plan")
             scripts.pop("stage1:prepare:quick:plan")
+            scripts.pop("docker:smoke:p0")
+            scripts.pop("docker:smoke:p1")
+            scripts.pop("docker:smoke:p2:chain")
             scripts.pop("docker:smoke:p2:paper-replay:validate")
             scripts.pop("docker:smoke:p2:pre-live:validate")
             scripts.pop("docker:smoke:p2:validate")
@@ -2114,6 +2120,9 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertIn("stage1:prepare:quick", package_check["summary"])
         self.assertIn("stage1:prepare:plan", package_check["summary"])
         self.assertIn("stage1:prepare:quick:plan", package_check["summary"])
+        self.assertIn("docker:smoke:p0", package_check["summary"])
+        self.assertIn("docker:smoke:p1", package_check["summary"])
+        self.assertIn("docker:smoke:p2:chain", package_check["summary"])
         self.assertIn("docker:smoke:p2:paper-replay:validate", package_check["summary"])
         self.assertIn("docker:smoke:p2:pre-live:validate", package_check["summary"])
         self.assertIn("docker:smoke:p2:validate", package_check["summary"])
@@ -4009,6 +4018,8 @@ class QuantCoreContractTest(unittest.TestCase):
             scripts["docker:smoke:p2:preflight"],
             f"{python_launcher} tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
         )
+        self.assertIn("--p0-acceptance", scripts["docker:smoke:p0"])
+        self.assertIn("--p1-acceptance", scripts["docker:smoke:p1"])
         self.assertIn("--p2-paper-replay", scripts["docker:smoke:p2:chain"])
         self.assertIn("--p2-pre-live-acceptance", scripts["docker:smoke:p2:chain"])
         self.assertIn("--p2-readiness-acceptance", scripts["docker:smoke:p2:chain"])
