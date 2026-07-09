@@ -15684,6 +15684,24 @@ describe("terminal workbench model", () => {
       "Bootstrap check sources changed from data/p2-chain-preflight.json to data/p2-chain-preflight-next.json"
     );
 
+    const staleRowStatusReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure: {
+        ...closure,
+        rows: closure.rows.map((row) =>
+          row.id === "research-entry" ? { ...row, status: "ready" as const } : row
+        )
+      },
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(staleRowStatusReference.status).toBe("stale");
+    expect(staleRowStatusReference.detail).toContain(
+      "Stage 1 rows changed from clean-open:ready->market, research-entry:blocked->research to clean-open:ready->market, research-entry:ready->research"
+    );
+
     const missingReference = buildStage1P0DailyUseArchiveReviewReference({
       closure,
       invalidShareStatus,

@@ -11408,12 +11408,25 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     !isCurrent && archivedBootstrapCheckSources !== currentBootstrapCheckSources
       ? ` Bootstrap check sources changed from ${archivedBootstrapCheckSources || "none"} to ${currentBootstrapCheckSources || "none"}.`
       : "";
+  const archivedStage1Rows = latestRow.stage1DailyArchiveReviewRowIds
+    .map(
+      (id, index) =>
+        `${id}:${latestRow.stage1DailyArchiveReviewRowStatuses[index] || "unknown"}->${
+          latestRow.stage1DailyArchiveReviewRowTargetWorkspaceIds[index] || "unknown"
+        }`
+    )
+    .join(", ");
+  const currentStage1Rows = closure.rows.map((row) => `${row.id}:${row.status}->${row.targetWorkspaceId}`).join(", ");
+  const stage1RowsStaleReason =
+    !isCurrent && archivedStage1Rows !== currentStage1Rows
+      ? ` Stage 1 rows changed from ${archivedStage1Rows || "none"} to ${currentStage1Rows || "none"}.`
+      : "";
 
   return finalizeStage1P0DailyUseArchiveReviewReference({
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
-      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}`,
+      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}${stage1RowsStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Stage 1 archive review current" : "Stage 1 archive review stale",
     query,
