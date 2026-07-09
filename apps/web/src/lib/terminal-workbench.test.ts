@@ -15666,6 +15666,24 @@ describe("terminal workbench model", () => {
       "Bootstrap checks changed from p2-manifest-chain:ready to p2-manifest-chain:review"
     );
 
+    const staleBootstrapCheckSourceReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure: {
+        ...closure,
+        bootstrapPreflightChecks: closure.bootstrapPreflightChecks?.map((check) =>
+          check.id === "p2-manifest-chain" ? { ...check, sourcePath: "data/p2-chain-preflight-next.json" } : check
+        )
+      },
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(staleBootstrapCheckSourceReference.status).toBe("stale");
+    expect(staleBootstrapCheckSourceReference.detail).toContain(
+      "Bootstrap check sources changed from data/p2-chain-preflight.json to data/p2-chain-preflight-next.json"
+    );
+
     const missingReference = buildStage1P0DailyUseArchiveReviewReference({
       closure,
       invalidShareStatus,
