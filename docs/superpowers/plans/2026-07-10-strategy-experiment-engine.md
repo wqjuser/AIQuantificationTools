@@ -1096,15 +1096,15 @@ Build every supported dimension from actual condition side/index; SMA and volume
 
 Candidate staging applies the candidate parameter patches to `experiment.definition.baseStrategy`, converts that config with `strategySnapshotFromStrategyConfig`, and returns `clearAuditedResearchResults(updatedWorkspace, "strategy")`.
 
-- [ ] **Step 4: Delete the old frontend simulator and scan models**
+- [ ] **Step 4: Freeze the old simulator until its remaining consumers migrate**
 
-Remove `BacktestParameterScanRow`, `BacktestParameterScanSummary`, `buildBacktestParameterScanRows`, `buildBacktestParameterScanSummary`, `parameterScanWindows`, `parameterScanThresholds`, `simulateSmaParameterScan`, its SMA/RSI/volume helpers, and `workspaceWithBacktestParameterCandidate`. Delete their old tests instead of keeping two authorities.
+Do not add any new call to `BacktestParameterScanRow`, `BacktestParameterScanSummary`, `buildBacktestParameterScanRows`, `buildBacktestParameterScanSummary`, `simulateSmaParameterScan`, or `workspaceWithBacktestParameterCandidate`. Keep the existing exports temporarily because `App.tsx`, Backtest Markdown, AI evidence, and layout contracts still consume them until Tasks 9–10. Their deletion is part of Task 10 after those consumers move to persisted experiment evidence; Task 8 must remain independently buildable.
 
 - [ ] **Step 5: Run focused tests and commit**
 
 Run the focused terminal-workbench test.
 
-Expected: PASS and no remaining production reference to `simulateSmaParameterScan`.
+Expected: PASS, the new persisted helpers have no dependency on `simulateSmaParameterScan`, and the existing frontend build remains valid until the final consumer migration.
 
 Commit:
 
@@ -1251,7 +1251,11 @@ buildBacktestReportMarkdown(workspace, runHistory = [], experiment: StrategyExpe
 
 Update `buildResearchRunExportBacktestReport`, `buildBacktestReportAuditEvent`, and `withResearchRunExportAuditEvidenceArtifacts` to accept/pass the same optional detail. Change App's report export and AI save call sites to pass `activeStrategyExperiment` only when revision and source run match.
 
-- [ ] **Step 4: Run focused and full frontend tests, then commit**
+- [ ] **Step 4: Delete the retired frontend simulator after the last consumer migrates**
+
+Remove `BacktestParameterScanRow`, `BacktestParameterScanSummary`, `buildBacktestParameterScanRows`, `buildBacktestParameterScanSummary`, `parameterScanWindows`, `parameterScanThresholds`, `simulateSmaParameterScan`, its SMA/RSI/volume helpers, and `workspaceWithBacktestParameterCandidate`. Delete their old tests rather than keeping two authorities. Before continuing, verify `rg "BacktestParameterScan|buildBacktestParameterScan|workspaceWithBacktestParameterCandidate|simulateSmaParameterScan" apps/web/src` returns no production references.
+
+- [ ] **Step 5: Run focused and full frontend tests, then commit**
 
 Run:
 
