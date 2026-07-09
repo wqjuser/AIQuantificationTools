@@ -11384,6 +11384,12 @@ export function buildStage1P0DailyUseArchiveReviewReference({
   const stateLabel = `${latestRow.stage1DailyArchiveReviewState || latestRow.focusQuery} ${
     latestRow.stage1DailyArchiveReviewReadyCount
   }/${latestRow.stage1DailyArchiveReviewTotalCount}`;
+  const archivedPrimaryAction = `${latestRow.stage1DailyArchiveReviewPrimaryActionId}:${latestRow.stage1DailyArchiveReviewPrimaryActionLabel}->${latestRow.stage1DailyArchiveReviewPrimaryTargetWorkspaceId}`;
+  const currentPrimaryAction = `${closure.primaryActionId}:${closure.primaryActionLabel}->${closure.primaryTargetWorkspaceId}`;
+  const primaryActionStaleReason =
+    !isCurrent && archivedPrimaryAction !== currentPrimaryAction
+      ? ` Primary action changed from ${archivedPrimaryAction} to ${currentPrimaryAction}.`
+      : "";
   const archivedP2ChainSource = latestRow.stage1DailyArchiveReviewBootstrapPreflightP2ManifestChainPreflightSourcePath;
   const currentP2ChainSource = closure.bootstrapPreflightSourcePaths?.p2ManifestChainPreflight ?? "";
   const p2ChainStaleReason =
@@ -11426,7 +11432,7 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
-      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}${stage1RowsStaleReason}`,
+      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${primaryActionStaleReason}${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}${stage1RowsStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Stage 1 archive review current" : "Stage 1 archive review stale",
     query,

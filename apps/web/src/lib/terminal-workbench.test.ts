@@ -15627,6 +15627,9 @@ describe("terminal workbench model", () => {
     expect(staleReference.fileName).toBe("stage1-p0-daily-use-archive-review-stale.md");
     expect(staleReference.copyText).toContain("- Status: stale");
     expect(staleReference.copyText).toContain("record a fresh archive");
+    expect(staleReference.detail).toContain(
+      "Primary action changed from open-research-entry:Open research entry->research to run-desktop-build:Run desktop build->settings"
+    );
 
     const staleBootstrapReference = buildStage1P0DailyUseArchiveReviewReference({
       closure: {
