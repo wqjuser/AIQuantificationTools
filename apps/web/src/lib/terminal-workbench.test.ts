@@ -15750,6 +15750,39 @@ describe("terminal workbench model", () => {
       "Invalid share changed from ready:none to invalid:invalid-workspace"
     );
 
+    const staleStateReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure: {
+        ...closure,
+        readyCount: 2,
+        state: "ready"
+      },
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(staleStateReference.status).toBe("stale");
+    expect(staleStateReference.detail).toContain("Stage 1 state changed from blocked 1/2 to ready 2/2");
+
+    const staleRowLabelReference = buildStage1P0DailyUseArchiveReviewReference({
+      closure: {
+        ...closure,
+        rows: closure.rows.map((row) =>
+          row.id === "research-entry" ? { ...row, label: "Research entry next" } : row
+        )
+      },
+      invalidShareStatus,
+      ledgerRows: rows,
+      refreshOutcome,
+      shareDeepLinkState
+    });
+
+    expect(staleRowLabelReference.status).toBe("stale");
+    expect(staleRowLabelReference.detail).toContain(
+      "Stage 1 row labels changed from clean-open:Clean environment, research-entry:Research entry to clean-open:Clean environment, research-entry:Research entry next"
+    );
+
     const missingReference = buildStage1P0DailyUseArchiveReviewReference({
       closure,
       invalidShareStatus,

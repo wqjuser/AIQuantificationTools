@@ -11384,6 +11384,11 @@ export function buildStage1P0DailyUseArchiveReviewReference({
   const stateLabel = `${latestRow.stage1DailyArchiveReviewState || latestRow.focusQuery} ${
     latestRow.stage1DailyArchiveReviewReadyCount
   }/${latestRow.stage1DailyArchiveReviewTotalCount}`;
+  const currentStateLabel = `${closure.state} ${closure.readyCount}/${closure.totalCount}`;
+  const stage1StateStaleReason =
+    !isCurrent && stateLabel !== currentStateLabel
+      ? ` Stage 1 state changed from ${stateLabel} to ${currentStateLabel}.`
+      : "";
   const archivedPrimaryAction = `${latestRow.stage1DailyArchiveReviewPrimaryActionId}:${latestRow.stage1DailyArchiveReviewPrimaryActionLabel}->${latestRow.stage1DailyArchiveReviewPrimaryTargetWorkspaceId}`;
   const currentPrimaryAction = `${closure.primaryActionId}:${closure.primaryActionLabel}->${closure.primaryTargetWorkspaceId}`;
   const primaryActionStaleReason =
@@ -11435,6 +11440,14 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     !isCurrent && archivedBootstrapCheckSources !== currentBootstrapCheckSources
       ? ` Bootstrap check sources changed from ${archivedBootstrapCheckSources || "none"} to ${currentBootstrapCheckSources || "none"}.`
       : "";
+  const archivedStage1RowLabels = latestRow.stage1DailyArchiveReviewRowIds
+    .map((id, index) => `${id}:${latestRow.stage1DailyArchiveReviewRowLabels[index] || "unknown"}`)
+    .join(", ");
+  const currentStage1RowLabels = closure.rows.map((row) => `${row.id}:${row.label}`).join(", ");
+  const stage1RowLabelsStaleReason =
+    !isCurrent && archivedStage1RowLabels !== currentStage1RowLabels
+      ? ` Stage 1 row labels changed from ${archivedStage1RowLabels || "none"} to ${currentStage1RowLabels || "none"}.`
+      : "";
   const archivedStage1Rows = latestRow.stage1DailyArchiveReviewRowIds
     .map(
       (id, index) =>
@@ -11453,7 +11466,7 @@ export function buildStage1P0DailyUseArchiveReviewReference({
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest archive review ${latestRow.id} matches current Stage 1 daily-use context (${stateLabel}).`
-      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${primaryActionStaleReason}${refreshOutcomeStaleReason}${shareContextStaleReason}${invalidShareStaleReason}${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}${stage1RowsStaleReason}`,
+      : `Latest archive review ${latestRow.id} no longer matches current Stage 1 daily-use context (${stateLabel}); record a fresh archive.${stage1StateStaleReason}${primaryActionStaleReason}${refreshOutcomeStaleReason}${shareContextStaleReason}${invalidShareStaleReason}${p2ChainStaleReason}${bootstrapCheckStaleReason}${bootstrapCheckSourceStaleReason}${stage1RowLabelsStaleReason}${stage1RowsStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Stage 1 archive review current" : "Stage 1 archive review stale",
     query,
