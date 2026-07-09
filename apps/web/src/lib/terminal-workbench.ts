@@ -11330,12 +11330,45 @@ export function buildDailyStartBriefReviewReference({
   const stateLabel = `${latestRow.dailyStartBriefReviewState || latestRow.focusQuery} local reviews ${
     latestRow.dailyStartBriefReviewCurrentReviewCount
   }/2 open ops ${latestRow.dailyStartBriefReviewOpenOpsItemCount}`;
+  const currentStateLabel = `${brief.state} local reviews ${brief.currentReviewCount}/2 open ops ${brief.openOpsItemCount}`;
+  const stateStaleReason =
+    !isCurrent && stateLabel !== currentStateLabel
+      ? ` Daily start state changed from ${stateLabel} to ${currentStateLabel}.`
+      : "";
+  const archivedPrimaryAction = `${latestRow.dailyStartBriefReviewPrimaryActionLabel}->${latestRow.dailyStartBriefReviewPrimaryActionWorkspaceId}`;
+  const currentPrimaryAction = `${brief.primaryActionLabel}->${brief.primaryActionWorkspaceId}`;
+  const primaryActionStaleReason =
+    !isCurrent && archivedPrimaryAction !== currentPrimaryAction
+      ? ` Primary action changed from ${archivedPrimaryAction} to ${currentPrimaryAction}.`
+      : "";
+  const archivedLocalReview = `${latestRow.dailyStartBriefReviewLocalReviewStatus}:${latestRow.dailyStartBriefReviewLocalReviewActionLabel}->${latestRow.dailyStartBriefReviewLocalReviewQuery}`;
+  const currentLocalReview = `${brief.localReviewStatus}:${brief.localReviewActionLabel}->${brief.localReviewQuery}`;
+  const localReviewStaleReason =
+    !isCurrent && archivedLocalReview !== currentLocalReview
+      ? ` Local review changed from ${archivedLocalReview} to ${currentLocalReview}.`
+      : "";
+  const archivedAuditContext = `${latestRow.dailyStartBriefReviewAuditQueryTitle || "none"}->${
+    latestRow.dailyStartBriefReviewAuditQuery || "none"
+  }`;
+  const currentAuditContext = `${brief.auditQueryTitle || "none"}->${brief.auditQuery || "none"}`;
+  const auditContextStaleReason =
+    !isCurrent && archivedAuditContext !== currentAuditContext
+      ? ` Audit context changed from ${archivedAuditContext} to ${currentAuditContext}.`
+      : "";
+  const archivedCheckpoints = latestRow.dailyStartBriefReviewCheckpointIds
+    .map((id, index) => `${id}:${latestRow.dailyStartBriefReviewCheckpointStatuses[index] || "unknown"}`)
+    .join(", ");
+  const currentCheckpoints = brief.checkpoints.map((checkpoint) => `${checkpoint.id}:${checkpoint.status}`).join(", ");
+  const checkpointsStaleReason =
+    !isCurrent && archivedCheckpoints !== currentCheckpoints
+      ? ` Checkpoints changed from ${archivedCheckpoints || "none"} to ${currentCheckpoints || "none"}.`
+      : "";
 
   return {
     createdAt: latestRow.createdAt,
     detail: isCurrent
       ? `Latest review ${latestRow.id} matches current daily start brief (${stateLabel}).`
-      : `Latest review ${latestRow.id} no longer matches current daily start brief (${stateLabel}); record a fresh review.`,
+      : `Latest review ${latestRow.id} no longer matches current daily start brief (${stateLabel}); record a fresh review.${stateStaleReason}${primaryActionStaleReason}${localReviewStaleReason}${auditContextStaleReason}${checkpointsStaleReason}`,
     eventId: latestRow.id,
     label: isCurrent ? "Daily start review current" : "Daily start review stale",
     query,

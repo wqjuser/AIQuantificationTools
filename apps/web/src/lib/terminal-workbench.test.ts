@@ -15902,6 +15902,32 @@ describe("terminal workbench model", () => {
       })
     );
     expect(reference.detail).toContain("matches current daily start brief");
+
+    const staleReference = buildDailyStartBriefReviewReference({
+      brief: {
+        ...brief,
+        checkpoints: brief.checkpoints.map((checkpoint) =>
+          checkpoint.id === "daily-ops-review" ? { ...checkpoint, status: "stale" as const } : checkpoint
+        ),
+        localReviewActionLabel: "Record daily start",
+        localReviewQuery: "daily_start_brief_review daily-start-next",
+        localReviewStatus: "stale",
+        primaryActionLabel: "Record Stage 1 archive",
+        primaryActionWorkspaceId: "research"
+      },
+      ledgerRows: rows
+    });
+
+    expect(staleReference.status).toBe("stale");
+    expect(staleReference.detail).toContain(
+      "Primary action changed from Run AI review->ai-review to Record Stage 1 archive->research"
+    );
+    expect(staleReference.detail).toContain(
+      "Local review changed from current:Open local review evidence->daily_ops_control_room_review daily-ops-current to stale:Record daily start->daily_start_brief_review daily-start-next"
+    );
+    expect(staleReference.detail).toContain(
+      "Checkpoints changed from ops-queue:review, personal-team-review:current, daily-ops-review:current, live-boundary:ready to ops-queue:review, personal-team-review:current, daily-ops-review:stale, live-boundary:ready"
+    );
   });
 
   test("counts daily start brief reviews in the local review bundle summary", () => {
