@@ -46,6 +46,20 @@ class QuantCoreContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def _sample_stage1_package_scripts(self):
+        return {
+            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+            "stage1:prepare": "node tools/run_python.mjs tools/stage1_prepare.py --mode full",
+            "stage1:prepare:quick": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick",
+            "stage1:prepare:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
+            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
+        }
+
     def _sample_p0_acceptance_manifest(self, *, run_id: str = "run-smoke"):
         return {
             "kind": "aiqt.p0AcceptanceManifest",
@@ -1776,19 +1790,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
             (project_root / "package.json").write_text(
-                json.dumps(
-                    {
-                        "scripts": {
-                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
-                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
-                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
-                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
-                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
-                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
-                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
-                        }
-                    }
-                ),
+                json.dumps({"scripts": self._sample_stage1_package_scripts()}),
                 encoding="utf-8",
             )
             write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
@@ -1856,19 +1858,7 @@ class QuantCoreContractTest(unittest.TestCase):
             desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
             p2_chain_path.write_text(json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")), encoding="utf-8")
             (project_root / "package.json").write_text(
-                json.dumps(
-                    {
-                        "scripts": {
-                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
-                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
-                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
-                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
-                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
-                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
-                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
-                        }
-                    }
-                ),
+                json.dumps({"scripts": self._sample_stage1_package_scripts()}),
                 encoding="utf-8",
             )
             write_stage1_daily_use_report(project_root=project_root, output_path=daily_use_path)
@@ -1940,17 +1930,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")),
                 encoding="utf-8",
             )
-            package_json = {
-                "scripts": {
-                    "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
-                    "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
-                    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
-                    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
-                    "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
-                    "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
-                    "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
-                }
-            }
+            package_json = {"scripts": self._sample_stage1_package_scripts()}
             (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
             write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
 
@@ -1982,6 +1962,55 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(preflight["liveBlockedBoundary"])
         self.assertIn("stage1 bootstrap preflight status=ready", validate_stage1_bootstrap_preflight(preflight))
 
+    def test_stage1_bootstrap_preflight_blocks_missing_prepare_scripts(self):
+        import json
+
+        from quant_core.stage1_bootstrap_preflight import build_stage1_bootstrap_preflight
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(
+                json.dumps(self._sample_p0_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "p1-acceptance.json").write_text(
+                json.dumps(self._sample_p1_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "desktop-release.json").write_text(
+                json.dumps(self._sample_desktop_release_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "p2-chain-preflight.json").write_text(
+                json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")),
+                encoding="utf-8",
+            )
+            scripts = self._sample_stage1_package_scripts()
+            scripts.pop("stage1:prepare")
+            scripts.pop("stage1:prepare:quick")
+            scripts.pop("stage1:prepare:plan")
+            package_json = {"scripts": scripts}
+            (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
+            write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
+
+            preflight = build_stage1_bootstrap_preflight(
+                project_root=project_root,
+                generated_at="2026-07-09T11:00:00+00:00",
+            )
+
+        package_check = preflight["checks"][0]
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertEqual(preflight["nextAction"], "repair-package-scripts")
+        self.assertEqual(preflight["recommendedCommand"], "npm install")
+        self.assertEqual(preflight["blockerIds"], ["package-scripts"])
+        self.assertEqual(package_check["status"], "blocked")
+        self.assertIn("stage1:prepare", package_check["summary"])
+        self.assertIn("stage1:prepare:quick", package_check["summary"])
+        self.assertIn("stage1:prepare:plan", package_check["summary"])
+
     def test_stage1_bootstrap_preflight_reviews_missing_p2_manifest_chain(self):
         import json
 
@@ -1995,17 +2024,7 @@ class QuantCoreContractTest(unittest.TestCase):
             (data_dir / "p0-acceptance.json").write_text(json.dumps(self._sample_p0_acceptance_manifest()), encoding="utf-8")
             (data_dir / "p1-acceptance.json").write_text(json.dumps(self._sample_p1_acceptance_manifest()), encoding="utf-8")
             (data_dir / "desktop-release.json").write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
-            package_json = {
-                "scripts": {
-                    "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
-                    "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
-                    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
-                    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
-                    "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
-                    "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
-                    "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
-                }
-            }
+            package_json = {"scripts": self._sample_stage1_package_scripts()}
             (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
             write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
 
@@ -2037,17 +2056,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             project_root = Path(tmp)
-            package_json = {
-                "scripts": {
-                    "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
-                    "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
-                    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
-                    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
-                    "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
-                    "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
-                    "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
-                }
-            }
+            package_json = {"scripts": self._sample_stage1_package_scripts()}
             (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
 
             preflight = build_stage1_bootstrap_preflight(
@@ -2089,19 +2098,7 @@ class QuantCoreContractTest(unittest.TestCase):
             desktop_path.write_text(json.dumps(self._sample_desktop_release_manifest()), encoding="utf-8")
             p2_chain_path.write_text(json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")), encoding="utf-8")
             (project_root / "package.json").write_text(
-                json.dumps(
-                    {
-                        "scripts": {
-                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
-                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
-                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
-                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
-                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
-                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
-                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
-                        }
-                    }
-                ),
+                json.dumps({"scripts": self._sample_stage1_package_scripts()}),
                 encoding="utf-8",
             )
             write_stage1_daily_use_report(project_root=project_root, output_path=daily_use_path)
@@ -2151,19 +2148,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
             package_path.write_text(
-                json.dumps(
-                    {
-                        "scripts": {
-                            "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
-                            "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
-                            "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
-                            "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
-                            "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
-                            "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
-                            "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
-                        }
-                    }
-                ),
+                json.dumps({"scripts": self._sample_stage1_package_scripts()}),
                 encoding="utf-8",
             )
             write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")

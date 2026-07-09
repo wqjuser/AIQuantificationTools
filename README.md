@@ -429,7 +429,7 @@ npm run stage1:preflight
 npm run stage1:preflight:validate
 ```
 
-这两条命令会检查 `package.json` 中的 Stage 1 日常入口和 P2 chain 预检入口、`data/p0-acceptance.json`、`data/p1-acceptance.json`、`data/p2-chain-preflight.json`、`data/desktop-release.json` 和 `data/stage1-daily-use.json`，并写入或验证 `data/stage1-bootstrap-preflight.json`。预检只读取现有脚本和 manifest，给出第一个阻断项、下一步动作和推荐命令；P2 chain preflight 缺失时会提示先运行 `npm run docker:smoke:p2:preflight`，链路已生成但仍被上游 manifest 阻断时会透传对应的 P2 下一步命令。Stage 1 preflight 不会运行 Docker、不会生成缺失 P0/P1/P2 证据、不会打包桌面端、不会写审计事件、不会连接券商或提交订单。
+这两条命令会检查 `package.json` 中的 Stage 1 一键准备、日常入口和 P2 chain 预检入口、`data/p0-acceptance.json`、`data/p1-acceptance.json`、`data/p2-chain-preflight.json`、`data/desktop-release.json` 和 `data/stage1-daily-use.json`，并写入或验证 `data/stage1-bootstrap-preflight.json`。预检只读取现有脚本和 manifest，给出第一个阻断项、下一步动作和推荐命令；P2 chain preflight 缺失时会提示先运行 `npm run docker:smoke:p2:preflight`，链路已生成但仍被上游 manifest 阻断时会透传对应的 P2 下一步命令。Stage 1 preflight 不会运行 Docker、不会生成缺失 P0/P1/P2 证据、不会打包桌面端、不会写审计事件、不会连接券商或提交订单。
 
 本地核心还提供 `GET /api/stage1/bootstrap-preflight/latest` 和 `POST /api/stage1/bootstrap-preflight`。前者只回读 `data/stage1-bootstrap-preflight.json` 并在缺失/无效时返回安全 fallback；如果 `package.json`、P0/P1/P2 chain/desktop manifest 或 `data/stage1-daily-use.json` 比 preflight 更新，readback 会把受影响检查投影为 review，附带 `staleSourcePaths` 并提示重新运行 `npm run stage1:preflight`。后者在产品内生成同一份 preflight manifest，然后立即用同一套 status readback 复核。首页 Stage 1/P0 日常收口卡会读取该 preflight：ready 时把开箱预检摘要合并进卡片详情；blocked/review/missing/invalid 时把“干净环境开箱”行作为总闸门，指向 Settings 复核推荐命令；当 preflight 自身因为上游源更新而 stale 时，首页中文 detail 会显示“开箱预检源已更新 · <path> · 请刷新自检”，行级状态显示“开箱预检待刷新”，区别于真正 blocked 的开箱失败。这个入口仍只读/写 preflight 文件，不运行 Docker、不补造 P0/P1/P2/desktop/daily-use 上游证据、不打包桌面端、不写审计事件、不连接券商或提交订单。
 

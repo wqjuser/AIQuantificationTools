@@ -30,6 +30,9 @@ STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_STATUSES = {"ready", "review", "blocked"}
 REQUIRED_PACKAGE_SCRIPTS = {
     "stage1:daily",
     "stage1:daily:validate",
+    "stage1:prepare",
+    "stage1:prepare:quick",
+    "stage1:prepare:plan",
     "desktop:release",
     "desktop:release:record",
     "docker:smoke:p0:validate",
@@ -402,7 +405,7 @@ def _package_scripts_check(project_root: Path) -> dict[str, Any]:
         check_id="package-scripts",
         label="Package scripts",
         status="ready",
-        summary="Required Stage 1 daily, desktop, acceptance, and P2 chain scripts are present.",
+        summary="Required Stage 1 prepare, daily, desktop, acceptance, and P2 chain scripts are present.",
         recommended_command="npm run stage1:preflight:validate",
         source_path="package.json",
     )
