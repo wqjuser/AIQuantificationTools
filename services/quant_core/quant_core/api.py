@@ -482,11 +482,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/strategy-experiments":
             try:
                 payload = self._read_json_body()
+                replay_id: str | None = None
                 if "replayOfExperimentId" in payload:
-                    replay_id = payload.get("replayOfExperimentId")
-                    if set(payload) != {"replayOfExperimentId"} or not isinstance(replay_id, str) or not replay_id.strip():
+                    raw_replay_id = payload.get("replayOfExperimentId")
+                    if (
+                        set(payload) != {"replayOfExperimentId"}
+                        or not isinstance(raw_replay_id, str)
+                        or not raw_replay_id.strip()
+                    ):
                         raise ValueError("invalid_strategy_experiment")
-                    detail = self._strategy_experiment_runner().replay(replay_id.strip())
+                    replay_id = raw_replay_id.strip()
                 else:
                     if set(payload) != {
                         "strategyRevision",
@@ -497,13 +502,6 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         "walkForward",
                     }:
                         raise ValueError("invalid_strategy_experiment")
-                    detail = self._strategy_experiment_runner().run_new(payload)
-            except StrategyExperimentError as error:
-                error_payload = {"error": error.error, "detail": error.detail}
-                if error.experiment_id:
-                    error_payload["experimentId"] = error.experiment_id
-                self._send_json(error_payload, status=error.status)
-                return
             except ValueError:
                 self._send_json(
                     {
@@ -512,6 +510,17 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     },
                     status=400,
                 )
+                return
+
+            try:
+                runner = self._strategy_experiment_runner()
+                detail = runner.replay(replay_id) if replay_id is not None else runner.run_new(payload)
+                experiment_payload = strategy_experiment_detail_to_payload(detail)
+            except StrategyExperimentError as error:
+                error_payload = {"error": error.error, "detail": error.detail}
+                if error.experiment_id:
+                    error_payload["experimentId"] = error.experiment_id
+                self._send_json(error_payload, status=error.status)
                 return
             except Exception:
                 self._send_json(
@@ -522,7 +531,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     status=500,
                 )
                 return
-            self._send_json({"experiment": strategy_experiment_detail_to_payload(detail)}, status=201)
+            self._send_json({"experiment": experiment_payload}, status=201)
             return
         if parsed.path == "/api/stage1/daily-use":
             try:
@@ -2955,6 +2964,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     source_run_id=query.get("sourceRunId", [""])[0].strip() or None,
                     limit=_parse_limit(query.get("limit", ["20"])[0]),
                 )
+                experiments_payload = strategy_experiment_records_to_payload(records)
             except Exception:
                 self._send_json(
                     {
@@ -2964,12 +2974,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     status=500,
                 )
                 return
-            self._send_json({"experiments": strategy_experiment_records_to_payload(records)})
+            self._send_json({"experiments": experiments_payload})
             return
         if parsed.path.startswith("/api/strategy-experiments/"):
             experiment_id = unquote(parsed.path.removeprefix("/api/strategy-experiments/")).strip()
             try:
                 detail = self.strategy_experiment_store.get(experiment_id) if experiment_id else None
+                experiment_payload = strategy_experiment_detail_to_payload(detail) if detail is not None else None
             except Exception:
                 self._send_json(
                     {
@@ -2988,7 +2999,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     status=404,
                 )
                 return
-            self._send_json({"experiment": strategy_experiment_detail_to_payload(detail)})
+            self._send_json({"experiment": experiment_payload})
             return
         if parsed.path == "/api/demo":
             query = parse_qs(parsed.query)

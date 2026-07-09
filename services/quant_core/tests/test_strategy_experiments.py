@@ -1680,6 +1680,75 @@ class StrategyExperimentHttpTests(unittest.TestCase):
         )
         self.assertEqual(self.experiment_store.list_recent(), [])
 
+    def test_raw_runner_value_errors_are_sanitized_as_500(self):
+        expected = {
+            "error": "strategy_experiment_failed",
+            "detail": "Strategy experiment execution failed.",
+        }
+        requests = (
+            ("run_new", runner_payload(self.strategy, values=(3,))),
+            ("replay", {"replayOfExperimentId": "experiment-a"}),
+        )
+
+        for method, payload in requests:
+            with (
+                self.subTest(method=method),
+                patch.object(StrategyExperimentRunner, method, side_effect=ValueError("internal store bug")),
+            ):
+                status, response = self.request("POST", "/api/strategy-experiments", payload)
+                self.assertEqual((status, response), (500, expected))
+                self.assertNotIn("internal store bug", json.dumps(response))
+
+    def test_codec_failures_return_sanitized_500_json(self):
+        detail = StrategyExperimentDetail(
+            experiment=experiment_record(),
+            snapshot=experiment_snapshot(),
+            candidates=[candidate_record()],
+        )
+        cases = (
+            (
+                "post",
+                "POST",
+                "/api/strategy-experiments",
+                runner_payload(self.strategy, values=(3,)),
+                "strategy_experiment_detail_to_payload",
+                {"error": "strategy_experiment_failed", "detail": "Strategy experiment execution failed."},
+            ),
+            (
+                "list",
+                "GET",
+                "/api/strategy-experiments",
+                None,
+                "strategy_experiment_records_to_payload",
+                {
+                    "error": "strategy_experiment_failed",
+                    "detail": "Strategy experiment history could not be loaded.",
+                },
+            ),
+            (
+                "detail",
+                "GET",
+                "/api/strategy-experiments/experiment-a",
+                None,
+                "strategy_experiment_detail_to_payload",
+                {"error": "strategy_experiment_failed", "detail": "Strategy experiment could not be loaded."},
+            ),
+        )
+
+        for name, method, path, payload, codec, expected in cases:
+            with (
+                self.subTest(route=name),
+                patch.object(StrategyExperimentRunner, "run_new", return_value=detail),
+                patch.object(self.experiment_store, "get", return_value=detail),
+                patch(f"quant_core.api.{codec}", side_effect=RuntimeError(f"secret {name} codec")),
+            ):
+                try:
+                    status, response = self.request(method, path, payload)
+                except Exception as error:
+                    self.fail(f"{name} request disconnected instead of returning JSON: {error}")
+                self.assertEqual((status, response), (500, expected))
+                self.assertNotIn("secret", json.dumps(response))
+
     def test_threaded_runtime_keeps_health_responsive_during_an_experiment(self):
         started = Event()
         release = Event()
