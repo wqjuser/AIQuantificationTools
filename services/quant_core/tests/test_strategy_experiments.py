@@ -4,6 +4,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
@@ -953,6 +954,76 @@ class StrategyExperimentDefinitionTests(unittest.TestCase):
 
         self.assertEqual(first, second)
 
+    def test_result_hash_ignores_definition_and_candidate_ids_and_sorts_by_patch(self):
+        patch_two = [
+            {
+                "conditionSide": "entry",
+                "conditionIndex": 0,
+                "parameter": "window",
+                "value": 2,
+            }
+        ]
+        patch_three = [
+            {
+                "conditionSide": "entry",
+                "conditionIndex": 0,
+                "parameter": "window",
+                "value": 3,
+            }
+        ]
+        selected = replace(
+            candidate_record("candidate-z"),
+            parameters=patch_two,
+            test_metrics={"totalReturnPct": 7},
+        )
+        other = replace(
+            candidate_record("candidate-a", rank=2),
+            parameters=patch_three,
+            test_metrics=None,
+        )
+        renamed_selected = replace(selected, candidate_id="renamed-a", experiment_id="replay")
+        renamed_other = replace(other, candidate_id="renamed-z", experiment_id="replay")
+
+        first = _result_hash(
+            "definition-a",
+            [selected, other],
+            selected_candidate_id=selected.candidate_id,
+            completion_reason="selected",
+        )
+        second = _result_hash(
+            "definition-b",
+            [renamed_other, renamed_selected],
+            selected_candidate_id=renamed_selected.candidate_id,
+            completion_reason="selected",
+        )
+
+        self.assertEqual(first, second)
+
+    def test_result_hash_payload_contains_only_patches_metrics_selection_and_schema(self):
+        selected = candidate_record()
+
+        with patch(
+            "quant_core.strategy_experiments.canonical_sha256",
+            side_effect=canonical_sha256,
+        ) as digest:
+            _result_hash(
+                "definition-a",
+                [selected],
+                selected_candidate_id=selected.candidate_id,
+                completion_reason="selected",
+            )
+
+        payload = digest.call_args.args[0]
+        self.assertEqual(
+            set(payload),
+            {"candidates", "selection", "completionReason", "schemaVersion"},
+        )
+        self.assertEqual(
+            set(payload["candidates"][0]),
+            {"parameters", "trainMetrics", "validationMetrics", "walkForward"},
+        )
+        self.assertEqual(set(payload["selection"]), {"parameters", "testMetrics"})
+
 
 class StrategyExperimentRunnerTests(unittest.TestCase):
     def setUp(self):
@@ -1024,7 +1095,7 @@ class StrategyExperimentRunnerTests(unittest.TestCase):
 
         self.assertEqual(RecordingBacktestEngine.calls, [])
         self.assertEqual(self.experiment_store.list_recent(), [])
-        with sqlite3.connect(self.experiment_store.path) as connection:
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection:
             snapshot_count = connection.execute(
                 "select count(*) from strategy_experiment_snapshots"
             ).fetchone()[0]
@@ -1079,6 +1150,88 @@ class StrategyExperimentRunnerTests(unittest.TestCase):
             self.assertEqual(raised.exception.error, expected_error)
 
         self.assertEqual(self.experiment_store.list_recent(), [])
+
+    def test_rejects_noncanonical_raw_library_body_without_persisting_snapshot(self):
+        record = self.strategy_store.get(self.strategy.revision)
+        assert record is not None
+        raw_body = {**record.strategy_config, "ignoredEvidence": {"rank": 1}}
+        with closing(sqlite3.connect(self.strategy_store.path)) as connection:
+            connection.execute(
+                "update strategy_versions set strategy_config_json = ? where revision = ?",
+                (json.dumps(raw_body), self.strategy.revision),
+            )
+            connection.commit()
+
+        with (
+            patch("quant_core.strategy_experiments.BacktestEngine", RecordingBacktestEngine),
+            self.assertRaises(StrategyExperimentError) as raised,
+        ):
+            self.runner.run_new(runner_payload(self.strategy, values=(3,)))
+
+        self.assertEqual(
+            (raised.exception.status, raised.exception.error),
+            (409, "strategy_experiment_conflict"),
+        )
+        self.assertEqual(RecordingBacktestEngine.calls, [])
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection:
+            snapshot_count = connection.execute(
+                "select count(*) from strategy_experiment_snapshots"
+            ).fetchone()[0]
+        self.assertEqual(snapshot_count, 0)
+
+    def test_rejects_noncanonical_raw_run_alias_without_persisting_snapshot(self):
+        audit = self.run_store.get("runner-run")
+        assert audit is not None
+        raw_body = dict(audit.strategy_config or {})
+        raw_body["entry_conditions"] = raw_body.pop("entryConditions")
+        noncanonical_audit = replace(audit, strategy_config=raw_body)
+
+        with (
+            patch.object(self.run_store, "get", return_value=noncanonical_audit),
+            patch("quant_core.strategy_experiments.BacktestEngine", RecordingBacktestEngine),
+            self.assertRaises(StrategyExperimentError) as raised,
+        ):
+            self.runner.run_new(runner_payload(self.strategy, values=(3,)))
+
+        self.assertEqual(
+            (raised.exception.status, raised.exception.error),
+            (409, "strategy_experiment_conflict"),
+        )
+        self.assertEqual(RecordingBacktestEngine.calls, [])
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection:
+            snapshot_count = connection.execute(
+                "select count(*) from strategy_experiment_snapshots"
+            ).fetchone()[0]
+        self.assertEqual(snapshot_count, 0)
+
+    def test_accepts_strategy_library_save_payload_after_store_normalization(self):
+        canonical = strategy_config_to_payload(self.strategy)
+        risk = canonical["risk"]
+        assert isinstance(risk, dict)
+        imported = {
+            "name": canonical["name"],
+            "revision": canonical["revision"],
+            "market": canonical["market"],
+            "symbols": canonical["symbols"],
+            "timeframe": canonical["timeframe"],
+            "version": canonical["version"],
+            "entry_conditions": canonical["entryConditions"],
+            "exit_conditions": canonical["exitConditions"],
+            "risk": {
+                "position_pct": risk["positionPct"],
+                "stop_loss_pct": risk["stopLossPct"],
+                "take_profit_pct": risk["takeProfitPct"],
+                "max_drawdown_pct": risk["maxDrawdownPct"],
+            },
+        }
+        self.strategy_store.delete(self.strategy.revision)
+        saved = self.strategy_store.save_payload(imported, audit_run_id="runner-run")
+
+        with patch("quant_core.strategy_experiments.BacktestEngine", RecordingBacktestEngine):
+            detail = self.runner.run_new(runner_payload(self.strategy, values=(3,)))
+
+        self.assertEqual(canonical_json(saved.strategy_config), canonical_json(canonical))
+        self.assertEqual(detail.experiment.status, "completed")
 
     def test_executes_train_and_validation_for_all_candidates_and_ranks_validation_only(self):
         with patch("quant_core.strategy_experiments.BacktestEngine", RecordingBacktestEngine):

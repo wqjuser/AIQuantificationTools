@@ -265,12 +265,20 @@ class StrategyExperimentRunner:
         try:
             library_strategy = strategy_config_from_payload(strategy_record.strategy_config)
             run_strategy = strategy_config_from_payload(source_run.strategy_config or {})
+            library_payload = strategy_config_to_payload(library_strategy)
+            run_payload = strategy_config_to_payload(run_strategy)
+            library_body_is_canonical = canonical_json(strategy_record.strategy_config) == canonical_json(
+                library_payload
+            )
+            run_body_is_canonical = canonical_json(source_run.strategy_config or {}) == canonical_json(
+                run_payload
+            )
         except (TypeError, ValueError) as error:
             raise _conflict("Stored strategy configuration is not canonical.") from error
-        library_payload = strategy_config_to_payload(library_strategy)
-        run_payload = strategy_config_to_payload(run_strategy)
         if (
-            library_strategy.revision != strategy_revision
+            not library_body_is_canonical
+            or not run_body_is_canonical
+            or library_strategy.revision != strategy_revision
             or run_strategy.revision != strategy_revision
             or strategy_record.revision != strategy_revision
             or source_run.strategy_revision != strategy_revision
@@ -945,20 +953,19 @@ def _warmup_bars(strategy: StrategyConfig) -> int:
 
 
 def _result_hash(
-    definition_hash: str,
+    _definition_hash: str,
     candidates: list[StrategyExperimentCandidateRecord],
     *,
     selected_candidate_id: str | None,
     completion_reason: str,
 ) -> str:
-    ordered = sorted(candidates, key=lambda candidate: candidate.candidate_id)
+    ordered = sorted(candidates, key=lambda candidate: canonical_json(candidate.parameters))
     selected = next(
         (candidate for candidate in ordered if candidate.candidate_id == selected_candidate_id),
         None,
     )
     return canonical_sha256(
         {
-            "definitionHash": definition_hash,
             "candidates": [
                 {
                     "parameters": candidate.parameters,
@@ -968,10 +975,13 @@ def _result_hash(
                 }
                 for candidate in ordered
             ],
-            "selectedCandidateId": selected_candidate_id,
-            "selectedTestMetrics": selected.test_metrics if selected else None,
+            "selection": (
+                {"parameters": selected.parameters, "testMetrics": selected.test_metrics}
+                if selected is not None
+                else None
+            ),
             "completionReason": completion_reason,
-            "resultSchemaVersion": RESULT_SCHEMA_VERSION,
+            "schemaVersion": RESULT_SCHEMA_VERSION,
         }
     )
 
