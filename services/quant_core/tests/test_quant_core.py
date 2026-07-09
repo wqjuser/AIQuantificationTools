@@ -2064,7 +2064,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(preflight["liveBlockedBoundary"])
         self.assertIn("stage1 bootstrap preflight status=ready", validate_stage1_bootstrap_preflight(preflight))
 
-    def test_stage1_bootstrap_preflight_blocks_missing_prepare_scripts(self):
+    def test_stage1_bootstrap_preflight_blocks_missing_or_empty_prepare_scripts(self):
         import json
 
         from quant_core.stage1_bootstrap_preflight import build_stage1_bootstrap_preflight
@@ -2100,7 +2100,7 @@ class QuantCoreContractTest(unittest.TestCase):
             scripts.pop("docker:smoke:p2:chain")
             scripts.pop("docker:smoke:p2:paper-replay:validate")
             scripts.pop("docker:smoke:p2:pre-live:validate")
-            scripts.pop("docker:smoke:p2:validate")
+            scripts["docker:smoke:p2:validate"] = " "
             package_json = {"scripts": scripts}
             (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
             write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
@@ -4033,6 +4033,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             scripts["docker:smoke:p2:pre-live:validate"],
             f"{python_launcher} tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
+        )
+        self.assertEqual(
+            scripts["docker:smoke:p2:validate"],
+            f"{python_launcher} tools/docker_smoke.py --validate-p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
         )
         self.assertEqual(scripts["desktop:release"], f"{python_launcher} tools/record_desktop_release.py")
         self.assertEqual(

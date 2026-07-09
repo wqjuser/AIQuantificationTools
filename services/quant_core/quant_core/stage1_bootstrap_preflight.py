@@ -399,7 +399,12 @@ def _package_scripts_check(project_root: Path) -> dict[str, Any]:
         missing_scripts = sorted(REQUIRED_PACKAGE_SCRIPTS)
     else:
         scripts = package_json.get("scripts") if isinstance(package_json, dict) else {}
-        missing_scripts = sorted(REQUIRED_PACKAGE_SCRIPTS.difference(scripts if isinstance(scripts, dict) else {}))
+        scripts = scripts if isinstance(scripts, dict) else {}
+        missing_scripts = sorted(
+            script
+            for script in REQUIRED_PACKAGE_SCRIPTS
+            if not isinstance(scripts.get(script), str) or not scripts[script].strip()
+        )
     if missing_scripts:
         return _check(
             check_id="package-scripts",
