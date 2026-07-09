@@ -54,6 +54,7 @@ class QuantCoreContractTest(unittest.TestCase):
             "stage1:prepare": "node tools/run_python.mjs tools/stage1_prepare.py --mode full",
             "stage1:prepare:quick": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick",
             "stage1:prepare:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
+            "stage1:prepare:quick:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick --dry-run",
             "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
             "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
             "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
@@ -2087,6 +2088,7 @@ class QuantCoreContractTest(unittest.TestCase):
             scripts.pop("stage1:prepare")
             scripts.pop("stage1:prepare:quick")
             scripts.pop("stage1:prepare:plan")
+            scripts.pop("stage1:prepare:quick:plan")
             package_json = {"scripts": scripts}
             (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
             write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
@@ -2105,6 +2107,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertIn("stage1:prepare", package_check["summary"])
         self.assertIn("stage1:prepare:quick", package_check["summary"])
         self.assertIn("stage1:prepare:plan", package_check["summary"])
+        self.assertIn("stage1:prepare:quick:plan", package_check["summary"])
 
     def test_stage1_bootstrap_preflight_reviews_missing_p2_manifest_chain(self):
         import json
@@ -4037,6 +4040,10 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             scripts["stage1:prepare:plan"],
             f"{python_launcher} tools/stage1_prepare.py --mode full --dry-run",
+        )
+        self.assertEqual(
+            scripts["stage1:prepare:quick:plan"],
+            f"{python_launcher} tools/stage1_prepare.py --mode quick --dry-run",
         )
 
     def test_docker_smoke_p2_chain_preflight_reports_missing_next_action(self):

@@ -23,6 +23,7 @@
     "stage1:prepare": "node tools/run_python.mjs tools/stage1_prepare.py --mode full",
     "stage1:prepare:quick": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick",
     "stage1:prepare:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
+    "stage1:prepare:quick:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick --dry-run",
     "api": "node tools/run_python.mjs tools/run_quant_api.py",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",

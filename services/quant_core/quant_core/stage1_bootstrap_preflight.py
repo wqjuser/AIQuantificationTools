@@ -33,6 +33,7 @@ REQUIRED_PACKAGE_SCRIPTS = {
     "stage1:prepare",
     "stage1:prepare:quick",
     "stage1:prepare:plan",
+    "stage1:prepare:quick:plan",
     "desktop:release",
     "desktop:release:record",
     "docker:smoke:p0:validate",
