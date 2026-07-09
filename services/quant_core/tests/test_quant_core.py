@@ -2333,8 +2333,15 @@ class QuantCoreContractTest(unittest.TestCase):
         package_check = status["checks"][0]
         self.assertEqual(package_check["id"], "package-scripts")
         self.assertEqual(package_check["status"], "review")
-        self.assertEqual(package_check["recommendedCommand"], "npm run stage1:prepare:quick")
-        self.assertEqual(status["recommendedCommand"], "npm run stage1:prepare:quick")
+        self.assertEqual(
+            package_check["recommendedCommand"],
+            "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
+        )
+        self.assertEqual(status["nextAction"], "repair-package-scripts")
+        self.assertEqual(
+            status["recommendedCommand"],
+            "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
+        )
 
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json
