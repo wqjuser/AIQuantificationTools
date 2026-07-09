@@ -47,6 +47,11 @@ import {
   type P2ReadinessAcceptanceSummary,
   type ResearchContextReadinessReportArchive,
   type ResearchRunDataPreparationEvidence,
+  type StrategyExperimentCandidate,
+  type StrategyExperimentDetail,
+  type StrategyExperimentErrorCode,
+  type StrategyExperimentListItem,
+  type StrategyExperimentMetricSet,
   type StrategyRuleDraft,
   type StrategyReadinessGate,
   type StrategySnapshot
@@ -90,6 +95,30 @@ export interface ResearchRunHistoryResult {
   source: WorkspaceSource;
   error?: string;
 }
+
+export type StrategyExperimentCreateRequest = import("./terminal-workbench").StrategyExperimentCreateRequest;
+
+export interface StrategyExperimentHistoryParams {
+  strategyRevision?: string;
+  sourceRunId?: string;
+  limit?: number;
+}
+
+export interface StrategyExperimentHistoryResult {
+  experiments: StrategyExperimentListItem[];
+  source: WorkspaceSource;
+  errorCode?: StrategyExperimentErrorCode;
+  error?: string;
+}
+
+export interface StrategyExperimentDetailResult {
+  experiment?: StrategyExperimentDetail;
+  source: WorkspaceSource;
+  errorCode?: StrategyExperimentErrorCode;
+  error?: string;
+}
+
+export type StrategyExperimentMutationResult = StrategyExperimentDetailResult;
 
 export interface ResearchNote {
   market: Market;
@@ -4880,6 +4909,27 @@ export function buildStrategyDetailUrl(baseUrl: string, revision: string): strin
 
 export function buildStrategyValidationUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/strategies/validate");
+}
+
+export function buildStrategyExperimentsUrl(
+  baseUrl: string,
+  params: StrategyExperimentHistoryParams = {}
+): string {
+  return buildApiUrl(baseUrl, "api/strategy-experiments", (url) => {
+    if (params.strategyRevision?.trim()) {
+      url.searchParams.set("strategyRevision", params.strategyRevision.trim());
+    }
+    if (params.sourceRunId?.trim()) {
+      url.searchParams.set("sourceRunId", params.sourceRunId.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(params.limit, 50))));
+    }
+  });
+}
+
+export function buildStrategyExperimentDetailUrl(baseUrl: string, experimentId: string): string {
+  return buildApiUrl(baseUrl, `api/strategy-experiments/${encodeURIComponent(experimentId)}`);
 }
 
 export function buildMarketKlinesUrl(
@@ -11540,6 +11590,102 @@ export async function loadStrategyDetail(
   }
 }
 
+export async function createStrategyExperiment(
+  baseUrl: string,
+  request: StrategyExperimentCreateRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategyExperimentMutationResult> {
+  try {
+    const response = await fetcher(buildStrategyExperimentsUrl(baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      if (isStrategyExperimentErrorPayload(payload)) {
+        return {
+          source: "core",
+          errorCode: payload.error,
+          error: payload.detail ?? payload.error
+        };
+      }
+      throw new Error("Invalid strategy experiment error contract");
+    }
+    if (!isStrategyExperimentDetailPayload(payload)) {
+      throw new Error("Invalid strategy experiment mutation contract");
+    }
+    return { experiment: payload.experiment, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown strategy experiment mutation error"
+    };
+  }
+}
+
+export async function loadStrategyExperiments(
+  baseUrl: string,
+  params: StrategyExperimentHistoryParams = {},
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategyExperimentHistoryResult> {
+  try {
+    const response = await fetcher(buildStrategyExperimentsUrl(baseUrl, params));
+    const payload = await response.json();
+    if (!response.ok) {
+      if (isStrategyExperimentErrorPayload(payload)) {
+        return {
+          experiments: [],
+          source: "core",
+          errorCode: payload.error,
+          error: payload.detail ?? payload.error
+        };
+      }
+      throw new Error("Invalid strategy experiment error contract");
+    }
+    if (!isStrategyExperimentHistoryPayload(payload)) {
+      throw new Error("Invalid strategy experiment history contract");
+    }
+    return { experiments: payload.experiments, source: "core" };
+  } catch (error) {
+    return {
+      experiments: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown strategy experiment history error"
+    };
+  }
+}
+
+export async function loadStrategyExperimentDetail(
+  baseUrl: string,
+  experimentId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategyExperimentDetailResult> {
+  try {
+    const response = await fetcher(buildStrategyExperimentDetailUrl(baseUrl, experimentId));
+    const payload = await response.json();
+    if (!response.ok) {
+      if (isStrategyExperimentErrorPayload(payload)) {
+        return {
+          source: "core",
+          errorCode: payload.error,
+          error: payload.detail ?? payload.error
+        };
+      }
+      throw new Error("Invalid strategy experiment error contract");
+    }
+    if (!isStrategyExperimentDetailPayload(payload)) {
+      throw new Error("Invalid strategy experiment detail contract");
+    }
+    return { experiment: payload.experiment, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown strategy experiment detail error"
+    };
+  }
+}
+
 export async function loadResearchRunPaperExecutions(
   baseUrl: string,
   runId: string,
@@ -14158,6 +14304,228 @@ function isCoreErrorPayload(value: unknown): value is { error: string; detail?: 
   }
   const payload = value as { error?: unknown; detail?: unknown };
   return typeof payload.error === "string" && (payload.detail === undefined || typeof payload.detail === "string");
+}
+
+function isStrategyExperimentErrorPayload(
+  value: unknown
+): value is { error: StrategyExperimentErrorCode; detail?: string } {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  return (
+    isStrategyExperimentErrorCode(value.error) &&
+    (value.detail === undefined || typeof value.detail === "string")
+  );
+}
+
+function isStrategyExperimentErrorCode(value: unknown): value is StrategyExperimentErrorCode {
+  return (
+    value === "invalid_strategy_experiment" ||
+    value === "strategy_not_found" ||
+    value === "research_run_not_found" ||
+    value === "strategy_experiment_not_found" ||
+    value === "source_snapshot_reaudit_required" ||
+    value === "strategy_experiment_conflict" ||
+    value === "test_holdout_consumed" ||
+    value === "strategy_experiment_failed"
+  );
+}
+
+function isStrategyExperimentHistoryPayload(value: unknown): value is { experiments: StrategyExperimentListItem[] } {
+  return (
+    isPlainRecord(value) &&
+    Array.isArray(value.experiments) &&
+    value.experiments.every(isStrategyExperimentListItem)
+  );
+}
+
+function isStrategyExperimentDetailPayload(value: unknown): value is { experiment: StrategyExperimentDetail } {
+  return isPlainRecord(value) && isStrategyExperimentDetail(value.experiment);
+}
+
+function isStrategyExperimentListItem(value: unknown): value is StrategyExperimentListItem {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.experimentId === "string" &&
+    typeof value.createdAt === "string" &&
+    (value.status === "completed" || value.status === "failed") &&
+    typeof value.definitionHash === "string" &&
+    typeof value.holdoutKey === "string" &&
+    typeof value.strategyRevision === "string" &&
+    typeof value.sourceRunId === "string" &&
+    typeof value.snapshotId === "string" &&
+    isMarket(value.market) &&
+    typeof value.symbol === "string" &&
+    isTimeframe(value.timeframe) &&
+    isStrategyExperimentDefinition(value.definition) &&
+    typeof value.evaluationCount === "number" &&
+    (value.selectedCandidateId === null || typeof value.selectedCandidateId === "string") &&
+    (value.completionReason === null ||
+      value.completionReason === "selected" ||
+      value.completionReason === "no_eligible_candidate") &&
+    (value.resultHash === null || typeof value.resultHash === "string") &&
+    (value.errorCode === null || typeof value.errorCode === "string") &&
+    (value.errorDetail === null || typeof value.errorDetail === "string")
+  );
+}
+
+function isStrategyExperimentDefinition(value: unknown): value is StrategyExperimentListItem["definition"] {
+  if (!isPlainRecord(value) || !isPlainRecord(value.split)) {
+    return false;
+  }
+  return (
+    isResearchRunStrategyConfig(value.baseStrategy) &&
+    typeof value.strategyRevision === "string" &&
+    typeof value.sourceRunId === "string" &&
+    typeof value.snapshotId === "string" &&
+    typeof value.canonicalDataHash === "string" &&
+    isMarket(value.market) &&
+    typeof value.symbol === "string" &&
+    isTimeframe(value.timeframe) &&
+    isBacktestAssumptions(value.assumptions) &&
+    value.split.trainPct === 60 &&
+    value.split.validationPct === 20 &&
+    value.split.testPct === 20 &&
+    Array.isArray(value.dimensions) &&
+    value.dimensions.every(isStrategyExperimentDimension) &&
+    isStrategyExperimentGuardrails(value.guardrails) &&
+    (value.walkForward === null || isStrategyExperimentWalkForward(value.walkForward)) &&
+    typeof value.evaluationBudget === "number" &&
+    value.engineVersion === "backtest-v1" &&
+    value.resultSchemaVersion === 1
+  );
+}
+
+function isStrategyExperimentDimension(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  return (
+    (value.conditionSide === "entry" || value.conditionSide === "exit") &&
+    typeof value.conditionIndex === "number" &&
+    (value.parameter === "window" || value.parameter === "threshold") &&
+    Array.isArray(value.values) &&
+    value.values.every((item) => typeof item === "number")
+  );
+}
+
+function isStrategyExperimentGuardrails(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    typeof value.minimumTradeCount === "number" &&
+    (value.maximumDrawdownPct === null || typeof value.maximumDrawdownPct === "number")
+  );
+}
+
+function isStrategyExperimentWalkForward(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    typeof value.trainBars === "number" &&
+    typeof value.validationBars === "number" &&
+    typeof value.stepBars === "number"
+  );
+}
+
+function isStrategyExperimentDetail(value: unknown): value is StrategyExperimentDetail {
+  return (
+    isStrategyExperimentListItem(value) &&
+    isPlainRecord(value) &&
+    (value.holdoutStatus === "unconsumed" ||
+      value.holdoutStatus === "consumed" ||
+      value.holdoutStatus === "consumed_by_other_definition") &&
+    isStrategyExperimentSnapshot(value.snapshot) &&
+    Array.isArray(value.candidates) &&
+    value.candidates.every(isStrategyExperimentCandidate)
+  );
+}
+
+function isStrategyExperimentSnapshot(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.snapshotId === "string" &&
+    typeof value.createdAt === "string" &&
+    isMarket(value.market) &&
+    typeof value.symbol === "string" &&
+    isTimeframe(value.timeframe) &&
+    typeof value.canonicalDataHash === "string" &&
+    typeof value.rows === "number" &&
+    typeof value.startAt === "string" &&
+    typeof value.endAt === "string" &&
+    Array.isArray(value.bars) &&
+    value.bars.every(isMarketKlineBar) &&
+    (value.testDefinitionHash === null || typeof value.testDefinitionHash === "string") &&
+    (value.testOwnerExperimentId === null || typeof value.testOwnerExperimentId === "string") &&
+    (value.testConsumedAt === null || typeof value.testConsumedAt === "string")
+  );
+}
+
+function isStrategyExperimentCandidate(value: unknown): value is StrategyExperimentCandidate {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.candidateId === "string" &&
+    typeof value.candidateRevision === "string" &&
+    Array.isArray(value.parameters) &&
+    value.parameters.every(isStrategyExperimentParameterPatch) &&
+    isStrategyExperimentMetricSet(value.trainMetrics) &&
+    isStrategyExperimentMetricSet(value.validationMetrics) &&
+    (value.testMetrics === null || isStrategyExperimentMetricSet(value.testMetrics)) &&
+    isStrategyExperimentWalkForwardEvidence(value.walkForward) &&
+    typeof value.eligible === "boolean" &&
+    (value.rank === null || typeof value.rank === "number")
+  );
+}
+
+function isStrategyExperimentParameterPatch(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    (value.conditionSide === "entry" || value.conditionSide === "exit") &&
+    typeof value.conditionIndex === "number" &&
+    (value.parameter === "window" || value.parameter === "threshold") &&
+    typeof value.value === "number"
+  );
+}
+
+function isStrategyExperimentMetricSet(value: unknown): value is StrategyExperimentMetricSet {
+  return (
+    isPlainRecord(value) &&
+    typeof value.totalReturnPct === "number" &&
+    typeof value.annualReturnPct === "number" &&
+    typeof value.maxDrawdownPct === "number" &&
+    typeof value.winRatePct === "number" &&
+    typeof value.profitFactor === "number" &&
+    typeof value.tradeCount === "number"
+  );
+}
+
+function isStrategyExperimentWalkForwardEvidence(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    Array.isArray(value.windows) &&
+    value.windows.every(isStrategyExperimentWalkForwardWindow) &&
+    typeof value.validationWindowCount === "number" &&
+    typeof value.positiveReturnCount === "number" &&
+    (value.medianReturnPct === null || typeof value.medianReturnPct === "number") &&
+    (value.worstDrawdownPct === null || typeof value.worstDrawdownPct === "number")
+  );
+}
+
+function isStrategyExperimentWalkForwardWindow(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    typeof value.index === "number" &&
+    typeof value.trainStartIndex === "number" &&
+    typeof value.trainEndIndex === "number" &&
+    typeof value.validationStartIndex === "number" &&
+    typeof value.validationEndIndex === "number" &&
+    isStrategyExperimentMetricSet(value.trainMetrics) &&
+    isStrategyExperimentMetricSet(value.validationMetrics)
+  );
 }
 
 function isStrategyValidation(value: unknown): value is StrategyValidation {
@@ -18852,6 +19220,7 @@ function isResearchRunDataSnapshot(value: unknown): boolean {
   }
   const snapshot = value as Record<string, unknown>;
   return (
+    (snapshot.hashVersion === undefined || snapshot.hashVersion === "aiqt-data-v2") &&
     typeof snapshot.source === "string" &&
     typeof snapshot.isComplete === "boolean" &&
     Array.isArray(snapshot.warnings) &&

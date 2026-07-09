@@ -144,6 +144,8 @@ import {
   buildSettingsStatusUrl,
   buildStrategiesUrl,
   buildStrategyDetailUrl,
+  buildStrategyExperimentDetailUrl,
+  buildStrategyExperimentsUrl,
   buildStrategyValidationUrl,
   buildResearchRunsUrl,
   buildMarketDataReadinessUrl,
@@ -226,6 +228,8 @@ import {
   refreshMarketCacheBatch,
   refreshWatchlistCacheRun,
   loadStrategyLibrary,
+  loadStrategyExperimentDetail,
+  loadStrategyExperiments,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
   saveAiReviewRunRecord,
@@ -252,6 +256,7 @@ import {
   revokeAuditReportEvent,
   saveResearchNote,
   saveStrategySnapshot,
+  createStrategyExperiment,
   withResearchRunExportAuditEvidenceArtifacts,
   buildBacktestReportAuditEvent,
   buildPortfolioBacktestReportAuditEvent,
@@ -333,6 +338,127 @@ const sampleCcxtInstallGuidance = {
   packageName: "ccxt",
   packageInstallCommand: "pip install ccxt"
 } as const;
+
+function sampleStrategyExperimentDetail() {
+  const metrics = {
+    totalReturnPct: 4.2,
+    annualReturnPct: 12.4,
+    maxDrawdownPct: 3.1,
+    winRatePct: 62.5,
+    profitFactor: 1.8,
+    tradeCount: 8
+  };
+  const baseStrategy = {
+    name: "SMA plan",
+    revision: "rev/a",
+    market: "ashare",
+    symbols: ["600000"],
+    timeframe: "1d",
+    version: 1,
+    entryConditions: [{ kind: "close_above_sma", params: { window: 10 } }],
+    exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+    risk: {
+      positionPct: 0.4,
+      stopLossPct: 0.06,
+      takeProfitPct: 0.12,
+      maxDrawdownPct: 0.09
+    }
+  };
+  return {
+    experimentId: "experiment-1",
+    createdAt: "2026-07-10T08:00:00+00:00",
+    status: "completed",
+    definitionHash: "definition-hash-1",
+    holdoutKey: "holdout-key-1",
+    strategyRevision: "rev/a",
+    sourceRunId: "run 1",
+    snapshotId: "snapshot-1",
+    market: "ashare",
+    symbol: "600000",
+    timeframe: "1d",
+    definition: {
+      baseStrategy,
+      strategyRevision: "rev/a",
+      sourceRunId: "run 1",
+      snapshotId: "snapshot-1",
+      canonicalDataHash: "data-hash-1",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 },
+      split: { trainPct: 60, validationPct: 20, testPct: 20 },
+      dimensions: [
+        { conditionSide: "entry", conditionIndex: 0, parameter: "window", values: [10, 15] }
+      ],
+      guardrails: { minimumTradeCount: 2, maximumDrawdownPct: 20 },
+      walkForward: { trainBars: 40, validationBars: 10, stepBars: 10 },
+      evaluationBudget: 13,
+      engineVersion: "backtest-v1",
+      resultSchemaVersion: 1
+    },
+    evaluationCount: 13,
+    selectedCandidateId: "candidate-a",
+    completionReason: "selected",
+    resultHash: "result-hash-1",
+    errorCode: null,
+    errorDetail: null,
+    holdoutStatus: "consumed",
+    snapshot: {
+      snapshotId: "snapshot-1",
+      createdAt: "2026-07-10T07:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      canonicalDataHash: "data-hash-1",
+      rows: 1,
+      startAt: "2026-07-09T08:00:00+00:00",
+      endAt: "2026-07-09T08:00:00+00:00",
+      bars: [
+        {
+          timestamp: "2026-07-09T08:00:00+00:00",
+          timestampMs: 1783584000000,
+          open: 9.1,
+          high: 9.4,
+          low: 9,
+          close: 9.3,
+          volume: 1300000
+        }
+      ],
+      testDefinitionHash: "definition-hash-1",
+      testOwnerExperimentId: "experiment-1",
+      testConsumedAt: "2026-07-10T08:00:00+00:00"
+    },
+    candidates: [
+      {
+        candidateId: "candidate-a",
+        candidateRevision: "candidate-rev-a",
+        parameters: [{ conditionSide: "entry", conditionIndex: 0, parameter: "window", value: 15 }],
+        trainMetrics: metrics,
+        validationMetrics: metrics,
+        testMetrics: metrics,
+        walkForward: {
+          windows: [
+            {
+              index: 0,
+              trainStartIndex: 0,
+              trainEndIndex: 40,
+              validationStartIndex: 40,
+              validationEndIndex: 50,
+              trainMetrics: metrics,
+              validationMetrics: metrics
+            }
+          ],
+          validationWindowCount: 1,
+          positiveReturnCount: 1,
+          medianReturnPct: 4.2,
+          worstDrawdownPct: 3.1
+        },
+        eligible: true,
+        rank: 1
+      }
+    ]
+  };
+}
 
 function sampleStage1BootstrapPreflight(status: "ready" | "review" | "blocked" = "ready") {
   const checkStatus = status === "ready" ? "ready" : status === "review" ? "review" : "blocked";
@@ -19268,6 +19394,158 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("fallback");
     expect(result.runs).toEqual([]);
     expect(result.error).toBe("offline");
+  });
+
+  test("builds encoded strategy experiment collection and detail URLs", () => {
+    expect(
+      buildStrategyExperimentsUrl("/", {
+        strategyRevision: "rev/a",
+        sourceRunId: "run 1",
+        limit: 5
+      })
+    ).toBe("/api/strategy-experiments?strategyRevision=rev%2Fa&sourceRunId=run+1&limit=5");
+    expect(buildStrategyExperimentDetailUrl("/", "experiment/你好")).toBe(
+      "/api/strategy-experiments/experiment%2F%E4%BD%A0%E5%A5%BD"
+    );
+  });
+
+  test("creates a strategy experiment with the exact new-definition request", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const request = {
+      strategyRevision: "rev/a",
+      sourceRunId: "run 1",
+      assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 },
+      dimensions: [
+        { conditionSide: "entry" as const, conditionIndex: 0, parameter: "window" as const, values: [10, 15] }
+      ],
+      guardrails: { minimumTradeCount: 2, maximumDrawdownPct: 20 },
+      walkForward: { trainBars: 40, validationBars: 10, stepBars: 10 }
+    };
+
+    const result = await createStrategyExperiment("/", request, async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 201, json: async () => ({ experiment: sampleStrategyExperimentDetail() }) };
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "/api/strategy-experiments",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(request)
+        }
+      }
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.experiment?.experimentId).toBe("experiment-1");
+    expect(result.experiment?.candidates[0]?.testMetrics?.totalReturnPct).toBe(4.2);
+  });
+
+  test("replays a strategy experiment through the create client", async () => {
+    const bodies: unknown[] = [];
+    const result = await createStrategyExperiment(
+      "/",
+      { replayOfExperimentId: "experiment/1" },
+      async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return { ok: true, status: 201, json: async () => ({ experiment: sampleStrategyExperimentDetail() }) };
+      }
+    );
+
+    expect(bodies).toEqual([{ replayOfExperimentId: "experiment/1" }]);
+    expect(result.source).toBe("core");
+    expect(result.experiment?.definitionHash).toBe("definition-hash-1");
+  });
+
+  test("loads valid strategy experiment list and detail envelopes", async () => {
+    const detail = sampleStrategyExperimentDetail();
+    const listItem = Object.fromEntries(
+      Object.entries(detail).filter(([key]) => !["holdoutStatus", "snapshot", "candidates"].includes(key))
+    );
+    const history = await loadStrategyExperiments(
+      "/",
+      { strategyRevision: "rev/a", sourceRunId: "run 1", limit: 5 },
+      async () => ({ ok: true, status: 200, json: async () => ({ experiments: [listItem] }) })
+    );
+    const loaded = await loadStrategyExperimentDetail("/", "experiment/1", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ experiment: detail })
+    }));
+
+    expect(history.source).toBe("core");
+    expect(history.experiments[0]?.definition.baseStrategy.revision).toBe("rev/a");
+    expect(loaded.source).toBe("core");
+    expect(loaded.experiment?.snapshot.bars[0]?.close).toBe(9.3);
+    expect(loaded.experiment?.candidates[0]?.walkForward.validationWindowCount).toBe(1);
+  });
+
+  test("preserves strategy experiment core business errors instead of falling back", async () => {
+    const result = await createStrategyExperiment(
+      "/",
+      { replayOfExperimentId: "experiment-1" },
+      async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: "test_holdout_consumed", detail: "Use a fresh snapshot." })
+      })
+    );
+
+    expect(result).toEqual({
+      source: "core",
+      errorCode: "test_holdout_consumed",
+      error: "Use a fresh snapshot."
+    });
+  });
+
+  test("accepts legacy or v2 strategy experiment source snapshots and rejects unknown hash versions", async () => {
+    const runPayload = (hashVersion?: string) => ({
+      run: {
+        runId: "run-snapshot-version",
+        createdAt: "2026-07-10T08:00:00+00:00",
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        strategyName: "SMA plan",
+        strategyRevision: "rev/a",
+        dataRows: 1,
+        metrics: {},
+        decisions: [],
+        executionMode: "paper_only",
+        dataSnapshot: {
+          ...(hashVersion === undefined ? {} : { hashVersion }),
+          source: "tencent",
+          isComplete: true,
+          warnings: [],
+          rows: 1,
+          start: "2026-07-09T08:00:00+00:00",
+          end: "2026-07-09T08:00:00+00:00",
+          hash: "snapshot-hash",
+          bars: [
+            {
+              timestamp: "2026-07-09T08:00:00+00:00",
+              timestampMs: 1783584000000,
+              open: 9.1,
+              high: 9.4,
+              low: 9,
+              close: 9.3,
+              volume: 1300000
+            }
+          ]
+        }
+      }
+    });
+    const fetchVersion = (version?: string) =>
+      loadResearchRunDetail("/", "run-snapshot-version", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => runPayload(version)
+      }));
+
+    expect((await fetchVersion()).source).toBe("core");
+    expect((await fetchVersion("aiqt-data-v2")).source).toBe("core");
+    expect((await fetchVersion("aiqt-data-v1")).source).toBe("fallback");
   });
 });
 

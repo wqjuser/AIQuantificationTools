@@ -8581,6 +8581,7 @@ export interface ResearchRunDataPreparationEvidence {
 }
 
 export interface ResearchRunDataSnapshot {
+  hashVersion?: "aiqt-data-v2";
   source: string;
   isComplete: boolean;
   warnings: string[];
@@ -8615,6 +8616,174 @@ export interface ResearchRunStrategyConfig {
   entryConditions: ResearchRunStrategyCondition[];
   exitConditions: ResearchRunStrategyCondition[];
   risk: ResearchRunStrategyRisk;
+}
+
+export type StrategyExperimentStatus = "completed" | "failed";
+
+export type StrategyExperimentErrorCode =
+  | "invalid_strategy_experiment"
+  | "strategy_not_found"
+  | "research_run_not_found"
+  | "strategy_experiment_not_found"
+  | "source_snapshot_reaudit_required"
+  | "strategy_experiment_conflict"
+  | "test_holdout_consumed"
+  | "strategy_experiment_failed";
+
+export interface StrategyExperimentMetricSet {
+  totalReturnPct: number;
+  annualReturnPct: number;
+  maxDrawdownPct: number;
+  winRatePct: number;
+  profitFactor: number;
+  tradeCount: number;
+}
+
+export interface StrategyExperimentDimension {
+  conditionSide: "entry" | "exit";
+  conditionIndex: number;
+  parameter: "window" | "threshold";
+  values: number[];
+}
+
+export interface StrategyExperimentParameterPatch {
+  conditionSide: "entry" | "exit";
+  conditionIndex: number;
+  parameter: "window" | "threshold";
+  value: number;
+}
+
+export interface StrategyExperimentGuardrails {
+  minimumTradeCount: number;
+  maximumDrawdownPct: number | null;
+}
+
+export interface StrategyExperimentWalkForward {
+  trainBars: number;
+  validationBars: number;
+  stepBars: number;
+}
+
+export interface StrategyExperimentWalkForwardWindow {
+  index: number;
+  trainStartIndex: number;
+  trainEndIndex: number;
+  validationStartIndex: number;
+  validationEndIndex: number;
+  trainMetrics: StrategyExperimentMetricSet;
+  validationMetrics: StrategyExperimentMetricSet;
+}
+
+export interface StrategyExperimentWalkForwardEvidence {
+  windows: StrategyExperimentWalkForwardWindow[];
+  validationWindowCount: number;
+  positiveReturnCount: number;
+  medianReturnPct: number | null;
+  worstDrawdownPct: number | null;
+}
+
+export interface StrategyExperimentDefinition {
+  baseStrategy: ResearchRunStrategyConfig;
+  strategyRevision: string;
+  sourceRunId: string;
+  snapshotId: string;
+  canonicalDataHash: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  assumptions: BacktestAssumptions;
+  split: {
+    trainPct: 60;
+    validationPct: 20;
+    testPct: 20;
+  };
+  dimensions: StrategyExperimentDimension[];
+  guardrails: StrategyExperimentGuardrails;
+  walkForward: StrategyExperimentWalkForward | null;
+  evaluationBudget: number;
+  engineVersion: "backtest-v1";
+  resultSchemaVersion: 1;
+}
+
+export interface StrategyExperimentCandidate {
+  candidateId: string;
+  candidateRevision: string;
+  parameters: StrategyExperimentParameterPatch[];
+  trainMetrics: StrategyExperimentMetricSet;
+  validationMetrics: StrategyExperimentMetricSet;
+  testMetrics: StrategyExperimentMetricSet | null;
+  walkForward: StrategyExperimentWalkForwardEvidence;
+  eligible: boolean;
+  rank: number | null;
+}
+
+export interface StrategyExperimentListItem {
+  experimentId: string;
+  createdAt: string;
+  status: StrategyExperimentStatus;
+  definitionHash: string;
+  holdoutKey: string;
+  strategyRevision: string;
+  sourceRunId: string;
+  snapshotId: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  definition: StrategyExperimentDefinition;
+  evaluationCount: number;
+  selectedCandidateId: string | null;
+  completionReason: "selected" | "no_eligible_candidate" | null;
+  resultHash: string | null;
+  errorCode: string | null;
+  errorDetail: string | null;
+}
+
+export interface StrategyExperimentSnapshot {
+  snapshotId: string;
+  createdAt: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  canonicalDataHash: string;
+  rows: number;
+  startAt: string;
+  endAt: string;
+  bars: ResearchRunDataSnapshotBar[];
+  testDefinitionHash: string | null;
+  testOwnerExperimentId: string | null;
+  testConsumedAt: string | null;
+}
+
+export type StrategyExperimentHoldoutStatus = "unconsumed" | "consumed" | "consumed_by_other_definition";
+
+export interface StrategyExperimentDetail extends StrategyExperimentListItem {
+  holdoutStatus: StrategyExperimentHoldoutStatus;
+  snapshot: StrategyExperimentSnapshot;
+  candidates: StrategyExperimentCandidate[];
+}
+
+export type StrategyExperimentCreateRequest =
+  | {
+      strategyRevision: string;
+      sourceRunId: string;
+      assumptions: BacktestAssumptions;
+      dimensions: StrategyExperimentDimension[];
+      guardrails: StrategyExperimentGuardrails;
+      walkForward: StrategyExperimentWalkForward | null;
+    }
+  | { replayOfExperimentId: string };
+
+export interface StrategyExperimentEvidenceSummary {
+  experimentId: string;
+  definitionHash: string;
+  resultHash: string;
+  selectedCandidateId: string;
+  candidateRevision: string;
+  parameters: StrategyExperimentParameterPatch[];
+  trainMetrics: StrategyExperimentMetricSet;
+  validationMetrics: StrategyExperimentMetricSet;
+  testMetrics: StrategyExperimentMetricSet;
+  holdoutStatus: StrategyExperimentHoldoutStatus;
 }
 
 export interface ResearchRunAiReport {
