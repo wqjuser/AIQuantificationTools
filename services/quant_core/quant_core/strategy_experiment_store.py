@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -254,7 +254,7 @@ class StrategyExperimentStore:
                 set test_definition_hash = ?, test_owner_experiment_id = ?, test_consumed_at = ?
                 where snapshot_id = ? and test_definition_hash is null
                 """,
-                (definition_hash, experiment_id, consumed_at.isoformat(), snapshot_id),
+                (definition_hash, experiment_id, _datetime_text(consumed_at), snapshot_id),
             )
             if updated.rowcount != 1:
                 raise ValueError("test_holdout_consumed")
@@ -271,6 +271,8 @@ class StrategyExperimentStore:
         experiment: StrategyExperimentRecord,
         candidates: list[StrategyExperimentCandidateRecord],
     ) -> None:
+        if any(candidate.experiment_id != experiment.experiment_id for candidate in candidates):
+            raise ValueError("strategy_experiment_candidate_mismatch")
         connection = self._connect()
         try:
             connection.execute("BEGIN")
@@ -424,7 +426,7 @@ class StrategyExperimentStore:
 def _snapshot_immutable_values(snapshot: StrategyExperimentSnapshot) -> tuple[Any, ...]:
     return (
         snapshot.snapshot_id,
-        snapshot.created_at.isoformat(),
+        _datetime_text(snapshot.created_at),
         snapshot.market,
         snapshot.symbol,
         snapshot.timeframe,
@@ -463,7 +465,7 @@ def _insert_experiment(connection: sqlite3.Connection, experiment: StrategyExper
         """,
         (
             experiment.experiment_id,
-            experiment.created_at.isoformat(),
+            _datetime_text(experiment.created_at),
             experiment.status,
             experiment.definition_hash,
             experiment.holdout_key,
@@ -589,5 +591,11 @@ def _parse_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
 
 
+def _datetime_text(value: datetime) -> str:
+    if value.tzinfo is not None and value.utcoffset() is not None:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat()
+
+
 def _optional_datetime_text(value: datetime | None) -> str | None:
-    return value.isoformat() if value is not None else None
+    return _datetime_text(value) if value is not None else None

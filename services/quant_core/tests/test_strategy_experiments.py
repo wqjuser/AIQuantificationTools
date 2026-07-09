@@ -515,6 +515,24 @@ class StrategyExperimentStoreTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual((experiment_count, candidate_count), (0, 0))
 
+    def test_record_completed_rejects_candidate_owned_by_another_experiment(self):
+        experiment = experiment_record()
+        wrong_owner = candidate_record(experiment_id="experiment-other")
+
+        with self.assertRaisesRegex(
+            ValueError, "^strategy_experiment_candidate_mismatch$"
+        ):
+            self.store.record_completed(experiment, [wrong_owner])
+
+        with sqlite3.connect(self.database_path) as connection:
+            experiment_count = connection.execute(
+                "select count(*) from strategy_experiments"
+            ).fetchone()[0]
+            candidate_count = connection.execute(
+                "select count(*) from strategy_experiment_candidates"
+            ).fetchone()[0]
+        self.assertEqual((experiment_count, candidate_count), (0, 0))
+
     def test_record_failed_persists_only_the_experiment(self):
         snapshot = experiment_snapshot()
         experiment = experiment_record("experiment-failed", status="failed")
@@ -561,6 +579,86 @@ class StrategyExperimentStoreTests(unittest.TestCase):
         self.assertEqual(
             [record.created_at for record in filtered],
             sorted((record.created_at for record in filtered), reverse=True),
+        )
+
+    def test_normalizes_aware_datetimes_to_utc_before_sorting_and_readback(self):
+        utc_plus_eight = timezone(timedelta(hours=8))
+        snapshot = replace(
+            experiment_snapshot(),
+            created_at=datetime(2026, 7, 10, 1, tzinfo=utc_plus_eight),
+        )
+        earlier = experiment_record(
+            "experiment-earlier",
+            created_at=datetime(2026, 7, 10, 1, tzinfo=utc_plus_eight),
+        )
+        later = experiment_record(
+            "experiment-later",
+            status="failed",
+            created_at=datetime(
+                2026,
+                7,
+                9,
+                14,
+                tzinfo=timezone(-timedelta(hours=4)),
+            ),
+        )
+        consumed_at = datetime(2026, 7, 10, 2, tzinfo=utc_plus_eight)
+        self.store.put_snapshot(snapshot)
+        self.store.claim_test_holdout(
+            snapshot_id=snapshot.snapshot_id,
+            definition_hash=earlier.definition_hash,
+            experiment_id=earlier.experiment_id,
+            consumed_at=consumed_at,
+        )
+        self.store.record_completed(
+            earlier,
+            [candidate_record(experiment_id=earlier.experiment_id)],
+        )
+        self.store.record_failed(later)
+
+        recent = self.store.list_recent()
+        detail = self.store.get(earlier.experiment_id)
+        with sqlite3.connect(self.database_path) as connection:
+            stored_snapshot_times = connection.execute(
+                """
+                select created_at, test_consumed_at
+                from strategy_experiment_snapshots
+                where snapshot_id = ?
+                """,
+                (snapshot.snapshot_id,),
+            ).fetchone()
+            stored_experiment_times = dict(
+                connection.execute(
+                    "select experiment_id, created_at from strategy_experiments"
+                ).fetchall()
+            )
+
+        self.assertEqual(
+            (stored_snapshot_times, stored_experiment_times),
+            (
+                ("2026-07-09T17:00:00+00:00", "2026-07-09T18:00:00+00:00"),
+                {
+                    earlier.experiment_id: "2026-07-09T17:00:00+00:00",
+                    later.experiment_id: "2026-07-09T18:00:00+00:00",
+                },
+            ),
+        )
+        self.assertEqual(
+            [record.experiment_id for record in recent],
+            [later.experiment_id, earlier.experiment_id],
+        )
+        assert detail is not None
+        self.assertEqual(
+            detail.experiment.created_at,
+            datetime(2026, 7, 9, 17, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            detail.snapshot.created_at,
+            datetime(2026, 7, 9, 17, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            detail.snapshot.test_consumed_at,
+            datetime(2026, 7, 9, 18, tzinfo=timezone.utc),
         )
 
     def test_store_has_no_update_or_delete_api(self):
