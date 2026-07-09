@@ -28,25 +28,25 @@ STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_IDS = [
 ]
 STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_STATUSES = {"ready", "review", "blocked"}
 REQUIRED_PACKAGE_SCRIPTS = {
-    "stage1:daily",
-    "stage1:daily:validate",
-    "stage1:preflight",
-    "stage1:preflight:validate",
-    "stage1:prepare",
-    "stage1:prepare:quick",
-    "stage1:prepare:plan",
-    "stage1:prepare:quick:plan",
-    "desktop:release",
-    "desktop:release:record",
-    "docker:smoke:p0",
-    "docker:smoke:p0:validate",
-    "docker:smoke:p1",
-    "docker:smoke:p1:validate",
-    "docker:smoke:p2:chain",
-    "docker:smoke:p2:preflight",
-    "docker:smoke:p2:paper-replay:validate",
-    "docker:smoke:p2:pre-live:validate",
-    "docker:smoke:p2:validate",
+    "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
+    "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+    "stage1:preflight": "node tools/run_python.mjs tools/stage1_bootstrap_preflight.py --output data/stage1-bootstrap-preflight.json",
+    "stage1:preflight:validate": "node tools/run_python.mjs tools/stage1_bootstrap_preflight.py --validate data/stage1-bootstrap-preflight.json",
+    "stage1:prepare": "node tools/run_python.mjs tools/stage1_prepare.py --mode full",
+    "stage1:prepare:quick": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick",
+    "stage1:prepare:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
+    "stage1:prepare:quick:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick --dry-run",
+    "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",
+    "desktop:release:record": "node tools/run_python.mjs tools/record_desktop_release.py --record-only",
+    "docker:smoke:p0": "node tools/run_python.mjs tools/docker_smoke.py --p0-acceptance --p0-import-check --p0-acceptance-report data/p0-acceptance.json",
+    "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
+    "docker:smoke:p1": "node tools/run_python.mjs tools/docker_smoke.py --p1-acceptance --p1-acceptance-report data/p1-acceptance.json",
+    "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+    "docker:smoke:p2:chain": "node tools/run_python.mjs tools/docker_smoke.py --p2-paper-replay --p2-pre-live-acceptance --p2-readiness-acceptance --p2-paper-replay-report data/p2-paper-replay.json --p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json --p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
+    "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
+    "docker:smoke:p2:paper-replay:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",
+    "docker:smoke:p2:pre-live:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-pre-live-acceptance-report data/p2-pre-live-acceptance.json",
+    "docker:smoke:p2:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-readiness-acceptance-report data/p2-readiness-acceptance.json",
 }
 NEXT_ACTIONS = {
     "package-scripts": ("repair-package-scripts", "npm install"),
@@ -393,6 +393,7 @@ def _stage1_bootstrap_preflight_status(
 
 def _package_scripts_check(project_root: Path) -> dict[str, Any]:
     package_path = project_root / "package.json"
+    misconfigured_scripts: list[str] = []
     try:
         package_json = json.loads(package_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -407,12 +408,22 @@ def _package_scripts_check(project_root: Path) -> dict[str, Any]:
             for script in REQUIRED_PACKAGE_SCRIPTS
             if not isinstance(scripts.get(script), str) or not scripts[script].strip()
         )
-    if missing_scripts:
+        misconfigured_scripts = sorted(
+            script
+            for script, expected_command in REQUIRED_PACKAGE_SCRIPTS.items()
+            if script not in missing_scripts and scripts[script].strip() != expected_command
+        )
+    if missing_scripts or misconfigured_scripts:
+        summary_parts = []
+        if missing_scripts:
+            summary_parts.append(f"Missing required Stage 1 scripts: {', '.join(missing_scripts)}.")
+        if misconfigured_scripts:
+            summary_parts.append(f"Misconfigured required Stage 1 scripts: {', '.join(misconfigured_scripts)}.")
         return _check(
             check_id="package-scripts",
             label="Package scripts",
             status="blocked",
-            summary=f"Missing required Stage 1 scripts: {', '.join(missing_scripts)}.",
+            summary=" ".join(summary_parts),
             recommended_command="npm install",
             source_path="package.json",
         )

@@ -2133,6 +2133,48 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertIn("docker:smoke:p2:pre-live:validate", package_check["summary"])
         self.assertIn("docker:smoke:p2:validate", package_check["summary"])
 
+    def test_stage1_bootstrap_preflight_blocks_misconfigured_prepare_scripts(self):
+        import json
+
+        from quant_core.stage1_bootstrap_preflight import build_stage1_bootstrap_preflight
+        from quant_core.stage1_daily_use import write_stage1_daily_use_report
+
+        with tempfile.TemporaryDirectory() as tmp:
+            project_root = Path(tmp)
+            data_dir = project_root / "data"
+            data_dir.mkdir()
+            (data_dir / "p0-acceptance.json").write_text(
+                json.dumps(self._sample_p0_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "p1-acceptance.json").write_text(
+                json.dumps(self._sample_p1_acceptance_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "desktop-release.json").write_text(
+                json.dumps(self._sample_desktop_release_manifest()),
+                encoding="utf-8",
+            )
+            (data_dir / "p2-chain-preflight.json").write_text(
+                json.dumps(self._sample_p2_manifest_chain_preflight(status="ready")),
+                encoding="utf-8",
+            )
+            scripts = self._sample_stage1_package_scripts()
+            scripts["stage1:prepare:quick"] = scripts["stage1:prepare"]
+            package_json = {"scripts": scripts}
+            (project_root / "package.json").write_text(json.dumps(package_json), encoding="utf-8")
+            write_stage1_daily_use_report(project_root=project_root, output_path=data_dir / "stage1-daily-use.json")
+
+            preflight = build_stage1_bootstrap_preflight(
+                project_root=project_root,
+                generated_at="2026-07-09T12:00:00+00:00",
+            )
+
+        package_check = preflight["checks"][0]
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertEqual(package_check["status"], "blocked")
+        self.assertIn("Misconfigured required Stage 1 scripts: stage1:prepare:quick.", package_check["summary"])
+
     def test_stage1_bootstrap_preflight_reviews_missing_p2_manifest_chain(self):
         import json
 
