@@ -65,6 +65,13 @@ def run_stage1_prepare(
                     flush=True,
                 )
                 return 1
+            except KeyboardInterrupt:
+                print(
+                    f"stage1 prepare interrupted step={step['id']} "
+                    f"command={' '.join(str(part) for part in command)}",
+                    flush=True,
+                )
+                return 130
     return 0
 
 

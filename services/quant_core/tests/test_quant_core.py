@@ -1831,6 +1831,29 @@ class QuantCoreContractTest(unittest.TestCase):
             printed,
         )
 
+    def test_stage1_prepare_reports_interrupted_step(self):
+        preparer = self._load_stage1_prepare_module()
+        printed = []
+
+        def fake_print(*args, **kwargs):
+            printed.append(" ".join(str(part) for part in args))
+
+        def runner(command, **kwargs):
+            raise KeyboardInterrupt()
+
+        with patch("builtins.print", fake_print):
+            exit_code = preparer.run_stage1_prepare(
+                mode="quick",
+                cwd=Path("/tmp/aiqt"),
+                runner=runner,
+            )
+
+        self.assertEqual(exit_code, 130)
+        self.assertIn(
+            "stage1 prepare interrupted step=p0-acceptance-validate command=npm run docker:smoke:p0:validate",
+            printed,
+        )
+
     def test_stage1_bootstrap_preflight_latest_api_returns_validated_preflight(self):
         import json
         from http.client import HTTPConnection
