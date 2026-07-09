@@ -2119,11 +2119,11 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(status["blockerIds"], [])
         self.assertEqual(status["staleSourcePaths"], ["data/stage1-daily-use.json"])
         self.assertEqual(status["nextAction"], "refresh-stage1-bootstrap-preflight")
-        self.assertEqual(status["recommendedCommand"], "npm run stage1:preflight")
+        self.assertEqual(status["recommendedCommand"], "npm run stage1:prepare:quick")
         stage1_daily_check = next(check for check in status["checks"] if check["id"] == "stage1-daily-use")
         self.assertEqual(stage1_daily_check["status"], "review")
         self.assertIn("Source file changed after this bootstrap preflight was generated.", stage1_daily_check["summary"])
-        self.assertEqual(stage1_daily_check["recommendedCommand"], "npm run stage1:preflight")
+        self.assertEqual(stage1_daily_check["recommendedCommand"], "npm run stage1:prepare:quick")
         self.assertFalse(status["liveTradingAllowed"])
         self.assertTrue(status["liveBlockedBoundary"])
 
@@ -2168,8 +2168,8 @@ class QuantCoreContractTest(unittest.TestCase):
         package_check = status["checks"][0]
         self.assertEqual(package_check["id"], "package-scripts")
         self.assertEqual(package_check["status"], "review")
-        self.assertEqual(package_check["recommendedCommand"], "npm run stage1:preflight")
-        self.assertEqual(status["recommendedCommand"], "npm run stage1:preflight")
+        self.assertEqual(package_check["recommendedCommand"], "npm run stage1:prepare:quick")
+        self.assertEqual(status["recommendedCommand"], "npm run stage1:prepare:quick")
 
     def test_p2_pre_live_acceptance_status_reads_latest_report(self):
         import json

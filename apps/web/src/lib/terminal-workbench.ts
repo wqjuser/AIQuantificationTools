@@ -9679,7 +9679,7 @@ function buildStage1BootstrapPreflightStaleSourceSummary(staleSourcePaths: strin
   if (staleSourcePaths.length === 0) {
     return null;
   }
-  return `Stale source files: ${staleSourcePaths.join(", ")}. Run npm run stage1:preflight to refresh.`;
+  return `Stale source files: ${staleSourcePaths.join(", ")}. Run npm run stage1:prepare:quick to refresh.`;
 }
 
 export function buildP2PreLiveAcceptanceSummary(

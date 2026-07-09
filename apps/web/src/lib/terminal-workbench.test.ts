@@ -3069,7 +3069,7 @@ describe("terminal workbench model", () => {
       reviewCount: 1,
       blockedCount: 0,
       nextAction: "refresh-stage1-bootstrap-preflight",
-      recommendedCommand: "npm run stage1:preflight",
+      recommendedCommand: "npm run stage1:prepare:quick",
       staleSourcePaths: ["data/stage1-daily-use.json"],
       reviewIds: ["stage1-daily-use"],
       checks: sampleStage1BootstrapPreflight("review").checks.map((check) =>
@@ -3078,7 +3078,7 @@ describe("terminal workbench model", () => {
               ...check,
               status: "review",
               summary: "Daily-use source changed after this bootstrap preflight was generated.",
-              recommendedCommand: "npm run stage1:preflight"
+              recommendedCommand: "npm run stage1:prepare:quick"
             }
               : check.id === "p0-acceptance" ||
                   check.id === "p1-acceptance" ||
@@ -3093,14 +3093,14 @@ describe("terminal workbench model", () => {
       actionLabel: "Refresh bootstrap preflight",
       currentCheckId: "stage1-daily-use",
       headline: "Stage 1 bootstrap preflight needs refresh (6/7)",
-      recommendedCommand: "npm run stage1:preflight",
+      recommendedCommand: "npm run stage1:prepare:quick",
       staleSourcePaths: ["data/stage1-daily-use.json"],
       staleSourceSummary:
-        "Stale source files: data/stage1-daily-use.json. Run npm run stage1:preflight to refresh.",
+        "Stale source files: data/stage1-daily-use.json. Run npm run stage1:prepare:quick to refresh.",
       state: "review",
       tone: "warning"
     });
-    expect(stale?.detail).toContain("Run npm run stage1:preflight to refresh.");
+    expect(stale?.detail).toContain("Run npm run stage1:prepare:quick to refresh.");
     expect(stale?.sourceSummary).toContain("Stale source files");
   });
 
@@ -3257,7 +3257,7 @@ describe("terminal workbench model", () => {
       reviewCount: 1,
       blockedCount: 0,
       nextAction: "refresh-stage1-bootstrap-preflight",
-      recommendedCommand: "npm run stage1:preflight",
+      recommendedCommand: "npm run stage1:prepare:quick",
       staleSourcePaths: ["data/stage1-daily-use.json"],
       reviewIds: ["stage1-daily-use"],
       checks: sampleStage1BootstrapPreflight("review").checks.map((check) =>
@@ -3266,7 +3266,7 @@ describe("terminal workbench model", () => {
               ...check,
               status: "review",
               summary: "Daily-use source changed after this bootstrap preflight was generated.",
-              recommendedCommand: "npm run stage1:preflight"
+              recommendedCommand: "npm run stage1:prepare:quick"
             }
           : check.id === "p0-acceptance" ||
               check.id === "p1-acceptance" ||
@@ -3407,10 +3407,10 @@ describe("terminal workbench model", () => {
     });
     expect(closure.bootstrapPreflightStaleSourcePaths).toEqual(["data/stage1-daily-use.json"]);
     expect(closure.bootstrapPreflightStaleSourceSummary).toBe(
-      "Stale source files: data/stage1-daily-use.json. Run npm run stage1:preflight to refresh."
+      "Stale source files: data/stage1-daily-use.json. Run npm run stage1:prepare:quick to refresh."
     );
     expect(closure.detail).toContain("Stage 1 bootstrap preflight needs refresh (6/7)");
-    expect(closure.detail).toContain("Run npm run stage1:preflight to refresh.");
+    expect(closure.detail).toContain("Run npm run stage1:prepare:quick to refresh.");
     expect(closure.rows[0]).toMatchObject({
       actionId: "review-bootstrap-preflight",
       actionLabel: "Refresh bootstrap preflight",

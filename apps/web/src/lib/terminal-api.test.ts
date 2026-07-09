@@ -1581,7 +1581,7 @@ describe("terminal workspace API client", () => {
           reviewCount: 1,
           blockedCount: 0,
           nextAction: "refresh-stage1-bootstrap-preflight",
-          recommendedCommand: "npm run stage1:preflight",
+          recommendedCommand: "npm run stage1:prepare:quick",
           staleSourcePaths: ["data/stage1-daily-use.json"],
           reviewIds: ["stage1-daily-use"],
           checks: sampleStage1BootstrapPreflight("review").checks.map((check) =>
@@ -1591,7 +1591,7 @@ describe("terminal workspace API client", () => {
                   status: "review",
                   summary:
                     "Stage 1 daily use is ready. Source file changed after this bootstrap preflight was generated.",
-                  recommendedCommand: "npm run stage1:preflight"
+                  recommendedCommand: "npm run stage1:prepare:quick"
                 }
                 : check.id === "p0-acceptance" ||
                     check.id === "p1-acceptance" ||
@@ -1612,7 +1612,7 @@ describe("terminal workspace API client", () => {
     expect(result.preflight?.readyCount).toBe(6);
     expect(result.preflight?.staleSourcePaths).toEqual(["data/stage1-daily-use.json"]);
     expect(result.preflight?.nextAction).toBe("refresh-stage1-bootstrap-preflight");
-    expect(result.preflight?.recommendedCommand).toBe("npm run stage1:preflight");
+    expect(result.preflight?.recommendedCommand).toBe("npm run stage1:prepare:quick");
     expect(result.preflight?.checks.find((check) => check.id === "stage1-daily-use")?.status).toBe("review");
     expect(result.preflight?.liveTradingAllowed).toBe(false);
     expect(result.preflight?.liveBlockedBoundary).toBe(true);

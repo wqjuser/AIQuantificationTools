@@ -48,6 +48,7 @@ NEXT_ACTIONS = {
     "stage1-daily-use": ("refresh-stage1-daily-use", "npm run stage1:daily"),
     "live-blocked-boundary": ("review-live-blocked-boundary", "npm run stage1:preflight:validate"),
 }
+STAGE1_BOOTSTRAP_PREFLIGHT_REFRESH_COMMAND = "npm run stage1:prepare:quick"
 
 
 def build_stage1_bootstrap_preflight(*, project_root: Path, generated_at: str | None = None) -> dict[str, Any]:
@@ -250,7 +251,7 @@ def _project_stale_source_review(report: dict[str, Any], report_path: Path) -> d
             continue
         check["status"] = "review"
         check["summary"] = f"{check['summary']} Source file changed after this bootstrap preflight was generated."
-        check["recommendedCommand"] = "npm run stage1:preflight"
+        check["recommendedCommand"] = STAGE1_BOOTSTRAP_PREFLIGHT_REFRESH_COMMAND
 
     projected["status"] = _overall_status(projected["checks"])
     projected["ready"] = projected["status"] == "ready"
@@ -267,7 +268,7 @@ def _project_stale_source_review(report: dict[str, Any], report_path: Path) -> d
     projected["staleSourcePaths"] = stale_sources
     if projected["status"] == "review":
         projected["nextAction"] = "refresh-stage1-bootstrap-preflight"
-        projected["recommendedCommand"] = "npm run stage1:preflight"
+        projected["recommendedCommand"] = STAGE1_BOOTSTRAP_PREFLIGHT_REFRESH_COMMAND
     else:
         projected["nextAction"], projected["recommendedCommand"] = _next_action(projected["checks"])
     validate_stage1_bootstrap_preflight(projected)
