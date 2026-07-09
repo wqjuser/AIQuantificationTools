@@ -27,11 +27,17 @@ class BacktestEngine:
         self.fee_rate = fee_rate
         self.slippage_rate = slippage_rate
 
-    def run(self, strategy: StrategyConfig, bars: list[OHLCVBar]) -> BacktestRun:
-        if not bars:
-            raise ValueError("backtest requires at least one OHLCV bar")
-
+    def run(
+        self,
+        strategy: StrategyConfig,
+        bars: list[OHLCVBar],
+        *,
+        evaluation_start_index: int = 0,
+    ) -> BacktestRun:
         ordered_bars = sorted(bars, key=lambda bar: bar.timestamp)
+        if not 0 <= evaluation_start_index < len(ordered_bars):
+            raise ValueError("invalid_evaluation_start_index")
+
         closes = [bar.close for bar in ordered_bars]
         volumes = [bar.volume for bar in ordered_bars]
         symbol = strategy.symbols[0]
@@ -41,6 +47,9 @@ class BacktestEngine:
         equity_curve: list[EquityPoint] = []
 
         for index, bar in enumerate(ordered_bars):
+            if index < evaluation_start_index:
+                continue
+
             if position.quantity <= 0 and self._all_conditions(strategy.entry_conditions, closes, volumes, index):
                 budget = cash * max(0.0, min(strategy.risk.position_pct, 1.0))
                 execution_price = bar.close * (1 + self.slippage_rate)
@@ -103,7 +112,8 @@ class BacktestEngine:
             position = _Position()
             equity_curve[-1] = EquityPoint(timestamp=last_bar.timestamp, equity=cash)
 
-        metrics = self._metrics(trades, [point.equity for point in equity_curve], len(ordered_bars), strategy.timeframe)
+        evaluation_rows = len(ordered_bars) - evaluation_start_index
+        metrics = self._metrics(trades, [point.equity for point in equity_curve], evaluation_rows, strategy.timeframe)
         return BacktestRun(
             strategy_name=strategy.name,
             strategy_revision=strategy.revision,
@@ -113,7 +123,7 @@ class BacktestEngine:
             metrics=metrics,
             trades=trades,
             equity_curve=equity_curve,
-            data_quality=DataQuality(source="local-cache", is_complete=True, rows=len(ordered_bars)),
+            data_quality=DataQuality(source="local-cache", is_complete=True, rows=evaluation_rows),
         )
 
     def _all_conditions(self, conditions: list[Condition], closes: list[float], volumes: list[float], index: int) -> bool:

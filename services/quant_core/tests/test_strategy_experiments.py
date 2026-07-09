@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 
+from quant_core.backtest import BacktestEngine
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
     canonical_data_hash,
@@ -13,7 +14,7 @@ from quant_core.canonical import (
     strategy_config_from_payload,
     strategy_config_to_payload,
 )
-from quant_core.domain import DataQuality, OHLCVBar
+from quant_core.domain import Condition, DataQuality, OHLCVBar, RiskRules, StrategyConfig
 from quant_core.research import _data_snapshot_payload
 from quant_core.runs import ResearchRunAudit, ResearchRunStore, research_run_export_to_payload, research_run_import_to_audit
 
@@ -64,6 +65,52 @@ def research_audit(run_id: str, data_snapshot: dict[str, object]) -> ResearchRun
         execution_mode="paper_only",
         data_snapshot=data_snapshot,
     )
+
+
+class BacktestEvaluationBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        closes = [10, 12, 10, 12, 10, 12, 11]
+        self.bars = [
+            OHLCVBar(
+                symbol="600000",
+                market="ashare",
+                timeframe="1d",
+                timestamp=datetime(2026, 7, index + 1, tzinfo=timezone.utc),
+                open=close,
+                high=close,
+                low=close,
+                close=close,
+                volume=1_000,
+            )
+            for index, close in enumerate(closes)
+        ]
+        self.strategy = StrategyConfig(
+            name="Evaluation boundary",
+            market="ashare",
+            symbols=["600000"],
+            timeframe="1d",
+            entry_conditions=[Condition(kind="close_above_sma", params={"window": 2})],
+            exit_conditions=[Condition(kind="close_below_sma", params={"window": 2})],
+            risk=RiskRules(position_pct=0.5),
+        )
+
+    def test_warms_indicators_without_trading_before_evaluation_boundary(self):
+        result = BacktestEngine().run(self.strategy, self.bars, evaluation_start_index=5)
+        default_result = BacktestEngine().run(self.strategy, self.bars)
+
+        self.assertEqual(result.trades[0].timestamp, self.bars[5].timestamp)
+        self.assertTrue(all(trade.timestamp >= self.bars[5].timestamp for trade in result.trades))
+        self.assertEqual(result.data_quality.rows, len(self.bars) - 5)
+        self.assertEqual(result.equity_curve[0].timestamp, self.bars[5].timestamp)
+        self.assertLess(default_result.trades[0].timestamp, self.bars[5].timestamp)
+        self.assertEqual(len(default_result.equity_curve), len(self.bars))
+
+    def test_rejects_invalid_evaluation_boundaries(self):
+        for boundary in (-1, len(self.bars)):
+            with self.subTest(boundary=boundary), self.assertRaisesRegex(
+                ValueError, "^invalid_evaluation_start_index$"
+            ):
+                BacktestEngine().run(self.strategy, self.bars, evaluation_start_index=boundary)
 
 
 class CanonicalContractTests(unittest.TestCase):
