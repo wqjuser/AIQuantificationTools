@@ -42,12 +42,12 @@ def run_stage1_prepare(
 ) -> int:
     project_root = Path(cwd or Path(__file__).resolve().parents[1])
     plan = build_stage1_prepare_plan(mode=mode)
-    print(f"stage1 prepare mode={mode} steps={len(plan)}")
+    print(f"stage1 prepare mode={mode} steps={len(plan)}", flush=True)
     for index, step in enumerate(plan, start=1):
         command = step["command"]
         if not isinstance(command, list):
             raise TypeError("Stage 1 prepare command must be a list")
-        print(f"{index}. {step['id']}: {' '.join(str(part) for part in command)}")
+        print(f"{index}. {step['id']}: {' '.join(str(part) for part in command)}", flush=True)
         if not dry_run:
             runner(command, cwd=project_root, check=True)
     return 0

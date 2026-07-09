@@ -3,6 +3,7 @@ import unittest
 import importlib.util
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 class QuantCoreContractTest(unittest.TestCase):
@@ -1760,6 +1761,27 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(calls, [])
+
+    def test_stage1_prepare_flushes_plan_output_before_running_commands(self):
+        preparer = self._load_stage1_prepare_module()
+        events = []
+
+        def fake_print(*args, **kwargs):
+            events.append(("print", args, kwargs))
+
+        def runner(*args, **kwargs):
+            events.append(("runner", args, kwargs))
+
+        with patch("builtins.print", fake_print):
+            exit_code = preparer.run_stage1_prepare(
+                mode="quick",
+                cwd=Path("/tmp/aiqt"),
+                runner=runner,
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual([event[0] for event in events[:3]], ["print", "print", "runner"])
+        self.assertTrue(all(event[2].get("flush") is True for event in events if event[0] == "print"))
 
     def test_stage1_bootstrap_preflight_latest_api_returns_validated_preflight(self):
         import json
