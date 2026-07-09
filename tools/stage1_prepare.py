@@ -49,7 +49,15 @@ def run_stage1_prepare(
             raise TypeError("Stage 1 prepare command must be a list")
         print(f"{index}. {step['id']}: {' '.join(str(part) for part in command)}", flush=True)
         if not dry_run:
-            runner(command, cwd=project_root, check=True)
+            try:
+                runner(command, cwd=project_root, check=True)
+            except subprocess.CalledProcessError as error:
+                print(
+                    f"stage1 prepare failed step={step['id']} exit={error.returncode} "
+                    f"command={' '.join(str(part) for part in command)}",
+                    flush=True,
+                )
+                return int(error.returncode or 1)
     return 0
 
 
