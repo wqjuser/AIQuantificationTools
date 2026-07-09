@@ -597,7 +597,13 @@ function strategyExperimentFixture(
       timeframe: "1d",
       assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 },
       split: { trainPct: 60, validationPct: 20, testPct: 20 },
-      dimensions: [{ conditionSide: "entry", conditionIndex: 0, parameter: "window", values: [10, 15] }],
+      dimensions: [
+        { conditionSide: "entry", conditionIndex: 0, parameter: "window", values: [10, 15] },
+        { conditionSide: "entry", conditionIndex: 1, parameter: "window", values: [14, 19] },
+        { conditionSide: "entry", conditionIndex: 1, parameter: "threshold", values: [55, 60] },
+        { conditionSide: "entry", conditionIndex: 2, parameter: "window", values: [20, 25] },
+        { conditionSide: "exit", conditionIndex: 0, parameter: "window", values: [30, 35] }
+      ],
       guardrails: { minimumTradeCount: 2, maximumDrawdownPct: 20 },
       walkForward: null,
       evaluationBudget: 11,
@@ -629,7 +635,7 @@ function strategyExperimentFixture(
     candidates: [
       {
         candidateId: "candidate-a",
-        candidateRevision: "candidate-rev-a",
+        candidateRevision: "9e41df242ce5",
         parameters: [
           { conditionSide: "entry", conditionIndex: 0, parameter: "window", value: 15 },
           { conditionSide: "entry", conditionIndex: 1, parameter: "window", value: 19 },
@@ -1369,7 +1375,7 @@ describe("terminal workbench model", () => {
       definitionHash: "definition-hash-1",
       resultHash: "result-hash-1",
       selectedCandidateId: "candidate-a",
-      candidateRevision: "candidate-rev-a",
+      candidateRevision: "9e41df242ce5",
       holdoutStatus: "consumed"
     });
     expect(
@@ -1512,12 +1518,12 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("stages a persisted strategy experiment candidate and clears audited evidence", () => {
+  test("stages a persisted strategy experiment candidate and clears audited evidence", async () => {
     const experiment = strategyExperimentFixture();
     const originalExperiment = structuredClone(experiment);
     const workspace = workspaceForStrategyExperiment(experiment);
 
-    const staged = workspaceWithStrategyExperimentCandidate(
+    const staged = await workspaceWithStrategyExperimentCandidate(
       {
         ...workspace,
         strategy: { ...workspace.strategy, name: "Unrelated current draft", entry: "Close > SMA200" }
@@ -1550,13 +1556,13 @@ describe("terminal workbench model", () => {
       {
         agent: "Strategy Experiment",
         message:
-          "Candidate candidate-a revision candidate-rev-a staged from persisted experiment experiment-1. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.",
+          "Candidate candidate-a revision 9e41df242ce5 staged from persisted experiment experiment-1. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.",
         tone: "warning"
       }
     ]);
   });
 
-  test("rejects invalid strategy experiment candidate patches atomically", () => {
+  test("rejects invalid strategy experiment candidate patches atomically", async () => {
     const experiment = strategyExperimentFixture();
     const workspace = workspaceForStrategyExperiment(experiment);
     const validWindowPatch: StrategyExperimentParameterPatch = {
@@ -1581,18 +1587,65 @@ describe("terminal workbench model", () => {
       [validWindowPatch, { ...validWindowPatch, conditionIndex: 99 }]
     ];
 
-    expect(workspaceWithStrategyExperimentCandidate(workspace, experiment, "missing-candidate")).toBe(workspace);
-    invalidPatchSets.forEach((parameters) => {
+    expect(await workspaceWithStrategyExperimentCandidate(workspace, experiment, "missing-candidate")).toBe(workspace);
+    for (const parameters of invalidPatchSets) {
       const invalidExperiment: StrategyExperimentDetail = {
         ...experiment,
         candidates: [{ ...experiment.candidates[0], parameters }]
       };
       const originalExperiment = structuredClone(invalidExperiment);
 
-      expect(workspaceWithStrategyExperimentCandidate(workspace, invalidExperiment, "candidate-a")).toBe(workspace);
+      expect(await workspaceWithStrategyExperimentCandidate(workspace, invalidExperiment, "candidate-a")).toBe(workspace);
       expect(invalidExperiment).toEqual(originalExperiment);
       expect(workspace.researchRun).not.toBeNull();
-    });
+    }
+  });
+
+  test("requires strategy experiment candidate patches to exactly match dimensions", async () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+    const parameters = experiment.candidates[0].parameters;
+    const mismatches: StrategyExperimentDetail[] = [
+      {
+        ...experiment,
+        candidates: [{ ...experiment.candidates[0], parameters: parameters.slice(0, -1) }]
+      },
+      {
+        ...experiment,
+        definition: {
+          ...experiment.definition,
+          dimensions: experiment.definition.dimensions.slice(0, -1)
+        }
+      },
+      {
+        ...experiment,
+        candidates: [
+          {
+            ...experiment.candidates[0],
+            parameters: [{ ...parameters[0], value: 5 }, ...parameters.slice(1)]
+          }
+        ]
+      }
+    ];
+
+    for (const mismatch of mismatches) {
+      expect(await workspaceWithStrategyExperimentCandidate(workspace, mismatch, "candidate-a")).toBe(workspace);
+      expect(workspace.researchRun).not.toBeNull();
+    }
+  });
+
+  test("rejects a strategy experiment candidate whose canonical revision mismatches", async () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+    const mismatchedRevision: StrategyExperimentDetail = {
+      ...experiment,
+      candidates: [{ ...experiment.candidates[0], candidateRevision: "000000000000" }]
+    };
+
+    expect(
+      await workspaceWithStrategyExperimentCandidate(workspace, mismatchedRevision, "candidate-a")
+    ).toBe(workspace);
+    expect(workspace.researchRun).not.toBeNull();
   });
 
   test("defines stage-gated product delivery in platform order", () => {

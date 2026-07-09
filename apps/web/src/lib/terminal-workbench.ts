@@ -30815,17 +30815,53 @@ export function strategySnapshotFromStrategyConfig(
   };
 }
 
-export function workspaceWithStrategyExperimentCandidate(
+export async function workspaceWithStrategyExperimentCandidate(
   workspace: TerminalWorkspace,
   experiment: StrategyExperimentDetail,
   candidateId: string
-): TerminalWorkspace {
+): Promise<TerminalWorkspace> {
   const candidate = experiment.candidates.find((item) => item.candidateId === candidateId);
   if (!candidate || !candidate.candidateRevision.trim()) {
     return workspace;
   }
 
   const baseStrategy = experiment.definition.baseStrategy;
+  const dimensions = new Map<string, StrategyExperimentDimension>();
+  for (const dimension of experiment.definition.dimensions) {
+    const conditions =
+      dimension.conditionSide === "entry"
+        ? baseStrategy.entryConditions
+        : dimension.conditionSide === "exit"
+          ? baseStrategy.exitConditions
+          : null;
+    if (
+      !conditions ||
+      !Number.isInteger(dimension.conditionIndex) ||
+      dimension.conditionIndex < 0 ||
+      dimension.conditionIndex >= conditions.length
+    ) {
+      return workspace;
+    }
+    const condition = conditions[dimension.conditionIndex];
+    if (
+      !strategyExperimentSupportedParameters[condition.kind]?.includes(dimension.parameter) ||
+      !dimension.values.length ||
+      !dimension.values.every((value) =>
+        isValidStrategyExperimentParameterValue(dimension.parameter, value)
+      )
+    ) {
+      return workspace;
+    }
+    const target = `${dimension.conditionSide}:${dimension.conditionIndex}:${dimension.parameter}`;
+    if (dimensions.has(target)) {
+      return workspace;
+    }
+    dimensions.set(target, dimension);
+  }
+  if (!dimensions.size || candidate.parameters.length !== dimensions.size) {
+    return workspace;
+  }
+
   const targets = new Set<string>();
   for (const parameterPatch of candidate.parameters) {
     const conditions =
@@ -30850,7 +30886,8 @@ export function workspaceWithStrategyExperimentCandidate(
       return workspace;
     }
     const target = `${parameterPatch.conditionSide}:${parameterPatch.conditionIndex}:${parameterPatch.parameter}`;
-    if (targets.has(target)) {
+    const dimension = dimensions.get(target);
+    if (!dimension || !dimension.values.includes(parameterPatch.value) || targets.has(target)) {
       return workspace;
     }
     targets.add(target);
@@ -30858,7 +30895,6 @@ export function workspaceWithStrategyExperimentCandidate(
 
   const strategyConfig: ResearchRunStrategyConfig = {
     ...baseStrategy,
-    revision: candidate.candidateRevision,
     entryConditions: baseStrategy.entryConditions.map((condition) => ({
       ...condition,
       params: { ...condition.params }
@@ -30876,23 +30912,59 @@ export function workspaceWithStrategyExperimentCandidate(
         : strategyConfig.exitConditions;
     conditions[parameterPatch.conditionIndex].params[parameterPatch.parameter] = parameterPatch.value;
   });
-  if (strategyConfig.revision !== candidate.candidateRevision) {
+  const expectedRevision = (
+    await sha256TextHex(
+      canonicalJsonStringify({
+        name: strategyConfig.name,
+        market: strategyConfig.market,
+        symbols: strategyConfig.symbols,
+        timeframe: strategyConfig.timeframe,
+        entry_conditions: strategyConfig.entryConditions.map((condition) => ({
+          kind: condition.kind,
+          params: condition.params
+        })),
+        exit_conditions: strategyConfig.exitConditions.map((condition) => ({
+          kind: condition.kind,
+          params: condition.params
+        })),
+        risk: {
+          position_pct: strategyConfig.risk.positionPct,
+          stop_loss_pct: strategyConfig.risk.stopLossPct,
+          take_profit_pct: strategyConfig.risk.takeProfitPct,
+          max_drawdown_pct: strategyConfig.risk.maxDrawdownPct
+        },
+        version: strategyConfig.version
+      })
+    )
+  ).slice(0, 12);
+  if (expectedRevision !== candidate.candidateRevision) {
     return workspace;
   }
+  const candidateStrategyConfig = { ...strategyConfig, revision: expectedRevision };
 
   return clearAuditedResearchResults(
     {
       ...workspace,
-      strategy: strategySnapshotFromStrategyConfig(strategyConfig),
+      strategy: strategySnapshotFromStrategyConfig(candidateStrategyConfig),
       decisionLog: [
         {
           agent: "Strategy Experiment",
-          message: `Candidate ${candidate.candidateId} revision ${strategyConfig.revision} staged from persisted experiment ${experiment.experimentId}. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.`,
+          message: `Candidate ${candidate.candidateId} revision ${candidateStrategyConfig.revision} staged from persisted experiment ${experiment.experimentId}. Run Pipeline to generate fresh audited backtest, AI review, paper, and promotion evidence.`,
           tone: "warning"
         }
       ]
     },
     "strategy"
+  );
+}
+
+function canonicalJsonStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, item) =>
+    item && typeof item === "object" && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        )
+      : item
   );
 }
 
