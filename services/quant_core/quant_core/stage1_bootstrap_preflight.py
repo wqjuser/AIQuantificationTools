@@ -30,6 +30,8 @@ STAGE1_BOOTSTRAP_PREFLIGHT_CHECK_STATUSES = {"ready", "review", "blocked"}
 REQUIRED_PACKAGE_SCRIPTS = {
     "stage1:daily",
     "stage1:daily:validate",
+    "stage1:preflight",
+    "stage1:preflight:validate",
     "stage1:prepare",
     "stage1:prepare:quick",
     "stage1:prepare:plan",

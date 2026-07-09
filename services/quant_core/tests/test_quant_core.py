@@ -51,6 +51,8 @@ class QuantCoreContractTest(unittest.TestCase):
         return {
             "stage1:daily": "node tools/run_python.mjs tools/stage1_daily_use.py --output data/stage1-daily-use.json",
             "stage1:daily:validate": "node tools/run_python.mjs tools/stage1_daily_use.py --validate data/stage1-daily-use.json",
+            "stage1:preflight": "node tools/run_python.mjs tools/stage1_bootstrap_preflight.py --output data/stage1-bootstrap-preflight.json",
+            "stage1:preflight:validate": "node tools/run_python.mjs tools/stage1_bootstrap_preflight.py --validate data/stage1-bootstrap-preflight.json",
             "stage1:prepare": "node tools/run_python.mjs tools/stage1_prepare.py --mode full",
             "stage1:prepare:quick": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick",
             "stage1:prepare:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
@@ -2091,6 +2093,8 @@ class QuantCoreContractTest(unittest.TestCase):
                 encoding="utf-8",
             )
             scripts = self._sample_stage1_package_scripts()
+            scripts.pop("stage1:preflight")
+            scripts.pop("stage1:preflight:validate")
             scripts.pop("stage1:prepare")
             scripts.pop("stage1:prepare:quick")
             scripts.pop("stage1:prepare:plan")
@@ -2116,6 +2120,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(preflight["recommendedCommand"], "npm install")
         self.assertEqual(preflight["blockerIds"], ["package-scripts"])
         self.assertEqual(package_check["status"], "blocked")
+        self.assertIn("stage1:preflight", package_check["summary"])
+        self.assertIn("stage1:preflight:validate", package_check["summary"])
         self.assertIn("stage1:prepare", package_check["summary"])
         self.assertIn("stage1:prepare:quick", package_check["summary"])
         self.assertIn("stage1:prepare:plan", package_check["summary"])
