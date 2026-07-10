@@ -11981,18 +11981,29 @@ export function createAuthoritativeAiReview(
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AuthoritativeAiReviewResult> {
-  const normalizedRequest = normalizeCreateAuthoritativeAiReviewRequest(request);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  return Promise.resolve().then(() => requestJson(
-    buildAuthoritativeAiReviewsUrl(baseUrl),
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(normalizedRequest),
-      ...(signal ? { signal } : {})
-    },
-    fetcher
-  )).then((payload) => {
+  const comparisonExperimentIds = request.comparisonExperimentIds;
+  const requestSnapshot: CreateAuthoritativeAiReviewRequest = {
+    primaryExperimentId: request.primaryExperimentId,
+    comparisonExperimentIds: Array.isArray(comparisonExperimentIds)
+      ? [...comparisonExperimentIds]
+      : comparisonExperimentIds,
+    providerId: request.providerId,
+    externalDataApproved: request.externalDataApproved
+  };
+  return Promise.resolve().then(() => {
+    const normalizedRequest = normalizeCreateAuthoritativeAiReviewRequest(requestSnapshot);
+    return requestJson(
+      buildAuthoritativeAiReviewsUrl(baseUrl),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(normalizedRequest),
+        ...(signal ? { signal } : {})
+      },
+      fetcher
+    ).then((payload) => ({ normalizedRequest, payload }));
+  }).then(({ normalizedRequest, payload }) => {
     if (!isAuthoritativeAiReviewCreatePayload(payload, normalizedRequest)) {
       throw new Error("Invalid authoritative AI review create contract");
     }
@@ -12009,13 +12020,15 @@ export function loadAuthoritativeAiReview(
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AuthoritativeAiReviewResult> {
-  const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  return Promise.resolve().then(() => requestJson(
-    buildAuthoritativeAiReviewUrl(baseUrl, normalizedAiReviewId),
-    signal ? { signal } : undefined,
-    fetcher
-  )).then((payload) => {
+  return Promise.resolve().then(() => {
+    const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
+    return requestJson(
+      buildAuthoritativeAiReviewUrl(baseUrl, normalizedAiReviewId),
+      signal ? { signal } : undefined,
+      fetcher
+    ).then((payload) => ({ normalizedAiReviewId, payload }));
+  }).then(({ normalizedAiReviewId, payload }) => {
     if (!isAuthoritativeAiReviewPayload(payload) || payload.review.aiReviewId !== normalizedAiReviewId) {
       throw new Error("Invalid authoritative AI review detail contract");
     }
@@ -12067,13 +12080,15 @@ export function loadAiReviewDecisions(
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AiReviewDecisionHistoryResult> {
-  const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  return Promise.resolve().then(() => requestJson(
-    buildAiReviewDecisionsUrl(baseUrl, normalizedAiReviewId),
-    signal ? { signal } : undefined,
-    fetcher
-  )).then((payload) => {
+  return Promise.resolve().then(() => {
+    const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
+    return requestJson(
+      buildAiReviewDecisionsUrl(baseUrl, normalizedAiReviewId),
+      signal ? { signal } : undefined,
+      fetcher
+    ).then((payload) => ({ normalizedAiReviewId, payload }));
+  }).then(({ normalizedAiReviewId, payload }) => {
     if (!isAiReviewDecisionsPayload(payload, normalizedAiReviewId)) {
       throw new Error("Invalid AI review decisions contract");
     }
@@ -12092,24 +12107,27 @@ export function appendAiReviewDecision(
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AiReviewDecisionMutationResult> {
-  const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  const normalizedRequest: AppendAiReviewDecisionRequest = {
+  const requestSnapshot: AppendAiReviewDecisionRequest = {
     operator: request.operator,
     status: request.status,
     rationale: request.rationale,
     supersedesDecisionId: request.supersedesDecisionId
   };
-  return Promise.resolve().then(() => requestJson(
-    buildAiReviewDecisionsUrl(baseUrl, normalizedAiReviewId),
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(normalizedRequest),
-      ...(signal ? { signal } : {})
-    },
-    fetcher
-  )).then((payload) => {
+  return Promise.resolve().then(() => {
+    const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
+    const normalizedRequest = requestSnapshot;
+    return requestJson(
+      buildAiReviewDecisionsUrl(baseUrl, normalizedAiReviewId),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(normalizedRequest),
+        ...(signal ? { signal } : {})
+      },
+      fetcher
+    ).then((payload) => ({ normalizedAiReviewId, normalizedRequest, payload }));
+  }).then(({ normalizedAiReviewId, normalizedRequest, payload }) => {
     if (!isAiReviewDecisionPayload(payload, normalizedAiReviewId, normalizedRequest)) {
       throw new Error("Invalid AI review decision append contract");
     }
@@ -14787,6 +14805,8 @@ function isStrategyExperimentListItem(value: unknown): value is StrategyExperime
     (value.status === "completed" || value.status === "failed") &&
     typeof value.definitionHash === "string" &&
     typeof value.holdoutKey === "string" &&
+    typeof value.strategyLineageKey === "string" &&
+    /^[0-9a-f]{64}$/.test(value.strategyLineageKey) &&
     typeof value.strategyRevision === "string" &&
     typeof value.sourceRunId === "string" &&
     typeof value.snapshotId === "string" &&

@@ -508,19 +508,34 @@ def _validate_array(value: Any, error: str) -> list[Any]:
     return value
 
 
-def build_strategy_lineage_key(experiment: Mapping[str, Any]) -> str:
-    strategy = experiment["strategy"]
+def build_strategy_lineage_key_from_parts(
+    *,
+    market: Any,
+    symbol: Any,
+    timeframe: Any,
+    strategy: Mapping[str, Any],
+) -> str:
     if not isinstance(strategy, Mapping):
         raise ValueError("strategy_must_be_object")
     body = {
-        "market": _normalize_token(experiment["market"]),
-        "symbol": _normalize_token(experiment["symbol"]),
-        "timeframe": _normalize_token(experiment["timeframe"]),
+        "market": _normalize_token(market),
+        "symbol": _normalize_token(symbol),
+        "timeframe": _normalize_token(timeframe),
         "strategyName": _normalize_strategy_name(strategy["name"]),
         "entryConditions": _condition_shapes(strategy["entryConditions"]),
         "exitConditions": _condition_shapes(strategy["exitConditions"]),
     }
     return canonical_sha256(body)
+
+
+def build_strategy_lineage_key(experiment: Mapping[str, Any]) -> str:
+    strategy = experiment["strategy"]
+    return build_strategy_lineage_key_from_parts(
+        market=experiment["market"],
+        symbol=experiment["symbol"],
+        timeframe=experiment["timeframe"],
+        strategy=strategy,
+    )
 
 
 class AiReviewEvidenceAssembler:

@@ -584,6 +584,7 @@ function strategyExperimentFixture(
     status: "completed",
     definitionHash: "definition-hash-1",
     holdoutKey: "holdout-key-1",
+    strategyLineageKey: "7".repeat(64),
     strategyRevision: baseStrategy.revision,
     sourceRunId: "run-experiment-1",
     snapshotId: "snapshot-1",

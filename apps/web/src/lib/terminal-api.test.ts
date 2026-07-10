@@ -67,7 +67,9 @@ import {
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
+  buildAuthoritativeAiReviewUrl,
   buildAuthoritativeAiReviewsUrl,
+  buildAiReviewDecisionsUrl,
   buildMarketCalendarUrl,
   buildPortfolioBacktestUrl,
   buildPortfolioPaperOrderApprovalsUrl,
@@ -379,6 +381,7 @@ function sampleStrategyExperimentDetail(): StrategyExperimentDetail {
     status: "completed",
     definitionHash: "definition-hash-1",
     holdoutKey: "holdout-key-1",
+    strategyLineageKey: stage3Hash("7"),
     strategyRevision: "rev/a",
     sourceRunId: "run 1",
     snapshotId: "snapshot-1",
@@ -19674,10 +19677,21 @@ describe("terminal workspace API client", () => {
     }));
 
     expect(history.source).toBe("core");
+    expect(history.experiments[0]?.strategyLineageKey).toBe(stage3Hash("7"));
     expect(history.experiments[0]?.definition.baseStrategy.revision).toBe("rev/a");
     expect(loaded.source).toBe("core");
+    expect(loaded.experiment?.strategyLineageKey).toBe(stage3Hash("7"));
     expect(loaded.experiment?.snapshot.bars[0]?.close).toBe(9.3);
     expect(loaded.experiment?.candidates[0]?.walkForward.validationWindowCount).toBe(1);
+
+    const { strategyLineageKey: _omitted, ...withoutLineageKey } = listItem;
+    const missingLineage = await loadStrategyExperiments("/", {}, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ experiments: [withoutLineageKey] })
+    }));
+    expect(missingLineage.source).toBe("fallback");
+    expect(missingLineage.experiments).toEqual([]);
   });
 
   test("preserves strategy experiment core business errors instead of falling back", async () => {
@@ -19816,11 +19830,25 @@ describe("terminal workspace API client", () => {
     ]);
     expect(result).toMatchObject({ source: "core", review: { authority: "authoritative" }, latestDecision: null });
 
-    const mutableRequest = { ...request };
-    const snapshotted = await createAuthoritativeAiReview("/", mutableRequest, async () => {
-      mutableRequest.primaryExperimentId = "mutated-after-send";
+    const mutableRequest = {
+      ...request,
+      comparisonExperimentIds: [] as string[],
+      providerId: "local" as "local" | "openai"
+    };
+    const snapshottedPromise = createAuthoritativeAiReview("/", mutableRequest, async (_url, init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        primaryExperimentId: "primary",
+        comparisonExperimentIds: [],
+        providerId: "local",
+        externalDataApproved: false
+      });
       return { ok: true, status: 201, json: async () => ({ review, latestDecision: null }) };
     });
+    mutableRequest.primaryExperimentId = "mutated-after-call";
+    mutableRequest.comparisonExperimentIds.push("mutated-after-call");
+    mutableRequest.providerId = "openai";
+    mutableRequest.externalDataApproved = true;
+    const snapshotted = await snapshottedPromise;
     expect(snapshotted.source).toBe("core");
 
     const mismatches = [
@@ -20013,6 +20041,39 @@ describe("terminal workspace API client", () => {
     );
     expect(appended).toMatchObject({ source: "core", decision: { status: "revision_requested" } });
 
+    const mutableRequest = {
+      ...request,
+      status: "revision_requested" as "revision_requested" | "accepted_for_research"
+    };
+    const snapshottedPromise = appendAiReviewDecision(
+      "/",
+      second.aiReviewId,
+      mutableRequest,
+      async (_url, init) => {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          operator: "researcher",
+          status: "revision_requested",
+          rationale: "Add a longer validation window.",
+          supersedesDecisionId: second.decisionId
+        });
+        return { ok: true, status: 201, json: async () => ({ decision: appendedDecision }) };
+      }
+    );
+    mutableRequest.operator = "mutated-after-call";
+    mutableRequest.status = "accepted_for_research";
+    mutableRequest.rationale = "mutated-after-call";
+    mutableRequest.supersedesDecisionId = first.decisionId;
+    const snapshotted = await snapshottedPromise;
+    expect(snapshotted).toMatchObject({
+      source: "core",
+      decision: {
+        operator: "researcher",
+        status: "revision_requested",
+        rationale: "Add a longer validation window.",
+        supersedesDecisionId: second.decisionId
+      }
+    });
+
     const mismatchedFields = [
       { ...appendedDecision, operator: "another-operator" },
       { ...appendedDecision, status: "accepted_for_research" },
@@ -20062,7 +20123,7 @@ describe("terminal workspace API client", () => {
     expect(result.decisions).toEqual([]);
   });
 
-  test("synchronously rejects untrimmed or empty review IDs without fetching", () => {
+  test("returns invalid review IDs through fallback promises without fetching", async () => {
     let fetchCount = 0;
     const fetcher = async () => {
       fetchCount += 1;
@@ -20080,19 +20141,23 @@ describe("terminal workspace API client", () => {
       { ...createRequest, comparisonExperimentIds: ["comparison "] },
       { ...createRequest, comparisonExperimentIds: ["   "] }
     ]) {
-      expect(() => createAuthoritativeAiReview("/", request, fetcher)).toThrow("Invalid AI review ID");
+      const result = await createAuthoritativeAiReview("/", request, fetcher);
+      expect(result.source).toBe("fallback");
+      expect(result.error).toContain("Invalid AI review ID");
     }
     for (const aiReviewId of [" ai-review-id", "", "   "]) {
-      expect(() => loadAuthoritativeAiReview("/", aiReviewId, fetcher)).toThrow("Invalid AI review ID");
-      expect(() => loadAiReviewDecisions("/", aiReviewId, fetcher)).toThrow("Invalid AI review ID");
-      expect(() => appendAiReviewDecision("/", aiReviewId, {
+      expect((await loadAuthoritativeAiReview("/", aiReviewId, fetcher)).source).toBe("fallback");
+      expect((await loadAiReviewDecisions("/", aiReviewId, fetcher)).source).toBe("fallback");
+      expect((await appendAiReviewDecision("/", aiReviewId, {
         operator: "researcher",
         status: "revision_requested",
         rationale: "Add a longer validation window.",
         supersedesDecisionId: null
-      }, fetcher)).toThrow("Invalid AI review ID");
+      }, fetcher)).source).toBe("fallback");
     }
     expect(fetchCount).toBe(0);
+    expect(() => buildAuthoritativeAiReviewUrl("/", " bad-id")).toThrow("Invalid AI review ID");
+    expect(() => buildAiReviewDecisionsUrl("/", " bad-id")).toThrow("Invalid AI review ID");
   });
 
   test("keeps non-ID URL construction errors in the fallback channel", async () => {

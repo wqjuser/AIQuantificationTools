@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal, Sequence, cast
 
+from quant_core.ai_review_stage3 import build_strategy_lineage_key_from_parts
 from quant_core.backtest import BacktestEngine
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
@@ -751,12 +752,19 @@ def strategy_experiment_records_to_payload(
 
 
 def _record_to_payload(record: StrategyExperimentRecord) -> dict[str, Any]:
+    strategy_lineage_key = build_strategy_lineage_key_from_parts(
+        market=record.market,
+        symbol=record.symbol,
+        timeframe=record.timeframe,
+        strategy=record.definition.get("baseStrategy"),
+    )
     return {
         "experimentId": record.experiment_id,
         "createdAt": record.created_at.isoformat(),
         "status": record.status,
         "definitionHash": record.definition_hash,
         "holdoutKey": record.holdout_key,
+        "strategyLineageKey": strategy_lineage_key,
         "strategyRevision": record.strategy_revision,
         "sourceRunId": record.source_run_id,
         "snapshotId": record.snapshot_id,

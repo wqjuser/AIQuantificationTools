@@ -22,7 +22,7 @@ from typing import Any
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from quant_core import ai_review_providers
+from quant_core import ai_review_providers, ai_review_stage3
 from quant_core.ai_review_providers import (
     AiReviewProviderError,
     AiReviewProviderRegistry,
@@ -2195,7 +2195,7 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
                 )
 
     def test_lineage_normalizes_tokens_and_name_but_not_strategy_shape(self) -> None:
-        strategy = _strategy(name="  Canonical   SMA  ")
+        strategy = _strategy(name="  Long ſ   Strategy  ")
         experiment = {
             "market": " ASHARE ",
             "symbol": " 600000 ",
@@ -2206,9 +2206,20 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
             "timeframe": "1d",
             "symbol": "600000",
             "market": "ashare",
-            "strategy": {**strategy, "name": "canonical sma"},
+            "strategy": {**strategy, "name": "long s strategy"},
         }
+        self.assertTrue(hasattr(ai_review_stage3, "build_strategy_lineage_key_from_parts"))
+        helper = ai_review_stage3.build_strategy_lineage_key_from_parts
         self.assertEqual(build_strategy_lineage_key(experiment), build_strategy_lineage_key(normalized))
+        self.assertEqual(
+            build_strategy_lineage_key(experiment),
+            helper(
+                market=experiment["market"],
+                symbol=experiment["symbol"],
+                timeframe=experiment["timeframe"],
+                strategy=experiment["strategy"],
+            ),
+        )
         self.assertRegex(build_strategy_lineage_key(experiment), HASH_PATTERN)
 
     def test_assembles_single_canonical_evidence_without_raw_bars(self) -> None:

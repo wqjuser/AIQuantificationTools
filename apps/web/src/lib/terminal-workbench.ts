@@ -8688,6 +8688,7 @@ export interface StrategyExperimentListItem {
   status: StrategyExperimentStatus;
   definitionHash: string;
   holdoutKey: string;
+  strategyLineageKey: string;
   strategyRevision: string;
   sourceRunId: string;
   snapshotId: string;

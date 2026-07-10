@@ -149,7 +149,11 @@ def experiment_record(
         market="ashare",
         symbol="600000",
         timeframe="1d",
-        definition={"experimentId": experiment_id, "split": [60, 20, 20]},
+        definition={
+            "experimentId": experiment_id,
+            "split": [60, 20, 20],
+            "baseStrategy": strategy_payload(revision=strategy_revision),
+        },
         evaluation_count=0 if failed else 5,
         selected_candidate_id=None if failed else "candidate-a",
         completion_reason=None if failed else "selected",
@@ -1430,6 +1434,11 @@ class StrategyExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(detail_payload["snapshot"]["bars"], detail.snapshot.bars)
         self.assertEqual(len(detail_payload["candidates"]), 2)
         self.assertEqual(records_payload[0]["definitionHash"], detail.experiment.definition_hash)
+        self.assertEqual(
+            detail_payload["strategyLineageKey"],
+            records_payload[0]["strategyLineageKey"],
+        )
+        self.assertEqual(len(detail_payload["strategyLineageKey"]), 64)
         self.assertNotIn("snapshot", records_payload[0])
         self.assertNotIn("candidates", records_payload[0])
         encoded = json.dumps(detail_payload, sort_keys=True)
@@ -1532,6 +1541,9 @@ class StrategyExperimentHttpTests(unittest.TestCase):
         self.assertEqual(list_status, 200)
         self.assertEqual(len(list_response["experiments"]), 2)
         self.assertTrue(
+            all(len(str(row.get("strategyLineageKey", ""))) == 64 for row in list_response["experiments"])
+        )
+        self.assertTrue(
             all(
                 row["strategyRevision"] == self.strategy.revision and row["sourceRunId"] == "runner-run"
                 for row in list_response["experiments"]
@@ -1539,6 +1551,10 @@ class StrategyExperimentHttpTests(unittest.TestCase):
         )
         self.assertTrue(all("snapshot" not in row and "candidates" not in row for row in list_response["experiments"]))
         self.assertEqual(detail_status, 200)
+        self.assertEqual(
+            detail_response["experiment"]["strategyLineageKey"],
+            experiment["strategyLineageKey"],
+        )
         self.assertEqual(detail_response["experiment"]["snapshot"]["bars"], experiment["snapshot"]["bars"])
         self.assertEqual(len(detail_response["experiment"]["candidates"]), 2)
         self.assertEqual(encoded_status, 200)

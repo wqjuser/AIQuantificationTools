@@ -245,36 +245,6 @@ function isUtcTimestamp(value: unknown): value is string {
     && Number.isFinite(Date.parse(value));
 }
 
-function isLegacyTimestamp(value: unknown): value is string {
-  if (!isTrimmedText(value)) {
-    return false;
-  }
-  const time = "(?:T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,6})?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)?)?";
-  const calendar = new RegExp(`^(\\d{4})-(\\d{2})-(\\d{2})${time}$`).exec(value);
-  if (calendar) {
-    const [year, month, day] = calendar.slice(1, 4).map(Number);
-    const parsed = new Date(0);
-    parsed.setUTCHours(0, 0, 0, 0);
-    parsed.setUTCFullYear(year, month - 1, day);
-    return year >= 1
-      && parsed.getUTCFullYear() === year
-      && parsed.getUTCMonth() === month - 1
-      && parsed.getUTCDate() === day;
-  }
-  const weekDate = new RegExp(`^(\\d{4})-W(\\d{2})-([1-7])${time}$`).exec(value);
-  if (!weekDate) {
-    return false;
-  }
-  const year = Number(weekDate[1]);
-  const week = Number(weekDate[2]);
-  const januaryFirstDate = new Date(0);
-  januaryFirstDate.setUTCFullYear(year, 0, 1);
-  const januaryFirst = januaryFirstDate.getUTCDay();
-  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const hasWeek53 = januaryFirst === 4 || (januaryFirst === 3 && leapYear);
-  return year >= 1 && week >= 1 && (week <= 52 || (week === 53 && hasWeek53));
-}
-
 function isValidHostname(hostname: string): boolean {
   if (hostname.startsWith("[") && hostname.endsWith("]")) {
     const address = hostname.slice(1, -1);
@@ -720,7 +690,7 @@ export function isLegacyAiReviewHistoryRecord(value: unknown): value is LegacyAi
     && value.recordType === "aiqt.aiReviewRun"
     && isTrimmedText(value.aiReviewId)
     && isTrimmedText(value.runId)
-    && isLegacyTimestamp(value.createdAt)
+    && isTrimmedText(value.createdAt)
     && isTrimmedText(value.status)
     && isObject(value.summary)
     && isObject(value.dossier)
@@ -791,50 +761,22 @@ export function isAiReviewDecisionChain(value: unknown): value is AiReviewDecisi
     });
 }
 
-function caseFoldForLineage(value: string): string {
-  const expansions: Record<string, string> = {
-    "ß": "ss",
-    "ẞ": "ss",
-    "ς": "σ",
-    "ﬀ": "ff",
-    "ﬁ": "fi",
-    "ﬂ": "fl",
-    "ﬃ": "ffi",
-    "ﬄ": "ffl",
-    "ﬅ": "st",
-    "ﬆ": "st"
-  };
-  return Array.from(value.trim().toLowerCase(), (character) => expansions[character] ?? character).join("");
-}
-
-function strategyStructureSignature(experiment: StrategyExperimentListItem): string {
-  const strategy = experiment.definition.baseStrategy;
-  const conditions = (items: typeof strategy.entryConditions) => items.map((condition) => ({
-    kind: caseFoldForLineage(condition.kind),
-    parameterKeys: Object.keys(condition.params).map(caseFoldForLineage).sort()
-  }));
-  return JSON.stringify({
-    name: caseFoldForLineage(strategy.name.replace(/\s+/gu, " ")),
-    entryConditions: conditions(strategy.entryConditions),
-    exitConditions: conditions(strategy.exitConditions)
-  });
-}
-
 export function buildComparisonEligibility(
   primary: StrategyExperimentListItem,
   candidate: StrategyExperimentListItem,
   selected: readonly (string | StrategyExperimentListItem)[] = []
 ): ComparisonEligibility {
   let reason: ComparisonIneligibilityReason | null = null;
+  const contextToken = (value: string) => value.trim().toLowerCase();
   if (candidate.experimentId === primary.experimentId) {
     reason = "primary";
   } else if (candidate.status !== "completed") {
     reason = "not-completed";
-  } else if (candidate.market !== primary.market
-    || candidate.symbol !== primary.symbol
-    || candidate.timeframe !== primary.timeframe) {
+  } else if (contextToken(candidate.market) !== contextToken(primary.market)
+    || contextToken(candidate.symbol) !== contextToken(primary.symbol)
+    || contextToken(candidate.timeframe) !== contextToken(primary.timeframe)) {
     reason = "context-mismatch";
-  } else if (strategyStructureSignature(candidate) !== strategyStructureSignature(primary)) {
+  } else if (candidate.strategyLineageKey !== primary.strategyLineageKey) {
     reason = "lineage-mismatch";
   } else {
     const selectedIds = selected.map((item) => typeof item === "string" ? item : item.experimentId);

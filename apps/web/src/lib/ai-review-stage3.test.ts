@@ -157,6 +157,7 @@ function sampleExperiment(
     status: "completed",
     definitionHash: hash("1"),
     holdoutKey: hash("2"),
+    strategyLineageKey: hash("7"),
     strategyRevision: "strategy-lineage-a",
     sourceRunId: `run-${experimentId}`,
     snapshotId: hash("3"),
@@ -303,14 +304,20 @@ describe("Stage 3 AI review runtime contracts", () => {
       ...legacy,
       createdAt: "2026-W28-4T07:00:00+00:00"
     })).toBe(true);
+    for (const createdAt of [
+      "2026-07-10 07:00:00+00:00",
+      "20260710T070000+0000",
+      "opaque-created-at"
+    ]) {
+      expect(isLegacyAiReviewHistoryRecord({ ...legacy, createdAt })).toBe(true);
+    }
     expect(isAiReviewHistoryRecord(legacy)).toBe(true);
     expect(isAiReviewHistoryRecord(sampleAuthoritativeReview())).toBe(true);
     expect(isAuthoritativeAiReviewRun(legacy)).toBe(false);
     expect(isAiReviewHistoryRecord({ ...legacy, authority: "authoritative" })).toBe(false);
     expect(isAiReviewHistoryRecord({ ...legacy, summary: [] })).toBe(false);
-    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: "not-a-time" })).toBe(false);
-    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: "2026-02-30T07:00:00+00:00" })).toBe(false);
-    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: "2026-W28-4T99:00:00+00:00" })).toBe(false);
+    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: "" })).toBe(false);
+    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: 123 })).toBe(false);
   });
 
   test("compares repeated review fields canonically instead of by object key order", () => {
@@ -488,56 +495,31 @@ describe("Stage 3 AI review runtime contracts", () => {
 });
 
 describe("Stage 3 comparison eligibility", () => {
-  test("allows the same normalized structure across revisions and parameter values", () => {
+  test("uses the authoritative lineage key instead of rebuilding strategy structure", () => {
     const primary = sampleExperiment("primary");
-    primary.definition.baseStrategy.name = "Straße ς ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ";
-    primary.definition.baseStrategy.entryConditions = [
-      { kind: "cross", params: { fast: 5, slow: 20 } },
-      { kind: "volume", params: { window: 10 } }
-    ];
     const candidate = structuredClone(sampleExperiment("candidate"));
     candidate.strategyRevision = "different-revision";
     candidate.definition.strategyRevision = "different-revision";
-    candidate.definition.baseStrategy = {
-      ...primary.definition.baseStrategy,
-      name: "  STRASSE   σ ff fi fl ffi ffl st st ",
-      revision: "different-revision",
-      entryConditions: [
-        { kind: " Cross ", params: { SLOW: 99, FAST: 1 } },
-        { kind: "volume", params: { window: 30 } }
-      ]
-    };
+    candidate.definition.baseStrategy.name = "A structurally different strategy";
+    candidate.definition.baseStrategy.entryConditions = [
+      { kind: "threshold", params: { signal: 99 } }
+    ];
     expect(buildComparisonEligibility(primary, candidate)).toEqual({
       eligible: true,
       reason: null
     });
   });
 
-  test("rejects structural name, kind, order, and parameter-key changes despite equal revisions", () => {
+  test("rejects different authoritative lineage keys even when local structure matches", () => {
     const primary = sampleExperiment("primary");
-    primary.definition.baseStrategy.entryConditions = [
-      { kind: "cross", params: { fast: 5, slow: 20 } },
-      { kind: "volume", params: { window: 10 } }
-    ];
-    const candidates = [
-      structuredClone(sampleExperiment("name")),
-      structuredClone(sampleExperiment("kind")),
-      structuredClone(sampleExperiment("order")),
-      structuredClone(sampleExperiment("key"))
-    ];
-    for (const candidate of candidates) {
-      candidate.definition.baseStrategy.entryConditions = structuredClone(
-        primary.definition.baseStrategy.entryConditions
-      );
-    }
-    candidates[0].definition.baseStrategy.name = "EMA plan";
-    candidates[1].definition.baseStrategy.entryConditions[0].kind = "threshold";
-    candidates[2].definition.baseStrategy.entryConditions.reverse();
-    candidates[3].definition.baseStrategy.entryConditions[0].params = { fast: 5, signal: 20 };
+    const candidate = sampleExperiment("candidate", { strategyLineageKey: hash("9") });
+    expect(buildComparisonEligibility(primary, candidate).reason).toBe("lineage-mismatch");
+  });
 
-    for (const candidate of candidates) {
-      expect(buildComparisonEligibility(primary, candidate).reason).toBe("lineage-mismatch");
-    }
+  test("normalizes controlled context casing before applying authoritative lineage", () => {
+    const primary = sampleExperiment("primary", { symbol: "BTCUSDT" });
+    const candidate = sampleExperiment("candidate", { symbol: "btcusdt" });
+    expect(buildComparisonEligibility(primary, candidate)).toEqual({ eligible: true, reason: null });
   });
 
   test("returns stable reason codes in guard order", () => {
@@ -545,10 +527,12 @@ describe("Stage 3 comparison eligibility", () => {
     expect(buildComparisonEligibility(primary, primary).reason).toBe("primary");
     expect(buildComparisonEligibility(primary, sampleExperiment("failed", { status: "failed" })).reason)
       .toBe("not-completed");
-    expect(buildComparisonEligibility(primary, sampleExperiment("context", { symbol: "000001" })).reason)
+    expect(buildComparisonEligibility(primary, sampleExperiment("context", {
+      symbol: "000001",
+      strategyLineageKey: hash("9")
+    })).reason)
       .toBe("context-mismatch");
-    const lineage = sampleExperiment("lineage");
-    lineage.definition.baseStrategy.name = "different strategy";
+    const lineage = sampleExperiment("lineage", { strategyLineageKey: hash("9") });
     expect(buildComparisonEligibility(primary, lineage).reason)
       .toBe("lineage-mismatch");
     expect(buildComparisonEligibility(primary, sampleExperiment("selected"), ["selected"]).reason)
