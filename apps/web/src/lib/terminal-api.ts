@@ -60,10 +60,9 @@ import {
 import {
   isAiReviewDecision,
   isAiReviewDecisionChain,
-  isAiReviewHistoryRecord,
   isAiReviewProviderStatus,
   isAuthoritativeAiReviewRun,
-  isLegacyAiReviewHistoryRecord,
+  parseAiReviewHistoryRecord,
   type AiReviewDecision,
   type AiReviewHistoryRecord,
   type AiReviewProviderStatus,
@@ -5024,6 +5023,27 @@ export function buildAiReviewProvidersUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/ai-review/providers");
 }
 
+function requireTrimmedAiReviewId(value: unknown): string {
+  if (typeof value !== "string" || !value || value !== value.trim()) {
+    throw new TypeError("Invalid AI review ID");
+  }
+  return value;
+}
+
+function normalizeCreateAuthoritativeAiReviewRequest(
+  request: CreateAuthoritativeAiReviewRequest
+): CreateAuthoritativeAiReviewRequest {
+  if (!Array.isArray(request.comparisonExperimentIds)) {
+    throw new TypeError("Invalid AI review ID");
+  }
+  return {
+    primaryExperimentId: requireTrimmedAiReviewId(request.primaryExperimentId),
+    comparisonExperimentIds: request.comparisonExperimentIds.map(requireTrimmedAiReviewId),
+    providerId: request.providerId,
+    externalDataApproved: request.externalDataApproved
+  };
+}
+
 export function buildAuthoritativeAiReviewsUrl(
   baseUrl: string,
   filters: AuthoritativeAiReviewFilters = {}
@@ -5054,11 +5074,11 @@ export function buildAuthoritativeAiReviewsUrl(
 }
 
 export function buildAuthoritativeAiReviewUrl(baseUrl: string, aiReviewId: string): string {
-  return buildApiUrl(baseUrl, `api/ai-reviews/${encodeURIComponent(aiReviewId)}`);
+  return buildApiUrl(baseUrl, `api/ai-reviews/${encodeURIComponent(requireTrimmedAiReviewId(aiReviewId))}`);
 }
 
 export function buildAiReviewDecisionsUrl(baseUrl: string, aiReviewId: string): string {
-  return buildApiUrl(baseUrl, `api/ai-reviews/${encodeURIComponent(aiReviewId)}/decisions`);
+  return buildApiUrl(baseUrl, `api/ai-reviews/${encodeURIComponent(requireTrimmedAiReviewId(aiReviewId))}/decisions`);
 }
 
 export function buildMarketKlinesUrl(
@@ -11877,20 +11897,34 @@ function isAuthoritativeAiReviewCreatePayload(
     && value.review.externalAssessment.provider === request.providerId;
 }
 
-function isAuthoritativeAiReviewHistoryPayload(
+function parseAuthoritativeAiReviewHistoryPayload(
   value: unknown
-): value is { reviews: AiReviewHistoryRecord[]; pagination: MixedAiReviewHistoryPagination } {
+): { reviews: AiReviewHistoryRecord[]; pagination: MixedAiReviewHistoryPagination } | null {
   if (!hasExactAiReviewEnvelopeKeys(value, ["reviews", "pagination"])
     || !Array.isArray(value.reviews)
-    || !value.reviews.every(isAiReviewHistoryRecord)
     || !hasExactAiReviewEnvelopeKeys(value.pagination, ["limit", "offset", "total", "query"])) {
-    return false;
+    return null;
   }
-  return Number.isInteger(value.pagination.limit) && (value.pagination.limit as number) >= 1
+  if (!(Number.isInteger(value.pagination.limit) && (value.pagination.limit as number) >= 1
     && (value.pagination.limit as number) <= 50
     && Number.isInteger(value.pagination.offset) && (value.pagination.offset as number) >= 0
     && Number.isInteger(value.pagination.total) && (value.pagination.total as number) >= 0
-    && typeof value.pagination.query === "string";
+    && typeof value.pagination.query === "string")) {
+    return null;
+  }
+  const reviews = value.reviews.map(parseAiReviewHistoryRecord);
+  if (reviews.some((review) => review === null)) {
+    return null;
+  }
+  return {
+    reviews: reviews as AiReviewHistoryRecord[],
+    pagination: {
+      limit: value.pagination.limit as number,
+      offset: value.pagination.offset as number,
+      total: value.pagination.total as number,
+      query: value.pagination.query
+    }
+  };
 }
 
 function isAiReviewDecisionsPayload(
@@ -11904,11 +11938,16 @@ function isAiReviewDecisionsPayload(
 
 function isAiReviewDecisionPayload(
   value: unknown,
-  aiReviewId: string
+  aiReviewId: string,
+  request: AppendAiReviewDecisionRequest
 ): value is { decision: AiReviewDecision } {
   return hasExactAiReviewEnvelopeKeys(value, ["decision"])
     && isAiReviewDecision(value.decision)
-    && value.decision.aiReviewId === aiReviewId;
+    && value.decision.aiReviewId === aiReviewId
+    && value.decision.operator === request.operator
+    && value.decision.status === request.status
+    && value.decision.rationale === request.rationale
+    && value.decision.supersedesDecisionId === request.supersedesDecisionId;
 }
 
 export async function loadAiReviewProviders(
@@ -11936,64 +11975,55 @@ export async function loadAiReviewProviders(
   }
 }
 
-export async function createAuthoritativeAiReview(
+export function createAuthoritativeAiReview(
   baseUrl: string,
   request: CreateAuthoritativeAiReviewRequest,
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AuthoritativeAiReviewResult> {
+  const normalizedRequest = normalizeCreateAuthoritativeAiReviewRequest(request);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  try {
-    const payload = await requestJson(
-      buildAuthoritativeAiReviewsUrl(baseUrl),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          primaryExperimentId: request.primaryExperimentId,
-          comparisonExperimentIds: [...request.comparisonExperimentIds],
-          providerId: request.providerId,
-          externalDataApproved: request.externalDataApproved
-        }),
-        ...(signal ? { signal } : {})
-      },
-      fetcher
-    );
-    if (!isAuthoritativeAiReviewCreatePayload(payload, request)) {
+  return Promise.resolve().then(() => requestJson(
+    buildAuthoritativeAiReviewsUrl(baseUrl),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(normalizedRequest),
+      ...(signal ? { signal } : {})
+    },
+    fetcher
+  )).then((payload) => {
+    if (!isAuthoritativeAiReviewCreatePayload(payload, normalizedRequest)) {
       throw new Error("Invalid authoritative AI review create contract");
     }
-    return { review: payload.review, latestDecision: payload.latestDecision, source: "core" };
-  } catch (error) {
-    return {
-      source: "fallback",
-      error: error instanceof Error ? error.message : "Unknown authoritative AI review create error"
-    };
-  }
+    return { review: payload.review, latestDecision: payload.latestDecision, source: "core" as const };
+  }).catch((error: unknown) => ({
+    source: "fallback",
+    error: error instanceof Error ? error.message : "Unknown authoritative AI review create error"
+  }));
 }
 
-export async function loadAuthoritativeAiReview(
+export function loadAuthoritativeAiReview(
   baseUrl: string,
   aiReviewId: string,
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AuthoritativeAiReviewResult> {
+  const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  try {
-    const payload = await requestJson(
-      buildAuthoritativeAiReviewUrl(baseUrl, aiReviewId),
-      signal ? { signal } : undefined,
-      fetcher
-    );
-    if (!isAuthoritativeAiReviewPayload(payload) || payload.review.aiReviewId !== aiReviewId) {
+  return Promise.resolve().then(() => requestJson(
+    buildAuthoritativeAiReviewUrl(baseUrl, normalizedAiReviewId),
+    signal ? { signal } : undefined,
+    fetcher
+  )).then((payload) => {
+    if (!isAuthoritativeAiReviewPayload(payload) || payload.review.aiReviewId !== normalizedAiReviewId) {
       throw new Error("Invalid authoritative AI review detail contract");
     }
-    return { review: payload.review, latestDecision: payload.latestDecision, source: "core" };
-  } catch (error) {
-    return {
-      source: "fallback",
-      error: error instanceof Error ? error.message : "Unknown authoritative AI review detail error"
-    };
-  }
+    return { review: payload.review, latestDecision: payload.latestDecision, source: "core" as const };
+  }).catch((error: unknown) => ({
+    source: "fallback",
+    error: error instanceof Error ? error.message : "Unknown authoritative AI review detail error"
+  }));
 }
 
 export async function loadAuthoritativeAiReviews(
@@ -12004,17 +12034,20 @@ export async function loadAuthoritativeAiReviews(
 ): Promise<AuthoritativeAiReviewHistoryResult> {
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
   try {
-    const payload = await requestJson(
+    const responsePayload = await requestJson(
       buildAuthoritativeAiReviewsUrl(baseUrl, filters),
       signal ? { signal } : undefined,
       fetcher
     );
-    if (!isAuthoritativeAiReviewHistoryPayload(payload)) {
+    const payload = parseAuthoritativeAiReviewHistoryPayload(responsePayload);
+    if (payload === null) {
       throw new Error("Invalid authoritative AI review history contract");
     }
     return {
       reviews: payload.reviews.filter(isAuthoritativeAiReviewRun),
-      legacyReviews: payload.reviews.filter(isLegacyAiReviewHistoryRecord),
+      legacyReviews: payload.reviews.filter(
+        (review): review is LegacyAiReviewHistoryRecord => review.authority === "legacy"
+      ),
       pagination: payload.pagination,
       source: "core"
     };
@@ -12028,66 +12061,63 @@ export async function loadAuthoritativeAiReviews(
   }
 }
 
-export async function loadAiReviewDecisions(
+export function loadAiReviewDecisions(
   baseUrl: string,
   aiReviewId: string,
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AiReviewDecisionHistoryResult> {
+  const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  try {
-    const payload = await requestJson(
-      buildAiReviewDecisionsUrl(baseUrl, aiReviewId),
-      signal ? { signal } : undefined,
-      fetcher
-    );
-    if (!isAiReviewDecisionsPayload(payload, aiReviewId)) {
+  return Promise.resolve().then(() => requestJson(
+    buildAiReviewDecisionsUrl(baseUrl, normalizedAiReviewId),
+    signal ? { signal } : undefined,
+    fetcher
+  )).then((payload) => {
+    if (!isAiReviewDecisionsPayload(payload, normalizedAiReviewId)) {
       throw new Error("Invalid AI review decisions contract");
     }
-    return { decisions: payload.decisions, source: "core" };
-  } catch (error) {
-    return {
-      decisions: [],
-      source: "fallback",
-      error: error instanceof Error ? error.message : "Unknown AI review decisions error"
-    };
-  }
+    return { decisions: payload.decisions, source: "core" as const };
+  }).catch((error: unknown) => ({
+    decisions: [],
+    source: "fallback",
+    error: error instanceof Error ? error.message : "Unknown AI review decisions error"
+  }));
 }
 
-export async function appendAiReviewDecision(
+export function appendAiReviewDecision(
   baseUrl: string,
   aiReviewId: string,
   request: AppendAiReviewDecisionRequest,
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
   maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<AiReviewDecisionMutationResult> {
+  const normalizedAiReviewId = requireTrimmedAiReviewId(aiReviewId);
   const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
-  try {
-    const payload = await requestJson(
-      buildAiReviewDecisionsUrl(baseUrl, aiReviewId),
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          operator: request.operator,
-          status: request.status,
-          rationale: request.rationale,
-          supersedesDecisionId: request.supersedesDecisionId
-        }),
-        ...(signal ? { signal } : {})
-      },
-      fetcher
-    );
-    if (!isAiReviewDecisionPayload(payload, aiReviewId)) {
+  const normalizedRequest: AppendAiReviewDecisionRequest = {
+    operator: request.operator,
+    status: request.status,
+    rationale: request.rationale,
+    supersedesDecisionId: request.supersedesDecisionId
+  };
+  return Promise.resolve().then(() => requestJson(
+    buildAiReviewDecisionsUrl(baseUrl, normalizedAiReviewId),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(normalizedRequest),
+      ...(signal ? { signal } : {})
+    },
+    fetcher
+  )).then((payload) => {
+    if (!isAiReviewDecisionPayload(payload, normalizedAiReviewId, normalizedRequest)) {
       throw new Error("Invalid AI review decision append contract");
     }
-    return { decision: payload.decision, source: "core" };
-  } catch (error) {
-    return {
-      source: "fallback",
-      error: error instanceof Error ? error.message : "Unknown AI review decision append error"
-    };
-  }
+    return { decision: payload.decision, source: "core" as const };
+  }).catch((error: unknown) => ({
+    source: "fallback",
+    error: error instanceof Error ? error.message : "Unknown AI review decision append error"
+  }));
 }
 
 export async function loadResearchRunPaperExecutions(

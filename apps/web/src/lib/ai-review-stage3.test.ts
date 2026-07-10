@@ -292,6 +292,7 @@ describe("Stage 3 AI review runtime contracts", () => {
     expect(isAiReviewDecisionChain([{ ...first, status: "approved" }, second])).toBe(false);
     expect(isAiReviewDecisionChain([first, { ...second, supersedesDecisionId: null }])).toBe(false);
     expect(isAiReviewDecisionChain([first, { ...second, decisionId: first.decisionId }])).toBe(false);
+    expect(isAiReviewDecision({ ...second, decisionId: second.supersedesDecisionId })).toBe(false);
     expect(isAiReviewDecision({ ...first, boundary: { ...first.boundary, orderSubmissionAllowed: true } })).toBe(false);
   });
 
@@ -307,6 +308,9 @@ describe("Stage 3 AI review runtime contracts", () => {
     expect(isAuthoritativeAiReviewRun(legacy)).toBe(false);
     expect(isAiReviewHistoryRecord({ ...legacy, authority: "authoritative" })).toBe(false);
     expect(isAiReviewHistoryRecord({ ...legacy, summary: [] })).toBe(false);
+    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: "not-a-time" })).toBe(false);
+    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: "2026-02-30T07:00:00+00:00" })).toBe(false);
+    expect(isAiReviewHistoryRecord({ ...legacy, createdAt: "2026-W28-4T99:00:00+00:00" })).toBe(false);
   });
 
   test("compares repeated review fields canonically instead of by object key order", () => {
@@ -330,6 +334,17 @@ describe("Stage 3 AI review runtime contracts", () => {
       model: "gpt-5",
       sanitizedBaseUrl: "https://api.openai.com/v1"
     })).toBe(true);
+    for (const sanitizedBaseUrl of [
+      "http://[::1]:11434",
+      "http://[0:0:0:0:0:0:0:1]:11434"
+    ]) {
+      expect(isAiReviewProviderStatus({
+        providerId: "ollama",
+        configured: true,
+        model: "local-model",
+        sanitizedBaseUrl
+      })).toBe(true);
+    }
     expect(isAiReviewProviderStatus({
       providerId: "openai",
       configured: true,
@@ -475,6 +490,7 @@ describe("Stage 3 AI review runtime contracts", () => {
 describe("Stage 3 comparison eligibility", () => {
   test("allows the same normalized structure across revisions and parameter values", () => {
     const primary = sampleExperiment("primary");
+    primary.definition.baseStrategy.name = "Straße ς ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ";
     primary.definition.baseStrategy.entryConditions = [
       { kind: "cross", params: { fast: 5, slow: 20 } },
       { kind: "volume", params: { window: 10 } }
@@ -484,10 +500,10 @@ describe("Stage 3 comparison eligibility", () => {
     candidate.definition.strategyRevision = "different-revision";
     candidate.definition.baseStrategy = {
       ...primary.definition.baseStrategy,
-      name: "  sma   PLAN ",
+      name: "  STRASSE   σ ff fi fl ffi ffl st st ",
       revision: "different-revision",
       entryConditions: [
-        { kind: "cross", params: { slow: 99, fast: 1 } },
+        { kind: " Cross ", params: { SLOW: 99, FAST: 1 } },
         { kind: "volume", params: { window: 30 } }
       ]
     };

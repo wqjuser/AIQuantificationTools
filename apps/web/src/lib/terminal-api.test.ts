@@ -19816,6 +19816,13 @@ describe("terminal workspace API client", () => {
     ]);
     expect(result).toMatchObject({ source: "core", review: { authority: "authoritative" }, latestDecision: null });
 
+    const mutableRequest = { ...request };
+    const snapshotted = await createAuthoritativeAiReview("/", mutableRequest, async () => {
+      mutableRequest.primaryExperimentId = "mutated-after-send";
+      return { ok: true, status: 201, json: async () => ({ review, latestDecision: null }) };
+    });
+    expect(snapshotted.source).toBe("core");
+
     const mismatches = [
       { request: { ...request, primaryExperimentId: "other" }, latestDecision: null },
       { request: { ...request, comparisonExperimentIds: ["comparison"] }, latestDecision: null },
@@ -19872,7 +19879,13 @@ describe("terminal workspace API client", () => {
           ok: true,
           status: 200,
           json: async () => ({
-            reviews: [sampleLegacyAiReviewHistoryPayload(), review],
+            reviews: [{
+              ...sampleLegacyAiReviewHistoryPayload(),
+              apiKey: "must-not-enter-state",
+              externalAssessment: { provider: "openai", model: "must-not-enter-state" },
+              primaryExperiment: { experimentId: "malformed-v2-field" },
+              summary: { liveExecutionBlocked: true, secret: "must-not-enter-state" }
+            }, review],
             pagination: { limit: 5, offset: 10, total: 12, query: "hash match" }
           })
         };
@@ -19885,7 +19898,26 @@ describe("terminal workspace API client", () => {
       source: "core",
       pagination: { total: 12 },
       reviews: [{ schemaVersion: 2 }],
-      legacyReviews: [{ schemaVersion: 1 }]
+      legacyReviews: [{
+        schemaVersion: 1,
+        authority: "legacy",
+        recordType: "aiqt.aiReviewRun",
+        aiReviewId: "ai-review-v1-http",
+        runId: "run-primary",
+        createdAt: "2026-07-10T07:00:00+00:00",
+        status: "ready",
+        boundary: "Evidence explanation only; live routing remains blocked."
+      }]
+    });
+    expect(result.legacyReviews[0]).toEqual({
+      schemaVersion: 1,
+      authority: "legacy",
+      recordType: "aiqt.aiReviewRun",
+      aiReviewId: "ai-review-v1-http",
+      runId: "run-primary",
+      createdAt: "2026-07-10T07:00:00+00:00",
+      status: "ready",
+      boundary: "Evidence explanation only; live routing remains blocked."
     });
 
     const invalid = await loadAuthoritativeAiReviews("/", {}, async () => ({
@@ -19951,6 +19983,13 @@ describe("terminal workspace API client", () => {
       supersedesDecisionId: second.decisionId,
       uiDraftId: "must-not-leak"
     };
+    const appendedDecision = {
+      ...sampleAiReviewDecisionPayload(3),
+      operator: request.operator,
+      status: request.status,
+      rationale: request.rationale,
+      supersedesDecisionId: request.supersedesDecisionId
+    };
     const appended = await appendAiReviewDecision(
       "/",
       second.aiReviewId,
@@ -19969,10 +20008,26 @@ describe("terminal workspace API client", () => {
           }),
           signal: controller.signal
         });
-        return { ok: true, status: 201, json: async () => ({ decision: { ...second, status: "revision_requested" } }) };
+        return { ok: true, status: 201, json: async () => ({ decision: appendedDecision }) };
       }
     );
     expect(appended).toMatchObject({ source: "core", decision: { status: "revision_requested" } });
+
+    const mismatchedFields = [
+      { ...appendedDecision, operator: "another-operator" },
+      { ...appendedDecision, status: "accepted_for_research" },
+      { ...appendedDecision, rationale: "A different rationale." },
+      { ...appendedDecision, supersedesDecisionId: first.decisionId }
+    ];
+    for (const decision of mismatchedFields) {
+      const mismatched = await appendAiReviewDecision("/", second.aiReviewId, request, async () => ({
+        ok: true,
+        status: 201,
+        json: async () => ({ decision })
+      }));
+      expect(mismatched.source).toBe("fallback");
+      expect(mismatched.decision).toBeUndefined();
+    }
 
     const mismatchedList = await loadAiReviewDecisions("/", "ai-review-other", async () => ({
       ok: true,
@@ -20005,6 +20060,49 @@ describe("terminal workspace API client", () => {
     }));
     expect(result.source).toBe("fallback");
     expect(result.decisions).toEqual([]);
+  });
+
+  test("synchronously rejects untrimmed or empty review IDs without fetching", () => {
+    let fetchCount = 0;
+    const fetcher = async () => {
+      fetchCount += 1;
+      throw new Error("must not fetch");
+    };
+    const createRequest = {
+      primaryExperimentId: "primary",
+      comparisonExperimentIds: [] as string[],
+      providerId: "local" as const,
+      externalDataApproved: false
+    };
+    for (const request of [
+      { ...createRequest, primaryExperimentId: " primary" },
+      { ...createRequest, primaryExperimentId: "" },
+      { ...createRequest, comparisonExperimentIds: ["comparison "] },
+      { ...createRequest, comparisonExperimentIds: ["   "] }
+    ]) {
+      expect(() => createAuthoritativeAiReview("/", request, fetcher)).toThrow("Invalid AI review ID");
+    }
+    for (const aiReviewId of [" ai-review-id", "", "   "]) {
+      expect(() => loadAuthoritativeAiReview("/", aiReviewId, fetcher)).toThrow("Invalid AI review ID");
+      expect(() => loadAiReviewDecisions("/", aiReviewId, fetcher)).toThrow("Invalid AI review ID");
+      expect(() => appendAiReviewDecision("/", aiReviewId, {
+        operator: "researcher",
+        status: "revision_requested",
+        rationale: "Add a longer validation window.",
+        supersedesDecisionId: null
+      }, fetcher)).toThrow("Invalid AI review ID");
+    }
+    expect(fetchCount).toBe(0);
+  });
+
+  test("keeps non-ID URL construction errors in the fallback channel", async () => {
+    const result = await loadAuthoritativeAiReview(
+      "not-a-valid-base",
+      "ai-review-0123456789abcdef0123456789abcdef",
+      async () => { throw new Error("must not fetch"); }
+    );
+    expect(result.source).toBe("fallback");
+    expect(result.review).toBeUndefined();
   });
 });
 
