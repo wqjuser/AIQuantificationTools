@@ -2718,6 +2718,43 @@ class QuantCoreContractTest(unittest.TestCase):
                 base_url="http://aiqt.local",
             )
 
+    def test_p2_paper_replay_manifest_accepts_bound_simulation_adapter_evidence(self):
+        from quant_core.p2_paper_replay import build_p2_paper_replay_manifest_from_export_package
+
+        export_package = self._sample_p2_paper_replay_export_package(run_id="run-p2-paper-replay")
+        export_package["adapterPaperExecutions"] = []
+        export_package["manifest"]["artifactCounts"]["adapterPaperExecutions"] = 0
+        export_package["portfolioPaperOrderSimulations"][0]["adapterPaperExecutionEvidence"] = {
+            "adapterPaperExecutionId": "adapter-paper-execution-ready",
+            "adapterId": "ashare-live",
+            "market": "ashare",
+            "route": "paper",
+            "status": "paper_execution_recorded",
+            "paperOnly": True,
+            "orderSubmitted": False,
+            "liveTradingAllowed": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+        }
+
+        manifest = build_p2_paper_replay_manifest_from_export_package(export_package)
+
+        self.assertEqual(manifest["adapterId"], "ashare-live")
+        self.assertEqual(manifest["latestEvidenceId"], "adapter-paper-execution-ready")
+        self.assertEqual(manifest["metrics"]["adapterPaperExecutions"], 1)
+
+    def test_p2_paper_replay_manifest_rejects_unbound_adapter_execution(self):
+        from quant_core.p2_paper_replay import build_p2_paper_replay_manifest_from_export_package
+
+        export_package = self._sample_p2_paper_replay_export_package(run_id="run-p2-paper-replay")
+        export_package["portfolioPaperOrderSimulations"][0]["adapterPaperExecutionId"] = (
+            "adapter-paper-execution-current"
+        )
+        export_package["portfolioPaperOrderSimulations"][0]["adapterPaperExecutionEvidence"] = {}
+
+        with self.assertRaisesRegex(ValueError, "adapter paper execution evidence is missing"):
+            build_p2_paper_replay_manifest_from_export_package(export_package)
+
     def test_p2_readiness_acceptance_status_reads_latest_report(self):
         import json
 
@@ -3806,6 +3843,15 @@ class QuantCoreContractTest(unittest.TestCase):
             "execution-adapter-secret-manifest-validation-run-p1-smoke-600000",
         )
         self.assertTrue(evidence["adapterPaperExecutionEvidence"]["paperFillRecorded"])
+        self.assertEqual(evidence["adapterPaperExecutionEvidence"]["adapterId"], "ashare-live")
+        self.assertEqual(evidence["adapterPaperExecutionEvidence"]["market"], "ashare")
+        self.assertEqual(evidence["adapterPaperExecutionEvidence"]["route"], "paper")
+        self.assertEqual(
+            evidence["adapterPaperExecutionEvidence"]["status"],
+            "paper_execution_recorded",
+        )
+        self.assertTrue(evidence["adapterPaperExecutionEvidence"]["paperOnly"])
+        self.assertFalse(evidence["adapterPaperExecutionEvidence"]["liveTradingAllowed"])
         self.assertFalse(evidence["adapterPaperExecutionEvidence"]["liveOrderSubmitted"])
         self.assertFalse(evidence["adapterPaperExecutionEvidence"]["routeExecuted"])
         self.assertNotIn("privateKey", json.dumps(simulation_payload))

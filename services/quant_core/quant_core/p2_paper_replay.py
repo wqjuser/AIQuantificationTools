@@ -78,21 +78,34 @@ def build_p2_paper_replay_manifest_from_export_package(
         and _string_field(simulation, "orderState") == "filled"
         and _string_field(simulation, "fillStatus") == "filled"
     ]
-    matching_adapter_executions = [
-        execution
-        for execution in adapter_executions
-        if _string_field(execution, "status") == "paper_execution_recorded"
-        and _string_field(execution, "route") == "paper"
-        and _string_field(execution, "market") in {None, market, "multi"}
-    ]
+    simulation_adapter_execution_ids = {
+        execution_id
+        for simulation in filled_simulations
+        if (execution_id := _string_field(simulation, "adapterPaperExecutionId"))
+    }
+    bound_adapter_executions: dict[str, dict[str, Any]] = {}
+    for simulation in filled_simulations:
+        execution_id = _string_field(simulation, "adapterPaperExecutionId") or ""
+        evidence = simulation.get("adapterPaperExecutionEvidence")
+        if _is_bound_adapter_paper_execution_evidence(evidence, execution_id=execution_id, market=market):
+            bound_adapter_executions[execution_id] = evidence
+    for execution in adapter_executions:
+        execution_id = _string_field(execution, "adapterPaperExecutionId") or ""
+        if execution_id in simulation_adapter_execution_ids and _is_bound_adapter_paper_execution_evidence(
+            execution,
+            execution_id=execution_id,
+            market=market,
+        ):
+            bound_adapter_executions.setdefault(execution_id, execution)
+    matching_adapter_executions = list(bound_adapter_executions.values())
 
-    selected_adapter_id = (
-        str(adapter_id or "").strip()
-        or _string_field(matching_adapter_executions[0], "adapterId")
-        or _string_field(matching_adapter_executions[0], "adapter")
-        if matching_adapter_executions
-        else ""
-    )
+    selected_adapter_id = str(adapter_id or "").strip()
+    if matching_adapter_executions and not selected_adapter_id:
+        selected_adapter_id = (
+            _string_field(matching_adapter_executions[0], "adapterId")
+            or _string_field(matching_adapter_executions[0], "adapter")
+            or ""
+        )
     if not selected_adapter_id:
         raise ValueError("P2 paper replay export package adapter paper execution evidence is missing")
 
@@ -460,6 +473,28 @@ def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _is_bound_adapter_paper_execution_evidence(
+    evidence: Any,
+    *,
+    execution_id: str,
+    market: str,
+) -> bool:
+    return (
+        isinstance(evidence, dict)
+        and bool(execution_id)
+        and _string_field(evidence, "adapterPaperExecutionId") == execution_id
+        and bool(_string_field(evidence, "adapterId") or _string_field(evidence, "adapter"))
+        and _string_field(evidence, "status") == "paper_execution_recorded"
+        and _string_field(evidence, "route") == "paper"
+        and _string_field(evidence, "market") in {market, "multi"}
+        and evidence.get("paperOnly") is True
+        and evidence.get("liveTradingAllowed") is False
+        and evidence.get("liveOrderSubmitted") is False
+        and evidence.get("routeExecuted") is False
+        and evidence.get("orderSubmitted") is not True
+    )
 
 
 def _unique_strings(values: list[str]) -> list[str]:
