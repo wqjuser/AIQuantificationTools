@@ -4,6 +4,7 @@ import {
   aiReviewRequiresExternalApproval,
   buildAiReviewAssessmentColumns,
   buildComparisonEligibility,
+  canRunAiReviewStage3,
   type AiReviewAssessment,
   type AiReviewDecision,
   type AiReviewDecisionStatus,
@@ -78,16 +79,19 @@ export function AiReviewStage3Section({
   const primary = experiments.find((experiment) => experiment.experimentId === primaryExperimentId) ?? null;
   const selectedProvider = providers.find((provider) => provider.providerId === providerId) ?? null;
   const requiresApproval = aiReviewRequiresExternalApproval(providerId);
-  const canRun = Boolean(primary)
-    && Boolean(selectedProvider?.configured)
-    && (!requiresApproval || externalDataApproved)
-    && !loading
-    && !running;
+  const busy = loading || running || appendingDecision;
+  const canRun = canRunAiReviewStage3({
+    primaryExperimentId,
+    providers,
+    providerId,
+    externalDataApproved,
+    busy
+  });
   const latestPredecessor = decisions.at(-1)?.decisionId ?? null;
   const canAppendDecision = Boolean(currentReview)
     && decisionDraft.operator.trim().length > 0
     && decisionDraft.rationale.trim().length > 0
-    && !appendingDecision;
+    && !busy;
   const columns = currentReview ? buildAiReviewAssessmentColumns(currentReview) : null;
 
   return (
@@ -104,10 +108,12 @@ export function AiReviewStage3Section({
 
       <div className="ai-review-stage3-grid">
         <section className="ai-review-stage3-card">
-          <h3>{i18n.t("aiReviewStage3.evidenceSelection")}</h3>
+          <h3>{i18n.t("aiReviewStage3.draftSelection")}</h3>
           <label>
             <span>{i18n.t("aiReviewStage3.primary")}</span>
             <select
+              data-testid="ai-review-stage3-primary"
+              disabled={busy}
               onChange={(event) => onPrimaryChange(event.target.value)}
               value={primaryExperimentId ?? ""}
             >
@@ -130,7 +136,8 @@ export function AiReviewStage3Section({
                 <label className={eligibility.eligible ? "eligible" : "ineligible"} key={experiment.experimentId}>
                   <input
                     checked={selected}
-                    disabled={!selected && !eligibility.eligible}
+                    data-testid="ai-review-stage3-comparison"
+                    disabled={busy || (!selected && !eligibility.eligible)}
                     onChange={() => onComparisonToggle(experiment.experimentId)}
                     type="checkbox"
                   />
@@ -152,7 +159,12 @@ export function AiReviewStage3Section({
           <h3>{i18n.t("aiReviewStage3.provider")}</h3>
           <label>
             <span>{i18n.t("aiReviewStage3.provider")}</span>
-            <select onChange={(event) => onProviderChange(event.target.value as AiReviewProviderId)} value={providerId}>
+            <select
+              data-testid="ai-review-stage3-provider"
+              disabled={busy}
+              onChange={(event) => onProviderChange(event.target.value as AiReviewProviderId)}
+              value={providerId}
+            >
               {providers.map((provider) => (
                 <option key={provider.providerId} value={provider.providerId}>
                   {provider.providerId} · {provider.configured
@@ -177,6 +189,8 @@ export function AiReviewStage3Section({
               <label className="ai-review-stage3-approval">
                 <input
                   checked={externalDataApproved}
+                  data-testid="ai-review-stage3-approval"
+                  disabled={busy}
                   onChange={(event) => onExternalDataApprovedChange(event.target.checked)}
                   type="checkbox"
                 />
@@ -185,7 +199,12 @@ export function AiReviewStage3Section({
             </div>
           ) : null}
           <div className="ai-review-stage3-actions">
-            <button disabled={!canRun} onClick={onRunReview} type="button">
+            <button
+              data-testid="ai-review-stage3-run"
+              disabled={!canRun}
+              onClick={onRunReview}
+              type="button"
+            >
               {running ? i18n.t("aiReviewStage3.running") : i18n.t("aiReviewStage3.run")}
             </button>
           </div>
@@ -195,15 +214,16 @@ export function AiReviewStage3Section({
       {currentReview && columns ? (
         <section className="ai-review-stage3-result">
           <header>
-            <span>{i18n.t("aiReviewStage3.currentReview")}</span>
+            <span>{i18n.t("aiReviewStage3.loadedRecord")}</span>
             <strong>{currentReview.aiReviewId}</strong>
           </header>
+          <ReviewMetadata i18n={i18n} review={currentReview} />
           <div className="ai-review-stage3-assessments">
             <AssessmentCard assessment={columns.deterministic} i18n={i18n} titleKey="aiReviewStage3.deterministic" />
             <AssessmentCard
               assessment={columns.external}
               emptyText={columns.externalError
-                ? `${columns.externalError.code}: ${columns.externalError.message}`
+                ? externalFailureText(i18n, columns.externalError.code)
                 : i18n.t(`aiReviewStage3.external.${columns.externalStatus}` as TranslationKey)}
               i18n={i18n}
               titleKey="aiReviewStage3.external"
@@ -233,6 +253,8 @@ export function AiReviewStage3Section({
               <label>
                 <span>{i18n.t("aiReviewStage3.operator")}</span>
                 <input
+                  data-testid="ai-review-stage3-operator"
+                  disabled={busy}
                   maxLength={80}
                   onChange={(event) => onDecisionDraftChange({ ...decisionDraft, operator: event.target.value })}
                   value={decisionDraft.operator}
@@ -241,6 +263,8 @@ export function AiReviewStage3Section({
               <label>
                 <span>{i18n.t("aiReviewStage3.decisionStatus")}</span>
                 <select
+                  data-testid="ai-review-stage3-status"
+                  disabled={busy}
                   onChange={(event) => onDecisionDraftChange({
                     ...decisionDraft,
                     status: event.target.value as AiReviewDecisionStatus
@@ -257,13 +281,20 @@ export function AiReviewStage3Section({
               <label className="ai-review-stage3-rationale">
                 <span>{i18n.t("aiReviewStage3.rationale")}</span>
                 <textarea
+                  data-testid="ai-review-stage3-rationale"
+                  disabled={busy}
                   maxLength={2000}
                   onChange={(event) => onDecisionDraftChange({ ...decisionDraft, rationale: event.target.value })}
                   value={decisionDraft.rationale}
                 />
               </label>
               <div className="ai-review-stage3-actions">
-                <button disabled={!canAppendDecision} onClick={onAppendDecision} type="button">
+                <button
+                  data-testid="ai-review-stage3-append"
+                  disabled={!canAppendDecision}
+                  onClick={onAppendDecision}
+                  type="button"
+                >
                   {appendingDecision ? i18n.t("aiReviewStage3.appending") : i18n.t("aiReviewStage3.appendDecision")}
                 </button>
               </div>
@@ -277,10 +308,18 @@ export function AiReviewStage3Section({
         <div>
           {history.map((review) => (
             <article key={review.aiReviewId}>
-              <span>{i18n.t("aiReviewStage3.authoritative")}</span>
-              <strong>{review.aiReviewId}</strong>
-              <small>{review.createdAt}</small>
-              <button onClick={() => onLoadReview(review.aiReviewId)} type="button">
+              <div className="ai-review-stage3-history-heading">
+                <span>{i18n.t("aiReviewStage3.authoritative")}</span>
+                <strong>{review.aiReviewId}</strong>
+                <small>{review.createdAt}</small>
+              </div>
+              <ReviewMetadata compact i18n={i18n} review={review} />
+              <button
+                data-testid="ai-review-stage3-inspect"
+                disabled={busy}
+                onClick={() => onLoadReview(review.aiReviewId)}
+                type="button"
+              >
                 {i18n.t("aiReviewStage3.inspect")}
               </button>
             </article>
@@ -316,15 +355,89 @@ function AssessmentCard({
         <>
           <strong>{i18n.t(`aiReviewStage3.stance.${assessment.stance}` as TranslationKey)}</strong>
           <p>{assessment.summary}</p>
+          <dl className="ai-review-stage3-assessment-meta">
+            <div>
+              <dt>{i18n.t("aiReviewStage3.consistency")}</dt>
+              <dd>{i18n.t(`aiReviewStage3.consistency.${assessment.consistency}` as TranslationKey)}</dd>
+            </div>
+          </dl>
           {assessment.risks.map((risk, index) => (
             <div className={`ai-review-stage3-risk ${risk.severity}`} key={`${risk.message}-${index}`}>
-              <b>{risk.severity}</b>
+              <b>{i18n.t(`aiReviewStage3.severity.${risk.severity}` as TranslationKey)}</b>
               <p>{risk.message}</p>
               <small className="ai-review-stage3-hash">{risk.evidenceReferences.join(" · ")}</small>
             </div>
           ))}
+          <AssessmentList
+            i18n={i18n}
+            items={assessment.invalidationConditions}
+            titleKey="aiReviewStage3.invalidationConditions"
+          />
+          <AssessmentList i18n={i18n} items={assessment.watchItems} titleKey="aiReviewStage3.watchItems" />
+          <AssessmentList i18n={i18n} items={assessment.evidenceGaps} titleKey="aiReviewStage3.evidenceGaps" />
         </>
       ) : <p>{emptyText ?? i18n.t("aiReviewStage3.external.skipped")}</p>}
     </article>
   );
+}
+
+function AssessmentList({
+  i18n,
+  items,
+  titleKey
+}: {
+  i18n: ReturnType<typeof createI18n>;
+  items: string[];
+  titleKey: TranslationKey;
+}) {
+  return (
+    <section className="ai-review-stage3-assessment-list">
+      <b>{i18n.t(titleKey)}</b>
+      {items.length
+        ? <ul>{items.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul>
+        : <p>{i18n.t("aiReviewStage3.none")}</p>}
+    </section>
+  );
+}
+
+function ReviewMetadata({
+  compact = false,
+  i18n,
+  review
+}: {
+  compact?: boolean;
+  i18n: ReturnType<typeof createI18n>;
+  review: AuthoritativeAiReviewRun;
+}) {
+  return (
+    <dl className={compact ? "ai-review-stage3-record-meta compact" : "ai-review-stage3-record-meta"}>
+      <div><dt>{i18n.t("aiReviewStage3.primary")}</dt><dd>{review.primaryExperiment.experimentId}</dd></div>
+      <div>
+        <dt>{i18n.t("aiReviewStage3.comparisonRecords")}</dt>
+        <dd>{review.comparisonExperiments.map((item) => item.experimentId).join(" · ") || i18n.t("aiReviewStage3.none")}</dd>
+      </div>
+      <div><dt>{i18n.t("aiReviewStage3.provider")}</dt><dd>{review.externalAssessment.provider}</dd></div>
+      <div><dt>{i18n.t("aiReviewStage3.model")}</dt><dd>{review.externalAssessment.model ?? i18n.t("aiReviewStage3.none")}</dd></div>
+      <div>
+        <dt>{i18n.t("aiReviewStage3.baseUrl")}</dt>
+        <dd>{review.externalAssessment.sanitizedBaseUrl ?? i18n.t("aiReviewStage3.none")}</dd>
+      </div>
+      <div>
+        <dt>{i18n.t("aiReviewStage3.externalAttemptStatus")}</dt>
+        <dd>{i18n.t(`aiReviewStage3.external.status.${review.externalAssessment.status}` as TranslationKey)}</dd>
+      </div>
+      <div><dt>{i18n.t("aiReviewStage3.evidenceHash")}</dt><dd className="ai-review-stage3-hash">{review.evidenceHash}</dd></div>
+      <div><dt>{i18n.t("aiReviewStage3.recordHash")}</dt><dd className="ai-review-stage3-hash">{review.recordHash}</dd></div>
+    </dl>
+  );
+}
+
+function externalFailureText(
+  i18n: ReturnType<typeof createI18n>,
+  code: string
+): string {
+  const detail = code === "ai_review_provider_not_configured"
+    ? i18n.t("aiReviewStage3.external.error.ai_review_provider_not_configured")
+    : i18n.t("aiReviewStage3.external.error.generic");
+  return `${i18n.t("aiReviewStage3.external.failed")} ${detail} · ${code}`;
 }

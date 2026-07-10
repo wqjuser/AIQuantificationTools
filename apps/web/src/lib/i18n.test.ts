@@ -14,6 +14,11 @@ describe("i18n", () => {
     expect(en.t("aiReviewStage3.legacyNonAuthoritative")).toBe("Legacy · non-authoritative");
     expect(zh.t("aiReviewStage3.error.decisionReadbackFailed")).toBe("AI 评审 Decision 回读失败。");
     expect(en.t("aiReviewStage3.error.decisionReadbackFailed")).toBe("AI review Decision readback failed.");
+    expect(zh.t("aiReviewStage3.draftSelection")).toBe("新评审草稿选择");
+    expect(en.t("aiReviewStage3.loadedRecord")).toBe("Loaded authoritative record");
+    expect(zh.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("Provider 尚未配置。");
+    expect(en.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("Provider is not configured.");
+    expect(zh.t("aiReviewStage3.error.contextLoadFailed")).toBe("AI 评审 Provider 或历史加载失败。");
     expect(translationKeysForLocale("zh-CN")).toEqual(translationKeysForLocale("en-US"));
   });
 

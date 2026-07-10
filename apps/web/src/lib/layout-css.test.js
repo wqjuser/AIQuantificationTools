@@ -96,25 +96,22 @@ describe("terminal layout css", () => {
   test("owns Stage 3 authority state in App and re-reads the Decision chain after append", () => {
     const appendSource = sourceBetween(
       "const appendAiReviewStage3Decision = useCallback",
-      "  ]);"
+      "const strategyExperimentRequestIsCurrent"
     );
-    expect(appSource).toContain("aiReviewStage3ContextGenerationRef");
-    expect(appSource).toContain("aiReviewStage3ReviewGenerationRef");
-    expect(appSource).toContain("aiReviewStage3ContextAbortControllerRef");
-    expect(appSource).toContain("aiReviewStage3ReviewAbortControllerRef");
-    expect(appSource).toContain("aiReviewRequestIsCurrent({");
+    expect(appSource).toContain("aiReviewStage3RequestCoordinatorRef");
+    expect(appSource).toContain("createAiReviewRequestCoordinator()");
+    expect(appSource).toContain("observeScope(aiReviewStage3ContextKey)");
+    expect(appSource).toContain("coordinator.beginContext(aiReviewStage3ContextKey)");
+    expect(appSource).toContain('coordinator.beginReview("running")');
+    expect(appSource).toContain('coordinator.beginReview("appending")');
+    expect(appendSource).toContain("appendAiReviewDecisionAndReadback({");
     expect(appendSource).toContain("appendAiReviewDecision(");
     expect(appendSource).toContain("loadAiReviewDecisions(");
-    expect(appendSource.indexOf("appendAiReviewDecision(")).toBeLessThan(
-      appendSource.indexOf("loadAiReviewDecisions(")
-    );
-    expect(appendSource.indexOf("loadAiReviewDecisions(")).toBeLessThan(
-      appendSource.indexOf("setAiReviewStage3Decisions(readback.decisions)")
-    );
+    expect(appendSource).toContain("setAiReviewStage3Decisions(result.decisions)");
     expect(aiReviewStage3SectionSource).toContain("AI_REVIEW_EXTERNAL_DATA_FIELDS.map");
     expect(aiReviewStage3SectionSource).toContain("buildAiReviewAssessmentColumns(currentReview)");
     expect(aiReviewStage3SectionSource).toContain("legacyHistory.map");
-    expect(aiReviewStage3SectionSource).toContain("(!requiresApproval || externalDataApproved)");
+    expect(aiReviewStage3SectionSource).toContain("canRunAiReviewStage3({");
   });
 
   test("splits production vendor dependencies instead of emitting one large entry chunk", () => {

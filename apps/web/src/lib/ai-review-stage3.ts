@@ -203,6 +203,46 @@ export interface AiReviewRequestGuard {
   aborted: boolean;
 }
 
+export type AiReviewRequestBusyKind = "running" | "appending";
+
+export interface AiReviewRequestBusyState {
+  loading: boolean;
+  running: boolean;
+  appending: boolean;
+}
+
+export interface AiReviewRequestToken {
+  lane: "context" | "review";
+  contextGeneration: number;
+  reviewGeneration: number;
+  scopeKey: string;
+  signal: AbortSignal;
+}
+
+export interface AiReviewRequestCoordinator {
+  readonly busy: AiReviewRequestBusyState;
+  readonly scopeKey: string;
+  observeScope: (scopeKey: string) => void;
+  beginContext: (scopeKey: string) => AiReviewRequestToken;
+  beginReview: (kind: AiReviewRequestBusyKind) => AiReviewRequestToken;
+  invalidateReview: () => void;
+  isCurrent: (token: AiReviewRequestToken) => boolean;
+  finish: (token: AiReviewRequestToken) => boolean;
+  dispose: () => void;
+}
+
+export type AiReviewDecisionReadbackStatus =
+  | "committed"
+  | "stale"
+  | "append-failed"
+  | "readback-failed"
+  | "readback-mismatch";
+
+export interface AiReviewDecisionReadbackResult {
+  status: AiReviewDecisionReadbackStatus;
+  decisions: AiReviewDecision[] | null;
+}
+
 const providerIds = new Set<AiReviewProviderId>(["local", "openai", "openai-compatible", "ollama"]);
 const stances = new Set<AiReviewStance>(["supported", "caution", "blocked", "insufficient_evidence"]);
 const severities = new Set<AiReviewRiskSeverity>(["low", "medium", "high", "critical"]);
@@ -838,6 +878,29 @@ export function aiReviewRequiresExternalApproval(providerId: AiReviewProviderId)
   return providerId !== "local";
 }
 
+export function canRunAiReviewStage3({
+  primaryExperimentId,
+  providers,
+  providerId,
+  externalDataApproved,
+  busy
+}: {
+  primaryExperimentId: string | null;
+  providers: readonly AiReviewProviderStatus[];
+  providerId: AiReviewProviderId;
+  externalDataApproved: boolean;
+  busy: boolean;
+}): boolean {
+  const provider = providers.find((candidate) => candidate.providerId === providerId);
+  if (!primaryExperimentId || !provider || busy) {
+    return false;
+  }
+  if (providerId === "local") {
+    return provider.configured;
+  }
+  return externalDataApproved;
+}
+
 export function buildAiReviewAssessmentColumns(review: AuthoritativeAiReviewRun): AiReviewAssessmentColumns {
   return {
     deterministic: review.deterministicAssessment,
@@ -864,4 +927,160 @@ export function aiReviewRequestIsCurrent(guard: AiReviewRequestGuard): boolean {
   return !guard.aborted
     && guard.requestGeneration === guard.currentGeneration
     && guard.requestScopeKey === guard.currentScopeKey;
+}
+
+export function createAiReviewRequestCoordinator(initialScopeKey = ""): AiReviewRequestCoordinator {
+  let observedScopeKey = initialScopeKey;
+  let contextGeneration = 0;
+  let reviewGeneration = 0;
+  let contextController: AbortController | null = null;
+  let reviewController: AbortController | null = null;
+  let busy: AiReviewRequestBusyState = { loading: false, running: false, appending: false };
+
+  const isCurrent = (token: AiReviewRequestToken): boolean => {
+    if (token.lane === "context") {
+      return aiReviewRequestIsCurrent({
+        requestGeneration: token.contextGeneration,
+        currentGeneration: contextGeneration,
+        requestScopeKey: token.scopeKey,
+        currentScopeKey: observedScopeKey,
+        aborted: token.signal.aborted
+      });
+    }
+    return contextGeneration === token.contextGeneration
+      && aiReviewRequestIsCurrent({
+        requestGeneration: token.reviewGeneration,
+        currentGeneration: reviewGeneration,
+        requestScopeKey: token.scopeKey,
+        currentScopeKey: observedScopeKey,
+        aborted: token.signal.aborted
+      });
+  };
+
+  return {
+    get busy() {
+      return { ...busy };
+    },
+    get scopeKey() {
+      return observedScopeKey;
+    },
+    observeScope(scopeKey) {
+      observedScopeKey = scopeKey;
+    },
+    beginContext(scopeKey) {
+      observedScopeKey = scopeKey;
+      contextController?.abort();
+      reviewController?.abort();
+      contextController = new AbortController();
+      reviewController = null;
+      contextGeneration += 1;
+      reviewGeneration += 1;
+      busy = { loading: true, running: false, appending: false };
+      return {
+        lane: "context",
+        contextGeneration,
+        reviewGeneration,
+        scopeKey,
+        signal: contextController.signal
+      };
+    },
+    beginReview(kind) {
+      reviewController?.abort();
+      reviewController = new AbortController();
+      reviewGeneration += 1;
+      busy = {
+        loading: false,
+        running: kind === "running",
+        appending: kind === "appending"
+      };
+      return {
+        lane: "review",
+        contextGeneration,
+        reviewGeneration,
+        scopeKey: observedScopeKey,
+        signal: reviewController.signal
+      };
+    },
+    invalidateReview() {
+      reviewController?.abort();
+      reviewController = null;
+      reviewGeneration += 1;
+      busy = { ...busy, running: false, appending: false };
+    },
+    isCurrent,
+    finish(token) {
+      if (!isCurrent(token)) {
+        return false;
+      }
+      busy = token.lane === "context"
+        ? { ...busy, loading: false }
+        : { ...busy, running: false, appending: false };
+      return true;
+    },
+    dispose() {
+      contextController?.abort();
+      reviewController?.abort();
+      contextController = null;
+      reviewController = null;
+      contextGeneration += 1;
+      reviewGeneration += 1;
+      busy = { loading: false, running: false, appending: false };
+    }
+  };
+}
+
+export async function appendAiReviewDecisionAndReadback({
+  aiReviewId,
+  request,
+  signal,
+  append,
+  load,
+  isCurrent
+}: {
+  aiReviewId: string;
+  request: AppendAiReviewDecisionRequest;
+  signal: AbortSignal;
+  append: (
+    aiReviewId: string,
+    request: AppendAiReviewDecisionRequest,
+    signal: AbortSignal
+  ) => Promise<{ decision?: AiReviewDecision }>;
+  load: (aiReviewId: string, signal: AbortSignal) => Promise<{ decisions?: AiReviewDecision[] }>;
+  isCurrent: () => boolean;
+}): Promise<AiReviewDecisionReadbackResult> {
+  if (signal.aborted || !isCurrent()) {
+    return { status: "stale", decisions: null };
+  }
+  let appendResult: { decision?: AiReviewDecision };
+  try {
+    appendResult = await append(aiReviewId, request, signal);
+  } catch {
+    return signal.aborted || !isCurrent()
+      ? { status: "stale", decisions: null }
+      : { status: "append-failed", decisions: null };
+  }
+  if (signal.aborted || !isCurrent()) {
+    return { status: "stale", decisions: null };
+  }
+  if (!appendResult.decision) {
+    return { status: "append-failed", decisions: null };
+  }
+  let readback: { decisions?: AiReviewDecision[] };
+  try {
+    readback = await load(aiReviewId, signal);
+  } catch {
+    return signal.aborted || !isCurrent()
+      ? { status: "stale", decisions: null }
+      : { status: "readback-failed", decisions: null };
+  }
+  if (signal.aborted || !isCurrent()) {
+    return { status: "stale", decisions: null };
+  }
+  if (!readback.decisions) {
+    return { status: "readback-failed", decisions: null };
+  }
+  if (readback.decisions.at(-1)?.decisionId !== appendResult.decision.decisionId) {
+    return { status: "readback-mismatch", decisions: null };
+  }
+  return { status: "committed", decisions: readback.decisions };
 }

@@ -3,11 +3,14 @@ import type { StrategyExperimentListItem } from "./terminal-workbench";
 import type { AiReviewDecision, AuthoritativeAiReviewRun } from "./ai-review-stage3";
 import {
   AI_REVIEW_EXTERNAL_DATA_FIELDS,
+  appendAiReviewDecisionAndReadback,
   aiReviewRequestIsCurrent,
   aiReviewRequiresExternalApproval,
   buildAiReviewAssessmentColumns,
   buildAiReviewDecisionDraft,
   buildComparisonEligibility,
+  canRunAiReviewStage3,
+  createAiReviewRequestCoordinator,
   isAiReviewDecision,
   isAiReviewDecisionChain,
   isAiReviewHistoryRecord,
@@ -588,6 +591,35 @@ describe("Stage 3 authoritative workspace view model", () => {
     ]);
   });
 
+  test("shares run eligibility for configured local and approved external attempts", () => {
+    const base = {
+      primaryExperimentId: "primary",
+      providerId: "openai-compatible" as const,
+      providers: [{
+        providerId: "openai-compatible" as const,
+        configured: false,
+        model: null,
+        sanitizedBaseUrl: null
+      }],
+      externalDataApproved: true,
+      busy: false
+    };
+    expect(canRunAiReviewStage3(base)).toBe(true);
+    expect(canRunAiReviewStage3({ ...base, externalDataApproved: false })).toBe(false);
+    expect(canRunAiReviewStage3({ ...base, providers: [] })).toBe(false);
+    expect(canRunAiReviewStage3({
+      ...base,
+      providerId: "local",
+      providers: [{ providerId: "local", configured: false, model: null, sanitizedBaseUrl: null }]
+    })).toBe(false);
+    expect(canRunAiReviewStage3({
+      ...base,
+      providerId: "local",
+      externalDataApproved: false,
+      providers: [{ providerId: "local", configured: true, model: null, sanitizedBaseUrl: null }]
+    })).toBe(true);
+  });
+
   test("keeps deterministic and external assessments as independent columns", () => {
     const localOnly = sampleAuthoritativeReview();
     expect(buildAiReviewAssessmentColumns(localOnly as AuthoritativeAiReviewRun)).toEqual({
@@ -658,5 +690,92 @@ describe("Stage 3 authoritative workspace view model", () => {
       currentScopeKey: "ashare:600000:1d",
       aborted: true
     })).toBe(false);
+  });
+
+  test("coordinates context and review lanes so scope changes, newer requests, and aborts stale old tokens", () => {
+    const coordinator = createAiReviewRequestCoordinator("scope-a");
+    const firstContext = coordinator.beginContext("scope-a");
+    expect(coordinator.busy).toEqual({ loading: true, running: false, appending: false });
+
+    coordinator.observeScope("scope-b");
+    expect(coordinator.isCurrent(firstContext)).toBe(false);
+    const secondContext = coordinator.beginContext("scope-b");
+    expect(firstContext.signal.aborted).toBe(true);
+    expect(coordinator.finish(firstContext)).toBe(false);
+    expect(coordinator.busy.loading).toBe(true);
+    expect(coordinator.finish(secondContext)).toBe(true);
+    expect(coordinator.busy).toEqual({ loading: false, running: false, appending: false });
+
+    const review = coordinator.beginReview("running");
+    const append = coordinator.beginReview("appending");
+    expect(review.signal.aborted).toBe(true);
+    expect(coordinator.isCurrent(review)).toBe(false);
+    expect(coordinator.busy).toEqual({ loading: false, running: false, appending: true });
+    expect(coordinator.finish(review)).toBe(false);
+    expect(coordinator.finish(append)).toBe(true);
+    expect(coordinator.busy).toEqual({ loading: false, running: false, appending: false });
+  });
+
+  test("does not let an asynchronously completed older request clear the newer busy state", async () => {
+    const coordinator = createAiReviewRequestCoordinator("scope");
+    const older = coordinator.beginReview("running");
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    }).then(() => coordinator.isCurrent(older));
+    const newer = coordinator.beginReview("appending");
+    release();
+    await expect(pending).resolves.toBe(false);
+    expect(coordinator.finish(older)).toBe(false);
+    expect(coordinator.busy).toEqual({ loading: false, running: false, appending: true });
+    expect(coordinator.finish(newer)).toBe(true);
+    expect(coordinator.busy).toEqual({ loading: false, running: false, appending: false });
+  });
+
+  test("reads the full Decision chain after append and commits only a current matching readback", async () => {
+    const appended = sampleDecision(2) as AiReviewDecision;
+    const first = sampleDecision(1) as AiReviewDecision;
+    const calls: string[] = [];
+    const success = await appendAiReviewDecisionAndReadback({
+      aiReviewId: appended.aiReviewId,
+      request: buildAiReviewDecisionDraft([first], "operator", "reason"),
+      signal: new AbortController().signal,
+      append: async () => {
+        calls.push("append");
+        return { decision: appended };
+      },
+      load: async () => {
+        calls.push("load");
+        return { decisions: [first, appended] };
+      },
+      isCurrent: () => true
+    });
+    expect(calls).toEqual(["append", "load"]);
+    expect(success).toEqual({ status: "committed", decisions: [first, appended] });
+
+    const mismatch = await appendAiReviewDecisionAndReadback({
+      aiReviewId: appended.aiReviewId,
+      request: buildAiReviewDecisionDraft([first], "operator", "reason"),
+      signal: new AbortController().signal,
+      append: async () => ({ decision: appended }),
+      load: async () => ({ decisions: [first] }),
+      isCurrent: () => true
+    });
+    expect(mismatch).toEqual({ status: "readback-mismatch", decisions: null });
+
+    let loadCalled = false;
+    const stale = await appendAiReviewDecisionAndReadback({
+      aiReviewId: appended.aiReviewId,
+      request: buildAiReviewDecisionDraft([first], "operator", "reason"),
+      signal: new AbortController().signal,
+      append: async () => ({ decision: appended }),
+      load: async () => {
+        loadCalled = true;
+        return { decisions: [first, appended] };
+      },
+      isCurrent: () => false
+    });
+    expect(stale).toEqual({ status: "stale", decisions: null });
+    expect(loadCalled).toBe(false);
   });
 });
