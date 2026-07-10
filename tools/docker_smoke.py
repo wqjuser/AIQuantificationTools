@@ -1350,6 +1350,71 @@ def _stage2_experiment(payload: Any, label: str) -> dict[str, Any]:
     return experiment
 
 
+def _stage2_source_run(payload: Any, run_id: str) -> dict[str, Any]:
+    run = _require_dict(_require_dict(payload, "Stage 2 source run").get("run"), "Stage 2 source run")
+    snapshot = _require_dict(run.get("dataSnapshot"), "Stage 2 source run snapshot")
+    strategy = _require_dict(run.get("strategyConfig"), "Stage 2 source run strategy")
+    if run.get("runId") != run_id or not str(snapshot.get("hash") or "").strip():
+        raise RuntimeError("Invalid Stage 2 source run: run id or canonical data hash is missing")
+    if not str(strategy.get("revision") or "").strip():
+        raise RuntimeError("Invalid Stage 2 source run: canonical strategy revision is missing")
+    return run
+
+
+def _matching_stage2_experiment(
+    experiments: Any,
+    *,
+    experiment_request: dict[str, Any],
+    source_run: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not isinstance(experiments, list):
+        raise RuntimeError("Invalid Stage 2 strategy experiment history response: experiments are missing")
+    snapshot = _require_dict(source_run.get("dataSnapshot"), "Stage 2 source run snapshot")
+    strategy = _require_dict(source_run.get("strategyConfig"), "Stage 2 source run strategy")
+    strategy_revision = str(experiment_request["strategyRevision"])
+    if source_run.get("strategyRevision") != strategy_revision or strategy.get("revision") != strategy_revision:
+        raise RuntimeError("Invalid Stage 2 source run: strategy revision does not match the pipeline")
+    expected = {
+        "baseStrategy": strategy,
+        "strategyRevision": strategy_revision,
+        "canonicalDataHash": snapshot["hash"],
+        "market": source_run.get("market"),
+        "symbol": source_run.get("symbol"),
+        "timeframe": source_run.get("timeframe"),
+        "assumptions": experiment_request["assumptions"],
+        "split": {"trainPct": 60, "validationPct": 20, "testPct": 20},
+        "dimensions": experiment_request["dimensions"],
+        "guardrails": experiment_request["guardrails"],
+        "walkForward": experiment_request["walkForward"],
+        "evaluationBudget": 5,
+        "engineVersion": "backtest-v1",
+        "resultSchemaVersion": 1,
+    }
+    definition_keys = {*expected, "sourceRunId", "snapshotId"}
+    for item in experiments:
+        if not isinstance(item, dict) or item.get("status") != "completed":
+            continue
+        definition = item.get("definition")
+        if not isinstance(definition, dict) or set(definition) != definition_keys:
+            continue
+        if any(definition.get(field) != value for field, value in expected.items()):
+            continue
+        if (
+            item.get("strategyRevision") != strategy_revision
+            or item.get("sourceRunId") != definition.get("sourceRunId")
+            or item.get("snapshotId") != definition.get("snapshotId")
+            or item.get("market") != source_run.get("market")
+            or item.get("symbol") != source_run.get("symbol")
+            or item.get("timeframe") != source_run.get("timeframe")
+            or not str(item.get("experimentId") or "").strip()
+            or not str(item.get("definitionHash") or "").strip()
+            or not str(item.get("resultHash") or "").strip()
+        ):
+            continue
+        return item
+    return None
+
+
 def run_stage2_strategy_experiment_acceptance(
     base_url: str,
     *,
@@ -1373,6 +1438,13 @@ def run_stage2_strategy_experiment_acceptance(
     ):
         raise RuntimeError("Invalid Stage 2 P0 v2 pipeline response: live or order route is not blocked")
     strategy_revision = strategy_revision_id.removeprefix("strategy-")
+    source_run = _stage2_source_run(
+        request_json(
+            join_url(base_url, f"/api/research/runs/{quote(run_id, safe='')}"),
+            timeout_seconds,
+        ),
+        run_id,
+    )
 
     experiment_request = {
         "strategyRevision": strategy_revision,
@@ -1389,15 +1461,30 @@ def run_stage2_strategy_experiment_acceptance(
         "guardrails": {"minimumTradeCount": 2, "maximumDrawdownPct": 20},
         "walkForward": None,
     }
-    experiment = _stage2_experiment(
-        post_json(
-            join_url(base_url, "/api/strategy-experiments"),
-            experiment_request,
-            timeout_seconds=timeout_seconds,
+    prior_history_query = urlencode({"strategyRevision": strategy_revision, "limit": 50})
+    prior_history_payload = _require_dict(
+        request_json(
+            join_url(base_url, f"/api/strategy-experiments?{prior_history_query}"),
+            timeout_seconds,
         ),
-        "Stage 2 strategy experiment",
+        "Stage 2 strategy experiment history",
     )
+    experiment = _matching_stage2_experiment(
+        prior_history_payload.get("experiments"),
+        experiment_request=experiment_request,
+        source_run=source_run,
+    )
+    if experiment is None:
+        experiment = _stage2_experiment(
+            post_json(
+                join_url(base_url, "/api/strategy-experiments"),
+                experiment_request,
+                timeout_seconds=timeout_seconds,
+            ),
+            "Stage 2 strategy experiment",
+        )
     experiment_id = str(experiment["experimentId"])
+    experiment_source_run_id = str(experiment["sourceRunId"])
     replay = _stage2_experiment(
         post_json(
             join_url(base_url, "/api/strategy-experiments"),
@@ -1412,7 +1499,9 @@ def run_stage2_strategy_experiment_acceptance(
     if any(replay[field] != experiment[field] for field in ("definitionHash", "resultHash")):
         raise RuntimeError("Invalid Stage 2 strategy experiment response: exact replay hashes do not match")
 
-    history_query = urlencode({"strategyRevision": strategy_revision, "sourceRunId": run_id, "limit": 5})
+    history_query = urlencode(
+        {"strategyRevision": strategy_revision, "sourceRunId": experiment_source_run_id, "limit": 5}
+    )
     history_payload = _require_dict(
         request_json(join_url(base_url, f"/api/strategy-experiments?{history_query}"), timeout_seconds),
         "Stage 2 strategy experiment history",
@@ -1434,13 +1523,14 @@ def run_stage2_strategy_experiment_acceptance(
         ),
         "Stage 2 strategy experiment detail",
     )
-    if detail["experimentId"] != experiment_id or any(
+    if detail["experimentId"] != experiment_id or detail["sourceRunId"] != experiment_source_run_id or any(
         detail[field] != experiment[field] for field in ("definitionHash", "resultHash")
     ):
         raise RuntimeError("Invalid Stage 2 strategy experiment detail response: experiment evidence does not match")
+    experiment = detail
 
     manifest = build_stage2_strategy_experiment_manifest(
-        run_id=run_id,
+        run_id=experiment_source_run_id,
         strategy_revision=strategy_revision,
         snapshot_id=str(experiment["snapshotId"]),
         experiment_id=experiment_id,

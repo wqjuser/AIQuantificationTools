@@ -3624,6 +3624,20 @@ class QuantCoreContractTest(unittest.TestCase):
         def fake_request_json(url, timeout_seconds):
             events.append(("GET", url))
             self.assertEqual(timeout_seconds, 5)
+            if url == "http://aiqt.local/api/research/runs/run-stage2":
+                return {
+                    "run": {
+                        "runId": "run-stage2",
+                        "market": "ashare",
+                        "symbol": "600000",
+                        "timeframe": "1d",
+                        "strategyRevision": "revision-stage2",
+                        "strategyConfig": {"revision": "revision-stage2"},
+                        "dataSnapshot": {"hash": "data-stage2"},
+                    }
+                }
+            if url.endswith("/api/strategy-experiments?strategyRevision=revision-stage2&limit=50"):
+                return {"experiments": []}
             if "/api/strategy-experiments?" in url:
                 return {
                     "experiments": [
@@ -3656,6 +3670,8 @@ class QuantCoreContractTest(unittest.TestCase):
             [(method, url.removeprefix("http://aiqt.local")) for method, url in events],
             [
                 ("POST", "/api/p0/pipeline"),
+                ("GET", "/api/research/runs/run-stage2"),
+                ("GET", "/api/strategy-experiments?strategyRevision=revision-stage2&limit=50"),
                 ("POST", "/api/strategy-experiments"),
                 ("POST", "/api/strategy-experiments"),
                 (
@@ -3694,6 +3710,222 @@ class QuantCoreContractTest(unittest.TestCase):
             finally:
                 docker_smoke.post_json = original_post_json
                 docker_smoke.request_json = original_request_json
+
+    def test_docker_smoke_stage2_reuses_matching_preserved_experiment(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        events = []
+        posted_payloads = []
+        strategy_config = {"name": "SMA", "revision": "revision-stage2", "version": 1}
+        definition = {
+            "baseStrategy": strategy_config,
+            "strategyRevision": "revision-stage2",
+            "sourceRunId": "run-stage2-prior",
+            "snapshotId": "snapshot-stage2",
+            "canonicalDataHash": "canonical-data-stage2",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            "split": {"trainPct": 60, "validationPct": 20, "testPct": 20},
+            "dimensions": [
+                {
+                    "conditionSide": "entry",
+                    "conditionIndex": 0,
+                    "parameter": "window",
+                    "values": [10, 20],
+                }
+            ],
+            "guardrails": {"minimumTradeCount": 2, "maximumDrawdownPct": 20},
+            "walkForward": None,
+            "evaluationBudget": 5,
+            "engineVersion": "backtest-v1",
+            "resultSchemaVersion": 1,
+        }
+
+        def experiment_payload(experiment_id):
+            return {
+                "experimentId": experiment_id,
+                "createdAt": "2026-07-10T08:00:00+00:00",
+                "status": "completed",
+                "definitionHash": "definition-stage2",
+                "holdoutKey": "holdout-stage2",
+                "strategyRevision": "revision-stage2",
+                "sourceRunId": "run-stage2-prior",
+                "snapshotId": "snapshot-stage2",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "definition": definition,
+                "evaluationCount": 5,
+                "selectedCandidateId": "candidate-a",
+                "completionReason": "selected",
+                "resultHash": "result-stage2",
+                "errorCode": None,
+                "errorDetail": None,
+                "holdoutStatus": "consumed",
+                "snapshot": {"bars": []},
+                "candidates": [
+                    {"candidateId": "candidate-a", "rank": 1, "eligible": True},
+                    {"candidateId": "candidate-b", "rank": 2, "eligible": True},
+                ],
+            }
+
+        prior = experiment_payload("experiment-stage2-prior")
+        replay = experiment_payload("experiment-stage2-replay")
+
+        def fake_post_json(url, payload, timeout_seconds):
+            events.append(("POST", url))
+            posted_payloads.append(payload)
+            if url.endswith("/api/p0/pipeline"):
+                return {
+                    "status": "audited_run_created",
+                    "runId": "run-stage2-fresh",
+                    "strategyRevisionId": "strategy-revision-stage2",
+                    "dataSnapshotId": "data-stage2",
+                    "metrics": {"totalReturnPct": 1.2, "maxDrawdownPct": 0.4, "tradeCount": 1},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                }
+            self.assertEqual(payload, {"replayOfExperimentId": "experiment-stage2-prior"})
+            return {"experiment": replay}
+
+        def fake_request_json(url, timeout_seconds):
+            events.append(("GET", url))
+            if url.endswith("/api/research/runs/run-stage2-fresh"):
+                return {
+                    "run": {
+                        "runId": "run-stage2-fresh",
+                        "market": "ashare",
+                        "symbol": "600000",
+                        "timeframe": "1d",
+                        "strategyRevision": "revision-stage2",
+                        "strategyConfig": strategy_config,
+                        "dataSnapshot": {"hash": "canonical-data-stage2"},
+                    }
+                }
+            if url.endswith("/api/strategy-experiments?strategyRevision=revision-stage2&limit=50"):
+                return {"experiments": [{key: value for key, value in prior.items() if key not in {"snapshot", "candidates"}}]}
+            if url.endswith("/api/strategy-experiments/experiment-stage2-prior"):
+                return {"experiment": prior}
+            if "sourceRunId=run-stage2-prior" in url:
+                return {
+                    "experiments": [
+                        {key: value for key, value in replay.items() if key not in {"snapshot", "candidates"}},
+                        {key: value for key, value in prior.items() if key not in {"snapshot", "candidates"}},
+                    ]
+                }
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        original_post_json = docker_smoke.post_json
+        original_request_json = docker_smoke.request_json
+        docker_smoke.post_json = fake_post_json
+        docker_smoke.request_json = fake_request_json
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                report_path = Path(tmp) / "stage2-strategy-experiment.json"
+                summaries = docker_smoke.run_stage2_strategy_experiment_acceptance(
+                    "http://aiqt.local", timeout_seconds=5, report_path=report_path
+                )
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+        finally:
+            docker_smoke.post_json = original_post_json
+            docker_smoke.request_json = original_request_json
+
+        self.assertEqual(posted_payloads[1:], [{"replayOfExperimentId": "experiment-stage2-prior"}])
+        self.assertEqual(report["runId"], "run-stage2-prior")
+        self.assertIn("stage2 p0-v2 run=run-stage2-fresh snapshot=data-stage2", summaries)
+        self.assertIn("sourceRunId=run-stage2-prior", " ".join(url for _, url in events))
+
+    def test_docker_smoke_stage2_does_not_reuse_changed_logical_definition(self):
+        docker_smoke = self._load_docker_smoke_module()
+        posted_payloads = []
+        strategy_config = {"name": "SMA", "revision": "revision-stage2", "version": 1}
+        prior_definition = {
+            "baseStrategy": strategy_config,
+            "strategyRevision": "revision-stage2",
+            "sourceRunId": "run-stage2-prior",
+            "snapshotId": "snapshot-stage2",
+            "canonicalDataHash": "canonical-data-stage2",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            "split": {"trainPct": 60, "validationPct": 20, "testPct": 20},
+            "dimensions": [{"conditionSide": "entry", "conditionIndex": 0, "parameter": "window", "values": [10, 20]}],
+            "guardrails": {"minimumTradeCount": 2, "maximumDrawdownPct": 19},
+            "walkForward": None,
+            "evaluationBudget": 5,
+            "engineVersion": "backtest-v1",
+            "resultSchemaVersion": 1,
+        }
+        prior = {
+            "experimentId": "experiment-stage2-prior",
+            "status": "completed",
+            "definitionHash": "definition-stage2-prior",
+            "resultHash": "result-stage2-prior",
+            "strategyRevision": "revision-stage2",
+            "sourceRunId": "run-stage2-prior",
+            "snapshotId": "snapshot-stage2",
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "definition": prior_definition,
+        }
+
+        def fake_post_json(url, payload, timeout_seconds):
+            posted_payloads.append(payload)
+            if url.endswith("/api/p0/pipeline"):
+                return {
+                    "status": "audited_run_created",
+                    "runId": "run-stage2-fresh",
+                    "strategyRevisionId": "strategy-revision-stage2",
+                    "dataSnapshotId": "data-stage2",
+                    "metrics": {"totalReturnPct": 1.2, "maxDrawdownPct": 0.4, "tradeCount": 1},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                }
+            raise RuntimeError("fresh create reached")
+
+        def fake_request_json(url, timeout_seconds):
+            if url.endswith("/api/research/runs/run-stage2-fresh"):
+                return {
+                    "run": {
+                        "runId": "run-stage2-fresh",
+                        "market": "ashare",
+                        "symbol": "600000",
+                        "timeframe": "1d",
+                        "strategyRevision": "revision-stage2",
+                        "strategyConfig": strategy_config,
+                        "dataSnapshot": {"hash": "canonical-data-stage2"},
+                    }
+                }
+            if url.endswith("/api/strategy-experiments?strategyRevision=revision-stage2&limit=50"):
+                return {"experiments": [prior]}
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        original_post_json = docker_smoke.post_json
+        original_request_json = docker_smoke.request_json
+        docker_smoke.post_json = fake_post_json
+        docker_smoke.request_json = fake_request_json
+        try:
+            with self.assertRaisesRegex(RuntimeError, "fresh create reached"):
+                docker_smoke.run_stage2_strategy_experiment_acceptance(
+                    "http://aiqt.local", timeout_seconds=5
+                )
+        finally:
+            docker_smoke.post_json = original_post_json
+            docker_smoke.request_json = original_request_json
+
+        self.assertNotIn({"replayOfExperimentId": "experiment-stage2-prior"}, posted_payloads)
+        self.assertEqual(posted_payloads[1]["sourceRunId"], "run-stage2-fresh")
 
     def test_docker_smoke_cli_validates_stage2_strategy_experiment_report_without_compose(self):
         import contextlib
