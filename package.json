@@ -32,6 +32,8 @@
     "docker:smoke:p0:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json",
     "docker:smoke:p1": "node tools/run_python.mjs tools/docker_smoke.py --p1-acceptance --p1-acceptance-report data/p1-acceptance.json",
     "docker:smoke:p1:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p1-acceptance-report data/p1-acceptance.json",
+    "docker:smoke:stage2": "node tools/run_python.mjs tools/docker_smoke.py --stage2-strategy-experiment --stage2-strategy-experiment-report data/stage2-strategy-experiment.json",
+    "docker:smoke:stage2:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-stage2-strategy-experiment-report data/stage2-strategy-experiment.json",
     "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
     "docker:smoke:p2:paper-replay": "node tools/run_python.mjs tools/docker_smoke.py --p2-paper-replay --p2-paper-replay-report data/p2-paper-replay.json",
     "docker:smoke:p2:paper-replay:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",

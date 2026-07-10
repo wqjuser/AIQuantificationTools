@@ -50,6 +50,12 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:p0:validate"]).toBe(
       `${pythonLauncher} tools/docker_smoke.py --validate-p0-acceptance-report data/p0-acceptance.json`,
     );
+    expect(packageJson.scripts["docker:smoke:stage2"]).toBe(
+      `${pythonLauncher} tools/docker_smoke.py --stage2-strategy-experiment --stage2-strategy-experiment-report data/stage2-strategy-experiment.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage2:validate"]).toBe(
+      `${pythonLauncher} tools/docker_smoke.py --validate-stage2-strategy-experiment-report data/stage2-strategy-experiment.json`,
+    );
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 

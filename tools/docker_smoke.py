@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 from urllib.error import URLError
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 
@@ -642,6 +643,83 @@ def load_p1_acceptance_report(path: Path) -> dict[str, Any]:
     return _require_dict(payload, "P1 acceptance manifest")
 
 
+def build_stage2_strategy_experiment_manifest(
+    *,
+    run_id: str,
+    strategy_revision: str,
+    snapshot_id: str,
+    experiment_id: str,
+    replay_experiment_id: str,
+    definition_hash: str,
+    result_hash: str,
+    candidate_count: int,
+    holdout_key: str,
+) -> dict[str, Any]:
+    return {
+        "kind": "aiqt.stage2StrategyExperimentAcceptance",
+        "schemaVersion": 1,
+        "runId": run_id,
+        "strategyRevision": strategy_revision,
+        "snapshotId": snapshot_id,
+        "experimentId": experiment_id,
+        "replayExperimentId": replay_experiment_id,
+        "definitionHash": definition_hash,
+        "resultHash": result_hash,
+        "candidateCount": candidate_count,
+        "holdoutKey": holdout_key,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "orderSubmitted": False,
+        "routeExecuted": False,
+    }
+
+
+def write_stage2_strategy_experiment_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage2 strategy experiment report={path}")
+    return path
+
+
+def load_stage2_strategy_experiment_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 2 strategy experiment manifest")
+
+
+def validate_stage2_strategy_experiment_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 2 strategy experiment manifest")
+    if payload.get("kind") != "aiqt.stage2StrategyExperimentAcceptance" or payload.get("schemaVersion") != 1:
+        raise RuntimeError("Invalid Stage 2 strategy experiment manifest: kind or schemaVersion is invalid")
+    required_strings = (
+        "runId",
+        "strategyRevision",
+        "snapshotId",
+        "experimentId",
+        "replayExperimentId",
+        "definitionHash",
+        "resultHash",
+        "holdoutKey",
+    )
+    values = {field: str(payload.get(field) or "").strip() for field in required_strings}
+    missing = [field for field, value in values.items() if not value]
+    if missing:
+        raise RuntimeError(
+            f"Invalid Stage 2 strategy experiment manifest: missing required fields {', '.join(missing)}"
+        )
+    if values["experimentId"] == values["replayExperimentId"]:
+        raise RuntimeError("Invalid Stage 2 strategy experiment manifest: replay experiment id is not distinct")
+    candidate_count = payload.get("candidateCount")
+    if isinstance(candidate_count, bool) or not isinstance(candidate_count, int) or candidate_count < 2:
+        raise RuntimeError("Invalid Stage 2 strategy experiment manifest: candidateCount must be at least 2")
+    if payload.get("paperOnly") is not True:
+        raise RuntimeError("Invalid Stage 2 strategy experiment manifest: paperOnly is not true")
+    if any(payload.get(field) is not False for field in ("liveTradingAllowed", "orderSubmitted", "routeExecuted")):
+        raise RuntimeError("Invalid Stage 2 strategy experiment manifest: live or order route is not blocked")
+    return (
+        f"stage2 strategy experiment run={values['runId']} candidates={candidate_count} "
+        "replayExact=True liveBlocked=True"
+    )
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1218,6 +1296,139 @@ def run_p0_import_acceptance(
     return [import_summary, imported_export_summary]
 
 
+def _stage2_experiment(payload: Any, label: str) -> dict[str, Any]:
+    response = _require_dict(payload, label)
+    experiment = _require_dict(response.get("experiment"), label)
+    if experiment.get("status") != "completed":
+        raise RuntimeError(f"Invalid {label} response: experiment is not completed")
+    for field in (
+        "experimentId",
+        "definitionHash",
+        "resultHash",
+        "holdoutKey",
+        "strategyRevision",
+        "sourceRunId",
+        "snapshotId",
+    ):
+        if not str(experiment.get(field) or "").strip():
+            raise RuntimeError(f"Invalid {label} response: {field} is missing")
+    candidates = experiment.get("candidates")
+    if not isinstance(candidates, list) or len(candidates) < 2:
+        raise RuntimeError(f"Invalid {label} response: at least two candidates are required")
+    return experiment
+
+
+def run_stage2_strategy_experiment_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    report_path: Path | None = None,
+) -> list[str]:
+    pipeline_payload = post_json(
+        join_url(base_url, "/api/p0/pipeline"),
+        build_p0_pipeline_payload("ashare", "600000", "1d"),
+        timeout_seconds=timeout_seconds,
+    )
+    pipeline_response = _require_dict(pipeline_payload, "Stage 2 P0 v2 pipeline")
+    run_id, _pipeline_summary = validate_p0_pipeline_payload(pipeline_response)
+    strategy_revision_id = str(pipeline_response.get("strategyRevisionId") or "").strip()
+    snapshot_id = str(pipeline_response.get("dataSnapshotId") or "").strip()
+    if not strategy_revision_id.startswith("strategy-") or not snapshot_id:
+        raise RuntimeError("Invalid Stage 2 P0 v2 pipeline response: strategy revision or snapshot is missing")
+    if any(
+        pipeline_response.get(field) is not False
+        for field in ("orderSubmitted", "liveOrderSubmitted", "routeExecuted")
+    ):
+        raise RuntimeError("Invalid Stage 2 P0 v2 pipeline response: live or order route is not blocked")
+    strategy_revision = strategy_revision_id.removeprefix("strategy-")
+
+    experiment_request = {
+        "strategyRevision": strategy_revision,
+        "sourceRunId": run_id,
+        "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        "dimensions": [
+            {
+                "conditionSide": "entry",
+                "conditionIndex": 0,
+                "parameter": "window",
+                "values": [10, 20],
+            }
+        ],
+        "guardrails": {"minimumTradeCount": 2, "maximumDrawdownPct": 20},
+        "walkForward": None,
+    }
+    experiment = _stage2_experiment(
+        post_json(
+            join_url(base_url, "/api/strategy-experiments"),
+            experiment_request,
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 2 strategy experiment",
+    )
+    experiment_id = str(experiment["experimentId"])
+    replay = _stage2_experiment(
+        post_json(
+            join_url(base_url, "/api/strategy-experiments"),
+            {"replayOfExperimentId": experiment_id},
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 2 strategy experiment replay",
+    )
+    replay_experiment_id = str(replay["experimentId"])
+    if replay_experiment_id == experiment_id:
+        raise RuntimeError("Invalid Stage 2 strategy experiment response: replay experiment id is not distinct")
+    if any(replay[field] != experiment[field] for field in ("definitionHash", "resultHash")):
+        raise RuntimeError("Invalid Stage 2 strategy experiment response: exact replay hashes do not match")
+
+    history_query = urlencode({"strategyRevision": strategy_revision, "sourceRunId": run_id, "limit": 5})
+    history_payload = _require_dict(
+        request_json(join_url(base_url, f"/api/strategy-experiments?{history_query}"), timeout_seconds),
+        "Stage 2 strategy experiment history",
+    )
+    history = history_payload.get("experiments")
+    if not isinstance(history, list):
+        raise RuntimeError("Invalid Stage 2 strategy experiment history response: experiments are missing")
+    history_by_id = {
+        str(item.get("experimentId") or "").strip(): item
+        for item in history
+        if isinstance(item, dict)
+    }
+    if not {experiment_id, replay_experiment_id}.issubset(history_by_id):
+        raise RuntimeError("Invalid Stage 2 strategy experiment history response: experiment pair is missing")
+    detail = _stage2_experiment(
+        request_json(
+            join_url(base_url, f"/api/strategy-experiments/{quote(experiment_id, safe='')}"),
+            timeout_seconds,
+        ),
+        "Stage 2 strategy experiment detail",
+    )
+    if detail["experimentId"] != experiment_id or any(
+        detail[field] != experiment[field] for field in ("definitionHash", "resultHash")
+    ):
+        raise RuntimeError("Invalid Stage 2 strategy experiment detail response: experiment evidence does not match")
+
+    manifest = build_stage2_strategy_experiment_manifest(
+        run_id=run_id,
+        strategy_revision=strategy_revision,
+        snapshot_id=str(experiment["snapshotId"]),
+        experiment_id=experiment_id,
+        replay_experiment_id=replay_experiment_id,
+        definition_hash=str(experiment["definitionHash"]),
+        result_hash=str(experiment["resultHash"]),
+        candidate_count=len(experiment["candidates"]),
+        holdout_key=str(experiment["holdoutKey"]),
+    )
+    summaries = [
+        f"stage2 p0-v2 run={run_id} snapshot={snapshot_id}",
+        validate_stage2_strategy_experiment_manifest(manifest),
+    ]
+    for summary in summaries:
+        print(summary)
+    if report_path is not None:
+        write_stage2_strategy_experiment_report(report_path, manifest)
+    return summaries
+
+
 def p1_watchlist_from_workspace_payload(payload: Any, *, min_symbols: int = 3) -> tuple[list[dict[str, Any]], str, str]:
     workspace = _require_dict(payload, "P1 workspace")
     if workspace.get("schemaVersion") != 1:
@@ -1639,6 +1850,8 @@ def run_smoke(
     p1_quantity: int = 2100,
     p1_import_base_url: str | None = None,
     p1_acceptance_report: Path | None = None,
+    stage2_strategy_experiment: bool = False,
+    stage2_strategy_experiment_report: Path | None = None,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
     p2_p1_acceptance_report: Path = Path("data") / "p1-acceptance.json",
@@ -1691,6 +1904,12 @@ def run_smoke(
                 quantity=p1_quantity,
                 import_base_url=p1_import_base_url,
                 report_path=p1_acceptance_report,
+            )
+        if stage2_strategy_experiment:
+            run_stage2_strategy_experiment_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                report_path=stage2_strategy_experiment_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -1747,6 +1966,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--p1-import-base-url", default=None, help="Optional clean service URL used as the P1 import target.")
     parser.add_argument("--p1-acceptance-report", default=None, help="Optional path for a JSON P1 acceptance manifest.")
     parser.add_argument("--validate-p1-acceptance-report", default=None, help="Validate an existing P1 acceptance manifest and exit.")
+    parser.add_argument(
+        "--stage2-strategy-experiment",
+        action="store_true",
+        help="Run a fresh P0 v2 strategy experiment and exact replay acceptance smoke.",
+    )
+    parser.add_argument(
+        "--stage2-strategy-experiment-report",
+        default=None,
+        help="Optional path for a JSON Stage 2 strategy experiment acceptance manifest.",
+    )
+    parser.add_argument(
+        "--validate-stage2-strategy-experiment-report",
+        default=None,
+        help="Validate an existing Stage 2 strategy experiment acceptance manifest and exit.",
+    )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
     parser.add_argument("--p2-p1-acceptance-report", default="data/p1-acceptance.json", help="Path to the P1 acceptance manifest used as P2 evidence.")
@@ -1844,6 +2078,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = load_p1_acceptance_report(Path(args.validate_p1_acceptance_report))
         print(validate_p1_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage2_strategy_experiment_report:
+        manifest = load_stage2_strategy_experiment_report(Path(args.validate_stage2_strategy_experiment_report))
+        print(validate_stage2_strategy_experiment_manifest(manifest))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -1891,6 +2129,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         p1_quantity=max(1, args.p1_quantity),
         p1_import_base_url=args.p1_import_base_url,
         p1_acceptance_report=Path(args.p1_acceptance_report) if args.p1_acceptance_report else None,
+        stage2_strategy_experiment=args.stage2_strategy_experiment,
+        stage2_strategy_experiment_report=(
+            Path(args.stage2_strategy_experiment_report) if args.stage2_strategy_experiment_report else None
+        ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,
         p2_run_id=args.p2_run_id,
         p2_p1_acceptance_report=Path(args.p2_p1_acceptance_report),

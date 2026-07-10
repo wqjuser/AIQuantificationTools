@@ -3404,6 +3404,242 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(report_payload["runId"], "run-smoke")
         self.assertIn("imported-export", [check["id"] for check in report_payload["checks"]])
 
+    def test_docker_smoke_builds_writes_loads_and_validates_stage2_strategy_experiment_manifest(self):
+        import copy
+
+        docker_smoke = self._load_docker_smoke_module()
+        manifest = docker_smoke.build_stage2_strategy_experiment_manifest(
+            run_id="run-stage2",
+            strategy_revision="revision-stage2",
+            snapshot_id="snapshot-stage2",
+            experiment_id="experiment-stage2",
+            replay_experiment_id="experiment-stage2-replay",
+            definition_hash="definition-stage2",
+            result_hash="result-stage2",
+            candidate_count=2,
+            holdout_key="holdout-stage2",
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.stage2StrategyExperimentAcceptance")
+        self.assertEqual(manifest["schemaVersion"], 1)
+        self.assertTrue(manifest["paperOnly"])
+        self.assertFalse(manifest["liveTradingAllowed"])
+        self.assertFalse(manifest["orderSubmitted"])
+        self.assertFalse(manifest["routeExecuted"])
+        self.assertEqual(
+            docker_smoke.validate_stage2_strategy_experiment_manifest(manifest),
+            "stage2 strategy experiment run=run-stage2 candidates=2 replayExact=True liveBlocked=True",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "stage2-strategy-experiment.json"
+            returned_path = docker_smoke.write_stage2_strategy_experiment_report(report_path, manifest)
+            loaded = docker_smoke.load_stage2_strategy_experiment_report(report_path)
+        self.assertEqual(returned_path, report_path)
+        self.assertEqual(loaded, manifest)
+
+        invalid_values = {
+            "same experiment id": {"replayExperimentId": "experiment-stage2"},
+            "missing definition hash": {"definitionHash": ""},
+            "missing result hash": {"resultHash": ""},
+            "too few candidates": {"candidateCount": 1},
+            "missing snapshot": {"snapshotId": ""},
+            "missing holdout": {"holdoutKey": ""},
+            "not paper only": {"paperOnly": False},
+            "live enabled": {"liveTradingAllowed": True},
+            "order submitted": {"orderSubmitted": True},
+            "route executed": {"routeExecuted": True},
+        }
+        for label, updates in invalid_values.items():
+            unsafe = copy.deepcopy(manifest)
+            unsafe.update(updates)
+            with self.subTest(label=label), self.assertRaises(RuntimeError):
+                docker_smoke.validate_stage2_strategy_experiment_manifest(unsafe)
+
+    def test_docker_smoke_stage2_strategy_experiment_runs_exact_paper_only_sequence(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        events = []
+        posted_payloads = []
+
+        def experiment_payload(experiment_id):
+            return {
+                "experimentId": experiment_id,
+                "createdAt": "2026-07-10T08:00:00+00:00",
+                "status": "completed",
+                "definitionHash": "definition-stage2",
+                "holdoutKey": "holdout-stage2",
+                "strategyRevision": "revision-stage2",
+                "sourceRunId": "run-stage2",
+                "snapshotId": "snapshot-stage2",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "definition": {"split": {"trainPct": 60, "validationPct": 20, "testPct": 20}},
+                "evaluationCount": 5,
+                "selectedCandidateId": "candidate-a",
+                "completionReason": "selected",
+                "resultHash": "result-stage2",
+                "errorCode": None,
+                "errorDetail": None,
+                "holdoutStatus": "consumed",
+                "snapshot": {
+                    "snapshotId": "snapshot-stage2",
+                    "createdAt": "2026-07-10T08:00:00+00:00",
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "canonicalDataHash": "data-stage2",
+                    "rows": 240,
+                    "startAt": "2026-01-01T00:00:00+00:00",
+                    "endAt": "2026-07-10T00:00:00+00:00",
+                    "bars": [],
+                    "testDefinitionHash": "definition-stage2",
+                    "testOwnerExperimentId": "experiment-stage2",
+                    "testConsumedAt": "2026-07-10T08:00:00+00:00",
+                },
+                "candidates": [
+                    {"candidateId": "candidate-a", "rank": 1, "eligible": True},
+                    {"candidateId": "candidate-b", "rank": 2, "eligible": True},
+                ],
+            }
+
+        original_experiment = experiment_payload("experiment-stage2")
+        replay_experiment = experiment_payload("experiment-stage2-replay")
+
+        def fake_post_json(url, payload, timeout_seconds):
+            events.append(("POST", url))
+            posted_payloads.append(payload)
+            self.assertEqual(timeout_seconds, 5)
+            if url.endswith("/api/p0/pipeline"):
+                return {
+                    "status": "audited_run_created",
+                    "runId": "run-stage2",
+                    "strategyRevisionId": "strategy-revision-stage2",
+                    "dataSnapshotId": "data-stage2",
+                    "metrics": {"totalReturnPct": 1.2, "maxDrawdownPct": 0.4, "tradeCount": 1},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                }
+            if payload == {"replayOfExperimentId": "experiment-stage2"}:
+                return {"experiment": replay_experiment}
+            return {"experiment": original_experiment}
+
+        def fake_request_json(url, timeout_seconds):
+            events.append(("GET", url))
+            self.assertEqual(timeout_seconds, 5)
+            if "/api/strategy-experiments?" in url:
+                return {
+                    "experiments": [
+                        {key: value for key, value in replay_experiment.items() if key not in {"snapshot", "candidates"}},
+                        {key: value for key, value in original_experiment.items() if key not in {"snapshot", "candidates"}},
+                    ]
+                }
+            if url.endswith("/api/strategy-experiments/experiment-stage2"):
+                return {"experiment": original_experiment}
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        original_post_json = docker_smoke.post_json
+        original_request_json = docker_smoke.request_json
+        docker_smoke.post_json = fake_post_json
+        docker_smoke.request_json = fake_request_json
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                report_path = Path(tmp) / "stage2-strategy-experiment.json"
+                summaries = docker_smoke.run_stage2_strategy_experiment_acceptance(
+                    "http://aiqt.local",
+                    timeout_seconds=5,
+                    report_path=report_path,
+                )
+                report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+        finally:
+            docker_smoke.post_json = original_post_json
+            docker_smoke.request_json = original_request_json
+
+        self.assertEqual(
+            [(method, url.removeprefix("http://aiqt.local")) for method, url in events],
+            [
+                ("POST", "/api/p0/pipeline"),
+                ("POST", "/api/strategy-experiments"),
+                ("POST", "/api/strategy-experiments"),
+                (
+                    "GET",
+                    "/api/strategy-experiments?strategyRevision=revision-stage2&sourceRunId=run-stage2&limit=5",
+                ),
+                ("GET", "/api/strategy-experiments/experiment-stage2"),
+            ],
+        )
+        self.assertEqual(posted_payloads[1]["sourceRunId"], "run-stage2")
+        self.assertEqual(posted_payloads[1]["strategyRevision"], "revision-stage2")
+        self.assertGreaterEqual(len(posted_payloads[1]["dimensions"][0]["values"]), 2)
+        self.assertEqual(posted_payloads[2], {"replayOfExperimentId": "experiment-stage2"})
+        forbidden_fields = {"liveTradingAllowed", "orderSubmitted", "liveOrderSubmitted", "routeExecuted"}
+        for payload in posted_payloads:
+            encoded_payload = json.dumps(payload)
+            for field in forbidden_fields:
+                self.assertNotIn(field, encoded_payload)
+        self.assertEqual(report_payload["experimentId"], "experiment-stage2")
+        self.assertEqual(report_payload["replayExperimentId"], "experiment-stage2-replay")
+        self.assertIn("stage2 p0-v2 run=run-stage2 snapshot=data-stage2", summaries)
+        self.assertIn(
+            "stage2 strategy experiment run=run-stage2 candidates=2 replayExact=True liveBlocked=True",
+            summaries,
+        )
+
+        replay_experiment["resultHash"] = "different-result"
+        with self.assertRaisesRegex(RuntimeError, "exact replay hashes do not match"):
+            docker_smoke.post_json = fake_post_json
+            docker_smoke.request_json = fake_request_json
+            try:
+                docker_smoke.run_stage2_strategy_experiment_acceptance(
+                    "http://aiqt.local",
+                    timeout_seconds=5,
+                )
+            finally:
+                docker_smoke.post_json = original_post_json
+                docker_smoke.request_json = original_request_json
+
+    def test_docker_smoke_cli_validates_stage2_strategy_experiment_report_without_compose(self):
+        import contextlib
+        import io
+
+        docker_smoke = self._load_docker_smoke_module()
+        manifest = docker_smoke.build_stage2_strategy_experiment_manifest(
+            run_id="run-stage2",
+            strategy_revision="revision-stage2",
+            snapshot_id="snapshot-stage2",
+            experiment_id="experiment-stage2",
+            replay_experiment_id="experiment-stage2-replay",
+            definition_hash="definition-stage2",
+            result_hash="result-stage2",
+            candidate_count=2,
+            holdout_key="holdout-stage2",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "stage2-strategy-experiment.json"
+            docker_smoke.write_stage2_strategy_experiment_report(report_path, manifest)
+
+            def fail_run_smoke(*args, **kwargs):
+                raise AssertionError("run_smoke should not be called in report validation mode")
+
+            original_run_smoke = docker_smoke.run_smoke
+            docker_smoke.run_smoke = fail_run_smoke
+            output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(output):
+                    exit_code = docker_smoke.main(
+                        ["--validate-stage2-strategy-experiment-report", str(report_path)]
+                    )
+            finally:
+                docker_smoke.run_smoke = original_run_smoke
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("stage2 strategy experiment run=run-stage2 candidates=2", output.getvalue())
+
     def test_docker_smoke_builds_and_validates_p1_acceptance_manifest(self):
         docker_smoke = self._load_docker_smoke_module()
 
