@@ -3779,6 +3779,30 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".ai-dossier-card");
   });
 
+  test("localizes persisted strategy experiment citations without rewriting opaque evidence", () => {
+    const citationLocalizationSource = sourceBetween(
+      "function aiCitationLabel",
+      "function paperTradingRowsFromExecutionRecord"
+    );
+    const valueSource = sourceBetween("function aiCitationValue", "function aiCitationDetail");
+    const detailSource = sourceBetween("function aiCitationDetail", "function paperTradingRowsFromExecutionRecord");
+
+    expect(citationLocalizationSource).toContain('"parameter-scan": "持久化策略实验"');
+    expect(valueSource).toContain('if (citation.id === "parameter-scan")');
+    const valueGuardIndex = valueSource.indexOf('if (citation.id === "parameter-scan")');
+    ['.replace("candidate for re-audit"', '.replace("complete"', '.replace("review"', '.replace("trades"'].forEach(
+      (replacement) => expect(valueGuardIndex).toBeLessThan(valueSource.indexOf(replacement))
+    );
+    expect(detailSource).toContain("citation: AiReviewCitation");
+    expect(detailSource).toContain('if (citation.id === "parameter-scan")');
+    const detailGuardIndex = detailSource.indexOf('if (citation.id === "parameter-scan")');
+    expect(detailGuardIndex).toBeLessThan(
+      detailSource.indexOf('.replace("Current parameter row is missing from the locked scan."')
+    );
+    expect(detailGuardIndex).toBeLessThan(detailSource.indexOf('.replace("candidates"'));
+    expect(appSource).toContain("aiCitationDetail(i18n, citation)");
+  });
+
   test("renders execution approval as a shared risk gate before paper orders", () => {
     expect(appSource).toContain("buildRiskApprovalSummary(workspace)");
     expect(appSource).toContain("<RiskApprovalBoard");

@@ -21366,7 +21366,7 @@ function AiReviewDossierBoard({ dossier, i18n }: { dossier: AiReviewDossier; i18
           <article className={`ai-dossier-card ${citation.tone}`} key={citation.id}>
             <span>{aiCitationLabel(i18n, citation)}</span>
             <strong>{aiCitationValue(i18n, citation)}</strong>
-            <p>{aiCitationDetail(i18n, citation.detail)}</p>
+            <p>{aiCitationDetail(i18n, citation)}</p>
           </article>
         ))}
       </div>
@@ -27083,7 +27083,7 @@ function AiReviewAuditTrailPanel({
             <article className={`audit-ai-citation ${citation.tone}`} key={citation.id}>
               <span>{aiCitationLabel(i18n, citation)}</span>
               <strong>{aiCitationValue(i18n, citation)}</strong>
-              <p>{aiCitationDetail(i18n, citation.detail)}</p>
+              <p>{aiCitationDetail(i18n, citation)}</p>
             </article>
           ))}
         </div>
@@ -32867,7 +32867,7 @@ function aiCitationLabel(i18n: AppI18n, citation: AiReviewCitation): string {
       run: "运行编号",
       metrics: "回测指标",
       "benchmark": "基准 Alpha",
-      "parameter-scan": "参数扫描",
+      "parameter-scan": "持久化策略实验",
       strategy: "策略版本",
       "data-quality": "数据质量",
       "research-note": "研究笔记",
@@ -32878,6 +32878,9 @@ function aiCitationLabel(i18n: AppI18n, citation: AiReviewCitation): string {
 
 function aiCitationValue(i18n: AppI18n, citation: AiReviewCitation): string {
   if (i18n.locale === "en-US") {
+    return citation.value;
+  }
+  if (citation.id === "parameter-scan") {
     return citation.value;
   }
   if (citation.value === "Missing audited run") {
@@ -32902,10 +32905,14 @@ function aiCitationValue(i18n: AppI18n, citation: AiReviewCitation): string {
     .replace("blocked gates", "个阻断闸门");
 }
 
-function aiCitationDetail(i18n: AppI18n, detail: string): string {
+function aiCitationDetail(i18n: AppI18n, citation: AiReviewCitation): string {
   if (i18n.locale === "en-US") {
-    return detail;
+    return citation.detail;
   }
+  if (citation.id === "parameter-scan") {
+    return citation.detail;
+  }
+  const detail = citation.detail;
   const benchmark = detail.match(/^Strategy (.+) vs buy-and-hold (.+) over (\d+) audited bars\.$/);
   if (benchmark) {
     return `策略 ${benchmark[1]} 对比买入持有 ${benchmark[2]} · ${benchmark[3]} 根审计K线`;
