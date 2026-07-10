@@ -263,6 +263,8 @@ import {
   buildStrategyGovernanceQueueRows,
   buildDefaultStrategyExperimentDimensions,
   buildStrategyExperimentEvidenceSummary,
+  replaceStrategyExperimentIdInUrl,
+  resolveStrategyExperimentIdFromUrl,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
   buildStrategyTemplateOptions,
@@ -1363,6 +1365,40 @@ function p2ReadinessEvidenceCoverageFixture(
 }
 
 describe("terminal workbench model", () => {
+  test("round-trips one safe strategy experiment id in the URL", () => {
+    const href = replaceStrategyExperimentIdInUrl(
+      "http://aiqt.local/?workspace=backtest&market=ashare&symbol=600000&timeframe=1d",
+      "experiment-480d6cd6258145b694eb8673f9d43318"
+    );
+
+    expect(href).toBe(
+      "http://aiqt.local/?workspace=backtest&market=ashare&symbol=600000&timeframe=1d&strategyExperiment=experiment-480d6cd6258145b694eb8673f9d43318"
+    );
+    expect(resolveStrategyExperimentIdFromUrl(new URL(href).search)).toBe(
+      "experiment-480d6cd6258145b694eb8673f9d43318"
+    );
+    expect(replaceStrategyExperimentIdInUrl(href, null)).toBe(
+      "http://aiqt.local/?workspace=backtest&market=ashare&symbol=600000&timeframe=1d"
+    );
+  });
+
+  test("rejects ambiguous or unsafe strategy experiment ids from the URL", () => {
+    [
+      "?strategyExperiment=",
+      "?strategyExperiment=experiment-1&strategyExperiment=experiment-2",
+      "?strategyExperiment=../experiment-1",
+      "?strategyExperiment=experiment%2F1",
+      "?strategyExperiment=%3Cscript%3Ealert(1)%3C%2Fscript%3E",
+      "?strategyExperiment=run-1"
+    ].forEach((search) => expect(resolveStrategyExperimentIdFromUrl(search)).toBeNull());
+    expect(
+      replaceStrategyExperimentIdInUrl(
+        "http://aiqt.local/?workspace=backtest&strategyExperiment=experiment-1",
+        "../experiment-2"
+      )
+    ).toBe("http://aiqt.local/?workspace=backtest");
+  });
+
   test("summarizes only a matching completed persisted strategy experiment", () => {
     const experiment = strategyExperimentFixture();
     const workspace = workspaceForStrategyExperiment(experiment);

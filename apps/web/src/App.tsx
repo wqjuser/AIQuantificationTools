@@ -323,6 +323,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildDefaultStrategyExperimentDimensions,
+  buildStrategyExperimentEvidenceSummary,
   buildBacktestEvidenceCards,
   buildBacktestReport,
   buildBacktestReportMarkdown,
@@ -492,6 +493,8 @@ import {
   resolveResearchPipelinePreparationEvidenceRunId,
   resolveSavedResearchWorkspaceSelection,
   resolveSavedResearchWorkspaceId,
+  replaceStrategyExperimentIdInUrl,
+  resolveStrategyExperimentIdFromUrl,
   resolveWatchlistCacheRefreshRunIdFromUrl,
   watchlistIncludesInstrument,
   AiWorkbenchAction,
@@ -709,6 +712,8 @@ const initialStage1P0DailyUseShareDeepLinkStatus =
     : resolveStage1P0DailyUseShareDeepLinkStatus(window.location.search);
 const initialStage1P0DailyUseShareDeepLinkState =
   typeof window === "undefined" ? null : resolveStage1P0DailyUseShareDeepLinkState(window.location.search);
+const initialStrategyExperimentId =
+  typeof window === "undefined" ? null : resolveStrategyExperimentIdFromUrl(window.location.search);
 const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";
 const stage1P0DailyUsePrimaryActionElementId = "stage1-p0-daily-use-primary-action";
 const stage1P0DailyUseRefreshActionElementId = "stage1-p0-daily-use-refresh-action";
@@ -1705,6 +1710,13 @@ function replaceWatchlistCacheRefreshRunUrlParam(runId: string | null): void {
   window.history.replaceState({}, "", `${url.pathname}${search ? `?${search}` : ""}${url.hash}`);
 }
 
+function replaceStrategyExperimentUrlParam(experimentId: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.history.replaceState({}, "", replaceStrategyExperimentIdInUrl(window.location.href, experimentId));
+}
+
 function replaceAuditEvidenceReportQueryUrlParam(query: string): void {
   if (typeof window === "undefined") {
     return;
@@ -2334,6 +2346,7 @@ export function App() {
   const workflowRunIdRef = useRef(0);
   const strategyValidationRequestIdRef = useRef(0);
   const strategyExperimentRequestGenerationRef = useRef(0);
+  const initialStrategyExperimentIdRef = useRef(initialStrategyExperimentId);
   const strategyExperimentSourceKeyRef = useRef<string | null>(null);
   const strategyExperimentWorkspaceRef = useRef(workspace);
   const strategyExperimentActiveRef = useRef(strategyExperimentActive);
@@ -3669,6 +3682,13 @@ export function App() {
       strategyExperimentStrategyRevision
     );
   }, [refreshStrategyExperiments, strategyExperimentUsableSourceKey]);
+
+  useEffect(() => {
+    if (initialStrategyExperimentIdRef.current) {
+      return;
+    }
+    replaceStrategyExperimentUrlParam(visibleStrategyExperimentActive?.experimentId ?? null);
+  }, [visibleStrategyExperimentActive?.experimentId]);
 
   useEffect(() => {
     void refreshP0AcceptanceLatest();
@@ -5468,13 +5488,35 @@ export function App() {
 
   const refreshWorkspace = useCallback(async () => {
     const startedSelectionVersion = manualSelectionVersionRef.current;
+    const requestedStrategyExperimentId = initialStrategyExperimentIdRef.current;
     setIsRefreshing(true);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
     const researchContextUrlState = resolveInitialResearchContextUrlState();
-    const restoredWorkspace = workspaceWithResearchContextUrlState(
+    let restoredWorkspace = workspaceWithResearchContextUrlState(
       workspaceWithAppliedResearchWorkspaceState(result.workspace),
       researchContextUrlState
     );
+    let restoredStrategyExperiment: StrategyExperimentDetail | null = null;
+    let restoredStrategyExperimentKlines: MarketKlinesResult | null = null;
+    if (requestedStrategyExperimentId) {
+      const experimentResult = await loadStrategyExperimentDetail(quantCoreBaseUrl, requestedStrategyExperimentId);
+      const experiment = experimentResult.experiment;
+      if (experiment) {
+        const runResult = await loadResearchRunDetail(quantCoreBaseUrl, experiment.sourceRunId);
+        if (runResult.run) {
+          const experimentWorkspace = workspaceFromResearchRunAudit(restoredWorkspace, runResult.run);
+          if (buildStrategyExperimentEvidenceSummary(experimentWorkspace, experiment)) {
+            restoredWorkspace = experimentWorkspace;
+            restoredStrategyExperiment = experiment;
+            restoredStrategyExperimentKlines = marketKlinesFromResearchRunAudit(runResult.run);
+          }
+        }
+      }
+      initialStrategyExperimentIdRef.current = null;
+      if (!restoredStrategyExperiment) {
+        replaceStrategyExperimentUrlParam(null);
+      }
+    }
     const restoredResult = {
       ...result,
       workspace: restoredWorkspace
@@ -5495,6 +5537,17 @@ export function App() {
         statusLabel: current.statusLabel
       };
     });
+    if (
+      restoredStrategyExperiment &&
+      manualSelectionVersionRef.current === startedSelectionVersion
+    ) {
+      setStrategyExperimentActive(restoredStrategyExperiment);
+      if (restoredStrategyExperimentKlines) {
+        setKlinesState(restoredStrategyExperimentKlines);
+      }
+    } else if (restoredStrategyExperiment) {
+      replaceStrategyExperimentUrlParam(null);
+    }
     if (shouldConsiderSavedWorkArea) {
       savedResearchWorkspaceSelectionAppliedRef.current = true;
       if (shouldApplySavedWorkArea) {

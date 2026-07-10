@@ -3622,6 +3622,21 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("strategyExperimentRequestGenerationRef");
     expect(appSource).toContain("strategyExperimentRequestIsCurrent");
     expect(appSource).toContain("strategyExperimentMatchesSourceKey");
+    expect(appSource).toContain("resolveStrategyExperimentIdFromUrl");
+    expect(appSource).toContain("replaceStrategyExperimentIdInUrl");
+    expect(appSource).toContain("initialStrategyExperimentIdRef");
+    const refreshWorkspaceSource = sourceBetween(
+      "const refreshWorkspace = useCallback",
+      "useEffect(() => {\n    if (activeWorkAreaId !== \"audit\")"
+    );
+    expect(refreshWorkspaceSource).toContain("loadStrategyExperimentDetail");
+    expect(refreshWorkspaceSource).toContain("loadResearchRunDetail");
+    expect(refreshWorkspaceSource).toContain("workspaceFromResearchRunAudit");
+    expect(refreshWorkspaceSource).toContain("buildStrategyExperimentEvidenceSummary");
+    expect(refreshWorkspaceSource).not.toContain("runHistory.find");
+    expect(refreshWorkspaceSource.indexOf("const requestedStrategyExperimentId")).toBeLessThan(
+      refreshWorkspaceSource.indexOf("await loadTerminalWorkspace")
+    );
     expect(appSource).toContain("active={visibleStrategyExperimentActive}");
     expect(appSource).toContain("dimensions={visibleStrategyExperimentDimensions}");
     expect(appSource).toContain("history={visibleStrategyExperimentHistory}");

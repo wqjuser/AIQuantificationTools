@@ -30635,6 +30635,32 @@ export function buildResearchRunContextBinding(workspace: TerminalWorkspace): Re
   };
 }
 
+function normalizeStrategyExperimentId(value: string | null | undefined): string | null {
+  const experimentId = value?.trim() ?? "";
+  return /^experiment-[A-Za-z0-9][A-Za-z0-9._:-]{0,109}$/.test(experimentId) ? experimentId : null;
+}
+
+export function resolveStrategyExperimentIdFromUrl(
+  search: string | URLSearchParams | null | undefined
+): string | null {
+  if (!search) {
+    return null;
+  }
+  const params = search instanceof URLSearchParams ? search : new URLSearchParams(search);
+  const values = params.getAll("strategyExperiment");
+  return values.length === 1 ? normalizeStrategyExperimentId(values[0]) : null;
+}
+
+export function replaceStrategyExperimentIdInUrl(href: string, experimentId: string | null): string {
+  const url = new URL(href);
+  const normalizedExperimentId = normalizeStrategyExperimentId(experimentId);
+  url.searchParams.delete("strategyExperiment");
+  if (normalizedExperimentId) {
+    url.searchParams.set("strategyExperiment", normalizedExperimentId);
+  }
+  return url.toString();
+}
+
 export function buildStrategyExperimentEvidenceSummary(
   workspace: TerminalWorkspace,
   experiment: StrategyExperimentDetail | null
