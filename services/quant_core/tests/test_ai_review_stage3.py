@@ -14,7 +14,7 @@ import unittest
 from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
-from http.client import BadStatusLine, HTTPException, IncompleteRead, LineTooLong
+from http.client import BadStatusLine, HTTPConnection, HTTPException, IncompleteRead, LineTooLong
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -4203,6 +4203,377 @@ class AiReviewProviderContractTests(unittest.TestCase):
         self.assertEqual(len(compatible.requests), 1)
         self.assertEqual(len(ollama.requests), 0)
         self.assertEqual(len(openai.requests), 0)
+
+
+class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
+    maxDiff = None
+
+    def setUp(self) -> None:
+        super().setUp()
+        from quant_core.api import QuantApiHandler
+
+        self._record_experiment("primary", seed=500)
+        self._record_experiment("comparison", seed=501)
+        self.review_store = AiReviewRunStore(self.root / "api.sqlite3")
+        self.decision_store = AiReviewDecisionStore(
+            self.review_store.path,
+            review_store=self.review_store,
+        )
+        self.provider = _StubReviewProvider()
+        self.registry = AiReviewProviderRegistry(
+            (
+                ProviderStatus("local", True, None, None),
+                ProviderStatus("openai", False, "gpt-test", "https://api.openai.com/v1"),
+                ProviderStatus("openai-compatible", True, "review-model", "https://example.test/v1"),
+                ProviderStatus("ollama", False, None, "http://127.0.0.1:11434"),
+            ),
+            {"openai-compatible": self.provider},
+        )
+        run_store = self.run_store
+        experiment_store = self.experiment_store
+        review_store = self.review_store
+        decision_store = self.decision_store
+        provider_registry = self.registry
+
+        class Handler(QuantApiHandler):
+            pass
+
+        Handler.run_store = run_store
+        Handler.strategy_experiment_store = experiment_store
+        Handler.ai_review_store = review_store
+        Handler.ai_review_decision_store = decision_store
+        Handler.ai_review_provider_registry = provider_registry
+        self.handler = Handler
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self.thread = threading.Thread(
+            target=lambda: self.server.serve_forever(poll_interval=0.01),
+            daemon=True,
+        )
+        self.thread.start()
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2)
+        super().tearDown()
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: object | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        connection = HTTPConnection(*self.server.server_address, timeout=5)
+        try:
+            body = None if payload is None else json.dumps(payload).encode("utf-8")
+            headers = {} if body is None else {"Content-Type": "application/json"}
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            return response.status, json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _review_request(**overrides: Any) -> dict[str, Any]:
+        return {
+            "primaryExperimentId": "primary",
+            "comparisonExperimentIds": [],
+            "providerId": "local",
+            "externalDataApproved": False,
+            **overrides,
+        }
+
+    @staticmethod
+    def _decision_request(**overrides: Any) -> dict[str, Any]:
+        return {
+            "operator": "researcher",
+            "status": "accepted_for_research",
+            "rationale": "Evidence supports another research iteration without paper or live authorization.",
+            "supersedesDecisionId": None,
+            **overrides,
+        }
+
+    def _create_review(self, **overrides: Any) -> tuple[int, dict[str, Any]]:
+        return self._request("POST", "/api/ai-reviews", self._review_request(**overrides))
+
+    def test_provider_status_is_read_only_camel_case_and_secret_free(self) -> None:
+        with patch.object(
+            ai_review_providers,
+            "urlopen",
+            side_effect=AssertionError("provider status must not access the network"),
+        ):
+            status, payload = self._request("GET", "/api/ai-review/providers")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload["providers"],
+            [
+                {"providerId": "local", "configured": True, "model": None, "sanitizedBaseUrl": None},
+                {
+                    "providerId": "openai",
+                    "configured": False,
+                    "model": "gpt-test",
+                    "sanitizedBaseUrl": "https://api.openai.com/v1",
+                },
+                {
+                    "providerId": "openai-compatible",
+                    "configured": True,
+                    "model": "review-model",
+                    "sanitizedBaseUrl": "https://example.test/v1",
+                },
+                {
+                    "providerId": "ollama",
+                    "configured": False,
+                    "model": None,
+                    "sanitizedBaseUrl": "http://127.0.0.1:11434",
+                },
+            ],
+        )
+        self.assertNotRegex(json.dumps(payload).casefold(), r"api.?key|authorization|secret")
+
+    def test_review_create_get_list_and_decision_routes_use_explicit_projections(self) -> None:
+        create_status, created = self._create_review()
+
+        self.assertEqual(create_status, 201)
+        self.assertEqual(created["review"]["authority"], "authoritative")
+        self.assertEqual(created["review"]["schemaVersion"], 2)
+        self.assertEqual(created["review"]["primaryExperiment"]["experimentId"], "primary")
+        self.assertIsNone(created["latestDecision"])
+        review_id = created["review"]["aiReviewId"]
+
+        detail_status, detail = self._request("GET", f"/api/ai-reviews/{review_id}")
+        list_status, listing = self._request(
+            "GET",
+            "/api/ai-reviews?runId=run-primary&experimentId=primary&limit=1&offset=0&query=primary",
+        )
+        self.assertEqual(detail_status, 200)
+        self.assertEqual(detail, created)
+        self.assertEqual(list_status, 200)
+        self.assertEqual([item["aiReviewId"] for item in listing["reviews"]], [review_id])
+        self.assertEqual(listing["reviews"][0]["authority"], "authoritative")
+        self.assertEqual(
+            listing["pagination"],
+            {"limit": 1, "offset": 0, "total": 1, "query": "primary"},
+        )
+        self.assertEqual(
+            listing["pagination"]["total"],
+            self.review_store.count_recent(
+                run_id="run-primary",
+                experiment_id="primary",
+                query="primary",
+            ),
+        )
+
+        decision_status, decision_payload = self._request(
+            "POST",
+            f"/api/ai-reviews/{review_id}/decisions",
+            self._decision_request(),
+        )
+        self.assertEqual(decision_status, 201)
+        decision = decision_payload["decision"]
+        self.assertEqual(decision["aiReviewId"], review_id)
+        self.assertEqual(
+            decision["boundary"],
+            {"paperOnly": True, "liveTradingAllowed": False, "orderSubmissionAllowed": False},
+        )
+        decisions_status, decisions = self._request(
+            "GET",
+            f"/api/ai-reviews/{review_id}/decisions",
+        )
+        self.assertEqual(decisions_status, 200)
+        self.assertEqual(decisions["decisions"], [decision])
+        refreshed_status, refreshed = self._request("GET", f"/api/ai-reviews/{review_id}")
+        self.assertEqual(refreshed_status, 200)
+        self.assertEqual(refreshed["latestDecision"], decision)
+
+    def test_review_request_is_exact_and_evidence_errors_keep_stable_statuses(self) -> None:
+        invalid_requests = (
+            [],
+            {**self._review_request(), "unknown": True},
+            self._review_request(primaryExperimentId=7),
+            self._review_request(comparisonExperimentIds="comparison"),
+            self._review_request(comparisonExperimentIds=["a", "b", "c", "d", "e"]),
+            self._review_request(providerId="unknown"),
+            self._review_request(externalDataApproved="false"),
+            self._review_request(externalDataApproved=True),
+        )
+        for request in invalid_requests:
+            with self.subTest(request=request):
+                status, payload = self._request("POST", "/api/ai-reviews", request)
+                self.assertEqual(status, 400)
+                self.assertEqual(payload["error"], "invalid_ai_review_request")
+
+        missing_status, missing = self._create_review(primaryExperimentId="missing")
+        self.assertEqual(missing_status, 404)
+        self.assertEqual(missing["error"], "ai_review_experiment_not_found")
+        self._record_experiment("failed", seed=502, status="failed")
+        failed_status, failed = self._create_review(primaryExperimentId="failed")
+        self.assertEqual(failed_status, 409)
+        self.assertEqual(failed["error"], "ai_review_experiment_not_completed")
+        self.assertEqual(self.review_store.count_recent(), 0)
+
+    def test_provider_failure_is_a_persisted_201_review(self) -> None:
+        provider = _StubReviewProvider(
+            error=AiReviewProviderError("timeout", "provider timed out")
+        )
+        self.handler.ai_review_provider_registry = AiReviewProviderRegistry(
+            (
+                ProviderStatus("local", True, None, None),
+                ProviderStatus("openai-compatible", True, "review-model", "https://example.test/v1"),
+            ),
+            {"openai-compatible": provider},
+        )
+
+        status, payload = self._create_review(
+            providerId="openai-compatible",
+            externalDataApproved=True,
+        )
+
+        self.assertEqual(status, 201)
+        self.assertEqual(payload["review"]["externalAssessment"]["status"], "failed")
+        self.assertEqual(payload["review"]["externalAssessment"]["error"]["code"], "timeout")
+        self.assertEqual(provider.calls, 1)
+        self.assertEqual(self.review_store.count_recent(), 1)
+
+    def test_decision_request_conflicts_not_found_and_hash_failures_are_mapped(self) -> None:
+        _, created = self._create_review()
+        review_id = created["review"]["aiReviewId"]
+        invalid_requests = (
+            [],
+            {**self._decision_request(), "unknown": True},
+            self._decision_request(operator=False),
+            self._decision_request(status="approved"),
+            self._decision_request(rationale=["not", "text"]),
+            self._decision_request(supersedesDecisionId=1),
+        )
+        for request in invalid_requests:
+            with self.subTest(request=request):
+                status, payload = self._request(
+                    "POST",
+                    f"/api/ai-reviews/{review_id}/decisions",
+                    request,
+                )
+                self.assertEqual(status, 400)
+                self.assertEqual(payload["error"], "invalid_ai_review_decision_request")
+
+        first_status, first = self._request(
+            "POST",
+            f"/api/ai-reviews/{review_id}/decisions",
+            self._decision_request(),
+        )
+        self.assertEqual(first_status, 201)
+        conflict_status, conflict = self._request(
+            "POST",
+            f"/api/ai-reviews/{review_id}/decisions",
+            self._decision_request(),
+        )
+        self.assertEqual(conflict_status, 409)
+        self.assertEqual(conflict["error"], "decision_conflict")
+
+        missing_get_status, missing_get = self._request("GET", "/api/ai-reviews/missing")
+        missing_decision_status, missing_decision = self._request(
+            "GET",
+            "/api/ai-reviews/missing/decisions",
+        )
+        self.assertEqual(missing_get_status, 404)
+        self.assertEqual(missing_get["error"], "ai_review_not_found")
+        self.assertEqual(missing_decision_status, 404)
+        self.assertEqual(missing_decision["error"], "ai_review_not_found")
+
+        with sqlite3.connect(self.review_store.path) as connection:
+            connection.execute(
+                "update ai_review_decisions set review_record_hash = ? where decision_id = ?",
+                ("0" * 64, first["decision"]["decisionId"]),
+            )
+        hash_status, hash_error = self._request(
+            "GET",
+            f"/api/ai-reviews/{review_id}/decisions",
+        )
+        self.assertEqual(hash_status, 409)
+        self.assertIn(hash_error["error"], {"ai_review_decision_record_conflict", "ai_review_decision_review_hash_mismatch"})
+
+    def test_review_read_hash_conflict_is_mapped_to_409(self) -> None:
+        _, created = self._create_review()
+        review_id = created["review"]["aiReviewId"]
+        with sqlite3.connect(self.review_store.path) as connection:
+            row = connection.execute(
+                "select record_json from ai_review_runs where ai_review_id = ?",
+                (review_id,),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            record = json.loads(row[0])
+            record["evidenceHash"] = "0" * 64
+            connection.execute(
+                "update ai_review_runs set record_json = ? where ai_review_id = ?",
+                (json.dumps(record), review_id),
+            )
+
+        status, payload = self._request("GET", f"/api/ai-reviews/{review_id}")
+
+        self.assertEqual(status, 409)
+        self.assertEqual(payload["error"], "ai_review_evidence_hash_mismatch")
+
+    def test_collection_query_validation_and_legacy_compatibility(self) -> None:
+        invalid_queries = (
+            "limit=0",
+            "limit=51",
+            "limit=nope",
+            "offset=-1",
+            "offset=nope",
+            "limit=1&limit=2",
+            "unknown=value",
+        )
+        for query in invalid_queries:
+            with self.subTest(query=query):
+                status, payload = self._request("GET", f"/api/ai-reviews?{query}")
+                self.assertEqual(status, 400)
+                self.assertEqual(payload["error"], "invalid_ai_review_query")
+
+        legacy = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review-v1-http",
+            "runId": "run-primary",
+            "createdAt": "2026-07-10T07:00:00+00:00",
+            "status": "ready",
+            "summary": {"liveExecutionBlocked": True},
+            "dossier": {"headline": "Legacy HTTP review"},
+            "citations": [],
+            "rounds": [],
+            "decisionLog": [],
+            "boundary": "Evidence explanation only; live routing remains blocked.",
+        }
+        self.review_store.record(legacy)
+        _, created = self._create_review()
+        list_status, listing = self._request("GET", "/api/ai-reviews?runId=run-primary&query=")
+        legacy_status, legacy_detail = self._request("GET", "/api/ai-reviews/ai-review-v1-http")
+        run_status, run_history = self._request(
+            "GET",
+            "/api/research/runs/run-primary/ai-reviews?limit=20&offset=0&query=",
+        )
+
+        self.assertEqual(list_status, 200)
+        self.assertEqual({item["authority"] for item in listing["reviews"]}, {"legacy", "authoritative"})
+        self.assertEqual(legacy_status, 200)
+        self.assertEqual(legacy_detail["review"]["authority"], "legacy")
+        self.assertIsNone(legacy_detail["latestDecision"])
+        self.assertEqual(run_status, 200)
+        self.assertEqual(len(run_history["aiReviews"]), 2)
+        self.assertEqual(
+            [item["aiReviewId"] for item in run_history["authoritativeAiReviews"]],
+            [created["review"]["aiReviewId"]],
+        )
+        self.assertEqual(run_history["authoritativeAiReviews"][0]["authority"], "authoritative")
+
+        retired_status, retired = self._request(
+            "POST",
+            "/api/research/runs/run-primary/ai-reviews",
+            legacy,
+        )
+        self.assertEqual(retired_status, 410)
+        self.assertEqual(retired["error"], "legacy_ai_review_write_retired")
+        self.assertIn("POST /api/ai-reviews", retired["detail"])
 
 
 if __name__ == "__main__":

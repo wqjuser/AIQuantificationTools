@@ -22042,7 +22042,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["replay"]["orders"][0]["simulationId"], "sim-replay-api")
         self.assertTrue(payload["replay"]["liveExecutionBlocked"])
 
-    def test_research_run_ai_review_api_records_review_for_run(self):
+    def test_research_run_ai_review_api_retires_client_v1_writes(self):
         import json
         from http.client import HTTPConnection
         from http.server import HTTPServer
@@ -22142,12 +22142,12 @@ class QuantCoreContractTest(unittest.TestCase):
                 thread.join(timeout=5)
                 server.server_close()
 
-        self.assertEqual(response.status, 201)
-        self.assertEqual(payload["aiReview"]["runId"], "run-ai-review-api")
-        self.assertEqual(payload["aiReview"]["record"]["summary"]["parameterScanBound"], True)
+        self.assertEqual(response.status, 410)
+        self.assertEqual(payload["error"], "legacy_ai_review_write_retired")
+        self.assertIn("POST /api/ai-reviews", payload["detail"])
         self.assertEqual(list_response.status, 200)
-        self.assertEqual(list_payload["aiReviews"][0]["aiReviewId"], "ai-review:run-ai-review-api:rev-ai-review-api")
-        self.assertEqual(list_payload["aiReviews"][0]["record"]["boundary"], "Evidence explanation only; no buy/sell instructions or guaranteed returns.")
+        self.assertEqual(list_payload["aiReviews"], [])
+        self.assertEqual(list_payload["authoritativeAiReviews"], [])
 
     def test_p0_ai_review_blocks_missing_and_mismatched_audited_run(self):
         import json

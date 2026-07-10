@@ -35,7 +35,20 @@ from quant_core.audit_signing import (
     audit_signing_key_registry_to_payload,
     audit_signing_key_rotation_plan_to_payload,
 )
-from quant_core.ai_review_runs import AiReviewRunRecord, AiReviewRunStore, ai_review_run_record_to_payload
+from quant_core.ai_review_decisions import AiReviewDecisionStore
+from quant_core.ai_review_providers import AiReviewProviderRegistry
+from quant_core.ai_review_runs import (
+    AiReviewRunRecord,
+    AiReviewRunStore,
+    AuthoritativeAiReviewRunRecord,
+    ai_review_run_record_to_payload,
+)
+from quant_core.ai_review_stage3 import (
+    AiReviewEvidenceAssembler,
+    AiReviewStage3Error,
+    AiReviewStage3Service,
+    DeterministicAiReviewEngine,
+)
 from quant_core.ai import LocalResearchAssistant
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
@@ -418,6 +431,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     portfolio_paper_order_simulation_store = PortfolioPaperOrderSimulationStore(Path("data/portfolio_paper_order_simulations.sqlite"))
     execution_adapter_certification_store = ExecutionAdapterCertificationStore(Path("data/execution_adapter_certifications.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
+    ai_review_decision_store = AiReviewDecisionStore(ai_review_store.path, review_store=ai_review_store)
+    ai_review_provider_registry = AiReviewProviderRegistry.from_environment()
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
@@ -479,6 +494,54 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        decision_review_id = _ai_review_decision_route_id(parsed.path)
+        if decision_review_id is not None:
+            if not decision_review_id:
+                self._send_json(
+                    {"error": "ai_review_not_found", "detail": "AI review was not found."},
+                    status=404,
+                )
+                return
+            try:
+                decision = self.ai_review_decision_store.append(
+                    decision_review_id,
+                    self._read_json_body(),
+                )
+            except ValueError as error:
+                self._send_ai_review_decision_error(error)
+                return
+            self._send_json({"decision": decision.record}, status=201)
+            return
+        if parsed.path == "/api/ai-reviews":
+            try:
+                request = _validated_ai_review_http_request(self._read_json_body())
+                review = self._ai_review_stage3_service().create_review(
+                    primary_experiment_id=request["primaryExperimentId"],
+                    comparison_experiment_ids=request["comparisonExperimentIds"],
+                    provider_id=request["providerId"],
+                    external_data_approved=request["externalDataApproved"],
+                )
+            except AiReviewStage3Error as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=error.status,
+                )
+                return
+            except ValueError as error:
+                code = str(error) or "invalid_ai_review_request"
+                if code.startswith("request_body_"):
+                    code = "invalid_ai_review_request"
+                status = 409 if _is_ai_review_conflict(code) else 400
+                self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=status)
+                return
+            self._send_json(
+                {
+                    "review": {**review, "authority": "authoritative"},
+                    "latestDecision": None,
+                },
+                status=201,
+            )
+            return
         if parsed.path == "/api/strategy-experiments":
             try:
                 payload = self._read_json_body()
@@ -2912,20 +2975,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             )
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/ai-reviews"):
-            run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/ai-reviews")).strip()
-            audit = self.run_store.get(run_id) if run_id else None
-            if not audit:
-                self._send_json({"error": "research_run_not_found", "runId": run_id}, status=404)
-                return
-            try:
-                payload = self._read_json_body()
-                if str(payload.get("runId") or "").strip() != run_id:
-                    raise ValueError("ai_review_run_id_mismatch")
-                review = self.ai_review_store.record(payload)
-            except ValueError as error:
-                self._send_json({"error": "invalid_ai_review_record", "detail": str(error)}, status=400)
-                return
-            self._send_json({"aiReview": ai_review_run_record_to_payload(review)}, status=201)
+            self._send_json(
+                {
+                    "error": "legacy_ai_review_write_retired",
+                    "detail": (
+                        "Client-supplied v1 AI review writes are retired; use experiment-backed "
+                        "POST /api/ai-reviews."
+                    ),
+                },
+                status=410,
+            )
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/paper-executions"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/paper-executions")).strip()
@@ -2955,6 +3014,98 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/health":
             self._send_json({"status": "ok", "service": "quant-core"})
+            return
+        if parsed.path == "/api/ai-review/providers":
+            self._send_json(
+                {
+                    "providers": [
+                        {
+                            "providerId": status.provider_id,
+                            "configured": status.configured,
+                            "model": status.model,
+                            "sanitizedBaseUrl": status.sanitized_base_url,
+                        }
+                        for status in self.ai_review_provider_registry.statuses()
+                    ]
+                }
+            )
+            return
+        decision_review_id = _ai_review_decision_route_id(parsed.path)
+        if decision_review_id is not None:
+            if not decision_review_id:
+                self._send_json(
+                    {"error": "ai_review_not_found", "detail": "AI review was not found."},
+                    status=404,
+                )
+                return
+            try:
+                decisions = self.ai_review_decision_store.list_by_review(decision_review_id)
+            except ValueError as error:
+                self._send_ai_review_decision_error(error)
+                return
+            self._send_json({"decisions": [decision.record for decision in decisions]})
+            return
+        if parsed.path == "/api/ai-reviews":
+            try:
+                query = _validated_ai_review_query(parsed.query)
+                reviews = self.ai_review_store.list_recent(
+                    run_id=query["runId"],
+                    experiment_id=query["experimentId"],
+                    limit=query["limit"],
+                    offset=query["offset"],
+                    query=query["query"],
+                )
+                total = self.ai_review_store.count_recent(
+                    run_id=query["runId"],
+                    experiment_id=query["experimentId"],
+                    query=query["query"],
+                )
+            except ValueError as error:
+                code = str(error) or "invalid_ai_review_query"
+                if not _is_ai_review_conflict(code):
+                    code = "invalid_ai_review_query"
+                status = 409 if _is_ai_review_conflict(code) else 400
+                self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=status)
+                return
+            self._send_json(
+                {
+                    "reviews": [_ai_review_http_projection(review) for review in reviews],
+                    "pagination": {
+                        "limit": query["limit"],
+                        "offset": query["offset"],
+                        "total": total,
+                        "query": query["query"],
+                    },
+                }
+            )
+            return
+        if parsed.path.startswith("/api/ai-reviews/"):
+            ai_review_id = unquote(parsed.path.removeprefix("/api/ai-reviews/")).strip()
+            try:
+                review = self.ai_review_store.get(ai_review_id) if ai_review_id and "/" not in ai_review_id else None
+            except ValueError as error:
+                code = str(error) or "ai_review_record_conflict"
+                self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=409)
+                return
+            if review is None:
+                self._send_json(
+                    {"error": "ai_review_not_found", "detail": "AI review was not found."},
+                    status=404,
+                )
+                return
+            latest_decision = None
+            if isinstance(review, AuthoritativeAiReviewRunRecord):
+                try:
+                    latest_decision = self.ai_review_decision_store.latest(ai_review_id)
+                except ValueError as error:
+                    self._send_ai_review_decision_error(error)
+                    return
+            self._send_json(
+                {
+                    "review": _ai_review_http_projection(review),
+                    "latestDecision": latest_decision.record if latest_decision is not None else None,
+                }
+            )
             return
         if parsed.path == "/api/strategy-experiments":
             query = parse_qs(parsed.query)
@@ -4107,6 +4258,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json(
                 {
                     "aiReviews": [ai_review_run_record_to_payload(review) for review in reviews],
+                    "authoritativeAiReviews": [
+                        _ai_review_http_projection(review)
+                        for review in reviews
+                        if isinstance(review, AuthoritativeAiReviewRunRecord)
+                    ],
                     "pagination": {
                         "limit": limit,
                         "offset": offset,
@@ -4278,6 +4434,29 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             experiment_store=self.strategy_experiment_store,
         )
 
+    def _ai_review_stage3_service(self) -> AiReviewStage3Service:
+        return AiReviewStage3Service(
+            evidence_assembler=AiReviewEvidenceAssembler(
+                experiment_store=self.strategy_experiment_store,
+                run_store=self.run_store,
+            ),
+            deterministic_engine=DeterministicAiReviewEngine(),
+            provider_registry=self.ai_review_provider_registry,
+            review_store=self.ai_review_store,
+        )
+
+    def _send_ai_review_decision_error(self, error: ValueError) -> None:
+        code = str(error) or "invalid_ai_review_decision_request"
+        if code.startswith("request_body_"):
+            code = "invalid_ai_review_decision_request"
+        if code == "ai_review_not_found":
+            status = 404
+        elif code == "invalid_ai_review_decision_request":
+            status = 400
+        else:
+            status = 409
+        self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=status)
+
     def _settings_status_payload(self) -> dict[str, object]:
         return build_settings_status(
             cache_path=self.cache.path,
@@ -4376,6 +4555,81 @@ def _attach_production_route_review_to_health_probe(
     probe_payload["productionRouteReviewId"] = review_id
     probe_payload["productionRouteReviewStatus"] = review_status
     probe_payload["routeReview"] = route_review_summary
+
+
+def _validated_ai_review_http_request(payload: dict[str, object]) -> dict[str, object]:
+    fields = {
+        "primaryExperimentId",
+        "comparisonExperimentIds",
+        "providerId",
+        "externalDataApproved",
+    }
+    comparison_ids = payload.get("comparisonExperimentIds")
+    if (
+        set(payload) != fields
+        or not isinstance(payload.get("primaryExperimentId"), str)
+        or not isinstance(comparison_ids, list)
+        or any(not isinstance(item, str) for item in comparison_ids)
+        or not isinstance(payload.get("providerId"), str)
+        or type(payload.get("externalDataApproved")) is not bool
+    ):
+        raise ValueError("invalid_ai_review_request")
+    return payload
+
+
+def _validated_ai_review_query(raw_query: str) -> dict[str, object]:
+    values = parse_qs(raw_query, keep_blank_values=True)
+    allowed = {"runId", "experimentId", "limit", "offset", "query"}
+    if not set(values) <= allowed or any(len(items) != 1 for items in values.values()):
+        raise ValueError("invalid_ai_review_query")
+    try:
+        limit = int(values.get("limit", ["20"])[0])
+        offset = int(values.get("offset", ["0"])[0])
+    except ValueError:
+        raise ValueError("invalid_ai_review_query") from None
+    if not 1 <= limit <= 50 or offset < 0:
+        raise ValueError("invalid_ai_review_query")
+    return {
+        "runId": values.get("runId", [""])[0].strip() or None,
+        "experimentId": values.get("experimentId", [""])[0].strip() or None,
+        "limit": limit,
+        "offset": offset,
+        "query": values.get("query", [""])[0].strip(),
+    }
+
+
+def _ai_review_decision_route_id(path: str) -> str | None:
+    prefix = "/api/ai-reviews/"
+    suffix = "/decisions"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return None
+    ai_review_id = unquote(path[len(prefix) : -len(suffix)]).strip()
+    return ai_review_id if ai_review_id and "/" not in ai_review_id else ""
+
+
+def _ai_review_http_projection(
+    record: AiReviewRunRecord | AuthoritativeAiReviewRunRecord,
+) -> dict[str, object]:
+    return {**record.record, "authority": record.authority}
+
+
+def _is_ai_review_conflict(code: str) -> bool:
+    return any(
+        token in code
+        for token in ("conflict", "evidence", "lineage", "hash_mismatch", "not_authoritative")
+    )
+
+
+def _ai_review_error_detail(code: str) -> str:
+    details = {
+        "invalid_ai_review_request": "AI review request fields are invalid.",
+        "invalid_ai_review_query": "AI review query parameters are invalid.",
+        "invalid_ai_review_decision_request": "AI review decision request fields are invalid.",
+        "ai_review_not_found": "AI review was not found.",
+        "ai_review_not_authoritative": "AI review decisions require an authoritative review.",
+        "decision_conflict": "The decision does not supersede the current latest decision.",
+    }
+    return details.get(code, "Stored AI review evidence conflicts with the requested operation.")
 
 
 def resolve_api_bind(
