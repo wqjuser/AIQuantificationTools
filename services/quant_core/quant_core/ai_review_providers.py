@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
 import socket
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from http.client import HTTPException
 from typing import Any, Literal, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from quant_core.ai_review_stage3 import validate_assessment
@@ -41,22 +43,39 @@ _SECRET_KEY_PARTS = (
     "password",
     "authorization",
 )
+_SAFE_NEGATION_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"(?:不要|不得|禁止)\s*下单",
+        r"不\s*保证收益",
+        r"无\s*收益保证",
+        r"\bno\s+target\s+price\b",
+        r"\bdo\s+not\s+place\s+orders?\b",
+    )
+)
 _PROHIBITED_OUTPUT_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
-        r"下单",
+        r"(?:建议|立即|请|应该|应当)\s*(?:买入|卖出|下单)",
+        r"(?:买入|卖出)\s*\d+(?:\.\d+)?\s*股",
         r"目标价",
         r"仓位指令",
+        r"(?:把|将)?\s*仓位\s*(?:提高|提升|增加|降低|降至|设为|调整)\s*(?:到|至|为)?\s*\d+(?:\.\d+)?\s*%",
         r"收益保证",
         r"保证收益",
+        r"收益\s*(?:是)?\s*(?:有)?\s*保证",
         r"\bsubmit\s+(?:an?\s+)?order\b",
         r"\bplace\s+(?:an?\s+)?order\b",
+        r"\b(?:buy|sell)\s+\d+(?:\.\d+)?\s*(?:shares?|units?)\b",
         r"\btarget\s+price\b",
         r"\bposition\s+instruction\b",
+        r"\b(?:increase|raise|reduce|lower|set|adjust)\s+(?:the\s+)?position(?:\s+size)?\s+(?:to|at)\s+\d+(?:\.\d+)?\s*%",
         r"\bguaranteed?\s+returns?\b",
         r"\breturns?\s+guarantee\b",
+        r"\breturns?\s+(?:is|are)\s+guaranteed\b",
     )
 )
+_FINAL_PROVIDER_ENDPOINTS = ("/chat/completions", "/api/chat")
 
 
 @dataclass(frozen=True)
@@ -78,10 +97,19 @@ class ProviderAttempt:
 
 
 class AiReviewProviderError(ValueError):
-    def __init__(self, code: str, detail: Any) -> None:
+    def __init__(
+        self,
+        code: str,
+        detail: Any,
+        *,
+        sensitive_values: Iterable[str] = (),
+    ) -> None:
         if code not in _ERROR_CODES:
             raise ValueError("unsupported_provider_error_code")
-        bounded_detail = sanitize_error_detail(detail)
+        bounded_detail = sanitize_error_detail(
+            detail,
+            sensitive_values=sensitive_values,
+        )
         super().__init__(bounded_detail)
         self.code = code
         self.detail = bounded_detail
@@ -111,8 +139,14 @@ def sanitize_base_url(value: str) -> str | None:
     return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
-def sanitize_error_detail(value: Any) -> str:
-    sanitized = _redact_sensitive_fields(value)
+def sanitize_error_detail(
+    value: Any,
+    *,
+    sensitive_values: Iterable[str] = (),
+) -> str:
+    sanitized = _redact_sensitive_fields(
+        _redact_sensitive_values(value, sensitive_values)
+    )
     if isinstance(sanitized, (Mapping, list, tuple)):
         detail = json.dumps(sanitized, ensure_ascii=False, default=str)
     else:
@@ -170,7 +204,7 @@ class OpenAiResponsesProvider:
 
 @dataclass(frozen=True)
 class OpenAiCompatibleProvider:
-    base_url: str
+    base_url: str = field(repr=False)
     api_key: str = field(repr=False)
     model: str
 
@@ -219,7 +253,7 @@ class OpenAiCompatibleProvider:
 
 @dataclass(frozen=True)
 class OllamaChatProvider:
-    base_url: str
+    base_url: str = field(repr=False)
     model: str
 
     def assess(
@@ -273,9 +307,13 @@ class AiReviewProviderRegistry:
         ollama_model = os.environ.get("OLLAMA_MODEL", "").strip()
 
         providers: dict[ProviderId, AiReviewProvider] = {}
+        compatible_safe_base = _validated_provider_base_url(compatible_base)
+        ollama_safe_base = _validated_provider_base_url(ollama_base)
         openai_configured = bool(openai_key and openai_model)
-        compatible_configured = bool(compatible_base and compatible_key and compatible_model)
-        ollama_configured = bool(ollama_base and ollama_model)
+        compatible_configured = bool(
+            compatible_safe_base and compatible_key and compatible_model
+        )
+        ollama_configured = bool(ollama_safe_base and ollama_model)
         if openai_configured:
             providers["openai"] = OpenAiResponsesProvider(openai_key, openai_model)
         if compatible_configured:
@@ -295,13 +333,13 @@ class AiReviewProviderRegistry:
                     "openai-compatible",
                     compatible_configured,
                     compatible_model or None,
-                    sanitize_base_url(compatible_base) if compatible_base else None,
+                    compatible_safe_base,
                 ),
                 ProviderStatus(
                     "ollama",
                     ollama_configured,
                     ollama_model or None,
-                    sanitize_base_url(ollama_base),
+                    ollama_safe_base,
                 ),
             ),
             providers,
@@ -327,6 +365,7 @@ def _post_json(
     *,
     authorization: str | None = None,
 ) -> Mapping[str, Any]:
+    sensitive_values = _request_sensitive_values(url, authorization)
     headers = {"Content-Type": "application/json"}
     if authorization is not None:
         headers["Authorization"] = authorization
@@ -348,8 +387,17 @@ def _post_json(
         response = urlopen(request, timeout=socket_timeout)
     except HTTPError as error:
         detail = _http_error_detail(error, deadline)
-        error.close()
-        failure = AiReviewProviderError("http_error", detail)
+        try:
+            error.close()
+        except (HTTPException, OSError):
+            pass
+        failure = AiReviewProviderError(
+            "http_error",
+            detail,
+            sensitive_values=sensitive_values,
+        )
+    except HTTPException:
+        failure = AiReviewProviderError("http_error", "provider_request_failed")
     except (TimeoutError, socket.timeout):
         failure = AiReviewProviderError("timeout", "provider_request_timed_out")
     except URLError as error:
@@ -368,6 +416,8 @@ def _post_json(
             raw = _read_bounded(response, deadline)
     except (TimeoutError, socket.timeout):
         failure = AiReviewProviderError("timeout", "provider_response_timed_out")
+    except HTTPException:
+        failure = AiReviewProviderError("http_error", "provider_response_failed")
     except OSError:
         failure = AiReviewProviderError("http_error", "provider_response_failed")
     if failure is not None:
@@ -404,17 +454,27 @@ def _read_bounded(response: Any, deadline: float) -> bytes:
 
 
 def _set_response_socket_timeout(response: Any, timeout: float) -> None:
-    raw = getattr(getattr(response, "fp", None), "raw", None)
-    sock = getattr(raw, "_sock", None)
-    if sock is not None:
-        sock.settimeout(max(timeout, 0.001))
+    stream = getattr(response, "fp", None)
+    for _ in range(2):
+        raw = getattr(stream, "raw", None)
+        sock = getattr(raw, "_sock", None)
+        if sock is not None:
+            sock.settimeout(max(timeout, 0.001))
+            return
+        stream = getattr(stream, "fp", None)
 
 
 def _http_error_detail(error: HTTPError, deadline: float) -> Any:
     try:
         raw = _read_bounded(error, deadline)
         parsed = json.loads(raw.decode("utf-8"))
-    except (AiReviewProviderError, UnicodeDecodeError, json.JSONDecodeError, OSError):
+    except (
+        AiReviewProviderError,
+        HTTPException,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        OSError,
+    ):
         parsed = None
     detail: dict[str, Any] = {"status": error.code}
     if isinstance(parsed, (Mapping, list)):
@@ -511,7 +571,13 @@ def _non_negative_int(value: Any) -> int | None:
 
 def _contains_prohibited_output(value: Any) -> bool:
     if isinstance(value, str):
-        return any(pattern.search(value) for pattern in _PROHIBITED_OUTPUT_PATTERNS)
+        normalized = value
+        for pattern in _SAFE_NEGATION_PATTERNS:
+            normalized = pattern.sub("", normalized)
+        return any(
+            pattern.search(normalized)
+            for pattern in _PROHIBITED_OUTPUT_PATTERNS
+        )
     if isinstance(value, Mapping):
         return any(_contains_prohibited_output(item) for item in value.values())
     if isinstance(value, (list, tuple)):
@@ -524,16 +590,112 @@ def _redact_sensitive_fields(value: Any) -> Any:
         redacted: dict[str, Any] = {}
         for key, item in value.items():
             name = str(key)
-            normalized = re.sub(r"[^a-z0-9]", "", name.casefold())
             redacted[name] = (
                 "[REDACTED]"
-                if any(part in normalized for part in _SECRET_KEY_PARTS)
+                if _is_sensitive_key(name)
                 else _redact_sensitive_fields(item)
             )
         return redacted
     if isinstance(value, (list, tuple)):
         return [_redact_sensitive_fields(item) for item in value]
     return value
+
+
+def _redact_sensitive_values(
+    value: Any,
+    sensitive_values: Iterable[str],
+) -> Any:
+    secrets = tuple(
+        sorted(
+            {item for item in sensitive_values if item},
+            key=len,
+            reverse=True,
+        )
+    )
+    if isinstance(value, str):
+        for secret in secrets:
+            value = value.replace(secret, "[REDACTED]")
+        return value
+    if isinstance(value, Mapping):
+        return {
+            key: _redact_sensitive_values(item, secrets)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_redact_sensitive_values(item, secrets) for item in value]
+    return value
+
+
+def _request_sensitive_values(
+    url: str,
+    authorization: str | None,
+) -> tuple[str, ...]:
+    values: list[str] = []
+    if authorization:
+        values.append(authorization)
+        _, separator, credential = authorization.partition(" ")
+        if separator and credential:
+            values.append(credential)
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return tuple(values)
+    for item in (parsed.username, parsed.password):
+        if item:
+            values.extend((item, unquote(item)))
+    for key, item in parse_qsl(parsed.query, keep_blank_values=False):
+        if _is_sensitive_key(key) and item:
+            values.append(item)
+    return tuple(values)
+
+
+def _validated_provider_base_url(value: str) -> str | None:
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        _ = parsed.port
+    except (UnicodeError, ValueError):
+        return None
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or not hostname
+        or not _is_valid_hostname(hostname)
+        or parsed.query
+        or parsed.fragment
+        or any(
+            parsed.path.rstrip("/").endswith(endpoint)
+            for endpoint in _FINAL_PROVIDER_ENDPOINTS
+        )
+    ):
+        return None
+    return sanitize_base_url(value)
+
+
+def _is_valid_hostname(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        pass
+    try:
+        hostname = value.encode("idna").decode("ascii").rstrip(".")
+    except UnicodeError:
+        return False
+    if not hostname or len(hostname) > 253:
+        return False
+    return all(
+        re.fullmatch(
+            r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+            label,
+            re.IGNORECASE,
+        )
+        for label in hostname.split(".")
+    )
+
+
+def _is_sensitive_key(value: Any) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", str(value).casefold())
+    return any(part in normalized for part in _SECRET_KEY_PARTS)
 
 
 def _is_timeout(reason: Any) -> bool:

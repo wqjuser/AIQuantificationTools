@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import os
 import re
@@ -11,10 +12,12 @@ import time
 import unittest
 from dataclasses import replace
 from datetime import datetime, timezone
+from http.client import BadStatusLine, HTTPException, IncompleteRead, LineTooLong
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 from quant_core import ai_review_providers
 from quant_core.ai_review_providers import (
@@ -1113,10 +1116,10 @@ class AiReviewProviderContractTests(unittest.TestCase):
         environment = {
             "OPENAI_API_KEY": "fake-openai-key",
             "OPENAI_MODEL": "gpt-test",
-            "OPENAI_COMPATIBLE_BASE_URL": "https://user:password@example.test:8443/v1?token=bad#secret",
+            "OPENAI_COMPATIBLE_BASE_URL": "https://user:password@example.test:8443/v1",
             "OPENAI_COMPATIBLE_API_KEY": "fake-compatible-key",
             "OPENAI_COMPATIBLE_MODEL": "compatible-test",
-            "OLLAMA_BASE_URL": "http://user:password@127.0.0.1:11434/root?q=bad#secret",
+            "OLLAMA_BASE_URL": "http://user:password@127.0.0.1:11434/root",
             "OLLAMA_MODEL": "ollama-test",
             "UNRELATED_PROVIDER_SECRET": "must-not-be-read",
         }
@@ -1152,6 +1155,94 @@ class AiReviewProviderContractTests(unittest.TestCase):
         self.assertIsNone(empty_registry.get("openai"))
         self.assertIsNone(empty_registry.get("openai-compatible"))
         self.assertIsNone(empty_registry.get("ollama"))
+
+    def test_invalid_provider_base_urls_are_not_configured(self) -> None:
+        invalid_cases = (
+            ("openai-compatible", "ftp://example.test/prefix"),
+            ("openai-compatible", "https://bad host/prefix"),
+            ("openai-compatible", "https://example.test:not-a-port/prefix"),
+            ("openai-compatible", "https://example.test/prefix?token=secret"),
+            ("openai-compatible", "https://example.test/prefix#fragment"),
+            ("openai-compatible", "https://example.test/prefix/chat/completions"),
+            ("ollama", "file://example.test/prefix"),
+            ("ollama", "http://bad host/prefix"),
+            ("ollama", "http://example.test:bad/prefix"),
+            ("ollama", "http://example.test/prefix?token=secret"),
+            ("ollama", "http://example.test/prefix#fragment"),
+            ("ollama", "http://example.test/prefix/api/chat"),
+        )
+        for provider_id, base_url in invalid_cases:
+            with self.subTest(provider=provider_id, base_url=base_url):
+                environment = (
+                    {
+                        "OPENAI_COMPATIBLE_BASE_URL": base_url,
+                        "OPENAI_COMPATIBLE_API_KEY": "fake-compatible-key",
+                        "OPENAI_COMPATIBLE_MODEL": "compatible-test",
+                    }
+                    if provider_id == "openai-compatible"
+                    else {"OLLAMA_BASE_URL": base_url, "OLLAMA_MODEL": "ollama-test"}
+                )
+                with patch.dict(os.environ, environment, clear=True):
+                    registry = AiReviewProviderRegistry.from_environment()
+
+                status = next(
+                    item for item in registry.statuses() if item.provider_id == provider_id
+                )
+                self.assertFalse(status.configured)
+                self.assertIsNone(status.sanitized_base_url)
+                self.assertIsNone(registry.get(provider_id))
+
+    def test_compatible_readiness_accepts_non_v1_prefix(self) -> None:
+        environment = {
+            "OPENAI_COMPATIBLE_BASE_URL": "https://example.test/custom/prefix",
+            "OPENAI_COMPATIBLE_API_KEY": "fake-compatible-key",
+            "OPENAI_COMPATIBLE_MODEL": "compatible-test",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            registry = AiReviewProviderRegistry.from_environment()
+
+        status = next(
+            item
+            for item in registry.statuses()
+            if item.provider_id == "openai-compatible"
+        )
+        self.assertTrue(status.configured)
+        self.assertEqual(
+            status.sanitized_base_url,
+            "https://example.test/custom/prefix",
+        )
+        self.assertIsInstance(
+            registry.get("openai-compatible"),
+            OpenAiCompatibleProvider,
+        )
+
+    def test_adapter_repr_never_exposes_raw_base_url(self) -> None:
+        compatible_url = (
+            "https://compatible-user:compatible-password@example.test/"
+            "prefix?token=compatible-query-secret"
+        )
+        ollama_url = (
+            "http://ollama-user:ollama-password@example.test/"
+            "prefix?token=ollama-query-secret"
+        )
+        exposed = repr(
+            OpenAiCompatibleProvider(
+                base_url=compatible_url,
+                api_key="fake-compatible-key",
+                model="compatible-test",
+            )
+        ) + repr(OllamaChatProvider(base_url=ollama_url, model="ollama-test"))
+
+        for secret in (
+            compatible_url,
+            ollama_url,
+            "compatible-password",
+            "compatible-query-secret",
+            "ollama-password",
+            "ollama-query-secret",
+            "fake-compatible-key",
+        ):
+            self.assertNotIn(secret, exposed)
 
     def test_openai_responses_contract_maps_structured_output_usage_and_latency_once(self) -> None:
         assessment = _provider_assessment()
@@ -1309,6 +1400,183 @@ class AiReviewProviderContractTests(unittest.TestCase):
                 finally:
                     server.close()
 
+    def test_http_exception_family_is_bounded_on_response_and_http_error_reads(self) -> None:
+        class ExplodingResponse:
+            def __init__(self, exception: HTTPException) -> None:
+                self.exception = exception
+
+            def __enter__(self) -> ExplodingResponse:
+                return self
+
+            def __exit__(self, *_args: Any) -> None:
+                return None
+
+            def read(self, _size: int = -1) -> bytes:
+                raise self.exception
+
+            def close(self) -> None:
+                return None
+
+        exception_factories = (
+            ("bad status", lambda: BadStatusLine("partial-status-fake-key")),
+            ("long line", lambda: LineTooLong("partial-header-fake-key")),
+            (
+                "incomplete read",
+                lambda: IncompleteRead(b"partial-body-fake-key", 10),
+            ),
+        )
+        provider = OpenAiCompatibleProvider(
+            base_url="https://example.test/prefix",
+            api_key="fake-compatible-key",
+            model="compatible-test",
+        )
+
+        for path in ("response", "http error"):
+            for label, factory in exception_factories:
+                with self.subTest(path=path, exception=label):
+                    response = ExplodingResponse(factory())
+                    transport_result: Any = response
+                    if path == "http error":
+                        transport_result = HTTPError(
+                            "https://example.test/prefix/chat/completions",
+                            502,
+                            "Bad Gateway",
+                            {},
+                            response,
+                        )
+                    patcher = (
+                        patch.object(
+                            ai_review_providers,
+                            "urlopen",
+                            side_effect=transport_result,
+                        )
+                        if path == "http error"
+                        else patch.object(
+                            ai_review_providers,
+                            "urlopen",
+                            return_value=transport_result,
+                        )
+                    )
+                    with patcher:
+                        error = self._assert_provider_error(
+                            "http_error",
+                            lambda: self._assess(provider),
+                        )
+                    exposed = error.detail + repr(error) + str(error)
+                    for secret in (
+                        "partial-status-fake-key",
+                        "partial-header-fake-key",
+                        "partial-body-fake-key",
+                        "fake-compatible-key",
+                    ):
+                        self.assertNotIn(secret, exposed)
+
+    def test_http_error_message_values_redact_current_request_secrets(self) -> None:
+        url = (
+            "https://url-user:url-password@example.test/prefix/chat/completions"
+            "?token=url-query-secret"
+        )
+        authorization = "Bearer fake-request-api-key"
+        body = json.dumps(
+            {
+                "error": {
+                    "message": (
+                        "url-user url-password url-query-secret "
+                        "fake-request-api-key Bearer fake-request-api-key"
+                    )
+                }
+            }
+        ).encode("utf-8")
+        response = HTTPError(
+            url,
+            401,
+            "Unauthorized",
+            {},
+            io.BytesIO(body),
+        )
+
+        with patch.object(ai_review_providers, "urlopen", side_effect=response):
+            error = self._assert_provider_error(
+                "http_error",
+                lambda: ai_review_providers._post_json(
+                    url,
+                    {"model": "compatible-test"},
+                    authorization=authorization,
+                ),
+            )
+
+        exposed = error.detail + repr(error) + str(error)
+        self.assertIn("[REDACTED]", exposed)
+        for secret in (
+            "url-user",
+            "url-password",
+            "url-query-secret",
+            "fake-request-api-key",
+            authorization,
+        ):
+            self.assertNotIn(secret, exposed)
+
+    def test_http_error_body_read_applies_remaining_socket_timeout(self) -> None:
+        class RecordingSocket:
+            timeout: float | None = None
+
+            def settimeout(self, timeout: float) -> None:
+                self.timeout = timeout
+
+        class RawStream:
+            def __init__(self, sock: RecordingSocket) -> None:
+                self._sock = sock
+
+        class BufferedStream:
+            def __init__(self, sock: RecordingSocket) -> None:
+                self.raw = RawStream(sock)
+
+        class ErrorBody:
+            def __init__(self, sock: RecordingSocket) -> None:
+                self.fp = BufferedStream(sock)
+
+            def read(self, _size: int = -1) -> bytes:
+                return b""
+
+            def close(self) -> None:
+                return None
+
+        sock = RecordingSocket()
+        error = HTTPError(
+            "https://example.test/prefix/chat/completions",
+            500,
+            "Internal Server Error",
+            {},
+            ErrorBody(sock),
+        )
+        self.addCleanup(error.close)
+        started = time.monotonic()
+
+        ai_review_providers._read_bounded(error, started + 0.25)
+
+        self.assertIsNotNone(sock.timeout)
+        self.assertGreater(sock.timeout, 0)
+        self.assertLessEqual(sock.timeout, 0.25)
+
+    def test_exactly_65536_response_bytes_are_accepted(self) -> None:
+        encoded = json.dumps(
+            self._compatible_response(),
+            separators=(",", ":"),
+        ).encode("utf-8")
+        body = encoded + b" " * (65_536 - len(encoded))
+        self.assertEqual(len(body), 65_536)
+        server = self._server(body)
+        provider = OpenAiCompatibleProvider(
+            base_url=server.base_url,
+            api_key="fake-compatible-key",
+            model="compatible-test",
+        )
+
+        attempt = self._assess(provider)
+
+        self.assertEqual(attempt.assessment, _provider_assessment())
+        self.assertEqual(len(server.requests), 1)
+
     def test_timeout_is_bounded_and_sends_only_one_request(self) -> None:
         server = _FakeProviderServer(
             body=json.dumps(self._compatible_response()).encode("utf-8"),
@@ -1329,8 +1597,42 @@ class AiReviewProviderContractTests(unittest.TestCase):
 
         self.assertEqual(len(server.requests), 1)
 
+    def test_provider_output_allows_explicit_safety_negations(self) -> None:
+        safe_texts = (
+            "不要下单",
+            "不得下单",
+            "禁止下单",
+            "不保证收益",
+            "无收益保证",
+            "no target price",
+            "do not place orders",
+        )
+        for safe_text in safe_texts:
+            with self.subTest(text=safe_text):
+                assessment = _provider_assessment()
+                assessment["summary"] = safe_text
+                server = self._server(self._compatible_response(assessment))
+                provider = OpenAiCompatibleProvider(
+                    base_url=server.base_url,
+                    api_key="fake-compatible-key",
+                    model="compatible-test",
+                )
+
+                attempt = self._assess(provider)
+
+                self.assertEqual(attempt.assessment["summary"], safe_text)
+                self.assertEqual(len(server.requests), 1)
+
     def test_provider_output_rejects_execution_instructions_and_return_guarantees(self) -> None:
-        forbidden_texts = ("立即下单", "目标价 120", "仓位指令为满仓", "收益保证 10%")
+        forbidden_texts = (
+            "建议买入100股",
+            "把仓位提高到80%",
+            "10%收益是有保证的",
+            "Place an order for 100 shares.",
+            "Set a target price of $120.",
+            "Increase the position to 80%.",
+            "A 10% return is guaranteed.",
+        )
         for forbidden in forbidden_texts:
             with self.subTest(text=forbidden):
                 assessment = _provider_assessment()
