@@ -117,6 +117,9 @@ class AiReviewProviderError(ValueError):
 
 
 class AiReviewProvider(Protocol):
+    @property
+    def endpoint(self) -> str: ...
+
     def assess(
         self,
         *,
@@ -159,6 +162,10 @@ def sanitize_error_detail(
 class OpenAiResponsesProvider:
     api_key: str = field(repr=False)
     model: str
+
+    @property
+    def endpoint(self) -> str:
+        return OPENAI_RESPONSES_URL
 
     def assess(
         self,
@@ -209,6 +216,10 @@ class OpenAiCompatibleProvider:
     api_key: str = field(repr=False)
     model: str
 
+    @property
+    def endpoint(self) -> str:
+        return self.base_url.rstrip("/") + "/chat/completions"
+
     def assess(
         self,
         *,
@@ -218,7 +229,7 @@ class OpenAiCompatibleProvider:
     ) -> ProviderAttempt:
         started = time.monotonic()
         response = _post_json(
-            self.base_url.rstrip("/") + "/chat/completions",
+            self.endpoint,
             {
                 "model": self.model,
                 "messages": [{"role": "user", "content": rendered_prompt}],
@@ -257,6 +268,10 @@ class OllamaChatProvider:
     base_url: str = field(repr=False)
     model: str
 
+    @property
+    def endpoint(self) -> str:
+        return self.base_url.rstrip("/") + "/api/chat"
+
     def assess(
         self,
         *,
@@ -266,7 +281,7 @@ class OllamaChatProvider:
     ) -> ProviderAttempt:
         started = time.monotonic()
         response = _post_json(
-            self.base_url.rstrip("/") + "/api/chat",
+            self.endpoint,
             {
                 "model": self.model,
                 "messages": [{"role": "user", "content": rendered_prompt}],
