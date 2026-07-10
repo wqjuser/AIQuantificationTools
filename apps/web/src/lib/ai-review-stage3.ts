@@ -181,6 +181,28 @@ export interface ComparisonEligibility {
   reason: ComparisonIneligibilityReason | null;
 }
 
+export const AI_REVIEW_EXTERNAL_DATA_FIELDS = [
+  "experimentReferences",
+  "strategyDefinition",
+  "dataQuality",
+  "candidateMetrics"
+] as const;
+
+export interface AiReviewAssessmentColumns {
+  deterministic: AiReviewAssessment;
+  external: AiReviewAssessment | null;
+  externalStatus: AiReviewExternalAssessment["status"];
+  externalError: AiReviewExternalAssessment["error"];
+}
+
+export interface AiReviewRequestGuard {
+  requestGeneration: number;
+  currentGeneration: number;
+  requestScopeKey: string;
+  currentScopeKey: string;
+  aborted: boolean;
+}
+
 const providerIds = new Set<AiReviewProviderId>(["local", "openai", "openai-compatible", "ollama"]);
 const stances = new Set<AiReviewStance>(["supported", "caution", "blocked", "insufficient_evidence"]);
 const severities = new Set<AiReviewRiskSeverity>(["low", "medium", "high", "critical"]);
@@ -787,4 +809,59 @@ export function buildComparisonEligibility(
     }
   }
   return { eligible: reason === null, reason };
+}
+
+export function resolveAiReviewPrimaryExperiment(
+  active: StrategyExperimentListItem | null,
+  experiments: readonly StrategyExperimentListItem[]
+): StrategyExperimentListItem | null {
+  if (active?.status === "completed") {
+    return active;
+  }
+  return experiments.find((experiment) => experiment.status === "completed") ?? null;
+}
+
+export function toggleAiReviewComparisonSelection(
+  primary: StrategyExperimentListItem,
+  candidate: StrategyExperimentListItem,
+  selectedExperimentIds: readonly string[]
+): string[] {
+  if (selectedExperimentIds.includes(candidate.experimentId)) {
+    return selectedExperimentIds.filter((experimentId) => experimentId !== candidate.experimentId);
+  }
+  return buildComparisonEligibility(primary, candidate, selectedExperimentIds).eligible
+    ? [...selectedExperimentIds, candidate.experimentId]
+    : [...selectedExperimentIds];
+}
+
+export function aiReviewRequiresExternalApproval(providerId: AiReviewProviderId): boolean {
+  return providerId !== "local";
+}
+
+export function buildAiReviewAssessmentColumns(review: AuthoritativeAiReviewRun): AiReviewAssessmentColumns {
+  return {
+    deterministic: review.deterministicAssessment,
+    external: review.externalAssessment.assessment,
+    externalStatus: review.externalAssessment.status,
+    externalError: review.externalAssessment.error
+  };
+}
+
+export function buildAiReviewDecisionDraft(
+  decisions: readonly AiReviewDecision[],
+  operator = "",
+  rationale = ""
+): AppendAiReviewDecisionRequest {
+  return {
+    operator,
+    status: "accepted_for_research",
+    rationale,
+    supersedesDecisionId: decisions.at(-1)?.decisionId ?? null
+  };
+}
+
+export function aiReviewRequestIsCurrent(guard: AiReviewRequestGuard): boolean {
+  return !guard.aborted
+    && guard.requestGeneration === guard.currentGeneration
+    && guard.requestScopeKey === guard.currentScopeKey;
 }

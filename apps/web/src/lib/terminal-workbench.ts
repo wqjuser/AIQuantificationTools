@@ -8704,6 +8704,39 @@ export interface StrategyExperimentListItem {
   errorDetail: string | null;
 }
 
+export interface AiReviewStage3ContextKeyInput {
+  workspaceId: string;
+  researchWorkspaceId: string | null;
+  market: string;
+  symbol: string;
+  timeframe: string;
+  sourceRunId: string | null;
+  strategyRevision: string | null;
+}
+
+export function buildAiReviewStage3ContextKey(input: AiReviewStage3ContextKeyInput): string {
+  return [
+    input.workspaceId,
+    input.researchWorkspaceId ?? "none",
+    input.market,
+    input.symbol,
+    input.timeframe,
+    input.sourceRunId ?? "none",
+    input.strategyRevision ?? "none"
+  ].map((value) => value.trim()).join(":");
+}
+
+export function buildAiReviewStage3CandidateKey(
+  activeExperimentId: string | null,
+  experiments: readonly Pick<StrategyExperimentListItem, "experimentId" | "status" | "resultHash">[]
+): string {
+  const evidence = experiments
+    .map((experiment) => `${experiment.experimentId}:${experiment.status}:${experiment.resultHash ?? "none"}`)
+    .sort()
+    .join("|");
+  return `${activeExperimentId ?? "none"}::${evidence}`;
+}
+
 export interface StrategyExperimentSnapshot {
   snapshotId: string;
   createdAt: string;

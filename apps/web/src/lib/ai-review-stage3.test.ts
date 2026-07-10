@@ -1,13 +1,21 @@
 import { describe, expect, test } from "vitest";
 import type { StrategyExperimentListItem } from "./terminal-workbench";
+import type { AiReviewDecision, AuthoritativeAiReviewRun } from "./ai-review-stage3";
 import {
+  AI_REVIEW_EXTERNAL_DATA_FIELDS,
+  aiReviewRequestIsCurrent,
+  aiReviewRequiresExternalApproval,
+  buildAiReviewAssessmentColumns,
+  buildAiReviewDecisionDraft,
   buildComparisonEligibility,
   isAiReviewDecision,
   isAiReviewDecisionChain,
   isAiReviewHistoryRecord,
   isAiReviewProviderStatus,
   isAuthoritativeAiReviewRun,
-  isLegacyAiReviewHistoryRecord
+  isLegacyAiReviewHistoryRecord,
+  resolveAiReviewPrimaryExperiment,
+  toggleAiReviewComparisonSelection
 } from "./ai-review-stage3";
 
 const hash = (digit: string): string => digit.repeat(64);
@@ -539,5 +547,116 @@ describe("Stage 3 comparison eligibility", () => {
       .toBe("already-selected");
     expect(buildComparisonEligibility(primary, sampleExperiment("fifth"), ["1", "2", "3", "4"]).reason)
       .toBe("limit-reached");
+  });
+});
+
+describe("Stage 3 authoritative workspace view model", () => {
+  test("automatically selects the current completed experiment as primary", () => {
+    const older = sampleExperiment("older");
+    const active = sampleExperiment("active");
+    expect(resolveAiReviewPrimaryExperiment(active, [older, active])?.experimentId).toBe("active");
+    expect(resolveAiReviewPrimaryExperiment(
+      sampleExperiment("failed-active", { status: "failed" }),
+      [older]
+    )?.experimentId).toBe("older");
+    expect(resolveAiReviewPrimaryExperiment(null, [sampleExperiment("failed", { status: "failed" })])).toBeNull();
+  });
+
+  test("keeps at most four legal comparisons and preserves stable ineligibility reasons", () => {
+    const primary = sampleExperiment("primary");
+    const selected = ["one", "two", "three"];
+    expect(toggleAiReviewComparisonSelection(primary, sampleExperiment("four"), selected)).toEqual([
+      "one", "two", "three", "four"
+    ]);
+    expect(toggleAiReviewComparisonSelection(primary, sampleExperiment("five"), [
+      "one", "two", "three", "four"
+    ])).toEqual(["one", "two", "three", "four"]);
+    expect(toggleAiReviewComparisonSelection(primary, sampleExperiment("wrong-context", {
+      symbol: "000001"
+    }), selected)).toEqual(selected);
+    expect(toggleAiReviewComparisonSelection(primary, sampleExperiment("two"), selected)).toEqual(["one", "three"]);
+  });
+
+  test("requires explicit external approval and exposes only the bounded outbound field manifest", () => {
+    expect(aiReviewRequiresExternalApproval("local")).toBe(false);
+    expect(aiReviewRequiresExternalApproval("openai-compatible")).toBe(true);
+    expect(AI_REVIEW_EXTERNAL_DATA_FIELDS).toEqual([
+      "experimentReferences",
+      "strategyDefinition",
+      "dataQuality",
+      "candidateMetrics"
+    ]);
+  });
+
+  test("keeps deterministic and external assessments as independent columns", () => {
+    const localOnly = sampleAuthoritativeReview();
+    expect(buildAiReviewAssessmentColumns(localOnly as AuthoritativeAiReviewRun)).toEqual({
+      deterministic: localOnly.deterministicAssessment,
+      external: null,
+      externalStatus: "skipped",
+      externalError: null
+    });
+
+    const failed = structuredClone(localOnly) as AuthoritativeAiReviewRun;
+    failed.externalAssessment = {
+      ...failed.externalAssessment,
+      status: "failed",
+      provider: "openai-compatible",
+      model: "review-model",
+      sanitizedBaseUrl: "https://example.test/v1",
+      endpointHash: hash("b"),
+      renderedPrompt: "Bounded canonical evidence",
+      requestHash: hash("c"),
+      latencyMs: 7,
+      error: { code: "timeout", message: "Provider request timed out." }
+    };
+    expect(buildAiReviewAssessmentColumns(failed).deterministic).toBe(failed.deterministicAssessment);
+    expect(buildAiReviewAssessmentColumns(failed).external).toBeNull();
+    expect(buildAiReviewAssessmentColumns(failed).externalError?.code).toBe("timeout");
+  });
+
+  test("builds decision drafts against the latest authoritative predecessor", () => {
+    expect(buildAiReviewDecisionDraft([], "operator", "reason").supersedesDecisionId).toBeNull();
+    expect(buildAiReviewDecisionDraft([
+      sampleDecision(1) as AiReviewDecision,
+      sampleDecision(2) as AiReviewDecision
+    ], "operator", "reason"))
+      .toMatchObject({
+        operator: "operator",
+        rationale: "reason",
+        status: "accepted_for_research",
+        supersedesDecisionId: sampleDecision(2).decisionId
+      });
+  });
+
+  test("requires both generation and scope to match before committing async responses", () => {
+    expect(aiReviewRequestIsCurrent({
+      requestGeneration: 4,
+      currentGeneration: 4,
+      requestScopeKey: "ashare:600000:1d",
+      currentScopeKey: "ashare:600000:1d",
+      aborted: false
+    })).toBe(true);
+    expect(aiReviewRequestIsCurrent({
+      requestGeneration: 3,
+      currentGeneration: 4,
+      requestScopeKey: "ashare:600000:1d",
+      currentScopeKey: "ashare:600000:1d",
+      aborted: false
+    })).toBe(false);
+    expect(aiReviewRequestIsCurrent({
+      requestGeneration: 4,
+      currentGeneration: 4,
+      requestScopeKey: "ashare:600000:1d",
+      currentScopeKey: "crypto:BTCUSDT:1d",
+      aborted: false
+    })).toBe(false);
+    expect(aiReviewRequestIsCurrent({
+      requestGeneration: 4,
+      currentGeneration: 4,
+      requestScopeKey: "ashare:600000:1d",
+      currentScopeKey: "ashare:600000:1d",
+      aborted: true
+    })).toBe(false);
   });
 });

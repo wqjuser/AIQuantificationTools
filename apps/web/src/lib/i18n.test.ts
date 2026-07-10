@@ -1,8 +1,22 @@
 import { describe, expect, test } from "vitest";
-import { createI18n, resolveInitialLocale, supportedLocales } from "./i18n";
+import { createI18n, resolveInitialLocale, supportedLocales, translationKeysForLocale } from "./i18n";
 import { buildProductWorkAreas, buildTerminalWorkspace } from "./terminal-workbench";
 
 describe("i18n", () => {
+  test("keeps Stage 3 AI review keys in parity across Chinese and English", () => {
+    const zh = createI18n("zh-CN");
+    const en = createI18n("en-US");
+    expect(zh.t("aiReviewStage3.title")).toBe("权威 AI 评审");
+    expect(en.t("aiReviewStage3.title")).toBe("Authoritative AI review");
+    expect(zh.t("aiReviewStage3.reason.context-mismatch")).toBe("研究上下文不一致");
+    expect(en.t("aiReviewStage3.reason.context-mismatch")).toBe("Research context mismatch");
+    expect(zh.t("aiReviewStage3.legacyNonAuthoritative")).toBe("旧版 · 非权威记录");
+    expect(en.t("aiReviewStage3.legacyNonAuthoritative")).toBe("Legacy · non-authoritative");
+    expect(zh.t("aiReviewStage3.error.decisionReadbackFailed")).toBe("AI 评审 Decision 回读失败。");
+    expect(en.t("aiReviewStage3.error.decisionReadbackFailed")).toBe("AI review Decision readback failed.");
+    expect(translationKeysForLocale("zh-CN")).toEqual(translationKeysForLocale("en-US"));
+  });
+
   test("defaults to Simplified Chinese unless a supported locale is stored", () => {
     expect(resolveInitialLocale()).toBe("zh-CN");
     expect(resolveInitialLocale("en-US")).toBe("en-US");

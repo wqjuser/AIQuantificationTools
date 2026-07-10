@@ -7,6 +7,10 @@ const strategyExperimentSectionSource = readFileSync(
   new URL("../components/StrategyExperimentSection.tsx", import.meta.url),
   "utf8"
 );
+const aiReviewStage3SectionSource = readFileSync(
+  new URL("../components/AiReviewStage3Section.tsx", import.meta.url),
+  "utf8"
+);
 const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
 const readmeSource = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
 const productPlanSource = readFileSync(new URL("../../../../docs/product-plan.md", import.meta.url), "utf8");
@@ -75,6 +79,44 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
+  test("keeps the authoritative AI review section presentational and responsive", () => {
+    expect(appSource).toContain('import { AiReviewStage3Section } from "./components/AiReviewStage3Section";');
+    expect(appSource).toContain("<AiReviewStage3Section");
+    expect(aiReviewStage3SectionSource).not.toContain("fetch(");
+    expect(aiReviewStage3SectionSource).not.toContain("useState(");
+    expect(aiReviewStage3SectionSource).not.toContain("useEffect(");
+    expect(aiReviewStage3SectionSource).toContain('className="ai-review-stage3-assessments"');
+    expect(aiReviewStage3SectionSource).toContain('className="ai-review-stage3-hash"');
+    expect(cssBlock(".ai-review-stage3-assessments")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(cssBlock(".ai-review-stage3-hash")).toContain("overflow-wrap: anywhere;");
+    expect(hasCssBlockWith("  .ai-review-stage3-assessments", ["grid-template-columns: 1fr;"])).toBe(true);
+    expect(hasCssBlockWith("  .ai-review-stage3-actions button", ["width: 100%;"])).toBe(true);
+  });
+
+  test("owns Stage 3 authority state in App and re-reads the Decision chain after append", () => {
+    const appendSource = sourceBetween(
+      "const appendAiReviewStage3Decision = useCallback",
+      "  ]);"
+    );
+    expect(appSource).toContain("aiReviewStage3ContextGenerationRef");
+    expect(appSource).toContain("aiReviewStage3ReviewGenerationRef");
+    expect(appSource).toContain("aiReviewStage3ContextAbortControllerRef");
+    expect(appSource).toContain("aiReviewStage3ReviewAbortControllerRef");
+    expect(appSource).toContain("aiReviewRequestIsCurrent({");
+    expect(appendSource).toContain("appendAiReviewDecision(");
+    expect(appendSource).toContain("loadAiReviewDecisions(");
+    expect(appendSource.indexOf("appendAiReviewDecision(")).toBeLessThan(
+      appendSource.indexOf("loadAiReviewDecisions(")
+    );
+    expect(appendSource.indexOf("loadAiReviewDecisions(")).toBeLessThan(
+      appendSource.indexOf("setAiReviewStage3Decisions(readback.decisions)")
+    );
+    expect(aiReviewStage3SectionSource).toContain("AI_REVIEW_EXTERNAL_DATA_FIELDS.map");
+    expect(aiReviewStage3SectionSource).toContain("buildAiReviewAssessmentColumns(currentReview)");
+    expect(aiReviewStage3SectionSource).toContain("legacyHistory.map");
+    expect(aiReviewStage3SectionSource).toContain("(!requiresApproval || externalDataApproved)");
+  });
+
   test("splits production vendor dependencies instead of emitting one large entry chunk", () => {
     expect(viteConfig).toContain("rolldownOptions");
     expect(viteConfig).toContain("codeSplitting");

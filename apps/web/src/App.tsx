@@ -112,6 +112,12 @@ import {
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
   createStrategyExperiment,
+  appendAiReviewDecision,
+  createAuthoritativeAiReview,
+  loadAiReviewDecisions,
+  loadAiReviewProviders,
+  loadAuthoritativeAiReview,
+  loadAuthoritativeAiReviews,
   loadStrategyExperimentDetail,
   loadStrategyExperiments,
   runPortfolioBacktest,
@@ -252,13 +258,28 @@ import {
 import { PortfolioPaperOrderAuditLedgerPanel } from "./components/PortfolioPaperOrderAuditLedgerPanel";
 import { ExecutionAdapterPaperExecutionAuditLedgerPanel } from "./components/ExecutionAdapterPaperExecutionAuditLedgerPanel";
 import { StrategyExperimentSection, isStrategyExperimentDraftValid } from "./components/StrategyExperimentSection";
+import { AiReviewStage3Section } from "./components/AiReviewStage3Section";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
+import {
+  aiReviewRequestIsCurrent,
+  buildAiReviewDecisionDraft,
+  resolveAiReviewPrimaryExperiment,
+  toggleAiReviewComparisonSelection,
+  type AiReviewDecision,
+  type AiReviewProviderId,
+  type AiReviewProviderStatus,
+  type AppendAiReviewDecisionRequest,
+  type AuthoritativeAiReviewRun,
+  type LegacyAiReviewHistoryRecord
+} from "./lib/ai-review-stage3";
 import {
   buildTerminalWorkspace,
   buildAgentCommitteeRounds,
   buildAiActionWorkflowState,
   buildAiEvidenceCards,
   buildAiReviewDossier,
+  buildAiReviewStage3CandidateKey,
+  buildAiReviewStage3ContextKey,
   buildAiReviewReportMarkdown,
   buildAiReviewAuditTimelineItems,
   buildAiReviewExportEvidenceIndexRows,
@@ -1934,6 +1955,21 @@ export function App() {
     useState<StrategyExperimentWalkForward | null>(null);
   const [isStrategyExperimentRunning, setIsStrategyExperimentRunning] = useState(false);
   const [strategyExperimentError, setStrategyExperimentError] = useState<string | null>(null);
+  const [aiReviewStage3Providers, setAiReviewStage3Providers] = useState<AiReviewProviderStatus[]>([]);
+  const [aiReviewStage3ProviderId, setAiReviewStage3ProviderId] = useState<AiReviewProviderId>("local");
+  const [aiReviewStage3ExternalDataApproved, setAiReviewStage3ExternalDataApproved] = useState(false);
+  const [aiReviewStage3PrimaryExperimentId, setAiReviewStage3PrimaryExperimentId] = useState<string | null>(null);
+  const [aiReviewStage3ComparisonExperimentIds, setAiReviewStage3ComparisonExperimentIds] = useState<string[]>([]);
+  const [aiReviewStage3CurrentReview, setAiReviewStage3CurrentReview] = useState<AuthoritativeAiReviewRun | null>(null);
+  const [aiReviewStage3Decisions, setAiReviewStage3Decisions] = useState<AiReviewDecision[]>([]);
+  const [aiReviewStage3History, setAiReviewStage3History] = useState<AuthoritativeAiReviewRun[]>([]);
+  const [aiReviewStage3LegacyHistory, setAiReviewStage3LegacyHistory] = useState<LegacyAiReviewHistoryRecord[]>([]);
+  const [aiReviewStage3DecisionDraft, setAiReviewStage3DecisionDraft] =
+    useState<AppendAiReviewDecisionRequest>(() => buildAiReviewDecisionDraft([]));
+  const [isLoadingAiReviewStage3, setIsLoadingAiReviewStage3] = useState(false);
+  const [isRunningAiReviewStage3, setIsRunningAiReviewStage3] = useState(false);
+  const [isAppendingAiReviewStage3Decision, setIsAppendingAiReviewStage3Decision] = useState(false);
+  const [aiReviewStage3Error, setAiReviewStage3Error] = useState<string | null>(null);
   const [strategyLibraryState, setStrategyLibraryState] = useState<StrategyLibraryResult>(initialStrategyLibraryState);
   const [strategyValidationState, setStrategyValidationState] =
     useState<StrategyValidationResult>(initialStrategyValidationState);
@@ -2355,6 +2391,11 @@ export function App() {
   const strategyExperimentSourceKeyRef = useRef<string | null>(null);
   const strategyExperimentWorkspaceRef = useRef(workspace);
   const strategyExperimentActiveRef = useRef(strategyExperimentActive);
+  const aiReviewStage3ContextGenerationRef = useRef(0);
+  const aiReviewStage3ReviewGenerationRef = useRef(0);
+  const aiReviewStage3ContextKeyRef = useRef("");
+  const aiReviewStage3ContextAbortControllerRef = useRef<AbortController | null>(null);
+  const aiReviewStage3ReviewAbortControllerRef = useRef<AbortController | null>(null);
   const aiReviewHistoryRequestIdRef = useRef(0);
   const auditEvidenceReportRequestIdRef = useRef(0);
   const marketDataRefreshOverrideAuditRequestIdRef = useRef(0);
@@ -2433,6 +2474,26 @@ export function App() {
     strategyExperimentMatchesSourceKey(strategyExperimentActive, strategyExperimentUsableSourceKey)
       ? strategyExperimentActive
       : null;
+  const aiReviewStage3Experiments = visibleStrategyExperimentActive
+    && !visibleStrategyExperimentHistory.some(
+      (experiment) => experiment.experimentId === visibleStrategyExperimentActive.experimentId
+    )
+      ? [visibleStrategyExperimentActive, ...visibleStrategyExperimentHistory]
+      : visibleStrategyExperimentHistory;
+  const aiReviewStage3ContextKey = buildAiReviewStage3ContextKey({
+    workspaceId: activeWorkAreaId,
+    researchWorkspaceId: workspace.researchWorkspaceState?.workspaceId ?? null,
+    market: workspace.selectedInstrument.market,
+    symbol: workspace.selectedInstrument.symbol,
+    timeframe: workspace.selectedTimeframe,
+    sourceRunId: strategyExperimentSourceRunId,
+    strategyRevision: strategyExperimentStrategyRevision
+  });
+  const aiReviewStage3CandidateKey = buildAiReviewStage3CandidateKey(
+    visibleStrategyExperimentActive?.experimentId ?? null,
+    aiReviewStage3Experiments
+  );
+  aiReviewStage3ContextKeyRef.current = aiReviewStage3ContextKey;
   const visibleStrategyExperimentUrlId = resolveStrategyExperimentIdForCurrentSource(
     visibleStrategyExperimentActive,
     strategyExperimentUsableSourceKey
@@ -3609,6 +3670,316 @@ export function App() {
     setAiReviewHistoryOffset(0);
     setAiReviewHistoryPagination(null);
   }, []);
+
+  const invalidateAiReviewStage3Review = useCallback(() => {
+    aiReviewStage3ReviewAbortControllerRef.current?.abort();
+    aiReviewStage3ReviewAbortControllerRef.current = null;
+    aiReviewStage3ReviewGenerationRef.current += 1;
+    setIsRunningAiReviewStage3(false);
+    setIsAppendingAiReviewStage3Decision(false);
+    setAiReviewStage3CurrentReview(null);
+    setAiReviewStage3Decisions([]);
+    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]));
+  }, []);
+
+  const beginAiReviewStage3ReviewRequest = useCallback(() => {
+    aiReviewStage3ReviewAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestGeneration = aiReviewStage3ReviewGenerationRef.current + 1;
+    aiReviewStage3ReviewGenerationRef.current = requestGeneration;
+    aiReviewStage3ReviewAbortControllerRef.current = controller;
+    setIsRunningAiReviewStage3(false);
+    setIsAppendingAiReviewStage3Decision(false);
+    return {
+      contextGeneration: aiReviewStage3ContextGenerationRef.current,
+      requestGeneration,
+      scopeKey: aiReviewStage3ContextKeyRef.current,
+      signal: controller.signal
+    };
+  }, []);
+
+  const aiReviewStage3ReviewRequestIsCurrent = useCallback((request: {
+    contextGeneration: number;
+    requestGeneration: number;
+    scopeKey: string;
+    signal: AbortSignal;
+  }) => aiReviewStage3ContextGenerationRef.current === request.contextGeneration
+    && aiReviewRequestIsCurrent({
+      requestGeneration: request.requestGeneration,
+      currentGeneration: aiReviewStage3ReviewGenerationRef.current,
+      requestScopeKey: request.scopeKey,
+      currentScopeKey: aiReviewStage3ContextKeyRef.current,
+      aborted: request.signal.aborted
+    }), []);
+
+  useEffect(() => {
+    aiReviewStage3ContextAbortControllerRef.current?.abort();
+    aiReviewStage3ReviewAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestGeneration = aiReviewStage3ContextGenerationRef.current + 1;
+    const requestScopeKey = aiReviewStage3ContextKey;
+    aiReviewStage3ContextGenerationRef.current = requestGeneration;
+    aiReviewStage3ReviewGenerationRef.current += 1;
+    aiReviewStage3ContextAbortControllerRef.current = controller;
+    aiReviewStage3ReviewAbortControllerRef.current = null;
+    setAiReviewStage3Providers([]);
+    setAiReviewStage3ProviderId("local");
+    setAiReviewStage3ExternalDataApproved(false);
+    setAiReviewStage3PrimaryExperimentId(null);
+    setAiReviewStage3ComparisonExperimentIds([]);
+    setAiReviewStage3History([]);
+    setAiReviewStage3LegacyHistory([]);
+    setAiReviewStage3CurrentReview(null);
+    setAiReviewStage3Decisions([]);
+    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]));
+    setAiReviewStage3Error(null);
+    setIsRunningAiReviewStage3(false);
+    setIsAppendingAiReviewStage3Decision(false);
+
+    if (activeWorkAreaId !== "ai-review" || !strategyExperimentSourceRunId) {
+      setIsLoadingAiReviewStage3(false);
+      return () => controller.abort();
+    }
+
+    setIsLoadingAiReviewStage3(true);
+    void Promise.all([
+      loadAiReviewProviders(quantCoreBaseUrl, controller.signal),
+      loadAuthoritativeAiReviews(quantCoreBaseUrl, {
+        runId: strategyExperimentSourceRunId,
+        limit: 50,
+        offset: 0
+      }, controller.signal)
+    ]).then(([providerResult, historyResult]) => {
+      if (!aiReviewRequestIsCurrent({
+        requestGeneration,
+        currentGeneration: aiReviewStage3ContextGenerationRef.current,
+        requestScopeKey,
+        currentScopeKey: aiReviewStage3ContextKeyRef.current,
+        aborted: controller.signal.aborted
+      })) {
+        return;
+      }
+      setAiReviewStage3Providers(providerResult.providers);
+      setAiReviewStage3History(historyResult.reviews);
+      setAiReviewStage3LegacyHistory(historyResult.legacyReviews);
+      setAiReviewStage3Error([providerResult.error, historyResult.error].filter(Boolean).join(" · ") || null);
+      setIsLoadingAiReviewStage3(false);
+    });
+
+    return () => controller.abort();
+  }, [activeWorkAreaId, aiReviewStage3ContextKey, strategyExperimentSourceRunId]);
+
+  useEffect(() => {
+    const primary = resolveAiReviewPrimaryExperiment(
+      visibleStrategyExperimentActive,
+      aiReviewStage3Experiments
+    );
+    invalidateAiReviewStage3Review();
+    setAiReviewStage3PrimaryExperimentId(primary?.experimentId ?? null);
+    setAiReviewStage3ComparisonExperimentIds([]);
+    setAiReviewStage3ExternalDataApproved(false);
+    setAiReviewStage3Error(null);
+  }, [aiReviewStage3CandidateKey, aiReviewStage3ContextKey, invalidateAiReviewStage3Review]);
+
+  const selectAiReviewStage3Primary = useCallback((experimentId: string) => {
+    const candidate = aiReviewStage3Experiments.find(
+      (experiment) => experiment.experimentId === experimentId && experiment.status === "completed"
+    );
+    if (!candidate || candidate.experimentId === aiReviewStage3PrimaryExperimentId) {
+      return;
+    }
+    invalidateAiReviewStage3Review();
+    setAiReviewStage3PrimaryExperimentId(candidate.experimentId);
+    setAiReviewStage3ComparisonExperimentIds([]);
+    setAiReviewStage3ExternalDataApproved(false);
+    setAiReviewStage3Error(null);
+  }, [aiReviewStage3Experiments, aiReviewStage3PrimaryExperimentId, invalidateAiReviewStage3Review]);
+
+  const toggleAiReviewStage3Comparison = useCallback((experimentId: string) => {
+    const primary = aiReviewStage3Experiments.find(
+      (experiment) => experiment.experimentId === aiReviewStage3PrimaryExperimentId
+    );
+    const candidate = aiReviewStage3Experiments.find((experiment) => experiment.experimentId === experimentId);
+    if (!primary || !candidate) {
+      return;
+    }
+    const next = toggleAiReviewComparisonSelection(
+      primary,
+      candidate,
+      aiReviewStage3ComparisonExperimentIds
+    );
+    if (next.join("|") === aiReviewStage3ComparisonExperimentIds.join("|")) {
+      return;
+    }
+    invalidateAiReviewStage3Review();
+    setAiReviewStage3ComparisonExperimentIds(next);
+    setAiReviewStage3ExternalDataApproved(false);
+    setAiReviewStage3Error(null);
+  }, [
+    aiReviewStage3ComparisonExperimentIds,
+    aiReviewStage3Experiments,
+    aiReviewStage3PrimaryExperimentId,
+    invalidateAiReviewStage3Review
+  ]);
+
+  const selectAiReviewStage3Provider = useCallback((providerId: AiReviewProviderId) => {
+    if (providerId === aiReviewStage3ProviderId) {
+      return;
+    }
+    invalidateAiReviewStage3Review();
+    setAiReviewStage3ProviderId(providerId);
+    setAiReviewStage3ExternalDataApproved(false);
+    setAiReviewStage3Error(null);
+  }, [aiReviewStage3ProviderId, invalidateAiReviewStage3Review]);
+
+  const approveAiReviewStage3ExternalData = useCallback((approved: boolean) => {
+    if (approved === aiReviewStage3ExternalDataApproved) {
+      return;
+    }
+    invalidateAiReviewStage3Review();
+    setAiReviewStage3ExternalDataApproved(approved);
+    setAiReviewStage3Error(null);
+  }, [aiReviewStage3ExternalDataApproved, invalidateAiReviewStage3Review]);
+
+  const runAiReviewStage3 = useCallback(async () => {
+    const selectedProvider = aiReviewStage3Providers.find(
+      (provider) => provider.providerId === aiReviewStage3ProviderId
+    );
+    if (!aiReviewStage3PrimaryExperimentId
+      || !selectedProvider?.configured
+      || (aiReviewStage3ProviderId !== "local" && !aiReviewStage3ExternalDataApproved)) {
+      return;
+    }
+    const request = beginAiReviewStage3ReviewRequest();
+    setAiReviewStage3CurrentReview(null);
+    setAiReviewStage3Decisions([]);
+    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]));
+    setIsRunningAiReviewStage3(true);
+    setAiReviewStage3Error(null);
+    const result = await createAuthoritativeAiReview(quantCoreBaseUrl, {
+      primaryExperimentId: aiReviewStage3PrimaryExperimentId,
+      comparisonExperimentIds: aiReviewStage3ComparisonExperimentIds,
+      providerId: aiReviewStage3ProviderId,
+      externalDataApproved: aiReviewStage3ExternalDataApproved
+    }, request.signal);
+    if (!aiReviewStage3ReviewRequestIsCurrent(request)) {
+      return;
+    }
+    setIsRunningAiReviewStage3(false);
+    if (result.source !== "core" || !result.review) {
+      setAiReviewStage3Error(result.error ?? strategyExperimentI18nRef.current.t("aiReviewStage3.error.reviewFailed"));
+      return;
+    }
+    setAiReviewStage3CurrentReview(result.review);
+    setAiReviewStage3Decisions(result.latestDecision ? [result.latestDecision] : []);
+    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft(result.latestDecision ? [result.latestDecision] : []));
+    setAiReviewStage3History((current) => [
+      result.review!,
+      ...current.filter((review) => review.aiReviewId !== result.review!.aiReviewId)
+    ]);
+  }, [
+    aiReviewStage3ComparisonExperimentIds,
+    aiReviewStage3ExternalDataApproved,
+    aiReviewStage3PrimaryExperimentId,
+    aiReviewStage3ProviderId,
+    aiReviewStage3Providers,
+    aiReviewStage3ReviewRequestIsCurrent,
+    beginAiReviewStage3ReviewRequest
+  ]);
+
+  const inspectAiReviewStage3 = useCallback(async (aiReviewId: string) => {
+    const request = beginAiReviewStage3ReviewRequest();
+    setAiReviewStage3CurrentReview(null);
+    setAiReviewStage3Decisions([]);
+    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]));
+    setIsRunningAiReviewStage3(true);
+    setAiReviewStage3Error(null);
+    const [reviewResult, decisionResult] = await Promise.all([
+      loadAuthoritativeAiReview(quantCoreBaseUrl, aiReviewId, request.signal),
+      loadAiReviewDecisions(quantCoreBaseUrl, aiReviewId, request.signal)
+    ]);
+    if (!aiReviewStage3ReviewRequestIsCurrent(request)) {
+      return;
+    }
+    setIsRunningAiReviewStage3(false);
+    const latestDecision = decisionResult.decisions.at(-1) ?? null;
+    if (reviewResult.source !== "core" || !reviewResult.review || decisionResult.source !== "core"
+      || (reviewResult.latestDecision?.decisionId ?? null) !== (latestDecision?.decisionId ?? null)) {
+      setAiReviewStage3Error(
+        reviewResult.error
+          ?? decisionResult.error
+          ?? strategyExperimentI18nRef.current.t("aiReviewStage3.error.readbackInconsistent")
+      );
+      return;
+    }
+    setAiReviewStage3CurrentReview(reviewResult.review);
+    setAiReviewStage3Decisions(decisionResult.decisions);
+    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft(decisionResult.decisions));
+  }, [aiReviewStage3ReviewRequestIsCurrent, beginAiReviewStage3ReviewRequest]);
+
+  const updateAiReviewStage3DecisionDraft = useCallback((draft: AppendAiReviewDecisionRequest) => {
+    setAiReviewStage3DecisionDraft({
+      ...draft,
+      supersedesDecisionId: aiReviewStage3Decisions.at(-1)?.decisionId ?? null
+    });
+  }, [aiReviewStage3Decisions]);
+
+  const appendAiReviewStage3Decision = useCallback(async () => {
+    if (!aiReviewStage3CurrentReview) {
+      return;
+    }
+    const request = beginAiReviewStage3ReviewRequest();
+    const reviewId = aiReviewStage3CurrentReview.aiReviewId;
+    const decisionRequest: AppendAiReviewDecisionRequest = {
+      ...aiReviewStage3DecisionDraft,
+      operator: aiReviewStage3DecisionDraft.operator.trim(),
+      rationale: aiReviewStage3DecisionDraft.rationale.trim(),
+      supersedesDecisionId: aiReviewStage3Decisions.at(-1)?.decisionId ?? null
+    };
+    setIsAppendingAiReviewStage3Decision(true);
+    setAiReviewStage3Error(null);
+    const appendResult = await appendAiReviewDecision(
+      quantCoreBaseUrl,
+      reviewId,
+      decisionRequest,
+      request.signal
+    );
+    if (!aiReviewStage3ReviewRequestIsCurrent(request)) {
+      return;
+    }
+    if (appendResult.source !== "core" || !appendResult.decision) {
+      setIsAppendingAiReviewStage3Decision(false);
+      setAiReviewStage3Error(
+        appendResult.error ?? strategyExperimentI18nRef.current.t("aiReviewStage3.error.decisionAppendFailed")
+      );
+      return;
+    }
+
+    const readback = await loadAiReviewDecisions(quantCoreBaseUrl, reviewId, request.signal);
+    if (!aiReviewStage3ReviewRequestIsCurrent(request)) {
+      return;
+    }
+    setIsAppendingAiReviewStage3Decision(false);
+    if (readback.source !== "core"
+      || readback.decisions.at(-1)?.decisionId !== appendResult.decision.decisionId) {
+      setAiReviewStage3Error(
+        readback.error ?? strategyExperimentI18nRef.current.t("aiReviewStage3.error.decisionReadbackFailed")
+      );
+      return;
+    }
+    setAiReviewStage3Decisions(readback.decisions);
+    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft(
+      readback.decisions,
+      decisionRequest.operator,
+      ""
+    ));
+  }, [
+    aiReviewStage3CurrentReview,
+    aiReviewStage3DecisionDraft,
+    aiReviewStage3Decisions,
+    aiReviewStage3ReviewRequestIsCurrent,
+    beginAiReviewStage3ReviewRequest
+  ]);
 
   const strategyExperimentRequestIsCurrent = useCallback((requestGeneration: number, sourceKey: string) => (
     strategyExperimentRequestGenerationRef.current === requestGeneration &&
@@ -11888,6 +12259,32 @@ export function App() {
     if (activeWorkAreaId === "ai-review") {
       return (
         <>
+          <AiReviewStage3Section
+            appendingDecision={isAppendingAiReviewStage3Decision}
+            comparisonExperimentIds={aiReviewStage3ComparisonExperimentIds}
+            currentReview={aiReviewStage3CurrentReview}
+            decisionDraft={aiReviewStage3DecisionDraft}
+            decisions={aiReviewStage3Decisions}
+            error={aiReviewStage3Error}
+            experiments={aiReviewStage3Experiments}
+            externalDataApproved={aiReviewStage3ExternalDataApproved}
+            history={aiReviewStage3History}
+            i18n={i18n}
+            legacyHistory={aiReviewStage3LegacyHistory}
+            loading={isLoadingAiReviewStage3}
+            onAppendDecision={() => void appendAiReviewStage3Decision()}
+            onComparisonToggle={toggleAiReviewStage3Comparison}
+            onDecisionDraftChange={updateAiReviewStage3DecisionDraft}
+            onExternalDataApprovedChange={approveAiReviewStage3ExternalData}
+            onLoadReview={(aiReviewId) => void inspectAiReviewStage3(aiReviewId)}
+            onPrimaryChange={selectAiReviewStage3Primary}
+            onProviderChange={selectAiReviewStage3Provider}
+            onRunReview={() => void runAiReviewStage3()}
+            primaryExperimentId={aiReviewStage3PrimaryExperimentId}
+            providerId={aiReviewStage3ProviderId}
+            providers={aiReviewStage3Providers}
+            running={isRunningAiReviewStage3}
+          />
           {renderAgentPanel("workflow-agent-panel")}
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />

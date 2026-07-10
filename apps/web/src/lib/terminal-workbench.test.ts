@@ -34,6 +34,8 @@ import {
   buildAiReviewRecordDriftRows,
   buildAiReviewRunRecord,
   buildAiReviewAuditTimelineItems,
+  buildAiReviewStage3CandidateKey,
+  buildAiReviewStage3ContextKey,
   buildAiReviewExportEvidenceIndexRows,
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
@@ -342,6 +344,40 @@ import {
   workspaceFromResearchRunAudit,
   strategySnapshotFromStrategyConfig
 } from "./terminal-workbench";
+
+describe("Stage 3 AI review state scopes", () => {
+  test("changes context scope for workspace, market context, run, or strategy changes", () => {
+    const base = {
+      workspaceId: "ai-review",
+      researchWorkspaceId: "research",
+      market: "ashare" as const,
+      symbol: "600000",
+      timeframe: "1d" as const,
+      sourceRunId: "run-1",
+      strategyRevision: "strategy-1"
+    };
+    const key = buildAiReviewStage3ContextKey(base);
+    expect(buildAiReviewStage3ContextKey({ ...base, workspaceId: "backtest" })).not.toBe(key);
+    expect(buildAiReviewStage3ContextKey({ ...base, symbol: "000001" })).not.toBe(key);
+    expect(buildAiReviewStage3ContextKey({ ...base, sourceRunId: "run-2" })).not.toBe(key);
+    expect(buildAiReviewStage3ContextKey({ ...base, strategyRevision: "strategy-2" })).not.toBe(key);
+  });
+
+  test("changes candidate scope when active or available experiment evidence changes", () => {
+    const candidates = [
+      { experimentId: "experiment-1", status: "completed" as const, resultHash: "a".repeat(64) }
+    ];
+    const key = buildAiReviewStage3CandidateKey("experiment-1", candidates);
+    expect(buildAiReviewStage3CandidateKey(null, candidates)).not.toBe(key);
+    expect(buildAiReviewStage3CandidateKey("experiment-1", [
+      ...candidates,
+      { experimentId: "experiment-2", status: "completed", resultHash: "b".repeat(64) }
+    ])).not.toBe(key);
+    expect(buildAiReviewStage3CandidateKey("experiment-1", [
+      { ...candidates[0], resultHash: "c".repeat(64) }
+    ])).not.toBe(key);
+  });
+});
 
 function sampleStage1BootstrapPreflight(
   status: "ready" | "review" | "blocked" | "missing" | "invalid" = "ready"
