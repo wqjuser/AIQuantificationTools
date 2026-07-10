@@ -1,342 +1,342 @@
-# Stage 3 Auditable AI Review Design
+# 第 3 阶段可审计 AI 评审设计
 
-## Goal
+## 目标
 
-Formally close Stage 2 after its final main-branch acceptance, open Stage 3 as the only current product stage, and ship an auditable AI review decision loop over persisted Strategy Experiment evidence.
+在最终主分支验收通过后正式关闭第 2 阶段，将第 3 阶段设为唯一当前产品阶段，并围绕已持久化的策略实验（Strategy Experiment）证据交付一套可审计的 AI 评审决策闭环。
 
-Every review has a deterministic local baseline. A user may explicitly add one external-model enrichment through a configured OpenAI, OpenAI-compatible, or Ollama provider. External availability never determines whether the local review can complete, and neither AI output nor a human research decision authorizes paper or live execution.
+每次评审都必须包含本地确定性基线。用户可以显式选择已配置的 OpenAI、OpenAI-compatible 或 Ollama provider，增加一次外部模型增强。外部 provider 是否可用不影响本地评审完成；AI 输出和人工研究决策都不能授权模拟或实盘执行。
 
-## Approved Product Decisions
+## 已确认的产品决策
 
-- AI review is audit-first and retains a deterministic local baseline.
-- Human decisions are separate, append-only records rather than mutable fields on a review.
-- A review supports one primary experiment and optional comparison experiments.
-- Comparison experiments must share market, symbol, timeframe, and a derived strategy lineage while allowing different audited runs and canonical snapshots.
-- Comparisons assess consistency, robustness, and evidence quality; they do not rank a global winner by raw return.
-- Human decision states are `accepted_for_research`, `revision_requested`, `rejected`, and `insufficient_evidence`.
-- External models are optional enhancements.
-- Initial provider adapters are official OpenAI, generic OpenAI-compatible, and native Ollama.
-- The user explicitly chooses one provider. There is no silent cross-provider failover or multi-model fan-out.
+- AI 评审采用审计优先原则，并始终保留本地确定性基线。
+- 人工决策是独立的追加式记录，不是 AI Review Run 上的可变字段。
+- 一份评审支持一个主实验和可选的多个对比实验。
+- 对比实验必须具有相同的市场、标的、周期和派生策略 lineage，但允许来自不同审计 run 和 canonical snapshot。
+- 对比只评价一致性、稳健性和证据质量，不按原始收益率选出“全局最佳”。
+- 人工决策状态为 `accepted_for_research`、`revision_requested`、`rejected` 和 `insufficient_evidence`。
+- 外部模型只是可选增强。
+- 第一批 provider adapter 为官方 OpenAI、通用 OpenAI-compatible 和原生 Ollama。
+- 用户必须显式选择一个 provider；禁止静默跨 provider 切换，也不同时请求多个模型。
 
-## Stage Boundary
+## 阶段边界
 
-The stage transition happens only after the full acceptance ladder passes on the implementation branch:
+只有实施分支上的完整验收链全部通过后，才执行阶段切换：
 
-- Stage 0 remains `maintenance`.
-- Stage 1 remains `maintenance` and its complete acceptance chain remains a regression gate.
-- Stage 2 moves from `current` to `maintenance`.
-- Stage 3 moves from `planned` to `current`.
-- Stages 4 and 5 remain `planned`.
+- 第 0 阶段保持 `maintenance`。
+- 第 1 阶段保持 `maintenance`，其完整验收链继续作为回归门禁。
+- 第 2 阶段从 `current` 切换为 `maintenance`。
+- 第 3 阶段从 `planned` 切换为 `current`。
+- 第 4、5 阶段保持 `planned`。
 
-Existing AI, portfolio, paper, adapter, and audit capabilities outside this design remain supporting infrastructure. This design does not expand Stage 4 or Stage 5.
+本设计范围之外的既有 AI、组合、模拟交易、adapter 和审计能力继续作为基础设施使用。本设计不扩展第 4 或第 5 阶段。
 
-## Non-Goals
+## 非目标
 
-- No autonomous order, paper approval, portfolio change, or live authorization.
-- No raw OHLCV, research-note text, account, position, order, or execution payload is sent to an external model.
-- No provider registry UI, dynamic model discovery, automatic provider fallback, retry queue, streaming UI, tool calling, web search, RAG, or background job system.
-- No Anthropic, Gemini, or other provider adapter in the first Stage 3 release.
-- No mutable AI review or human-decision record.
+- 不自动创建订单、批准模拟执行、修改组合或授权实盘。
+- 不向外部模型发送原始 OHLCV、研究笔记正文、账户、持仓、订单或执行 payload。
+- 不建设 provider 注册表 UI、动态模型发现、自动 provider 回退、重试队列、流式 UI、工具调用、联网搜索、RAG 或后台任务系统。
+- 第一版不实现 Anthropic、Gemini 或其他 provider adapter。
+- 不允许修改既有 AI Review Run 或人工 Decision。
 
-## Architecture
+## 架构
 
-### Evidence Assembler
+### 证据组装器
 
-`AiReviewEvidenceAssembler` accepts a primary experiment ID and up to four comparison experiment IDs. It loads evidence from `ResearchRunStore` and `StrategyExperimentStore`; clients cannot submit metrics, hashes, candidates, or review conclusions.
+`AiReviewEvidenceAssembler` 接收一个主实验 ID 和最多四个对比实验 ID。它从 `ResearchRunStore` 与 `StrategyExperimentStore` 读取证据；客户端不能提交 metrics、hash、候选结果或评审结论。
 
-The assembler verifies:
+组装器必须校验：
 
-- every experiment exists and is `completed`;
-- experiment, definition, snapshot, source run, strategy revision, selected candidate, definition hash, and result hash agree;
-- the selected candidate has test metrics and non-selected candidates do not;
-- comparison IDs are unique and do not repeat the primary ID;
-- all comparisons share the required context and strategy lineage;
-- no more than five experiments are included.
+- 每个实验均存在且状态为 `completed`；
+- experiment、definition、snapshot、source run、strategy revision、selected candidate、definition hash 和 result hash 相互一致；
+- 选中候选具有 test metrics，未选中候选不具有 test metrics；
+- 对比 ID 唯一，且不能与主实验 ID 重复；
+- 全部对比实验满足上下文和策略 lineage 限制；
+- 一份评审最多包含五个实验。
 
-It emits a canonical evidence bundle plus `evidenceHash`.
+组装器输出 canonical evidence bundle 和 `evidenceHash`。
 
-### Strategy Lineage
+### 策略 Lineage
 
-No new strategy-family table is introduced. `strategyLineageKey` is the canonical hash of:
+不新增策略族数据表。`strategyLineageKey` 是以下内容的 canonical hash：
 
-- market, symbol, and timeframe;
-- normalized strategy name;
-- ordered entry and exit condition kinds;
-- the sorted parameter-key set for each condition.
+- market、symbol 和 timeframe；
+- 规范化后的策略名称；
+- 有序的 entry/exit condition kinds；
+- 每个 condition 排序后的参数键集合。
 
-Parameter values, strategy revisions, audited runs, and snapshots may differ. A changed strategy name, condition order, condition kind, or parameter shape creates a different lineage.
+参数值、strategy revision、审计 run 和 snapshot 可以不同。策略名称、condition 顺序、condition kind 或参数结构变化时，必须生成不同 lineage。
 
-### Deterministic Review Engine
+### 确定性评审引擎
 
-`DeterministicAiReviewEngine` always runs. It evaluates evidence completeness, data-quality state, validation/test consistency, drawdown, trade count, walk-forward stability, comparison consistency, and live-safety boundaries.
+`DeterministicAiReviewEngine` 每次都必须运行。它评价证据完整性、数据质量、validation/test 一致性、回撤、交易次数、walk-forward 稳定性、跨实验一致性和实盘安全边界。
 
-It returns the same structured assessment schema used by external providers:
+确定性引擎与外部 provider 使用相同的结构化 assessment schema：
 
-- `stance`: `supported`, `caution`, `blocked`, or `insufficient_evidence`;
-- `summary`;
-- `risks[]` with severity, text, and evidence references;
-- `invalidationConditions[]`;
-- `watchItems[]`;
-- `evidenceGaps[]`;
-- comparison `consistency`: `consistent`, `mixed`, `divergent`, or `insufficient`.
+- `stance`：`supported`、`caution`、`blocked` 或 `insufficient_evidence`；
+- `summary`；
+- `risks[]`：包含严重级别、说明和 evidence references；
+- `invalidationConditions[]`；
+- `watchItems[]`；
+- `evidenceGaps[]`；
+- 对比模式额外包含 `consistency`：`consistent`、`mixed`、`divergent` 或 `insufficient`。
 
-The engine never emits orders, target prices, position instructions, guaranteed returns, or execution authorization.
+引擎禁止输出订单、目标价格、仓位指令、收益保证或执行授权。
 
-### External Provider Layer
+### 外部 Provider 层
 
-One small `AiReviewProvider` protocol has three real implementations because three providers are in scope:
+由于范围内确实存在三个 provider，实现一个小型 `AiReviewProvider` protocol 和三个真实 adapter：
 
-- `OpenAiResponsesProvider` calls the official OpenAI Responses API with structured output.
-- `OpenAiCompatibleProvider` calls a configured Chat Completions-compatible endpoint.
-- `OllamaChatProvider` calls Ollama's native chat endpoint with a JSON Schema format.
+- `OpenAiResponsesProvider`：调用官方 OpenAI Responses API，并要求结构化输出。
+- `OpenAiCompatibleProvider`：调用已配置的 Chat Completions-compatible endpoint。
+- `OllamaChatProvider`：调用 Ollama 原生 chat endpoint，并通过 JSON Schema 指定输出格式。
 
-The selected provider receives the same bounded canonical evidence summary. The prompt treats all evidence strings as data, not instructions. Provider output is accepted only after strict JSON-schema validation and evidence-reference validation.
+选中的 provider 只能接收同一份受限 canonical evidence summary。Prompt 必须把全部证据字符串视为数据而不是指令。只有通过严格 JSON Schema 校验和 evidence-reference 校验的输出才能被接受。
 
-The deterministic and external assessments remain separate in the saved record. External output cannot overwrite the deterministic stance or any safety boundary.
+确定性 assessment 与外部 assessment 在记录中保持独立。外部输出不能覆盖确定性 stance 或任何安全边界。
 
-## Provider Configuration
+## Provider 配置
 
-### Official OpenAI
+### 官方 OpenAI
 
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
-- fixed request URL: `https://api.openai.com/v1/responses`
+- 固定请求地址：`https://api.openai.com/v1/responses`
 
-### Generic OpenAI-Compatible
+### 通用 OpenAI-Compatible
 
 - `OPENAI_COMPATIBLE_BASE_URL`
 - `OPENAI_COMPATIBLE_API_KEY`
 - `OPENAI_COMPATIBLE_MODEL`
-- request URL: `OPENAI_COMPATIBLE_BASE_URL.rstrip("/") + "/chat/completions"`
+- 请求地址：`OPENAI_COMPATIBLE_BASE_URL.rstrip("/") + "/chat/completions"`
 
-The configured base URL includes the provider's API prefix, such as `https://example.com/v1`, and excludes the final `/chat/completions` endpoint.
+配置的 Base URL 必须包含 provider 自己的 API 前缀，例如 `https://example.com/v1`，但不能包含最终 `/chat/completions` endpoint。
 
-### Native Ollama
+### 原生 Ollama
 
-- `OLLAMA_BASE_URL`, default `http://127.0.0.1:11434`
+- `OLLAMA_BASE_URL`，默认值为 `http://127.0.0.1:11434`
 - `OLLAMA_MODEL`
-- request URL: `OLLAMA_BASE_URL.rstrip("/") + "/api/chat"`
+- 请求地址：`OLLAMA_BASE_URL.rstrip("/") + "/api/chat"`
 
-Compose explicitly passes these variables to the API container. Provider status reports only configured/unconfigured state, model, and a sanitized base URL that retains scheme, host, port, and path while removing user info, query, and fragment. Keys are never returned or logged.
+Compose 必须显式把这些变量传入 API 容器。Provider 状态只返回已配置/未配置状态、model 和脱敏 Base URL；脱敏结果保留 scheme、host、port 和 path，但移除 user info、query 和 fragment。Key 不能被返回或写入日志。
 
-Each provider has one configured model in the first release. The UI does not discover remote models or accept an arbitrary endpoint.
+第一版每个 provider 只配置一个 model。UI 不发现远端模型，也不接受任意 endpoint。
 
-## External Data Boundary
+## 外部数据边界
 
-External requests may contain:
+外部请求可以包含：
 
-- experiment and evidence IDs/hashes;
-- market, symbol, timeframe, and snapshot date range;
-- strategy condition structure and risk parameters;
-- train, validation, selected-test, and walk-forward metric summaries;
-- data-quality status and warnings;
-- deterministic evidence references.
+- experiment ID、evidence ID 和对应 hash；
+- market、symbol、timeframe 与 snapshot 日期区间；
+- 策略 condition 结构和风险参数；
+- train、validation、selected-test 与 walk-forward 指标摘要；
+- 数据质量状态和 warnings；
+- 确定性 evidence references。
 
-External requests exclude:
+外部请求不能包含：
 
-- raw bars;
-- free-form research-note content;
-- API keys or secret-like metadata;
-- account, position, portfolio, order, paper-execution, and live-adapter payloads;
-- audit signing material;
-- hidden model reasoning.
+- 原始 bars；
+- 自由文本研究笔记；
+- API Key 或 secret-like metadata；
+- 账户、持仓、组合、订单、paper execution 和 live adapter payload；
+- 审计签名材料；
+- 模型隐藏推理。
 
-The frontend displays the provider, model, sanitized base URL, and outbound field groups before enabling the confirmation checkbox.
+前端只有在展示 provider、model、脱敏 Base URL 和外发字段组后，才能启用外发确认框。
 
 ## Review Run Schema
 
-`aiqt.aiReviewRun` schema v2 is backend-generated and immutable.
+`aiqt.aiReviewRun` schema v2 只能由后端生成，并且不可变。
 
-Required top-level fields:
+必需的顶层字段：
 
-- `schemaVersion`, `recordType`, `aiReviewId`, `createdAt`;
-- `mode`: `single` or `comparison`;
-- `primaryExperiment` and `comparisonExperiments`;
-- `strategyLineageKey`, `evidenceHash`;
-- `deterministicAssessment`;
-- `externalAssessment`;
-- `recordHash`;
-- the fixed evidence-only and paper/live-blocked boundary.
+- `schemaVersion`、`recordType`、`aiReviewId`、`createdAt`；
+- `mode`：`single` 或 `comparison`；
+- `primaryExperiment` 和 `comparisonExperiments`；
+- `strategyLineageKey`、`evidenceHash`；
+- `deterministicAssessment`；
+- `externalAssessment`；
+- `recordHash`；
+- 固定的 evidence-only 和 paper/live-blocked 边界。
 
-Each experiment reference contains experiment ID, source run ID, strategy revision, snapshot ID, definition hash, result hash, selected candidate ID, candidate revision, canonical data hash, and data range.
+每个实验引用包含 experiment ID、source run ID、strategy revision、snapshot ID、definition hash、result hash、selected candidate ID、candidate revision、canonical data hash 和数据区间。
 
-`externalAssessment` contains:
+`externalAssessment` 包含：
 
-- `status`: `completed`, `failed`, or `skipped`;
-- provider, model, sanitized base URL, and endpoint hash;
-- prompt-template and output-schema versions, the exact bounded rendered prompt, rendered-prompt hash, and evidence/request/response hashes;
-- validated structured output when completed;
-- token usage when returned, latency, and bounded error category/detail;
-- no API key and no hidden-reasoning field.
+- `status`：`completed`、`failed` 或 `skipped`；
+- provider、model、脱敏 Base URL 和 endpoint hash；
+- prompt-template version、output-schema version、受限的完整 rendered prompt、rendered-prompt hash 以及 evidence/request/response hashes；
+- 成功时保存已校验的结构化输出；
+- provider 返回的 token usage、latency 和受限错误分类/说明；
+- 不包含 API Key 或隐藏推理字段。
 
-The existing `ai_review_runs` table gains nullable v2 query columns. V2 insert is immutable: an ID conflict may return the existing row only when `recordHash` is identical; otherwise it is a conflict. Schema v1 records remain readable, importable, exportable, and visibly labeled legacy/non-authoritative.
+现有 `ai_review_runs` 表增加可空的 v2 查询列。V2 采用不可变 insert：只有 `recordHash` 完全一致时，ID 冲突才可返回原记录；否则返回 conflict。Schema v1 记录继续支持读取、导入和导出，并在 UI 中明确标记为 legacy/non-authoritative。
 
-The old run-scoped HTTP POST that accepts a complete client-generated v1 record is retired. Internal package import may still restore valid v1 records.
+旧的 run-scoped HTTP POST 会接收完整客户端 v1 record，因此必须退役。内部复现包导入流程仍可恢复合法 v1 记录。
 
-## Human Decision Schema
+## 人工 Decision Schema
 
-`aiqt.aiReviewDecision` schema v1 is stored in a new `ai_review_decisions` table.
+`aiqt.aiReviewDecision` schema v1 保存到新的 `ai_review_decisions` 表。
 
-Required fields:
+必需字段：
 
-- `decisionId`, `aiReviewId`, `createdAt`, and `operator`;
-- `status`: `accepted_for_research`, `revision_requested`, `rejected`, or `insufficient_evidence`;
-- bounded `rationale`;
-- `supersedesDecisionId`;
-- `reviewRecordHash` and `evidenceHash`;
-- paper-only/live-blocked boundary fields.
+- `decisionId`、`aiReviewId`、`createdAt` 和 `operator`；
+- `status`：`accepted_for_research`、`revision_requested`、`rejected` 或 `insufficient_evidence`；
+- 有长度限制的 `rationale`；
+- `supersedesDecisionId`；
+- `reviewRecordHash` 和 `evidenceHash`；
+- paper-only/live-blocked 边界字段。
 
-The first decision has no predecessor. A later decision must reference the current latest decision. An outdated predecessor returns `decision_conflict`; old rows are never updated or deleted.
+第一条 Decision 没有前置记录。后续 Decision 必须引用当前最新 Decision；引用过期记录时返回 `decision_conflict`。旧记录永远不能被更新或删除。
 
-No decision status authorizes paper or live execution. `accepted_for_research` means only that the reviewed evidence may continue through research iteration.
+任何 Decision 状态都不能授权模拟或实盘执行。`accepted_for_research` 只表示该证据可以继续进入研究迭代。
 
 ## API
 
-### Provider Status
+### Provider 状态
 
 `GET /api/ai-review/providers`
 
-Returns local, OpenAI, OpenAI-compatible, and Ollama readiness without making a network request.
+返回 local、OpenAI、OpenAI-compatible 和 Ollama 的配置状态，不发起网络请求。
 
-### Generate Review
+### 生成评审
 
 `POST /api/ai-reviews`
 
-The exact request fields are:
+请求只能包含：
 
-- `primaryExperimentId`;
-- `comparisonExperimentIds`;
-- `providerId`;
-- `externalDataApproved`.
+- `primaryExperimentId`；
+- `comparisonExperimentIds`；
+- `providerId`；
+- `externalDataApproved`。
 
-Provider `local` requires `externalDataApproved=false`. An external provider requires explicit approval and a complete configuration.
+Provider 为 `local` 时，`externalDataApproved` 必须是 `false`。使用外部 provider 时必须显式确认外发。
 
-### Read Reviews
+### 读取评审
 
 - `GET /api/ai-reviews/{aiReviewId}`
 - `GET /api/ai-reviews?runId=&experimentId=&limit=&offset=&query=`
 
-The existing run-scoped GET remains a compatible projection across v1 and v2 history.
+现有 run-scoped GET 继续作为 v1/v2 历史的兼容投影。
 
-### Human Decisions
+### 人工决策
 
 - `GET /api/ai-reviews/{aiReviewId}/decisions`
 - `POST /api/ai-reviews/{aiReviewId}/decisions`
 
-The decision request contains only operator, status, rationale, and `supersedesDecisionId`.
+Decision 请求只能包含 operator、status、rationale 和 `supersedesDecisionId`。
 
-## Processing Flow
+## 处理流程
 
-1. Validate the exact request shape.
-2. Load and validate primary/comparison evidence before any provider call.
-3. Assemble and hash the canonical evidence bundle.
-4. Generate the deterministic assessment.
-5. If an external provider is selected, verify external-data approval and configuration.
-6. If configuration is incomplete, record a failed external assessment without making an outbound request.
-7. Otherwise call the selected provider once with hard connection, total-time, response-size, and output-token limits.
-8. Validate the structured response and every evidence reference.
-9. Build and insert the immutable v2 record.
-10. Return the saved record and latest human-decision projection.
+1. 校验精确请求结构。
+2. 在调用任何 provider 前加载并校验主实验与对比实验。
+3. 组装 canonical evidence bundle 并计算 hash。
+4. 生成确定性 assessment。
+5. 如果选择外部 provider，校验外发确认和 provider 配置。
+6. 如果配置不完整，不发起外网请求，并记录失败的 external assessment。
+7. 配置完整时，只调用一次指定 provider，并设置严格的连接、总耗时、响应大小和输出 token 上限。
+8. 校验结构化响应和每一条 evidence reference。
+9. 构造并插入不可变 v2 record。
+10. 返回已保存 record 和最新人工 Decision 投影。
 
-An external configuration or runtime failure does not fail the local review. The record is saved with `externalAssessment.status=failed`; only evidence and request-shape errors prevent record creation.
+外部配置或运行失败不能导致本地评审失败。系统必须保存 `externalAssessment.status=failed` 的 Review Run；只有证据和请求结构错误才能阻止创建记录。
 
-## Frontend
+## 前端
 
-The existing AI Review workspace gains one authoritative Stage 3 panel rather than a new work area.
+在现有 AI Review 工作区增加一个权威 Stage 3 面板，不新增工作区。
 
-- The active completed Strategy Experiment is the default primary experiment.
-- Up to four eligible comparison experiments are selectable.
-- Ineligible experiments show a concise context or lineage reason and cannot be selected.
-- Provider controls show configuration state, model, and sanitized base URL.
-- External providers require a visible outbound-data confirmation.
-- Results display deterministic and external assessments side by side without merging their stances.
-- History displays evidence hash, experiment set, provider attempt, record hash, and legacy/authoritative status.
-- The decision form requires operator, one approved state, rationale, and the latest decision predecessor.
-- Decision history displays the complete append-only chain.
+- 当前 completed Strategy Experiment 自动成为主实验。
+- 最多可以选择四个符合条件的对比实验。
+- 不符合条件的实验显示简洁的上下文或 lineage 原因，并禁止选择。
+- Provider 控件显示配置状态、model 和脱敏 Base URL。
+- 外部 provider 必须显示外发数据确认。
+- 结果区并排展示确定性和外部 assessment，不合并二者 stance。
+- 历史区显示 evidence hash、实验集合、provider attempt、record hash 和 legacy/authoritative 状态。
+- Decision 表单要求 operator、已批准状态、rationale 和最新 Decision 前置 ID。
+- Decision 历史显示完整追加链。
 
-Loading a strategy candidate, changing research context, or losing the exact experiment binding clears the active review selection and keeps execution blocked. Stale async review/history/provider responses cannot commit into a new workspace context.
+加载策略候选、切换研究上下文或失去精确 experiment binding 时，必须清除当前 Review 选择并保持执行阻断。过期的异步 review/history/provider 响应不能写入新的工作区上下文。
 
-## Error Handling
+## 错误处理
 
-Evidence failures happen before any external request:
+证据错误必须发生在任何外部请求之前：
 
-- missing experiment: 404;
-- incomplete experiment, lineage/context/hash mismatch, or consumed evidence inconsistency: 409;
-- duplicate IDs, comparison overflow, unknown fields, or invalid values: 400.
+- experiment 不存在：404；
+- experiment 未完成、lineage/context/hash 不匹配或 consumed evidence 不一致：409；
+- ID 重复、对比数量超限、未知字段或值非法：400。
 
-An unconfigured selected provider produces a completed local review with `externalAssessment.status=failed`, error `ai_review_provider_not_configured`, and no outbound request. For a configured provider, timeout, HTTP failure, oversized response, invalid JSON, invalid schema, or unknown evidence references also produce a completed local review with failed external metadata.
+选择未配置 provider 时，仍生成完整本地评审，但 `externalAssessment.status=failed`、错误为 `ai_review_provider_not_configured`，并且不发起外网请求。对于已配置 provider，timeout、HTTP 错误、响应过大、JSON 无效、schema 无效或 evidence reference 未知，同样生成本地评审并记录失败 external metadata。
 
-Provider error details are bounded and recursively redact secret, token, API-key, private-key, password, and authorization fields. Raw provider responses are not logged.
+Provider 错误说明必须限制长度，并递归脱敏 secret、token、API key、private key、password 和 authorization 字段。原始 provider 响应不能写入日志。
 
-Decision creation validates the review record/evidence hashes and the latest predecessor. Concurrent stale writes return `decision_conflict`.
+创建 Decision 时必须校验 Review record/evidence hashes 和最新前置 Decision。并发写入使用过期前置记录时返回 `decision_conflict`。
 
-## Testing
+## 测试
 
-### Backend
+### 后端
 
-- canonical evidence and lineage hashes;
-- single and comparison assembly;
-- source run, revision, snapshot, definition, result, and candidate binding;
-- comparison context and limit failures;
-- selected-only test evidence;
-- deterministic assessment output;
-- v2 record immutability and v1 compatibility;
-- decision append order and concurrency conflicts.
+- canonical evidence 与 lineage hashes；
+- single/comparison 证据组装；
+- source run、revision、snapshot、definition、result 和 candidate 绑定；
+- comparison 上下文和数量限制错误；
+- selected-only test evidence；
+- 确定性 assessment 输出；
+- v2 record 不可变性和 v1 兼容性；
+- Decision 追加顺序与并发 conflict。
 
-### Provider Contracts
+### Provider 合约
 
-Tests use local fake HTTP servers; CI never calls a real provider.
+测试使用本地假 HTTP server；CI 不调用真实 provider。
 
-- official OpenAI Responses request/structured response;
-- generic Chat Completions URL and response mapping;
-- native Ollama `/api/chat` schema request and usage mapping;
-- missing configuration, timeout, HTTP failure, invalid JSON/schema, oversized response, and redaction;
-- no cross-provider fallback and exactly one outbound request.
+- 官方 OpenAI Responses 请求和结构化响应；
+- 通用 Chat Completions URL 与响应映射；
+- 原生 Ollama `/api/chat` schema 请求和 usage 映射；
+- 缺少配置、timeout、HTTP 错误、无效 JSON/schema、响应过大和脱敏；
+- 不跨 provider 回退，并且只发出一次请求。
 
 ### Web
 
-- provider readiness and explicit consent;
-- primary/comparison selection and eligibility reasons;
-- deterministic/external rendering;
-- legacy labeling;
-- decision creation and append-only history;
-- stale async suppression, refresh restoration, translations, and narrow layout.
+- provider readiness 和显式外发确认；
+- 主实验/对比实验选择与不合格原因；
+- 确定性/外部结果展示；
+- legacy 标记；
+- Decision 创建和追加式历史；
+- stale async 抑制、刷新恢复、翻译和窄屏布局。
 
-## Acceptance
+## 验收
 
-The final gate includes:
+最终门禁包括：
 
-- focused backend and Web tests;
-- complete `npm test`;
-- production Web build;
-- Docker rebuild without deleting persistent volumes;
-- full Stage 1 acceptance and current DMG;
-- Stage 2 smoke and saved-manifest validation;
-- new deterministic Stage 3 Docker smoke and saved-manifest validation;
-- browser acceptance for single review, comparison review, refresh restoration, decision replacement chain, unconfigured-provider state, and narrow layout;
-- one explicitly authorized live OpenAI-compatible smoke using the configured `.env` provider.
+- 聚焦后端与 Web 测试；
+- 完整 `npm test`；
+- Web 生产构建；
+- 不删除持久卷的 Docker 重建；
+- 完整第 1 阶段验收和当前 DMG；
+- 第 2 阶段 smoke 和已保存 manifest 校验；
+- 新增的确定性第 3 阶段 Docker smoke 和已保存 manifest 校验；
+- 浏览器验收：单实验评审、多实验对比、刷新恢复、Decision 改判链、provider 未配置状态和窄屏布局；
+- 使用当前 `.env` provider 进行一次显式授权的 OpenAI-compatible 外网 smoke。
 
-The live smoke sends only the approved minimal evidence summary, makes one request, performs no fallback or retry, validates the structured result and audit hashes, redacts logs, and keeps paper/live routing blocked whether it succeeds or fails.
+外网 smoke 只发送已批准的最小 evidence summary，只发起一次请求，不回退、不重试，校验结构化结果和审计 hashes，脱敏日志，并且无论成功或失败都保持 paper/live 阻断。
 
-Only after all non-optional gates pass does the stage status change from Stage 2 current to Stage 2 maintenance and Stage 3 current. A live-provider outage is recorded but does not block Stage 3 because the deterministic baseline and provider contract tests are authoritative.
+只有所有非可选门禁通过后，才把第 2 阶段从 current 切换为 maintenance，并把第 3 阶段切换为 current。外部 provider 暂时不可用时必须记录失败，但不能阻止第 3 阶段通过，因为确定性 baseline 与 provider contract tests 才是权威门禁。
 
-## Migration and Compatibility
+## 迁移与兼容
 
-- Existing v1 review records and export packages remain readable and importable.
-- V1 records are labeled legacy/non-authoritative and cannot satisfy the Stage 3 authoritative-review gate.
-- Existing research-run export/import continues to carry v1 records and gains v2 Review Run plus Decision artifacts and manifest counts.
-- Import validates record/evidence hashes, experiment references, decision predecessor chains, artifact counts, and live-blocked boundaries before writing.
-- Import rollback snapshots and restores both v2 reviews and decisions with existing research-run artifacts.
+- 现有 v1 Review 记录和复现包继续支持读取与导入。
+- V1 记录标记为 legacy/non-authoritative，不能满足第 3 阶段权威评审门禁。
+- 现有研究 run 导出/导入继续携带 v1 records，并增加 v2 Review Run、Decision artifact 和 manifest counts。
+- 导入写入前校验 record/evidence hashes、experiment references、Decision 前置链、artifact counts 和 live-blocked 边界。
+- 导入回滚必须与既有 research-run artifacts 一起快照并恢复 v2 reviews 与 decisions。
 
-## Completion Criteria
+## 完成标准
 
-Stage 3 opening is complete when:
+满足以下条件时，第 3 阶段开放完成：
 
-- backend-generated v2 reviews work in single and comparison modes;
-- local deterministic review always completes for valid evidence;
-- all three external provider adapters pass local contract tests;
-- the configured OpenAI-compatible live smoke is auditable and safe;
-- human decisions form a linear append-only chain;
-- review/export/import/replay preserve all hashes and boundaries;
-- Stage 1, Stage 2, Stage 3, build, Docker, browser, and desktop gates pass;
-- Stage 2 is maintenance and Stage 3 is current in source and documentation.
+- 后端生成的 v2 Review 在 single 和 comparison 模式均可用；
+- 合法证据始终可以完成本地确定性评审；
+- 三个外部 provider adapter 全部通过本地合约测试；
+- 已配置的 OpenAI-compatible 外网 smoke 可审计且安全；
+- 人工 Decisions 形成线性追加链；
+- Review/export/import/replay 保留全部 hashes 和边界；
+- 第 1、2、3 阶段、build、Docker、browser 和 desktop 门禁全部通过；
+- 源码与文档中的第 2 阶段为 maintenance、第 3 阶段为 current。
