@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import socket
 import sqlite3
 import tempfile
 import threading
@@ -4263,8 +4264,10 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
         method: str,
         path: str,
         payload: object | None = None,
+        *,
+        server: ThreadingHTTPServer | None = None,
     ) -> tuple[int, dict[str, Any]]:
-        connection = HTTPConnection(*self.server.server_address, timeout=5)
+        connection = HTTPConnection(*(server or self.server).server_address, timeout=5)
         try:
             body = None if payload is None else json.dumps(payload).encode("utf-8")
             headers = {} if body is None else {"Content-Type": "application/json"}
@@ -4273,6 +4276,53 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
             return response.status, json.loads(response.read().decode("utf-8"))
         finally:
             connection.close()
+
+    def _raw_request(
+        self,
+        path: str,
+        *,
+        content_length: str,
+        body: bytes,
+    ) -> tuple[int | None, dict[str, Any]]:
+        request = (
+            f"POST {path} HTTP/1.0\r\n"
+            "Host: 127.0.0.1\r\n"
+            "Content-Type: application/json\r\n"
+            f"Content-Length: {content_length}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode("ascii") + body
+        response = b""
+        with socket.create_connection(self.server.server_address, timeout=5) as client:
+            client.sendall(request)
+            client.shutdown(socket.SHUT_WR)
+            while chunk := client.recv(65_536):
+                response += chunk
+        headers, separator, raw_body = response.partition(b"\r\n\r\n")
+        status_line = headers.split(b"\r\n", 1)[0].split()
+        status = int(status_line[1]) if len(status_line) >= 2 else None
+        payload = json.loads(raw_body.decode("utf-8")) if separator and raw_body else {}
+        return status, payload
+
+    def _request_with_handler(
+        self,
+        handler: type[BaseHTTPRequestHandler],
+        method: str,
+        path: str,
+        payload: object | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        server.daemon_threads = True
+        thread = threading.Thread(
+            target=lambda: server.serve_forever(poll_interval=0.01),
+            daemon=True,
+        )
+        thread.start()
+        try:
+            return self._request(method, path, payload, server=server)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     @staticmethod
     def _review_request(**overrides: Any) -> dict[str, Any]:
@@ -4296,6 +4346,141 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
 
     def _create_review(self, **overrides: Any) -> tuple[int, dict[str, Any]]:
         return self._request("POST", "/api/ai-reviews", self._review_request(**overrides))
+
+    def test_json_body_reader_uses_stable_errors_for_every_invalid_boundary(self) -> None:
+        cases = (
+            ({}, b"", "request_body_required"),
+            ({"Content-Length": "nope"}, b"{}", "request_body_invalid_content_length"),
+            ({"Content-Length": "-1"}, b"", "request_body_invalid_content_length"),
+            ({"Content-Length": "0"}, b"", "request_body_required"),
+            ({"Content-Length": "10000001"}, b"", "request_body_too_large"),
+            ({"Content-Length": "3"}, b"{}", "request_body_incomplete"),
+            ({"Content-Length": "1"}, b"\xff", "request_body_must_be_utf8"),
+            ({"Content-Length": "1"}, b"{", "request_body_must_be_json"),
+            ({"Content-Length": "2"}, b"[]", "request_body_must_be_object"),
+        )
+        for headers, body, code in cases:
+            with self.subTest(code=code):
+                handler = object.__new__(self.handler)
+                handler.headers = headers
+                handler.rfile = io.BytesIO(body)
+                with self.assertRaisesRegex(ValueError, f"^{code}$"):
+                    handler._read_json_body()
+
+    def test_malformed_raw_bodies_map_to_route_specific_400_errors(self) -> None:
+        review_status, review_error = self._raw_request(
+            "/api/ai-reviews",
+            content_length="nope",
+            body=b"{}",
+        )
+        decision_status, decision_error = self._raw_request(
+            "/api/ai-reviews/missing/decisions",
+            content_length="1",
+            body=b"\xff",
+        )
+
+        self.assertEqual(review_status, 400)
+        self.assertEqual(
+            review_error,
+            {
+                "error": "invalid_ai_review_request",
+                "detail": "AI review request fields are invalid.",
+            },
+        )
+        self.assertEqual(decision_status, 400)
+        self.assertEqual(
+            decision_error,
+            {
+                "error": "invalid_ai_review_decision_request",
+                "detail": "AI review decision request fields are invalid.",
+            },
+        )
+
+    def test_provider_registry_reflects_environment_after_import_for_status_and_service(self) -> None:
+        from quant_core.api import QuantApiHandler
+
+        class Handler(QuantApiHandler):
+            pass
+
+        Handler.run_store = self.run_store
+        Handler.strategy_experiment_store = self.experiment_store
+        Handler.ai_review_store = AiReviewRunStore(self.root / "late-environment.sqlite3")
+        with patch.dict(
+            os.environ,
+            {"OPENAI_API_KEY": "late-key", "OPENAI_MODEL": "late-model"},
+        ), patch.object(
+            ai_review_providers,
+            "urlopen",
+            side_effect=AssertionError("provider status must not access the network"),
+        ), patch.object(
+            AiReviewProviderRegistry,
+            "from_environment",
+            wraps=AiReviewProviderRegistry.from_environment,
+        ) as from_environment:
+            status, payload = self._request_with_handler(
+                Handler,
+                "GET",
+                "/api/ai-review/providers",
+            )
+            create_status, _ = self._request_with_handler(
+                Handler,
+                "POST",
+                "/api/ai-reviews",
+                self._review_request(),
+            )
+
+        providers = {item["providerId"]: item for item in payload["providers"]}
+        self.assertEqual(status, 200)
+        self.assertEqual(create_status, 201)
+        self.assertEqual(from_environment.call_count, 2)
+        self.assertTrue(providers["openai"]["configured"])
+        self.assertEqual(providers["openai"]["model"], "late-model")
+
+    def test_decisions_follow_a_subclass_review_store_without_extra_injection(self) -> None:
+        from quant_core.api import QuantApiHandler
+
+        review_store = AiReviewRunStore(self.root / "subclass-api.sqlite3")
+        run_store = self.run_store
+        experiment_store = self.experiment_store
+
+        class Handler(QuantApiHandler):
+            pass
+
+        Handler.run_store = run_store
+        Handler.strategy_experiment_store = experiment_store
+        Handler.ai_review_store = review_store
+        create_status, created = self._request_with_handler(
+            Handler,
+            "POST",
+            "/api/ai-reviews",
+            self._review_request(),
+        )
+        review_id = created["review"]["aiReviewId"]
+        decision_status, decision_payload = self._request_with_handler(
+            Handler,
+            "POST",
+            f"/api/ai-reviews/{review_id}/decisions",
+            self._decision_request(),
+        )
+        detail_status, detail = self._request_with_handler(
+            Handler,
+            "GET",
+            f"/api/ai-reviews/{review_id}",
+        )
+        decisions_status, decisions = self._request_with_handler(
+            Handler,
+            "GET",
+            f"/api/ai-reviews/{review_id}/decisions",
+        )
+
+        self.assertEqual(create_status, 201)
+        self.assertEqual(decision_status, 201)
+        self.assertEqual(detail_status, 200)
+        self.assertEqual(decisions_status, 200)
+        self.assertEqual(detail["latestDecision"], decision_payload["decision"])
+        self.assertEqual(decisions["decisions"], [decision_payload["decision"]])
+        self.assertEqual(Handler.ai_review_decision_store.path, review_store.path.resolve())
+        self.assertIs(Handler.ai_review_decision_store.review_store, review_store)
 
     def test_provider_status_is_read_only_camel_case_and_secret_free(self) -> None:
         with patch.object(
@@ -4386,6 +4571,7 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
         refreshed_status, refreshed = self._request("GET", f"/api/ai-reviews/{review_id}")
         self.assertEqual(refreshed_status, 200)
         self.assertEqual(refreshed["latestDecision"], decision)
+        self.assertIs(self.handler.ai_review_decision_store, self.decision_store)
 
     def test_review_request_is_exact_and_evidence_errors_keep_stable_statuses(self) -> None:
         invalid_requests = (

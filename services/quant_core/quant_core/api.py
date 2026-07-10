@@ -432,7 +432,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     execution_adapter_certification_store = ExecutionAdapterCertificationStore(Path("data/execution_adapter_certifications.sqlite"))
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     ai_review_decision_store = AiReviewDecisionStore(ai_review_store.path, review_store=ai_review_store)
-    ai_review_provider_registry = AiReviewProviderRegistry.from_environment()
+    ai_review_provider_registry: AiReviewProviderRegistry | None = None
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
@@ -503,7 +503,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 return
             try:
-                decision = self.ai_review_decision_store.append(
+                decision = self._current_ai_review_decision_store().append(
                     decision_review_id,
                     self._read_json_body(),
                 )
@@ -3025,7 +3025,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                             "model": status.model,
                             "sanitizedBaseUrl": status.sanitized_base_url,
                         }
-                        for status in self.ai_review_provider_registry.statuses()
+                        for status in self._current_ai_review_provider_registry().statuses()
                     ]
                 }
             )
@@ -3039,7 +3039,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 return
             try:
-                decisions = self.ai_review_decision_store.list_by_review(decision_review_id)
+                decisions = self._current_ai_review_decision_store().list_by_review(
+                    decision_review_id
+                )
             except ValueError as error:
                 self._send_ai_review_decision_error(error)
                 return
@@ -3096,7 +3098,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             latest_decision = None
             if isinstance(review, AuthoritativeAiReviewRunRecord):
                 try:
-                    latest_decision = self.ai_review_decision_store.latest(ai_review_id)
+                    latest_decision = self._current_ai_review_decision_store().latest(
+                        ai_review_id
+                    )
                 except ValueError as error:
                     self._send_ai_review_decision_error(error)
                     return
@@ -4396,16 +4400,30 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_json_body(self) -> dict[str, object]:
-        content_length = int(self.headers.get("Content-Length", "0") or "0")
-        if content_length <= 0:
+        raw_content_length = self.headers.get("Content-Length")
+        if raw_content_length is None:
+            raise ValueError("request_body_required")
+        if not raw_content_length.isascii() or not raw_content_length.isdecimal():
+            raise ValueError("request_body_invalid_content_length")
+        try:
+            content_length = int(raw_content_length)
+        except ValueError:
+            raise ValueError("request_body_invalid_content_length") from None
+        if content_length == 0:
             raise ValueError("request_body_required")
         if content_length > 10_000_000:
             raise ValueError("request_body_too_large")
         raw = self.rfile.read(content_length)
+        if len(raw) != content_length:
+            raise ValueError("request_body_incomplete")
         try:
-            payload = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError as error:
-            raise ValueError("request_body_must_be_json") from error
+            decoded = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ValueError("request_body_must_be_utf8") from None
+        try:
+            payload = json.loads(decoded)
+        except json.JSONDecodeError:
+            raise ValueError("request_body_must_be_json") from None
         if not isinstance(payload, dict):
             raise ValueError("request_body_must_be_object")
         return payload
@@ -4441,9 +4459,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 run_store=self.run_store,
             ),
             deterministic_engine=DeterministicAiReviewEngine(),
-            provider_registry=self.ai_review_provider_registry,
+            provider_registry=self._current_ai_review_provider_registry(),
             review_store=self.ai_review_store,
         )
+
+    def _current_ai_review_provider_registry(self) -> AiReviewProviderRegistry:
+        return self.ai_review_provider_registry or AiReviewProviderRegistry.from_environment()
+
+    def _current_ai_review_decision_store(self) -> AiReviewDecisionStore:
+        decision_store = self.ai_review_decision_store
+        review_store = self.ai_review_store
+        if (
+            decision_store.review_store is review_store
+            and decision_store.path.resolve() == review_store.path.resolve()
+        ):
+            return decision_store
+        decision_store = AiReviewDecisionStore(review_store.path, review_store=review_store)
+        type(self).ai_review_decision_store = decision_store
+        return decision_store
 
     def _send_ai_review_decision_error(self, error: ValueError) -> None:
         code = str(error) or "invalid_ai_review_decision_request"
