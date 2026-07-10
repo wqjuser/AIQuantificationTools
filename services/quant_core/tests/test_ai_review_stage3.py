@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime, timezone
 from http.client import BadStatusLine, HTTPException, IncompleteRead, LineTooLong
@@ -28,6 +29,11 @@ from quant_core.ai_review_providers import (
     OpenAiResponsesProvider,
     sanitize_base_url,
     sanitize_error_detail,
+)
+from quant_core.ai_review_runs import (
+    AiReviewRunRecord,
+    AiReviewRunStore,
+    AuthoritativeAiReviewRunRecord,
 )
 from quant_core.ai_review_stage3 import (
     AiReviewEvidenceAssembler,
@@ -242,6 +248,109 @@ def _rehash_bundle(bundle: dict[str, Any]) -> None:
     )
 
 
+def _authoritative_review_record(
+    *,
+    ai_review_id: str = "ai-review-v2-primary",
+    run_id: str = "run-primary",
+    experiment_id: str = "experiment-primary",
+    created_at: str = "2026-07-10T08:00:00+00:00",
+    summary: str = "Authoritative Stage 3 review.",
+) -> dict[str, Any]:
+    primary_experiment = {
+        "experimentId": experiment_id,
+        "sourceRunId": run_id,
+        "strategyRevision": "1" * 64,
+        "snapshotId": "2" * 64,
+        "definitionHash": "3" * 64,
+        "resultHash": "4" * 64,
+        "selectedCandidateId": "candidate-selected",
+        "candidateRevision": "5" * 64,
+        "canonicalDataHash": "6" * 64,
+        "dataRange": {
+            "startAt": "2026-01-01T00:00:00+00:00",
+            "endAt": "2026-06-30T00:00:00+00:00",
+        },
+    }
+    strategy_lineage_key = "7" * 64
+    evidence_bundle = {
+        "schemaVersion": 1,
+        "mode": "single",
+        "primaryExperiment": copy.deepcopy(primary_experiment),
+        "comparisonExperiments": [],
+        "strategyLineageKey": strategy_lineage_key,
+        "evidenceItems": [],
+        "safetyBoundary": {
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "orderSubmissionAllowed": False,
+        },
+    }
+    evidence_bundle["evidenceHash"] = canonical_sha256(evidence_bundle)
+    record = {
+        "schemaVersion": 2,
+        "recordType": "aiqt.aiReviewRun",
+        "aiReviewId": ai_review_id,
+        "createdAt": created_at,
+        "mode": "single",
+        "primaryExperiment": primary_experiment,
+        "comparisonExperiments": [],
+        "strategyLineageKey": strategy_lineage_key,
+        "evidenceBundle": evidence_bundle,
+        "evidenceHash": evidence_bundle["evidenceHash"],
+        "deterministicAssessment": {
+            "stance": "supported",
+            "summary": summary,
+            "risks": [],
+            "invalidationConditions": [],
+            "watchItems": [],
+            "evidenceGaps": [],
+            "consistency": "insufficient",
+        },
+        "externalAssessment": {
+            "status": "skipped",
+            "provider": "local",
+            "model": None,
+            "sanitizedBaseUrl": None,
+            "endpointHash": None,
+            "promptTemplateVersion": "aiqt-ai-review-v1",
+            "outputSchemaVersion": "aiqt-ai-review-assessment-v1",
+            "renderedPrompt": "",
+            "renderedPromptHash": canonical_sha256(""),
+            "evidenceHash": evidence_bundle["evidenceHash"],
+            "requestHash": None,
+            "responseHash": None,
+            "assessment": None,
+            "usage": None,
+            "latencyMs": 0,
+            "error": None,
+        },
+        "boundary": {
+            "purpose": "research_evidence_review_only",
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "orderSubmissionAllowed": False,
+        },
+    }
+    record["recordHash"] = canonical_sha256(record)
+    return record
+
+
+def _rehash_authoritative_review(record: dict[str, Any]) -> None:
+    record["recordHash"] = canonical_sha256(
+        {key: value for key, value in record.items() if key != "recordHash"}
+    )
+
+
+def _rehash_authoritative_evidence(record: dict[str, Any]) -> None:
+    bundle = record["evidenceBundle"]
+    bundle["evidenceHash"] = canonical_sha256(
+        {key: value for key, value in bundle.items() if key != "evidenceHash"}
+    )
+    record["evidenceHash"] = bundle["evidenceHash"]
+    record["externalAssessment"]["evidenceHash"] = bundle["evidenceHash"]
+    _rehash_authoritative_review(record)
+
+
 def _bars(seed: int) -> list[dict[str, Any]]:
     return [
         {
@@ -312,6 +421,326 @@ def _result_hash(
             "schemaVersion": 1,
         }
     )
+
+
+class AiReviewRunStoreV2Tests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.path = Path(self.temporary_directory.name) / "ai-review-runs.sqlite3"
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    def _legacy_record(
+        self,
+        *,
+        ai_review_id: str = "ai-review-v1",
+        run_id: str = "run-primary",
+        created_at: str = "2026-07-10T07:00:00+00:00",
+    ) -> dict[str, Any]:
+        return {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": ai_review_id,
+            "runId": run_id,
+            "createdAt": created_at,
+            "status": "ready",
+            "summary": {"liveExecutionBlocked": True},
+            "dossier": {"headline": "Legacy review"},
+            "citations": [],
+            "rounds": [],
+            "decisionLog": [],
+            "boundary": "Evidence explanation only; live routing remains blocked.",
+        }
+
+    def _create_old_schema(self, record: dict[str, Any]) -> None:
+        with closing(sqlite3.connect(self.path)) as connection:
+            connection.execute(
+                """
+                create table ai_review_runs (
+                    ai_review_id text primary key,
+                    run_id text not null,
+                    created_at text not null,
+                    record_json text not null
+                )
+                """
+            )
+            connection.execute(
+                "insert into ai_review_runs values (?, ?, ?, ?)",
+                (
+                    record["aiReviewId"],
+                    record["runId"],
+                    record["createdAt"],
+                    json.dumps(record),
+                ),
+            )
+            connection.commit()
+
+    def _assert_store_error(self, code: str, record: dict[str, Any]) -> None:
+        with self.assertRaisesRegex(ValueError, f"^{code}$"):
+            AiReviewRunStore(self.path).record_v2(record)
+
+    def test_concurrent_open_migrates_old_schema_and_preserves_legacy_rows(self) -> None:
+        legacy = self._legacy_record()
+        self._create_old_schema(legacy)
+        barrier = threading.Barrier(3)
+        errors: list[BaseException] = []
+
+        def open_store() -> None:
+            barrier.wait()
+            try:
+                AiReviewRunStore(self.path)
+            except BaseException as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=open_store) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        self.assertEqual(errors, [])
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        store = AiReviewRunStore(self.path)
+        records = store.list_by_run("run-primary")
+        self.assertEqual(len(records), 1)
+        self.assertIsInstance(records[0], AiReviewRunRecord)
+        self.assertEqual(records[0].authority, "legacy")
+        self.assertEqual(records[0].record, legacy)
+
+        with closing(sqlite3.connect(self.path)) as connection:
+            columns = {row[1] for row in connection.execute("pragma table_info(ai_review_runs)")}
+            indexes = {row[1] for row in connection.execute("pragma index_list(ai_review_runs)")}
+            migrated = connection.execute(
+                """
+                select schema_version, primary_experiment_id, evidence_hash, record_hash, authority
+                from ai_review_runs
+                where ai_review_id = ?
+                """,
+                (legacy["aiReviewId"],),
+            ).fetchone()
+
+        self.assertTrue(
+            {"schema_version", "primary_experiment_id", "evidence_hash", "record_hash", "authority"}
+            <= columns
+        )
+        self.assertTrue(
+            {
+                "idx_ai_review_runs_created_at",
+                "idx_ai_review_runs_run_id",
+                "idx_ai_review_runs_primary_experiment_id",
+                "idx_ai_review_runs_record_hash",
+            }
+            <= indexes
+        )
+        self.assertEqual(migrated, (None, None, None, None, None))
+
+    def test_record_v2_persists_complete_canonical_record_and_query_columns(self) -> None:
+        record = _authoritative_review_record()
+        store = AiReviewRunStore(self.path)
+
+        stored = store.record_v2(record)
+        loaded = store.get(record["aiReviewId"])
+
+        self.assertIsInstance(stored, AuthoritativeAiReviewRunRecord)
+        self.assertEqual(stored.authority, "authoritative")
+        self.assertEqual(stored.run_id, record["primaryExperiment"]["sourceRunId"])
+        self.assertEqual(stored.primary_experiment_id, "experiment-primary")
+        self.assertEqual(stored.evidence_hash, record["evidenceHash"])
+        self.assertEqual(stored.record_hash, record["recordHash"])
+        self.assertEqual(stored.record, record)
+        self.assertEqual(loaded, stored)
+
+        with closing(sqlite3.connect(self.path)) as connection:
+            row = connection.execute(
+                """
+                select schema_version, primary_experiment_id, evidence_hash, record_hash,
+                       authority, record_json
+                from ai_review_runs
+                where ai_review_id = ?
+                """,
+                (record["aiReviewId"],),
+            ).fetchone()
+        self.assertEqual(row[:5], (2, "experiment-primary", record["evidenceHash"], record["recordHash"], "authoritative"))
+        self.assertEqual(row[5], canonical_json(record))
+
+    def test_record_v2_is_idempotent_for_same_hash_and_conflicts_without_overwrite(self) -> None:
+        store = AiReviewRunStore(self.path)
+        record = _authoritative_review_record()
+        first = store.record_v2(record)
+
+        second = store.record_v2(copy.deepcopy(record))
+        conflicting = _authoritative_review_record(summary="Changed assessment must not overwrite.")
+        with self.assertRaisesRegex(ValueError, "^ai_review_record_conflict$"):
+            store.record_v2(conflicting)
+
+        self.assertEqual(second, first)
+        self.assertEqual(store.get(record["aiReviewId"]), first)
+        with closing(sqlite3.connect(self.path)) as connection:
+            count = connection.execute("select count(*) from ai_review_runs").fetchone()[0]
+        self.assertEqual(count, 1)
+
+    def test_record_v2_serializes_concurrent_conflicts_across_connections(self) -> None:
+        first = _authoritative_review_record(summary="First concurrent body.")
+        second = _authoritative_review_record(summary="Second concurrent body.")
+        stores = (AiReviewRunStore(self.path), AiReviewRunStore(self.path))
+        barrier = threading.Barrier(3)
+        outcomes: list[tuple[str, str]] = []
+
+        def insert(store: AiReviewRunStore, record: dict[str, Any]) -> None:
+            barrier.wait()
+            try:
+                stored = store.record_v2(record)
+                outcomes.append(("stored", stored.record_hash))
+            except ValueError as error:
+                outcomes.append(("error", str(error)))
+
+        threads = [
+            threading.Thread(target=insert, args=(stores[0], first)),
+            threading.Thread(target=insert, args=(stores[1], second)),
+        ]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(sum(outcome[0] == "stored" for outcome in outcomes), 1)
+        self.assertEqual(
+            [outcome for outcome in outcomes if outcome[0] == "error"],
+            [("error", "ai_review_record_conflict")],
+        )
+        loaded = stores[0].get(first["aiReviewId"])
+        self.assertIsInstance(loaded, AuthoritativeAiReviewRunRecord)
+        self.assertIn(loaded.record_hash, {first["recordHash"], second["recordHash"]})
+        with closing(sqlite3.connect(self.path)) as connection:
+            self.assertEqual(connection.execute("select count(*) from ai_review_runs").fetchone()[0], 1)
+
+    def test_record_v2_rejects_missing_or_invalid_hash_schema_and_boundary(self) -> None:
+        cases: dict[str, tuple[str, Any]] = {
+            "missing record hash": (
+                "ai_review_record_hash_required",
+                lambda record: record.pop("recordHash"),
+            ),
+            "missing evidence hash": (
+                "ai_review_evidence_hash_required",
+                lambda record: (record.pop("evidenceHash"), _rehash_authoritative_review(record)),
+            ),
+            "wrong schema": (
+                "unsupported_ai_review_schema_version",
+                lambda record: (record.update({"schemaVersion": 3}), _rehash_authoritative_review(record)),
+            ),
+            "unsafe boundary": (
+                "ai_review_boundary_invalid",
+                lambda record: (
+                    record["boundary"].update({"liveTradingAllowed": True}),
+                    _rehash_authoritative_review(record),
+                ),
+            ),
+            "unsafe evidence boundary": (
+                "ai_review_boundary_invalid",
+                lambda record: (
+                    record["evidenceBundle"]["safetyBoundary"].update(
+                        {"orderSubmissionAllowed": True}
+                    ),
+                    _rehash_authoritative_evidence(record),
+                ),
+            ),
+            "evidence hash mismatch": (
+                "ai_review_evidence_hash_mismatch",
+                lambda record: (
+                    record.update({"evidenceHash": "f" * 64}),
+                    _rehash_authoritative_review(record),
+                ),
+            ),
+            "record hash mismatch": (
+                "ai_review_record_hash_mismatch",
+                lambda record: record.update({"recordHash": "f" * 64}),
+            ),
+        }
+        for label, (code, mutate) in cases.items():
+            with self.subTest(case=label):
+                record = _authoritative_review_record(ai_review_id=f"review-invalid-{label}")
+                mutate(record)
+                self._assert_store_error(code, record)
+
+    def test_lists_legacy_and_authoritative_records_by_run_experiment_query_and_page(self) -> None:
+        store = AiReviewRunStore(self.path)
+        legacy = store.record(self._legacy_record())
+        authoritative = store.record_v2(
+            _authoritative_review_record(
+                ai_review_id="ai-review-v2-shared",
+                created_at="2026-07-10T08:00:00+00:00",
+                summary="Needle authoritative assessment.",
+            )
+        )
+        store.record_v2(
+            _authoritative_review_record(
+                ai_review_id="ai-review-v2-other",
+                run_id="run-other",
+                experiment_id="experiment-other",
+                created_at="2026-07-10T09:00:00+00:00",
+            )
+        )
+
+        by_run = store.list_by_run("run-primary")
+        page = store.list_by_run("run-primary", limit=1, offset=1)
+        by_query = store.list_by_run("run-primary", query="needle")
+        by_experiment = store.list_by_experiment("experiment-primary", query="needle")
+        combined = store.list_recent(
+            run_id="run-primary",
+            experiment_id="experiment-primary",
+            limit=1,
+            offset=0,
+            query="authoritative",
+        )
+
+        self.assertEqual(by_run, [authoritative, legacy])
+        self.assertEqual(page, [legacy])
+        self.assertEqual(by_query, [authoritative])
+        self.assertEqual(by_experiment, [authoritative])
+        self.assertEqual(combined, [authoritative])
+        self.assertEqual([record.authority for record in by_run], ["authoritative", "legacy"])
+        self.assertEqual(store.count_by_run("run-primary"), 2)
+        self.assertEqual(store.count_by_run("run-primary", query="needle"), 1)
+
+    def test_v2_reads_validate_canonical_json_instead_of_trusting_query_columns(self) -> None:
+        record = _authoritative_review_record()
+        store = AiReviewRunStore(self.path)
+        store.record_v2(record)
+        with closing(sqlite3.connect(self.path)) as connection:
+            connection.execute(
+                """
+                update ai_review_runs
+                set schema_version = 1,
+                    evidence_hash = 'query-column-tampered',
+                    record_hash = 'query-column-tampered',
+                    authority = 'legacy'
+                where ai_review_id = ?
+                """,
+                (record["aiReviewId"],),
+            )
+            connection.commit()
+
+        loaded = store.get(record["aiReviewId"])
+        self.assertIsInstance(loaded, AuthoritativeAiReviewRunRecord)
+        self.assertEqual(loaded.authority, "authoritative")
+        self.assertEqual(loaded.evidence_hash, record["evidenceHash"])
+        self.assertEqual(loaded.record_hash, record["recordHash"])
+
+        unsafe = copy.deepcopy(record)
+        unsafe["boundary"]["orderSubmissionAllowed"] = True
+        _rehash_authoritative_review(unsafe)
+        with closing(sqlite3.connect(self.path)) as connection:
+            connection.execute(
+                "update ai_review_runs set record_json = ? where ai_review_id = ?",
+                (canonical_json(unsafe), record["aiReviewId"]),
+            )
+            connection.commit()
+        with self.assertRaisesRegex(ValueError, "^ai_review_boundary_invalid$"):
+            store.get(record["aiReviewId"])
 
 
 class AiReviewEvidenceAssemblerTests(unittest.TestCase):
