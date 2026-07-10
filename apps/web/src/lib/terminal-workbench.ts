@@ -9153,6 +9153,20 @@ export function workspaceNeedsStrategyReaudit(workspace: TerminalWorkspace): boo
   return !workspace.researchRun && activeQuantLoopStepId(workspace) === "strategy";
 }
 
+export function goldenPathRunRebindIsCurrent(
+  capturedWorkspace: TerminalWorkspace,
+  currentWorkspace: TerminalWorkspace,
+  capturedSelectionVersion: number,
+  currentSelectionVersion: number,
+  capturedWorkflowRunId: number,
+  currentWorkflowRunId: number
+): boolean {
+  return capturedWorkspace === currentWorkspace &&
+    capturedSelectionVersion === currentSelectionVersion &&
+    capturedWorkflowRunId === currentWorkflowRunId &&
+    !workspaceNeedsStrategyReaudit(currentWorkspace);
+}
+
 const backtestAssumptionSpecs: Record<
   BacktestAssumptionField,
   { label: string; suffix: string; min: number; step: number }

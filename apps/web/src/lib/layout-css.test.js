@@ -1206,6 +1206,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("goldenPath?.latestRunId");
     expect(appSource).toContain("loadResearchRunDetail(quantCoreBaseUrl, latestRunId)");
     expect(appSource).toContain("await replayRun(detail.run)");
+    expect(ensureRunSource).toContain("goldenPathRunRebindIsCurrent");
+    expect(ensureRunSource).toContain("if (!rebound)");
     expect(ensureRunSource).toContain("if (strategyDraftRequiresReaudit)");
     expect(ensureRunSource).toContain('statusLabel: "Strategy draft requires audit"');
     expect(ensureRunSource).toContain("Run Pipeline to audit the current strategy draft");

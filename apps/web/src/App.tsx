@@ -686,6 +686,7 @@ import {
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithSavedWatchlist,
   workspaceWithStrategyExperimentCandidate,
+  goldenPathRunRebindIsCurrent,
   workspaceNeedsStrategyReaudit,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
@@ -6598,17 +6599,21 @@ export function App() {
   }, [loadPaperExecutionDeepLink]);
 
   const replayRun = useCallback(
-    async (run: ResearchRunAudit) => {
+    async (run: ResearchRunAudit): Promise<boolean> => {
       const replayVersion = manualSelectionVersionRef.current + 1;
       manualSelectionVersionRef.current = replayVersion;
-      workflowRunIdRef.current += 1;
+      const replayWorkflowRunId = workflowRunIdRef.current + 1;
+      workflowRunIdRef.current = replayWorkflowRunId;
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
       resetAiReviewHistoryState();
       const detail = await loadResearchRunDetail(quantCoreBaseUrl, run.runId);
-      if (manualSelectionVersionRef.current !== replayVersion) {
-        return;
+      if (
+        manualSelectionVersionRef.current !== replayVersion ||
+        workflowRunIdRef.current !== replayWorkflowRunId
+      ) {
+        return false;
       }
       const auditedRun = detail.run ?? run;
       const auditedKlines = marketKlinesFromResearchRunAudit(auditedRun);
@@ -6625,8 +6630,11 @@ export function App() {
         loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId),
         refreshAiReviewRunHistory(auditedRun.runId, { offset: 0, query: "" })
       ]);
-      if (manualSelectionVersionRef.current !== replayVersion) {
-        return;
+      if (
+        manualSelectionVersionRef.current !== replayVersion ||
+        workflowRunIdRef.current !== replayWorkflowRunId
+      ) {
+        return false;
       }
       setPaperExecutionRecord(paperHistory.execution ?? null);
       setPromotionCandidateRecord(promotionHistory.promotion ?? null);
@@ -6648,6 +6656,7 @@ export function App() {
       setActiveLoopStepId("backtest");
       setActiveWorkflowStageId("execution");
       setWorkflowRunState(buildAuditReplayWorkflowState(auditedRun));
+      return true;
     },
     [refreshAiReviewRunHistory, resetAiReviewHistoryState]
   );
@@ -6695,9 +6704,27 @@ export function App() {
       return false;
     }
 
+    const capturedWorkspace = strategyExperimentWorkspaceRef.current;
+    const capturedSelectionVersion = manualSelectionVersionRef.current;
+    const capturedWorkflowRunId = workflowRunIdRef.current;
+    const rebindIsCurrent = () => goldenPathRunRebindIsCurrent(
+      capturedWorkspace,
+      strategyExperimentWorkspaceRef.current,
+      capturedSelectionVersion,
+      manualSelectionVersionRef.current,
+      capturedWorkflowRunId,
+      workflowRunIdRef.current
+    );
+
     const historyRun = runHistory.find((run) => run.runId === latestRunId);
     if (historyRun) {
-      await replayRun(historyRun);
+      if (!rebindIsCurrent()) {
+        return false;
+      }
+      const rebound = await replayRun(historyRun);
+      if (!rebound) {
+        return false;
+      }
       setActiveWorkAreaId("execution");
       setActiveLoopStepId("paper");
       setActiveWorkflowStageId("execution");
@@ -6710,8 +6737,14 @@ export function App() {
     }
 
     const detail = await loadResearchRunDetail(quantCoreBaseUrl, latestRunId);
+    if (!rebindIsCurrent()) {
+      return false;
+    }
     if (detail.run) {
-      await replayRun(detail.run);
+      const rebound = await replayRun(detail.run);
+      if (!rebound) {
+        return false;
+      }
       setActiveWorkAreaId("execution");
       setActiveLoopStepId("paper");
       setActiveWorkflowStageId("execution");

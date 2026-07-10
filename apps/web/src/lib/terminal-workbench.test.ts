@@ -323,6 +323,7 @@ import {
   type WatchlistCacheRefreshRunSnapshot,
   type WorkflowRunState,
   visiblePanels,
+  goldenPathRunRebindIsCurrent,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
   workspaceWithPreservedInteractiveState,
@@ -1683,6 +1684,35 @@ describe("terminal workbench model", () => {
     expect(workspaceNeedsStrategyReaudit(initial)).toBe(false);
     expect(workspaceNeedsStrategyReaudit(audited)).toBe(false);
     expect(workspaceNeedsStrategyReaudit(staged)).toBe(true);
+  });
+
+  test("rejects a Golden Path run rebind when strategy state changes while detail is pending", async () => {
+    const capturedWorkspace = buildTerminalWorkspace();
+    let currentWorkspace = capturedWorkspace;
+    let currentSelectionVersion = 4;
+    let releaseDetail!: () => void;
+    const detailPending = new Promise<void>((resolve) => {
+      releaseDetail = resolve;
+    });
+    const pendingGuard = (async () => {
+      await detailPending;
+      return goldenPathRunRebindIsCurrent(
+        capturedWorkspace,
+        currentWorkspace,
+        4,
+        currentSelectionVersion,
+        8,
+        8
+      );
+    })();
+
+    currentWorkspace = workspaceWithStrategyField(currentWorkspace, "name", "Pending draft");
+    currentSelectionVersion += 1;
+    releaseDetail();
+
+    await expect(pendingGuard).resolves.toBe(false);
+    expect(goldenPathRunRebindIsCurrent(capturedWorkspace, capturedWorkspace, 4, 4, 8, 8)).toBe(true);
+    expect(goldenPathRunRebindIsCurrent(capturedWorkspace, capturedWorkspace, 4, 4, 8, 9)).toBe(false);
   });
 
   test("rejects invalid strategy experiment candidate patches atomically", async () => {
