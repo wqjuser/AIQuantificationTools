@@ -263,6 +263,8 @@ def _authoritative_review_record(
     created_at: str = "2026-07-10T08:00:00+00:00",
     summary: str = "Authoritative Stage 3 review.",
 ) -> dict[str, Any]:
+    if not re.fullmatch(r"ai-review-[0-9a-f]{32}", ai_review_id):
+        ai_review_id = f"ai-review-{canonical_sha256(ai_review_id)[:32]}"
     primary_experiment = {
         "experimentId": experiment_id,
         "sourceRunId": run_id,
@@ -285,7 +287,17 @@ def _authoritative_review_record(
         "primaryExperiment": copy.deepcopy(primary_experiment),
         "comparisonExperiments": [],
         "strategyLineageKey": strategy_lineage_key,
-        "evidenceItems": [],
+        "evidenceItems": [
+            {
+                "id": f"experiment:{experiment_id}:context",
+                "kind": "experiment_context",
+                "value": {
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                },
+            }
+        ],
         "safetyBoundary": {
             "paperOnly": True,
             "liveTradingAllowed": False,
@@ -356,6 +368,51 @@ def _rehash_authoritative_evidence(record: dict[str, Any]) -> None:
     record["evidenceHash"] = bundle["evidenceHash"]
     record["externalAssessment"]["evidenceHash"] = bundle["evidenceHash"]
     _rehash_authoritative_review(record)
+
+
+def _completed_authoritative_review_record(
+    *,
+    ai_review_id: str = "ai-review-completed",
+) -> dict[str, Any]:
+    record = _authoritative_review_record(ai_review_id=ai_review_id)
+    external = record["externalAssessment"]
+    external.update(
+        {
+            "status": "completed",
+            "provider": "openai-compatible",
+            "model": "review-model",
+            "sanitizedBaseUrl": "https://example.test/v1",
+            "endpointHash": canonical_sha256(
+                "https://example.test/v1/chat/completions"
+            ),
+            "renderedPrompt": "canonical evidence prompt",
+            "renderedPromptHash": canonical_sha256("canonical evidence prompt"),
+            "assessment": copy.deepcopy(record["deterministicAssessment"]),
+            "usage": {
+                "inputTokens": 17,
+                "outputTokens": 11,
+                "totalTokens": 28,
+            },
+            "latencyMs": 7,
+            "error": None,
+        }
+    )
+    external["requestHash"] = canonical_sha256(
+        {
+            "provider": external["provider"],
+            "model": external["model"],
+            "endpointHash": external["endpointHash"],
+            "promptTemplateVersion": external["promptTemplateVersion"],
+            "outputSchemaVersion": external["outputSchemaVersion"],
+            "renderedPromptHash": external["renderedPromptHash"],
+            "evidenceHash": external["evidenceHash"],
+        }
+    )
+    external["responseHash"] = canonical_sha256(
+        {"assessment": external["assessment"], "usage": external["usage"]}
+    )
+    _rehash_authoritative_review(record)
+    return record
 
 
 def _decision_record(
@@ -866,6 +923,181 @@ class AiReviewRunStoreV2Tests(unittest.TestCase):
                 record = _authoritative_review_record(ai_review_id=f"review-invalid-{label}")
                 mutate(record)
                 self._assert_store_error(code, record)
+
+    def test_record_v2_rejects_noncanonical_authoritative_shapes_and_hashes(self) -> None:
+        def mutate_reference_extra(record: dict[str, Any]) -> None:
+            for reference in (
+                record["primaryExperiment"],
+                record["evidenceBundle"]["primaryExperiment"],
+            ):
+                reference["memo"] = "not authoritative"
+            _rehash_authoritative_evidence(record)
+
+        def mutate_range_extra(record: dict[str, Any]) -> None:
+            for reference in (
+                record["primaryExperiment"],
+                record["evidenceBundle"]["primaryExperiment"],
+            ):
+                reference["dataRange"]["timezone"] = "UTC"
+            _rehash_authoritative_evidence(record)
+
+        cases: dict[str, Any] = {
+            "top-level extra": lambda record: record.update({"memo": "extra"}),
+            "invalid review id": lambda record: record.update(
+                {"aiReviewId": "ai-review-not-hex"}
+            ),
+            "noncanonical created at": lambda record: record.update(
+                {"createdAt": "2026-07-10T08:00:00Z"}
+            ),
+            "reference extra": mutate_reference_extra,
+            "data range extra": mutate_range_extra,
+            "empty evidence items": lambda record: (
+                record["evidenceBundle"].update({"evidenceItems": []}),
+                _rehash_authoritative_evidence(record),
+            ),
+            "evidence item extra": lambda record: (
+                record["evidenceBundle"]["evidenceItems"][0].update(
+                    {"memo": "extra"}
+                ),
+                _rehash_authoritative_evidence(record),
+            ),
+            "deterministic assessment extra": lambda record: record[
+                "deterministicAssessment"
+            ].update({"memo": "extra"}),
+            "boundary integer bool": lambda record: record["boundary"].update(
+                {"paperOnly": 1}
+            ),
+            "external extra": lambda record: record["externalAssessment"].update(
+                {"memo": "extra"}
+            ),
+            "skipped with assessment": lambda record: record[
+                "externalAssessment"
+            ].update({"assessment": copy.deepcopy(record["deterministicAssessment"])}),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(case=label):
+                record = _authoritative_review_record(ai_review_id=f"invalid-{label}")
+                mutate(record)
+                _rehash_authoritative_review(record)
+                with self.assertRaises(ValueError):
+                    AiReviewRunStore(self.path).record_v2(record)
+
+    def test_record_v2_recomputes_completed_external_provenance_and_usage(self) -> None:
+        cases: dict[str, Any] = {
+            "endpoint hash": lambda external: external.update(
+                {"endpointHash": "f" * 64}
+            ),
+            "request hash": lambda external: external.update(
+                {"requestHash": "f" * 64}
+            ),
+            "response hash": lambda external: external.update(
+                {"responseHash": "f" * 64}
+            ),
+            "usage extra": lambda external: external["usage"].update(
+                {"access_token": 1}
+            ),
+            "usage bool": lambda external: external["usage"].update(
+                {"inputTokens": True}
+            ),
+            "usage nested": lambda external: external["usage"].update(
+                {"outputTokens": {"value": 11}}
+            ),
+            "latency bool": lambda external: external.update({"latencyMs": True}),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(case=label):
+                record = _completed_authoritative_review_record(
+                    ai_review_id=f"completed-{label}"
+                )
+                mutate(record["externalAssessment"])
+                _rehash_authoritative_review(record)
+                with self.assertRaises(ValueError):
+                    AiReviewRunStore(self.path).record_v2(record)
+
+    def test_record_v2_rejects_failed_and_error_status_mismatches(self) -> None:
+        cases: dict[str, Any] = {
+            "failed response hash": lambda external: external.update(
+                {
+                    "status": "failed",
+                    "responseHash": "f" * 64,
+                    "assessment": None,
+                    "usage": None,
+                    "error": {"code": "timeout", "message": "timed out"},
+                }
+            ),
+            "error extra": lambda external: external.update(
+                {
+                    "status": "failed",
+                    "responseHash": None,
+                    "assessment": None,
+                    "usage": None,
+                    "error": {
+                        "code": "timeout",
+                        "message": "timed out",
+                        "detail": "extra",
+                    },
+                }
+            ),
+            "secret error": lambda external: external.update(
+                {
+                    "status": "failed",
+                    "responseHash": None,
+                    "assessment": None,
+                    "usage": None,
+                    "error": {
+                        "code": "timeout",
+                        "message": "access_token=leaked",
+                    },
+                }
+            ),
+            "secret keyword error": lambda external: external.update(
+                {
+                    "status": "failed",
+                    "responseHash": None,
+                    "assessment": None,
+                    "usage": None,
+                    "error": {
+                        "code": "timeout",
+                        "message": "provider secret leaked",
+                    },
+                }
+            ),
+            "blank error": lambda external: external.update(
+                {
+                    "status": "failed",
+                    "responseHash": None,
+                    "assessment": None,
+                    "usage": None,
+                    "error": {"code": "timeout", "message": " "},
+                }
+            ),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(case=label):
+                record = _completed_authoritative_review_record(
+                    ai_review_id=f"failed-{label}"
+                )
+                mutate(record["externalAssessment"])
+                _rehash_authoritative_review(record)
+                with self.assertRaises(ValueError):
+                    AiReviewRunStore(self.path).record_v2(record)
+
+    def test_v2_readback_runs_the_same_exact_validator(self) -> None:
+        store = AiReviewRunStore(self.path)
+        record = _authoritative_review_record()
+        store.record_v2(record)
+        tampered = copy.deepcopy(record)
+        tampered["externalAssessment"]["memo"] = "readback bypass"
+        _rehash_authoritative_review(tampered)
+        with closing(sqlite3.connect(self.path)) as connection:
+            connection.execute(
+                "update ai_review_runs set record_json = ? where ai_review_id = ?",
+                (canonical_json(tampered), record["aiReviewId"]),
+            )
+            connection.commit()
+
+        with self.assertRaises(ValueError):
+            store.get(record["aiReviewId"])
 
     def test_lists_legacy_and_authoritative_records_by_run_experiment_query_and_page(self) -> None:
         store = AiReviewRunStore(self.path)
@@ -1970,9 +2202,11 @@ class _StubReviewProvider:
         *,
         endpoint: str = "https://example.test/v1/chat/completions",
         error: AiReviewProviderError | Exception | None = None,
+        attempt_mutation: Any = None,
     ) -> None:
         self.endpoint = endpoint
         self.error = error
+        self.attempt_mutation = attempt_mutation
         self.calls = 0
 
     def assess(
@@ -1987,7 +2221,7 @@ class _StubReviewProvider:
             raise self.error
         assessment = _provider_assessment()
         assessment["risks"][0]["evidenceReferences"] = [sorted(known_evidence_ids)[0]]
-        return ProviderAttempt(
+        attempt = ProviderAttempt(
             provider_id="openai-compatible",
             model="review-model",
             sanitized_base_url="https://example.test/v1",
@@ -1995,6 +2229,7 @@ class _StubReviewProvider:
             usage={"inputTokens": 17, "outputTokens": 11, "totalTokens": 28},
             latency_ms=7,
         )
+        return self.attempt_mutation(attempt) if self.attempt_mutation else attempt
 
 
 class _MutatingEvidenceAssembler:
@@ -2015,6 +2250,15 @@ class _MutatingEvidenceAssembler:
         return bundle
 
 
+class _CountingDeterministicEngine:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def evaluate(self, evidence_bundle: dict[str, Any]) -> dict[str, Any]:
+        self.calls += 1
+        return DeterministicAiReviewEngine().evaluate(evidence_bundle)
+
+
 class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
     maxDiff = None
 
@@ -2030,6 +2274,7 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         configured: bool = True,
         assembler: Any = None,
         sanitized_base_url: str | None = "https://example.test/v1",
+        deterministic_engine: Any = None,
     ) -> AiReviewStage3Service:
         provider = provider or _StubReviewProvider()
         registry = AiReviewProviderRegistry(
@@ -2046,7 +2291,7 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         )
         return AiReviewStage3Service(
             evidence_assembler=assembler or self.assembler,
-            deterministic_engine=DeterministicAiReviewEngine(),
+            deterministic_engine=deterministic_engine or DeterministicAiReviewEngine(),
             provider_registry=registry,
             review_store=self.review_store,
         )
@@ -2190,6 +2435,277 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         self.assertEqual(provider.calls, 0)
         self.assertEqual(self.review_store.count_recent(), 0)
 
+    def test_evidence_preflight_rejects_rehashed_malformed_bundles_before_evaluation(self) -> None:
+        def duplicate_evidence_id(bundle: dict[str, Any]) -> None:
+            bundle["evidenceItems"].append(copy.deepcopy(bundle["evidenceItems"][0]))
+
+        def duplicate_primary_as_comparison(bundle: dict[str, Any]) -> None:
+            bundle["mode"] = "comparison"
+            bundle["comparisonExperiments"] = [
+                copy.deepcopy(bundle["primaryExperiment"])
+            ]
+
+        cases: dict[str, Any] = {
+            "top-level extra": lambda bundle: bundle.update({"memo": "extra"}),
+            "malformed reference hash": lambda bundle: bundle[
+                "primaryExperiment"
+            ].update({"definitionHash": "not-a-hash"}),
+            "data range extra": lambda bundle: bundle["primaryExperiment"][
+                "dataRange"
+            ].update({"timezone": "UTC"}),
+            "empty evidence items": lambda bundle: bundle.update(
+                {"evidenceItems": []}
+            ),
+            "evidence item extra": lambda bundle: bundle["evidenceItems"][0].update(
+                {"memo": "extra"}
+            ),
+            "duplicate evidence id": duplicate_evidence_id,
+            "primary repeated as comparison": duplicate_primary_as_comparison,
+        }
+        for label, mutation in cases.items():
+            with self.subTest(case=label):
+                provider = _StubReviewProvider()
+                engine = _CountingDeterministicEngine()
+                service = self._service(
+                    provider=provider,
+                    assembler=_MutatingEvidenceAssembler(self.assembler, mutation),
+                    deterministic_engine=engine,
+                )
+
+                raised: BaseException | None = None
+                try:
+                    self._create_external(service)
+                except BaseException as error:
+                    raised = error
+
+                self.assertIsInstance(raised, AiReviewStage3Error)
+                self.assertEqual(raised.code, "ai_review_evidence_conflict")  # type: ignore[union-attr]
+                self.assertEqual(engine.calls, 0)
+                self.assertEqual(provider.calls, 0)
+                self.assertEqual(self.review_store.count_recent(), 0)
+
+    def test_external_parameter_projection_rejects_non_numeric_or_unsafe_values(self) -> None:
+        def strategy_item(bundle: dict[str, Any]) -> dict[str, Any]:
+            return next(
+                item
+                for item in bundle["evidenceItems"]
+                if item["kind"] == "strategy_definition"
+            )
+
+        def candidate_item(bundle: dict[str, Any]) -> dict[str, Any]:
+            return next(
+                item
+                for item in bundle["evidenceItems"]
+                if item["kind"] == "candidate_metrics"
+            )
+
+        cases: dict[str, Any] = {
+            "string condition param": lambda bundle: strategy_item(bundle)["value"][
+                "entryConditions"
+            ][0]["params"].update({"memo": "research context"}),
+            "unsafe condition key": lambda bundle: strategy_item(bundle)["value"][
+                "entryConditions"
+            ][0]["params"].update({"not-safe!": 1}),
+            "string candidate value": lambda bundle: candidate_item(bundle)["value"][
+                "parameters"
+            ][0].update({"value": "memo"}),
+            "boolean candidate value": lambda bundle: candidate_item(bundle)["value"][
+                "parameters"
+            ][0].update({"value": True}),
+        }
+        for label, mutation in cases.items():
+            with self.subTest(case=label):
+                provider = _StubReviewProvider()
+                service = self._service(
+                    provider=provider,
+                    assembler=_MutatingEvidenceAssembler(self.assembler, mutation),
+                )
+
+                with self.assertRaises(AiReviewStage3Error) as raised:
+                    self._create_external(service)
+
+                self.assertEqual(
+                    raised.exception.code,
+                    "ai_review_external_evidence_forbidden",
+                )
+                self.assertEqual(provider.calls, 0)
+                self.assertEqual(self.review_store.count_recent(), 0)
+
+    def test_external_free_strings_reject_payload_and_credentials_without_false_positive(self) -> None:
+        unsafe_values = (
+            "account=broker-fixture",
+            "research note=private-fixture",
+            "signing=signing-fixture",
+            "access_token=token-fixture",
+            "authorization: Bearer bearer-fixture",
+            "sk-proj-abcdefghijklmnopqrstuvwxyz",
+        )
+        for unsafe_value in unsafe_values:
+            with self.subTest(value=unsafe_value):
+                def mutate_warning(bundle: dict[str, Any], value: str = unsafe_value) -> None:
+                    quality = next(
+                        item
+                        for item in bundle["evidenceItems"]
+                        if item["kind"] == "data_quality"
+                    )
+                    quality["value"]["warnings"] = [value]
+
+                provider = _StubReviewProvider()
+                service = self._service(
+                    provider=provider,
+                    assembler=_MutatingEvidenceAssembler(
+                        self.assembler,
+                        mutate_warning,
+                    ),
+                )
+                with self.assertRaises(AiReviewStage3Error) as raised:
+                    self._create_external(service)
+                self.assertEqual(
+                    raised.exception.code,
+                    "ai_review_external_evidence_forbidden",
+                )
+                self.assertEqual(provider.calls, 0)
+                self.assertEqual(self.review_store.count_recent(), 0)
+
+        def add_normal_research_warning(bundle: dict[str, Any]) -> None:
+            quality = next(
+                item
+                for item in bundle["evidenceItems"]
+                if item["kind"] == "data_quality"
+            )
+            quality["value"]["warnings"] = [
+                "Account for volatility when reviewing this research result."
+            ]
+
+        provider = _StubReviewProvider()
+        record = self._create_external(
+            self._service(
+                provider=provider,
+                assembler=_MutatingEvidenceAssembler(
+                    self.assembler,
+                    add_normal_research_warning,
+                ),
+            )
+        )
+        self.assertEqual(record["externalAssessment"]["status"], "completed")
+        self.assertEqual(provider.calls, 1)
+
+    def test_invalid_provider_attempt_is_persisted_as_failed_without_attempt_data(self) -> None:
+        cases: dict[str, Any] = {
+            "provider": lambda attempt: replace(attempt, provider_id="ollama"),
+            "model": lambda attempt: replace(attempt, model="other-model"),
+            "base url": lambda attempt: replace(
+                attempt,
+                sanitized_base_url="https://evil.test/access_token=leaked",
+            ),
+            "usage extra": lambda attempt: replace(
+                attempt,
+                usage={**attempt.usage, "access_token": 1},
+            ),
+            "usage bool": lambda attempt: replace(
+                attempt,
+                usage={**attempt.usage, "inputTokens": True},
+            ),
+            "usage nested": lambda attempt: replace(
+                attempt,
+                usage={**attempt.usage, "outputTokens": {"value": 11}},
+            ),
+            "latency bool": lambda attempt: replace(attempt, latency_ms=True),
+            "latency negative": lambda attempt: replace(attempt, latency_ms=-1),
+        }
+        for label, mutation in cases.items():
+            with self.subTest(case=label):
+                provider = _StubReviewProvider(attempt_mutation=mutation)
+                record = self._create_external(self._service(provider=provider))
+                external = record["externalAssessment"]
+
+                self.assertEqual(external["status"], "failed")
+                self.assertIsNotNone(external["endpointHash"])
+                self.assertIsNotNone(external["requestHash"])
+                self.assertIsNone(external["responseHash"])
+                self.assertIsNone(external["assessment"])
+                self.assertIsNone(external["usage"])
+                self.assertEqual(
+                    external["error"],
+                    {
+                        "code": "ai_review_provider_failed",
+                        "message": "Provider execution failed.",
+                    },
+                )
+                self.assertNotIn("access_token", canonical_json(record))
+                self.assertEqual(provider.calls, 1)
+
+    def test_provider_endpoint_must_equal_endpoint_derived_from_persisted_base(self) -> None:
+        provider = _StubReviewProvider(
+            endpoint=(
+                "https://example.test/v1/chat/completions"
+                "?access_token=endpoint-secret"
+            )
+        )
+
+        record = self._create_external(self._service(provider=provider))
+
+        external = record["externalAssessment"]
+        expected_endpoint = (
+            external["sanitizedBaseUrl"].rstrip("/") + "/chat/completions"
+        )
+        self.assertEqual(external["status"], "failed")
+        self.assertEqual(external["endpointHash"], canonical_sha256(expected_endpoint))
+        self.assertEqual(
+            external["requestHash"],
+            canonical_sha256(
+                {
+                    "provider": external["provider"],
+                    "model": external["model"],
+                    "endpointHash": external["endpointHash"],
+                    "promptTemplateVersion": external["promptTemplateVersion"],
+                    "outputSchemaVersion": external["outputSchemaVersion"],
+                    "renderedPromptHash": external["renderedPromptHash"],
+                    "evidenceHash": external["evidenceHash"],
+                }
+            ),
+        )
+        self.assertNotIn("endpoint-secret", canonical_json(record))
+        self.assertEqual(provider.calls, 0)
+
+    def test_status_base_url_must_already_be_sanitized(self) -> None:
+        provider = _StubReviewProvider()
+
+        record = self._create_external(
+            self._service(
+                provider=provider,
+                sanitized_base_url=(
+                    "https://example.test/v1?access_token=status-secret"
+                ),
+            )
+        )
+
+        external = record["externalAssessment"]
+        self.assertEqual(external["status"], "failed")
+        self.assertEqual(
+            external["error"]["code"],
+            "ai_review_provider_not_configured",
+        )
+        self.assertIsNone(external["sanitizedBaseUrl"])
+        self.assertIsNone(external["endpointHash"])
+        self.assertIsNone(external["requestHash"])
+        self.assertIsNone(external["responseHash"])
+        self.assertNotIn("status-secret", canonical_json(record))
+        self.assertEqual(provider.calls, 0)
+
+    def test_secret_like_provider_error_text_is_replaced_before_persistence(self) -> None:
+        provider = _StubReviewProvider(
+            error=AiReviewProviderError("timeout", "provider secret leaked")
+        )
+
+        record = self._create_external(self._service(provider=provider))
+
+        self.assertEqual(
+            record["externalAssessment"]["error"],
+            {"code": "timeout", "message": "Provider request failed."},
+        )
+        self.assertNotIn("provider secret leaked", canonical_json(record))
+
     def test_prompt_is_allowlisted_endpoint_is_redacted_and_hashes_recompute(self) -> None:
         fixtures = {
             "raw-bar-fixture",
@@ -2206,25 +2722,22 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         }
 
         def inject_forbidden_fields(bundle: dict[str, Any]) -> None:
-            bundle.update(
+            strategy_item = next(
+                item for item in bundle["evidenceItems"] if item["kind"] == "strategy_definition"
+            )
+            strategy_item["value"].update(
                 {
                     "bars": ["raw-bar-fixture"],
                     "researchNotes": ["research-note-fixture"],
                     "account": "account-fixture",
                     "portfolio": "portfolio-fixture",
                     "position": "position-fixture",
-                    "order": "order-fixture",
                     "paperExecution": "paper-fixture",
                     "liveAdapter": "live-fixture",
-                    "secret": "secret-fixture",
                     "signingMaterial": "signing-fixture",
                     "hiddenReasoning": "hidden-reasoning-fixture",
                 }
             )
-            strategy_item = next(
-                item for item in bundle["evidenceItems"] if item["kind"] == "strategy_definition"
-            )
-            strategy_item["value"]["notes"] = "research-note-fixture"
             candidate_item = next(
                 item for item in bundle["evidenceItems"] if item["kind"] == "candidate_metrics"
             )
@@ -2233,13 +2746,8 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
                 item for item in bundle["evidenceItems"] if item["kind"] == "data_quality"
             )
             quality_item["value"]["apiKey"] = "secret-fixture"
-            bundle["primaryExperiment"]["dataRange"]["orderPayload"] = "order-fixture"
 
-        raw_endpoint = (
-            "https://endpoint-user:endpoint-password@example.test/v1/chat/completions"
-            "?token=endpoint-query-secret"
-        )
-        provider = _StubReviewProvider(endpoint=raw_endpoint)
+        provider = _StubReviewProvider()
         assembler = _MutatingEvidenceAssembler(self.assembler, inject_forbidden_fields)
 
         record = self._create_external(
@@ -2255,10 +2763,10 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         for fixture in fixtures:
             self.assertNotIn(fixture, prompt)
         self.assertEqual(external["sanitizedBaseUrl"], "https://example.test/v1")
-        self.assertEqual(external["endpointHash"], canonical_sha256(raw_endpoint))
-        exposed = canonical_json(record)
-        for secret in ("endpoint-user", "endpoint-password", "endpoint-query-secret"):
-            self.assertNotIn(secret, exposed)
+        expected_endpoint = (
+            external["sanitizedBaseUrl"].rstrip("/") + "/chat/completions"
+        )
+        self.assertEqual(external["endpointHash"], canonical_sha256(expected_endpoint))
 
         self.assertEqual(
             record["evidenceHash"],

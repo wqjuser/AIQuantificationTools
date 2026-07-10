@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -31,6 +32,72 @@ _V2_EXPERIMENT_FIELDS = (
     "selectedCandidateId",
     "candidateRevision",
     "canonicalDataHash",
+)
+_V2_HASH_EXPERIMENT_FIELDS = {
+    "snapshotId",
+    "definitionHash",
+    "resultHash",
+    "canonicalDataHash",
+}
+_V2_RECORD_FIELDS = {
+    "schemaVersion",
+    "recordType",
+    "aiReviewId",
+    "createdAt",
+    "mode",
+    "primaryExperiment",
+    "comparisonExperiments",
+    "strategyLineageKey",
+    "evidenceBundle",
+    "evidenceHash",
+    "deterministicAssessment",
+    "externalAssessment",
+    "boundary",
+    "recordHash",
+}
+_V2_EVIDENCE_FIELDS = {
+    "schemaVersion",
+    "mode",
+    "primaryExperiment",
+    "comparisonExperiments",
+    "strategyLineageKey",
+    "evidenceItems",
+    "safetyBoundary",
+    "evidenceHash",
+}
+_V2_EXTERNAL_FIELDS = {
+    "status",
+    "provider",
+    "model",
+    "sanitizedBaseUrl",
+    "endpointHash",
+    "promptTemplateVersion",
+    "outputSchemaVersion",
+    "renderedPrompt",
+    "renderedPromptHash",
+    "evidenceHash",
+    "requestHash",
+    "responseHash",
+    "assessment",
+    "usage",
+    "latencyMs",
+    "error",
+}
+_V2_USAGE_FIELDS = {"inputTokens", "outputTokens", "totalTokens"}
+_V2_PROVIDER_IDS = {"local", "openai", "openai-compatible", "ollama"}
+_V2_PROMPT_TEMPLATE_VERSION = "aiqt-ai-review-v1"
+_V2_OUTPUT_SCHEMA_VERSION = "aiqt-ai-review-assessment-v1"
+_V2_OPENAI_BASE_URL = "https://api.openai.com/v1"
+_V2_OPENAI_ENDPOINT = "https://api.openai.com/v1/responses"
+_V2_REVIEW_ID_PATTERN = re.compile(r"^ai-review-[0-9a-f]{32}$")
+_V2_SAFE_ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
+_V2_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"\b(?:access[_ -]?token|token|secret|api[_ -]?key|password|authorization|private[_ -]?key)\b\s*[:=]\s*\S+",
+    re.IGNORECASE,
+)
+_V2_ERROR_SECRET_PATTERN = re.compile(
+    r"(?:access[_ -]?token|api[_ -]?key|private[_ -]?key|authorization|password|bearer|secret|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
+    re.IGNORECASE,
 )
 _SELECT_COLUMNS = (
     "ai_review_id, run_id, created_at, record_json, schema_version, "
@@ -411,14 +478,21 @@ def _authoritative_ai_review_run_record(value: Any) -> AuthoritativeAiReviewRunR
 def _normalize_authoritative_ai_review_record(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("ai_review_record_must_be_object")
-    if value.get("schemaVersion") != 2:
+    if type(value.get("schemaVersion")) is not int or value.get("schemaVersion") != 2:
         raise ValueError("unsupported_ai_review_schema_version")
     if value.get("recordType") != "aiqt.aiReviewRun":
         raise ValueError("unsupported_ai_review_record_type")
+    actual_fields = set(value)
+    if actual_fields - _V2_RECORD_FIELDS or (
+        _V2_RECORD_FIELDS - actual_fields
+    ) - {"recordHash", "evidenceHash"}:
+        raise ValueError("ai_review_record_invalid")
 
     ai_review_id = _required_string(value, "aiReviewId", "ai_review_id_required")
+    if not _V2_REVIEW_ID_PATTERN.fullmatch(ai_review_id):
+        raise ValueError("ai_review_id_invalid")
     created_at = _required_string(value, "createdAt", "created_at_required")
-    _parse_datetime(created_at)
+    _canonical_utc_datetime(created_at)
     mode = value.get("mode")
     if mode not in {"single", "comparison"}:
         raise ValueError("ai_review_mode_invalid")
@@ -446,17 +520,9 @@ def _normalize_authoritative_ai_review_record(value: Any) -> dict[str, Any]:
         value.get("evidenceHash"),
         "ai_review_evidence_hash_required",
     )
-    evidence_bundle = value.get("evidenceBundle")
-    if not isinstance(evidence_bundle, dict):
-        raise ValueError("ai_review_evidence_bundle_required")
-    bundle_hash = _required_hash(
-        evidence_bundle.get("evidenceHash"),
-        "ai_review_evidence_hash_required",
-    )
-    expected_bundle_hash = canonical_sha256(
-        {key: item for key, item in evidence_bundle.items() if key != "evidenceHash"}
-    )
-    if evidence_hash != bundle_hash or bundle_hash != expected_bundle_hash:
+    evidence_bundle = validate_ai_review_evidence_bundle(value.get("evidenceBundle"))
+    bundle_hash = evidence_bundle["evidenceHash"]
+    if evidence_hash != bundle_hash:
         raise ValueError("ai_review_evidence_hash_mismatch")
     if (
         evidence_bundle.get("schemaVersion") != 1
@@ -467,15 +533,21 @@ def _normalize_authoritative_ai_review_record(value: Any) -> dict[str, Any]:
         != canonical_json(comparison_experiments)
     ):
         raise ValueError("ai_review_evidence_binding_invalid")
-    if evidence_bundle.get("safetyBoundary") != _V2_EVIDENCE_BOUNDARY:
-        raise ValueError("ai_review_boundary_invalid")
+    known_evidence_ids = frozenset(
+        item["id"] for item in evidence_bundle["evidenceItems"]
+    )
+    from quant_core.ai_review_stage3 import validate_assessment
 
-    if not isinstance(value.get("deterministicAssessment"), dict):
-        raise ValueError("ai_review_deterministic_assessment_required")
-    if not isinstance(value.get("externalAssessment"), dict):
-        raise ValueError("ai_review_external_assessment_required")
-    if value.get("boundary") != _V2_BOUNDARY:
-        raise ValueError("ai_review_boundary_invalid")
+    try:
+        validate_assessment(value.get("deterministicAssessment"), known_evidence_ids)
+    except (TypeError, ValueError) as error:
+        raise ValueError("ai_review_deterministic_assessment_invalid") from error
+    _validate_external_assessment(
+        value.get("externalAssessment"),
+        evidence_hash=evidence_hash,
+        known_evidence_ids=known_evidence_ids,
+    )
+    _validate_exact_boundary(value.get("boundary"), _V2_BOUNDARY)
 
     record_hash = _required_hash(
         value.get("recordHash"),
@@ -496,16 +568,283 @@ def _normalize_authoritative_ai_review_record(value: Any) -> dict[str, Any]:
 def _experiment_reference(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("ai_review_experiment_reference_invalid")
+    if set(value) != {*_V2_EXPERIMENT_FIELDS, "dataRange"}:
+        raise ValueError("ai_review_experiment_reference_invalid")
     for field in _V2_EXPERIMENT_FIELDS:
         _required_string(value, field, "ai_review_experiment_reference_invalid")
+    for field in _V2_HASH_EXPERIMENT_FIELDS:
+        _required_hash(value[field], "ai_review_experiment_reference_invalid")
     data_range = value.get("dataRange")
-    if not isinstance(data_range, dict):
+    if not isinstance(data_range, dict) or set(data_range) != {"startAt", "endAt"}:
         raise ValueError("ai_review_experiment_reference_invalid")
     start_at = _required_string(data_range, "startAt", "ai_review_experiment_reference_invalid")
     end_at = _required_string(data_range, "endAt", "ai_review_experiment_reference_invalid")
     if _parse_datetime(start_at) > _parse_datetime(end_at):
         raise ValueError("ai_review_experiment_reference_invalid")
     return value
+
+
+def validate_ai_review_evidence_bundle(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != _V2_EVIDENCE_FIELDS:
+        raise ValueError("ai_review_evidence_bundle_invalid")
+    if type(value.get("schemaVersion")) is not int or value.get("schemaVersion") != 1:
+        raise ValueError("ai_review_evidence_bundle_invalid")
+    mode = value.get("mode")
+    if mode not in {"single", "comparison"}:
+        raise ValueError("ai_review_evidence_bundle_invalid")
+    primary = _experiment_reference(value.get("primaryExperiment"))
+    comparisons_value = value.get("comparisonExperiments")
+    if not isinstance(comparisons_value, list):
+        raise ValueError("ai_review_comparison_experiments_invalid")
+    comparisons = [_experiment_reference(item) for item in comparisons_value]
+    comparison_ids = [item["experimentId"] for item in comparisons]
+    if (
+        len(comparisons) > 4
+        or len(comparison_ids) != len(set(comparison_ids))
+        or primary["experimentId"] in comparison_ids
+        or (mode == "single" and comparisons)
+        or (mode == "comparison" and not comparisons)
+    ):
+        raise ValueError("ai_review_comparison_experiments_invalid")
+    _required_hash(
+        value.get("strategyLineageKey"),
+        "ai_review_strategy_lineage_key_invalid",
+    )
+    evidence_items = value.get("evidenceItems")
+    if not isinstance(evidence_items, list) or not evidence_items:
+        raise ValueError("ai_review_evidence_items_invalid")
+    evidence_ids: list[str] = []
+    for item in evidence_items:
+        if not isinstance(item, dict) or set(item) != {"id", "kind", "value"}:
+            raise ValueError("ai_review_evidence_items_invalid")
+        evidence_ids.append(_required_string(item, "id", "ai_review_evidence_items_invalid"))
+        _required_string(item, "kind", "ai_review_evidence_items_invalid")
+        if not isinstance(item.get("value"), dict):
+            raise ValueError("ai_review_evidence_items_invalid")
+    if len(evidence_ids) != len(set(evidence_ids)):
+        raise ValueError("ai_review_evidence_items_invalid")
+    _validate_exact_boundary(value.get("safetyBoundary"), _V2_EVIDENCE_BOUNDARY)
+    evidence_hash = _required_hash(
+        value.get("evidenceHash"),
+        "ai_review_evidence_hash_required",
+    )
+    try:
+        expected_hash = canonical_sha256(
+            {key: item for key, item in value.items() if key != "evidenceHash"}
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("ai_review_evidence_bundle_invalid") from error
+    if evidence_hash != expected_hash:
+        raise ValueError("ai_review_evidence_hash_mismatch")
+    return json.loads(canonical_json(value))
+
+
+def expected_ai_review_provider_endpoint(
+    provider_id: Any,
+    sanitized_base_url: Any,
+) -> str | None:
+    if provider_id == "local":
+        if sanitized_base_url is not None:
+            raise ValueError("ai_review_provider_provenance_invalid")
+        return None
+    if provider_id not in _V2_PROVIDER_IDS or not isinstance(sanitized_base_url, str):
+        raise ValueError("ai_review_provider_provenance_invalid")
+    from quant_core.ai_review_providers import sanitize_base_url
+
+    if not sanitized_base_url or sanitize_base_url(sanitized_base_url) != sanitized_base_url:
+        raise ValueError("ai_review_provider_provenance_invalid")
+    if provider_id == "openai":
+        if sanitized_base_url != _V2_OPENAI_BASE_URL:
+            raise ValueError("ai_review_provider_provenance_invalid")
+        return _V2_OPENAI_ENDPOINT
+    suffix = "/chat/completions" if provider_id == "openai-compatible" else "/api/chat"
+    return sanitized_base_url.rstrip("/") + suffix
+
+
+def _validate_external_assessment(
+    value: Any,
+    *,
+    evidence_hash: str,
+    known_evidence_ids: frozenset[str],
+) -> None:
+    if not isinstance(value, dict) or set(value) != _V2_EXTERNAL_FIELDS:
+        raise ValueError("ai_review_external_assessment_invalid")
+    status = value.get("status")
+    provider = value.get("provider")
+    if status not in {"completed", "failed", "skipped"} or provider not in _V2_PROVIDER_IDS:
+        raise ValueError("ai_review_external_assessment_invalid")
+    if value.get("promptTemplateVersion") != _V2_PROMPT_TEMPLATE_VERSION:
+        raise ValueError("ai_review_external_assessment_invalid")
+    if value.get("outputSchemaVersion") != _V2_OUTPUT_SCHEMA_VERSION:
+        raise ValueError("ai_review_external_assessment_invalid")
+    rendered_prompt = value.get("renderedPrompt")
+    if not isinstance(rendered_prompt, str):
+        raise ValueError("ai_review_external_assessment_invalid")
+    if value.get("renderedPromptHash") != canonical_sha256(rendered_prompt):
+        raise ValueError("ai_review_external_assessment_invalid")
+    if value.get("evidenceHash") != evidence_hash:
+        raise ValueError("ai_review_external_assessment_invalid")
+    latency_ms = value.get("latencyMs")
+    if type(latency_ms) is not int or latency_ms < 0:
+        raise ValueError("ai_review_external_assessment_invalid")
+
+    model = value.get("model")
+    safe_base = value.get("sanitizedBaseUrl")
+    if status == "skipped":
+        if (
+            provider != "local"
+            or model is not None
+            or safe_base is not None
+            or rendered_prompt != ""
+            or latency_ms != 0
+            or any(
+                value.get(field) is not None
+                for field in (
+                    "endpointHash",
+                    "requestHash",
+                    "responseHash",
+                    "assessment",
+                    "usage",
+                    "error",
+                )
+            )
+        ):
+            raise ValueError("ai_review_external_assessment_invalid")
+        expected_ai_review_provider_endpoint(provider, safe_base)
+        return
+
+    if provider == "local":
+        raise ValueError("ai_review_external_assessment_invalid")
+    error = value.get("error")
+    if status == "failed" and _is_unconfigured_error(error):
+        if (
+            value.get("endpointHash") is not None
+            or value.get("requestHash") is not None
+            or value.get("responseHash") is not None
+            or value.get("assessment") is not None
+            or value.get("usage") is not None
+            or latency_ms != 0
+        ):
+            raise ValueError("ai_review_external_assessment_invalid")
+        if model is not None:
+            _validate_nonempty_string(model, "ai_review_external_assessment_invalid")
+        if safe_base is not None:
+            expected_ai_review_provider_endpoint(provider, safe_base)
+        _validate_external_error(error)
+        return
+
+    _validate_nonempty_string(model, "ai_review_external_assessment_invalid")
+    expected_endpoint = expected_ai_review_provider_endpoint(provider, safe_base)
+    endpoint_hash = _required_hash(
+        value.get("endpointHash"),
+        "ai_review_external_assessment_invalid",
+    )
+    if endpoint_hash != canonical_sha256(expected_endpoint):
+        raise ValueError("ai_review_external_assessment_invalid")
+    expected_request_hash = canonical_sha256(
+        {
+            "provider": provider,
+            "model": model,
+            "endpointHash": endpoint_hash,
+            "promptTemplateVersion": value["promptTemplateVersion"],
+            "outputSchemaVersion": value["outputSchemaVersion"],
+            "renderedPromptHash": value["renderedPromptHash"],
+            "evidenceHash": evidence_hash,
+        }
+    )
+    if value.get("requestHash") != expected_request_hash:
+        raise ValueError("ai_review_external_assessment_invalid")
+
+    if status == "failed":
+        if (
+            value.get("responseHash") is not None
+            or value.get("assessment") is not None
+            or value.get("usage") is not None
+        ):
+            raise ValueError("ai_review_external_assessment_invalid")
+        _validate_external_error(error)
+        return
+
+    if error is not None:
+        raise ValueError("ai_review_external_assessment_invalid")
+    from quant_core.ai_review_stage3 import validate_assessment
+
+    try:
+        assessment = validate_assessment(value.get("assessment"), known_evidence_ids)
+    except (TypeError, ValueError) as validation_error:
+        raise ValueError("ai_review_external_assessment_invalid") from validation_error
+    usage = _validate_usage(value.get("usage"))
+    expected_response_hash = canonical_sha256(
+        {"assessment": assessment, "usage": usage}
+    )
+    if value.get("responseHash") != expected_response_hash:
+        raise ValueError("ai_review_external_assessment_invalid")
+
+
+def _validate_usage(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict) or not set(value) <= _V2_USAGE_FIELDS:
+        raise ValueError("ai_review_external_assessment_invalid")
+    if any(type(item) is not int or item < 0 for item in value.values()):
+        raise ValueError("ai_review_external_assessment_invalid")
+    return value
+
+
+def _is_unconfigured_error(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("code") == "ai_review_provider_not_configured"
+
+
+def _validate_external_error(value: Any) -> None:
+    if not isinstance(value, dict) or set(value) != {"code", "message"}:
+        raise ValueError("ai_review_external_assessment_invalid")
+    code = value.get("code")
+    message = value.get("message")
+    if not isinstance(code, str) or not _V2_SAFE_ERROR_CODE_PATTERN.fullmatch(code):
+        raise ValueError("ai_review_external_assessment_invalid")
+    if (
+        not isinstance(message, str)
+        or not message
+        or message != message.strip()
+        or len(message) > 500
+    ):
+        raise ValueError("ai_review_external_assessment_invalid")
+    if any(
+        pattern.search(message)
+        for pattern in (
+            _V2_SECRET_ASSIGNMENT_PATTERN,
+            _V2_ERROR_SECRET_PATTERN,
+        )
+    ):
+        raise ValueError("ai_review_external_assessment_invalid")
+
+
+def _validate_exact_boundary(value: Any, expected: dict[str, Any]) -> None:
+    if not isinstance(value, dict) or set(value) != set(expected):
+        raise ValueError("ai_review_boundary_invalid")
+    for key, expected_value in expected.items():
+        item = value.get(key)
+        if isinstance(expected_value, bool):
+            if type(item) is not bool or item is not expected_value:
+                raise ValueError("ai_review_boundary_invalid")
+        elif type(item) is not type(expected_value) or item != expected_value:
+            raise ValueError("ai_review_boundary_invalid")
+
+
+def _validate_nonempty_string(value: Any, code: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(code)
+    return value
+
+
+def _canonical_utc_datetime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError("created_at_invalid") from error
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ValueError("created_at_invalid")
+    if parsed.isoformat() != value:
+        raise ValueError("created_at_invalid")
+    return parsed
 
 
 def _required_string(value: dict[str, Any], field: str, code: str) -> str:

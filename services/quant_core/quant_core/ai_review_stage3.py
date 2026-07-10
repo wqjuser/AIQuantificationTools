@@ -62,8 +62,17 @@ _STANCES = {"supported", "caution", "blocked", "insufficient_evidence"}
 _SEVERITIES = {"low", "medium", "high", "critical"}
 _CONSISTENCIES = {"consistent", "mixed", "divergent", "insufficient"}
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_SAFE_PARAMETER_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _SECRET_VALUE_PATTERN = re.compile(
-    r"(?:api[_ -]?key|private[_ -]?key|authorization|password|bearer\s+|secret)",
+    r"(?:\b(?:access[_ -]?token|token|secret|api[_ -]?key|password|authorization|private[_ -]?key)\b\s*[:=]\s*\S+|\bbearer\s+[a-z0-9._~+/=-]+|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
+    re.IGNORECASE,
+)
+_ERROR_SECRET_VALUE_PATTERN = re.compile(
+    r"(?:access[_ -]?token|api[_ -]?key|private[_ -]?key|authorization|password|bearer|secret|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
+    re.IGNORECASE,
+)
+_FORBIDDEN_EXTERNAL_VALUE_PATTERN = re.compile(
+    r"(?:\b(?:ohlcv|research[_ -]?notes?|order[_ -]?payload|paper[_ -]?execution|live[_ -]?adapter|signing(?:[_ -]?material)?|private[_ -]?key|hidden[_ -]?reasoning)\b|\b(?:bars?|account|portfolio)\b\s*[:=]\s*\S+|\b(?:bars?|account|portfolio)\s+payload\b)",
     re.IGNORECASE,
 )
 _ASSESSMENT_OUTPUT_SCHEMA = {
@@ -807,6 +816,7 @@ class AiReviewStage3Service:
         known_evidence_ids: frozenset[str],
     ) -> dict[str, Any]:
         from quant_core.ai_review_providers import AiReviewProviderError, sanitize_base_url
+        from quant_core.ai_review_runs import expected_ai_review_provider_endpoint
 
         status = next(
             (
@@ -818,7 +828,12 @@ class AiReviewStage3Service:
         )
         model = status.model if status is not None and isinstance(status.model, str) else None
         raw_safe_base = status.sanitized_base_url if status is not None else None
-        safe_base = sanitize_base_url(raw_safe_base) if isinstance(raw_safe_base, str) else None
+        normalized_base = (
+            sanitize_base_url(raw_safe_base)
+            if isinstance(raw_safe_base, str)
+            else None
+        )
+        safe_base = normalized_base if normalized_base == raw_safe_base else None
         prompt_hash = canonical_sha256(rendered_prompt)
         base = _external_assessment_base(
             provider_id=provider_id,
@@ -862,10 +877,13 @@ class AiReviewStage3Service:
             }
 
         try:
-            endpoint = provider.endpoint
-        except Exception:
-            endpoint = None
-        if not isinstance(endpoint, str) or not endpoint:
+            expected_endpoint = expected_ai_review_provider_endpoint(
+                provider_id,
+                safe_base,
+            )
+        except ValueError:
+            expected_endpoint = None
+        if expected_endpoint is None:
             return {
                 **base,
                 "status": "failed",
@@ -876,12 +894,12 @@ class AiReviewStage3Service:
                 "usage": None,
                 "latencyMs": 0,
                 "error": {
-                    "code": "ai_review_provider_failed",
-                    "message": "Provider execution failed.",
+                    "code": "ai_review_provider_not_configured",
+                    "message": "The selected AI review provider is not configured.",
                 },
             }
 
-        endpoint_hash = canonical_sha256(endpoint)
+        endpoint_hash = canonical_sha256(expected_endpoint)
         request_hash = canonical_sha256(
             {
                 "provider": provider_id,
@@ -893,6 +911,25 @@ class AiReviewStage3Service:
                 "evidenceHash": evidence_hash,
             }
         )
+        try:
+            endpoint_matches = provider.endpoint == expected_endpoint
+        except Exception:
+            endpoint_matches = False
+        if not endpoint_matches:
+            return {
+                **base,
+                "status": "failed",
+                "endpointHash": endpoint_hash,
+                "requestHash": request_hash,
+                "responseHash": None,
+                "assessment": None,
+                "usage": None,
+                "latencyMs": 0,
+                "error": {
+                    "code": "ai_review_provider_failed",
+                    "message": "Provider execution failed.",
+                },
+            }
         started = time.monotonic()
         try:
             attempt = provider.assess(
@@ -900,12 +937,18 @@ class AiReviewStage3Service:
                 output_schema=_ASSESSMENT_OUTPUT_SCHEMA,
                 known_evidence_ids=known_evidence_ids,
             )
-            if attempt.provider_id != provider_id or attempt.model != model:
+            if (
+                attempt.provider_id != provider_id
+                or attempt.model != model
+                or attempt.sanitized_base_url != safe_base
+            ):
                 raise ValueError("provider_attempt_identity_mismatch")
             assessment = validate_assessment(attempt.assessment, known_evidence_ids)
-            if not isinstance(attempt.usage, Mapping):
-                raise ValueError("provider_attempt_usage_invalid")
-            usage = dict(attempt.usage)
+            usage = _validated_provider_attempt_usage(attempt.usage)
+            latency_ms = _validated_non_negative_int(
+                attempt.latency_ms,
+                "provider_attempt_latency_invalid",
+            )
             response_hash = canonical_sha256(
                 {"assessment": assessment, "usage": usage}
             )
@@ -917,7 +960,7 @@ class AiReviewStage3Service:
                 "responseHash": response_hash,
                 "assessment": assessment,
                 "usage": usage,
-                "latencyMs": max(0, int(attempt.latency_ms)),
+                "latencyMs": latency_ms,
                 "error": None,
             }
         except AiReviewProviderError as error:
@@ -955,44 +998,10 @@ def _validate_review_service_request(
 
 def _validate_service_evidence_bundle(evidence_bundle: Any) -> None:
     try:
-        expected_hash = canonical_sha256(
-            {
-                key: value
-                for key, value in evidence_bundle.items()
-                if key != "evidenceHash"
-            }
-        )
-        primary = evidence_bundle.get("primaryExperiment")
-        comparisons = evidence_bundle.get("comparisonExperiments")
-        evidence_items = evidence_bundle.get("evidenceItems")
-        evidence_ids = [item.get("id") for item in evidence_items]
-        valid = bool(
-            isinstance(evidence_bundle, Mapping)
-            and evidence_bundle.get("schemaVersion") == 1
-            and evidence_bundle.get("mode") in {"single", "comparison"}
-            and isinstance(primary, Mapping)
-            and isinstance(comparisons, list)
-            and isinstance(evidence_items, list)
-            and all(isinstance(item, Mapping) for item in evidence_items)
-            and all(isinstance(item_id, str) and item_id for item_id in evidence_ids)
-            and len(evidence_ids) == len(set(evidence_ids))
-            and isinstance(evidence_bundle.get("strategyLineageKey"), str)
-            and _SHA256_PATTERN.fullmatch(evidence_bundle["strategyLineageKey"])
-            and evidence_bundle.get("evidenceHash") == expected_hash
-            and evidence_bundle.get("safetyBoundary")
-            == {
-                "paperOnly": True,
-                "liveTradingAllowed": False,
-                "orderSubmissionAllowed": False,
-            }
-            and (
-                (evidence_bundle["mode"] == "single" and not comparisons)
-                or (evidence_bundle["mode"] == "comparison" and bool(comparisons))
-            )
-        )
+        from quant_core.ai_review_runs import validate_ai_review_evidence_bundle
+
+        validate_ai_review_evidence_bundle(evidence_bundle)
     except (AttributeError, KeyError, TypeError, ValueError):
-        valid = False
-    if not valid:
         raise AiReviewStage3Error(
             "ai_review_evidence_conflict",
             409,
@@ -1115,14 +1124,25 @@ def _project_strategy(value: Mapping[str, Any]) -> dict[str, Any]:
     for field in ("entryConditions", "exitConditions"):
         conditions = value.get(field)
         if isinstance(conditions, list):
-            projected[field] = [
-                {
-                    **_selected_fields(item, ("kind",)),
-                    "params": _selected_fields(item.get("params", {}), tuple(item.get("params", {}))),
-                }
-                for item in conditions
-                if isinstance(item, Mapping) and isinstance(item.get("params"), Mapping)
-            ]
+            projected_conditions = []
+            for item in conditions:
+                if not isinstance(item, Mapping) or not isinstance(item.get("params"), Mapping):
+                    continue
+                params = item["params"]
+                if any(
+                    not isinstance(key, str)
+                    or not _SAFE_PARAMETER_IDENTIFIER_PATTERN.fullmatch(key)
+                    or not _is_safe_external_number(item_value)
+                    for key, item_value in params.items()
+                ):
+                    _raise_forbidden_external_evidence()
+                projected_conditions.append(
+                    {
+                        **_selected_fields(item, ("kind",)),
+                        "params": dict(params),
+                    }
+                )
+            projected[field] = projected_conditions
     risk = value.get("risk")
     if isinstance(risk, Mapping):
         projected["risk"] = _selected_fields(
@@ -1139,14 +1159,24 @@ def _project_candidate(value: Mapping[str, Any]) -> dict[str, Any]:
     )
     parameters = value.get("parameters")
     if isinstance(parameters, list):
-        projected["parameters"] = [
-            _selected_fields(
-                item,
-                ("conditionSide", "conditionIndex", "parameter", "value"),
+        projected_parameters = []
+        for item in parameters:
+            if not isinstance(item, Mapping):
+                continue
+            parameter = item.get("parameter")
+            if (
+                not isinstance(parameter, str)
+                or not _SAFE_PARAMETER_IDENTIFIER_PATTERN.fullmatch(parameter)
+                or not _is_safe_external_number(item.get("value"))
+            ):
+                _raise_forbidden_external_evidence()
+            projected_parameters.append(
+                _selected_fields(
+                    item,
+                    ("conditionSide", "conditionIndex", "parameter", "value"),
+                )
             )
-            for item in parameters
-            if isinstance(item, Mapping)
-        ]
+        projected["parameters"] = projected_parameters
     for field in ("trainMetrics", "validationMetrics", "testMetrics"):
         metrics = value.get(field)
         if isinstance(metrics, Mapping):
@@ -1213,11 +1243,7 @@ def _selected_fields(value: Mapping[str, Any], fields: Sequence[str]) -> dict[st
 
 def _assert_external_evidence_safe(value: Any) -> None:
     if _contains_forbidden_external_evidence(value):
-        raise AiReviewStage3Error(
-            "ai_review_external_evidence_forbidden",
-            400,
-            "External evidence contains a forbidden field or secret-like value.",
-        )
+        _raise_forbidden_external_evidence()
 
 
 def _contains_forbidden_external_evidence(value: Any) -> bool:
@@ -1246,7 +1272,41 @@ def _contains_forbidden_external_evidence(value: Any) -> bool:
         return False
     if isinstance(value, (list, tuple)):
         return any(_contains_forbidden_external_evidence(item) for item in value)
-    return isinstance(value, str) and bool(_SECRET_VALUE_PATTERN.search(value))
+    return isinstance(value, str) and bool(
+        _SECRET_VALUE_PATTERN.search(value)
+        or _FORBIDDEN_EXTERNAL_VALUE_PATTERN.search(value)
+    )
+
+
+def _is_safe_external_number(value: Any) -> bool:
+    return (
+        type(value) in {int, float}
+        and (type(value) is int or math.isfinite(value))
+    )
+
+
+def _raise_forbidden_external_evidence() -> None:
+    raise AiReviewStage3Error(
+        "ai_review_external_evidence_forbidden",
+        400,
+        "External evidence contains a forbidden field or secret-like value.",
+    )
+
+
+def _validated_provider_attempt_usage(value: Any) -> dict[str, int]:
+    allowed = {"inputTokens", "outputTokens", "totalTokens"}
+    if not isinstance(value, Mapping) or not set(value) <= allowed:
+        raise ValueError("provider_attempt_usage_invalid")
+    return {
+        key: _validated_non_negative_int(item, "provider_attempt_usage_invalid")
+        for key, item in value.items()
+    }
+
+
+def _validated_non_negative_int(value: Any, code: str) -> int:
+    if type(value) is not int or value < 0:
+        raise ValueError(code)
+    return value
 
 
 def _local_external_assessment(evidence_hash: str) -> dict[str, Any]:
@@ -1292,8 +1352,8 @@ def _external_assessment_base(
 
 
 def _bounded_provider_error_message(value: Any) -> str:
-    detail = str(value)[:500]
-    if not detail or _SECRET_VALUE_PATTERN.search(detail):
+    detail = str(value).strip()[:500]
+    if not detail or _ERROR_SECRET_VALUE_PATTERN.search(detail):
         return "Provider request failed."
     return detail
 
