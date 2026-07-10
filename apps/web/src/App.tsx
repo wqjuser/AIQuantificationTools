@@ -28267,7 +28267,17 @@ function researchImportDiffValue(i18n: AppI18n, value: string): string {
     .replaceAll("manifest", "manifest");
 }
 
-function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
+export function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
+  if (detail.startsWith("Authoritative Review readback unavailable; import is blocked fail-closed.")) {
+    return i18n.locale === "en-US"
+      ? "Authoritative Review readback unavailable; import is blocked fail-closed."
+      : "权威评审回读不可用；导入已按 fail-closed 阻断。";
+  }
+  if (detail.startsWith("Decision readback unavailable; import is blocked fail-closed.")) {
+    return i18n.locale === "en-US"
+      ? "Decision readback unavailable; import is blocked fail-closed."
+      : "Decision 回读不可用；导入已按 fail-closed 阻断。";
+  }
   if (i18n.locale === "en-US") {
     return detail;
   }
@@ -28288,8 +28298,6 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Package does not include a locked research note.", "复现包没有包含锁定研究笔记。")
     .replace("Import will restore paper execution records attached to the package run.", "导入会恢复附加在包内运行上的模拟执行记录。")
     .replace("Import will restore saved AI review records and their evidence anchors.", "导入会恢复保存的 AI 评审记录及其证据锚点。")
-    .replace("Authoritative Review readback unavailable; import is blocked fail-closed.", "权威评审回读不可用；导入按 fail-closed 阻断。")
-    .replace("Decision readback unavailable; import is blocked fail-closed.", "Decision 回读不可用；导入按 fail-closed 阻断。")
     .replace("Authority conflict: a legacy Review already owns this Review ID.", "Authority 冲突：该评审 ID 已由 legacy 评审占用。")
     .replace("Authoritative Review ID and recordHash are same-hash.", "权威评审 ID 与 recordHash 一致。")
     .replace("Authoritative Review ID conflict: recordHash differs from persisted evidence.", "权威评审 ID 冲突：recordHash 与持久化证据不同。")

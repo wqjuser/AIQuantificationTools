@@ -15940,7 +15940,7 @@ export function buildResearchRunImportDiffRows({
               : "No authoritative Review",
         incoming: "authoritative · " + incoming.recordHash,
         detail: readbackError
-          ? "Authoritative Review readback unavailable; import is blocked fail-closed. " + readbackError
+          ? "Authoritative Review readback unavailable; import is blocked fail-closed."
           : authorityConflict
             ? "Authority conflict: a legacy Review already owns this Review ID."
             : current
@@ -15993,7 +15993,7 @@ export function buildResearchRunImportDiffRows({
         const same = !blocked && chainIndex < existing.length;
         let detail: string;
         if (readbackError) {
-          detail = "Decision readback unavailable; import is blocked fail-closed. " + readbackError;
+          detail = "Decision readback unavailable; import is blocked fail-closed.";
         } else if (diverged) {
           detail = chainIndex === divergenceIndex && current?.decisionId === archived.decisionId
             ? "Decision ID recordHash conflict: archived evidence differs from the persisted prefix."

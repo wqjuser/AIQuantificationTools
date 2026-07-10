@@ -11540,18 +11540,22 @@ describe("terminal workbench model", () => {
       workspace,
       exportPackage,
       aiReviewArchiveReadbackErrors: {
-        ["review:" + review.aiReviewId]: "offline",
-        ["decisions:" + review.aiReviewId]: "decision store offline"
+        ["review:" + review.aiReviewId]: "review store offline · token=internal-secret",
+        ["decisions:" + review.aiReviewId]: "decision store offline · token=internal-secret"
       }
     });
-    expect(unavailableRows.find((row) => row.id === "ai-review-run-v2:0")).toMatchObject({
+    const unavailableReviewRow = unavailableRows.find((row) => row.id === "ai-review-run-v2:0");
+    expect(unavailableReviewRow).toMatchObject({
       status: "blocked",
       detail: expect.stringContaining("fail-closed")
     });
-    expect(unavailableRows.find((row) => row.id === "ai-review-decision:0")).toMatchObject({
+    const unavailableDecisionRow = unavailableRows.find((row) => row.id === "ai-review-decision:0");
+    expect(unavailableDecisionRow).toMatchObject({
       status: "blocked",
       detail: expect.stringContaining("fail-closed")
     });
+    expect(unavailableReviewRow?.detail).not.toContain("internal-secret");
+    expect(unavailableDecisionRow?.detail).not.toContain("internal-secret");
 
     const countMismatchPackage = {
       ...exportPackage,
