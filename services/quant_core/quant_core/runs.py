@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from quant_core.ai_review_runs import validate_ai_review_run_record
+
 from quant_core.canonical import DATA_SNAPSHOT_HASH_VERSION, canonical_data_hash, normalize_snapshot_bars
 from quant_core.handoff_notes import normalize_handoff_note_payloads
 
@@ -757,7 +759,7 @@ def research_run_import_ai_review_runs(payload: dict[str, Any], *, run_id: str |
         return []
     if not isinstance(raw_reviews, list):
         raise ValueError("ai_review_runs_must_be_array")
-    return _normalize_ai_review_run_payloads(raw_reviews, run_id=run_id)
+    return _normalize_ai_review_run_payloads(raw_reviews, run_id=run_id, strict_envelope=True)
 
 
 def research_run_import_ai_review_runs_v2(
@@ -815,11 +817,7 @@ def research_run_import_handoff_notes(payload: dict[str, Any], *, run_id: str | 
     )
 
 
-def research_run_import_to_audit(
-    payload: dict[str, Any],
-    *,
-    validate_safety_boundary: bool = True,
-) -> ResearchRunAudit:
+def research_run_import_precheck(payload: dict[str, Any]) -> str:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
         raise ValueError("export_package_must_be_object")
@@ -827,18 +825,66 @@ def research_run_import_to_audit(
         raise ValueError("unsupported_export_kind")
     if int(_number_or_default(export_package.get("packageVersion"), 0)) != 1:
         raise ValueError("unsupported_export_package_version")
-
     manifest = export_package.get("manifest")
     research_run = export_package.get("researchRun")
-    handoff = export_package.get("executionHandoff")
     if not isinstance(manifest, dict):
         raise ValueError("manifest_must_be_object")
     if not isinstance(research_run, dict):
         raise ValueError("research_run_must_be_object")
+    _validate_export_integrity(export_package)
+    counts = manifest.get("artifactCounts")
+    if not isinstance(counts, dict):
+        raise ValueError("artifact_counts_must_be_object")
+    data_snapshot = research_run.get("dataSnapshot")
+    ai_report = research_run.get("aiReport")
+    expected = {
+        "bars": _raw_array_length(data_snapshot.get("bars") if isinstance(data_snapshot, dict) else None),
+        "trades": _raw_array_length(research_run.get("backtestTrades")),
+        "equityPoints": _raw_array_length(research_run.get("backtestEquityCurve")),
+        "decisions": _raw_array_length(research_run.get("decisions")),
+        "aiRisks": _raw_array_length(ai_report.get("risks") if isinstance(ai_report, dict) else None),
+    }
+    top_level_arrays = {
+        "paperExecutions": "paperExecutions",
+        "adapterPaperExecutions": "adapterPaperExecutions",
+        "portfolioPaperOrderBatches": "portfolioPaperOrderBatches",
+        "portfolioPaperOrderApprovals": "portfolioPaperOrderApprovals",
+        "portfolioPaperOrderSimulations": "portfolioPaperOrderSimulations",
+        "aiReviewRuns": "aiReviewRuns",
+        "aiReviewRunsV2": "aiReviewRunsV2",
+        "aiReviewDecisions": "aiReviewDecisions",
+        "auditEvents": "auditEvents",
+        "handoffNotes": "handoffNotes",
+    }
+    for count_key, package_key in top_level_arrays.items():
+        value = export_package.get(package_key)
+        if count_key in counts or value:
+            expected[count_key] = _raw_array_length(value)
+    if "promotionCandidates" in counts or export_package.get("promotionCandidate"):
+        expected["promotionCandidates"] = 1 if isinstance(export_package.get("promotionCandidate"), dict) else 0
+    research_note = research_run.get("researchNote")
+    if "researchNotes" in counts or research_note:
+        expected["researchNotes"] = int(
+            isinstance(research_note, dict) and bool(str(research_note.get("body") or "").strip())
+        )
+    for key, value in expected.items():
+        if int(_number_or_default(counts.get(key), -1)) != value:
+            raise ValueError(f"artifact_count_{_camel_to_snake(key)}_mismatch")
+    return _required_text(research_run, "runId")
+
+
+def _raw_array_length(value: Any) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
+    run_id = research_run_import_precheck(payload)
+    export_package = payload.get("export", payload)
+    manifest = export_package.get("manifest")
+    research_run = export_package.get("researchRun")
+    handoff = export_package.get("executionHandoff")
     if not isinstance(handoff, dict):
         raise ValueError("execution_handoff_must_be_object")
-    _validate_export_integrity(export_package)
-    run_id = _required_text(research_run, "runId")
     paper_executions = research_run_import_paper_executions(export_package, run_id=run_id)
     adapter_paper_executions = research_run_import_adapter_paper_executions(
         export_package,
@@ -879,8 +925,7 @@ def research_run_import_to_audit(
         handoff_notes=handoff_notes,
         promotion_candidate=promotion_candidate,
     )
-    if validate_safety_boundary:
-        validate_research_run_import_safety_boundary(export_package)
+    _validate_research_run_import_safety_boundary(export_package)
 
     created_at_raw = _required_text(research_run, "createdAt")
     try:
@@ -921,28 +966,53 @@ def research_run_import_to_audit(
     )
 
 
-def validate_research_run_import_safety_boundary(payload: dict[str, Any]) -> None:
+def _validate_research_run_import_safety_boundary(payload: dict[str, Any]) -> None:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
         raise ValueError("export_package_must_be_object")
     manifest = export_package.get("manifest")
+    research_run = export_package.get("researchRun")
     handoff = export_package.get("executionHandoff")
     if not isinstance(manifest, dict):
         raise ValueError("manifest_must_be_object")
     if not isinstance(handoff, dict):
         raise ValueError("execution_handoff_must_be_object")
-    if manifest.get("paperOnly") is not True or handoff.get("paperOnly") is not True:
+    if not isinstance(research_run, dict):
+        raise ValueError("research_run_must_be_object")
+    if (
+        manifest.get("executionMode") != "paper_only"
+        or research_run.get("executionMode") != "paper_only"
+        or handoff.get("mode") != "paper_only"
+        or manifest.get("paperOnly") is not True
+        or manifest.get("liveBlockedBoundary") is not True
+        or handoff.get("paperOnly") is not True
+    ):
         raise ValueError("paper_only_export_boundary_required")
-    if any(
-        bool(manifest.get(field))
-        for field in (
-            "orderSubmissionEnabled",
-            "liveTradingAllowed",
-            "liveOrderSubmitted",
-            "routeExecuted",
-        )
-    ) or bool(handoff.get("liveTradingAllowed")):
+    unsafe_fields = (
+        "orderSubmissionEnabled",
+        "liveTradingAllowed",
+        "liveOrderSubmitted",
+        "routeExecuted",
+    )
+    if any(manifest.get(field) is not False for field in unsafe_fields):
         raise ValueError("live_trading_exports_cannot_be_imported")
+    optional_unsafe_fields = (
+        "orderSubmissionAllowed",
+        "orderSubmitted",
+    )
+    if any(
+        field in manifest and manifest.get(field) is not False
+        for field in optional_unsafe_fields
+    ):
+        raise ValueError("live_trading_exports_cannot_be_imported")
+    for container in (research_run, handoff):
+        if any(
+            field in container and container.get(field) is not False
+            for field in (*unsafe_fields, *optional_unsafe_fields)
+        ):
+            raise ValueError("live_trading_exports_cannot_be_imported")
+    if "paperOnly" in research_run and research_run.get("paperOnly") is not True:
+        raise ValueError("paper_only_export_boundary_required")
 
 
 def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRunAudit:
@@ -1050,13 +1120,9 @@ def _validate_manifest_consistency(
         ("symbol", "symbol", "manifest_symbol_mismatch"),
         ("timeframe", "timeframe", "manifest_timeframe_mismatch"),
         ("strategyRevision", "strategyRevision", "manifest_strategy_revision_mismatch"),
-        ("executionMode", "executionMode", "manifest_execution_mode_mismatch"),
     ]:
         if str(manifest.get(manifest_key) or "") != str(research_run.get(run_key) or ""):
             raise ValueError(error_code)
-    if str(handoff.get("mode") or "") != str(research_run.get("executionMode") or ""):
-        raise ValueError("execution_handoff_mode_mismatch")
-
     bars = data_snapshot.get("bars")
     if not isinstance(bars, list):
         raise ValueError("data_snapshot_bars_must_be_array")
@@ -1517,6 +1583,7 @@ def _normalize_ai_review_run_payloads(
     value: list[dict[str, Any]] | None,
     *,
     run_id: str | None = None,
+    strict_envelope: bool = False,
 ) -> list[dict[str, Any]]:
     normalized = []
     expected_run_id = str(run_id or "").strip()
@@ -1541,7 +1608,8 @@ def _normalize_ai_review_run_payloads(
         if ai_review_id != record_ai_review_id:
             raise ValueError("ai_review_id_mismatch")
         created_at = str(item.get("createdAt") or record.get("createdAt") or "").strip()
-        if not created_at:
+        record_created_at = str(record.get("createdAt") or "").strip()
+        if not created_at or (strict_envelope and created_at != record_created_at):
             raise ValueError("ai_review_created_at_is_required")
         if int(_number_or_default(record.get("schemaVersion"), 0)) != 1:
             raise ValueError("ai_review_schema_version_must_be_1")
@@ -1549,12 +1617,20 @@ def _normalize_ai_review_run_payloads(
             raise ValueError("ai_review_record_type_mismatch")
         if not str(record.get("boundary") or "").strip():
             raise ValueError("ai_review_boundary_is_required")
+        safe_record = validate_ai_review_run_record(
+            {
+                **record,
+                "aiReviewId": record_ai_review_id,
+                "runId": record_run_id or envelope_run_id or expected_run_id,
+                "createdAt": record_created_at or created_at,
+            }
+        ).record
         normalized.append(
             {
                 "aiReviewId": ai_review_id,
                 "runId": envelope_run_id or record_run_id or expected_run_id,
                 "createdAt": created_at,
-                "record": dict(record),
+                "record": safe_record,
             }
         )
     return normalized

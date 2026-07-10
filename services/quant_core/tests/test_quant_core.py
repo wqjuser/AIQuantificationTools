@@ -26435,7 +26435,11 @@ class QuantCoreContractTest(unittest.TestCase):
                 "dataRows": 2,
                 "executionMode": "paper_only",
                 "paperOnly": True,
+                "orderSubmissionEnabled": False,
                 "liveTradingAllowed": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "liveBlockedBoundary": True,
                 "artifactCounts": {
                     "bars": 2,
                     "trades": 1,
@@ -26702,6 +26706,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from http.server import HTTPServer
         from threading import Thread
 
+        from quant_core.ai_review_decisions import AiReviewDecisionStore
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import QuantApiHandler
         from quant_core.execution import (
@@ -26807,11 +26812,15 @@ class QuantCoreContractTest(unittest.TestCase):
             paper_library = PaperExecutionStore(f"{tmp}/paper.sqlite")
             portfolio_order_library = PortfolioPaperOrderStore(f"{tmp}/portfolio_orders.sqlite")
 
-            class FailingAiReviewStore(AiReviewRunStore):
-                def record(self, record):
+            class FailingAiReviewDecisionStore(AiReviewDecisionStore):
+                def apply_archive_atomic(self, **kwargs):
                     raise RuntimeError("ai_review_write_failed")
 
-            review_store = FailingAiReviewStore(f"{tmp}/ai_reviews.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            decision_store = FailingAiReviewDecisionStore(
+                review_store.path,
+                review_store=review_store,
+            )
             note_library.save(
                 market="ashare",
                 symbol="600000",
@@ -26827,6 +26836,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 paper_execution_store = paper_library
                 portfolio_paper_order_store = portfolio_order_library
                 ai_review_store = review_store
+                ai_review_decision_store = decision_store
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -26866,6 +26876,7 @@ class QuantCoreContractTest(unittest.TestCase):
     def test_research_run_import_rollback_restores_all_previous_paper_executions(self):
         import sqlite3
 
+        from quant_core.ai_review_decisions import AiReviewDecisionStore
         from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.api import _persist_research_run_import
         from quant_core.audit_events import AuditEventStore
@@ -26935,11 +26946,15 @@ class QuantCoreContractTest(unittest.TestCase):
             )
             audit_event_library = AuditEventStore(f"{tmp}/audit_events.sqlite")
 
-            class FailingAiReviewStore(AiReviewRunStore):
-                def record(self, record):
+            class FailingAiReviewDecisionStore(AiReviewDecisionStore):
+                def apply_archive_atomic(self, **kwargs):
                     raise RuntimeError("ai_review_write_failed")
 
-            review_store = FailingAiReviewStore(f"{tmp}/ai_reviews.sqlite")
+            review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
+            decision_store = FailingAiReviewDecisionStore(
+                review_store.path,
+                review_store=review_store,
+            )
             research_store.record(audit)
             for index in range(51):
                 paper_library.record(
@@ -27005,6 +27020,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     portfolio_paper_order_approval_store=portfolio_order_approval_library,
                     portfolio_paper_order_simulation_store=portfolio_order_simulation_library,
                     ai_review_store=review_store,
+                    ai_review_decision_store=decision_store,
                     audit=audit,
                     imported_note=None,
                     paper_execution_records=[],

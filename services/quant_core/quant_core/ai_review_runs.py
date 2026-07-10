@@ -120,6 +120,34 @@ _V2_OUTPUT_SCHEMA_VERSION = "aiqt-ai-review-assessment-v1"
 _V2_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _V2_OPENAI_ENDPOINT = "https://api.openai.com/v1/responses"
 _V2_REVIEW_ID_PATTERN = re.compile(r"^ai-review-[0-9a-f]{32}$")
+_LEGACY_OPTIONAL_FIELDS = (
+    "market",
+    "symbol",
+    "timeframe",
+    "strategyRevision",
+    "executionMode",
+    "evidenceAnchors",
+)
+_FORBIDDEN_LEGACY_KEY_PARTS = (
+    "apikey",
+    "authorization",
+    "credential",
+    "password",
+    "privatekey",
+    "providerresponse",
+    "rawproviderresponse",
+    "rawresponse",
+    "requestheaders",
+    "responsebody",
+    "secret",
+    "token",
+)
+_SECRET_LIKE_VALUE_PATTERN = re.compile(
+    r"(?:\bbearer\s+[a-z0-9._~+/=-]+|\bsk-(?:proj-)?[a-z0-9_-]{8,}|"
+    r"\b(?:access[_ -]?token|api[_ -]?key|authorization|password|private[_ -]?key|secret)"
+    r"\b\s*[:=]\s*\S+)",
+    re.IGNORECASE,
+)
 _SELECT_COLUMNS = (
     "ai_review_id, run_id, created_at, record_json, schema_version, "
     "primary_experiment_id, evidence_hash, record_hash, authority"
@@ -433,6 +461,140 @@ class AiReviewRunStore:
         finally:
             connection.close()
 
+    def validate_archive_ownership(
+        self,
+        *,
+        legacy_records: list[AiReviewRunRecord],
+        authoritative_records: list[AuthoritativeAiReviewRunRecord],
+        replace_run_id: str | None = None,
+    ) -> None:
+        connection = self._connect()
+        try:
+            self.validate_archive_ownership_in_transaction(
+                connection,
+                legacy_records=legacy_records,
+                authoritative_records=authoritative_records,
+                replace_run_id=replace_run_id,
+            )
+        finally:
+            connection.close()
+
+    def validate_archive_ownership_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        legacy_records: list[AiReviewRunRecord],
+        authoritative_records: list[AuthoritativeAiReviewRunRecord],
+        replace_run_id: str | None = None,
+    ) -> None:
+        for incoming in [*legacy_records, *authoritative_records]:
+            row = connection.execute(
+                f"select {_SELECT_COLUMNS} from ai_review_runs where ai_review_id = ?",
+                (incoming.ai_review_id,),
+            ).fetchone()
+            if row is None:
+                continue
+            try:
+                existing = _row_to_ai_review_run_record(row)
+            except (TypeError, ValueError):
+                raise ValueError("ai_review_archive_owner_conflict") from None
+            if existing.run_id != incoming.run_id:
+                raise ValueError("ai_review_archive_owner_conflict")
+            if replace_run_id is not None and existing.run_id == replace_run_id:
+                continue
+            if type(existing) is not type(incoming):
+                raise ValueError("ai_review_archive_owner_conflict")
+            if (
+                isinstance(incoming, AuthoritativeAiReviewRunRecord)
+                and existing.record_hash != incoming.record_hash
+            ):
+                raise ValueError("ai_review_record_conflict")
+
+    def write_archive_records_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        legacy_records: list[AiReviewRunRecord],
+        authoritative_records: list[AuthoritativeAiReviewRunRecord],
+        replace_run_id: str | None = None,
+    ) -> None:
+        self.validate_archive_ownership_in_transaction(
+            connection,
+            legacy_records=legacy_records,
+            authoritative_records=authoritative_records,
+            replace_run_id=replace_run_id,
+        )
+        if replace_run_id is not None:
+            connection.execute("delete from ai_review_runs where run_id = ?", (replace_run_id,))
+        for record in legacy_records:
+            connection.execute(
+                """
+                insert into ai_review_runs (
+                    ai_review_id, run_id, created_at, record_json,
+                    schema_version, primary_experiment_id, evidence_hash, record_hash, authority
+                ) values (?, ?, ?, ?, null, null, null, null, null)
+                on conflict(ai_review_id) do update set
+                    run_id = excluded.run_id,
+                    created_at = excluded.created_at,
+                    record_json = excluded.record_json,
+                    schema_version = null,
+                    primary_experiment_id = null,
+                    evidence_hash = null,
+                    record_hash = null,
+                    authority = null
+                """,
+                (
+                    record.ai_review_id,
+                    record.run_id,
+                    record.created_at.isoformat(),
+                    json.dumps(record.record, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+        for record in authoritative_records:
+            row = connection.execute(
+                "select record_hash from ai_review_runs where ai_review_id = ?",
+                (record.ai_review_id,),
+            ).fetchone()
+            if row is not None:
+                if str(row[0] or "") == record.record_hash:
+                    continue
+                raise ValueError("ai_review_record_conflict")
+            connection.execute(
+                """
+                insert into ai_review_runs (
+                    ai_review_id, run_id, created_at, record_json, schema_version,
+                    primary_experiment_id, evidence_hash, record_hash, authority
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.ai_review_id,
+                    record.run_id,
+                    record.created_at.isoformat(),
+                    canonical_json(record.record),
+                    2,
+                    record.primary_experiment_id,
+                    record.evidence_hash,
+                    record.record_hash,
+                    record.authority,
+                ),
+            )
+
+    def list_archive_by_run_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        run_id: str,
+    ) -> list[AiReviewRunRecord | AuthoritativeAiReviewRunRecord]:
+        rows = connection.execute(
+            f"""
+            select {_SELECT_COLUMNS}
+            from ai_review_runs
+            where run_id = ?
+            order by created_at desc, ai_review_id
+            """,
+            (run_id,),
+        ).fetchall()
+        return [_row_to_ai_review_run_record(row) for row in rows]
+
 
 def validate_ai_review_run_record(record: dict[str, Any]) -> AiReviewRunRecord:
     normalized = _normalize_ai_review_record(record)
@@ -450,12 +612,43 @@ def validate_authoritative_ai_review_run_record(
     return _authoritative_ai_review_run_record(record)
 
 
-def ai_review_run_record_to_payload(record: AiReviewRunRecord) -> dict[str, Any]:
+def validate_ai_review_archive_records(
+    *,
+    run_id: str,
+    legacy_records: list[dict[str, Any]],
+    authoritative_records: list[dict[str, Any]],
+) -> tuple[list[AiReviewRunRecord], list[AuthoritativeAiReviewRunRecord]]:
+    legacy = [validate_ai_review_run_record(record) for record in legacy_records]
+    authoritative = [
+        validate_authoritative_ai_review_run_record(record)
+        for record in authoritative_records
+    ]
+    legacy_ids = [record.ai_review_id for record in legacy]
+    authoritative_ids = [record.ai_review_id for record in authoritative]
+    if len(set(legacy_ids)) != len(legacy_ids):
+        raise ValueError("ai_review_id_duplicate")
+    if len(set(authoritative_ids)) != len(authoritative_ids):
+        raise ValueError("ai_review_v2_id_duplicate")
+    if set(legacy_ids).intersection(authoritative_ids):
+        raise ValueError("ai_review_authority_conflict")
+    if any(record.run_id != run_id for record in [*legacy, *authoritative]):
+        raise ValueError("ai_review_archive_run_id_mismatch")
+    return legacy, authoritative
+
+
+def ai_review_run_record_to_payload(
+    record: AiReviewRunRecord | AuthoritativeAiReviewRunRecord,
+) -> dict[str, Any]:
+    safe_record = (
+        validate_ai_review_run_record(record.record).record
+        if isinstance(record, AiReviewRunRecord)
+        else record.record
+    )
     return {
         "aiReviewId": record.ai_review_id,
         "runId": record.run_id,
         "createdAt": record.created_at.isoformat(),
-        "record": record.record,
+        "record": safe_record,
     }
 
 
@@ -481,21 +674,66 @@ def _normalize_ai_review_record(value: dict[str, Any]) -> dict[str, Any]:
     if not boundary:
         raise ValueError("ai_review_boundary_required")
 
-    return {
-        **value,
+    normalized = {
         "schemaVersion": 1,
         "recordType": "aiqt.aiReviewRun",
         "aiReviewId": ai_review_id,
         "runId": run_id,
         "createdAt": created_at,
-        "status": str(value.get("status") or "ready"),
-        "summary": _dict_or_empty(value.get("summary")),
-        "dossier": _dict_or_empty(value.get("dossier")),
-        "citations": _list_or_empty(value.get("citations")),
-        "rounds": _list_or_empty(value.get("rounds")),
-        "decisionLog": _list_or_empty(value.get("decisionLog")),
-        "boundary": boundary,
+        "status": _safe_legacy_text(value.get("status") or "ready"),
+        "summary": _safe_legacy_mapping(value.get("summary")),
+        "dossier": _safe_legacy_mapping(value.get("dossier")),
+        "citations": _safe_legacy_list(value.get("citations")),
+        "rounds": _safe_legacy_list(value.get("rounds")),
+        "decisionLog": _safe_legacy_list(value.get("decisionLog")),
+        "boundary": _safe_legacy_text(boundary),
     }
+    for field in _LEGACY_OPTIONAL_FIELDS:
+        if field not in value:
+            continue
+        if field == "evidenceAnchors":
+            normalized[field] = _safe_legacy_list(value.get(field))
+        else:
+            normalized[field] = _safe_legacy_text(value.get(field))
+    return normalized
+
+
+def _safe_legacy_mapping(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): _safe_legacy_value(item)
+        for key, item in value.items()
+        if not _forbidden_legacy_key(key)
+    }
+
+
+def _safe_legacy_list(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return []
+    return [_safe_legacy_value(item) for item in value]
+
+
+def _safe_legacy_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return _safe_legacy_mapping(value)
+    if isinstance(value, list):
+        return _safe_legacy_list(value)
+    if isinstance(value, str):
+        return _safe_legacy_text(value)
+    if value is None or type(value) in {bool, int, float}:
+        return value
+    return str(value)
+
+
+def _safe_legacy_text(value: Any) -> str:
+    text = str(value)
+    return "[redacted]" if _SECRET_LIKE_VALUE_PATTERN.search(text) else text
+
+
+def _forbidden_legacy_key(value: Any) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", str(value).lower())
+    return any(part in normalized for part in _FORBIDDEN_LEGACY_KEY_PARTS)
 
 
 def _authoritative_ai_review_run_record(value: Any) -> AuthoritativeAiReviewRunRecord:

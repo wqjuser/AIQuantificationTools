@@ -36,9 +36,8 @@ from quant_core.audit_signing import (
     audit_signing_key_rotation_plan_to_payload,
 )
 from quant_core.ai_review_decisions import (
-    AiReviewDecisionRecord,
     AiReviewDecisionStore,
-    validate_ai_review_decision_record,
+    validate_ai_review_decision_archive_records,
 )
 from quant_core.ai_review_providers import AiReviewProviderRegistry
 from quant_core.ai_review_runs import (
@@ -46,8 +45,7 @@ from quant_core.ai_review_runs import (
     AiReviewRunStore,
     AuthoritativeAiReviewRunRecord,
     ai_review_run_record_to_payload,
-    validate_ai_review_run_record,
-    validate_authoritative_ai_review_run_record,
+    validate_ai_review_archive_records,
 )
 from quant_core.ai_review_stage3 import (
     AiReviewEvidenceAssembler,
@@ -275,8 +273,8 @@ from quant_core.runs import (
     research_run_import_portfolio_paper_orders,
     research_run_import_portfolio_paper_order_simulations,
     research_run_import_handoff_notes,
+    research_run_import_precheck,
     research_run_import_to_audit,
-    validate_research_run_import_safety_boundary,
 )
 from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
 from quant_core.strategy_library import (
@@ -2896,10 +2894,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/research/runs/import":
             try:
                 payload = self._read_json_body()
-                audit = research_run_import_to_audit(
-                    payload,
-                    validate_safety_boundary=False,
+                run_id = research_run_import_precheck(payload)
+                ai_review_records, ai_review_records_v2, ai_review_decision_records = (
+                    _preflight_ai_review_archive(
+                        payload,
+                        run_id=run_id,
+                        review_store=self.ai_review_store,
+                        decision_store=self._current_ai_review_decision_store(),
+                    )
                 )
+                audit = research_run_import_to_audit(payload)
                 paper_executions = research_run_import_paper_executions(payload, run_id=audit.run_id)
                 portfolio_paper_orders = research_run_import_portfolio_paper_orders(payload, base_run_id=audit.run_id)
                 portfolio_paper_order_approvals = research_run_import_portfolio_paper_order_approvals(
@@ -2926,10 +2930,6 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     portfolio_paper_order_payload_to_simulation(simulation_payload)
                     for simulation_payload in portfolio_paper_order_simulations
                 ]
-                ai_review_records, ai_review_records_v2, ai_review_decision_records = (
-                    _preflight_ai_review_archive(payload, run_id=audit.run_id)
-                )
-                validate_research_run_import_safety_boundary(payload)
                 imported_note = _importable_research_note_payload(
                     audit.research_note,
                     market=audit.market,
@@ -5520,66 +5520,42 @@ def _preflight_ai_review_archive(
     payload: dict[str, object],
     *,
     run_id: str,
+    review_store: AiReviewRunStore | None = None,
+    decision_store: AiReviewDecisionStore | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     legacy_envelopes = research_run_import_ai_review_runs(payload, run_id=run_id)
     v2_envelopes = research_run_import_ai_review_runs_v2(payload, run_id=run_id)
     decision_envelopes = research_run_import_ai_review_decisions(payload)
 
-    legacy_records = [
-        validate_ai_review_run_record(dict(envelope["record"])).record
-        for envelope in legacy_envelopes
-    ]
-    authoritative = [
-        validate_authoritative_ai_review_run_record(dict(envelope["record"]))
-        for envelope in v2_envelopes
-    ]
-    if any(review.run_id != run_id for review in authoritative):
-        raise ValueError("ai_review_record_v2_run_id_mismatch")
-    if len({review.ai_review_id for review in authoritative}) != len(authoritative):
-        raise ValueError("ai_review_v2_id_duplicate")
-    if {review.ai_review_id for review in authoritative}.intersection(
-        record["aiReviewId"] for record in legacy_records
-    ):
-        raise ValueError("ai_review_authority_conflict")
-
-    decisions = [
-        validate_ai_review_decision_record(dict(envelope["record"]))
-        for envelope in decision_envelopes
-    ]
-    if len({decision.decision_id for decision in decisions}) != len(decisions):
-        raise ValueError("ai_review_decision_id_duplicate")
-    _validate_ai_review_decision_chains(authoritative, decisions)
+    legacy_payloads = [dict(envelope["record"]) for envelope in legacy_envelopes]
+    authoritative_payloads = [dict(envelope["record"]) for envelope in v2_envelopes]
+    decision_payloads = [dict(envelope["record"]) for envelope in decision_envelopes]
+    legacy, authoritative = validate_ai_review_archive_records(
+        run_id=run_id,
+        legacy_records=legacy_payloads,
+        authoritative_records=authoritative_payloads,
+    )
+    decisions = validate_ai_review_decision_archive_records(
+        decision_payloads,
+        authoritative,
+    )
+    if (review_store is None) != (decision_store is None):
+        raise ValueError("ai_review_archive_stores_must_be_paired")
+    if review_store is not None and decision_store is not None:
+        if review_store.path.resolve() != decision_store.path.resolve():
+            raise ValueError("ai_review_decision_store_path_mismatch")
+        decision_store.preflight_archive_apply(
+            run_id=run_id,
+            legacy_records=legacy_payloads,
+            authoritative_records=authoritative_payloads,
+            decision_records=decision_payloads,
+        )
 
     return (
-        [dict(record) for record in legacy_records],
+        [dict(record.record) for record in legacy],
         [dict(review.record) for review in authoritative],
         [dict(decision.record) for decision in decisions],
     )
-
-
-def _validate_ai_review_decision_chains(
-    reviews: list[AuthoritativeAiReviewRunRecord],
-    decisions: list[AiReviewDecisionRecord],
-) -> None:
-    review_by_id = {review.ai_review_id: review for review in reviews}
-    chains: dict[str, list[AiReviewDecisionRecord]] = {
-        review_id: [] for review_id in review_by_id
-    }
-    for decision in decisions:
-        review = review_by_id.get(decision.ai_review_id)
-        if review is None:
-            raise ValueError("ai_review_decision_review_missing")
-        if decision.review_record_hash != review.record_hash:
-            raise ValueError("ai_review_decision_review_hash_mismatch")
-        if decision.evidence_hash != review.evidence_hash:
-            raise ValueError("ai_review_decision_evidence_hash_mismatch")
-        chains[decision.ai_review_id].append(decision)
-    for chain in chains.values():
-        predecessor = None
-        for decision in chain:
-            if decision.supersedes_decision_id != predecessor:
-                raise ValueError("decision_conflict")
-            predecessor = decision.decision_id
 
 
 def _ai_review_decision_archive_payload(decision: object) -> dict[str, object]:
@@ -5624,54 +5600,61 @@ def _restore_ai_review_archive_snapshot(
     decision_store: AiReviewDecisionStore,
     snapshot: dict[str, object],
 ) -> None:
-    legacy_envelopes = snapshot.get("aiReviewRuns", [])
-    v2_envelopes = snapshot.get("aiReviewRunsV2", [])
+    if review_store.path.resolve() != decision_store.path.resolve():
+        raise ValueError("ai_review_decision_store_path_mismatch")
+    mixed_legacy = snapshot.get("aiReviewRuns", [])
+    if not isinstance(mixed_legacy, list):
+        raise ValueError("import_undo_ai_review_archive_must_use_arrays")
+    has_v2_array = "aiReviewRunsV2" in snapshot
+    has_decision_array = "aiReviewDecisions" in snapshot
+    if has_v2_array:
+        v2_envelopes = snapshot.get("aiReviewRunsV2")
+        if not isinstance(v2_envelopes, list):
+            raise ValueError("import_undo_ai_review_archive_must_use_arrays")
+        legacy_envelopes = mixed_legacy
+    else:
+        legacy_envelopes = []
+        v2_envelopes = []
+        for item in mixed_legacy:
+            record = item.get("record") if isinstance(item, dict) else None
+            if isinstance(record, dict) and record.get("schemaVersion") == 2:
+                v2_envelopes.append(item)
+            else:
+                legacy_envelopes.append(item)
     decision_envelopes = snapshot.get("aiReviewDecisions", [])
-    if not all(isinstance(value, list) for value in (legacy_envelopes, v2_envelopes, decision_envelopes)):
+    if not isinstance(decision_envelopes, list):
         raise ValueError("import_undo_ai_review_archive_must_use_arrays")
 
-    legacy_records = [
-        validate_ai_review_run_record(dict(item["record"])).record
-        for item in legacy_envelopes
-        if isinstance(item, dict) and isinstance(item.get("record"), dict)
-    ]
-    authoritative = [
-        validate_authoritative_ai_review_run_record(dict(item["record"]))
-        for item in v2_envelopes
-        if isinstance(item, dict) and isinstance(item.get("record"), dict)
-    ]
-    decisions = [
-        validate_ai_review_decision_record(dict(item["record"]))
-        for item in decision_envelopes
-        if isinstance(item, dict) and isinstance(item.get("record"), dict)
-    ]
-    if (
-        len(legacy_records) != len(legacy_envelopes)
-        or len(authoritative) != len(v2_envelopes)
-        or len(decisions) != len(decision_envelopes)
-        or any(record["runId"] != run_id for record in legacy_records)
-        or any(review.run_id != run_id for review in authoritative)
-    ):
-        raise ValueError("import_undo_ai_review_archive_invalid")
-    _validate_ai_review_decision_chains(authoritative, decisions)
-
-    current_review_ids = [
-        review.ai_review_id
-        for review in review_store.list_all_by_run(run_id)
-        if isinstance(review, AuthoritativeAiReviewRunRecord)
-    ]
-    decision_store.delete_by_reviews(
-        current_review_ids
-        + [review.ai_review_id for review in authoritative]
-        + [decision.ai_review_id for decision in decisions]
+    legacy_normalized = research_run_import_ai_review_runs(
+        {"aiReviewRuns": legacy_envelopes},
+        run_id=run_id,
     )
-    review_store.delete_by_run(run_id)
-    for record in legacy_records:
-        review_store.record(record)
-    for review in authoritative:
-        review_store.record_v2(review.record)
-    for decision in decisions:
-        decision_store.restore_validated(decision.record)
+    authoritative_normalized = research_run_import_ai_review_runs_v2(
+        {"aiReviewRunsV2": v2_envelopes},
+        run_id=run_id,
+    )
+    decision_normalized = research_run_import_ai_review_decisions(
+        {"aiReviewDecisions": decision_envelopes}
+    )
+    legacy_payloads = [dict(item["record"]) for item in legacy_normalized]
+    authoritative_payloads = [dict(item["record"]) for item in authoritative_normalized]
+    decision_payloads = [dict(item["record"]) for item in decision_normalized]
+    legacy, authoritative = validate_ai_review_archive_records(
+        run_id=run_id,
+        legacy_records=legacy_payloads,
+        authoritative_records=authoritative_payloads,
+    )
+    decisions = validate_ai_review_decision_archive_records(
+        decision_payloads,
+        authoritative,
+    )
+    decision_store.replace_archive_atomic(
+        run_id=run_id,
+        legacy_records=[record.record for record in legacy],
+        authoritative_records=[record.record for record in authoritative],
+        decision_records=[record.record for record in decisions],
+        preserve_existing_decisions=not has_decision_array,
+    )
 
 
 def _persist_research_run_import(
@@ -5708,6 +5691,12 @@ def _persist_research_run_import(
     )
     if handoff_note_payloads and handoff_note_store is None:
         raise ValueError("handoff_note_store_required")
+    ai_review_decision_store.preflight_archive_apply(
+        run_id=audit.run_id,
+        legacy_records=ai_review_records,
+        authoritative_records=ai_review_records_v2,
+        decision_records=ai_review_decision_records,
+    )
 
     previous_run = run_store.get(audit.run_id)
     previous_note = (
@@ -5740,6 +5729,7 @@ def _persist_research_run_import(
     previous_audit_events = audit_event_store.list_all_by_run(audit.run_id)
     previous_handoff_notes = handoff_note_store.list_by_run(audit.run_id, limit=200) if handoff_note_store else []
 
+    ai_archive_applied = False
     try:
         run_store.record(audit)
         if imported_note:
@@ -5766,12 +5756,13 @@ def _persist_research_run_import(
             portfolio_paper_order_approval_store.record(approval)
         for simulation in portfolio_paper_order_simulations:
             portfolio_paper_order_simulation_store.record(simulation)
-        for review_record in ai_review_records:
-            ai_review_store.record(review_record)
-        for review_record in ai_review_records_v2:
-            ai_review_store.record_v2(review_record)
-        for decision_record in ai_review_decision_records:
-            ai_review_decision_store.restore_validated(decision_record)
+        ai_review_decision_store.apply_archive_atomic(
+            run_id=audit.run_id,
+            legacy_records=ai_review_records,
+            authoritative_records=ai_review_records_v2,
+            decision_records=ai_review_decision_records,
+        )
+        ai_archive_applied = True
         if handoff_note_payloads and handoff_note_store:
             handoff_note_store.delete_by_subject(subject_type="research_run", subject_id=audit.run_id)
             for handoff_note_payload in handoff_note_payloads:
@@ -5802,6 +5793,7 @@ def _persist_research_run_import(
             previous_portfolio_paper_order_simulations=previous_portfolio_paper_order_simulations,
             previous_ai_reviews=previous_ai_reviews,
             previous_ai_review_archive=previous_ai_review_archive,
+            restore_ai_review_archive=ai_archive_applied,
             previous_audit_events=previous_audit_events,
             handoff_note_store=handoff_note_store,
             previous_handoff_notes=previous_handoff_notes,
@@ -6039,11 +6031,11 @@ def _undo_research_run_import_from_snapshot(
     previous_ai_reviews = [
         _ai_review_run_from_payload(item) for item in previous_ai_review_payloads if isinstance(item, dict)
     ]
-    previous_ai_review_archive = {
-        "aiReviewRuns": previous_ai_review_payloads,
-        "aiReviewRunsV2": previous_ai_review_v2_payloads,
-        "aiReviewDecisions": previous_ai_review_decision_payloads,
-    }
+    previous_ai_review_archive = {"aiReviewRuns": previous_ai_review_payloads}
+    if "aiReviewRunsV2" in previous:
+        previous_ai_review_archive["aiReviewRunsV2"] = previous_ai_review_v2_payloads
+    if "aiReviewDecisions" in previous:
+        previous_ai_review_archive["aiReviewDecisions"] = previous_ai_review_decision_payloads
     previous_audit_events = [dict(item) for item in previous_audit_event_payloads if isinstance(item, dict)]
     previous_handoff_notes = [
         handoff_note_from_payload(item) for item in previous_handoff_note_payloads if isinstance(item, dict)
@@ -6192,6 +6184,7 @@ def _rollback_research_run_import(
     previous_handoff_notes: list[HandoffNote],
     ai_review_decision_store: AiReviewDecisionStore | None = None,
     previous_ai_review_archive: dict[str, object] | None = None,
+    restore_ai_review_archive: bool = True,
 ) -> None:
     audit_event_store.delete_by_run(run_id)
     for event in previous_audit_events:
@@ -6205,7 +6198,9 @@ def _rollback_research_run_import(
         for note in previous_handoff_notes:
             handoff_note_store.restore(note)
 
-    if previous_ai_review_archive is not None:
+    if not restore_ai_review_archive:
+        pass
+    elif previous_ai_review_archive is not None:
         if ai_review_decision_store is None:
             raise ValueError("ai_review_decision_store_required")
         _restore_ai_review_archive_snapshot(
