@@ -607,6 +607,48 @@ class AiReviewRunStoreV2Tests(unittest.TestCase):
 
         self.assertEqual(store.get(record["aiReviewId"]), authoritative)
 
+    def test_record_v1_rejects_each_authoritative_query_marker_without_overwrite(self) -> None:
+        store = AiReviewRunStore(self.path)
+        cases = {
+            "primary experiment": ("experiment-primary", None, None),
+            "evidence hash": (None, "e" * 64, None),
+            "record hash": (None, None, "f" * 64),
+        }
+        for label, markers in cases.items():
+            with self.subTest(marker=label):
+                record = _authoritative_review_record(ai_review_id=f"ai-review-marker-{label}")
+                store.record_v2(record)
+                legacy = self._legacy_record(ai_review_id=record["aiReviewId"])
+                with closing(sqlite3.connect(self.path)) as connection:
+                    connection.execute(
+                        """
+                        update ai_review_runs
+                        set record_json = ?,
+                            schema_version = null,
+                            primary_experiment_id = ?,
+                            evidence_hash = ?,
+                            record_hash = ?,
+                            authority = null
+                        where ai_review_id = ?
+                        """,
+                        (canonical_json(legacy), *markers, record["aiReviewId"]),
+                    )
+                    connection.commit()
+                    before = connection.execute(
+                        "select * from ai_review_runs where ai_review_id = ?",
+                        (record["aiReviewId"],),
+                    ).fetchone()
+
+                with self.assertRaisesRegex(ValueError, "^ai_review_record_conflict$"):
+                    store.record(legacy)
+
+                with closing(sqlite3.connect(self.path)) as connection:
+                    after = connection.execute(
+                        "select * from ai_review_runs where ai_review_id = ?",
+                        (record["aiReviewId"],),
+                    ).fetchone()
+                self.assertEqual(after, before)
+
     def test_record_v1_retains_legacy_upsert_behavior(self) -> None:
         store = AiReviewRunStore(self.path)
         first = self._legacy_record()

@@ -529,10 +529,7 @@ def _row_to_ai_review_run_record(
     row: tuple[Any, ...],
 ) -> AiReviewRunRecord | AuthoritativeAiReviewRunRecord:
     decoded = json.loads(row[3])
-    if (
-        (isinstance(decoded, dict) and decoded.get("schemaVersion") == 2)
-        or _row_has_authoritative_query_columns(row)
-    ):
+    if _row_has_v2_identity(row, decoded):
         return _authoritative_ai_review_run_record(decoded)
     record = _dict_or_empty(decoded)
     return AiReviewRunRecord(
@@ -543,13 +540,14 @@ def _row_to_ai_review_run_record(
     )
 
 
-def _row_has_v2_identity(row: tuple[Any, ...]) -> bool:
-    if row[4] == 2 or row[8] == "authoritative":
+def _row_has_v2_identity(row: tuple[Any, ...], record: Any = None) -> bool:
+    if _row_has_authoritative_query_columns(row):
         return True
-    try:
-        record = json.loads(row[3])
-    except (json.JSONDecodeError, TypeError):
-        return False
+    if record is None:
+        try:
+            record = json.loads(row[3])
+        except (json.JSONDecodeError, TypeError):
+            return False
     return isinstance(record, dict) and record.get("schemaVersion") == 2
 
 
