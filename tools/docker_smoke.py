@@ -1501,7 +1501,7 @@ def run_stage2_strategy_experiment_acceptance(
             ),
             "Stage 2 strategy experiment",
         )
-        if _matching_stage2_experiment(
+        if experiment.get("sourceRunId") != experiment_request["sourceRunId"] or _matching_stage2_experiment(
             [experiment],
             experiment_request=experiment_request,
             source_run=source_run,

@@ -3985,8 +3985,8 @@ class QuantCoreContractTest(unittest.TestCase):
                         original["definition"][field.removeprefix("definition.")] = f"wrong-{field}"
                     else:
                         original[field] = f"wrong-{field}"
-                        if field == "snapshotId":
-                            original["definition"]["snapshotId"] = original[field]
+                        if field in {"snapshotId", "sourceRunId"}:
+                            original["definition"][field] = original[field]
                 replay = copy.deepcopy(original)
                 replay["experimentId"] = "experiment-stage2-replay"
                 if stage == "replay":
