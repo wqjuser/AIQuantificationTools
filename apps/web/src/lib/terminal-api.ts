@@ -57,6 +57,17 @@ import {
   type StrategyReadinessGate,
   type StrategySnapshot
 } from "./terminal-workbench";
+import {
+  isAiReviewDecision,
+  isAiReviewDecisionChain,
+  isAiReviewProviderStatus,
+  isAuthoritativeAiReviewRun,
+  type AiReviewDecision,
+  type AiReviewProviderStatus,
+  type AppendAiReviewDecisionRequest,
+  type AuthoritativeAiReviewRun,
+  type CreateAuthoritativeAiReviewRequest
+} from "./ai-review-stage3";
 
 export const defaultQuantCoreBaseUrl = "/";
 export type ResearchTimeframe = Timeframe;
@@ -120,6 +131,55 @@ export interface StrategyExperimentDetailResult {
 }
 
 export type StrategyExperimentMutationResult = StrategyExperimentDetailResult;
+
+export interface AiReviewProviderStatusResult {
+  providers: AiReviewProviderStatus[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AuthoritativeAiReviewResult {
+  review?: AuthoritativeAiReviewRun;
+  latestDecision?: AiReviewDecision | null;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AuthoritativeAiReviewFilters {
+  runId?: string;
+  experimentId?: string;
+  limit?: number;
+  offset?: number;
+  query?: string;
+}
+
+export interface AuthoritativeAiReviewPagination {
+  limit: number;
+  offset: number;
+  total: number;
+  query: string;
+}
+
+export interface AuthoritativeAiReviewHistoryResult {
+  reviews: AuthoritativeAiReviewRun[];
+  pagination?: AuthoritativeAiReviewPagination;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AiReviewDecisionHistoryResult {
+  decisions: AiReviewDecision[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface AiReviewDecisionMutationResult {
+  decision?: AiReviewDecision;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export type { AppendAiReviewDecisionRequest, CreateAuthoritativeAiReviewRequest };
 
 export interface ResearchNote {
   market: Market;
@@ -4556,6 +4616,28 @@ export interface HandoffNoteSaveParams {
 
 const defaultFetcher: WorkspaceFetcher = async (url, init) => fetch(url, init);
 
+async function requestJson(
+  url: string,
+  init: RequestInit | undefined,
+  fetcher: WorkspaceFetcher
+): Promise<unknown> {
+  const response = await fetcher(url, init);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+  }
+  return payload;
+}
+
+function resolveAiReviewRequestOptions(
+  signalOrFetcher: AbortSignal | WorkspaceFetcher | undefined,
+  maybeFetcher: WorkspaceFetcher
+): { signal?: AbortSignal; fetcher: WorkspaceFetcher } {
+  return typeof signalOrFetcher === "function"
+    ? { fetcher: signalOrFetcher }
+    : { signal: signalOrFetcher, fetcher: maybeFetcher };
+}
+
 export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): string {
   const configured = env.VITE_QUANT_API_BASE?.trim();
   return configured ? configured : defaultQuantCoreBaseUrl;
@@ -4931,6 +5013,41 @@ export function buildStrategyExperimentsUrl(
 
 export function buildStrategyExperimentDetailUrl(baseUrl: string, experimentId: string): string {
   return buildApiUrl(baseUrl, `api/strategy-experiments/${encodeURIComponent(experimentId)}`);
+}
+
+export function buildAiReviewProvidersUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/ai-review/providers");
+}
+
+export function buildAuthoritativeAiReviewsUrl(
+  baseUrl: string,
+  filters: AuthoritativeAiReviewFilters = {}
+): string {
+  return buildApiUrl(baseUrl, "api/ai-reviews", (url) => {
+    if (filters.runId?.trim()) {
+      url.searchParams.set("runId", filters.runId.trim());
+    }
+    if (filters.experimentId?.trim()) {
+      url.searchParams.set("experimentId", filters.experimentId.trim());
+    }
+    if (filters.limit !== undefined) {
+      url.searchParams.set("limit", String(Math.max(1, Math.min(filters.limit, 50))));
+    }
+    if (filters.offset !== undefined) {
+      url.searchParams.set("offset", String(Math.max(0, filters.offset)));
+    }
+    if (filters.query?.trim()) {
+      url.searchParams.set("query", filters.query.trim());
+    }
+  });
+}
+
+export function buildAuthoritativeAiReviewUrl(baseUrl: string, aiReviewId: string): string {
+  return buildApiUrl(baseUrl, `api/ai-reviews/${encodeURIComponent(aiReviewId)}`);
+}
+
+export function buildAiReviewDecisionsUrl(baseUrl: string, aiReviewId: string): string {
+  return buildApiUrl(baseUrl, `api/ai-reviews/${encodeURIComponent(aiReviewId)}/decisions`);
 }
 
 export function buildMarketKlinesUrl(
@@ -11702,6 +11819,233 @@ export async function loadStrategyExperimentDetail(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown strategy experiment detail error"
+    };
+  }
+}
+
+function hasExactAiReviewEnvelopeKeys(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  return typeof value === "object"
+    && value !== null
+    && !Array.isArray(value)
+    && Object.keys(value).length === keys.length
+    && keys.every((key) => key in value);
+}
+
+function isAiReviewProvidersPayload(value: unknown): value is { providers: AiReviewProviderStatus[] } {
+  return hasExactAiReviewEnvelopeKeys(value, ["providers"])
+    && Array.isArray(value.providers)
+    && value.providers.every(isAiReviewProviderStatus);
+}
+
+function isAuthoritativeAiReviewPayload(
+  value: unknown
+): value is { review: AuthoritativeAiReviewRun; latestDecision: AiReviewDecision | null } {
+  if (!hasExactAiReviewEnvelopeKeys(value, ["review", "latestDecision"])
+    || !isAuthoritativeAiReviewRun(value.review)
+    || (value.latestDecision !== null && !isAiReviewDecision(value.latestDecision))) {
+    return false;
+  }
+  return value.latestDecision === null || (
+    value.latestDecision.aiReviewId === value.review.aiReviewId
+    && value.latestDecision.reviewRecordHash === value.review.recordHash
+    && value.latestDecision.evidenceHash === value.review.evidenceHash
+  );
+}
+
+function isAuthoritativeAiReviewHistoryPayload(
+  value: unknown
+): value is { reviews: AuthoritativeAiReviewRun[]; pagination: AuthoritativeAiReviewPagination } {
+  if (!hasExactAiReviewEnvelopeKeys(value, ["reviews", "pagination"])
+    || !Array.isArray(value.reviews)
+    || !value.reviews.every(isAuthoritativeAiReviewRun)
+    || !hasExactAiReviewEnvelopeKeys(value.pagination, ["limit", "offset", "total", "query"])) {
+    return false;
+  }
+  return Number.isInteger(value.pagination.limit) && (value.pagination.limit as number) >= 1
+    && (value.pagination.limit as number) <= 50
+    && Number.isInteger(value.pagination.offset) && (value.pagination.offset as number) >= 0
+    && Number.isInteger(value.pagination.total) && (value.pagination.total as number) >= 0
+    && typeof value.pagination.query === "string";
+}
+
+function isAiReviewDecisionsPayload(value: unknown): value is { decisions: AiReviewDecision[] } {
+  return hasExactAiReviewEnvelopeKeys(value, ["decisions"])
+    && isAiReviewDecisionChain(value.decisions);
+}
+
+function isAiReviewDecisionPayload(value: unknown): value is { decision: AiReviewDecision } {
+  return hasExactAiReviewEnvelopeKeys(value, ["decision"]) && isAiReviewDecision(value.decision);
+}
+
+export async function loadAiReviewProviders(
+  baseUrl: string,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiReviewProviderStatusResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  try {
+    const payload = await requestJson(
+      buildAiReviewProvidersUrl(baseUrl),
+      signal ? { signal } : undefined,
+      fetcher
+    );
+    if (!isAiReviewProvidersPayload(payload)) {
+      throw new Error("Invalid AI review providers contract");
+    }
+    return { providers: payload.providers, source: "core" };
+  } catch (error) {
+    return {
+      providers: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown AI review providers error"
+    };
+  }
+}
+
+export async function createAuthoritativeAiReview(
+  baseUrl: string,
+  request: CreateAuthoritativeAiReviewRequest,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuthoritativeAiReviewResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  try {
+    const payload = await requestJson(
+      buildAuthoritativeAiReviewsUrl(baseUrl),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          primaryExperimentId: request.primaryExperimentId,
+          comparisonExperimentIds: [...request.comparisonExperimentIds],
+          providerId: request.providerId,
+          externalDataApproved: request.externalDataApproved
+        }),
+        ...(signal ? { signal } : {})
+      },
+      fetcher
+    );
+    if (!isAuthoritativeAiReviewPayload(payload)) {
+      throw new Error("Invalid authoritative AI review create contract");
+    }
+    return { review: payload.review, latestDecision: payload.latestDecision, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown authoritative AI review create error"
+    };
+  }
+}
+
+export async function loadAuthoritativeAiReview(
+  baseUrl: string,
+  aiReviewId: string,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuthoritativeAiReviewResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  try {
+    const payload = await requestJson(
+      buildAuthoritativeAiReviewUrl(baseUrl, aiReviewId),
+      signal ? { signal } : undefined,
+      fetcher
+    );
+    if (!isAuthoritativeAiReviewPayload(payload)) {
+      throw new Error("Invalid authoritative AI review detail contract");
+    }
+    return { review: payload.review, latestDecision: payload.latestDecision, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown authoritative AI review detail error"
+    };
+  }
+}
+
+export async function loadAuthoritativeAiReviews(
+  baseUrl: string,
+  filters: AuthoritativeAiReviewFilters = {},
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AuthoritativeAiReviewHistoryResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  try {
+    const payload = await requestJson(
+      buildAuthoritativeAiReviewsUrl(baseUrl, filters),
+      signal ? { signal } : undefined,
+      fetcher
+    );
+    if (!isAuthoritativeAiReviewHistoryPayload(payload)) {
+      throw new Error("Invalid authoritative AI review history contract");
+    }
+    return { reviews: payload.reviews, pagination: payload.pagination, source: "core" };
+  } catch (error) {
+    return {
+      reviews: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown authoritative AI review history error"
+    };
+  }
+}
+
+export async function loadAiReviewDecisions(
+  baseUrl: string,
+  aiReviewId: string,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiReviewDecisionHistoryResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  try {
+    const payload = await requestJson(
+      buildAiReviewDecisionsUrl(baseUrl, aiReviewId),
+      signal ? { signal } : undefined,
+      fetcher
+    );
+    if (!isAiReviewDecisionsPayload(payload)) {
+      throw new Error("Invalid AI review decisions contract");
+    }
+    return { decisions: payload.decisions, source: "core" };
+  } catch (error) {
+    return {
+      decisions: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown AI review decisions error"
+    };
+  }
+}
+
+export async function appendAiReviewDecision(
+  baseUrl: string,
+  aiReviewId: string,
+  request: AppendAiReviewDecisionRequest,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiReviewDecisionMutationResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  try {
+    const payload = await requestJson(
+      buildAiReviewDecisionsUrl(baseUrl, aiReviewId),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operator: request.operator,
+          status: request.status,
+          rationale: request.rationale,
+          supersedesDecisionId: request.supersedesDecisionId
+        }),
+        ...(signal ? { signal } : {})
+      },
+      fetcher
+    );
+    if (!isAiReviewDecisionPayload(payload)) {
+      throw new Error("Invalid AI review decision append contract");
+    }
+    return { decision: payload.decision, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown AI review decision append error"
     };
   }
 }

@@ -232,6 +232,12 @@ import {
   loadStrategyLibrary,
   loadStrategyExperimentDetail,
   loadStrategyExperiments,
+  loadAiReviewProviders,
+  createAuthoritativeAiReview,
+  loadAuthoritativeAiReview,
+  loadAuthoritativeAiReviews,
+  loadAiReviewDecisions,
+  appendAiReviewDecision,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
   saveAiReviewRunRecord,
@@ -459,6 +465,107 @@ function sampleStrategyExperimentDetail(): StrategyExperimentDetail {
         rank: 1
       }
     ]
+  };
+}
+
+const stage3Hash = (digit: string): string => digit.repeat(64);
+
+function sampleAuthoritativeAiReviewPayload() {
+  const primaryExperiment = {
+    experimentId: "primary",
+    sourceRunId: "run-primary",
+    strategyRevision: stage3Hash("1"),
+    snapshotId: stage3Hash("2"),
+    definitionHash: stage3Hash("3"),
+    resultHash: stage3Hash("4"),
+    selectedCandidateId: "candidate-primary",
+    candidateRevision: stage3Hash("5"),
+    canonicalDataHash: stage3Hash("6"),
+    dataRange: {
+      startAt: "2026-01-01T00:00:00+00:00",
+      endAt: "2026-06-30T00:00:00+00:00"
+    }
+  };
+  const assessment = {
+    stance: "supported",
+    summary: "The persisted evidence supports another research iteration.",
+    risks: [],
+    invalidationConditions: [],
+    watchItems: [],
+    evidenceGaps: [],
+    consistency: "consistent"
+  };
+  return {
+    schemaVersion: 2,
+    authority: "authoritative",
+    recordType: "aiqt.aiReviewRun",
+    aiReviewId: "ai-review-0123456789abcdef0123456789abcdef",
+    createdAt: "2026-07-10T08:00:00+00:00",
+    mode: "single",
+    primaryExperiment,
+    comparisonExperiments: [],
+    strategyLineageKey: stage3Hash("7"),
+    evidenceBundle: {
+      schemaVersion: 1,
+      mode: "single",
+      primaryExperiment,
+      comparisonExperiments: [],
+      strategyLineageKey: stage3Hash("7"),
+      evidenceItems: [
+        {
+          id: "experiment:primary:context",
+          kind: "experiment_context",
+          value: { market: "ashare", symbol: "600000", timeframe: "1d" }
+        }
+      ],
+      safetyBoundary: { paperOnly: true, liveTradingAllowed: false, orderSubmissionAllowed: false },
+      evidenceHash: stage3Hash("8")
+    },
+    evidenceHash: stage3Hash("8"),
+    deterministicAssessment: assessment,
+    externalAssessment: {
+      status: "skipped",
+      provider: "local",
+      model: null,
+      sanitizedBaseUrl: null,
+      endpointHash: null,
+      promptTemplateVersion: "aiqt-ai-review-v1",
+      outputSchemaVersion: "aiqt-ai-review-assessment-v1",
+      renderedPrompt: "",
+      renderedPromptHash: stage3Hash("9"),
+      evidenceHash: stage3Hash("8"),
+      requestHash: null,
+      responseHash: null,
+      assessment: null,
+      usage: null,
+      latencyMs: 0,
+      error: null
+    },
+    boundary: {
+      purpose: "research_evidence_review_only",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      orderSubmissionAllowed: false
+    },
+    recordHash: stage3Hash("a")
+  };
+}
+
+function sampleAiReviewDecisionPayload(index = 1) {
+  return {
+    schemaVersion: 1,
+    recordType: "aiqt.aiReviewDecision",
+    decisionId: `ai-review-decision-${String(index).repeat(32)}`,
+    aiReviewId: "ai-review-0123456789abcdef0123456789abcdef",
+    createdAt: `2026-07-10T08:0${index}:00+00:00`,
+    operator: "researcher",
+    status: "accepted_for_research",
+    rationale: "Use this evidence for the next research iteration.",
+    supersedesDecisionId: index === 1 ? null : `ai-review-decision-${String(index - 1).repeat(32)}`,
+    reviewRecordHash: stage3Hash("a"),
+    evidenceHash: stage3Hash("8"),
+    boundary: { paperOnly: true, liveTradingAllowed: false, orderSubmissionAllowed: false },
+    recordHash: stage3Hash(String(index))
   };
 }
 
@@ -19619,6 +19726,177 @@ describe("terminal workspace API client", () => {
     expect((await fetchVersion()).source).toBe("core");
     expect((await fetchVersion("aiqt-data-v2")).source).toBe("core");
     expect((await fetchVersion("aiqt-data-v1")).source).toBe("fallback");
+  });
+
+  test("loads safe AI review provider status and rejects secret-bearing projections", async () => {
+    const valid = await loadAiReviewProviders("/", async (url, init) => {
+      expect(url).toBe("/api/ai-review/providers");
+      expect(init).toBeUndefined();
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          providers: [
+            { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
+            {
+              providerId: "openai-compatible",
+              configured: true,
+              model: "review-model",
+              sanitizedBaseUrl: "https://example.test/v1"
+            }
+          ]
+        })
+      };
+    });
+    expect(valid.source).toBe("core");
+    expect(valid.providers[0]).toMatchObject({ providerId: "local" });
+
+    const invalid = await loadAiReviewProviders("/", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        providers: [{ providerId: "openai", configured: true, model: "gpt-5", sanitizedBaseUrl: null, apiKey: "x" }]
+      })
+    }));
+    expect(invalid.source).toBe("fallback");
+    expect(invalid.providers).toEqual([]);
+    expect(invalid.error).toContain("provider");
+  });
+
+  test("creates an authoritative review with an exact request and forwards AbortSignal", async () => {
+    const controller = new AbortController();
+    const request = {
+      primaryExperimentId: "primary",
+      comparisonExperimentIds: ["comparison"],
+      providerId: "openai-compatible" as const,
+      externalDataApproved: true,
+      uiOnly: "must-not-leak"
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const review = sampleAuthoritativeAiReviewPayload();
+    const result = await createAuthoritativeAiReview("/", request, controller.signal, async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 201, json: async () => ({ review, latestDecision: null }) };
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "/api/ai-reviews",
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            primaryExperimentId: "primary",
+            comparisonExperimentIds: ["comparison"],
+            providerId: "openai-compatible",
+            externalDataApproved: true
+          }),
+          signal: controller.signal
+        }
+      }
+    ]);
+    expect(result).toMatchObject({ source: "core", review: { authority: "authoritative" }, latestDecision: null });
+  });
+
+  test("loads encoded authoritative detail and deeply rejects a legacy review", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const review = sampleAuthoritativeAiReviewPayload();
+    const result = await loadAuthoritativeAiReview("/", "review/你好", async (url, init) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, json: async () => ({ review, latestDecision: null }) };
+    });
+    expect(calls).toEqual([{ url: "/api/ai-reviews/review%2F%E4%BD%A0%E5%A5%BD", init: undefined }]);
+    expect(result.review?.recordHash).toBe(stage3Hash("a"));
+
+    const legacy = await loadAuthoritativeAiReview("/", "legacy", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ review: { ...review, schemaVersion: 1, authority: "legacy" }, latestDecision: null })
+    }));
+    expect(legacy.source).toBe("fallback");
+    expect(legacy.review).toBeUndefined();
+  });
+
+  test("loads authoritative review history with URLSearchParams filters and validates pagination", async () => {
+    const calls: string[] = [];
+    const review = sampleAuthoritativeAiReviewPayload();
+    const result = await loadAuthoritativeAiReviews(
+      "/",
+      { runId: "run 1", experimentId: "experiment/1", limit: 5, offset: 10, query: "hash match" },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ reviews: [review], pagination: { limit: 5, offset: 10, total: 12, query: "hash match" } })
+        };
+      }
+    );
+    expect(calls).toEqual([
+      "/api/ai-reviews?runId=run+1&experimentId=experiment%2F1&limit=5&offset=10&query=hash+match"
+    ]);
+    expect(result).toMatchObject({ source: "core", pagination: { total: 12 }, reviews: [{ schemaVersion: 2 }] });
+
+    const invalid = await loadAuthoritativeAiReviews("/", {}, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ reviews: [review], pagination: { limit: "5", offset: 0, total: 1, query: "" } })
+    }));
+    expect(invalid.source).toBe("fallback");
+    expect(invalid.reviews).toEqual([]);
+  });
+
+  test("loads and appends the exact AI review decision chain", async () => {
+    const first = sampleAiReviewDecisionPayload(1);
+    const second = sampleAiReviewDecisionPayload(2);
+    const loaded = await loadAiReviewDecisions("/", "review/你好", async (url) => {
+      expect(url).toBe("/api/ai-reviews/review%2F%E4%BD%A0%E5%A5%BD/decisions");
+      return { ok: true, status: 200, json: async () => ({ decisions: [first, second] }) };
+    });
+    expect(loaded.decisions).toHaveLength(2);
+
+    const controller = new AbortController();
+    const request = {
+      operator: "researcher",
+      status: "revision_requested" as const,
+      rationale: "Add a longer validation window.",
+      supersedesDecisionId: second.decisionId,
+      uiDraftId: "must-not-leak"
+    };
+    const appended = await appendAiReviewDecision(
+      "/",
+      "review/你好",
+      request,
+      controller.signal,
+      async (url, init) => {
+        expect(url).toBe("/api/ai-reviews/review%2F%E4%BD%A0%E5%A5%BD/decisions");
+        expect(init).toEqual({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            operator: "researcher",
+            status: "revision_requested",
+            rationale: "Add a longer validation window.",
+            supersedesDecisionId: second.decisionId
+          }),
+          signal: controller.signal
+        });
+        return { ok: true, status: 201, json: async () => ({ decision: { ...second, status: "revision_requested" } }) };
+      }
+    );
+    expect(appended).toMatchObject({ source: "core", decision: { status: "revision_requested" } });
+  });
+
+  test("rejects a broken decision predecessor chain before returning it to callers", async () => {
+    const first = sampleAiReviewDecisionPayload(1);
+    const second = { ...sampleAiReviewDecisionPayload(2), supersedesDecisionId: null };
+    const result = await loadAiReviewDecisions("/", "review", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ decisions: [first, second] })
+    }));
+    expect(result.source).toBe("fallback");
+    expect(result.decisions).toEqual([]);
   });
 });
 
