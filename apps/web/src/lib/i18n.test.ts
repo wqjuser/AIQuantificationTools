@@ -142,6 +142,9 @@ describe("i18n", () => {
     expect(zh.t("strategyExperiment.budget")).toBe("评估预算");
     expect(zh.t("strategyExperiment.completed")).toBe("已完成");
     expect(zh.t("strategyExperiment.failed")).toBe("失败");
+    expect(zh.t("strategyExperiment.invalidDraft")).toBe("实验配置无效，请检查参数范围、保护条件和评估预算。");
+    expect(zh.t("strategyExperiment.exportFailed")).toBe("实验 JSON 导出失败。");
+    expect(zh.t("strategyExperiment.candidateLoadFailed")).toBe("候选草稿载入失败。");
 
     expect(en.t("strategyExperiment.title")).toBe("Strategy experiments");
     expect(en.t("strategyExperiment.run")).toBe("Run experiment");
@@ -158,6 +161,9 @@ describe("i18n", () => {
     expect(en.t("strategyExperiment.budget")).toBe("Evaluation budget");
     expect(en.t("strategyExperiment.completed")).toBe("Completed");
     expect(en.t("strategyExperiment.failed")).toBe("Failed");
+    expect(en.t("strategyExperiment.invalidDraft")).toBe("The experiment draft is invalid; review parameter bounds, guardrails, and budget.");
+    expect(en.t("strategyExperiment.exportFailed")).toBe("Strategy experiment JSON export failed.");
+    expect(en.t("strategyExperiment.candidateLoadFailed")).toBe("Strategy experiment candidate load failed.");
   });
 
   test("formats audited run labels in the active locale", () => {

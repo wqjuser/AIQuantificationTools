@@ -3,6 +3,10 @@ import { describe, expect, test } from "vitest";
 
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const strategyExperimentSectionSource = readFileSync(
+  new URL("../components/StrategyExperimentSection.tsx", import.meta.url),
+  "utf8"
+);
 const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
 const readmeSource = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
 const productPlanSource = readFileSync(new URL("../../../../docs/product-plan.md", import.meta.url), "utf8");
@@ -3603,7 +3607,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildBacktestReportMarkdown(workspace, runHistory)");
     expect(appSource).toContain("buildBacktestReportAuditEvent({");
     expect(appSource).toContain("saveAuditEvent(quantCoreBaseUrl, backtestReportAuditEvent)");
-    expect(appSource).toContain('import { StrategyExperimentSection } from "./components/StrategyExperimentSection";');
+    expect(appSource).toContain('import { StrategyExperimentSection, isStrategyExperimentDraftValid } from "./components/StrategyExperimentSection";');
     expect(appSource).toContain("<BacktestReportPanel");
     expect(appSource).toContain("<StrategyExperimentSection");
     expect(appSource).toContain("refreshStrategyExperiments");
@@ -3612,6 +3616,35 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("replayStrategyExperiment");
     expect(appSource).toContain("exportStrategyExperimentJson");
     expect(appSource).toContain("loadStrategyExperimentCandidate");
+    expect(appSource).toContain("const strategyExperimentUsableSourceKey =");
+    expect(appSource).toContain("researchRunContextBinding.canUseRun && workspace.researchRun");
+    expect(appSource).toContain("strategyExperimentSourceKeyRef");
+    expect(appSource).toContain("strategyExperimentRequestGenerationRef");
+    expect(appSource).toContain("strategyExperimentRequestIsCurrent");
+    expect(appSource).toContain("strategyExperimentMatchesSourceKey");
+    expect(appSource).toContain("active={visibleStrategyExperimentActive}");
+    expect(appSource).toContain("dimensions={visibleStrategyExperimentDimensions}");
+    expect(appSource).toContain("history={visibleStrategyExperimentHistory}");
+    expect(appSource).toContain("strategyExperimentWorkspaceRef.current !== capturedWorkspace");
+    expect(appSource).toContain("strategyExperimentActiveRef.current !== capturedActive");
+    const candidateLoadSource = sourceBetween(
+      "const loadStrategyExperimentCandidate = useCallback",
+      "const submitPaperExecution = useCallback"
+    );
+    expect(candidateLoadSource).toContain("catch (candidateError)");
+    expect(candidateLoadSource).toContain("strategyExperimentRequestIsCurrent");
+    const experimentExportSource = sourceBetween(
+      "const exportStrategyExperimentJson = useCallback",
+      "const loadStrategyExperimentCandidate = useCallback"
+    );
+    expect(experimentExportSource).toContain("try {");
+    expect(experimentExportSource).toContain("catch (exportError)");
+    expect(experimentExportSource).toContain("finally {");
+    expect(experimentExportSource).toContain("anchor?.remove()");
+    expect(experimentExportSource).toContain("URL.revokeObjectURL(objectUrl)");
+    expect(strategyExperimentSectionSource).toContain("export function isStrategyExperimentDraftValid");
+    expect(strategyExperimentSectionSource).toContain("Number.isFinite");
+    expect(strategyExperimentSectionSource).toContain("isStrategyExperimentDraftValid(dimensions, guardrails, walkForward)");
     expect(appSource).not.toContain("buildBacktestParameterScanRows");
     expect(appSource).not.toContain("workspaceWithBacktestParameterCandidate");
     expect(appSource).not.toContain('className="parameter-scan-table"');
@@ -3648,6 +3681,48 @@ describe("terminal layout css", () => {
     expect(styles).toContain("@media (max-width: 860px)");
     expect(styles).not.toContain(".parameter-scan-");
     expect(styles).toContain(".report-export-button");
+  });
+
+  test("backtest lab rejects invalid strategy experiment drafts before submit", async () => {
+    const component = await import("../components/StrategyExperimentSection");
+    expect(typeof component.isStrategyExperimentDraftValid).toBe("function");
+    const validDimensions = [
+      { conditionSide: "entry", conditionIndex: 0, parameter: "window", values: [5, 10] },
+      { conditionSide: "exit", conditionIndex: 1, parameter: "threshold", values: [20, 30] }
+    ];
+    const validGuardrails = { minimumTradeCount: 2, maximumDrawdownPct: 20 };
+
+    expect(component.isStrategyExperimentDraftValid(validDimensions, validGuardrails, null)).toBe(true);
+    expect(
+      component.isStrategyExperimentDraftValid(validDimensions, validGuardrails, {
+        trainBars: 40,
+        validationBars: 10,
+        stepBars: 10
+      })
+    ).toBe(true);
+
+    const invalidDimensions = [
+      [],
+      [{ ...validDimensions[0], conditionIndex: -1 }],
+      [{ ...validDimensions[0], values: [] }],
+      [{ ...validDimensions[0], values: [Number.NaN] }],
+      [{ ...validDimensions[0], values: [1.5] }],
+      [{ ...validDimensions[0], values: [0] }],
+      [{ ...validDimensions[0], values: [251] }],
+      [{ ...validDimensions[1], values: [-1] }],
+      [{ ...validDimensions[1], values: [101] }],
+      [validDimensions[0], { ...validDimensions[0] }],
+      [{ ...validDimensions[0], values: Array.from({ length: 82 }, (_, index) => index + 1) }]
+    ];
+    invalidDimensions.forEach((dimensions) => {
+      expect(component.isStrategyExperimentDraftValid(dimensions, validGuardrails, null)).toBe(false);
+    });
+
+    expect(component.isStrategyExperimentDraftValid(validDimensions, { ...validGuardrails, minimumTradeCount: -1 }, null)).toBe(false);
+    expect(component.isStrategyExperimentDraftValid(validDimensions, { ...validGuardrails, minimumTradeCount: 1.5 }, null)).toBe(false);
+    expect(component.isStrategyExperimentDraftValid(validDimensions, { ...validGuardrails, maximumDrawdownPct: 101 }, null)).toBe(false);
+    expect(component.isStrategyExperimentDraftValid(validDimensions, validGuardrails, { trainBars: 0, validationBars: 10, stepBars: 10 })).toBe(false);
+    expect(component.isStrategyExperimentDraftValid(validDimensions, validGuardrails, { trainBars: 40, validationBars: 1.5, stepBars: 10 })).toBe(false);
   });
 
   test("collapses the terminal and workflow grid before cards become squeezed", () => {

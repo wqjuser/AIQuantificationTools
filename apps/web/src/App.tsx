@@ -251,7 +251,7 @@ import {
 } from "./lib/terminal-api";
 import { PortfolioPaperOrderAuditLedgerPanel } from "./components/PortfolioPaperOrderAuditLedgerPanel";
 import { ExecutionAdapterPaperExecutionAuditLedgerPanel } from "./components/ExecutionAdapterPaperExecutionAuditLedgerPanel";
-import { StrategyExperimentSection } from "./components/StrategyExperimentSection";
+import { StrategyExperimentSection, isStrategyExperimentDraftValid } from "./components/StrategyExperimentSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   buildTerminalWorkspace,
@@ -1905,12 +1905,10 @@ export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
   const [strategyExperimentHistory, setStrategyExperimentHistory] = useState<StrategyExperimentListItem[]>([]);
+  const [strategyExperimentHistorySourceKey, setStrategyExperimentHistorySourceKey] = useState<string | null>(null);
   const [strategyExperimentActive, setStrategyExperimentActive] = useState<StrategyExperimentDetail | null>(null);
-  const [strategyExperimentDimensions, setStrategyExperimentDimensions] = useState<StrategyExperimentDimension[]>(
-    () => initialWorkspaceState.workspace.researchRun?.strategyConfig
-      ? buildDefaultStrategyExperimentDimensions(initialWorkspaceState.workspace.researchRun.strategyConfig)
-      : []
-  );
+  const [strategyExperimentDimensions, setStrategyExperimentDimensions] = useState<StrategyExperimentDimension[]>([]);
+  const [strategyExperimentDraftSourceKey, setStrategyExperimentDraftSourceKey] = useState<string | null>(null);
   const [strategyExperimentGuardrails, setStrategyExperimentGuardrails] = useState<StrategyExperimentGuardrails>({
     minimumTradeCount: 2,
     maximumDrawdownPct: 20
@@ -2335,6 +2333,10 @@ export function App() {
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
   const strategyValidationRequestIdRef = useRef(0);
+  const strategyExperimentRequestGenerationRef = useRef(0);
+  const strategyExperimentSourceKeyRef = useRef<string | null>(null);
+  const strategyExperimentWorkspaceRef = useRef(workspace);
+  const strategyExperimentActiveRef = useRef(strategyExperimentActive);
   const aiReviewHistoryRequestIdRef = useRef(0);
   const auditEvidenceReportRequestIdRef = useRef(0);
   const marketDataRefreshOverrideAuditRequestIdRef = useRef(0);
@@ -2359,6 +2361,8 @@ export function App() {
     replaceWatchlistCacheRefreshRunUrlParam(runId);
   }, []);
   const i18n = createI18n(locale);
+  const strategyExperimentI18nRef = useRef(i18n);
+  strategyExperimentI18nRef.current = i18n;
   const goldenPath = goldenPathState.goldenPath;
   const productWorkAreas = productWorkAreasWithGoldenPath(buildProductWorkAreas(workspace), goldenPath);
   const activeWorkArea =
@@ -2387,8 +2391,31 @@ export function App() {
   const currentAiReviewRunRecord = buildAiReviewRunRecord(workspace);
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
-  const strategyExperimentSourceRunId = workspace.researchRun?.runId ?? null;
-  const strategyExperimentStrategyRevision = workspace.researchRun?.strategyRevision ?? null;
+  const strategyExperimentUsableSourceKey =
+    researchRunContextBinding.canUseRun && workspace.researchRun
+      ? `${workspace.researchRun.runId}:${workspace.researchRun.strategyRevision}`
+      : null;
+  const strategyExperimentSourceRunId = strategyExperimentUsableSourceKey ? workspace.researchRun!.runId : null;
+  const strategyExperimentStrategyRevision = strategyExperimentUsableSourceKey
+    ? workspace.researchRun!.strategyRevision
+    : null;
+  strategyExperimentSourceKeyRef.current = strategyExperimentUsableSourceKey;
+  strategyExperimentWorkspaceRef.current = workspace;
+  strategyExperimentActiveRef.current = strategyExperimentActive;
+  const visibleStrategyExperimentDimensions =
+    strategyExperimentDraftSourceKey === strategyExperimentUsableSourceKey
+      ? strategyExperimentDimensions
+      : [];
+  const visibleStrategyExperimentHistory =
+    strategyExperimentHistorySourceKey === strategyExperimentUsableSourceKey
+      ? strategyExperimentHistory
+      : [];
+  const visibleStrategyExperimentActive =
+    strategyExperimentUsableSourceKey &&
+    strategyExperimentActive &&
+    strategyExperimentMatchesSourceKey(strategyExperimentActive, strategyExperimentUsableSourceKey)
+      ? strategyExperimentActive
+      : null;
   const scannerCandidates = buildScannerCandidates(workspace);
   const researchOpsQueue = buildResearchOpsQueueRows({
     workspace,
@@ -3554,40 +3581,90 @@ export function App() {
     setAiReviewHistoryPagination(null);
   }, []);
 
-  const refreshStrategyExperiments = useCallback(async () => {
-    if (!strategyExperimentSourceRunId || !strategyExperimentStrategyRevision) {
-      setStrategyExperimentHistory([]);
-      setStrategyExperimentError(null);
-      return;
+  const strategyExperimentRequestIsCurrent = useCallback((requestGeneration: number, sourceKey: string) => (
+    strategyExperimentRequestGenerationRef.current === requestGeneration &&
+    strategyExperimentSourceKeyRef.current === sourceKey
+  ), []);
+
+  const beginStrategyExperimentRequest = useCallback((sourceKey: string): number | null => {
+    if (strategyExperimentSourceKeyRef.current !== sourceKey) {
+      return null;
     }
-    const result = await loadStrategyExperiments(quantCoreBaseUrl, {
-      sourceRunId: strategyExperimentSourceRunId,
-      strategyRevision: strategyExperimentStrategyRevision,
-      limit: 20
-    });
-    if (result.error) {
-      setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
-      return;
-    }
-    setStrategyExperimentHistory(result.experiments);
+    const requestGeneration = strategyExperimentRequestGenerationRef.current + 1;
+    strategyExperimentRequestGenerationRef.current = requestGeneration;
+    setIsStrategyExperimentRunning(true);
     setStrategyExperimentError(null);
-  }, [i18n.locale, strategyExperimentSourceRunId, strategyExperimentStrategyRevision]);
+    return requestGeneration;
+  }, []);
+
+  const refreshStrategyExperiments = useCallback(async (
+    requestGeneration: number,
+    sourceKey: string,
+    sourceRunId: string,
+    strategyRevision: string
+  ) => {
+    try {
+      const result = await loadStrategyExperiments(quantCoreBaseUrl, {
+        sourceRunId,
+        strategyRevision,
+        limit: 20
+      });
+      if (!strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        return;
+      }
+      if (result.error) {
+        setStrategyExperimentError(
+          strategyExperimentErrorMessage(strategyExperimentI18nRef.current, result.errorCode, result.error)
+        );
+        return;
+      }
+      setStrategyExperimentHistory(
+        result.experiments.filter((experiment) => strategyExperimentMatchesSourceKey(experiment, sourceKey))
+      );
+      setStrategyExperimentHistorySourceKey(sourceKey);
+      setStrategyExperimentError(null);
+    } catch (historyError) {
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setStrategyExperimentError(strategyExperimentErrorMessage(
+          strategyExperimentI18nRef.current,
+          undefined,
+          historyError instanceof Error ? historyError.message : undefined
+        ));
+      }
+    }
+  }, [strategyExperimentRequestIsCurrent]);
 
   useEffect(() => {
     resetAiReviewHistoryState();
   }, [resetAiReviewHistoryState, workspace.researchRun?.runId]);
 
   useEffect(() => {
+    const requestGeneration = strategyExperimentRequestGenerationRef.current + 1;
+    strategyExperimentRequestGenerationRef.current = requestGeneration;
+    setIsStrategyExperimentRunning(false);
+    setStrategyExperimentError(null);
+    setStrategyExperimentDraftSourceKey(strategyExperimentUsableSourceKey);
     setStrategyExperimentDimensions(
-      workspace.researchRun?.strategyConfig
+      strategyExperimentUsableSourceKey && workspace.researchRun?.strategyConfig
         ? buildDefaultStrategyExperimentDimensions(workspace.researchRun.strategyConfig)
         : []
     );
-  }, [strategyExperimentSourceRunId, strategyExperimentStrategyRevision]);
-
-  useEffect(() => {
-    void refreshStrategyExperiments();
-  }, [refreshStrategyExperiments]);
+    if (
+      !strategyExperimentUsableSourceKey ||
+      !strategyExperimentSourceRunId ||
+      !strategyExperimentStrategyRevision
+    ) {
+      setStrategyExperimentHistory([]);
+      setStrategyExperimentHistorySourceKey(null);
+      return;
+    }
+    void refreshStrategyExperiments(
+      requestGeneration,
+      strategyExperimentUsableSourceKey,
+      strategyExperimentSourceRunId,
+      strategyExperimentStrategyRevision
+    );
+  }, [refreshStrategyExperiments, strategyExperimentUsableSourceKey]);
 
   useEffect(() => {
     void refreshP0AcceptanceLatest();
@@ -8266,102 +8343,241 @@ export function App() {
 
   const runStrategyExperiment = useCallback(async () => {
     const sourceRun = workspace.researchRun;
-    if (!currentResearchRunId || !sourceRun?.strategyRevision) {
+    const sourceKey = strategyExperimentUsableSourceKey;
+    if (!sourceKey || !strategyExperimentSourceRunId || !strategyExperimentStrategyRevision || !sourceRun) {
       setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
       return;
     }
-    setIsStrategyExperimentRunning(true);
-    setStrategyExperimentError(null);
+    if (!isStrategyExperimentDraftValid(
+      visibleStrategyExperimentDimensions,
+      strategyExperimentGuardrails,
+      strategyExperimentWalkForward
+    )) {
+      setStrategyExperimentError(i18n.t("strategyExperiment.invalidDraft"));
+      return;
+    }
+    const requestGeneration = beginStrategyExperimentRequest(sourceKey);
+    if (requestGeneration === null) {
+      return;
+    }
     try {
       const result = await createStrategyExperiment(quantCoreBaseUrl, {
-        strategyRevision: sourceRun.strategyRevision,
-        sourceRunId: currentResearchRunId,
+        strategyRevision: strategyExperimentStrategyRevision,
+        sourceRunId: strategyExperimentSourceRunId,
         assumptions: workspace.backtestAssumptions ?? defaultBacktestAssumptions,
-        dimensions: strategyExperimentDimensions,
+        dimensions: visibleStrategyExperimentDimensions,
         guardrails: strategyExperimentGuardrails,
         walkForward: strategyExperimentWalkForward
       });
+      if (!strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        return;
+      }
       if (!result.experiment) {
-        setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
+        setStrategyExperimentError(
+          strategyExperimentErrorMessage(strategyExperimentI18nRef.current, result.errorCode, result.error)
+        );
+        return;
+      }
+      if (!strategyExperimentMatchesSourceKey(result.experiment, sourceKey)) {
+        setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
         return;
       }
       setStrategyExperimentActive(result.experiment);
       setStrategyExperimentError(null);
-      await refreshStrategyExperiments();
+      await refreshStrategyExperiments(
+        requestGeneration,
+        sourceKey,
+        strategyExperimentSourceRunId,
+        strategyExperimentStrategyRevision
+      );
+    } catch (runError) {
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setStrategyExperimentError(strategyExperimentErrorMessage(
+          strategyExperimentI18nRef.current,
+          undefined,
+          runError instanceof Error ? runError.message : undefined
+        ));
+      }
     } finally {
-      setIsStrategyExperimentRunning(false);
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setIsStrategyExperimentRunning(false);
+      }
     }
   }, [
-    currentResearchRunId,
-    i18n.locale,
+    beginStrategyExperimentRequest,
+    i18n,
     refreshStrategyExperiments,
-    strategyExperimentDimensions,
     strategyExperimentGuardrails,
+    strategyExperimentRequestIsCurrent,
+    strategyExperimentSourceRunId,
+    strategyExperimentStrategyRevision,
+    strategyExperimentUsableSourceKey,
     strategyExperimentWalkForward,
+    visibleStrategyExperimentDimensions,
     workspace
   ]);
 
   const inspectStrategyExperiment = useCallback(async (experimentId: string) => {
-    setIsStrategyExperimentRunning(true);
-    setStrategyExperimentError(null);
-    try {
-      const result = await loadStrategyExperimentDetail(quantCoreBaseUrl, experimentId);
-      if (!result.experiment) {
-        setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
-        return;
-      }
-      setStrategyExperimentActive(result.experiment);
-      setStrategyExperimentError(null);
-    } finally {
-      setIsStrategyExperimentRunning(false);
-    }
-  }, [i18n.locale]);
-
-  const replayStrategyExperiment = useCallback(async (experimentId: string) => {
-    setIsStrategyExperimentRunning(true);
-    setStrategyExperimentError(null);
-    try {
-      const result = await createStrategyExperiment(quantCoreBaseUrl, { replayOfExperimentId: experimentId });
-      if (!result.experiment) {
-        setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
-        return;
-      }
-      setStrategyExperimentActive(result.experiment);
-      setStrategyExperimentError(null);
-      await refreshStrategyExperiments();
-    } finally {
-      setIsStrategyExperimentRunning(false);
-    }
-  }, [i18n.locale, refreshStrategyExperiments]);
-
-  const exportStrategyExperimentJson = useCallback((experiment: StrategyExperimentDetail) => {
-    const objectUrl = URL.createObjectURL(
-      new Blob([JSON.stringify(experiment, null, 2)], { type: "application/json;charset=utf-8" })
-    );
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = `${experiment.experimentId}-strategy-experiment.json`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(objectUrl);
-    setStrategyExperimentError(null);
-  }, []);
-
-  const loadStrategyExperimentCandidate = useCallback(async (candidateId: string) => {
-    if (!strategyExperimentActive) {
+    const sourceKey = strategyExperimentUsableSourceKey;
+    if (!sourceKey) {
       setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
       return;
     }
-    setIsStrategyExperimentRunning(true);
-    setStrategyExperimentError(null);
+    const requestGeneration = beginStrategyExperimentRequest(sourceKey);
+    if (requestGeneration === null) {
+      return;
+    }
+    try {
+      const result = await loadStrategyExperimentDetail(quantCoreBaseUrl, experimentId);
+      if (!strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        return;
+      }
+      if (!result.experiment) {
+        setStrategyExperimentError(
+          strategyExperimentErrorMessage(strategyExperimentI18nRef.current, result.errorCode, result.error)
+        );
+        return;
+      }
+      if (!strategyExperimentMatchesSourceKey(result.experiment, sourceKey)) {
+        setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+        return;
+      }
+      setStrategyExperimentActive(result.experiment);
+      setStrategyExperimentError(null);
+    } catch (inspectError) {
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setStrategyExperimentError(strategyExperimentErrorMessage(
+          strategyExperimentI18nRef.current,
+          undefined,
+          inspectError instanceof Error ? inspectError.message : undefined
+        ));
+      }
+    } finally {
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setIsStrategyExperimentRunning(false);
+      }
+    }
+  }, [beginStrategyExperimentRequest, i18n, strategyExperimentRequestIsCurrent, strategyExperimentUsableSourceKey]);
+
+  const replayStrategyExperiment = useCallback(async (experimentId: string) => {
+    const sourceKey = strategyExperimentUsableSourceKey;
+    if (!sourceKey || !strategyExperimentSourceRunId || !strategyExperimentStrategyRevision) {
+      setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+      return;
+    }
+    const requestGeneration = beginStrategyExperimentRequest(sourceKey);
+    if (requestGeneration === null) {
+      return;
+    }
+    try {
+      const result = await createStrategyExperiment(quantCoreBaseUrl, { replayOfExperimentId: experimentId });
+      if (!strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        return;
+      }
+      if (!result.experiment) {
+        setStrategyExperimentError(
+          strategyExperimentErrorMessage(strategyExperimentI18nRef.current, result.errorCode, result.error)
+        );
+        return;
+      }
+      if (!strategyExperimentMatchesSourceKey(result.experiment, sourceKey)) {
+        setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+        return;
+      }
+      setStrategyExperimentActive(result.experiment);
+      setStrategyExperimentError(null);
+      await refreshStrategyExperiments(
+        requestGeneration,
+        sourceKey,
+        strategyExperimentSourceRunId,
+        strategyExperimentStrategyRevision
+      );
+    } catch (replayError) {
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setStrategyExperimentError(strategyExperimentErrorMessage(
+          strategyExperimentI18nRef.current,
+          undefined,
+          replayError instanceof Error ? replayError.message : undefined
+        ));
+      }
+    } finally {
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setIsStrategyExperimentRunning(false);
+      }
+    }
+  }, [
+    beginStrategyExperimentRequest,
+    i18n,
+    refreshStrategyExperiments,
+    strategyExperimentRequestIsCurrent,
+    strategyExperimentSourceRunId,
+    strategyExperimentStrategyRevision,
+    strategyExperimentUsableSourceKey
+  ]);
+
+  const exportStrategyExperimentJson = useCallback((experiment: StrategyExperimentDetail) => {
+    const sourceKey = strategyExperimentSourceKeyRef.current;
+    if (!sourceKey || !strategyExperimentMatchesSourceKey(experiment, sourceKey)) {
+      setStrategyExperimentError(
+        strategyExperimentI18nRef.current.t("strategyExperiment.persistedEvidenceRequired")
+      );
+      return;
+    }
+    let objectUrl: string | null = null;
+    let anchor: HTMLAnchorElement | null = null;
+    try {
+      objectUrl = URL.createObjectURL(
+        new Blob([JSON.stringify(experiment, null, 2)], { type: "application/json;charset=utf-8" })
+      );
+      anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${experiment.experimentId}-strategy-experiment.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      setStrategyExperimentError(null);
+    } catch (exportError) {
+      setStrategyExperimentError(strategyExperimentActionErrorMessage(
+        strategyExperimentI18nRef.current,
+        "strategyExperiment.exportFailed",
+        exportError
+      ));
+    } finally {
+      anchor?.remove();
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+  }, []);
+
+  const loadStrategyExperimentCandidate = useCallback(async (candidateId: string) => {
+    const sourceKey = strategyExperimentUsableSourceKey;
+    const capturedActive = visibleStrategyExperimentActive;
+    const capturedWorkspace = workspace;
+    if (!sourceKey || !capturedActive || !strategyExperimentMatchesSourceKey(capturedActive, sourceKey)) {
+      setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+      return;
+    }
+    const requestGeneration = beginStrategyExperimentRequest(sourceKey);
+    if (requestGeneration === null) {
+      return;
+    }
     try {
       const nextWorkspace = await workspaceWithStrategyExperimentCandidate(
-        workspace,
-        strategyExperimentActive,
+        capturedWorkspace,
+        capturedActive,
         candidateId
       );
-      if (nextWorkspace === workspace) {
+      if (!strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        return;
+      }
+      if (
+        strategyExperimentWorkspaceRef.current !== capturedWorkspace ||
+        strategyExperimentActiveRef.current !== capturedActive
+      ) {
+        setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+        return;
+      }
+      if (nextWorkspace === capturedWorkspace) {
         setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
         return;
       }
@@ -8380,10 +8596,28 @@ export function App() {
       setActiveLoopStepId("strategy");
       setActiveWorkflowStageId("factor");
       setWorkflowRunState(createWorkflowRunState());
+    } catch (candidateError) {
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setStrategyExperimentError(strategyExperimentActionErrorMessage(
+          strategyExperimentI18nRef.current,
+          "strategyExperiment.candidateLoadFailed",
+          candidateError
+        ));
+      }
     } finally {
-      setIsStrategyExperimentRunning(false);
+      if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
+        setIsStrategyExperimentRunning(false);
+      }
     }
-  }, [i18n.locale, resetAiReviewHistoryState, strategyExperimentActive, workspace]);
+  }, [
+    beginStrategyExperimentRequest,
+    i18n,
+    resetAiReviewHistoryState,
+    strategyExperimentRequestIsCurrent,
+    strategyExperimentUsableSourceKey,
+    visibleStrategyExperimentActive,
+    workspace
+  ]);
 
   const submitPaperExecution = useCallback(async () => {
     const runId = currentResearchRunId;
@@ -11475,11 +11709,11 @@ export function App() {
             evidenceCards={backtestEvidenceCards}
             experimentSection={
               <StrategyExperimentSection
-                active={strategyExperimentActive}
-                dimensions={strategyExperimentDimensions}
+                active={visibleStrategyExperimentActive}
+                dimensions={visibleStrategyExperimentDimensions}
                 error={strategyExperimentError}
                 guardrails={strategyExperimentGuardrails}
-                history={strategyExperimentHistory}
+                history={visibleStrategyExperimentHistory}
                 i18n={i18n}
                 onDimensionsChange={setStrategyExperimentDimensions}
                 onExport={exportStrategyExperimentJson}
@@ -31637,6 +31871,22 @@ function strategyExperimentErrorMessage(
         ? i18n.t("strategyExperiment.persistedEvidenceRequired")
         : detail ?? i18n.t("strategyExperiment.persistedEvidenceRequired");
   return detail && detail !== errorCode && detail !== message ? `${message} ${detail}` : message;
+}
+
+function strategyExperimentMatchesSourceKey(
+  experiment: Pick<StrategyExperimentListItem, "sourceRunId" | "strategyRevision">,
+  sourceKey: string
+): boolean {
+  return `${experiment.sourceRunId}:${experiment.strategyRevision}` === sourceKey;
+}
+
+function strategyExperimentActionErrorMessage(
+  i18n: AppI18n,
+  key: "strategyExperiment.exportFailed" | "strategyExperiment.candidateLoadFailed",
+  error: unknown
+): string {
+  const message = i18n.t(key);
+  return error instanceof Error && error.message ? `${message} ${error.message}` : message;
 }
 
 function backtestRunComparisonBadgeLabel(i18n: AppI18n, badge: BacktestRunComparisonMatrixBadge): string {

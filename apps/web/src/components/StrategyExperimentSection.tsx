@@ -28,6 +28,57 @@ export interface StrategyExperimentSectionProps {
   onLoadCandidate: (candidateId: string) => void;
 }
 
+export function isStrategyExperimentDraftValid(
+  dimensions: StrategyExperimentDimension[],
+  guardrails: StrategyExperimentGuardrails,
+  walkForward: StrategyExperimentWalkForward | null
+): boolean {
+  if (!dimensions.length) {
+    return false;
+  }
+  const targets = new Set<string>();
+  let candidateCount = 1;
+  for (const dimension of dimensions) {
+    const target = `${dimension.conditionSide}:${dimension.conditionIndex}:${dimension.parameter}`;
+    if (
+      (dimension.conditionSide !== "entry" && dimension.conditionSide !== "exit") ||
+      !Number.isInteger(dimension.conditionIndex) ||
+      dimension.conditionIndex < 0 ||
+      (dimension.parameter !== "window" && dimension.parameter !== "threshold") ||
+      targets.has(target) ||
+      !dimension.values.length ||
+      new Set(dimension.values).size !== dimension.values.length ||
+      candidateCount > 81 / dimension.values.length
+    ) {
+      return false;
+    }
+    targets.add(target);
+    candidateCount *= dimension.values.length;
+    for (const value of dimension.values) {
+      if (
+        !Number.isFinite(value) ||
+        (dimension.parameter === "window"
+          ? !Number.isInteger(value) || value < 1 || value > 250
+          : value < 0 || value > 100)
+      ) {
+        return false;
+      }
+    }
+  }
+  if (
+    !Number.isInteger(guardrails.minimumTradeCount) ||
+    guardrails.minimumTradeCount < 0 ||
+    (guardrails.maximumDrawdownPct !== null &&
+      (!Number.isFinite(guardrails.maximumDrawdownPct) ||
+        guardrails.maximumDrawdownPct < 0 ||
+        guardrails.maximumDrawdownPct > 100))
+  ) {
+    return false;
+  }
+  return walkForward === null || [walkForward.trainBars, walkForward.validationBars, walkForward.stepBars]
+    .every((value) => Number.isInteger(value) && value > 0);
+}
+
 export function StrategyExperimentSection({
   active,
   dimensions,
@@ -54,7 +105,17 @@ export function StrategyExperimentSection({
     dimensions.length ? 1 : 0
   );
 
-  const updateDimensionValue = (dimensionIndex: number, valueIndex: number, value: number) => {
+  const updateDimensionValue = (dimensionIndex: number, valueIndex: number, rawValue: string) => {
+    const dimension = dimensions[dimensionIndex];
+    const value = validDraftNumber(
+      rawValue,
+      dimension.parameter === "window" ? 1 : 0,
+      dimension.parameter === "window" ? 250 : 100,
+      dimension.parameter === "window"
+    );
+    if (value === null) {
+      return;
+    }
     onDimensionsChange(
       dimensions.map((dimension, index) =>
         index === dimensionIndex
@@ -78,7 +139,11 @@ export function StrategyExperimentSection({
         </div>
         <div className="strategy-experiment-actions">
           <span>{i18n.t("strategyExperiment.budget")}: {evaluationBudget}</span>
-          <button disabled={running || !dimensions.length} onClick={onRun} type="button">
+          <button
+            disabled={running || !isStrategyExperimentDraftValid(dimensions, guardrails, walkForward)}
+            onClick={onRun}
+            type="button"
+          >
             {running ? i18n.t("strategyExperiment.running") : i18n.t("strategyExperiment.run")}
           </button>
           <button disabled={running || !active} onClick={() => active && onExport(active)} type="button">
@@ -115,7 +180,7 @@ export function StrategyExperimentSection({
                         onChange={(event) => updateDimensionValue(
                           dimensionIndex,
                           valueIndex,
-                          Number(event.currentTarget.value)
+                          event.currentTarget.value
                         )}
                         step={dimension.parameter === "window" ? 1 : 0.1}
                         type="number"
@@ -139,10 +204,12 @@ export function StrategyExperimentSection({
             <span>{i18n.t("strategyExperiment.minimumTrades")}</span>
             <input
               min={0}
-              onChange={(event) => onGuardrailsChange({
-                ...guardrails,
-                minimumTradeCount: Number(event.currentTarget.value)
-              })}
+              onChange={(event) => {
+                const value = validDraftNumber(event.currentTarget.value, 0, Number.MAX_SAFE_INTEGER, true);
+                if (value !== null) {
+                  onGuardrailsChange({ ...guardrails, minimumTradeCount: value });
+                }
+              }}
               step={1}
               type="number"
               value={guardrails.minimumTradeCount}
@@ -153,10 +220,12 @@ export function StrategyExperimentSection({
             <input
               min={0}
               max={100}
-              onChange={(event) => onGuardrailsChange({
-                ...guardrails,
-                maximumDrawdownPct: event.currentTarget.value === "" ? null : Number(event.currentTarget.value)
-              })}
+              onChange={(event) => {
+                const value = validDraftNumber(event.currentTarget.value, 0, 100, false);
+                if (value !== null) {
+                  onGuardrailsChange({ ...guardrails, maximumDrawdownPct: value });
+                }
+              }}
               step={0.1}
               type="number"
               value={guardrails.maximumDrawdownPct ?? ""}
@@ -179,10 +248,12 @@ export function StrategyExperimentSection({
                   <span>{i18n.t(`strategyExperiment.${field}`)}</span>
                   <input
                     min={1}
-                    onChange={(event) => onWalkForwardChange({
-                      ...walkForward,
-                      [field]: Number(event.currentTarget.value)
-                    })}
+                    onChange={(event) => {
+                      const value = validDraftNumber(event.currentTarget.value, 1, Number.MAX_SAFE_INTEGER, true);
+                      if (value !== null) {
+                        onWalkForwardChange({ ...walkForward, [field]: value });
+                      }
+                    }}
                     step={1}
                     type="number"
                     value={walkForward[field]}
@@ -349,4 +420,14 @@ function holdoutLabel(
     return i18n.t("strategyExperiment.holdoutConsumedOther");
   }
   return i18n.t("strategyExperiment.holdoutUnconsumed");
+}
+
+function validDraftNumber(rawValue: string, minimum: number, maximum: number, integer: boolean): number | null {
+  if (!rawValue.trim()) {
+    return null;
+  }
+  const value = Number(rawValue);
+  return Number.isFinite(value) && value >= minimum && value <= maximum && (!integer || Number.isInteger(value))
+    ? value
+    : null;
 }
