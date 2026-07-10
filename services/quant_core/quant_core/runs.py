@@ -542,6 +542,8 @@ def research_run_export_to_payload(
     portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
+    ai_review_runs_v2: list[dict[str, Any]] | None = None,
+    ai_review_decisions: list[dict[str, Any]] | None = None,
     audit_events: list[dict[str, Any]] | None = None,
     handoff_notes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -569,6 +571,11 @@ def research_run_export_to_payload(
     )
     normalized_promotion_candidate = _normalize_promotion_candidate(promotion_candidate, run_id=audit.run_id)
     ai_review_run_payloads = _normalize_ai_review_run_payloads(ai_review_runs, run_id=audit.run_id)
+    ai_review_run_v2_payloads = _normalize_ai_review_run_v2_payloads(
+        ai_review_runs_v2,
+        run_id=audit.run_id,
+    )
+    ai_review_decision_payloads = _normalize_ai_review_decision_payloads(ai_review_decisions)
     audit_event_payloads = _normalize_audit_event_payloads(audit_events, run_id=audit.run_id)
     handoff_note_payloads = normalize_handoff_note_payloads(
         handoff_notes,
@@ -589,6 +596,8 @@ def research_run_export_to_payload(
         "promotionCandidates": 1 if normalized_promotion_candidate else 0,
         "researchNotes": 1 if _research_note_has_body(research_note) else 0,
         "aiReviewRuns": len(ai_review_run_payloads),
+        "aiReviewRunsV2": len(ai_review_run_v2_payloads),
+        "aiReviewDecisions": len(ai_review_decision_payloads),
         "auditEvents": len(audit_event_payloads),
         "handoffNotes": len(handoff_note_payloads),
     }
@@ -622,6 +631,8 @@ def research_run_export_to_payload(
         "portfolioPaperOrderSimulations": portfolio_paper_order_simulation_payloads,
         "promotionCandidate": normalized_promotion_candidate,
         "aiReviewRuns": ai_review_run_payloads,
+        "aiReviewRunsV2": ai_review_run_v2_payloads,
+        "aiReviewDecisions": ai_review_decision_payloads,
         "auditEvents": audit_event_payloads,
         "handoffNotes": handoff_note_payloads,
         "executionHandoff": {
@@ -749,6 +760,34 @@ def research_run_import_ai_review_runs(payload: dict[str, Any], *, run_id: str |
     return _normalize_ai_review_run_payloads(raw_reviews, run_id=run_id)
 
 
+def research_run_import_ai_review_runs_v2(
+    payload: dict[str, Any],
+    *,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_reviews = export_package.get("aiReviewRunsV2", [])
+    if raw_reviews is None:
+        return []
+    if not isinstance(raw_reviews, list):
+        raise ValueError("ai_review_runs_v2_must_be_array")
+    return _normalize_ai_review_run_v2_payloads(raw_reviews, run_id=run_id)
+
+
+def research_run_import_ai_review_decisions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    raw_decisions = export_package.get("aiReviewDecisions", [])
+    if raw_decisions is None:
+        return []
+    if not isinstance(raw_decisions, list):
+        raise ValueError("ai_review_decisions_must_be_array")
+    return _normalize_ai_review_decision_payloads(raw_decisions)
+
+
 def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
@@ -776,7 +815,11 @@ def research_run_import_handoff_notes(payload: dict[str, Any], *, run_id: str | 
     )
 
 
-def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
+def research_run_import_to_audit(
+    payload: dict[str, Any],
+    *,
+    validate_safety_boundary: bool = True,
+) -> ResearchRunAudit:
     export_package = payload.get("export", payload)
     if not isinstance(export_package, dict):
         raise ValueError("export_package_must_be_object")
@@ -795,9 +838,6 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
     if not isinstance(handoff, dict):
         raise ValueError("execution_handoff_must_be_object")
     _validate_export_integrity(export_package)
-    if bool(manifest.get("liveTradingAllowed")) or bool(handoff.get("liveTradingAllowed")):
-        raise ValueError("live_trading_exports_cannot_be_imported")
-
     run_id = _required_text(research_run, "runId")
     paper_executions = research_run_import_paper_executions(export_package, run_id=run_id)
     adapter_paper_executions = research_run_import_adapter_paper_executions(
@@ -814,6 +854,8 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         base_run_id=run_id,
     )
     ai_review_runs = research_run_import_ai_review_runs(export_package, run_id=run_id)
+    ai_review_runs_v2 = research_run_import_ai_review_runs_v2(export_package, run_id=run_id)
+    ai_review_decisions = research_run_import_ai_review_decisions(export_package)
     audit_events = research_run_import_audit_events(export_package, run_id=run_id)
     handoff_notes = research_run_import_handoff_notes(export_package, run_id=run_id)
     promotion_candidate = _normalize_promotion_candidate(export_package.get("promotionCandidate"), run_id=run_id)
@@ -831,10 +873,14 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
         portfolio_paper_order_approvals=portfolio_paper_order_approvals,
         portfolio_paper_order_simulations=portfolio_paper_order_simulations,
         ai_review_runs=ai_review_runs,
+        ai_review_runs_v2=ai_review_runs_v2,
+        ai_review_decisions=ai_review_decisions,
         audit_events=audit_events,
         handoff_notes=handoff_notes,
         promotion_candidate=promotion_candidate,
     )
+    if validate_safety_boundary:
+        validate_research_run_import_safety_boundary(export_package)
 
     created_at_raw = _required_text(research_run, "createdAt")
     try:
@@ -873,6 +919,30 @@ def research_run_import_to_audit(payload: dict[str, Any]) -> ResearchRunAudit:
             audit_fields={"market": market, "symbol": symbol, "timeframe": timeframe},
         ),
     )
+
+
+def validate_research_run_import_safety_boundary(payload: dict[str, Any]) -> None:
+    export_package = payload.get("export", payload)
+    if not isinstance(export_package, dict):
+        raise ValueError("export_package_must_be_object")
+    manifest = export_package.get("manifest")
+    handoff = export_package.get("executionHandoff")
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest_must_be_object")
+    if not isinstance(handoff, dict):
+        raise ValueError("execution_handoff_must_be_object")
+    if manifest.get("paperOnly") is not True or handoff.get("paperOnly") is not True:
+        raise ValueError("paper_only_export_boundary_required")
+    if any(
+        bool(manifest.get(field))
+        for field in (
+            "orderSubmissionEnabled",
+            "liveTradingAllowed",
+            "liveOrderSubmitted",
+            "routeExecuted",
+        )
+    ) or bool(handoff.get("liveTradingAllowed")):
+        raise ValueError("live_trading_exports_cannot_be_imported")
 
 
 def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRunAudit:
@@ -967,6 +1037,8 @@ def _validate_manifest_consistency(
     portfolio_paper_order_approvals: list[dict[str, Any]] | None = None,
     portfolio_paper_order_simulations: list[dict[str, Any]] | None = None,
     ai_review_runs: list[dict[str, Any]] | None = None,
+    ai_review_runs_v2: list[dict[str, Any]] | None = None,
+    ai_review_decisions: list[dict[str, Any]] | None = None,
     audit_events: list[dict[str, Any]] | None = None,
     handoff_notes: list[dict[str, Any]] | None = None,
     promotion_candidate: dict[str, Any] | None = None,
@@ -1028,6 +1100,10 @@ def _validate_manifest_consistency(
         expected_counts["promotionCandidates"] = 1 if promotion_candidate else 0
     if "aiReviewRuns" in counts or ai_review_runs:
         expected_counts["aiReviewRuns"] = len(ai_review_runs or [])
+    if "aiReviewRunsV2" in counts or ai_review_runs_v2:
+        expected_counts["aiReviewRunsV2"] = len(ai_review_runs_v2 or [])
+    if "aiReviewDecisions" in counts or ai_review_decisions:
+        expected_counts["aiReviewDecisions"] = len(ai_review_decisions or [])
     if "auditEvents" in counts or audit_events:
         expected_counts["auditEvents"] = len(audit_events or [])
     if "handoffNotes" in counts or handoff_notes:
@@ -1477,6 +1553,84 @@ def _normalize_ai_review_run_payloads(
             {
                 "aiReviewId": ai_review_id,
                 "runId": envelope_run_id or record_run_id or expected_run_id,
+                "createdAt": created_at,
+                "record": dict(record),
+            }
+        )
+    return normalized
+
+
+def _normalize_ai_review_run_v2_payloads(
+    value: list[dict[str, Any]] | None,
+    *,
+    run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    normalized = []
+    expected_run_id = str(run_id or "").strip()
+    for item in value or []:
+        if not isinstance(item, dict):
+            raise ValueError("ai_review_run_v2_must_be_object")
+        record = item.get("record")
+        if not isinstance(record, dict):
+            raise ValueError("ai_review_record_v2_must_be_object")
+        primary = record.get("primaryExperiment")
+        if not isinstance(primary, dict):
+            raise ValueError("ai_review_record_v2_primary_experiment_required")
+        envelope_run_id = str(item.get("runId") or "").strip()
+        record_run_id = str(primary.get("sourceRunId") or "").strip()
+        if expected_run_id and envelope_run_id != expected_run_id:
+            raise ValueError("ai_review_run_v2_run_id_mismatch")
+        if expected_run_id and record_run_id != expected_run_id:
+            raise ValueError("ai_review_record_v2_run_id_mismatch")
+        if envelope_run_id and record_run_id and envelope_run_id != record_run_id:
+            raise ValueError("ai_review_record_v2_run_id_mismatch")
+        ai_review_id = str(item.get("aiReviewId") or "").strip()
+        record_ai_review_id = str(record.get("aiReviewId") or "").strip()
+        if not ai_review_id or not record_ai_review_id:
+            raise ValueError("ai_review_v2_id_is_required")
+        if ai_review_id != record_ai_review_id:
+            raise ValueError("ai_review_v2_id_mismatch")
+        created_at = str(item.get("createdAt") or "").strip()
+        if not created_at or created_at != str(record.get("createdAt") or "").strip():
+            raise ValueError("ai_review_v2_created_at_mismatch")
+        if record.get("schemaVersion") != 2:
+            raise ValueError("ai_review_schema_version_must_be_2")
+        if record.get("recordType") != "aiqt.aiReviewRun":
+            raise ValueError("ai_review_record_type_mismatch")
+        normalized.append(
+            {
+                "aiReviewId": ai_review_id,
+                "runId": envelope_run_id or record_run_id or expected_run_id,
+                "createdAt": created_at,
+                "record": dict(record),
+            }
+        )
+    return normalized
+
+
+def _normalize_ai_review_decision_payloads(
+    value: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    normalized = []
+    for item in value or []:
+        if not isinstance(item, dict):
+            raise ValueError("ai_review_decision_must_be_object")
+        record = item.get("record")
+        if not isinstance(record, dict):
+            raise ValueError("ai_review_decision_record_must_be_object")
+        decision_id = str(item.get("decisionId") or "").strip()
+        ai_review_id = str(item.get("aiReviewId") or "").strip()
+        created_at = str(item.get("createdAt") or "").strip()
+        if not decision_id or decision_id != str(record.get("decisionId") or "").strip():
+            raise ValueError("ai_review_decision_id_mismatch")
+        if not ai_review_id or ai_review_id != str(record.get("aiReviewId") or "").strip():
+            raise ValueError("ai_review_decision_review_id_mismatch")
+        if not created_at or created_at != str(record.get("createdAt") or "").strip():
+            raise ValueError("ai_review_decision_created_at_mismatch")
+        normalized.append(
+            {
+                "decisionId": decision_id,
+                "aiReviewId": ai_review_id,
                 "createdAt": created_at,
                 "record": dict(record),
             }

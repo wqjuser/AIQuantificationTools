@@ -209,6 +209,21 @@ class AiReviewDecisionStore:
         decisions = self.list_by_review(ai_review_id)
         return decisions[-1] if decisions else None
 
+    def delete_by_reviews(self, ai_review_ids: list[str]) -> None:
+        normalized = sorted({str(value).strip() for value in ai_review_ids if str(value).strip()})
+        if not normalized:
+            return
+        placeholders = ", ".join("?" for _ in normalized)
+        connection = self._connect()
+        try:
+            connection.execute(
+                f"delete from ai_review_decisions where ai_review_id in ({placeholders})",
+                normalized,
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
     def _authoritative_review(self, ai_review_id: str) -> AuthoritativeAiReviewRunRecord:
         review = self.review_store.get(ai_review_id)
         if review is None:
@@ -307,6 +322,10 @@ def _normalize_request(value: Any) -> dict[str, Any]:
         "rationale": rationale,
         "supersedesDecisionId": predecessor,
     }
+
+
+def validate_ai_review_decision_record(record: dict[str, Any]) -> AiReviewDecisionRecord:
+    return _decision_record(record)
 
 
 def _decision_record(value: Any) -> AiReviewDecisionRecord:

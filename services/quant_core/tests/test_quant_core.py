@@ -27889,6 +27889,10 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(export_response.status, 200)
         self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["aiReviewRuns"], 1)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["aiReviewRunsV2"], 0)
+        self.assertEqual(export_payload["export"]["manifest"]["artifactCounts"]["aiReviewDecisions"], 0)
+        self.assertEqual(export_payload["export"]["aiReviewRunsV2"], [])
+        self.assertEqual(export_payload["export"]["aiReviewDecisions"], [])
         self.assertEqual(export_payload["export"]["aiReviewRuns"][0]["aiReviewId"], "ai-review:run-ai-review-portable:rev-ai-review-portable")
         self.assertEqual(
             export_payload["export"]["aiReviewRuns"][0]["record"]["evidenceAnchors"][0]["id"],

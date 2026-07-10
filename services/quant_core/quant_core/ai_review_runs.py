@@ -434,6 +434,22 @@ class AiReviewRunStore:
             connection.close()
 
 
+def validate_ai_review_run_record(record: dict[str, Any]) -> AiReviewRunRecord:
+    normalized = _normalize_ai_review_record(record)
+    return AiReviewRunRecord(
+        ai_review_id=str(normalized["aiReviewId"]),
+        run_id=str(normalized["runId"]),
+        created_at=_parse_datetime(str(normalized["createdAt"])),
+        record=normalized,
+    )
+
+
+def validate_authoritative_ai_review_run_record(
+    record: dict[str, Any],
+) -> AuthoritativeAiReviewRunRecord:
+    return _authoritative_ai_review_run_record(record)
+
+
 def ai_review_run_record_to_payload(record: AiReviewRunRecord) -> dict[str, Any]:
     return {
         "aiReviewId": record.ai_review_id,

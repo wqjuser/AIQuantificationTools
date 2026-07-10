@@ -22,7 +22,7 @@ from typing import Any
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from quant_core import ai_review_providers, ai_review_stage3
+from quant_core import ai_review_providers, ai_review_stage3, runs as runs_module
 from quant_core.ai_review_providers import (
     AiReviewProviderError,
     AiReviewProviderRegistry,
@@ -1822,6 +1822,636 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
                     "^ai_review_decision_record_invalid$",
                 ):
                     store.restore_validated(record)
+
+
+class AiReviewArchiveTests(unittest.TestCase):
+    maxDiff = None
+
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name)
+        self.review_store = AiReviewRunStore(self.root / "ai-review-archive.sqlite3")
+        self.decision_store = AiReviewDecisionStore(
+            self.review_store.path,
+            review_store=self.review_store,
+        )
+        self.audit = ResearchRunAudit(
+            run_id="run-archive",
+            created_at=NOW,
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            strategy_name="Archive strategy",
+            strategy_revision="1" * 64,
+            data_rows=0,
+            metrics={},
+            decisions=[],
+            execution_mode="paper_only",
+            data_quality={"source": "fixture", "isComplete": True, "warnings": [], "rows": 0},
+            data_snapshot={
+                "source": "fixture",
+                "isComplete": True,
+                "warnings": [],
+                "rows": 0,
+                "start": None,
+                "end": None,
+                "hash": "archive-snapshot",
+                "bars": [],
+            },
+        )
+        self.legacy = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review-legacy-archive",
+            "runId": self.audit.run_id,
+            "createdAt": "2026-07-10T07:00:00+00:00",
+            "status": "ready",
+            "summary": {"liveExecutionBlocked": True},
+            "dossier": {"headline": "Legacy review"},
+            "citations": [],
+            "rounds": [],
+            "decisionLog": [],
+            "boundary": "Evidence explanation only; live routing remains blocked.",
+        }
+        self.review = _authoritative_review_record(
+            ai_review_id="ai-review-archive",
+            run_id=self.audit.run_id,
+            experiment_id="experiment-archive",
+        )
+        self.decisions = [
+            _decision_record(self.review, decision_id=_decision_id(80)),
+            _decision_record(
+                self.review,
+                decision_id=_decision_id(81),
+                created_at="2026-07-10T08:31:00+00:00",
+                status="revision_requested",
+                supersedes_decision_id=_decision_id(80),
+            ),
+        ]
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    @staticmethod
+    def _legacy_envelope(record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "aiReviewId": record["aiReviewId"],
+            "runId": record["runId"],
+            "createdAt": record["createdAt"],
+            "record": copy.deepcopy(record),
+        }
+
+    def _v2_envelope(self, record: dict[str, Any] | None = None) -> dict[str, Any]:
+        selected = record or self.review
+        return {
+            "aiReviewId": selected["aiReviewId"],
+            "runId": selected["primaryExperiment"]["sourceRunId"],
+            "createdAt": selected["createdAt"],
+            "record": copy.deepcopy(selected),
+        }
+
+    @staticmethod
+    def _decision_envelope(record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "decisionId": record["decisionId"],
+            "aiReviewId": record["aiReviewId"],
+            "createdAt": record["createdAt"],
+            "record": copy.deepcopy(record),
+        }
+
+    def _package(self) -> dict[str, Any]:
+        return runs_module.research_run_export_to_payload(
+            self.audit,
+            exported_at=NOW,
+            ai_review_runs=[self._legacy_envelope(self.legacy)],
+            ai_review_runs_v2=[self._v2_envelope()],
+            ai_review_decisions=[self._decision_envelope(record) for record in self.decisions],
+        )
+
+    def test_export_and_preflight_round_trip_v1_v2_decisions_without_provider_secrets(self) -> None:
+        from quant_core import api
+
+        package = self._package()
+
+        self.assertEqual(package["manifest"]["artifactCounts"]["aiReviewRuns"], 1)
+        self.assertEqual(package["manifest"]["artifactCounts"]["aiReviewRunsV2"], 1)
+        self.assertEqual(package["manifest"]["artifactCounts"]["aiReviewDecisions"], 2)
+        self.assertEqual(package["aiReviewRunsV2"], [self._v2_envelope()])
+        self.assertEqual(
+            package["aiReviewDecisions"],
+            [self._decision_envelope(record) for record in self.decisions],
+        )
+        serialized = canonical_json(package)
+        self.assertNotIn("OPENAI_API_KEY", serialized)
+        self.assertNotIn("rawProviderResponse", serialized)
+
+        audit = runs_module.research_run_import_to_audit(package)
+        legacy, reviews, decisions = api._preflight_ai_review_archive(
+            package,
+            run_id=audit.run_id,
+        )
+
+        self.assertEqual(legacy, [self.legacy])
+        self.assertEqual(reviews, [self.review])
+        self.assertEqual(decisions, self.decisions)
+
+    def test_preflight_rejects_counts_hashes_missing_review_chain_and_live_boundary_before_write(self) -> None:
+        from quant_core import api
+
+        mutations: dict[str, Any] = {
+            "count": lambda package: package["manifest"]["artifactCounts"].__setitem__(
+                "aiReviewRunsV2", 0
+            ),
+            "review hash": lambda package: package["aiReviewRunsV2"][0]["record"].__setitem__(
+                "recordHash", "0" * 64
+            ),
+            "missing review": lambda package: package.__setitem__("aiReviewRunsV2", []),
+            "broken decision chain": lambda package: package["aiReviewDecisions"][1]["record"].__setitem__(
+                "supersedesDecisionId", None
+            ),
+            "live boundary": lambda package: package["aiReviewRunsV2"][0]["record"]["boundary"].__setitem__(
+                "liveTradingAllowed", True
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                package = self._package()
+                mutate(package)
+                package["integrity"]["hash"] = runs_module._export_package_hash(package)
+                with self.assertRaises(ValueError):
+                    audit = runs_module.research_run_import_to_audit(package)
+                    api._preflight_ai_review_archive(package, run_id=audit.run_id)
+
+        self.assertEqual(self.review_store.list_all_by_run(self.audit.run_id), [])
+
+    def test_preflight_reaches_missing_review_hash_and_fork_validators(self) -> None:
+        from quant_core import api
+
+        missing_review = self._package()
+        missing_review["aiReviewRunsV2"] = []
+        missing_review["manifest"]["artifactCounts"]["aiReviewRunsV2"] = 0
+        missing_review["integrity"]["hash"] = runs_module._export_package_hash(missing_review)
+        audit = runs_module.research_run_import_to_audit(missing_review)
+        with self.assertRaisesRegex(ValueError, "^ai_review_decision_review_missing$"):
+            api._preflight_ai_review_archive(missing_review, run_id=audit.run_id)
+
+        evidence_tamper = self._package()
+        evidence_tamper["aiReviewRunsV2"][0]["record"]["evidenceHash"] = "0" * 64
+        evidence_tamper["integrity"]["hash"] = runs_module._export_package_hash(evidence_tamper)
+        audit = runs_module.research_run_import_to_audit(evidence_tamper)
+        with self.assertRaisesRegex(ValueError, "^ai_review_evidence_hash_mismatch$"):
+            api._preflight_ai_review_archive(evidence_tamper, run_id=audit.run_id)
+
+        decision_hash_tamper = self._package()
+        decision_hash_tamper["aiReviewDecisions"][0]["record"]["recordHash"] = "0" * 64
+        decision_hash_tamper["integrity"]["hash"] = runs_module._export_package_hash(
+            decision_hash_tamper
+        )
+        audit = runs_module.research_run_import_to_audit(decision_hash_tamper)
+        with self.assertRaisesRegex(ValueError, "^ai_review_decision_record_hash_mismatch$"):
+            api._preflight_ai_review_archive(decision_hash_tamper, run_id=audit.run_id)
+
+        forked = self._package()
+        fork = _decision_record(
+            self.review,
+            decision_id=_decision_id(82),
+            created_at="2026-07-10T08:32:00+00:00",
+            supersedes_decision_id=self.decisions[0]["decisionId"],
+        )
+        forked["aiReviewDecisions"].append(self._decision_envelope(fork))
+        forked["manifest"]["artifactCounts"]["aiReviewDecisions"] = 3
+        forked["integrity"]["hash"] = runs_module._export_package_hash(forked)
+        audit = runs_module.research_run_import_to_audit(forked)
+        with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
+            api._preflight_ai_review_archive(forked, run_id=audit.run_id)
+
+        decision_count = self._package()
+        decision_count["manifest"]["artifactCounts"]["aiReviewDecisions"] = 1
+        decision_count["integrity"]["hash"] = runs_module._export_package_hash(decision_count)
+        with self.assertRaisesRegex(ValueError, "^artifact_count_ai_review_decisions_mismatch$"):
+            runs_module.research_run_import_to_audit(decision_count)
+
+        run_mismatch = self._package()
+        run_mismatch["aiReviewRunsV2"][0]["record"]["primaryExperiment"]["sourceRunId"] = "run-other"
+        run_mismatch["integrity"]["hash"] = runs_module._export_package_hash(run_mismatch)
+        with self.assertRaisesRegex(ValueError, "^ai_review_record_v2_run_id_mismatch$"):
+            runs_module.research_run_import_to_audit(run_mismatch)
+
+        decision_boundary = self._package()
+        decision = decision_boundary["aiReviewDecisions"][0]["record"]
+        decision["boundary"]["orderSubmissionAllowed"] = True
+        _rehash_decision(decision)
+        decision_boundary["integrity"]["hash"] = runs_module._export_package_hash(
+            decision_boundary
+        )
+        audit = runs_module.research_run_import_to_audit(decision_boundary)
+        with self.assertRaisesRegex(ValueError, "^ai_review_decision_boundary_invalid$"):
+            api._preflight_ai_review_archive(decision_boundary, run_id=audit.run_id)
+
+        package_boundary = self._package()
+        package_boundary["manifest"]["paperOnly"] = False
+        package_boundary["manifest"]["orderSubmissionEnabled"] = True
+        package_boundary["integrity"]["hash"] = runs_module._export_package_hash(
+            package_boundary
+        )
+        with self.assertRaisesRegex(ValueError, "^paper_only_export_boundary_required$"):
+            runs_module.research_run_import_to_audit(package_boundary)
+
+    def test_snapshot_restore_preserves_exact_v1_v2_and_decision_state(self) -> None:
+        from quant_core import api
+
+        previous_review = _authoritative_review_record(
+            ai_review_id="ai-review-before-import",
+            run_id=self.audit.run_id,
+            experiment_id="experiment-before-import",
+        )
+        previous_decision = _decision_record(previous_review, decision_id=_decision_id(90))
+        self.review_store.record(copy.deepcopy(self.legacy))
+        self.review_store.record_v2(copy.deepcopy(previous_review))
+        self.decision_store.restore_validated(copy.deepcopy(previous_decision))
+        snapshot = api._snapshot_ai_review_archive(
+            run_id=self.audit.run_id,
+            review_store=self.review_store,
+            decision_store=self.decision_store,
+        )
+
+        self.review_store.record_v2(copy.deepcopy(self.review))
+        for decision in self.decisions:
+            self.decision_store.restore_validated(copy.deepcopy(decision))
+        api._restore_ai_review_archive_snapshot(
+            run_id=self.audit.run_id,
+            review_store=self.review_store,
+            decision_store=self.decision_store,
+            snapshot=snapshot,
+        )
+
+        self.assertEqual(
+            api._snapshot_ai_review_archive(
+                run_id=self.audit.run_id,
+                review_store=self.review_store,
+                decision_store=self.decision_store,
+            ),
+            snapshot,
+        )
+
+    def test_snapshot_restore_validates_decision_binding_before_any_mutation(self) -> None:
+        from quant_core import api
+
+        self.review_store.record_v2(copy.deepcopy(self.review))
+        self.decision_store.restore_validated(copy.deepcopy(self.decisions[0]))
+        before = api._snapshot_ai_review_archive(
+            run_id=self.audit.run_id,
+            review_store=self.review_store,
+            decision_store=self.decision_store,
+        )
+        tampered = copy.deepcopy(before)
+        decision = tampered["aiReviewDecisions"][0]["record"]
+        decision["reviewRecordHash"] = "0" * 64
+        _rehash_decision(decision)
+
+        with self.assertRaisesRegex(ValueError, "^ai_review_decision_review_hash_mismatch$"):
+            api._restore_ai_review_archive_snapshot(
+                run_id=self.audit.run_id,
+                review_store=self.review_store,
+                decision_store=self.decision_store,
+                snapshot=tampered,
+            )
+        self.assertEqual(
+            api._snapshot_ai_review_archive(
+                run_id=self.audit.run_id,
+                review_store=self.review_store,
+                decision_store=self.decision_store,
+            ),
+            before,
+        )
+
+    def _import_stores(self, api: Any, prefix: str = "import") -> dict[str, Any]:
+        return {
+            "run_store": ResearchRunStore(self.root / f"{prefix}-runs.sqlite3"),
+            "note_store": api.ResearchNoteStore(self.root / f"{prefix}-notes.sqlite3"),
+            "strategy_store": api.StrategyLibraryStore(self.root / f"{prefix}-strategies.sqlite3"),
+            "paper_execution_store": api.PaperExecutionStore(self.root / f"{prefix}-paper.sqlite3"),
+            "portfolio_paper_order_store": api.PortfolioPaperOrderStore(self.root / f"{prefix}-orders.sqlite3"),
+            "portfolio_paper_order_approval_store": api.PortfolioPaperOrderApprovalStore(
+                self.root / f"{prefix}-approvals.sqlite3"
+            ),
+            "portfolio_paper_order_simulation_store": api.PortfolioPaperOrderSimulationStore(
+                self.root / f"{prefix}-simulations.sqlite3"
+            ),
+            "audit_event_store": api.AuditEventStore(self.root / f"{prefix}-audit.sqlite3"),
+            "handoff_note_store": api.HandoffNoteStore(self.root / f"{prefix}-handoff.sqlite3"),
+        }
+
+    def test_decision_store_failure_rolls_back_exact_preimport_ai_review_state(self) -> None:
+        from quant_core import api
+
+        previous_review = _authoritative_review_record(
+            ai_review_id="ai-review-before-failure",
+            run_id=self.audit.run_id,
+            experiment_id="experiment-before-failure",
+        )
+        previous_decision = _decision_record(previous_review, decision_id=_decision_id(91))
+        self.review_store.record(copy.deepcopy(self.legacy))
+        self.review_store.record_v2(copy.deepcopy(previous_review))
+        self.decision_store.restore_validated(copy.deepcopy(previous_decision))
+        before = api._snapshot_ai_review_archive(
+            run_id=self.audit.run_id,
+            review_store=self.review_store,
+            decision_store=self.decision_store,
+        )
+        failing_id = self.decisions[-1]["decisionId"]
+
+        class FailingDecisionStore(AiReviewDecisionStore):
+            def restore_validated(self, record: dict[str, Any]) -> Any:
+                if record.get("decisionId") == failing_id:
+                    raise RuntimeError("injected_decision_store_failure")
+                return super().restore_validated(record)
+
+        failing_store = FailingDecisionStore(
+            self.review_store.path,
+            review_store=self.review_store,
+        )
+        stores = self._import_stores(api)
+        with self.assertRaisesRegex(RuntimeError, "injected_decision_store_failure"):
+            api._persist_research_run_import(
+                **stores,
+                ai_review_store=self.review_store,
+                ai_review_decision_store=failing_store,
+                audit=self.audit,
+                imported_note=None,
+                paper_execution_records=[],
+                portfolio_paper_order_batches=[],
+                portfolio_paper_order_approvals=[],
+                portfolio_paper_order_simulations=[],
+                ai_review_records=[],
+                ai_review_records_v2=[copy.deepcopy(self.review)],
+                ai_review_decision_records=copy.deepcopy(self.decisions),
+                audit_event_payloads=[],
+                handoff_note_payloads=[],
+            )
+
+        self.assertEqual(
+            api._snapshot_ai_review_archive(
+                run_id=self.audit.run_id,
+                review_store=self.review_store,
+                decision_store=self.decision_store,
+            ),
+            before,
+        )
+
+    def test_review_store_failure_rolls_back_exact_preimport_ai_review_state(self) -> None:
+        from quant_core import api
+
+        previous_review = _authoritative_review_record(
+            ai_review_id="ai-review-before-review-failure",
+            run_id=self.audit.run_id,
+            experiment_id="experiment-before-review-failure",
+        )
+        previous_decision = _decision_record(previous_review, decision_id=_decision_id(92))
+
+        second_imported_review = _authoritative_review_record(
+            ai_review_id="ai-review-second-import",
+            run_id=self.audit.run_id,
+            experiment_id="experiment-second-import",
+            created_at="2026-07-10T08:01:00+00:00",
+        )
+
+        class FailingReviewStore(AiReviewRunStore):
+            def record_v2(self, record: dict[str, Any]) -> Any:
+                if record.get("aiReviewId") == self_review_id:
+                    raise RuntimeError("injected_review_store_failure")
+                return super().record_v2(record)
+
+        self_review_id = second_imported_review["aiReviewId"]
+        failing_store = FailingReviewStore(self.review_store.path)
+        failing_decision_store = AiReviewDecisionStore(
+            failing_store.path,
+            review_store=failing_store,
+        )
+        failing_store.record(copy.deepcopy(self.legacy))
+        failing_store.record_v2(copy.deepcopy(previous_review))
+        failing_decision_store.restore_validated(copy.deepcopy(previous_decision))
+        before = api._snapshot_ai_review_archive(
+            run_id=self.audit.run_id,
+            review_store=failing_store,
+            decision_store=failing_decision_store,
+        )
+        stores = self._import_stores(api)
+        with self.assertRaisesRegex(RuntimeError, "injected_review_store_failure"):
+            api._persist_research_run_import(
+                **stores,
+                ai_review_store=failing_store,
+                ai_review_decision_store=failing_decision_store,
+                audit=self.audit,
+                imported_note=None,
+                paper_execution_records=[],
+                portfolio_paper_order_batches=[],
+                portfolio_paper_order_approvals=[],
+                portfolio_paper_order_simulations=[],
+                ai_review_records=[],
+                ai_review_records_v2=[
+                    copy.deepcopy(self.review),
+                    copy.deepcopy(second_imported_review),
+                ],
+                ai_review_decision_records=copy.deepcopy(self.decisions),
+                audit_event_payloads=[],
+                handoff_note_payloads=[],
+            )
+
+        self.assertEqual(
+            api._snapshot_ai_review_archive(
+                run_id=self.audit.run_id,
+                review_store=failing_store,
+                decision_store=failing_decision_store,
+            ),
+            before,
+        )
+
+    def test_undo_restores_exact_preimport_state_and_legacy_only_package_stays_compatible(self) -> None:
+        from quant_core import api
+
+        self.review_store.record(copy.deepcopy(self.legacy))
+        before = api._snapshot_ai_review_archive(
+            run_id=self.audit.run_id,
+            review_store=self.review_store,
+            decision_store=self.decision_store,
+        )
+        stores = self._import_stores(api)
+        undo = api._persist_research_run_import(
+            **stores,
+            ai_review_store=self.review_store,
+            ai_review_decision_store=self.decision_store,
+            audit=self.audit,
+            imported_note=None,
+            paper_execution_records=[],
+            portfolio_paper_order_batches=[],
+            portfolio_paper_order_approvals=[],
+            portfolio_paper_order_simulations=[],
+            ai_review_records=[],
+            ai_review_records_v2=[copy.deepcopy(self.review)],
+            ai_review_decision_records=copy.deepcopy(self.decisions),
+            audit_event_payloads=[],
+            handoff_note_payloads=[],
+        )
+        legacy_undo = copy.deepcopy(undo)
+        legacy_undo["previous"].pop("aiReviewRunsV2")
+        legacy_undo["previous"].pop("aiReviewDecisions")
+        api._undo_research_run_import_from_snapshot(
+            **stores,
+            ai_review_store=self.review_store,
+            ai_review_decision_store=self.decision_store,
+            snapshot=legacy_undo,
+        )
+        self.assertEqual(
+            api._snapshot_ai_review_archive(
+                run_id=self.audit.run_id,
+                review_store=self.review_store,
+                decision_store=self.decision_store,
+            ),
+            before,
+        )
+
+        legacy_package = runs_module.research_run_export_to_payload(
+            self.audit,
+            exported_at=NOW,
+            ai_review_runs=[self._legacy_envelope(self.legacy)],
+        )
+        legacy_package.pop("aiReviewRunsV2")
+        legacy_package.pop("aiReviewDecisions")
+        legacy_package["manifest"]["artifactCounts"].pop("aiReviewRunsV2")
+        legacy_package["manifest"]["artifactCounts"].pop("aiReviewDecisions")
+        legacy_package["integrity"]["hash"] = runs_module._export_package_hash(legacy_package)
+        legacy_audit = runs_module.research_run_import_to_audit(legacy_package)
+        legacy, v2, decisions = api._preflight_ai_review_archive(
+            legacy_package,
+            run_id=legacy_audit.run_id,
+        )
+        self.assertEqual(legacy, [self.legacy])
+        self.assertEqual(v2, [])
+        self.assertEqual(decisions, [])
+
+    def test_http_export_import_round_trip_restores_v2_evidence_and_all_decisions_without_experiment_store(self) -> None:
+        from quant_core import api
+
+        def handler(
+            name: str,
+            stores: dict[str, Any],
+            review_store: AiReviewRunStore,
+            decision_store: AiReviewDecisionStore,
+        ) -> type[api.QuantApiHandler]:
+            class Handler(api.QuantApiHandler):
+                def log_message(self, format: str, *args: Any) -> None:
+                    return
+
+            Handler.__name__ = name
+            for attribute, store in stores.items():
+                setattr(Handler, attribute, store)
+            Handler.ai_review_store = review_store
+            Handler.ai_review_decision_store = decision_store
+            Handler.import_undo_store = api.ResearchRunImportUndoStore(
+                self.root / f"{name}-undo.sqlite3"
+            )
+            Handler.strategy_experiment_store = None
+            return Handler
+
+        def request(
+            server: ThreadingHTTPServer,
+            method: str,
+            path: str,
+            payload: dict[str, Any] | None = None,
+        ) -> tuple[int, dict[str, Any]]:
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            try:
+                body = None if payload is None else json.dumps(payload).encode("utf-8")
+                connection.request(
+                    method,
+                    path,
+                    body=body,
+                    headers={} if body is None else {"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                return response.status, json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+
+        source_stores = self._import_stores(api, "http-source")
+        source_stores["run_store"].record(self.audit)
+        self.review_store.record(copy.deepcopy(self.legacy))
+        self.review_store.record_v2(copy.deepcopy(self.review))
+        for decision in self.decisions:
+            self.decision_store.restore_validated(copy.deepcopy(decision))
+        source_handler = handler(
+            "ArchiveSourceHandler",
+            source_stores,
+            self.review_store,
+            self.decision_store,
+        )
+        source_server = ThreadingHTTPServer(("127.0.0.1", 0), source_handler)
+        source_thread = threading.Thread(target=source_server.serve_forever, daemon=True)
+        source_thread.start()
+        try:
+            export_status, export_payload = request(
+                source_server,
+                "GET",
+                f"/api/research/runs/{self.audit.run_id}/export",
+            )
+        finally:
+            source_server.shutdown()
+            source_server.server_close()
+            source_thread.join(timeout=2)
+
+        package = export_payload["export"]
+        self.assertEqual(export_status, 200)
+        self.assertEqual(package["manifest"]["artifactCounts"]["aiReviewRunsV2"], 1)
+        self.assertEqual(package["manifest"]["artifactCounts"]["aiReviewDecisions"], 2)
+        self.assertEqual(package["aiReviewRunsV2"][0]["record"]["evidenceBundle"], self.review["evidenceBundle"])
+
+        target_stores = self._import_stores(api, "http-target")
+        target_review_store = AiReviewRunStore(self.root / "http-target-ai-review.sqlite3")
+        target_decision_store = AiReviewDecisionStore(
+            target_review_store.path,
+            review_store=target_review_store,
+        )
+        target_handler = handler(
+            "ArchiveTargetHandler",
+            target_stores,
+            target_review_store,
+            target_decision_store,
+        )
+        target_server = ThreadingHTTPServer(("127.0.0.1", 0), target_handler)
+        target_thread = threading.Thread(target=target_server.serve_forever, daemon=True)
+        target_thread.start()
+        try:
+            import_status, import_payload = request(
+                target_server,
+                "POST",
+                "/api/research/runs/import",
+                package,
+            )
+            review_status, review_payload = request(
+                target_server,
+                "GET",
+                f"/api/ai-reviews/{self.review['aiReviewId']}",
+            )
+            decisions_status, decisions_payload = request(
+                target_server,
+                "GET",
+                f"/api/ai-reviews/{self.review['aiReviewId']}/decisions",
+            )
+        finally:
+            target_server.shutdown()
+            target_server.server_close()
+            target_thread.join(timeout=2)
+
+        self.assertEqual(import_status, 201, import_payload)
+        self.assertEqual(review_status, 200, review_payload)
+        self.assertEqual(review_payload["review"]["evidenceHash"], self.review["evidenceHash"])
+        self.assertEqual(review_payload["review"]["recordHash"], self.review["recordHash"])
+        self.assertEqual(decisions_status, 200, decisions_payload)
+        self.assertEqual(
+            [record["decisionId"] for record in decisions_payload["decisions"]],
+            [record["decisionId"] for record in self.decisions],
+        )
 
 
 class _AiReviewStage3Fixture:
