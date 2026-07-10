@@ -494,6 +494,7 @@ import {
   resolveSavedResearchWorkspaceSelection,
   resolveSavedResearchWorkspaceId,
   replaceStrategyExperimentIdInUrl,
+  resolveStrategyExperimentIdForCurrentSource,
   resolveStrategyExperimentIdFromUrl,
   resolveWatchlistCacheRefreshRunIdFromUrl,
   watchlistIncludesInstrument,
@@ -2429,6 +2430,10 @@ export function App() {
     strategyExperimentMatchesSourceKey(strategyExperimentActive, strategyExperimentUsableSourceKey)
       ? strategyExperimentActive
       : null;
+  const visibleStrategyExperimentUrlId = resolveStrategyExperimentIdForCurrentSource(
+    visibleStrategyExperimentActive,
+    strategyExperimentUsableSourceKey
+  );
   const aiReviewDossier = visibleStrategyExperimentActive
     ? buildAiReviewDossier(workspace, visibleStrategyExperimentActive)
     : buildAiReviewDossier(workspace);
@@ -3689,8 +3694,8 @@ export function App() {
     if (initialStrategyExperimentIdRef.current) {
       return;
     }
-    replaceStrategyExperimentUrlParam(visibleStrategyExperimentActive?.experimentId ?? null);
-  }, [visibleStrategyExperimentActive?.experimentId]);
+    replaceStrategyExperimentUrlParam(visibleStrategyExperimentUrlId);
+  }, [visibleStrategyExperimentUrlId]);
 
   useEffect(() => {
     void refreshP0AcceptanceLatest();
@@ -5547,8 +5552,6 @@ export function App() {
       if (restoredStrategyExperimentKlines) {
         setKlinesState(restoredStrategyExperimentKlines);
       }
-    } else if (restoredStrategyExperiment) {
-      replaceStrategyExperimentUrlParam(null);
     }
     if (shouldConsiderSavedWorkArea) {
       savedResearchWorkspaceSelectionAppliedRef.current = true;

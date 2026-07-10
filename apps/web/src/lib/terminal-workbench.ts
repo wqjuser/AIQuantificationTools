@@ -30644,6 +30644,15 @@ function normalizeStrategyExperimentId(value: string | null | undefined): string
   return /^experiment-[A-Za-z0-9][A-Za-z0-9._:-]{0,109}$/.test(experimentId) ? experimentId : null;
 }
 
+export function resolveStrategyExperimentIdForCurrentSource(
+  experiment: Pick<StrategyExperimentListItem, "experimentId" | "sourceRunId" | "strategyRevision"> | null,
+  sourceKey: string | null
+): string | null {
+  return experiment && sourceKey === `${experiment.sourceRunId}:${experiment.strategyRevision}`
+    ? normalizeStrategyExperimentId(experiment.experimentId)
+    : null;
+}
+
 export function resolveStrategyExperimentIdFromUrl(
   search: string | URLSearchParams | null | undefined
 ): string | null {

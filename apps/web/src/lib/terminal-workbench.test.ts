@@ -264,6 +264,7 @@ import {
   buildDefaultStrategyExperimentDimensions,
   buildStrategyExperimentEvidenceSummary,
   replaceStrategyExperimentIdInUrl,
+  resolveStrategyExperimentIdForCurrentSource,
   resolveStrategyExperimentIdFromUrl,
   buildStrategyRuleDraft,
   buildStrategyRuleRows,
@@ -1398,6 +1399,20 @@ describe("terminal workbench model", () => {
         "../experiment-2"
       )
     ).toBe("http://aiqt.local/?workspace=backtest");
+  });
+
+  test("keeps the current matching experiment URL when a second restore finishes stale", () => {
+    const experiment = strategyExperimentFixture();
+    const href = "http://aiqt.local/?workspace=backtest&strategyExperiment=experiment-1";
+    const currentSourceKey = `${experiment.sourceRunId}:${experiment.strategyRevision}`;
+
+    expect(
+      replaceStrategyExperimentIdInUrl(
+        href,
+        resolveStrategyExperimentIdForCurrentSource(experiment, currentSourceKey)
+      )
+    ).toBe(href);
+    expect(resolveStrategyExperimentIdForCurrentSource(experiment, "run-other:revision-other")).toBeNull();
   });
 
   test("summarizes only a matching completed persisted strategy experiment", () => {

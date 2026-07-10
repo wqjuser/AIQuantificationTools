@@ -3643,6 +3643,8 @@ describe("terminal layout css", () => {
     expect(refreshWorkspaceSource).toContain("loadResearchRunDetail");
     expect(refreshWorkspaceSource).toContain("workspaceFromResearchRunAudit");
     expect(refreshWorkspaceSource).toContain("buildStrategyExperimentEvidenceSummary");
+    expect(appSource).toContain("resolveStrategyExperimentIdForCurrentSource");
+    expect(refreshWorkspaceSource).not.toContain("else if (restoredStrategyExperiment)");
     expect(refreshWorkspaceSource).not.toContain("runHistory.find");
     expect(refreshWorkspaceSource.indexOf("const requestedStrategyExperimentId")).toBeLessThan(
       refreshWorkspaceSource.indexOf("await loadTerminalWorkspace")
