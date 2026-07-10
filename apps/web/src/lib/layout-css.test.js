@@ -3770,6 +3770,28 @@ describe("terminal layout css", () => {
     expect(hasCssDeclaration("  .center-grid,\n  .workflow-layout", "grid-template-columns: 1fr;")).toBe(true);
   });
 
+  test("releases the left rail from the viewport on the single-column narrow layout", () => {
+    const tabletMedia = sourceBetweenText(
+      styles,
+      "@media (max-width: 960px) {",
+      "@media (max-width: 860px) {"
+    );
+    const narrowMedia = sourceBetweenText(
+      styles,
+      "@media (max-width: 860px) {",
+      "@media (max-width: 560px) {"
+    );
+    const tabletLeftRail = sourceBetweenText(tabletMedia, "  .left-rail {", "  }");
+    const narrowLeftRail = sourceBetweenText(narrowMedia, "  .left-rail {", "  }");
+
+    expect(tabletLeftRail).toContain("position: sticky;");
+    expect(tabletLeftRail).toContain("height: 100vh;");
+    expect(narrowLeftRail).toContain("position: static;");
+    expect(narrowLeftRail).toContain("align-self: stretch;");
+    expect(narrowLeftRail).toContain("height: auto;");
+    expect(narrowLeftRail).toContain("overflow: visible;");
+  });
+
   test("keeps AI review inside workflow pages instead of a separate global strip", () => {
     expect(appSource).not.toContain("<AssistantCommandStrip");
     expect(appSource).not.toContain("function AssistantCommandStrip");

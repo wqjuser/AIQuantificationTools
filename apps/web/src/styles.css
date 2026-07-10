@@ -16854,6 +16854,10 @@ button.ai-review-record {
   }
 
   .left-rail {
+    position: static;
+    align-self: stretch;
+    height: auto;
+    overflow: visible;
     border-width: 0 0 1px;
   }
 
