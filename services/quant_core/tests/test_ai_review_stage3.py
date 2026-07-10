@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import io
 import json
 import os
@@ -388,6 +389,10 @@ def _rehash_decision(record: dict[str, Any]) -> None:
     record["recordHash"] = canonical_sha256(
         {key: value for key, value in record.items() if key != "recordHash"}
     )
+
+
+def _decision_id(value: int) -> str:
+    return f"ai-review-decision-{value:032x}"
 
 
 def _bars(seed: int) -> list[dict[str, Any]]:
@@ -998,7 +1003,7 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         root = Path(self.temporary_directory.name)
         self.review_path = root / "reviews.sqlite3"
-        self.decision_path = root / "decisions.sqlite3"
+        self.decision_path = self.review_path
         self.review_store = AiReviewRunStore(self.review_path)
         self.review = _authoritative_review_record()
         self.review_store.record_v2(self.review)
@@ -1073,7 +1078,7 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
     def test_append_generates_identity_hashes_and_fixed_boundary(self) -> None:
         stored = self._append()
 
-        self.assertTrue(stored.decision_id)
+        self.assertRegex(stored.decision_id, r"^ai-review-decision-[0-9a-f]{32}$")
         self.assertEqual(stored.ai_review_id, self.review["aiReviewId"])
         self.assertEqual(stored.review_record_hash, self.review["recordHash"])
         self.assertEqual(stored.evidence_hash, self.review["evidenceHash"])
@@ -1094,6 +1099,16 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
             ),
         )
 
+    def test_store_requires_the_review_and_decision_ledgers_to_share_one_database(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "^ai_review_decision_store_path_mismatch$",
+        ):
+            AiReviewDecisionStore(
+                self.review_path.with_name("other.sqlite3"),
+                review_store=self.review_store,
+            )
+
     def test_append_requires_first_null_and_each_later_current_predecessor(self) -> None:
         with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
             self._append(supersedes_decision_id="missing-decision")
@@ -1109,10 +1124,12 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
         self.assertEqual(self.store.latest(self.review["aiReviewId"]), third)
 
     def test_append_refuses_to_extend_a_broken_existing_chain(self) -> None:
+        first_id = _decision_id(1)
+        broken_id = _decision_id(2)
         first = self.store.restore_validated(
-            _decision_record(self.review, decision_id="existing-first")
+            _decision_record(self.review, decision_id=first_id)
         )
-        broken = _decision_record(self.review, decision_id="existing-broken")
+        broken = _decision_record(self.review, decision_id=broken_id)
         with closing(sqlite3.connect(self.decision_path)) as connection:
             connection.execute(
                 """
@@ -1140,12 +1157,12 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
             connection.commit()
 
         with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
-            self._append(supersedes_decision_id=broken["decisionId"])
+            self._append(supersedes_decision_id=broken_id)
 
         with closing(sqlite3.connect(self.decision_path)) as connection:
             count = connection.execute("select count(*) from ai_review_decisions").fetchone()[0]
         self.assertEqual(count, 2)
-        self.assertEqual(first.decision_id, "existing-first")
+        self.assertEqual(first.decision_id, first_id)
 
     def test_append_rejects_missing_and_legacy_reviews(self) -> None:
         with self.assertRaisesRegex(ValueError, "^ai_review_not_found$"):
@@ -1180,7 +1197,7 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
             )
 
     def test_restore_is_idempotent_only_for_same_id_and_record_hash(self) -> None:
-        record = _decision_record(self.review, decision_id="decision-imported")
+        record = _decision_record(self.review, decision_id=_decision_id(1))
 
         first = self.store.restore_validated(record)
         second = self.store.restore_validated(copy.deepcopy(record))
@@ -1232,18 +1249,89 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
         )
         self.assertEqual(len(self.store.list_by_review(self.review["aiReviewId"])), 1)
 
+    def test_append_holds_review_against_delete_until_decision_commit(self) -> None:
+        review_read = threading.Event()
+        release_review_read = threading.Event()
+        delete_started = threading.Event()
+        delete_finished = threading.Event()
+        append_outcomes: list[tuple[str, str]] = []
+
+        class BlockingReviewStore(AiReviewRunStore):
+            def get(
+                self,
+                ai_review_id: str,
+            ) -> AiReviewRunRecord | AuthoritativeAiReviewRunRecord | None:
+                review = super().get(ai_review_id)
+                review_read.set()
+                if not release_review_read.wait(timeout=5):
+                    raise RuntimeError("timed out waiting to release review read")
+                return review
+
+        blocking_review_store = BlockingReviewStore(self.review_path)
+        decision_store = AiReviewDecisionStore(
+            self.decision_path,
+            review_store=blocking_review_store,
+        )
+
+        def append() -> None:
+            try:
+                decision = decision_store.append(
+                    self.review["aiReviewId"],
+                    {
+                        "operator": "researcher",
+                        "status": "accepted_for_research",
+                        "rationale": "Review must exist through decision commit.",
+                        "supersedesDecisionId": None,
+                    },
+                )
+                append_outcomes.append(("stored", decision.decision_id))
+            except BaseException as error:
+                append_outcomes.append(("error", str(error)))
+
+        def delete_review() -> None:
+            delete_started.set()
+            blocking_review_store.delete_by_run(
+                self.review["primaryExperiment"]["sourceRunId"]
+            )
+            delete_finished.set()
+
+        append_thread = threading.Thread(target=append)
+        delete_thread = threading.Thread(target=delete_review)
+        append_thread.start()
+        self.assertTrue(review_read.wait(timeout=5))
+        delete_thread.start()
+        self.assertTrue(delete_started.wait(timeout=5))
+        deleted_before_decision_commit = delete_finished.wait(timeout=0.2)
+        release_review_read.set()
+        append_thread.join(timeout=5)
+        delete_thread.join(timeout=5)
+
+        self.assertFalse(deleted_before_decision_commit)
+        self.assertFalse(append_thread.is_alive())
+        self.assertFalse(delete_thread.is_alive())
+        self.assertEqual(len(append_outcomes), 1)
+        self.assertEqual(append_outcomes[0][0], "stored")
+        self.assertIsNone(self.review_store.get(self.review["aiReviewId"]))
+        with closing(sqlite3.connect(self.decision_path)) as connection:
+            decision_count = connection.execute(
+                "select count(*) from ai_review_decisions"
+            ).fetchone()[0]
+        self.assertEqual(decision_count, 1)
+
     def test_list_and_latest_follow_insertion_chain_when_timestamps_and_ids_do_not_sort(self) -> None:
+        first_id = _decision_id(15)
+        second_id = _decision_id(1)
         first_record = _decision_record(
             self.review,
-            decision_id="z-first",
+            decision_id=first_id,
             created_at="2026-07-10T08:30:00+00:00",
         )
         second_record = _decision_record(
             self.review,
-            decision_id="a-second",
+            decision_id=second_id,
             created_at="2026-07-10T08:30:00+00:00",
             status="revision_requested",
-            supersedes_decision_id="z-first",
+            supersedes_decision_id=first_id,
         )
 
         first = self.store.restore_validated(first_record)
@@ -1300,9 +1388,12 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
                 ),
             ),
         )
-        for label, code, mutate in cases:
+        for index, (label, code, mutate) in enumerate(cases, start=1):
             with self.subTest(case=label):
-                record = _decision_record(self.review, decision_id=f"invalid-{label}")
+                record = _decision_record(
+                    self.review,
+                    decision_id=_decision_id(index),
+                )
                 mutate(record)
                 with self.assertRaisesRegex(ValueError, f"^{code}$"):
                     self.store.restore_validated(record)
@@ -1310,24 +1401,98 @@ class AiReviewDecisionStoreTests(unittest.TestCase):
         self.assertEqual(self.store.list_by_review(self.review["aiReviewId"]), [])
 
     def test_restore_imports_complete_linear_chain_without_skip_option(self) -> None:
+        first_id = _decision_id(1)
+        second_id = _decision_id(2)
+        third_id = _decision_id(3)
         records = [
-            _decision_record(self.review, decision_id="import-1"),
+            _decision_record(self.review, decision_id=first_id),
             _decision_record(
                 self.review,
-                decision_id="import-2",
-                supersedes_decision_id="import-1",
+                decision_id=second_id,
+                supersedes_decision_id=first_id,
             ),
             _decision_record(
                 self.review,
-                decision_id="import-3",
-                supersedes_decision_id="import-2",
+                decision_id=third_id,
+                supersedes_decision_id=second_id,
             ),
         ]
 
         restored = [self.store.restore_validated(record) for record in records]
 
         self.assertEqual(self.store.list_by_review(self.review["aiReviewId"]), restored)
-        self.assertNotIn("skip", str(self.store.restore_validated))
+        self.assertEqual(
+            list(inspect.signature(self.store.restore_validated).parameters),
+            ["record"],
+        )
+        with self.assertRaises(TypeError):
+            self.store.restore_validated(records[-1], skip_validation=True)
+
+    def test_restore_requires_integer_schema_and_exact_boolean_boundary(self) -> None:
+        cases: tuple[tuple[str, str, Any], ...] = (
+            (
+                "boolean schema",
+                "ai_review_decision_record_invalid",
+                lambda record: record.update({"schemaVersion": True}),
+            ),
+            (
+                "integer true boundary",
+                "ai_review_decision_boundary_invalid",
+                lambda record: record["boundary"].update({"paperOnly": 1}),
+            ),
+            (
+                "integer false boundary",
+                "ai_review_decision_boundary_invalid",
+                lambda record: record["boundary"].update({"liveTradingAllowed": 0}),
+            ),
+            (
+                "extra boundary field",
+                "ai_review_decision_boundary_invalid",
+                lambda record: record["boundary"].update({"unknown": False}),
+            ),
+        )
+        for index, (label, code, mutate) in enumerate(cases, start=1):
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "ledger.sqlite3"
+                review_store = AiReviewRunStore(path)
+                review_store.record_v2(self.review)
+                store = AiReviewDecisionStore(path, review_store=review_store)
+                record = _decision_record(self.review, decision_id=_decision_id(index))
+                mutate(record)
+                _rehash_decision(record)
+
+                with self.assertRaisesRegex(ValueError, f"^{code}$"):
+                    store.restore_validated(record)
+
+    def test_restore_requires_backend_canonical_identity_and_utc_time(self) -> None:
+        cases = (
+            ("arbitrary id", "decision-imported", "2026-07-10T08:30:00+00:00"),
+            (
+                "uppercase id",
+                "ai-review-decision-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "2026-07-10T08:30:00+00:00",
+            ),
+            ("z time", _decision_id(1), "2026-07-10T08:30:00Z"),
+            ("nonzero offset", _decision_id(1), "2026-07-10T16:30:00+08:00"),
+            ("noncanonical text", _decision_id(1), "2026-07-10 08:30:00+00:00"),
+        )
+        for label, decision_id, created_at in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "ledger.sqlite3"
+                review_store = AiReviewRunStore(path)
+                review_store.record_v2(self.review)
+                store = AiReviewDecisionStore(path, review_store=review_store)
+                record = _decision_record(
+                    self.review,
+                    decision_id=decision_id,
+                    created_at=created_at,
+                )
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "^ai_review_decision_record_invalid$",
+                ):
+                    store.restore_validated(record)
 
 
 class AiReviewEvidenceAssemblerTests(unittest.TestCase):

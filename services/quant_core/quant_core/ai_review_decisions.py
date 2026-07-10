@@ -18,6 +18,7 @@ _DECISION_STATUSES = {
     "rejected",
     "insufficient_evidence",
 }
+_DECISION_ID_PREFIX = "ai-review-decision-"
 _DECISION_BOUNDARY = {
     "paperOnly": True,
     "liveTradingAllowed": False,
@@ -80,7 +81,9 @@ class AiReviewDecisionStore:
         *,
         review_store: AiReviewRunStore,
     ) -> None:
-        self.path = Path(path)
+        self.path = Path(path).resolve()
+        if self.path != review_store.path.resolve():
+            raise ValueError("ai_review_decision_store_path_mismatch")
         self.review_store = review_store
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
@@ -124,10 +127,10 @@ class AiReviewDecisionStore:
         request: dict[str, Any],
     ) -> AiReviewDecisionRecord:
         normalized_request = _normalize_request(request)
-        review = self._authoritative_review(ai_review_id)
         connection = self._connect()
         try:
             connection.execute("begin immediate")
+            review = self._authoritative_review(ai_review_id)
             decisions = self._validated_rows(connection, review)
             expected_predecessor = decisions[-1].decision_id if decisions else None
             if normalized_request["supersedesDecisionId"] != expected_predecessor:
@@ -160,11 +163,11 @@ class AiReviewDecisionStore:
 
     def restore_validated(self, record: dict[str, Any]) -> AiReviewDecisionRecord:
         stored = _decision_record(record)
-        review = self._authoritative_review(stored.ai_review_id)
-        _validate_review_binding(stored, review)
         connection = self._connect()
         try:
             connection.execute("begin immediate")
+            review = self._authoritative_review(stored.ai_review_id)
+            _validate_review_binding(stored, review)
             existing_row = connection.execute(
                 f"select {_SELECT_COLUMNS} from ai_review_decisions where decision_id = ?",
                 (stored.decision_id,),
@@ -309,17 +312,21 @@ def _normalize_request(value: Any) -> dict[str, Any]:
 def _decision_record(value: Any) -> AiReviewDecisionRecord:
     if not isinstance(value, dict) or set(value) != _RECORD_FIELDS:
         raise ValueError("ai_review_decision_record_invalid")
-    if value.get("schemaVersion") != 1 or value.get("recordType") != "aiqt.aiReviewDecision":
+    if (
+        type(value.get("schemaVersion")) is not int
+        or value["schemaVersion"] != 1
+        or value.get("recordType") != "aiqt.aiReviewDecision"
+    ):
         raise ValueError("ai_review_decision_record_invalid")
 
-    decision_id = _identifier(value.get("decisionId"))
+    decision_id = _decision_identifier(value.get("decisionId"))
     ai_review_id = _identifier(value.get("aiReviewId"))
     created_at_text = _identifier(value.get("createdAt"))
     try:
-        created_at = datetime.fromisoformat(created_at_text.replace("Z", "+00:00"))
+        created_at = datetime.fromisoformat(created_at_text)
     except ValueError:
         raise ValueError("ai_review_decision_record_invalid") from None
-    if created_at.tzinfo is None:
+    if created_at.tzinfo != timezone.utc or created_at.isoformat() != created_at_text:
         raise ValueError("ai_review_decision_record_invalid")
 
     try:
@@ -336,7 +343,15 @@ def _decision_record(value: Any) -> AiReviewDecisionRecord:
 
     review_record_hash = _hash(value.get("reviewRecordHash"))
     evidence_hash = _hash(value.get("evidenceHash"))
-    if value.get("boundary") != _DECISION_BOUNDARY:
+    boundary = value.get("boundary")
+    if (
+        not isinstance(boundary, dict)
+        or set(boundary) != set(_DECISION_BOUNDARY)
+        or any(
+            type(boundary[key]) is not bool or boundary[key] is not expected
+            for key, expected in _DECISION_BOUNDARY.items()
+        )
+    ):
         raise ValueError("ai_review_decision_boundary_invalid")
     record_hash = _hash(value.get("recordHash"))
     expected_hash = canonical_sha256(
@@ -402,6 +417,20 @@ def _bounded_string(value: Any, *, minimum: int, maximum: int) -> str:
 
 def _identifier(value: Any) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError("ai_review_decision_record_invalid")
+    return value
+
+
+def _decision_identifier(value: Any) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.startswith(_DECISION_ID_PREFIX)
+        or len(value) != len(_DECISION_ID_PREFIX) + 32
+        or any(
+            character not in "0123456789abcdef"
+            for character in value[len(_DECISION_ID_PREFIX) :]
+        )
+    ):
         raise ValueError("ai_review_decision_record_invalid")
     return value
 
