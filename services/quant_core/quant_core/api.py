@@ -4331,24 +4331,28 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 portfolio_paper_order_simulation_to_payload(simulation)
                 for simulation in self.portfolio_paper_order_simulation_store.list_all_by_base_run(run_id)
             ]
-            stored_ai_reviews = self.ai_review_store.list_all_by_run(run_id)
-            ai_reviews = [
-                ai_review_run_record_to_payload(review)
-                for review in stored_ai_reviews
-                if isinstance(review, AiReviewRunRecord)
-            ]
-            authoritative_ai_reviews = [
-                review
-                for review in stored_ai_reviews
-                if isinstance(review, AuthoritativeAiReviewRunRecord)
-            ]
-            ai_review_decisions = [
-                _ai_review_decision_archive_payload(decision)
-                for review in authoritative_ai_reviews
-                for decision in self._current_ai_review_decision_store().list_by_review(
-                    review.ai_review_id
-                )
-            ]
+            try:
+                stored_ai_reviews = self.ai_review_store.list_all_by_run(run_id)
+                ai_reviews = [
+                    ai_review_run_record_to_payload(review)
+                    for review in stored_ai_reviews
+                    if isinstance(review, AiReviewRunRecord)
+                ]
+                authoritative_ai_reviews = [
+                    review
+                    for review in stored_ai_reviews
+                    if isinstance(review, AuthoritativeAiReviewRunRecord)
+                ]
+                ai_review_decisions = [
+                    _ai_review_decision_archive_payload(decision)
+                    for review in authoritative_ai_reviews
+                    for decision in self._current_ai_review_decision_store().list_by_review(
+                        review.ai_review_id
+                    )
+                ]
+            except ValueError:
+                self._send_json({"error": "invalid_ai_review_archive"}, status=400)
+                return
             audit_events = [
                 audit_event_record_to_payload(event) for event in self.audit_event_store.list_recent(run_id=run_id, limit=50)
             ]
@@ -5593,13 +5597,13 @@ def _snapshot_ai_review_archive(
     }
 
 
-def _restore_ai_review_archive_snapshot(
+def _preflight_ai_review_archive_snapshot(
     *,
     run_id: str,
     review_store: AiReviewRunStore,
     decision_store: AiReviewDecisionStore,
     snapshot: dict[str, object],
-) -> None:
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], bool]:
     if review_store.path.resolve() != decision_store.path.resolve():
         raise ValueError("ai_review_decision_store_path_mismatch")
     mixed_legacy = snapshot.get("aiReviewRuns", [])
@@ -5648,12 +5652,43 @@ def _restore_ai_review_archive_snapshot(
         decision_payloads,
         authoritative,
     )
-    decision_store.replace_archive_atomic(
+    preserve_existing_decisions = not has_decision_array
+    decision_store.preflight_archive_replace(
         run_id=run_id,
         legacy_records=[record.record for record in legacy],
         authoritative_records=[record.record for record in authoritative],
         decision_records=[record.record for record in decisions],
-        preserve_existing_decisions=not has_decision_array,
+        preserve_existing_decisions=preserve_existing_decisions,
+    )
+    return (
+        [dict(record.record) for record in legacy],
+        [dict(record.record) for record in authoritative],
+        [dict(record.record) for record in decisions],
+        preserve_existing_decisions,
+    )
+
+
+def _restore_ai_review_archive_snapshot(
+    *,
+    run_id: str,
+    review_store: AiReviewRunStore,
+    decision_store: AiReviewDecisionStore,
+    snapshot: dict[str, object],
+) -> None:
+    legacy, authoritative, decisions, preserve_existing_decisions = (
+        _preflight_ai_review_archive_snapshot(
+            run_id=run_id,
+            review_store=review_store,
+            decision_store=decision_store,
+            snapshot=snapshot,
+        )
+    )
+    decision_store.replace_archive_atomic(
+        run_id=run_id,
+        legacy_records=legacy,
+        authoritative_records=authoritative,
+        decision_records=decisions,
+        preserve_existing_decisions=preserve_existing_decisions,
     )
 
 
@@ -6041,6 +6076,12 @@ def _undo_research_run_import_from_snapshot(
         handoff_note_from_payload(item) for item in previous_handoff_note_payloads if isinstance(item, dict)
     ]
 
+    _preflight_ai_review_archive_snapshot(
+        run_id=run_id,
+        review_store=ai_review_store,
+        decision_store=ai_review_decision_store,
+        snapshot=previous_ai_review_archive,
+    )
     _rollback_research_run_import(
         run_store=run_store,
         note_store=note_store,

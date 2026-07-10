@@ -12,6 +12,7 @@ from quant_core.ai_review_runs import (
     AiReviewRunRecord,
     AiReviewRunStore,
     AuthoritativeAiReviewRunRecord,
+    contains_secret_like_archive_text,
     validate_ai_review_archive_records,
 )
 from quant_core.canonical import canonical_json, canonical_sha256
@@ -313,33 +314,15 @@ class AiReviewDecisionStore:
         connection = self._connect()
         try:
             connection.execute("begin immediate")
-            current = self.review_store.list_archive_by_run_in_transaction(connection, run_id)
-            current_authoritative_ids = {
-                review.ai_review_id
-                for review in current
-                if isinstance(review, AuthoritativeAiReviewRunRecord)
-            }
-            self.review_store.validate_archive_ownership_in_transaction(
+            current_authoritative_ids = self._preflight_archive_replace_in_transaction(
                 connection,
-                legacy_records=legacy,
-                authoritative_records=authoritative,
-                replace_run_id=run_id,
+                run_id=run_id,
+                legacy=legacy,
+                authoritative=authoritative,
+                decisions=decisions,
+                preserve_existing_decisions=preserve_existing_decisions,
             )
-            if preserve_existing_decisions:
-                preserved = self._decisions_for_reviews(
-                    connection,
-                    current_authoritative_ids,
-                )
-                validate_ai_review_decision_archive_records(
-                    [decision.record for decision in preserved],
-                    authoritative,
-                )
-            else:
-                self._validate_global_decision_ids(
-                    connection,
-                    decisions,
-                    replace_review_ids=current_authoritative_ids,
-                )
+            if not preserve_existing_decisions:
                 self._delete_decisions_in_transaction(
                     connection,
                     current_authoritative_ids
@@ -359,6 +342,76 @@ class AiReviewDecisionStore:
             raise
         finally:
             connection.close()
+
+    def preflight_archive_replace(
+        self,
+        *,
+        run_id: str,
+        legacy_records: list[dict[str, Any]],
+        authoritative_records: list[dict[str, Any]],
+        decision_records: list[dict[str, Any]],
+        preserve_existing_decisions: bool,
+    ) -> None:
+        legacy, authoritative = validate_ai_review_archive_records(
+            run_id=run_id,
+            legacy_records=legacy_records,
+            authoritative_records=authoritative_records,
+        )
+        decisions = validate_ai_review_decision_archive_records(
+            decision_records,
+            authoritative,
+        )
+        connection = self._connect()
+        try:
+            self._preflight_archive_replace_in_transaction(
+                connection,
+                run_id=run_id,
+                legacy=legacy,
+                authoritative=authoritative,
+                decisions=decisions,
+                preserve_existing_decisions=preserve_existing_decisions,
+            )
+        finally:
+            connection.close()
+
+    def _preflight_archive_replace_in_transaction(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        run_id: str,
+        legacy: list[AiReviewRunRecord],
+        authoritative: list[AuthoritativeAiReviewRunRecord],
+        decisions: list[AiReviewDecisionRecord],
+        preserve_existing_decisions: bool,
+    ) -> set[str]:
+        current = self.review_store.list_archive_by_run_in_transaction(connection, run_id)
+        current_authoritative_ids = {
+            review.ai_review_id
+            for review in current
+            if isinstance(review, AuthoritativeAiReviewRunRecord)
+        }
+        self.review_store.validate_archive_ownership_in_transaction(
+            connection,
+            legacy_records=legacy,
+            authoritative_records=authoritative,
+            replace_run_id=run_id,
+        )
+        if preserve_existing_decisions:
+            preserved = self._decisions_for_reviews(
+                connection,
+                current_authoritative_ids,
+            )
+            validate_ai_review_decision_archive_records(
+                [decision.record for decision in preserved],
+                authoritative,
+            )
+        else:
+            self._validate_global_decision_ids(
+                connection,
+                decisions,
+                replace_review_ids=current_authoritative_ids,
+            )
+        return current_authoritative_ids
 
     def _validate_global_decision_ids(
         self,
@@ -541,6 +594,10 @@ def _normalize_request(value: Any) -> dict[str, Any]:
         raise ValueError("invalid_ai_review_decision_request")
     operator = _bounded_string(value.get("operator"), minimum=1, maximum=80)
     rationale = _bounded_string(value.get("rationale"), minimum=1, maximum=2000)
+    if contains_secret_like_archive_text(operator) or contains_secret_like_archive_text(
+        rationale
+    ):
+        raise ValueError("invalid_ai_review_decision_request")
     status = value.get("status")
     predecessor = value.get("supersedesDecisionId")
     if (

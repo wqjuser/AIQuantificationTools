@@ -144,7 +144,8 @@ _FORBIDDEN_LEGACY_KEY_PARTS = (
 )
 _SECRET_LIKE_VALUE_PATTERN = re.compile(
     r"(?:\bbearer\s+[a-z0-9._~+/=-]+|\bsk-(?:proj-)?[a-z0-9_-]{8,}|"
-    r"\b(?:access[_ -]?token|api[_ -]?key|authorization|password|private[_ -]?key|secret)"
+    r"\b(?:access[_ -]?token|api[_ -]?key|authorization|credential(?:s)?|password|"
+    r"private[_ -]?key|secret)"
     r"\b\s*[:=]\s*\S+)",
     re.IGNORECASE,
 )
@@ -670,6 +671,20 @@ def _normalize_ai_review_record(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("run_id_required")
     if not created_at:
         raise ValueError("created_at_required")
+    identity_fields = (
+        "aiReviewId",
+        "runId",
+        "createdAt",
+        "market",
+        "symbol",
+        "timeframe",
+        "strategyRevision",
+    )
+    if any(
+        field in value and contains_secret_like_archive_text(value.get(field))
+        for field in identity_fields
+    ):
+        raise ValueError("ai_review_archive_secret_text_forbidden")
     _parse_datetime(created_at)
     if not boundary:
         raise ValueError("ai_review_boundary_required")
@@ -728,7 +743,11 @@ def _safe_legacy_value(value: Any) -> Any:
 
 def _safe_legacy_text(value: Any) -> str:
     text = str(value)
-    return "[redacted]" if _SECRET_LIKE_VALUE_PATTERN.search(text) else text
+    return "[redacted]" if contains_secret_like_archive_text(text) else text
+
+
+def contains_secret_like_archive_text(value: Any) -> bool:
+    return bool(_SECRET_LIKE_VALUE_PATTERN.search(str(value)))
 
 
 def _forbidden_legacy_key(value: Any) -> bool:

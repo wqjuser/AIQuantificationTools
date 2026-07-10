@@ -1011,6 +1011,17 @@ def _validate_research_run_import_safety_boundary(payload: dict[str, Any]) -> No
             for field in (*unsafe_fields, *optional_unsafe_fields)
         ):
             raise ValueError("live_trading_exports_cannot_be_imported")
+    allowed_routes = {"paper", "paper_only", "blocked"}
+    for container in (manifest, research_run, handoff):
+        if any(
+            field in container
+            and (
+                not isinstance(container.get(field), str)
+                or str(container.get(field)).strip() not in allowed_routes
+            )
+            for field in ("route", "routeMode", "executionRoute")
+        ):
+            raise ValueError("live_trading_exports_cannot_be_imported")
     if "paperOnly" in research_run and research_run.get("paperOnly") is not True:
         raise ValueError("paper_only_export_boundary_required")
 
