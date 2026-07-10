@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import math
+import re
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from quant_core.canonical import (
@@ -27,6 +29,366 @@ class AiReviewStage3Error(ValueError):
         self.code = code
         self.status = status
         self.detail = detail
+
+
+MIN_REVIEW_TRADE_COUNT = 10
+MAX_REVIEW_DRAWDOWN_PCT = 15.0
+WALK_FORWARD_FAILURE_RATIO = 0.5
+MAX_ASSESSMENT_ITEMS = 50
+MAX_ASSESSMENT_TEXT_CHARS = 2_000
+
+_ASSESSMENT_FIELDS = {
+    "stance",
+    "summary",
+    "risks",
+    "invalidationConditions",
+    "watchItems",
+    "evidenceGaps",
+    "consistency",
+}
+_RISK_FIELDS = {"severity", "message", "evidenceReferences"}
+_STANCES = {"supported", "caution", "blocked", "insufficient_evidence"}
+_SEVERITIES = {"low", "medium", "high", "critical"}
+_CONSISTENCIES = {"consistent", "mixed", "divergent", "insufficient"}
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+def validate_assessment(
+    payload: Mapping[str, Any],
+    known_evidence_ids: Collection[str],
+) -> dict[str, Any]:
+    if not isinstance(payload, Mapping) or set(payload) != _ASSESSMENT_FIELDS:
+        raise ValueError("assessment_fields_invalid")
+    _validate_enum(payload["stance"], _STANCES, "assessment_stance_invalid")
+    _validate_text(payload["summary"], "assessment_summary_invalid")
+    _validate_enum(payload["consistency"], _CONSISTENCIES, "assessment_consistency_invalid")
+
+    known_ids = set(known_evidence_ids)
+    risks = _validate_array(payload["risks"], "assessment_risks_invalid")
+    for risk in risks:
+        if not isinstance(risk, Mapping) or set(risk) != _RISK_FIELDS:
+            raise ValueError("assessment_risk_fields_invalid")
+        _validate_enum(risk["severity"], _SEVERITIES, "assessment_risk_severity_invalid")
+        _validate_text(risk["message"], "assessment_risk_message_invalid")
+        references = _validate_array(
+            risk["evidenceReferences"],
+            "assessment_evidence_references_invalid",
+        )
+        for reference in references:
+            _validate_text(reference, "assessment_evidence_reference_invalid")
+            if reference not in known_ids:
+                raise ValueError("assessment_evidence_reference_unknown")
+
+    for field in ("invalidationConditions", "watchItems", "evidenceGaps"):
+        for item in _validate_array(payload[field], f"assessment_{field}_invalid"):
+            _validate_text(item, f"assessment_{field}_item_invalid")
+    return dict(payload)
+
+
+class DeterministicAiReviewEngine:
+    def evaluate(self, evidence_bundle: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(evidence_bundle, Mapping):
+            raise ValueError("evidence_bundle_must_be_object")
+        raw_items = evidence_bundle.get("evidenceItems")
+        if not isinstance(raw_items, list):
+            raise ValueError("evidence_items_must_be_array")
+        evidence_items = [item for item in raw_items if isinstance(item, Mapping)]
+        known_ids = {
+            item["id"]
+            for item in evidence_items
+            if isinstance(item.get("id"), str) and item["id"].strip()
+        }
+        references = _review_experiment_references(evidence_bundle)
+        risks: list[dict[str, Any]] = []
+        gaps: list[str] = []
+        blocked = False
+
+        expected_hash = canonical_sha256(
+            {key: value for key, value in evidence_bundle.items() if key != "evidenceHash"}
+        )
+        if evidence_bundle.get("evidenceHash") != expected_hash:
+            blocked = True
+            risks.append(
+                _assessment_risk(
+                    "critical",
+                    "The canonical evidence hash does not match the supplied bundle.",
+                )
+            )
+
+        if evidence_bundle.get("safetyBoundary") != {
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "orderSubmissionAllowed": False,
+        }:
+            blocked = True
+            risks.append(
+                _assessment_risk(
+                    "critical",
+                    "The research-only safety boundary is invalid.",
+                )
+            )
+
+        signatures: dict[str, tuple[int, int, bool, bool]] = {}
+        for reference in references:
+            experiment_id = reference.get("experimentId")
+            if not isinstance(experiment_id, str) or not experiment_id.strip():
+                blocked = True
+                risks.append(_assessment_risk("critical", "An experiment reference is invalid."))
+                continue
+
+            data_quality_id = f"experiment:{experiment_id}:data-quality"
+            data_quality_item = next(
+                (
+                    item
+                    for item in evidence_items
+                    if item.get("id") == data_quality_id and item.get("kind") == "data_quality"
+                ),
+                None,
+            )
+            if data_quality_item is None or not isinstance(data_quality_item.get("value"), Mapping):
+                gaps.append(f"{experiment_id} data quality evidence is missing.")
+            else:
+                quality = data_quality_item["value"]
+                if quality.get("isComplete") is not True:
+                    blocked = True
+                    risks.append(
+                        _assessment_risk(
+                            "critical",
+                            "Data quality is incomplete.",
+                            data_quality_id,
+                        )
+                    )
+                if not _data_quality_binding_is_valid(reference, quality):
+                    blocked = True
+                    risks.append(
+                        _assessment_risk(
+                            "critical",
+                            "The data hash or range boundary conflicts with the experiment reference.",
+                            data_quality_id,
+                        )
+                    )
+
+            candidate_item = next(
+                (
+                    item
+                    for item in evidence_items
+                    if item.get("kind") == "candidate_metrics"
+                    and str(item.get("id", "")).startswith(f"experiment:{experiment_id}:candidate:")
+                    and isinstance(item.get("value"), Mapping)
+                    and item["value"].get("selected") is True
+                ),
+                None,
+            )
+            if candidate_item is None:
+                gaps.append(f"{experiment_id} selected candidate evidence is missing.")
+                continue
+            candidate_id = str(candidate_item["id"])
+            candidate = candidate_item["value"]
+            validation = _complete_metrics(candidate.get("validationMetrics"))
+            test = _complete_metrics(candidate.get("testMetrics"))
+            walk_forward_returns = _walk_forward_returns(candidate.get("walkForward"))
+            if validation is None:
+                gaps.append(f"{experiment_id} validationMetrics evidence is missing or incomplete.")
+            if test is None:
+                gaps.append(f"{experiment_id} testMetrics evidence is missing or incomplete.")
+            if walk_forward_returns is None:
+                gaps.append(f"{experiment_id} walkForward evidence is missing or incomplete.")
+            if validation is None or test is None or walk_forward_returns is None:
+                continue
+
+            validation_return, validation_drawdown, validation_trades = validation
+            test_return, test_drawdown, test_trades = test
+            signatures[experiment_id] = (
+                _direction(validation_return),
+                _direction(test_return),
+                validation_drawdown > MAX_REVIEW_DRAWDOWN_PCT,
+                test_drawdown > MAX_REVIEW_DRAWDOWN_PCT,
+            )
+            if validation_return * test_return < 0:
+                risks.append(
+                    _assessment_risk(
+                        "high",
+                        "Validation and test returns reverse direction.",
+                        candidate_id,
+                    )
+                )
+            if max(validation_drawdown, test_drawdown) > MAX_REVIEW_DRAWDOWN_PCT:
+                risks.append(
+                    _assessment_risk(
+                        "high",
+                        f"Maximum drawdown exceeds {MAX_REVIEW_DRAWDOWN_PCT:.2f}%.",
+                        candidate_id,
+                    )
+                )
+            if min(validation_trades, test_trades) < MIN_REVIEW_TRADE_COUNT:
+                risks.append(
+                    _assessment_risk(
+                        "medium",
+                        f"Trade count is below {MIN_REVIEW_TRADE_COUNT}.",
+                        candidate_id,
+                    )
+                )
+            failure_count = sum(value <= 0 for value in walk_forward_returns)
+            if failure_count / len(walk_forward_returns) > WALK_FORWARD_FAILURE_RATIO:
+                risks.append(
+                    _assessment_risk(
+                        "high",
+                        "A majority of walk-forward windows have non-positive returns.",
+                        candidate_id,
+                    )
+                )
+
+        consistency = _review_consistency(references, signatures)
+        gaps = list(dict.fromkeys(gaps))
+        if blocked:
+            stance = "blocked"
+            summary = "Assessment blocked by evidence integrity or data-quality risk."
+        elif gaps:
+            stance = "insufficient_evidence"
+            summary = f"Evidence is incomplete; {len(gaps)} required item(s) are missing or invalid."
+        elif risks:
+            stance = "caution"
+            summary = f"Evidence is complete with {len(risks)} deterministic caution signal(s)."
+        else:
+            stance = "supported"
+            summary = "Evidence is complete and no deterministic caution threshold was crossed."
+
+        assessment = {
+            "stance": stance,
+            "summary": summary,
+            "risks": risks,
+            "invalidationConditions": [
+                "Invalidate support if validation and test returns reverse direction.",
+                f"Invalidate support if maximum drawdown exceeds {MAX_REVIEW_DRAWDOWN_PCT:.2f}%.",
+                f"Invalidate support if trade count falls below {MIN_REVIEW_TRADE_COUNT}.",
+                "Invalidate support if more than "
+                f"{WALK_FORWARD_FAILURE_RATIO:.0%} of walk-forward windows have non-positive returns.",
+            ],
+            "watchItems": [
+                f"Monitor validation and test trade counts against the minimum of {MIN_REVIEW_TRADE_COUNT}.",
+                f"Monitor maximum drawdown against the {MAX_REVIEW_DRAWDOWN_PCT:.2f}% limit.",
+                f"Monitor whether non-positive walk-forward windows exceed {WALK_FORWARD_FAILURE_RATIO:.0%}.",
+            ],
+            "evidenceGaps": gaps,
+            "consistency": consistency,
+        }
+        return validate_assessment(assessment, known_ids)
+
+
+def _review_experiment_references(evidence_bundle: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    primary = evidence_bundle.get("primaryExperiment")
+    comparisons = evidence_bundle.get("comparisonExperiments")
+    if not isinstance(primary, Mapping) or not isinstance(comparisons, list):
+        return []
+    return [primary, *(item for item in comparisons if isinstance(item, Mapping))]
+
+
+def _data_quality_binding_is_valid(
+    reference: Mapping[str, Any],
+    quality: Mapping[str, Any],
+) -> bool:
+    data_hash = quality.get("canonicalDataHash")
+    reference_range = reference.get("dataRange")
+    start = quality.get("startAt")
+    end = quality.get("endAt")
+    return bool(
+        isinstance(data_hash, str)
+        and _SHA256_PATTERN.fullmatch(data_hash)
+        and data_hash == reference.get("canonicalDataHash")
+        and isinstance(reference_range, Mapping)
+        and isinstance(start, str)
+        and start
+        and isinstance(end, str)
+        and end
+        and start <= end
+        and start == reference_range.get("startAt")
+        and end == reference_range.get("endAt")
+    )
+
+
+def _complete_metrics(value: Any) -> tuple[float, float, float] | None:
+    if not isinstance(value, Mapping):
+        return None
+    metrics = tuple(
+        _finite_number(value.get(field))
+        for field in ("totalReturnPct", "maxDrawdownPct", "tradeCount")
+    )
+    if any(item is None for item in metrics):
+        return None
+    return metrics  # type: ignore[return-value]
+
+
+def _walk_forward_returns(value: Any) -> list[float] | None:
+    if not isinstance(value, Mapping) or not isinstance(value.get("windows"), list):
+        return None
+    returns: list[float] = []
+    for window in value["windows"]:
+        if not isinstance(window, Mapping):
+            return None
+        metrics = window.get("validationMetrics")
+        raw_return = metrics.get("totalReturnPct") if isinstance(metrics, Mapping) else window.get("totalReturnPct")
+        item = _finite_number(raw_return)
+        if item is None:
+            return None
+        returns.append(item)
+    return returns or None
+
+
+def _review_consistency(
+    references: list[Mapping[str, Any]],
+    signatures: Mapping[str, tuple[int, int, bool, bool]],
+) -> str:
+    experiment_ids = [reference.get("experimentId") for reference in references]
+    if len(experiment_ids) < 2 or any(experiment_id not in signatures for experiment_id in experiment_ids):
+        return "insufficient"
+    primary_signature = signatures[str(experiment_ids[0])]
+    comparison_signatures = [signatures[str(experiment_id)] for experiment_id in experiment_ids[1:]]
+    conflict_count = sum(signature != primary_signature for signature in comparison_signatures)
+    if conflict_count == 0:
+        return "consistent"
+    if conflict_count * 2 > len(comparison_signatures):
+        return "divergent"
+    return "mixed"
+
+
+def _assessment_risk(
+    severity: str,
+    message: str,
+    evidence_reference: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "severity": severity,
+        "message": message,
+        "evidenceReferences": [evidence_reference] if evidence_reference else [],
+    }
+
+
+def _direction(value: float) -> int:
+    return 1 if value > 0 else -1 if value < 0 else 0
+
+
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _validate_text(value: Any, error: str) -> None:
+    if not isinstance(value, str) or not value.strip() or len(value) > MAX_ASSESSMENT_TEXT_CHARS:
+        raise ValueError(error)
+
+
+def _validate_enum(value: Any, allowed: set[str], error: str) -> None:
+    _validate_text(value, error)
+    if value not in allowed:
+        raise ValueError(error)
+
+
+def _validate_array(value: Any, error: str) -> list[Any]:
+    if not isinstance(value, list) or len(value) > MAX_ASSESSMENT_ITEMS:
+        raise ValueError(error)
+    return value
 
 
 def build_strategy_lineage_key(experiment: Mapping[str, Any]) -> str:

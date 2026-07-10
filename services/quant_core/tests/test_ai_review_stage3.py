@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 import sqlite3
@@ -13,7 +14,9 @@ from typing import Any
 from quant_core.ai_review_stage3 import (
     AiReviewEvidenceAssembler,
     AiReviewStage3Error,
+    DeterministicAiReviewEngine,
     build_strategy_lineage_key,
+    validate_assessment,
 )
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
@@ -35,6 +38,87 @@ from quant_core.strategy_experiment_store import (
 
 HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 NOW = datetime(2026, 7, 10, tzinfo=timezone.utc)
+
+
+def _review_evidence_bundle(
+    experiments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    specs = experiments or [{}]
+    references: list[dict[str, Any]] = []
+    evidence_items: list[dict[str, Any]] = []
+    for index, spec in enumerate(specs, start=1):
+        experiment_id = str(spec.get("experimentId", f"experiment-{index}"))
+        data_hash = canonical_sha256({"experimentId": experiment_id})
+        reference = {
+            "experimentId": experiment_id,
+            "canonicalDataHash": data_hash,
+            "dataRange": {
+                "startAt": "2026-01-01T00:00:00+00:00",
+                "endAt": "2026-06-30T00:00:00+00:00",
+            },
+        }
+        references.append(reference)
+        evidence_items.extend(
+            [
+                {
+                    "id": f"experiment:{experiment_id}:data-quality",
+                    "kind": "data_quality",
+                    "value": {
+                        "source": "fixture",
+                        "isComplete": spec.get("isComplete", True),
+                        "warnings": [],
+                        "rows": 120,
+                        "canonicalDataHash": data_hash,
+                        **reference["dataRange"],
+                    },
+                },
+                {
+                    "id": f"experiment:{experiment_id}:candidate:selected",
+                    "kind": "candidate_metrics",
+                    "value": {
+                        "candidateId": "selected",
+                        "selected": True,
+                        "validationMetrics": {
+                            "totalReturnPct": spec.get("validationReturnPct", 5.0),
+                            "maxDrawdownPct": spec.get("validationDrawdownPct", 8.0),
+                            "tradeCount": spec.get("validationTradeCount", 12),
+                        },
+                        "testMetrics": {
+                            "totalReturnPct": spec.get("testReturnPct", 3.0),
+                            "maxDrawdownPct": spec.get("testDrawdownPct", 9.0),
+                            "tradeCount": spec.get("testTradeCount", 10),
+                        },
+                        "walkForward": {
+                            "windows": [
+                                {"validationMetrics": {"totalReturnPct": value}}
+                                for value in spec.get("walkForwardReturns", [2.0, 1.0, -0.5])
+                            ]
+                        },
+                    },
+                },
+            ]
+        )
+    bundle = {
+        "schemaVersion": 1,
+        "mode": "comparison" if len(references) > 1 else "single",
+        "primaryExperiment": references[0],
+        "comparisonExperiments": references[1:],
+        "strategyLineageKey": canonical_sha256({"lineage": "fixture"}),
+        "evidenceItems": evidence_items,
+        "safetyBoundary": {
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "orderSubmissionAllowed": False,
+        },
+    }
+    bundle["evidenceHash"] = canonical_sha256(bundle)
+    return bundle
+
+
+def _rehash_bundle(bundle: dict[str, Any]) -> None:
+    bundle["evidenceHash"] = canonical_sha256(
+        {key: value for key, value in bundle.items() if key != "evidenceHash"}
+    )
 
 
 def _bars(seed: int) -> list[dict[str, Any]]:
@@ -569,6 +653,186 @@ class AiReviewEvidenceAssemblerTests(unittest.TestCase):
             )
         second = self.assembler.assemble(experiment_id, [])
         self.assertEqual(first["evidenceHash"], second["evidenceHash"])
+
+
+class DeterministicAiReviewEngineTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = DeterministicAiReviewEngine()
+
+    def test_missing_validation_test_or_walk_forward_is_insufficient(self) -> None:
+        for field in ("validationMetrics", "testMetrics", "walkForward"):
+            with self.subTest(field=field):
+                bundle = _review_evidence_bundle()
+                candidate = next(
+                    item for item in bundle["evidenceItems"] if item["kind"] == "candidate_metrics"
+                )
+                del candidate["value"][field]
+                _rehash_bundle(bundle)
+
+                assessment = self.engine.evaluate(bundle)
+
+                self.assertEqual(assessment["stance"], "insufficient_evidence")
+                self.assertTrue(any(field in gap for gap in assessment["evidenceGaps"]))
+
+    def test_data_quality_hash_or_safety_boundary_anomalies_are_blocked(self) -> None:
+        cases: list[tuple[str, Any]] = [
+            (
+                "data quality",
+                lambda bundle: bundle["evidenceItems"][0]["value"].update({"isComplete": False}),
+            ),
+            (
+                "canonical data hash",
+                lambda bundle: bundle["evidenceItems"][0]["value"].update(
+                    {"canonicalDataHash": "0" * 64}
+                ),
+            ),
+            (
+                "safety boundary",
+                lambda bundle: bundle["safetyBoundary"].update({"liveTradingAllowed": True}),
+            ),
+        ]
+        for label, mutate in cases:
+            with self.subTest(case=label):
+                bundle = _review_evidence_bundle()
+                mutate(bundle)
+                _rehash_bundle(bundle)
+                self.assertEqual(self.engine.evaluate(bundle)["stance"], "blocked")
+
+        bundle = _review_evidence_bundle()
+        bundle["evidenceHash"] = "f" * 64
+        self.assertEqual(self.engine.evaluate(bundle)["stance"], "blocked")
+
+    def test_metric_caution_rules_are_aggregated(self) -> None:
+        cases = {
+            "validation/test direction flip": {"testReturnPct": -1.0},
+            "drawdown threshold": {"testDrawdownPct": 15.01},
+            "minimum trade count": {"testTradeCount": 9},
+            "walk-forward majority failure": {"walkForwardReturns": [1.0, -1.0, -2.0]},
+        }
+        for label, spec in cases.items():
+            with self.subTest(rule=label):
+                assessment = self.engine.evaluate(_review_evidence_bundle([spec]))
+                self.assertEqual(assessment["stance"], "caution")
+                self.assertTrue(assessment["risks"])
+
+    def test_stance_priority_is_blocked_then_insufficient_then_caution(self) -> None:
+        blocked = _review_evidence_bundle([{"testReturnPct": -1.0}])
+        candidate = next(item for item in blocked["evidenceItems"] if item["kind"] == "candidate_metrics")
+        del candidate["value"]["walkForward"]
+        blocked["safetyBoundary"]["liveTradingAllowed"] = True
+        _rehash_bundle(blocked)
+        self.assertEqual(self.engine.evaluate(blocked)["stance"], "blocked")
+
+        insufficient = _review_evidence_bundle([{"testReturnPct": -1.0}])
+        candidate = next(
+            item for item in insufficient["evidenceItems"] if item["kind"] == "candidate_metrics"
+        )
+        del candidate["value"]["walkForward"]
+        _rehash_bundle(insufficient)
+        self.assertEqual(self.engine.evaluate(insufficient)["stance"], "insufficient_evidence")
+
+    def test_cross_experiment_consistency_states(self) -> None:
+        consistent = _review_evidence_bundle([{}, {}, {}])
+        mixed = _review_evidence_bundle(
+            [{}, {}, {"testReturnPct": -2.0}]
+        )
+        divergent = _review_evidence_bundle(
+            [{}, {"testReturnPct": -2.0}, {"validationDrawdownPct": 20.0}]
+        )
+
+        self.assertEqual(self.engine.evaluate(consistent)["consistency"], "consistent")
+        self.assertEqual(self.engine.evaluate(mixed)["consistency"], "mixed")
+        self.assertEqual(self.engine.evaluate(divergent)["consistency"], "divergent")
+        self.assertEqual(
+            self.engine.evaluate(_review_evidence_bundle())["consistency"],
+            "insufficient",
+        )
+
+    def test_output_is_deterministic_referenced_and_non_executable(self) -> None:
+        bundle = _review_evidence_bundle([{}, {"testTradeCount": 9}])
+
+        first = self.engine.evaluate(bundle)
+        second = self.engine.evaluate(copy.deepcopy(bundle))
+
+        self.assertEqual(first, second)
+        evidence_ids = {item["id"] for item in bundle["evidenceItems"]}
+        self.assertTrue(
+            all(
+                reference in evidence_ids
+                for risk in first["risks"]
+                for reference in risk["evidenceReferences"]
+            )
+        )
+        output_text = canonical_json(first).casefold()
+        for forbidden in (
+            "下单",
+            "目标价",
+            "仓位指令",
+            "保证收益",
+            "submit order",
+            "target price",
+            "position instruction",
+            "guaranteed return",
+        ):
+            self.assertNotIn(forbidden, output_text)
+        watch_text = " ".join(first["watchItems"])
+        self.assertIn("10", watch_text)
+        self.assertIn("15.00%", watch_text)
+        self.assertIn("50%", watch_text)
+
+    def test_validate_assessment_rejects_invalid_schema(self) -> None:
+        bundle = _review_evidence_bundle()
+        known_ids = {item["id"] for item in bundle["evidenceItems"]}
+        valid = self.engine.evaluate(bundle)
+        invalid_payloads: dict[str, dict[str, Any]] = {}
+
+        payload = copy.deepcopy(valid)
+        payload["unknown"] = True
+        invalid_payloads["unknown top-level field"] = payload
+
+        payload = copy.deepcopy(valid)
+        payload["summary"] = ""
+        invalid_payloads["empty string"] = payload
+
+        payload = copy.deepcopy(valid)
+        payload["stance"] = "maybe"
+        invalid_payloads["unknown enum"] = payload
+
+        payload = copy.deepcopy(valid)
+        payload["watchItems"] = [f"item-{index}" for index in range(51)]
+        invalid_payloads["too many array items"] = payload
+
+        payload = copy.deepcopy(valid)
+        payload["summary"] = "x" * 2_001
+        invalid_payloads["text too long"] = payload
+
+        payload = copy.deepcopy(valid)
+        payload["risks"] = [
+            {
+                "severity": "high",
+                "message": "Referenced evidence is unknown.",
+                "evidenceReferences": ["experiment:unknown:candidate:selected"],
+            }
+        ]
+        invalid_payloads["unknown evidence reference"] = payload
+
+        payload = copy.deepcopy(valid)
+        payload["risks"] = [
+            {
+                "severity": "high",
+                "message": "Unknown risk field.",
+                "evidenceReferences": [],
+                "unknown": True,
+            }
+        ]
+        invalid_payloads["unknown risk field"] = payload
+
+        for label, invalid in invalid_payloads.items():
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError):
+                    validate_assessment(invalid, known_ids)
+
+        self.assertEqual(validate_assessment(valid, known_ids), valid)
 
 
 if __name__ == "__main__":
