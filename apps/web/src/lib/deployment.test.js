@@ -9,6 +9,15 @@ function readRepoFile(path) {
   return readFileSync(repoFile(path), "utf8");
 }
 
+function composeService(compose, serviceName) {
+  const match = compose.match(new RegExp(`^  ${serviceName}:\\n([\\s\\S]*?)(?=^  [a-zA-Z0-9_-]+:|^volumes:)`, "m"));
+  return match?.[0] ?? "";
+}
+
+function renderComposeDefaults(service) {
+  return service.replace(/\$\{[A-Z0-9_]+:-([^}]*)\}/g, (_match, fallback) => fallback);
+}
+
 describe("docker deployment contract", () => {
   test("runs tests, build, Docker build, and Docker smoke in GitHub Actions", () => {
     expect(existsSync(repoFile(".github/workflows/ci.yml"))).toBe(true);
@@ -91,6 +100,37 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("healthcheck:");
     expect(compose).toContain("volumes:");
     expect(compose).toContain("quant-data:");
+  });
+
+  test("passes Stage 3 provider environment to the API service only", () => {
+    const compose = readRepoFile("compose.yaml");
+    const apiService = composeService(compose, "api");
+    const webService = composeService(compose, "web");
+
+    expect(apiService).toContain("OPENAI_API_KEY: ${OPENAI_API_KEY:-}");
+    expect(apiService).toContain("OPENAI_MODEL: ${OPENAI_MODEL:-}");
+    expect(apiService).toContain("OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}");
+    expect(apiService).toContain("OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}");
+    expect(apiService).toContain("OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}");
+    expect(apiService).toContain("OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}");
+    expect(apiService).toContain("OLLAMA_MODEL: ${OLLAMA_MODEL:-}");
+    expect(renderComposeDefaults(apiService)).toContain("OLLAMA_BASE_URL: http://host.docker.internal:11434");
+    expect(webService).not.toContain("API_KEY");
+  });
+
+  test("documents safe Stage 3 provider defaults in Chinese", () => {
+    const example = readRepoFile(".env.example");
+
+    expect(example).toContain("OPENAI_API_KEY=\n");
+    expect(example).toContain("OPENAI_MODEL=\n");
+    expect(example).toContain("OPENAI_COMPATIBLE_BASE_URL=\n");
+    expect(example).toContain("OPENAI_COMPATIBLE_API_KEY=\n");
+    expect(example).toContain("OPENAI_COMPATIBLE_MODEL=\n");
+    expect(example).toContain("OLLAMA_BASE_URL=http://host.docker.internal:11434\n");
+    expect(example).toContain("OLLAMA_MODEL=\n");
+    expect(example).toContain("必须包含 Provider API 前缀");
+    expect(example).toContain("不能包含 /chat/completions");
+    expect(example).toContain('rstrip("/") + "/chat/completions"');
   });
 
   test("uses the Docker-first 5173 endpoint as the default smoke target", () => {

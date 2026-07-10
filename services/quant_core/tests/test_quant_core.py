@@ -4949,6 +4949,30 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(resolve_api_bind(environ={"QUANT_CORE_PORT": "not-a-number"}), ("127.0.0.1", 8765))
 
+    def test_compose_passes_stage3_provider_environment_to_api_only(self):
+        compose = (Path(__file__).resolve().parents[3] / "compose.yaml").read_text(encoding="utf-8")
+        api_service = compose.split("  api:\n", 1)[1].split("  web:\n", 1)[0]
+        web_service = compose.split("  web:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+        expected_api_environment = {
+            "OPENAI_API_KEY": "${OPENAI_API_KEY:-}",
+            "OPENAI_MODEL": "${OPENAI_MODEL:-}",
+            "OPENAI_COMPATIBLE_BASE_URL": "${OPENAI_COMPATIBLE_BASE_URL:-}",
+            "OPENAI_COMPATIBLE_API_KEY": "${OPENAI_COMPATIBLE_API_KEY:-}",
+            "OPENAI_COMPATIBLE_MODEL": "${OPENAI_COMPATIBLE_MODEL:-}",
+            "OLLAMA_BASE_URL": "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}",
+            "OLLAMA_MODEL": "${OLLAMA_MODEL:-}",
+        }
+
+        for key, value in expected_api_environment.items():
+            self.assertIn(f"      {key}: {value}\n", api_service)
+        self.assertNotIn("API_KEY", web_service)
+
+        rendered_defaults = api_service
+        controlled_defaults = {"OLLAMA_BASE_URL": "http://host.docker.internal:11434"}
+        for key, value in expected_api_environment.items():
+            rendered_defaults = rendered_defaults.replace(value, controlled_defaults.get(key, ""))
+        self.assertIn("      OLLAMA_BASE_URL: http://host.docker.internal:11434\n", rendered_defaults)
+
     def test_strategy_config_round_trips_with_stable_revision(self):
         from quant_core.domain import Condition, RiskRules, StrategyConfig
 
