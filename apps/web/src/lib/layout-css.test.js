@@ -3597,15 +3597,24 @@ describe("terminal layout css", () => {
 
   test("renders the backtest lab as an auditable evidence report", () => {
     expect(appSource).toContain("buildBacktestReport(workspace)");
-    expect(appSource).toContain("buildBacktestParameterScanRows(workspace)");
     expect(appSource).toContain("buildBacktestRunComparisonMatrixRows(runHistory");
     expect(appSource).toContain("buildBacktestRunComparisonMatrixSummary(backtestRunComparisonMatrixRows)");
     expect(appSource).toContain("filterBacktestRunComparisonMatrixRows");
-    expect(appSource).toContain("workspaceWithBacktestParameterCandidate");
     expect(appSource).toContain("buildBacktestReportMarkdown(workspace, runHistory)");
     expect(appSource).toContain("buildBacktestReportAuditEvent({");
     expect(appSource).toContain("saveAuditEvent(quantCoreBaseUrl, backtestReportAuditEvent)");
+    expect(appSource).toContain('import { StrategyExperimentSection } from "./components/StrategyExperimentSection";');
     expect(appSource).toContain("<BacktestReportPanel");
+    expect(appSource).toContain("<StrategyExperimentSection");
+    expect(appSource).toContain("refreshStrategyExperiments");
+    expect(appSource).toContain("runStrategyExperiment");
+    expect(appSource).toContain("inspectStrategyExperiment");
+    expect(appSource).toContain("replayStrategyExperiment");
+    expect(appSource).toContain("exportStrategyExperimentJson");
+    expect(appSource).toContain("loadStrategyExperimentCandidate");
+    expect(appSource).not.toContain("buildBacktestParameterScanRows");
+    expect(appSource).not.toContain("workspaceWithBacktestParameterCandidate");
+    expect(appSource).not.toContain('className="parameter-scan-table"');
     expect(appSource).toContain("onExportMarkdown={exportBacktestReportMarkdown}");
     expect(appSource).toContain('className="backtest-report"');
     expect(appSource).toContain('className="report-export-button"');
@@ -3613,9 +3622,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('className="backtest-benchmark-strip"');
     expect(appSource).toContain('className="backtest-report-grid"');
     expect(appSource).toContain('className="backtest-report-section"');
-    expect(appSource).toContain('className="backtest-report-section parameter-scan-section"');
-    expect(appSource).toContain('className="parameter-scan-table"');
-    expect(appSource).toContain('i18n.t("backtest.stageCandidate")');
+    expect(appSource).toContain("experimentSection={");
     expect(appSource).toContain("buildBacktestEvidenceCards(workspace)");
     expect(appSource).toContain("buildBacktestReadinessGates(workspace)");
     expect(appSource).toContain("evidenceCards={backtestEvidenceCards}");
@@ -3635,9 +3642,11 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".backtest-report-grid");
     expect(styles).toContain(".backtest-run-comparison-matrix");
     expect(styles).toContain(".backtest-run-comparison-row");
-    expect(styles).toContain(".parameter-scan-table");
-    expect(styles).toContain(".parameter-scan-row");
-    expect(styles).toContain(".parameter-scan-row button");
+    expect(styles).toContain(".strategy-experiment-config");
+    expect(styles).toContain(".strategy-experiment-history");
+    expect(styles).toContain(".strategy-experiment-candidates");
+    expect(styles).toContain("@media (max-width: 860px)");
+    expect(styles).not.toContain(".parameter-scan-");
     expect(styles).toContain(".report-export-button");
   });
 

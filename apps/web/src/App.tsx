@@ -111,6 +111,9 @@ import {
   recordExecutionAdapterRuntimeReloadAcceptance,
   recordExecutionAdapterCertification,
   recordExecutionAdapterCertificationApply,
+  createStrategyExperiment,
+  loadStrategyExperimentDetail,
+  loadStrategyExperiments,
   runPortfolioBacktest,
   recordPortfolioPaperOrderBatch,
   refreshMarketCache,
@@ -248,6 +251,7 @@ import {
 } from "./lib/terminal-api";
 import { PortfolioPaperOrderAuditLedgerPanel } from "./components/PortfolioPaperOrderAuditLedgerPanel";
 import { ExecutionAdapterPaperExecutionAuditLedgerPanel } from "./components/ExecutionAdapterPaperExecutionAuditLedgerPanel";
+import { StrategyExperimentSection } from "./components/StrategyExperimentSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   buildTerminalWorkspace,
@@ -318,9 +322,8 @@ import {
   buildAuditSigningKeyRotationLedgerRows,
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
+  buildDefaultStrategyExperimentDimensions,
   buildBacktestEvidenceCards,
-  buildBacktestParameterScanRows,
-  buildBacktestParameterScanSummary,
   buildBacktestReport,
   buildBacktestReportMarkdown,
   buildBacktestReadinessGates,
@@ -430,6 +433,7 @@ import {
   buildPortfolioPeerAuditPlan,
   buildPortfolioRiskRows,
   buildProductWorkAreas,
+  defaultBacktestAssumptions,
   defaultPortfolioPaperOrderRouteRiskTemplate,
   buildPreLiveReadinessChecklist,
   buildPromotionReadiness,
@@ -529,8 +533,6 @@ import {
   BacktestAssumptionField,
   BacktestAssumptionRow,
   BacktestEvidenceCard,
-  BacktestParameterScanRow,
-  BacktestParameterScanSummary,
   BacktestReport,
   BacktestReadinessGate,
   BacktestRunComparisonMatrixBadge,
@@ -645,6 +647,12 @@ import {
   StrategyConditionKind,
   StrategyGovernanceQueue,
   StrategyGovernanceQueueRow,
+  StrategyExperimentDetail,
+  StrategyExperimentDimension,
+  StrategyExperimentErrorCode,
+  StrategyExperimentGuardrails,
+  StrategyExperimentListItem,
+  StrategyExperimentWalkForward,
   StrategyRuleDraft,
   StrategyRuleDraftField,
   StrategyReadinessGate,
@@ -668,12 +676,12 @@ import {
   workspaceFromResearchRunAudit,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
-  workspaceWithBacktestParameterCandidate,
   workspaceWithAppliedResearchWorkspaceState,
   workspaceWithPreservedInteractiveState,
   workspaceWithResearchContextUrlState,
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithSavedWatchlist,
+  workspaceWithStrategyExperimentCandidate,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyTemplate,
@@ -1896,6 +1904,21 @@ function latestRecordedProductionRouteReviewIdForAdapter(
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
+  const [strategyExperimentHistory, setStrategyExperimentHistory] = useState<StrategyExperimentListItem[]>([]);
+  const [strategyExperimentActive, setStrategyExperimentActive] = useState<StrategyExperimentDetail | null>(null);
+  const [strategyExperimentDimensions, setStrategyExperimentDimensions] = useState<StrategyExperimentDimension[]>(
+    () => initialWorkspaceState.workspace.researchRun?.strategyConfig
+      ? buildDefaultStrategyExperimentDimensions(initialWorkspaceState.workspace.researchRun.strategyConfig)
+      : []
+  );
+  const [strategyExperimentGuardrails, setStrategyExperimentGuardrails] = useState<StrategyExperimentGuardrails>({
+    minimumTradeCount: 2,
+    maximumDrawdownPct: 20
+  });
+  const [strategyExperimentWalkForward, setStrategyExperimentWalkForward] =
+    useState<StrategyExperimentWalkForward | null>(null);
+  const [isStrategyExperimentRunning, setIsStrategyExperimentRunning] = useState(false);
+  const [strategyExperimentError, setStrategyExperimentError] = useState<string | null>(null);
   const [strategyLibraryState, setStrategyLibraryState] = useState<StrategyLibraryResult>(initialStrategyLibraryState);
   const [strategyValidationState, setStrategyValidationState] =
     useState<StrategyValidationResult>(initialStrategyValidationState);
@@ -2364,6 +2387,8 @@ export function App() {
   const currentAiReviewRunRecord = buildAiReviewRunRecord(workspace);
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
+  const strategyExperimentSourceRunId = workspace.researchRun?.runId ?? null;
+  const strategyExperimentStrategyRevision = workspace.researchRun?.strategyRevision ?? null;
   const scannerCandidates = buildScannerCandidates(workspace);
   const researchOpsQueue = buildResearchOpsQueueRows({
     workspace,
@@ -2625,8 +2650,6 @@ export function App() {
   });
   const backtestAssumptionRows = buildBacktestAssumptionRows(workspace);
   const backtestEvidenceCards = buildBacktestEvidenceCards(workspace);
-  const backtestParameterScanRows = buildBacktestParameterScanRows(workspace);
-  const backtestParameterScanSummary = buildBacktestParameterScanSummary(workspace);
   const backtestReport = buildBacktestReport(workspace);
   const backtestRunComparisonMatrixRows = buildBacktestRunComparisonMatrixRows(runHistory, currentResearchRunId);
   const backtestRunComparisonMatrixSummary = buildBacktestRunComparisonMatrixSummary(backtestRunComparisonMatrixRows);
@@ -3531,9 +3554,40 @@ export function App() {
     setAiReviewHistoryPagination(null);
   }, []);
 
+  const refreshStrategyExperiments = useCallback(async () => {
+    if (!strategyExperimentSourceRunId || !strategyExperimentStrategyRevision) {
+      setStrategyExperimentHistory([]);
+      setStrategyExperimentError(null);
+      return;
+    }
+    const result = await loadStrategyExperiments(quantCoreBaseUrl, {
+      sourceRunId: strategyExperimentSourceRunId,
+      strategyRevision: strategyExperimentStrategyRevision,
+      limit: 20
+    });
+    if (result.error) {
+      setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
+      return;
+    }
+    setStrategyExperimentHistory(result.experiments);
+    setStrategyExperimentError(null);
+  }, [i18n.locale, strategyExperimentSourceRunId, strategyExperimentStrategyRevision]);
+
   useEffect(() => {
     resetAiReviewHistoryState();
   }, [resetAiReviewHistoryState, workspace.researchRun?.runId]);
+
+  useEffect(() => {
+    setStrategyExperimentDimensions(
+      workspace.researchRun?.strategyConfig
+        ? buildDefaultStrategyExperimentDimensions(workspace.researchRun.strategyConfig)
+        : []
+    );
+  }, [strategyExperimentSourceRunId, strategyExperimentStrategyRevision]);
+
+  useEffect(() => {
+    void refreshStrategyExperiments();
+  }, [refreshStrategyExperiments]);
 
   useEffect(() => {
     void refreshP0AcceptanceLatest();
@@ -8210,23 +8264,126 @@ export function App() {
     setActiveWorkflowStageId("backtest");
   }, []);
 
-  const stageBacktestParameterCandidate = useCallback((candidateId: string) => {
-    manualSelectionVersionRef.current += 1;
-    workflowRunIdRef.current += 1;
-    setIsRunning(false);
-    setPaperExecutionRecord(null);
-    setPromotionCandidateRecord(null);
-    resetAiReviewHistoryState();
-    setWorkspaceState((current) => ({
-      workspace: workspaceWithBacktestParameterCandidate(current.workspace, candidateId),
-      source: "core",
-      statusLabel: "Parameter candidate staged"
-    }));
-    setActiveWorkAreaId("strategy");
-    setActiveLoopStepId("strategy");
-    setActiveWorkflowStageId("factor");
-    setWorkflowRunState(createWorkflowRunState());
+  const runStrategyExperiment = useCallback(async () => {
+    const sourceRun = workspace.researchRun;
+    if (!currentResearchRunId || !sourceRun?.strategyRevision) {
+      setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+      return;
+    }
+    setIsStrategyExperimentRunning(true);
+    setStrategyExperimentError(null);
+    try {
+      const result = await createStrategyExperiment(quantCoreBaseUrl, {
+        strategyRevision: sourceRun.strategyRevision,
+        sourceRunId: currentResearchRunId,
+        assumptions: workspace.backtestAssumptions ?? defaultBacktestAssumptions,
+        dimensions: strategyExperimentDimensions,
+        guardrails: strategyExperimentGuardrails,
+        walkForward: strategyExperimentWalkForward
+      });
+      if (!result.experiment) {
+        setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
+        return;
+      }
+      setStrategyExperimentActive(result.experiment);
+      setStrategyExperimentError(null);
+      await refreshStrategyExperiments();
+    } finally {
+      setIsStrategyExperimentRunning(false);
+    }
+  }, [
+    currentResearchRunId,
+    i18n.locale,
+    refreshStrategyExperiments,
+    strategyExperimentDimensions,
+    strategyExperimentGuardrails,
+    strategyExperimentWalkForward,
+    workspace
+  ]);
+
+  const inspectStrategyExperiment = useCallback(async (experimentId: string) => {
+    setIsStrategyExperimentRunning(true);
+    setStrategyExperimentError(null);
+    try {
+      const result = await loadStrategyExperimentDetail(quantCoreBaseUrl, experimentId);
+      if (!result.experiment) {
+        setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
+        return;
+      }
+      setStrategyExperimentActive(result.experiment);
+      setStrategyExperimentError(null);
+    } finally {
+      setIsStrategyExperimentRunning(false);
+    }
+  }, [i18n.locale]);
+
+  const replayStrategyExperiment = useCallback(async (experimentId: string) => {
+    setIsStrategyExperimentRunning(true);
+    setStrategyExperimentError(null);
+    try {
+      const result = await createStrategyExperiment(quantCoreBaseUrl, { replayOfExperimentId: experimentId });
+      if (!result.experiment) {
+        setStrategyExperimentError(strategyExperimentErrorMessage(i18n, result.errorCode, result.error));
+        return;
+      }
+      setStrategyExperimentActive(result.experiment);
+      setStrategyExperimentError(null);
+      await refreshStrategyExperiments();
+    } finally {
+      setIsStrategyExperimentRunning(false);
+    }
+  }, [i18n.locale, refreshStrategyExperiments]);
+
+  const exportStrategyExperimentJson = useCallback((experiment: StrategyExperimentDetail) => {
+    const objectUrl = URL.createObjectURL(
+      new Blob([JSON.stringify(experiment, null, 2)], { type: "application/json;charset=utf-8" })
+    );
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = `${experiment.experimentId}-strategy-experiment.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setStrategyExperimentError(null);
   }, []);
+
+  const loadStrategyExperimentCandidate = useCallback(async (candidateId: string) => {
+    if (!strategyExperimentActive) {
+      setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+      return;
+    }
+    setIsStrategyExperimentRunning(true);
+    setStrategyExperimentError(null);
+    try {
+      const nextWorkspace = await workspaceWithStrategyExperimentCandidate(
+        workspace,
+        strategyExperimentActive,
+        candidateId
+      );
+      if (nextWorkspace === workspace) {
+        setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
+        return;
+      }
+      manualSelectionVersionRef.current += 1;
+      workflowRunIdRef.current += 1;
+      setIsRunning(false);
+      setPaperExecutionRecord(null);
+      setPromotionCandidateRecord(null);
+      resetAiReviewHistoryState();
+      setWorkspaceState({
+        workspace: nextWorkspace,
+        source: "core",
+        statusLabel: "Strategy experiment candidate loaded"
+      });
+      setActiveWorkAreaId("strategy");
+      setActiveLoopStepId("strategy");
+      setActiveWorkflowStageId("factor");
+      setWorkflowRunState(createWorkflowRunState());
+    } finally {
+      setIsStrategyExperimentRunning(false);
+    }
+  }, [i18n.locale, resetAiReviewHistoryState, strategyExperimentActive, workspace]);
 
   const submitPaperExecution = useCallback(async () => {
     const runId = currentResearchRunId;
@@ -11316,12 +11473,29 @@ export function App() {
             assumptionRows={backtestAssumptionRows}
             className="workflow-backtest-panel"
             evidenceCards={backtestEvidenceCards}
+            experimentSection={
+              <StrategyExperimentSection
+                active={strategyExperimentActive}
+                dimensions={strategyExperimentDimensions}
+                error={strategyExperimentError}
+                guardrails={strategyExperimentGuardrails}
+                history={strategyExperimentHistory}
+                i18n={i18n}
+                onDimensionsChange={setStrategyExperimentDimensions}
+                onExport={exportStrategyExperimentJson}
+                onGuardrailsChange={setStrategyExperimentGuardrails}
+                onInspect={inspectStrategyExperiment}
+                onLoadCandidate={loadStrategyExperimentCandidate}
+                onReplay={replayStrategyExperiment}
+                onRun={runStrategyExperiment}
+                onWalkForwardChange={setStrategyExperimentWalkForward}
+                running={isStrategyExperimentRunning}
+                walkForward={strategyExperimentWalkForward}
+              />
+            }
             i18n={i18n}
             onExportMarkdown={exportBacktestReportMarkdown}
-            onStageParameterCandidate={stageBacktestParameterCandidate}
             onUpdateAssumption={updateBacktestAssumption}
-            parameterScanRows={backtestParameterScanRows}
-            parameterScanSummary={backtestParameterScanSummary}
             report={backtestReport}
             readinessGates={backtestReadinessGates}
             runComparisonMatrixRows={backtestRunComparisonMatrixRows}
@@ -17382,12 +17556,10 @@ function BacktestReportPanel({
   assumptionRows,
   className,
   evidenceCards,
+  experimentSection,
   i18n,
   onExportMarkdown,
-  onStageParameterCandidate,
   onUpdateAssumption,
-  parameterScanRows,
-  parameterScanSummary,
   report,
   readinessGates,
   runComparisonMatrixRows,
@@ -17397,12 +17569,10 @@ function BacktestReportPanel({
   assumptionRows: BacktestAssumptionRow[];
   className?: string;
   evidenceCards: BacktestEvidenceCard[];
+  experimentSection: ReactNode;
   i18n: AppI18n;
   onExportMarkdown?: () => void;
-  onStageParameterCandidate: (candidateId: string) => void;
   onUpdateAssumption: (field: BacktestAssumptionField, value: number) => void;
-  parameterScanRows: BacktestParameterScanRow[];
-  parameterScanSummary: BacktestParameterScanSummary | null;
   report: BacktestReport;
   readinessGates: BacktestReadinessGate[];
   runComparisonMatrixRows: BacktestRunComparisonMatrixRow[];
@@ -17693,82 +17863,7 @@ function BacktestReportPanel({
           </div>
         </div>
 
-        <section className="backtest-report-section parameter-scan-section">
-          <div className="backtest-replay-title">
-            <span>{i18n.t("backtest.parameterScan")}</span>
-            <strong>{parameterScanRows.length}</strong>
-          </div>
-          {parameterScanRows.length ? (
-            <>
-              {parameterScanSummary ? (
-                <div className="parameter-scan-summary" data-tone={parameterScanSummary.tone}>
-                  <article>
-                    <span>{i18n.locale === "zh-CN" ? "当前排名" : "Current rank"}</span>
-                    <strong>
-                      {parameterScanSummary.currentRank
-                        ? `${parameterScanSummary.currentRank}/${parameterScanSummary.totalRows}`
-                        : "N/A"}
-                    </strong>
-                    <p>{parameterScanSummary.currentCondition ?? (i18n.locale === "zh-CN" ? "等待当前参数" : "Waiting for current row")}</p>
-                  </article>
-                  <article>
-                    <span>{i18n.locale === "zh-CN" ? "复审候选" : "Re-audit candidate"}</span>
-                    <strong>{parameterScanSummary.bestCandidateCondition ?? "N/A"}</strong>
-                    <p>
-                      {parameterScanSummary.bestCandidateReturnPct} · {parameterScanSummary.bestCandidateDelta} ·{" "}
-                      {parameterScanSummary.bestCandidateMaxDrawdownPct}
-                    </p>
-                  </article>
-                  <article>
-                    <span>{i18n.locale === "zh-CN" ? "候选分布" : "Candidate mix"}</span>
-                    <strong>
-                      {parameterScanSummary.candidateCount} / {parameterScanSummary.totalRows}
-                    </strong>
-                    <p>
-                      {i18n.locale === "zh-CN"
-                        ? `${parameterScanSummary.positiveCount} 个正向，${parameterScanSummary.riskCount} 个回撤风险`
-                        : `${parameterScanSummary.positiveCount} positive, ${parameterScanSummary.riskCount} drawdown-risk`}
-                    </p>
-                  </article>
-                </div>
-              ) : null}
-              <div className="parameter-scan-table">
-                <div className="parameter-scan-row parameter-scan-head">
-                  <span>{i18n.t("strategy.condition")}</span>
-                  <span>{i18n.metricLabel("Return")}</span>
-                  <span>{i18n.metricLabel("Max DD")}</span>
-                  <span>{i18n.metricLabel("Trades")}</span>
-                  <span>{i18n.locale === "zh-CN" ? "较当前" : "Delta"}</span>
-                  <span>{i18n.t("execution.status")}</span>
-                  <span>{i18n.locale === "zh-CN" ? "动作" : "Action"}</span>
-                </div>
-                {parameterScanRows.map((row) => (
-                  <article className={`parameter-scan-row ${row.tone}`} key={row.id}>
-                    <span>{row.condition}</span>
-                    <span>{row.returnPct}</span>
-                    <span>{row.maxDrawdownPct}</span>
-                    <span>{row.tradeCount}</span>
-                    <span>{row.alphaVsCurrent}</span>
-                    <span>{parameterScanStatusLabel(i18n, row.status)}</span>
-                    <button
-                      disabled={row.status === "current"}
-                      onClick={() => onStageParameterCandidate(row.id)}
-                      type="button"
-                    >
-                      {i18n.t("backtest.stageCandidate")}
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="parameter-scan-empty">
-              {i18n.locale === "zh-CN"
-                ? "运行流水线并绑定审计 K 线后，才会生成参数敏感性扫描。"
-                : "Run Pipeline with an audited K-line snapshot to generate parameter sensitivity."}
-            </div>
-          )}
-        </section>
+        {experimentSection}
 
         <div className="backtest-replay-title">
           <span>{i18n.t("backtest.replay")}</span>
@@ -31526,11 +31621,22 @@ function backtestStatusLabel(i18n: AppI18n, status: BacktestTradeRow["status"]):
   return { filled: "已成交", open: "观察中", review: "复核", blocked: "已阻断" }[status];
 }
 
-function parameterScanStatusLabel(i18n: AppI18n, status: BacktestParameterScanRow["status"]): string {
-  if (i18n.locale === "en-US") {
-    return status;
-  }
-  return { current: "当前", candidate: "候选" }[status];
+function strategyExperimentErrorMessage(
+  i18n: AppI18n,
+  errorCode?: StrategyExperimentErrorCode,
+  detail?: string
+): string {
+  const message = errorCode === "source_snapshot_reaudit_required"
+    ? i18n.t("strategyExperiment.legacyReaudit")
+    : errorCode === "test_holdout_consumed"
+      ? i18n.t("strategyExperiment.holdoutConsumed")
+      : errorCode === "strategy_experiment_conflict" ||
+          errorCode === "strategy_not_found" ||
+          errorCode === "research_run_not_found" ||
+          errorCode === "strategy_experiment_not_found"
+        ? i18n.t("strategyExperiment.persistedEvidenceRequired")
+        : detail ?? i18n.t("strategyExperiment.persistedEvidenceRequired");
+  return detail && detail !== errorCode && detail !== message ? `${message} ${detail}` : message;
 }
 
 function backtestRunComparisonBadgeLabel(i18n: AppI18n, badge: BacktestRunComparisonMatrixBadge): string {

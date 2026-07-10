@@ -123,6 +123,43 @@ describe("i18n", () => {
     expect(en.t("module.workflow.run")).toBe("Run pipeline");
   });
 
+  test("translates the persisted strategy experiment workbench", () => {
+    const zh = createI18n("zh-CN");
+    const en = createI18n("en-US");
+
+    expect(zh.t("strategyExperiment.title")).toBe("策略实验");
+    expect(zh.t("strategyExperiment.run")).toBe("运行实验");
+    expect(zh.t("strategyExperiment.replay")).toBe("精确重放");
+    expect(zh.t("strategyExperiment.export")).toBe("导出 JSON");
+    expect(zh.t("strategyExperiment.loadDraft")).toBe("载入草稿");
+    expect(zh.t("strategyExperiment.legacyReaudit")).toBe("旧版快照需要重新运行研究流水线后才能实验。");
+    expect(zh.t("strategyExperiment.holdoutConsumed")).toBe("测试留出集已被另一实验定义使用，请生成新的审计快照。");
+    expect(zh.t("strategyExperiment.persistedEvidenceRequired")).toBe("需要与当前运行和策略版本匹配的持久化实验依据。");
+    expect(zh.t("strategyExperiment.train")).toBe("训练集");
+    expect(zh.t("strategyExperiment.validation")).toBe("验证集");
+    expect(zh.t("strategyExperiment.test")).toBe("测试集");
+    expect(zh.t("strategyExperiment.eligibility")).toBe("资格");
+    expect(zh.t("strategyExperiment.budget")).toBe("评估预算");
+    expect(zh.t("strategyExperiment.completed")).toBe("已完成");
+    expect(zh.t("strategyExperiment.failed")).toBe("失败");
+
+    expect(en.t("strategyExperiment.title")).toBe("Strategy experiments");
+    expect(en.t("strategyExperiment.run")).toBe("Run experiment");
+    expect(en.t("strategyExperiment.replay")).toBe("Exact replay");
+    expect(en.t("strategyExperiment.export")).toBe("Export JSON");
+    expect(en.t("strategyExperiment.loadDraft")).toBe("Load draft");
+    expect(en.t("strategyExperiment.legacyReaudit")).toBe("Legacy snapshots must be re-audited by running the research pipeline again.");
+    expect(en.t("strategyExperiment.holdoutConsumed")).toBe("The test holdout was consumed by another definition; generate a fresh audited snapshot.");
+    expect(en.t("strategyExperiment.persistedEvidenceRequired")).toBe("Persisted experiment evidence matching the current run and strategy revision is required.");
+    expect(en.t("strategyExperiment.train")).toBe("Train");
+    expect(en.t("strategyExperiment.validation")).toBe("Validation");
+    expect(en.t("strategyExperiment.test")).toBe("Test");
+    expect(en.t("strategyExperiment.eligibility")).toBe("Eligibility");
+    expect(en.t("strategyExperiment.budget")).toBe("Evaluation budget");
+    expect(en.t("strategyExperiment.completed")).toBe("Completed");
+    expect(en.t("strategyExperiment.failed")).toBe("Failed");
+  });
+
   test("formats audited run labels in the active locale", () => {
     const zh = createI18n("zh-CN");
     const en = createI18n("en-US");
