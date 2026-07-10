@@ -32,7 +32,10 @@ _V2_EXPERIMENT_FIELDS = (
     "candidateRevision",
     "canonicalDataHash",
 )
-_SELECT_COLUMNS = "ai_review_id, run_id, created_at, record_json"
+_SELECT_COLUMNS = (
+    "ai_review_id, run_id, created_at, record_json, schema_version, "
+    "primary_experiment_id, evidence_hash, record_hash, authority"
+)
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,13 @@ class AiReviewRunStore:
         )
         connection = self._connect()
         try:
+            connection.execute("begin immediate")
+            row = connection.execute(
+                f"select {_SELECT_COLUMNS} from ai_review_runs where ai_review_id = ?",
+                (stored.ai_review_id,),
+            ).fetchone()
+            if row is not None and _row_has_v2_identity(row):
+                raise ValueError("ai_review_record_conflict")
             connection.execute(
                 """
                 insert into ai_review_runs (
@@ -145,6 +155,9 @@ class AiReviewRunStore:
                 ),
             )
             connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
         finally:
             connection.close()
         return stored
@@ -159,7 +172,10 @@ class AiReviewRunStore:
                 (stored.ai_review_id,),
             ).fetchone()
             if row is not None:
-                existing = _row_to_ai_review_run_record(row)
+                try:
+                    existing = _row_to_ai_review_run_record(row)
+                except (TypeError, ValueError):
+                    raise ValueError("ai_review_record_conflict") from None
                 if (
                     isinstance(existing, AuthoritativeAiReviewRunRecord)
                     and existing.record_hash == stored.record_hash
@@ -280,8 +296,8 @@ class AiReviewRunStore:
         connection = self._connect()
         try:
             rows = connection.execute(
-                """
-                select ai_review_id, run_id, created_at, record_json
+                f"""
+                select {_SELECT_COLUMNS}
                 from ai_review_runs
                 where run_id = ?
                 order by created_at desc, ai_review_id
@@ -292,8 +308,18 @@ class AiReviewRunStore:
             connection.close()
         return [_row_to_ai_review_run_record(row) for row in rows]
 
-    def count_by_run(self, run_id: str, query: str = "") -> int:
-        filter_sql, parameters = _run_filter_parameters(run_id, query)
+    def count_recent(
+        self,
+        *,
+        run_id: str | None = None,
+        experiment_id: str | None = None,
+        query: str = "",
+    ) -> int:
+        filter_sql, parameters = _filter_parameters(
+            run_id=run_id,
+            experiment_id=experiment_id,
+            query=query,
+        )
         connection = self._connect()
         try:
             row = connection.execute(
@@ -307,6 +333,9 @@ class AiReviewRunStore:
         finally:
             connection.close()
         return int(row[0]) if row else 0
+
+    def count_by_run(self, run_id: str, query: str = "") -> int:
+        return self.count_recent(run_id=run_id, query=query)
 
     def delete_by_run(self, run_id: str) -> None:
         connection = self._connect()
@@ -365,7 +394,7 @@ def _normalize_ai_review_record(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _authoritative_ai_review_run_record(value: dict[str, Any]) -> AuthoritativeAiReviewRunRecord:
+def _authoritative_ai_review_run_record(value: Any) -> AuthoritativeAiReviewRunRecord:
     normalized = _normalize_authoritative_ai_review_record(value)
     primary_experiment = normalized["primaryExperiment"]
     return AuthoritativeAiReviewRunRecord(
@@ -379,7 +408,7 @@ def _authoritative_ai_review_run_record(value: dict[str, Any]) -> AuthoritativeA
     )
 
 
-def _normalize_authoritative_ai_review_record(value: dict[str, Any]) -> dict[str, Any]:
+def _normalize_authoritative_ai_review_record(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("ai_review_record_must_be_object")
     if value.get("schemaVersion") != 2:
@@ -499,15 +528,33 @@ def _required_hash(value: Any, code: str) -> str:
 def _row_to_ai_review_run_record(
     row: tuple[Any, ...],
 ) -> AiReviewRunRecord | AuthoritativeAiReviewRunRecord:
-    record = _dict_or_empty(json.loads(row[3]))
-    if record.get("schemaVersion") == 2:
-        return _authoritative_ai_review_run_record(record)
+    decoded = json.loads(row[3])
+    if (
+        (isinstance(decoded, dict) and decoded.get("schemaVersion") == 2)
+        or _row_has_authoritative_query_columns(row)
+    ):
+        return _authoritative_ai_review_run_record(decoded)
+    record = _dict_or_empty(decoded)
     return AiReviewRunRecord(
         ai_review_id=str(row[0]),
         run_id=str(row[1]),
         created_at=_parse_datetime(str(row[2])),
         record=record,
     )
+
+
+def _row_has_v2_identity(row: tuple[Any, ...]) -> bool:
+    if row[4] == 2 or row[8] == "authoritative":
+        return True
+    try:
+        record = json.loads(row[3])
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(record, dict) and record.get("schemaVersion") == 2
+
+
+def _row_has_authoritative_query_columns(row: tuple[Any, ...]) -> bool:
+    return any(value is not None for value in row[4:9])
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -535,10 +582,6 @@ def _number_or_default(value: Any, default: float) -> float:
 
 def _bounded_limit(value: int) -> int:
     return max(1, min(int(_number_or_default(value, 20)), 50))
-
-
-def _run_filter_parameters(run_id: str, query: str) -> tuple[str, tuple[Any, ...]]:
-    return _filter_parameters(run_id=run_id, experiment_id=None, query=query)
 
 
 def _filter_parameters(

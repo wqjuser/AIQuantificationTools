@@ -581,6 +581,116 @@ class AiReviewRunStoreV2Tests(unittest.TestCase):
             count = connection.execute("select count(*) from ai_review_runs").fetchone()[0]
         self.assertEqual(count, 1)
 
+    def test_record_v2_reports_stable_conflict_for_tampered_existing_row(self) -> None:
+        store = AiReviewRunStore(self.path)
+        record = _authoritative_review_record()
+        store.record_v2(record)
+        tampered = copy.deepcopy(record)
+        tampered.pop("schemaVersion")
+        with closing(sqlite3.connect(self.path)) as connection:
+            connection.execute(
+                "update ai_review_runs set record_json = ? where ai_review_id = ?",
+                (canonical_json(tampered), record["aiReviewId"]),
+            )
+            connection.commit()
+
+        with self.assertRaisesRegex(ValueError, "^ai_review_record_conflict$"):
+            store.record_v2(record)
+
+    def test_record_v1_conflicts_with_existing_v2_without_overwrite(self) -> None:
+        store = AiReviewRunStore(self.path)
+        record = _authoritative_review_record()
+        authoritative = store.record_v2(record)
+
+        with self.assertRaisesRegex(ValueError, "^ai_review_record_conflict$"):
+            store.record(self._legacy_record(ai_review_id=record["aiReviewId"]))
+
+        self.assertEqual(store.get(record["aiReviewId"]), authoritative)
+
+    def test_record_v1_retains_legacy_upsert_behavior(self) -> None:
+        store = AiReviewRunStore(self.path)
+        first = self._legacy_record()
+        updated = self._legacy_record(created_at="2026-07-10T08:00:00+00:00")
+        updated["dossier"]["headline"] = "Updated legacy review"
+
+        store.record(first)
+        stored = store.record(updated)
+
+        self.assertEqual(store.get(first["aiReviewId"]), stored)
+
+    def test_concurrent_v1_cannot_overwrite_v2_after_v2_acquires_write_lock(self) -> None:
+        v2_has_lock = threading.Event()
+        release_v2 = threading.Event()
+        v1_attempted_write = threading.Event()
+
+        class GatedV2Connection(sqlite3.Connection):
+            def execute(self, sql: str, parameters: Any = ()) -> sqlite3.Cursor:
+                cursor = super().execute(sql, parameters)
+                if sql.strip().lower() == "begin immediate":
+                    v2_has_lock.set()
+                    if not release_v2.wait(timeout=5):
+                        raise TimeoutError("v2 transaction gate timed out")
+                return cursor
+
+        class ObservedV1Connection(sqlite3.Connection):
+            def execute(self, sql: str, parameters: Any = ()) -> sqlite3.Cursor:
+                normalized = " ".join(sql.lower().split())
+                if normalized == "begin immediate" or normalized.startswith(
+                    "insert into ai_review_runs"
+                ):
+                    v1_attempted_write.set()
+                return super().execute(sql, parameters)
+
+        v2_store = AiReviewRunStore(self.path)
+        v1_store = AiReviewRunStore(self.path)
+        v2_store._connect = lambda: sqlite3.connect(  # type: ignore[method-assign]
+            self.path,
+            timeout=30,
+            factory=GatedV2Connection,
+        )
+        v1_store._connect = lambda: sqlite3.connect(  # type: ignore[method-assign]
+            self.path,
+            timeout=30,
+            factory=ObservedV1Connection,
+        )
+        record = _authoritative_review_record(ai_review_id="ai-review-v1-v2-race")
+        legacy = self._legacy_record(ai_review_id=record["aiReviewId"])
+        outcomes: list[tuple[str, str]] = []
+
+        def write_v2() -> None:
+            try:
+                outcomes.append(("v2", v2_store.record_v2(record).authority))
+            except ValueError as error:
+                outcomes.append(("v2-error", str(error)))
+
+        def write_v1() -> None:
+            try:
+                outcomes.append(("v1", v1_store.record(legacy).authority))
+            except ValueError as error:
+                outcomes.append(("v1-error", str(error)))
+
+        v2_thread = threading.Thread(target=write_v2)
+        v1_thread = threading.Thread(target=write_v1)
+        v2_thread.start()
+        self.assertTrue(v2_has_lock.wait(timeout=5))
+        v1_thread.start()
+        try:
+            self.assertTrue(v1_attempted_write.wait(timeout=5))
+        finally:
+            release_v2.set()
+        v2_thread.join(timeout=5)
+        v1_thread.join(timeout=5)
+
+        self.assertFalse(v2_thread.is_alive())
+        self.assertFalse(v1_thread.is_alive())
+        self.assertCountEqual(
+            outcomes,
+            [("v2", "authoritative"), ("v1-error", "ai_review_record_conflict")],
+        )
+        loaded = v2_store.get(record["aiReviewId"])
+        self.assertIsInstance(loaded, AuthoritativeAiReviewRunRecord)
+        self.assertEqual(loaded.record_hash, record["recordHash"])
+
     def test_record_v2_serializes_concurrent_conflicts_across_connections(self) -> None:
         first = _authoritative_review_record(summary="First concurrent body.")
         second = _authoritative_review_record(summary="Second concurrent body.")
@@ -705,6 +815,15 @@ class AiReviewRunStoreV2Tests(unittest.TestCase):
         self.assertEqual([record.authority for record in by_run], ["authoritative", "legacy"])
         self.assertEqual(store.count_by_run("run-primary"), 2)
         self.assertEqual(store.count_by_run("run-primary", query="needle"), 1)
+        self.assertEqual(
+            store.count_recent(
+                run_id="run-primary",
+                experiment_id="experiment-primary",
+                query="authoritative",
+            ),
+            len(combined),
+        )
+        self.assertEqual(store.count_recent(), len(store.list_recent(limit=50)))
 
     def test_v2_reads_validate_canonical_json_instead_of_trusting_query_columns(self) -> None:
         record = _authoritative_review_record()
@@ -741,6 +860,56 @@ class AiReviewRunStoreV2Tests(unittest.TestCase):
             connection.commit()
         with self.assertRaisesRegex(ValueError, "^ai_review_boundary_invalid$"):
             store.get(record["aiReviewId"])
+
+    def test_authoritative_query_columns_reject_record_json_downgrades(self) -> None:
+        cases: dict[str, tuple[Any, tuple[Any, ...], str]] = {
+            "schema removed": (
+                lambda record: {
+                    key: value for key, value in record.items() if key != "schemaVersion"
+                },
+                (2, "experiment-primary", "evidence", "record", "authoritative"),
+                "unsupported_ai_review_schema_version",
+            ),
+            "schema changed": (
+                lambda record: {**record, "schemaVersion": 1},
+                (2, "experiment-primary", "evidence", "record", "authoritative"),
+                "unsupported_ai_review_schema_version",
+            ),
+            "json array with hash marker": (
+                lambda _record: [],
+                (None, None, None, "record", None),
+                "ai_review_record_must_be_object",
+            ),
+            "invalid authority column": (
+                lambda record: {**record, "schemaVersion": 1},
+                (None, None, None, None, "invalid"),
+                "unsupported_ai_review_schema_version",
+            ),
+        }
+        store = AiReviewRunStore(self.path)
+        for label, (tamper, columns, code) in cases.items():
+            with self.subTest(case=label):
+                record = _authoritative_review_record(ai_review_id=f"ai-review-tampered-{label}")
+                store.record_v2(record)
+                record_json = canonical_json(tamper(copy.deepcopy(record)))
+                with closing(sqlite3.connect(self.path)) as connection:
+                    connection.execute(
+                        """
+                        update ai_review_runs
+                        set record_json = ?,
+                            schema_version = ?,
+                            primary_experiment_id = ?,
+                            evidence_hash = ?,
+                            record_hash = ?,
+                            authority = ?
+                        where ai_review_id = ?
+                        """,
+                        (record_json, *columns, record["aiReviewId"]),
+                    )
+                    connection.commit()
+
+                with self.assertRaisesRegex(ValueError, f"^{code}$"):
+                    store.get(record["aiReviewId"])
 
 
 class AiReviewEvidenceAssemblerTests(unittest.TestCase):
