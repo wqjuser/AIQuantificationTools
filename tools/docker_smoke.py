@@ -1374,9 +1374,16 @@ def _matching_stage2_experiment(
     strategy_revision = str(experiment_request["strategyRevision"])
     if source_run.get("strategyRevision") != strategy_revision or strategy.get("revision") != strategy_revision:
         raise RuntimeError("Invalid Stage 2 source run: strategy revision does not match the pipeline")
+    snapshot_id = _quant_core_validator("canonical", "canonical_snapshot_id")(
+        market=str(source_run.get("market") or ""),
+        symbol=str(source_run.get("symbol") or ""),
+        timeframe=str(source_run.get("timeframe") or ""),
+        canonical_data_hash=str(snapshot["hash"]),
+    )
     expected = {
         "baseStrategy": strategy,
         "strategyRevision": strategy_revision,
+        "snapshotId": snapshot_id,
         "canonicalDataHash": snapshot["hash"],
         "market": source_run.get("market"),
         "symbol": source_run.get("symbol"),
@@ -1390,7 +1397,7 @@ def _matching_stage2_experiment(
         "engineVersion": "backtest-v1",
         "resultSchemaVersion": 1,
     }
-    definition_keys = {*expected, "sourceRunId", "snapshotId"}
+    definition_keys = {*expected, "sourceRunId"}
     for item in experiments:
         if not isinstance(item, dict) or item.get("status") != "completed":
             continue
@@ -1494,8 +1501,12 @@ def run_stage2_strategy_experiment_acceptance(
             ),
             "Stage 2 strategy experiment",
         )
-        if experiment["sourceRunId"] != run_id:
-            raise RuntimeError("Invalid Stage 2 strategy experiment: fresh source run binding does not match")
+        if _matching_stage2_experiment(
+            [experiment],
+            experiment_request=experiment_request,
+            source_run=source_run,
+        ) is not experiment:
+            raise RuntimeError("Invalid Stage 2 strategy experiment: fresh definition binding does not match")
     experiment_id = str(experiment["experimentId"])
     experiment_source_run_id = str(experiment["sourceRunId"])
     replay = _stage2_experiment(
@@ -1530,12 +1541,17 @@ def run_stage2_strategy_experiment_acceptance(
     }
     if not {experiment_id, replay_experiment_id}.issubset(history_by_id):
         raise RuntimeError("Invalid Stage 2 strategy experiment history response: experiment pair is missing")
-    for pair_id in (experiment_id, replay_experiment_id):
+    for pair_id, expected in ((experiment_id, experiment), (replay_experiment_id, replay)):
+        history_row = history_by_id[pair_id]
         _require_stage2_experiment_binding(
-            history_by_id[pair_id],
-            experiment,
+            history_row,
+            expected,
             "Stage 2 strategy experiment history response",
         )
+        if history_row.get("status") != "completed" or any(
+            history_row.get(field) != expected.get(field) for field in ("definitionHash", "resultHash")
+        ):
+            raise RuntimeError("Invalid Stage 2 strategy experiment history response: evidence binding does not match")
     detail = _stage2_experiment(
         request_json(
             join_url(base_url, f"/api/strategy-experiments/{quote(experiment_id, safe='')}"),

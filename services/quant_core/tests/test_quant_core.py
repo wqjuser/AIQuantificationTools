@@ -17,6 +17,40 @@ class QuantCoreContractTest(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
+    def _stage2_smoke_definition(
+        self,
+        docker_smoke,
+        strategy_config,
+        *,
+        source_run_id="run-stage2",
+        data_hash="data-stage2",
+        maximum_drawdown_pct=20,
+    ):
+        snapshot_id = docker_smoke._quant_core_validator("canonical", "canonical_snapshot_id")(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            canonical_data_hash=data_hash,
+        )
+        return {
+            "baseStrategy": strategy_config,
+            "strategyRevision": "revision-stage2",
+            "sourceRunId": source_run_id,
+            "snapshotId": snapshot_id,
+            "canonicalDataHash": data_hash,
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+            "split": {"trainPct": 60, "validationPct": 20, "testPct": 20},
+            "dimensions": [{"conditionSide": "entry", "conditionIndex": 0, "parameter": "window", "values": [10, 20]}],
+            "guardrails": {"minimumTradeCount": 2, "maximumDrawdownPct": maximum_drawdown_pct},
+            "walkForward": None,
+            "evaluationBudget": 5,
+            "engineVersion": "backtest-v1",
+            "resultSchemaVersion": 1,
+        }
+
     def _load_desktop_release_recorder_module(self):
         root = Path(__file__).resolve().parents[3]
         module_path = root / "tools" / "record_desktop_release.py"
@@ -3554,6 +3588,9 @@ class QuantCoreContractTest(unittest.TestCase):
         docker_smoke = self._load_docker_smoke_module()
         events = []
         posted_payloads = []
+        strategy_config = {"revision": "revision-stage2"}
+        definition = self._stage2_smoke_definition(docker_smoke, strategy_config)
+        canonical_snapshot_id = definition["snapshotId"]
 
         def experiment_payload(experiment_id):
             return {
@@ -3564,11 +3601,11 @@ class QuantCoreContractTest(unittest.TestCase):
                 "holdoutKey": "holdout-stage2",
                 "strategyRevision": "revision-stage2",
                 "sourceRunId": "run-stage2",
-                "snapshotId": "snapshot-stage2",
+                "snapshotId": canonical_snapshot_id,
                 "market": "ashare",
                 "symbol": "600000",
                 "timeframe": "1d",
-                "definition": {"split": {"trainPct": 60, "validationPct": 20, "testPct": 20}},
+                "definition": definition,
                 "evaluationCount": 5,
                 "selectedCandidateId": "candidate-a",
                 "completionReason": "selected",
@@ -3577,7 +3614,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "errorDetail": None,
                 "holdoutStatus": "consumed",
                 "snapshot": {
-                    "snapshotId": "snapshot-stage2",
+                    "snapshotId": canonical_snapshot_id,
                     "createdAt": "2026-07-10T08:00:00+00:00",
                     "market": "ashare",
                     "symbol": "600000",
@@ -3632,7 +3669,7 @@ class QuantCoreContractTest(unittest.TestCase):
                         "symbol": "600000",
                         "timeframe": "1d",
                         "strategyRevision": "revision-stage2",
-                        "strategyConfig": {"revision": "revision-stage2"},
+                        "strategyConfig": strategy_config,
                         "dataSnapshot": {"hash": "data-stage2"},
                     }
                 }
@@ -3718,31 +3755,12 @@ class QuantCoreContractTest(unittest.TestCase):
         events = []
         posted_payloads = []
         strategy_config = {"name": "SMA", "revision": "revision-stage2", "version": 1}
-        definition = {
-            "baseStrategy": strategy_config,
-            "strategyRevision": "revision-stage2",
-            "sourceRunId": "run-stage2-prior",
-            "snapshotId": "snapshot-stage2",
-            "canonicalDataHash": "canonical-data-stage2",
-            "market": "ashare",
-            "symbol": "600000",
-            "timeframe": "1d",
-            "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
-            "split": {"trainPct": 60, "validationPct": 20, "testPct": 20},
-            "dimensions": [
-                {
-                    "conditionSide": "entry",
-                    "conditionIndex": 0,
-                    "parameter": "window",
-                    "values": [10, 20],
-                }
-            ],
-            "guardrails": {"minimumTradeCount": 2, "maximumDrawdownPct": 20},
-            "walkForward": None,
-            "evaluationBudget": 5,
-            "engineVersion": "backtest-v1",
-            "resultSchemaVersion": 1,
-        }
+        definition = self._stage2_smoke_definition(
+            docker_smoke,
+            strategy_config,
+            source_run_id="run-stage2-prior",
+            data_hash="canonical-data-stage2",
+        )
 
         def experiment_payload(experiment_id):
             return {
@@ -3753,7 +3771,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "holdoutKey": "holdout-stage2",
                 "strategyRevision": "revision-stage2",
                 "sourceRunId": "run-stage2-prior",
-                "snapshotId": "snapshot-stage2",
+                "snapshotId": definition["snapshotId"],
                 "market": "ashare",
                 "symbol": "600000",
                 "timeframe": "1d",
@@ -3845,24 +3863,13 @@ class QuantCoreContractTest(unittest.TestCase):
         docker_smoke = self._load_docker_smoke_module()
         posted_payloads = []
         strategy_config = {"name": "SMA", "revision": "revision-stage2", "version": 1}
-        prior_definition = {
-            "baseStrategy": strategy_config,
-            "strategyRevision": "revision-stage2",
-            "sourceRunId": "run-stage2-prior",
-            "snapshotId": "snapshot-stage2",
-            "canonicalDataHash": "canonical-data-stage2",
-            "market": "ashare",
-            "symbol": "600000",
-            "timeframe": "1d",
-            "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
-            "split": {"trainPct": 60, "validationPct": 20, "testPct": 20},
-            "dimensions": [{"conditionSide": "entry", "conditionIndex": 0, "parameter": "window", "values": [10, 20]}],
-            "guardrails": {"minimumTradeCount": 2, "maximumDrawdownPct": 19},
-            "walkForward": None,
-            "evaluationBudget": 5,
-            "engineVersion": "backtest-v1",
-            "resultSchemaVersion": 1,
-        }
+        prior_definition = self._stage2_smoke_definition(
+            docker_smoke,
+            strategy_config,
+            source_run_id="run-stage2-prior",
+            data_hash="canonical-data-stage2",
+            maximum_drawdown_pct=19,
+        )
         prior = {
             "experimentId": "experiment-stage2-prior",
             "status": "completed",
@@ -3870,7 +3877,7 @@ class QuantCoreContractTest(unittest.TestCase):
             "resultHash": "result-stage2-prior",
             "strategyRevision": "revision-stage2",
             "sourceRunId": "run-stage2-prior",
-            "snapshotId": "snapshot-stage2",
+            "snapshotId": prior_definition["snapshotId"],
             "market": "ashare",
             "symbol": "600000",
             "timeframe": "1d",
@@ -3931,6 +3938,8 @@ class QuantCoreContractTest(unittest.TestCase):
         import copy
 
         docker_smoke = self._load_docker_smoke_module()
+        strategy_config = {"revision": "revision-stage2"}
+        definition = self._stage2_smoke_definition(docker_smoke, strategy_config)
 
         def experiment_payload(experiment_id):
             return {
@@ -3941,23 +3950,43 @@ class QuantCoreContractTest(unittest.TestCase):
                 "holdoutKey": "holdout-stage2",
                 "strategyRevision": "revision-stage2",
                 "sourceRunId": "run-stage2",
-                "snapshotId": "snapshot-stage2",
+                "snapshotId": definition["snapshotId"],
                 "market": "ashare",
                 "symbol": "600000",
                 "timeframe": "1d",
+                "definition": copy.deepcopy(definition),
                 "candidates": [{"candidateId": "candidate-a"}, {"candidateId": "candidate-b"}],
             }
 
         cases = [
             ("create", "sourceRunId"),
+            ("create", "strategyRevision"),
+            ("create", "snapshotId"),
+            ("create", "definition.canonicalDataHash"),
+            ("create", "definition.guardrails"),
             *[("replay", field) for field in ("sourceRunId", "strategyRevision", "snapshotId")],
-            *[("history", field) for field in ("sourceRunId", "strategyRevision", "snapshotId")],
+            *[
+                ("history", field)
+                for field in (
+                    "sourceRunId",
+                    "strategyRevision",
+                    "snapshotId",
+                    "status",
+                    "definitionHash",
+                    "resultHash",
+                )
+            ],
         ]
         for stage, field in cases:
             with self.subTest(stage=stage, field=field):
                 original = experiment_payload("experiment-stage2")
                 if stage == "create":
-                    original[field] = f"wrong-{field}"
+                    if field.startswith("definition."):
+                        original["definition"][field.removeprefix("definition.")] = f"wrong-{field}"
+                    else:
+                        original[field] = f"wrong-{field}"
+                        if field == "snapshotId":
+                            original["definition"]["snapshotId"] = original[field]
                 replay = copy.deepcopy(original)
                 replay["experimentId"] = "experiment-stage2-replay"
                 if stage == "replay":
@@ -3991,7 +4020,7 @@ class QuantCoreContractTest(unittest.TestCase):
                                 "symbol": "600000",
                                 "timeframe": "1d",
                                 "strategyRevision": "revision-stage2",
-                                "strategyConfig": {"revision": "revision-stage2"},
+                                "strategyConfig": strategy_config,
                                 "dataSnapshot": {"hash": "data-stage2"},
                             }
                         }
