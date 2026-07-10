@@ -222,7 +222,6 @@ export interface AiReviewRequestToken {
 export interface AiReviewRequestCoordinator {
   readonly busy: AiReviewRequestBusyState;
   readonly scopeKey: string;
-  observeScope: (scopeKey: string) => void;
   beginContext: (scopeKey: string) => AiReviewRequestToken;
   beginReview: (kind: AiReviewRequestBusyKind) => AiReviewRequestToken;
   invalidateReview: () => void;
@@ -963,9 +962,6 @@ export function createAiReviewRequestCoordinator(initialScopeKey = ""): AiReview
     },
     get scopeKey() {
       return observedScopeKey;
-    },
-    observeScope(scopeKey) {
-      observedScopeKey = scopeKey;
     },
     beginContext(scopeKey) {
       observedScopeKey = scopeKey;

@@ -100,7 +100,9 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("aiReviewStage3RequestCoordinatorRef");
     expect(appSource).toContain("createAiReviewRequestCoordinator()");
-    expect(appSource).toContain("observeScope(aiReviewStage3ContextKey)");
+    expect(appSource).not.toContain(".observeScope(");
+    expect(appSource).toContain("useLayoutEffect");
+    expect(appSource).toContain("useLayoutEffect(() => {\n    const coordinator = aiReviewStage3RequestCoordinatorRef.current!;");
     expect(appSource).toContain("coordinator.beginContext(aiReviewStage3ContextKey)");
     expect(appSource).toContain('coordinator.beginReview("running")');
     expect(appSource).toContain('coordinator.beginReview("appending")');

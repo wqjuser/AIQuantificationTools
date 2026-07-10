@@ -697,10 +697,17 @@ describe("Stage 3 authoritative workspace view model", () => {
     const firstContext = coordinator.beginContext("scope-a");
     expect(coordinator.busy).toEqual({ loading: true, running: false, appending: false });
 
-    coordinator.observeScope("scope-b");
-    expect(coordinator.isCurrent(firstContext)).toBe(false);
+    expect("observeScope" in coordinator).toBe(false);
+    const abandonedRenderScopes = ["scope-b", "scope-a"];
+    expect(abandonedRenderScopes.at(-1)).toBe("scope-a");
+    expect(coordinator.scopeKey).toBe("scope-a");
+    expect(coordinator.isCurrent(firstContext)).toBe(true);
+    expect(firstContext.signal.aborted).toBe(false);
+    expect(coordinator.busy).toEqual({ loading: true, running: false, appending: false });
+
     const secondContext = coordinator.beginContext("scope-b");
     expect(firstContext.signal.aborted).toBe(true);
+    expect(coordinator.isCurrent(firstContext)).toBe(false);
     expect(coordinator.finish(firstContext)).toBe(false);
     expect(coordinator.busy.loading).toBe(true);
     expect(coordinator.finish(secondContext)).toBe(true);
@@ -713,6 +720,21 @@ describe("Stage 3 authoritative workspace view model", () => {
     expect(coordinator.busy).toEqual({ loading: false, running: false, appending: true });
     expect(coordinator.finish(review)).toBe(false);
     expect(coordinator.finish(append)).toBe(true);
+    expect(coordinator.busy).toEqual({ loading: false, running: false, appending: false });
+  });
+
+  test("converges busy state across a StrictMode-style dispose and committed restart", () => {
+    const coordinator = createAiReviewRequestCoordinator("scope-a");
+    const discarded = coordinator.beginContext("scope-a");
+    coordinator.dispose();
+    expect(discarded.signal.aborted).toBe(true);
+    expect(coordinator.busy).toEqual({ loading: false, running: false, appending: false });
+
+    const committed = coordinator.beginContext("scope-a");
+    expect(coordinator.busy).toEqual({ loading: true, running: false, appending: false });
+    expect(coordinator.finish(discarded)).toBe(false);
+    expect(coordinator.busy).toEqual({ loading: true, running: false, appending: false });
+    expect(coordinator.finish(committed)).toBe(true);
     expect(coordinator.busy).toEqual({ loading: false, running: false, appending: false });
   });
 
@@ -777,5 +799,58 @@ describe("Stage 3 authoritative workspace view model", () => {
     });
     expect(stale).toEqual({ status: "stale", decisions: null });
     expect(loadCalled).toBe(false);
+  });
+
+  test("classifies Decision append and readback fallback or throw paths without committing", async () => {
+    const first = sampleDecision(1) as AiReviewDecision;
+    const appended = sampleDecision(2) as AiReviewDecision;
+    const base = {
+      aiReviewId: appended.aiReviewId,
+      request: buildAiReviewDecisionDraft([first], "operator", "reason"),
+      signal: new AbortController().signal,
+      isCurrent: () => true
+    };
+    await expect(appendAiReviewDecisionAndReadback({
+      ...base,
+      append: async () => ({}),
+      load: async () => ({ decisions: [first, appended] })
+    })).resolves.toEqual({ status: "append-failed", decisions: null });
+    await expect(appendAiReviewDecisionAndReadback({
+      ...base,
+      append: async () => ({ decision: appended }),
+      load: async () => ({})
+    })).resolves.toEqual({ status: "readback-failed", decisions: null });
+    await expect(appendAiReviewDecisionAndReadback({
+      ...base,
+      append: async () => { throw new Error("append failed"); },
+      load: async () => ({ decisions: [first, appended] })
+    })).resolves.toEqual({ status: "append-failed", decisions: null });
+    await expect(appendAiReviewDecisionAndReadback({
+      ...base,
+      append: async () => ({ decision: appended }),
+      load: async () => { throw new Error("readback failed"); }
+    })).resolves.toEqual({ status: "readback-failed", decisions: null });
+
+    let appendCurrent = true;
+    await expect(appendAiReviewDecisionAndReadback({
+      ...base,
+      append: async () => {
+        appendCurrent = false;
+        throw new Error("stale append");
+      },
+      load: async () => ({ decisions: [first, appended] }),
+      isCurrent: () => appendCurrent
+    })).resolves.toEqual({ status: "stale", decisions: null });
+
+    let readbackCurrent = true;
+    await expect(appendAiReviewDecisionAndReadback({
+      ...base,
+      append: async () => ({ decision: appended }),
+      load: async () => {
+        readbackCurrent = false;
+        throw new Error("stale readback");
+      },
+      isCurrent: () => readbackCurrent
+    })).resolves.toEqual({ status: "stale", decisions: null });
   });
 });

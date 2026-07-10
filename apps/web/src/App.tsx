@@ -21,7 +21,17 @@ import {
   X
 } from "lucide-react";
 import { ActionType, dispose, init, LoadDataType, type Chart, type KLineData } from "klinecharts";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode
+} from "react";
 import {
   buildLoadingMarketKlinesResult,
   loadGoldenPathStatus,
@@ -2495,7 +2505,6 @@ export function App() {
     visibleStrategyExperimentActive?.experimentId ?? null,
     aiReviewStage3Experiments
   );
-  aiReviewStage3RequestCoordinatorRef.current.observeScope(aiReviewStage3ContextKey);
   const visibleStrategyExperimentUrlId = resolveStrategyExperimentIdForCurrentSource(
     visibleStrategyExperimentActive,
     strategyExperimentUsableSourceKey
@@ -3688,7 +3697,7 @@ export function App() {
     setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]));
   }, [syncAiReviewStage3Busy]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const coordinator = aiReviewStage3RequestCoordinatorRef.current!;
     const request = coordinator.beginContext(aiReviewStage3ContextKey);
     syncAiReviewStage3Busy();
@@ -3736,7 +3745,7 @@ export function App() {
     return () => coordinator.dispose();
   }, [activeWorkAreaId, aiReviewStage3ContextKey, strategyExperimentSourceRunId, syncAiReviewStage3Busy]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const primary = resolveAiReviewPrimaryExperiment(
       visibleStrategyExperimentActive,
       aiReviewStage3Experiments
@@ -3925,14 +3934,19 @@ export function App() {
   ]);
 
   const updateAiReviewStage3DecisionDraft = useCallback((draft: AppendAiReviewDecisionRequest) => {
-    if (isAppendingAiReviewStage3Decision) {
+    if (isLoadingAiReviewStage3 || isRunningAiReviewStage3 || isAppendingAiReviewStage3Decision) {
       return;
     }
     setAiReviewStage3DecisionDraft({
       ...draft,
       supersedesDecisionId: aiReviewStage3Decisions.at(-1)?.decisionId ?? null
     });
-  }, [aiReviewStage3Decisions, isAppendingAiReviewStage3Decision]);
+  }, [
+    aiReviewStage3Decisions,
+    isAppendingAiReviewStage3Decision,
+    isLoadingAiReviewStage3,
+    isRunningAiReviewStage3
+  ]);
 
   const appendAiReviewStage3Decision = useCallback(async () => {
     if (!aiReviewStage3CurrentReview
