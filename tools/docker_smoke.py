@@ -687,7 +687,30 @@ def load_stage2_strategy_experiment_report(path: Path) -> dict[str, Any]:
 
 def validate_stage2_strategy_experiment_manifest(manifest: Any) -> str:
     payload = _require_dict(manifest, "Stage 2 strategy experiment manifest")
-    if payload.get("kind") != "aiqt.stage2StrategyExperimentAcceptance" or payload.get("schemaVersion") != 1:
+    expected_keys = {
+        "kind",
+        "schemaVersion",
+        "runId",
+        "strategyRevision",
+        "snapshotId",
+        "experimentId",
+        "replayExperimentId",
+        "definitionHash",
+        "resultHash",
+        "candidateCount",
+        "holdoutKey",
+        "paperOnly",
+        "liveTradingAllowed",
+        "orderSubmitted",
+        "routeExecuted",
+    }
+    if set(payload) != expected_keys:
+        raise RuntimeError("Invalid Stage 2 strategy experiment manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage2StrategyExperimentAcceptance"
+        or type(payload["schemaVersion"]) is not int
+        or payload["schemaVersion"] != 1
+    ):
         raise RuntimeError("Invalid Stage 2 strategy experiment manifest: kind or schemaVersion is invalid")
     required_strings = (
         "runId",
@@ -699,8 +722,12 @@ def validate_stage2_strategy_experiment_manifest(manifest: Any) -> str:
         "resultHash",
         "holdoutKey",
     )
-    values = {field: str(payload.get(field) or "").strip() for field in required_strings}
-    missing = [field for field, value in values.items() if not value]
+    values = {
+        field: payload[field].strip()
+        for field in required_strings
+        if isinstance(payload[field], str) and payload[field].strip()
+    }
+    missing = [field for field in required_strings if field not in values]
     if missing:
         raise RuntimeError(
             f"Invalid Stage 2 strategy experiment manifest: missing required fields {', '.join(missing)}"
@@ -708,7 +735,7 @@ def validate_stage2_strategy_experiment_manifest(manifest: Any) -> str:
     if values["experimentId"] == values["replayExperimentId"]:
         raise RuntimeError("Invalid Stage 2 strategy experiment manifest: replay experiment id is not distinct")
     candidate_count = payload.get("candidateCount")
-    if isinstance(candidate_count, bool) or not isinstance(candidate_count, int) or candidate_count < 2:
+    if type(candidate_count) is not int or candidate_count < 2:
         raise RuntimeError("Invalid Stage 2 strategy experiment manifest: candidateCount must be at least 2")
     if payload.get("paperOnly") is not True:
         raise RuntimeError("Invalid Stage 2 strategy experiment manifest: paperOnly is not true")

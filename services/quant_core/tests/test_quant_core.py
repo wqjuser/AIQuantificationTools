@@ -3456,6 +3456,42 @@ class QuantCoreContractTest(unittest.TestCase):
             with self.subTest(label=label), self.assertRaises(RuntimeError):
                 docker_smoke.validate_stage2_strategy_experiment_manifest(unsafe)
 
+        malformed_manifests = {
+            "not an object": [],
+            "missing key": {key: value for key, value in manifest.items() if key != "routeExecuted"},
+            "extra key": {**manifest, "unexpected": "field"},
+            "schemaVersion bool": {**manifest, "schemaVersion": True},
+            "schemaVersion float": {**manifest, "schemaVersion": 1.0},
+            "schemaVersion string": {**manifest, "schemaVersion": "1"},
+            "candidateCount bool": {**manifest, "candidateCount": True},
+            "candidateCount float": {**manifest, "candidateCount": 2.0},
+            "candidateCount string": {**manifest, "candidateCount": "2"},
+            "candidateCount below minimum": {**manifest, "candidateCount": 1},
+            "paperOnly false": {**manifest, "paperOnly": False},
+            "paperOnly integer": {**manifest, "paperOnly": 1},
+            "paperOnly string": {**manifest, "paperOnly": "true"},
+        }
+        string_fields = (
+            "runId",
+            "strategyRevision",
+            "snapshotId",
+            "experimentId",
+            "replayExperimentId",
+            "definitionHash",
+            "resultHash",
+            "holdoutKey",
+        )
+        for field in string_fields:
+            malformed_manifests[f"{field} non-string"] = {**manifest, field: 123}
+            malformed_manifests[f"{field} blank"] = {**manifest, field: "  "}
+        for field in ("liveTradingAllowed", "orderSubmitted", "routeExecuted"):
+            malformed_manifests[f"{field} true"] = {**manifest, field: True}
+            malformed_manifests[f"{field} integer"] = {**manifest, field: 0}
+            malformed_manifests[f"{field} string"] = {**manifest, field: "false"}
+        for label, malformed in malformed_manifests.items():
+            with self.subTest(label=label), self.assertRaises(RuntimeError):
+                docker_smoke.validate_stage2_strategy_experiment_manifest(malformed)
+
     def test_docker_smoke_stage2_strategy_experiment_runs_exact_paper_only_sequence(self):
         import json
 
