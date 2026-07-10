@@ -479,6 +479,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "route": "paper",
                     "status": "paper_execution_recorded",
                     "paperOnly": True,
+                    "orderSubmitted": False,
                     "liveTradingAllowed": False,
                     "liveOrderSubmitted": False,
                     "routeExecuted": False,
@@ -2751,6 +2752,24 @@ class QuantCoreContractTest(unittest.TestCase):
             "adapter-paper-execution-current"
         )
         export_package["portfolioPaperOrderSimulations"][0]["adapterPaperExecutionEvidence"] = {}
+
+        with self.assertRaisesRegex(ValueError, "adapter paper execution evidence is missing"):
+            build_p2_paper_replay_manifest_from_export_package(export_package)
+
+    def test_p2_paper_replay_manifest_rejects_missing_order_submitted_boundary(self):
+        from quant_core.p2_paper_replay import build_p2_paper_replay_manifest_from_export_package
+
+        export_package = self._sample_p2_paper_replay_export_package(run_id="run-p2-paper-replay")
+        export_package["adapterPaperExecutions"][0].pop("orderSubmitted")
+
+        with self.assertRaisesRegex(ValueError, "adapter paper execution evidence is missing"):
+            build_p2_paper_replay_manifest_from_export_package(export_package)
+
+    def test_p2_paper_replay_manifest_rejects_non_boolean_order_submitted_boundary(self):
+        from quant_core.p2_paper_replay import build_p2_paper_replay_manifest_from_export_package
+
+        export_package = self._sample_p2_paper_replay_export_package(run_id="run-p2-paper-replay")
+        export_package["adapterPaperExecutions"][0]["orderSubmitted"] = "false"
 
         with self.assertRaisesRegex(ValueError, "adapter paper execution evidence is missing"):
             build_p2_paper_replay_manifest_from_export_package(export_package)

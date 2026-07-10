@@ -493,7 +493,7 @@ def _is_bound_adapter_paper_execution_evidence(
         and evidence.get("liveTradingAllowed") is False
         and evidence.get("liveOrderSubmitted") is False
         and evidence.get("routeExecuted") is False
-        and evidence.get("orderSubmitted") is not True
+        and evidence.get("orderSubmitted") is False
     )
 
 
