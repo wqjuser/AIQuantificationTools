@@ -324,6 +324,7 @@ import {
   type WorkflowRunState,
   visiblePanels,
   goldenPathRunRebindIsCurrent,
+  nextAiReviewHistoryRequestId,
   replayRunRequestIsCurrent,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
@@ -1747,6 +1748,36 @@ describe("terminal workbench model", () => {
     expect(committedPagination).toBeNull();
     expect(loading).toBe(false);
     expect(replayRunRequestIsCurrent(4, 4, 8, 8)).toBe(true);
+  });
+
+  test("invalidates an older committed AI review request when history state resets", async () => {
+    let currentRequestId = nextAiReviewHistoryRequestId(3);
+    const requestId = currentRequestId;
+    let committedRecords: string[] = [];
+    let committedPagination: number | null = null;
+    let loading = true;
+    let releaseRequest!: (records: string[]) => void;
+    const requestPending = new Promise<string[]>((resolve) => {
+      releaseRequest = resolve;
+    });
+    const pendingCommit = (async () => {
+      const records = await requestPending;
+      if (currentRequestId !== requestId) {
+        return false;
+      }
+      committedRecords = records;
+      committedPagination = records.length;
+      return true;
+    })();
+
+    currentRequestId = nextAiReviewHistoryRequestId(currentRequestId);
+    loading = false;
+    releaseRequest(["stale-effect-review"]);
+
+    await expect(pendingCommit).resolves.toBe(false);
+    expect(committedRecords).toEqual([]);
+    expect(committedPagination).toBeNull();
+    expect(loading).toBe(false);
   });
 
   test("rejects invalid strategy experiment candidate patches atomically", async () => {

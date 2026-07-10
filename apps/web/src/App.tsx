@@ -687,6 +687,7 @@ import {
   workspaceWithSavedWatchlist,
   workspaceWithStrategyExperimentCandidate,
   goldenPathRunRebindIsCurrent,
+  nextAiReviewHistoryRequestId,
   replayRunRequestIsCurrent,
   workspaceNeedsStrategyReaudit,
   workspaceWithStrategyLibraryItem,
@@ -3601,6 +3602,8 @@ export function App() {
   }, []);
 
   const resetAiReviewHistoryState = useCallback(() => {
+    aiReviewHistoryRequestIdRef.current = nextAiReviewHistoryRequestId(aiReviewHistoryRequestIdRef.current);
+    setIsLoadingAiReviewHistory(false);
     setAiReviewRunRecords([]);
     setAiReviewHistoryQuery("");
     setAiReviewHistoryOffset(0);
@@ -3740,7 +3743,7 @@ export function App() {
       const offset = options.offset ?? aiReviewHistoryOffset;
       const query = options.query ?? aiReviewHistoryQuery;
       const commit = options.commit !== false;
-      const requestId = commit ? aiReviewHistoryRequestIdRef.current + 1 : null;
+      const requestId = commit ? nextAiReviewHistoryRequestId(aiReviewHistoryRequestIdRef.current) : null;
       if (requestId !== null) {
         aiReviewHistoryRequestIdRef.current = requestId;
         setIsLoadingAiReviewHistory(true);

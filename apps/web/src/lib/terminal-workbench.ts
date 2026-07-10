@@ -9162,6 +9162,10 @@ export function replayRunRequestIsCurrent(
   return capturedSelectionVersion === currentSelectionVersion && capturedWorkflowRunId === currentWorkflowRunId;
 }
 
+export function nextAiReviewHistoryRequestId(currentRequestId: number): number {
+  return currentRequestId + 1;
+}
+
 export function goldenPathRunRebindIsCurrent(
   capturedWorkspace: TerminalWorkspace,
   currentWorkspace: TerminalWorkspace,
