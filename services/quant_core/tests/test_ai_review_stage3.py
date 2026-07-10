@@ -30,6 +30,7 @@ from quant_core.ai_review_providers import (
     sanitize_base_url,
     sanitize_error_detail,
 )
+from quant_core.ai_review_decisions import AiReviewDecisionStore
 from quant_core.ai_review_runs import (
     AiReviewRunRecord,
     AiReviewRunStore,
@@ -349,6 +350,44 @@ def _rehash_authoritative_evidence(record: dict[str, Any]) -> None:
     record["evidenceHash"] = bundle["evidenceHash"]
     record["externalAssessment"]["evidenceHash"] = bundle["evidenceHash"]
     _rehash_authoritative_review(record)
+
+
+def _decision_record(
+    review: dict[str, Any],
+    *,
+    decision_id: str,
+    created_at: str = "2026-07-10T08:30:00+00:00",
+    operator: str = "researcher",
+    status: str = "accepted_for_research",
+    rationale: str = "Evidence is ready for another research iteration.",
+    supersedes_decision_id: str | None = None,
+) -> dict[str, Any]:
+    record = {
+        "schemaVersion": 1,
+        "recordType": "aiqt.aiReviewDecision",
+        "decisionId": decision_id,
+        "aiReviewId": review["aiReviewId"],
+        "createdAt": created_at,
+        "operator": operator,
+        "status": status,
+        "rationale": rationale,
+        "supersedesDecisionId": supersedes_decision_id,
+        "reviewRecordHash": review["recordHash"],
+        "evidenceHash": review["evidenceHash"],
+        "boundary": {
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "orderSubmissionAllowed": False,
+        },
+    }
+    record["recordHash"] = canonical_sha256(record)
+    return record
+
+
+def _rehash_decision(record: dict[str, Any]) -> None:
+    record["recordHash"] = canonical_sha256(
+        {key: value for key, value in record.items() if key != "recordHash"}
+    )
 
 
 def _bars(seed: int) -> list[dict[str, Any]]:
@@ -952,6 +991,343 @@ class AiReviewRunStoreV2Tests(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, f"^{code}$"):
                     store.get(record["aiReviewId"])
+
+
+class AiReviewDecisionStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        root = Path(self.temporary_directory.name)
+        self.review_path = root / "reviews.sqlite3"
+        self.decision_path = root / "decisions.sqlite3"
+        self.review_store = AiReviewRunStore(self.review_path)
+        self.review = _authoritative_review_record()
+        self.review_store.record_v2(self.review)
+        self.store = AiReviewDecisionStore(
+            self.decision_path,
+            review_store=self.review_store,
+        )
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    def _append(
+        self,
+        *,
+        operator: str = "researcher",
+        status: str = "accepted_for_research",
+        rationale: str = "Evidence is ready for another research iteration.",
+        supersedes_decision_id: str | None = None,
+    ) -> Any:
+        return self.store.append(
+            self.review["aiReviewId"],
+            {
+                "operator": operator,
+                "status": status,
+                "rationale": rationale,
+                "supersedesDecisionId": supersedes_decision_id,
+            },
+        )
+
+    def test_append_accepts_each_exact_decision_status(self) -> None:
+        statuses = (
+            "accepted_for_research",
+            "revision_requested",
+            "rejected",
+            "insufficient_evidence",
+        )
+        predecessor = None
+        for status in statuses:
+            stored = self._append(status=status, supersedes_decision_id=predecessor)
+            self.assertEqual(stored.status, status)
+            predecessor = stored.decision_id
+
+        self.assertEqual(
+            [item.status for item in self.store.list_by_review(self.review["aiReviewId"])],
+            list(statuses),
+        )
+
+    def test_append_enforces_operator_and_rationale_bounds_and_exact_request(self) -> None:
+        invalid_requests = (
+            {"operator": "", "status": "accepted_for_research", "rationale": "r", "supersedesDecisionId": None},
+            {"operator": "x" * 81, "status": "accepted_for_research", "rationale": "r", "supersedesDecisionId": None},
+            {"operator": "researcher", "status": "unknown", "rationale": "r", "supersedesDecisionId": None},
+            {"operator": "researcher", "status": "accepted_for_research", "rationale": "", "supersedesDecisionId": None},
+            {"operator": "researcher", "status": "accepted_for_research", "rationale": "x" * 2001, "supersedesDecisionId": None},
+            {"operator": "researcher", "status": [], "rationale": "r", "supersedesDecisionId": None},
+            {"operator": "researcher", "status": "accepted_for_research", "rationale": "r", "supersedesDecisionId": None, "reviewRecordHash": "f" * 64},
+        )
+        for request in invalid_requests:
+            with self.subTest(request=request):
+                with self.assertRaisesRegex(ValueError, "^invalid_ai_review_decision_request$"):
+                    self.store.append(self.review["aiReviewId"], request)
+
+        first = self._append(operator="x", rationale="r")
+        second = self._append(
+            operator="x" * 80,
+            rationale="r" * 2000,
+            supersedes_decision_id=first.decision_id,
+        )
+        self.assertEqual(len(second.operator), 80)
+        self.assertEqual(len(second.rationale), 2000)
+
+    def test_append_generates_identity_hashes_and_fixed_boundary(self) -> None:
+        stored = self._append()
+
+        self.assertTrue(stored.decision_id)
+        self.assertEqual(stored.ai_review_id, self.review["aiReviewId"])
+        self.assertEqual(stored.review_record_hash, self.review["recordHash"])
+        self.assertEqual(stored.evidence_hash, self.review["evidenceHash"])
+        self.assertEqual(stored.record["schemaVersion"], 1)
+        self.assertEqual(stored.record["recordType"], "aiqt.aiReviewDecision")
+        self.assertEqual(
+            stored.record["boundary"],
+            {
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "orderSubmissionAllowed": False,
+            },
+        )
+        self.assertEqual(
+            stored.record_hash,
+            canonical_sha256(
+                {key: value for key, value in stored.record.items() if key != "recordHash"}
+            ),
+        )
+
+    def test_append_requires_first_null_and_each_later_current_predecessor(self) -> None:
+        with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
+            self._append(supersedes_decision_id="missing-decision")
+
+        first = self._append()
+        with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
+            self._append()
+        second = self._append(supersedes_decision_id=first.decision_id)
+        with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
+            self._append(supersedes_decision_id=first.decision_id)
+        third = self._append(supersedes_decision_id=second.decision_id)
+
+        self.assertEqual(self.store.latest(self.review["aiReviewId"]), third)
+
+    def test_append_refuses_to_extend_a_broken_existing_chain(self) -> None:
+        first = self.store.restore_validated(
+            _decision_record(self.review, decision_id="existing-first")
+        )
+        broken = _decision_record(self.review, decision_id="existing-broken")
+        with closing(sqlite3.connect(self.decision_path)) as connection:
+            connection.execute(
+                """
+                insert into ai_review_decisions (
+                    decision_id,
+                    ai_review_id,
+                    created_at,
+                    supersedes_decision_id,
+                    review_record_hash,
+                    evidence_hash,
+                    record_json
+                )
+                values (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    broken["decisionId"],
+                    broken["aiReviewId"],
+                    broken["createdAt"],
+                    broken["supersedesDecisionId"],
+                    broken["reviewRecordHash"],
+                    broken["evidenceHash"],
+                    canonical_json(broken),
+                ),
+            )
+            connection.commit()
+
+        with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
+            self._append(supersedes_decision_id=broken["decisionId"])
+
+        with closing(sqlite3.connect(self.decision_path)) as connection:
+            count = connection.execute("select count(*) from ai_review_decisions").fetchone()[0]
+        self.assertEqual(count, 2)
+        self.assertEqual(first.decision_id, "existing-first")
+
+    def test_append_rejects_missing_and_legacy_reviews(self) -> None:
+        with self.assertRaisesRegex(ValueError, "^ai_review_not_found$"):
+            self.store.append(
+                "missing-review",
+                {
+                    "operator": "researcher",
+                    "status": "rejected",
+                    "rationale": "No review exists.",
+                    "supersedesDecisionId": None,
+                },
+            )
+
+        legacy = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "legacy-review",
+            "runId": "run-primary",
+            "createdAt": "2026-07-10T07:00:00+00:00",
+            "boundary": "research-only; paper/live execution blocked",
+        }
+        self.review_store.record(legacy)
+        with self.assertRaisesRegex(ValueError, "^ai_review_not_authoritative$"):
+            self.store.append(
+                legacy["aiReviewId"],
+                {
+                    "operator": "researcher",
+                    "status": "rejected",
+                    "rationale": "Legacy evidence is not authoritative.",
+                    "supersedesDecisionId": None,
+                },
+            )
+
+    def test_restore_is_idempotent_only_for_same_id_and_record_hash(self) -> None:
+        record = _decision_record(self.review, decision_id="decision-imported")
+
+        first = self.store.restore_validated(record)
+        second = self.store.restore_validated(copy.deepcopy(record))
+        self.assertEqual(second, first)
+        self.assertEqual(len(self.store.list_by_review(self.review["aiReviewId"])), 1)
+
+        conflicting = copy.deepcopy(record)
+        conflicting["rationale"] = "Different content under the same identity."
+        _rehash_decision(conflicting)
+        with self.assertRaisesRegex(ValueError, "^ai_review_decision_record_conflict$"):
+            self.store.restore_validated(conflicting)
+
+    def test_concurrent_append_serializes_predecessor_check(self) -> None:
+        stores = (
+            AiReviewDecisionStore(self.decision_path, review_store=self.review_store),
+            AiReviewDecisionStore(self.decision_path, review_store=self.review_store),
+        )
+        barrier = threading.Barrier(3)
+        outcomes: list[tuple[str, str]] = []
+
+        def append(store: AiReviewDecisionStore) -> None:
+            barrier.wait()
+            try:
+                stored = store.append(
+                    self.review["aiReviewId"],
+                    {
+                        "operator": "researcher",
+                        "status": "revision_requested",
+                        "rationale": "Concurrent decision.",
+                        "supersedesDecisionId": None,
+                    },
+                )
+                outcomes.append(("stored", stored.decision_id))
+            except ValueError as error:
+                outcomes.append(("error", str(error)))
+
+        threads = [threading.Thread(target=append, args=(store,)) for store in stores]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(timeout=5)
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(sum(kind == "stored" for kind, _ in outcomes), 1)
+        self.assertEqual(
+            [outcome for outcome in outcomes if outcome[0] == "error"],
+            [("error", "decision_conflict")],
+        )
+        self.assertEqual(len(self.store.list_by_review(self.review["aiReviewId"])), 1)
+
+    def test_list_and_latest_follow_insertion_chain_when_timestamps_and_ids_do_not_sort(self) -> None:
+        first_record = _decision_record(
+            self.review,
+            decision_id="z-first",
+            created_at="2026-07-10T08:30:00+00:00",
+        )
+        second_record = _decision_record(
+            self.review,
+            decision_id="a-second",
+            created_at="2026-07-10T08:30:00+00:00",
+            status="revision_requested",
+            supersedes_decision_id="z-first",
+        )
+
+        first = self.store.restore_validated(first_record)
+        second = self.store.restore_validated(second_record)
+
+        self.assertEqual(self.store.list_by_review(self.review["aiReviewId"]), [first, second])
+        self.assertEqual(self.store.latest(self.review["aiReviewId"]), second)
+        self.assertFalse(hasattr(self.store, "update"))
+        self.assertFalse(hasattr(self.store, "delete"))
+        self.assertEqual(self.store.list_by_review(self.review["aiReviewId"])[0], first)
+
+    def test_restore_validates_schema_hashes_boundary_review_binding_and_chain(self) -> None:
+        cases: tuple[tuple[str, str, Any], ...] = (
+            (
+                "schema",
+                "ai_review_decision_record_invalid",
+                lambda record: record.update({"schemaVersion": 2}),
+            ),
+            (
+                "record hash",
+                "ai_review_decision_record_hash_mismatch",
+                lambda record: record.update({"recordHash": "f" * 64}),
+            ),
+            (
+                "boundary",
+                "ai_review_decision_boundary_invalid",
+                lambda record: (
+                    record["boundary"].update({"liveTradingAllowed": True}),
+                    _rehash_decision(record),
+                ),
+            ),
+            (
+                "review hash",
+                "ai_review_decision_review_hash_mismatch",
+                lambda record: (
+                    record.update({"reviewRecordHash": "e" * 64}),
+                    _rehash_decision(record),
+                ),
+            ),
+            (
+                "evidence hash",
+                "ai_review_decision_evidence_hash_mismatch",
+                lambda record: (
+                    record.update({"evidenceHash": "d" * 64}),
+                    _rehash_decision(record),
+                ),
+            ),
+            (
+                "predecessor",
+                "decision_conflict",
+                lambda record: (
+                    record.update({"supersedesDecisionId": "missing"}),
+                    _rehash_decision(record),
+                ),
+            ),
+        )
+        for label, code, mutate in cases:
+            with self.subTest(case=label):
+                record = _decision_record(self.review, decision_id=f"invalid-{label}")
+                mutate(record)
+                with self.assertRaisesRegex(ValueError, f"^{code}$"):
+                    self.store.restore_validated(record)
+
+        self.assertEqual(self.store.list_by_review(self.review["aiReviewId"]), [])
+
+    def test_restore_imports_complete_linear_chain_without_skip_option(self) -> None:
+        records = [
+            _decision_record(self.review, decision_id="import-1"),
+            _decision_record(
+                self.review,
+                decision_id="import-2",
+                supersedes_decision_id="import-1",
+            ),
+            _decision_record(
+                self.review,
+                decision_id="import-3",
+                supersedes_decision_id="import-2",
+            ),
+        ]
+
+        restored = [self.store.restore_validated(record) for record in records]
+
+        self.assertEqual(self.store.list_by_review(self.review["aiReviewId"]), restored)
+        self.assertNotIn("skip", str(self.store.restore_validated))
 
 
 class AiReviewEvidenceAssemblerTests(unittest.TestCase):
