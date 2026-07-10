@@ -51,6 +51,7 @@ def _review_evidence_bundle(
         data_hash = canonical_sha256({"experimentId": experiment_id})
         reference = {
             "experimentId": experiment_id,
+            "selectedCandidateId": "selected",
             "canonicalDataHash": data_hash,
             "dataRange": {
                 "startAt": "2026-01-01T00:00:00+00:00",
@@ -674,6 +675,38 @@ class DeterministicAiReviewEngineTests(unittest.TestCase):
                 self.assertEqual(assessment["stance"], "insufficient_evidence")
                 self.assertTrue(any(field in gap for gap in assessment["evidenceGaps"]))
 
+    def test_malformed_experiment_references_are_insufficient(self) -> None:
+        cases: dict[str, Any] = {
+            "missing primary": lambda bundle: bundle.pop("primaryExperiment"),
+            "primary is not an object": lambda bundle: bundle.update(
+                {"primaryExperiment": "experiment-1"}
+            ),
+            "primary object is incomplete": lambda bundle: bundle.update(
+                {"primaryExperiment": {}}
+            ),
+            "missing comparisons": lambda bundle: bundle.pop("comparisonExperiments"),
+            "comparisons is not an array": lambda bundle: bundle.update(
+                {"comparisonExperiments": {}}
+            ),
+            "comparison item is not an object": lambda bundle: bundle[
+                "comparisonExperiments"
+            ].append("experiment-2"),
+            "comparison object is incomplete": lambda bundle: bundle[
+                "comparisonExperiments"
+            ].append({}),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(case=label):
+                bundle = _review_evidence_bundle()
+                mutate(bundle)
+                _rehash_bundle(bundle)
+
+                assessment = self.engine.evaluate(bundle)
+
+                self.assertEqual(assessment["stance"], "insufficient_evidence")
+                self.assertTrue(assessment["evidenceGaps"])
+                self.assertEqual(assessment["consistency"], "insufficient")
+
     def test_data_quality_hash_or_safety_boundary_anomalies_are_blocked(self) -> None:
         cases: list[tuple[str, Any]] = [
             (
@@ -731,6 +764,23 @@ class DeterministicAiReviewEngineTests(unittest.TestCase):
         _rehash_bundle(insufficient)
         self.assertEqual(self.engine.evaluate(insufficient)["stance"], "insufficient_evidence")
 
+    def test_blocked_precedes_gap_and_caution_from_different_experiments(self) -> None:
+        bundle = _review_evidence_bundle([{}, {"testTradeCount": 9}])
+        primary_candidate = next(
+            item
+            for item in bundle["evidenceItems"]
+            if item["id"] == "experiment:experiment-1:candidate:selected"
+        )
+        del primary_candidate["value"]["walkForward"]
+        bundle["safetyBoundary"]["liveTradingAllowed"] = True
+        _rehash_bundle(bundle)
+
+        assessment = self.engine.evaluate(bundle)
+
+        self.assertEqual(assessment["stance"], "blocked")
+        self.assertTrue(any("walkForward" in gap for gap in assessment["evidenceGaps"]))
+        self.assertTrue(any("Trade count" in risk["message"] for risk in assessment["risks"]))
+
     def test_cross_experiment_consistency_states(self) -> None:
         consistent = _review_evidence_bundle([{}, {}, {}])
         mixed = _review_evidence_bundle(
@@ -747,6 +797,74 @@ class DeterministicAiReviewEngineTests(unittest.TestCase):
             self.engine.evaluate(_review_evidence_bundle())["consistency"],
             "insufficient",
         )
+
+    def test_consistency_includes_trade_count_and_walk_forward_risks(self) -> None:
+        cases = {
+            "minimum trade count": {"testTradeCount": 9},
+            "walk-forward majority failure": {
+                "walkForwardReturns": [1.0, -1.0, -2.0]
+            },
+        }
+        for label, comparison in cases.items():
+            with self.subTest(risk=label):
+                assessment = self.engine.evaluate(_review_evidence_bundle([{}, comparison]))
+                self.assertEqual(assessment["consistency"], "divergent")
+
+    def test_selected_candidate_bindings_must_match_reference_id_and_value(self) -> None:
+        def candidate_item(bundle: dict[str, Any]) -> dict[str, Any]:
+            return next(
+                item for item in bundle["evidenceItems"] if item["kind"] == "candidate_metrics"
+            )
+
+        cases: dict[str, Any] = {
+            "reference": lambda bundle: bundle["primaryExperiment"].update(
+                {"selectedCandidateId": "other"}
+            ),
+            "evidence item id": lambda bundle: candidate_item(bundle).update(
+                {"id": "experiment:experiment-1:candidate:other"}
+            ),
+            "candidate value": lambda bundle: candidate_item(bundle)["value"].update(
+                {"candidateId": "other"}
+            ),
+        }
+        for label, mutate in cases.items():
+            with self.subTest(binding=label):
+                bundle = _review_evidence_bundle()
+                mutate(bundle)
+                _rehash_bundle(bundle)
+
+                assessment = self.engine.evaluate(bundle)
+
+                self.assertEqual(assessment["stance"], "insufficient_evidence")
+                self.assertTrue(
+                    any("selected candidate" in gap for gap in assessment["evidenceGaps"])
+                )
+
+    def test_each_experiment_requires_exactly_one_selected_candidate_item(self) -> None:
+        cases = ("missing", "duplicate")
+        for case in cases:
+            with self.subTest(case=case):
+                bundle = _review_evidence_bundle()
+                candidate = next(
+                    item
+                    for item in bundle["evidenceItems"]
+                    if item["kind"] == "candidate_metrics"
+                )
+                if case == "missing":
+                    candidate["value"]["selected"] = False
+                else:
+                    duplicate = copy.deepcopy(candidate)
+                    duplicate["id"] = "experiment:experiment-1:candidate:duplicate"
+                    duplicate["value"]["candidateId"] = "duplicate"
+                    bundle["evidenceItems"].append(duplicate)
+                _rehash_bundle(bundle)
+
+                assessment = self.engine.evaluate(bundle)
+
+                self.assertEqual(assessment["stance"], "insufficient_evidence")
+                self.assertTrue(
+                    any("selected candidate" in gap for gap in assessment["evidenceGaps"])
+                )
 
     def test_output_is_deterministic_referenced_and_non_executable(self) -> None:
         bundle = _review_evidence_bundle([{}, {"testTradeCount": 9}])

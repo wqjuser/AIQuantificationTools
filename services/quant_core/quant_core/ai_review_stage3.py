@@ -98,9 +98,8 @@ class DeterministicAiReviewEngine:
             for item in evidence_items
             if isinstance(item.get("id"), str) and item["id"].strip()
         }
-        references = _review_experiment_references(evidence_bundle)
         risks: list[dict[str, Any]] = []
-        gaps: list[str] = []
+        references, gaps = _review_experiment_references(evidence_bundle)
         blocked = False
 
         expected_hash = canonical_sha256(
@@ -128,13 +127,12 @@ class DeterministicAiReviewEngine:
                 )
             )
 
-        signatures: dict[str, tuple[int, int, bool, bool]] = {}
+        signatures: dict[str, tuple[int, int, bool, bool, bool, bool]] = {}
         for reference in references:
             experiment_id = reference.get("experimentId")
-            if not isinstance(experiment_id, str) or not experiment_id.strip():
-                blocked = True
-                risks.append(_assessment_risk("critical", "An experiment reference is invalid."))
-                continue
+            selected_candidate_id = reference.get("selectedCandidateId")
+            assert isinstance(experiment_id, str)
+            assert isinstance(selected_candidate_id, str)
 
             data_quality_id = f"experiment:{experiment_id}:data-quality"
             data_quality_item = next(
@@ -168,22 +166,33 @@ class DeterministicAiReviewEngine:
                         )
                     )
 
-            candidate_item = next(
-                (
-                    item
-                    for item in evidence_items
-                    if item.get("kind") == "candidate_metrics"
-                    and str(item.get("id", "")).startswith(f"experiment:{experiment_id}:candidate:")
-                    and isinstance(item.get("value"), Mapping)
-                    and item["value"].get("selected") is True
-                ),
-                None,
-            )
-            if candidate_item is None:
-                gaps.append(f"{experiment_id} selected candidate evidence is missing.")
+            candidate_items = [
+                item
+                for item in evidence_items
+                if item.get("kind") == "candidate_metrics"
+                and str(item.get("id", "")).startswith(
+                    f"experiment:{experiment_id}:candidate:"
+                )
+                and isinstance(item.get("value"), Mapping)
+                and item["value"].get("selected") is True
+            ]
+            if len(candidate_items) != 1:
+                gaps.append(
+                    f"{experiment_id} must have exactly one selected candidate evidence item."
+                )
                 continue
+            candidate_item = candidate_items[0]
             candidate_id = str(candidate_item["id"])
             candidate = candidate_item["value"]
+            if (
+                candidate_id
+                != f"experiment:{experiment_id}:candidate:{selected_candidate_id}"
+                or candidate.get("candidateId") != selected_candidate_id
+            ):
+                gaps.append(
+                    f"{experiment_id} selected candidate reference, evidence id, and value conflict."
+                )
+                continue
             validation = _complete_metrics(candidate.get("validationMetrics"))
             test = _complete_metrics(candidate.get("testMetrics"))
             walk_forward_returns = _walk_forward_returns(candidate.get("walkForward"))
@@ -198,11 +207,18 @@ class DeterministicAiReviewEngine:
 
             validation_return, validation_drawdown, validation_trades = validation
             test_return, test_drawdown, test_trades = test
+            trade_count_breach = min(validation_trades, test_trades) < MIN_REVIEW_TRADE_COUNT
+            failure_count = sum(value <= 0 for value in walk_forward_returns)
+            walk_forward_breach = (
+                failure_count / len(walk_forward_returns) > WALK_FORWARD_FAILURE_RATIO
+            )
             signatures[experiment_id] = (
                 _direction(validation_return),
                 _direction(test_return),
                 validation_drawdown > MAX_REVIEW_DRAWDOWN_PCT,
                 test_drawdown > MAX_REVIEW_DRAWDOWN_PCT,
+                trade_count_breach,
+                walk_forward_breach,
             )
             if validation_return * test_return < 0:
                 risks.append(
@@ -220,7 +236,7 @@ class DeterministicAiReviewEngine:
                         candidate_id,
                     )
                 )
-            if min(validation_trades, test_trades) < MIN_REVIEW_TRADE_COUNT:
+            if trade_count_breach:
                 risks.append(
                     _assessment_risk(
                         "medium",
@@ -228,8 +244,7 @@ class DeterministicAiReviewEngine:
                         candidate_id,
                     )
                 )
-            failure_count = sum(value <= 0 for value in walk_forward_returns)
-            if failure_count / len(walk_forward_returns) > WALK_FORWARD_FAILURE_RATIO:
+            if walk_forward_breach:
                 risks.append(
                     _assessment_risk(
                         "high",
@@ -275,12 +290,37 @@ class DeterministicAiReviewEngine:
         return validate_assessment(assessment, known_ids)
 
 
-def _review_experiment_references(evidence_bundle: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+def _review_experiment_references(
+    evidence_bundle: Mapping[str, Any],
+) -> tuple[list[Mapping[str, Any]], list[str]]:
     primary = evidence_bundle.get("primaryExperiment")
     comparisons = evidence_bundle.get("comparisonExperiments")
-    if not isinstance(primary, Mapping) or not isinstance(comparisons, list):
-        return []
-    return [primary, *(item for item in comparisons if isinstance(item, Mapping))]
+    gaps: list[str] = []
+    if not _review_reference_is_structurally_valid(primary):
+        gaps.append("primaryExperiment reference is missing or invalid.")
+        primary = None
+    if not isinstance(comparisons, list):
+        gaps.append("comparisonExperiments must be an array of valid references.")
+        comparisons = []
+    valid_comparisons: list[Mapping[str, Any]] = []
+    for index, comparison in enumerate(comparisons):
+        if not _review_reference_is_structurally_valid(comparison):
+            gaps.append(f"comparisonExperiments[{index}] reference is invalid.")
+        else:
+            valid_comparisons.append(comparison)
+    if primary is None:
+        return [], gaps
+    return [primary, *valid_comparisons], gaps
+
+
+def _review_reference_is_structurally_valid(value: Any) -> bool:
+    return bool(
+        isinstance(value, Mapping)
+        and isinstance(value.get("experimentId"), str)
+        and value["experimentId"].strip()
+        and isinstance(value.get("selectedCandidateId"), str)
+        and value["selectedCandidateId"].strip()
+    )
 
 
 def _data_quality_binding_is_valid(
@@ -336,7 +376,7 @@ def _walk_forward_returns(value: Any) -> list[float] | None:
 
 def _review_consistency(
     references: list[Mapping[str, Any]],
-    signatures: Mapping[str, tuple[int, int, bool, bool]],
+    signatures: Mapping[str, tuple[int, int, bool, bool, bool, bool]],
 ) -> str:
     experiment_ids = [reference.get("experimentId") for reference in references]
     if len(experiment_ids) < 2 or any(experiment_id not in signatures for experiment_id in experiment_ids):
