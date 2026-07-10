@@ -4,11 +4,12 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -752,6 +753,243 @@ def validate_stage2_strategy_experiment_manifest(manifest: Any) -> str:
     )
 
 
+_STAGE3_MANIFEST_FIELDS = {
+    "kind",
+    "schemaVersion",
+    "generatedAt",
+    "status",
+    "sourceRunId",
+    "primaryExperimentId",
+    "comparisonExperimentIds",
+    "strategyLineageKey",
+    "evidenceHash",
+    "reviewRecordHash",
+    "deterministicStance",
+    "deterministicConsistency",
+    "externalProvider",
+    "externalStatus",
+    "requestCount",
+    "decisions",
+    "artifactCounts",
+    "exportPackageHash",
+    "importedPackageHash",
+    "readbackHash",
+    "paperOnly",
+    "liveTradingAllowed",
+    "orderSubmissionAllowed",
+    "orderSubmitted",
+    "liveOrderSubmitted",
+    "routeExecuted",
+}
+_STAGE3_DECISION_FIELDS = {
+    "decisionId",
+    "status",
+    "supersedesDecisionId",
+    "recordHash",
+}
+
+
+def build_stage3_ai_review_manifest(
+    *,
+    source_run_id: str,
+    primary_experiment_id: str,
+    comparison_experiment_ids: list[str],
+    strategy_lineage_key: str,
+    evidence_hash: str,
+    review_record_hash: str,
+    deterministic_stance: str,
+    deterministic_consistency: str,
+    external_provider: str,
+    external_status: str,
+    request_count: int,
+    decisions: list[dict[str, Any]],
+    export_package_hash: str,
+    imported_package_hash: str,
+    readback_hash: str,
+    artifact_counts: dict[str, int],
+) -> dict[str, Any]:
+    return {
+        "kind": "aiqt.stage3AiReviewAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed",
+        "sourceRunId": source_run_id,
+        "primaryExperimentId": primary_experiment_id,
+        "comparisonExperimentIds": list(comparison_experiment_ids),
+        "strategyLineageKey": strategy_lineage_key,
+        "evidenceHash": evidence_hash,
+        "reviewRecordHash": review_record_hash,
+        "deterministicStance": deterministic_stance,
+        "deterministicConsistency": deterministic_consistency,
+        "externalProvider": external_provider,
+        "externalStatus": external_status,
+        "requestCount": request_count,
+        "decisions": json.loads(json.dumps(decisions)),
+        "artifactCounts": dict(artifact_counts),
+        "exportPackageHash": export_package_hash,
+        "importedPackageHash": imported_package_hash,
+        "readbackHash": readback_hash,
+        "paperOnly": True,
+        "liveTradingAllowed": False,
+        "orderSubmissionAllowed": False,
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+    }
+
+
+def write_stage3_ai_review_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(f"stage3 ai-review report={path}")
+    return path
+
+
+def load_stage3_ai_review_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 3 AI review acceptance manifest")
+
+
+def _stage3_hash(value: Any, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise RuntimeError(f"Invalid Stage 3 AI review manifest: {field} is not a SHA-256 hash")
+    return value
+
+
+def _stage3_text(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise RuntimeError(f"Invalid Stage 3 AI review manifest: {field} is invalid")
+    return value
+
+
+def validate_stage3_ai_review_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 3 AI review acceptance manifest")
+    if set(payload) != _STAGE3_MANIFEST_FIELDS:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage3AiReviewAcceptance"
+        or type(payload["schemaVersion"]) is not int
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review manifest: identity is invalid")
+    generated_at = _stage3_text(payload["generatedAt"], "generatedAt")
+    try:
+        parsed_generated_at = datetime.fromisoformat(generated_at)
+    except ValueError:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: generatedAt is invalid") from None
+    if parsed_generated_at.tzinfo != timezone.utc or parsed_generated_at.isoformat() != generated_at:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: generatedAt is not canonical UTC")
+
+    source_run_id = _stage3_text(payload["sourceRunId"], "sourceRunId")
+    primary_experiment_id = _stage3_text(
+        payload["primaryExperimentId"], "primaryExperimentId"
+    )
+    comparisons = payload["comparisonExperimentIds"]
+    if (
+        not isinstance(comparisons, list)
+        or len(comparisons) > 4
+        or any(not isinstance(item, str) or not item.strip() or item != item.strip() for item in comparisons)
+        or len(set(comparisons)) != len(comparisons)
+        or primary_experiment_id in comparisons
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review manifest: comparison experiment ids are invalid")
+    for field in (
+        "strategyLineageKey",
+        "evidenceHash",
+        "reviewRecordHash",
+        "exportPackageHash",
+        "importedPackageHash",
+        "readbackHash",
+    ):
+        _stage3_hash(payload[field], field)
+    if payload["deterministicStance"] not in {
+        "supported",
+        "caution",
+        "blocked",
+        "insufficient_evidence",
+    } or payload["deterministicConsistency"] not in {
+        "consistent",
+        "mixed",
+        "divergent",
+        "insufficient",
+    }:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: deterministic assessment is invalid")
+
+    provider = payload["externalProvider"]
+    external_status = payload["externalStatus"]
+    request_count = payload["requestCount"]
+    if type(request_count) is not int or not 0 <= request_count <= 1:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: requestCount is invalid")
+    if provider == "local":
+        if external_status != "skipped" or request_count != 0:
+            raise RuntimeError("Invalid Stage 3 AI review manifest: local Provider evidence is invalid")
+    elif provider == "openai-compatible":
+        if external_status not in {"completed", "failed"} or request_count != 1:
+            raise RuntimeError("Invalid Stage 3 AI review manifest: live Provider evidence is invalid")
+    else:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: externalProvider is invalid")
+
+    decisions = payload["decisions"]
+    if not isinstance(decisions, list) or len(decisions) != 2:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: Decision chain length is invalid")
+    predecessor = None
+    decision_ids: set[str] = set()
+    for decision in decisions:
+        if not isinstance(decision, dict) or set(decision) != _STAGE3_DECISION_FIELDS:
+            raise RuntimeError("Invalid Stage 3 AI review manifest: Decision fields are invalid")
+        decision_id = _stage3_text(decision["decisionId"], "decisionId")
+        if (
+            not decision_id.startswith("ai-review-decision-")
+            or len(decision_id) != len("ai-review-decision-") + 32
+            or any(character not in "0123456789abcdef" for character in decision_id.removeprefix("ai-review-decision-"))
+            or decision_id in decision_ids
+            or decision["status"] not in {
+                "accepted_for_research",
+                "revision_requested",
+                "rejected",
+                "insufficient_evidence",
+            }
+            or decision["supersedesDecisionId"] != predecessor
+        ):
+            raise RuntimeError("Invalid Stage 3 AI review manifest: Decision chain is invalid")
+        _stage3_hash(decision["recordHash"], "Decision recordHash")
+        decision_ids.add(decision_id)
+        predecessor = decision_id
+
+    counts = payload["artifactCounts"]
+    if (
+        not isinstance(counts, dict)
+        or set(counts) != {"aiReviewRunsV2", "aiReviewDecisions"}
+        or type(counts["aiReviewRunsV2"]) is not int
+        or counts["aiReviewRunsV2"] != 1
+        or type(counts["aiReviewDecisions"]) is not int
+        or counts["aiReviewDecisions"] != len(decisions)
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review manifest: artifact counts are invalid")
+    if payload["paperOnly"] is not True or any(
+        payload[field] is not False
+        for field in (
+            "liveTradingAllowed",
+            "orderSubmissionAllowed",
+            "orderSubmitted",
+            "liveOrderSubmitted",
+            "routeExecuted",
+        )
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review manifest: live or order route is not blocked")
+    return (
+        f"stage3 ai-review run={source_run_id} provider={provider} requests={request_count} "
+        f"decisions={len(decisions)} liveBlocked=True"
+    )
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1186,6 +1424,32 @@ def post_json(url: str, payload: dict[str, Any], timeout_seconds: int) -> Any:
         return json.loads(response.read().decode("utf-8"))
 
 
+def post_json_with_status(
+    url: str,
+    payload: dict[str, Any],
+    timeout_seconds: int,
+) -> tuple[int, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+        },
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        try:
+            payload = json.loads(error.read().decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            payload = {}
+        return error.code, payload
+
+
 def request_text(url: str, timeout_seconds: int) -> str:
     with urlopen(url, timeout=timeout_seconds) as response:
         return response.read().decode("utf-8", errors="replace")
@@ -1586,6 +1850,451 @@ def run_stage2_strategy_experiment_acceptance(
     if report_path is not None:
         write_stage2_strategy_experiment_report(report_path, manifest)
     return summaries
+
+
+def _stage3_experiment_manifest(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory() as directory:
+        report_path = Path(directory) / "stage2-strategy-experiment.json"
+        run_stage2_strategy_experiment_acceptance(
+            base_url,
+            timeout_seconds=timeout_seconds,
+            report_path=report_path,
+        )
+        manifest = load_stage2_strategy_experiment_report(report_path)
+    validate_stage2_strategy_experiment_manifest(manifest)
+    return manifest
+
+
+def _stage3_review_record(
+    payload: Any,
+    *,
+    primary_experiment_id: str,
+    comparison_experiment_ids: list[str],
+    provider: str,
+) -> Any:
+    response = _require_dict(payload, "Stage 3 AI review")
+    projected = _require_dict(response.get("review"), "Stage 3 AI review")
+    if projected.get("authority") != "authoritative":
+        raise RuntimeError("Invalid Stage 3 AI review: authority is not authoritative")
+    record = {key: value for key, value in projected.items() if key != "authority"}
+    validator = _quant_core_validator(
+        "ai_review_runs",
+        "validate_authoritative_ai_review_run_record",
+    )
+    try:
+        stored = validator(record)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid Stage 3 AI review: {error}") from error
+    if (
+        stored.primary_experiment_id != primary_experiment_id
+        or [item["experimentId"] for item in stored.record["comparisonExperiments"]]
+        != comparison_experiment_ids
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review: experiment binding does not match")
+    canonical_sha256 = _quant_core_validator("canonical", "canonical_sha256")
+    bundle = stored.record["evidenceBundle"]
+    if stored.evidence_hash != canonical_sha256(
+        {key: value for key, value in bundle.items() if key != "evidenceHash"}
+    ) or stored.record_hash != canonical_sha256(
+        {key: value for key, value in stored.record.items() if key != "recordHash"}
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review: canonical hash does not match")
+    external = stored.record["externalAssessment"]
+    expected_statuses = {"skipped"} if provider == "local" else {"completed", "failed"}
+    if external.get("provider") != provider or external.get("status") not in expected_statuses:
+        raise RuntimeError("Invalid Stage 3 AI review: Provider evidence does not match")
+    return stored
+
+
+def _stage3_decision_record(payload: Any, *, review: Any) -> Any:
+    response = _require_dict(payload, "Stage 3 AI review Decision")
+    record = _require_dict(response.get("decision"), "Stage 3 AI review Decision")
+    validator = _quant_core_validator(
+        "ai_review_decisions",
+        "validate_ai_review_decision_record",
+    )
+    try:
+        stored = validator(record)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid Stage 3 AI review Decision: {error}") from error
+    if (
+        stored.ai_review_id != review.ai_review_id
+        or stored.review_record_hash != review.record_hash
+        or stored.evidence_hash != review.evidence_hash
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review Decision: Review binding does not match")
+    return stored
+
+
+def _stage3_export_package(payload: Any) -> dict[str, Any]:
+    response = _require_dict(payload, "Stage 3 research export")
+    package = response.get("export", response)
+    return _require_dict(package, "Stage 3 research export package")
+
+
+def _stage3_archive_snapshot(
+    package: dict[str, Any],
+    *,
+    source_run_id: str,
+    review_id: str,
+    decision_ids: list[str],
+) -> dict[str, Any]:
+    manifest = _require_dict(package.get("manifest"), "Stage 3 research export manifest")
+    counts = _require_dict(manifest.get("artifactCounts"), "Stage 3 research export artifact counts")
+    if (
+        manifest.get("runId") != source_run_id
+        or manifest.get("paperOnly") is not True
+        or manifest.get("liveTradingAllowed") is not False
+        or manifest.get("orderSubmissionEnabled") is not False
+        or manifest.get("liveOrderSubmitted") is not False
+        or manifest.get("routeExecuted") is not False
+        or manifest.get("liveBlockedBoundary") is not True
+    ):
+        raise RuntimeError("Invalid Stage 3 research export: paper-only boundary is invalid")
+    reviews = package.get("aiReviewRunsV2")
+    decisions = package.get("aiReviewDecisions")
+    if (
+        not isinstance(reviews, list)
+        or not isinstance(decisions, list)
+        or type(counts.get("aiReviewRunsV2")) is not int
+        or counts["aiReviewRunsV2"] != len(reviews)
+        or type(counts.get("aiReviewDecisions")) is not int
+        or counts["aiReviewDecisions"] != len(decisions)
+    ):
+        raise RuntimeError("Invalid Stage 3 research export: artifact counts do not match")
+    matching_reviews = [
+        item
+        for item in reviews
+        if isinstance(item, dict) and item.get("aiReviewId") == review_id
+    ]
+    matching_decisions = [
+        item
+        for item in decisions
+        if isinstance(item, dict) and item.get("aiReviewId") == review_id
+    ]
+    if len(matching_reviews) != 1 or len(matching_decisions) != len(decision_ids):
+        raise RuntimeError("Invalid Stage 3 research export: accepted Review or Decision is missing")
+    review_envelope = _require_dict(
+        matching_reviews[0],
+        "Stage 3 authoritative Review envelope",
+    )
+    review_record = _require_dict(review_envelope.get("record"), "Stage 3 authoritative Review record")
+    review_validator = _quant_core_validator(
+        "ai_review_runs",
+        "validate_authoritative_ai_review_run_record",
+    )
+    decision_validator = _quant_core_validator(
+        "ai_review_decisions",
+        "validate_ai_review_decision_archive_records",
+    )
+    try:
+        review = review_validator(review_record)
+        decision_records = [
+            _require_dict(
+                _require_dict(item, "Stage 3 Decision envelope").get("record"),
+                "Stage 3 Decision record",
+            )
+            for item in matching_decisions
+        ]
+        stored_decisions = decision_validator(decision_records, [review])
+    except ValueError as error:
+        raise RuntimeError(f"Invalid Stage 3 research export: {error}") from error
+    if (
+        review.ai_review_id != review_id
+        or review.run_id != source_run_id
+        or [decision.decision_id for decision in stored_decisions] != decision_ids
+    ):
+        raise RuntimeError("Invalid Stage 3 research export: Review or Decision identity does not match")
+    integrity = _require_dict(package.get("integrity"), "Stage 3 research export integrity")
+    if integrity.get("algorithm") != "sha256":
+        raise RuntimeError("Invalid Stage 3 research export: integrity algorithm is invalid")
+    package_hash = _stage3_hash(integrity.get("hash"), "research export integrity hash")
+    return {
+        "packageHash": package_hash,
+        "review": review,
+        "decisions": stored_decisions,
+        "artifactCounts": {
+            "aiReviewRunsV2": 1,
+            "aiReviewDecisions": len(stored_decisions),
+        },
+    }
+
+
+def _run_stage3_ai_review_flow(
+    *,
+    base_url: str,
+    import_base_url: str,
+    timeout_seconds: int,
+    source_run_id: str,
+    primary_experiment_id: str,
+    comparison_experiment_ids: list[str],
+    provider: str,
+    external_data_approved: bool,
+    request_count: int,
+) -> dict[str, Any]:
+    if (
+        (provider == "local" and (external_data_approved or request_count != 0))
+        or (
+            provider == "openai-compatible"
+            and (external_data_approved is not True or request_count != 1)
+        )
+        or provider not in {"local", "openai-compatible"}
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review flow: Provider authorization is invalid")
+    review_payload = post_json(
+        join_url(base_url, "/api/ai-reviews"),
+        {
+            "primaryExperimentId": primary_experiment_id,
+            "comparisonExperimentIds": comparison_experiment_ids,
+            "providerId": provider,
+            "externalDataApproved": external_data_approved,
+        },
+        timeout_seconds,
+    )
+    created_review = _stage3_review_record(
+        review_payload,
+        primary_experiment_id=primary_experiment_id,
+        comparison_experiment_ids=comparison_experiment_ids,
+        provider=provider,
+    )
+    decision_url = join_url(
+        base_url,
+        f"/api/ai-reviews/{quote(created_review.ai_review_id, safe='')}/decisions",
+    )
+    first = _stage3_decision_record(
+        post_json(
+            decision_url,
+            {
+                "operator": "stage3-smoke",
+                "status": "accepted_for_research",
+                "rationale": "Stage 3 evidence passed deterministic paper-only acceptance.",
+                "supersedesDecisionId": None,
+            },
+            timeout_seconds,
+        ),
+        review=created_review,
+    )
+    second = _stage3_decision_record(
+        post_json(
+            decision_url,
+            {
+                "operator": "stage3-smoke",
+                "status": "revision_requested",
+                "rationale": "Stage 3 acceptance verifies an auditable Decision revision chain.",
+                "supersedesDecisionId": first.decision_id,
+            },
+            timeout_seconds,
+        ),
+        review=created_review,
+    )
+    conflict_status, conflict_payload = post_json_with_status(
+        decision_url,
+        {
+            "operator": "stage3-smoke",
+            "status": "rejected",
+            "rationale": "This stale predecessor must be rejected by the Decision ledger.",
+            "supersedesDecisionId": first.decision_id,
+        },
+        timeout_seconds,
+    )
+    if (
+        conflict_status != 409
+        or not isinstance(conflict_payload, dict)
+        or conflict_payload.get("error") != "decision_conflict"
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review: stale Decision predecessor was not rejected")
+    detail = _require_dict(
+        request_json(
+            join_url(
+                base_url,
+                f"/api/ai-reviews/{quote(created_review.ai_review_id, safe='')}",
+            ),
+            timeout_seconds,
+        ),
+        "Stage 3 AI review detail",
+    )
+    detail_review = _stage3_review_record(
+        detail,
+        primary_experiment_id=primary_experiment_id,
+        comparison_experiment_ids=comparison_experiment_ids,
+        provider=provider,
+    )
+    latest_decision = _require_dict(
+        detail.get("latestDecision"),
+        "Stage 3 latest Decision",
+    )
+    if (
+        detail_review.record_hash != created_review.record_hash
+        or latest_decision.get("decisionId") != second.decision_id
+        or latest_decision.get("recordHash") != second.record_hash
+    ):
+        raise RuntimeError("Invalid Stage 3 AI review detail: readback hash does not match")
+
+    export_package = _stage3_export_package(
+        request_json(
+            join_url(
+                base_url,
+                f"/api/research/runs/{quote(source_run_id, safe='')}/export",
+            ),
+            timeout_seconds,
+        )
+    )
+    decision_ids = [first.decision_id, second.decision_id]
+    exported = _stage3_archive_snapshot(
+        export_package,
+        source_run_id=source_run_id,
+        review_id=created_review.ai_review_id,
+        decision_ids=decision_ids,
+    )
+    import_payload = _require_dict(
+        post_json(
+            join_url(import_base_url, "/api/research/runs/import"),
+            export_package,
+            timeout_seconds,
+        ),
+        "Stage 3 research import",
+    )
+    imported_run = _require_dict(import_payload.get("run"), "Stage 3 imported research run")
+    if imported_run.get("runId") != source_run_id:
+        raise RuntimeError("Invalid Stage 3 research import: source run does not match")
+    imported_package = _stage3_export_package(
+        request_json(
+            join_url(
+                import_base_url,
+                f"/api/research/runs/{quote(source_run_id, safe='')}/export",
+            ),
+            timeout_seconds,
+        )
+    )
+    imported = _stage3_archive_snapshot(
+        imported_package,
+        source_run_id=source_run_id,
+        review_id=created_review.ai_review_id,
+        decision_ids=decision_ids,
+    )
+    if (
+        imported["review"].record_hash != exported["review"].record_hash
+        or [item.record_hash for item in imported["decisions"]]
+        != [item.record_hash for item in exported["decisions"]]
+    ):
+        raise RuntimeError("Invalid Stage 3 research import: readback hashes do not match")
+    canonical_sha256 = _quant_core_validator("canonical", "canonical_sha256")
+    readback_hash = canonical_sha256(
+        {
+            "reviewRecordHash": imported["review"].record_hash,
+            "decisionRecordHashes": [
+                decision.record_hash for decision in imported["decisions"]
+            ],
+        }
+    )
+    assessment = created_review.record["deterministicAssessment"]
+    external = created_review.record["externalAssessment"]
+    return build_stage3_ai_review_manifest(
+        source_run_id=source_run_id,
+        primary_experiment_id=primary_experiment_id,
+        comparison_experiment_ids=comparison_experiment_ids,
+        strategy_lineage_key=created_review.record["strategyLineageKey"],
+        evidence_hash=created_review.evidence_hash,
+        review_record_hash=created_review.record_hash,
+        deterministic_stance=assessment["stance"],
+        deterministic_consistency=assessment["consistency"],
+        external_provider=external["provider"],
+        external_status=external["status"],
+        request_count=request_count,
+        decisions=[
+            {
+                "decisionId": decision.decision_id,
+                "status": decision.status,
+                "supersedesDecisionId": decision.supersedes_decision_id,
+                "recordHash": decision.record_hash,
+            }
+            for decision in imported["decisions"]
+        ],
+        export_package_hash=exported["packageHash"],
+        imported_package_hash=imported["packageHash"],
+        readback_hash=readback_hash,
+        artifact_counts=imported["artifactCounts"],
+    )
+
+
+def run_stage3_ai_review_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    import_base_url: str | None = None,
+    report_path: Path | None = None,
+) -> list[str]:
+    experiment = _stage3_experiment_manifest(base_url, timeout_seconds=timeout_seconds)
+    manifest = _run_stage3_ai_review_flow(
+        base_url=base_url,
+        import_base_url=import_base_url or base_url,
+        timeout_seconds=timeout_seconds,
+        source_run_id=experiment["runId"],
+        primary_experiment_id=experiment["experimentId"],
+        comparison_experiment_ids=[experiment["replayExperimentId"]],
+        provider="local",
+        external_data_approved=False,
+        request_count=0,
+    )
+    summary = validate_stage3_ai_review_manifest(manifest)
+    summaries = [summary, "stage3 ai-review decision-conflict=passed archive-readback=passed"]
+    for item in summaries:
+        print(item)
+    if report_path is not None:
+        write_stage3_ai_review_report(report_path, manifest)
+    return summaries
+
+
+def run_stage3_ai_review_live_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    provider: str,
+    external_data_approved: bool,
+    import_base_url: str | None = None,
+    report_path: Path | None = None,
+) -> dict[str, Any]:
+    if provider != "openai-compatible" or external_data_approved is not True:
+        raise RuntimeError(
+            "Stage 3 live AI review requires provider=openai-compatible and explicit external evidence approval"
+        )
+    status_payload = _require_dict(
+        request_json(join_url(base_url, "/api/ai-review/providers"), timeout_seconds),
+        "Stage 3 AI review Provider status",
+    )
+    providers = status_payload.get("providers")
+    status = next(
+        (
+            item
+            for item in providers
+            if isinstance(providers, list)
+            and isinstance(item, dict)
+            and item.get("providerId") == provider
+        ),
+        None,
+    ) if isinstance(providers, list) else None
+    if not isinstance(status, dict) or status.get("configured") is not True:
+        raise RuntimeError("Stage 3 live AI review Provider is not configured; requestCount=0")
+    experiment = _stage3_experiment_manifest(base_url, timeout_seconds=timeout_seconds)
+    manifest = _run_stage3_ai_review_flow(
+        base_url=base_url,
+        import_base_url=import_base_url or base_url,
+        timeout_seconds=timeout_seconds,
+        source_run_id=experiment["runId"],
+        primary_experiment_id=experiment["experimentId"],
+        comparison_experiment_ids=[],
+        provider=provider,
+        external_data_approved=True,
+        request_count=1,
+    )
+    print(validate_stage3_ai_review_manifest(manifest))
+    if report_path is not None:
+        write_stage3_ai_review_report(report_path, manifest)
+    return manifest
 
 
 def p1_watchlist_from_workspace_payload(payload: Any, *, min_symbols: int = 3) -> tuple[list[dict[str, Any]], str, str]:
@@ -2011,6 +2720,12 @@ def run_smoke(
     p1_acceptance_report: Path | None = None,
     stage2_strategy_experiment: bool = False,
     stage2_strategy_experiment_report: Path | None = None,
+    stage3_ai_review: bool = False,
+    stage3_ai_review_report: Path | None = None,
+    stage3_ai_review_import_base_url: str | None = None,
+    stage3_ai_review_live_provider: str | None = None,
+    stage3_ai_review_live_report: Path | None = None,
+    approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
     p2_p1_acceptance_report: Path = Path("data") / "p1-acceptance.json",
@@ -2069,6 +2784,22 @@ def run_smoke(
                 base_url,
                 timeout_seconds=timeout_seconds,
                 report_path=stage2_strategy_experiment_report,
+            )
+        if stage3_ai_review:
+            run_stage3_ai_review_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                import_base_url=stage3_ai_review_import_base_url,
+                report_path=stage3_ai_review_report,
+            )
+        if stage3_ai_review_live_provider:
+            run_stage3_ai_review_live_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                provider=stage3_ai_review_live_provider,
+                external_data_approved=approve_external_evidence,
+                import_base_url=stage3_ai_review_import_base_url,
+                report_path=stage3_ai_review_live_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -2139,6 +2870,41 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--validate-stage2-strategy-experiment-report",
         default=None,
         help="Validate an existing Stage 2 strategy experiment acceptance manifest and exit.",
+    )
+    parser.add_argument(
+        "--stage3-ai-review",
+        action="store_true",
+        help="Run deterministic local Stage 3 AI review acceptance.",
+    )
+    parser.add_argument(
+        "--stage3-ai-review-report",
+        default=None,
+        help="Optional path for a JSON Stage 3 AI review acceptance manifest.",
+    )
+    parser.add_argument(
+        "--validate-stage3-ai-review-report",
+        default=None,
+        help="Validate an existing Stage 3 AI review acceptance manifest and exit.",
+    )
+    parser.add_argument(
+        "--stage3-ai-review-import-base-url",
+        default=None,
+        help="Optional isolated API URL used for Stage 3 archive import and readback.",
+    )
+    parser.add_argument(
+        "--stage3-ai-review-live-provider",
+        default=None,
+        help="Explicit external Provider for a live Stage 3 evidence request.",
+    )
+    parser.add_argument(
+        "--stage3-ai-review-live-report",
+        default=None,
+        help="Optional path for a redacted live Stage 3 AI review acceptance manifest.",
+    )
+    parser.add_argument(
+        "--approve-external-evidence",
+        action="store_true",
+        help="Explicitly approve the single external Stage 3 evidence request.",
     )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
@@ -2229,6 +2995,19 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    live_requested = args.stage3_ai_review_live_provider is not None
+    if live_requested != args.approve_external_evidence:
+        raise RuntimeError(
+            "Stage 3 live AI review requires both --stage3-ai-review-live-provider "
+            "and --approve-external-evidence; requestCount=0"
+        )
+    if live_requested and (
+        args.stage3_ai_review_live_provider != "openai-compatible"
+        or args.stage3_ai_review
+    ):
+        raise RuntimeError(
+            "Stage 3 live AI review only permits provider=openai-compatible and cannot run with local mode; requestCount=0"
+        )
     if args.validate_p0_acceptance_report:
         manifest = load_p0_acceptance_report(Path(args.validate_p0_acceptance_report))
         print(validate_p0_acceptance_manifest(manifest))
@@ -2240,6 +3019,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.validate_stage2_strategy_experiment_report:
         manifest = load_stage2_strategy_experiment_report(Path(args.validate_stage2_strategy_experiment_report))
         print(validate_stage2_strategy_experiment_manifest(manifest))
+        return 0
+    if args.validate_stage3_ai_review_report:
+        manifest = load_stage3_ai_review_report(Path(args.validate_stage3_ai_review_report))
+        print(validate_stage3_ai_review_manifest(manifest))
         return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
@@ -2292,6 +3075,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage2_strategy_experiment_report=(
             Path(args.stage2_strategy_experiment_report) if args.stage2_strategy_experiment_report else None
         ),
+        stage3_ai_review=args.stage3_ai_review,
+        stage3_ai_review_report=(
+            Path(args.stage3_ai_review_report) if args.stage3_ai_review_report else None
+        ),
+        stage3_ai_review_import_base_url=args.stage3_ai_review_import_base_url,
+        stage3_ai_review_live_provider=args.stage3_ai_review_live_provider,
+        stage3_ai_review_live_report=(
+            Path(args.stage3_ai_review_live_report)
+            if args.stage3_ai_review_live_report
+            else None
+        ),
+        approve_external_evidence=args.approve_external_evidence,
         p2_readiness_acceptance=args.p2_readiness_acceptance,
         p2_run_id=args.p2_run_id,
         p2_p1_acceptance_report=Path(args.p2_p1_acceptance_report),

@@ -70,6 +70,15 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:stage2:validate"]).toBe(
       `${pythonLauncher} tools/docker_smoke.py --validate-stage2-strategy-experiment-report data/stage2-strategy-experiment.json`,
     );
+    expect(packageJson.scripts["docker:smoke:stage3"]).toBe(
+      `${pythonLauncher} tools/docker_smoke.py --stage3-ai-review --stage3-ai-review-report data/stage3-ai-review.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage3:validate"]).toBe(
+      `${pythonLauncher} tools/docker_smoke.py --validate-stage3-ai-review-report data/stage3-ai-review.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage3:live"]).toBe(
+      `${pythonLauncher} tools/docker_smoke.py --stage3-ai-review-live-provider openai-compatible --stage3-ai-review-live-report data/stage3-ai-review-live.json`,
+    );
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 

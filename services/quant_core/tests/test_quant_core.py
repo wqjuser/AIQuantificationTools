@@ -51,6 +51,160 @@ class QuantCoreContractTest(unittest.TestCase):
             "resultSchemaVersion": 1,
         }
 
+    def _stage3_review_fixture(
+        self,
+        docker_smoke,
+        *,
+        provider="local",
+        external_status="skipped",
+        with_comparison=True,
+    ):
+        canonical_sha256 = docker_smoke._quant_core_validator("canonical", "canonical_sha256")
+        primary = {
+            "experimentId": "experiment-primary",
+            "sourceRunId": "run-stage3",
+            "strategyRevision": "1" * 64,
+            "snapshotId": "2" * 64,
+            "definitionHash": "3" * 64,
+            "resultHash": "4" * 64,
+            "selectedCandidateId": "candidate-selected",
+            "candidateRevision": "5" * 64,
+            "canonicalDataHash": "6" * 64,
+            "dataRange": {
+                "startAt": "2026-01-01T00:00:00+00:00",
+                "endAt": "2026-06-30T00:00:00+00:00",
+            },
+        }
+        comparison = {
+            **primary,
+            "experimentId": "experiment-comparison",
+            "definitionHash": "8" * 64,
+            "resultHash": "9" * 64,
+        }
+        comparisons = [comparison] if with_comparison else []
+        lineage = "7" * 64
+        evidence_bundle = {
+            "schemaVersion": 1,
+            "mode": "comparison" if with_comparison else "single",
+            "primaryExperiment": primary,
+            "comparisonExperiments": comparisons,
+            "strategyLineageKey": lineage,
+            "evidenceItems": [
+                {
+                    "id": f"experiment:{reference['experimentId']}:context",
+                    "kind": "experiment_context",
+                    "value": {"market": "ashare", "symbol": "600000", "timeframe": "1d"},
+                }
+                for reference in (primary, *comparisons)
+            ],
+            "safetyBoundary": {
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "orderSubmissionAllowed": False,
+            },
+        }
+        evidence_bundle["evidenceHash"] = canonical_sha256(evidence_bundle)
+        external = {
+            "status": external_status,
+            "provider": provider,
+            "model": None if provider == "local" else "review-model",
+            "sanitizedBaseUrl": None if provider == "local" else "https://example.test/v1",
+            "endpointHash": None,
+            "promptTemplateVersion": "aiqt-ai-review-v1",
+            "outputSchemaVersion": "aiqt-ai-review-assessment-v1",
+            "renderedPrompt": "",
+            "renderedPromptHash": canonical_sha256(""),
+            "evidenceHash": evidence_bundle["evidenceHash"],
+            "requestHash": None,
+            "responseHash": None,
+            "assessment": None,
+            "usage": None,
+            "latencyMs": 0,
+            "error": None,
+        }
+        if external_status == "failed":
+            render_external_prompt = docker_smoke._quant_core_validator(
+                "ai_review_stage3", "render_external_prompt"
+            )
+            external["renderedPrompt"], _ = render_external_prompt(evidence_bundle)
+            external["renderedPromptHash"] = canonical_sha256(external["renderedPrompt"])
+            external["endpointHash"] = canonical_sha256(
+                "https://example.test/v1/chat/completions"
+            )
+            external["requestHash"] = canonical_sha256(
+                {
+                    "provider": provider,
+                    "model": external["model"],
+                    "endpointHash": external["endpointHash"],
+                    "promptTemplateVersion": external["promptTemplateVersion"],
+                    "outputSchemaVersion": external["outputSchemaVersion"],
+                    "renderedPromptHash": external["renderedPromptHash"],
+                    "evidenceHash": external["evidenceHash"],
+                }
+            )
+            external["error"] = {"code": "timeout", "message": "Provider request failed."}
+        record = {
+            "schemaVersion": 2,
+            "recordType": "aiqt.aiReviewRun",
+            "aiReviewId": "ai-review-" + "a" * 32,
+            "createdAt": "2026-07-10T08:00:00+00:00",
+            "mode": "comparison" if with_comparison else "single",
+            "primaryExperiment": primary,
+            "comparisonExperiments": comparisons,
+            "strategyLineageKey": lineage,
+            "evidenceBundle": evidence_bundle,
+            "evidenceHash": evidence_bundle["evidenceHash"],
+            "deterministicAssessment": {
+                "stance": "supported",
+                "summary": "Canonical evidence supports another research iteration.",
+                "risks": [],
+                "invalidationConditions": [],
+                "watchItems": [],
+                "evidenceGaps": [],
+                "consistency": "consistent",
+            },
+            "externalAssessment": external,
+            "boundary": {
+                "purpose": "research_evidence_review_only",
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "orderSubmissionAllowed": False,
+            },
+        }
+        record["recordHash"] = canonical_sha256(record)
+        return record
+
+    def _stage3_decision_fixture(
+        self,
+        docker_smoke,
+        review,
+        *,
+        index,
+        status,
+        predecessor,
+    ):
+        canonical_sha256 = docker_smoke._quant_core_validator("canonical", "canonical_sha256")
+        record = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.aiReviewDecision",
+            "decisionId": f"ai-review-decision-{index:032x}",
+            "aiReviewId": review["aiReviewId"],
+            "createdAt": f"2026-07-10T08:{30 + index:02d}:00+00:00",
+            "operator": "stage3-smoke",
+            "status": status,
+            "rationale": "Stage 3 deterministic acceptance evidence.",
+            "supersedesDecisionId": predecessor,
+            "reviewRecordHash": review["recordHash"],
+            "evidenceHash": review["evidenceHash"],
+            "boundary": {
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "orderSubmissionAllowed": False,
+            },
+        }
+        record["recordHash"] = canonical_sha256(record)
+        return record
+
     def _load_desktop_release_recorder_module(self):
         root = Path(__file__).resolve().parents[3]
         module_path = root / "tools" / "record_desktop_release.py"
@@ -4081,6 +4235,510 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("stage2 strategy experiment run=run-stage2 candidates=2", output.getvalue())
+
+    def test_docker_smoke_builds_and_strictly_validates_stage3_ai_review_manifest(self):
+        import contextlib
+        import copy
+        import io
+
+        docker_smoke = self._load_docker_smoke_module()
+        decisions = [
+            {
+                "decisionId": "ai-review-decision-" + "1" * 32,
+                "status": "accepted_for_research",
+                "supersedesDecisionId": None,
+                "recordHash": "8" * 64,
+            },
+            {
+                "decisionId": "ai-review-decision-" + "2" * 32,
+                "status": "revision_requested",
+                "supersedesDecisionId": "ai-review-decision-" + "1" * 32,
+                "recordHash": "9" * 64,
+            },
+        ]
+        manifest = docker_smoke.build_stage3_ai_review_manifest(
+            source_run_id="run-stage3",
+            primary_experiment_id="experiment-primary",
+            comparison_experiment_ids=["experiment-comparison"],
+            strategy_lineage_key="1" * 64,
+            evidence_hash="2" * 64,
+            review_record_hash="3" * 64,
+            deterministic_stance="supported",
+            deterministic_consistency="consistent",
+            external_provider="local",
+            external_status="skipped",
+            request_count=0,
+            decisions=decisions,
+            export_package_hash="4" * 64,
+            imported_package_hash="5" * 64,
+            readback_hash="6" * 64,
+            artifact_counts={"aiReviewRunsV2": 1, "aiReviewDecisions": 2},
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.stage3AiReviewAcceptance")
+        self.assertEqual(manifest["decisions"], decisions)
+        self.assertEqual(
+            docker_smoke.validate_stage3_ai_review_manifest(manifest),
+            "stage3 ai-review run=run-stage3 provider=local requests=0 decisions=2 liveBlocked=True",
+        )
+        completed_external = copy.deepcopy(manifest)
+        completed_external.update(
+            {
+                "externalProvider": "openai-compatible",
+                "externalStatus": "completed",
+                "requestCount": 1,
+            }
+        )
+        self.assertIn(
+            "provider=openai-compatible requests=1",
+            docker_smoke.validate_stage3_ai_review_manifest(completed_external),
+        )
+
+        mutations = {
+            "missing field": lambda value: value.pop("readbackHash"),
+            "top-level secret": lambda value: value.update({"apiKey": "must-not-exist"}),
+            "raw response": lambda value: value.update({"rawResponse": {"text": "no"}}),
+            "bad evidence hash": lambda value: value.update({"evidenceHash": "bad"}),
+            "provider request overflow": lambda value: value.update({"requestCount": 2}),
+            "local provider request": lambda value: value.update({"requestCount": 1}),
+            "unknown provider": lambda value: value.update({"externalProvider": "openai"}),
+            "wrong external status": lambda value: value.update({"externalStatus": "completed"}),
+            "review count": lambda value: value["artifactCounts"].update({"aiReviewRunsV2": 2}),
+            "decision count": lambda value: value["artifactCounts"].update({"aiReviewDecisions": 1}),
+            "broken chain": lambda value: value["decisions"][1].update({"supersedesDecisionId": None}),
+            "bad Decision id": lambda value: value["decisions"][0].update({"decisionId": "decision-1"}),
+            "bad Decision status": lambda value: value["decisions"][0].update({"status": "approved"}),
+            "Decision extra field": lambda value: value["decisions"][0].update({"renderedPrompt": "no"}),
+            "counts extra field": lambda value: value["artifactCounts"].update({"aiReviewRuns": 0}),
+            "live enabled": lambda value: value.update({"liveTradingAllowed": True}),
+            "order enabled": lambda value: value.update({"orderSubmissionAllowed": True}),
+            "route executed": lambda value: value.update({"routeExecuted": True}),
+        }
+        for label, mutate in mutations.items():
+            invalid = copy.deepcopy(manifest)
+            mutate(invalid)
+            with self.subTest(label=label), self.assertRaises(RuntimeError):
+                docker_smoke.validate_stage3_ai_review_manifest(invalid)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "stage3-ai-review.json"
+            docker_smoke.write_stage3_ai_review_report(report_path, manifest)
+            self.assertEqual(docker_smoke.load_stage3_ai_review_report(report_path), manifest)
+            output = io.StringIO()
+            with patch.object(
+                docker_smoke,
+                "run_smoke",
+                side_effect=AssertionError("report validation must not start Compose"),
+            ), contextlib.redirect_stdout(output):
+                exit_code = docker_smoke.main(
+                    ["--validate-stage3-ai-review-report", str(report_path)]
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertIn("stage3 ai-review run=run-stage3", output.getvalue())
+
+    def test_docker_smoke_stage3_ai_review_runs_decision_conflict_export_import_and_readback(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        review = self._stage3_review_fixture(docker_smoke)
+        first = self._stage3_decision_fixture(
+            docker_smoke,
+            review,
+            index=1,
+            status="accepted_for_research",
+            predecessor=None,
+        )
+        second = self._stage3_decision_fixture(
+            docker_smoke,
+            review,
+            index=2,
+            status="revision_requested",
+            predecessor=first["decisionId"],
+        )
+        decisions = [first, second]
+
+        def envelope(record):
+            return {
+                "aiReviewId": record["aiReviewId"],
+                "runId": record["primaryExperiment"]["sourceRunId"],
+                "createdAt": record["createdAt"],
+                "record": record,
+            }
+
+        def decision_envelope(record):
+            return {
+                "decisionId": record["decisionId"],
+                "aiReviewId": record["aiReviewId"],
+                "createdAt": record["createdAt"],
+                "record": record,
+            }
+
+        export_package = {
+            "kind": "aiqt.researchRun.export",
+            "manifest": {
+                "runId": "run-stage3",
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "orderSubmissionEnabled": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "liveBlockedBoundary": True,
+                "artifactCounts": {"aiReviewRunsV2": 1, "aiReviewDecisions": 2},
+            },
+            "aiReviewRunsV2": [envelope(review)],
+            "aiReviewDecisions": [decision_envelope(item) for item in decisions],
+            "integrity": {"algorithm": "sha256", "hash": "b" * 64},
+        }
+        imported_package = json.loads(json.dumps(export_package))
+        imported_package["integrity"]["hash"] = "c" * 64
+        events = []
+        decision_posts = []
+        export_reads = 0
+
+        def fake_stage2(base_url, *, timeout_seconds, report_path=None):
+            self.assertEqual(base_url, "http://aiqt.local")
+            docker_smoke.write_stage2_strategy_experiment_report(
+                report_path,
+                docker_smoke.build_stage2_strategy_experiment_manifest(
+                    run_id="run-stage3",
+                    strategy_revision="d" * 64,
+                    snapshot_id="a" * 64,
+                    experiment_id="experiment-primary",
+                    replay_experiment_id="experiment-comparison",
+                    definition_hash="b" * 64,
+                    result_hash="c" * 64,
+                    candidate_count=2,
+                    holdout_key="holdout-stage3",
+                ),
+            )
+            return ["stage2 fixture"]
+
+        def fake_post_json(url, payload, timeout_seconds):
+            events.append(("POST", url))
+            if url == "http://aiqt.local/api/ai-reviews":
+                self.assertEqual(
+                    payload,
+                    {
+                        "primaryExperimentId": "experiment-primary",
+                        "comparisonExperimentIds": ["experiment-comparison"],
+                        "providerId": "local",
+                        "externalDataApproved": False,
+                    },
+                )
+                return {"review": {**review, "authority": "authoritative"}, "latestDecision": None}
+            if url.endswith("/decisions"):
+                decision_posts.append(payload)
+                return {"decision": decisions[len(decision_posts) - 1]}
+            if url == "http://isolated.local/api/research/runs/import":
+                self.assertEqual(payload, export_package)
+                return {"run": {"runId": "run-stage3"}, "undoToken": "undo-stage3"}
+            raise AssertionError(f"Unexpected POST URL: {url}")
+
+        def fake_post_json_with_status(url, payload, timeout_seconds):
+            events.append(("POST_EXPECTED_ERROR", url))
+            self.assertEqual(payload["supersedesDecisionId"], first["decisionId"])
+            return 409, {"error": "decision_conflict"}
+
+        def fake_request_json(url, timeout_seconds):
+            nonlocal export_reads
+            events.append(("GET", url))
+            if url.endswith(f"/api/ai-reviews/{review['aiReviewId']}"):
+                return {"review": {**review, "authority": "authoritative"}, "latestDecision": second}
+            if url == "http://aiqt.local/api/research/runs/run-stage3/export":
+                export_reads += 1
+                return {"export": export_package}
+            if url == "http://isolated.local/api/research/runs/run-stage3/export":
+                export_reads += 1
+                return {"export": imported_package}
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        with patch.object(docker_smoke, "run_stage2_strategy_experiment_acceptance", side_effect=fake_stage2), patch.object(
+            docker_smoke, "post_json", side_effect=fake_post_json
+        ), patch.object(
+            docker_smoke, "post_json_with_status", side_effect=fake_post_json_with_status
+        ), patch.object(docker_smoke, "request_json", side_effect=fake_request_json):
+            with tempfile.TemporaryDirectory() as tmp:
+                report_path = Path(tmp) / "stage3-ai-review.json"
+                summaries = docker_smoke.run_stage3_ai_review_acceptance(
+                    "http://aiqt.local",
+                    timeout_seconds=5,
+                    import_base_url="http://isolated.local",
+                    report_path=report_path,
+                )
+                report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(len(decision_posts), 2)
+        self.assertIsNone(decision_posts[0]["supersedesDecisionId"])
+        self.assertEqual(decision_posts[1]["supersedesDecisionId"], first["decisionId"])
+        self.assertEqual(export_reads, 2)
+        self.assertEqual(report["reviewRecordHash"], review["recordHash"])
+        self.assertEqual(report["decisions"][-1]["decisionId"], second["decisionId"])
+        self.assertEqual(report["exportPackageHash"], "b" * 64)
+        self.assertEqual(report["importedPackageHash"], "c" * 64)
+        self.assertEqual(report["requestCount"], 0)
+        self.assertTrue(any("decision-conflict=passed" in summary for summary in summaries))
+
+    def test_docker_smoke_stage3_ai_review_live_requires_both_gates_and_never_retries(self):
+        docker_smoke = self._load_docker_smoke_module()
+        core_calls = []
+        stage2_calls = []
+
+        def fake_request_json(url, timeout_seconds):
+            self.assertEqual(url, "http://aiqt.local/api/ai-review/providers")
+            return {
+                "providers": [
+                    {
+                        "providerId": "openai-compatible",
+                        "configured": True,
+                        "model": "review-model",
+                        "sanitizedBaseUrl": "https://example.test/v1",
+                    }
+                ]
+            }
+
+        def fake_stage2(base_url, *, timeout_seconds, report_path=None):
+            stage2_calls.append(base_url)
+            docker_smoke.write_stage2_strategy_experiment_report(
+                report_path,
+                docker_smoke.build_stage2_strategy_experiment_manifest(
+                    run_id="run-stage3",
+                    strategy_revision="d" * 64,
+                    snapshot_id="a" * 64,
+                    experiment_id="experiment-primary",
+                    replay_experiment_id="experiment-comparison",
+                    definition_hash="b" * 64,
+                    result_hash="c" * 64,
+                    candidate_count=2,
+                    holdout_key="holdout-stage3",
+                ),
+            )
+            return []
+
+        def fake_core(**kwargs):
+            core_calls.append(kwargs)
+            return docker_smoke.build_stage3_ai_review_manifest(
+                source_run_id="run-stage3",
+                primary_experiment_id="experiment-primary",
+                comparison_experiment_ids=[],
+                strategy_lineage_key="1" * 64,
+                evidence_hash="2" * 64,
+                review_record_hash="3" * 64,
+                deterministic_stance="supported",
+                deterministic_consistency="insufficient",
+                external_provider="openai-compatible",
+                external_status="failed",
+                request_count=1,
+                decisions=[
+                    {
+                        "decisionId": "ai-review-decision-" + "1" * 32,
+                        "status": "accepted_for_research",
+                        "supersedesDecisionId": None,
+                        "recordHash": "8" * 64,
+                    },
+                    {
+                        "decisionId": "ai-review-decision-" + "2" * 32,
+                        "status": "revision_requested",
+                        "supersedesDecisionId": "ai-review-decision-" + "1" * 32,
+                        "recordHash": "9" * 64,
+                    },
+                ],
+                export_package_hash="4" * 64,
+                imported_package_hash="5" * 64,
+                readback_hash="6" * 64,
+                artifact_counts={"aiReviewRunsV2": 1, "aiReviewDecisions": 2},
+            )
+
+        with patch.object(docker_smoke, "request_json", side_effect=fake_request_json), patch.object(
+            docker_smoke, "run_stage2_strategy_experiment_acceptance", side_effect=fake_stage2
+        ), patch.object(docker_smoke, "_run_stage3_ai_review_flow", side_effect=fake_core):
+            manifest = docker_smoke.run_stage3_ai_review_live_acceptance(
+                "http://aiqt.local",
+                timeout_seconds=5,
+                provider="openai-compatible",
+                external_data_approved=True,
+            )
+
+        self.assertEqual(stage2_calls, ["http://aiqt.local"])
+        self.assertEqual(len(core_calls), 1)
+        self.assertEqual(core_calls[0]["provider"], "openai-compatible")
+        self.assertTrue(core_calls[0]["external_data_approved"])
+        self.assertEqual(manifest["requestCount"], 1)
+        self.assertNotRegex(str(manifest).casefold(), r"api.?key|authorization|renderedprompt|raw.*response")
+
+        with patch.object(
+            docker_smoke,
+            "request_json",
+            side_effect=AssertionError("missing approval must fail before Provider status"),
+        ), patch.object(
+            docker_smoke,
+            "run_stage2_strategy_experiment_acceptance",
+            side_effect=AssertionError("missing approval must fail before Stage 2"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "explicit external evidence approval"):
+                docker_smoke.run_stage3_ai_review_live_acceptance(
+                    "http://aiqt.local",
+                    timeout_seconds=5,
+                    provider="openai-compatible",
+                    external_data_approved=False,
+                )
+
+        live_review = self._stage3_review_fixture(
+            docker_smoke,
+            provider="openai-compatible",
+            external_status="failed",
+            with_comparison=False,
+        )
+        live_first = self._stage3_decision_fixture(
+            docker_smoke,
+            live_review,
+            index=11,
+            status="accepted_for_research",
+            predecessor=None,
+        )
+        live_second = self._stage3_decision_fixture(
+            docker_smoke,
+            live_review,
+            index=12,
+            status="revision_requested",
+            predecessor=live_first["decisionId"],
+        )
+        live_decisions = [live_first, live_second]
+        live_package = {
+            "kind": "aiqt.researchRun.export",
+            "manifest": {
+                "runId": "run-stage3",
+                "paperOnly": True,
+                "liveTradingAllowed": False,
+                "orderSubmissionEnabled": False,
+                "liveOrderSubmitted": False,
+                "routeExecuted": False,
+                "liveBlockedBoundary": True,
+                "artifactCounts": {"aiReviewRunsV2": 1, "aiReviewDecisions": 2},
+            },
+            "aiReviewRunsV2": [
+                {
+                    "aiReviewId": live_review["aiReviewId"],
+                    "runId": "run-stage3",
+                    "createdAt": live_review["createdAt"],
+                    "record": live_review,
+                }
+            ],
+            "aiReviewDecisions": [
+                {
+                    "decisionId": decision["decisionId"],
+                    "aiReviewId": decision["aiReviewId"],
+                    "createdAt": decision["createdAt"],
+                    "record": decision,
+                }
+                for decision in live_decisions
+            ],
+            "integrity": {"algorithm": "sha256", "hash": "d" * 64},
+        }
+        live_imported_package = {
+            **live_package,
+            "integrity": {"algorithm": "sha256", "hash": "e" * 64},
+        }
+        live_review_posts = []
+        live_decision_posts = []
+
+        def live_post_json(url, payload, timeout_seconds):
+            if url == "http://aiqt.local/api/ai-reviews":
+                live_review_posts.append(payload)
+                return {
+                    "review": {**live_review, "authority": "authoritative"},
+                    "latestDecision": None,
+                }
+            if url.endswith("/decisions"):
+                live_decision_posts.append(payload)
+                return {"decision": live_decisions[len(live_decision_posts) - 1]}
+            if url == "http://isolated.local/api/research/runs/import":
+                return {"run": {"runId": "run-stage3"}, "undoToken": "undo-live"}
+            raise AssertionError(f"Unexpected live POST URL: {url}")
+
+        def live_request_json(url, timeout_seconds):
+            if url.endswith(f"/api/ai-reviews/{live_review['aiReviewId']}"):
+                return {
+                    "review": {**live_review, "authority": "authoritative"},
+                    "latestDecision": live_second,
+                }
+            if url == "http://aiqt.local/api/research/runs/run-stage3/export":
+                return {"export": live_package}
+            if url == "http://isolated.local/api/research/runs/run-stage3/export":
+                return {"export": live_imported_package}
+            raise AssertionError(f"Unexpected live GET URL: {url}")
+
+        with patch.object(docker_smoke, "post_json", side_effect=live_post_json), patch.object(
+            docker_smoke,
+            "post_json_with_status",
+            return_value=(409, {"error": "decision_conflict"}),
+        ), patch.object(docker_smoke, "request_json", side_effect=live_request_json):
+            live_manifest = docker_smoke._run_stage3_ai_review_flow(
+                base_url="http://aiqt.local",
+                import_base_url="http://isolated.local",
+                timeout_seconds=5,
+                source_run_id="run-stage3",
+                primary_experiment_id="experiment-primary",
+                comparison_experiment_ids=[],
+                provider="openai-compatible",
+                external_data_approved=True,
+                request_count=1,
+            )
+
+        self.assertEqual(
+            live_review_posts,
+            [
+                {
+                    "primaryExperimentId": "experiment-primary",
+                    "comparisonExperimentIds": [],
+                    "providerId": "openai-compatible",
+                    "externalDataApproved": True,
+                }
+            ],
+        )
+        self.assertEqual(len(live_decision_posts), 2)
+        self.assertEqual(live_manifest["externalStatus"], "failed")
+        self.assertEqual(live_manifest["requestCount"], 1)
+
+        with patch.object(docker_smoke, "run_smoke", side_effect=AssertionError("must fail before Compose")):
+            for arguments in (
+                ["--stage3-ai-review-live-provider", "openai-compatible"],
+                ["--approve-external-evidence"],
+                ["--stage3-ai-review-live-provider", "local", "--approve-external-evidence"],
+            ):
+                with self.subTest(arguments=arguments), self.assertRaises(RuntimeError):
+                    docker_smoke.main(arguments)
+
+        no_requests = []
+        with patch.object(
+            docker_smoke,
+            "request_json",
+            return_value={
+                "providers": [
+                    {
+                        "providerId": "openai-compatible",
+                        "configured": False,
+                        "model": None,
+                        "sanitizedBaseUrl": None,
+                    }
+                ]
+            },
+        ), patch.object(
+            docker_smoke,
+            "run_stage2_strategy_experiment_acceptance",
+            side_effect=lambda *args, **kwargs: no_requests.append("stage2"),
+        ), patch.object(
+            docker_smoke,
+            "_run_stage3_ai_review_flow",
+            side_effect=lambda **kwargs: no_requests.append("provider"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "not configured"):
+                docker_smoke.run_stage3_ai_review_live_acceptance(
+                    "http://aiqt.local",
+                    timeout_seconds=5,
+                    provider="openai-compatible",
+                    external_data_approved=True,
+                )
+        self.assertEqual(no_requests, [])
 
     def test_docker_smoke_builds_and_validates_p1_acceptance_manifest(self):
         docker_smoke = self._load_docker_smoke_module()
