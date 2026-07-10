@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { AiReviewDecision } from "./ai-review-stage3";
 import type {
   AuditEvidenceReportLedgerSummary,
   AuditEvidenceReportLedgerRow,
@@ -841,7 +842,7 @@ function stage3ArchiveReviewFixture() {
   };
 }
 
-function stage3ArchiveDecisionFixture() {
+function stage3ArchiveDecisionFixture(): AiReviewDecision {
   return {
     schemaVersion: 1,
     recordType: "aiqt.aiReviewDecision",
@@ -909,6 +910,28 @@ function stage3ArchiveBrowserPackage(): ResearchRunExportBrowserPackage {
       createdAt: decision.createdAt,
       record: decision
     }]
+  } as unknown as ResearchRunExportBrowserPackage;
+}
+
+function stage3ArchiveBrowserPackageWithDecisions(
+  decisions: ReturnType<typeof stage3ArchiveDecisionFixture>[]
+): ResearchRunExportBrowserPackage {
+  const exportPackage = stage3ArchiveBrowserPackage();
+  return {
+    ...exportPackage,
+    manifest: {
+      ...exportPackage.manifest,
+      artifactCounts: {
+        ...exportPackage.manifest.artifactCounts,
+        aiReviewDecisions: decisions.length
+      }
+    },
+    aiReviewDecisions: decisions.map((record) => ({
+      decisionId: record.decisionId,
+      aiReviewId: record.aiReviewId,
+      createdAt: record.createdAt,
+      record
+    }))
   } as unknown as ResearchRunExportBrowserPackage;
 }
 
@@ -11372,6 +11395,7 @@ describe("terminal workbench model", () => {
 
     const previewRows = buildResearchRunExportPreviewRows({
       workspace,
+      aiReviewArchiveStatus: "ready",
       authoritativeAiReviewRecords: [review],
       aiReviewDecisions: [decision]
     });
@@ -11388,6 +11412,26 @@ describe("terminal workbench model", () => {
           status: "ready",
           count: "1 Decision",
           exportPath: "aiReviewDecisions[]"
+        })
+      ])
+    );
+    const failedPreviewRows = buildResearchRunExportPreviewRows({
+      workspace,
+      aiReviewArchiveStatus: "failed",
+      aiReviewArchiveError: "Decision store offline"
+    });
+    expect(failedPreviewRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai-review-runs-v2",
+          status: "blocked",
+          count: "unknown",
+          detail: expect.stringContaining("Decision store offline")
+        }),
+        expect.objectContaining({
+          id: "ai-review-decisions",
+          status: "blocked",
+          count: "unknown"
         })
       ])
     );
@@ -11451,6 +11495,21 @@ describe("terminal workbench model", () => {
       status: "same",
       detail: expect.stringContaining("same-hash")
     });
+    for (const stage of ["preview", "confirmed", "cancelled"] as const) {
+      const sameAuditEvent = buildResearchRunImportAuditEvent({
+        exportPackage,
+        fileName: "stage3-same.json",
+        rows: sameRows,
+        stage,
+        createdAt: "2026-07-10T09:05:00+00:00"
+      });
+      expect(sameAuditEvent.artifactRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "ai-review-run-v2:0", status: "same" }),
+          expect.objectContaining({ id: "ai-review-decision:0", status: "same" })
+        ])
+      );
+    }
 
     const conflictRows = buildResearchRunImportDiffRows({
       workspace,
@@ -11512,6 +11571,66 @@ describe("terminal workbench model", () => {
       buildResearchRunImportDiffRows({ workspace, exportPackage: countMismatchPackage })
         .find((row) => row.id === "artifact-counts")?.detail
     ).toContain("aiReviewRunsV2 0/1");
+  });
+
+  test("aligns Decision import diff with persisted prefix and append semantics", () => {
+    const first = stage3ArchiveDecisionFixture();
+    const second = {
+      ...first,
+      decisionId: "ai-review-decision-22222222222222222222222222222222",
+      createdAt: "2026-07-10T08:02:00+00:00",
+      supersedesDecisionId: first.decisionId,
+      recordHash: "2".repeat(64)
+    };
+    const fork = {
+      ...first,
+      decisionId: "ai-review-decision-33333333333333333333333333333333",
+      createdAt: "2026-07-10T08:03:00+00:00",
+      supersedesDecisionId: first.decisionId,
+      recordHash: "3".repeat(64)
+    };
+    const workspace = buildTerminalWorkspace();
+
+    const appendRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage: stage3ArchiveBrowserPackageWithDecisions([first, second]),
+      aiReviewDecisions: [first]
+    });
+    expect(appendRows.find((row) => row.id === "ai-review-decision:0")).toMatchObject({ status: "same" });
+    expect(appendRows.find((row) => row.id === "ai-review-decision:1")).toMatchObject({
+      status: "add",
+      detail: expect.stringContaining("append")
+    });
+
+    const forkRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage: stage3ArchiveBrowserPackageWithDecisions([first, fork]),
+      aiReviewDecisions: [first, second]
+    });
+    expect(forkRows.find((row) => row.id === "ai-review-decision:1")).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("fork")
+    });
+
+    const persistedExtensionRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage: stage3ArchiveBrowserPackageWithDecisions([first]),
+      aiReviewDecisions: [first, second]
+    });
+    expect(persistedExtensionRows.find((row) => row.id === "ai-review-decision:0")).toMatchObject({
+      status: "same",
+      detail: expect.stringContaining("persisted prefix")
+    });
+
+    const hashConflictRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage: stage3ArchiveBrowserPackageWithDecisions([first]),
+      aiReviewDecisions: [{ ...first, recordHash: "0".repeat(64) }]
+    });
+    expect(hashConflictRows.find((row) => row.id === "ai-review-decision:0")).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("recordHash")
+    });
   });
 
   test("builds a searchable research run export package browser from manifest artifacts", () => {

@@ -14586,6 +14586,8 @@ export function filterAiReviewExportEvidenceIndexRows(
 }
 
 export function buildResearchRunExportPreviewRows({
+  aiReviewArchiveError = null,
+  aiReviewArchiveStatus = "ready",
   aiReviewDecisions = [],
   aiReviewRecords = [],
   authoritativeAiReviewRecords = [],
@@ -14596,6 +14598,8 @@ export function buildResearchRunExportPreviewRows({
   workspace
 }: {
   workspace: TerminalWorkspace;
+  aiReviewArchiveError?: string | null;
+  aiReviewArchiveStatus?: "idle" | "loading" | "ready" | "failed";
   aiReviewDecisions?: AiReviewDecision[];
   currentAiReviewRecord?: AiReviewRunRecord | null;
   aiReviewRecords?: ResearchRunExportPreviewAiReviewEnvelope[];
@@ -14627,6 +14631,13 @@ export function buildResearchRunExportPreviewRows({
   );
   const latestAuthoritativeAiReviewRecord = activeAuthoritativeAiReviewRecords[0] ?? null;
   const latestAiReviewDecision = activeAiReviewDecisions.at(-1) ?? null;
+  const aiReviewArchiveUnavailable = aiReviewArchiveStatus !== "ready";
+  const aiReviewArchiveUnavailableDetail =
+    aiReviewArchiveStatus === "loading"
+      ? "Loading the complete persistent Stage 3 archive for this research run."
+      : aiReviewArchiveError
+        ? "Persistent Stage 3 archive readback failed: " + aiReviewArchiveError
+        : "Persistent Stage 3 archive readiness is unknown.";
   const currentRecordReady = Boolean(currentAiReviewRecord && run && currentAiReviewRecord.runId === run.runId);
   const backtestTradeCount = workspace.backtestTrades?.length ?? 0;
   const equityPointCount = workspace.backtestEquityCurve?.length ?? 0;
@@ -14770,42 +14781,68 @@ export function buildResearchRunExportPreviewRows({
     {
       id: "ai-review-runs-v2",
       label: "Authoritative AI reviews",
-      status: activeAuthoritativeAiReviewRecords.length > 0 ? "ready" : run ? "missing" : "blocked",
-      count: activeAuthoritativeAiReviewRecords.length + " authoritative",
+      status: aiReviewArchiveUnavailable
+        ? "blocked"
+        : activeAuthoritativeAiReviewRecords.length > 0
+          ? "ready"
+          : run
+            ? "missing"
+            : "blocked",
+      count: aiReviewArchiveUnavailable ? "unknown" : activeAuthoritativeAiReviewRecords.length + " authoritative",
       anchor: latestAuthoritativeAiReviewRecord
         ? "aiReviewRunV2:" + latestAuthoritativeAiReviewRecord.aiReviewId
         : "aiReviewRunV2:" + runId + ":missing",
       exportPath: "aiReviewRunsV2[]",
-      detail: activeAuthoritativeAiReviewRecords.length > 0
+      detail: aiReviewArchiveUnavailable
+        ? aiReviewArchiveUnavailableDetail
+        : activeAuthoritativeAiReviewRecords.length > 0
         ? "Authoritative v2 Reviews and evidence hashes are ready for export."
         : run
           ? "No authoritative v2 Review is saved for this research run."
           : "A research run is required before authoritative Reviews can be exported.",
-      tone: activeAuthoritativeAiReviewRecords.length > 0 ? "ai" : run ? "warning" : "risk"
+      tone: aiReviewArchiveUnavailable
+        ? "risk"
+        : activeAuthoritativeAiReviewRecords.length > 0
+          ? "ai"
+          : run
+            ? "warning"
+            : "risk"
     },
     {
       id: "ai-review-decisions",
       label: "AI review Decisions",
-      status: activeAiReviewDecisions.length > 0
+      status: aiReviewArchiveUnavailable
+        ? "blocked"
+        : activeAiReviewDecisions.length > 0
         ? "ready"
         : activeAuthoritativeAiReviewRecords.length > 0
           ? "missing"
           : run
             ? "missing"
             : "blocked",
-      count: activeAiReviewDecisions.length + " Decision" + (activeAiReviewDecisions.length === 1 ? "" : "s"),
+      count: aiReviewArchiveUnavailable
+        ? "unknown"
+        : activeAiReviewDecisions.length + " Decision" + (activeAiReviewDecisions.length === 1 ? "" : "s"),
       anchor: latestAiReviewDecision
         ? "aiReviewDecision:" + latestAiReviewDecision.decisionId
         : "aiReviewDecision:" + runId + ":missing",
       exportPath: "aiReviewDecisions[]",
-      detail: activeAiReviewDecisions.length > 0
+      detail: aiReviewArchiveUnavailable
+        ? aiReviewArchiveUnavailableDetail
+        : activeAiReviewDecisions.length > 0
         ? "Decision append-chain evidence is ready for export."
         : activeAuthoritativeAiReviewRecords.length > 0
           ? "The authoritative Review has no appended Decision."
           : run
             ? "Save an authoritative Review before appending a Decision."
             : "A research run is required before Decisions can be exported.",
-      tone: activeAiReviewDecisions.length > 0 ? "ai" : run ? "warning" : "risk"
+      tone: aiReviewArchiveUnavailable
+        ? "risk"
+        : activeAiReviewDecisions.length > 0
+          ? "ai"
+          : run
+            ? "warning"
+            : "risk"
     },
     {
       id: "paper-executions",
@@ -15804,9 +15841,6 @@ export function buildResearchRunImportDiffRows({
   const authoritativeAiReviewById = new Map(
     authoritativeAiReviewRecords.map((review) => [review.aiReviewId, review])
   );
-  const aiReviewDecisionById = new Map(
-    aiReviewDecisions.map((decision) => [decision.decisionId, decision])
-  );
   const legacyAiReviewIdSet = new Set(legacyAiReviewIds);
   const packagePaperCount = exportPackage.paperExecutions?.length ?? 0;
   const packagePaperPreparationEvidenceRunIds = collectPaperExecutionPreparationEvidenceRunIds(exportPackage.paperExecutions);
@@ -15919,32 +15953,75 @@ export function buildResearchRunImportDiffRows({
       };
     }
   );
-  const aiReviewDecisionDiffRows = (exportPackage.aiReviewDecisions ?? []).map(
-    (envelope, index): ResearchRunImportDiffRow => {
-      const incoming = envelope.record;
-      const current = aiReviewDecisionById.get(incoming.decisionId);
-      const readbackError = aiReviewArchiveReadbackErrors["decisions:" + incoming.aiReviewId];
-      const sameHash = current?.recordHash === incoming.recordHash;
-      return {
-        id: ("ai-review-decision:" + index) as ResearchRunImportDiffRow["id"],
-        label: "Decision · " + incoming.decisionId,
-        status: readbackError || (current && !sameHash) ? "blocked" : current ? "same" : "add",
-        current: readbackError
-          ? "Persistent readback unavailable"
-          : current
-            ? current.recordHash
-            : "No Decision",
-        incoming: incoming.recordHash,
-        detail: readbackError
-          ? "Decision readback unavailable; import is blocked fail-closed. " + readbackError
-          : current
-            ? sameHash
-              ? "Decision ID and recordHash are same-hash."
-              : "Decision ID conflict: recordHash differs from persisted evidence."
-            : "Decision is new and will be added.",
-        exportPath: "aiReviewDecisions[" + index + "].record",
-        tone: readbackError || (current && !sameHash) ? "risk" : current ? "positive" : "ai"
-      };
+  const incomingDecisionsByReview = new Map<
+    string,
+    Array<{ envelope: NonNullable<ResearchRunExportBrowserPackage["aiReviewDecisions"]>[number]; index: number }>
+  >();
+  (exportPackage.aiReviewDecisions ?? []).forEach((envelope, index) => {
+    incomingDecisionsByReview.set(
+      envelope.aiReviewId,
+      [...(incomingDecisionsByReview.get(envelope.aiReviewId) ?? []), { envelope, index }]
+    );
+  });
+  const aiReviewDecisionDiffRows = [...incomingDecisionsByReview.entries()].flatMap(
+    ([aiReviewId, incomingItems]): ResearchRunImportDiffRow[] => {
+      const existing = aiReviewDecisions.filter((decision) => decision.aiReviewId === aiReviewId);
+      const incoming = incomingItems.map((item) => item.envelope.record);
+      const readbackError = aiReviewArchiveReadbackErrors["decisions:" + aiReviewId];
+      const overlap = Math.min(existing.length, incoming.length);
+      let divergenceIndex = -1;
+      for (let index = 0; index < overlap; index += 1) {
+        if (existing[index].decisionId !== incoming[index].decisionId
+          || existing[index].recordHash !== incoming[index].recordHash) {
+          divergenceIndex = index;
+          break;
+        }
+      }
+      const appendIndex = existing.length;
+      const expectedPredecessor = existing.at(-1)?.decisionId ?? null;
+      const appendPredecessorConflict =
+        divergenceIndex < 0
+        && incoming.length > existing.length
+        && incoming[appendIndex].supersedesDecisionId !== expectedPredecessor;
+      const incomingIsPersistedPrefix = divergenceIndex < 0 && incoming.length < existing.length;
+      return incomingItems.map(({ envelope, index }, chainIndex) => {
+        const archived = envelope.record;
+        const current = existing[chainIndex];
+        const diverged = divergenceIndex >= 0 && chainIndex >= divergenceIndex;
+        const appendBlocked = appendPredecessorConflict && chainIndex >= appendIndex;
+        const blocked = Boolean(readbackError) || diverged || appendBlocked;
+        const same = !blocked && chainIndex < existing.length;
+        let detail: string;
+        if (readbackError) {
+          detail = "Decision readback unavailable; import is blocked fail-closed. " + readbackError;
+        } else if (diverged) {
+          detail = chainIndex === divergenceIndex && current?.decisionId === archived.decisionId
+            ? "Decision ID recordHash conflict: archived evidence differs from the persisted prefix."
+            : "Decision chain fork: incoming Decision does not match the persisted ordered prefix.";
+        } else if (appendBlocked) {
+          detail = "Decision append conflict: supersedesDecisionId does not extend the persisted prefix.";
+        } else if (same) {
+          detail = incomingIsPersistedPrefix
+            ? "Incoming Decision chain is a persisted prefix; import preserves later Decisions."
+            : "Decision ID and recordHash are same-hash in the persisted prefix.";
+        } else {
+          detail = "Decision extends the persisted prefix and will append.";
+        }
+        return {
+          id: ("ai-review-decision:" + index) as ResearchRunImportDiffRow["id"],
+          label: "Decision · " + archived.decisionId,
+          status: blocked ? "blocked" : same ? "same" : "add",
+          current: readbackError
+            ? "Persistent readback unavailable"
+            : current
+              ? current.recordHash
+              : "No Decision",
+          incoming: archived.recordHash,
+          detail,
+          exportPath: "aiReviewDecisions[" + index + "].record",
+          tone: blocked ? "risk" : same ? "positive" : "ai"
+        };
+      });
     }
   );
 
@@ -16985,7 +17062,7 @@ function researchRunImportAuditArtifactRows(rows: ResearchRunImportDiffRow[]): R
       row.id.startsWith("ai-review-run-v2:") || row.id.startsWith("ai-review-decision:");
     if ((!researchRunImportAuditArtifactRowIds.has(row.id) && !isStage3Evidence)
       || row.status === "blocked"
-      || row.status === "same") {
+      || (row.status === "same" && !isStage3Evidence)) {
       return [];
     }
     return [{

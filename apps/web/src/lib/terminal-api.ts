@@ -450,6 +450,15 @@ export interface AiReviewArchiveImportSnapshot {
   readbackErrors: Record<string, string>;
 }
 
+export interface AiReviewRunArchiveSnapshotResult {
+  runId: string;
+  authoritativeAiReviewRecords: AuthoritativeAiReviewRun[];
+  aiReviewDecisions: AiReviewDecision[];
+  legacyAiReviewRecords: LegacyAiReviewHistoryRecord[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface ResearchRunImportResult {
   run?: ResearchRunAudit;
   note?: ResearchNote;
@@ -6133,6 +6142,97 @@ export async function loadAiReviewArchiveImportSnapshot(
     aiReviewDecisions: entries.flatMap((entry) => entry.decisions),
     legacyAiReviewIds: Array.from(new Set(entries.flatMap((entry) => entry.legacyAiReviewIds))),
     readbackErrors: Object.assign({}, ...entries.map((entry) => entry.errors))
+  };
+}
+
+export async function loadAiReviewRunArchiveSnapshot(
+  baseUrl: string,
+  runId: string,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiReviewRunArchiveSnapshotResult> {
+  const normalizedRunId = runId.trim();
+  if (!normalizedRunId) {
+    return {
+      runId: normalizedRunId,
+      authoritativeAiReviewRecords: [],
+      aiReviewDecisions: [],
+      legacyAiReviewRecords: [],
+      source: "fallback",
+      error: "Invalid AI Review archive run ID"
+    };
+  }
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  const fallback = (error: string): AiReviewRunArchiveSnapshotResult => ({
+    runId: normalizedRunId,
+    authoritativeAiReviewRecords: [],
+    aiReviewDecisions: [],
+    legacyAiReviewRecords: [],
+    source: "fallback",
+    error
+  });
+  const authoritativeAiReviewRecords: AuthoritativeAiReviewRun[] = [];
+  const legacyAiReviewRecords: LegacyAiReviewHistoryRecord[] = [];
+  const seenAiReviewIds = new Set<string>();
+  let offset = 0;
+  let expectedTotal: number | null = null;
+  while (expectedTotal === null || offset < expectedTotal) {
+    const page = await loadAuthoritativeAiReviews(
+      baseUrl,
+      { runId: normalizedRunId, limit: 50, offset },
+      signal,
+      fetcher
+    );
+    if (page.source !== "core" || !page.pagination) {
+      return fallback(page.error ?? "AI Review archive history readback failed");
+    }
+    if (page.pagination.limit !== 50
+      || page.pagination.offset !== offset
+      || page.pagination.query !== ""
+      || (expectedTotal !== null && page.pagination.total !== expectedTotal)) {
+      return fallback("Inconsistent AI Review archive pagination");
+    }
+    expectedTotal ??= page.pagination.total;
+    const pageRecords = [...page.reviews, ...page.legacyReviews];
+    if (pageRecords.length > page.pagination.limit
+      || offset + pageRecords.length > expectedTotal
+      || (offset + pageRecords.length < expectedTotal && pageRecords.length !== page.pagination.limit)) {
+      return fallback("Incomplete AI Review archive pagination");
+    }
+    for (const review of page.reviews) {
+      if (review.primaryExperiment.sourceRunId !== normalizedRunId || seenAiReviewIds.has(review.aiReviewId)) {
+        return fallback("Invalid AI Review archive run binding or duplicate Review ID");
+      }
+      seenAiReviewIds.add(review.aiReviewId);
+    }
+    for (const review of page.legacyReviews) {
+      if (review.runId !== normalizedRunId || seenAiReviewIds.has(review.aiReviewId)) {
+        return fallback("Invalid AI Review archive run binding or duplicate Review ID");
+      }
+      seenAiReviewIds.add(review.aiReviewId);
+    }
+    authoritativeAiReviewRecords.push(...page.reviews);
+    legacyAiReviewRecords.push(...page.legacyReviews);
+    if (offset + pageRecords.length === expectedTotal) {
+      break;
+    }
+    offset += page.pagination.limit;
+  }
+  const decisionResults = await Promise.all(
+    authoritativeAiReviewRecords.map((review) =>
+      loadAiReviewDecisions(baseUrl, review.aiReviewId, signal, fetcher)
+    )
+  );
+  const failedDecisionReadback = decisionResults.find((result) => result.source !== "core");
+  if (failedDecisionReadback) {
+    return fallback(failedDecisionReadback.error ?? "AI Review Decision archive readback failed");
+  }
+  return {
+    runId: normalizedRunId,
+    authoritativeAiReviewRecords,
+    aiReviewDecisions: decisionResults.flatMap((result) => result.decisions),
+    legacyAiReviewRecords,
+    source: "core"
   };
 }
 
@@ -18758,6 +18858,10 @@ function isResearchRunExportPaperBoundary(
     || researchRun.executionMode !== "paper_only"
     || handoff.mode !== "paper_only"
     || manifest.paperOnly !== true
+    || manifest.liveBlockedBoundary !== true
+    || manifest.orderSubmissionEnabled !== false
+    || manifest.liveOrderSubmitted !== false
+    || manifest.routeExecuted !== false
     || manifest.liveTradingAllowed !== false
     || handoff.paperOnly !== true
     || handoff.liveTradingAllowed !== false) {
@@ -18777,8 +18881,7 @@ function isResearchRunExportPaperBoundary(
     "routeExecuted"
   ];
   const allowedRoutes = new Set(["paper", "paper_only", "blocked"]);
-  return (manifest.liveBlockedBoundary === undefined || manifest.liveBlockedBoundary === true)
-    && records.every((record) =>
+  return records.every((record) =>
       falseOnlyFields.every((field) => !(field in record) || record[field] === false)
       && ["route", "routeMode", "executionRoute"].every((field) =>
         !(field in record)

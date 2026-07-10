@@ -126,6 +126,7 @@ import {
   createAuthoritativeAiReview,
   loadAiReviewDecisions,
   loadAiReviewArchiveImportSnapshot,
+  loadAiReviewRunArchiveSnapshot,
   loadAiReviewProviders,
   loadAuthoritativeAiReview,
   loadAuthoritativeAiReviews,
@@ -949,6 +950,15 @@ type PaperExecutionDeepLinkStatus = InitialPaperExecutionDeepLink & {
   error: string | null;
   status: "idle" | "loading" | "loaded" | "failed";
 };
+
+interface AiReviewArchivePreviewState {
+  aiReviewDecisions: AiReviewDecision[];
+  authoritativeAiReviewRecords: AuthoritativeAiReviewRun[];
+  error: string | null;
+  legacyAiReviewRecords: LegacyAiReviewHistoryRecord[];
+  runId: string | null;
+  status: "idle" | "loading" | "ready" | "failed";
+}
 
 interface ResearchRunExportPackageInspectionResult {
   error?: string;
@@ -2283,6 +2293,14 @@ export function App() {
   const [p0PaperSimulationRecord, setP0PaperSimulationRecord] = useState<P0PaperSimulationResponse | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
   const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
+  const [aiReviewArchivePreview, setAiReviewArchivePreview] = useState<AiReviewArchivePreviewState>({
+    aiReviewDecisions: [],
+    authoritativeAiReviewRecords: [],
+    error: null,
+    legacyAiReviewRecords: [],
+    runId: null,
+    status: "idle"
+  });
   const [inspectedExportPackage, setInspectedExportPackage] = useState<ResearchRunExportPackage | null>(null);
   const [pendingImportPackage, setPendingImportPackage] = useState<{
     aiReviewArchiveSnapshot: AiReviewArchiveImportSnapshot;
@@ -2412,6 +2430,7 @@ export function App() {
     aiReviewStage3RequestCoordinatorRef.current = createAiReviewRequestCoordinator();
   }
   const aiReviewHistoryRequestIdRef = useRef(0);
+  const aiReviewArchivePreviewRequestIdRef = useRef(0);
   const auditEvidenceReportRequestIdRef = useRef(0);
   const marketDataRefreshOverrideAuditRequestIdRef = useRef(0);
   const portfolioPaperOrderAuditRequestIdRef = useRef(0);
@@ -2667,10 +2686,23 @@ export function App() {
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
+  const currentAiReviewArchivePreview: AiReviewArchivePreviewState =
+    aiReviewArchivePreview.runId === currentResearchRunId
+      ? aiReviewArchivePreview
+      : {
+          aiReviewDecisions: [],
+          authoritativeAiReviewRecords: [],
+          error: null,
+          legacyAiReviewRecords: [],
+          runId: currentResearchRunId ?? null,
+          status: currentResearchRunId ? "loading" : "idle"
+        };
   const researchRunExportPreviewRows = buildResearchRunExportPreviewRows({
-    aiReviewDecisions: aiReviewStage3Decisions,
+    aiReviewArchiveError: currentAiReviewArchivePreview.error,
+    aiReviewArchiveStatus: currentAiReviewArchivePreview.status,
+    aiReviewDecisions: currentAiReviewArchivePreview.aiReviewDecisions,
     aiReviewRecords: activeAiReviewRunRecords,
-    authoritativeAiReviewRecords: aiReviewStage3History,
+    authoritativeAiReviewRecords: currentAiReviewArchivePreview.authoritativeAiReviewRecords,
     currentAiReviewRecord: currentAiReviewRunRecord,
     paperExecution: activePaperExecutionRecord,
     promotionCandidate: activePromotionCandidateRecord,
@@ -4448,6 +4480,71 @@ export function App() {
     setIsLoadingResearchRunImportAudit(false);
     return auditHistory;
   }, [quantCoreBaseUrl, researchRunImportAuditOffset, researchRunImportAuditQuery]);
+
+  useEffect(() => {
+    const requestId = aiReviewArchivePreviewRequestIdRef.current + 1;
+    aiReviewArchivePreviewRequestIdRef.current = requestId;
+    const aiReviewArchivePreviewController = new AbortController();
+    const runId = currentResearchRunId ?? null;
+
+    if (activeWorkAreaId !== "audit" || !runId) {
+      setAiReviewArchivePreview({
+        aiReviewDecisions: [],
+        authoritativeAiReviewRecords: [],
+        error: null,
+        legacyAiReviewRecords: [],
+        runId,
+        status: "idle"
+      });
+      return () => aiReviewArchivePreviewController.abort();
+    }
+
+    setAiReviewArchivePreview({
+      aiReviewDecisions: [],
+      authoritativeAiReviewRecords: [],
+      error: null,
+      legacyAiReviewRecords: [],
+      runId,
+      status: "loading"
+    });
+    void loadAiReviewRunArchiveSnapshot(
+      quantCoreBaseUrl,
+      runId,
+      aiReviewArchivePreviewController.signal
+    ).then((result) => {
+      if (
+        aiReviewArchivePreviewController.signal.aborted
+        || aiReviewArchivePreviewRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+      setAiReviewArchivePreview({
+        aiReviewDecisions: result.source === "core" ? result.aiReviewDecisions : [],
+        authoritativeAiReviewRecords: result.source === "core" ? result.authoritativeAiReviewRecords : [],
+        error: result.source === "core" ? null : result.error ?? "AI Review archive readback failed.",
+        legacyAiReviewRecords: result.source === "core" ? result.legacyAiReviewRecords : [],
+        runId,
+        status: result.source === "core" ? "ready" : "failed"
+      });
+    }).catch((archiveError: unknown) => {
+      if (
+        aiReviewArchivePreviewController.signal.aborted
+        || aiReviewArchivePreviewRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+      setAiReviewArchivePreview({
+        aiReviewDecisions: [],
+        authoritativeAiReviewRecords: [],
+        error: archiveError instanceof Error ? archiveError.message : "AI Review archive readback failed.",
+        legacyAiReviewRecords: [],
+        runId,
+        status: "failed"
+      });
+    });
+
+    return () => aiReviewArchivePreviewController.abort();
+  }, [activeWorkAreaId, currentResearchRunId]);
 
   useEffect(() => {
     if (activeWorkAreaId !== "audit") {
@@ -22426,7 +22523,7 @@ function ResearchRunExportPreviewPanel({
               <article className={`research-export-preview-row ${row.tone} ${row.status}`} key={row.id}>
                 <span>{researchExportPreviewLabel(i18n, row)}</span>
                 <strong>{researchExportPreviewDetail(i18n, row.detail)}</strong>
-                <em>{row.count}</em>
+                <em>{researchExportPreviewCount(i18n, row.count)}</em>
                 <small>{row.exportPath}</small>
                 <b>{researchExportPreviewStatusLabel(i18n, row.status)}</b>
                 <p>{row.anchor}</p>
@@ -27881,6 +27978,10 @@ function researchExportPreviewStatusLabel(
   )[status];
 }
 
+function researchExportPreviewCount(i18n: AppI18n, count: string): string {
+  return i18n.locale === "zh-CN" && count === "unknown" ? "未知" : count;
+}
+
 function researchExportPreviewDetail(i18n: AppI18n, detail: string): string {
   if (i18n.locale === "en-US") {
     return detail;
@@ -27900,6 +28001,9 @@ function researchExportPreviewDetail(i18n: AppI18n, detail: string): string {
   const executionDetail = detail.match(/^(.+) · (\d+)\/(\d+) gates passed$/);
   if (executionDetail) {
     return `${executionDetail[1]} · ${executionDetail[2]}/${executionDetail[3]} 个闸门通过`;
+  }
+  if (detail.startsWith("Persistent Stage 3 archive readback failed:")) {
+    return "持久化 Stage 3 归档回读失败；当前导出就绪状态已按 fail-closed 阻断。";
   }
   return detail
     .replace("Run Pipeline before an export package can be reproduced.", "先运行流水线，才能生成可复现导出包。")
@@ -27931,7 +28035,9 @@ function researchExportPreviewDetail(i18n: AppI18n, detail: string): string {
     .replace("Decision append-chain evidence is ready for export.", "Decision 追加链证据已可导出。")
     .replace("The authoritative Review has no appended Decision.", "该权威评审尚未追加 Decision。")
     .replace("Save an authoritative Review before appending a Decision.", "追加 Decision 前先保存权威评审。")
-    .replace("A research run is required before Decisions can be exported.", "导出 Decision 前需要先生成研究运行。");
+    .replace("A research run is required before Decisions can be exported.", "导出 Decision 前需要先生成研究运行。")
+    .replace("Loading the complete persistent Stage 3 archive for this research run.", "正在加载当前研究运行的完整持久化 Stage 3 归档。")
+    .replace("Persistent Stage 3 archive readiness is unknown.", "持久化 Stage 3 归档就绪状态未知。");
 }
 
 function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowserRow): string {
@@ -28057,11 +28163,16 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
   if (i18n.locale === "en-US") {
     return row.label;
   }
+  const recordId = row.label.split(" · ").slice(1).join(" · ");
   if (row.id.startsWith("ai-review-run-v2:")) {
-    return i18n.t("archive.aiReview.authoritative");
+    return recordId
+      ? `${i18n.t("archive.aiReview.authoritative")} · ${recordId}`
+      : i18n.t("archive.aiReview.authoritative");
   }
   if (row.id.startsWith("ai-review-decision:")) {
-    return i18n.t("archive.aiReview.decision");
+    return recordId
+      ? `${i18n.t("archive.aiReview.decision")} · ${recordId}`
+      : i18n.t("archive.aiReview.decision");
   }
   return (
     {
@@ -28186,6 +28297,12 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Decision ID and recordHash are same-hash.", "Decision ID 与 recordHash 一致。")
     .replace("Decision ID conflict: recordHash differs from persisted evidence.", "Decision ID 冲突：recordHash 与持久化证据不同。")
     .replace("Decision is new and will be added.", "Decision 为新增记录，将写入本地。")
+    .replace("Decision chain fork: incoming Decision does not match the persisted ordered prefix.", "Decision 链分叉：传入 Decision 与持久化有序前缀不一致。")
+    .replace("Decision ID recordHash conflict: archived evidence differs from the persisted prefix.", "Decision ID 的 recordHash 冲突：归档证据与持久化前缀不一致。")
+    .replace("Decision append conflict: supersedesDecisionId does not extend the persisted prefix.", "Decision 追加冲突：supersedesDecisionId 未扩展持久化前缀。")
+    .replace("Decision ID and recordHash are same-hash in the persisted prefix.", "Decision ID 与 recordHash 在持久化前缀中一致。")
+    .replace("Incoming Decision chain is a persisted prefix; import preserves later Decisions.", "传入 Decision 链是持久化前缀；导入会保留后续 Decision。")
+    .replace("Decision extends the persisted prefix and will append.", "Decision 扩展持久化前缀并将追加写入。")
     .replace(
       "Audit evidence summary run id does not match the import package manifest.",
       "审计证据摘要 run id 与导入包 manifest 不一致。"

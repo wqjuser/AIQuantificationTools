@@ -241,6 +241,7 @@ import {
   loadAuthoritativeAiReviews,
   loadAiReviewDecisions,
   loadAiReviewArchiveImportSnapshot,
+  loadAiReviewRunArchiveSnapshot,
   appendAiReviewDecision,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
@@ -610,7 +611,11 @@ function sampleStage3ArchiveExportPackage() {
       dataRows: 0,
       executionMode: "paper_only",
       paperOnly: true,
+      liveBlockedBoundary: true,
       liveTradingAllowed: false,
+      orderSubmissionEnabled: false,
+      liveOrderSubmitted: false,
+      routeExecuted: false,
       artifactCounts: {
         bars: 0,
         trades: 0,
@@ -14125,7 +14130,11 @@ describe("terminal workspace API client", () => {
               dataRows: 2,
               executionMode: "paper_only",
               paperOnly: true,
+              liveBlockedBoundary: true,
               liveTradingAllowed: false,
+              orderSubmissionEnabled: false,
+              liveOrderSubmitted: false,
+              routeExecuted: false,
               artifactCounts: {
                 bars: 2,
                 trades: 1,
@@ -14597,7 +14606,11 @@ describe("terminal workspace API client", () => {
         dataRows: 1,
         executionMode: "paper_only",
         paperOnly: true,
+        liveBlockedBoundary: true,
         liveTradingAllowed: false,
+        orderSubmissionEnabled: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
         artifactCounts: { bars: 1, trades: 0, equityPoints: 0, decisions: 0, aiRisks: 0 }
       },
       researchRun: {
@@ -14741,6 +14754,21 @@ describe("terminal workspace API client", () => {
         }
       })
     ).toBeNull();
+    for (const field of [
+      "liveBlockedBoundary",
+      "orderSubmissionEnabled",
+      "liveOrderSubmitted",
+      "routeExecuted"
+    ]) {
+      const manifest = { ...stage3Package.manifest } as Record<string, unknown>;
+      delete manifest[field];
+      expect(
+        normalizeResearchRunExportPackagePayload({
+          ...stage3Package,
+          manifest
+        })
+      ).toBeNull();
+    }
     expect(
       normalizeResearchRunExportPackagePayload({
         ...stage3Package,
@@ -14805,7 +14833,11 @@ describe("terminal workspace API client", () => {
         dataRows: 1,
         executionMode: "paper_only",
         paperOnly: true,
+        liveBlockedBoundary: true,
         liveTradingAllowed: false,
+        orderSubmissionEnabled: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
         artifactCounts: {
           bars: 1,
           trades: 1,
@@ -15172,7 +15204,11 @@ describe("terminal workspace API client", () => {
         dataRows: 1,
         executionMode: "paper_only",
         paperOnly: true,
+        liveBlockedBoundary: true,
         liveTradingAllowed: false,
+        orderSubmissionEnabled: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
         artifactCounts: { bars: 1, trades: 0, equityPoints: 0, decisions: 0, aiRisks: 0 }
       },
       researchRun: {
@@ -15271,7 +15307,11 @@ describe("terminal workspace API client", () => {
         dataRows: 1,
         executionMode: "paper_only",
         paperOnly: true,
+        liveBlockedBoundary: true,
         liveTradingAllowed: false,
+        orderSubmissionEnabled: false,
+        liveOrderSubmitted: false,
+        routeExecuted: false,
         artifactCounts: { bars: 1, trades: 0, equityPoints: 0, decisions: 0, aiRisks: 0 }
       },
       researchRun: {
@@ -20239,6 +20279,156 @@ describe("terminal workspace API client", () => {
     expect(decisionUnavailable.readbackErrors).toMatchObject({
       ["decisions:" + review.aiReviewId]: "decision store offline"
     });
+  });
+
+  test("loads every paginated authoritative Review and Decision for an Audit run snapshot", async () => {
+    const reviews = Array.from({ length: 51 }, (_, index) => {
+      const source = sampleAuthoritativeAiReviewPayload();
+      const aiReviewId = "ai-review-" + index.toString(16).padStart(32, "0");
+      const recordHash = index.toString(16).padStart(64, "0");
+      const primaryExperiment = {
+        ...source.primaryExperiment,
+        sourceRunId: "run-audit-snapshot",
+        experimentId: "experiment-audit-" + index
+      };
+      return {
+        ...source,
+        aiReviewId,
+        primaryExperiment,
+        evidenceBundle: {
+          ...source.evidenceBundle,
+          primaryExperiment
+        },
+        recordHash
+      };
+    });
+    const first = reviews[0];
+    const decision = {
+      ...sampleAiReviewDecisionPayload(),
+      aiReviewId: first.aiReviewId,
+      reviewRecordHash: first.recordHash
+    };
+    const historyOffsets: number[] = [];
+    const result = await loadAiReviewRunArchiveSnapshot("/", "run-audit-snapshot", async (url) => {
+      const parsed = new URL(url, "http://aiqt.local");
+      if (parsed.pathname.endsWith("/decisions")) {
+        const aiReviewId = decodeURIComponent(parsed.pathname.split("/").at(-2) ?? "");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ decisions: aiReviewId === first.aiReviewId ? [decision] : [] })
+        };
+      }
+      const offset = Number(parsed.searchParams.get("offset") ?? 0);
+      historyOffsets.push(offset);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          reviews: reviews.slice(offset, offset + 50),
+          pagination: { limit: 50, offset, total: reviews.length, query: "" }
+        })
+      };
+    });
+
+    expect(historyOffsets).toEqual([0, 50]);
+    expect(result).toMatchObject({
+      runId: "run-audit-snapshot",
+      source: "core",
+      authoritativeAiReviewRecords: reviews,
+      aiReviewDecisions: [decision],
+      legacyAiReviewRecords: []
+    });
+  });
+
+  test("fails the complete Audit run snapshot when any Decision chain readback fails", async () => {
+    const review = sampleAuthoritativeAiReviewPayload();
+    const primaryExperiment = { ...review.primaryExperiment, sourceRunId: "run-audit-failure" };
+    const runReview = {
+      ...review,
+      primaryExperiment,
+      evidenceBundle: { ...review.evidenceBundle, primaryExperiment }
+    };
+    const result = await loadAiReviewRunArchiveSnapshot("/", "run-audit-failure", async (url) => {
+      if (url.endsWith("/decisions")) {
+        throw new Error("decision store offline");
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          reviews: [runReview],
+          pagination: { limit: 50, offset: 0, total: 1, query: "" }
+        })
+      };
+    });
+
+    expect(result).toMatchObject({
+      runId: "run-audit-failure",
+      source: "fallback",
+      error: "decision store offline"
+    });
+  });
+
+  test("fails Audit run snapshots closed on stale pagination and run bindings", async () => {
+    const source = sampleAuthoritativeAiReviewPayload();
+    const forRun = (runId: string) => {
+      const primaryExperiment = { ...source.primaryExperiment, sourceRunId: runId };
+      return {
+        ...source,
+        primaryExperiment,
+        evidenceBundle: { ...source.evidenceBundle, primaryExperiment }
+      };
+    };
+    const malformedPages = [
+      { reviews: [forRun("run-audit-guard")], pagination: { limit: 49, offset: 0, total: 1, query: "" } },
+      { reviews: [forRun("run-audit-guard")], pagination: { limit: 50, offset: 1, total: 1, query: "" } },
+      { reviews: [forRun("run-audit-guard")], pagination: { limit: 50, offset: 0, total: 1, query: "stale" } },
+      { reviews: [forRun("different-run")], pagination: { limit: 50, offset: 0, total: 1, query: "" } },
+      { reviews: [], pagination: { limit: 50, offset: 0, total: 1, query: "" } }
+    ];
+
+    for (const page of malformedPages) {
+      const result = await loadAiReviewRunArchiveSnapshot("/", "run-audit-guard", async () => ({
+        ok: true,
+        status: 200,
+        json: async () => page
+      }));
+      expect(result.source).toBe("fallback");
+      expect(result.authoritativeAiReviewRecords).toEqual([]);
+      expect(result.aiReviewDecisions).toEqual([]);
+    }
+  });
+
+  test("fails Audit run snapshots closed on duplicate IDs and changing totals across pages", async () => {
+    const reviews = Array.from({ length: 50 }, (_, index) => {
+      const source = sampleAuthoritativeAiReviewPayload();
+      const primaryExperiment = { ...source.primaryExperiment, sourceRunId: "run-audit-pages" };
+      return {
+        ...source,
+        aiReviewId: "ai-review-" + index.toString(16).padStart(32, "0"),
+        primaryExperiment,
+        evidenceBundle: { ...source.evidenceBundle, primaryExperiment },
+        recordHash: index.toString(16).padStart(64, "0")
+      };
+    });
+    for (const secondPage of [
+      { reviews: [reviews[0]], pagination: { limit: 50, offset: 50, total: 51, query: "" } },
+      { reviews: [{ ...reviews[0], aiReviewId: "ai-review-" + "f".repeat(32) }], pagination: { limit: 50, offset: 50, total: 52, query: "" } }
+    ]) {
+      const result = await loadAiReviewRunArchiveSnapshot("/", "run-audit-pages", async (url) => {
+        const offset = Number(new URL(url, "http://aiqt.local").searchParams.get("offset") ?? 0);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => offset === 0
+            ? { reviews, pagination: { limit: 50, offset: 0, total: 51, query: "" } }
+            : secondPage
+        };
+      });
+      expect(result.source).toBe("fallback");
+      expect(result.authoritativeAiReviewRecords).toEqual([]);
+    }
   });
 
   test("loads mixed review history into explicit groups while preserving the mixed total", async () => {

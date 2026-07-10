@@ -1752,10 +1752,25 @@ describe("terminal layout css", () => {
 
   test("renders a research run export package preview in the audit work area", () => {
     const auditWorkspaceSource = sourceBetween('if (activeWorkAreaId === "audit")', 'if (activeWorkAreaId === "settings")');
+    const exportPreviewDetailSource = sourceBetween("function researchExportPreviewDetail", "function researchExportBrowserLabel");
 
     expect(appSource).toContain("buildResearchRunExportPreviewRows");
     expect(appSource).toContain("filterResearchRunExportPreviewRows");
     expect(appSource).toContain("const researchRunExportPreviewRows = buildResearchRunExportPreviewRows");
+    expect(appSource).toContain("loadAiReviewRunArchiveSnapshot");
+    expect(appSource).toContain("const aiReviewArchivePreviewController = new AbortController()");
+    expect(appSource).toContain("aiReviewArchivePreviewRequestIdRef.current !== requestId");
+    expect(appSource).toContain('status: "loading"');
+    expect(appSource).toContain('status: result.source === "core" ? "ready" : "failed"');
+    expect(appSource).toContain('status: "failed"');
+    expect(appSource).toContain("aiReviewArchivePreview.runId === currentResearchRunId");
+    expect(appSource).toContain("aiReviewArchiveStatus: currentAiReviewArchivePreview.status");
+    expect(appSource).toContain("authoritativeAiReviewRecords: currentAiReviewArchivePreview.authoritativeAiReviewRecords");
+    expect(appSource).toContain("aiReviewDecisions: currentAiReviewArchivePreview.aiReviewDecisions");
+    expect(exportPreviewDetailSource).toContain('detail.startsWith("Persistent Stage 3 archive readback failed:")');
+    expect(exportPreviewDetailSource).toContain("正在加载当前研究运行的完整持久化 Stage 3 归档。");
+    expect(exportPreviewDetailSource).toContain("持久化 Stage 3 归档就绪状态未知。");
+    expect(appSource).toContain("researchExportPreviewCount(i18n, row.count)");
     expect(appSource).toContain("function ResearchRunExportPreviewPanel");
     expect(auditWorkspaceSource).toContain("<ResearchRunExportPreviewPanel");
     expect(auditWorkspaceSource).toContain('className="workflow-export-preview-panel"');
@@ -1908,6 +1923,7 @@ describe("terminal layout css", () => {
     expect(importDiffLabelSource).toContain('"audit-summary": "导入审计摘要"');
     expect(importDiffLabelSource).toContain('"audit-report": "导入审计报告"');
     expect(importDiffLabelSource).toContain('"backtest-report": "导入回测报告"');
+    expect(importDiffLabelSource).toContain('row.label.split(" · ").slice(1).join(" · ")');
     expect(appSource).toContain('const [researchRunImportDiffQuery, setResearchRunImportDiffQuery] = useState(initialImportAuditEvidenceDeepLink?.focusQuery ?? "");');
     expect(appSource).toContain("function ResearchRunImportDiffPanel");
     expect(auditWorkspaceSource).toContain("<ResearchRunImportDiffPanel");
