@@ -9153,6 +9153,15 @@ export function workspaceNeedsStrategyReaudit(workspace: TerminalWorkspace): boo
   return !workspace.researchRun && activeQuantLoopStepId(workspace) === "strategy";
 }
 
+export function replayRunRequestIsCurrent(
+  capturedSelectionVersion: number,
+  currentSelectionVersion: number,
+  capturedWorkflowRunId: number,
+  currentWorkflowRunId: number
+): boolean {
+  return capturedSelectionVersion === currentSelectionVersion && capturedWorkflowRunId === currentWorkflowRunId;
+}
+
 export function goldenPathRunRebindIsCurrent(
   capturedWorkspace: TerminalWorkspace,
   currentWorkspace: TerminalWorkspace,
@@ -9162,8 +9171,12 @@ export function goldenPathRunRebindIsCurrent(
   currentWorkflowRunId: number
 ): boolean {
   return capturedWorkspace === currentWorkspace &&
-    capturedSelectionVersion === currentSelectionVersion &&
-    capturedWorkflowRunId === currentWorkflowRunId &&
+    replayRunRequestIsCurrent(
+      capturedSelectionVersion,
+      currentSelectionVersion,
+      capturedWorkflowRunId,
+      currentWorkflowRunId
+    ) &&
     !workspaceNeedsStrategyReaudit(currentWorkspace);
 }
 

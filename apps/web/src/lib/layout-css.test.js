@@ -1199,6 +1199,8 @@ describe("terminal layout css", () => {
     const actionHandlerSource = sourceBetween("const runGoldenPathActionById = useCallback(", "const runGoldenPathAction = useCallback(");
     const disabledHandlerSource = sourceBetween("const isGoldenPathActionDisabledById = useCallback(", "const goldenPathActionId = goldenPath?.nextAction?.id;");
     const ensureRunSource = sourceBetween("const ensureGoldenPathLatestRunBound = useCallback(", "const undoResearchRunImportEvent = useCallback(");
+    const replayRunSource = sourceBetween("const replayRun = useCallback(", "const replayImportRollbackRun = useCallback(");
+    const refreshAiReviewSource = sourceBetween("const refreshAiReviewRunHistory = useCallback(", "const refreshAuditEvidenceReportEvents = useCallback(");
 
     expect(appSource).toContain("const ensureGoldenPathLatestRunBound = useCallback(");
     expect(appSource).toContain("workspaceNeedsStrategyReaudit(workspace)");
@@ -1208,6 +1210,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("await replayRun(detail.run)");
     expect(ensureRunSource).toContain("goldenPathRunRebindIsCurrent");
     expect(ensureRunSource).toContain("if (!rebound)");
+    expect(replayRunSource).toContain("replayRunRequestIsCurrent");
+    expect(replayRunSource).toContain("commit: false");
+    expect(replayRunSource).toContain("setAiReviewHistoryPagination(aiReviewHistory.pagination ?? null)");
+    expect(refreshAiReviewSource).toContain("const commit = options.commit !== false");
+    expect(refreshAiReviewSource).toContain("const requestId = commit ? aiReviewHistoryRequestIdRef.current + 1 : null");
     expect(ensureRunSource).toContain("if (strategyDraftRequiresReaudit)");
     expect(ensureRunSource).toContain('statusLabel: "Strategy draft requires audit"');
     expect(ensureRunSource).toContain("Run Pipeline to audit the current strategy draft");

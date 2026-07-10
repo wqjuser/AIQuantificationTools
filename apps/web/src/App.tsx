@@ -687,6 +687,7 @@ import {
   workspaceWithSavedWatchlist,
   workspaceWithStrategyExperimentCandidate,
   goldenPathRunRebindIsCurrent,
+  replayRunRequestIsCurrent,
   workspaceNeedsStrategyReaudit,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
@@ -3735,18 +3736,21 @@ export function App() {
   }, [refreshP2ManifestChainPreflightLatest]);
 
   const refreshAiReviewRunHistory = useCallback(
-    async (runId: string, options: { offset?: number; query?: string } = {}) => {
+    async (runId: string, options: { commit?: boolean; offset?: number; query?: string } = {}) => {
       const offset = options.offset ?? aiReviewHistoryOffset;
       const query = options.query ?? aiReviewHistoryQuery;
-      const requestId = aiReviewHistoryRequestIdRef.current + 1;
-      aiReviewHistoryRequestIdRef.current = requestId;
-      setIsLoadingAiReviewHistory(true);
+      const commit = options.commit !== false;
+      const requestId = commit ? aiReviewHistoryRequestIdRef.current + 1 : null;
+      if (requestId !== null) {
+        aiReviewHistoryRequestIdRef.current = requestId;
+        setIsLoadingAiReviewHistory(true);
+      }
       const aiReviewHistory = await loadResearchRunAiReviews(quantCoreBaseUrl, runId, {
         limit: AI_REVIEW_HISTORY_PAGE_SIZE,
         offset,
         query
       });
-      if (aiReviewHistoryRequestIdRef.current === requestId) {
+      if (requestId !== null && aiReviewHistoryRequestIdRef.current === requestId) {
         setAiReviewRunRecords(aiReviewHistory.aiReviews);
         setAiReviewHistoryPagination(aiReviewHistory.pagination ?? null);
         setIsLoadingAiReviewHistory(false);
@@ -6609,10 +6613,12 @@ export function App() {
       setPromotionCandidateRecord(null);
       resetAiReviewHistoryState();
       const detail = await loadResearchRunDetail(quantCoreBaseUrl, run.runId);
-      if (
-        manualSelectionVersionRef.current !== replayVersion ||
-        workflowRunIdRef.current !== replayWorkflowRunId
-      ) {
+      if (!replayRunRequestIsCurrent(
+        replayVersion,
+        manualSelectionVersionRef.current,
+        replayWorkflowRunId,
+        workflowRunIdRef.current
+      )) {
         return false;
       }
       const auditedRun = detail.run ?? run;
@@ -6625,20 +6631,26 @@ export function App() {
       if (auditedKlines) {
         setKlinesState(auditedKlines);
       }
+      setIsLoadingAiReviewHistory(true);
       const [paperHistory, promotionHistory, aiReviewHistory] = await Promise.all([
         loadLatestResearchRunPaperExecution(quantCoreBaseUrl, auditedRun.runId),
         loadResearchRunPromotion(quantCoreBaseUrl, auditedRun.runId),
-        refreshAiReviewRunHistory(auditedRun.runId, { offset: 0, query: "" })
+        refreshAiReviewRunHistory(auditedRun.runId, { commit: false, offset: 0, query: "" })
       ]);
-      if (
-        manualSelectionVersionRef.current !== replayVersion ||
-        workflowRunIdRef.current !== replayWorkflowRunId
-      ) {
+      if (!replayRunRequestIsCurrent(
+        replayVersion,
+        manualSelectionVersionRef.current,
+        replayWorkflowRunId,
+        workflowRunIdRef.current
+      )) {
+        setIsLoadingAiReviewHistory(false);
         return false;
       }
       setPaperExecutionRecord(paperHistory.execution ?? null);
       setPromotionCandidateRecord(promotionHistory.promotion ?? null);
       setAiReviewRunRecords(aiReviewHistory.aiReviews);
+      setAiReviewHistoryPagination(aiReviewHistory.pagination ?? null);
+      setIsLoadingAiReviewHistory(false);
       if (paperHistory.execution) {
         setWorkspaceState((current) => ({
           ...current,

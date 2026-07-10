@@ -324,6 +324,7 @@ import {
   type WorkflowRunState,
   visiblePanels,
   goldenPathRunRebindIsCurrent,
+  replayRunRequestIsCurrent,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
   workspaceWithPreservedInteractiveState,
@@ -1713,6 +1714,39 @@ describe("terminal workbench model", () => {
     await expect(pendingGuard).resolves.toBe(false);
     expect(goldenPathRunRebindIsCurrent(capturedWorkspace, capturedWorkspace, 4, 4, 8, 8)).toBe(true);
     expect(goldenPathRunRebindIsCurrent(capturedWorkspace, capturedWorkspace, 4, 4, 8, 9)).toBe(false);
+  });
+
+  test("does not commit stale AI review history after replay selection changes while the request is pending", async () => {
+    let currentSelectionVersion = 4;
+    let currentWorkflowRunId = 8;
+    let committedRecords: string[] = [];
+    let committedPagination: number | null = null;
+    let loading = true;
+    let releaseAiReview!: (records: string[]) => void;
+    const aiReviewPending = new Promise<string[]>((resolve) => {
+      releaseAiReview = resolve;
+    });
+    const pendingReplay = (async () => {
+      const records = await aiReviewPending;
+      if (!replayRunRequestIsCurrent(4, currentSelectionVersion, 8, currentWorkflowRunId)) {
+        loading = false;
+        return false;
+      }
+      committedRecords = records;
+      committedPagination = records.length;
+      loading = false;
+      return true;
+    })();
+
+    currentSelectionVersion += 1;
+    currentWorkflowRunId += 1;
+    releaseAiReview(["stale-review"]);
+
+    await expect(pendingReplay).resolves.toBe(false);
+    expect(committedRecords).toEqual([]);
+    expect(committedPagination).toBeNull();
+    expect(loading).toBe(false);
+    expect(replayRunRequestIsCurrent(4, 4, 8, 8)).toBe(true);
   });
 
   test("rejects invalid strategy experiment candidate patches atomically", async () => {
