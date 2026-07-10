@@ -14,6 +14,11 @@ function composeService(compose, serviceName) {
   return match?.[0] ?? "";
 }
 
+function composeEnvironment(service) {
+  const match = service.match(/^    environment:\n((?: {6}[A-Z][A-Z0-9_]*:[^\n]*\n)+)/m);
+  return match?.[1] ?? "";
+}
+
 function renderComposeDefaults(service) {
   return service.replace(/\$\{[A-Z0-9_]+:-([^}]*)\}/g, (_match, fallback) => fallback);
 }
@@ -106,16 +111,25 @@ describe("docker deployment contract", () => {
     const compose = readRepoFile("compose.yaml");
     const apiService = composeService(compose, "api");
     const webService = composeService(compose, "web");
+    const apiEnvironment = composeEnvironment(apiService);
+    const webDockerfile = readRepoFile("apps/web/Dockerfile");
 
-    expect(apiService).toContain("OPENAI_API_KEY: ${OPENAI_API_KEY:-}");
-    expect(apiService).toContain("OPENAI_MODEL: ${OPENAI_MODEL:-}");
-    expect(apiService).toContain("OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}");
-    expect(apiService).toContain("OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}");
-    expect(apiService).toContain("OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}");
-    expect(apiService).toContain("OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}");
-    expect(apiService).toContain("OLLAMA_MODEL: ${OLLAMA_MODEL:-}");
-    expect(renderComposeDefaults(apiService)).toContain("OLLAMA_BASE_URL: http://host.docker.internal:11434");
-    expect(webService).not.toContain("API_KEY");
+    const providerEnvironment = {
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}",
+      OPENAI_MODEL: "${OPENAI_MODEL:-}",
+      OPENAI_COMPATIBLE_BASE_URL: "${OPENAI_COMPATIBLE_BASE_URL:-}",
+      OPENAI_COMPATIBLE_API_KEY: "${OPENAI_COMPATIBLE_API_KEY:-}",
+      OPENAI_COMPATIBLE_MODEL: "${OPENAI_COMPATIBLE_MODEL:-}",
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}",
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-}",
+    };
+    for (const [name, value] of Object.entries(providerEnvironment)) {
+      expect(apiEnvironment).toContain(`      ${name}: ${value}\n`);
+      expect(webService).not.toContain(name);
+      expect(webDockerfile).not.toContain(name);
+    }
+    expect(renderComposeDefaults(apiEnvironment)).toContain("OLLAMA_BASE_URL: http://host.docker.internal:11434");
+    expect(composeEnvironment(apiService.replace("    environment:", "    labels:"))).toBe("");
   });
 
   test("documents safe Stage 3 provider defaults in Chinese", () => {

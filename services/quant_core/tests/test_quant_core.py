@@ -4950,9 +4950,24 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(resolve_api_bind(environ={"QUANT_CORE_PORT": "not-a-number"}), ("127.0.0.1", 8765))
 
     def test_compose_passes_stage3_provider_environment_to_api_only(self):
+        import re
+
         compose = (Path(__file__).resolve().parents[3] / "compose.yaml").read_text(encoding="utf-8")
         api_service = compose.split("  api:\n", 1)[1].split("  web:\n", 1)[0]
         web_service = compose.split("  web:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+
+        def compose_environment(service):
+            match = re.search(
+                r"^    environment:\n((?: {6}[A-Z][A-Z0-9_]*:[^\n]*\n)+)",
+                service,
+                flags=re.MULTILINE,
+            )
+            return match.group(1) if match else ""
+
+        api_environment = compose_environment(api_service)
+        web_dockerfile = (Path(__file__).resolve().parents[3] / "apps/web/Dockerfile").read_text(
+            encoding="utf-8"
+        )
         expected_api_environment = {
             "OPENAI_API_KEY": "${OPENAI_API_KEY:-}",
             "OPENAI_MODEL": "${OPENAI_MODEL:-}",
@@ -4964,10 +4979,12 @@ class QuantCoreContractTest(unittest.TestCase):
         }
 
         for key, value in expected_api_environment.items():
-            self.assertIn(f"      {key}: {value}\n", api_service)
-        self.assertNotIn("API_KEY", web_service)
+            self.assertIn(f"      {key}: {value}\n", api_environment)
+            self.assertNotIn(key, web_service)
+            self.assertNotIn(key, web_dockerfile)
+        self.assertEqual(compose_environment(api_service.replace("    environment:", "    labels:")), "")
 
-        rendered_defaults = api_service
+        rendered_defaults = api_environment
         controlled_defaults = {"OLLAMA_BASE_URL": "http://host.docker.internal:11434"}
         for key, value in expected_api_environment.items():
             rendered_defaults = rendered_defaults.replace(value, controlled_defaults.get(key, ""))
