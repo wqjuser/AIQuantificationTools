@@ -651,6 +651,8 @@ def _request_sensitive_values(
 
 
 def _validated_provider_base_url(value: str) -> str | None:
+    if "?" in value or "#" in value:
+        return None
     try:
         parsed = urlsplit(value)
         hostname = parsed.hostname
