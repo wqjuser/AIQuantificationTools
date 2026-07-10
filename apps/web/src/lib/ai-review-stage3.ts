@@ -822,6 +822,38 @@ export function isAiReviewDecisionChain(value: unknown): value is AiReviewDecisi
     });
 }
 
+export function resolveAiReviewRestoredSelection(
+  reviews: readonly AuthoritativeAiReviewRun[],
+  decisions: readonly AiReviewDecision[],
+  sourceRunId: string
+): { review: AuthoritativeAiReviewRun | null; decisions: AiReviewDecision[] } | null {
+  if (!reviews.every((review) => isAuthoritativeAiReviewRun(review)
+    && review.primaryExperiment.sourceRunId === sourceRunId)
+    || new Set(reviews.map((review) => review.aiReviewId)).size !== reviews.length
+    || !decisions.every(isAiReviewDecision)) {
+    return null;
+  }
+  const reviewsById = new Map(reviews.map((review) => [review.aiReviewId, review]));
+  for (const decision of decisions) {
+    const review = reviewsById.get(decision.aiReviewId);
+    if (!review || decision.reviewRecordHash !== review.recordHash || decision.evidenceHash !== review.evidenceHash) {
+      return null;
+    }
+  }
+  for (const review of reviews) {
+    if (!isAiReviewDecisionChain(decisions.filter((decision) => decision.aiReviewId === review.aiReviewId))) {
+      return null;
+    }
+  }
+  const review = [...reviews].sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt) || right.aiReviewId.localeCompare(left.aiReviewId)
+  )[0] ?? null;
+  return {
+    review,
+    decisions: review ? decisions.filter((decision) => decision.aiReviewId === review.aiReviewId) : []
+  };
+}
+
 export function buildComparisonEligibility(
   primary: StrategyExperimentListItem,
   candidate: StrategyExperimentListItem,

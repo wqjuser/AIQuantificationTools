@@ -5868,10 +5868,12 @@ export async function loadResearchRunHistory(
 export async function loadResearchRunDetail(
   baseUrl: string,
   runId: string,
-  fetcher: WorkspaceFetcher = defaultFetcher
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
 ): Promise<ResearchRunDetailResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
   try {
-    const response = await fetcher(buildResearchRunDetailUrl(baseUrl, runId));
+    const response = await fetcher(buildResearchRunDetailUrl(baseUrl, runId), signal ? { signal } : undefined);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }

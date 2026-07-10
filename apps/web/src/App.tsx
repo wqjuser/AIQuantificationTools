@@ -129,7 +129,6 @@ import {
   loadAiReviewRunArchiveSnapshot,
   loadAiReviewProviders,
   loadAuthoritativeAiReview,
-  loadAuthoritativeAiReviews,
   loadStrategyExperimentDetail,
   loadStrategyExperiments,
   runPortfolioBacktest,
@@ -279,6 +278,7 @@ import {
   canRunAiReviewStage3,
   createAiReviewRequestCoordinator,
   resolveAiReviewPrimaryExperiment,
+  resolveAiReviewRestoredSelection,
   toggleAiReviewComparisonSelection,
   type AiReviewDecision,
   type AiReviewProviderId,
@@ -711,6 +711,8 @@ import {
   WorkflowRunState,
   WorkflowStageView,
   buildResearchContextDeepLink,
+  replaceAiReviewRunIdInUrl,
+  resolveAiReviewRunIdFromUrl,
   resolveResearchContextUrlState,
   resolveAdapterWorkflowInstrument,
   resolveWatchlistCacheRefreshRunSelection,
@@ -756,6 +758,8 @@ const initialStage1P0DailyUseShareDeepLinkState =
   typeof window === "undefined" ? null : resolveStage1P0DailyUseShareDeepLinkState(window.location.search);
 const initialStrategyExperimentId =
   typeof window === "undefined" ? null : resolveStrategyExperimentIdFromUrl(window.location.search);
+const initialAiReviewRunId =
+  typeof window === "undefined" ? null : resolveAiReviewRunIdFromUrl(window.location.search);
 const stage1P0DailyUseClosureElementId = "stage1-p0-daily-use-closure";
 const stage1P0DailyUsePrimaryActionElementId = "stage1-p0-daily-use-primary-action";
 const stage1P0DailyUseRefreshActionElementId = "stage1-p0-daily-use-refresh-action";
@@ -1699,6 +1703,9 @@ function resolveInitialImportAuditEvidenceDeepLink(): InitialImportAuditEvidence
   if (params.get("paperExecution")?.trim()) {
     return null;
   }
+  if (params.get("workspace") === "ai-review") {
+    return null;
+  }
   const runId = params.get("runId")?.trim();
   if (!runId) {
     return null;
@@ -2422,6 +2429,8 @@ export function App() {
   const strategyValidationRequestIdRef = useRef(0);
   const strategyExperimentRequestGenerationRef = useRef(0);
   const initialStrategyExperimentIdRef = useRef(initialStrategyExperimentId);
+  const initialAiReviewRunIdRef = useRef(initialAiReviewRunId);
+  const aiReviewRunRestoreAbortControllerRef = useRef<AbortController | null>(null);
   const strategyExperimentSourceKeyRef = useRef<string | null>(null);
   const strategyExperimentWorkspaceRef = useRef(workspace);
   const strategyExperimentActiveRef = useRef(strategyExperimentActive);
@@ -3766,29 +3775,43 @@ export function App() {
 
     void Promise.all([
       loadAiReviewProviders(quantCoreBaseUrl, request.signal),
-      loadAuthoritativeAiReviews(quantCoreBaseUrl, {
-        runId: strategyExperimentSourceRunId,
-        limit: 50,
-        offset: 0
-      }, request.signal)
-    ]).then(([providerResult, historyResult]) => {
+      loadAiReviewRunArchiveSnapshot(quantCoreBaseUrl, strategyExperimentSourceRunId, request.signal)
+    ]).then(([providerResult, archiveResult]) => {
       if (!coordinator.isCurrent(request)) {
         return;
       }
       setAiReviewStage3Providers(providerResult.providers);
-      setAiReviewStage3History(historyResult.reviews);
-      setAiReviewStage3LegacyHistory(historyResult.legacyReviews);
-      setAiReviewStage3Error(
-        providerResult.source === "core" && historyResult.source === "core"
+      const restoredSelection = archiveResult.source === "core"
+        ? resolveAiReviewRestoredSelection(
+            archiveResult.authoritativeAiReviewRecords,
+            archiveResult.aiReviewDecisions,
+            strategyExperimentSourceRunId
+          )
+        : null;
+      if (archiveResult.source === "core" && restoredSelection) {
+        setAiReviewStage3History(archiveResult.authoritativeAiReviewRecords);
+        setAiReviewStage3LegacyHistory(archiveResult.legacyAiReviewRecords);
+        setAiReviewStage3CurrentReview(restoredSelection.review);
+        setAiReviewStage3Decisions(restoredSelection.decisions);
+        setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft(restoredSelection.decisions));
+      }
+      setAiReviewStage3Error(providerResult.source !== "core" || archiveResult.source !== "core"
+        ? strategyExperimentI18nRef.current.t("aiReviewStage3.error.contextLoadFailed")
+        : restoredSelection
           ? null
-          : strategyExperimentI18nRef.current.t("aiReviewStage3.error.contextLoadFailed")
-      );
+          : strategyExperimentI18nRef.current.t("aiReviewStage3.error.readbackInconsistent"));
       coordinator.finish(request);
       syncAiReviewStage3Busy();
     });
 
     return () => coordinator.dispose();
-  }, [activeWorkAreaId, aiReviewStage3ContextKey, strategyExperimentSourceRunId, syncAiReviewStage3Busy]);
+  }, [
+    activeWorkAreaId,
+    aiReviewStage3CandidateKey,
+    aiReviewStage3ContextKey,
+    strategyExperimentSourceRunId,
+    syncAiReviewStage3Busy
+  ]);
 
   useLayoutEffect(() => {
     const primary = resolveAiReviewPrimaryExperiment(
@@ -6018,6 +6041,16 @@ export function App() {
   const refreshWorkspace = useCallback(async () => {
     const startedSelectionVersion = manualSelectionVersionRef.current;
     const requestedStrategyExperimentId = initialStrategyExperimentIdRef.current;
+    const requestedAiReviewRunId = initialAiReviewRunIdRef.current;
+    aiReviewRunRestoreAbortControllerRef.current?.abort();
+    const restoreController = requestedAiReviewRunId ? new AbortController() : null;
+    aiReviewRunRestoreAbortControllerRef.current = restoreController;
+    const aiReviewRestoreIsCurrent = () => Boolean(
+      restoreController
+      && !restoreController.signal.aborted
+      && aiReviewRunRestoreAbortControllerRef.current === restoreController
+      && manualSelectionVersionRef.current === startedSelectionVersion
+    );
     setIsRefreshing(true);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
     const researchContextUrlState = resolveInitialResearchContextUrlState();
@@ -6025,13 +6058,45 @@ export function App() {
       workspaceWithAppliedResearchWorkspaceState(result.workspace),
       researchContextUrlState
     );
+    let restoredAiReviewRun: ResearchRunAudit | null = null;
+    let restoredAiReviewKlines: MarketKlinesResult | null = null;
+    let aiReviewRunRestoreError: string | null = null;
+    if (requestedAiReviewRunId && restoreController) {
+      const runResult = await loadResearchRunDetail(
+        quantCoreBaseUrl,
+        requestedAiReviewRunId,
+        restoreController.signal
+      );
+      if (aiReviewRestoreIsCurrent()) {
+        initialAiReviewRunIdRef.current = null;
+        if (runResult.source === "core" && runResult.run?.runId === requestedAiReviewRunId) {
+          restoredAiReviewRun = runResult.run;
+          restoredWorkspace = workspaceFromResearchRunAudit(restoredWorkspace, runResult.run);
+          restoredAiReviewKlines = marketKlinesFromResearchRunAudit(runResult.run);
+        } else {
+          aiReviewRunRestoreError = strategyExperimentI18nRef.current.t("aiReviewStage3.error.runRestoreFailed");
+          window.history.replaceState(
+            {},
+            "",
+            replaceAiReviewRunIdInUrl(window.location.href, "ai-review", null)
+          );
+        }
+      } else {
+        initialAiReviewRunIdRef.current = null;
+      }
+      if (aiReviewRunRestoreAbortControllerRef.current === restoreController) {
+        aiReviewRunRestoreAbortControllerRef.current = null;
+      }
+    }
     let restoredStrategyExperiment: StrategyExperimentDetail | null = null;
     let restoredStrategyExperimentKlines: MarketKlinesResult | null = null;
-    if (requestedStrategyExperimentId) {
+    if (requestedStrategyExperimentId && (!requestedAiReviewRunId || restoredAiReviewRun)) {
       const experimentResult = await loadStrategyExperimentDetail(quantCoreBaseUrl, requestedStrategyExperimentId);
       const experiment = experimentResult.experiment;
-      if (experiment) {
-        const runResult = await loadResearchRunDetail(quantCoreBaseUrl, experiment.sourceRunId);
+      if (experiment && (!requestedAiReviewRunId || experiment.sourceRunId === requestedAiReviewRunId)) {
+        const runResult = restoredAiReviewRun?.runId === experiment.sourceRunId
+          ? { run: restoredAiReviewRun, source: "core" as const }
+          : await loadResearchRunDetail(quantCoreBaseUrl, experiment.sourceRunId);
         if (runResult.run) {
           const experimentWorkspace = workspaceFromResearchRunAudit(restoredWorkspace, runResult.run);
           if (buildStrategyExperimentEvidenceSummary(experimentWorkspace, experiment)) {
@@ -6045,10 +6110,21 @@ export function App() {
       if (!restoredStrategyExperiment) {
         replaceStrategyExperimentUrlParam(null);
       }
+    } else if (requestedStrategyExperimentId) {
+      initialStrategyExperimentIdRef.current = null;
+      replaceStrategyExperimentUrlParam(null);
     }
     const restoredResult = {
       ...result,
-      workspace: restoredWorkspace
+      workspace: restoredWorkspace,
+      ...(aiReviewRunRestoreError
+        ? { statusLabel: aiReviewRunRestoreError, error: aiReviewRunRestoreError }
+        : restoredAiReviewRun
+          ? {
+              statusLabel: strategyExperimentI18nRef.current.t("aiReviewStage3.runRestored"),
+              error: undefined
+            }
+          : {})
     };
     const urlContextCreatesUnsavedWatchlist =
       Boolean(researchContextUrlState) && !watchlistIncludesInstrument(result.workspace.watchlist, researchContextUrlState!);
@@ -6074,6 +6150,8 @@ export function App() {
       if (restoredStrategyExperimentKlines) {
         setKlinesState(restoredStrategyExperimentKlines);
       }
+    } else if (restoredAiReviewKlines && manualSelectionVersionRef.current === startedSelectionVersion) {
+      setKlinesState(restoredAiReviewKlines);
     }
     if (shouldConsiderSavedWorkArea) {
       savedResearchWorkspaceSelectionAppliedRef.current = true;
@@ -11887,7 +11965,15 @@ export function App() {
 
   useEffect(() => {
     void refreshWorkspace();
+    return () => aiReviewRunRestoreAbortControllerRef.current?.abort();
   }, [refreshWorkspace]);
+
+  useEffect(() => {
+    if (activeWorkAreaId !== "ai-review") {
+      initialAiReviewRunIdRef.current = null;
+      aiReviewRunRestoreAbortControllerRef.current?.abort();
+    }
+  }, [activeWorkAreaId]);
 
   useEffect(() => {
     void refreshChart();
@@ -11919,14 +12005,25 @@ export function App() {
   }, [locale]);
 
   useEffect(() => {
-    const url = new URL(window.location.href);
+    const currentUrl = new URL(window.location.href);
+    const url = new URL(replaceAiReviewRunIdInUrl(
+      currentUrl.toString(),
+      activeWorkAreaId,
+      activeWorkAreaId === "ai-review"
+        ? currentResearchRunId ?? initialAiReviewRunIdRef.current
+        : currentResearchRunId
+    ));
     const shouldSyncResearchContext = activeWorkAreaId === "market" || activeWorkAreaId === "research";
+    const runIdChanged = url.searchParams.toString() !== currentUrl.searchParams.toString();
     const contextChanged =
       shouldSyncResearchContext &&
       (url.searchParams.get("market") !== workspace.selectedInstrument.market ||
         url.searchParams.get("symbol") !== workspace.selectedInstrument.symbol ||
         url.searchParams.get("timeframe") !== workspace.selectedTimeframe);
-    if (url.searchParams.get("workspace") === activeWorkAreaId && !url.searchParams.has("workflow") && !contextChanged) {
+    if (url.searchParams.get("workspace") === activeWorkAreaId
+      && !url.searchParams.has("workflow")
+      && !contextChanged
+      && !runIdChanged) {
       return;
     }
     url.searchParams.set("workspace", activeWorkAreaId);
@@ -11937,7 +12034,13 @@ export function App() {
       url.searchParams.set("timeframe", workspace.selectedTimeframe);
     }
     window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
-  }, [activeWorkAreaId, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+  }, [
+    activeWorkAreaId,
+    currentResearchRunId,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
 
   useEffect(() => {
     skipNextSymbolSearchRef.current = true;

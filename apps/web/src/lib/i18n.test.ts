@@ -25,6 +25,8 @@ describe("i18n", () => {
     expect(zh.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("Provider 尚未配置。");
     expect(en.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("Provider is not configured.");
     expect(zh.t("aiReviewStage3.error.contextLoadFailed")).toBe("AI 评审 Provider 或历史加载失败。");
+    expect(zh.t("aiReviewStage3.error.runRestoreFailed")).toBe("AI 评审研究运行恢复失败，未加载链接中的运行数据。");
+    expect(en.t("aiReviewStage3.error.runRestoreFailed")).toBe("AI review research run restore failed; linked run data was not loaded.");
     expect(translationKeysForLocale("zh-CN")).toEqual(translationKeysForLocale("en-US"));
   });
 

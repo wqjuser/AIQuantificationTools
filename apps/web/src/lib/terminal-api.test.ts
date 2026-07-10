@@ -14104,6 +14104,27 @@ describe("terminal workspace API client", () => {
     expect(result.run?.backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
   });
 
+  test("forwards an abort signal while loading an exact research run", async () => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | null = null;
+    const result = await loadResearchRunDetail(
+      "http://127.0.0.1:8765",
+      "run-new",
+      controller.signal,
+      async (_url, init) => {
+        requestSignal = init?.signal ?? null;
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ detail: "not found" })
+        };
+      }
+    );
+
+    expect(requestSignal).toBe(controller.signal);
+    expect(result.source).toBe("fallback");
+  });
+
   test("loads one research run export package from the Python core", async () => {
     const calls: string[] = [];
     const result = await loadResearchRunExport("http://127.0.0.1:8765", "run-new", async (url) => {

@@ -238,6 +238,7 @@ import {
   resolveSavedResearchWorkspaceId,
   buildResearchContextDeepLink,
   resolveResearchContextUrlState,
+  replaceAiReviewRunIdInUrl,
   researchWorkspaceStateMatchesDraft,
   resolveProductWorkAreaSelection,
   resolveLocalReviewCoverageNextActionDeepLinkState,
@@ -298,6 +299,7 @@ import {
   resolveAdapterWorkflowInstrument,
   watchlistIncludesInstrument,
   resolveWatchlistCacheRefreshRunIdFromUrl,
+  resolveAiReviewRunIdFromUrl,
   resolveWatchlistCacheRefreshRunSelection,
   mergeResearchRunImportAuditEvents,
   quantLoopLabels,
@@ -347,6 +349,55 @@ import {
 } from "./terminal-workbench";
 
 describe("Stage 3 AI review state scopes", () => {
+  test("accepts only one safe research run id for the AI review workspace", () => {
+    expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=run-e390066dd7fa")).toBe(
+      "run-e390066dd7fa"
+    );
+    expect(resolveAiReviewRunIdFromUrl("?workspace=audit&runId=run-e390066dd7fa")).toBeNull();
+    expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=../run-secret")).toBeNull();
+    expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=run-a&runId=run-b")).toBeNull();
+  });
+
+  test("persists the active AI review run without taking ownership of audit deep links", () => {
+    const entered = new URL(replaceAiReviewRunIdInUrl(
+      "http://127.0.0.1:5173/?workspace=audit",
+      "ai-review",
+      "run-e390066dd7fa"
+    ));
+    expect(entered.searchParams.get("runId")).toBe("run-e390066dd7fa");
+
+    const missing = new URL(replaceAiReviewRunIdInUrl(entered.toString(), "ai-review", null));
+    expect(missing.searchParams.has("runId")).toBe(false);
+
+    entered.searchParams.set("workspace", "ai-review");
+    const left = new URL(replaceAiReviewRunIdInUrl(entered.toString(), "research", null));
+    expect(left.searchParams.has("runId")).toBe(false);
+
+    const auditDeepLink = new URL(replaceAiReviewRunIdInUrl(
+      "http://127.0.0.1:5173/?workspace=ai-review&runId=run-audit&exportPath=manifest%3Arun-audit&auditEvent=event-1",
+      "audit",
+      null
+    ));
+    expect(auditDeepLink.searchParams.get("runId")).toBe("run-audit");
+    expect(auditDeepLink.searchParams.get("exportPath")).toBe("manifest:run-audit");
+    expect(auditDeepLink.searchParams.get("auditEvent")).toBe("event-1");
+
+    const executionDeepLink = new URL(replaceAiReviewRunIdInUrl(
+      "http://127.0.0.1:5173/?workspace=ai-review&runId=run-paper&paperExecution=paper-1",
+      "execution",
+      null
+    ));
+    expect(executionDeepLink.searchParams.get("runId")).toBe("run-paper");
+    expect(executionDeepLink.searchParams.get("paperExecution")).toBe("paper-1");
+
+    const nonConsumer = new URL(replaceAiReviewRunIdInUrl(
+      "http://127.0.0.1:5173/?workspace=audit&runId=run-audit",
+      "market",
+      null
+    ));
+    expect(nonConsumer.searchParams.has("runId")).toBe(false);
+  });
+
   test("changes context scope for workspace, market context, run, or strategy changes", () => {
     const base = {
       workspaceId: "ai-review",

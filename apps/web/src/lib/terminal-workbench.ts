@@ -23413,6 +23413,42 @@ function normalizeWatchlistCacheRefreshRunId(runId: string | null | undefined): 
   return /^[A-Za-z0-9._:-]{1,120}$/.test(trimmedRunId) ? trimmedRunId : null;
 }
 
+function normalizeAiReviewRunId(runId: string | null | undefined): string | null {
+  const trimmedRunId = runId?.trim() ?? "";
+  return /^run-[A-Za-z0-9][A-Za-z0-9._:-]{0,115}$/.test(trimmedRunId) ? trimmedRunId : null;
+}
+
+export function resolveAiReviewRunIdFromUrl(
+  search: string | URLSearchParams | null | undefined
+): string | null {
+  if (!search) {
+    return null;
+  }
+  const params = search instanceof URLSearchParams ? search : new URLSearchParams(search);
+  const runIds = params.getAll("runId");
+  return params.get("workspace") === "ai-review" && runIds.length === 1
+    ? normalizeAiReviewRunId(runIds[0])
+    : null;
+}
+
+export function replaceAiReviewRunIdInUrl(
+  href: string,
+  nextWorkspaceId: ProductWorkAreaId,
+  runId: string | null | undefined
+): string {
+  const url = new URL(href);
+  if (nextWorkspaceId === "ai-review") {
+    url.searchParams.delete("runId");
+    const normalizedRunId = normalizeAiReviewRunId(runId);
+    if (normalizedRunId) {
+      url.searchParams.set("runId", normalizedRunId);
+    }
+  } else if (nextWorkspaceId !== "audit" && nextWorkspaceId !== "execution") {
+    url.searchParams.delete("runId");
+  }
+  return url.toString();
+}
+
 export function resolveWatchlistCacheRefreshRunIdFromUrl(search: string | URLSearchParams | null | undefined): string | null {
   if (!search) {
     return null;

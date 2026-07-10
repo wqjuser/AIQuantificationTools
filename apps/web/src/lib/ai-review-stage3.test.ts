@@ -18,6 +18,7 @@ import {
   isAuthoritativeAiReviewRun,
   isLegacyAiReviewHistoryRecord,
   resolveAiReviewPrimaryExperiment,
+  resolveAiReviewRestoredSelection,
   toggleAiReviewComparisonSelection
 } from "./ai-review-stage3";
 
@@ -214,6 +215,31 @@ function sampleExperiment(
 }
 
 describe("Stage 3 AI review runtime contracts", () => {
+  test("restores the latest authoritative review with its complete Decision chain", () => {
+    const review = sampleAuthoritativeReview() as AuthoritativeAiReviewRun;
+    const decisions = [sampleDecision(1), sampleDecision(2)] as AiReviewDecision[];
+
+    expect(resolveAiReviewRestoredSelection([review], decisions, "run-primary")).toEqual({
+      review,
+      decisions
+    });
+    expect(resolveAiReviewRestoredSelection([], [], "run-primary")).toEqual({
+      review: null,
+      decisions: []
+    });
+  });
+
+  test("fails closed for cross-run, orphaned, or incomplete restored Decision evidence", () => {
+    const review = sampleAuthoritativeReview() as AuthoritativeAiReviewRun;
+    const first = sampleDecision(1) as AiReviewDecision;
+    const second = sampleDecision(2) as AiReviewDecision;
+
+    expect(resolveAiReviewRestoredSelection([review], [first, second], "run-other")).toBeNull();
+    expect(resolveAiReviewRestoredSelection([review], [{ ...first, aiReviewId: "ai-review-orphan" }], "run-primary"))
+      .toBeNull();
+    expect(resolveAiReviewRestoredSelection([review], [second], "run-primary")).toBeNull();
+  });
+
   test("accepts authoritative v2 records with skipped, failed, and completed external assessments", () => {
     const skipped = sampleAuthoritativeReview();
     expect(isAuthoritativeAiReviewRun(skipped)).toBe(true);

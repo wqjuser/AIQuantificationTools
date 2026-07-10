@@ -116,6 +116,29 @@ describe("terminal layout css", () => {
     expect(aiReviewStage3SectionSource).toContain("canRunAiReviewStage3({");
   });
 
+  test("restores a URL-bound AI review run without weakening audit deep links or stale-request guards", () => {
+    const refreshWorkspaceSource = sourceBetween(
+      "const refreshWorkspace = useCallback",
+      "const refreshChart = useCallback"
+    );
+    const stage3ContextSource = sourceBetween(
+      "useLayoutEffect(() => {\n    const coordinator = aiReviewStage3RequestCoordinatorRef.current!;",
+      "const selectAiReviewStage3Primary = useCallback"
+    );
+    expect(appSource).toContain("resolveAiReviewRunIdFromUrl(window.location.search)");
+    expect(appSource).toContain("replaceAiReviewRunIdInUrl(");
+    expect(appSource).toContain("currentResearchRunId");
+    expect(refreshWorkspaceSource).toContain("new AbortController()");
+    expect(refreshWorkspaceSource).toContain("requestedAiReviewRunId,\n        restoreController.signal");
+    expect(refreshWorkspaceSource).toContain("manualSelectionVersionRef.current === startedSelectionVersion");
+    expect(refreshWorkspaceSource).toContain('strategyExperimentI18nRef.current.t("aiReviewStage3.error.runRestoreFailed")');
+    expect(appSource).toContain('if (activeWorkAreaId !== "ai-review") {\n      initialAiReviewRunIdRef.current = null;');
+    expect(appSource).toContain("aiReviewRunRestoreAbortControllerRef.current?.abort()");
+    expect(stage3ContextSource).toContain("loadAiReviewRunArchiveSnapshot(");
+    expect(stage3ContextSource).toContain("resolveAiReviewRestoredSelection(");
+    expect(stage3ContextSource).toContain("setAiReviewStage3Decisions(restoredSelection.decisions)");
+  });
+
   test("splits production vendor dependencies instead of emitting one large entry chunk", () => {
     expect(viteConfig).toContain("rolldownOptions");
     expect(viteConfig).toContain("codeSplitting");
