@@ -115,6 +115,24 @@ export interface AuthoritativeAiReviewRun {
   recordHash: string;
 }
 
+export interface LegacyAiReviewHistoryRecord {
+  schemaVersion: 1;
+  authority: "legacy";
+  recordType: "aiqt.aiReviewRun";
+  aiReviewId: string;
+  runId: string;
+  createdAt: string;
+  status: string;
+  summary: Record<string, unknown>;
+  dossier: Record<string, unknown>;
+  citations: unknown[];
+  rounds: unknown[];
+  decisionLog: unknown[];
+  boundary: string;
+}
+
+export type AiReviewHistoryRecord = AuthoritativeAiReviewRun | LegacyAiReviewHistoryRecord;
+
 export type AiReviewDecisionStatus =
   | "accepted_for_research"
   | "revision_requested"
@@ -191,6 +209,8 @@ const externalErrorCodes = new Set<AiReviewExternalErrorCode>([
 const hashPattern = /^[0-9a-f]{64}$/;
 const reviewIdPattern = /^ai-review-[0-9a-f]{32}$/;
 const decisionIdPattern = /^ai-review-decision-[0-9a-f]{32}$/;
+const openAiBaseUrl = "https://api.openai.com/v1";
+const safeRawPathPattern = /^(?:[A-Za-z0-9/:@\-._~!$&'()*+,;=]|%[0-9a-f]{2})*$/i;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -230,9 +250,66 @@ function isUtcTimestamp(value: unknown): value is string {
     && Number.isFinite(Date.parse(value));
 }
 
+function isValidHostname(hostname: string): boolean {
+  if (hostname.startsWith("[") && hostname.endsWith("]")) {
+    try {
+      return new URL(`http://${hostname}`).hostname === hostname.toLowerCase();
+    } catch {
+      return false;
+    }
+  }
+  try {
+    if (/[\\\s]/.test(hostname)) {
+      return false;
+    }
+    const ascii = /^[\x00-\x7f]+$/.test(hostname)
+      ? hostname.replace(/\.$/, "")
+      : new URL(`http://${hostname}`).hostname.replace(/\.$/, "");
+    return ascii.length > 0
+      && ascii.length <= 253
+      && ascii.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
+  } catch {
+    return false;
+  }
+}
+
 function isSafeBaseUrl(value: unknown): value is string {
   if (typeof value !== "string" || !value || value !== value.trim()
-    || value.includes("?") || value.includes("#") || /%(?![0-9a-f]{2})/i.test(value)) {
+    || value.includes("?") || value.includes("#")) {
+    return false;
+  }
+  const match = /^(https?):\/\/([^/?#]+)([^?#]*)$/.exec(value);
+  if (!match) {
+    return false;
+  }
+  const [, , authority, rawPath] = match;
+  if (authority.includes("@") || !safeRawPathPattern.test(rawPath)) {
+    return false;
+  }
+  let hostname = authority;
+  if (authority.startsWith("[")) {
+    const ipv6 = /^(\[[^\]]+\])(?::([0-9]+))?$/.exec(authority);
+    if (!ipv6) {
+      return false;
+    }
+    hostname = ipv6[1];
+    if (ipv6[2] !== undefined && String(Number(ipv6[2])) !== ipv6[2]) {
+      return false;
+    }
+  } else {
+    const separator = authority.lastIndexOf(":");
+    if (separator >= 0) {
+      const port = authority.slice(separator + 1);
+      hostname = authority.slice(0, separator);
+      if (!/^\d+$/.test(port) || String(Number(port)) !== port) {
+        return false;
+      }
+    }
+    if (hostname.includes(":")) {
+      return false;
+    }
+  }
+  if (!hostname || hostname !== hostname.toLowerCase() || !isValidHostname(hostname)) {
     return false;
   }
   try {
@@ -243,11 +320,25 @@ function isSafeBaseUrl(value: unknown): value is string {
       && !parsed.password
       && !parsed.search
       && !parsed.hash
-      && !parsed.pathname.replace(/\/$/, "").endsWith("/chat/completions")
-      && !parsed.pathname.replace(/\/$/, "").endsWith("/api/chat");
+      && !rawPath.replace(/\/+$/, "").endsWith("/chat/completions")
+      && !rawPath.replace(/\/+$/, "").endsWith("/api/chat");
   } catch {
     return false;
   }
+}
+
+function isProviderBaseUrl(
+  provider: AiReviewProviderId,
+  value: unknown,
+  allowNull: boolean
+): value is string | null {
+  if (provider === "local") {
+    return value === null;
+  }
+  if (value === null) {
+    return allowNull;
+  }
+  return isSafeBaseUrl(value) && (provider !== "openai" || value === openAiBaseUrl);
 }
 
 function isPaperBoundary(value: unknown): value is AiReviewDecision["boundary"] {
@@ -443,8 +534,20 @@ function isEvidenceItem(value: unknown): value is AiReviewEvidenceItem {
   return value.value.selected ? "testMetrics" in value.value && isMetrics(value.value.testMetrics) : !("testMetrics" in value.value);
 }
 
-function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+function canonicalJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalJsonValue);
+  }
+  if (!isObject(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, canonicalJsonValue(value[key])])
+  );
+}
+
+function sameCanonicalValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(canonicalJsonValue(left)) === JSON.stringify(canonicalJsonValue(right));
 }
 
 function isEvidenceBundle(value: unknown): value is AiReviewEvidenceBundle {
@@ -516,9 +619,10 @@ function isExternalAssessment(
     return value.endpointHash === null && value.requestHash === null && value.responseHash === null
       && value.assessment === null && value.usage === null && value.latencyMs === 0
       && (value.model === null || isTrimmedText(value.model))
-      && (value.sanitizedBaseUrl === null || isSafeBaseUrl(value.sanitizedBaseUrl));
+      && isProviderBaseUrl(value.provider as AiReviewProviderId, value.sanitizedBaseUrl, true);
   }
-  if (!isTrimmedText(value.model) || !isSafeBaseUrl(value.sanitizedBaseUrl)
+  if (!isTrimmedText(value.model)
+    || !isProviderBaseUrl(value.provider as AiReviewProviderId, value.sanitizedBaseUrl, false)
     || !isHash(value.endpointHash) || !isHash(value.requestHash)) {
     return false;
   }
@@ -536,11 +640,16 @@ export function isAiReviewProviderStatus(value: unknown): value is AiReviewProvi
     || typeof value.providerId !== "string" || !providerIds.has(value.providerId as AiReviewProviderId)
     || typeof value.configured !== "boolean"
     || (value.model !== null && !isTrimmedText(value.model))
-    || (value.sanitizedBaseUrl !== null && !isSafeBaseUrl(value.sanitizedBaseUrl))) {
+    || !isProviderBaseUrl(value.providerId as AiReviewProviderId, value.sanitizedBaseUrl, true)) {
     return false;
   }
-  return value.providerId !== "local"
-    || (value.configured === true && value.model === null && value.sanitizedBaseUrl === null);
+  if (value.providerId === "local") {
+    return value.configured === true && value.model === null && value.sanitizedBaseUrl === null;
+  }
+  if (value.providerId === "openai" && value.sanitizedBaseUrl !== openAiBaseUrl) {
+    return false;
+  }
+  return !value.configured || (isTrimmedText(value.model) && value.sanitizedBaseUrl !== null);
 }
 
 export function isAuthoritativeAiReviewRun(value: unknown): value is AuthoritativeAiReviewRun {
@@ -559,8 +668,8 @@ export function isAuthoritativeAiReviewRun(value: unknown): value is Authoritati
     || value.evidenceBundle.mode !== value.mode
     || value.evidenceBundle.strategyLineageKey !== value.strategyLineageKey
     || value.evidenceBundle.evidenceHash !== value.evidenceHash
-    || !sameJson(value.evidenceBundle.primaryExperiment, value.primaryExperiment)
-    || !sameJson(value.evidenceBundle.comparisonExperiments, value.comparisonExperiments)
+    || !sameCanonicalValue(value.evidenceBundle.primaryExperiment, value.primaryExperiment)
+    || !sameCanonicalValue(value.evidenceBundle.comparisonExperiments, value.comparisonExperiments)
     || !hasExactKeys(value.boundary, ["purpose", "paperOnly", "liveTradingAllowed", "orderSubmissionAllowed"])
     || value.boundary.purpose !== "research_evidence_review_only"
     || !isPaperBoundary({
@@ -573,6 +682,27 @@ export function isAuthoritativeAiReviewRun(value: unknown): value is Authoritati
   const evidenceIds = new Set(value.evidenceBundle.evidenceItems.map((item) => item.id));
   return isAssessment(value.deterministicAssessment, evidenceIds)
     && isExternalAssessment(value.externalAssessment, value.evidenceHash, evidenceIds);
+}
+
+export function isLegacyAiReviewHistoryRecord(value: unknown): value is LegacyAiReviewHistoryRecord {
+  return isObject(value)
+    && value.schemaVersion === 1
+    && value.authority === "legacy"
+    && value.recordType === "aiqt.aiReviewRun"
+    && isTrimmedText(value.aiReviewId)
+    && isTrimmedText(value.runId)
+    && isTrimmedText(value.createdAt)
+    && isTrimmedText(value.status)
+    && isObject(value.summary)
+    && isObject(value.dossier)
+    && Array.isArray(value.citations)
+    && Array.isArray(value.rounds)
+    && Array.isArray(value.decisionLog)
+    && isTrimmedText(value.boundary);
+}
+
+export function isAiReviewHistoryRecord(value: unknown): value is AiReviewHistoryRecord {
+  return isAuthoritativeAiReviewRun(value) || isLegacyAiReviewHistoryRecord(value);
 }
 
 export function isAiReviewDecision(value: unknown): value is AiReviewDecision {
@@ -600,7 +730,8 @@ export function isAiReviewDecisionChain(value: unknown): value is AiReviewDecisi
   if (!Array.isArray(value) || !value.every(isAiReviewDecision)) {
     return false;
   }
-  return value.every((decision, index) => {
+  return new Set(value.map((decision) => decision.decisionId)).size === value.length
+    && value.every((decision, index) => {
     const previous = value[index - 1];
     return decision.supersedesDecisionId === (previous?.decisionId ?? null)
       && (index === 0 || (
@@ -608,6 +739,19 @@ export function isAiReviewDecisionChain(value: unknown): value is AiReviewDecisi
         && decision.reviewRecordHash === value[0].reviewRecordHash
         && decision.evidenceHash === value[0].evidenceHash
       ));
+    });
+}
+
+function strategyStructureSignature(experiment: StrategyExperimentListItem): string {
+  const strategy = experiment.definition.baseStrategy;
+  const conditions = (items: typeof strategy.entryConditions) => items.map((condition) => ({
+    kind: condition.kind,
+    parameterKeys: Object.keys(condition.params).sort()
+  }));
+  return JSON.stringify({
+    name: strategy.name.trim().replace(/\s+/gu, " ").toLocaleLowerCase(),
+    entryConditions: conditions(strategy.entryConditions),
+    exitConditions: conditions(strategy.exitConditions)
   });
 }
 
@@ -625,7 +769,7 @@ export function buildComparisonEligibility(
     || candidate.symbol !== primary.symbol
     || candidate.timeframe !== primary.timeframe) {
     reason = "context-mismatch";
-  } else if (candidate.strategyRevision !== primary.strategyRevision) {
+  } else if (strategyStructureSignature(candidate) !== strategyStructureSignature(primary)) {
     reason = "lineage-mismatch";
   } else {
     const selectedIds = selected.map((item) => typeof item === "string" ? item : item.experimentId);

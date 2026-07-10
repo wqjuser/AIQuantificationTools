@@ -60,13 +60,17 @@ import {
 import {
   isAiReviewDecision,
   isAiReviewDecisionChain,
+  isAiReviewHistoryRecord,
   isAiReviewProviderStatus,
   isAuthoritativeAiReviewRun,
+  isLegacyAiReviewHistoryRecord,
   type AiReviewDecision,
+  type AiReviewHistoryRecord,
   type AiReviewProviderStatus,
   type AppendAiReviewDecisionRequest,
   type AuthoritativeAiReviewRun,
-  type CreateAuthoritativeAiReviewRequest
+  type CreateAuthoritativeAiReviewRequest,
+  type LegacyAiReviewHistoryRecord
 } from "./ai-review-stage3";
 
 export const defaultQuantCoreBaseUrl = "/";
@@ -153,7 +157,7 @@ export interface AuthoritativeAiReviewFilters {
   query?: string;
 }
 
-export interface AuthoritativeAiReviewPagination {
+export interface MixedAiReviewHistoryPagination {
   limit: number;
   offset: number;
   total: number;
@@ -162,7 +166,8 @@ export interface AuthoritativeAiReviewPagination {
 
 export interface AuthoritativeAiReviewHistoryResult {
   reviews: AuthoritativeAiReviewRun[];
-  pagination?: AuthoritativeAiReviewPagination;
+  legacyReviews: LegacyAiReviewHistoryRecord[];
+  pagination?: MixedAiReviewHistoryPagination;
   source: WorkspaceSource;
   error?: string;
 }
@@ -5023,6 +5028,12 @@ export function buildAuthoritativeAiReviewsUrl(
   baseUrl: string,
   filters: AuthoritativeAiReviewFilters = {}
 ): string {
+  if ((filters.limit !== undefined
+    && (!Number.isFinite(filters.limit) || !Number.isInteger(filters.limit) || filters.limit < 1 || filters.limit > 50))
+    || (filters.offset !== undefined
+      && (!Number.isFinite(filters.offset) || !Number.isInteger(filters.offset) || filters.offset < 0))) {
+    throw new RangeError("Invalid AI review filters");
+  }
   return buildApiUrl(baseUrl, "api/ai-reviews", (url) => {
     if (filters.runId?.trim()) {
       url.searchParams.set("runId", filters.runId.trim());
@@ -5031,10 +5042,10 @@ export function buildAuthoritativeAiReviewsUrl(
       url.searchParams.set("experimentId", filters.experimentId.trim());
     }
     if (filters.limit !== undefined) {
-      url.searchParams.set("limit", String(Math.max(1, Math.min(filters.limit, 50))));
+      url.searchParams.set("limit", String(filters.limit));
     }
     if (filters.offset !== undefined) {
-      url.searchParams.set("offset", String(Math.max(0, filters.offset)));
+      url.searchParams.set("offset", String(filters.offset));
     }
     if (filters.query?.trim()) {
       url.searchParams.set("query", filters.query.trim());
@@ -11852,12 +11863,26 @@ function isAuthoritativeAiReviewPayload(
   );
 }
 
+function isAuthoritativeAiReviewCreatePayload(
+  value: unknown,
+  request: CreateAuthoritativeAiReviewRequest
+): value is { review: AuthoritativeAiReviewRun; latestDecision: null } {
+  if (!isAuthoritativeAiReviewPayload(value) || value.latestDecision !== null) {
+    return false;
+  }
+  const comparisonIds = value.review.comparisonExperiments.map((item) => item.experimentId);
+  return value.review.primaryExperiment.experimentId === request.primaryExperimentId
+    && comparisonIds.length === request.comparisonExperimentIds.length
+    && comparisonIds.every((id, index) => id === request.comparisonExperimentIds[index])
+    && value.review.externalAssessment.provider === request.providerId;
+}
+
 function isAuthoritativeAiReviewHistoryPayload(
   value: unknown
-): value is { reviews: AuthoritativeAiReviewRun[]; pagination: AuthoritativeAiReviewPagination } {
+): value is { reviews: AiReviewHistoryRecord[]; pagination: MixedAiReviewHistoryPagination } {
   if (!hasExactAiReviewEnvelopeKeys(value, ["reviews", "pagination"])
     || !Array.isArray(value.reviews)
-    || !value.reviews.every(isAuthoritativeAiReviewRun)
+    || !value.reviews.every(isAiReviewHistoryRecord)
     || !hasExactAiReviewEnvelopeKeys(value.pagination, ["limit", "offset", "total", "query"])) {
     return false;
   }
@@ -11868,13 +11893,22 @@ function isAuthoritativeAiReviewHistoryPayload(
     && typeof value.pagination.query === "string";
 }
 
-function isAiReviewDecisionsPayload(value: unknown): value is { decisions: AiReviewDecision[] } {
+function isAiReviewDecisionsPayload(
+  value: unknown,
+  aiReviewId: string
+): value is { decisions: AiReviewDecision[] } {
   return hasExactAiReviewEnvelopeKeys(value, ["decisions"])
-    && isAiReviewDecisionChain(value.decisions);
+    && isAiReviewDecisionChain(value.decisions)
+    && value.decisions.every((decision) => decision.aiReviewId === aiReviewId);
 }
 
-function isAiReviewDecisionPayload(value: unknown): value is { decision: AiReviewDecision } {
-  return hasExactAiReviewEnvelopeKeys(value, ["decision"]) && isAiReviewDecision(value.decision);
+function isAiReviewDecisionPayload(
+  value: unknown,
+  aiReviewId: string
+): value is { decision: AiReviewDecision } {
+  return hasExactAiReviewEnvelopeKeys(value, ["decision"])
+    && isAiReviewDecision(value.decision)
+    && value.decision.aiReviewId === aiReviewId;
 }
 
 export async function loadAiReviewProviders(
@@ -11925,7 +11959,7 @@ export async function createAuthoritativeAiReview(
       },
       fetcher
     );
-    if (!isAuthoritativeAiReviewPayload(payload)) {
+    if (!isAuthoritativeAiReviewCreatePayload(payload, request)) {
       throw new Error("Invalid authoritative AI review create contract");
     }
     return { review: payload.review, latestDecision: payload.latestDecision, source: "core" };
@@ -11950,7 +11984,7 @@ export async function loadAuthoritativeAiReview(
       signal ? { signal } : undefined,
       fetcher
     );
-    if (!isAuthoritativeAiReviewPayload(payload)) {
+    if (!isAuthoritativeAiReviewPayload(payload) || payload.review.aiReviewId !== aiReviewId) {
       throw new Error("Invalid authoritative AI review detail contract");
     }
     return { review: payload.review, latestDecision: payload.latestDecision, source: "core" };
@@ -11978,10 +12012,16 @@ export async function loadAuthoritativeAiReviews(
     if (!isAuthoritativeAiReviewHistoryPayload(payload)) {
       throw new Error("Invalid authoritative AI review history contract");
     }
-    return { reviews: payload.reviews, pagination: payload.pagination, source: "core" };
+    return {
+      reviews: payload.reviews.filter(isAuthoritativeAiReviewRun),
+      legacyReviews: payload.reviews.filter(isLegacyAiReviewHistoryRecord),
+      pagination: payload.pagination,
+      source: "core"
+    };
   } catch (error) {
     return {
       reviews: [],
+      legacyReviews: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown authoritative AI review history error"
     };
@@ -12001,7 +12041,7 @@ export async function loadAiReviewDecisions(
       signal ? { signal } : undefined,
       fetcher
     );
-    if (!isAiReviewDecisionsPayload(payload)) {
+    if (!isAiReviewDecisionsPayload(payload, aiReviewId)) {
       throw new Error("Invalid AI review decisions contract");
     }
     return { decisions: payload.decisions, source: "core" };
@@ -12038,7 +12078,7 @@ export async function appendAiReviewDecision(
       },
       fetcher
     );
-    if (!isAiReviewDecisionPayload(payload)) {
+    if (!isAiReviewDecisionPayload(payload, aiReviewId)) {
       throw new Error("Invalid AI review decision append contract");
     }
     return { decision: payload.decision, source: "core" };

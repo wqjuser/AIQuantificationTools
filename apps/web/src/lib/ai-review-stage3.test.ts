@@ -4,8 +4,10 @@ import {
   buildComparisonEligibility,
   isAiReviewDecision,
   isAiReviewDecisionChain,
+  isAiReviewHistoryRecord,
   isAiReviewProviderStatus,
-  isAuthoritativeAiReviewRun
+  isAuthoritativeAiReviewRun,
+  isLegacyAiReviewHistoryRecord
 } from "./ai-review-stage3";
 
 const hash = (digit: string): string => digit.repeat(64);
@@ -124,6 +126,24 @@ function sampleDecision(index = 1) {
       orderSubmissionAllowed: false
     },
     recordHash: hash(String(index))
+  };
+}
+
+function sampleLegacyReview() {
+  return {
+    schemaVersion: 1,
+    recordType: "aiqt.aiReviewRun",
+    aiReviewId: "ai-review-v1",
+    runId: "run-primary",
+    createdAt: "2026-07-10T07:00:00+00:00",
+    authority: "legacy",
+    status: "ready",
+    summary: { liveExecutionBlocked: true },
+    dossier: { headline: "Legacy review" },
+    citations: [],
+    rounds: [],
+    decisionLog: [],
+    boundary: "Evidence explanation only; live routing remains blocked."
   };
 }
 
@@ -271,7 +291,30 @@ describe("Stage 3 AI review runtime contracts", () => {
     expect(isAiReviewDecisionChain([first, second])).toBe(true);
     expect(isAiReviewDecisionChain([{ ...first, status: "approved" }, second])).toBe(false);
     expect(isAiReviewDecisionChain([first, { ...second, supersedesDecisionId: null }])).toBe(false);
+    expect(isAiReviewDecisionChain([first, { ...second, decisionId: first.decisionId }])).toBe(false);
     expect(isAiReviewDecision({ ...first, boundary: { ...first.boundary, orderSubmissionAllowed: true } })).toBe(false);
+  });
+
+  test("parses legal legacy history records without treating them as authoritative", () => {
+    const legacy = sampleLegacyReview();
+    expect(isLegacyAiReviewHistoryRecord(legacy)).toBe(true);
+    expect(isLegacyAiReviewHistoryRecord({
+      ...legacy,
+      createdAt: "2026-W28-4T07:00:00+00:00"
+    })).toBe(true);
+    expect(isAiReviewHistoryRecord(legacy)).toBe(true);
+    expect(isAiReviewHistoryRecord(sampleAuthoritativeReview())).toBe(true);
+    expect(isAuthoritativeAiReviewRun(legacy)).toBe(false);
+    expect(isAiReviewHistoryRecord({ ...legacy, authority: "authoritative" })).toBe(false);
+    expect(isAiReviewHistoryRecord({ ...legacy, summary: [] })).toBe(false);
+  });
+
+  test("compares repeated review fields canonically instead of by object key order", () => {
+    const review = sampleAuthoritativeReview();
+    review.evidenceBundle.primaryExperiment = Object.fromEntries(
+      Object.entries(review.primaryExperiment).reverse()
+    ) as typeof review.primaryExperiment;
+    expect(isAuthoritativeAiReviewRun(review)).toBe(true);
   });
 
   test("accepts only safe provider status projections and rejects key material", () => {
@@ -280,6 +323,12 @@ describe("Stage 3 AI review runtime contracts", () => {
       configured: true,
       model: "review-model",
       sanitizedBaseUrl: "https://example.test/v1"
+    })).toBe(true);
+    expect(isAiReviewProviderStatus({
+      providerId: "openai",
+      configured: true,
+      model: "gpt-5",
+      sanitizedBaseUrl: "https://api.openai.com/v1"
     })).toBe(true);
     expect(isAiReviewProviderStatus({
       providerId: "openai",
@@ -300,16 +349,179 @@ describe("Stage 3 AI review runtime contracts", () => {
       model: "review-model",
       sanitizedBaseUrl: "https://example.test/%zz"
     })).toBe(false);
+    const invalidStatuses = [
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: null,
+        sanitizedBaseUrl: "https://example.test/v1"
+      },
+      {
+        providerId: "ollama",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: null
+      },
+      {
+        providerId: "openai",
+        configured: true,
+        model: "gpt-5",
+        sanitizedBaseUrl: "https://example.test/v1"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "HTTPS://EXAMPLE.TEST/v1"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "https://bad_host.test/v1"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "https://example.test/v1/chat/completions"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "https://example.test/v1?key=value"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "https://example.test/v1#fragment"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "https://example.test/a b"
+      },
+      {
+        providerId: "ollama",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "http://127.0.0.1:011434"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "ftp://example.test/v1"
+      },
+      {
+        providerId: "openai-compatible",
+        configured: true,
+        model: "review-model",
+        sanitizedBaseUrl: "https://example.test\\v1"
+      }
+    ];
+    for (const status of invalidStatuses) {
+      expect(isAiReviewProviderStatus(status)).toBe(false);
+    }
+  });
+
+  test("enforces external assessment provider provenance including the unconfigured matrix", () => {
+    const review = sampleAuthoritativeReview();
+    const unconfigured = {
+      ...review,
+      externalAssessment: {
+        ...review.externalAssessment,
+        status: "failed",
+        provider: "openai",
+        renderedPrompt: "Bounded canonical evidence",
+        error: {
+          code: "ai_review_provider_not_configured",
+          message: "Provider is not configured."
+        }
+      }
+    };
+    expect(isAuthoritativeAiReviewRun(unconfigured)).toBe(true);
+    expect(isAuthoritativeAiReviewRun({
+      ...unconfigured,
+      externalAssessment: {
+        ...unconfigured.externalAssessment,
+        sanitizedBaseUrl: "https://example.test/v1"
+      }
+    })).toBe(false);
+
+    const attempted = {
+      ...unconfigured,
+      externalAssessment: {
+        ...unconfigured.externalAssessment,
+        model: "gpt-5",
+        sanitizedBaseUrl: "https://example.test/v1",
+        endpointHash: hash("b"),
+        requestHash: hash("c"),
+        latencyMs: 7,
+        error: { code: "timeout", message: "Provider request timed out." }
+      }
+    };
+    expect(isAuthoritativeAiReviewRun(attempted)).toBe(false);
+    expect(isAuthoritativeAiReviewRun({
+      ...review,
+      externalAssessment: { ...review.externalAssessment, provider: "ollama" }
+    })).toBe(false);
   });
 });
 
 describe("Stage 3 comparison eligibility", () => {
-  test("allows a completed experiment with the same context and strategy revision", () => {
+  test("allows the same normalized structure across revisions and parameter values", () => {
     const primary = sampleExperiment("primary");
-    expect(buildComparisonEligibility(primary, sampleExperiment("candidate"))).toEqual({
+    primary.definition.baseStrategy.entryConditions = [
+      { kind: "cross", params: { fast: 5, slow: 20 } },
+      { kind: "volume", params: { window: 10 } }
+    ];
+    const candidate = structuredClone(sampleExperiment("candidate"));
+    candidate.strategyRevision = "different-revision";
+    candidate.definition.strategyRevision = "different-revision";
+    candidate.definition.baseStrategy = {
+      ...primary.definition.baseStrategy,
+      name: "  sma   PLAN ",
+      revision: "different-revision",
+      entryConditions: [
+        { kind: "cross", params: { slow: 99, fast: 1 } },
+        { kind: "volume", params: { window: 30 } }
+      ]
+    };
+    expect(buildComparisonEligibility(primary, candidate)).toEqual({
       eligible: true,
       reason: null
     });
+  });
+
+  test("rejects structural name, kind, order, and parameter-key changes despite equal revisions", () => {
+    const primary = sampleExperiment("primary");
+    primary.definition.baseStrategy.entryConditions = [
+      { kind: "cross", params: { fast: 5, slow: 20 } },
+      { kind: "volume", params: { window: 10 } }
+    ];
+    const candidates = [
+      structuredClone(sampleExperiment("name")),
+      structuredClone(sampleExperiment("kind")),
+      structuredClone(sampleExperiment("order")),
+      structuredClone(sampleExperiment("key"))
+    ];
+    for (const candidate of candidates) {
+      candidate.definition.baseStrategy.entryConditions = structuredClone(
+        primary.definition.baseStrategy.entryConditions
+      );
+    }
+    candidates[0].definition.baseStrategy.name = "EMA plan";
+    candidates[1].definition.baseStrategy.entryConditions[0].kind = "threshold";
+    candidates[2].definition.baseStrategy.entryConditions.reverse();
+    candidates[3].definition.baseStrategy.entryConditions[0].params = { fast: 5, signal: 20 };
+
+    for (const candidate of candidates) {
+      expect(buildComparisonEligibility(primary, candidate).reason).toBe("lineage-mismatch");
+    }
   });
 
   test("returns stable reason codes in guard order", () => {
@@ -319,7 +531,9 @@ describe("Stage 3 comparison eligibility", () => {
       .toBe("not-completed");
     expect(buildComparisonEligibility(primary, sampleExperiment("context", { symbol: "000001" })).reason)
       .toBe("context-mismatch");
-    expect(buildComparisonEligibility(primary, sampleExperiment("lineage", { strategyRevision: "other" })).reason)
+    const lineage = sampleExperiment("lineage");
+    lineage.definition.baseStrategy.name = "different strategy";
+    expect(buildComparisonEligibility(primary, lineage).reason)
       .toBe("lineage-mismatch");
     expect(buildComparisonEligibility(primary, sampleExperiment("selected"), ["selected"]).reason)
       .toBe("already-selected");

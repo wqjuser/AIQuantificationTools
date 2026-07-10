@@ -67,6 +67,7 @@ import {
   buildResearchRunPaperExecutionsUrl,
   buildResearchRunPromotionUrl,
   buildResearchRunAiReviewsUrl,
+  buildAuthoritativeAiReviewsUrl,
   buildMarketCalendarUrl,
   buildPortfolioBacktestUrl,
   buildPortfolioPaperOrderApprovalsUrl,
@@ -566,6 +567,24 @@ function sampleAiReviewDecisionPayload(index = 1) {
     evidenceHash: stage3Hash("8"),
     boundary: { paperOnly: true, liveTradingAllowed: false, orderSubmissionAllowed: false },
     recordHash: stage3Hash(String(index))
+  };
+}
+
+function sampleLegacyAiReviewHistoryPayload() {
+  return {
+    schemaVersion: 1,
+    recordType: "aiqt.aiReviewRun",
+    aiReviewId: "ai-review-v1-http",
+    runId: "run-primary",
+    createdAt: "2026-07-10T07:00:00+00:00",
+    authority: "legacy",
+    status: "ready",
+    summary: { liveExecutionBlocked: true },
+    dossier: { headline: "Legacy HTTP review" },
+    citations: [],
+    rounds: [],
+    decisionLog: [],
+    boundary: "Evidence explanation only; live routing remains blocked."
   };
 }
 
@@ -19767,9 +19786,9 @@ describe("terminal workspace API client", () => {
     const controller = new AbortController();
     const request = {
       primaryExperimentId: "primary",
-      comparisonExperimentIds: ["comparison"],
-      providerId: "openai-compatible" as const,
-      externalDataApproved: true,
+      comparisonExperimentIds: [],
+      providerId: "local" as const,
+      externalDataApproved: false,
       uiOnly: "must-not-leak"
     };
     const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -19787,26 +19806,50 @@ describe("terminal workspace API client", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             primaryExperimentId: "primary",
-            comparisonExperimentIds: ["comparison"],
-            providerId: "openai-compatible",
-            externalDataApproved: true
+            comparisonExperimentIds: [],
+            providerId: "local",
+            externalDataApproved: false
           }),
           signal: controller.signal
         }
       }
     ]);
     expect(result).toMatchObject({ source: "core", review: { authority: "authoritative" }, latestDecision: null });
+
+    const mismatches = [
+      { request: { ...request, primaryExperimentId: "other" }, latestDecision: null },
+      { request: { ...request, comparisonExperimentIds: ["comparison"] }, latestDecision: null },
+      { request: { ...request, providerId: "openai" as const }, latestDecision: null },
+      { request, latestDecision: sampleAiReviewDecisionPayload(1) }
+    ];
+    for (const mismatch of mismatches) {
+      const rejected = await createAuthoritativeAiReview("/", mismatch.request, async () => ({
+        ok: true,
+        status: 201,
+        json: async () => ({ review, latestDecision: mismatch.latestDecision })
+      }));
+      expect(rejected.source).toBe("fallback");
+      expect(rejected.review).toBeUndefined();
+    }
   });
 
   test("loads encoded authoritative detail and deeply rejects a legacy review", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const review = sampleAuthoritativeAiReviewPayload();
-    const result = await loadAuthoritativeAiReview("/", "review/你好", async (url, init) => {
+    const result = await loadAuthoritativeAiReview("/", review.aiReviewId, async (url, init) => {
       calls.push({ url, init });
       return { ok: true, status: 200, json: async () => ({ review, latestDecision: null }) };
     });
-    expect(calls).toEqual([{ url: "/api/ai-reviews/review%2F%E4%BD%A0%E5%A5%BD", init: undefined }]);
+    expect(calls).toEqual([{ url: `/api/ai-reviews/${review.aiReviewId}`, init: undefined }]);
     expect(result.review?.recordHash).toBe(stage3Hash("a"));
+
+    const mismatched = await loadAuthoritativeAiReview("/", "ai-review-other", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ review, latestDecision: null })
+    }));
+    expect(mismatched.source).toBe("fallback");
+    expect(mismatched.review).toBeUndefined();
 
     const legacy = await loadAuthoritativeAiReview("/", "legacy", async () => ({
       ok: true,
@@ -19817,7 +19860,7 @@ describe("terminal workspace API client", () => {
     expect(legacy.review).toBeUndefined();
   });
 
-  test("loads authoritative review history with URLSearchParams filters and validates pagination", async () => {
+  test("loads mixed review history into explicit groups while preserving the mixed total", async () => {
     const calls: string[] = [];
     const review = sampleAuthoritativeAiReviewPayload();
     const result = await loadAuthoritativeAiReviews(
@@ -19828,14 +19871,22 @@ describe("terminal workspace API client", () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ reviews: [review], pagination: { limit: 5, offset: 10, total: 12, query: "hash match" } })
+          json: async () => ({
+            reviews: [sampleLegacyAiReviewHistoryPayload(), review],
+            pagination: { limit: 5, offset: 10, total: 12, query: "hash match" }
+          })
         };
       }
     );
     expect(calls).toEqual([
       "/api/ai-reviews?runId=run+1&experimentId=experiment%2F1&limit=5&offset=10&query=hash+match"
     ]);
-    expect(result).toMatchObject({ source: "core", pagination: { total: 12 }, reviews: [{ schemaVersion: 2 }] });
+    expect(result).toMatchObject({
+      source: "core",
+      pagination: { total: 12 },
+      reviews: [{ schemaVersion: 2 }],
+      legacyReviews: [{ schemaVersion: 1 }]
+    });
 
     const invalid = await loadAuthoritativeAiReviews("/", {}, async () => ({
       ok: true,
@@ -19844,13 +19895,50 @@ describe("terminal workspace API client", () => {
     }));
     expect(invalid.source).toBe("fallback");
     expect(invalid.reviews).toEqual([]);
+    expect(invalid.legacyReviews).toEqual([]);
+
+    const malformed = await loadAuthoritativeAiReviews("/", {}, async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        reviews: [{ ...sampleLegacyAiReviewHistoryPayload(), authority: "unknown" }],
+        pagination: { limit: 20, offset: 0, total: 1, query: "" }
+      })
+    }));
+    expect(malformed.source).toBe("fallback");
+    expect(malformed.reviews).toEqual([]);
+    expect(malformed.legacyReviews).toEqual([]);
+  });
+
+  test("rejects invalid review pagination filters without sending a request", async () => {
+    const invalidFilters = [
+      { limit: 0 },
+      { limit: 51 },
+      { limit: 1.5 },
+      { limit: Number.NaN },
+      { limit: Number.POSITIVE_INFINITY },
+      { offset: -1 },
+      { offset: 1.5 },
+      { offset: Number.NaN },
+      { offset: Number.POSITIVE_INFINITY }
+    ];
+    for (const filters of invalidFilters) {
+      expect(() => buildAuthoritativeAiReviewsUrl("/", filters)).toThrow("Invalid AI review filters");
+      let requested = false;
+      const result = await loadAuthoritativeAiReviews("/", filters, async () => {
+        requested = true;
+        throw new Error("must not request");
+      });
+      expect(requested).toBe(false);
+      expect(result.source).toBe("fallback");
+    }
   });
 
   test("loads and appends the exact AI review decision chain", async () => {
     const first = sampleAiReviewDecisionPayload(1);
     const second = sampleAiReviewDecisionPayload(2);
-    const loaded = await loadAiReviewDecisions("/", "review/你好", async (url) => {
-      expect(url).toBe("/api/ai-reviews/review%2F%E4%BD%A0%E5%A5%BD/decisions");
+    const loaded = await loadAiReviewDecisions("/", first.aiReviewId, async (url) => {
+      expect(url).toBe(`/api/ai-reviews/${first.aiReviewId}/decisions`);
       return { ok: true, status: 200, json: async () => ({ decisions: [first, second] }) };
     });
     expect(loaded.decisions).toHaveLength(2);
@@ -19865,11 +19953,11 @@ describe("terminal workspace API client", () => {
     };
     const appended = await appendAiReviewDecision(
       "/",
-      "review/你好",
+      second.aiReviewId,
       request,
       controller.signal,
       async (url, init) => {
-        expect(url).toBe("/api/ai-reviews/review%2F%E4%BD%A0%E5%A5%BD/decisions");
+        expect(url).toBe(`/api/ai-reviews/${second.aiReviewId}/decisions`);
         expect(init).toEqual({
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -19885,12 +19973,32 @@ describe("terminal workspace API client", () => {
       }
     );
     expect(appended).toMatchObject({ source: "core", decision: { status: "revision_requested" } });
+
+    const mismatchedList = await loadAiReviewDecisions("/", "ai-review-other", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ decisions: [first, second] })
+    }));
+    expect(mismatchedList).toMatchObject({ source: "fallback", decisions: [] });
+
+    const mismatchedAppend = await appendAiReviewDecision(
+      "/",
+      "ai-review-other",
+      request,
+      async () => ({
+        ok: true,
+        status: 201,
+        json: async () => ({ decision: second })
+      })
+    );
+    expect(mismatchedAppend.source).toBe("fallback");
+    expect(mismatchedAppend.decision).toBeUndefined();
   });
 
   test("rejects a broken decision predecessor chain before returning it to callers", async () => {
     const first = sampleAiReviewDecisionPayload(1);
     const second = { ...sampleAiReviewDecisionPayload(2), supersedesDecisionId: null };
-    const result = await loadAiReviewDecisions("/", "review", async () => ({
+    const result = await loadAiReviewDecisions("/", first.aiReviewId, async () => ({
       ok: true,
       status: 200,
       json: async () => ({ decisions: [first, second] })
