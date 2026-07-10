@@ -125,6 +125,7 @@ import {
   appendAiReviewDecision,
   createAuthoritativeAiReview,
   loadAiReviewDecisions,
+  loadAiReviewArchiveImportSnapshot,
   loadAiReviewProviders,
   loadAuthoritativeAiReview,
   loadAuthoritativeAiReviews,
@@ -179,6 +180,7 @@ import {
   P2ManifestChainPreflightLatestResult,
   PromotionCandidateRecord,
   AiReviewRunRecordEnvelope,
+  AiReviewArchiveImportSnapshot,
   AiReviewRunHistoryPagination,
   AuditEventRecord,
   AuditEventHistoryPagination,
@@ -2283,6 +2285,7 @@ export function App() {
   const [aiReviewRunRecords, setAiReviewRunRecords] = useState<AiReviewRunRecordEnvelope[]>([]);
   const [inspectedExportPackage, setInspectedExportPackage] = useState<ResearchRunExportPackage | null>(null);
   const [pendingImportPackage, setPendingImportPackage] = useState<{
+    aiReviewArchiveSnapshot: AiReviewArchiveImportSnapshot;
     exportPackage: ResearchRunExportPackage;
     fileName: string;
   } | null>(null);
@@ -2665,7 +2668,9 @@ export function App() {
     : null;
   const visiblePaperTradingRows = persistedPaperTradingRows ?? paperTradingRows;
   const researchRunExportPreviewRows = buildResearchRunExportPreviewRows({
+    aiReviewDecisions: aiReviewStage3Decisions,
     aiReviewRecords: activeAiReviewRunRecords,
+    authoritativeAiReviewRecords: aiReviewStage3History,
     currentAiReviewRecord: currentAiReviewRunRecord,
     paperExecution: activePaperExecutionRecord,
     promotionCandidate: activePromotionCandidateRecord,
@@ -2744,8 +2749,16 @@ export function App() {
     AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
   );
   const researchRunImportDiffRows = buildResearchRunImportDiffRows({
+    aiReviewArchiveReadbackErrors: pendingImportPackage?.aiReviewArchiveSnapshot.readbackErrors,
+    aiReviewDecisions:
+      pendingImportPackage?.aiReviewArchiveSnapshot.aiReviewDecisions ?? aiReviewStage3Decisions,
     aiReviewRecords: activeAiReviewRunRecords,
+    authoritativeAiReviewRecords:
+      pendingImportPackage?.aiReviewArchiveSnapshot.authoritativeAiReviewRecords ?? aiReviewStage3History,
     exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage,
+    legacyAiReviewIds:
+      pendingImportPackage?.aiReviewArchiveSnapshot.legacyAiReviewIds
+      ?? aiReviewStage3LegacyHistory.map((review) => review.aiReviewId),
     paperExecution: activePaperExecutionRecord,
     workspace
   });
@@ -8078,10 +8091,18 @@ export function App() {
           return;
         }
         exportPackage = await withVerifiedResearchRunExportPackageReportSignatures(quantCoreBaseUrl, exportPackage);
+        const aiReviewArchiveSnapshot = await loadAiReviewArchiveImportSnapshot(
+          quantCoreBaseUrl,
+          exportPackage
+        );
 
         const previewRows = buildResearchRunImportDiffRows({
+          aiReviewArchiveReadbackErrors: aiReviewArchiveSnapshot.readbackErrors,
+          aiReviewDecisions: aiReviewArchiveSnapshot.aiReviewDecisions,
           aiReviewRecords: activeAiReviewRunRecords,
+          authoritativeAiReviewRecords: aiReviewArchiveSnapshot.authoritativeAiReviewRecords,
           exportPackage,
+          legacyAiReviewIds: aiReviewArchiveSnapshot.legacyAiReviewIds,
           paperExecution: activePaperExecutionRecord,
           workspace
         });
@@ -8095,7 +8116,7 @@ export function App() {
             stage: "preview"
           })
         );
-        setPendingImportPackage({ exportPackage, fileName: file.name });
+        setPendingImportPackage({ aiReviewArchiveSnapshot, exportPackage, fileName: file.name });
         setInspectedExportPackage(exportPackage);
         setActiveWorkAreaId("audit");
         setWorkspaceState((current) => ({
@@ -8132,12 +8153,33 @@ export function App() {
     }
 
     const importRows = buildResearchRunImportDiffRows({
+      aiReviewArchiveReadbackErrors: pendingImportPackage.aiReviewArchiveSnapshot.readbackErrors,
+      aiReviewDecisions: pendingImportPackage.aiReviewArchiveSnapshot.aiReviewDecisions,
       aiReviewRecords: activeAiReviewRunRecords,
+      authoritativeAiReviewRecords: pendingImportPackage.aiReviewArchiveSnapshot.authoritativeAiReviewRecords,
       exportPackage: pendingImportPackage.exportPackage,
+      legacyAiReviewIds: pendingImportPackage.aiReviewArchiveSnapshot.legacyAiReviewIds,
       paperExecution: activePaperExecutionRecord,
       workspace
     });
     const previousRunId = workspace.researchRun?.runId ?? null;
+    if (importRows.some((row) => row.status === "blocked")) {
+      appendResearchRunImportAuditEvent(
+        buildResearchRunImportAuditEvent({
+          exportPackage: pendingImportPackage.exportPackage,
+          fileName: pendingImportPackage.fileName,
+          previousRunId,
+          rows: importRows,
+          stage: "preview"
+        })
+      );
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Research run import preview blocked",
+        error: "Research run import is blocked by unresolved package conflicts"
+      }));
+      return;
+    }
     const importVersion = manualSelectionVersionRef.current + 1;
     manualSelectionVersionRef.current = importVersion;
     workflowRunIdRef.current += 1;
@@ -8290,8 +8332,12 @@ export function App() {
           fileName: pendingImportPackage.fileName,
           previousRunId: workspace.researchRun?.runId ?? null,
           rows: buildResearchRunImportDiffRows({
+            aiReviewArchiveReadbackErrors: pendingImportPackage.aiReviewArchiveSnapshot.readbackErrors,
+            aiReviewDecisions: pendingImportPackage.aiReviewArchiveSnapshot.aiReviewDecisions,
             aiReviewRecords: activeAiReviewRunRecords,
+            authoritativeAiReviewRecords: pendingImportPackage.aiReviewArchiveSnapshot.authoritativeAiReviewRecords,
             exportPackage: pendingImportPackage.exportPackage,
+            legacyAiReviewIds: pendingImportPackage.aiReviewArchiveSnapshot.legacyAiReviewIds,
             paperExecution: activePaperExecutionRecord,
             workspace
           }),
@@ -12870,6 +12916,7 @@ export function App() {
             currentRunId={workspace.researchRun?.runId ?? null}
             currentStrategyRevision={workspace.researchRun?.strategyRevision ?? "draft"}
             dossier={aiReviewDossier}
+            exportPackage={inspectedExportPackage}
             historyPagination={aiReviewHistoryPagination}
             historyQuery={aiReviewHistoryQuery}
             i18n={i18n}
@@ -27522,6 +27569,7 @@ function AiReviewAuditTrailPanel({
   currentStrategyRevision,
   dataSnapshot,
   dossier,
+  exportPackage,
   historyPagination,
   historyQuery,
   i18n,
@@ -27543,6 +27591,7 @@ function AiReviewAuditTrailPanel({
   currentStrategyRevision: string;
   dataSnapshot: ResearchRunDataSnapshot | null;
   dossier: AiReviewDossier;
+  exportPackage: ResearchRunExportPackage | null;
   historyPagination: AiReviewRunHistoryPagination | null;
   historyQuery: string;
   i18n: AppI18n;
@@ -27587,6 +27636,7 @@ function AiReviewAuditTrailPanel({
   const [evidenceIndexQuery, setEvidenceIndexQuery] = useState("");
   const evidenceIndexRows = buildAiReviewExportEvidenceIndexRows({
     currentRecord,
+    exportPackage,
     records: records.map((record) => record.record),
     timelineItems
   });
@@ -27750,7 +27800,9 @@ function aiReviewEvidenceIndexGroupLabel(
       {
         "current-record": "Current record",
         "saved-record": "Saved record",
-        timeline: "Timeline"
+        timeline: "Timeline",
+        "package-authoritative-review": i18n.t("archive.aiReview.group.authoritative"),
+        "package-decision": i18n.t("archive.aiReview.group.decision")
       } satisfies Record<AiReviewExportEvidenceIndexRow["group"], string>
     )[group];
   }
@@ -27758,7 +27810,9 @@ function aiReviewEvidenceIndexGroupLabel(
     {
       "current-record": "当前记录",
       "saved-record": "保存记录",
-      timeline: "审计时间线"
+      timeline: "审计时间线",
+      "package-authoritative-review": i18n.t("archive.aiReview.group.authoritative"),
+      "package-decision": i18n.t("archive.aiReview.group.decision")
     } satisfies Record<AiReviewExportEvidenceIndexRow["group"], string>
   )[group];
 }
@@ -27770,6 +27824,10 @@ function aiReviewEvidenceIndexDetail(i18n: AppI18n, detail: string): string {
   return detail
     .replace("Current AI review record", "当前 AI 评审记录")
     .replace("Saved AI review record", "保存 AI 评审记录")
+    .replace("provider ", "provider ")
+    .replace("status ", "状态 ")
+    .replace("assessment ", "评估 ")
+    .replace("operator ", "操作人 ")
     .replace("Evidence dossier is ready", "证据档案已就绪")
     .replace("Evidence dossier blocked", "证据档案阻断")
     .replace("Paper execution approved", "模拟执行已审批")
@@ -27794,6 +27852,8 @@ function researchExportPreviewLabel(i18n: AppI18n, row: ResearchRunExportPreview
       "paper-executions": "模拟执行",
       "promotion-candidate": "晋级候选",
       "ai-review-runs": "AI 评审记录",
+      "ai-review-runs-v2": i18n.t("archive.aiReview.authoritative"),
+      "ai-review-decisions": i18n.t("archive.aiReview.decision"),
       "execution-handoff": "执行交接"
     } satisfies Record<ResearchRunExportPreviewRow["id"], string>
   )[row.id];
@@ -27864,7 +27924,14 @@ function researchExportPreviewDetail(i18n: AppI18n, detail: string): string {
     .replace("Execution handoff gates are created after an audited run is available.", "审计运行可用后会生成执行交接闸门。")
     .replace("Audited run can stage paper orders", "审计运行可提交模拟委托")
     .replace("live trading remains blocked", "实盘仍保持阻断")
-    .replace("needs risk review before staging execution", "提交执行前仍需风控复核");
+    .replace("needs risk review before staging execution", "提交执行前仍需风控复核")
+    .replace("Authoritative v2 Reviews and evidence hashes are ready for export.", "权威 v2 评审及证据 Hash 已可导出。")
+    .replace("No authoritative v2 Review is saved for this research run.", "当前研究运行尚未保存权威 v2 评审。")
+    .replace("A research run is required before authoritative Reviews can be exported.", "导出权威评审前需要先生成研究运行。")
+    .replace("Decision append-chain evidence is ready for export.", "Decision 追加链证据已可导出。")
+    .replace("The authoritative Review has no appended Decision.", "该权威评审尚未追加 Decision。")
+    .replace("Save an authoritative Review before appending a Decision.", "追加 Decision 前先保存权威评审。")
+    .replace("A research run is required before Decisions can be exported.", "导出 Decision 前需要先生成研究运行。");
 }
 
 function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowserRow): string {
@@ -27889,6 +27956,8 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "p0-completeness": "P0 完整性",
       "promotion-candidate": "晋级候选",
       "ai-reviews": "AI 评审",
+      "ai-reviews-v2": i18n.t("archive.aiReview.authoritative"),
+      "ai-review-decisions": i18n.t("archive.aiReview.decision"),
       "audit-summary": "审计摘要",
       "audit-report": "审计报告",
       "execution-handoff": "执行交接"
@@ -27975,6 +28044,10 @@ function researchExportBrowserDetail(i18n: AppI18n, detail: string): string {
     .replace("No promotion candidate payload is attached.", "没有附加晋级候选载荷。")
     .replace("Manifest and package AI review counts match.", "Manifest 与包内 AI 评审数量一致。")
     .replace("Manifest AI review count does not match the package payload.", "Manifest AI 评审数量与包内载荷不一致。")
+    .replace("Authoritative v2 Review count matches the export package payload.", "权威 v2 评审数量与导出包载荷一致。")
+    .replace("Authoritative v2 Review manifest count does not match the package payload.", "权威 v2 评审的 manifest 数量与包内载荷不一致。")
+    .replace("AI Review Decision count matches the export package payload.", "AI 评审 Decision 数量与导出包载荷一致。")
+    .replace("AI Review Decision manifest count does not match the package payload.", "AI 评审 Decision 的 manifest 数量与包内载荷不一致。")
     .replace("No saved AI review record is attached.", "没有附加保存的 AI 评审记录。")
     .replace("Live execution handoff is allowed by the package gates.", "包内闸门允许实盘执行交接。")
     .replace("Package remains paper-only; live execution is blocked.", "导出包仍为仅模拟盘；实盘执行保持阻断。");
@@ -27983,6 +28056,12 @@ function researchExportBrowserDetail(i18n: AppI18n, detail: string): string {
 function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): string {
   if (i18n.locale === "en-US") {
     return row.label;
+  }
+  if (row.id.startsWith("ai-review-run-v2:")) {
+    return i18n.t("archive.aiReview.authoritative");
+  }
+  if (row.id.startsWith("ai-review-decision:")) {
+    return i18n.t("archive.aiReview.decision");
   }
   return (
     {
@@ -28005,8 +28084,8 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "audit-report": "导入审计报告",
       "backtest-report": "导入回测报告",
       "live-boundary": "实盘边界"
-    } satisfies Record<ResearchRunImportDiffRow["id"], string>
-  )[row.id];
+    } as Record<string, string>
+  )[row.id] ?? row.label;
 }
 
 function researchImportVerifiedReportSignatureLabel(
@@ -28062,6 +28141,10 @@ function researchImportDiffValue(i18n: AppI18n, value: string): string {
     .replace("No local note", "无本地笔记")
     .replace("No package note", "无包内笔记")
     .replace("No local package summary", "无本地包摘要")
+    .replace("Persistent readback unavailable", "持久化回读不可用")
+    .replace("Legacy authority owns this Review ID", "该评审 ID 已由 legacy authority 占用")
+    .replace("No authoritative Review", "无权威评审")
+    .replace("No Decision", "无 Decision")
     .replace("no focus", "无焦点")
     .replace("No package selected", "未选择复现包")
     .replace("Local live enabled", "本地实盘已开启")
@@ -28094,6 +28177,15 @@ function researchImportDiffDetail(i18n: AppI18n, detail: string): string {
     .replace("Package does not include a locked research note.", "复现包没有包含锁定研究笔记。")
     .replace("Import will restore paper execution records attached to the package run.", "导入会恢复附加在包内运行上的模拟执行记录。")
     .replace("Import will restore saved AI review records and their evidence anchors.", "导入会恢复保存的 AI 评审记录及其证据锚点。")
+    .replace("Authoritative Review readback unavailable; import is blocked fail-closed.", "权威评审回读不可用；导入按 fail-closed 阻断。")
+    .replace("Decision readback unavailable; import is blocked fail-closed.", "Decision 回读不可用；导入按 fail-closed 阻断。")
+    .replace("Authority conflict: a legacy Review already owns this Review ID.", "Authority 冲突：该评审 ID 已由 legacy 评审占用。")
+    .replace("Authoritative Review ID and recordHash are same-hash.", "权威评审 ID 与 recordHash 一致。")
+    .replace("Authoritative Review ID conflict: recordHash differs from persisted evidence.", "权威评审 ID 冲突：recordHash 与持久化证据不同。")
+    .replace("Authoritative Review is new and will be added.", "权威评审为新增记录，将写入本地。")
+    .replace("Decision ID and recordHash are same-hash.", "Decision ID 与 recordHash 一致。")
+    .replace("Decision ID conflict: recordHash differs from persisted evidence.", "Decision ID 冲突：recordHash 与持久化证据不同。")
+    .replace("Decision is new and will be added.", "Decision 为新增记录，将写入本地。")
     .replace(
       "Audit evidence summary run id does not match the import package manifest.",
       "审计证据摘要 run id 与导入包 manifest 不一致。"
@@ -28340,6 +28432,10 @@ function auditMetadataVerifiedReportSignatures(value: unknown): ResearchRunImpor
 }
 
 function isResearchRunImportDiffRowId(value: unknown): value is ResearchRunImportDiffRow["id"] {
+  if (typeof value === "string"
+    && (/^ai-review-run-v2:\d+$/u.test(value) || /^ai-review-decision:\d+$/u.test(value))) {
+    return true;
+  }
   return (
     value === "package-integrity" ||
     value === "artifact-counts" ||
@@ -28351,6 +28447,7 @@ function isResearchRunImportDiffRowId(value: unknown): value is ResearchRunImpor
     value === "preparation-evidence" ||
     value === "strategy-revision" ||
     value === "research-note" ||
+    value === "handoff-notes" ||
     value === "paper-executions" ||
     value === "adapter-paper-executions" ||
     value === "portfolio-paper-orders" ||

@@ -1939,7 +1939,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage");
     expect(importFileSource).toContain("normalizeResearchRunExportPackagePayload(parsed)");
     expect(importFileSource).toContain("withVerifiedResearchRunExportPackageReportSignatures(quantCoreBaseUrl, exportPackage)");
-    expect(importFileSource).toContain("setPendingImportPackage({ exportPackage, fileName: file.name })");
+    expect(importFileSource).toContain(
+      "setPendingImportPackage({ aiReviewArchiveSnapshot, exportPackage, fileName: file.name })"
+    );
+    expect(importFileSource).toContain("loadAiReviewArchiveImportSnapshot");
     expect(importFileSource).toContain("setInspectedExportPackage(exportPackage)");
     expect(importFileSource).not.toContain("importResearchRunExport");
     expect(confirmImportSource).toContain("importResearchRunExport(quantCoreBaseUrl, pendingImportPackage.exportPackage)");

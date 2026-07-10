@@ -1,3 +1,5 @@
+import type { AiReviewDecision, AuthoritativeAiReviewRun } from "./ai-review-stage3";
+
 export type PanelId =
   | "watchlist"
   | "chart"
@@ -1656,7 +1658,12 @@ export interface AiReviewAuditTimelineItem {
   tone: "positive" | "warning" | "neutral" | "risk" | "ai";
 }
 
-export type AiReviewExportEvidenceIndexGroup = "current-record" | "saved-record" | "timeline";
+export type AiReviewExportEvidenceIndexGroup =
+  | "current-record"
+  | "saved-record"
+  | "timeline"
+  | "package-authoritative-review"
+  | "package-decision";
 
 export interface AiReviewExportEvidenceIndexRow {
   id: string;
@@ -1684,6 +1691,8 @@ export interface ResearchRunExportPreviewRow {
     | "paper-executions"
     | "promotion-candidate"
     | "ai-review-runs"
+    | "ai-review-runs-v2"
+    | "ai-review-decisions"
     | "execution-handoff";
   label: string;
   status: ResearchRunExportPreviewStatus;
@@ -1741,6 +1750,8 @@ export interface ResearchRunExportBrowserManifest {
     promotionCandidates?: number;
     researchNotes?: number;
     aiReviewRuns?: number;
+    aiReviewRunsV2?: number;
+    aiReviewDecisions?: number;
     auditEvents?: number;
     handoffNotes?: number;
   };
@@ -2277,6 +2288,18 @@ export interface ResearchRunExportBrowserPackage {
   portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulationSnapshot[];
   promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
   aiReviewRuns?: ResearchRunExportPreviewAiReviewEnvelope[];
+  aiReviewRunsV2?: Array<{
+    aiReviewId: string;
+    runId: string;
+    createdAt: string;
+    record: AuthoritativeAiReviewRun;
+  }>;
+  aiReviewDecisions?: Array<{
+    decisionId: string;
+    aiReviewId: string;
+    createdAt: string;
+    record: AiReviewDecision;
+  }>;
   auditEvents?: ResearchRunExportAuditEventSnapshot[];
   handoffNotes?: ResearchRunExportHandoffNoteSnapshot[];
   p0PackageCompleteness?: {
@@ -2390,6 +2413,8 @@ export interface ResearchRunExportBrowserRow {
     | "portfolio-paper-orders"
     | "promotion-candidate"
     | "ai-reviews"
+    | "ai-reviews-v2"
+    | "ai-review-decisions"
     | "audit-events"
     | "p0-completeness"
     | "audit-summary"
@@ -2423,8 +2448,7 @@ export interface ResearchRunExportIndexRow {
 
 export type ResearchRunImportDiffStatus = "same" | "add" | "change" | "replace" | "blocked";
 
-export interface ResearchRunImportDiffRow {
-  id:
+export type ResearchRunImportDiffRowId =
     | "package-integrity"
     | "artifact-counts"
     | "run-id"
@@ -2443,7 +2467,12 @@ export interface ResearchRunImportDiffRow {
     | "audit-summary"
     | "audit-report"
     | "backtest-report"
-    | "live-boundary";
+    | "live-boundary"
+    | `ai-review-run-v2:${number}`
+    | `ai-review-decision:${number}`;
+
+export interface ResearchRunImportDiffRow {
+  id: ResearchRunImportDiffRowId;
   label: string;
   status: ResearchRunImportDiffStatus;
   current: string;
@@ -14441,10 +14470,12 @@ export function buildAiReviewAuditTimelineItems({
 
 export function buildAiReviewExportEvidenceIndexRows({
   currentRecord,
+  exportPackage,
   records,
   timelineItems
 }: {
   currentRecord: AiReviewRunRecord | null;
+  exportPackage?: Pick<ResearchRunExportBrowserPackage, "aiReviewRunsV2" | "aiReviewDecisions"> | null;
   records: AiReviewRunRecord[];
   timelineItems: AiReviewAuditTimelineItem[];
 }): AiReviewExportEvidenceIndexRow[] {
@@ -14491,6 +14522,49 @@ export function buildAiReviewExportEvidenceIndexRows({
     });
   });
 
+  exportPackage?.aiReviewRunsV2?.forEach((envelope, index) => {
+    const review = envelope.record;
+    const experimentIds = [
+      review.primaryExperiment.experimentId,
+      ...review.comparisonExperiments.map((experiment) => experiment.experimentId)
+    ];
+    rows.push({
+      id: "package-v2:" + review.aiReviewId,
+      group: "package-authoritative-review",
+      label: "Authoritative Review · " + review.aiReviewId,
+      anchor: "aiReviewRunV2:" + review.aiReviewId,
+      reference: experimentIds.join(" "),
+      exportPath: "aiReviewRunsV2[" + index + "].record",
+      detail: [
+        "provider " + review.externalAssessment.provider,
+        "status " + review.externalAssessment.status,
+        "assessment " + review.deterministicAssessment.stance,
+        "evidenceHash " + review.evidenceHash,
+        "recordHash " + review.recordHash
+      ].join(" · "),
+      tone: review.externalAssessment.status === "failed" ? "risk" : "ai"
+    });
+  });
+
+  exportPackage?.aiReviewDecisions?.forEach((envelope, index) => {
+    const decision = envelope.record;
+    rows.push({
+      id: "package-decision:" + decision.decisionId,
+      group: "package-decision",
+      label: "Decision · " + decision.decisionId,
+      anchor: "aiReviewDecision:" + decision.decisionId,
+      reference: decision.aiReviewId,
+      exportPath: "aiReviewDecisions[" + index + "].record",
+      detail: [
+        "status " + decision.status,
+        "evidenceHash " + decision.evidenceHash,
+        "recordHash " + decision.recordHash,
+        "operator " + decision.operator
+      ].join(" · "),
+      tone: decision.status === "rejected" ? "risk" : "ai"
+    });
+  });
+
   return rows;
 }
 
@@ -14512,7 +14586,9 @@ export function filterAiReviewExportEvidenceIndexRows(
 }
 
 export function buildResearchRunExportPreviewRows({
+  aiReviewDecisions = [],
   aiReviewRecords = [],
+  authoritativeAiReviewRecords = [],
   currentAiReviewRecord = null,
   paperExecution = null,
   promotionCandidate = null,
@@ -14520,8 +14596,10 @@ export function buildResearchRunExportPreviewRows({
   workspace
 }: {
   workspace: TerminalWorkspace;
+  aiReviewDecisions?: AiReviewDecision[];
   currentAiReviewRecord?: AiReviewRunRecord | null;
   aiReviewRecords?: ResearchRunExportPreviewAiReviewEnvelope[];
+  authoritativeAiReviewRecords?: AuthoritativeAiReviewRun[];
   paperExecution?: PaperExecutionSnapshot | null;
   promotionCandidate?: ResearchRunExportPreviewPromotionCandidate | null;
   riskApproval?: RiskApprovalSummary | null;
@@ -14540,6 +14618,15 @@ export function buildResearchRunExportPreviewRows({
     ? aiReviewRecords.filter((record) => record.runId === run.runId)
     : [];
   const latestAiReviewRecord = activeAiReviewRecords[0] ?? null;
+  const activeAuthoritativeAiReviewRecords = run
+    ? authoritativeAiReviewRecords.filter((review) => review.primaryExperiment.sourceRunId === run.runId)
+    : [];
+  const authoritativeReviewIds = new Set(activeAuthoritativeAiReviewRecords.map((review) => review.aiReviewId));
+  const activeAiReviewDecisions = aiReviewDecisions.filter((decision) =>
+    authoritativeReviewIds.has(decision.aiReviewId)
+  );
+  const latestAuthoritativeAiReviewRecord = activeAuthoritativeAiReviewRecords[0] ?? null;
+  const latestAiReviewDecision = activeAiReviewDecisions.at(-1) ?? null;
   const currentRecordReady = Boolean(currentAiReviewRecord && run && currentAiReviewRecord.runId === run.runId);
   const backtestTradeCount = workspace.backtestTrades?.length ?? 0;
   const equityPointCount = workspace.backtestEquityCurve?.length ?? 0;
@@ -14679,6 +14766,46 @@ export function buildResearchRunExportPreviewRows({
               ? "Run and save an AI review record before relying on exported AI evidence."
               : "A research run is required before AI review records can be exported.",
       tone: activeAiReviewRecords.length > 0 ? "ai" : currentRecordReady || run ? "warning" : "risk"
+    },
+    {
+      id: "ai-review-runs-v2",
+      label: "Authoritative AI reviews",
+      status: activeAuthoritativeAiReviewRecords.length > 0 ? "ready" : run ? "missing" : "blocked",
+      count: activeAuthoritativeAiReviewRecords.length + " authoritative",
+      anchor: latestAuthoritativeAiReviewRecord
+        ? "aiReviewRunV2:" + latestAuthoritativeAiReviewRecord.aiReviewId
+        : "aiReviewRunV2:" + runId + ":missing",
+      exportPath: "aiReviewRunsV2[]",
+      detail: activeAuthoritativeAiReviewRecords.length > 0
+        ? "Authoritative v2 Reviews and evidence hashes are ready for export."
+        : run
+          ? "No authoritative v2 Review is saved for this research run."
+          : "A research run is required before authoritative Reviews can be exported.",
+      tone: activeAuthoritativeAiReviewRecords.length > 0 ? "ai" : run ? "warning" : "risk"
+    },
+    {
+      id: "ai-review-decisions",
+      label: "AI review Decisions",
+      status: activeAiReviewDecisions.length > 0
+        ? "ready"
+        : activeAuthoritativeAiReviewRecords.length > 0
+          ? "missing"
+          : run
+            ? "missing"
+            : "blocked",
+      count: activeAiReviewDecisions.length + " Decision" + (activeAiReviewDecisions.length === 1 ? "" : "s"),
+      anchor: latestAiReviewDecision
+        ? "aiReviewDecision:" + latestAiReviewDecision.decisionId
+        : "aiReviewDecision:" + runId + ":missing",
+      exportPath: "aiReviewDecisions[]",
+      detail: activeAiReviewDecisions.length > 0
+        ? "Decision append-chain evidence is ready for export."
+        : activeAuthoritativeAiReviewRecords.length > 0
+          ? "The authoritative Review has no appended Decision."
+          : run
+            ? "Save an authoritative Review before appending a Decision."
+            : "A research run is required before Decisions can be exported.",
+      tone: activeAiReviewDecisions.length > 0 ? "ai" : run ? "warning" : "risk"
     },
     {
       id: "paper-executions",
@@ -14830,6 +14957,8 @@ export function buildResearchRunExportBrowserRows(
   const portfolioPaperOrderSimulationAdapterEvidenceDetail =
     formatPortfolioPaperOrderSimulationAdapterEvidenceDetail(exportPackage.portfolioPaperOrderSimulations);
   const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
+  const authoritativeAiReviewPackageCount = exportPackage.aiReviewRunsV2?.length ?? 0;
+  const aiReviewDecisionPackageCount = exportPackage.aiReviewDecisions?.length ?? 0;
   const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
   const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
   const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
@@ -14898,6 +15027,10 @@ export function buildResearchRunExportBrowserRows(
   ].filter(Boolean);
   const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
   const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
+  const authoritativeAiReviewCountMatches =
+    (artifactCounts.aiReviewRunsV2 ?? 0) === authoritativeAiReviewPackageCount;
+  const aiReviewDecisionCountMatches =
+    (artifactCounts.aiReviewDecisions ?? 0) === aiReviewDecisionPackageCount;
   const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
   const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
   const p0PackageCompleteness = exportPackage.p0PackageCompleteness;
@@ -15102,6 +15235,60 @@ export function buildResearchRunExportBrowserRows(
       exportPath: "aiReviewRuns[]",
       tone: aiReviewCountMatches && aiReviewPackageCount > 0 ? "ai" : aiReviewCountMatches ? "neutral" : "risk"
     },
+    ...(artifactCounts.aiReviewRunsV2 !== undefined || exportPackage.aiReviewRunsV2 !== undefined
+      ? ([
+        {
+          id: "ai-reviews-v2",
+          label: "Authoritative AI Reviews",
+          status:
+            authoritativeAiReviewCountMatches && authoritativeAiReviewPackageCount > 0
+              ? "ready"
+              : authoritativeAiReviewCountMatches
+                ? "missing"
+                : "blocked",
+          value:
+            (artifactCounts.aiReviewRunsV2 ?? 0) + " manifest / "
+            + authoritativeAiReviewPackageCount + " package",
+          detail: authoritativeAiReviewCountMatches
+            ? "Authoritative v2 Review count matches the export package payload."
+            : "Authoritative v2 Review manifest count does not match the package payload.",
+          exportPath: "aiReviewRunsV2[].record",
+          tone:
+            authoritativeAiReviewCountMatches && authoritativeAiReviewPackageCount > 0
+              ? "ai"
+              : authoritativeAiReviewCountMatches
+                ? "neutral"
+                : "risk"
+        }
+      ] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...(artifactCounts.aiReviewDecisions !== undefined || exportPackage.aiReviewDecisions !== undefined
+      ? ([
+        {
+          id: "ai-review-decisions",
+          label: "AI Review Decisions",
+          status:
+            aiReviewDecisionCountMatches && aiReviewDecisionPackageCount > 0
+              ? "ready"
+              : aiReviewDecisionCountMatches
+                ? "missing"
+                : "blocked",
+          value:
+            (artifactCounts.aiReviewDecisions ?? 0) + " manifest / "
+            + aiReviewDecisionPackageCount + " package",
+          detail: aiReviewDecisionCountMatches
+            ? "AI Review Decision count matches the export package payload."
+            : "AI Review Decision manifest count does not match the package payload.",
+          exportPath: "aiReviewDecisions[].record",
+          tone:
+            aiReviewDecisionCountMatches && aiReviewDecisionPackageCount > 0
+              ? "ai"
+              : aiReviewDecisionCountMatches
+                ? "neutral"
+                : "risk"
+        }
+      ] satisfies ResearchRunExportBrowserRow[])
+      : []),
     {
       id: "audit-events",
       label: "Audit events",
@@ -15288,6 +15475,8 @@ export function buildResearchRunExportIndexRows(
       const portfolioPaperOrderApprovalPackageCount = exportPackage.portfolioPaperOrderApprovals?.length ?? 0;
       const portfolioPaperOrderSimulationPackageCount = exportPackage.portfolioPaperOrderSimulations?.length ?? 0;
       const aiReviewPackageCount = exportPackage.aiReviewRuns?.length ?? 0;
+      const authoritativeAiReviewPackageCount = exportPackage.aiReviewRunsV2?.length ?? 0;
+      const aiReviewDecisionPackageCount = exportPackage.aiReviewDecisions?.length ?? 0;
       const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
       const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
       const promotionPackageCount = exportPackage.promotionCandidate ? 1 : 0;
@@ -15369,6 +15558,10 @@ export function buildResearchRunExportIndexRows(
         (artifactCounts.portfolioPaperOrderSimulations ?? 0) === portfolioPaperOrderSimulationPackageCount;
       const promotionCountMatches = (artifactCounts.promotionCandidates ?? 0) === promotionPackageCount;
       const aiReviewCountMatches = (artifactCounts.aiReviewRuns ?? 0) === aiReviewPackageCount;
+      const authoritativeAiReviewCountMatches =
+        (artifactCounts.aiReviewRunsV2 ?? 0) === authoritativeAiReviewPackageCount;
+      const aiReviewDecisionCountMatches =
+        (artifactCounts.aiReviewDecisions ?? 0) === aiReviewDecisionPackageCount;
       const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
       const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
       const mismatchReasons = [
@@ -15379,6 +15572,8 @@ export function buildResearchRunExportIndexRows(
         portfolioPaperOrderCountMatches ? null : "Portfolio paper order count mismatch",
         promotionCountMatches ? null : "Promotion candidate count mismatch",
         aiReviewCountMatches ? null : "AI review count mismatch",
+        authoritativeAiReviewCountMatches ? null : "Authoritative AI Review count mismatch",
+        aiReviewDecisionCountMatches ? null : "AI Review Decision count mismatch",
         auditEventCountMatches ? null : "Audit event count mismatch",
         handoffNoteCountMatches ? null : "Handoff note count mismatch",
         auditReport && !auditReportIsReady ? "Audit report mismatch" : null,
@@ -15414,6 +15609,12 @@ export function buildResearchRunExportIndexRows(
           `${artifactCounts.portfolioPaperOrderApprovals ?? 0} approvals`,
           `${artifactCounts.portfolioPaperOrderSimulations ?? 0} fills`,
           `${artifactCounts.aiReviewRuns ?? 0} AI`,
+          artifactCounts.aiReviewRunsV2 !== undefined || exportPackage.aiReviewRunsV2 !== undefined
+            ? (artifactCounts.aiReviewRunsV2 ?? 0) + " authoritative Reviews"
+            : null,
+          artifactCounts.aiReviewDecisions !== undefined || exportPackage.aiReviewDecisions !== undefined
+            ? (artifactCounts.aiReviewDecisions ?? 0) + " Decisions"
+            : null,
           (artifactCounts.auditEvents ?? 0) > 0 ? `${artifactCounts.auditEvents ?? 0} audit events` : null,
           (artifactCounts.handoffNotes ?? 0) > 0 ? `${artifactCounts.handoffNotes ?? 0} handoff notes` : null,
           reportArtifactLabels.length ? `${reportArtifactLabels.length} reports` : null,
@@ -15467,6 +15668,8 @@ function researchRunImportArtifactCountMismatches(
   exportPackage: ResearchRunExportBrowserPackage,
   actualCounts: {
     aiReviewRuns: number;
+    aiReviewRunsV2: number;
+    aiReviewDecisions: number;
     adapterPaperExecutions: number;
     paperExecutions: number;
     portfolioPaperOrderApprovals: number;
@@ -15501,6 +15704,8 @@ function researchRunImportArtifactCountMismatches(
     ],
     ["promotionCandidates", artifactCounts.promotionCandidates ?? 0, actualCounts.promotionCandidates],
     ["aiReviewRuns", artifactCounts.aiReviewRuns ?? 0, actualCounts.aiReviewRuns],
+    ["aiReviewRunsV2", artifactCounts.aiReviewRunsV2 ?? 0, actualCounts.aiReviewRunsV2],
+    ["aiReviewDecisions", artifactCounts.aiReviewDecisions ?? 0, actualCounts.aiReviewDecisions],
     ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents],
     ["handoffNotes", artifactCounts.handoffNotes ?? 0, actualCounts.handoffNotes]
   ];
@@ -15511,14 +15716,22 @@ function researchRunImportArtifactCountMismatches(
 }
 
 export function buildResearchRunImportDiffRows({
+  aiReviewArchiveReadbackErrors = {},
+  aiReviewDecisions = [],
   aiReviewRecords = [],
+  authoritativeAiReviewRecords = [],
   exportPackage,
+  legacyAiReviewIds = [],
   paperExecution = null,
   workspace
 }: {
   workspace: TerminalWorkspace;
   exportPackage: ResearchRunExportBrowserPackage | null | undefined;
+  aiReviewArchiveReadbackErrors?: Record<string, string>;
+  aiReviewDecisions?: AiReviewDecision[];
   aiReviewRecords?: ResearchRunExportPreviewAiReviewEnvelope[];
+  authoritativeAiReviewRecords?: AuthoritativeAiReviewRun[];
+  legacyAiReviewIds?: string[];
   paperExecution?: PaperExecutionSnapshot | null;
 }): ResearchRunImportDiffRow[] {
   if (!exportPackage) {
@@ -15580,12 +15793,21 @@ export function buildResearchRunImportDiffRows({
   const integrityIsReady =
     exportPackage.integrity?.algorithm === "sha256" && /^[a-f0-9]{64}$/iu.test(integrityHash);
   const packageAiReviewCount = exportPackage.aiReviewRuns?.length ?? 0;
+  const packageAuthoritativeAiReviewCount = exportPackage.aiReviewRunsV2?.length ?? 0;
+  const packageAiReviewDecisionCount = exportPackage.aiReviewDecisions?.length ?? 0;
   const manifestAiReviewCount = exportPackage.manifest.artifactCounts.aiReviewRuns ?? 0;
   const packageAuditEventCount = exportPackage.auditEvents?.length ?? 0;
   const packageHandoffNoteCount = exportPackage.handoffNotes?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
     : 0;
+  const authoritativeAiReviewById = new Map(
+    authoritativeAiReviewRecords.map((review) => [review.aiReviewId, review])
+  );
+  const aiReviewDecisionById = new Map(
+    aiReviewDecisions.map((decision) => [decision.decisionId, decision])
+  );
+  const legacyAiReviewIdSet = new Set(legacyAiReviewIds);
   const packagePaperCount = exportPackage.paperExecutions?.length ?? 0;
   const packagePaperPreparationEvidenceRunIds = collectPaperExecutionPreparationEvidenceRunIds(exportPackage.paperExecutions);
   const packageAdapterPaperExecutionCount = exportPackage.adapterPaperExecutions?.length ?? 0;
@@ -15652,6 +15874,8 @@ export function buildResearchRunImportDiffRows({
     : "";
   const artifactCountMismatches = researchRunImportArtifactCountMismatches(exportPackage, {
     aiReviewRuns: packageAiReviewCount,
+    aiReviewRunsV2: packageAuthoritativeAiReviewCount,
+    aiReviewDecisions: packageAiReviewDecisionCount,
     adapterPaperExecutions: packageAdapterPaperExecutionCount,
     paperExecutions: packagePaperCount,
     portfolioPaperOrderApprovals: packagePortfolioPaperOrderApprovalCount,
@@ -15662,6 +15886,67 @@ export function buildResearchRunImportDiffRows({
     auditEvents: packageAuditEventCount,
     handoffNotes: packageHandoffNoteCount
   });
+  const authoritativeAiReviewDiffRows = (exportPackage.aiReviewRunsV2 ?? []).map(
+    (envelope, index): ResearchRunImportDiffRow => {
+      const incoming = envelope.record;
+      const current = authoritativeAiReviewById.get(incoming.aiReviewId);
+      const readbackError = aiReviewArchiveReadbackErrors["review:" + incoming.aiReviewId];
+      const authorityConflict = legacyAiReviewIdSet.has(incoming.aiReviewId);
+      const sameHash = current?.recordHash === incoming.recordHash;
+      return {
+        id: ("ai-review-run-v2:" + index) as ResearchRunImportDiffRow["id"],
+        label: "Authoritative Review · " + incoming.aiReviewId,
+        status: readbackError || authorityConflict || (current && !sameHash) ? "blocked" : current ? "same" : "add",
+        current: readbackError
+          ? "Persistent readback unavailable"
+          : authorityConflict
+            ? "Legacy authority owns this Review ID"
+            : current
+              ? "authoritative · " + current.recordHash
+              : "No authoritative Review",
+        incoming: "authoritative · " + incoming.recordHash,
+        detail: readbackError
+          ? "Authoritative Review readback unavailable; import is blocked fail-closed. " + readbackError
+          : authorityConflict
+            ? "Authority conflict: a legacy Review already owns this Review ID."
+            : current
+              ? sameHash
+                ? "Authoritative Review ID and recordHash are same-hash."
+                : "Authoritative Review ID conflict: recordHash differs from persisted evidence."
+              : "Authoritative Review is new and will be added.",
+        exportPath: "aiReviewRunsV2[" + index + "].record",
+        tone: readbackError || authorityConflict || (current && !sameHash) ? "risk" : current ? "positive" : "ai"
+      };
+    }
+  );
+  const aiReviewDecisionDiffRows = (exportPackage.aiReviewDecisions ?? []).map(
+    (envelope, index): ResearchRunImportDiffRow => {
+      const incoming = envelope.record;
+      const current = aiReviewDecisionById.get(incoming.decisionId);
+      const readbackError = aiReviewArchiveReadbackErrors["decisions:" + incoming.aiReviewId];
+      const sameHash = current?.recordHash === incoming.recordHash;
+      return {
+        id: ("ai-review-decision:" + index) as ResearchRunImportDiffRow["id"],
+        label: "Decision · " + incoming.decisionId,
+        status: readbackError || (current && !sameHash) ? "blocked" : current ? "same" : "add",
+        current: readbackError
+          ? "Persistent readback unavailable"
+          : current
+            ? current.recordHash
+            : "No Decision",
+        incoming: incoming.recordHash,
+        detail: readbackError
+          ? "Decision readback unavailable; import is blocked fail-closed. " + readbackError
+          : current
+            ? sameHash
+              ? "Decision ID and recordHash are same-hash."
+              : "Decision ID conflict: recordHash differs from persisted evidence."
+            : "Decision is new and will be added.",
+        exportPath: "aiReviewDecisions[" + index + "].record",
+        tone: readbackError || (current && !sameHash) ? "risk" : current ? "positive" : "ai"
+      };
+    }
+  );
 
   return [
     {
@@ -15895,6 +16180,8 @@ export function buildResearchRunImportDiffRows({
       exportPath: "aiReviewRuns[]",
       tone: packageAiReviewCount > 0 ? "ai" : "neutral"
     },
+    ...authoritativeAiReviewDiffRows,
+    ...aiReviewDecisionDiffRows,
     ...(auditSummary
       ? ([
           {
@@ -16694,7 +16981,11 @@ const researchRunImportAuditArtifactRowIds = new Set<ResearchRunImportDiffRow["i
 
 function researchRunImportAuditArtifactRows(rows: ResearchRunImportDiffRow[]): ResearchRunImportAuditArtifactRow[] {
   return rows.flatMap((row) => {
-    if (!researchRunImportAuditArtifactRowIds.has(row.id) || row.status === "blocked" || row.status === "same") {
+    const isStage3Evidence =
+      row.id.startsWith("ai-review-run-v2:") || row.id.startsWith("ai-review-decision:");
+    if ((!researchRunImportAuditArtifactRowIds.has(row.id) && !isStage3Evidence)
+      || row.status === "blocked"
+      || row.status === "same") {
       return [];
     }
     return [{

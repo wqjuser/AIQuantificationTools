@@ -240,6 +240,7 @@ import {
   loadAuthoritativeAiReview,
   loadAuthoritativeAiReviews,
   loadAiReviewDecisions,
+  loadAiReviewArchiveImportSnapshot,
   appendAiReviewDecision,
   validateStrategySnapshot,
   submitResearchRunPaperExecution,
@@ -588,6 +589,124 @@ function sampleLegacyAiReviewHistoryPayload() {
     rounds: [],
     decisionLog: [],
     boundary: "Evidence explanation only; live routing remains blocked."
+  };
+}
+
+function sampleStage3ArchiveExportPackage() {
+  const review = sampleAuthoritativeAiReviewPayload();
+  const decision = sampleAiReviewDecisionPayload();
+  return {
+    kind: "aiqt.researchRun.export",
+    packageVersion: 1,
+    exportedAt: "2026-07-10T09:00:00+00:00",
+    manifest: {
+      runId: "run-primary",
+      createdAt: "2026-07-10T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyRevision: stage3Hash("1"),
+      dataHash: "stage3-archive-snapshot",
+      dataRows: 0,
+      executionMode: "paper_only",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      artifactCounts: {
+        bars: 0,
+        trades: 0,
+        equityPoints: 0,
+        decisions: 0,
+        aiRisks: 0,
+        aiReviewRuns: 0,
+        aiReviewRunsV2: 1,
+        aiReviewDecisions: 1
+      }
+    },
+    researchRun: {
+      runId: "run-primary",
+      createdAt: "2026-07-10T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Stage 3 archive",
+      strategyRevision: stage3Hash("1"),
+      dataRows: 0,
+      metrics: {},
+      decisions: [],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "fixture",
+        isComplete: true,
+        warnings: [],
+        rows: 0,
+        start: null,
+        end: null,
+        hash: "stage3-archive-snapshot",
+        bars: []
+      }
+    },
+    executionHandoff: {
+      mode: "paper_only",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      requiredGates: []
+    },
+    aiReviewRuns: [],
+    aiReviewRunsV2: [
+      {
+        aiReviewId: review.aiReviewId,
+        runId: review.primaryExperiment.sourceRunId,
+        createdAt: review.createdAt,
+        record: review
+      }
+    ],
+    aiReviewDecisions: [
+      {
+        decisionId: decision.decisionId,
+        aiReviewId: decision.aiReviewId,
+        createdAt: decision.createdAt,
+        record: decision
+      }
+    ]
+  };
+}
+
+function sampleLegacyArchiveEnvelope(aiReviewId: string) {
+  const record = {
+    schemaVersion: 1,
+    recordType: "aiqt.aiReviewRun",
+    aiReviewId,
+    runId: "run-primary",
+    createdAt: "2026-07-10T07:00:00+00:00",
+    market: "ashare",
+    symbol: "600000",
+    timeframe: "1d",
+    strategyRevision: stage3Hash("1"),
+    executionMode: "paper_only",
+    status: "ready",
+    summary: {
+      citationCount: 0,
+      roundCount: 0,
+      decisionCount: 0,
+      parameterScanBound: false,
+      liveExecutionBlocked: true
+    },
+    dossier: {
+      status: "ready",
+      headline: "Legacy review",
+      summary: "Legacy evidence explanation.",
+      citations: []
+    },
+    citations: [],
+    rounds: [],
+    decisionLog: [],
+    boundary: "Evidence explanation only; live routing remains blocked."
+  };
+  return {
+    aiReviewId,
+    runId: record.runId,
+    createdAt: record.createdAt,
+    record
   };
 }
 
@@ -14527,6 +14646,133 @@ describe("terminal workspace API client", () => {
     expect(normalizeResearchRunExportPackagePayload({ export: { manifest: { runId: "broken" } } })).toBeNull();
   });
 
+  test("normalizes legacy-only and authoritative Stage 3 archive packages", () => {
+    const stage3Package = sampleStage3ArchiveExportPackage();
+    const normalized = normalizeResearchRunExportPackagePayload(stage3Package);
+    const {
+      aiReviewRunsV2: _reviews,
+      aiReviewDecisions: _decisions,
+      ...legacyOnly
+    } = stage3Package;
+    const {
+      aiReviewRunsV2: _reviewCount,
+      aiReviewDecisions: _decisionCount,
+      ...legacyArtifactCounts
+    } = legacyOnly.manifest.artifactCounts;
+    const legacyManifest = {
+      ...legacyOnly.manifest,
+      artifactCounts: legacyArtifactCounts
+    };
+
+    expect(normalized?.aiReviewRunsV2?.[0]?.record.aiReviewId).toBe(
+      "ai-review-0123456789abcdef0123456789abcdef"
+    );
+    expect(normalized?.aiReviewDecisions?.[0]?.record.decisionId).toBe(
+      "ai-review-decision-11111111111111111111111111111111"
+    );
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...legacyOnly,
+        manifest: legacyManifest
+      })?.manifest.runId
+    ).toBe("run-primary");
+  });
+
+  test("rejects invalid authoritative archive records without falling back to legacy", () => {
+    const stage3Package = sampleStage3ArchiveExportPackage();
+    const invalidReview = {
+      ...stage3Package.aiReviewRunsV2[0],
+      record: {
+        ...stage3Package.aiReviewRunsV2[0].record,
+        boundary: {
+          ...stage3Package.aiReviewRunsV2[0].record.boundary,
+          liveTradingAllowed: true
+        }
+      }
+    };
+
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        aiReviewRunsV2: [invalidReview]
+      })
+    ).toBeNull();
+
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        aiReviewDecisions: [{
+          ...stage3Package.aiReviewDecisions[0],
+          record: {
+            ...stage3Package.aiReviewDecisions[0].record,
+            status: "unknown"
+          }
+        }]
+      })
+    ).toBeNull();
+
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        aiReviewRuns: [sampleLegacyArchiveEnvelope(stage3Package.aiReviewRunsV2[0].aiReviewId)],
+        manifest: {
+          ...stage3Package.manifest,
+          artifactCounts: {
+            ...stage3Package.manifest.artifactCounts,
+            aiReviewRuns: 1
+          }
+        }
+      })
+    ).toBeNull();
+  });
+
+  test("rejects Stage 3 archive count mismatches and unsafe package boundaries", () => {
+    const stage3Package = sampleStage3ArchiveExportPackage();
+
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        manifest: {
+          ...stage3Package.manifest,
+          artifactCounts: {
+            ...stage3Package.manifest.artifactCounts,
+            aiReviewRunsV2: 0
+          }
+        }
+      })
+    ).toBeNull();
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        manifest: {
+          ...stage3Package.manifest,
+          artifactCounts: {
+            ...stage3Package.manifest.artifactCounts,
+            aiReviewDecisions: 0
+          }
+        }
+      })
+    ).toBeNull();
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        executionHandoff: {
+          ...stage3Package.executionHandoff,
+          liveTradingAllowed: true
+        }
+      })
+    ).toBeNull();
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        manifest: {
+          ...stage3Package.manifest,
+          route: "live"
+        }
+      })
+    ).toBeNull();
+  });
+
   test("normalizes P0 package completeness and run-bound audit events", () => {
     const auditEvent: AuditEventRecord = {
       schemaVersion: 1,
@@ -19893,6 +20139,106 @@ describe("terminal workspace API client", () => {
     }));
     expect(legacy.source).toBe("fallback");
     expect(legacy.review).toBeUndefined();
+
+    const missing = await loadAuthoritativeAiReview("/", review.aiReviewId, async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "ai_review_not_found" })
+    }));
+    expect(missing).toMatchObject({
+      source: "fallback",
+      error: "ai_review_not_found",
+      httpStatus: 404
+    });
+  });
+
+  test("loads a persistent Stage 3 archive import snapshot for same-hash comparison", async () => {
+    const exportPackage = sampleStage3ArchiveExportPackage() as unknown as ResearchRunExportPackage;
+    const review = exportPackage.aiReviewRunsV2![0].record;
+    const decision = exportPackage.aiReviewDecisions![0].record;
+    const snapshot = await loadAiReviewArchiveImportSnapshot("/", exportPackage, async (url) => {
+      if (url.endsWith("/decisions")) {
+        return { ok: true, status: 200, json: async () => ({ decisions: [decision] }) };
+      }
+      if (url.includes("?")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            reviews: [review],
+            pagination: { limit: 50, offset: 0, total: 1, query: review.aiReviewId }
+          })
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ review, latestDecision: decision }) };
+    });
+
+    expect(snapshot).toEqual({
+      authoritativeAiReviewRecords: [review],
+      aiReviewDecisions: [decision],
+      legacyAiReviewIds: [],
+      readbackErrors: {}
+    });
+  });
+
+  test("treats 404 as absent but fails closed on readback and authority errors", async () => {
+    const exportPackage = sampleStage3ArchiveExportPackage() as unknown as ResearchRunExportPackage;
+    const review = exportPackage.aiReviewRunsV2![0].record;
+    const decision = exportPackage.aiReviewDecisions![0].record;
+    const history = (reviews: unknown[]) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        reviews,
+        pagination: { limit: 50, offset: 0, total: reviews.length, query: review.aiReviewId }
+      })
+    });
+    const missing = await loadAiReviewArchiveImportSnapshot("/", exportPackage, async (url) =>
+      url.includes("?")
+        ? history([])
+        : { ok: false, status: 404, json: async () => ({ detail: "ai_review_not_found" }) }
+    );
+    expect(missing).toMatchObject({
+      authoritativeAiReviewRecords: [],
+      aiReviewDecisions: [],
+      legacyAiReviewIds: [],
+      readbackErrors: {}
+    });
+
+    const unavailable = await loadAiReviewArchiveImportSnapshot("/", exportPackage, async (url) => {
+      if (url.includes("?")) {
+        return history([]);
+      }
+      throw new Error("offline");
+    });
+    expect(unavailable.readbackErrors).toMatchObject({
+      ["review:" + review.aiReviewId]: "offline",
+      ["decisions:" + review.aiReviewId]: "offline"
+    });
+
+    const legacyRecord = {
+      ...sampleLegacyAiReviewHistoryPayload(),
+      aiReviewId: review.aiReviewId
+    };
+    const authorityConflict = await loadAiReviewArchiveImportSnapshot("/", exportPackage, async (url) =>
+      url.includes("?")
+        ? history([legacyRecord])
+        : { ok: false, status: 404, json: async () => ({ detail: "ai_review_not_found" }) }
+    );
+    expect(authorityConflict.legacyAiReviewIds).toEqual([review.aiReviewId]);
+
+    const decisionUnavailable = await loadAiReviewArchiveImportSnapshot("/", exportPackage, async (url) => {
+      if (url.endsWith("/decisions")) {
+        throw new Error("decision store offline");
+      }
+      if (url.includes("?")) {
+        return history([review]);
+      }
+      return { ok: true, status: 200, json: async () => ({ review, latestDecision: decision }) };
+    });
+    expect(decisionUnavailable.readbackErrors).toMatchObject({
+      ["decisions:" + review.aiReviewId]: "decision store offline"
+    });
   });
 
   test("loads mixed review history into explicit groups while preserving the mixed total", async () => {

@@ -754,6 +754,164 @@ function workspaceForStrategyExperiment(experiment: StrategyExperimentDetail): T
   });
 }
 
+function stage3ArchiveReviewFixture() {
+  return {
+    schemaVersion: 2,
+    authority: "authoritative",
+    recordType: "aiqt.aiReviewRun",
+    aiReviewId: "ai-review-0123456789abcdef0123456789abcdef",
+    createdAt: "2026-07-10T08:00:00+00:00",
+    mode: "single",
+    primaryExperiment: {
+      experimentId: "experiment-stage3-archive",
+      sourceRunId: "run-stage3-archive",
+      strategyRevision: "1".repeat(64),
+      snapshotId: "2".repeat(64),
+      definitionHash: "3".repeat(64),
+      resultHash: "4".repeat(64),
+      selectedCandidateId: "candidate-stage3",
+      candidateRevision: "5".repeat(64),
+      canonicalDataHash: "6".repeat(64),
+      dataRange: {
+        startAt: "2026-01-01T00:00:00+00:00",
+        endAt: "2026-06-30T00:00:00+00:00"
+      }
+    },
+    comparisonExperiments: [],
+    strategyLineageKey: "7".repeat(64),
+    evidenceBundle: {
+      schemaVersion: 1,
+      mode: "single",
+      primaryExperiment: {
+        experimentId: "experiment-stage3-archive",
+        sourceRunId: "run-stage3-archive",
+        strategyRevision: "1".repeat(64),
+        snapshotId: "2".repeat(64),
+        definitionHash: "3".repeat(64),
+        resultHash: "4".repeat(64),
+        selectedCandidateId: "candidate-stage3",
+        candidateRevision: "5".repeat(64),
+        canonicalDataHash: "6".repeat(64),
+        dataRange: {
+          startAt: "2026-01-01T00:00:00+00:00",
+          endAt: "2026-06-30T00:00:00+00:00"
+        }
+      },
+      comparisonExperiments: [],
+      strategyLineageKey: "7".repeat(64),
+      evidenceItems: [],
+      safetyBoundary: { paperOnly: true, liveTradingAllowed: false, orderSubmissionAllowed: false },
+      evidenceHash: "8".repeat(64)
+    },
+    evidenceHash: "8".repeat(64),
+    deterministicAssessment: {
+      stance: "supported",
+      summary: "Stage 3 evidence is supported.",
+      risks: [],
+      invalidationConditions: [],
+      watchItems: [],
+      evidenceGaps: [],
+      consistency: "consistent"
+    },
+    externalAssessment: {
+      status: "completed",
+      provider: "openai-compatible",
+      model: "review-model",
+      sanitizedBaseUrl: "https://provider.example/v1",
+      endpointHash: "9".repeat(64),
+      promptTemplateVersion: "aiqt-ai-review-v1",
+      outputSchemaVersion: "aiqt-ai-review-assessment-v1",
+      renderedPrompt: "review prompt",
+      renderedPromptHash: "a".repeat(64),
+      evidenceHash: "8".repeat(64),
+      requestHash: "b".repeat(64),
+      responseHash: "c".repeat(64),
+      assessment: null,
+      usage: null,
+      latencyMs: 12,
+      error: null
+    },
+    boundary: {
+      purpose: "research_evidence_review_only",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      orderSubmissionAllowed: false
+    },
+    recordHash: "d".repeat(64)
+  };
+}
+
+function stage3ArchiveDecisionFixture() {
+  return {
+    schemaVersion: 1,
+    recordType: "aiqt.aiReviewDecision",
+    decisionId: "ai-review-decision-11111111111111111111111111111111",
+    aiReviewId: "ai-review-0123456789abcdef0123456789abcdef",
+    createdAt: "2026-07-10T08:01:00+00:00",
+    operator: "researcher",
+    status: "accepted_for_research",
+    rationale: "Use this evidence for another research iteration.",
+    supersedesDecisionId: null,
+    reviewRecordHash: "d".repeat(64),
+    evidenceHash: "8".repeat(64),
+    boundary: { paperOnly: true, liveTradingAllowed: false, orderSubmissionAllowed: false },
+    recordHash: "e".repeat(64)
+  };
+}
+
+function stage3ArchiveBrowserPackage(): ResearchRunExportBrowserPackage {
+  const review = stage3ArchiveReviewFixture();
+  const decision = stage3ArchiveDecisionFixture();
+  return {
+    kind: "aiqt.researchRun.export",
+    packageVersion: 1,
+    exportedAt: "2026-07-10T09:00:00+00:00",
+    integrity: { algorithm: "sha256", hash: "f".repeat(64) },
+    manifest: {
+      runId: "run-stage3-archive",
+      createdAt: "2026-07-10T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyRevision: "1".repeat(64),
+      dataHash: "snapshot-stage3-archive",
+      dataRows: 0,
+      executionMode: "paper_only",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      artifactCounts: {
+        bars: 0,
+        trades: 0,
+        equityPoints: 0,
+        decisions: 0,
+        aiRisks: 0,
+        aiReviewRuns: 0,
+        aiReviewRunsV2: 1,
+        aiReviewDecisions: 1
+      }
+    },
+    executionHandoff: {
+      mode: "paper_only",
+      paperOnly: true,
+      liveTradingAllowed: false,
+      requiredGates: []
+    },
+    aiReviewRuns: [],
+    aiReviewRunsV2: [{
+      aiReviewId: review.aiReviewId,
+      runId: review.primaryExperiment.sourceRunId,
+      createdAt: review.createdAt,
+      record: review
+    }],
+    aiReviewDecisions: [{
+      decisionId: decision.decisionId,
+      aiReviewId: decision.aiReviewId,
+      createdAt: decision.createdAt,
+      record: decision
+    }]
+  } as unknown as ResearchRunExportBrowserPackage;
+}
+
 function promotionPaperExecutionFixture(
   id: string
 ): { workspace: TerminalWorkspace; execution: PaperExecutionSnapshot } {
@@ -11149,6 +11307,211 @@ describe("terminal workbench model", () => {
     expect(filterResearchRunExportPreviewRows(rows, "paperExecutions").map((row) => row.id)).toEqual([
       "paper-executions"
     ]);
+  });
+
+  test("surfaces authoritative Stage 3 archive evidence with stable searchable paths", () => {
+    const exportPackage = stage3ArchiveBrowserPackage();
+    const review = exportPackage.aiReviewRunsV2![0].record;
+    const decision = exportPackage.aiReviewDecisions![0].record;
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-stage3-archive",
+      createdAt: "2026-07-10T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Stage 3 archive",
+      strategyRevision: "1".repeat(64),
+      dataRows: 0,
+      metrics: {},
+      decisions: [],
+      executionMode: "paper_only",
+      dataSnapshot: {
+        source: "fixture",
+        isComplete: true,
+        warnings: [],
+        rows: 0,
+        start: null,
+        end: null,
+        hash: "snapshot-stage3-archive",
+        bars: []
+      }
+    });
+
+    const indexRows = buildAiReviewExportEvidenceIndexRows({
+      currentRecord: null,
+      records: [],
+      timelineItems: [],
+      exportPackage
+    });
+    expect(indexRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          group: "package-authoritative-review",
+          anchor: "aiReviewRunV2:" + review.aiReviewId,
+          exportPath: "aiReviewRunsV2[0].record"
+        }),
+        expect.objectContaining({
+          group: "package-decision",
+          anchor: "aiReviewDecision:" + decision.decisionId,
+          exportPath: "aiReviewDecisions[0].record"
+        })
+      ])
+    );
+    for (const query of [
+      review.aiReviewId,
+      decision.decisionId,
+      review.primaryExperiment.experimentId,
+      review.evidenceHash,
+      review.recordHash,
+      review.externalAssessment.provider,
+      review.externalAssessment.status,
+      decision.status
+    ]) {
+      expect(filterAiReviewExportEvidenceIndexRows(indexRows, query).length).toBeGreaterThan(0);
+    }
+
+    const previewRows = buildResearchRunExportPreviewRows({
+      workspace,
+      authoritativeAiReviewRecords: [review],
+      aiReviewDecisions: [decision]
+    });
+    expect(previewRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai-review-runs-v2",
+          status: "ready",
+          count: "1 authoritative",
+          exportPath: "aiReviewRunsV2[]"
+        }),
+        expect.objectContaining({
+          id: "ai-review-decisions",
+          status: "ready",
+          count: "1 Decision",
+          exportPath: "aiReviewDecisions[]"
+        })
+      ])
+    );
+
+    const browserRows = buildResearchRunExportBrowserRows(exportPackage);
+    expect(browserRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "ai-reviews-v2", status: "ready", exportPath: "aiReviewRunsV2[].record" }),
+        expect.objectContaining({
+          id: "ai-review-decisions",
+          status: "ready",
+          exportPath: "aiReviewDecisions[].record"
+        })
+      ])
+    );
+    const packageIndexRows = buildResearchRunExportIndexRows([exportPackage]);
+    expect(packageIndexRows[0].artifacts).toContain("1 authoritative Reviews");
+    expect(packageIndexRows[0].artifacts).toContain("1 Decisions");
+    expect(filterResearchRunExportIndexRows(packageIndexRows, "authoritative Reviews").map((row) => row.id)).toEqual([
+      "run-stage3-archive"
+    ]);
+  });
+
+  test("blocks Stage 3 count mismatches and distinguishes add, same-hash, and conflict diffs", () => {
+    const exportPackage = stage3ArchiveBrowserPackage();
+    const review = exportPackage.aiReviewRunsV2![0].record;
+    const decision = exportPackage.aiReviewDecisions![0].record;
+    const workspace = buildTerminalWorkspace();
+    const addRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage,
+      authoritativeAiReviewRecords: [],
+      aiReviewDecisions: []
+    });
+    expect(addRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "ai-review-run-v2:0",
+          status: "add",
+          exportPath: "aiReviewRunsV2[0].record"
+        }),
+        expect.objectContaining({
+          id: "ai-review-decision:0",
+          status: "add",
+          exportPath: "aiReviewDecisions[0].record"
+        })
+      ])
+    );
+
+    const sameRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage,
+      authoritativeAiReviewRecords: [review],
+      aiReviewDecisions: [decision]
+    });
+    expect(sameRows.find((row) => row.id === "ai-review-run-v2:0")).toMatchObject({
+      status: "same",
+      detail: expect.stringContaining("same-hash")
+    });
+    expect(sameRows.find((row) => row.id === "ai-review-decision:0")).toMatchObject({
+      status: "same",
+      detail: expect.stringContaining("same-hash")
+    });
+
+    const conflictRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage,
+      authoritativeAiReviewRecords: [{ ...review, recordHash: "0".repeat(64) }],
+      aiReviewDecisions: [{ ...decision, recordHash: "0".repeat(64) }]
+    });
+    expect(conflictRows.find((row) => row.id === "ai-review-run-v2:0")).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("conflict")
+    });
+    expect(conflictRows.find((row) => row.id === "ai-review-decision:0")).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("conflict")
+    });
+
+    const legacyAuthorityRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage,
+      legacyAiReviewIds: [review.aiReviewId]
+    });
+    expect(legacyAuthorityRows.find((row) => row.id === "ai-review-run-v2:0")).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("Authority conflict")
+    });
+
+    const unavailableRows = buildResearchRunImportDiffRows({
+      workspace,
+      exportPackage,
+      aiReviewArchiveReadbackErrors: {
+        ["review:" + review.aiReviewId]: "offline",
+        ["decisions:" + review.aiReviewId]: "decision store offline"
+      }
+    });
+    expect(unavailableRows.find((row) => row.id === "ai-review-run-v2:0")).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("fail-closed")
+    });
+    expect(unavailableRows.find((row) => row.id === "ai-review-decision:0")).toMatchObject({
+      status: "blocked",
+      detail: expect.stringContaining("fail-closed")
+    });
+
+    const countMismatchPackage = {
+      ...exportPackage,
+      manifest: {
+        ...exportPackage.manifest,
+        artifactCounts: {
+          ...exportPackage.manifest.artifactCounts,
+          aiReviewRunsV2: 0,
+          aiReviewDecisions: 0
+        }
+      }
+    };
+    const mismatchBrowserRows = buildResearchRunExportBrowserRows(countMismatchPackage);
+    expect(mismatchBrowserRows.find((row) => row.id === "ai-reviews-v2")?.status).toBe("blocked");
+    expect(mismatchBrowserRows.find((row) => row.id === "ai-review-decisions")?.status).toBe("blocked");
+    expect(
+      buildResearchRunImportDiffRows({ workspace, exportPackage: countMismatchPackage })
+        .find((row) => row.id === "artifact-counts")?.detail
+    ).toContain("aiReviewRunsV2 0/1");
   });
 
   test("builds a searchable research run export package browser from manifest artifacts", () => {

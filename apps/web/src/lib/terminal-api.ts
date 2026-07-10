@@ -146,6 +146,7 @@ export interface AuthoritativeAiReviewResult {
   latestDecision?: AiReviewDecision | null;
   source: WorkspaceSource;
   error?: string;
+  httpStatus?: number;
 }
 
 export interface AuthoritativeAiReviewFilters {
@@ -244,6 +245,15 @@ export interface ResearchRunExportManifest {
   executionMode: string;
   paperOnly: boolean;
   liveTradingAllowed: boolean;
+  liveBlockedBoundary?: boolean;
+  liveOrderSubmitted?: boolean;
+  orderSubmissionAllowed?: boolean;
+  orderSubmissionEnabled?: boolean;
+  orderSubmitted?: boolean;
+  route?: string;
+  routeExecuted?: boolean;
+  routeMode?: string;
+  executionRoute?: string;
   artifactCounts: {
     bars: number;
     trades: number;
@@ -258,6 +268,8 @@ export interface ResearchRunExportManifest {
     promotionCandidates?: number;
     researchNotes?: number;
     aiReviewRuns?: number;
+    aiReviewRunsV2?: number;
+    aiReviewDecisions?: number;
     auditEvents?: number;
     handoffNotes?: number;
   };
@@ -415,6 +427,8 @@ export interface ResearchRunExportPackage {
   portfolioPaperOrderSimulations?: PortfolioPaperOrderSimulation[];
   promotionCandidate?: PromotionCandidateRecord | null;
   aiReviewRuns?: AiReviewRunRecordEnvelope[];
+  aiReviewRunsV2?: AiReviewRunV2ArchiveEnvelope[];
+  aiReviewDecisions?: AiReviewDecisionArchiveEnvelope[];
   auditEvents?: AuditEventRecord[];
   handoffNotes?: HandoffNote[];
   p0PackageCompleteness?: ResearchRunExportP0PackageCompleteness;
@@ -427,6 +441,13 @@ export interface ResearchRunExportResult {
   exportPackage?: ResearchRunExportPackage;
   source: WorkspaceSource;
   error?: string;
+}
+
+export interface AiReviewArchiveImportSnapshot {
+  authoritativeAiReviewRecords: AuthoritativeAiReviewRun[];
+  aiReviewDecisions: AiReviewDecision[];
+  legacyAiReviewIds: string[];
+  readbackErrors: Record<string, string>;
 }
 
 export interface ResearchRunImportResult {
@@ -532,6 +553,20 @@ export interface AiReviewRunRecordEnvelope {
   runId: string;
   createdAt: string;
   record: AiReviewRunRecord;
+}
+
+export interface AiReviewRunV2ArchiveEnvelope {
+  aiReviewId: string;
+  runId: string;
+  createdAt: string;
+  record: AuthoritativeAiReviewRun;
+}
+
+export interface AiReviewDecisionArchiveEnvelope {
+  decisionId: string;
+  aiReviewId: string;
+  createdAt: string;
+  record: AiReviewDecision;
 }
 
 export interface AiReviewRunRecordResult {
@@ -4620,6 +4655,12 @@ export interface HandoffNoteSaveParams {
 
 const defaultFetcher: WorkspaceFetcher = async (url, init) => fetch(url, init);
 
+class WorkspaceHttpError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
+
 async function requestJson(
   url: string,
   init: RequestInit | undefined,
@@ -4628,7 +4669,10 @@ async function requestJson(
   const response = await fetcher(url, init);
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    throw new WorkspaceHttpError(
+      coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`,
+      response.status
+    );
   }
   return payload;
 }
@@ -6037,6 +6081,59 @@ export function normalizeResearchRunExportPackagePayload(value: unknown): Resear
     return stripUntrustedPackageReportVerification(value.export);
   }
   return null;
+}
+
+export async function loadAiReviewArchiveImportSnapshot(
+  baseUrl: string,
+  exportPackage: ResearchRunExportPackage,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiReviewArchiveImportSnapshot> {
+  const reviewIds = Array.from(new Set((exportPackage.aiReviewRunsV2 ?? []).map((item) => item.aiReviewId)));
+  const entries = await Promise.all(reviewIds.map(async (aiReviewId) => {
+    const [detail, history] = await Promise.all([
+      loadAuthoritativeAiReview(baseUrl, aiReviewId, fetcher),
+      loadAuthoritativeAiReviews(baseUrl, { query: aiReviewId, limit: 50, offset: 0 }, fetcher)
+    ]);
+    const exactLegacyIds = history.legacyReviews
+      .filter((review) => review.aiReviewId === aiReviewId)
+      .map((review) => review.aiReviewId);
+    const exactHistoryReview = history.reviews.find((review) => review.aiReviewId === aiReviewId);
+    const errors: Record<string, string> = {};
+    if (history.source !== "core") {
+      errors["review:" + aiReviewId] = history.error ?? "AI Review authority readback failed";
+    } else if (detail.source !== "core" && detail.httpStatus !== 404) {
+      errors["review:" + aiReviewId] = detail.error ?? "Authoritative Review readback failed";
+    } else if (detail.source !== "core" && exactHistoryReview) {
+      errors["review:" + aiReviewId] = "Authoritative Review detail/history readback mismatch";
+    }
+    const review = detail.review ?? exactHistoryReview;
+    let decisions: AiReviewDecision[] = [];
+    if (review && !errors["review:" + aiReviewId]) {
+      const decisionHistory = await loadAiReviewDecisions(baseUrl, aiReviewId, fetcher);
+      if (decisionHistory.source === "core") {
+        decisions = decisionHistory.decisions;
+      } else {
+        errors["decisions:" + aiReviewId] =
+          decisionHistory.error ?? "AI Review Decision readback failed";
+      }
+    } else if (errors["review:" + aiReviewId]) {
+      errors["decisions:" + aiReviewId] = errors["review:" + aiReviewId];
+    }
+    return {
+      decisions,
+      errors,
+      legacyAiReviewIds: exactLegacyIds,
+      review
+    };
+  }));
+  return {
+    authoritativeAiReviewRecords: entries
+      .map((entry) => entry.review)
+      .filter((review): review is AuthoritativeAiReviewRun => Boolean(review)),
+    aiReviewDecisions: entries.flatMap((entry) => entry.decisions),
+    legacyAiReviewIds: Array.from(new Set(entries.flatMap((entry) => entry.legacyAiReviewIds))),
+    readbackErrors: Object.assign({}, ...entries.map((entry) => entry.errors))
+  };
 }
 
 function stripUntrustedPackageReportVerification(exportPackage: ResearchRunExportPackage): ResearchRunExportPackage {
@@ -12035,7 +12132,8 @@ export function loadAuthoritativeAiReview(
     return { review: payload.review, latestDecision: payload.latestDecision, source: "core" as const };
   }).catch((error: unknown) => ({
     source: "fallback",
-    error: error instanceof Error ? error.message : "Unknown authoritative AI review detail error"
+    error: error instanceof Error ? error.message : "Unknown authoritative AI review detail error",
+    ...(error instanceof WorkspaceHttpError ? { httpStatus: error.status } : {})
   }));
 }
 
@@ -18262,6 +18360,16 @@ function isResearchRunExportPackage(value: unknown): value is ResearchRunExportP
       isPromotionCandidateRecord(exportPackage.promotionCandidate)) &&
     (exportPackage.aiReviewRuns === undefined ||
       (Array.isArray(exportPackage.aiReviewRuns) && exportPackage.aiReviewRuns.every(isAiReviewRunRecordEnvelope))) &&
+    (exportPackage.aiReviewRunsV2 === undefined ||
+      (Array.isArray(exportPackage.aiReviewRunsV2) &&
+        exportPackage.aiReviewRunsV2.every((item) =>
+          isAiReviewRunV2ArchiveEnvelope(item, exportPackage.manifest?.runId)
+        ))) &&
+    (exportPackage.aiReviewDecisions === undefined ||
+      (Array.isArray(exportPackage.aiReviewDecisions) &&
+        exportPackage.aiReviewDecisions.every(isAiReviewDecisionArchiveEnvelope))) &&
+    isAiReviewStage3ArchiveBindingValid(exportPackage) &&
+    isResearchRunExportPaperBoundary(exportPackage) &&
     (exportPackage.auditEvents === undefined ||
       (Array.isArray(exportPackage.auditEvents) && exportPackage.auditEvents.every(isAuditEventRecord))) &&
     (exportPackage.handoffNotes === undefined ||
@@ -18563,9 +18671,121 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     (counts?.promotionCandidates === undefined || typeof counts.promotionCandidates === "number") &&
     (counts?.researchNotes === undefined || typeof counts.researchNotes === "number") &&
     (counts?.aiReviewRuns === undefined || typeof counts.aiReviewRuns === "number") &&
+    (counts?.aiReviewRunsV2 === undefined || typeof counts.aiReviewRunsV2 === "number") &&
+    (counts?.aiReviewDecisions === undefined || typeof counts.aiReviewDecisions === "number") &&
     (counts?.auditEvents === undefined || typeof counts.auditEvents === "number") &&
     (counts?.handoffNotes === undefined || typeof counts.handoffNotes === "number")
   );
+}
+
+function isAiReviewRunV2ArchiveEnvelope(value: unknown, runId: string | undefined): value is AiReviewRunV2ArchiveEnvelope {
+  if (!hasExactAiReviewEnvelopeKeys(value, ["aiReviewId", "runId", "createdAt", "record"])
+    || typeof value.aiReviewId !== "string"
+    || typeof value.runId !== "string"
+    || typeof value.createdAt !== "string"
+    || !isAuthoritativeAiReviewRun(value.record)) {
+    return false;
+  }
+  return value.aiReviewId === value.record.aiReviewId
+    && value.createdAt === value.record.createdAt
+    && value.runId === value.record.primaryExperiment.sourceRunId
+    && (!runId || value.runId === runId);
+}
+
+function isAiReviewDecisionArchiveEnvelope(value: unknown): value is AiReviewDecisionArchiveEnvelope {
+  if (!hasExactAiReviewEnvelopeKeys(value, ["decisionId", "aiReviewId", "createdAt", "record"])
+    || typeof value.decisionId !== "string"
+    || typeof value.aiReviewId !== "string"
+    || typeof value.createdAt !== "string"
+    || !isAiReviewDecision(value.record)) {
+    return false;
+  }
+  return value.decisionId === value.record.decisionId
+    && value.aiReviewId === value.record.aiReviewId
+    && value.createdAt === value.record.createdAt;
+}
+
+function isAiReviewStage3ArchiveBindingValid(
+  exportPackage: Partial<ResearchRunExportPackage>
+): boolean {
+  const reviews = exportPackage.aiReviewRunsV2;
+  const decisions = exportPackage.aiReviewDecisions;
+  const counts = exportPackage.manifest?.artifactCounts;
+  const hasReviews = reviews !== undefined || counts?.aiReviewRunsV2 !== undefined;
+  const hasDecisions = decisions !== undefined || counts?.aiReviewDecisions !== undefined;
+  if ((hasReviews && (!Array.isArray(reviews) || counts?.aiReviewRunsV2 !== reviews.length))
+    || (hasDecisions && (!Array.isArray(decisions) || counts?.aiReviewDecisions !== decisions.length))) {
+    return false;
+  }
+  if (!reviews && !decisions) {
+    return true;
+  }
+  const reviewRecords = reviews?.map((item) => item.record) ?? [];
+  const legacyReviewIds = exportPackage.aiReviewRuns?.map((item) => item.aiReviewId) ?? [];
+  if (new Set(legacyReviewIds).size !== legacyReviewIds.length
+    || reviewRecords.some((review) => legacyReviewIds.includes(review.aiReviewId))) {
+    return false;
+  }
+  if (new Set(reviewRecords.map((review) => review.aiReviewId)).size !== reviewRecords.length) {
+    return false;
+  }
+  const reviewById = new Map(reviewRecords.map((review) => [review.aiReviewId, review]));
+  const decisionRecords = decisions?.map((item) => item.record) ?? [];
+  if (new Set(decisionRecords.map((decision) => decision.decisionId)).size !== decisionRecords.length) {
+    return false;
+  }
+  const groupedDecisions = new Map<string, AiReviewDecision[]>();
+  for (const decision of decisionRecords) {
+    const review = reviewById.get(decision.aiReviewId);
+    if (!review
+      || decision.reviewRecordHash !== review.recordHash
+      || decision.evidenceHash !== review.evidenceHash) {
+      return false;
+    }
+    groupedDecisions.set(decision.aiReviewId, [...(groupedDecisions.get(decision.aiReviewId) ?? []), decision]);
+  }
+  return [...groupedDecisions.values()].every(isAiReviewDecisionChain);
+}
+
+function isResearchRunExportPaperBoundary(
+  exportPackage: Partial<ResearchRunExportPackage>
+): boolean {
+  const manifest = exportPackage.manifest;
+  const researchRun = exportPackage.researchRun;
+  const handoff = exportPackage.executionHandoff;
+  if (!manifest || !researchRun || !handoff
+    || manifest.executionMode !== "paper_only"
+    || researchRun.executionMode !== "paper_only"
+    || handoff.mode !== "paper_only"
+    || manifest.paperOnly !== true
+    || manifest.liveTradingAllowed !== false
+    || handoff.paperOnly !== true
+    || handoff.liveTradingAllowed !== false) {
+    return false;
+  }
+  const records = [
+    manifest as unknown as Record<string, unknown>,
+    researchRun as unknown as Record<string, unknown>,
+    handoff as unknown as Record<string, unknown>
+  ];
+  const falseOnlyFields = [
+    "orderSubmissionEnabled",
+    "orderSubmissionAllowed",
+    "orderSubmitted",
+    "liveTradingAllowed",
+    "liveOrderSubmitted",
+    "routeExecuted"
+  ];
+  const allowedRoutes = new Set(["paper", "paper_only", "blocked"]);
+  return (manifest.liveBlockedBoundary === undefined || manifest.liveBlockedBoundary === true)
+    && records.every((record) =>
+      falseOnlyFields.every((field) => !(field in record) || record[field] === false)
+      && ["route", "routeMode", "executionRoute"].every((field) =>
+        !(field in record)
+        || (typeof record[field] === "string" && allowedRoutes.has((record[field] as string).trim()))
+      )
+      && (!("paperOnly" in record) || record.paperOnly === true)
+    );
 }
 
 function isResearchRunExportP0PackageCompleteness(
