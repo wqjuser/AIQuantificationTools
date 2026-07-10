@@ -329,6 +329,7 @@ import {
   workspaceWithSavedWatchlist,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyExperimentCandidate,
+  workspaceNeedsStrategyReaudit,
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyTemplate,
   workspaceWithStrategyField,
@@ -1653,6 +1654,20 @@ describe("terminal workbench model", () => {
         tone: "warning"
       }
     ]);
+  });
+
+  test("requires re-audit only for an active unaudited strategy draft", async () => {
+    const initial = buildTerminalWorkspace();
+    const audited = workspaceForStrategyExperiment(strategyExperimentFixture());
+    const staged = await workspaceWithStrategyExperimentCandidate(
+      audited,
+      strategyExperimentFixture(),
+      "candidate-a"
+    );
+
+    expect(workspaceNeedsStrategyReaudit(initial)).toBe(false);
+    expect(workspaceNeedsStrategyReaudit(audited)).toBe(false);
+    expect(workspaceNeedsStrategyReaudit(staged)).toBe(true);
   });
 
   test("rejects invalid strategy experiment candidate patches atomically", async () => {

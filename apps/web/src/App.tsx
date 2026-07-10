@@ -685,6 +685,7 @@ import {
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithSavedWatchlist,
   workspaceWithStrategyExperimentCandidate,
+  workspaceNeedsStrategyReaudit,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyTemplate,
@@ -2401,6 +2402,7 @@ export function App() {
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
+  const strategyDraftRequiresReaudit = workspaceNeedsStrategyReaudit(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
   const strategyExperimentUsableSourceKey =
     researchRunContextBinding.canUseRun && workspace.researchRun
@@ -6669,6 +6671,14 @@ export function App() {
   );
 
   const ensureGoldenPathLatestRunBound = useCallback(async (): Promise<boolean> => {
+    if (strategyDraftRequiresReaudit) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Strategy draft requires audit",
+        error: "Run Pipeline to audit the current strategy draft before paper execution."
+      }));
+      return false;
+    }
     if (researchRunContextBinding.canUseRun) {
       return true;
     }
@@ -6716,7 +6726,14 @@ export function App() {
       error: detail.error ?? `Golden Path latest run ${latestRunId} was not found`
     }));
     return false;
-  }, [goldenPath?.latestRunId, quantCoreBaseUrl, replayRun, researchRunContextBinding.canUseRun, runHistory]);
+  }, [
+    goldenPath?.latestRunId,
+    quantCoreBaseUrl,
+    replayRun,
+    researchRunContextBinding.canUseRun,
+    runHistory,
+    strategyDraftRequiresReaudit
+  ]);
 
   const undoResearchRunImportEvent = useCallback(
     async (undoToken: string, expectedRunId: string) => {
@@ -11537,9 +11554,13 @@ export function App() {
         return !researchPipelinePreflight.canRun;
       }
       if (executableActionId === "submit-paper-order") {
-        const canRebindGoldenPathRun = Boolean(goldenPath?.latestRunId) && !researchRunContextBinding.canUseRun;
+        const canRebindGoldenPathRun =
+          !strategyDraftRequiresReaudit &&
+          Boolean(goldenPath?.latestRunId) &&
+          !researchRunContextBinding.canUseRun;
         return (
           isSubmittingPaperExecution ||
+          strategyDraftRequiresReaudit ||
           (!canRebindGoldenPathRun &&
             (!researchRunContextBinding.canUseRun || riskApprovalSummary.status === "blocked"))
         );
@@ -11556,7 +11577,8 @@ export function App() {
       refreshingCacheKey,
       researchPipelinePreflight.canRun,
       researchRunContextBinding.canUseRun,
-      riskApprovalSummary.status
+      riskApprovalSummary.status,
+      strategyDraftRequiresReaudit
     ]
   );
 
@@ -11565,12 +11587,12 @@ export function App() {
   const workspaceContextActionId = activeWorkspaceContext?.actionId;
   const isWorkspaceContextActionDisabled =
     !workspaceContextActionId || isGoldenPathActionDisabledById(workspaceContextActionId);
-  const goldenPathActionHint = goldenPathActionPreflightHint(i18n, goldenPathActionId, researchPipelinePreflight);
-  const workspaceContextActionHint = goldenPathActionPreflightHint(
-    i18n,
-    workspaceContextActionId,
-    researchPipelinePreflight
-  );
+  const goldenPathActionHint =
+    strategyDraftReauditHint(i18n, goldenPathActionId, strategyDraftRequiresReaudit) ??
+    goldenPathActionPreflightHint(i18n, goldenPathActionId, researchPipelinePreflight);
+  const workspaceContextActionHint =
+    strategyDraftReauditHint(i18n, workspaceContextActionId, strategyDraftRequiresReaudit) ??
+    goldenPathActionPreflightHint(i18n, workspaceContextActionId, researchPipelinePreflight);
 
   const renderChartPanel = (className = "chart-panel") => (
     <Panel
@@ -19402,6 +19424,19 @@ function goldenPathActionPreflightHint(
     return null;
   }
   return researchPipelinePreflightIssueDetail(i18n, preflight);
+}
+
+function strategyDraftReauditHint(
+  i18n: AppI18n,
+  actionId: string | null | undefined,
+  strategyDraftRequiresReaudit: boolean
+): string | null {
+  if (actionId !== "submit-paper-order" || !strategyDraftRequiresReaudit) {
+    return null;
+  }
+  return i18n.locale === "zh-CN"
+    ? "请先运行流水线审计当前策略草稿，再提交模拟委托。"
+    : "Run Pipeline to audit this strategy draft before paper execution.";
 }
 
 function researchPipelinePreflightConfirmMessage(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {

@@ -9149,6 +9149,10 @@ function activeQuantLoopStepId(workspace: TerminalWorkspace): string {
   );
 }
 
+export function workspaceNeedsStrategyReaudit(workspace: TerminalWorkspace): boolean {
+  return !workspace.researchRun && activeQuantLoopStepId(workspace) === "strategy";
+}
+
 const backtestAssumptionSpecs: Record<
   BacktestAssumptionField,
   { label: string; suffix: string; min: number; step: number }

@@ -1195,25 +1195,35 @@ describe("terminal layout css", () => {
     expect(outcomeHandlerSource).toContain('setActiveWorkAreaId("execution");');
   });
 
-  test("lets the Golden Path paper action rebind the latest audited run before submission", () => {
+  test("blocks Golden Path from rebinding an old run over an unaudited strategy draft", () => {
     const actionHandlerSource = sourceBetween("const runGoldenPathActionById = useCallback(", "const runGoldenPathAction = useCallback(");
     const disabledHandlerSource = sourceBetween("const isGoldenPathActionDisabledById = useCallback(", "const goldenPathActionId = goldenPath?.nextAction?.id;");
+    const ensureRunSource = sourceBetween("const ensureGoldenPathLatestRunBound = useCallback(", "const undoResearchRunImportEvent = useCallback(");
 
     expect(appSource).toContain("const ensureGoldenPathLatestRunBound = useCallback(");
+    expect(appSource).toContain("workspaceNeedsStrategyReaudit(workspace)");
+    expect(appSource).toContain("strategyDraftRequiresReaudit");
     expect(appSource).toContain("goldenPath?.latestRunId");
     expect(appSource).toContain("loadResearchRunDetail(quantCoreBaseUrl, latestRunId)");
     expect(appSource).toContain("await replayRun(detail.run)");
+    expect(ensureRunSource).toContain("if (strategyDraftRequiresReaudit)");
+    expect(ensureRunSource).toContain('statusLabel: "Strategy draft requires audit"');
+    expect(ensureRunSource).toContain("Run Pipeline to audit the current strategy draft");
     expect(actionHandlerSource).toContain("const executableActionId = normalizeP0CurrentGapActionId(actionId);");
     expect(actionHandlerSource).toContain('if (executableActionId === "submit-paper-order")');
     expect(actionHandlerSource).toContain("void (async () => {");
     expect(actionHandlerSource).toContain("const runWasAlreadyBound = researchRunContextBinding.canUseRun;");
     expect(actionHandlerSource).toContain("const runIsBound = await ensureGoldenPathLatestRunBound();");
     expect(actionHandlerSource).toContain("if (runWasAlreadyBound && runIsBound)");
-    expect(disabledHandlerSource).toContain("const canRebindGoldenPathRun = Boolean(goldenPath?.latestRunId) && !researchRunContextBinding.canUseRun;");
+    expect(disabledHandlerSource).toContain("!strategyDraftRequiresReaudit");
+    expect(disabledHandlerSource).toContain("strategyDraftRequiresReaudit ||");
+    expect(disabledHandlerSource).toContain("const canRebindGoldenPathRun =");
     expect(disabledHandlerSource).toContain("return (");
     expect(disabledHandlerSource).toContain("isSubmittingPaperExecution ||");
     expect(disabledHandlerSource).toContain("(!canRebindGoldenPathRun &&");
     expect(disabledHandlerSource).toContain('riskApprovalSummary.status === "blocked"');
+    expect(appSource).toContain("strategyDraftReauditHint(");
+    expect(appSource).toContain("Run Pipeline to audit this strategy draft before paper execution.");
   });
 
   test("translates golden path cache readiness guidance for audited research", () => {
@@ -3970,7 +3980,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildResearchRunContextBinding");
     expect(appSource).toContain("const researchRunContextBinding = buildResearchRunContextBinding(workspace)");
     expect(appSource).toContain("const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null");
-    expect(appSource).toContain("const canRebindGoldenPathRun = Boolean(goldenPath?.latestRunId) && !researchRunContextBinding.canUseRun;");
+    expect(appSource).toContain("const canRebindGoldenPathRun =");
+    expect(appSource).toContain("!strategyDraftRequiresReaudit &&");
+    expect(appSource).toContain("Boolean(goldenPath?.latestRunId) &&");
     expect(appSource).toContain("!canRebindGoldenPathRun &&");
     expect(appSource).toContain('riskApprovalSummary.status === "blocked"');
     expect(appSource).not.toContain("return isSubmittingPaperExecution || !workspace.researchRun?.runId");
