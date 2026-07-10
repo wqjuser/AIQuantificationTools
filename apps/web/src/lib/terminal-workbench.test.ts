@@ -1648,6 +1648,54 @@ describe("terminal workbench model", () => {
     expect(workspace.researchRun).not.toBeNull();
   });
 
+  test("stages strategy experiment candidates with Python canonical risk floats", async () => {
+    const pythonCases: Array<{
+      revision: string;
+      risk: ResearchRunStrategyConfig["risk"];
+    }> = [
+      {
+        revision: "7c2b1a9f7567",
+        risk: { positionPct: 1, stopLossPct: 0, takeProfitPct: -0, maxDrawdownPct: 1 }
+      },
+      {
+        revision: "592836017a7e",
+        risk: {
+          positionPct: 1e-7,
+          stopLossPct: 2e-7,
+          takeProfitPct: 3e-7,
+          maxDrawdownPct: 4e-7
+        }
+      }
+    ];
+
+    for (const pythonCase of pythonCases) {
+      const baseExperiment = strategyExperimentFixture();
+      const experiment: StrategyExperimentDetail = {
+        ...baseExperiment,
+        definition: {
+          ...baseExperiment.definition,
+          baseStrategy: {
+            ...baseExperiment.definition.baseStrategy,
+            risk: pythonCase.risk
+          }
+        },
+        candidates: [
+          {
+            ...baseExperiment.candidates[0],
+            candidateRevision: pythonCase.revision
+          }
+        ]
+      };
+      const workspace = workspaceForStrategyExperiment(experiment);
+
+      const staged = await workspaceWithStrategyExperimentCandidate(workspace, experiment, "candidate-a");
+
+      expect(staged).not.toBe(workspace);
+      expect(staged.researchRun).toBeNull();
+      expect(staged.decisionLog[0].message).toContain(`revision ${pythonCase.revision}`);
+    }
+  });
+
   test("defines stage-gated product delivery in platform order", () => {
     const stages = buildProductDevelopmentStages();
 

@@ -30913,29 +30913,7 @@ export async function workspaceWithStrategyExperimentCandidate(
     conditions[parameterPatch.conditionIndex].params[parameterPatch.parameter] = parameterPatch.value;
   });
   const expectedRevision = (
-    await sha256TextHex(
-      canonicalJsonStringify({
-        name: strategyConfig.name,
-        market: strategyConfig.market,
-        symbols: strategyConfig.symbols,
-        timeframe: strategyConfig.timeframe,
-        entry_conditions: strategyConfig.entryConditions.map((condition) => ({
-          kind: condition.kind,
-          params: condition.params
-        })),
-        exit_conditions: strategyConfig.exitConditions.map((condition) => ({
-          kind: condition.kind,
-          params: condition.params
-        })),
-        risk: {
-          position_pct: strategyConfig.risk.positionPct,
-          stop_loss_pct: strategyConfig.risk.stopLossPct,
-          take_profit_pct: strategyConfig.risk.takeProfitPct,
-          max_drawdown_pct: strategyConfig.risk.maxDrawdownPct
-        },
-        version: strategyConfig.version
-      })
-    )
+    await sha256TextHex(pythonStrategyRevisionJson(strategyConfig))
   ).slice(0, 12);
   if (expectedRevision !== candidate.candidateRevision) {
     return workspace;
@@ -30958,14 +30936,95 @@ export async function workspaceWithStrategyExperimentCandidate(
   );
 }
 
-function canonicalJsonStringify(value: unknown): string {
-  return JSON.stringify(value, (_key, item) =>
-    item && typeof item === "object" && !Array.isArray(item)
-      ? Object.fromEntries(
-          Object.entries(item).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-        )
-      : item
-  );
+interface PythonFloatJsonValue {
+  pythonFloat: number;
+}
+
+function pythonStrategyRevisionJson(strategyConfig: ResearchRunStrategyConfig): string {
+  const conditionPayload = (condition: ResearchRunStrategyCondition) => ({
+    kind: condition.kind,
+    params: Object.fromEntries(
+      Object.entries(condition.params).map(([key, value]) => [
+        key,
+        key === "threshold" && typeof value === "number" && !Number.isInteger(value)
+          ? pythonFloatJsonValue(value)
+          : value
+      ])
+    )
+  });
+  return pythonCanonicalJson({
+    name: strategyConfig.name,
+    market: strategyConfig.market,
+    symbols: strategyConfig.symbols,
+    timeframe: strategyConfig.timeframe,
+    entry_conditions: strategyConfig.entryConditions.map(conditionPayload),
+    exit_conditions: strategyConfig.exitConditions.map(conditionPayload),
+    risk: {
+      position_pct: pythonFloatJsonValue(strategyConfig.risk.positionPct),
+      stop_loss_pct: pythonFloatJsonValue(strategyConfig.risk.stopLossPct),
+      take_profit_pct: pythonFloatJsonValue(strategyConfig.risk.takeProfitPct),
+      max_drawdown_pct: pythonFloatJsonValue(strategyConfig.risk.maxDrawdownPct)
+    },
+    version: strategyConfig.version
+  });
+}
+
+function pythonFloatJsonValue(value: number | null): PythonFloatJsonValue | null {
+  return value === null ? null : { pythonFloat: value };
+}
+
+function pythonCanonicalJson(value: unknown): string {
+  if (isPythonFloatJsonValue(value)) {
+    return pythonFloatJsonToken(value.pythonFloat);
+  }
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new TypeError("Strategy revision numbers must be finite.");
+    }
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => pythonCanonicalJson(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+      .map((key) => `${JSON.stringify(key)}:${pythonCanonicalJson(record[key])}`)
+      .join(",")}}`;
+  }
+  throw new TypeError("Strategy revision payload contains an unsupported value.");
+}
+
+function isPythonFloatJsonValue(value: unknown): value is PythonFloatJsonValue {
+  return value !== null &&
+    typeof value === "object" &&
+    Object.keys(value).length === 1 &&
+    typeof (value as PythonFloatJsonValue).pythonFloat === "number";
+}
+
+function pythonFloatJsonToken(value: number): string {
+  if (!Number.isFinite(value)) {
+    throw new TypeError("Strategy revision risk values must be finite.");
+  }
+  if (Object.is(value, -0)) {
+    return "-0.0";
+  }
+  if (value === 0) {
+    return "0.0";
+  }
+  const absoluteValue = Math.abs(value);
+  if (absoluteValue < 1e-4 || absoluteValue >= 1e16) {
+    return value
+      .toExponential()
+      .replace(/e([+-])(\d+)$/u, (_match, sign: string, exponent: string) =>
+        `e${sign}${exponent.padStart(2, "0")}`
+      );
+  }
+  return Number.isInteger(value) ? `${value.toString()}.0` : value.toString();
 }
 
 function normalizeDiffValue(value: string): string {
