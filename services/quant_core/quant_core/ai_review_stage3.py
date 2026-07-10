@@ -67,12 +67,12 @@ _SECRET_VALUE_PATTERN = re.compile(
     r"(?:\b(?:access[_ -]?token|token|secret|api[_ -]?key|password|authorization|private[_ -]?key)\b\s*[:=]\s*\S+|\bbearer\s+[a-z0-9._~+/=-]+|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
     re.IGNORECASE,
 )
-_ERROR_SECRET_VALUE_PATTERN = re.compile(
-    r"(?:access[_ -]?token|api[_ -]?key|private[_ -]?key|authorization|password|bearer|secret|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
+_SECRET_TEXT_PATTERN = re.compile(
+    r"(?:\btoken\b|access[_ -]?token|api[_ -]?key|private[_ -]?key|authorization|password|bearer|secret|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
     re.IGNORECASE,
 )
 _FORBIDDEN_EXTERNAL_VALUE_PATTERN = re.compile(
-    r"(?:\b(?:ohlcv|research[_ -]?notes?|order[_ -]?payload|paper[_ -]?execution|live[_ -]?adapter|signing(?:[_ -]?material)?|private[_ -]?key|hidden[_ -]?reasoning)\b|\b(?:bars?|account|portfolio)\b\s*[:=]\s*\S+|\b(?:bars?|account|portfolio)\s+payload\b)",
+    r"(?:\b(?:bars?|ohlcv|notes?|research[_ -]?notes?|account|portfolio|position|order|paper|live|signing|signature|reasoning|chainofthought)\b\s*[:=]\s*\S+|\b(?:bars?|ohlcv|notes?|research[_ -]?notes?|account|portfolio|position|order)\s+payload\b|\bpaper\s+execution\b|\blive\s+adapter\b|\bsigning\s+material\b|\bprivate\s+key\b|\bhidden\s+reasoning\b)",
     re.IGNORECASE,
 )
 _ASSESSMENT_OUTPUT_SCHEMA = {
@@ -776,7 +776,7 @@ class AiReviewStage3Service:
         if provider_id == "local":
             external_assessment = _local_external_assessment(evidence_bundle["evidenceHash"])
         else:
-            rendered_prompt, known_evidence_ids = _render_external_prompt(evidence_bundle)
+            rendered_prompt, known_evidence_ids = render_external_prompt(evidence_bundle)
             external_assessment = self._attempt_external(
                 provider_id=provider_id,
                 evidence_hash=evidence_bundle["evidenceHash"],
@@ -1009,7 +1009,7 @@ def _validate_service_evidence_bundle(evidence_bundle: Any) -> None:
         )
 
 
-def _render_external_prompt(
+def render_external_prompt(
     evidence_bundle: Mapping[str, Any],
 ) -> tuple[str, frozenset[str]]:
     external_evidence = _project_external_evidence(evidence_bundle)
@@ -1278,6 +1278,10 @@ def _contains_forbidden_external_evidence(value: Any) -> bool:
     )
 
 
+def contains_ai_review_secret_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(_SECRET_TEXT_PATTERN.search(value))
+
+
 def _is_safe_external_number(value: Any) -> bool:
     return (
         type(value) in {int, float}
@@ -1353,7 +1357,7 @@ def _external_assessment_base(
 
 def _bounded_provider_error_message(value: Any) -> str:
     detail = str(value).strip()[:500]
-    if not detail or _ERROR_SECRET_VALUE_PATTERN.search(detail):
+    if not detail or contains_ai_review_secret_text(detail):
         return "Provider request failed."
     return detail
 

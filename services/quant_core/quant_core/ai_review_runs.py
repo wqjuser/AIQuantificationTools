@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -85,20 +86,36 @@ _V2_EXTERNAL_FIELDS = {
 }
 _V2_USAGE_FIELDS = {"inputTokens", "outputTokens", "totalTokens"}
 _V2_PROVIDER_IDS = {"local", "openai", "openai-compatible", "ollama"}
+_V2_EXTERNAL_ERROR_CODES = {
+    "ai_review_provider_not_configured",
+    "ai_review_provider_failed",
+    "timeout",
+    "http_error",
+    "response_too_large",
+    "invalid_json",
+    "invalid_schema",
+    "unknown_evidence_reference",
+}
+_EVIDENCE_KINDS = {
+    "experiment_context",
+    "strategy_definition",
+    "data_quality",
+    "candidate_metrics",
+}
+_METRIC_FIELDS = {
+    "totalReturnPct",
+    "annualReturnPct",
+    "maxDrawdownPct",
+    "winRatePct",
+    "profitFactor",
+    "tradeCount",
+}
 _V2_PROMPT_TEMPLATE_VERSION = "aiqt-ai-review-v1"
 _V2_OUTPUT_SCHEMA_VERSION = "aiqt-ai-review-assessment-v1"
 _V2_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _V2_OPENAI_ENDPOINT = "https://api.openai.com/v1/responses"
 _V2_REVIEW_ID_PATTERN = re.compile(r"^ai-review-[0-9a-f]{32}$")
 _V2_SAFE_ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
-_V2_SECRET_ASSIGNMENT_PATTERN = re.compile(
-    r"\b(?:access[_ -]?token|token|secret|api[_ -]?key|password|authorization|private[_ -]?key)\b\s*[:=]\s*\S+",
-    re.IGNORECASE,
-)
-_V2_ERROR_SECRET_PATTERN = re.compile(
-    r"(?:access[_ -]?token|api[_ -]?key|private[_ -]?key|authorization|password|bearer|secret|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
-    re.IGNORECASE,
-)
 _SELECT_COLUMNS = (
     "ai_review_id, run_id, created_at, record_json, schema_version, "
     "primary_experiment_id, evidence_hash, record_hash, authority"
@@ -494,7 +511,7 @@ def _normalize_authoritative_ai_review_record(value: Any) -> dict[str, Any]:
     created_at = _required_string(value, "createdAt", "created_at_required")
     _canonical_utc_datetime(created_at)
     mode = value.get("mode")
-    if mode not in {"single", "comparison"}:
+    if not isinstance(mode, str) or mode not in {"single", "comparison"}:
         raise ValueError("ai_review_mode_invalid")
 
     primary_experiment = _experiment_reference(value.get("primaryExperiment"))
@@ -544,6 +561,7 @@ def _normalize_authoritative_ai_review_record(value: Any) -> dict[str, Any]:
         raise ValueError("ai_review_deterministic_assessment_invalid") from error
     _validate_external_assessment(
         value.get("externalAssessment"),
+        evidence_bundle=evidence_bundle,
         evidence_hash=evidence_hash,
         known_evidence_ids=known_evidence_ids,
     )
@@ -590,7 +608,7 @@ def validate_ai_review_evidence_bundle(value: Any) -> dict[str, Any]:
     if type(value.get("schemaVersion")) is not int or value.get("schemaVersion") != 1:
         raise ValueError("ai_review_evidence_bundle_invalid")
     mode = value.get("mode")
-    if mode not in {"single", "comparison"}:
+    if not isinstance(mode, str) or mode not in {"single", "comparison"}:
         raise ValueError("ai_review_evidence_bundle_invalid")
     primary = _experiment_reference(value.get("primaryExperiment"))
     comparisons_value = value.get("comparisonExperiments")
@@ -618,9 +636,10 @@ def validate_ai_review_evidence_bundle(value: Any) -> dict[str, Any]:
         if not isinstance(item, dict) or set(item) != {"id", "kind", "value"}:
             raise ValueError("ai_review_evidence_items_invalid")
         evidence_ids.append(_required_string(item, "id", "ai_review_evidence_items_invalid"))
-        _required_string(item, "kind", "ai_review_evidence_items_invalid")
-        if not isinstance(item.get("value"), dict):
+        kind = _required_string(item, "kind", "ai_review_evidence_items_invalid")
+        if kind not in _EVIDENCE_KINDS:
             raise ValueError("ai_review_evidence_items_invalid")
+        _validate_evidence_item(kind, item.get("value"))
     if len(evidence_ids) != len(set(evidence_ids)):
         raise ValueError("ai_review_evidence_items_invalid")
     _validate_exact_boundary(value.get("safetyBoundary"), _V2_EVIDENCE_BOUNDARY)
@@ -639,6 +658,236 @@ def validate_ai_review_evidence_bundle(value: Any) -> dict[str, Any]:
     return json.loads(canonical_json(value))
 
 
+def _validate_evidence_item(kind: str, value: Any) -> None:
+    if kind == "experiment_context":
+        _require_object_fields(
+            value,
+            required={"market", "symbol", "timeframe"},
+        )
+        for field in ("market", "symbol", "timeframe"):
+            _required_string(value, field, "ai_review_evidence_items_invalid")
+        return
+    if kind == "strategy_definition":
+        _validate_strategy_evidence(value)
+        return
+    if kind == "data_quality":
+        _validate_data_quality_evidence(value)
+        return
+    _validate_candidate_evidence(value)
+
+
+def _validate_strategy_evidence(value: Any) -> None:
+    fields = {
+        "name",
+        "revision",
+        "market",
+        "symbols",
+        "timeframe",
+        "version",
+        "entryConditions",
+        "exitConditions",
+        "risk",
+    }
+    _require_object_fields(value, required=fields)
+    for field in ("name", "revision", "market", "timeframe"):
+        _required_string(value, field, "ai_review_evidence_items_invalid")
+    symbols = value.get("symbols")
+    if not isinstance(symbols, list) or not symbols:
+        raise ValueError("ai_review_evidence_items_invalid")
+    for symbol in symbols:
+        _validate_text_value(symbol)
+    _validate_strict_int(value.get("version"), minimum=0)
+    for field in ("entryConditions", "exitConditions"):
+        conditions = value.get(field)
+        if not isinstance(conditions, list):
+            raise ValueError("ai_review_evidence_items_invalid")
+        for condition in conditions:
+            _require_object_fields(condition, required={"kind", "params"})
+            _required_string(condition, "kind", "ai_review_evidence_items_invalid")
+            params = condition.get("params")
+            if not isinstance(params, dict):
+                raise ValueError("ai_review_evidence_items_invalid")
+            for key, item in params.items():
+                if (
+                    not isinstance(key, str)
+                    or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", key)
+                ):
+                    raise ValueError("ai_review_evidence_items_invalid")
+                _validate_finite_number(item)
+    risk = value.get("risk")
+    _require_object_fields(
+        risk,
+        required={
+            "positionPct",
+            "stopLossPct",
+            "takeProfitPct",
+            "maxDrawdownPct",
+        },
+    )
+    for item in risk.values():
+        _validate_finite_number(item)
+
+
+def _validate_data_quality_evidence(value: Any) -> None:
+    required = {
+        "source",
+        "isComplete",
+        "warnings",
+        "rows",
+        "canonicalDataHash",
+        "startAt",
+        "endAt",
+    }
+    _require_object_fields(value, required=required, optional={"tradeCount"})
+    _required_string(value, "source", "ai_review_evidence_items_invalid")
+    if type(value.get("isComplete")) is not bool:
+        raise ValueError("ai_review_evidence_items_invalid")
+    warnings = value.get("warnings")
+    if not isinstance(warnings, list):
+        raise ValueError("ai_review_evidence_items_invalid")
+    for warning in warnings:
+        if not isinstance(warning, str):
+            raise ValueError("ai_review_evidence_items_invalid")
+    _validate_strict_int(value.get("rows"), minimum=0)
+    if "tradeCount" in value:
+        _validate_strict_int(value["tradeCount"], minimum=0)
+    _required_hash(value.get("canonicalDataHash"), "ai_review_evidence_items_invalid")
+    start_at = _required_string(value, "startAt", "ai_review_evidence_items_invalid")
+    end_at = _required_string(value, "endAt", "ai_review_evidence_items_invalid")
+    if _parse_datetime(start_at) > _parse_datetime(end_at):
+        raise ValueError("ai_review_evidence_items_invalid")
+
+
+def _validate_candidate_evidence(value: Any) -> None:
+    required = {
+        "candidateId",
+        "candidateRevision",
+        "parameters",
+        "trainMetrics",
+        "validationMetrics",
+        "walkForward",
+        "eligible",
+        "rank",
+        "selected",
+    }
+    _require_object_fields(value, required=required, optional={"testMetrics"})
+    for field in ("candidateId", "candidateRevision"):
+        _required_string(value, field, "ai_review_evidence_items_invalid")
+    if type(value.get("eligible")) is not bool or type(value.get("selected")) is not bool:
+        raise ValueError("ai_review_evidence_items_invalid")
+    rank = value.get("rank")
+    if rank is not None:
+        _validate_strict_int(rank, minimum=1)
+    parameters = value.get("parameters")
+    if not isinstance(parameters, list):
+        raise ValueError("ai_review_evidence_items_invalid")
+    for parameter in parameters:
+        _require_object_fields(
+            parameter,
+            required={"conditionSide", "conditionIndex", "parameter", "value"},
+        )
+        condition_side = parameter.get("conditionSide")
+        if (
+            not isinstance(condition_side, str)
+            or condition_side not in {"entry", "exit"}
+        ):
+            raise ValueError("ai_review_evidence_items_invalid")
+        _validate_strict_int(parameter.get("conditionIndex"), minimum=0)
+        name = _required_string(
+            parameter,
+            "parameter",
+            "ai_review_evidence_items_invalid",
+        )
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
+            raise ValueError("ai_review_evidence_items_invalid")
+        _validate_finite_number(parameter.get("value"))
+    _validate_metrics(value.get("trainMetrics"))
+    _validate_metrics(value.get("validationMetrics"))
+    if value["selected"]:
+        if "testMetrics" not in value:
+            raise ValueError("ai_review_evidence_items_invalid")
+        _validate_metrics(value["testMetrics"])
+    elif "testMetrics" in value:
+        raise ValueError("ai_review_evidence_items_invalid")
+    _validate_walk_forward(value.get("walkForward"))
+
+
+def _validate_metrics(value: Any) -> None:
+    _require_object_fields(value, required=set(), optional=_METRIC_FIELDS)
+    for field, item in value.items():
+        if field == "tradeCount":
+            _validate_strict_int(item, minimum=0)
+        else:
+            _validate_finite_number(item)
+
+
+def _validate_walk_forward(value: Any) -> None:
+    summary_fields = {
+        "validationWindowCount",
+        "positiveReturnCount",
+        "medianReturnPct",
+        "worstDrawdownPct",
+    }
+    _require_object_fields(value, required={"windows"}, optional=summary_fields)
+    for field in ("validationWindowCount", "positiveReturnCount"):
+        if field in value:
+            _validate_strict_int(value[field], minimum=0)
+    for field in ("medianReturnPct", "worstDrawdownPct"):
+        if field in value and value[field] is not None:
+            _validate_finite_number(value[field])
+    windows = value.get("windows")
+    if not isinstance(windows, list):
+        raise ValueError("ai_review_evidence_items_invalid")
+    index_fields = {
+        "index",
+        "trainStartIndex",
+        "trainEndIndex",
+        "validationStartIndex",
+        "validationEndIndex",
+    }
+    window_fields = index_fields | _METRIC_FIELDS | {"trainMetrics", "validationMetrics"}
+    for window in windows:
+        _require_object_fields(window, required=set(), optional=window_fields)
+        for field in index_fields:
+            if field in window:
+                _validate_strict_int(window[field], minimum=0)
+        _validate_metrics({key: window[key] for key in _METRIC_FIELDS if key in window})
+        for field in ("trainMetrics", "validationMetrics"):
+            if field in window:
+                _validate_metrics(window[field])
+
+
+def _require_object_fields(
+    value: Any,
+    *,
+    required: set[str],
+    optional: set[str] | None = None,
+) -> None:
+    if not isinstance(value, dict):
+        raise ValueError("ai_review_evidence_items_invalid")
+    allowed = required | (optional or set())
+    if not required <= set(value) or set(value) - allowed:
+        raise ValueError("ai_review_evidence_items_invalid")
+
+
+def _validate_text_value(value: Any) -> None:
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise ValueError("ai_review_evidence_items_invalid")
+
+
+def _validate_strict_int(value: Any, *, minimum: int) -> None:
+    if type(value) is not int or value < minimum:
+        raise ValueError("ai_review_evidence_items_invalid")
+
+
+def _validate_finite_number(value: Any) -> None:
+    if type(value) is int:
+        return
+    if type(value) is float and math.isfinite(value):
+        return
+    raise ValueError("ai_review_evidence_items_invalid")
+
+
 def expected_ai_review_provider_endpoint(
     provider_id: Any,
     sanitized_base_url: Any,
@@ -647,11 +896,13 @@ def expected_ai_review_provider_endpoint(
         if sanitized_base_url is not None:
             raise ValueError("ai_review_provider_provenance_invalid")
         return None
-    if provider_id not in _V2_PROVIDER_IDS or not isinstance(sanitized_base_url, str):
+    if not isinstance(provider_id, str) or provider_id not in _V2_PROVIDER_IDS:
         raise ValueError("ai_review_provider_provenance_invalid")
-    from quant_core.ai_review_providers import sanitize_base_url
+    if not isinstance(sanitized_base_url, str):
+        raise ValueError("ai_review_provider_provenance_invalid")
+    from quant_core.ai_review_providers import validated_provider_base_url
 
-    if not sanitized_base_url or sanitize_base_url(sanitized_base_url) != sanitized_base_url:
+    if validated_provider_base_url(sanitized_base_url) != sanitized_base_url:
         raise ValueError("ai_review_provider_provenance_invalid")
     if provider_id == "openai":
         if sanitized_base_url != _V2_OPENAI_BASE_URL:
@@ -664,6 +915,7 @@ def expected_ai_review_provider_endpoint(
 def _validate_external_assessment(
     value: Any,
     *,
+    evidence_bundle: dict[str, Any],
     evidence_hash: str,
     known_evidence_ids: frozenset[str],
 ) -> None:
@@ -671,7 +923,12 @@ def _validate_external_assessment(
         raise ValueError("ai_review_external_assessment_invalid")
     status = value.get("status")
     provider = value.get("provider")
-    if status not in {"completed", "failed", "skipped"} or provider not in _V2_PROVIDER_IDS:
+    if (
+        not isinstance(status, str)
+        or status not in {"completed", "failed", "skipped"}
+        or not isinstance(provider, str)
+        or provider not in _V2_PROVIDER_IDS
+    ):
         raise ValueError("ai_review_external_assessment_invalid")
     if value.get("promptTemplateVersion") != _V2_PROMPT_TEMPLATE_VERSION:
         raise ValueError("ai_review_external_assessment_invalid")
@@ -714,6 +971,14 @@ def _validate_external_assessment(
         return
 
     if provider == "local":
+        raise ValueError("ai_review_external_assessment_invalid")
+    from quant_core.ai_review_stage3 import render_external_prompt
+
+    try:
+        expected_prompt, rendered_evidence_ids = render_external_prompt(evidence_bundle)
+    except ValueError as prompt_error:
+        raise ValueError("ai_review_external_assessment_invalid") from prompt_error
+    if rendered_prompt != expected_prompt or rendered_evidence_ids != known_evidence_ids:
         raise ValueError("ai_review_external_assessment_invalid")
     error = value.get("error")
     if status == "failed" and _is_unconfigured_error(error):
@@ -798,7 +1063,11 @@ def _validate_external_error(value: Any) -> None:
         raise ValueError("ai_review_external_assessment_invalid")
     code = value.get("code")
     message = value.get("message")
-    if not isinstance(code, str) or not _V2_SAFE_ERROR_CODE_PATTERN.fullmatch(code):
+    if (
+        not isinstance(code, str)
+        or code not in _V2_EXTERNAL_ERROR_CODES
+        or not _V2_SAFE_ERROR_CODE_PATTERN.fullmatch(code)
+    ):
         raise ValueError("ai_review_external_assessment_invalid")
     if (
         not isinstance(message, str)
@@ -807,13 +1076,9 @@ def _validate_external_error(value: Any) -> None:
         or len(message) > 500
     ):
         raise ValueError("ai_review_external_assessment_invalid")
-    if any(
-        pattern.search(message)
-        for pattern in (
-            _V2_SECRET_ASSIGNMENT_PATTERN,
-            _V2_ERROR_SECRET_PATTERN,
-        )
-    ):
+    from quant_core.ai_review_stage3 import contains_ai_review_secret_text
+
+    if contains_ai_review_secret_text(message):
         raise ValueError("ai_review_external_assessment_invalid")
 
 

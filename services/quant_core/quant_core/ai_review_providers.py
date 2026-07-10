@@ -323,8 +323,8 @@ class AiReviewProviderRegistry:
         ollama_model = os.environ.get("OLLAMA_MODEL", "").strip()
 
         providers: dict[ProviderId, AiReviewProvider] = {}
-        compatible_safe_base = _validated_provider_base_url(compatible_base)
-        ollama_safe_base = _validated_provider_base_url(ollama_base)
+        compatible_safe_base = validated_provider_base_url(compatible_base)
+        ollama_safe_base = validated_provider_base_url(ollama_base)
         openai_configured = bool(openai_key and openai_model)
         compatible_configured = bool(
             compatible_safe_base and compatible_key and compatible_model
@@ -334,12 +334,15 @@ class AiReviewProviderRegistry:
             providers["openai"] = OpenAiResponsesProvider(openai_key, openai_model)
         if compatible_configured:
             providers["openai-compatible"] = OpenAiCompatibleProvider(
-                compatible_base,
+                compatible_safe_base or "",
                 compatible_key,
                 compatible_model,
             )
         if ollama_configured:
-            providers["ollama"] = OllamaChatProvider(ollama_base, ollama_model)
+            providers["ollama"] = OllamaChatProvider(
+                ollama_safe_base or "",
+                ollama_model,
+            )
 
         return cls(
             (
@@ -665,7 +668,7 @@ def _request_sensitive_values(
     return tuple(values)
 
 
-def _validated_provider_base_url(value: str) -> str | None:
+def validated_provider_base_url(value: str) -> str | None:
     if "?" in value or "#" in value:
         return None
     try:
