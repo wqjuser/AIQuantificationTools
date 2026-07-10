@@ -1415,6 +1415,16 @@ def _matching_stage2_experiment(
     return None
 
 
+def _require_stage2_experiment_binding(
+    experiment: dict[str, Any],
+    expected: dict[str, Any],
+    label: str,
+) -> None:
+    for field in ("sourceRunId", "strategyRevision", "snapshotId"):
+        if experiment.get(field) != expected.get(field):
+            raise RuntimeError(f"Invalid {label}: {field} binding does not match")
+
+
 def run_stage2_strategy_experiment_acceptance(
     base_url: str,
     *,
@@ -1474,7 +1484,8 @@ def run_stage2_strategy_experiment_acceptance(
         experiment_request=experiment_request,
         source_run=source_run,
     )
-    if experiment is None:
+    reused = experiment is not None
+    if not reused:
         experiment = _stage2_experiment(
             post_json(
                 join_url(base_url, "/api/strategy-experiments"),
@@ -1483,6 +1494,8 @@ def run_stage2_strategy_experiment_acceptance(
             ),
             "Stage 2 strategy experiment",
         )
+        if experiment["sourceRunId"] != run_id:
+            raise RuntimeError("Invalid Stage 2 strategy experiment: fresh source run binding does not match")
     experiment_id = str(experiment["experimentId"])
     experiment_source_run_id = str(experiment["sourceRunId"])
     replay = _stage2_experiment(
@@ -1493,6 +1506,7 @@ def run_stage2_strategy_experiment_acceptance(
         ),
         "Stage 2 strategy experiment replay",
     )
+    _require_stage2_experiment_binding(replay, experiment, "Stage 2 strategy experiment replay")
     replay_experiment_id = str(replay["experimentId"])
     if replay_experiment_id == experiment_id:
         raise RuntimeError("Invalid Stage 2 strategy experiment response: replay experiment id is not distinct")
@@ -1516,6 +1530,12 @@ def run_stage2_strategy_experiment_acceptance(
     }
     if not {experiment_id, replay_experiment_id}.issubset(history_by_id):
         raise RuntimeError("Invalid Stage 2 strategy experiment history response: experiment pair is missing")
+    for pair_id in (experiment_id, replay_experiment_id):
+        _require_stage2_experiment_binding(
+            history_by_id[pair_id],
+            experiment,
+            "Stage 2 strategy experiment history response",
+        )
     detail = _stage2_experiment(
         request_json(
             join_url(base_url, f"/api/strategy-experiments/{quote(experiment_id, safe='')}"),
@@ -1523,7 +1543,8 @@ def run_stage2_strategy_experiment_acceptance(
         ),
         "Stage 2 strategy experiment detail",
     )
-    if detail["experimentId"] != experiment_id or detail["sourceRunId"] != experiment_source_run_id or any(
+    _require_stage2_experiment_binding(detail, experiment, "Stage 2 strategy experiment detail response")
+    if detail["experimentId"] != experiment_id or any(
         detail[field] != experiment[field] for field in ("definitionHash", "resultHash")
     ):
         raise RuntimeError("Invalid Stage 2 strategy experiment detail response: experiment evidence does not match")

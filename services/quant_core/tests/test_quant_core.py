@@ -3927,6 +3927,95 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn({"replayOfExperimentId": "experiment-stage2-prior"}, posted_payloads)
         self.assertEqual(posted_payloads[1]["sourceRunId"], "run-stage2-fresh")
 
+    def test_docker_smoke_stage2_rejects_misbound_create_replay_or_history(self):
+        import copy
+
+        docker_smoke = self._load_docker_smoke_module()
+
+        def experiment_payload(experiment_id):
+            return {
+                "experimentId": experiment_id,
+                "status": "completed",
+                "definitionHash": "definition-stage2",
+                "resultHash": "result-stage2",
+                "holdoutKey": "holdout-stage2",
+                "strategyRevision": "revision-stage2",
+                "sourceRunId": "run-stage2",
+                "snapshotId": "snapshot-stage2",
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "candidates": [{"candidateId": "candidate-a"}, {"candidateId": "candidate-b"}],
+            }
+
+        cases = [
+            ("create", "sourceRunId"),
+            *[("replay", field) for field in ("sourceRunId", "strategyRevision", "snapshotId")],
+            *[("history", field) for field in ("sourceRunId", "strategyRevision", "snapshotId")],
+        ]
+        for stage, field in cases:
+            with self.subTest(stage=stage, field=field):
+                original = experiment_payload("experiment-stage2")
+                if stage == "create":
+                    original[field] = f"wrong-{field}"
+                replay = copy.deepcopy(original)
+                replay["experimentId"] = "experiment-stage2-replay"
+                if stage == "replay":
+                    replay[field] = f"wrong-{field}"
+                history = [copy.deepcopy(replay), copy.deepcopy(original)]
+                if stage == "history":
+                    history[0][field] = f"wrong-{field}"
+
+                def fake_post_json(url, payload, timeout_seconds):
+                    if url.endswith("/api/p0/pipeline"):
+                        return {
+                            "status": "audited_run_created",
+                            "runId": "run-stage2",
+                            "strategyRevisionId": "strategy-revision-stage2",
+                            "dataSnapshotId": "data-stage2",
+                            "metrics": {},
+                            "paperOnly": True,
+                            "liveTradingAllowed": False,
+                            "orderSubmitted": False,
+                            "liveOrderSubmitted": False,
+                            "routeExecuted": False,
+                        }
+                    return {"experiment": replay if "replayOfExperimentId" in payload else original}
+
+                def fake_request_json(url, timeout_seconds):
+                    if url.endswith("/api/research/runs/run-stage2"):
+                        return {
+                            "run": {
+                                "runId": "run-stage2",
+                                "market": "ashare",
+                                "symbol": "600000",
+                                "timeframe": "1d",
+                                "strategyRevision": "revision-stage2",
+                                "strategyConfig": {"revision": "revision-stage2"},
+                                "dataSnapshot": {"hash": "data-stage2"},
+                            }
+                        }
+                    if url.endswith("/api/strategy-experiments?strategyRevision=revision-stage2&limit=50"):
+                        return {"experiments": []}
+                    if "/api/strategy-experiments?" in url:
+                        return {"experiments": history}
+                    if url.endswith("/api/strategy-experiments/experiment-stage2"):
+                        return {"experiment": original}
+                    raise AssertionError(f"Unexpected GET URL: {url}")
+
+                original_post_json = docker_smoke.post_json
+                original_request_json = docker_smoke.request_json
+                docker_smoke.post_json = fake_post_json
+                docker_smoke.request_json = fake_request_json
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "source run|binding"):
+                        docker_smoke.run_stage2_strategy_experiment_acceptance(
+                            "http://aiqt.local", timeout_seconds=5
+                        )
+                finally:
+                    docker_smoke.post_json = original_post_json
+                    docker_smoke.request_json = original_request_json
+
     def test_docker_smoke_cli_validates_stage2_strategy_experiment_report_without_compose(self):
         import contextlib
         import io
