@@ -58,6 +58,7 @@ from quant_core.canonical import (
     strategy_config_from_payload,
     strategy_config_to_payload,
 )
+from quant_core.domain import Condition, RiskRules, StrategyConfig
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.strategy_experiment_store import (
     StrategyExperimentCandidateRecord,
@@ -2701,6 +2702,103 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         self.assertEqual(record["externalAssessment"]["status"], "completed")
         self.assertEqual(provider.calls, 1)
 
+    def test_evidence_preflight_accepts_canonical_strategy_with_optional_risk_limits(self) -> None:
+        canonical_strategy = strategy_config_to_payload(
+            StrategyConfig(
+                name="Minimal canonical strategy",
+                market="ashare",
+                symbols=["600000"],
+                timeframe="1d",
+                entry_conditions=[
+                    Condition("close_above_sma", {"window": 20})
+                ],
+                exit_conditions=[
+                    Condition("close_below_sma", {"window": 20})
+                ],
+                risk=RiskRules(position_pct=0.5),
+            )
+        )
+        self._record_experiment(
+            "minimal-risk",
+            seed=101,
+            strategy=canonical_strategy,
+        )
+
+        provider = _StubReviewProvider()
+        record = self._service(provider=provider).create_review(
+            primary_experiment_id="minimal-risk",
+            comparison_experiment_ids=[],
+            provider_id="openai-compatible",
+            external_data_approved=True,
+        )
+
+        strategy = next(
+            item["value"]
+            for item in record["evidenceBundle"]["evidenceItems"]
+            if item["kind"] == "strategy_definition"
+        )
+        self.assertEqual(
+            strategy["risk"],
+            {
+                "positionPct": 0.5,
+                "stopLossPct": None,
+                "takeProfitPct": None,
+                "maxDrawdownPct": None,
+            },
+        )
+        self.assertEqual(record["externalAssessment"]["status"], "completed")
+        self.assertEqual(provider.calls, 1)
+        self.assertEqual(self.review_store.count_recent(), 1)
+
+    def test_evidence_preflight_rejects_noncanonical_strategy_before_evaluation(self) -> None:
+        def strategy_value(bundle: dict[str, Any]) -> dict[str, Any]:
+            return next(
+                item["value"]
+                for item in bundle["evidenceItems"]
+                if item["kind"] == "strategy_definition"
+            )
+
+        cases: dict[str, Any] = {
+            "version zero": lambda bundle: strategy_value(bundle).update(
+                {"version": 0}
+            ),
+            "multiple symbols": lambda bundle: strategy_value(bundle).update(
+                {"symbols": ["600000", "600001"]}
+            ),
+            "empty entry conditions": lambda bundle: strategy_value(bundle).update(
+                {"entryConditions": []}
+            ),
+            "empty exit conditions": lambda bundle: strategy_value(bundle).update(
+                {"exitConditions": []}
+            ),
+            "unsupported condition kind": lambda bundle: strategy_value(bundle)[
+                "entryConditions"
+            ][0].update({"kind": "future_signal"}),
+        }
+        for index, (label, mutation) in enumerate(cases.items()):
+            with self.subTest(case=label):
+                self.review_store = AiReviewRunStore(
+                    self.root / f"canonical-strategy-{index}.sqlite3"
+                )
+                provider = _StubReviewProvider()
+                engine = _CountingDeterministicEngine()
+                service = self._service(
+                    provider=provider,
+                    assembler=_MutatingEvidenceAssembler(
+                        self.assembler,
+                        mutation,
+                    ),
+                    deterministic_engine=engine,
+                )
+
+                with self.assertRaises(AiReviewStage3Error) as raised:
+                    self._create_external(service)
+
+                self.assertEqual(raised.exception.code, "ai_review_evidence_conflict")
+                self.assertEqual(engine.calls, 0)
+                self.assertEqual(provider.calls, 0)
+                self.assertEqual(self.review_store.count_recent(), 0)
+
     def test_external_parameter_projection_rejects_non_numeric_or_unsafe_values(self) -> None:
         def strategy_item(bundle: dict[str, Any]) -> dict[str, Any]:
             return next(
@@ -2752,18 +2850,30 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         unsafe_values = (
             "account=broker-fixture",
             "order=order-fixture",
+            "order_payload=order-payload-fixture",
+            "order-id=order-id-fixture",
             "position=position-fixture",
             "paper=paper-fixture",
+            "paper_execution=paper-execution-fixture",
             "live=live-fixture",
+            "live_adapter=live-adapter-fixture",
             "notes=notes-fixture",
             "research note=private-fixture",
+            "research_note=private-fixture",
             "signing=signing-fixture",
+            "signing_material=signing-material-fixture",
+            "hidden_reasoning=reasoning-fixture",
+            "chain_of_thought=reasoning-fixture",
             "access_token=token-fixture",
             "authorization: Bearer bearer-fixture",
             "sk-proj-abcdefghijklmnopqrstuvwxyz",
         )
-        for unsafe_value in unsafe_values:
+        for index, unsafe_value in enumerate(unsafe_values):
             with self.subTest(value=unsafe_value):
+                self.review_store = AiReviewRunStore(
+                    self.root / f"unsafe-warning-{index}.sqlite3"
+                )
+
                 def mutate_warning(bundle: dict[str, Any], value: str = unsafe_value) -> None:
                     quality = next(
                         item

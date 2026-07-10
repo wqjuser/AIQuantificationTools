@@ -9,7 +9,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from quant_core.canonical import canonical_json, canonical_sha256
+from quant_core.canonical import (
+    canonical_json,
+    canonical_sha256,
+    strategy_config_from_payload,
+    strategy_config_to_payload,
+)
 
 
 _V2_BOUNDARY = {
@@ -115,7 +120,6 @@ _V2_OUTPUT_SCHEMA_VERSION = "aiqt-ai-review-assessment-v1"
 _V2_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _V2_OPENAI_ENDPOINT = "https://api.openai.com/v1/responses"
 _V2_REVIEW_ID_PATTERN = re.compile(r"^ai-review-[0-9a-f]{32}$")
-_V2_SAFE_ERROR_CODE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
 _SELECT_COLUMNS = (
     "ai_review_id, run_id, created_at, record_json, schema_version, "
     "primary_experiment_id, evidence_hash, record_hash, authority"
@@ -689,43 +693,12 @@ def _validate_strategy_evidence(value: Any) -> None:
         "risk",
     }
     _require_object_fields(value, required=fields)
-    for field in ("name", "revision", "market", "timeframe"):
-        _required_string(value, field, "ai_review_evidence_items_invalid")
-    symbols = value.get("symbols")
-    if not isinstance(symbols, list) or not symbols:
-        raise ValueError("ai_review_evidence_items_invalid")
-    for symbol in symbols:
-        _validate_text_value(symbol)
-    _validate_strict_int(value.get("version"), minimum=0)
-    for field in ("entryConditions", "exitConditions"):
-        conditions = value.get(field)
-        if not isinstance(conditions, list):
-            raise ValueError("ai_review_evidence_items_invalid")
-        for condition in conditions:
-            _require_object_fields(condition, required={"kind", "params"})
-            _required_string(condition, "kind", "ai_review_evidence_items_invalid")
-            params = condition.get("params")
-            if not isinstance(params, dict):
-                raise ValueError("ai_review_evidence_items_invalid")
-            for key, item in params.items():
-                if (
-                    not isinstance(key, str)
-                    or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", key)
-                ):
-                    raise ValueError("ai_review_evidence_items_invalid")
-                _validate_finite_number(item)
-    risk = value.get("risk")
-    _require_object_fields(
-        risk,
-        required={
-            "positionPct",
-            "stopLossPct",
-            "takeProfitPct",
-            "maxDrawdownPct",
-        },
-    )
-    for item in risk.values():
-        _validate_finite_number(item)
+    try:
+        canonical = strategy_config_to_payload(strategy_config_from_payload(value))
+        if canonical_json(canonical) != canonical_json(value):
+            raise ValueError("strategy_evidence_not_canonical")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("ai_review_evidence_items_invalid") from error
 
 
 def _validate_data_quality_evidence(value: Any) -> None:
@@ -1066,7 +1039,6 @@ def _validate_external_error(value: Any) -> None:
     if (
         not isinstance(code, str)
         or code not in _V2_EXTERNAL_ERROR_CODES
-        or not _V2_SAFE_ERROR_CODE_PATTERN.fullmatch(code)
     ):
         raise ValueError("ai_review_external_assessment_invalid")
     if (

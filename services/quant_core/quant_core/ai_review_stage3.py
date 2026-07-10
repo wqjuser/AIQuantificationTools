@@ -71,8 +71,10 @@ _SECRET_TEXT_PATTERN = re.compile(
     r"(?:\btoken\b|access[_ -]?token|api[_ -]?key|private[_ -]?key|authorization|password|bearer|secret|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)",
     re.IGNORECASE,
 )
+_EXTERNAL_LABEL_SEPARATOR = r"[_ -]+"
+_FORBIDDEN_EXTERNAL_LABEL = rf"(?:bars?|ohlcv|notes?|research{_EXTERNAL_LABEL_SEPARATOR}notes?|account|portfolio|position|order|order{_EXTERNAL_LABEL_SEPARATOR}(?:payload|id)|paper|paper{_EXTERNAL_LABEL_SEPARATOR}execution|live|live{_EXTERNAL_LABEL_SEPARATOR}adapter|signing|signing{_EXTERNAL_LABEL_SEPARATOR}material|signature|reasoning|hidden{_EXTERNAL_LABEL_SEPARATOR}reasoning|chain(?:ofthought|{_EXTERNAL_LABEL_SEPARATOR}of{_EXTERNAL_LABEL_SEPARATOR}thought))"
 _FORBIDDEN_EXTERNAL_VALUE_PATTERN = re.compile(
-    r"(?:\b(?:bars?|ohlcv|notes?|research[_ -]?notes?|account|portfolio|position|order|paper|live|signing|signature|reasoning|chainofthought)\b\s*[:=]\s*\S+|\b(?:bars?|ohlcv|notes?|research[_ -]?notes?|account|portfolio|position|order)\s+payload\b|\bpaper\s+execution\b|\blive\s+adapter\b|\bsigning\s+material\b|\bprivate\s+key\b|\bhidden\s+reasoning\b)",
+    rf"(?:\b{_FORBIDDEN_EXTERNAL_LABEL}\b\s*[:=]\s*\S+|\b(?:bars?|ohlcv|notes?|research{_EXTERNAL_LABEL_SEPARATOR}notes?|account|portfolio|position|order){_EXTERNAL_LABEL_SEPARATOR}payload\b|\bpaper{_EXTERNAL_LABEL_SEPARATOR}execution\b|\blive{_EXTERNAL_LABEL_SEPARATOR}adapter\b|\bsigning{_EXTERNAL_LABEL_SEPARATOR}material\b|\bprivate{_EXTERNAL_LABEL_SEPARATOR}key\b|\bhidden{_EXTERNAL_LABEL_SEPARATOR}reasoning\b)",
     re.IGNORECASE,
 )
 _ASSESSMENT_OUTPUT_SCHEMA = {
