@@ -222,7 +222,7 @@ import {
   PortfolioPaperOrderStateHistory,
   PortfolioPaperOrderSimulation,
   resolveQuantCoreBaseUrl,
-  runP0AiReview,
+  saveAiReviewRunRecord,
   runP0PaperSimulation,
   runP0Pipeline,
   runTerminalResearch,
@@ -2387,8 +2387,6 @@ export function App() {
   const latestChartBar = klinesState.bars.at(-1);
   const agentCommitteeRounds = buildAgentCommitteeRounds(workspace);
   const aiEvidenceCards = buildAiEvidenceCards(workspace);
-  const aiReviewDossier = buildAiReviewDossier(workspace);
-  const currentAiReviewRunRecord = buildAiReviewRunRecord(workspace);
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
   const strategyExperimentUsableSourceKey =
@@ -2416,6 +2414,12 @@ export function App() {
     strategyExperimentMatchesSourceKey(strategyExperimentActive, strategyExperimentUsableSourceKey)
       ? strategyExperimentActive
       : null;
+  const aiReviewDossier = visibleStrategyExperimentActive
+    ? buildAiReviewDossier(workspace, visibleStrategyExperimentActive)
+    : buildAiReviewDossier(workspace);
+  const currentAiReviewRunRecord = visibleStrategyExperimentActive
+    ? buildAiReviewRunRecord(workspace, visibleStrategyExperimentActive)
+    : buildAiReviewRunRecord(workspace);
   const scannerCandidates = buildScannerCandidates(workspace);
   const researchOpsQueue = buildResearchOpsQueueRows({
     workspace,
@@ -6752,7 +6756,8 @@ export function App() {
       result.exportPackage,
       auditEvidenceSummary,
       undefined,
-      runHistory
+      runHistory,
+      visibleStrategyExperimentActive
     );
     const reportHistory = await loadAuditEvents(quantCoreBaseUrl, {
       eventType: "audit_evidence_report,backtest_report",
@@ -6779,7 +6784,7 @@ export function App() {
       statusLabel: "Research run export ready",
       error: undefined
     }));
-  }, [auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl, runHistory]);
+  }, [...[auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl, runHistory], visibleStrategyExperimentActive]);
 
   const inspectRunExportPackageByRunId = useCallback(async (runId: string): Promise<ResearchRunExportPackageInspectionResult> => {
     setIsInspectingExportPackage(true);
@@ -7341,7 +7346,9 @@ export function App() {
   }, [runHistory]);
 
   const exportBacktestReportMarkdown = useCallback(() => {
-    const markdown = buildBacktestReportMarkdown(workspace, runHistory);
+    const markdown = visibleStrategyExperimentActive
+      ? buildBacktestReportMarkdown(workspace, runHistory, visibleStrategyExperimentActive)
+      : buildBacktestReportMarkdown(workspace, runHistory);
     const runId = workspace.researchRun?.runId;
     if (!markdown || !runId) {
       setWorkspaceState((current) => ({
@@ -7366,6 +7373,7 @@ export function App() {
       error: undefined
     }));
     void buildBacktestReportAuditEvent({
+      experiment: visibleStrategyExperimentActive,
       markdown,
       runHistory,
       workspace
@@ -7396,10 +7404,12 @@ export function App() {
         }
       });
     });
-  }, [runHistory, workspace]);
+  }, [runHistory, visibleStrategyExperimentActive, workspace]);
 
   const exportAiReviewMarkdown = useCallback(() => {
-    const markdown = buildAiReviewReportMarkdown(workspace);
+    const markdown = visibleStrategyExperimentActive
+      ? buildAiReviewReportMarkdown(workspace, visibleStrategyExperimentActive)
+      : buildAiReviewReportMarkdown(workspace);
     const runId = workspace.researchRun?.runId;
     if (!markdown || !runId) {
       setWorkspaceState((current) => ({
@@ -7423,10 +7433,10 @@ export function App() {
       statusLabel: "AI review export ready",
       error: undefined
     }));
-  }, [workspace]);
+  }, [visibleStrategyExperimentActive, workspace]);
 
   const exportAiReviewRunRecord = useCallback(() => {
-    const record = buildAiReviewRunRecord(workspace);
+    const record = buildAiReviewRunRecord(workspace, visibleStrategyExperimentActive);
     const runId = workspace.researchRun?.runId;
     if (!record || !runId) {
       setWorkspaceState((current) => ({
@@ -7452,11 +7462,12 @@ export function App() {
       statusLabel: "AI review record export ready",
       error: undefined
     }));
-  }, [workspace]);
+  }, [visibleStrategyExperimentActive, workspace]);
 
   const saveCurrentAiReviewRunRecord = useCallback(async () => {
     const runId = workspace.researchRun?.runId;
-    if (!runId) {
+    const record = buildAiReviewRunRecord(workspace, visibleStrategyExperimentActive);
+    if (!runId || !record) {
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "AI review record save failed",
@@ -7466,12 +7477,7 @@ export function App() {
     }
 
     setIsSavingAiReviewRecord(true);
-    const result = await runP0AiReview(quantCoreBaseUrl, {
-      runId,
-      market: workspace.selectedInstrument.market,
-      symbol: workspace.selectedInstrument.symbol,
-      timeframe: workspace.selectedTimeframe
-    });
+    const result = await saveAiReviewRunRecord(quantCoreBaseUrl, record);
     if (result.source === "fallback" || !result.aiReview) {
       setWorkspaceState((current) => ({
         ...current,
@@ -7488,14 +7494,14 @@ export function App() {
     ]);
     setWorkspaceState((current) => ({
       ...current,
-      statusLabel: result.mode === "local_evidence_review" ? "P0 AI review evidence saved" : "AI review record saved",
+      statusLabel: "AI review record saved",
       error: undefined
     }));
     setActiveWorkAreaId("ai-review");
     setActiveLoopStepId("agent-review");
     setActiveWorkflowStageId("agent");
     setIsSavingAiReviewRecord(false);
-  }, [workspace]);
+  }, [quantCoreBaseUrl, visibleStrategyExperimentActive, workspace]);
 
   const appendResearchRunImportAuditEvent = useCallback(
     (event: ResearchRunImportAuditEvent) => {

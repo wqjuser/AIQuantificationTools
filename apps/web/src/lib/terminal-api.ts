@@ -3,6 +3,7 @@ import {
   buildAuditEvidenceReportMarkdown,
   buildBacktestReportMarkdown,
   buildBacktestRunComparisonMatrixRows,
+  buildStrategyExperimentEvidenceSummary,
   buildPortfolioBacktestDiagnosticRows,
   buildP0CurrentGapActionUrlSearch,
   buildStrategyRuleDraft,
@@ -5998,7 +5999,8 @@ export async function buildResearchRunExportAuditReport(
 export async function buildResearchRunExportBacktestReport(
   exportPackage: ResearchRunExportPackage,
   runHistory: ResearchRunAudit[] = [],
-  generatedAt = new Date().toISOString()
+  generatedAt = new Date().toISOString(),
+  experiment: StrategyExperimentDetail | null = null
 ): Promise<ResearchRunExportBacktestReport | null> {
   const run = exportPackage.researchRun;
   if (!run.dataSnapshot) {
@@ -6007,7 +6009,7 @@ export async function buildResearchRunExportBacktestReport(
 
   const comparisonHistory = [run, ...runHistory.filter((candidate) => candidate.runId !== run.runId)];
   const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), run);
-  const contentMarkdown = buildBacktestReportMarkdown(workspace, comparisonHistory);
+  const contentMarkdown = buildBacktestReportMarkdown(workspace, comparisonHistory, experiment);
   if (!contentMarkdown) {
     return null;
   }
@@ -7072,11 +7074,13 @@ function buildOperatorRunbookControlSnapshot(runbook: OperatorRunbookSummary): s
 }
 
 export async function buildBacktestReportAuditEvent({
+  experiment = null,
   generatedAt = new Date().toISOString(),
   markdown,
   runHistory = [],
   workspace
 }: {
+  experiment?: StrategyExperimentDetail | null;
   generatedAt?: string;
   markdown: string;
   runHistory?: ResearchRunAudit[];
@@ -7092,6 +7096,7 @@ export async function buildBacktestReportAuditEvent({
   const fileName = `${sanitizeDownloadFileName(run.runId)}-backtest-report.md`;
   const auditedRun = runHistory.find((candidate) => candidate.runId === run.runId);
   const runComparisonRows = buildBacktestRunComparisonMatrixRows(runHistory, run.runId);
+  const experimentEvidence = buildStrategyExperimentEvidenceSummary(workspace, experiment);
 
   return {
     schemaVersion: 1,
@@ -7117,6 +7122,15 @@ export async function buildBacktestReportAuditEvent({
       dataRows: auditedRun?.dataRows ?? run.dataRows,
       runComparisonRows: runComparisonRows.length,
       hasRunComparisonMatrix: markdown.includes("## Run Comparison Matrix"),
+      ...(experimentEvidence
+        ? {
+            strategyExperimentId: experimentEvidence.experimentId,
+            strategyExperimentDefinitionHash: experimentEvidence.definitionHash,
+            strategyExperimentResultHash: experimentEvidence.resultHash,
+            strategyExperimentSelectedCandidateId: experimentEvidence.selectedCandidateId,
+            strategyExperimentHoldoutStatus: experimentEvidence.holdoutStatus
+          }
+        : {}),
       boundary: "historical audited evidence only; no investment advice"
     }
   };
@@ -7289,10 +7303,16 @@ export async function withResearchRunExportAuditEvidenceArtifacts(
   exportPackage: ResearchRunExportPackage,
   summary: AuditEvidenceSummary,
   generatedAt?: string,
-  runHistory: ResearchRunAudit[] = []
+  runHistory: ResearchRunAudit[] = [],
+  experiment: StrategyExperimentDetail | null = null
 ): Promise<ResearchRunExportPackage> {
   const resolvedGeneratedAt = generatedAt ?? new Date().toISOString();
-  const backtestReport = await buildResearchRunExportBacktestReport(exportPackage, runHistory, resolvedGeneratedAt);
+  const backtestReport = await buildResearchRunExportBacktestReport(
+    exportPackage,
+    runHistory,
+    resolvedGeneratedAt,
+    experiment
+  );
   return {
     ...exportPackage,
     auditEvidenceSummary: buildResearchRunExportAuditEvidenceSummary(summary, resolvedGeneratedAt),

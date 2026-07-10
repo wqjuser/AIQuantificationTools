@@ -1518,41 +1518,6 @@ export interface BacktestReport {
   diagnosticCount: number;
 }
 
-export interface BacktestParameterScanRow {
-  id: string;
-  runId: string;
-  source: string;
-  condition: string;
-  entryWindow: number;
-  exitWindow: number;
-  entryRsiThreshold: number | null;
-  entryVolumeWindow: number | null;
-  returnPct: string;
-  maxDrawdownPct: string;
-  tradeCount: number;
-  alphaVsCurrent: string;
-  status: "current" | "candidate";
-  tone: "positive" | "warning" | "neutral" | "risk";
-  dataRows: number;
-}
-
-export interface BacktestParameterScanSummary {
-  totalRows: number;
-  candidateCount: number;
-  positiveCount: number;
-  riskCount: number;
-  currentCondition: string | null;
-  currentRank: number | null;
-  bestCandidateId: string | null;
-  bestCandidateCondition: string | null;
-  bestCandidateReturnPct: string;
-  bestCandidateMaxDrawdownPct: string;
-  bestCandidateDelta: string;
-  headline: string;
-  detail: string;
-  tone: "positive" | "warning" | "neutral" | "risk";
-}
-
 export interface DecisionLogEntry {
   agent: string;
   message: string;
@@ -13675,7 +13640,12 @@ export function buildAiEvidenceCards(workspace: TerminalWorkspace): AiEvidenceCa
   return cards;
 }
 
-export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDossier {
+const persistedStrategyExperimentRequired = "Persisted strategy experiment required.";
+
+export function buildAiReviewDossier(
+  workspace: TerminalWorkspace,
+  experiment: StrategyExperimentDetail | null = null
+): AiReviewDossier {
   const auditBinding = buildResearchRunContextBinding(workspace);
   const blockedGateCount = workspace.execution.gates.filter((gate) => !gate.passed).length;
   const riskGateCitation: AiReviewCitation = {
@@ -13746,7 +13716,7 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
   const dataQuality = run.dataQuality;
   const researchNote = normalizedResearchNote(run.researchNote);
   const benchmark = buildBacktestBenchmark(workspace);
-  const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
+  const experimentEvidence = buildStrategyExperimentEvidenceSummary(workspace, experiment);
   const benchmarkCitation: AiReviewCitation = {
     id: "benchmark",
     label: "Benchmark alpha",
@@ -13754,15 +13724,15 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
     detail: aiBenchmarkDetail(benchmark),
     tone: benchmark.tone
   };
-  const parameterScanCitation: AiReviewCitation | null = parameterScanSummary
-    ? {
-        id: "parameter-scan",
-        label: "Parameter scan",
-        value: parameterScanSummary.headline,
-        detail: parameterScanSummary.detail,
-        tone: parameterScanSummary.tone
-      }
-    : null;
+  const parameterScanCitation: AiReviewCitation = {
+    id: "parameter-scan",
+    label: "Persisted strategy experiment",
+    value: experimentEvidence?.experimentId ?? persistedStrategyExperimentRequired,
+    detail: experimentEvidence
+      ? `Definition ${experimentEvidence.definitionHash} · Result ${experimentEvidence.resultHash} · Selected candidate ${experimentEvidence.selectedCandidateId} (${experimentEvidence.candidateRevision}) · Holdout ${experimentEvidence.holdoutStatus}.`
+      : persistedStrategyExperimentRequired,
+    tone: experimentEvidence ? "positive" : "warning"
+  };
   const noteCitation: AiReviewCitation | null = researchNote
     ? {
         id: "research-note",
@@ -13793,7 +13763,7 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
         tone: returnMetric.startsWith("-") ? "warning" : "positive"
       },
       benchmarkCitation,
-      ...(parameterScanCitation ? [parameterScanCitation] : []),
+      parameterScanCitation,
       {
         id: "strategy",
         label: "Strategy revision",
@@ -13822,20 +13792,23 @@ export function buildAiReviewDossier(workspace: TerminalWorkspace): AiReviewDoss
   };
 }
 
-export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): string | null {
+export function buildAiReviewReportMarkdown(
+  workspace: TerminalWorkspace,
+  experiment: StrategyExperimentDetail | null = null
+): string | null {
   const run = workspace.researchRun;
   if (!run) {
     return null;
   }
 
-  const dossier = buildAiReviewDossier(workspace);
+  const dossier = buildAiReviewDossier(workspace, experiment);
   if (dossier.status !== "ready") {
     return null;
   }
 
   const rounds = buildAgentCommitteeRounds(workspace);
   const benchmark = buildBacktestBenchmark(workspace);
-  const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
+  const experimentEvidence = buildStrategyExperimentEvidenceSummary(workspace, experiment);
   const researchNote = normalizedResearchNote(run.researchNote);
   const citationRows = dossier.citations.map((citation) => [citation.label, citation.value, citation.detail]);
   const committeeRows = rounds.map((round) => [
@@ -13880,28 +13853,20 @@ export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): strin
       ]
     ),
     "",
-    "## Parameter Scan Summary",
+    "## Persisted Strategy Experiment",
     "",
-    parameterScanSummary
+    experimentEvidence
       ? markdownTable(
           ["Field", "Value"],
           [
-            ["Rows", parameterScanSummary.totalRows],
-            [
-              "Current rank",
-              parameterScanSummary.currentRank
-                ? `${parameterScanSummary.currentRank}/${parameterScanSummary.totalRows}`
-                : "N/A"
-            ],
-            ["Candidate for re-audit", parameterScanSummary.bestCandidateCondition ?? "N/A"],
-            ["Candidate return", parameterScanSummary.bestCandidateReturnPct],
-            ["Candidate max drawdown", parameterScanSummary.bestCandidateMaxDrawdownPct],
-            ["Candidate delta", parameterScanSummary.bestCandidateDelta],
-            ["Risk rows", parameterScanSummary.riskCount],
-            ["Boundary", "Candidate must be re-audited; no investment advice."]
+            ["Experiment ID", experimentEvidence.experimentId],
+            ["Definition hash", experimentEvidence.definitionHash],
+            ["Result hash", experimentEvidence.resultHash],
+            ["Selected candidate", `${experimentEvidence.selectedCandidateId} (${experimentEvidence.candidateRevision})`],
+            ["Holdout", experimentEvidence.holdoutStatus]
           ]
         )
-      : "Parameter scan summary requires an audited data snapshot.",
+      : persistedStrategyExperimentRequired,
     "",
     researchNote ? "## Locked Research Note" : "",
     researchNote ? "" : "",
@@ -13919,7 +13884,7 @@ export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): strin
     "",
     "AI must not output buy/sell instructions or guaranteed returns.",
     "",
-    "This report can explain only the audited run, locked strategy revision, data snapshot, benchmark comparison, parameter scan summary, and risk gates above."
+    "This report can explain only the audited run, locked strategy revision, data snapshot, benchmark comparison, persisted strategy experiment, and risk gates above."
   ]
     .filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
     .join("\n")
@@ -13927,13 +13892,16 @@ export function buildAiReviewReportMarkdown(workspace: TerminalWorkspace): strin
     .concat("\n");
 }
 
-export function buildAiReviewRunRecord(workspace: TerminalWorkspace): AiReviewRunRecord | null {
+export function buildAiReviewRunRecord(
+  workspace: TerminalWorkspace,
+  experiment: StrategyExperimentDetail | null = null
+): AiReviewRunRecord | null {
   const run = workspace.researchRun;
   if (!run) {
     return null;
   }
 
-  const dossier = buildAiReviewDossier(workspace);
+  const dossier = buildAiReviewDossier(workspace, experiment);
   if (dossier.status !== "ready") {
     return null;
   }
@@ -13959,7 +13927,7 @@ export function buildAiReviewRunRecord(workspace: TerminalWorkspace): AiReviewRu
       citationCount: citations.length,
       roundCount: rounds.length,
       decisionCount: decisionLog.length,
-      parameterScanBound: citations.some((citation) => citation.id === "parameter-scan"),
+      parameterScanBound: Boolean(buildStrategyExperimentEvidenceSummary(workspace, experiment)),
       liveExecutionBlocked: !workspace.execution.liveEnabled
     },
     dossier,
@@ -31363,156 +31331,10 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
   };
 }
 
-export function buildBacktestParameterScanRows(workspace: TerminalWorkspace): BacktestParameterScanRow[] {
-  if (!buildResearchRunContextBinding(workspace).canUseRun) {
-    return [];
-  }
-
-  const run = workspace.researchRun;
-  const bars = run?.dataSnapshot?.bars
-    .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
-    .slice()
-    .sort((left, right) => left.timestampMs - right.timestampMs);
-
-  if (!run || !bars || bars.length < 2) {
-    return [];
-  }
-
-  const draft = buildStrategyRuleDraft(workspace);
-  const entryWindows = parameterScanWindows(draft.entryWindow);
-  const exitWindows = parameterScanWindows(draft.exitWindow);
-  const entryRsiThresholds: Array<number | null> =
-    draft.entryRsiConfirm && !isRsiConditionKind(draft.entryKind)
-      ? parameterScanThresholds(draft.entryRsiThreshold)
-      : [null];
-  const entryVolumeWindows: Array<number | null> = draft.entryVolumeConfirm
-    ? parameterScanWindows(draft.entryVolumeWindow)
-    : [null];
-  const currentMetricReturn = parsePercentMetric(metricValue(workspace, "Return", "N/A"));
-  const currentScan = simulateSmaParameterScan(
-    workspace,
-    bars,
-    draft.entryWindow,
-    draft.exitWindow,
-    draft.entryRsiThreshold,
-    draft.entryVolumeWindow
-  );
-  const currentReturn = currentMetricReturn ?? currentScan.totalReturnPct;
-
-  return entryWindows.flatMap((entryWindow) =>
-    exitWindows.flatMap((exitWindow) =>
-      entryRsiThresholds.flatMap((entryRsiThreshold) =>
-        entryVolumeWindows.map((entryVolumeWindow) => {
-          const result = simulateSmaParameterScan(
-            workspace,
-            bars,
-            entryWindow,
-            exitWindow,
-            entryRsiThreshold,
-            entryVolumeWindow
-          );
-          const delta = result.totalReturnPct - currentReturn;
-          const isCurrent =
-            entryWindow === draft.entryWindow &&
-            exitWindow === draft.exitWindow &&
-            (!draft.entryRsiConfirm || entryRsiThreshold === draft.entryRsiThreshold) &&
-            (!draft.entryVolumeConfirm || entryVolumeWindow === draft.entryVolumeWindow);
-          const breachesDrawdown = result.maxDrawdownPct > draft.maxDrawdownPct;
-          const rsiCondition = entryRsiThreshold === null ? "" : ` / RSI>${formatConditionNumber(entryRsiThreshold)}`;
-          const rsiId = entryRsiThreshold === null ? "" : `-rsi-${formatConditionNumber(entryRsiThreshold)}`;
-          const volumeCondition = entryVolumeWindow === null ? "" : ` / VOL${entryVolumeWindow}`;
-          const volumeId = entryVolumeWindow === null ? "" : `-vol-${entryVolumeWindow}`;
-          return {
-            id: `scan-entry-${entryWindow}-exit-${exitWindow}${rsiId}${volumeId}`,
-            runId: run.runId,
-            source: run.dataSnapshot?.hash ?? run.dataSnapshot?.source ?? "audited snapshot",
-            condition: `SMA${entryWindow} / SMA${exitWindow}${rsiCondition}${volumeCondition}`,
-            entryWindow,
-            exitWindow,
-            entryRsiThreshold,
-            entryVolumeWindow,
-            returnPct: formatSignedPct(result.totalReturnPct),
-            maxDrawdownPct: formatPct(result.maxDrawdownPct),
-            tradeCount: result.tradeCount,
-            alphaVsCurrent: formatSignedPointDelta(delta),
-            status: isCurrent ? "current" : "candidate",
-            tone: isCurrent ? "neutral" : breachesDrawdown ? "risk" : delta >= 0 ? "positive" : "warning",
-            dataRows: bars.length
-          };
-        })
-      )
-    )
-  );
-}
-
-export function buildBacktestParameterScanSummary(workspace: TerminalWorkspace): BacktestParameterScanSummary | null {
-  const rows = buildBacktestParameterScanRows(workspace);
-  if (!rows.length) {
-    return null;
-  }
-
-  const rankedRows = rows
-    .map((row, index) => ({
-      row,
-      index,
-      returnPct: parsePercentMetric(row.returnPct) ?? Number.NEGATIVE_INFINITY,
-      maxDrawdownPct: parsePercentMetric(row.maxDrawdownPct) ?? Number.POSITIVE_INFINITY
-    }))
-    .sort(
-      (left, right) =>
-        right.returnPct - left.returnPct ||
-        left.maxDrawdownPct - right.maxDrawdownPct ||
-        left.index - right.index
-    );
-  const currentRankIndex = rankedRows.findIndex((entry) => entry.row.status === "current");
-  const currentRow = rows.find((row) => row.status === "current") ?? null;
-  const candidateRows = rows.filter((row) => row.status === "candidate");
-  const positiveCount = rows.filter((row) => row.tone === "positive").length;
-  const riskCount = rows.filter((row) => row.tone === "risk").length;
-  const bestCandidate =
-    rankedRows.find((entry) => entry.row.status === "candidate" && entry.row.tone !== "risk") ??
-    rankedRows.find((entry) => entry.row.status === "candidate") ??
-    null;
-  const currentRank = currentRankIndex >= 0 ? currentRankIndex + 1 : null;
-  const bestRow = bestCandidate?.row ?? null;
-  const tone: BacktestParameterScanSummary["tone"] =
-    bestRow?.tone === "positive"
-      ? "positive"
-      : riskCount === candidateRows.length && candidateRows.length > 0
-        ? "risk"
-        : currentRank === 1
-          ? "neutral"
-          : "warning";
-
-  return {
-    totalRows: rows.length,
-    candidateCount: candidateRows.length,
-    positiveCount,
-    riskCount,
-    currentCondition: currentRow?.condition ?? null,
-    currentRank,
-    bestCandidateId: bestRow?.id ?? null,
-    bestCandidateCondition: bestRow?.condition ?? null,
-    bestCandidateReturnPct: bestRow?.returnPct ?? "N/A",
-    bestCandidateMaxDrawdownPct: bestRow?.maxDrawdownPct ?? "N/A",
-    bestCandidateDelta: bestRow?.alphaVsCurrent ?? "N/A",
-    headline: bestRow ? `${bestRow.condition} candidate for re-audit` : "No candidate cleared for re-audit",
-    detail: [
-      currentRank === null
-        ? "Current parameter row is missing from the locked scan."
-        : `Current ${currentRow?.condition ?? "parameter"} ranks ${currentRank}/${rows.length} on the locked snapshot.`,
-      `${candidateRows.length} candidates, ${positiveCount} positive rows, ${riskCount} drawdown-risk rows.`,
-      bestRow
-        ? `${bestRow.condition} is the top non-current candidate for re-audit; this is not investment advice.`
-        : "No non-current candidate is available for re-audit; this is not investment advice."
-    ].join(" "),
-    tone
-  };
-}
-
 export function buildBacktestReportMarkdown(
   workspace: TerminalWorkspace,
-  runHistory: ResearchRunAudit[] = []
+  runHistory: ResearchRunAudit[] = [],
+  experiment: StrategyExperimentDetail | null = null
 ): string | null {
   const run = workspace.researchRun;
   if (!run) {
@@ -31520,27 +31342,19 @@ export function buildBacktestReportMarkdown(
   }
 
   const report = buildBacktestReport(workspace);
-  const aiDossier = buildAiReviewDossier(workspace);
+  const aiDossier = buildAiReviewDossier(workspace, experiment);
   const snapshot = run.dataSnapshot;
   const preparationEvidence = snapshot?.preparationEvidence ?? null;
   const marketCalendar = snapshot?.marketCalendar ?? null;
   const researchNote = normalizedResearchNote(run.researchNote);
   const metricRows = report.metrics.map((metric) => [metric.label, metric.value, metric.tone]);
-  const parameterScanSummary = buildBacktestParameterScanSummary(workspace);
+  const experimentEvidence = buildStrategyExperimentEvidenceSummary(workspace, experiment);
   const benchmarkRows = [
     ["Strategy", report.benchmark.strategyReturn],
     ["Benchmark buy and hold", report.benchmark.benchmarkReturn],
     ["Alpha", report.benchmark.alpha]
   ];
   const assumptionRows = report.assumptionRows.map((row) => [row.label, `${row.value} ${row.suffix}`]);
-  const parameterScanRows = buildBacktestParameterScanRows(workspace).map((row) => [
-    row.condition,
-    row.returnPct,
-    row.maxDrawdownPct,
-    row.tradeCount,
-    row.alphaVsCurrent,
-    row.status
-  ]);
   const runComparisonRows = buildBacktestRunComparisonMatrixRows(runHistory, run.runId);
   const runComparisonSummary = buildBacktestRunComparisonMatrixSummary(runComparisonRows);
   const runComparisonMarkdownRows = runComparisonRows.map((row) => [
@@ -31624,29 +31438,20 @@ export function buildBacktestReportMarkdown(
     "",
     markdownTable(["Assumption", "Value"], assumptionRows),
     "",
-    "## Parameter Scan Summary",
+    "## Persisted Strategy Experiment",
     "",
-    parameterScanSummary
+    experimentEvidence
       ? markdownTable(
           ["Field", "Value"],
           [
-            ["Rows", parameterScanSummary.totalRows],
-            ["Current rank", parameterScanSummary.currentRank ? `${parameterScanSummary.currentRank}/${parameterScanSummary.totalRows}` : "N/A"],
-            ["Candidate for re-audit", parameterScanSummary.bestCandidateCondition ?? "N/A"],
-            ["Candidate return", parameterScanSummary.bestCandidateReturnPct],
-            ["Candidate max drawdown", parameterScanSummary.bestCandidateMaxDrawdownPct],
-            ["Candidate delta", parameterScanSummary.bestCandidateDelta],
-            ["Risk rows", parameterScanSummary.riskCount],
-            ["Boundary", "Candidate must be re-audited; no investment advice."]
+            ["Experiment ID", experimentEvidence.experimentId],
+            ["Definition hash", experimentEvidence.definitionHash],
+            ["Result hash", experimentEvidence.resultHash],
+            ["Selected candidate", `${experimentEvidence.selectedCandidateId} (${experimentEvidence.candidateRevision})`],
+            ["Holdout", experimentEvidence.holdoutStatus]
           ]
         )
-      : "Parameter scan summary requires an audited data snapshot.",
-    "",
-    "## Parameter Sensitivity",
-    "",
-    parameterScanRows.length
-      ? markdownTable(["Condition", "Return", "Max drawdown", "Trades", "Delta", "Status"], parameterScanRows)
-      : "Parameter sensitivity requires an audited data snapshot.",
+      : persistedStrategyExperimentRequired,
     "",
     "## Run Comparison Matrix",
     "",
@@ -31754,163 +31559,6 @@ export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBe
     sampleBars: bars.length,
     source: snapshot?.source ?? "unknown"
   };
-}
-
-function parameterScanWindows(currentWindow: number): number[] {
-  return Array.from(
-    new Set([currentWindow - 5, currentWindow, currentWindow + 5].map((window) => normalizeStrategyWindow(window)))
-  ).sort((left, right) => left - right);
-}
-
-function parameterScanThresholds(currentThreshold: number): number[] {
-  return Array.from(
-    new Set(
-      [currentThreshold - 5, currentThreshold, currentThreshold + 5].map((threshold) =>
-        normalizeStrategyThreshold(threshold, defaultStrategyRuleDraft.entryRsiThreshold)
-      )
-    )
-  ).sort((left, right) => left - right);
-}
-
-function simulateSmaParameterScan(
-  workspace: TerminalWorkspace,
-  bars: ResearchRunDataSnapshotBar[],
-  entryWindow: number,
-  exitWindow: number,
-  entryRsiThreshold: number | null = null,
-  entryVolumeWindow: number | null = null
-): { totalReturnPct: number; maxDrawdownPct: number; tradeCount: number } {
-  const assumptions = resolveBacktestAssumptions(workspace);
-  const draft = buildStrategyRuleDraft(workspace);
-  const feeRate = assumptions.feeBps / 10_000;
-  const slippageRate = assumptions.slippageBps / 10_000;
-  const positionPct = Math.max(0, Math.min(draft.positionPct / 100, 1));
-  const stopLossPct = draft.stopLossPct / 100;
-  const takeProfitPct = draft.takeProfitPct / 100;
-  const closes = bars.map((bar) => bar.close);
-  const volumes = bars.map((bar) => bar.volume);
-  let cash = assumptions.initialCash;
-  let quantity = 0;
-  let entryPrice = 0;
-  let tradeCount = 0;
-  const equityValues: number[] = [];
-
-  bars.forEach((bar, index) => {
-    const passesRsi =
-      !draft.entryRsiConfirm ||
-      rsiAbove(closes, index, draft.entryRsiWindow, entryRsiThreshold ?? draft.entryRsiThreshold);
-    const passesVolume =
-      !draft.entryVolumeConfirm || volumeAboveSma(volumes, index, entryVolumeWindow ?? draft.entryVolumeWindow);
-    if (quantity <= 0 && closeAboveSma(closes, index, entryWindow) && passesRsi && passesVolume) {
-      const budget = cash * positionPct;
-      const executionPrice = bar.close * (1 + slippageRate);
-      const nextQuantity = executionPrice > 0 ? budget / executionPrice : 0;
-      const fee = budget * feeRate;
-      if (nextQuantity > 0 && budget + fee <= cash) {
-        cash -= budget + fee;
-        quantity = nextQuantity;
-        entryPrice = executionPrice;
-        tradeCount += 1;
-      }
-    } else if (quantity > 0) {
-      const shouldExit =
-        bar.close <= entryPrice * (1 - stopLossPct) ||
-        bar.close >= entryPrice * (1 + takeProfitPct) ||
-        closeBelowSma(closes, index, exitWindow);
-      if (shouldExit) {
-        const executionPrice = bar.close * (1 - slippageRate);
-        const gross = quantity * executionPrice;
-        cash += gross - gross * feeRate;
-        quantity = 0;
-        entryPrice = 0;
-        tradeCount += 1;
-      }
-    }
-
-    equityValues.push(cash + quantity * bar.close);
-  });
-
-  if (quantity > 0) {
-    const lastClose = bars[bars.length - 1].close;
-    const executionPrice = lastClose * (1 - slippageRate);
-    const gross = quantity * executionPrice;
-    cash += gross - gross * feeRate;
-    quantity = 0;
-    tradeCount += 1;
-    equityValues[equityValues.length - 1] = cash;
-  }
-
-  return {
-    totalReturnPct: ((cash / assumptions.initialCash) - 1) * 100,
-    maxDrawdownPct: maxDrawdownFromEquity(equityValues),
-    tradeCount
-  };
-}
-
-function closeAboveSma(closes: number[], index: number, window: number): boolean {
-  const average = smaAt(closes, index, window);
-  return average !== null && closes[index] > average;
-}
-
-function closeBelowSma(closes: number[], index: number, window: number): boolean {
-  const average = smaAt(closes, index, window);
-  return average !== null && closes[index] < average;
-}
-
-function volumeAboveSma(volumes: number[], index: number, window: number): boolean {
-  const average = smaAt(volumes, index, window);
-  return average !== null && volumes[index] > average;
-}
-
-function rsiAbove(closes: number[], index: number, window: number, threshold: number): boolean {
-  const value = rsiAt(closes, index, window);
-  return value !== null && value > threshold;
-}
-
-function rsiAt(closes: number[], index: number, window: number): number | null {
-  if (window <= 0 || index < window) {
-    return null;
-  }
-  let gains = 0;
-  let losses = 0;
-  for (let cursor = index - window + 1; cursor <= index; cursor += 1) {
-    const delta = closes[cursor] - closes[cursor - 1];
-    if (delta >= 0) {
-      gains += delta;
-    } else {
-      losses += Math.abs(delta);
-    }
-  }
-  const averageGain = gains / window;
-  const averageLoss = losses / window;
-  if (averageLoss === 0) {
-    return 100;
-  }
-  const relativeStrength = averageGain / averageLoss;
-  return 100 - 100 / (1 + relativeStrength);
-}
-
-function smaAt(values: number[], index: number, window: number): number | null {
-  if (window <= 0 || index + 1 < window) {
-    return null;
-  }
-  const slice = values.slice(index + 1 - window, index + 1);
-  return slice.reduce((sum, value) => sum + value, 0) / window;
-}
-
-function maxDrawdownFromEquity(equityValues: number[]): number {
-  if (!equityValues.length) {
-    return 0;
-  }
-  let peak = equityValues[0];
-  let maxDrawdown = 0;
-  equityValues.forEach((equity) => {
-    peak = Math.max(peak, equity);
-    if (peak > 0) {
-      maxDrawdown = Math.max(maxDrawdown, ((peak - equity) / peak) * 100);
-    }
-  });
-  return maxDrawdown;
 }
 
 function markdownTable(headers: string[], rows: Array<Array<string | number | boolean | null | undefined>>): string {
@@ -34503,45 +34151,6 @@ export function workspaceWithBacktestAssumption(
     ],
     decisionLog: [note, ...existingLog],
     researchRun: null
-  };
-}
-
-export function workspaceWithBacktestParameterCandidate(
-  currentWorkspace: TerminalWorkspace,
-  candidateId: string
-): TerminalWorkspace {
-  const candidate = buildBacktestParameterScanRows(currentWorkspace).find((row) => row.id === candidateId);
-  if (!candidate || candidate.status === "current") {
-    return currentWorkspace;
-  }
-
-  const currentDraft = buildStrategyRuleDraft(currentWorkspace);
-  const nextStrategy = strategySnapshotFromRuleDraft({
-    ...currentDraft,
-    entryWindow: candidate.entryWindow,
-    exitWindow: candidate.exitWindow,
-    entryRsiThreshold: candidate.entryRsiThreshold ?? currentDraft.entryRsiThreshold,
-    entryVolumeWindow: candidate.entryVolumeWindow ?? currentDraft.entryVolumeWindow
-  });
-  const note: DecisionLogEntry = {
-    agent: "Backtest Lab",
-    message: `Parameter candidate ${candidate.condition} staged from run ${candidate.runId}. Run Pipeline to generate a fresh audited backtest.`,
-    tone: "warning"
-  };
-  const existingLog =
-    currentWorkspace.decisionLog[0]?.agent === "Backtest Lab"
-      ? currentWorkspace.decisionLog.slice(1)
-      : currentWorkspace.decisionLog;
-
-  return {
-    ...clearAuditedResearchResults(
-      {
-        ...currentWorkspace,
-        strategy: nextStrategy,
-        decisionLog: [note, ...existingLog]
-      },
-      "strategy"
-    )
   };
 }
 

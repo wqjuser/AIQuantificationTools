@@ -42,7 +42,9 @@ import {
   type P2ReadinessEvidenceCoverage,
   type P2ReadinessAcceptanceReviewSource,
   type P2ReadinessAcceptanceSummary,
-  type ResearchRunAudit
+  type ResearchRunAudit,
+  type ResearchRunStrategyConfig,
+  type StrategyExperimentDetail
 } from "./terminal-workbench";
 import {
   buildP0AcceptanceLatestUrl,
@@ -339,7 +341,7 @@ const sampleCcxtInstallGuidance = {
   packageInstallCommand: "pip install ccxt"
 } as const;
 
-function sampleStrategyExperimentDetail() {
+function sampleStrategyExperimentDetail(): StrategyExperimentDetail {
   const metrics = {
     totalReturnPct: 4.2,
     annualReturnPct: 12.4,
@@ -348,7 +350,7 @@ function sampleStrategyExperimentDetail() {
     profitFactor: 1.8,
     tradeCount: 8
   };
-  const baseStrategy = {
+  const baseStrategy: ResearchRunStrategyConfig = {
     name: "SMA plan",
     revision: "rev/a",
     market: "ashare",
@@ -14877,7 +14879,7 @@ describe("terminal workspace API client", () => {
     expect(normalized?.auditReport?.signature?.importVerifiedAt).toBeUndefined();
   });
 
-  test("attaches audit evidence summary metadata to research run export packages", async () => {
+  test("attaches audit evidence summary metadata and strategy experiment evidence to export artifacts", async () => {
     const exportPackage = {
       kind: "aiqt.researchRun.export",
       packageVersion: 1,
@@ -15238,6 +15240,77 @@ describe("terminal workspace API client", () => {
         }
       })
     ).toBeNull();
+
+    const experiment = sampleStrategyExperimentDetail();
+    const experimentRun: ResearchRunAudit = {
+      runId: experiment.sourceRunId,
+      createdAt: experiment.createdAt,
+      market: experiment.market,
+      symbol: experiment.symbol,
+      timeframe: experiment.timeframe,
+      strategyName: experiment.definition.baseStrategy.name,
+      strategyRevision: experiment.strategyRevision,
+      dataRows: experiment.snapshot.rows,
+      metrics: { total_return_pct: 4.2, max_drawdown_pct: 3.1, win_rate_pct: 62.5, trade_count: 8 },
+      decisions: [],
+      executionMode: "paper_only",
+      strategyConfig: experiment.definition.baseStrategy,
+      dataSnapshot: {
+        hashVersion: "aiqt-data-v2",
+        source: "unit-test",
+        isComplete: true,
+        warnings: [],
+        rows: experiment.snapshot.rows,
+        start: experiment.snapshot.startAt,
+        end: experiment.snapshot.endAt,
+        hash: experiment.snapshot.canonicalDataHash,
+        bars: experiment.snapshot.bars
+      }
+    };
+    const experimentExportPackage = {
+      ...exportPackage,
+      researchRun: experimentRun
+    } satisfies ResearchRunExportPackage;
+    const experimentArtifactPackage = await withResearchRunExportAuditEvidenceArtifacts(
+      experimentExportPackage,
+      summary,
+      "2026-07-10T09:00:00+00:00",
+      [],
+      experiment
+    );
+    const experimentMarkdown = experimentArtifactPackage.backtestReport?.contentMarkdown;
+
+    [
+      experiment.experimentId,
+      experiment.definitionHash,
+      experiment.resultHash,
+      experiment.selectedCandidateId,
+      experiment.holdoutStatus
+    ].forEach((value) => expect(experimentMarkdown).toContain(value));
+    const missingArtifactPackage = await withResearchRunExportAuditEvidenceArtifacts(
+      experimentExportPackage,
+      summary,
+      "2026-07-10T09:00:00+00:00"
+    );
+    expect(missingArtifactPackage.backtestReport?.contentMarkdown).toContain(
+      "Persisted strategy experiment required."
+    );
+    expect(missingArtifactPackage.backtestReport?.contentMarkdown).not.toContain("Candidate return");
+
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), experimentRun);
+    const auditEvent = await buildBacktestReportAuditEvent({
+      generatedAt: "2026-07-10T09:00:00+00:00",
+      markdown: buildBacktestReportMarkdown(workspace, [], experiment) ?? "",
+      workspace,
+      experiment
+    });
+    expect(auditEvent?.metadata).toMatchObject({
+      strategyExperimentId: experiment.experimentId,
+      strategyExperimentDefinitionHash: experiment.definitionHash,
+      strategyExperimentResultHash: experiment.resultHash,
+      strategyExperimentSelectedCandidateId: experiment.selectedCandidateId,
+      strategyExperimentHoldoutStatus: experiment.holdoutStatus
+    });
   });
 
   test("builds a ledger audit event when an audit evidence report is generated", async () => {

@@ -108,8 +108,6 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildBacktestEvidenceCards,
-  buildBacktestParameterScanRows,
-  buildBacktestParameterScanSummary,
   buildBacktestReport,
   buildBacktestReportMarkdown,
   buildBacktestCrossSymbolComparisonRows,
@@ -324,7 +322,6 @@ import {
   visiblePanels,
   workspaceWithAiAction,
   workspaceWithBacktestAssumption,
-  workspaceWithBacktestParameterCandidate,
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
   workspaceWithSavedWatchlist,
@@ -1397,6 +1394,66 @@ describe("terminal workbench model", () => {
       })
     ).toBeNull();
     expect(buildStrategyExperimentEvidenceSummary(workspace, { ...experiment, status: "failed" })).toBeNull();
+  });
+
+  test("cites matching persisted strategy experiment evidence in backtest and AI artifacts", () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+    const expectedEvidence = [
+      "experiment-1",
+      "definition-hash-1",
+      "result-hash-1",
+      "candidate-a",
+      "consumed"
+    ];
+
+    const backtestMarkdown = buildBacktestReportMarkdown(workspace, [], experiment);
+    const aiMarkdown = buildAiReviewReportMarkdown(workspace, experiment);
+    const dossier = buildAiReviewDossier(workspace, experiment);
+    const record = buildAiReviewRunRecord(workspace, experiment);
+    const citation = dossier.citations.find((item) => item.id === "parameter-scan");
+
+    expectedEvidence.forEach((value) => {
+      expect(backtestMarkdown).toContain(value);
+      expect(aiMarkdown).toContain(value);
+      expect(JSON.stringify(record)).toContain(value);
+    });
+    expect(citation).toEqual({
+      id: "parameter-scan",
+      label: "Persisted strategy experiment",
+      value: "experiment-1",
+      detail:
+        "Definition definition-hash-1 · Result result-hash-1 · Selected candidate candidate-a (9e41df242ce5) · Holdout consumed.",
+      tone: "positive"
+    });
+    expect(record?.summary.parameterScanBound).toBe(true);
+  });
+
+  test("requires a matching persisted strategy experiment without synthetic candidate metrics", () => {
+    const experiment = strategyExperimentFixture();
+    const workspace = workspaceForStrategyExperiment(experiment);
+    const mismatchedExperiment = { ...experiment, sourceRunId: "other-run" };
+
+    [
+      buildBacktestReportMarkdown(workspace),
+      buildBacktestReportMarkdown(workspace, [], mismatchedExperiment),
+      buildAiReviewReportMarkdown(workspace),
+      buildAiReviewReportMarkdown(workspace, mismatchedExperiment)
+    ].forEach((markdown) => {
+      expect(markdown).toContain("Persisted strategy experiment required.");
+      expect(markdown).not.toContain("Candidate return");
+      expect(markdown).not.toContain("Candidate max drawdown");
+      expect(markdown).not.toContain("Parameter Sensitivity");
+    });
+
+    [buildAiReviewDossier(workspace), buildAiReviewDossier(workspace, mismatchedExperiment)].forEach((dossier) => {
+      expect(dossier.citations.find((item) => item.id === "parameter-scan")).toMatchObject({
+        label: "Persisted strategy experiment",
+        value: "Persisted strategy experiment required."
+      });
+    });
+    expect(buildAiReviewRunRecord(workspace)?.summary.parameterScanBound).toBe(false);
+    expect(buildAiReviewRunRecord(workspace, mismatchedExperiment)?.summary.parameterScanBound).toBe(false);
   });
 
   test("rejects broken v2 strategy experiment snapshot chains", () => {
@@ -9183,10 +9240,10 @@ describe("terminal workbench model", () => {
         },
         {
           id: "parameter-scan",
-          label: "Parameter scan",
-          value: expect.stringMatching(/candidate for re-audit|No candidate cleared for re-audit/u),
-          detail: expect.stringContaining("not investment advice"),
-          tone: expect.stringMatching(/positive|warning|neutral|risk/u)
+          label: "Persisted strategy experiment",
+          value: "Persisted strategy experiment required.",
+          detail: "Persisted strategy experiment required.",
+          tone: "warning"
         },
         {
           id: "strategy",
@@ -9284,9 +9341,9 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("Run ID: `run-ai-report-md`");
     expect(markdown).toContain("Strategy revision: `rev-ai-report-md`");
     expect(markdown).toContain("| Benchmark alpha | +3.20pp |");
-    expect(markdown).toContain("## Parameter Scan Summary");
-    expect(markdown).toContain("| Candidate for re-audit |");
-    expect(markdown).toContain("Candidate must be re-audited; no investment advice.");
+    expect(markdown).toContain("## Persisted Strategy Experiment");
+    expect(markdown).toContain("Persisted strategy experiment required.");
+    expect(markdown).not.toContain("Candidate return");
     expect(markdown).toContain("| Technical Analyst | support | 64% | Trend improved after the audit run. |");
     expect(markdown).toContain("| Risk Manager | risk | 82% | Keep paper-only gates closed for live routing. |");
     expect(markdown).toContain("关注银行板块相对强度");
@@ -9385,7 +9442,7 @@ describe("terminal workbench model", () => {
         citationCount: expect.any(Number),
         roundCount: 5,
         decisionCount: 2,
-        parameterScanBound: true,
+        parameterScanBound: false,
         liveExecutionBlocked: true
       },
       boundary: "Evidence explanation only; no buy/sell instructions or guaranteed returns."
@@ -30630,628 +30687,6 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("builds parameter scan rows from the audited data snapshot", () => {
-    const workspace = workspaceFromResearchRunAudit(
-      {
-        ...buildTerminalWorkspace(),
-        strategy: {
-          name: "Short SMA audit",
-          entry: "Close > SMA3",
-          exit: "Close < SMA3",
-          position: "20% max capital allocation",
-          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
-        }
-      },
-      {
-        runId: "run-parameter-scan",
-        createdAt: "2026-05-28T08:00:00+00:00",
-        market: "ashare",
-        symbol: "600000",
-        timeframe: "1d",
-        strategyName: "Short SMA audit",
-        strategyRevision: "rev-parameter-scan",
-        dataRows: 10,
-        metrics: {
-          total_return_pct: 4,
-          max_drawdown_pct: 2,
-          win_rate_pct: 50,
-          trade_count: 4
-        },
-        decisions: [],
-        executionMode: "paper_only",
-        strategyConfig: {
-          name: "Short SMA audit",
-          revision: "rev-parameter-scan",
-          market: "ashare",
-          symbols: ["600000"],
-          timeframe: "1d",
-          version: 1,
-          entryConditions: [{ kind: "close_above_sma", params: { window: 3 } }],
-          exitConditions: [{ kind: "close_below_sma", params: { window: 3 } }],
-          risk: {
-            positionPct: 0.2,
-            stopLossPct: 0.08,
-            takeProfitPct: 0.18,
-            maxDrawdownPct: 0.12
-          }
-        },
-        dataSnapshot: {
-          source: "unit-test",
-          isComplete: true,
-          warnings: [],
-          rows: 10,
-          start: "2026-05-01T00:00:00+00:00",
-          end: "2026-05-10T00:00:00+00:00",
-          hash: "snapshot-parameter-scan",
-          bars: [10, 11, 12, 11, 13, 14, 13, 15, 16, 17].map((close, index) => ({
-            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
-            timestampMs: 1777593600000 + index * 86_400_000,
-            open: close - 0.2,
-            high: close + 0.4,
-            low: close - 0.5,
-            close,
-            volume: 1_000_000 + index * 10_000
-          }))
-        }
-      }
-    );
-
-    const rows = buildBacktestParameterScanRows(workspace);
-
-    expect(rows).toHaveLength(9);
-    expect(rows.map((row) => `${row.entryWindow}/${row.exitWindow}`)).toEqual([
-      "1/1",
-      "1/3",
-      "1/8",
-      "3/1",
-      "3/3",
-      "3/8",
-      "8/1",
-      "8/3",
-      "8/8"
-    ]);
-    expect(rows.find((row) => row.status === "current")).toMatchObject({
-      id: "scan-entry-3-exit-3",
-      entryWindow: 3,
-      exitWindow: 3,
-      condition: "SMA3 / SMA3",
-      dataRows: 10,
-      runId: "run-parameter-scan",
-      alphaVsCurrent: expect.stringMatching(/pp$/u)
-    });
-    expect(rows.every((row) => row.source === "snapshot-parameter-scan")).toBe(true);
-  });
-
-  test("summarizes parameter scan rows without turning them into advice", () => {
-    const workspace = workspaceFromResearchRunAudit(
-      {
-        ...buildTerminalWorkspace(),
-        strategy: {
-          name: "Short SMA audit",
-          entry: "Close > SMA3",
-          exit: "Close < SMA3",
-          position: "20% max capital allocation",
-          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
-        }
-      },
-      {
-        runId: "run-parameter-summary",
-        createdAt: "2026-05-28T08:00:00+00:00",
-        market: "ashare",
-        symbol: "600000",
-        timeframe: "1d",
-        strategyName: "Short SMA audit",
-        strategyRevision: "rev-parameter-summary",
-        dataRows: 10,
-        metrics: {
-          total_return_pct: 4,
-          max_drawdown_pct: 2,
-          win_rate_pct: 50,
-          trade_count: 4
-        },
-        decisions: [],
-        executionMode: "paper_only",
-        strategyConfig: {
-          name: "Short SMA audit",
-          revision: "rev-parameter-summary",
-          market: "ashare",
-          symbols: ["600000"],
-          timeframe: "1d",
-          version: 1,
-          entryConditions: [{ kind: "close_above_sma", params: { window: 3 } }],
-          exitConditions: [{ kind: "close_below_sma", params: { window: 3 } }],
-          risk: {
-            positionPct: 0.2,
-            stopLossPct: 0.08,
-            takeProfitPct: 0.18,
-            maxDrawdownPct: 0.12
-          }
-        },
-        dataSnapshot: {
-          source: "unit-test",
-          isComplete: true,
-          warnings: [],
-          rows: 10,
-          start: "2026-05-01T00:00:00+00:00",
-          end: "2026-05-10T00:00:00+00:00",
-          hash: "snapshot-parameter-summary",
-          bars: [10, 11, 12, 11, 13, 14, 13, 15, 16, 17].map((close, index) => ({
-            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
-            timestampMs: 1777593600000 + index * 86_400_000,
-            open: close - 0.2,
-            high: close + 0.4,
-            low: close - 0.5,
-            close,
-            volume: 1_000_000 + index * 10_000
-          }))
-        }
-      }
-    );
-
-    const summary = buildBacktestParameterScanSummary(workspace);
-
-    expect(summary).toMatchObject({
-      totalRows: 9,
-      candidateCount: 8,
-      currentCondition: "SMA3 / SMA3",
-      currentRank: expect.any(Number),
-      bestCandidateId: expect.stringMatching(/^scan-entry-/u),
-      bestCandidateCondition: expect.any(String),
-      bestCandidateReturnPct: expect.stringMatching(/%$/u),
-      bestCandidateMaxDrawdownPct: expect.stringMatching(/%$/u),
-      bestCandidateDelta: expect.stringMatching(/pp$/u),
-      riskCount: expect.any(Number),
-      positiveCount: expect.any(Number),
-      tone: expect.stringMatching(/positive|warning|neutral|risk/u)
-    });
-    expect(summary?.bestCandidateId).not.toBe("scan-entry-3-exit-3");
-    expect(summary?.detail.toLowerCase()).toContain("re-audit");
-    expect(summary?.detail.toLowerCase()).not.toContain("buy");
-  });
-
-  test("does not summarize parameter scans without audited rows", () => {
-    expect(buildBacktestParameterScanSummary(buildTerminalWorkspace())).toBeNull();
-  });
-
-  test("builds parameter scan rows for RSI confirmation thresholds", () => {
-    const workspace = workspaceFromResearchRunAudit(
-      {
-        ...buildTerminalWorkspace(),
-        strategy: {
-          name: "RSI confirmed SMA audit",
-          entry: "Close > SMA3 AND RSI14 > 55",
-          exit: "Close < SMA3",
-          position: "20% max capital allocation",
-          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
-        }
-      },
-      {
-        runId: "run-rsi-parameter-scan",
-        createdAt: "2026-05-28T08:00:00+00:00",
-        market: "ashare",
-        symbol: "600000",
-        timeframe: "1d",
-        strategyName: "RSI confirmed SMA audit",
-        strategyRevision: "rev-rsi-parameter-scan",
-        dataRows: 20,
-        metrics: {
-          total_return_pct: 4,
-          max_drawdown_pct: 2,
-          win_rate_pct: 50,
-          trade_count: 4
-        },
-        decisions: [],
-        executionMode: "paper_only",
-        strategyConfig: {
-          name: "RSI confirmed SMA audit",
-          revision: "rev-rsi-parameter-scan",
-          market: "ashare",
-          symbols: ["600000"],
-          timeframe: "1d",
-          version: 1,
-          entryConditions: [
-            { kind: "close_above_sma", params: { window: 3 } },
-            { kind: "rsi_above", params: { window: 14, threshold: 55 } }
-          ],
-          exitConditions: [{ kind: "close_below_sma", params: { window: 3 } }],
-          risk: {
-            positionPct: 0.2,
-            stopLossPct: 0.08,
-            takeProfitPct: 0.18,
-            maxDrawdownPct: 0.12
-          }
-        },
-        dataSnapshot: {
-          source: "unit-test",
-          isComplete: true,
-          warnings: [],
-          rows: 20,
-          start: "2026-05-01T00:00:00+00:00",
-          end: "2026-05-20T00:00:00+00:00",
-          hash: "snapshot-rsi-parameter-scan",
-          bars: [
-            10, 11, 12, 11, 13, 14, 13, 15, 16, 17, 16, 18, 19, 18, 20, 21, 20, 22, 23, 24
-          ].map((close, index) => ({
-            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
-            timestampMs: 1777593600000 + index * 86_400_000,
-            open: close - 0.2,
-            high: close + 0.4,
-            low: close - 0.5,
-            close,
-            volume: 1_000_000 + index * 10_000
-          }))
-        }
-      }
-    );
-
-    const rows = buildBacktestParameterScanRows(workspace);
-
-    expect(rows).toHaveLength(27);
-    expect(Array.from(new Set(rows.map((row) => row.entryRsiThreshold)))).toEqual([50, 55, 60]);
-    expect(rows.find((row) => row.status === "current")).toMatchObject({
-      id: "scan-entry-3-exit-3-rsi-55",
-      entryWindow: 3,
-      exitWindow: 3,
-      entryRsiThreshold: 55,
-      condition: "SMA3 / SMA3 / RSI>55",
-      dataRows: 20,
-      runId: "run-rsi-parameter-scan"
-    });
-  });
-
-  test("builds parameter scan rows for volume confirmation windows", () => {
-    const workspace = workspaceFromResearchRunAudit(
-      {
-        ...buildTerminalWorkspace(),
-        strategy: {
-          name: "Volume confirmed SMA audit",
-          entry: "Close > SMA5 AND Volume > VOL10",
-          exit: "Close < SMA5",
-          position: "20% max capital allocation",
-          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
-        }
-      },
-      {
-        runId: "run-volume-parameter-scan",
-        createdAt: "2026-05-28T08:00:00+00:00",
-        market: "ashare",
-        symbol: "600000",
-        timeframe: "1d",
-        strategyName: "Volume confirmed SMA audit",
-        strategyRevision: "rev-volume-parameter-scan",
-        dataRows: 20,
-        metrics: {
-          total_return_pct: 4,
-          max_drawdown_pct: 2,
-          win_rate_pct: 50,
-          trade_count: 4
-        },
-        decisions: [],
-        executionMode: "paper_only",
-        strategyConfig: {
-          name: "Volume confirmed SMA audit",
-          revision: "rev-volume-parameter-scan",
-          market: "ashare",
-          symbols: ["600000"],
-          timeframe: "1d",
-          version: 1,
-          entryConditions: [
-            { kind: "close_above_sma", params: { window: 5 } },
-            { kind: "volume_above_sma", params: { window: 10 } }
-          ],
-          exitConditions: [{ kind: "close_below_sma", params: { window: 5 } }],
-          risk: {
-            positionPct: 0.2,
-            stopLossPct: 0.08,
-            takeProfitPct: 0.18,
-            maxDrawdownPct: 0.12
-          }
-        },
-        dataSnapshot: {
-          source: "unit-test",
-          isComplete: true,
-          warnings: [],
-          rows: 20,
-          start: "2026-05-01T00:00:00+00:00",
-          end: "2026-05-20T00:00:00+00:00",
-          hash: "snapshot-volume-parameter-scan",
-          bars: [
-            10, 11, 12, 11, 13, 14, 13, 15, 16, 17, 16, 18, 19, 18, 20, 21, 20, 22, 23, 24
-          ].map((close, index) => ({
-            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
-            timestampMs: 1777593600000 + index * 86_400_000,
-            open: close - 0.2,
-            high: close + 0.4,
-            low: close - 0.5,
-            close,
-            volume: 1_000_000 + (index % 5) * 80_000 + index * 10_000
-          }))
-        }
-      }
-    );
-
-    const rows = buildBacktestParameterScanRows(workspace);
-
-    expect(rows).toHaveLength(27);
-    expect(Array.from(new Set(rows.map((row) => row.entryVolumeWindow)))).toEqual([5, 10, 15]);
-    expect(rows.find((row) => row.status === "current")).toMatchObject({
-      id: "scan-entry-5-exit-5-vol-10",
-      entryWindow: 5,
-      exitWindow: 5,
-      entryVolumeWindow: 10,
-      condition: "SMA5 / SMA5 / VOL10",
-      dataRows: 20,
-      runId: "run-volume-parameter-scan"
-    });
-  });
-
-  test("does not build parameter scan rows without an audited data snapshot", () => {
-    expect(buildBacktestParameterScanRows(buildTerminalWorkspace())).toEqual([]);
-  });
-
-  test("stages a parameter scan candidate as a fresh strategy draft", () => {
-    const workspace = workspaceFromResearchRunAudit(
-      {
-        ...buildTerminalWorkspace(),
-        strategy: {
-          name: "Short SMA audit",
-          entry: "Close > SMA3",
-          exit: "Close < SMA3",
-          position: "20% max capital allocation",
-          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
-        }
-      },
-      {
-        runId: "run-stage-parameter",
-        createdAt: "2026-05-28T08:00:00+00:00",
-        market: "ashare",
-        symbol: "600000",
-        timeframe: "1d",
-        strategyName: "Short SMA audit",
-        strategyRevision: "rev-stage-parameter",
-        dataRows: 10,
-        metrics: {
-          total_return_pct: 4,
-          max_drawdown_pct: 2,
-          win_rate_pct: 50,
-          trade_count: 4
-        },
-        decisions: [],
-        executionMode: "paper_only",
-        strategyConfig: {
-          name: "Short SMA audit",
-          revision: "rev-stage-parameter",
-          market: "ashare",
-          symbols: ["600000"],
-          timeframe: "1d",
-          version: 1,
-          entryConditions: [{ kind: "close_above_sma", params: { window: 3 } }],
-          exitConditions: [{ kind: "close_below_sma", params: { window: 3 } }],
-          risk: {
-            positionPct: 0.2,
-            stopLossPct: 0.08,
-            takeProfitPct: 0.18,
-            maxDrawdownPct: 0.12
-          }
-        },
-        dataSnapshot: {
-          source: "unit-test",
-          isComplete: true,
-          warnings: [],
-          rows: 10,
-          start: "2026-05-01T00:00:00+00:00",
-          end: "2026-05-10T00:00:00+00:00",
-          hash: "snapshot-stage-parameter",
-          bars: [10, 11, 12, 11, 13, 14, 13, 15, 16, 17].map((close, index) => ({
-            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
-            timestampMs: 1777593600000 + index * 86_400_000,
-            open: close - 0.2,
-            high: close + 0.4,
-            low: close - 0.5,
-            close,
-            volume: 1_000_000 + index * 10_000
-          }))
-        }
-      }
-    );
-
-    const staged = workspaceWithBacktestParameterCandidate(workspace, "scan-entry-1-exit-1");
-
-    expect(staged.strategy).toMatchObject({
-      entry: "Close > SMA1",
-      exit: "Close < SMA1",
-      position: "20% max capital allocation"
-    });
-    expect(staged.researchRun).toBeNull();
-    expect(quantLoopStatuses(staged)).toMatchObject({
-      strategy: "active",
-      backtest: "ready",
-      "agent-review": "ready",
-      paper: "locked"
-    });
-    expect(staged.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
-    expect(staged.backtestTrades).toEqual([]);
-    expect(staged.decisionLog[0]).toMatchObject({
-      agent: "Backtest Lab",
-      tone: "warning",
-      message: "Parameter candidate SMA1 / SMA1 staged from run run-stage-parameter. Run Pipeline to generate a fresh audited backtest."
-    });
-  });
-
-  test("stages an RSI threshold parameter candidate as a fresh strategy draft", () => {
-    const workspace = workspaceFromResearchRunAudit(
-      {
-        ...buildTerminalWorkspace(),
-        strategy: {
-          name: "RSI confirmed SMA audit",
-          entry: "Close > SMA3 AND RSI14 > 55",
-          exit: "Close < SMA3",
-          position: "20% max capital allocation",
-          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
-        }
-      },
-      {
-        runId: "run-stage-rsi-parameter",
-        createdAt: "2026-05-28T08:00:00+00:00",
-        market: "ashare",
-        symbol: "600000",
-        timeframe: "1d",
-        strategyName: "RSI confirmed SMA audit",
-        strategyRevision: "rev-stage-rsi-parameter",
-        dataRows: 20,
-        metrics: {
-          total_return_pct: 4,
-          max_drawdown_pct: 2,
-          win_rate_pct: 50,
-          trade_count: 4
-        },
-        decisions: [],
-        executionMode: "paper_only",
-        strategyConfig: {
-          name: "RSI confirmed SMA audit",
-          revision: "rev-stage-rsi-parameter",
-          market: "ashare",
-          symbols: ["600000"],
-          timeframe: "1d",
-          version: 1,
-          entryConditions: [
-            { kind: "close_above_sma", params: { window: 3 } },
-            { kind: "rsi_above", params: { window: 14, threshold: 55 } }
-          ],
-          exitConditions: [{ kind: "close_below_sma", params: { window: 3 } }],
-          risk: {
-            positionPct: 0.2,
-            stopLossPct: 0.08,
-            takeProfitPct: 0.18,
-            maxDrawdownPct: 0.12
-          }
-        },
-        dataSnapshot: {
-          source: "unit-test",
-          isComplete: true,
-          warnings: [],
-          rows: 20,
-          start: "2026-05-01T00:00:00+00:00",
-          end: "2026-05-20T00:00:00+00:00",
-          hash: "snapshot-stage-rsi-parameter",
-          bars: [
-            10, 11, 12, 11, 13, 14, 13, 15, 16, 17, 16, 18, 19, 18, 20, 21, 20, 22, 23, 24
-          ].map((close, index) => ({
-            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
-            timestampMs: 1777593600000 + index * 86_400_000,
-            open: close - 0.2,
-            high: close + 0.4,
-            low: close - 0.5,
-            close,
-            volume: 1_000_000 + index * 10_000
-          }))
-        }
-      }
-    );
-
-    const staged = workspaceWithBacktestParameterCandidate(workspace, "scan-entry-1-exit-1-rsi-50");
-
-    expect(staged.strategy).toMatchObject({
-      entry: "Close > SMA1 AND RSI14 > 50",
-      exit: "Close < SMA1",
-      position: "20% max capital allocation"
-    });
-    expect(staged.researchRun).toBeNull();
-    expect(staged.decisionLog[0]).toMatchObject({
-      agent: "Backtest Lab",
-      tone: "warning",
-      message:
-        "Parameter candidate SMA1 / SMA1 / RSI>50 staged from run run-stage-rsi-parameter. Run Pipeline to generate a fresh audited backtest."
-    });
-  });
-
-  test("stages a volume window parameter candidate as a fresh strategy draft", () => {
-    const workspace = workspaceFromResearchRunAudit(
-      {
-        ...buildTerminalWorkspace(),
-        strategy: {
-          name: "Volume confirmed SMA audit",
-          entry: "Close > SMA5 AND Volume > VOL10",
-          exit: "Close < SMA5",
-          position: "20% max capital allocation",
-          risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
-        }
-      },
-      {
-        runId: "run-stage-volume-parameter",
-        createdAt: "2026-05-28T08:00:00+00:00",
-        market: "ashare",
-        symbol: "600000",
-        timeframe: "1d",
-        strategyName: "Volume confirmed SMA audit",
-        strategyRevision: "rev-stage-volume-parameter",
-        dataRows: 20,
-        metrics: {
-          total_return_pct: 4,
-          max_drawdown_pct: 2,
-          win_rate_pct: 50,
-          trade_count: 4
-        },
-        decisions: [],
-        executionMode: "paper_only",
-        strategyConfig: {
-          name: "Volume confirmed SMA audit",
-          revision: "rev-stage-volume-parameter",
-          market: "ashare",
-          symbols: ["600000"],
-          timeframe: "1d",
-          version: 1,
-          entryConditions: [
-            { kind: "close_above_sma", params: { window: 5 } },
-            { kind: "volume_above_sma", params: { window: 10 } }
-          ],
-          exitConditions: [{ kind: "close_below_sma", params: { window: 5 } }],
-          risk: {
-            positionPct: 0.2,
-            stopLossPct: 0.08,
-            takeProfitPct: 0.18,
-            maxDrawdownPct: 0.12
-          }
-        },
-        dataSnapshot: {
-          source: "unit-test",
-          isComplete: true,
-          warnings: [],
-          rows: 20,
-          start: "2026-05-01T00:00:00+00:00",
-          end: "2026-05-20T00:00:00+00:00",
-          hash: "snapshot-stage-volume-parameter",
-          bars: [
-            10, 11, 12, 11, 13, 14, 13, 15, 16, 17, 16, 18, 19, 18, 20, 21, 20, 22, 23, 24
-          ].map((close, index) => ({
-            timestamp: `2026-05-${String(index + 1).padStart(2, "0")}T00:00:00+00:00`,
-            timestampMs: 1777593600000 + index * 86_400_000,
-            open: close - 0.2,
-            high: close + 0.4,
-            low: close - 0.5,
-            close,
-            volume: 1_000_000 + (index % 5) * 80_000 + index * 10_000
-          }))
-        }
-      }
-    );
-
-    const staged = workspaceWithBacktestParameterCandidate(workspace, "scan-entry-1-exit-1-vol-5");
-
-    expect(staged.strategy).toMatchObject({
-      entry: "Close > SMA1 AND Volume > VOL5",
-      exit: "Close < SMA1",
-      position: "20% max capital allocation"
-    });
-    expect(staged.researchRun).toBeNull();
-    expect(staged.decisionLog[0]).toMatchObject({
-      agent: "Backtest Lab",
-      tone: "warning",
-      message:
-        "Parameter candidate SMA1 / SMA1 / VOL5 staged from run run-stage-volume-parameter. Run Pipeline to generate a fresh audited backtest."
-    });
-  });
-
   test("builds a portable markdown report from audited backtest evidence", () => {
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-report-md",
@@ -31357,9 +30792,9 @@ describe("terminal workbench model", () => {
     );
     expect(markdown).toContain("AI Evidence Boundary");
     expect(markdown).toContain("No investment advice");
-    expect(markdown).toContain("Parameter Sensitivity");
-    expect(markdown).toContain("| Condition | Return | Max drawdown | Trades | Delta | Status |");
-    expect(markdown).toContain("Parameter Scan Summary");
+    expect(markdown).toContain("Persisted Strategy Experiment");
+    expect(markdown).toContain("Persisted strategy experiment required.");
+    expect(markdown).not.toContain("Candidate return");
     expect(markdown).toContain("No investment advice");
     expect(markdown).toContain("关注银行板块相对强度");
     expect(markdown).toContain("| BUY | filled | 9.20 | 2100 | +8.20% |");
