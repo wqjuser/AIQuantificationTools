@@ -962,6 +962,11 @@ def validate_stage3_ai_review_manifest(manifest: Any) -> str:
         _stage3_hash(decision["recordHash"], "Decision recordHash")
         decision_ids.add(decision_id)
         predecessor = decision_id
+    if [decision["status"] for decision in decisions] != [
+        "accepted_for_research",
+        "revision_requested",
+    ]:
+        raise RuntimeError("Invalid Stage 3 AI review manifest: Decision status sequence is invalid")
 
     counts = payload["artifactCounts"]
     if (

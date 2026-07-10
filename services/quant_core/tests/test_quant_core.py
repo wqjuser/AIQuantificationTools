@@ -4308,6 +4308,13 @@ class QuantCoreContractTest(unittest.TestCase):
             "broken chain": lambda value: value["decisions"][1].update({"supersedesDecisionId": None}),
             "bad Decision id": lambda value: value["decisions"][0].update({"decisionId": "decision-1"}),
             "bad Decision status": lambda value: value["decisions"][0].update({"status": "approved"}),
+            "rejected then accepted": lambda value: (
+                value["decisions"][0].update({"status": "rejected"}),
+                value["decisions"][1].update({"status": "accepted_for_research"}),
+            ),
+            "accepted twice": lambda value: value["decisions"][1].update(
+                {"status": "accepted_for_research"}
+            ),
             "Decision extra field": lambda value: value["decisions"][0].update({"renderedPrompt": "no"}),
             "counts extra field": lambda value: value["artifactCounts"].update({"aiReviewRuns": 0}),
             "live enabled": lambda value: value.update({"liveTradingAllowed": True}),
