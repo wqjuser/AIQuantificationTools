@@ -518,10 +518,12 @@ class StrategyExperimentStoreTests(unittest.TestCase):
         snapshot = experiment_snapshot()
 
         first = self.store.put_snapshot(snapshot)
-        second = self.store.put_snapshot(snapshot)
+        second = self.store.put_snapshot(
+            replace(snapshot, created_at=snapshot.created_at + timedelta(hours=1))
+        )
 
         self.assertEqual(first, snapshot)
-        self.assertEqual(second.snapshot_id, first.snapshot_id)
+        self.assertEqual(second, first)
         with sqlite3.connect(self.database_path) as connection:
             count = connection.execute(
                 "select count(*) from strategy_experiment_snapshots"
@@ -532,7 +534,6 @@ class StrategyExperimentStoreTests(unittest.TestCase):
         snapshot = experiment_snapshot()
         self.store.put_snapshot(snapshot)
         mismatches = {
-            "created_at": snapshot.created_at + timedelta(seconds=1),
             "market": "crypto",
             "symbol": "000001",
             "timeframe": "1h",
@@ -1318,6 +1319,24 @@ class StrategyExperimentRunnerTests(unittest.TestCase):
             RecordingBacktestEngine.calls = []
             with self.assertRaises(StrategyExperimentError) as raised:
                 self.runner.run_new(second)
+
+        self.assertEqual((raised.exception.status, raised.exception.error), (409, "test_holdout_consumed"))
+        self.assertEqual(RecordingBacktestEngine.calls, [])
+
+    def test_same_snapshot_from_a_later_source_run_reaches_the_holdout_guard(self):
+        later_run = replace(
+            runner_audit("runner-run-later", self.strategy),
+            created_at=datetime(2026, 7, 10, 1, tzinfo=timezone.utc),
+        )
+        self.run_store.record(later_run)
+
+        with patch("quant_core.strategy_experiments.BacktestEngine", RecordingBacktestEngine):
+            self.runner.run_new(runner_payload(self.strategy, values=(3,)))
+            RecordingBacktestEngine.calls = []
+            with self.assertRaises(StrategyExperimentError) as raised:
+                self.runner.run_new(
+                    runner_payload(self.strategy, run_id=later_run.run_id, values=(3,))
+                )
 
         self.assertEqual((raised.exception.status, raised.exception.error), (409, "test_holdout_consumed"))
         self.assertEqual(RecordingBacktestEngine.calls, [])

@@ -172,7 +172,7 @@ class StrategyExperimentStore:
                 (snapshot.snapshot_id,),
             ).fetchone()
             if existing is not None:
-                if tuple(existing[:10]) != immutable:
+                if tuple(existing[:1] + existing[2:10]) != immutable[:1] + immutable[2:]:
                     raise ValueError("strategy_experiment_conflict")
                 connection.commit()
                 return _row_to_snapshot(existing)
