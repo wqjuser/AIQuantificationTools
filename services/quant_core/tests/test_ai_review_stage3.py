@@ -1116,10 +1116,10 @@ class AiReviewProviderContractTests(unittest.TestCase):
         environment = {
             "OPENAI_API_KEY": "fake-openai-key",
             "OPENAI_MODEL": "gpt-test",
-            "OPENAI_COMPATIBLE_BASE_URL": "https://user:password@example.test:8443/v1",
+            "OPENAI_COMPATIBLE_BASE_URL": "https://example.test:8443/v1",
             "OPENAI_COMPATIBLE_API_KEY": "fake-compatible-key",
             "OPENAI_COMPATIBLE_MODEL": "compatible-test",
-            "OLLAMA_BASE_URL": "http://user:password@127.0.0.1:11434/root",
+            "OLLAMA_BASE_URL": "http://127.0.0.1:11434/root",
             "OLLAMA_MODEL": "ollama-test",
             "UNRELATED_PROVIDER_SECRET": "must-not-be-read",
         }
@@ -1164,12 +1164,24 @@ class AiReviewProviderContractTests(unittest.TestCase):
             ("openai-compatible", "https://example.test/prefix?token=secret"),
             ("openai-compatible", "https://example.test/prefix#fragment"),
             ("openai-compatible", "https://example.test/prefix/chat/completions"),
+            ("openai-compatible", "https://user:password@example.test/prefix"),
+            ("openai-compatible", "https://example.test/bad path"),
+            ("openai-compatible", "https://example.test/bad\npath"),
+            ("openai-compatible", "https://example.test/路径"),
+            ("openai-compatible", "https://example.test/bad%GGpath"),
+            ("openai-compatible", "https://example.test/bad%2"),
             ("ollama", "file://example.test/prefix"),
             ("ollama", "http://bad host/prefix"),
             ("ollama", "http://example.test:bad/prefix"),
             ("ollama", "http://example.test/prefix?token=secret"),
             ("ollama", "http://example.test/prefix#fragment"),
             ("ollama", "http://example.test/prefix/api/chat"),
+            ("ollama", "http://user:password@example.test/prefix"),
+            ("ollama", "http://example.test/bad path"),
+            ("ollama", "http://example.test/bad\npath"),
+            ("ollama", "http://example.test/路径"),
+            ("ollama", "http://example.test/bad%GGpath"),
+            ("ollama", "http://example.test/bad%2"),
         )
         for provider_id, base_url in invalid_cases:
             with self.subTest(provider=provider_id, base_url=base_url):
@@ -1215,6 +1227,40 @@ class AiReviewProviderContractTests(unittest.TestCase):
             registry.get("openai-compatible"),
             OpenAiCompatibleProvider,
         )
+
+    def test_provider_readiness_accepts_percent_encoded_paths(self) -> None:
+        cases = (
+            (
+                "openai-compatible",
+                "https://example.test/api%20v1",
+                {
+                    "OPENAI_COMPATIBLE_BASE_URL": "https://example.test/api%20v1",
+                    "OPENAI_COMPATIBLE_API_KEY": "fake-compatible-key",
+                    "OPENAI_COMPATIBLE_MODEL": "compatible-test",
+                },
+            ),
+            (
+                "ollama",
+                "http://example.test/api%20v1",
+                {
+                    "OLLAMA_BASE_URL": "http://example.test/api%20v1",
+                    "OLLAMA_MODEL": "ollama-test",
+                },
+            ),
+        )
+        for provider_id, expected_url, environment in cases:
+            with self.subTest(provider=provider_id):
+                with patch.dict(os.environ, environment, clear=True):
+                    registry = AiReviewProviderRegistry.from_environment()
+
+                status = next(
+                    item
+                    for item in registry.statuses()
+                    if item.provider_id == provider_id
+                )
+                self.assertTrue(status.configured)
+                self.assertEqual(status.sanitized_base_url, expected_url)
+                self.assertIsNotNone(registry.get(provider_id))
 
     def test_adapter_repr_never_exposes_raw_base_url(self) -> None:
         compatible_url = (
@@ -1328,8 +1374,10 @@ class AiReviewProviderContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(attempt.provider_id, "openai-compatible")
+        self.assertEqual(attempt.model, "compatible-test")
         self.assertEqual(attempt.assessment, assessment)
         self.assertEqual(attempt.usage, {"inputTokens": 11, "outputTokens": 17, "totalTokens": 28})
+        self.assertGreaterEqual(attempt.latency_ms, 0)
 
     def test_ollama_contract_uses_native_schema_and_maps_usage_once(self) -> None:
         assessment = _provider_assessment()
@@ -1364,8 +1412,10 @@ class AiReviewProviderContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(attempt.provider_id, "ollama")
+        self.assertEqual(attempt.model, "ollama-test")
         self.assertEqual(attempt.assessment, assessment)
         self.assertEqual(attempt.usage, {"inputTokens": 7, "outputTokens": 9, "totalTokens": 16})
+        self.assertGreaterEqual(attempt.latency_ms, 0)
 
     def test_provider_failures_are_bounded_classified_and_never_retried(self) -> None:
         invalid_schema = _provider_assessment()

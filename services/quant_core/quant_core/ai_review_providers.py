@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from http.client import HTTPException
 from typing import Any, Literal, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from quant_core.ai_review_stage3 import validate_assessment
@@ -76,6 +76,7 @@ _PROHIBITED_OUTPUT_PATTERNS = tuple(
     )
 )
 _FINAL_PROVIDER_ENDPOINTS = ("/chat/completions", "/api/chat")
+_URL_PATH_SAFE = "/:@-._~!$&'()*+,;=%"
 
 
 @dataclass(frozen=True)
@@ -660,8 +661,11 @@ def _validated_provider_base_url(value: str) -> str | None:
         parsed.scheme.casefold() not in {"http", "https"}
         or not hostname
         or not _is_valid_hostname(hostname)
+        or parsed.username is not None
+        or parsed.password is not None
         or parsed.query
         or parsed.fragment
+        or not _is_valid_raw_url_path(value)
         or any(
             parsed.path.rstrip("/").endswith(endpoint)
             for endpoint in _FINAL_PROVIDER_ENDPOINTS
@@ -669,6 +673,18 @@ def _validated_provider_base_url(value: str) -> str | None:
     ):
         return None
     return sanitize_base_url(value)
+
+
+def _is_valid_raw_url_path(value: str) -> bool:
+    authority_start = value.find("://") + 3
+    path_start = value.find("/", authority_start)
+    if path_start < 0:
+        return True
+    path = value[path_start:]
+    return not re.search(r"%(?![0-9a-f]{2})", path, re.IGNORECASE) and path == quote(
+        path,
+        safe=_URL_PATH_SAFE,
+    )
 
 
 def _is_valid_hostname(value: str) -> bool:
