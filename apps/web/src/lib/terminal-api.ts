@@ -61,11 +61,13 @@ import {
   isAiReviewDecision,
   isAiReviewDecisionChain,
   isAiReviewProviderStatus,
+  isAiReviewRunArchiveRecord,
   isAuthoritativeAiReviewRun,
   parseAiReviewHistoryRecord,
   type AiReviewDecision,
   type AiReviewHistoryRecord,
   type AiReviewProviderStatus,
+  type AiReviewRunArchiveRecord,
   type AppendAiReviewDecisionRequest,
   type AuthoritativeAiReviewRun,
   type CreateAuthoritativeAiReviewRequest,
@@ -568,7 +570,7 @@ export interface AiReviewRunV2ArchiveEnvelope {
   aiReviewId: string;
   runId: string;
   createdAt: string;
-  record: AuthoritativeAiReviewRun;
+  record: AiReviewRunArchiveRecord;
 }
 
 export interface AiReviewDecisionArchiveEnvelope {
@@ -18785,7 +18787,7 @@ function isAiReviewRunV2ArchiveEnvelope(value: unknown, runId: string | undefine
     || typeof value.aiReviewId !== "string"
     || typeof value.runId !== "string"
     || typeof value.createdAt !== "string"
-    || !isAuthoritativeAiReviewRun(value.record)) {
+    || !isAiReviewRunArchiveRecord(value.record)) {
     return false;
   }
   return value.aiReviewId === value.record.aiReviewId

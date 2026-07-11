@@ -1,4 +1,4 @@
-import type { AiReviewDecision, AuthoritativeAiReviewRun } from "./ai-review-stage3";
+import type { AiReviewDecision, AiReviewRunArchiveRecord, AuthoritativeAiReviewRun } from "./ai-review-stage3";
 
 export type PanelId =
   | "watchlist"
@@ -2292,7 +2292,7 @@ export interface ResearchRunExportBrowserPackage {
     aiReviewId: string;
     runId: string;
     createdAt: string;
-    record: AuthoritativeAiReviewRun;
+    record: AiReviewRunArchiveRecord;
   }>;
   aiReviewDecisions?: Array<{
     decisionId: string;

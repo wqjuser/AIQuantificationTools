@@ -115,6 +115,8 @@ export interface AuthoritativeAiReviewRun {
   recordHash: string;
 }
 
+export type AiReviewRunArchiveRecord = Omit<AuthoritativeAiReviewRun, "authority">;
+
 export interface LegacyAiReviewHistoryRecord {
   schemaVersion: 1;
   authority: "legacy";
@@ -742,6 +744,17 @@ export function isAuthoritativeAiReviewRun(value: unknown): value is Authoritati
   const evidenceIds = new Set(value.evidenceBundle.evidenceItems.map((item) => item.id));
   return isAssessment(value.deterministicAssessment, evidenceIds)
     && isExternalAssessment(value.externalAssessment, value.evidenceHash, evidenceIds);
+}
+
+export function isAiReviewRunArchiveRecord(value: unknown): value is AiReviewRunArchiveRecord {
+  if (!hasExactKeys(value, [
+    "schemaVersion", "recordType", "aiReviewId", "createdAt", "mode", "primaryExperiment",
+    "comparisonExperiments", "strategyLineageKey", "evidenceBundle", "evidenceHash", "deterministicAssessment",
+    "externalAssessment", "boundary", "recordHash"
+  ])) {
+    return false;
+  }
+  return isAuthoritativeAiReviewRun({ ...value, authority: "authoritative" });
 }
 
 export function isLegacyAiReviewHistoryRecord(value: unknown): value is LegacyAiReviewHistoryRecord {

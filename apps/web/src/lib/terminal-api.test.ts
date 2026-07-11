@@ -595,6 +595,7 @@ function sampleLegacyAiReviewHistoryPayload() {
 
 function sampleStage3ArchiveExportPackage() {
   const review = sampleAuthoritativeAiReviewPayload();
+  const { authority: _authority, ...archiveReview } = review;
   const decision = sampleAiReviewDecisionPayload();
   return {
     kind: "aiqt.researchRun.export",
@@ -662,7 +663,7 @@ function sampleStage3ArchiveExportPackage() {
         aiReviewId: review.aiReviewId,
         runId: review.primaryExperiment.sourceRunId,
         createdAt: review.createdAt,
-        record: review
+        record: archiveReview
       }
     ],
     aiReviewDecisions: [
@@ -14701,6 +14702,8 @@ describe("terminal workspace API client", () => {
     expect(normalized?.aiReviewRunsV2?.[0]?.record.aiReviewId).toBe(
       "ai-review-0123456789abcdef0123456789abcdef"
     );
+    expect(normalized?.aiReviewRunsV2?.[0]?.record).toBe(stage3Package.aiReviewRunsV2[0].record);
+    expect(normalized?.aiReviewRunsV2?.[0]?.record).not.toHaveProperty("authority");
     expect(normalized?.aiReviewDecisions?.[0]?.record.decisionId).toBe(
       "ai-review-decision-11111111111111111111111111111111"
     );
@@ -14729,6 +14732,19 @@ describe("terminal workspace API client", () => {
       normalizeResearchRunExportPackagePayload({
         ...stage3Package,
         aiReviewRunsV2: [invalidReview]
+      })
+    ).toBeNull();
+
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        ...stage3Package,
+        aiReviewRunsV2: [{
+          ...stage3Package.aiReviewRunsV2[0],
+          record: {
+            ...stage3Package.aiReviewRunsV2[0].record,
+            unexpected: true
+          }
+        }]
       })
     ).toBeNull();
 
@@ -20215,7 +20231,7 @@ describe("terminal workspace API client", () => {
 
   test("loads a persistent Stage 3 archive import snapshot for same-hash comparison", async () => {
     const exportPackage = sampleStage3ArchiveExportPackage() as unknown as ResearchRunExportPackage;
-    const review = exportPackage.aiReviewRunsV2![0].record;
+    const review = { ...exportPackage.aiReviewRunsV2![0].record, authority: "authoritative" as const };
     const decision = exportPackage.aiReviewDecisions![0].record;
     const snapshot = await loadAiReviewArchiveImportSnapshot("/", exportPackage, async (url) => {
       if (url.endsWith("/decisions")) {
@@ -20244,7 +20260,7 @@ describe("terminal workspace API client", () => {
 
   test("treats 404 as absent but fails closed on readback and authority errors", async () => {
     const exportPackage = sampleStage3ArchiveExportPackage() as unknown as ResearchRunExportPackage;
-    const review = exportPackage.aiReviewRunsV2![0].record;
+    const review = { ...exportPackage.aiReviewRunsV2![0].record, authority: "authoritative" as const };
     const decision = exportPackage.aiReviewDecisions![0].record;
     const history = (reviews: unknown[]) => ({
       ok: true,

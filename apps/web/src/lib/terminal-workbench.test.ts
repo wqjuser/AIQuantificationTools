@@ -11409,6 +11409,7 @@ describe("terminal workbench model", () => {
   test("surfaces authoritative Stage 3 archive evidence with stable searchable paths", () => {
     const exportPackage = stage3ArchiveBrowserPackage();
     const review = exportPackage.aiReviewRunsV2![0].record;
+    const authoritativeReview = { ...review, authority: "authoritative" as const };
     const decision = exportPackage.aiReviewDecisions![0].record;
     const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
       runId: "run-stage3-archive",
@@ -11470,7 +11471,7 @@ describe("terminal workbench model", () => {
     const previewRows = buildResearchRunExportPreviewRows({
       workspace,
       aiReviewArchiveStatus: "ready",
-      authoritativeAiReviewRecords: [review],
+      authoritativeAiReviewRecords: [authoritativeReview],
       aiReviewDecisions: [decision]
     });
     expect(previewRows).toEqual(
@@ -11532,6 +11533,7 @@ describe("terminal workbench model", () => {
   test("blocks Stage 3 count mismatches and distinguishes add, same-hash, and conflict diffs", () => {
     const exportPackage = stage3ArchiveBrowserPackage();
     const review = exportPackage.aiReviewRunsV2![0].record;
+    const authoritativeReview = { ...review, authority: "authoritative" as const };
     const decision = exportPackage.aiReviewDecisions![0].record;
     const workspace = buildTerminalWorkspace();
     const addRows = buildResearchRunImportDiffRows({
@@ -11558,7 +11560,7 @@ describe("terminal workbench model", () => {
     const sameRows = buildResearchRunImportDiffRows({
       workspace,
       exportPackage,
-      authoritativeAiReviewRecords: [review],
+      authoritativeAiReviewRecords: [authoritativeReview],
       aiReviewDecisions: [decision]
     });
     expect(sameRows.find((row) => row.id === "ai-review-run-v2:0")).toMatchObject({
@@ -11588,7 +11590,7 @@ describe("terminal workbench model", () => {
     const conflictRows = buildResearchRunImportDiffRows({
       workspace,
       exportPackage,
-      authoritativeAiReviewRecords: [{ ...review, recordHash: "0".repeat(64) }],
+      authoritativeAiReviewRecords: [{ ...authoritativeReview, recordHash: "0".repeat(64) }],
       aiReviewDecisions: [{ ...decision, recordHash: "0".repeat(64) }]
     });
     expect(conflictRows.find((row) => row.id === "ai-review-run-v2:0")).toMatchObject({
