@@ -4702,7 +4702,7 @@ export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): 
   return configured ? configured : defaultQuantCoreBaseUrl;
 }
 
-function buildApiUrl(baseUrl: string, path: string, configure?: (url: URL) => void): string {
+export function buildApiUrl(baseUrl: string, path: string, configure?: (url: URL) => void): string {
   const trimmedBase = baseUrl.trim();
   const normalizedBase = trimmedBase && trimmedBase !== "/" ? (trimmedBase.endsWith("/") ? trimmedBase : `${trimmedBase}/`) : "/";
   const url = new URL(path.replace(/^\/+/, ""), normalizedBase === "/" ? "http://aiqt.local/" : normalizedBase);
@@ -7860,7 +7860,7 @@ export async function undoResearchRunImport(
   }
 }
 
-function coreErrorDetail(value: unknown): string | null {
+export function coreErrorDetail(value: unknown): string | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -19383,7 +19383,7 @@ function isPortfolioPaperOrderStateHistoryPayload(
   return isPortfolioPaperOrderStateHistory(payload.stateHistory);
 }
 
-function isPortfolioPaperOrderStateHistory(value: unknown): value is PortfolioPaperOrderStateHistory {
+export function isPortfolioPaperOrderStateHistory(value: unknown): value is PortfolioPaperOrderStateHistory {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -19475,7 +19475,7 @@ function isPortfolioPaperOrderReplayPayload(value: unknown): value is { replay: 
   return isPortfolioPaperOrderReplay(payload.replay);
 }
 
-function isPortfolioPaperOrderReplay(value: unknown): value is PortfolioPaperOrderReplay {
+export function isPortfolioPaperOrderReplay(value: unknown): value is PortfolioPaperOrderReplay {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -19557,7 +19557,7 @@ function isPortfolioPaperOrderReplaySummary(value: unknown): value is PortfolioP
   );
 }
 
-function isPortfolioPaperOrderApproval(value: unknown): value is PortfolioPaperOrderApproval {
+export function isPortfolioPaperOrderApproval(value: unknown): value is PortfolioPaperOrderApproval {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -19574,7 +19574,7 @@ function isPortfolioPaperOrderApproval(value: unknown): value is PortfolioPaperO
   );
 }
 
-function isPortfolioPaperOrderSimulation(value: unknown): value is PortfolioPaperOrderSimulation {
+export function isPortfolioPaperOrderSimulation(value: unknown): value is PortfolioPaperOrderSimulation {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -19621,7 +19621,7 @@ function isPortfolioPaperOrderSimulationRouteRisk(value: unknown): value is Port
   );
 }
 
-function isPortfolioPaperOrderBatch(value: unknown): value is PortfolioPaperOrderBatch {
+export function isPortfolioPaperOrderBatch(value: unknown): value is PortfolioPaperOrderBatch {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -19698,7 +19698,7 @@ function isNumberRecord(value: unknown): value is Record<string, number> {
   return Object.values(value).every((item) => typeof item === "number");
 }
 
-function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
+export function isPortfolioBacktestRun(value: unknown): value is PortfolioBacktestRun {
   if (!value || typeof value !== "object") {
     return false;
   }

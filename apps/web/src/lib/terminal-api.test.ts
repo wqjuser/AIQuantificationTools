@@ -327,10 +327,22 @@ import {
   buildResearchWorkspaceStateUrl,
   saveResearchWorkspaceState,
   saveWatchlist,
+  buildApiUrl,
+  coreErrorDetail,
   type AuditEventRecord,
   type PortfolioBacktestRun,
   type ResearchRunExportPackage
 } from "./terminal-api";
+
+describe("Stage 4 portfolio workflow shared API utilities", () => {
+  test("encode query values and extract only safe server error text", () => {
+    expect(buildApiUrl("/", "/api/portfolio/workflows", (url) => url.searchParams.set("baseRunId", "run /你好"))).toBe(
+      "/api/portfolio/workflows?baseRunId=run+%2F%E4%BD%A0%E5%A5%BD"
+    );
+    expect(coreErrorDetail({ detail: "safe detail", secret: "not returned" })).toBe("safe detail");
+    expect(coreErrorDetail({ error: "safe code" })).toBe("safe code");
+  });
+});
 
 const sampleAkshareInstallGuidance = {
   packageName: "akshare",
