@@ -9055,7 +9055,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
     workAreaIds: ["market", "research"],
-    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 4 ships.",
+    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 5 ships.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -9090,9 +9090,9 @@ const productDevelopmentStageDefinitions = [
   {
     id: "portfolio-paper",
     label: "Stage 4 · Portfolio and Paper Trading",
-    status: "current",
-    workAreaIds: ["portfolio", "execution"],
-    focus: "Move into portfolio risk, paper orders, and lifecycle replay after single-strategy evidence is dependable.",
+    status: "maintenance",
+    workAreaIds: ["portfolio"],
+    focus: "Preserve the accepted portfolio paper workflow as the authoritative source for Stage 5 shadow execution.",
     exitCriteria: [
       "Portfolio backtest, risk checks, paper orders, approvals, and simulations share one auditable lifecycle.",
       "Paper accounts and positions replay deterministically.",
@@ -9102,9 +9102,9 @@ const productDevelopmentStageDefinitions = [
   {
     id: "live-readiness",
     label: "Stage 5 · Live Readiness",
-    status: "planned",
-    workAreaIds: [],
-    focus: "Prepare certified broker and exchange adapters only after paper trading and audit gates are mature.",
+    status: "current",
+    workAreaIds: ["execution"],
+    focus: "Validate isolated shadow execution, idempotency, recovery, limits, kill switch, and reconciliation without a broker connection.",
     exitCriteria: [
       "Adapter authentication, account sync, order lifecycle, and reconciliation are testable without real funds.",
       "Every live candidate cites strategy, backtest, AI review, risk approval, adapter state, and human confirmation.",
@@ -9175,7 +9175,7 @@ const productWorkAreaDefinitions = [
     accent: "execution",
     quantLoopStepId: "paper",
     workflowStageId: "execution",
-    deliveryStageId: "portfolio-paper"
+    deliveryStageId: "live-readiness"
   },
   {
     id: "audit",

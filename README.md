@@ -88,9 +88,20 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 4 当前阶段：组合模拟黄金路径
+## Stage 5 当前阶段：Shadow Execution 安全基础
 
-Portfolio 工作区已经提供唯一的 Stage 4 组合模拟黄金路径：从至少两个同市场、同周期的已审计 research run 完成组合构建、确定性风控复核、人工审批、批量模拟成交和账户回放。页面每一步只保留一个主动作，刷新后从持久化批次、审批、模拟成交、状态历史、账户回放和权威工作流恢复，不依赖临时前端成功状态；Execution 继续展示逐单明细，Audit 负责归档与 hash 回读。2026-07-11 发布门禁通过后，Stage 4 成为唯一 current，Stage 3 转入 maintenance，Stage 5 保持 planned。
+Stage 4 已通过退出门禁并转入维护。Stage 5 第一阶段只把权威 Stage 4 workflow 投影到本地 `local-fake-shadow` adapter：稳定生成 `clientOrderId`，记录状态迁移、限额、kill switch、超时一次/重试、对账和审计 attempt。持久化继续复用 `AuditEventStore`，服务重启后可恢复；相同完成请求保持幂等，不创建第二套订单库。
+
+```powershell
+npm run docker:smoke:stage5 -- --no-build
+npm run docker:smoke:stage5:validate
+```
+
+验收产物为 `data/stage5-shadow-execution.json`，kind 为 `aiqt.stage5ShadowExecutionAcceptance`。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。本阶段不访问 broker/testnet、不读取 broker secret、不做账户同步、不提交或撤销订单；仍固定 `paperOnly=true`、`shadowOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+
+## Stage 4 维护门禁：组合模拟黄金路径
+
+Portfolio 工作区已经提供唯一的 Stage 4 组合模拟黄金路径：从至少两个同市场、同周期的已审计 research run 完成组合构建、确定性风控复核、人工审批、批量模拟成交和账户回放。页面每一步只保留一个主动作，刷新后从持久化批次、审批、模拟成交、状态历史、账户回放和权威工作流恢复，不依赖临时前端成功状态；Execution 继续展示逐单明细，Audit 负责归档与 hash 回读。2026-07-11 Stage 4 完成退出并转入 maintenance，Stage 5 shadow execution 第一阶段成为唯一 current。
 
 权威工作流通过 `POST /api/portfolio/workflows` 入账。请求只包含 `baseRunId`、`name`、`initialCash`、`legs`、`riskTemplate`、`batchId` 和 `operator`；核心会从既有 stores 重新运行组合并读取批次、审批、模拟成交、状态历史与 replay，通过后写入一条 `stage4_portfolio_workflow` 审计事件。`GET /api/portfolio/workflows?baseRunId=...&limit=20` 按最新优先回读，并重新校验 workflow hash、审计事件身份、时间和完整 paper-only 证据。研究运行导出 manifest 用 `artifactCounts.stage4PortfolioWorkflows` 记录数量，导入预检会拒绝数量、身份、hash 或安全边界不一致；通过原子导入后再导出，可从 Audit 包浏览器回读同一 workflow hash。
 

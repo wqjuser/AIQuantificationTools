@@ -216,6 +216,12 @@ from quant_core.stage4_portfolio import (
     build_stage4_portfolio_workflow_snapshot,
     validate_stage4_portfolio_workflow_snapshot,
 )
+from quant_core.stage5_shadow import (
+    build_stage5_shadow_session,
+    stage5_shadow_session_key,
+    stage5_shadow_session_to_audit_event,
+    validate_stage5_shadow_session,
+)
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
@@ -2091,6 +2097,54 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=201,
             )
             return
+        if parsed.path == "/api/execution/shadow-sessions":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "baseRunId", "workflowHash", "failureMode", "operator"
+                }:
+                    raise ValueError("stage5 shadow request fields are invalid")
+                base_run_id = _required_stage4_string(payload["baseRunId"])
+                workflow_hash = _required_stage4_string(payload["workflowHash"])
+                failure_mode = _required_stage4_string(payload["failureMode"])
+                operator = _required_stage4_string(payload["operator"])
+                workflow = _stage5_shadow_source_workflow(
+                    self.audit_event_store, base_run_id, workflow_hash
+                )
+                existing = _stage5_shadow_sessions(
+                    self.audit_event_store, base_run_id, workflow_hash
+                )
+                latest = existing[0] if existing else None
+                if latest and latest["failureMode"] != failure_mode:
+                    raise ValueError("stage5 shadow failureMode does not match existing session")
+                if latest and latest["status"] != "recoverable_failure":
+                    session = latest
+                    created = False
+                else:
+                    attempt = 2 if latest else 1
+                    session = build_stage5_shadow_session(
+                        workflow,
+                        failure_mode=failure_mode,
+                        attempt=attempt,
+                    )
+                    self.audit_event_store.record(
+                        stage5_shadow_session_to_audit_event(session, operator)
+                    )
+                    created = True
+            except LookupError as error:
+                self._send_json(
+                    {"error": "stage5_shadow_workflow_not_found", "detail": str(error)},
+                    status=404,
+                )
+                return
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage5_shadow_session", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json({"shadowSession": session}, status=201 if created else 200)
+            return
         if parsed.path == "/api/portfolio/backtest":
             try:
                 portfolio = _portfolio_backtest_from_payload(self._read_json_body(), self.run_store)
@@ -3867,6 +3921,25 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/execution/shadow-sessions":
+            try:
+                base_run_id, limit = _stage5_shadow_query(parsed.query)
+                sessions = _stage5_shadow_sessions(
+                    self.audit_event_store, base_run_id, None, limit=limit
+                )
+            except ValueError as error:
+                code = (
+                    "invalid_stage5_shadow_session_query"
+                    if str(error) == "invalid_stage5_shadow_session_query"
+                    else "invalid_stage5_shadow_session_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"shadowSessions": sessions})
+            return
         if parsed.path == "/api/portfolio/paper-orders":
             query = parse_qs(parsed.query)
             base_run_id = query.get("baseRunId", [""])[0].strip()
@@ -5010,6 +5083,79 @@ def _stage4_portfolio_workflow_query(raw_query: str) -> tuple[str, int]:
     limit = int(raw_limit[0])
     if not 1 <= limit <= 50:
         raise ValueError("invalid_stage4_portfolio_workflow_query")
+    return base_run_id, limit
+
+
+def _stage5_shadow_source_workflow(
+    store: AuditEventStore, base_run_id: str, workflow_hash: str
+) -> dict[str, Any]:
+    for event in store.list_recent(
+        run_id=base_run_id, event_type="stage4_portfolio_workflow", limit=50
+    ):
+        workflow = validate_stage4_portfolio_workflow_snapshot(
+            event.metadata.get("snapshot")
+        )
+        if (
+            workflow["workflowId"] != event.event_id
+            or workflow["baseRunId"] != base_run_id
+            or datetime.fromisoformat(workflow["generatedAt"]) != event.created_at
+        ):
+            raise ValueError("stage4 portfolio workflow audit binding does not match")
+        if workflow["workflowHash"] == workflow_hash:
+            return workflow
+    raise LookupError("authoritative Stage 4 workflow was not found")
+
+
+def _stage5_shadow_sessions(
+    store: AuditEventStore,
+    base_run_id: str,
+    workflow_hash: str | None,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    expected_key = stage5_shadow_session_key(workflow_hash) if workflow_hash else None
+    sessions = []
+    for event in store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_shadow_execution_session",
+        limit=50,
+    ):
+        session = validate_stage5_shadow_session(event.metadata.get("snapshot"))
+        if (
+            session["sessionId"] != event.event_id
+            or session["baseRunId"] != base_run_id
+        ):
+            raise ValueError("stage5 shadow audit binding does not match")
+        if expected_key and session["sessionKey"] != expected_key:
+            continue
+        workflow = _stage5_shadow_source_workflow(
+            store, base_run_id, session["workflowHash"]
+        )
+        rebuilt = build_stage5_shadow_session(
+            workflow,
+            failure_mode=session["failureMode"],
+            attempt=session["attempt"],
+            generated_at=session["generatedAt"],
+        )
+        if rebuilt != session:
+            raise ValueError("stage5 shadow session does not match source workflow")
+        sessions.append(session)
+        if len(sessions) >= limit:
+            break
+    return sessions
+
+
+def _stage5_shadow_query(raw_query: str) -> tuple[str, int]:
+    query = parse_qs(raw_query, keep_blank_values=True)
+    if set(query) - {"baseRunId", "limit"} or len(query.get("baseRunId", [])) != 1:
+        raise ValueError("invalid_stage5_shadow_session_query")
+    base_run_id = query["baseRunId"][0].strip()
+    raw_limit = query.get("limit", ["20"])
+    if not base_run_id or len(raw_limit) != 1 or not raw_limit[0].isdigit():
+        raise ValueError("invalid_stage5_shadow_session_query")
+    limit = int(raw_limit[0])
+    if not 1 <= limit <= 50:
+        raise ValueError("invalid_stage5_shadow_session_query")
     return base_run_id, limit
 
 

@@ -1247,6 +1247,107 @@ def validate_stage4_portfolio_acceptance_manifest(manifest: Any) -> str:
     )
 
 
+_STAGE5_SAFETY = {
+    "paperOnly": True,
+    "shadowOnly": True,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_shadow_acceptance_manifest(
+    *,
+    workflow: dict[str, Any],
+    first_attempt: dict[str, Any],
+    recovered_attempt: dict[str, Any],
+    idempotent_attempt: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "aiqt.stage5ShadowExecutionAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed",
+        "workflow": workflow,
+        "firstAttempt": first_attempt,
+        "recoveredAttempt": recovered_attempt,
+        "idempotentAttempt": idempotent_attempt,
+        **_STAGE5_SAFETY,
+    }
+
+
+def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 shadow acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "workflow", "firstAttempt",
+        "recoveredAttempt", "idempotentAttempt", *_STAGE5_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5ShadowExecutionAcceptance"
+        or type(payload["schemaVersion"]) is not int
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or any(payload[field] is not expected for field, expected in _STAGE5_SAFETY.items())
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5.generatedAt")
+    workflow_validator = _quant_core_validator(
+        "stage4_portfolio", "validate_stage4_portfolio_workflow_snapshot"
+    )
+    validator = _quant_core_validator("stage5_shadow", "validate_stage5_shadow_session")
+    builder = _quant_core_validator("stage5_shadow", "build_stage5_shadow_session")
+    try:
+        workflow = workflow_validator(payload["workflow"])
+        first = validator(payload["firstAttempt"])
+        recovered = validator(payload["recoveredAttempt"])
+        idempotent = validator(payload["idempotentAttempt"])
+        rebuilt_first = builder(
+            workflow,
+            failure_mode=first["failureMode"],
+            attempt=first["attempt"],
+            generated_at=first["generatedAt"],
+        )
+        rebuilt_recovered = builder(
+            workflow,
+            failure_mode=recovered["failureMode"],
+            attempt=recovered["attempt"],
+            generated_at=recovered["generatedAt"],
+        )
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(f"Invalid Stage 5 shadow acceptance manifest: session is invalid: {error}") from error
+    if (
+        first["failureMode"] != "timeout_once"
+        or first["attempt"] != 1
+        or first["status"] != "recoverable_failure"
+        or recovered["attempt"] != 2
+        or recovered["status"] != "reconciled"
+        or recovered != idempotent
+        or first["sessionKey"] != recovered["sessionKey"]
+        or [row["clientOrderId"] for row in first["orders"]]
+        != [row["clientOrderId"] for row in recovered["orders"]]
+        or first != rebuilt_first
+        or recovered != rebuilt_recovered
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: recovery or idempotency is invalid")
+    return (
+        f"stage5 shadow acceptance run={recovered['baseRunId']} orders={len(recovered['orders'])} "
+        "recovered=True idempotent=True liveBlocked=True"
+    )
+
+
+def write_stage5_shadow_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 shadow acceptance report={path}")
+    return path
+
+
+def load_stage5_shadow_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 shadow acceptance manifest")
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -2099,6 +2200,46 @@ def run_stage4_portfolio_acceptance(
     print(summary)
     if report_path is not None:
         write_stage4_portfolio_acceptance_report(report_path, manifest)
+    return [summary]
+
+
+def run_stage5_shadow_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    stage4_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    stage4_manifest = load_stage4_portfolio_acceptance_report(stage4_report_path)
+    validate_stage4_portfolio_acceptance_manifest(stage4_manifest)
+    workflow = _require_dict(stage4_manifest.get("workflow"), "Stage 5 source workflow")
+    request = {
+        "baseRunId": workflow["baseRunId"],
+        "workflowHash": workflow["workflowHash"],
+        "failureMode": "timeout_once",
+        "operator": "stage5-shadow-smoke",
+    }
+    attempts = []
+    for _ in range(3):
+        response = _require_dict(
+            post_json(
+                join_url(base_url, "/api/execution/shadow-sessions"),
+                request,
+                timeout_seconds=timeout_seconds,
+            ),
+            "Stage 5 shadow session",
+        )
+        attempts.append(_require_dict(response.get("shadowSession"), "Stage 5 shadow session"))
+    manifest = build_stage5_shadow_acceptance_manifest(
+        workflow=workflow,
+        first_attempt=attempts[0],
+        recovered_attempt=attempts[1],
+        idempotent_attempt=attempts[2],
+    )
+    summary = validate_stage5_shadow_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_shadow_acceptance_report(report_path, manifest)
     return [summary]
 
 
@@ -3237,6 +3378,9 @@ def run_smoke(
     stage3_ai_review_live_report: Path | None = None,
     stage4_portfolio_paper: bool = False,
     stage4_portfolio_paper_report: Path | None = None,
+    stage5_shadow: bool = False,
+    stage5_shadow_stage4_report: Path = Path("data") / "stage4-portfolio-paper.json",
+    stage5_shadow_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -3318,6 +3462,13 @@ def run_smoke(
                 base_url,
                 timeout_seconds=timeout_seconds,
                 report_path=stage4_portfolio_paper_report,
+            )
+        if stage5_shadow:
+            run_stage5_shadow_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                stage4_report_path=stage5_shadow_stage4_report,
+                report_path=stage5_shadow_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -3438,6 +3589,18 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--validate-stage4-portfolio-paper-report",
         default=None,
         help="Validate an existing Stage 4 portfolio paper acceptance manifest and exit.",
+    )
+    parser.add_argument("--stage5-shadow", action="store_true", help="Run isolated Stage 5 shadow execution acceptance.")
+    parser.add_argument(
+        "--stage5-shadow-stage4-report",
+        default="data/stage4-portfolio-paper.json",
+        help="Stage 4 acceptance manifest used as authoritative Stage 5 input.",
+    )
+    parser.add_argument("--stage5-shadow-report", default=None, help="Optional Stage 5 shadow acceptance report path.")
+    parser.add_argument(
+        "--validate-stage5-shadow-report",
+        default=None,
+        help="Validate an existing Stage 5 shadow acceptance report and exit.",
     )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
@@ -3561,6 +3724,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = load_stage4_portfolio_acceptance_report(Path(args.validate_stage4_portfolio_paper_report))
         print(validate_stage4_portfolio_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage5_shadow_report:
+        manifest = load_stage5_shadow_acceptance_report(Path(args.validate_stage5_shadow_report))
+        print(validate_stage5_shadow_acceptance_manifest(manifest))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -3628,6 +3795,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage4_portfolio_paper_report=(
             Path(args.stage4_portfolio_paper_report) if args.stage4_portfolio_paper_report else None
         ),
+        stage5_shadow=args.stage5_shadow,
+        stage5_shadow_stage4_report=Path(args.stage5_shadow_stage4_report),
+        stage5_shadow_report=Path(args.stage5_shadow_report) if args.stage5_shadow_report else None,
         p2_readiness_acceptance=args.p2_readiness_acceptance,
         p2_run_id=args.p2_run_id,
         p2_p1_acceptance_report=Path(args.p2_p1_acceptance_report),
