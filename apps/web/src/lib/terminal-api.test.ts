@@ -14895,7 +14895,8 @@ describe("terminal workspace API client", () => {
           aiRisks: 1,
           paperExecutions: 1,
           aiReviewRuns: 1,
-          auditEvents: 1
+          auditEvents: 1,
+          stage4PortfolioWorkflows: 0
         }
       },
       researchRun: {
@@ -15088,9 +15089,24 @@ describe("terminal workspace API client", () => {
     const normalized = normalizeResearchRunExportPackagePayload({ export: exportPackage });
 
     expect(normalized?.manifest.artifactCounts.auditEvents).toBe(1);
+    expect(normalized?.manifest.artifactCounts.stage4PortfolioWorkflows).toBe(0);
     expect(normalized?.auditEvents?.[0].eventType).toBe("p0_paper_simulation");
     expect(normalized?.p0PackageCompleteness?.ready).toBe(true);
     expect(normalized?.p0PackageCompleteness?.criteria[0]?.id).toBe("paper-simulation");
+    expect(
+      normalizeResearchRunExportPackagePayload({
+        export: {
+          ...exportPackage,
+          manifest: {
+            ...exportPackage.manifest,
+            artifactCounts: {
+              ...exportPackage.manifest.artifactCounts,
+              stage4PortfolioWorkflows: "1"
+            }
+          }
+        }
+      })
+    ).toBeNull();
   });
 
   test("rejects malformed portfolio paper order batches in export packages", () => {

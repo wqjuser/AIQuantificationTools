@@ -19435,6 +19435,50 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(status, 500)
         self.assertEqual(payload["error"], "invalid_stage4_portfolio_workflow_store")
 
+    def test_stage4_portfolio_workflow_export_import_preserves_authoritative_audit_evidence(self):
+        from quant_core.runs import (
+            research_run_export_to_payload,
+            research_run_import_audit_events,
+            research_run_import_to_audit,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dependencies = self._stage4_portfolio_workflow_dependencies(Path(tmp))
+            status, created = self._stage4_portfolio_workflow_http(
+                dependencies,
+                "POST",
+                "/api/portfolio/workflows",
+                self._stage4_portfolio_workflow_request(),
+            )
+        self.assertEqual(status, 201)
+        event = created["auditEvent"]
+        workflow = created["workflow"]
+        audit = self._sample_research_run_audit(run_id="run-a", strategy_revision="rev-run-a")
+
+        exported = research_run_export_to_payload(audit, audit_events=[event])
+        self.assertEqual(exported["manifest"]["artifactCounts"]["stage4PortfolioWorkflows"], 1)
+        self.assertEqual(exported["auditEvents"][0]["metadata"]["snapshot"], workflow)
+        imported_audit = research_run_import_to_audit(exported)
+        imported_events = research_run_import_audit_events(exported, run_id="run-a")
+        reexported = research_run_export_to_payload(imported_audit, audit_events=imported_events)
+        self.assertEqual(
+            reexported["auditEvents"][0]["metadata"]["snapshot"]["workflowHash"],
+            workflow["workflowHash"],
+        )
+
+        for case in ("metadata", "count", "hash"):
+            with self.subTest(case=case):
+                tampered = research_run_export_to_payload(audit, audit_events=[event])
+                tampered.pop("integrity")
+                if case == "metadata":
+                    tampered["auditEvents"][0]["metadata"] = {"snapshot": {}}
+                elif case == "count":
+                    tampered["manifest"]["artifactCounts"]["stage4PortfolioWorkflows"] = 0
+                else:
+                    tampered["auditEvents"][0]["metadata"]["snapshot"]["workflowHash"] = "0" * 64
+                with self.assertRaises(ValueError):
+                    research_run_import_to_audit(tampered)
+
     def test_portfolio_backtest_api_combines_audited_runs_by_weight(self):
         import json
         from http.client import HTTPConnection

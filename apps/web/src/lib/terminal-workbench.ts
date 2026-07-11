@@ -1753,6 +1753,7 @@ export interface ResearchRunExportBrowserManifest {
     aiReviewRunsV2?: number;
     aiReviewDecisions?: number;
     auditEvents?: number;
+    stage4PortfolioWorkflows?: number;
     handoffNotes?: number;
   };
 }
@@ -2464,6 +2465,7 @@ export type ResearchRunImportDiffRowId =
     | "adapter-paper-executions"
     | "portfolio-paper-orders"
     | "ai-review-runs"
+    | "stage4-portfolio-workflows"
     | "audit-summary"
     | "audit-report"
     | "backtest-report"
@@ -14966,6 +14968,40 @@ function formatPortfolioPaperOrderSimulationAdapterEvidenceDetail(
   } carries adapter paper execution evidence: ${firstSimulation.adapterPaperExecutionId} · ${fillSummary}`;
 }
 
+function stage4PortfolioWorkflowAuditSnapshots(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+): Record<string, unknown>[] {
+  return (auditEvents ?? []).flatMap((event) => {
+    const snapshot = event.metadata.snapshot;
+    return event.eventType === "stage4_portfolio_workflow"
+      && snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+      ? [snapshot as Record<string, unknown>]
+      : [];
+  });
+}
+
+function stage4PortfolioWorkflowEvidenceDetail(snapshot: Record<string, unknown>): string {
+  const batch = snapshot.batch && typeof snapshot.batch === "object" && !Array.isArray(snapshot.batch)
+    ? snapshot.batch as Record<string, unknown>
+    : {};
+  const approvals = Array.isArray(snapshot.approvals) ? snapshot.approvals.length : 0;
+  const simulations = Array.isArray(snapshot.simulations) ? snapshot.simulations.length : 0;
+  const replay = snapshot.replay && typeof snapshot.replay === "object" && !Array.isArray(snapshot.replay)
+    ? snapshot.replay as Record<string, unknown>
+    : {};
+  const replayOrders = Array.isArray(replay.orders) ? replay.orders.length : 0;
+  return [
+    snapshot.workflowHash,
+    `batch ${String(batch.batchId ?? "")}`,
+    `${approvals} approvals`,
+    `${simulations} simulations`,
+    `replay ${String(replay.baseRunId ?? "")} / ${replayOrders} orders`,
+    snapshot.paperOnly === true && snapshot.liveTradingAllowed === false && snapshot.liveBlockedBoundary === true
+      ? "paper-only"
+      : "unsafe boundary"
+  ].filter(Boolean).join(" · ");
+}
+
 export function buildResearchRunExportBrowserRows(
   exportPackage: ResearchRunExportBrowserPackage | null | undefined
 ): ResearchRunExportBrowserRow[] {
@@ -14997,6 +15033,9 @@ export function buildResearchRunExportBrowserRows(
   const authoritativeAiReviewPackageCount = exportPackage.aiReviewRunsV2?.length ?? 0;
   const aiReviewDecisionPackageCount = exportPackage.aiReviewDecisions?.length ?? 0;
   const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
+  const stage4PortfolioWorkflows = stage4PortfolioWorkflowAuditSnapshots(exportPackage.auditEvents);
+  const hasStage4PortfolioWorkflowAccounting =
+    artifactCounts.stage4PortfolioWorkflows !== undefined || stage4PortfolioWorkflows.length > 0;
   const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
   const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
     (event) => event.eventType === "p0_paper_simulation"
@@ -15069,6 +15108,8 @@ export function buildResearchRunExportBrowserRows(
   const aiReviewDecisionCountMatches =
     (artifactCounts.aiReviewDecisions ?? 0) === aiReviewDecisionPackageCount;
   const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
+  const stage4PortfolioWorkflowCountMatches =
+    (artifactCounts.stage4PortfolioWorkflows ?? 0) === stage4PortfolioWorkflows.length;
   const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
   const p0PackageCompleteness = exportPackage.p0PackageCompleteness;
   const p0CompletenessIsReady =
@@ -15328,25 +15369,33 @@ export function buildResearchRunExportBrowserRows(
       : []),
     {
       id: "audit-events",
-      label: "Audit events",
+      label: hasStage4PortfolioWorkflowAccounting ? "Stage 4 portfolio workflows" : "Audit events",
       status:
-        auditEventCountMatches && auditEventPackageCount > 0
+        auditEventCountMatches && stage4PortfolioWorkflowCountMatches && auditEventPackageCount > 0
           ? "ready"
-          : auditEventCountMatches
+          : auditEventCountMatches && stage4PortfolioWorkflowCountMatches
             ? "missing"
             : "blocked",
-      value: `${artifactCounts.auditEvents ?? 0} manifest / ${auditEventPackageCount} package`,
-      detail: auditEventCountMatches
-        ? `${p0PaperSimulationAuditEvents.length} P0 paper simulation event${
+      value: hasStage4PortfolioWorkflowAccounting
+        ? `${artifactCounts.stage4PortfolioWorkflows ?? 0} manifest / ${stage4PortfolioWorkflows.length} package`
+        : `${artifactCounts.auditEvents ?? 0} manifest / ${auditEventPackageCount} package`,
+      detail: hasStage4PortfolioWorkflowAccounting
+        ? stage4PortfolioWorkflowCountMatches
+          ? stage4PortfolioWorkflows.map(stage4PortfolioWorkflowEvidenceDetail).join(" · ")
+          : "Stage 4 workflow manifest count does not match auditEvents[]."
+        : auditEventCountMatches
+          ? `${p0PaperSimulationAuditEvents.length} P0 paper simulation event${
             p0PaperSimulationAuditEvents.length === 1 ? "" : "s"
           }${
             p0PaperSimulationAuditEvents[0]?.eventType ? ` · ${p0PaperSimulationAuditEvents[0].eventType}` : ""
           }${
             p0PaperSimulationAuditEvents[0]?.eventId ? ` · ${p0PaperSimulationAuditEvents[0].eventId}` : ""
           }`
-        : "Manifest audit event count does not match the package payload.",
-      exportPath: "auditEvents[]",
-      tone: auditEventCountMatches && auditEventPackageCount > 0 ? "ai" : auditEventCountMatches ? "neutral" : "risk"
+          : "Manifest audit event count does not match the package payload.",
+      exportPath: hasStage4PortfolioWorkflowAccounting ? "auditEvents[].metadata.snapshot" : "auditEvents[]",
+      tone: auditEventCountMatches && stage4PortfolioWorkflowCountMatches && auditEventPackageCount > 0
+        ? "ai"
+        : auditEventCountMatches && stage4PortfolioWorkflowCountMatches ? "neutral" : "risk"
     },
     ...(p0PackageCompleteness
       ? ([
@@ -15715,6 +15764,7 @@ function researchRunImportArtifactCountMismatches(
     promotionCandidates: number;
     researchNotes: number;
     auditEvents: number;
+    stage4PortfolioWorkflows: number;
     handoffNotes: number;
   }
 ): string[] {
@@ -15744,6 +15794,7 @@ function researchRunImportArtifactCountMismatches(
     ["aiReviewRunsV2", artifactCounts.aiReviewRunsV2 ?? 0, actualCounts.aiReviewRunsV2],
     ["aiReviewDecisions", artifactCounts.aiReviewDecisions ?? 0, actualCounts.aiReviewDecisions],
     ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents],
+    ["stage4PortfolioWorkflows", artifactCounts.stage4PortfolioWorkflows ?? 0, actualCounts.stage4PortfolioWorkflows],
     ["handoffNotes", artifactCounts.handoffNotes ?? 0, actualCounts.handoffNotes]
   ];
 
@@ -15834,6 +15885,7 @@ export function buildResearchRunImportDiffRows({
   const packageAiReviewDecisionCount = exportPackage.aiReviewDecisions?.length ?? 0;
   const manifestAiReviewCount = exportPackage.manifest.artifactCounts.aiReviewRuns ?? 0;
   const packageAuditEventCount = exportPackage.auditEvents?.length ?? 0;
+  const packageStage4PortfolioWorkflows = stage4PortfolioWorkflowAuditSnapshots(exportPackage.auditEvents);
   const packageHandoffNoteCount = exportPackage.handoffNotes?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
@@ -15918,6 +15970,7 @@ export function buildResearchRunImportDiffRows({
     promotionCandidates: exportPackage.promotionCandidate ? 1 : 0,
     researchNotes: incomingNote ? 1 : 0,
     auditEvents: packageAuditEventCount,
+    stage4PortfolioWorkflows: packageStage4PortfolioWorkflows.length,
     handoffNotes: packageHandoffNoteCount
   });
   const authoritativeAiReviewDiffRows = (exportPackage.aiReviewRunsV2 ?? []).map(
@@ -16247,6 +16300,22 @@ export function buildResearchRunImportDiffRows({
       exportPath: "portfolioPaperOrderBatches[] portfolioPaperOrderApprovals[] portfolioPaperOrderSimulations[]",
       tone: packagePortfolioPaperOrderHasLedger ? "warning" : "neutral"
     },
+    ...(exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows !== undefined || packageStage4PortfolioWorkflows.length
+      ? ([{
+          id: "stage4-portfolio-workflows",
+          label: "Stage 4 portfolio workflows",
+          status: packageStage4PortfolioWorkflows.length ? "add" : "same",
+          current: "Local audit event store",
+          incoming: packageStage4PortfolioWorkflows.length
+            ? packageStage4PortfolioWorkflows.map(stage4PortfolioWorkflowEvidenceDetail).join(" · ")
+            : "No Stage 4 workflow",
+          detail: packageStage4PortfolioWorkflows.length
+            ? "Import will restore authoritative Stage 4 workflow evidence through auditEvents[]."
+            : "Package does not include Stage 4 workflow evidence.",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: packageStage4PortfolioWorkflows.length ? "ai" : "neutral"
+        }] satisfies ResearchRunImportDiffRow[])
+      : []),
     {
       id: "ai-review-runs",
       label: "AI review runs",
@@ -17050,6 +17119,7 @@ const researchRunImportAuditArtifactRowIds = new Set<ResearchRunImportDiffRow["i
   "paper-executions",
   "adapter-paper-executions",
   "portfolio-paper-orders",
+  "stage4-portfolio-workflows",
   "ai-review-runs",
   "audit-summary",
   "audit-report",

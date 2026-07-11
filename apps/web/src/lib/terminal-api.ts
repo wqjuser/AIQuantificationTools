@@ -273,6 +273,7 @@ export interface ResearchRunExportManifest {
     aiReviewRunsV2?: number;
     aiReviewDecisions?: number;
     auditEvents?: number;
+    stage4PortfolioWorkflows?: number;
     handoffNotes?: number;
   };
 }
@@ -18778,6 +18779,7 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     (counts?.aiReviewRunsV2 === undefined || typeof counts.aiReviewRunsV2 === "number") &&
     (counts?.aiReviewDecisions === undefined || typeof counts.aiReviewDecisions === "number") &&
     (counts?.auditEvents === undefined || typeof counts.auditEvents === "number") &&
+    (counts?.stage4PortfolioWorkflows === undefined || typeof counts.stage4PortfolioWorkflows === "number") &&
     (counts?.handoffNotes === undefined || typeof counts.handoffNotes === "number")
   );
 }

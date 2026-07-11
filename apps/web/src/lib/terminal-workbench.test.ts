@@ -11653,6 +11653,65 @@ describe("terminal workbench model", () => {
     ).toContain("aiReviewRunsV2 0/1");
   });
 
+  test("surfaces Stage 4 workflow evidence from audit events in browser and import diff", () => {
+    const exportPackage = stage3ArchiveBrowserPackage();
+    const workflowHash = "4".repeat(64);
+    exportPackage.manifest.artifactCounts.auditEvents = 1;
+    exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows = 1;
+    exportPackage.auditEvents = [{
+      schemaVersion: 1,
+      eventId: "stage4-workflow-1",
+      eventType: "stage4_portfolio_workflow",
+      runId: exportPackage.manifest.runId,
+      createdAt: "2026-07-11T09:00:00+00:00",
+      stage: "stage4-portfolio-workflow",
+      source: "local-operator",
+      summary: "Stage 4 workflow recorded.",
+      detail: "Authoritative paper-only workflow.",
+      metadata: {
+        snapshot: {
+          workflowId: "stage4-workflow-1",
+          baseRunId: exportPackage.manifest.runId,
+          generatedAt: "2026-07-11T09:00:00+00:00",
+          batch: { batchId: "portfolio-paper-batch-1" },
+          approvals: [{ approvalId: "approval-1" }, { approvalId: "approval-2" }],
+          simulations: [{ simulationId: "simulation-1" }, { simulationId: "simulation-2" }],
+          replay: { baseRunId: exportPackage.manifest.runId, orders: [{ orderId: "order-1" }, { orderId: "order-2" }] },
+          paperOnly: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          liveBlockedBoundary: true,
+          workflowHash
+        }
+      },
+    }];
+
+    expect(buildResearchRunExportBrowserRows(exportPackage)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "audit-events",
+          status: "ready",
+          value: "1 manifest / 1 package",
+          detail: expect.stringContaining(workflowHash),
+          exportPath: "auditEvents[].metadata.snapshot"
+        })
+      ])
+    );
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "stage4-portfolio-workflows",
+          status: "add",
+          incoming: expect.stringContaining(workflowHash),
+          exportPath: "auditEvents[].metadata.snapshot"
+        })
+      ])
+    );
+    expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "audit-events")?.detail)
+      .toContain("batch portfolio-paper-batch-1 · 2 approvals · 2 simulations · replay run-stage3-archive / 2 orders");
+  });
+
   test("aligns Decision import diff with persisted prefix and append semantics", () => {
     const first = stage3ArchiveDecisionFixture();
     const second = {

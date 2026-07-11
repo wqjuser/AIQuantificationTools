@@ -12,6 +12,7 @@ from quant_core.ai_review_runs import validate_ai_review_run_record
 
 from quant_core.canonical import DATA_SNAPSHOT_HASH_VERSION, canonical_data_hash, normalize_snapshot_bars
 from quant_core.handoff_notes import normalize_handoff_note_payloads
+from quant_core.stage4_portfolio import validate_stage4_portfolio_workflow_snapshot
 
 
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
@@ -601,6 +602,7 @@ def research_run_export_to_payload(
         "aiReviewRunsV2": len(ai_review_run_v2_payloads),
         "aiReviewDecisions": len(ai_review_decision_payloads),
         "auditEvents": len(audit_event_payloads),
+        "stage4PortfolioWorkflows": _stage4_portfolio_workflow_count(audit_event_payloads),
         "handoffNotes": len(handoff_note_payloads),
     }
     export_package = {
@@ -860,6 +862,9 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
         value = export_package.get(package_key)
         if count_key in counts or value:
             expected[count_key] = _raw_array_length(value)
+    audit_events = export_package.get("auditEvents")
+    if "stage4PortfolioWorkflows" in counts or _stage4_portfolio_workflow_count(audit_events):
+        expected["stage4PortfolioWorkflows"] = _stage4_portfolio_workflow_count(audit_events)
     if "promotionCandidates" in counts or export_package.get("promotionCandidate"):
         expected["promotionCandidates"] = 1 if isinstance(export_package.get("promotionCandidate"), dict) else 0
     research_note = research_run.get("researchNote")
@@ -1183,6 +1188,8 @@ def _validate_manifest_consistency(
         expected_counts["aiReviewDecisions"] = len(ai_review_decisions or [])
     if "auditEvents" in counts or audit_events:
         expected_counts["auditEvents"] = len(audit_events or [])
+    if "stage4PortfolioWorkflows" in counts or _stage4_portfolio_workflow_count(audit_events):
+        expected_counts["stage4PortfolioWorkflows"] = _stage4_portfolio_workflow_count(audit_events)
     if "handoffNotes" in counts or handoff_notes:
         expected_counts["handoffNotes"] = len(handoff_notes or [])
     research_note = _normalize_research_note(
@@ -1357,6 +1364,17 @@ def _normalize_audit_event_payloads(
                 raise ValueError("audit_event_summary_required")
             if not detail:
                 raise ValueError("audit_event_detail_required")
+            if event_type == "stage4_portfolio_workflow":
+                snapshot = validate_stage4_portfolio_workflow_snapshot(
+                    _dict_or_empty(item.get("metadata")).get("snapshot")
+                )
+                if (
+                    event_id != snapshot["workflowId"]
+                    or event_run_id != snapshot["baseRunId"]
+                    or created_at != snapshot["generatedAt"]
+                    or stage != "stage4-portfolio-workflow"
+                ):
+                    raise ValueError("stage4_portfolio_workflow_audit_binding_mismatch")
         normalized.append(
             {
                 "schemaVersion": 1,
@@ -1372,6 +1390,14 @@ def _normalize_audit_event_payloads(
             }
         )
     return normalized
+
+
+def _stage4_portfolio_workflow_count(value: Any) -> int:
+    return sum(
+        1
+        for item in value or []
+        if isinstance(item, dict) and item.get("eventType") == "stage4_portfolio_workflow"
+    )
 
 
 def _normalize_adapter_paper_execution_payloads(
