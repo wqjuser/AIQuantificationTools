@@ -3836,7 +3836,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 workflows = []
                 for event in events:
                     snapshot = validate_stage4_portfolio_workflow_snapshot(event.metadata.get("snapshot"))
-                    if snapshot["baseRunId"] != base_run_id or snapshot["workflowId"] != event.event_id:
+                    generated_at = datetime.fromisoformat(snapshot["generatedAt"])
+                    if (
+                        snapshot["baseRunId"] != base_run_id
+                        or snapshot["workflowId"] != event.event_id
+                        or event.created_at.tzinfo is None
+                        or event.created_at.utcoffset() is None
+                        or event.created_at != generated_at
+                    ):
                         raise ValueError("stage4 portfolio workflow audit binding does not match")
                     workflows.append(snapshot)
             except ValueError as error:
@@ -4931,6 +4938,8 @@ def _stage4_portfolio_workflow_from_payload(
         ],
     }
     batch = _find_portfolio_paper_order_batch(batch_store, base_run_id, batch_id)
+    if batch.portfolio_name != name:
+        raise ValueError("stage4 portfolio workflow batch portfolio name does not match")
     order_ids = [str(order.get("orderId") or "") for order in batch.orders]
     approvals = _stage4_ordered_evidence(
         approval_store.list_by_batch(base_run_id, batch_id), order_ids, "approval"

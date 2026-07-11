@@ -19282,6 +19282,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(listed["pagination"], {"limit": 2, "total": 2})
 
     def test_stage4_portfolio_workflow_api_rejects_client_live_fields_and_incomplete_or_mismatched_evidence(self):
+        from dataclasses import replace
+
         from quant_core.execution import PortfolioPaperOrderApproval, PortfolioPaperOrderSimulation
 
         cases = (
@@ -19289,10 +19291,14 @@ class QuantCoreContractTest(unittest.TestCase):
             "cross_market",
             "cross_timeframe",
             "missing_batch",
+            "batch_name_mismatch",
             "incomplete_approvals",
             "missing_fills",
             "replay_mismatch",
             "simulation_mismatch",
+            "simulation_source_run_mismatch",
+            "simulation_quantity_mismatch",
+            "simulation_notional_mismatch",
             "live_field",
         )
         for case in cases:
@@ -19307,6 +19313,10 @@ class QuantCoreContractTest(unittest.TestCase):
                     request["legs"] = request["legs"][:1]
                 elif case == "missing_batch":
                     request["batchId"] = "missing-batch"
+                elif case == "batch_name_mismatch":
+                    dependencies["batch_store"].record(
+                        replace(dependencies["batch"], portfolio_name="Different portfolio")
+                    )
                 elif case == "incomplete_approvals":
                     dependencies["approval_store"].record(
                         PortfolioPaperOrderApproval(
@@ -19320,7 +19330,14 @@ class QuantCoreContractTest(unittest.TestCase):
                             reason="Rejected.",
                         )
                     )
-                elif case in {"missing_fills", "replay_mismatch", "simulation_mismatch"}:
+                elif case in {
+                    "missing_fills",
+                    "replay_mismatch",
+                    "simulation_mismatch",
+                    "simulation_source_run_mismatch",
+                    "simulation_quantity_mismatch",
+                    "simulation_notional_mismatch",
+                }:
                     dependencies["simulation_store"].record(
                         PortfolioPaperOrderSimulation(
                             simulation_id=f"simulation-order-b-{case}",
@@ -19330,11 +19347,11 @@ class QuantCoreContractTest(unittest.TestCase):
                             simulated_at=datetime(2026, 7, 11, 8, 10, tzinfo=timezone.utc),
                             mode="portfolio_paper_order_simulation",
                             symbol="600000" if case == "simulation_mismatch" else "000300",
-                            source_run_id="run-b",
+                            source_run_id="run-a" if case == "simulation_source_run_mismatch" else "run-b",
                             side="hold" if case == "replay_mismatch" else "buy",
-                            quantity=50,
+                            quantity=51 if case == "simulation_quantity_mismatch" else 50,
                             fill_price=400,
-                            notional_value=20_000,
+                            notional_value=20_001 if case == "simulation_notional_mismatch" else 20_000,
                             order_state="pending" if case == "missing_fills" else "filled",
                             fill_status="pending" if case == "missing_fills" else "filled",
                             reason="Invalid workflow evidence.",
@@ -19385,6 +19402,34 @@ class QuantCoreContractTest(unittest.TestCase):
             )
             status, payload = self._stage4_portfolio_workflow_http(
                 dependencies, "GET", "/api/portfolio/workflows?baseRunId=run-a&limit=2"
+            )
+
+        self.assertEqual(status, 500)
+        self.assertEqual(payload["error"], "invalid_stage4_portfolio_workflow_store")
+
+    def test_stage4_portfolio_workflow_api_fails_closed_when_audit_time_differs_from_snapshot_instant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dependencies = self._stage4_portfolio_workflow_dependencies(Path(tmp))
+            create_status, created = self._stage4_portfolio_workflow_http(
+                dependencies,
+                "POST",
+                "/api/portfolio/workflows",
+                self._stage4_portfolio_workflow_request(),
+            )
+            self.assertEqual(create_status, 201)
+            event = created["auditEvent"]
+            dependencies["audit_store"].record(
+                {
+                    **event,
+                    "createdAt": (
+                        datetime.fromisoformat(event["createdAt"]) + timedelta(seconds=1)
+                    ).isoformat(),
+                }
+            )
+            status, payload = self._stage4_portfolio_workflow_http(
+                dependencies,
+                "GET",
+                "/api/portfolio/workflows?baseRunId=run-a&limit=1",
             )
 
         self.assertEqual(status, 500)
