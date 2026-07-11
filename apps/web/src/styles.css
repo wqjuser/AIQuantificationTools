@@ -3631,6 +3631,7 @@ em {
 .portfolio-layout {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   grid-template-areas:
+    "stage4 stage4"
     "portfolio decision"
     "execution decision";
 }
@@ -9261,6 +9262,167 @@ em {
 
 .workflow-portfolio-panel {
   grid-area: portfolio;
+}
+
+.portfolio-stage4-section {
+  grid-area: stage4;
+  min-width: 0;
+  border: 1px solid #2a3b51;
+  border-radius: 10px;
+  background: #0d1622;
+  padding: 14px;
+}
+
+.portfolio-stage4-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.portfolio-stage4-header span,
+.portfolio-stage4-header p,
+.portfolio-stage4-header h2 {
+  margin: 0;
+}
+
+.portfolio-stage4-header span,
+.portfolio-stage4-step small,
+.portfolio-stage4-evidence,
+.portfolio-stage4-actions small {
+  color: #8fa4b8;
+  font-size: 11px;
+}
+
+.portfolio-stage4-header h2 {
+  margin-top: 3px;
+  color: #f0f7fb;
+  font-size: 17px;
+}
+
+.portfolio-stage4-header p {
+  margin-top: 4px;
+  color: #a8b7c7;
+  font-size: 12px;
+}
+
+.portfolio-stage4-boundary {
+  max-width: 310px;
+  border: 1px solid #7a552c;
+  border-radius: 999px;
+  color: #f4c46d;
+  font-size: 10px;
+  padding: 5px 9px;
+  text-align: center;
+}
+
+.portfolio-stage4-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.portfolio-stage4-step {
+  min-width: 0;
+  border: 1px solid #293a50;
+  border-radius: 8px;
+  background: #111c2a;
+  padding: 9px;
+}
+
+.portfolio-stage4-step > span,
+.portfolio-stage4-step strong,
+.portfolio-stage4-step small {
+  display: block;
+}
+
+.portfolio-stage4-step > span {
+  color: #6f879d;
+  font: 800 10px var(--mono);
+}
+
+.portfolio-stage4-step strong {
+  margin-top: 5px;
+  color: #dce6ee;
+  font-size: 12px;
+}
+
+.portfolio-stage4-step.passed {
+  border-color: #27685c;
+}
+
+.portfolio-stage4-step.passed strong {
+  color: #71dfc5;
+}
+
+.portfolio-stage4-step.blocked {
+  border-color: #7a3a32;
+}
+
+.portfolio-stage4-blocker {
+  margin: 10px 0 0;
+  color: #f3ae96;
+  font-size: 11px;
+}
+
+.portfolio-stage4-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.portfolio-stage4-primary {
+  min-height: 34px;
+  border: 1px solid #277967;
+  border-radius: 7px;
+  background: #123129;
+  color: #7af5dd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 13px;
+}
+
+.portfolio-stage4-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.portfolio-stage4-evidence {
+  margin-top: 11px;
+}
+
+.portfolio-stage4-evidence summary {
+  cursor: pointer;
+  color: #b7c9d8;
+  font-weight: 800;
+}
+
+.portfolio-stage4-evidence dl {
+  margin: 8px 0 0;
+}
+
+.portfolio-stage4-evidence dl > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.portfolio-stage4-evidence dd {
+  min-width: 0;
+  margin: 0;
+  color: #dce6ee;
+  font-family: var(--mono);
+}
+
+.portfolio-stage4-hash {
+  overflow-wrap: anywhere;
 }
 
 .workflow-broker-panel {
@@ -16989,6 +17151,7 @@ button.ai-review-record {
 
   .portfolio-layout {
     grid-template-areas:
+      "stage4"
       "portfolio"
       "execution"
       "decision";
@@ -17460,6 +17623,7 @@ button.ai-review-record {
 
   .portfolio-layout {
     grid-template-areas:
+      "stage4"
       "portfolio"
       "execution"
       "decision";
@@ -17616,6 +17780,24 @@ button.ai-review-record {
 }
 
 @media (max-width: 560px) {
+  .portfolio-stage4-header,
+  .portfolio-stage4-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portfolio-stage4-boundary {
+    max-width: none;
+  }
+
+  .portfolio-stage4-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-stage4-primary {
+    width: 100%;
+  }
+
   .daily-start-brief-checkpoints {
     grid-template-columns: 1fr;
   }

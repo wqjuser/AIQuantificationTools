@@ -11,6 +11,10 @@ const aiReviewStage3SectionSource = readFileSync(
   new URL("../components/AiReviewStage3Section.tsx", import.meta.url),
   "utf8"
 );
+const portfolioStage4SectionSource = readFileSync(
+  new URL("../components/PortfolioStage4Section.tsx", import.meta.url),
+  "utf8"
+);
 const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
 const readmeSource = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
 const productPlanSource = readFileSync(new URL("../../../../docs/product-plan.md", import.meta.url), "utf8");
@@ -79,6 +83,41 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
+  test("renders the Stage 4 golden path once in Portfolio and restores all authoritative evidence", () => {
+    const portfolioSource = sourceBetween(
+      'if (activeWorkAreaId === "portfolio")',
+      'if (activeWorkAreaId === "execution")'
+    );
+    const executionSource = sourceBetween(
+      'if (activeWorkAreaId === "execution")',
+      'if (activeWorkAreaId === "audit")'
+    );
+    expect(appSource).toContain('import { PortfolioStage4Section } from "./components/PortfolioStage4Section";');
+    expect((appSource.match(/<PortfolioStage4Section/g) ?? [])).toHaveLength(1);
+    expect(portfolioSource.indexOf("<PortfolioStage4Section")).toBeGreaterThan(-1);
+    expect(portfolioSource.indexOf("<PortfolioStage4Section")).toBeLessThan(portfolioSource.indexOf("<PortfolioWorkspace"));
+    expect(executionSource).not.toContain("<PortfolioStage4Section");
+    expect(portfolioStage4SectionSource).not.toContain("fetch(");
+    for (const loader of [
+      "loadPortfolioPaperOrderBatches",
+      "loadPortfolioPaperOrderApprovals",
+      "loadPortfolioPaperOrderSimulations",
+      "loadPortfolioPaperOrderStateHistory",
+      "loadPortfolioPaperOrderReplay",
+      "loadStage4PortfolioWorkflows"
+    ]) expect(appSource).toContain(loader);
+    expect(appSource).toContain("portfolioStage4RequestCoordinatorRef");
+    expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.isCurrent(requestToken)");
+  });
+
+  test("stacks the Stage 4 steps at mobile width without horizontal overflow", () => {
+    expect(cssBlock(".portfolio-stage4-steps")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
+    expect(cssBlock(".portfolio-stage4-section")).toContain("min-width: 0;");
+    expect(cssBlock(".portfolio-stage4-hash")).toContain("overflow-wrap: anywhere;");
+    expect(hasCssBlockWith("  .portfolio-stage4-steps", ["grid-template-columns: 1fr;"])).toBe(true);
+    expect(hasCssBlockWith("  .portfolio-stage4-primary", ["width: 100%;"])).toBe(true);
+  });
+
   test("keeps the authoritative AI review section presentational and responsive", () => {
     expect(appSource).toContain('import { AiReviewStage3Section } from "./components/AiReviewStage3Section";');
     expect(appSource).toContain("<AiReviewStage3Section");
