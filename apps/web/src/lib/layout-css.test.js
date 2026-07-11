@@ -110,6 +110,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("portfolioStage4RequestCoordinatorRef");
     expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.isCurrent(request)");
     expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId)");
+    expect(appSource).toContain("const resetStage4PortfolioBusyState = useCallback");
     expect(appSource).toContain("selectCurrentStage4PortfolioWorkflow(");
     expect(appSource).toContain("portfolioStage4LatestBatch?.batchId");
     expect(appSource).toContain("const request = portfolioStage4RequestCoordinatorRef.current.begin(");
@@ -124,7 +125,19 @@ describe("terminal layout css", () => {
       const actionSource = sourceBetween(`const ${action} = useCallback`, "\n  });");
       expect(actionSource, action).toContain("portfolioStage4RequestCoordinatorRef.current.begin(");
       expect(actionSource, action).toContain("portfolioStage4RequestCoordinatorRef.current.isCurrent(request)");
+      expect(actionSource.indexOf("resetStage4PortfolioBusyState()"), action).toBeLessThan(
+        actionSource.indexOf("portfolioStage4RequestCoordinatorRef.current.begin(")
+      );
     }
+    const baseChangeSource = sourceBetween(
+      "useLayoutEffect(() => {\n    resetStage4PortfolioBusyState();",
+      "}, [currentResearchRunId, resetStage4PortfolioBusyState]);"
+    );
+    expect(baseChangeSource.indexOf("resetStage4PortfolioBusyState()"))
+      .toBeLessThan(baseChangeSource.indexOf("portfolioStage4RequestCoordinatorRef.current.invalidate("));
+    const refreshSource = sourceBetween("const refreshWorkspace = useCallback", "const refreshChart = useCallback");
+    expect(refreshSource.indexOf("resetStage4PortfolioBusyState()"))
+      .toBeLessThan(refreshSource.indexOf("portfolioStage4RequestCoordinatorRef.current.invalidate("));
   });
 
   test("navigates each Stage 4 review action to its actual evidence region", () => {
@@ -135,6 +148,11 @@ describe("terminal layout css", () => {
     expect(actionSource).toContain('"review-portfolio-risk": ".workflow-portfolio-panel .risk-ledger"');
     expect(actionSource).toContain('"review-portfolio-orders": ".portfolio-order-approval"');
     expect(actionSource).toContain('"review-route-risk": ".portfolio-route-risk-template"');
+    const refreshStart = actionSource.indexOf('if (actionId === "refresh-account-replay")');
+    const refreshEnd = actionSource.indexOf('if (actionId === "record-stage4-workflow")');
+    const refreshSource = actionSource.slice(refreshStart, refreshEnd);
+    expect(refreshSource.indexOf("resetStage4PortfolioBusyState()"))
+      .toBeLessThan(refreshSource.indexOf("portfolioStage4RequestCoordinatorRef.current.invalidate("));
   });
 
   test("stacks the Stage 4 steps at mobile width without horizontal overflow", () => {

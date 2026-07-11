@@ -2514,15 +2514,18 @@ export function App() {
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const strategyDraftRequiresReaudit = workspaceNeedsStrategyReaudit(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
-  useLayoutEffect(() => {
-    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
+  const resetStage4PortfolioBusyState = useCallback(() => {
     setIsRunningPortfolioBacktest(false);
     setIsRecordingPortfolioPaperOrders(false);
     setApprovingPortfolioPaperOrderId(null);
     setSimulatingPortfolioPaperOrderId(null);
     setIsSimulatingPortfolioPaperOrderBatch(false);
     setIsRecordingPortfolioStage4Workflow(false);
-  }, [currentResearchRunId]);
+  }, []);
+  useLayoutEffect(() => {
+    resetStage4PortfolioBusyState();
+    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
+  }, [currentResearchRunId, resetStage4PortfolioBusyState]);
   const strategyExperimentUsableSourceKey =
     researchRunContextBinding.canUseRun && workspace.researchRun
       ? `${workspace.researchRun.runId}:${workspace.researchRun.strategyRevision}`
@@ -6100,6 +6103,7 @@ export function App() {
       && manualSelectionVersionRef.current === startedSelectionVersion
     );
     setIsRefreshing(true);
+    resetStage4PortfolioBusyState();
     portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
     setPortfolioStage4RefreshGeneration((current) => current + 1);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
@@ -6219,7 +6223,13 @@ export function App() {
     await refreshSettingsStatus();
     await refreshAuditSigningKeys();
     setIsRefreshing(false);
-  }, [refreshAuditSigningKeys, refreshRunHistory, refreshSettingsStatus]);
+  }, [
+    currentResearchRunId,
+    refreshAuditSigningKeys,
+    refreshRunHistory,
+    refreshSettingsStatus,
+    resetStage4PortfolioBusyState
+  ]);
 
   useEffect(() => {
     if (activeWorkAreaId !== "audit") {
@@ -6671,6 +6681,7 @@ export function App() {
   ]);
 
   const runPortfolioBacktestDraft = useCallback(async () => {
+    resetStage4PortfolioBusyState();
     const request = portfolioStage4RequestCoordinatorRef.current.begin(currentResearchRunId);
     if (!portfolioBacktestDraft.request) {
       if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
@@ -6686,11 +6697,12 @@ export function App() {
     if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     setPortfolioBacktestState(result);
     setIsRunningPortfolioBacktest(false);
-  }, [currentResearchRunId, portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
+  }, [currentResearchRunId, portfolioBacktestDraft.request, portfolioBacktestDraft.summary, resetStage4PortfolioBusyState]);
 
   const recordPortfolioPaperOrders = useCallback(async () => {
     const portfolio = portfolioBacktestState.portfolio;
     const baseRunId = currentResearchRunId;
+    resetStage4PortfolioBusyState();
     const request = portfolioStage4RequestCoordinatorRef.current.begin(baseRunId);
     const orders = portfolio?.paperOrderEvents ?? [];
     if (!portfolio || !baseRunId || !orders.length) {
@@ -6752,10 +6764,11 @@ export function App() {
       statusLabel: "Portfolio paper order record failed",
       error: result.error ?? "Portfolio paper order record failed"
     }));
-  }, [currentResearchRunId, portfolioBacktestState.portfolio]);
+  }, [currentResearchRunId, portfolioBacktestState.portfolio, resetStage4PortfolioBusyState]);
 
   const reviewPortfolioPaperOrder = useCallback(async (row: PortfolioPaperOrderApprovalRow, approved: boolean) => {
     if (row.baseRunId !== currentResearchRunId) return;
+    resetStage4PortfolioBusyState();
     const request = portfolioStage4RequestCoordinatorRef.current.begin(row.baseRunId);
     setApprovingPortfolioPaperOrderId(row.id);
     const result = await recordPortfolioPaperOrderApproval(quantCoreBaseUrl, {
@@ -6813,7 +6826,7 @@ export function App() {
       statusLabel: "Portfolio paper order approval failed",
       error: approvalError
     }));
-  }, [currentResearchRunId, quantCoreBaseUrl]);
+  }, [currentResearchRunId, quantCoreBaseUrl, resetStage4PortfolioBusyState]);
 
   const approvePortfolioPaperOrder = useCallback(
     (row: PortfolioPaperOrderApprovalRow) => reviewPortfolioPaperOrder(row, true),
@@ -6837,6 +6850,7 @@ export function App() {
 
   const simulatePortfolioPaperOrder = useCallback(async (row: PortfolioPaperOrderApprovalRow) => {
     if (row.baseRunId !== currentResearchRunId) return;
+    resetStage4PortfolioBusyState();
     const request = portfolioStage4RequestCoordinatorRef.current.begin(row.baseRunId);
     setSimulatingPortfolioPaperOrderId(row.id);
     const routeRow = portfolioPaperOrderSimulationRouteRows.find(
@@ -6906,10 +6920,12 @@ export function App() {
     currentResearchRunId,
     portfolioPaperOrderRouteRiskRequest,
     portfolioPaperOrderSimulationRouteRows,
-    quantCoreBaseUrl
+    quantCoreBaseUrl,
+    resetStage4PortfolioBusyState
   ]);
 
   const simulatePortfolioPaperOrderBatch = useCallback(async () => {
+    resetStage4PortfolioBusyState();
     const request = portfolioStage4RequestCoordinatorRef.current.begin(currentResearchRunId);
     const simulatedOrderKeys = new Set(
       portfolioPaperOrderSimulations.map((simulation) => `${simulation.batchId}:${simulation.orderId}`)
@@ -7047,13 +7063,15 @@ export function App() {
     portfolioPaperOrderRouteRiskRequest,
     portfolioPaperOrderSimulationRouteRows,
     portfolioPaperOrderSimulations,
-    quantCoreBaseUrl
+    quantCoreBaseUrl,
+    resetStage4PortfolioBusyState
   ]);
 
   const recordPortfolioStage4Workflow = useCallback(async () => {
     const workflowDraft = portfolioBacktestDraft.request;
     const batch = portfolioStage4LatestBatch;
     if (!workflowDraft || !currentResearchRunId || !batch) return;
+    resetStage4PortfolioBusyState();
     const request = portfolioStage4RequestCoordinatorRef.current.begin(currentResearchRunId);
     setIsRecordingPortfolioStage4Workflow(true);
     const result = await recordStage4PortfolioWorkflow(quantCoreBaseUrl, {
@@ -7086,7 +7104,8 @@ export function App() {
     portfolioBacktestDraft.request,
     portfolioPaperOrderRouteRiskRequest,
     portfolioStage4LatestBatch,
-    quantCoreBaseUrl
+    quantCoreBaseUrl,
+    resetStage4PortfolioBusyState
   ]);
 
   const runPortfolioStage4PrimaryAction = useCallback((actionId: string) => {
@@ -7094,6 +7113,7 @@ export function App() {
     if (actionId === "record-paper-order-batch") return void recordPortfolioPaperOrders();
     if (actionId === "simulate-portfolio-batch") return void simulatePortfolioPaperOrderBatch();
     if (actionId === "refresh-account-replay") {
+      resetStage4PortfolioBusyState();
       portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
       setPortfolioStage4RefreshGeneration((current) => current + 1);
       return;
@@ -7111,7 +7131,8 @@ export function App() {
     recordPortfolioStage4Workflow,
     runPortfolioBacktestDraft,
     simulatePortfolioPaperOrderBatch,
-    currentResearchRunId
+    currentResearchRunId,
+    resetStage4PortfolioBusyState
   ]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {

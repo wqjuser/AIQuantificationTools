@@ -87,6 +87,44 @@ describe("PortfolioStage4Section", () => {
     expect(commits).toEqual([]);
   });
 
+  test("same-run refresh resets every Stage 4 busy owner and rejects its late completion", async () => {
+    for (const action of ["backtest", "batch", "approval", "single", "batch-simulation", "workflow"]) {
+      const coordinator = createPortfolioStage4RequestCoordinator("run-a");
+      const late = deferred<void>();
+      let busy: string | null = action;
+      const request = coordinator.begin("run-a");
+      const completion = late.promise.then(() => {
+        if (coordinator.isCurrent(request)) busy = null;
+      });
+
+      busy = null;
+      coordinator.invalidate("run-a");
+      late.resolve();
+      await completion;
+
+      expect(busy, action).toBeNull();
+    }
+  });
+
+  test("an invalidated old action cannot clear the newer action busy owner", async () => {
+    const coordinator = createPortfolioStage4RequestCoordinator("run-a");
+    const late = deferred<void>();
+    let busy: string | null = "backtest";
+    const older = coordinator.begin("run-a");
+    const completion = late.promise.then(() => {
+      if (coordinator.isCurrent(older)) busy = null;
+    });
+
+    busy = null;
+    const newer = coordinator.begin("run-a");
+    busy = "workflow";
+    late.resolve();
+    await completion;
+
+    expect(coordinator.isCurrent(newer)).toBe(true);
+    expect(busy).toBe("workflow");
+  });
+
   test("renders five Chinese-first steps, one enabled primary action, blockers and the paper boundary", () => {
     const markup = renderToStaticMarkup(
       <PortfolioStage4Section
