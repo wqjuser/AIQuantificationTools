@@ -7,6 +7,172 @@ from unittest.mock import patch
 
 
 class QuantCoreContractTest(unittest.TestCase):
+    def _stage4_portfolio_workflow_dependencies(self, root, *, market_b="ashare", timeframe_b="1d"):
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.execution import (
+            PortfolioPaperOrderApproval,
+            PortfolioPaperOrderApprovalStore,
+            PortfolioPaperOrderBatch,
+            PortfolioPaperOrderSimulation,
+            PortfolioPaperOrderSimulationStore,
+            PortfolioPaperOrderStore,
+        )
+        from quant_core.runs import ResearchRunAudit, ResearchRunStore
+
+        created_at = datetime(2026, 7, 11, 8, 0, tzinfo=timezone.utc)
+        timestamps = [created_at + timedelta(days=index) for index in range(3)]
+
+        def audit(run_id, symbol, market, timeframe, equities):
+            return ResearchRunAudit(
+                run_id=run_id,
+                created_at=created_at,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                strategy_name="Stage 4 audited plan",
+                strategy_revision=f"rev-{run_id}",
+                data_rows=len(equities),
+                metrics={"total_return_pct": 5, "win_rate_pct": 50, "profit_factor": 1.5, "trade_count": 2},
+                decisions=[],
+                execution_mode="paper_only",
+                ai_report={"summary": "Audited", "risks": [], "improvements": [], "disclaimer": "No advice"},
+                data_quality={"source": "local-cache", "isComplete": True, "warnings": [], "rows": len(equities)},
+                backtest_equity_curve=[
+                    {"timestamp": timestamp.isoformat(), "equity": equity}
+                    for timestamp, equity in zip(timestamps, equities, strict=True)
+                ],
+            )
+
+        run_store = ResearchRunStore(root / "runs.sqlite")
+        run_store.record(audit("run-a", "600000", "ashare", "1d", [100_000, 105_000, 110_000]))
+        run_store.record(audit("run-b", "000300", market_b, timeframe_b, [100_000, 103_000, 108_000]))
+        batch_store = PortfolioPaperOrderStore(root / "batches.sqlite")
+        approval_store = PortfolioPaperOrderApprovalStore(root / "approvals.sqlite")
+        simulation_store = PortfolioPaperOrderSimulationStore(root / "simulations.sqlite")
+        audit_store = AuditEventStore(root / "audit.sqlite")
+        batch = PortfolioPaperOrderBatch(
+            batch_id="portfolio-paper-batch-1",
+            base_run_id="run-a",
+            portfolio_name="Stage 4 Golden Path",
+            created_at=created_at,
+            mode="portfolio_paper_order_batch",
+            source="portfolio_backtest",
+            orders=[
+                {
+                    "timestamp": created_at.isoformat(),
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "order-a",
+                    "symbol": "600000",
+                    "sourceRunId": "run-a",
+                    "side": "buy",
+                    "quantity": 100,
+                    "notionalValue": 10_000,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                },
+                {
+                    "timestamp": created_at.isoformat(),
+                    "eventType": "portfolio_paper_order",
+                    "orderId": "order-b",
+                    "symbol": "000300",
+                    "sourceRunId": "run-b",
+                    "side": "buy",
+                    "quantity": 50,
+                    "notionalValue": 20_000,
+                    "status": "pending_review",
+                    "riskStatus": "passed",
+                },
+            ],
+            summary={},
+        )
+        batch_store.record(batch)
+        for index, order_id in enumerate(("order-a", "order-b")):
+            approval_store.record(
+                PortfolioPaperOrderApproval(
+                    approval_id=f"approval-{order_id}",
+                    base_run_id="run-a",
+                    batch_id=batch.batch_id,
+                    order_id=order_id,
+                    reviewed_at=created_at + timedelta(minutes=index + 1),
+                    approved=True,
+                    reviewer="local-operator",
+                    reason="Paper-only approval.",
+                )
+            )
+        for index, (order_id, symbol, source_run_id, quantity, price) in enumerate(
+            (("order-a", "600000", "run-a", 100, 100), ("order-b", "000300", "run-b", 50, 400))
+        ):
+            simulation_store.record(
+                PortfolioPaperOrderSimulation(
+                    simulation_id=f"simulation-{order_id}",
+                    base_run_id="run-a",
+                    batch_id=batch.batch_id,
+                    order_id=order_id,
+                    simulated_at=created_at + timedelta(minutes=index + 3),
+                    mode="portfolio_paper_order_simulation",
+                    symbol=symbol,
+                    source_run_id=source_run_id,
+                    side="buy",
+                    quantity=quantity,
+                    fill_price=price,
+                    notional_value=quantity * price,
+                    order_state="filled",
+                    fill_status="filled",
+                    reason="Paper fill.",
+                    approved_by="local-operator",
+                )
+            )
+        return {
+            "run_store": run_store,
+            "batch_store": batch_store,
+            "approval_store": approval_store,
+            "simulation_store": simulation_store,
+            "audit_store": audit_store,
+            "batch": batch,
+        }
+
+    def _stage4_portfolio_workflow_http(self, dependencies, method, path, body=None):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+
+        class TestHandler(QuantApiHandler):
+            pass
+
+        TestHandler.run_store = dependencies["run_store"]
+        TestHandler.portfolio_paper_order_store = dependencies["batch_store"]
+        TestHandler.portfolio_paper_order_approval_store = dependencies["approval_store"]
+        TestHandler.portfolio_paper_order_simulation_store = dependencies["simulation_store"]
+        TestHandler.audit_event_store = dependencies["audit_store"]
+        server = HTTPServer(("127.0.0.1", 0), TestHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(*server.server_address, timeout=5)
+        try:
+            encoded = json.dumps(body).encode("utf-8") if body is not None else None
+            connection.request(method, path, body=encoded, headers={"Content-Type": "application/json"})
+            response = connection.getresponse()
+            return response.status, json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+    def _stage4_portfolio_workflow_request(self):
+        return {
+            "baseRunId": "run-a",
+            "name": "Stage 4 Golden Path",
+            "initialCash": 100_000,
+            "legs": [{"runId": "run-a", "targetWeight": 0.5}, {"runId": "run-b", "targetWeight": 0.4}],
+            "riskTemplate": {"minCashAfter": 10_000, "maxSymbolNotional": 50_000, "maxBatchNotional": 90_000},
+            "batchId": "portfolio-paper-batch-1",
+            "operator": "local-operator",
+        }
+
     def _load_docker_smoke_module(self):
         root = Path(__file__).resolve().parents[3]
         module_path = root / "tools" / "docker_smoke.py"
@@ -19086,6 +19252,143 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["executions"][0]["executionId"], payload["execution"]["executionId"])
         self.assertEqual(list_payload["executions"][0]["preparationEvidence"]["quality"]["source"], "tencent")
+
+    def test_stage4_portfolio_workflow_api_persists_authoritative_snapshot_and_pages_newest_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dependencies = self._stage4_portfolio_workflow_dependencies(Path(tmp))
+            request = self._stage4_portfolio_workflow_request()
+            first_status, first = self._stage4_portfolio_workflow_http(
+                dependencies, "POST", "/api/portfolio/workflows", request
+            )
+            second_status, second = self._stage4_portfolio_workflow_http(
+                dependencies, "POST", "/api/portfolio/workflows", request
+            )
+            get_status, listed = self._stage4_portfolio_workflow_http(
+                dependencies, "GET", "/api/portfolio/workflows?baseRunId=run-a&limit=2"
+            )
+
+        self.assertEqual(first_status, 201)
+        self.assertEqual(second_status, 201)
+        self.assertEqual(first["auditEvent"]["eventType"], "stage4_portfolio_workflow")
+        self.assertEqual(first["auditEvent"]["metadata"]["snapshot"], first["workflow"])
+        self.assertEqual(first["workflow"]["portfolioRequest"]["legs"][0]["symbol"], "600000")
+        self.assertEqual(first["workflow"]["portfolio"]["legs"][1]["symbol"], "000300")
+        self.assertNotEqual(first["workflow"]["workflowId"], second["workflow"]["workflowId"])
+        self.assertEqual(get_status, 200)
+        self.assertEqual(
+            [item["workflowId"] for item in listed["workflows"]],
+            [second["workflow"]["workflowId"], first["workflow"]["workflowId"]],
+        )
+        self.assertEqual(listed["pagination"], {"limit": 2, "total": 2})
+
+    def test_stage4_portfolio_workflow_api_rejects_client_live_fields_and_incomplete_or_mismatched_evidence(self):
+        from quant_core.execution import PortfolioPaperOrderApproval, PortfolioPaperOrderSimulation
+
+        cases = (
+            "one_leg",
+            "cross_market",
+            "cross_timeframe",
+            "missing_batch",
+            "incomplete_approvals",
+            "missing_fills",
+            "replay_mismatch",
+            "simulation_mismatch",
+            "live_field",
+        )
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                dependencies = self._stage4_portfolio_workflow_dependencies(
+                    Path(tmp),
+                    market_b="us" if case == "cross_market" else "ashare",
+                    timeframe_b="1m" if case == "cross_timeframe" else "1d",
+                )
+                request = self._stage4_portfolio_workflow_request()
+                if case == "one_leg":
+                    request["legs"] = request["legs"][:1]
+                elif case == "missing_batch":
+                    request["batchId"] = "missing-batch"
+                elif case == "incomplete_approvals":
+                    dependencies["approval_store"].record(
+                        PortfolioPaperOrderApproval(
+                            approval_id="approval-order-b-rejected",
+                            base_run_id="run-a",
+                            batch_id="portfolio-paper-batch-1",
+                            order_id="order-b",
+                            reviewed_at=datetime(2026, 7, 11, 8, 10, tzinfo=timezone.utc),
+                            approved=False,
+                            reviewer="local-operator",
+                            reason="Rejected.",
+                        )
+                    )
+                elif case in {"missing_fills", "replay_mismatch", "simulation_mismatch"}:
+                    dependencies["simulation_store"].record(
+                        PortfolioPaperOrderSimulation(
+                            simulation_id=f"simulation-order-b-{case}",
+                            base_run_id="run-a",
+                            batch_id="portfolio-paper-batch-1",
+                            order_id="order-b",
+                            simulated_at=datetime(2026, 7, 11, 8, 10, tzinfo=timezone.utc),
+                            mode="portfolio_paper_order_simulation",
+                            symbol="600000" if case == "simulation_mismatch" else "000300",
+                            source_run_id="run-b",
+                            side="hold" if case == "replay_mismatch" else "buy",
+                            quantity=50,
+                            fill_price=400,
+                            notional_value=20_000,
+                            order_state="pending" if case == "missing_fills" else "filled",
+                            fill_status="pending" if case == "missing_fills" else "filled",
+                            reason="Invalid workflow evidence.",
+                            approved_by="local-operator",
+                        )
+                    )
+                elif case == "live_field":
+                    request["liveTradingAllowed"] = True
+                status, payload = self._stage4_portfolio_workflow_http(
+                    dependencies, "POST", "/api/portfolio/workflows", request
+                )
+                self.assertIn(status, {400, 404})
+                self.assertIn("error", payload)
+                self.assertEqual(
+                    dependencies["audit_store"].count(event_type="stage4_portfolio_workflow"),
+                    0,
+                )
+
+    def test_stage4_portfolio_workflow_api_rejects_malformed_queries_and_fails_closed_on_bad_rows(self):
+        malformed_paths = (
+            "/api/portfolio/workflows",
+            "/api/portfolio/workflows?baseRunId=&limit=2",
+            "/api/portfolio/workflows?baseRunId=run-a&limit=nope",
+            "/api/portfolio/workflows?baseRunId=run-a&limit=0",
+            "/api/portfolio/workflows?baseRunId=run-a&limit=2&extra=true",
+            "/api/portfolio/workflows?baseRunId=run-a&baseRunId=run-b&limit=2",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            dependencies = self._stage4_portfolio_workflow_dependencies(Path(tmp))
+            for path in malformed_paths:
+                with self.subTest(path=path):
+                    status, payload = self._stage4_portfolio_workflow_http(dependencies, "GET", path)
+                    self.assertEqual(status, 400)
+                    self.assertEqual(payload["error"], "invalid_stage4_portfolio_workflow_query")
+            dependencies["audit_store"].record(
+                {
+                    "schemaVersion": 1,
+                    "eventId": "bad-stage4-workflow-row",
+                    "eventType": "stage4_portfolio_workflow",
+                    "runId": "run-a",
+                    "createdAt": "2026-07-11T09:00:00+00:00",
+                    "stage": "stage4-portfolio-workflow",
+                    "source": "local-operator",
+                    "summary": "Malformed persisted workflow.",
+                    "detail": "This row must fail closed.",
+                    "metadata": {"snapshot": {}},
+                }
+            )
+            status, payload = self._stage4_portfolio_workflow_http(
+                dependencies, "GET", "/api/portfolio/workflows?baseRunId=run-a&limit=2"
+            )
+
+        self.assertEqual(status, 500)
+        self.assertEqual(payload["error"], "invalid_stage4_portfolio_workflow_store")
 
     def test_portfolio_backtest_api_combines_audited_runs_by_weight(self):
         import json

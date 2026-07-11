@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -211,6 +212,10 @@ from quant_core.market_calendar import build_market_calendar_status
 from quant_core.market_klines import QuantDingerKlineAdapter, build_market_data_readiness, market_klines_to_payload
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+from quant_core.stage4_portfolio import (
+    build_stage4_portfolio_workflow_snapshot,
+    validate_stage4_portfolio_workflow_snapshot,
+)
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
@@ -2049,6 +2054,43 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=409 if restart_acceptance.status == "blocked" else 200,
             )
             return
+        if parsed.path == "/api/portfolio/workflows":
+            try:
+                snapshot, operator = _stage4_portfolio_workflow_from_payload(
+                    self._read_json_body(),
+                    run_store=self.run_store,
+                    batch_store=self.portfolio_paper_order_store,
+                    approval_store=self.portfolio_paper_order_approval_store,
+                    simulation_store=self.portfolio_paper_order_simulation_store,
+                )
+                audit_event = self.audit_event_store.record(
+                    {
+                        "schemaVersion": 1,
+                        "eventId": snapshot["workflowId"],
+                        "eventType": "stage4_portfolio_workflow",
+                        "runId": snapshot["baseRunId"],
+                        "createdAt": snapshot["generatedAt"],
+                        "stage": "stage4-portfolio-workflow",
+                        "source": operator,
+                        "summary": f"Recorded authoritative Stage 4 portfolio workflow for {snapshot['baseRunId']}.",
+                        "detail": "Portfolio, paper evidence, state history, and replay were rebuilt from server stores.",
+                        "metadata": {"snapshot": snapshot},
+                    }
+                )
+            except LookupError as error:
+                self._send_json(
+                    {"error": "stage4_portfolio_workflow_evidence_not_found", "detail": str(error)},
+                    status=404,
+                )
+                return
+            except ValueError as error:
+                self._send_json({"error": "invalid_stage4_portfolio_workflow", "detail": str(error)}, status=400)
+                return
+            self._send_json(
+                {"workflow": snapshot, "auditEvent": audit_event_record_to_payload(audit_event)},
+                status=201,
+            )
+            return
         if parsed.path == "/api/portfolio/backtest":
             try:
                 portfolio = _portfolio_backtest_from_payload(self._read_json_body(), self.run_store)
@@ -3783,6 +3825,41 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/portfolio/workflows":
+            try:
+                base_run_id, limit = _stage4_portfolio_workflow_query(parsed.query)
+                events = self.audit_event_store.list_recent(
+                    run_id=base_run_id,
+                    event_type="stage4_portfolio_workflow",
+                    limit=limit,
+                )
+                workflows = []
+                for event in events:
+                    snapshot = validate_stage4_portfolio_workflow_snapshot(event.metadata.get("snapshot"))
+                    if snapshot["baseRunId"] != base_run_id or snapshot["workflowId"] != event.event_id:
+                        raise ValueError("stage4 portfolio workflow audit binding does not match")
+                    workflows.append(snapshot)
+            except ValueError as error:
+                code = (
+                    "invalid_stage4_portfolio_workflow_query"
+                    if str(error) == "invalid_stage4_portfolio_workflow_query"
+                    else "invalid_stage4_portfolio_workflow_store"
+                )
+                self._send_json({"error": code, "detail": str(error)}, status=400 if code.endswith("query") else 500)
+                return
+            self._send_json(
+                {
+                    "workflows": workflows,
+                    "pagination": {
+                        "limit": limit,
+                        "total": self.audit_event_store.count(
+                            run_id=base_run_id,
+                            event_type="stage4_portfolio_workflow",
+                        ),
+                    },
+                }
+            )
+            return
         if parsed.path == "/api/portfolio/paper-orders":
             query = parse_qs(parsed.query)
             base_run_id = query.get("baseRunId", [""])[0].strip()
@@ -4796,6 +4873,135 @@ def _watchlist_refresh_preparation_evidence(
                 "error": item.error,
             }
     return None
+
+
+def _stage4_portfolio_workflow_from_payload(
+    payload: dict[str, object],
+    *,
+    run_store: ResearchRunStore,
+    batch_store: PortfolioPaperOrderStore,
+    approval_store: PortfolioPaperOrderApprovalStore,
+    simulation_store: PortfolioPaperOrderSimulationStore,
+) -> tuple[dict[str, object], str]:
+    expected_fields = {"baseRunId", "name", "initialCash", "legs", "riskTemplate", "batchId", "operator"}
+    if not isinstance(payload, dict) or set(payload) != expected_fields:
+        raise ValueError("stage4 portfolio workflow request fields are invalid")
+    base_run_id = _required_stage4_string(payload["baseRunId"])
+    name = _required_stage4_string(payload["name"])
+    batch_id = _required_stage4_string(payload["batchId"])
+    operator = _required_stage4_string(payload["operator"])
+    initial_cash = payload["initialCash"]
+    if isinstance(initial_cash, bool) or not isinstance(initial_cash, (int, float)) or initial_cash <= 0:
+        raise ValueError("stage4 portfolio workflow initialCash must be positive")
+    legs = payload["legs"]
+    if not isinstance(legs, list) or len(legs) < 2:
+        raise ValueError("stage4 portfolio workflow requires at least two legs")
+    for leg in legs:
+        if not isinstance(leg, dict) or set(leg) != {"runId", "targetWeight"}:
+            raise ValueError("stage4 portfolio workflow leg fields are invalid")
+        _required_stage4_string(leg["runId"])
+        weight = leg["targetWeight"]
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise ValueError("stage4 portfolio workflow targetWeight must be numeric")
+    risk_template = payload["riskTemplate"]
+    if not isinstance(risk_template, dict) or set(risk_template) != {
+        "minCashAfter",
+        "maxSymbolNotional",
+        "maxBatchNotional",
+    }:
+        raise ValueError("stage4 portfolio workflow riskTemplate fields are invalid")
+
+    portfolio_input = {"name": name, "initialCash": initial_cash, "legs": legs}
+    portfolio = _portfolio_backtest_from_payload(portfolio_input, run_store)
+    audits = [run_store.get(str(leg["runId"])) for leg in legs]
+    if any(audit is None for audit in audits):
+        raise LookupError("stage4 portfolio workflow run not found")
+    portfolio_request = {
+        "name": name,
+        "initialCash": initial_cash,
+        "legs": [
+            {
+                "runId": leg["runId"],
+                "symbol": audit.symbol,
+                "market": audit.market,
+                "timeframe": audit.timeframe,
+                "targetWeight": leg["targetWeight"],
+            }
+            for leg, audit in zip(legs, audits, strict=True)
+        ],
+    }
+    batch = _find_portfolio_paper_order_batch(batch_store, base_run_id, batch_id)
+    order_ids = [str(order.get("orderId") or "") for order in batch.orders]
+    approvals = _stage4_ordered_evidence(
+        approval_store.list_by_batch(base_run_id, batch_id), order_ids, "approval"
+    )
+    simulations = _stage4_ordered_evidence(
+        simulation_store.list_by_batch(base_run_id, batch_id), order_ids, "simulation"
+    )
+    run_symbols = {str(leg["runId"]): audit.symbol for leg, audit in zip(legs, audits, strict=True)}
+    for order, simulation in zip(batch.orders, simulations, strict=True):
+        source_run_id = str(order.get("sourceRunId") or "")
+        if (
+            run_symbols.get(source_run_id) != str(order.get("symbol") or "")
+            or simulation.symbol != order.get("symbol")
+            or simulation.source_run_id != source_run_id
+            or simulation.side != order.get("side")
+            or simulation.quantity != order.get("quantity")
+            or simulation.notional_value != order.get("notionalValue")
+        ):
+            raise ValueError("stage4 portfolio workflow simulation does not match batch order")
+    approval_payloads = [portfolio_paper_order_approval_to_payload(item) for item in approvals]
+    simulation_payloads = [portfolio_paper_order_simulation_to_payload(item) for item in simulations]
+    state_history = build_portfolio_paper_order_state_history(
+        batch,
+        approvals=approvals,
+        simulations=simulations,
+    )
+    replay = build_portfolio_paper_order_replay(
+        simulations,
+        base_run_id=base_run_id,
+        initial_cash=float(initial_cash),
+    )
+    snapshot = build_stage4_portfolio_workflow_snapshot(
+        workflow_id=f"stage4-portfolio-workflow-{uuid.uuid4().hex}",
+        base_run_id=base_run_id,
+        portfolio_request=portfolio_request,
+        portfolio=portfolio,
+        risk_template=risk_template,
+        batch=portfolio_paper_order_batch_to_payload(batch),
+        approvals=approval_payloads,
+        simulations=simulation_payloads,
+        state_history=state_history,
+        replay=replay,
+    )
+    return snapshot, operator
+
+
+def _required_stage4_string(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("stage4 portfolio workflow string field is required")
+    return value.strip()
+
+
+def _stage4_ordered_evidence(items: list[object], order_ids: list[str], label: str) -> list[object]:
+    by_order_id = {str(getattr(item, "order_id", "")): item for item in items}
+    if not order_ids or len(items) != len(order_ids) or set(by_order_id) != set(order_ids):
+        raise ValueError(f"stage4 portfolio workflow {label}s do not match batch orders")
+    return [by_order_id[order_id] for order_id in order_ids]
+
+
+def _stage4_portfolio_workflow_query(raw_query: str) -> tuple[str, int]:
+    query = parse_qs(raw_query, keep_blank_values=True)
+    if set(query) - {"baseRunId", "limit"} or len(query.get("baseRunId", [])) != 1:
+        raise ValueError("invalid_stage4_portfolio_workflow_query")
+    base_run_id = query["baseRunId"][0].strip()
+    raw_limit = query.get("limit", ["20"])
+    if not base_run_id or len(raw_limit) != 1 or not raw_limit[0].isdigit():
+        raise ValueError("invalid_stage4_portfolio_workflow_query")
+    limit = int(raw_limit[0])
+    if not 1 <= limit <= 50:
+        raise ValueError("invalid_stage4_portfolio_workflow_query")
+    return base_run_id, limit
 
 
 def _portfolio_backtest_from_payload(payload: dict[str, object], run_store: ResearchRunStore):
