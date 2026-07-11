@@ -9055,7 +9055,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
     workAreaIds: ["market", "research"],
-    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 3 ships.",
+    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 4 ships.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -9078,7 +9078,7 @@ const productDevelopmentStageDefinitions = [
   {
     id: "ai-review",
     label: "Stage 3 · AI Review",
-    status: "current",
+    status: "maintenance",
     workAreaIds: ["ai-review"],
     focus: "Ship deterministic, provider-optional AI review from selected audited experiments with authoritative replayable decisions.",
     exitCriteria: [
@@ -9090,7 +9090,7 @@ const productDevelopmentStageDefinitions = [
   {
     id: "portfolio-paper",
     label: "Stage 4 · Portfolio and Paper Trading",
-    status: "planned",
+    status: "current",
     workAreaIds: ["portfolio", "execution"],
     focus: "Move into portfolio risk, paper orders, and lifecycle replay after single-strategy evidence is dependable.",
     exitCriteria: [

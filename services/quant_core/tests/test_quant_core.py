@@ -23461,6 +23461,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
     def test_portfolio_paper_order_replay_rebuilds_cash_positions_and_orders(self):
         import json
+        from dataclasses import replace
 
         from quant_core.execution import (
             PortfolioPaperOrderSimulation,
@@ -23546,6 +23547,12 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("replay-adapter-private-key-should-not-leak", json.dumps(replay))
         self.assertTrue(replay["paperOnly"])
         self.assertTrue(replay["liveExecutionBlocked"])
+
+        same_time = build_portfolio_paper_order_replay(
+            [simulations[0], replace(simulations[1], simulated_at=simulations[0].simulated_at)],
+            base_run_id="portfolio-run-replay",
+        )
+        self.assertEqual([order["orderId"] for order in same_time["orders"]], ["order-buy-late", "order-buy-early"])
 
     def test_portfolio_paper_order_replay_api_returns_base_run_account_snapshot(self):
         import json

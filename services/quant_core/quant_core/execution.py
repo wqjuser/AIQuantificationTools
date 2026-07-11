@@ -2249,7 +2249,7 @@ def build_portfolio_paper_order_replay(
     realized_pnl = 0.0
     replay_simulations = sorted(
         [simulation for simulation in simulations if simulation.base_run_id == normalized_base_run_id],
-        key=lambda simulation: (simulation.simulated_at, simulation.batch_id, simulation.order_id),
+        key=lambda simulation: (simulation.simulated_at, simulation.batch_id),
     )
 
     for simulation in replay_simulations:
