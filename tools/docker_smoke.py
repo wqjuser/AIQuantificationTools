@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -995,6 +996,153 @@ def validate_stage3_ai_review_manifest(manifest: Any) -> str:
     )
 
 
+_STAGE4_ACCEPTANCE_FIELDS = {
+    "kind",
+    "schemaVersion",
+    "generatedAt",
+    "status",
+    "portfolioHash",
+    "workflowHash",
+    "workflow",
+    "retryEvidence",
+    "exportReadback",
+    "paperOnly",
+    "liveTradingAllowed",
+    "orderSubmissionEnabled",
+    "routeExecuted",
+    "liveBlockedBoundary",
+}
+_STAGE4_SAFETY = {
+    "paperOnly": True,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def _stage4_acceptance_hash(value: Any) -> str:
+    try:
+        canonical = json.dumps(value, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: evidence is not canonical JSON") from error
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def build_stage4_portfolio_acceptance_manifest(
+    *,
+    workflow: dict[str, Any],
+    retry_evidence: dict[str, Any],
+    export_readback: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "aiqt.stage4PortfolioPaperAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed",
+        "portfolioHash": _stage4_acceptance_hash(workflow.get("portfolio")),
+        "workflowHash": workflow.get("workflowHash"),
+        "workflow": json.loads(json.dumps(workflow)),
+        "retryEvidence": json.loads(json.dumps(retry_evidence)),
+        "exportReadback": json.loads(json.dumps(export_readback)),
+        **_STAGE4_SAFETY,
+    }
+
+
+def write_stage4_portfolio_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage4 portfolio acceptance report={path}")
+    return path
+
+
+def load_stage4_portfolio_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 4 portfolio acceptance manifest")
+
+
+def validate_stage4_portfolio_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 4 portfolio acceptance manifest")
+    if set(payload) != _STAGE4_ACCEPTANCE_FIELDS:
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage4PortfolioPaperAcceptance"
+        or type(payload["schemaVersion"]) is not int
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+    ):
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: identity is invalid")
+    generated_at = payload["generatedAt"]
+    try:
+        parsed_generated_at = datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else None
+    except ValueError:
+        parsed_generated_at = None
+    if parsed_generated_at is None or parsed_generated_at.tzinfo != timezone.utc or parsed_generated_at.isoformat() != generated_at:
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: generatedAt is not canonical UTC")
+    if any(payload.get(field) is not expected for field, expected in _STAGE4_SAFETY.items()):
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: paper/live boundary is invalid")
+
+    validator = _quant_core_validator("stage4_portfolio", "validate_stage4_portfolio_workflow_snapshot")
+    try:
+        workflow = validator(payload["workflow"])
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(f"Invalid Stage 4 portfolio acceptance manifest: workflow is invalid: {error}") from error
+    legs = workflow["portfolioRequest"].get("legs")
+    if not isinstance(legs, list) or len(legs) != 2:
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: exactly two legs are required")
+    if payload["workflowHash"] != workflow["workflowHash"]:
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: workflow hash does not match")
+    if payload["portfolioHash"] != _stage4_acceptance_hash(workflow["portfolio"]):
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: portfolio hash does not match")
+
+    risk_checks = workflow["portfolio"].get("preTradeRiskChecks")
+    risk_ids = {
+        check.get("checkId")
+        for check in risk_checks or []
+        if isinstance(check, dict) and check.get("status") in {"passed", "review"}
+    }
+    if not isinstance(risk_checks, list) or not {
+        "portfolio_data_quality",
+        "trade_review_status",
+        "trade_notional_limit",
+    }.issubset(risk_ids) or any(
+        not isinstance(check, dict) or check.get("status") not in {"passed", "review"} for check in risk_checks
+    ):
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: risk checks are invalid")
+
+    order_ids = [order.get("orderId") for order in workflow["batch"]["orders"]]
+    retry = payload["retryEvidence"]
+    if not isinstance(retry, dict) or set(retry) != {
+        "requestedOrderIds",
+        "initialFilledOrderIds",
+        "retryCreatedOrderIds",
+        "retrySkippedOrderIds",
+    } or retry["requestedOrderIds"] != order_ids or retry["initialFilledOrderIds"] != order_ids or retry[
+        "retryCreatedOrderIds"
+    ] != [] or retry["retrySkippedOrderIds"] != order_ids:
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: idempotent retry evidence is invalid")
+
+    readback = payload["exportReadback"]
+    if not isinstance(readback, dict) or set(readback) != {
+        "exportArtifactCount",
+        "importedArtifactCount",
+        "readbackArtifactCount",
+        "exportWorkflowHash",
+        "importedWorkflowHash",
+        "readbackWorkflowHash",
+    } or any(
+        type(readback[field]) is not int or readback[field] != 1
+        for field in ("exportArtifactCount", "importedArtifactCount", "readbackArtifactCount")
+    ) or any(
+        readback[field] != workflow["workflowHash"]
+        for field in ("exportWorkflowHash", "importedWorkflowHash", "readbackWorkflowHash")
+    ):
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: export readback evidence is invalid")
+    return (
+        f"stage4 portfolio acceptance run={workflow['baseRunId']} legs=2 orders={len(order_ids)} "
+        "replayExact=True liveBlocked=True"
+    )
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1595,6 +1743,259 @@ def run_p0_import_acceptance(
         1,
     )
     return [import_summary, imported_export_summary]
+
+
+def _stage4_export_workflow(payload: Any, run_id: str) -> tuple[dict[str, Any], int]:
+    package = _require_dict(_require_dict(payload, "Stage 4 research export").get("export"), "Stage 4 export")
+    manifest = _require_dict(package.get("manifest"), "Stage 4 export manifest")
+    counts = _require_dict(manifest.get("artifactCounts"), "Stage 4 export artifact counts")
+    count = counts.get("stage4PortfolioWorkflows")
+    events = package.get("auditEvents")
+    workflows = [
+        event.get("metadata", {}).get("snapshot")
+        for event in events or []
+        if isinstance(event, dict)
+        and event.get("eventType") == "stage4_portfolio_workflow"
+        and isinstance(event.get("metadata"), dict)
+    ]
+    if manifest.get("runId") != run_id or type(count) is not int or count != 1 or len(workflows) != 1:
+        raise RuntimeError("Invalid Stage 4 research export: workflow count or run binding is invalid")
+    return _require_dict(workflows[0], "Stage 4 exported workflow"), count
+
+
+def run_stage4_portfolio_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    report_path: Path | None = None,
+) -> list[str]:
+    run_ids = []
+    for symbol in ("600000", "000300"):
+        response = post_json(
+            join_url(base_url, "/api/p0/pipeline"),
+            build_p0_pipeline_payload("ashare", symbol, "1d"),
+            timeout_seconds=timeout_seconds,
+        )
+        run_id, _summary = validate_p0_pipeline_payload(response)
+        run_ids.append(run_id)
+    base_run_id = run_ids[0]
+    portfolio_request = {
+        "name": "Stage 4 Golden Path",
+        "initialCash": 100000,
+        "legs": [
+            {"runId": run_ids[0], "targetWeight": 0.5},
+            {"runId": run_ids[1], "targetWeight": 0.4},
+        ],
+    }
+    portfolio = _require_dict(
+        _require_dict(
+            post_json(
+                join_url(base_url, "/api/portfolio/backtest"),
+                portfolio_request,
+                timeout_seconds=timeout_seconds,
+            ),
+            "Stage 4 portfolio backtest",
+        ).get("portfolio"),
+        "Stage 4 portfolio",
+    )
+    legs = portfolio.get("legs")
+    if not isinstance(legs, list) or len(legs) != 2:
+        raise RuntimeError("Invalid Stage 4 portfolio response: exactly two legs are required")
+    now = datetime.now(timezone.utc).isoformat()
+    orders = [
+        {
+            "timestamp": now,
+            "eventType": "portfolio_paper_order",
+            "orderId": f"stage4-{_smoke_token(run_id)}-{_smoke_token(str(leg.get('symbol') or ''))}-buy",
+            "symbol": str(leg.get("symbol") or ""),
+            "sourceRunId": run_id,
+            "side": "buy",
+            "quantity": 10,
+            "notionalValue": 1000,
+            "status": "pending_review",
+            "riskStatus": "passed",
+            "reason": "Stage 4 paper-only acceptance order.",
+        }
+        for run_id, leg in zip(run_ids, legs, strict=True)
+    ]
+    batch_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/portfolio/paper-orders"),
+            {
+                "baseRunId": base_run_id,
+                "portfolioName": portfolio_request["name"],
+                "source": "stage4_portfolio_acceptance",
+                "orders": orders,
+            },
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 4 portfolio paper-order batch",
+    )
+    batch = _require_dict(batch_response.get("portfolioPaperOrderBatch"), "Stage 4 portfolio paper-order batch")
+    batch_id = str(batch.get("batchId") or "").strip()
+    order_ids = [str(order.get("orderId") or "").strip() for order in batch.get("orders", [])]
+    if batch.get("baseRunId") != base_run_id or not batch_id or order_ids != [order["orderId"] for order in orders]:
+        raise RuntimeError("Invalid Stage 4 portfolio paper-order batch: binding is invalid")
+
+    for order_id in order_ids:
+        approval_response = _require_dict(
+            post_json(
+                join_url(base_url, "/api/portfolio/paper-order-approvals"),
+                {
+                    "baseRunId": base_run_id,
+                    "batchId": batch_id,
+                    "orderId": order_id,
+                    "approved": True,
+                    "reviewer": "stage4-smoke-operator",
+                    "reviewedAt": datetime.now(timezone.utc).isoformat(),
+                    "reason": "Approved for Stage 4 paper-only acceptance.",
+                },
+                timeout_seconds=timeout_seconds,
+            ),
+            "Stage 4 portfolio approval",
+        )
+        approval = _require_dict(approval_response.get("approval"), "Stage 4 portfolio approval")
+        if approval.get("orderId") != order_id or approval.get("approved") is not True:
+            raise RuntimeError("Invalid Stage 4 portfolio approval: exact approval sequence is invalid")
+
+    simulation_request = {
+        "baseRunId": base_run_id,
+        "batchId": batch_id,
+        "orderIds": order_ids,
+        "simulatedAt": datetime.now(timezone.utc).isoformat(),
+        "routeRisk": {
+            "initialCash": 100000,
+            "minCashAfter": 10000,
+            "maxSymbolNotional": 50000,
+            "maxBatchNotional": 90000,
+        },
+    }
+    first_simulation = _require_dict(
+        post_json(
+            join_url(base_url, "/api/portfolio/paper-order-simulations/batch"),
+            simulation_request,
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 4 batch simulation",
+    )
+    retry_simulation = _require_dict(
+        post_json(
+            join_url(base_url, "/api/portfolio/paper-order-simulations/batch"),
+            simulation_request,
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 4 batch simulation retry",
+    )
+    created = first_simulation.get("createdSimulations")
+    retry_created = retry_simulation.get("createdSimulations")
+    retry_batch = _require_dict(retry_simulation.get("batchSimulation"), "Stage 4 retry summary")
+    skipped = retry_batch.get("skippedOrders")
+    if (
+        not isinstance(created, list)
+        or [row.get("orderId") for row in created if isinstance(row, dict)] != order_ids
+        or any(row.get("orderState") != "filled" or row.get("fillStatus") != "filled" for row in created)
+        or retry_created != []
+        or not isinstance(skipped, list)
+        or [row.get("orderId") for row in skipped if isinstance(row, dict)] != order_ids
+        or any(row.get("reason") != "already_simulated" for row in skipped)
+    ):
+        raise RuntimeError("Invalid Stage 4 batch simulation: fill or idempotent retry evidence is invalid")
+
+    context = urlencode({"baseRunId": base_run_id, "batchId": batch_id})
+    state_history = _require_dict(
+        _require_dict(
+            request_json(
+                join_url(base_url, f"/api/portfolio/paper-order-state-history?{context}"),
+                timeout_seconds,
+            ),
+            "Stage 4 state history",
+        ).get("stateHistory"),
+        "Stage 4 state history",
+    )
+    replay = _require_dict(
+        _require_dict(
+            request_json(
+                join_url(
+                    base_url,
+                    f"/api/portfolio/paper-order-replay?{urlencode({'baseRunId': base_run_id, 'initialCash': 100000})}",
+                ),
+                timeout_seconds,
+            ),
+            "Stage 4 replay",
+        ).get("replay"),
+        "Stage 4 replay",
+    )
+    workflow_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/portfolio/workflows"),
+            {
+                **portfolio_request,
+                "baseRunId": base_run_id,
+                "riskTemplate": {
+                    field: simulation_request["routeRisk"][field]
+                    for field in ("minCashAfter", "maxSymbolNotional", "maxBatchNotional")
+                },
+                "batchId": batch_id,
+                "operator": "stage4-smoke-operator",
+            },
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 4 authoritative workflow",
+    )
+    workflow = _require_dict(workflow_response.get("workflow"), "Stage 4 authoritative workflow")
+    if (
+        {key: value for key, value in workflow.get("stateHistory", {}).items() if key != "generatedAt"}
+        != {key: value for key, value in state_history.items() if key != "generatedAt"}
+        or {key: value for key, value in workflow.get("replay", {}).items() if key != "generatedAt"}
+        != {key: value for key, value in replay.items() if key != "generatedAt"}
+    ):
+        raise RuntimeError("Invalid Stage 4 authoritative workflow: state or replay readback differs")
+
+    export_url = join_url(base_url, f"/api/research/runs/{quote(base_run_id, safe='')}/export")
+    export_payload = request_json(export_url, timeout_seconds)
+    exported_workflow, export_count = _stage4_export_workflow(export_payload, base_run_id)
+    export_package = _require_dict(_require_dict(export_payload, "Stage 4 research export").get("export"), "Stage 4 export")
+    import_payload = post_json(
+        join_url(base_url, "/api/research/runs/import"),
+        export_package,
+        timeout_seconds=timeout_seconds,
+    )
+    validate_p0_import_payload(import_payload, base_run_id)
+    imported_export = request_json(export_url, timeout_seconds)
+    imported_workflow, imported_count = _stage4_export_workflow(imported_export, base_run_id)
+    readback_payload = _require_dict(
+        request_json(
+            join_url(base_url, f"/api/portfolio/workflows?{urlencode({'baseRunId': base_run_id, 'limit': 1})}"),
+            timeout_seconds,
+        ),
+        "Stage 4 workflow readback",
+    )
+    workflows = readback_payload.get("workflows")
+    if not isinstance(workflows, list) or len(workflows) != 1:
+        raise RuntimeError("Invalid Stage 4 workflow readback: exactly one workflow is required")
+    readback_workflow = _require_dict(workflows[0], "Stage 4 workflow readback")
+    manifest = build_stage4_portfolio_acceptance_manifest(
+        workflow=workflow,
+        retry_evidence={
+            "requestedOrderIds": order_ids,
+            "initialFilledOrderIds": order_ids,
+            "retryCreatedOrderIds": [],
+            "retrySkippedOrderIds": order_ids,
+        },
+        export_readback={
+            "exportArtifactCount": export_count,
+            "importedArtifactCount": imported_count,
+            "readbackArtifactCount": 1,
+            "exportWorkflowHash": exported_workflow.get("workflowHash"),
+            "importedWorkflowHash": imported_workflow.get("workflowHash"),
+            "readbackWorkflowHash": readback_workflow.get("workflowHash"),
+        },
+    )
+    summary = validate_stage4_portfolio_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage4_portfolio_acceptance_report(report_path, manifest)
+    return [summary]
 
 
 def _stage2_experiment(payload: Any, label: str) -> dict[str, Any]:
@@ -2730,6 +3131,8 @@ def run_smoke(
     stage3_ai_review_import_base_url: str | None = None,
     stage3_ai_review_live_provider: str | None = None,
     stage3_ai_review_live_report: Path | None = None,
+    stage4_portfolio_paper: bool = False,
+    stage4_portfolio_paper_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -2805,6 +3208,12 @@ def run_smoke(
                 external_data_approved=approve_external_evidence,
                 import_base_url=stage3_ai_review_import_base_url,
                 report_path=stage3_ai_review_live_report,
+            )
+        if stage4_portfolio_paper:
+            run_stage4_portfolio_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                report_path=stage4_portfolio_paper_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -2910,6 +3319,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--approve-external-evidence",
         action="store_true",
         help="Explicitly approve the single external Stage 3 evidence request.",
+    )
+    parser.add_argument(
+        "--stage4-portfolio-paper",
+        action="store_true",
+        help="Run the Stage 4 portfolio paper golden-path acceptance smoke.",
+    )
+    parser.add_argument(
+        "--stage4-portfolio-paper-report",
+        default=None,
+        help="Optional path for a JSON Stage 4 portfolio paper acceptance manifest.",
+    )
+    parser.add_argument(
+        "--validate-stage4-portfolio-paper-report",
+        default=None,
+        help="Validate an existing Stage 4 portfolio paper acceptance manifest and exit.",
     )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
@@ -3029,6 +3453,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = load_stage3_ai_review_report(Path(args.validate_stage3_ai_review_report))
         print(validate_stage3_ai_review_manifest(manifest))
         return 0
+    if args.validate_stage4_portfolio_paper_report:
+        manifest = load_stage4_portfolio_acceptance_report(Path(args.validate_stage4_portfolio_paper_report))
+        print(validate_stage4_portfolio_acceptance_manifest(manifest))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -3092,6 +3520,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             else None
         ),
         approve_external_evidence=args.approve_external_evidence,
+        stage4_portfolio_paper=args.stage4_portfolio_paper,
+        stage4_portfolio_paper_report=(
+            Path(args.stage4_portfolio_paper_report) if args.stage4_portfolio_paper_report else None
+        ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,
         p2_run_id=args.p2_run_id,
         p2_p1_acceptance_report=Path(args.p2_p1_acceptance_report),

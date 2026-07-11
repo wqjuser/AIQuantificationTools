@@ -4509,6 +4509,264 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("stage3 ai-review run=run-stage3", output.getvalue())
 
+    def test_docker_smoke_builds_and_mutation_validates_stage4_portfolio_acceptance_manifest(self):
+        import contextlib
+        import copy
+        import io
+
+        docker_smoke = self._load_docker_smoke_module()
+        docker_smoke.ensure_quant_core_import_path()
+        with tempfile.TemporaryDirectory() as tmp:
+            dependencies = self._stage4_portfolio_workflow_dependencies(Path(tmp))
+            status, created = self._stage4_portfolio_workflow_http(
+                dependencies,
+                "POST",
+                "/api/portfolio/workflows",
+                self._stage4_portfolio_workflow_request(),
+            )
+        self.assertEqual(status, 201)
+        workflow = created["workflow"]
+        order_ids = [order["orderId"] for order in workflow["batch"]["orders"]]
+        manifest = docker_smoke.build_stage4_portfolio_acceptance_manifest(
+            workflow=workflow,
+            retry_evidence={
+                "requestedOrderIds": order_ids,
+                "initialFilledOrderIds": order_ids,
+                "retryCreatedOrderIds": [],
+                "retrySkippedOrderIds": order_ids,
+            },
+            export_readback={
+                "exportArtifactCount": 1,
+                "importedArtifactCount": 1,
+                "readbackArtifactCount": 1,
+                "exportWorkflowHash": workflow["workflowHash"],
+                "importedWorkflowHash": workflow["workflowHash"],
+                "readbackWorkflowHash": workflow["workflowHash"],
+            },
+        )
+
+        self.assertEqual(manifest["kind"], "aiqt.stage4PortfolioPaperAcceptance")
+        self.assertEqual(manifest["schemaVersion"], 1)
+        self.assertEqual(len(manifest["workflow"]["portfolioRequest"]["legs"]), 2)
+        self.assertEqual(
+            docker_smoke.validate_stage4_portfolio_acceptance_manifest(manifest),
+            "stage4 portfolio acceptance run=run-a legs=2 orders=2 replayExact=True liveBlocked=True",
+        )
+
+        mutations = {
+            "identity": lambda value: value.update({"kind": "wrong"}),
+            "schema": lambda value: value.update({"schemaVersion": 2}),
+            "status": lambda value: value.update({"status": "blocked"}),
+            "two legs": lambda value: value["workflow"]["portfolioRequest"].update(
+                {"legs": value["workflow"]["portfolioRequest"]["legs"][:1]}
+            ),
+            "portfolio hash": lambda value: value.update({"portfolioHash": "0" * 64}),
+            "workflow hash": lambda value: value.update({"workflowHash": "0" * 64}),
+            "risk checks": lambda value: value["workflow"]["portfolio"].update({"preTradeRiskChecks": []}),
+            "batch": lambda value: value["workflow"]["batch"].update({"orders": []}),
+            "approval sequence": lambda value: value["workflow"].update(
+                {"approvals": list(reversed(value["workflow"]["approvals"]))}
+            ),
+            "filled simulations": lambda value: value["workflow"]["simulations"][0].update(
+                {"fillStatus": "pending"}
+            ),
+            "idempotent retry": lambda value: value["retryEvidence"].update(
+                {"retryCreatedOrderIds": [order_ids[0]]}
+            ),
+            "state history": lambda value: value["workflow"]["stateHistory"]["summary"].update(
+                {"filledOrders": 1}
+            ),
+            "replay account": lambda value: value["workflow"]["replay"].update({"account": {}}),
+            "export readback": lambda value: value["exportReadback"].update({"readbackArtifactCount": 0}),
+        }
+        for label, mutate in mutations.items():
+            invalid = copy.deepcopy(manifest)
+            mutate(invalid)
+            with self.subTest(label=label), self.assertRaises(RuntimeError):
+                docker_smoke.validate_stage4_portfolio_acceptance_manifest(invalid)
+        for field in (
+            "paperOnly",
+            "liveTradingAllowed",
+            "orderSubmissionEnabled",
+            "routeExecuted",
+            "liveBlockedBoundary",
+        ):
+            invalid = copy.deepcopy(manifest)
+            invalid[field] = not invalid[field]
+            with self.subTest(safety=field), self.assertRaises(RuntimeError):
+                docker_smoke.validate_stage4_portfolio_acceptance_manifest(invalid)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "stage4-portfolio-paper.json"
+            self.assertEqual(
+                docker_smoke.write_stage4_portfolio_acceptance_report(report_path, manifest),
+                report_path,
+            )
+            self.assertEqual(docker_smoke.load_stage4_portfolio_acceptance_report(report_path), manifest)
+            output = io.StringIO()
+            with patch.object(
+                docker_smoke,
+                "run_smoke",
+                side_effect=AssertionError("report validation must not start Compose"),
+            ), contextlib.redirect_stdout(output):
+                exit_code = docker_smoke.main(
+                    ["--validate-stage4-portfolio-paper-report", str(report_path)]
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertIn("stage4 portfolio acceptance run=run-a", output.getvalue())
+
+    def test_docker_smoke_stage4_portfolio_acceptance_runs_full_idempotent_archive_chain(self):
+        import json
+
+        docker_smoke = self._load_docker_smoke_module()
+        docker_smoke.ensure_quant_core_import_path()
+        with tempfile.TemporaryDirectory() as tmp:
+            dependencies = self._stage4_portfolio_workflow_dependencies(Path(tmp))
+            status, created = self._stage4_portfolio_workflow_http(
+                dependencies,
+                "POST",
+                "/api/portfolio/workflows",
+                self._stage4_portfolio_workflow_request(),
+            )
+        self.assertEqual(status, 201)
+        workflow = created["workflow"]
+        expected_order_ids = ["stage4-run-a-600000-buy", "stage4-run-b-000300-buy"]
+        for index, order_id in enumerate(expected_order_ids):
+            workflow["batch"]["orders"][index]["orderId"] = order_id
+            workflow["approvals"][index]["orderId"] = order_id
+            workflow["simulations"][index]["orderId"] = order_id
+            workflow["stateHistory"]["orders"][index]["orderId"] = order_id
+            workflow["replay"]["orders"][index]["orderId"] = order_id
+        workflow["workflowHash"] = docker_smoke._quant_core_validator(
+            "stage4_portfolio", "stage4_portfolio_workflow_hash"
+        )(workflow)
+        batch = workflow["batch"]
+        order_ids = [order["orderId"] for order in batch["orders"]]
+        events = []
+        pipeline_index = 0
+        simulation_index = 0
+        export_index = 0
+
+        export_package = {
+            "kind": "aiqt.researchRun.export",
+            "manifest": {"runId": "run-a", "artifactCounts": {"stage4PortfolioWorkflows": 1}},
+            "auditEvents": [
+                {"eventType": "stage4_portfolio_workflow", "metadata": {"snapshot": workflow}}
+            ],
+        }
+
+        def fake_post_json(url, payload, timeout_seconds):
+            nonlocal pipeline_index, simulation_index
+            events.append(("POST", url, payload))
+            self.assertEqual(timeout_seconds, 5)
+            if url.endswith("/api/p0/pipeline"):
+                run_id = ("run-a", "run-b")[pipeline_index]
+                pipeline_index += 1
+                return {
+                    "status": "audited_run_created",
+                    "runId": run_id,
+                    "metrics": {},
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "orderSubmitted": False,
+                    "liveOrderSubmitted": False,
+                    "routeExecuted": False,
+                }
+            if url.endswith("/api/portfolio/backtest"):
+                return {"portfolio": workflow["portfolio"]}
+            if url.endswith("/api/portfolio/paper-orders"):
+                return {"portfolioPaperOrderBatch": batch}
+            if url.endswith("/api/portfolio/paper-order-approvals"):
+                order_id = payload["orderId"]
+                return {"approval": next(row for row in workflow["approvals"] if row["orderId"] == order_id)}
+            if url.endswith("/api/portfolio/paper-order-simulations/batch"):
+                simulation_index += 1
+                retry = simulation_index == 2
+                return {
+                    "batchSimulation": {
+                        "status": "partial" if retry else "filled",
+                        "filledOrderIds": [] if retry else order_ids,
+                        "skippedOrders": (
+                            [{"orderId": order_id, "reason": "already_simulated"} for order_id in order_ids]
+                            if retry
+                            else []
+                        ),
+                    },
+                    "simulations": workflow["simulations"],
+                    "createdSimulations": [] if retry else workflow["simulations"],
+                }
+            if url.endswith("/api/portfolio/workflows"):
+                return {"workflow": workflow}
+            if url.endswith("/api/research/runs/import"):
+                self.assertEqual(payload, export_package)
+                return {
+                    "run": {
+                        "runId": "run-a",
+                        "executionMode": "paper_only",
+                        "dataSnapshot": {"bars": [{}]},
+                        "liveTradingAllowed": False,
+                    },
+                    "undoToken": "undo-stage4",
+                    "undo": {},
+                }
+            raise AssertionError(f"Unexpected POST URL: {url}")
+
+        def fake_request_json(url, timeout_seconds):
+            nonlocal export_index
+            events.append(("GET", url, None))
+            self.assertEqual(timeout_seconds, 5)
+            if "/api/portfolio/paper-order-state-history?" in url:
+                return {"stateHistory": workflow["stateHistory"]}
+            if "/api/portfolio/paper-order-replay?" in url:
+                return {"replay": workflow["replay"]}
+            if url.endswith("/api/research/runs/run-a/export"):
+                export_index += 1
+                return {"export": export_package}
+            if "/api/portfolio/workflows?" in url:
+                return {"workflows": [workflow], "pagination": {"total": 1}}
+            raise AssertionError(f"Unexpected GET URL: {url}")
+
+        with patch.object(docker_smoke, "post_json", side_effect=fake_post_json), patch.object(
+            docker_smoke, "request_json", side_effect=fake_request_json
+        ), tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "stage4-portfolio-paper.json"
+            summaries = docker_smoke.run_stage4_portfolio_acceptance(
+                "http://aiqt.local",
+                timeout_seconds=5,
+                report_path=report_path,
+            )
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(pipeline_index, 2)
+        self.assertEqual(simulation_index, 2)
+        self.assertEqual(export_index, 2)
+        self.assertEqual(report["workflowHash"], workflow["workflowHash"])
+        self.assertEqual(report["retryEvidence"]["retryCreatedOrderIds"], [])
+        self.assertEqual(report["retryEvidence"]["retrySkippedOrderIds"], order_ids)
+        self.assertTrue(
+            any(summary.startswith("stage4 portfolio acceptance run=run-a legs=2 orders=2") for summary in summaries)
+        )
+        self.assertEqual(
+            [(method, url.removeprefix("http://aiqt.local")) for method, url, _ in events],
+            [
+                ("POST", "/api/p0/pipeline"),
+                ("POST", "/api/p0/pipeline"),
+                ("POST", "/api/portfolio/backtest"),
+                ("POST", "/api/portfolio/paper-orders"),
+                ("POST", "/api/portfolio/paper-order-approvals"),
+                ("POST", "/api/portfolio/paper-order-approvals"),
+                ("POST", "/api/portfolio/paper-order-simulations/batch"),
+                ("POST", "/api/portfolio/paper-order-simulations/batch"),
+                ("GET", "/api/portfolio/paper-order-state-history?baseRunId=run-a&batchId=portfolio-paper-batch-1"),
+                ("GET", "/api/portfolio/paper-order-replay?baseRunId=run-a&initialCash=100000"),
+                ("POST", "/api/portfolio/workflows"),
+                ("GET", "/api/research/runs/run-a/export"),
+                ("POST", "/api/research/runs/import"),
+                ("GET", "/api/research/runs/run-a/export"),
+                ("GET", "/api/portfolio/workflows?baseRunId=run-a&limit=1"),
+            ],
+        )
+
     def test_docker_smoke_stage3_ai_review_runs_decision_conflict_export_import_and_readback(self):
         import json
 
