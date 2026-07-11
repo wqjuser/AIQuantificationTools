@@ -15093,20 +15093,22 @@ describe("terminal workspace API client", () => {
     expect(normalized?.auditEvents?.[0].eventType).toBe("p0_paper_simulation");
     expect(normalized?.p0PackageCompleteness?.ready).toBe(true);
     expect(normalized?.p0PackageCompleteness?.criteria[0]?.id).toBe("paper-simulation");
-    expect(
-      normalizeResearchRunExportPackagePayload({
-        export: {
-          ...exportPackage,
-          manifest: {
-            ...exportPackage.manifest,
-            artifactCounts: {
-              ...exportPackage.manifest.artifactCounts,
-              stage4PortfolioWorkflows: "1"
+    for (const invalidCount of ["1", true, 1.5, -1]) {
+      expect(
+        normalizeResearchRunExportPackagePayload({
+          export: {
+            ...exportPackage,
+            manifest: {
+              ...exportPackage.manifest,
+              artifactCounts: {
+                ...exportPackage.manifest.artifactCounts,
+                stage4PortfolioWorkflows: invalidCount
+              }
             }
           }
-        }
-      })
-    ).toBeNull();
+        })
+      ).toBeNull();
+    }
   });
 
   test("rejects malformed portfolio paper order batches in export packages", () => {

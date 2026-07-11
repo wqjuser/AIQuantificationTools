@@ -14980,6 +14980,33 @@ function stage4PortfolioWorkflowAuditSnapshots(
   });
 }
 
+function stage4PortfolioWorkflowAuditEventsAreValid(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+): boolean {
+  return (auditEvents ?? [])
+    .filter((event) => event.eventType === "stage4_portfolio_workflow")
+    .every((event) => {
+      const snapshot = event.metadata.snapshot;
+      if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+        return false;
+      }
+      const value = snapshot as Record<string, unknown>;
+      return event.eventId === value.workflowId
+        && event.runId === value.baseRunId
+        && event.createdAt === value.generatedAt
+        && event.stage === "stage4-portfolio-workflow"
+        && value.batch !== null && typeof value.batch === "object" && !Array.isArray(value.batch)
+        && Array.isArray(value.approvals)
+        && Array.isArray(value.simulations)
+        && value.replay !== null && typeof value.replay === "object" && !Array.isArray(value.replay)
+        && value.paperOnly === true
+        && value.liveTradingAllowed === false
+        && value.liveBlockedBoundary === true
+        && value.orderSubmissionEnabled === false
+        && value.routeExecuted === false;
+    });
+}
+
 function stage4PortfolioWorkflowEvidenceDetail(snapshot: Record<string, unknown>): string {
   const batch = snapshot.batch && typeof snapshot.batch === "object" && !Array.isArray(snapshot.batch)
     ? snapshot.batch as Record<string, unknown>
@@ -14996,7 +15023,11 @@ function stage4PortfolioWorkflowEvidenceDetail(snapshot: Record<string, unknown>
     `${approvals} approvals`,
     `${simulations} simulations`,
     `replay ${String(replay.baseRunId ?? "")} / ${replayOrders} orders`,
-    snapshot.paperOnly === true && snapshot.liveTradingAllowed === false && snapshot.liveBlockedBoundary === true
+    snapshot.paperOnly === true
+      && snapshot.liveTradingAllowed === false
+      && snapshot.liveBlockedBoundary === true
+      && snapshot.orderSubmissionEnabled === false
+      && snapshot.routeExecuted === false
       ? "paper-only"
       : "unsafe boundary"
   ].filter(Boolean).join(" · ");
@@ -15034,8 +15065,9 @@ export function buildResearchRunExportBrowserRows(
   const aiReviewDecisionPackageCount = exportPackage.aiReviewDecisions?.length ?? 0;
   const auditEventPackageCount = exportPackage.auditEvents?.length ?? 0;
   const stage4PortfolioWorkflows = stage4PortfolioWorkflowAuditSnapshots(exportPackage.auditEvents);
+  const stage4PortfolioWorkflowsAreValid = stage4PortfolioWorkflowAuditEventsAreValid(exportPackage.auditEvents);
   const hasStage4PortfolioWorkflowAccounting =
-    artifactCounts.stage4PortfolioWorkflows !== undefined || stage4PortfolioWorkflows.length > 0;
+    (artifactCounts.stage4PortfolioWorkflows ?? 0) > 0 || stage4PortfolioWorkflows.length > 0;
   const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
   const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
     (event) => event.eventType === "p0_paper_simulation"
@@ -15371,18 +15403,20 @@ export function buildResearchRunExportBrowserRows(
       id: "audit-events",
       label: hasStage4PortfolioWorkflowAccounting ? "Stage 4 portfolio workflows" : "Audit events",
       status:
-        auditEventCountMatches && stage4PortfolioWorkflowCountMatches && auditEventPackageCount > 0
+        auditEventCountMatches && stage4PortfolioWorkflowCountMatches && stage4PortfolioWorkflowsAreValid && auditEventPackageCount > 0
           ? "ready"
-          : auditEventCountMatches && stage4PortfolioWorkflowCountMatches
+          : auditEventCountMatches && stage4PortfolioWorkflowCountMatches && stage4PortfolioWorkflowsAreValid
             ? "missing"
             : "blocked",
       value: hasStage4PortfolioWorkflowAccounting
         ? `${artifactCounts.stage4PortfolioWorkflows ?? 0} manifest / ${stage4PortfolioWorkflows.length} package`
         : `${artifactCounts.auditEvents ?? 0} manifest / ${auditEventPackageCount} package`,
       detail: hasStage4PortfolioWorkflowAccounting
-        ? stage4PortfolioWorkflowCountMatches
+        ? stage4PortfolioWorkflowCountMatches && stage4PortfolioWorkflowsAreValid
           ? stage4PortfolioWorkflows.map(stage4PortfolioWorkflowEvidenceDetail).join(" · ")
-          : "Stage 4 workflow manifest count does not match auditEvents[]."
+          : stage4PortfolioWorkflowCountMatches
+            ? `${stage4PortfolioWorkflows.map(stage4PortfolioWorkflowEvidenceDetail).join(" · ")} · invalid bindings or unsafe boundary`
+            : "Stage 4 workflow manifest count does not match auditEvents[]."
         : auditEventCountMatches
           ? `${p0PaperSimulationAuditEvents.length} P0 paper simulation event${
             p0PaperSimulationAuditEvents.length === 1 ? "" : "s"
@@ -15393,9 +15427,9 @@ export function buildResearchRunExportBrowserRows(
           }`
           : "Manifest audit event count does not match the package payload.",
       exportPath: hasStage4PortfolioWorkflowAccounting ? "auditEvents[].metadata.snapshot" : "auditEvents[]",
-      tone: auditEventCountMatches && stage4PortfolioWorkflowCountMatches && auditEventPackageCount > 0
+      tone: auditEventCountMatches && stage4PortfolioWorkflowCountMatches && stage4PortfolioWorkflowsAreValid && auditEventPackageCount > 0
         ? "ai"
-        : auditEventCountMatches && stage4PortfolioWorkflowCountMatches ? "neutral" : "risk"
+        : auditEventCountMatches && stage4PortfolioWorkflowCountMatches && stage4PortfolioWorkflowsAreValid ? "neutral" : "risk"
     },
     ...(p0PackageCompleteness
       ? ([
@@ -15886,6 +15920,7 @@ export function buildResearchRunImportDiffRows({
   const manifestAiReviewCount = exportPackage.manifest.artifactCounts.aiReviewRuns ?? 0;
   const packageAuditEventCount = exportPackage.auditEvents?.length ?? 0;
   const packageStage4PortfolioWorkflows = stage4PortfolioWorkflowAuditSnapshots(exportPackage.auditEvents);
+  const packageStage4PortfolioWorkflowsAreValid = stage4PortfolioWorkflowAuditEventsAreValid(exportPackage.auditEvents);
   const packageHandoffNoteCount = exportPackage.handoffNotes?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
@@ -16300,16 +16335,20 @@ export function buildResearchRunImportDiffRows({
       exportPath: "portfolioPaperOrderBatches[] portfolioPaperOrderApprovals[] portfolioPaperOrderSimulations[]",
       tone: packagePortfolioPaperOrderHasLedger ? "warning" : "neutral"
     },
-    ...(exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows !== undefined || packageStage4PortfolioWorkflows.length
+    ...((exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows ?? 0) > 0 || packageStage4PortfolioWorkflows.length
       ? ([{
           id: "stage4-portfolio-workflows",
           label: "Stage 4 portfolio workflows",
-          status: packageStage4PortfolioWorkflows.length ? "add" : "same",
+          status: packageStage4PortfolioWorkflowsAreValid
+            ? packageStage4PortfolioWorkflows.length ? "add" : "same"
+            : "blocked",
           current: "Local audit event store",
           incoming: packageStage4PortfolioWorkflows.length
             ? packageStage4PortfolioWorkflows.map(stage4PortfolioWorkflowEvidenceDetail).join(" · ")
             : "No Stage 4 workflow",
-          detail: packageStage4PortfolioWorkflows.length
+          detail: !packageStage4PortfolioWorkflowsAreValid
+            ? "Stage 4 workflow import is blocked by invalid bindings or an unsafe paper-only boundary."
+            : packageStage4PortfolioWorkflows.length
             ? "Import will restore authoritative Stage 4 workflow evidence through auditEvents[]."
             : "Package does not include Stage 4 workflow evidence.",
           exportPath: "auditEvents[].metadata.snapshot",

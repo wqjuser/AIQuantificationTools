@@ -11710,6 +11710,43 @@ describe("terminal workbench model", () => {
     );
     expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "audit-events")?.detail)
       .toContain("batch portfolio-paper-batch-1 · 2 approvals · 2 simulations · replay run-stage3-archive / 2 orders");
+
+    for (const mutate of [
+      (snapshot: Record<string, unknown>) => { snapshot.paperOnly = false; },
+      (snapshot: Record<string, unknown>) => { snapshot.liveTradingAllowed = true; },
+      (snapshot: Record<string, unknown>) => { snapshot.liveBlockedBoundary = false; },
+      (snapshot: Record<string, unknown>) => { snapshot.orderSubmissionEnabled = true; },
+      (snapshot: Record<string, unknown>) => { snapshot.routeExecuted = true; }
+    ]) {
+      const unsafePackage = structuredClone(exportPackage);
+      const snapshot = unsafePackage.auditEvents?.[0]?.metadata.snapshot as Record<string, unknown>;
+      mutate(snapshot);
+      expect(buildResearchRunExportBrowserRows(unsafePackage).find((row) => row.id === "audit-events"))
+        .toMatchObject({ status: "blocked", detail: expect.stringContaining("unsafe boundary") });
+      expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unsafePackage })
+        .find((row) => row.id === "stage4-portfolio-workflows"))
+        .toMatchObject({ status: "blocked", detail: expect.stringContaining("unsafe") });
+    }
+
+    const unrelatedPackage = stage3ArchiveBrowserPackage();
+    unrelatedPackage.manifest.artifactCounts.auditEvents = 1;
+    unrelatedPackage.manifest.artifactCounts.stage4PortfolioWorkflows = 0;
+    unrelatedPackage.auditEvents = [{
+      schemaVersion: 1,
+      eventId: "p0-event-1",
+      eventType: "p0_paper_simulation",
+      runId: unrelatedPackage.manifest.runId,
+      createdAt: "2026-07-11T09:00:00+00:00",
+      stage: "execution",
+      source: "p0-paper-simulation",
+      summary: "P0 paper simulation.",
+      detail: "Unrelated audit evidence.",
+      metadata: {}
+    }];
+    expect(buildResearchRunExportBrowserRows(unrelatedPackage).find((row) => row.id === "audit-events"))
+      .toMatchObject({ label: "Audit events", status: "ready", exportPath: "auditEvents[]" });
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unrelatedPackage })
+      .find((row) => row.id === "stage4-portfolio-workflows")).toBeUndefined();
   });
 
   test("aligns Decision import diff with persisted prefix and append semantics", () => {

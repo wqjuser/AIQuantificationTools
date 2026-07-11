@@ -19436,6 +19436,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["error"], "invalid_stage4_portfolio_workflow_store")
 
     def test_stage4_portfolio_workflow_export_import_preserves_authoritative_audit_evidence(self):
+        import copy
+
         from quant_core.runs import (
             research_run_export_to_payload,
             research_run_import_audit_events,
@@ -19455,7 +19457,7 @@ class QuantCoreContractTest(unittest.TestCase):
         workflow = created["workflow"]
         audit = self._sample_research_run_audit(run_id="run-a", strategy_revision="rev-run-a")
 
-        exported = research_run_export_to_payload(audit, audit_events=[event])
+        exported = research_run_export_to_payload(audit, audit_events=[copy.deepcopy(event)])
         self.assertEqual(exported["manifest"]["artifactCounts"]["stage4PortfolioWorkflows"], 1)
         self.assertEqual(exported["auditEvents"][0]["metadata"]["snapshot"], workflow)
         imported_audit = research_run_import_to_audit(exported)
@@ -19468,7 +19470,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         for case in ("metadata", "count", "hash"):
             with self.subTest(case=case):
-                tampered = research_run_export_to_payload(audit, audit_events=[event])
+                tampered = research_run_export_to_payload(audit, audit_events=[copy.deepcopy(event)])
                 tampered.pop("integrity")
                 if case == "metadata":
                     tampered["auditEvents"][0]["metadata"] = {"snapshot": {}}
@@ -19478,6 +19480,76 @@ class QuantCoreContractTest(unittest.TestCase):
                     tampered["auditEvents"][0]["metadata"]["snapshot"]["workflowHash"] = "0" * 64
                 with self.assertRaises(ValueError):
                     research_run_import_to_audit(tampered)
+
+        for invalid_count in ("1", True, 1.0, -1):
+            with self.subTest(invalid_count=invalid_count):
+                tampered = research_run_export_to_payload(audit, audit_events=[copy.deepcopy(event)])
+                tampered.pop("integrity")
+                tampered["manifest"]["artifactCounts"]["stage4PortfolioWorkflows"] = invalid_count
+                with self.assertRaisesRegex(ValueError, "stage4_portfolio_workflows_count_invalid"):
+                    research_run_import_to_audit(tampered)
+
+    def test_stage4_portfolio_workflow_invalid_manifest_counts_reject_import_before_atomic_persistence(self):
+        import copy
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.runs import ResearchRunStore, research_run_export_to_payload
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dependencies = self._stage4_portfolio_workflow_dependencies(root / "source")
+            status, created = self._stage4_portfolio_workflow_http(
+                dependencies,
+                "POST",
+                "/api/portfolio/workflows",
+                self._stage4_portfolio_workflow_request(),
+            )
+            self.assertEqual(status, 201)
+            audit = self._sample_research_run_audit(run_id="run-a", strategy_revision="rev-run-a")
+            exported = research_run_export_to_payload(audit, audit_events=[created["auditEvent"]])
+            target_runs = ResearchRunStore(root / "target-runs.sqlite")
+            target_events = AuditEventStore(root / "target-events.sqlite")
+
+            class TargetHandler(QuantApiHandler):
+                run_store = target_runs
+                audit_event_store = target_events
+
+            server = HTTPServer(("127.0.0.1", 0), TargetHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            try:
+                with patch("quant_core.api._persist_research_run_import") as persist:
+                    for invalid_count in ("1", True, 1.0, -1):
+                        with self.subTest(invalid_count=invalid_count):
+                            tampered = copy.deepcopy(exported)
+                            tampered.pop("integrity")
+                            tampered["manifest"]["artifactCounts"]["stage4PortfolioWorkflows"] = invalid_count
+                            body = json.dumps(tampered).encode("utf-8")
+                            connection.request(
+                                "POST",
+                                "/api/research/runs/import",
+                                body=body,
+                                headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                            )
+                            response = connection.getresponse()
+                            payload = json.loads(response.read().decode("utf-8"))
+                            self.assertEqual(response.status, 400)
+                            self.assertEqual(payload["detail"], "stage4_portfolio_workflows_count_invalid")
+                    persist.assert_not_called()
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertIsNone(target_runs.get("run-a"))
+            self.assertEqual(target_events.count(event_type="stage4_portfolio_workflow"), 0)
 
     def test_portfolio_backtest_api_combines_audited_runs_by_weight(self):
         import json

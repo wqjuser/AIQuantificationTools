@@ -18779,7 +18779,8 @@ function isResearchRunExportManifest(value: unknown): value is ResearchRunExport
     (counts?.aiReviewRunsV2 === undefined || typeof counts.aiReviewRunsV2 === "number") &&
     (counts?.aiReviewDecisions === undefined || typeof counts.aiReviewDecisions === "number") &&
     (counts?.auditEvents === undefined || typeof counts.auditEvents === "number") &&
-    (counts?.stage4PortfolioWorkflows === undefined || typeof counts.stage4PortfolioWorkflows === "number") &&
+    (counts?.stage4PortfolioWorkflows === undefined ||
+      (Number.isInteger(counts.stage4PortfolioWorkflows) && counts.stage4PortfolioWorkflows >= 0)) &&
     (counts?.handoffNotes === undefined || typeof counts.handoffNotes === "number")
   );
 }

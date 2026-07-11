@@ -837,6 +837,7 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
     counts = manifest.get("artifactCounts")
     if not isinstance(counts, dict):
         raise ValueError("artifact_counts_must_be_object")
+    _stage4_portfolio_workflow_manifest_count(counts)
     data_snapshot = research_run.get("dataSnapshot")
     ai_report = research_run.get("aiReport")
     expected = {
@@ -1161,6 +1162,7 @@ def _validate_manifest_consistency(
     counts = manifest.get("artifactCounts")
     if not isinstance(counts, dict):
         raise ValueError("artifact_counts_must_be_object")
+    _stage4_portfolio_workflow_manifest_count(counts)
     expected_counts = {
         "bars": bar_count,
         "trades": len(_list_of_dicts(research_run.get("backtestTrades"))),
@@ -1398,6 +1400,15 @@ def _stage4_portfolio_workflow_count(value: Any) -> int:
         for item in value or []
         if isinstance(item, dict) and item.get("eventType") == "stage4_portfolio_workflow"
     )
+
+
+def _stage4_portfolio_workflow_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage4PortfolioWorkflows" not in counts:
+        return None
+    value = counts["stage4PortfolioWorkflows"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage4_portfolio_workflows_count_invalid")
+    return value
 
 
 def _normalize_adapter_paper_execution_payloads(
