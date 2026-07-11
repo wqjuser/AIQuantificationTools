@@ -144,7 +144,9 @@ export function buildStage4PortfolioGoldenPath(input: Stage4PortfolioGoldenPathI
   if (!batch) return goldenPathResult(1, "record-paper-order-batch", "paper-batch-missing");
 
   const orderIds = new Set(batch.orders.map((order) => order.orderId));
-  const boundLifecycle = lifecycle.filter((row) => row.batchId === batch.batchId && orderIds.has(row.orderId));
+  const boundLifecycle = lifecycle.filter((row) =>
+    row.baseRunId === input.baseRunId && row.batchId === batch.batchId && orderIds.has(row.orderId)
+  );
   if (batch.orders.some((order) => order.riskStatus === "blocked") ||
       boundLifecycle.some((row) => row.state === "risk_rejected" || row.riskStatus === "blocked")) {
     return goldenPathResult(1, "review-portfolio-risk", "risk-rejected", true);
@@ -159,7 +161,9 @@ export function buildStage4PortfolioGoldenPath(input: Stage4PortfolioGoldenPathI
   );
   if (hasMixedRows) return goldenPathResult(2, "review-portfolio-orders", "mixed-batch", true);
 
-  const boundApprovals = approvalRows.filter((row) => row.batchId === batch.batchId && orderIds.has(row.orderId));
+  const boundApprovals = approvalRows.filter((row) =>
+    row.baseRunId === input.baseRunId && row.batchId === batch.batchId && orderIds.has(row.orderId)
+  );
   if (boundLifecycle.some((row) => row.state === "operator_rejected") ||
       boundApprovals.some((row) => row.state === "operator_rejected")) {
     return goldenPathResult(2, "review-portfolio-orders", "operator-rejected", true);
@@ -184,15 +188,19 @@ export function buildStage4PortfolioGoldenPath(input: Stage4PortfolioGoldenPathI
 
   const historyMatches = input.stateHistory?.baseRunId === input.baseRunId &&
     input.stateHistory.batchId === batch.batchId &&
-    input.stateHistory.orders.length === orderIds.size &&
-    input.stateHistory.orders.every((row) => orderIds.has(row.orderId));
+    hasExactOrderIds(input.stateHistory.orders, orderIds);
   const replayMatches = input.replay?.baseRunId === input.baseRunId &&
-    input.replay.orders.length === orderIds.size &&
-    input.replay.orders.every((row) => row.batchId === batch.batchId && orderIds.has(row.orderId));
+    input.replay.orders.every((row) => row.batchId === batch.batchId) &&
+    hasExactOrderIds(input.replay.orders, orderIds);
   if (!historyMatches || !replayMatches) {
     return goldenPathResult(4, "refresh-account-replay", "account-replay-missing");
   }
   return goldenPathResult(4, "record-stage4-workflow", "authoritative-workflow-missing");
+}
+
+function hasExactOrderIds(rows: readonly { orderId: string }[], orderIds: ReadonlySet<string>): boolean {
+  return rows.length === orderIds.size && new Set(rows.map((row) => row.orderId)).size === orderIds.size &&
+    rows.every((row) => orderIds.has(row.orderId));
 }
 
 function goldenPathResult(

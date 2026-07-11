@@ -503,4 +503,49 @@ describe("Stage 4 portfolio golden path", () => {
       "passed", "passed", "passed", "passed", "passed"
     ]);
   });
+
+  test("requires state history and replay to contain the exact batch order IDs", () => {
+    const cases = [
+      (input: any) => { input.stateHistory.orders = [input.stateHistory.orders[0], input.stateHistory.orders[0]]; },
+      (input: any) => {
+        input.replay.orders = [
+          input.replay.orders[0],
+          { ...input.replay.orders[1], orderId: "order-extra" }
+        ];
+      }
+    ];
+
+    for (const mutate of cases) {
+      const input: any = structuredClone(goldenPathInput());
+      mutate(input);
+      expect(buildStage4PortfolioGoldenPath(input)).toMatchObject({
+        status: "review",
+        currentStepId: "account-replay",
+        primaryActionId: "refresh-account-replay",
+        blockers: ["account-replay-missing"]
+      });
+    }
+  });
+
+  test("ignores lifecycle and approval rows from a stale base run even when batch and order IDs match", () => {
+    const staleLifecycle: any = structuredClone(goldenPathInput());
+    staleLifecycle.lifecycle[0].baseRunId = "run-stale";
+    staleLifecycle.lifecycle[0].state = "risk_rejected";
+    staleLifecycle.lifecycle[0].riskStatus = "blocked";
+    expect(buildStage4PortfolioGoldenPath(staleLifecycle)).toMatchObject({
+      status: "review",
+      currentStepId: "account-replay",
+      primaryActionId: "record-stage4-workflow",
+      blockers: ["authoritative-workflow-missing"]
+    });
+
+    const staleApproval: any = structuredClone(goldenPathInput());
+    staleApproval.approvalRows.forEach((row: any) => { row.baseRunId = "run-stale"; });
+    expect(buildStage4PortfolioGoldenPath(staleApproval)).toMatchObject({
+      status: "review",
+      currentStepId: "operator-approval",
+      primaryActionId: "review-portfolio-orders",
+      blockers: ["operator-approval-required"]
+    });
+  });
 });
