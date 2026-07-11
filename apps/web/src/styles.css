@@ -17224,6 +17224,18 @@ button.ai-review-record {
     grid-template-columns: 1fr;
   }
 
+  .market-refresh-audit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-paper-order-audit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .research-export-preview-row {
+    grid-template-columns: 1fr;
+  }
+
   .research-import-diff-actions {
     justify-content: flex-start;
   }

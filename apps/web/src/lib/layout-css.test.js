@@ -1888,6 +1888,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".research-export-preview-row")).toContain(
       "grid-template-columns: minmax(104px, 0.44fr) minmax(0, 1fr) minmax(76px, 0.28fr) minmax(126px, 0.46fr) auto;"
     );
+    expect(hasCssBlockWith("  .research-export-preview-row", ["grid-template-columns: 1fr;"])).toBe(true);
     expect(hasCssBlockWith(".audit-layout", ['"runbook workflow"', '"history decision"', '"export export"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"runbook"', '"workflow"', '"history"', '"decision"', '"export"', '"ai"'])).toBe(true);
   });
@@ -3162,6 +3163,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".market-refresh-audit-row")).toContain(
       "grid-template-columns: minmax(120px, 0.34fr) minmax(180px, 0.46fr) minmax(0, 1fr) minmax(150px, 0.38fr);"
     );
+    expect(hasCssBlockWith("  .market-refresh-audit-row", ["grid-template-columns: 1fr;"])).toBe(true);
     expect(hasCssBlockWith(".audit-layout", ['"refresh-overrides refresh-overrides"', '"reports reports"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"refresh-overrides"', '"reports"'])).toBe(true);
   });
@@ -3211,6 +3213,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".portfolio-paper-order-audit-row")).toContain(
       "grid-template-columns: minmax(92px, 0.24fr) minmax(164px, 0.42fr) minmax(0, 0.7fr) minmax(210px, 0.54fr);"
     );
+    expect(hasCssBlockWith("  .portfolio-paper-order-audit-row", ["grid-template-columns: 1fr;"])).toBe(true);
     expect(hasCssBlockWith(".audit-layout", ['"refresh-overrides refresh-overrides"', '"portfolio-orders portfolio-orders"', '"reports reports"'])).toBe(true);
     expect(hasCssBlockWith("  .audit-layout", ['"refresh-overrides"', '"portfolio-orders"', '"reports"'])).toBe(true);
   });
