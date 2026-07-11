@@ -4694,6 +4694,15 @@ class QuantCoreContractTest(unittest.TestCase):
             "route risk check": lambda value: value["workflow"]["simulations"][0]["routeRisk"][
                 "checks"
             ][0].update({"passed": False}),
+            "route risk cash after": lambda value: value["workflow"]["simulations"][0]["routeRisk"].update(
+                {"cashAfter": -999_999}
+            ),
+            "route risk check value": lambda value: value["workflow"]["simulations"][0]["routeRisk"][
+                "checks"
+            ][0].update({"value": -999_999}),
+            "route risk position check": lambda value: value["workflow"]["simulations"][0]["routeRisk"][
+                "checks"
+            ][1].update({"passed": False}),
             "risk duplicate identity": lambda value: value["workflow"]["portfolio"][
                 "preTradeRiskChecks"
             ].append(copy.deepcopy(value["workflow"]["portfolio"]["preTradeRiskChecks"][0])),
@@ -20001,6 +20010,15 @@ class QuantCoreContractTest(unittest.TestCase):
                         "route risk": lambda workflow: workflow["simulations"][0]["routeRisk"][
                             "limits"
                         ].update({"minCashAfter": 9_999}),
+                        "route risk cash after": lambda workflow: workflow["simulations"][0]["routeRisk"].update(
+                            {"cashAfter": -999_999}
+                        ),
+                        "route risk check value": lambda workflow: workflow["simulations"][0]["routeRisk"][
+                            "checks"
+                        ][0].update({"value": -999_999}),
+                        "route risk position check": lambda workflow: workflow["simulations"][0]["routeRisk"][
+                            "checks"
+                        ][1].update({"passed": False}),
                         "replay financials": lambda workflow: workflow["replay"]["account"].update(
                             {"cash": workflow["replay"]["account"]["cash"] + 1}
                         ),

@@ -17,6 +17,7 @@ from quant_core.stage4_portfolio import (
 )
 from quant_core.execution import (
     build_portfolio_paper_order_replay,
+    build_portfolio_paper_order_simulation_route_risk,
     portfolio_paper_order_payload_to_simulation,
 )
 
@@ -76,6 +77,16 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             "maxBatchNotional": 90_000,
         }
         self.simulations = [self.simulation("order-a", "600000", 100, 100, 1), self.simulation("order-b", "000300", 50, 400, 2)]
+        existing_simulations = []
+        for simulation in self.simulations:
+            simulation["routeRisk"] = build_portfolio_paper_order_simulation_route_risk(
+                simulation,
+                base_run_id="run-a",
+                batch_id="batch-1",
+                existing_simulations=existing_simulations,
+                route_risk={"initialCash": 100_000, **self.risk_template},
+            )
+            existing_simulations.append(portfolio_paper_order_payload_to_simulation(simulation))
         self.state_history = {
             "baseRunId": "run-a",
             "batchId": "batch-1",
@@ -234,6 +245,9 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             ),
             lambda value: value["simulations"][0]["routeRisk"]["checks"][0].update({"limit": 9_000}),
             lambda value: value["simulations"][0]["routeRisk"]["checks"][0].update({"passed": False}),
+            lambda value: value["simulations"][0]["routeRisk"].update({"cashAfter": -999_999}),
+            lambda value: value["simulations"][0]["routeRisk"]["checks"][0].update({"value": -999_999}),
+            lambda value: value["simulations"][0]["routeRisk"]["checks"][1].update({"passed": False}),
         ]
         for mutate in mutations:
             with self.subTest(mutate=mutate):

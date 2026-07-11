@@ -262,8 +262,8 @@ export function isStage4PortfolioWorkflow(value: unknown): value is Stage4Portfo
     workflow.batch.baseRunId !== workflow.baseRunId || !orderIds.length || new Set(orderIds).size !== orderIds.length ||
     !boundRows(workflow.approvals, orderIds, workflow.baseRunId, workflow.batch.batchId, (row) => row.approved === true) ||
     !boundRows(workflow.simulations, orderIds, workflow.baseRunId, workflow.batch.batchId,
-      (row) => row.orderState === "filled" && row.fillStatus === "filled" && row.paperOnly === true &&
-        row.liveExecutionBlocked === true && stage4RouteRiskMatches(row, workflow))) return false;
+      (row, index) => row.orderState === "filled" && row.fillStatus === "filled" && row.paperOnly === true &&
+        row.liveExecutionBlocked === true && stage4RouteRiskMatches(row, workflow, index))) return false;
 
   const history = workflow.stateHistory;
   const replay = workflow.replay;
@@ -378,10 +378,10 @@ function isRiskTemplate(value: unknown): value is Stage4PortfolioRiskTemplate {
 }
 
 function boundRows<T extends { orderId: string; baseRunId: string; batchId: string }>(
-  rows: T[], orderIds: string[], baseRunId: string, batchId: string, extra: (row: T) => boolean
+  rows: T[], orderIds: string[], baseRunId: string, batchId: string, extra: (row: T, index: number) => boolean
 ): boolean {
   return rows.length === orderIds.length && rows.every((row, index) => row.orderId === orderIds[index] &&
-    row.baseRunId === baseRunId && row.batchId === batchId && extra(row));
+    row.baseRunId === baseRunId && row.batchId === batchId && extra(row, index));
 }
 
 function integerEquals(value: unknown, expected: number): boolean {
@@ -390,33 +390,73 @@ function integerEquals(value: unknown, expected: number): boolean {
 
 function stage4RouteRiskMatches(
   simulation: PortfolioPaperOrderSimulation,
-  workflow: Stage4PortfolioWorkflow
+  workflow: Stage4PortfolioWorkflow,
+  index: number
 ): boolean {
   const routeRisk = simulation.routeRisk;
   if (!isRecord(routeRisk)) return false;
-  const limits = routeRisk.limits;
-  const checks = routeRisk.checks;
-  if (routeRisk.status !== "passed" || routeRisk.baseRunId !== simulation.baseRunId ||
-    routeRisk.batchId !== simulation.batchId || routeRisk.orderId !== simulation.orderId ||
-    !Array.isArray(routeRisk.blockedReasons) || routeRisk.blockedReasons.length !== 0 || !isRecord(limits) ||
-    !Array.isArray(checks)) return false;
-  const expected = {
-    initialCash: workflow.portfolioRequest.initialCash,
-    minCashAfter: workflow.riskTemplate.minCashAfter,
-    maxSymbolNotional: workflow.riskTemplate.maxSymbolNotional,
-    maxBatchNotional: workflow.riskTemplate.maxBatchNotional
+  const prior = workflow.simulations.slice(0, index);
+  const round = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
+  const initialCash = workflow.portfolioRequest.initialCash;
+  const replayCash = initialCash + prior.reduce(
+    (cash, row) => cash + (row.side === "sell" ? row.notionalValue : -row.notionalValue), 0
+  );
+  const cashBefore = replayCash > 0 ? replayCash : initialCash;
+  const symbolPositionBefore = prior.filter((row) => row.symbol === simulation.symbol).reduce(
+    (quantity, row) => quantity + (row.side === "buy" ? row.quantity : -row.quantity), 0
+  );
+  const cashAfter = cashBefore + (simulation.side === "sell" ? simulation.notionalValue : -simulation.notionalValue);
+  const symbolPositionAfter = symbolPositionBefore + (simulation.side === "buy" ? simulation.quantity : -simulation.quantity);
+  const symbolNotionalAfter = simulation.notionalValue + prior.filter(
+    (row) => row.symbol === simulation.symbol && row.side === simulation.side
+  ).reduce((sum, row) => sum + row.notionalValue, 0);
+  const batchNotionalAfter = simulation.notionalValue + prior.filter(
+    (row) => row.batchId === simulation.batchId
+  ).reduce((sum, row) => sum + row.notionalValue, 0);
+  const limits = {
+    initialCash: round(workflow.portfolioRequest.initialCash),
+    minCashAfter: round(workflow.riskTemplate.minCashAfter),
+    maxSymbolNotional: round(workflow.riskTemplate.maxSymbolNotional),
+    maxBatchNotional: round(workflow.riskTemplate.maxBatchNotional)
   };
-  if (!hasExactKeys(limits, Object.keys(expected)) ||
-    Object.entries(expected).some(([key, limit]) => limits[key] !== limit)) return false;
-  const checkLimits: Record<string, number> = {
-    cash_after_below_minimum: expected.minCashAfter,
-    symbol_notional_limit_exceeded: expected.maxSymbolNotional,
-    batch_notional_limit_exceeded: expected.maxBatchNotional
-  };
-  return Object.entries(checkLimits).every(([id, limit]) => {
-    const matching = checks.filter((check: unknown) => isRecord(check) && check.id === id);
-    return matching.length === 1 && isRecord(matching[0]) && matching[0].passed === true && matching[0].limit === limit;
+  const checks = [
+    { id: "cash_after_below_minimum", label: "Cash after route", passed: simulation.side !== "buy" || cashAfter >= limits.minCashAfter, value: round(cashAfter), limit: round(limits.minCashAfter) },
+    { id: "insufficient_symbol_position", label: "Sell position coverage", passed: simulation.side !== "sell" || simulation.quantity <= symbolPositionBefore, value: round(simulation.quantity), limit: round(symbolPositionBefore) },
+    { id: "symbol_notional_limit_exceeded", label: "Symbol notional limit", passed: symbolNotionalAfter <= limits.maxSymbolNotional, value: round(symbolNotionalAfter), limit: round(limits.maxSymbolNotional) },
+    { id: "batch_notional_limit_exceeded", label: "Batch notional limit", passed: batchNotionalAfter <= limits.maxBatchNotional, value: round(batchNotionalAfter), limit: round(limits.maxBatchNotional) }
+  ];
+  const blockedReasons = checks.filter((check) => !check.passed).map((check) => check.id);
+  return exactJson(routeRisk, {
+    schemaVersion: 1,
+    mode: "portfolio_paper_simulation_route_guard",
+    status: blockedReasons.length ? "blocked" : "passed",
+    baseRunId: simulation.baseRunId,
+    batchId: simulation.batchId,
+    orderId: simulation.orderId,
+    symbol: simulation.symbol,
+    side: simulation.side,
+    orderNotional: round(simulation.notionalValue),
+    cashBefore: round(cashBefore),
+    cashAfter: round(cashAfter),
+    symbolPositionBefore: round(symbolPositionBefore),
+    symbolPositionAfter: round(symbolPositionAfter),
+    symbolNotionalAfter: round(symbolNotionalAfter),
+    batchNotionalAfter: round(batchNotionalAfter),
+    limits,
+    checks,
+    blockedReasons,
+    paperOnly: true,
+    liveExecutionBlocked: true
   });
+}
+
+function exactJson(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length && left.every((item, index) => exactJson(item, right[index]));
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  return hasExactKeys(left, Object.keys(right)) && Object.keys(right).every((key) => exactJson(left[key], right[key]));
 }
 
 function isPagination(value: unknown): value is { limit: number; total: number } {
