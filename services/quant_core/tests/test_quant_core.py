@@ -4764,6 +4764,7 @@ class QuantCoreContractTest(unittest.TestCase):
         batch = workflow["batch"]
         order_ids = [order["orderId"] for order in batch["orders"]]
         events = []
+        pipeline_symbols = []
         pipeline_index = 0
         simulation_index = 0
         export_index = 0
@@ -4781,6 +4782,7 @@ class QuantCoreContractTest(unittest.TestCase):
             events.append(("POST", url, payload))
             self.assertEqual(timeout_seconds, 5)
             if url.endswith("/api/p0/pipeline"):
+                pipeline_symbols.append(payload["symbol"])
                 run_id = ("run-a", "run-b")[pipeline_index]
                 pipeline_index += 1
                 return {
@@ -4859,6 +4861,7 @@ class QuantCoreContractTest(unittest.TestCase):
             report = json.loads(report_path.read_text(encoding="utf-8"))
 
         self.assertEqual(pipeline_index, 2)
+        self.assertEqual(pipeline_symbols, ["600000", "000001"])
         self.assertEqual(simulation_index, 2)
         self.assertEqual(export_index, 2)
         self.assertEqual(report["workflowHash"], workflow["workflowHash"])

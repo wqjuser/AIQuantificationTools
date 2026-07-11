@@ -1874,7 +1874,7 @@ def run_stage4_portfolio_acceptance(
     report_path: Path | None = None,
 ) -> list[str]:
     run_ids = []
-    for symbol in ("600000", "000300"):
+    for symbol in ("600000", "000001"):
         response = post_json(
             join_url(base_url, "/api/p0/pipeline"),
             build_p0_pipeline_payload("ashare", symbol, "1d"),
