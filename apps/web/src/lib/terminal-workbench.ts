@@ -24288,7 +24288,12 @@ export function buildPortfolioBacktestDraft(
 
   const selected = [
     current,
-    ...candidates.filter((run) => run.runId !== current.runId && run.symbol !== current.symbol)
+    ...candidates.filter(
+      (run, index) =>
+        run.runId !== current.runId &&
+        run.symbol !== current.symbol &&
+        candidates.findIndex((candidate) => candidate.symbol === run.symbol) === index
+    )
   ].slice(0, 3);
 
   if (selected.length < 2) {

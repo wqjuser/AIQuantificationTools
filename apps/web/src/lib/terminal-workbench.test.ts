@@ -22901,8 +22901,13 @@ describe("terminal workbench model", () => {
         { timestamp: "2026-05-27T08:00:00+00:00", equity: 101000 }
       ]
     };
+    const olderPeer = {
+      ...peer,
+      runId: "run-peer-000300-old",
+      createdAt: "2026-05-26T06:00:00+00:00"
+    };
 
-    const draft = buildPortfolioBacktestDraft([otherMarket, peer, current], current.runId);
+    const draft = buildPortfolioBacktestDraft([otherMarket, olderPeer, peer, current], current.runId);
 
     expect(draft.status).toBe("ready");
     expect(draft.request).toEqual({
