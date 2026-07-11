@@ -4547,6 +4547,16 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(manifest["kind"], "aiqt.stage4PortfolioPaperAcceptance")
         self.assertEqual(manifest["schemaVersion"], 1)
+        self.assertEqual(
+            manifest["riskEvidence"],
+            {
+                "totalCount": 5,
+                "passedCount": 5,
+                "reviewCount": 0,
+                "blockedCount": 0,
+                "rejectionReasons": [],
+            },
+        )
         self.assertEqual(len(manifest["workflow"]["portfolioRequest"]["legs"]), 2)
         self.assertEqual(
             docker_smoke.validate_stage4_portfolio_acceptance_manifest(manifest),
@@ -4557,12 +4567,18 @@ class QuantCoreContractTest(unittest.TestCase):
             "identity": lambda value: value.update({"kind": "wrong"}),
             "schema": lambda value: value.update({"schemaVersion": 2}),
             "status": lambda value: value.update({"status": "blocked"}),
+            "generatedAt": lambda value: value.update({"generatedAt": "2026-07-11T08:00:00Z"}),
             "two legs": lambda value: value["workflow"]["portfolioRequest"].update(
                 {"legs": value["workflow"]["portfolioRequest"]["legs"][:1]}
             ),
             "portfolio hash": lambda value: value.update({"portfolioHash": "0" * 64}),
             "workflow hash": lambda value: value.update({"workflowHash": "0" * 64}),
             "risk checks": lambda value: value["workflow"]["portfolio"].update({"preTradeRiskChecks": []}),
+            "risk total count": lambda value: value["riskEvidence"].update({"totalCount": 4}),
+            "risk passed count": lambda value: value["riskEvidence"].update({"passedCount": 4}),
+            "risk rejection reasons": lambda value: value["riskEvidence"].update(
+                {"rejectionReasons": ["unstable-reason"]}
+            ),
             "batch": lambda value: value["workflow"]["batch"].update({"orders": []}),
             "approval sequence": lambda value: value["workflow"].update(
                 {"approvals": list(reversed(value["workflow"]["approvals"]))}
@@ -4583,6 +4599,79 @@ class QuantCoreContractTest(unittest.TestCase):
             invalid = copy.deepcopy(manifest)
             mutate(invalid)
             with self.subTest(label=label), self.assertRaises(RuntimeError):
+                docker_smoke.validate_stage4_portfolio_acceptance_manifest(invalid)
+
+        stage4_hash = docker_smoke._quant_core_validator(
+            "stage4_portfolio", "stage4_portfolio_workflow_hash"
+        )
+
+        def rehash(value):
+            value["workflow"]["workflowHash"] = stage4_hash(value["workflow"])
+            value["workflowHash"] = value["workflow"]["workflowHash"]
+            value["portfolioHash"] = docker_smoke._stage4_acceptance_hash(value["workflow"]["portfolio"])
+            value["riskEvidence"] = docker_smoke._stage4_risk_evidence(value["workflow"])
+            for field in ("exportWorkflowHash", "importedWorkflowHash", "readbackWorkflowHash"):
+                value["exportReadback"][field] = value["workflowHash"]
+
+        semantic_mutations = {
+            "workflow identity": lambda value: value["workflow"].update(
+                {"kind": "aiqt.stage4PortfolioWorkflow.tampered"}
+            ),
+            "workflow schema": lambda value: value["workflow"].update({"schemaVersion": 2}),
+            "workflow generatedAt": lambda value: value["workflow"].update(
+                {"generatedAt": "2026-07-11T16:00:00+08:00"}
+            ),
+            "state generatedAt": lambda value: value["workflow"]["stateHistory"].update(
+                {"generatedAt": "2026-07-11T16:00:00+08:00"}
+            ),
+            "replay generatedAt": lambda value: value["workflow"]["replay"].update(
+                {"generatedAt": "2026-07-11T16:00:00+08:00"}
+            ),
+            "order source binding": lambda value: value["workflow"]["batch"]["orders"][0].update(
+                {"sourceRunId": "run-b"}
+            ),
+            "order symbol binding": lambda value: value["workflow"]["batch"]["orders"][0].update(
+                {"symbol": "000300"}
+            ),
+            "duplicate leg run binding": lambda value: (
+                value["workflow"]["portfolioRequest"]["legs"][1].update({"runId": "run-a"}),
+                value["workflow"]["batch"]["orders"][1].update({"sourceRunId": "run-a"}),
+            ),
+            "duplicate leg symbol binding": lambda value: (
+                value["workflow"]["portfolioRequest"]["legs"][1].update({"symbol": "600000"}),
+                value["workflow"]["portfolio"]["legs"][1].update({"symbol": "600000"}),
+                value["workflow"]["batch"]["orders"][1].update({"symbol": "600000"}),
+            ),
+            "risk duplicate identity": lambda value: value["workflow"]["portfolio"][
+                "preTradeRiskChecks"
+            ].append(copy.deepcopy(value["workflow"]["portfolio"]["preTradeRiskChecks"][0])),
+            "risk blocked reason": lambda value: value["workflow"]["portfolio"][
+                "preTradeRiskChecks"
+            ][0].update({"status": "blocked", "reason": "stable-stage4-risk-block"}),
+            "replay cash": lambda value: value["workflow"]["replay"]["account"].update(
+                {"cash": value["workflow"]["replay"]["account"]["cash"] + 1}
+            ),
+            "replay equity": lambda value: value["workflow"]["replay"]["account"].update(
+                {"equity": value["workflow"]["replay"]["account"]["equity"] + 1}
+            ),
+            "replay account position": lambda value: value["workflow"]["replay"]["account"][
+                "positions"
+            ].update({"600000": 101}),
+            "replay position row": lambda value: value["workflow"]["replay"]["positions"][0].update(
+                {"quantity": value["workflow"]["replay"]["positions"][0]["quantity"] + 1}
+            ),
+            "replay realized pnl": lambda value: value["workflow"]["replay"]["summary"].update(
+                {"realizedPnl": 1}
+            ),
+            "simulation fill fact": lambda value: value["workflow"]["simulations"][0].update(
+                {"quantity": value["workflow"]["simulations"][0]["quantity"] + 1}
+            ),
+        }
+        for label, mutate in semantic_mutations.items():
+            invalid = copy.deepcopy(manifest)
+            mutate(invalid)
+            rehash(invalid)
+            with self.subTest(semantic=label), self.assertRaises(RuntimeError):
                 docker_smoke.validate_stage4_portfolio_acceptance_manifest(invalid)
         for field in (
             "paperOnly",

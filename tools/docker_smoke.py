@@ -1004,6 +1004,7 @@ _STAGE4_ACCEPTANCE_FIELDS = {
     "portfolioHash",
     "workflowHash",
     "workflow",
+    "riskEvidence",
     "retryEvidence",
     "exportReadback",
     "paperOnly",
@@ -1029,6 +1030,32 @@ def _stage4_acceptance_hash(value: Any) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _stage4_risk_evidence(workflow: dict[str, Any]) -> dict[str, Any]:
+    checks = workflow.get("portfolio", {}).get("preTradeRiskChecks", [])
+    statuses = [check.get("status") for check in checks if isinstance(check, dict)]
+    return {
+        "totalCount": len(checks) if isinstance(checks, list) else 0,
+        "passedCount": statuses.count("passed"),
+        "reviewCount": statuses.count("review"),
+        "blockedCount": statuses.count("blocked"),
+        "rejectionReasons": sorted(
+            str(check.get("reason") or "").strip()
+            for check in checks
+            if isinstance(check, dict) and check.get("status") == "blocked"
+        ) if isinstance(checks, list) else [],
+    }
+
+
+def _stage4_utc(value: Any, field: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.tzinfo != timezone.utc or parsed.isoformat() != value:
+        raise RuntimeError(f"Invalid Stage 4 portfolio acceptance manifest: {field} is not canonical UTC")
+    return value
+
+
 def build_stage4_portfolio_acceptance_manifest(
     *,
     workflow: dict[str, Any],
@@ -1043,6 +1070,7 @@ def build_stage4_portfolio_acceptance_manifest(
         "portfolioHash": _stage4_acceptance_hash(workflow.get("portfolio")),
         "workflowHash": workflow.get("workflowHash"),
         "workflow": json.loads(json.dumps(workflow)),
+        "riskEvidence": _stage4_risk_evidence(workflow),
         "retryEvidence": json.loads(json.dumps(retry_evidence)),
         "exportReadback": json.loads(json.dumps(export_readback)),
         **_STAGE4_SAFETY,
@@ -1071,13 +1099,7 @@ def validate_stage4_portfolio_acceptance_manifest(manifest: Any) -> str:
         or payload["status"] != "passed"
     ):
         raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: identity is invalid")
-    generated_at = payload["generatedAt"]
-    try:
-        parsed_generated_at = datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else None
-    except ValueError:
-        parsed_generated_at = None
-    if parsed_generated_at is None or parsed_generated_at.tzinfo != timezone.utc or parsed_generated_at.isoformat() != generated_at:
-        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: generatedAt is not canonical UTC")
+    _stage4_utc(payload["generatedAt"], "generatedAt")
     if any(payload.get(field) is not expected for field, expected in _STAGE4_SAFETY.items()):
         raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: paper/live boundary is invalid")
 
@@ -1094,20 +1116,77 @@ def validate_stage4_portfolio_acceptance_manifest(manifest: Any) -> str:
     if payload["portfolioHash"] != _stage4_acceptance_hash(workflow["portfolio"]):
         raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: portfolio hash does not match")
 
+    for field, evidence in (
+        ("workflow.generatedAt", workflow.get("generatedAt")),
+        ("workflow.stateHistory.generatedAt", workflow.get("stateHistory", {}).get("generatedAt")),
+        ("workflow.replay.generatedAt", workflow.get("replay", {}).get("generatedAt")),
+    ):
+        _stage4_utc(evidence, field)
+
+    portfolio_legs = workflow["portfolio"].get("legs")
+    leg_bindings = [(leg.get("runId"), leg.get("symbol")) for leg in legs if isinstance(leg, dict)]
+    portfolio_symbols = [leg.get("symbol") for leg in portfolio_legs or [] if isinstance(leg, dict)]
+    order_bindings = [
+        (order.get("sourceRunId"), order.get("symbol"))
+        for order in workflow["batch"].get("orders", [])
+        if isinstance(order, dict)
+    ]
+    if (
+        len(leg_bindings) != 2
+        or len(set(leg_bindings)) != 2
+        or len({run_id for run_id, _symbol in leg_bindings}) != 2
+        or len(portfolio_symbols) != 2
+        or len(set(portfolio_symbols)) != 2
+        or [symbol for _run_id, symbol in leg_bindings] != portfolio_symbols
+        or order_bindings != leg_bindings
+    ):
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: leg and batch order bindings are invalid")
+
     risk_checks = workflow["portfolio"].get("preTradeRiskChecks")
-    risk_ids = {
-        check.get("checkId")
-        for check in risk_checks or []
-        if isinstance(check, dict) and check.get("status") in {"passed", "review"}
+    expected_risk_ids = {
+        ("portfolio", "portfolio_data_quality", None, None),
+        *{
+            ("trade", check_id, run_id, symbol)
+            for run_id, symbol in leg_bindings
+            for check_id in ("trade_review_status", "trade_notional_limit")
+        },
     }
-    if not isinstance(risk_checks, list) or not {
-        "portfolio_data_quality",
-        "trade_review_status",
-        "trade_notional_limit",
-    }.issubset(risk_ids) or any(
-        not isinstance(check, dict) or check.get("status") not in {"passed", "review"} for check in risk_checks
+    risk_ids = [
+        (check.get("scope"), check.get("checkId"), check.get("sourceRunId"), check.get("symbol"))
+        for check in risk_checks or []
+        if isinstance(check, dict)
+    ]
+    if (
+        not isinstance(risk_checks, list)
+        or len(risk_checks) != 5
+        or len(set(risk_ids)) != 5
+        or set(risk_ids) != expected_risk_ids
+        or any(
+            not isinstance(check, dict)
+            or check.get("status") not in {"passed", "review", "blocked"}
+            or not str(check.get("reason") or "").strip()
+            for check in risk_checks
+        )
+        or payload["riskEvidence"] != _stage4_risk_evidence(workflow)
+        or payload["riskEvidence"].get("blockedCount") != 0
+        or payload["riskEvidence"].get("rejectionReasons") != []
     ):
         raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: risk checks are invalid")
+
+    try:
+        to_simulation = _quant_core_validator("execution", "portfolio_paper_order_payload_to_simulation")
+        build_replay = _quant_core_validator("execution", "build_portfolio_paper_order_replay")
+        replay = workflow["replay"]
+        expected_replay = build_replay(
+            [to_simulation(simulation) for simulation in workflow["simulations"]],
+            base_run_id=workflow["baseRunId"],
+            initial_cash=workflow["portfolioRequest"]["initialCash"],
+            generated_at=datetime.fromisoformat(replay["generatedAt"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(f"Invalid Stage 4 portfolio acceptance manifest: replay evidence is invalid: {error}") from error
+    if replay != expected_replay:
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: replay evidence is not exact")
 
     order_ids = [order.get("orderId") for order in workflow["batch"]["orders"]]
     retry = payload["retryEvidence"]
