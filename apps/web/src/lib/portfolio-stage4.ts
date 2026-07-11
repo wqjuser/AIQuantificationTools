@@ -98,7 +98,7 @@ export function isStage4PortfolioWorkflow(value: unknown): value is Stage4Portfo
     !nonempty(workflow.workflowId) || !zonedDate(workflow.generatedAt) || !nonempty(workflow.baseRunId) ||
     workflow.paperOnly !== true || workflow.liveTradingAllowed !== false || workflow.orderSubmissionEnabled !== false ||
     workflow.routeExecuted !== false || workflow.liveBlockedBoundary !== true ||
-    !/^[0-9a-f]{64}$/i.test(workflow.workflowHash) ||
+    !/^[0-9a-f]{64}$/.test(workflow.workflowHash) ||
     !isRecord(workflow.portfolioRequest) || !nonempty(workflow.portfolioRequest.name) ||
     !positive(workflow.portfolioRequest.initialCash) || !Array.isArray(workflow.portfolioRequest.legs) ||
     workflow.portfolioRequest.legs.length < 2 || !isPortfolioBacktestRun(workflow.portfolio) ||
@@ -146,8 +146,17 @@ export async function recordStage4PortfolioWorkflow(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        baseRunId: request.baseRunId, name: request.name, initialCash: request.initialCash, legs: request.legs,
-        riskTemplate: request.riskTemplate, batchId: request.batchId, operator: request.operator
+        baseRunId: request.baseRunId,
+        name: request.name,
+        initialCash: request.initialCash,
+        legs: request.legs.map(({ runId, targetWeight }) => ({ runId, targetWeight })),
+        riskTemplate: {
+          minCashAfter: request.riskTemplate.minCashAfter,
+          maxSymbolNotional: request.riskTemplate.maxSymbolNotional,
+          maxBatchNotional: request.riskTemplate.maxBatchNotional
+        },
+        batchId: request.batchId,
+        operator: request.operator
       })
     }, fetcher);
     if (!isRecord(payload) || !isStage4PortfolioWorkflow(payload.workflow)) {
@@ -179,9 +188,16 @@ export async function loadStage4PortfolioWorkflows(
 
 async function requestPayload(url: string, init: RequestInit | undefined, fetcher: WorkspaceFetcher): Promise<unknown> {
   const response = await fetcher(url, init);
-  const payload = await response.json();
-  if (!response.ok) throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
-  return payload;
+  if (!response.ok) {
+    let errorPayload: unknown;
+    try {
+      errorPayload = await response.json();
+    } catch {
+      // Empty and non-JSON errors intentionally fall back to the status-only message.
+    }
+    throw new Error(coreErrorDetail(errorPayload) ?? `HTTP ${response.status ?? "error"}`);
+  }
+  return response.json();
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
@@ -206,7 +222,14 @@ function positive(value: unknown): value is number {
 }
 
 function zonedDate(value: unknown): value is string {
-  return nonempty(value) && !Number.isNaN(Date.parse(value)) && /(?:Z|[+-]\d\d:\d\d)$/.test(value);
+  if (!nonempty(value)) return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(Z|[+-](\d{2}):(\d{2}))$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, , offsetHour = "00", offsetMinute = "00"] = match;
+  const y = Number(year), m = Number(month), d = Number(day);
+  return y >= 1 && m >= 1 && m <= 12 && d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate() &&
+    Number(hour) <= 23 && Number(minute) <= 59 && Number(second) <= 59 &&
+    Number(offsetHour) <= 23 && Number(offsetMinute) <= 59;
 }
 
 function isRiskTemplate(value: unknown): value is Stage4PortfolioRiskTemplate {

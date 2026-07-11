@@ -197,6 +197,8 @@ describe("Stage 4 portfolio workflow contract", () => {
       (value) => { value.stateHistory.summary.filledOrders = 1; },
       (value) => { value.replay.summary.positionCount = 1; },
       (value) => { value.workflowHash = "a".repeat(63); },
+      (value) => { value.workflowHash = "A".repeat(64); },
+      (value) => { value.generatedAt = "2026-02-30T08:15:00+00:00"; },
       (value) => { value.paperOnly = false; },
       (value) => { value.liveTradingAllowed = true; },
       (value) => { value.orderSubmissionEnabled = true; },
@@ -211,12 +213,12 @@ describe("Stage 4 portfolio workflow contract", () => {
   });
 
   test("records the exact seven-field request and validates the response", async () => {
-    const request = {
+    const request: any = {
       baseRunId: "run-a",
       name: "Stage 4",
       initialCash: 100_000,
-      legs: [{ runId: "run-a", targetWeight: 0.4 }, { runId: "run-b", targetWeight: 0.4 }],
-      riskTemplate: { minCashAfter: 10_000, maxSymbolNotional: 50_000, maxBatchNotional: 90_000 },
+      legs: [{ runId: "run-a", targetWeight: 0.4, symbol: "must-not-send" }, { runId: "run-b", targetWeight: 0.4, liveTradingAllowed: true }],
+      riskTemplate: { minCashAfter: 10_000, maxSymbolNotional: 50_000, maxBatchNotional: 90_000, routeExecuted: true },
       batchId: "batch-1",
       operator: "operator"
     };
@@ -228,7 +230,15 @@ describe("Stage 4 portfolio workflow contract", () => {
 
     expect(captured.url).toBe("/api/portfolio/workflows");
     expect(captured.init?.method).toBe("POST");
-    expect(JSON.parse(String(captured.init?.body))).toEqual(request);
+    expect(JSON.parse(String(captured.init?.body))).toEqual({
+      baseRunId: "run-a",
+      name: "Stage 4",
+      initialCash: 100_000,
+      legs: [{ runId: "run-a", targetWeight: 0.4 }, { runId: "run-b", targetWeight: 0.4 }],
+      riskTemplate: { minCashAfter: 10_000, maxSymbolNotional: 50_000, maxBatchNotional: 90_000 },
+      batchId: "batch-1",
+      operator: "operator"
+    });
     expect(result.workflow?.workflowId).toBe("stage4-workflow-1");
     expect(result.error).toBeUndefined();
   });
@@ -254,6 +264,11 @@ describe("Stage 4 portfolio workflow contract", () => {
       status: 500,
       json: async () => ({ detail: "stored workflow is invalid", secret: "ignored" })
     }));
+    const nonJson = await loadStage4PortfolioWorkflows("/", "run-a", async () => ({
+      ok: false,
+      status: 502,
+      json: async () => { throw new SyntaxError("Unexpected end of JSON input"); }
+    }));
     const malformed = await recordStage4PortfolioWorkflow("/", {
       baseRunId: "run-a",
       name: "Stage 4",
@@ -265,6 +280,7 @@ describe("Stage 4 portfolio workflow contract", () => {
     }, async () => ({ ok: true, status: 201, json: async () => ({ workflow: { ...workflow(), routeExecuted: true } }) }));
 
     expect(http).toMatchObject({ workflows: [], source: "fallback", error: "stored workflow is invalid" });
+    expect(nonJson).toMatchObject({ workflows: [], source: "fallback", error: "HTTP 502" });
     expect(malformed).toMatchObject({ source: "fallback", error: "Invalid Stage 4 portfolio workflow contract" });
     expect(malformed.workflow).toBeUndefined();
   });
