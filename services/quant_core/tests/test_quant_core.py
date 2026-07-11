@@ -45,7 +45,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         run_store = ResearchRunStore(root / "runs.sqlite")
         run_store.record(audit("run-a", "600000", "ashare", "1d", [100_000, 105_000, 110_000]))
-        run_store.record(audit("run-b", "000300", market_b, timeframe_b, [100_000, 103_000, 108_000]))
+        run_store.record(audit("run-b", "000001", market_b, timeframe_b, [100_000, 103_000, 108_000]))
         batch_store = PortfolioPaperOrderStore(root / "batches.sqlite")
         approval_store = PortfolioPaperOrderApprovalStore(root / "approvals.sqlite")
         simulation_store = PortfolioPaperOrderSimulationStore(root / "simulations.sqlite")
@@ -74,7 +74,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "timestamp": created_at.isoformat(),
                     "eventType": "portfolio_paper_order",
                     "orderId": "order-b",
-                    "symbol": "000300",
+                    "symbol": "000001",
                     "sourceRunId": "run-b",
                     "side": "buy",
                     "quantity": 50,
@@ -100,7 +100,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 )
             )
         for index, (order_id, symbol, source_run_id, quantity, price) in enumerate(
-            (("order-a", "600000", "run-a", 100, 100), ("order-b", "000300", "run-b", 50, 400))
+            (("order-a", "600000", "run-a", 100, 100), ("order-b", "000001", "run-b", 50, 400))
         ):
             simulation_store.record(
                 PortfolioPaperOrderSimulation(
@@ -4751,7 +4751,20 @@ class QuantCoreContractTest(unittest.TestCase):
             )
         self.assertEqual(status, 201)
         workflow = created["workflow"]
-        expected_order_ids = ["stage4-run-a-600000-buy", "stage4-run-b-000300-buy"]
+        expected_leg_identities = [("run-a", "600000"), ("run-b", "000001")]
+        self.assertEqual(
+            [(leg["runId"], leg["symbol"]) for leg in workflow["portfolioRequest"]["legs"]],
+            expected_leg_identities,
+        )
+        self.assertEqual(
+            [leg["symbol"] for leg in workflow["portfolio"]["legs"]],
+            [symbol for _, symbol in expected_leg_identities],
+        )
+        self.assertEqual(
+            [(order["sourceRunId"], order["symbol"]) for order in workflow["batch"]["orders"]],
+            expected_leg_identities,
+        )
+        expected_order_ids = ["stage4-run-a-600000-buy", "stage4-run-b-000001-buy"]
         for index, order_id in enumerate(expected_order_ids):
             workflow["batch"]["orders"][index]["orderId"] = order_id
             workflow["approvals"][index]["orderId"] = order_id
@@ -19654,7 +19667,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(first["auditEvent"]["eventType"], "stage4_portfolio_workflow")
         self.assertEqual(first["auditEvent"]["metadata"]["snapshot"], first["workflow"])
         self.assertEqual(first["workflow"]["portfolioRequest"]["legs"][0]["symbol"], "600000")
-        self.assertEqual(first["workflow"]["portfolio"]["legs"][1]["symbol"], "000300")
+        self.assertEqual(first["workflow"]["portfolio"]["legs"][1]["symbol"], "000001")
         self.assertNotEqual(first["workflow"]["workflowId"], second["workflow"]["workflowId"])
         self.assertEqual(get_status, 200)
         self.assertEqual(
