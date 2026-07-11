@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  buildStage4PortfolioGoldenPath,
   buildStage4PortfolioWorkflowsUrl,
   isStage4PortfolioWorkflow,
   loadStage4PortfolioWorkflows,
@@ -283,5 +284,223 @@ describe("Stage 4 portfolio workflow contract", () => {
     expect(nonJson).toMatchObject({ workflows: [], source: "fallback", error: "HTTP 502" });
     expect(malformed).toMatchObject({ source: "fallback", error: "Invalid Stage 4 portfolio workflow contract" });
     expect(malformed.workflow).toBeUndefined();
+  });
+});
+
+describe("Stage 4 portfolio golden path", () => {
+  function goldenPathInput() {
+    const value = workflow();
+    const lifecycle = value.batch.orders.map((order) => ({
+      batchId: value.batch.batchId,
+      baseRunId: value.baseRunId,
+      portfolioName: value.batch.portfolioName,
+      orderId: order.orderId,
+      symbol: order.symbol,
+      sourceRunId: order.sourceRunId,
+      side: order.side,
+      quantity: order.quantity,
+      notionalValue: order.notionalValue,
+      originalStatus: order.status,
+      riskStatus: order.riskStatus,
+      state: "ready_for_simulation" as const,
+      routable: true,
+      paperOnly: true,
+      liveExecutionBlocked: true,
+      approvedBy: "operator",
+      reviewedAt: "2026-07-11T08:05:00+00:00",
+      reason: "Approved for paper simulation."
+    }));
+    const approvalRows = lifecycle.map((row) => ({
+      id: `${row.batchId}:${row.orderId}`,
+      portfolioName: row.portfolioName,
+      batchId: row.batchId,
+      baseRunId: row.baseRunId,
+      orderId: row.orderId,
+      symbol: row.symbol,
+      side: row.side,
+      quantity: row.quantity,
+      notionalValue: row.notionalValue,
+      riskStatus: row.riskStatus,
+      state: row.state,
+      canApprove: false,
+      canReject: false,
+      approvedBy: row.approvedBy,
+      reviewedAt: row.reviewedAt,
+      actionHint: row.reason,
+      tone: "positive" as const
+    }));
+    const routeRows = value.simulations.map((simulation) => ({
+      id: `route-${simulation.orderId}`,
+      batchId: simulation.batchId,
+      orderId: simulation.orderId,
+      symbol: simulation.symbol,
+      side: simulation.side,
+      routeState: "filled" as const,
+      statusLabel: "Already simulated",
+      detail: "duplicate simulator route is blocked.",
+      latestStateLabel: "Filled",
+      focusQuery: simulation.orderId,
+      stateEventId: null,
+      canSimulate: false,
+      simulationId: simulation.simulationId,
+      adapterPaperExecutionId: null,
+      adapterPaperExecutionEvidenceLabel: "",
+      adapterManifestValidationId: null,
+      tone: "neutral" as const
+    }));
+    return {
+      baseRunId: value.baseRunId,
+      portfolio: value.portfolio,
+      batches: [value.batch],
+      lifecycle,
+      approvalRows,
+      routeRows,
+      stateHistory: value.stateHistory,
+      replay: value.replay,
+      workflow: null
+    };
+  }
+
+  test("derives the exact five ordered steps and one primary action for every transition", () => {
+    const complete = goldenPathInput();
+    const cases = [
+      {
+        mutate: (input: any) => { input.portfolio = null; input.batches = []; },
+        step: "portfolio-build",
+        action: "run-portfolio-backtest",
+        blockers: ["portfolio-missing"]
+      },
+      {
+        mutate: (input: any) => { input.batches = []; },
+        step: "risk-review",
+        action: "record-paper-order-batch",
+        blockers: ["paper-batch-missing"]
+      },
+      {
+        mutate: (input: any) => {
+          input.lifecycle[0].riskStatus = "review";
+          input.lifecycle[0].state = "risk_review";
+        },
+        step: "risk-review",
+        action: "review-portfolio-risk",
+        blockers: ["risk-review-required"]
+      },
+      {
+        mutate: (input: any) => {
+          input.lifecycle.forEach((row: any) => { row.state = "awaiting_operator_review"; row.approvedBy = null; });
+          input.approvalRows.forEach((row: any) => { row.state = "awaiting_operator_review"; row.approvedBy = null; });
+          input.routeRows = [];
+        },
+        step: "operator-approval",
+        action: "review-portfolio-orders",
+        blockers: ["operator-approval-required"]
+      },
+      {
+        mutate: (input: any) => {
+          input.routeRows.forEach((row: any) => { row.routeState = "ready"; row.simulationId = null; row.canSimulate = true; });
+          input.stateHistory = null;
+          input.replay = null;
+        },
+        step: "paper-simulation",
+        action: "simulate-portfolio-batch",
+        blockers: ["paper-simulation-missing"]
+      },
+      {
+        mutate: (input: any) => { input.stateHistory = null; input.replay = null; },
+        step: "account-replay",
+        action: "refresh-account-replay",
+        blockers: ["account-replay-missing"]
+      },
+      {
+        mutate: () => {},
+        step: "account-replay",
+        action: "record-stage4-workflow",
+        blockers: ["authoritative-workflow-missing"]
+      }
+    ];
+
+    for (const row of cases) {
+      const input: any = structuredClone(complete);
+      row.mutate(input);
+      const result = buildStage4PortfolioGoldenPath(input);
+      expect(result.steps.map((step) => step.id)).toEqual([
+        "portfolio-build", "risk-review", "operator-approval", "paper-simulation", "account-replay"
+      ]);
+      expect(result.currentStepId).toBe(row.step);
+      expect(result.primaryActionId).toBe(row.action);
+      expect(result.blockers).toEqual(row.blockers);
+      expect(result.steps.filter((step) => step.actionId !== null).map((step) => step.actionId)).toEqual([row.action]);
+    }
+  });
+
+  test("fails closed on stale, mixed, rejected and route-blocked evidence", () => {
+    const cases = [
+      {
+        mutate: (input: any) => { input.baseRunId = "run-new"; },
+        step: "portfolio-build",
+        action: "run-portfolio-backtest",
+        blocker: "stale-base-run"
+      },
+      {
+        mutate: (input: any) => { input.approvalRows[0].batchId = "batch-other"; },
+        step: "operator-approval",
+        action: "review-portfolio-orders",
+        blocker: "mixed-batch"
+      },
+      {
+        mutate: (input: any) => {
+          input.lifecycle[0].state = "operator_rejected";
+          input.approvalRows[0].state = "operator_rejected";
+        },
+        step: "operator-approval",
+        action: "review-portfolio-orders",
+        blocker: "operator-rejected"
+      },
+      {
+        mutate: (input: any) => {
+          input.routeRows[0].routeState = "blocked";
+          input.routeRows[0].simulationId = null;
+        },
+        step: "paper-simulation",
+        action: "review-route-risk",
+        blocker: "route-risk-blocked"
+      }
+    ];
+
+    for (const row of cases) {
+      const input: any = structuredClone(goldenPathInput());
+      row.mutate(input);
+      expect(buildStage4PortfolioGoldenPath(input)).toMatchObject({
+        status: "blocked",
+        currentStepId: row.step,
+        primaryActionId: row.action,
+        blockers: [row.blocker]
+      });
+    }
+  });
+
+  test("treats duplicate fills as completed simulation and restores a complete authoritative workflow", () => {
+    const duplicate = buildStage4PortfolioGoldenPath(goldenPathInput());
+    expect(duplicate.steps.find((step) => step.id === "paper-simulation")?.status).toBe("passed");
+    expect(duplicate.currentStepId).toBe("account-replay");
+
+    const restored: any = goldenPathInput();
+    restored.portfolio = null;
+    restored.batches = [];
+    restored.lifecycle = [];
+    restored.approvalRows = [];
+    restored.routeRows = [];
+    restored.stateHistory = null;
+    restored.replay = null;
+    restored.workflow = workflow();
+    expect(buildStage4PortfolioGoldenPath(restored)).toMatchObject({
+      status: "ready",
+      currentStepId: "account-replay",
+      primaryActionId: null,
+      blockers: []
+    });
+    expect(buildStage4PortfolioGoldenPath(restored).steps.map((step) => step.status)).toEqual([
+      "passed", "passed", "passed", "passed", "passed"
+    ]);
   });
 });

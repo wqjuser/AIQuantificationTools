@@ -7,16 +7,23 @@ import {
   isPortfolioPaperOrderReplay,
   isPortfolioPaperOrderSimulation,
   isPortfolioPaperOrderStateHistory,
+  type GoldenPathOverallStatus,
+  type GoldenPathStep,
   type PortfolioBacktestLegRequest,
   type PortfolioBacktestRun,
   type PortfolioPaperOrderApproval,
   type PortfolioPaperOrderBatch,
+  type PortfolioPaperOrderLifecycleEvent,
   type PortfolioPaperOrderReplay,
   type PortfolioPaperOrderSimulation,
   type PortfolioPaperOrderStateHistory,
   type WorkspaceFetcher,
   type WorkspaceSource
 } from "./terminal-api";
+import type {
+  PortfolioPaperOrderApprovalRow,
+  PortfolioPaperOrderSimulationRouteRow
+} from "./terminal-workbench";
 
 export interface Stage4PortfolioWorkflowRequest {
   baseRunId: string;
@@ -77,6 +84,34 @@ export interface Stage4PortfolioWorkflowHistoryResult {
   error?: string;
 }
 
+export interface Stage4PortfolioGoldenPathInput {
+  baseRunId: string;
+  portfolio?: PortfolioBacktestRun | null;
+  batches?: readonly PortfolioPaperOrderBatch[];
+  lifecycle?: readonly PortfolioPaperOrderLifecycleEvent[];
+  approvalRows?: readonly PortfolioPaperOrderApprovalRow[];
+  routeRows?: readonly PortfolioPaperOrderSimulationRouteRow[];
+  stateHistory?: PortfolioPaperOrderStateHistory | null;
+  replay?: PortfolioPaperOrderReplay | null;
+  workflow?: Stage4PortfolioWorkflow | null;
+}
+
+export interface Stage4PortfolioGoldenPath {
+  status: GoldenPathOverallStatus;
+  currentStepId: string;
+  steps: GoldenPathStep[];
+  primaryActionId: string | null;
+  blockers: string[];
+}
+
+const GOLDEN_PATH_STEPS = [
+  ["portfolio-build", "Portfolio build"],
+  ["risk-review", "Risk review"],
+  ["operator-approval", "Operator approval"],
+  ["paper-simulation", "Paper simulation"],
+  ["account-replay", "Account replay"]
+] as const;
+
 const WORKFLOW_KEYS = [
   "kind", "schemaVersion", "workflowId", "generatedAt", "baseRunId", "portfolioRequest", "portfolio",
   "riskTemplate", "batch", "approvals", "simulations", "stateHistory", "replay", "paperOnly",
@@ -88,6 +123,100 @@ export function buildStage4PortfolioWorkflowsUrl(baseUrl: string, baseRunId?: st
     url.searchParams.set("baseRunId", baseRunId);
     url.searchParams.set("limit", String(limit));
   });
+}
+
+export function buildStage4PortfolioGoldenPath(input: Stage4PortfolioGoldenPathInput): Stage4PortfolioGoldenPath {
+  const batches = input.batches ?? [];
+  const lifecycle = input.lifecycle ?? [];
+  const approvalRows = input.approvalRows ?? [];
+  const routeRows = input.routeRows ?? [];
+  const workflow = input.workflow;
+
+  if (workflow?.baseRunId === input.baseRunId) return goldenPathResult(4, null, null, false, true);
+  if (!input.portfolio) return goldenPathResult(0, "run-portfolio-backtest", "portfolio-missing");
+
+  const batch = [...batches]
+    .filter((row) => row.baseRunId === input.baseRunId)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  if ((workflow && workflow.baseRunId !== input.baseRunId) || (!batch && batches.length)) {
+    return goldenPathResult(0, "run-portfolio-backtest", "stale-base-run", true);
+  }
+  if (!batch) return goldenPathResult(1, "record-paper-order-batch", "paper-batch-missing");
+
+  const orderIds = new Set(batch.orders.map((order) => order.orderId));
+  const boundLifecycle = lifecycle.filter((row) => row.batchId === batch.batchId && orderIds.has(row.orderId));
+  if (batch.orders.some((order) => order.riskStatus === "blocked") ||
+      boundLifecycle.some((row) => row.state === "risk_rejected" || row.riskStatus === "blocked")) {
+    return goldenPathResult(1, "review-portfolio-risk", "risk-rejected", true);
+  }
+  if (batch.orders.some((order) => order.riskStatus === "review") ||
+      boundLifecycle.some((row) => row.state === "risk_review" || row.riskStatus === "review")) {
+    return goldenPathResult(1, "review-portfolio-risk", "risk-review-required");
+  }
+
+  const hasMixedRows = [...lifecycle, ...approvalRows, ...routeRows].some(
+    (row) => orderIds.has(row.orderId) && row.batchId !== batch.batchId
+  );
+  if (hasMixedRows) return goldenPathResult(2, "review-portfolio-orders", "mixed-batch", true);
+
+  const boundApprovals = approvalRows.filter((row) => row.batchId === batch.batchId && orderIds.has(row.orderId));
+  if (boundLifecycle.some((row) => row.state === "operator_rejected") ||
+      boundApprovals.some((row) => row.state === "operator_rejected")) {
+    return goldenPathResult(2, "review-portfolio-orders", "operator-rejected", true);
+  }
+  const approvedOrderIds = new Set(boundApprovals
+    .filter((row) => row.state === "ready_for_simulation" || row.approvedBy !== null)
+    .map((row) => row.orderId));
+  if ([...orderIds].some((orderId) => !approvedOrderIds.has(orderId))) {
+    return goldenPathResult(2, "review-portfolio-orders", "operator-approval-required");
+  }
+
+  const boundRoutes = routeRows.filter((row) => row.batchId === batch.batchId && orderIds.has(row.orderId));
+  if (boundRoutes.some((row) => row.routeState === "blocked")) {
+    return goldenPathResult(3, "review-route-risk", "route-risk-blocked", true);
+  }
+  const filledOrderIds = new Set(boundRoutes
+    .filter((row) => row.routeState === "filled" && row.simulationId)
+    .map((row) => row.orderId));
+  if ([...orderIds].some((orderId) => !filledOrderIds.has(orderId))) {
+    return goldenPathResult(3, "simulate-portfolio-batch", "paper-simulation-missing");
+  }
+
+  const historyMatches = input.stateHistory?.baseRunId === input.baseRunId &&
+    input.stateHistory.batchId === batch.batchId &&
+    input.stateHistory.orders.length === orderIds.size &&
+    input.stateHistory.orders.every((row) => orderIds.has(row.orderId));
+  const replayMatches = input.replay?.baseRunId === input.baseRunId &&
+    input.replay.orders.length === orderIds.size &&
+    input.replay.orders.every((row) => row.batchId === batch.batchId && orderIds.has(row.orderId));
+  if (!historyMatches || !replayMatches) {
+    return goldenPathResult(4, "refresh-account-replay", "account-replay-missing");
+  }
+  return goldenPathResult(4, "record-stage4-workflow", "authoritative-workflow-missing");
+}
+
+function goldenPathResult(
+  currentIndex: number,
+  actionId: string | null,
+  blocker: string | null,
+  blocked = false,
+  complete = false
+): Stage4PortfolioGoldenPath {
+  const steps: GoldenPathStep[] = GOLDEN_PATH_STEPS.map(([id, label], index) => ({
+    id,
+    label,
+    status: complete || index < currentIndex ? "passed" : index === currentIndex && blocked ? "blocked" : "review",
+    passed: complete || index < currentIndex,
+    detail: index === currentIndex && blocker ? blocker : complete || index < currentIndex ? "Complete" : "Pending",
+    actionId: index === currentIndex ? actionId : null
+  }));
+  return {
+    status: complete ? "ready" : blocked ? "blocked" : "review",
+    currentStepId: GOLDEN_PATH_STEPS[currentIndex][0],
+    steps,
+    primaryActionId: actionId,
+    blockers: blocker ? [blocker] : []
+  };
 }
 
 export function isStage4PortfolioWorkflow(value: unknown): value is Stage4PortfolioWorkflow {
