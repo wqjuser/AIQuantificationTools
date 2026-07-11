@@ -272,6 +272,7 @@ import { ExecutionAdapterPaperExecutionAuditLedgerPanel } from "./components/Exe
 import { StrategyExperimentSection, isStrategyExperimentDraftValid } from "./components/StrategyExperimentSection";
 import { AiReviewStage3Section } from "./components/AiReviewStage3Section";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
+import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
@@ -2450,7 +2451,7 @@ export function App() {
   const portfolioPaperOrderAuditRequestIdRef = useRef(0);
   const executionAdapterPaperExecutionAuditRequestIdRef = useRef(0);
   const researchRunImportAuditRequestIdRef = useRef(0);
-  const inspectedExportArchiveRequestIdRef = useRef(0);
+  const exportPackageRequestCoordinatorRef = useRef(createLatestRequestCoordinator());
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
@@ -7513,14 +7514,15 @@ export function App() {
   }, [...[auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl, runHistory], visibleStrategyExperimentActive]);
 
   const inspectRunExportPackageByRunId = useCallback(async (runId: string): Promise<ResearchRunExportPackageInspectionResult> => {
-    const inspectionRequestId = ++inspectedExportArchiveRequestIdRef.current;
+    const requestCoordinator = exportPackageRequestCoordinatorRef.current;
+    const inspectionRequestId = requestCoordinator.begin();
     setIsInspectingExportPackage(true);
     setPendingImportPackage(null);
     setInspectedExportPackage(null);
     setInspectedExportArchiveSnapshot(null);
     try {
       const result = await loadResearchRunExport(quantCoreBaseUrl, runId);
-      if (inspectionRequestId !== inspectedExportArchiveRequestIdRef.current) {
+      if (!requestCoordinator.isCurrent(inspectionRequestId)) {
         return { ok: false, error: "Research run export inspect superseded" };
       }
       if (result.source === "fallback" || !result.exportPackage) {
@@ -7538,7 +7540,7 @@ export function App() {
         quantCoreBaseUrl,
         result.exportPackage
       );
-      if (inspectionRequestId !== inspectedExportArchiveRequestIdRef.current) {
+      if (!requestCoordinator.isCurrent(inspectionRequestId)) {
         return { ok: false, error: "Research run export inspect superseded" };
       }
 
@@ -7557,7 +7559,7 @@ export function App() {
       setActiveWorkAreaId("audit");
       return { ok: true };
     } finally {
-      if (inspectionRequestId === inspectedExportArchiveRequestIdRef.current) {
+      if (requestCoordinator.isCurrent(inspectionRequestId)) {
         setIsInspectingExportPackage(false);
       }
     }
@@ -8269,7 +8271,8 @@ export function App() {
 
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
-      inspectedExportArchiveRequestIdRef.current += 1;
+      const requestCoordinator = exportPackageRequestCoordinatorRef.current;
+      const requestId = requestCoordinator.begin();
       setIsInspectingExportPackage(false);
       const input = event.currentTarget;
       const file = input.files?.[0];
@@ -8280,9 +8283,16 @@ export function App() {
       const previousRunId = workspace.researchRun?.runId ?? null;
 
       try {
-        const parsed = JSON.parse(await file.text()) as unknown;
+        const fileText = await file.text();
+        if (!requestCoordinator.isCurrent(requestId)) {
+          return;
+        }
+        const parsed = JSON.parse(fileText) as unknown;
         let exportPackage = normalizeResearchRunExportPackagePayload(parsed);
         if (!exportPackage) {
+          if (!requestCoordinator.isCurrent(requestId)) {
+            return;
+          }
           appendResearchRunImportAuditEvent(
             buildResearchRunImportAuditEvent({
               error: "Invalid research run export contract",
@@ -8304,10 +8314,16 @@ export function App() {
           return;
         }
         exportPackage = await withVerifiedResearchRunExportPackageReportSignatures(quantCoreBaseUrl, exportPackage);
+        if (!requestCoordinator.isCurrent(requestId)) {
+          return;
+        }
         const aiReviewArchiveSnapshot = await loadAiReviewArchiveImportSnapshot(
           quantCoreBaseUrl,
           exportPackage
         );
+        if (!requestCoordinator.isCurrent(requestId)) {
+          return;
+        }
 
         const previewRows = buildResearchRunImportDiffRows({
           aiReviewArchiveReadbackErrors: aiReviewArchiveSnapshot.readbackErrors,
@@ -8320,6 +8336,9 @@ export function App() {
           workspace
         });
         const previewBlocked = previewRows.some((row) => row.status === "blocked");
+        if (!requestCoordinator.isCurrent(requestId)) {
+          return;
+        }
         appendResearchRunImportAuditEvent(
           buildResearchRunImportAuditEvent({
             exportPackage,
@@ -8339,6 +8358,9 @@ export function App() {
           error: undefined
         }));
       } catch (importError) {
+        if (!requestCoordinator.isCurrent(requestId)) {
+          return;
+        }
         appendResearchRunImportAuditEvent(
           buildResearchRunImportAuditEvent({
             error: importError instanceof Error ? importError.message : "Research run import failed",

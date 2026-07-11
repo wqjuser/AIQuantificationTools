@@ -2045,7 +2045,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("[inspectedExportArchiveSnapshot, setInspectedExportArchiveSnapshot]");
     expect(appSource).toContain("await loadAiReviewArchiveImportSnapshot(");
     expect(appSource).toContain("setInspectedExportArchiveSnapshot({");
-    expect(appSource).toContain("inspectionRequestId !== inspectedExportArchiveRequestIdRef.current");
+    expect(appSource).toContain("const requestCoordinator = exportPackageRequestCoordinatorRef.current;");
+    expect(appSource).toContain("if (!requestCoordinator.isCurrent(inspectionRequestId))");
     expect(appSource).toContain("pendingImportPackage?.aiReviewArchiveSnapshot ?? inspectedArchiveSnapshot");
     expect(appSource).toContain("return { ok: false, error: errorMessage };");
     expect(appSource).toContain("return { ok: true };");
