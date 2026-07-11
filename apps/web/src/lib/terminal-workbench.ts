@@ -23443,7 +23443,13 @@ export function replaceAiReviewRunIdInUrl(
     if (normalizedRunId) {
       url.searchParams.set("runId", normalizedRunId);
     }
-  } else if (nextWorkspaceId !== "audit" && nextWorkspaceId !== "execution") {
+  } else if (
+    (nextWorkspaceId === "audit" &&
+      !url.searchParams.has("exportPath") &&
+      !url.searchParams.has("auditEvent")) ||
+    (nextWorkspaceId === "execution" && !url.searchParams.has("paperExecution")) ||
+    (nextWorkspaceId !== "audit" && nextWorkspaceId !== "execution")
+  ) {
     url.searchParams.delete("runId");
   }
   return url.toString();

@@ -382,6 +382,15 @@ describe("Stage 3 AI review state scopes", () => {
     expect(auditDeepLink.searchParams.get("exportPath")).toBe("manifest:run-audit");
     expect(auditDeepLink.searchParams.get("auditEvent")).toBe("event-1");
 
+    for (const marker of ["exportPath=manifest%3Arun-audit", "auditEvent=event-1"]) {
+      const markedAudit = new URL(replaceAiReviewRunIdInUrl(
+        `http://127.0.0.1:5173/?workspace=ai-review&runId=run-audit&${marker}`,
+        "audit",
+        null
+      ));
+      expect(markedAudit.searchParams.get("runId")).toBe("run-audit");
+    }
+
     const executionDeepLink = new URL(replaceAiReviewRunIdInUrl(
       "http://127.0.0.1:5173/?workspace=ai-review&runId=run-paper&paperExecution=paper-1",
       "execution",
@@ -389,6 +398,20 @@ describe("Stage 3 AI review state scopes", () => {
     ));
     expect(executionDeepLink.searchParams.get("runId")).toBe("run-paper");
     expect(executionDeepLink.searchParams.get("paperExecution")).toBe("paper-1");
+
+    const plainAudit = new URL(replaceAiReviewRunIdInUrl(
+      "http://127.0.0.1:5173/?workspace=ai-review&runId=run-ai-review",
+      "audit",
+      null
+    ));
+    expect(plainAudit.searchParams.has("runId")).toBe(false);
+
+    const plainExecution = new URL(replaceAiReviewRunIdInUrl(
+      "http://127.0.0.1:5173/?workspace=ai-review&runId=run-ai-review",
+      "execution",
+      null
+    ));
+    expect(plainExecution.searchParams.has("runId")).toBe(false);
 
     const nonConsumer = new URL(replaceAiReviewRunIdInUrl(
       "http://127.0.0.1:5173/?workspace=audit&runId=run-audit",
