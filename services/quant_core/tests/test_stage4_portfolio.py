@@ -244,6 +244,33 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     stage4_portfolio_workflow_hash(snapshot)
 
+    def test_rejects_boolean_and_float_evidence_counts(self) -> None:
+        fields = [
+            ("stateHistory", "orderCount"),
+            ("stateHistory", "filledOrders"),
+            ("stateHistory", "liveBlockedEvents"),
+            ("replay", "filledOrders"),
+            ("replay", "positionCount"),
+        ]
+        single = self.build()
+        single["batch"]["orders"] = single["batch"]["orders"][:1]
+        single["approvals"] = single["approvals"][:1]
+        single["simulations"] = single["simulations"][:1]
+        single["stateHistory"]["orders"] = single["stateHistory"]["orders"][:1]
+        single["replay"]["orders"] = single["replay"]["orders"][:1]
+        single["replay"]["positions"] = single["replay"]["positions"][:1]
+        single["stateHistory"]["summary"].update({"orderCount": 1, "filledOrders": 1, "liveBlockedEvents": 1})
+        single["replay"]["summary"].update({"filledOrders": 1, "positionCount": 1})
+
+        for evidence, field in fields:
+            for baseline, invalid in ((single, True), (self.build(), 2.0)):
+                with self.subTest(evidence=evidence, field=field, invalid=invalid):
+                    snapshot = copy.deepcopy(baseline)
+                    snapshot[evidence]["summary"][field] = invalid
+                    snapshot["workflowHash"] = stage4_portfolio_workflow_hash(snapshot)
+                    with self.assertRaises(ValueError):
+                        validate_stage4_portfolio_workflow_snapshot(snapshot)
+
     def test_rejects_mutated_safety_fields_nested_live_fields_and_extra_keys(self) -> None:
         mutations = [
             lambda value: value.update({"paperOnly": False}),

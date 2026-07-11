@@ -164,10 +164,9 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
     if not isinstance(state_orders, list) or not all(isinstance(row, dict) for row in state_orders) or [row.get("orderId") for row in state_orders] != order_ids:
         raise ValueError("stage4 portfolio workflow state history orders do not match")
     state_summary = _nested_object(state_history, "summary", "state history")
-    if state_summary.get("orderCount") != len(order_ids) or state_summary.get("filledOrders") != len(simulations):
-        raise ValueError("stage4 portfolio workflow state history totals do not match")
-    if state_summary.get("liveBlockedEvents") != len(simulations):
-        raise ValueError("stage4 portfolio workflow live-blocked event total does not match")
+    _count(state_summary, "orderCount", len(order_ids), "state history")
+    _count(state_summary, "filledOrders", len(simulations), "state history")
+    _count(state_summary, "liveBlockedEvents", len(simulations), "state history")
 
     replay = _object(value, "replay")
     if replay.get("baseRunId") != base_run_id:
@@ -182,8 +181,8 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
     account = _nested_object(replay, "account", "replay")
     if not isinstance(replay_positions, list) or not isinstance(account.get("positions"), dict):
         raise ValueError("stage4 portfolio workflow replay positions are invalid")
-    if replay_summary.get("filledOrders") != len(simulations) or replay_summary.get("positionCount") != len(replay_positions):
-        raise ValueError("stage4 portfolio workflow replay totals do not match")
+    _count(replay_summary, "filledOrders", len(simulations), "replay")
+    _count(replay_summary, "positionCount", len(replay_positions), "replay")
     if not isinstance(replay_summary.get("warnings"), list):
         raise ValueError("stage4 portfolio workflow replay warnings are invalid")
     for field in ("cash", "equity"):
@@ -245,6 +244,11 @@ def _number(value: Any, label: str) -> float:
     if number != number or number in (float("inf"), float("-inf")):
         raise ValueError(f"stage4 portfolio workflow {label} must be finite")
     return number
+
+
+def _count(value: dict[str, Any], field: str, expected: int, label: str) -> None:
+    if type(value.get(field)) is not int or value[field] != expected:
+        raise ValueError(f"stage4 portfolio workflow {label} {field} does not match")
 
 
 def _bound_rows(value: Any, base_run_id: str, batch_id: str, label: str) -> list[dict[str, Any]]:
