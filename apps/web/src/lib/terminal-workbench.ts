@@ -14991,14 +14991,46 @@ function stage4PortfolioWorkflowAuditEventsAreValid(
         return false;
       }
       const value = snapshot as Record<string, unknown>;
+      const batch = stage4ArchiveRecord(value.batch);
+      const stateHistory = stage4ArchiveRecord(value.stateHistory);
+      const replay = stage4ArchiveRecord(value.replay);
+      const orders = stage4ArchiveRows(batch?.orders);
+      const approvals = stage4ArchiveRows(value.approvals);
+      const simulations = stage4ArchiveRows(value.simulations);
+      const stateOrders = stage4ArchiveRows(stateHistory?.orders);
+      const replayOrders = stage4ArchiveRows(replay?.orders);
+      const orderIds = stage4ArchiveIds(orders, "orderId");
+      const batchId = batch?.batchId;
+      const baseRunId = value.baseRunId;
       return event.eventId === value.workflowId
-        && event.runId === value.baseRunId
+        && event.runId === baseRunId
         && event.createdAt === value.generatedAt
         && event.stage === "stage4-portfolio-workflow"
-        && value.batch !== null && typeof value.batch === "object" && !Array.isArray(value.batch)
-        && Array.isArray(value.approvals)
-        && Array.isArray(value.simulations)
-        && value.replay !== null && typeof value.replay === "object" && !Array.isArray(value.replay)
+        && stage4ArchiveHasExactWorkflowKeys(value)
+        && value.kind === "aiqt.stage4PortfolioWorkflow"
+        && value.schemaVersion === 1
+        && typeof value.workflowHash === "string"
+        && /^[0-9a-f]{64}$/.test(value.workflowHash)
+        && typeof baseRunId === "string" && baseRunId.length > 0
+        && stage4ArchiveRecord(value.portfolioRequest) !== null
+        && stage4ArchiveRecord(value.portfolio) !== null
+        && stage4ArchiveRecord(value.riskTemplate) !== null
+        && batch !== null && typeof batchId === "string" && batchId.length > 0
+        && batch.baseRunId === baseRunId
+        && orderIds.length > 0 && new Set(orderIds).size === orderIds.length
+        && stage4ArchiveBoundRows(approvals, orderIds, baseRunId, batchId, "approvalId")
+        && approvals.every((row) => row.approved === true)
+        && stage4ArchiveBoundRows(simulations, orderIds, baseRunId, batchId, "simulationId")
+        && simulations.every((row) => row.orderState === "filled" && row.fillStatus === "filled"
+          && row.paperOnly === true && row.liveExecutionBlocked === true)
+        && stateHistory !== null && stateHistory.baseRunId === baseRunId && stateHistory.batchId === batchId
+        && stage4ArchiveExactIds(stateOrders, orderIds)
+        && stateHistory.paperOnly === true && stateHistory.liveExecutionBlocked === true
+        && replay !== null && replay.baseRunId === baseRunId
+        && stage4ArchiveExactIds(replayOrders, orderIds)
+        && replayOrders.every((row, index) => row.batchId === batchId
+          && row.simulationId === simulations[index]?.simulationId)
+        && replay.paperOnly === true && replay.liveExecutionBlocked === true
         && value.paperOnly === true
         && value.liveTradingAllowed === false
         && value.liveBlockedBoundary === true
@@ -15007,22 +15039,80 @@ function stage4PortfolioWorkflowAuditEventsAreValid(
     });
 }
 
+const stage4ArchiveWorkflowKeys = [
+  "kind", "schemaVersion", "workflowId", "generatedAt", "baseRunId", "portfolioRequest", "portfolio",
+  "riskTemplate", "batch", "approvals", "simulations", "stateHistory", "replay", "paperOnly",
+  "liveTradingAllowed", "orderSubmissionEnabled", "routeExecuted", "liveBlockedBoundary", "workflowHash"
+] as const;
+
+function stage4ArchiveHasExactWorkflowKeys(value: Record<string, unknown>): boolean {
+  const keys = Object.keys(value);
+  return keys.length === stage4ArchiveWorkflowKeys.length
+    && stage4ArchiveWorkflowKeys.every((key) => Object.hasOwn(value, key));
+}
+
+function stage4ArchiveRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function stage4ArchiveRows(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) && value.every((row) => stage4ArchiveRecord(row) !== null)
+    ? value as Record<string, unknown>[]
+    : [];
+}
+
+function stage4ArchiveIds(rows: Record<string, unknown>[], field: string): string[] {
+  return rows.flatMap((row) => typeof row[field] === "string" && row[field] ? [row[field] as string] : []);
+}
+
+function stage4ArchiveExactIds(rows: Record<string, unknown>[], expectedIds: string[]): boolean {
+  const ids = stage4ArchiveIds(rows, "orderId");
+  return ids.length === expectedIds.length && ids.every((id, index) => id === expectedIds[index]);
+}
+
+function stage4ArchiveBoundRows(
+  rows: Record<string, unknown>[],
+  orderIds: string[],
+  baseRunId: unknown,
+  batchId: unknown,
+  recordIdField: string
+): boolean {
+  return rows.length === orderIds.length && rows.every((row, index) =>
+    typeof row[recordIdField] === "string" && row[recordIdField] !== ""
+    && row.orderId === orderIds[index] && row.baseRunId === baseRunId && row.batchId === batchId
+  );
+}
+
 function stage4PortfolioWorkflowEvidenceDetail(snapshot: Record<string, unknown>): string {
   const batch = snapshot.batch && typeof snapshot.batch === "object" && !Array.isArray(snapshot.batch)
     ? snapshot.batch as Record<string, unknown>
     : {};
-  const approvals = Array.isArray(snapshot.approvals) ? snapshot.approvals.length : 0;
-  const simulations = Array.isArray(snapshot.simulations) ? snapshot.simulations.length : 0;
+  const orders = stage4ArchiveRows(batch.orders);
+  const approvals = stage4ArchiveRows(snapshot.approvals);
+  const simulations = stage4ArchiveRows(snapshot.simulations);
+  const stateHistory = stage4ArchiveRecord(snapshot.stateHistory) ?? {};
+  const stateOrders = stage4ArchiveRows(stateHistory.orders);
   const replay = snapshot.replay && typeof snapshot.replay === "object" && !Array.isArray(snapshot.replay)
     ? snapshot.replay as Record<string, unknown>
     : {};
-  const replayOrders = Array.isArray(replay.orders) ? replay.orders.length : 0;
+  const replayOrders = stage4ArchiveRows(replay.orders);
+  const safety = [
+    `paperOnly=${String(snapshot.paperOnly)}`,
+    `liveTradingAllowed=${String(snapshot.liveTradingAllowed)}`,
+    `orderSubmissionEnabled=${String(snapshot.orderSubmissionEnabled)}`,
+    `routeExecuted=${String(snapshot.routeExecuted)}`,
+    `liveBlockedBoundary=${String(snapshot.liveBlockedBoundary)}`
+  ];
   return [
     snapshot.workflowHash,
+    `base ${String(snapshot.baseRunId ?? "")}`,
     `batch ${String(batch.batchId ?? "")}`,
-    `${approvals} approvals`,
-    `${simulations} simulations`,
-    `replay ${String(replay.baseRunId ?? "")} / ${replayOrders} orders`,
+    `orders ${stage4ArchiveIds(orders, "orderId").join(", ")}`,
+    `approvals ${stage4ArchiveIds(approvals, "approvalId").join(", ")}`,
+    `simulations ${stage4ArchiveIds(simulations, "simulationId").join(", ")}`,
+    `state ${stage4ArchiveIds(stateOrders, "orderId").join(", ")}`,
+    `replay ${stage4ArchiveIds(replayOrders, "orderId").join(", ")}`,
+    ...safety,
     snapshot.paperOnly === true
       && snapshot.liveTradingAllowed === false
       && snapshot.liveBlockedBoundary === true

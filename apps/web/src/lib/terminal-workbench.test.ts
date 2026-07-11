@@ -1009,6 +1009,91 @@ function stage3ArchiveBrowserPackageWithDecisions(
   } as unknown as ResearchRunExportBrowserPackage;
 }
 
+function stage4ArchiveWorkflowFixture() {
+  const quality = { source: "fixture", isComplete: true, warnings: [], rows: 2 };
+  const order = (orderId: string, symbol: string, sourceRunId: string) => ({
+    timestamp: "2026-07-11T08:00:00+00:00", eventType: "portfolio_paper_order", orderId, symbol,
+    sourceRunId, side: "buy", notionalValue: 40_000, quantity: 100, status: "pending_review",
+    riskStatus: "passed", reason: "Within paper limits."
+  });
+  const approval = (orderId: string) => ({
+    approvalId: `approval-${orderId}`, baseRunId: "run-a", batchId: "batch-1", orderId,
+    reviewedAt: "2026-07-11T08:05:00+00:00", approved: true, reviewer: "operator",
+    reason: "Approved for paper simulation."
+  });
+  const simulation = (orderId: string, symbol: string, sourceRunId: string) => ({
+    simulationId: `simulation-${orderId}`, baseRunId: "run-a", batchId: "batch-1", orderId,
+    simulatedAt: "2026-07-11T08:10:00+00:00", mode: "portfolio_paper_order_simulation", symbol,
+    sourceRunId, side: "buy", quantity: 100, fillPrice: 400, notionalValue: 40_000,
+    orderState: "filled", fillStatus: "filled", reason: "Paper fill.", approvedBy: "operator",
+    paperOnly: true, liveExecutionBlocked: true
+  });
+  const stateOrder = (orderId: string, symbol: string, sourceRunId: string) => ({
+    batchId: "batch-1", baseRunId: "run-a", portfolioName: "Stage 4", orderId, symbol, sourceRunId,
+    side: "buy", quantity: 100, notionalValue: 40_000, originalStatus: "pending_review",
+    riskStatus: "passed", currentState: "simulation_filled", currentStateLabel: "Filled", events: [],
+    paperOnly: true, liveExecutionBlocked: true
+  });
+  const replayOrder = (orderId: string, symbol: string) => ({
+    simulationId: `simulation-${orderId}`, batchId: "batch-1", orderId,
+    simulatedAt: "2026-07-11T08:10:00+00:00", symbol, side: "buy", quantity: 100,
+    fillPrice: 400, notionalValue: 40_000, cashAfter: 20_000, positionAfter: 100,
+    replayState: "applied", paperOnly: true, liveExecutionBlocked: true
+  });
+  return {
+    kind: "aiqt.stage4PortfolioWorkflow", schemaVersion: 1, workflowId: "stage4-workflow-1",
+    generatedAt: "2026-07-11T08:15:00+00:00", baseRunId: "run-a",
+    portfolioRequest: {
+      name: "Stage 4", initialCash: 100_000,
+      legs: [
+        { runId: "run-a", symbol: "600000", market: "ashare", timeframe: "1d", targetWeight: 0.4 },
+        { runId: "run-b", symbol: "000300", market: "ashare", timeframe: "1d", targetWeight: 0.4 }
+      ]
+    },
+    portfolio: {
+      name: "Stage 4", market: "ashare", timeframe: "1d", initialCash: 100_000, cashWeight: 0.2,
+      metrics: { totalReturnPct: 1, annualReturnPct: 2, maxDrawdownPct: 3, winRatePct: 50, profitFactor: 1.2, tradeCount: 2 },
+      equityCurve: [{ timestamp: "2026-07-11T08:00:00+00:00", equity: 100_000 }],
+      legs: [
+        { symbol: "600000", targetWeight: 0.4, startingValue: 40_000, endingValue: 40_100, contributionValue: 100, contributionReturnPct: 0.25, maxDrawdownPct: 1, tradeCount: 1, dataQuality: quality },
+        { symbol: "000300", targetWeight: 0.4, startingValue: 40_000, endingValue: 40_100, contributionValue: 100, contributionReturnPct: 0.25, maxDrawdownPct: 1, tradeCount: 1, dataQuality: quality }
+      ],
+      preTradeRiskChecks: [{ timestamp: "2026-07-11T08:00:00+00:00", eventType: "pre_trade_risk_check", scope: "portfolio", symbol: null, sourceRunId: null, checkId: "portfolio_data_quality", status: "passed", value: 2, limit: 2, reason: "Complete." }],
+      dataQuality: quality
+    },
+    riskTemplate: { minCashAfter: 10_000, maxSymbolNotional: 50_000, maxBatchNotional: 90_000 },
+    batch: {
+      batchId: "batch-1", baseRunId: "run-a", portfolioName: "Stage 4", createdAt: "2026-07-11T08:00:00+00:00",
+      mode: "portfolio_paper_order_review", source: "portfolio_backtest",
+      summary: { totalOrders: 2, totalNotionalValue: 80_000, statusCounts: { pending_review: 2 }, riskStatusCounts: { passed: 2 } },
+      orders: [order("order-a", "600000", "run-a"), order("order-b", "000300", "run-b")]
+    },
+    approvals: [approval("order-a"), approval("order-b")],
+    simulations: [simulation("order-a", "600000", "run-a"), simulation("order-b", "000300", "run-b")],
+    stateHistory: {
+      schemaVersion: 1, baseRunId: "run-a", batchId: "batch-1", portfolioName: "Stage 4",
+      generatedAt: "2026-07-11T08:15:00+00:00", mode: "portfolio_paper_order_state_history",
+      summary: { orderCount: 2, eventCount: 6, approvedOrders: 2, rejectedOrders: 0, filledOrders: 2, liveBlockedEvents: 2, stateCounts: { simulation_filled: 2 } },
+      orders: [stateOrder("order-a", "600000", "run-a"), stateOrder("order-b", "000300", "run-b")],
+      paperOnly: true, liveExecutionBlocked: true
+    },
+    replay: {
+      schemaVersion: 1, baseRunId: "run-a", generatedAt: "2026-07-11T08:15:00+00:00",
+      mode: "portfolio_paper_order_replay", initialCash: 100_000,
+      account: { cash: 20_000, equity: 100_000, positions: { "600000": 100, "000300": 100 } },
+      positions: [
+        { symbol: "600000", quantity: 100, avgCost: 400, lastPrice: 400, marketValue: 40_000, unrealizedPnl: 0 },
+        { symbol: "000300", quantity: 100, avgCost: 400, lastPrice: 400, marketValue: 40_000, unrealizedPnl: 0 }
+      ],
+      orders: [replayOrder("order-a", "600000"), replayOrder("order-b", "000300")],
+      summary: { filledOrders: 2, buyNotional: 80_000, sellNotional: 0, netNotional: 80_000, realizedPnl: 0, unrealizedPnl: 0, positionCount: 2, warnings: [] },
+      paperOnly: true, liveExecutionBlocked: true
+    },
+    paperOnly: true, liveTradingAllowed: false, orderSubmissionEnabled: false, routeExecuted: false,
+    liveBlockedBoundary: true, workflowHash: "4".repeat(64)
+  };
+}
+
 function promotionPaperExecutionFixture(
   id: string
 ): { workspace: TerminalWorkspace; execution: PaperExecutionSnapshot } {
@@ -11655,36 +11740,22 @@ describe("terminal workbench model", () => {
 
   test("surfaces Stage 4 workflow evidence from audit events in browser and import diff", () => {
     const exportPackage = stage3ArchiveBrowserPackage();
-    const workflowHash = "4".repeat(64);
+    const workflow = stage4ArchiveWorkflowFixture();
+    const workflowHash = workflow.workflowHash;
+    exportPackage.manifest.runId = workflow.baseRunId;
     exportPackage.manifest.artifactCounts.auditEvents = 1;
     exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows = 1;
     exportPackage.auditEvents = [{
       schemaVersion: 1,
-      eventId: "stage4-workflow-1",
+      eventId: workflow.workflowId,
       eventType: "stage4_portfolio_workflow",
       runId: exportPackage.manifest.runId,
-      createdAt: "2026-07-11T09:00:00+00:00",
+      createdAt: workflow.generatedAt,
       stage: "stage4-portfolio-workflow",
       source: "local-operator",
       summary: "Stage 4 workflow recorded.",
       detail: "Authoritative paper-only workflow.",
-      metadata: {
-        snapshot: {
-          workflowId: "stage4-workflow-1",
-          baseRunId: exportPackage.manifest.runId,
-          generatedAt: "2026-07-11T09:00:00+00:00",
-          batch: { batchId: "portfolio-paper-batch-1" },
-          approvals: [{ approvalId: "approval-1" }, { approvalId: "approval-2" }],
-          simulations: [{ simulationId: "simulation-1" }, { simulationId: "simulation-2" }],
-          replay: { baseRunId: exportPackage.manifest.runId, orders: [{ orderId: "order-1" }, { orderId: "order-2" }] },
-          paperOnly: true,
-          liveTradingAllowed: false,
-          orderSubmissionEnabled: false,
-          routeExecuted: false,
-          liveBlockedBoundary: true,
-          workflowHash
-        }
-      },
+      metadata: { snapshot: workflow },
     }];
 
     expect(buildResearchRunExportBrowserRows(exportPackage)).toEqual(
@@ -11709,7 +11780,11 @@ describe("terminal workbench model", () => {
       ])
     );
     expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "audit-events")?.detail)
-      .toContain("batch portfolio-paper-batch-1 · 2 approvals · 2 simulations · replay run-stage3-archive / 2 orders");
+      .toContain("base run-a · batch batch-1 · orders order-a, order-b · approvals approval-order-a, approval-order-b");
+    expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "audit-events")?.detail)
+      .toContain("simulations simulation-order-a, simulation-order-b · state order-a, order-b · replay order-a, order-b");
+    expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "audit-events")?.detail)
+      .toContain("paperOnly=true · liveTradingAllowed=false · orderSubmissionEnabled=false · routeExecuted=false · liveBlockedBoundary=true");
 
     for (const mutate of [
       (snapshot: Record<string, unknown>) => { snapshot.paperOnly = false; },
@@ -11726,6 +11801,37 @@ describe("terminal workbench model", () => {
       expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unsafePackage })
         .find((row) => row.id === "stage4-portfolio-workflows"))
         .toMatchObject({ status: "blocked", detail: expect.stringContaining("unsafe") });
+    }
+
+    for (const mutate of [
+      (snapshot: Record<string, any>) => { delete snapshot.workflowHash; },
+      (snapshot: Record<string, any>) => { snapshot.workflowHash = "F".repeat(64); },
+      (snapshot: Record<string, any>) => { snapshot.batch = { batchId: "batch-1", baseRunId: "run-a", orders: [] }; },
+      (snapshot: Record<string, any>) => { snapshot.approvals[0].orderId = "orphan-order"; },
+      (snapshot: Record<string, any>) => { snapshot.simulations[0].orderId = "orphan-order"; },
+      (snapshot: Record<string, any>) => { snapshot.stateHistory.orders[0].orderId = "orphan-order"; },
+      (snapshot: Record<string, any>) => { snapshot.replay.orders[0].orderId = "orphan-order"; },
+      (snapshot: Record<string, any>) => {
+        Object.keys(snapshot).forEach((key) => delete snapshot[key]);
+        Object.assign(snapshot, {
+          workflowId: "stage4-workflow-1",
+          baseRunId: "run-a",
+          generatedAt: "2026-07-11T08:15:00+00:00",
+          workflowHash: "4".repeat(64),
+          paperOnly: true,
+          liveTradingAllowed: false,
+          orderSubmissionEnabled: false,
+          routeExecuted: false,
+          liveBlockedBoundary: true
+        });
+      }
+    ]) {
+      const malformedPackage = structuredClone(exportPackage);
+      mutate(malformedPackage.auditEvents?.[0]?.metadata.snapshot as Record<string, any>);
+      expect(buildResearchRunExportBrowserRows(malformedPackage).find((row) => row.id === "audit-events")?.status)
+        .toBe("blocked");
+      expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: malformedPackage })
+        .find((row) => row.id === "stage4-portfolio-workflows")?.status).toBe("blocked");
     }
 
     const unrelatedPackage = stage3ArchiveBrowserPackage();
