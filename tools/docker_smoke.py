@@ -1263,6 +1263,7 @@ def build_stage5_shadow_acceptance_manifest(
     first_attempt: dict[str, Any],
     recovered_attempt: dict[str, Any],
     idempotent_attempt: dict[str, Any],
+    export_readback: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "kind": "aiqt.stage5ShadowExecutionAcceptance",
@@ -1273,6 +1274,7 @@ def build_stage5_shadow_acceptance_manifest(
         "firstAttempt": first_attempt,
         "recoveredAttempt": recovered_attempt,
         "idempotentAttempt": idempotent_attempt,
+        "exportReadback": export_readback,
         **_STAGE5_SAFETY,
     }
 
@@ -1281,7 +1283,7 @@ def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
     payload = _require_dict(manifest, "Stage 5 shadow acceptance manifest")
     if set(payload) != {
         "kind", "schemaVersion", "generatedAt", "status", "workflow", "firstAttempt",
-        "recoveredAttempt", "idempotentAttempt", *_STAGE5_SAFETY,
+        "recoveredAttempt", "idempotentAttempt", "exportReadback", *_STAGE5_SAFETY,
     }:
         raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: fields are invalid")
     if (
@@ -1331,6 +1333,24 @@ def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
         or recovered != rebuilt_recovered
     ):
         raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: recovery or idempotency is invalid")
+    expected_hashes = sorted([first["sessionHash"], recovered["sessionHash"]])
+    readback = payload["exportReadback"]
+    if (
+        not isinstance(readback, dict)
+        or set(readback) != {
+            "exportArtifactCount", "importedArtifactCount", "readbackArtifactCount",
+            "exportSessionHashes", "importedSessionHashes", "readbackSessionHashes",
+        }
+        or any(
+            type(readback[field]) is not int or readback[field] != 2
+            for field in ("exportArtifactCount", "importedArtifactCount", "readbackArtifactCount")
+        )
+        or any(
+            sorted(readback[field]) != expected_hashes
+            for field in ("exportSessionHashes", "importedSessionHashes", "readbackSessionHashes")
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: export readback is invalid")
     return (
         f"stage5 shadow acceptance run={recovered['baseRunId']} orders={len(recovered['orders'])} "
         "recovered=True idempotent=True liveBlocked=True"
@@ -2230,17 +2250,68 @@ def run_stage5_shadow_acceptance(
             "Stage 5 shadow session",
         )
         attempts.append(_require_dict(response.get("shadowSession"), "Stage 5 shadow session"))
+    run_id = str(workflow["baseRunId"])
+    export_url = join_url(base_url, f"/api/research/runs/{quote(run_id, safe='')}/export")
+    export_package, exported_sessions = _stage5_export_sessions(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    validate_p0_import_payload(
+        post_json(
+            join_url(base_url, "/api/research/runs/import"),
+            export_package,
+            timeout_seconds=timeout_seconds,
+        ),
+        run_id,
+    )
+    _imported_package, imported_sessions = _stage5_export_sessions(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    readback_payload = _require_dict(
+        request_json(
+            join_url(base_url, f"/api/execution/shadow-sessions?{urlencode({'baseRunId': run_id, 'limit': 20})}"),
+            timeout_seconds,
+        ),
+        "Stage 5 shadow readback",
+    )
+    readback_sessions = readback_payload.get("shadowSessions")
+    if not isinstance(readback_sessions, list):
+        raise RuntimeError("Invalid Stage 5 shadow readback: sessions are missing")
     manifest = build_stage5_shadow_acceptance_manifest(
         workflow=workflow,
         first_attempt=attempts[0],
         recovered_attempt=attempts[1],
         idempotent_attempt=attempts[2],
+        export_readback={
+            "exportArtifactCount": len(exported_sessions),
+            "importedArtifactCount": len(imported_sessions),
+            "readbackArtifactCount": len(readback_sessions),
+            "exportSessionHashes": sorted(session["sessionHash"] for session in exported_sessions),
+            "importedSessionHashes": sorted(session["sessionHash"] for session in imported_sessions),
+            "readbackSessionHashes": sorted(session["sessionHash"] for session in readback_sessions),
+        },
     )
     summary = validate_stage5_shadow_acceptance_manifest(manifest)
     print(summary)
     if report_path is not None:
         write_stage5_shadow_acceptance_report(report_path, manifest)
     return [summary]
+
+
+def _stage5_export_sessions(payload: Any, run_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    package = _require_dict(_require_dict(payload, "Stage 5 research export").get("export"), "Stage 5 export")
+    manifest = _require_dict(package.get("manifest"), "Stage 5 export manifest")
+    counts = _require_dict(manifest.get("artifactCounts"), "Stage 5 export artifact counts")
+    sessions = [
+        event["metadata"]["snapshot"]
+        for event in package.get("auditEvents") or []
+        if isinstance(event, dict)
+        and event.get("eventType") == "stage5_shadow_execution_session"
+        and isinstance(event.get("metadata"), dict)
+        and isinstance(event["metadata"].get("snapshot"), dict)
+    ]
+    if manifest.get("runId") != run_id or counts.get("stage5ShadowSessions") != len(sessions):
+        raise RuntimeError("Invalid Stage 5 research export: session count or run binding is invalid")
+    return package, sessions
 
 
 def _stage2_experiment(payload: Any, label: str) -> dict[str, Any]:

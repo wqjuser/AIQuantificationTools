@@ -1,4 +1,5 @@
 import type { AiReviewDecision, AiReviewRunArchiveRecord, AuthoritativeAiReviewRun } from "./ai-review-stage3";
+import { isStage5ShadowSession } from "./stage5-shadow";
 
 export type PanelId =
   | "watchlist"
@@ -1754,6 +1755,7 @@ export interface ResearchRunExportBrowserManifest {
     aiReviewDecisions?: number;
     auditEvents?: number;
     stage4PortfolioWorkflows?: number;
+    stage5ShadowSessions?: number;
     handoffNotes?: number;
   };
 }
@@ -2416,6 +2418,7 @@ export interface ResearchRunExportBrowserRow {
     | "ai-reviews"
     | "ai-reviews-v2"
     | "ai-review-decisions"
+    | "stage5-shadow-sessions"
     | "audit-events"
     | "p0-completeness"
     | "audit-summary"
@@ -2466,6 +2469,7 @@ export type ResearchRunImportDiffRowId =
     | "portfolio-paper-orders"
     | "ai-review-runs"
     | "stage4-portfolio-workflows"
+    | "stage5-shadow-sessions"
     | "audit-summary"
     | "audit-report"
     | "backtest-report"
@@ -14980,6 +14984,19 @@ function stage4PortfolioWorkflowAuditSnapshots(
   });
 }
 
+function stage5ShadowSessionAuditSnapshots(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+) {
+  return (auditEvents ?? []).flatMap((event) => {
+    const snapshot = event.metadata.snapshot;
+    return event.eventType === "stage5_shadow_execution_session" && isStage5ShadowSession(snapshot)
+      && event.eventId === snapshot.sessionId && event.runId === snapshot.baseRunId
+      && event.createdAt === snapshot.generatedAt && event.stage === "stage5-shadow-execution"
+      ? [snapshot]
+      : [];
+  });
+}
+
 function stage4PortfolioWorkflowAuditEventsAreValid(
   auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
 ): boolean {
@@ -15158,6 +15175,10 @@ export function buildResearchRunExportBrowserRows(
   const stage4PortfolioWorkflowsAreValid = stage4PortfolioWorkflowAuditEventsAreValid(exportPackage.auditEvents);
   const hasStage4PortfolioWorkflowAccounting =
     (artifactCounts.stage4PortfolioWorkflows ?? 0) > 0 || stage4PortfolioWorkflows.length > 0;
+  const stage5ShadowSessions = stage5ShadowSessionAuditSnapshots(exportPackage.auditEvents);
+  const stage5ShadowSessionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_shadow_execution_session").length;
+  const stage5ShadowSessionsAreValid = stage5ShadowSessions.length === stage5ShadowSessionEventCount;
   const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
   const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
     (event) => event.eventType === "p0_paper_simulation"
@@ -15232,6 +15253,8 @@ export function buildResearchRunExportBrowserRows(
   const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
   const stage4PortfolioWorkflowCountMatches =
     (artifactCounts.stage4PortfolioWorkflows ?? 0) === stage4PortfolioWorkflows.length;
+  const stage5ShadowSessionCountMatches =
+    (artifactCounts.stage5ShadowSessions ?? 0) === stage5ShadowSessions.length;
   const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
   const p0PackageCompleteness = exportPackage.p0PackageCompleteness;
   const p0CompletenessIsReady =
@@ -15488,6 +15511,19 @@ export function buildResearchRunExportBrowserRows(
                 : "risk"
         }
       ] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...((artifactCounts.stage5ShadowSessions ?? 0) > 0 || stage5ShadowSessionEventCount > 0
+      ? ([{
+          id: "stage5-shadow-sessions",
+          label: "Stage 5 shadow sessions",
+          status: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid ? "ready" : "blocked",
+          value: `${artifactCounts.stage5ShadowSessions ?? 0} manifest / ${stage5ShadowSessions.length} package`,
+          detail: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid
+            ? `${stage5ShadowSessions.map((session) => `${session.sessionId} · ${session.status} · attempt ${session.attempt}`).join(" · ")} · live route blocked`
+            : "Stage 5 shadow session count, identity, time, or safety contract does not match auditEvents[].",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid ? "ai" : "risk"
+        }] satisfies ResearchRunExportBrowserRow[])
       : []),
     {
       id: "audit-events",
@@ -15889,6 +15925,7 @@ function researchRunImportArtifactCountMismatches(
     researchNotes: number;
     auditEvents: number;
     stage4PortfolioWorkflows: number;
+    stage5ShadowSessions: number;
     handoffNotes: number;
   }
 ): string[] {
@@ -15919,6 +15956,7 @@ function researchRunImportArtifactCountMismatches(
     ["aiReviewDecisions", artifactCounts.aiReviewDecisions ?? 0, actualCounts.aiReviewDecisions],
     ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents],
     ["stage4PortfolioWorkflows", artifactCounts.stage4PortfolioWorkflows ?? 0, actualCounts.stage4PortfolioWorkflows],
+    ["stage5ShadowSessions", artifactCounts.stage5ShadowSessions ?? 0, actualCounts.stage5ShadowSessions],
     ["handoffNotes", artifactCounts.handoffNotes ?? 0, actualCounts.handoffNotes]
   ];
 
@@ -16011,6 +16049,13 @@ export function buildResearchRunImportDiffRows({
   const packageAuditEventCount = exportPackage.auditEvents?.length ?? 0;
   const packageStage4PortfolioWorkflows = stage4PortfolioWorkflowAuditSnapshots(exportPackage.auditEvents);
   const packageStage4PortfolioWorkflowsAreValid = stage4PortfolioWorkflowAuditEventsAreValid(exportPackage.auditEvents);
+  const packageStage5ShadowSessions = stage5ShadowSessionAuditSnapshots(exportPackage.auditEvents);
+  const packageStage5ShadowSessionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_shadow_execution_session").length;
+  const packageStage5ShadowSessionsAreValid =
+    packageStage5ShadowSessions.length === packageStage5ShadowSessionEventCount;
+  const packageStage5ShadowSessionCountMatches =
+    (exportPackage.manifest.artifactCounts.stage5ShadowSessions ?? 0) === packageStage5ShadowSessions.length;
   const packageHandoffNoteCount = exportPackage.handoffNotes?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
@@ -16096,6 +16141,7 @@ export function buildResearchRunImportDiffRows({
     researchNotes: incomingNote ? 1 : 0,
     auditEvents: packageAuditEventCount,
     stage4PortfolioWorkflows: packageStage4PortfolioWorkflows.length,
+    stage5ShadowSessions: packageStage5ShadowSessions.length,
     handoffNotes: packageHandoffNoteCount
   });
   const authoritativeAiReviewDiffRows = (exportPackage.aiReviewRunsV2 ?? []).map(
@@ -16443,6 +16489,24 @@ export function buildResearchRunImportDiffRows({
             : "Package does not include Stage 4 workflow evidence.",
           exportPath: "auditEvents[].metadata.snapshot",
           tone: packageStage4PortfolioWorkflows.length ? "ai" : "neutral"
+        }] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...((exportPackage.manifest.artifactCounts.stage5ShadowSessions ?? 0) > 0 || packageStage5ShadowSessionEventCount > 0
+      ? ([{
+          id: "stage5-shadow-sessions",
+          label: "Stage 5 shadow sessions",
+          status: packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches
+            ? packageStage5ShadowSessions.length ? "add" : "same"
+            : "blocked",
+          current: "Local audit event store",
+          incoming: `${packageStage5ShadowSessions.length} sessions / ${exportPackage.manifest.artifactCounts.stage5ShadowSessions ?? 0} manifest`,
+          detail: packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches
+            ? "Import will restore Stage 5 shadow attempts with stable clientOrderId, reconciliation, and blocked live boundaries."
+            : "Stage 5 shadow import is blocked by an artifact count mismatch or invalid identity, time, or safety evidence.",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches && packageStage5ShadowSessions.length
+            ? "ai"
+            : packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches ? "neutral" : "risk"
         }] satisfies ResearchRunImportDiffRow[])
       : []),
     {

@@ -13,6 +13,7 @@ from quant_core.ai_review_runs import validate_ai_review_run_record
 from quant_core.canonical import DATA_SNAPSHOT_HASH_VERSION, canonical_data_hash, normalize_snapshot_bars
 from quant_core.handoff_notes import normalize_handoff_note_payloads
 from quant_core.stage4_portfolio import validate_stage4_portfolio_workflow_snapshot
+from quant_core.stage5_shadow import build_stage5_shadow_session, validate_stage5_shadow_session
 
 
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
@@ -603,6 +604,7 @@ def research_run_export_to_payload(
         "aiReviewDecisions": len(ai_review_decision_payloads),
         "auditEvents": len(audit_event_payloads),
         "stage4PortfolioWorkflows": _stage4_portfolio_workflow_count(audit_event_payloads),
+        "stage5ShadowSessions": _stage5_shadow_session_count(audit_event_payloads),
         "handoffNotes": len(handoff_note_payloads),
     }
     export_package = {
@@ -838,6 +840,7 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
     if not isinstance(counts, dict):
         raise ValueError("artifact_counts_must_be_object")
     _stage4_portfolio_workflow_manifest_count(counts)
+    _stage5_shadow_session_manifest_count(counts)
     data_snapshot = research_run.get("dataSnapshot")
     ai_report = research_run.get("aiReport")
     expected = {
@@ -866,6 +869,8 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
     audit_events = export_package.get("auditEvents")
     if "stage4PortfolioWorkflows" in counts or _stage4_portfolio_workflow_count(audit_events):
         expected["stage4PortfolioWorkflows"] = _stage4_portfolio_workflow_count(audit_events)
+    if "stage5ShadowSessions" in counts or _stage5_shadow_session_count(audit_events):
+        expected["stage5ShadowSessions"] = _stage5_shadow_session_count(audit_events)
     if "promotionCandidates" in counts or export_package.get("promotionCandidate"):
         expected["promotionCandidates"] = 1 if isinstance(export_package.get("promotionCandidate"), dict) else 0
     research_note = research_run.get("researchNote")
@@ -1192,6 +1197,8 @@ def _validate_manifest_consistency(
         expected_counts["auditEvents"] = len(audit_events or [])
     if "stage4PortfolioWorkflows" in counts or _stage4_portfolio_workflow_count(audit_events):
         expected_counts["stage4PortfolioWorkflows"] = _stage4_portfolio_workflow_count(audit_events)
+    if "stage5ShadowSessions" in counts or _stage5_shadow_session_count(audit_events):
+        expected_counts["stage5ShadowSessions"] = _stage5_shadow_session_count(audit_events)
     if "handoffNotes" in counts or handoff_notes:
         expected_counts["handoffNotes"] = len(handoff_notes or [])
     research_note = _normalize_research_note(
@@ -1377,6 +1384,17 @@ def _normalize_audit_event_payloads(
                     or stage != "stage4-portfolio-workflow"
                 ):
                     raise ValueError("stage4_portfolio_workflow_audit_binding_mismatch")
+            if event_type == "stage5_shadow_execution_session":
+                snapshot = validate_stage5_shadow_session(
+                    _dict_or_empty(item.get("metadata")).get("snapshot")
+                )
+                if (
+                    event_id != snapshot["sessionId"]
+                    or event_run_id != snapshot["baseRunId"]
+                    or created_at != snapshot["generatedAt"]
+                    or stage != "stage5-shadow-execution"
+                ):
+                    raise ValueError("stage5_shadow_session_audit_binding_mismatch")
         normalized.append(
             {
                 "schemaVersion": 1,
@@ -1391,6 +1409,27 @@ def _normalize_audit_event_payloads(
                 "metadata": _dict_or_empty(item.get("metadata")),
             }
         )
+    if strict:
+        workflows = {
+            item["metadata"]["snapshot"]["workflowHash"]: item["metadata"]["snapshot"]
+            for item in normalized
+            if item["eventType"] == "stage4_portfolio_workflow"
+        }
+        for item in normalized:
+            if item["eventType"] != "stage5_shadow_execution_session":
+                continue
+            session = item["metadata"]["snapshot"]
+            workflow = workflows.get(session["workflowHash"])
+            if workflow is None:
+                raise ValueError("stage5_shadow_source_workflow_missing")
+            rebuilt = build_stage5_shadow_session(
+                workflow,
+                failure_mode=session["failureMode"],
+                attempt=session["attempt"],
+                generated_at=session["generatedAt"],
+            )
+            if rebuilt != session:
+                raise ValueError("stage5_shadow_session_source_mismatch")
     return normalized
 
 
@@ -1408,6 +1447,23 @@ def _stage4_portfolio_workflow_manifest_count(counts: dict[str, Any]) -> int | N
     value = counts["stage4PortfolioWorkflows"]
     if type(value) is not int or value < 0:
         raise ValueError("stage4_portfolio_workflows_count_invalid")
+    return value
+
+
+def _stage5_shadow_session_count(value: Any) -> int:
+    return sum(
+        1
+        for item in value or []
+        if isinstance(item, dict) and item.get("eventType") == "stage5_shadow_execution_session"
+    )
+
+
+def _stage5_shadow_session_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage5ShadowSessions" not in counts:
+        return None
+    value = counts["stage5ShadowSessions"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage5_shadow_sessions_count_invalid")
     return value
 
 

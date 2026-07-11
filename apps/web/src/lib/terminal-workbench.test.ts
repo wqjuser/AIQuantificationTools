@@ -1094,6 +1094,42 @@ function stage4ArchiveWorkflowFixture() {
   };
 }
 
+function stage5ShadowSessionFixture() {
+  return {
+    kind: "aiqt.stage5ShadowExecutionSession", schemaVersion: 1,
+    sessionId: "stage5-shadow-session-1", sessionKey: "1".repeat(64),
+    generatedAt: "2026-07-11T08:20:00+00:00", baseRunId: "run-a",
+    workflowId: "stage4-workflow-1", workflowHash: "4".repeat(64),
+    adapter: { id: "local-fake-shadow", environment: "isolated-local", mode: "shadow" },
+    attempt: 1, failureMode: "none", status: "reconciled",
+    limits: { maxOrders: 2, maxGrossNotional: 90_000, timeoutSeconds: 3, maxAttempts: 2 },
+    killSwitch: { enabled: true, triggered: false },
+    orders: [
+      {
+        orderId: "order-a", clientOrderId: `shadow-${"a".repeat(24)}`, symbol: "600000", side: "buy",
+        quantity: 100, notionalValue: 40_000, state: "reconciled", reason: "Shadow reconciled.",
+        transitions: [
+          { state: "projected", at: "2026-07-11T08:20:00+00:00" },
+          { state: "shadow_acknowledged", at: "2026-07-11T08:20:00+00:00" },
+          { state: "reconciled", at: "2026-07-11T08:20:00+00:00" }
+        ]
+      },
+      {
+        orderId: "order-b", clientOrderId: `shadow-${"b".repeat(24)}`, symbol: "000300", side: "buy",
+        quantity: 100, notionalValue: 40_000, state: "reconciled", reason: "Shadow reconciled.",
+        transitions: [
+          { state: "projected", at: "2026-07-11T08:20:00+00:00" },
+          { state: "shadow_acknowledged", at: "2026-07-11T08:20:00+00:00" },
+          { state: "reconciled", at: "2026-07-11T08:20:00+00:00" }
+        ]
+      }
+    ],
+    reconciliation: { reconciled: true, reason: "Exact shadow reconciliation.", stage4OrderCount: 2, shadowOrderCount: 2, grossNotional: 80_000 },
+    paperOnly: true, shadowOnly: true, liveTradingAllowed: false, orderSubmissionEnabled: false,
+    routeExecuted: false, liveBlockedBoundary: true, sessionHash: "5".repeat(64)
+  } as const;
+}
+
 function promotionPaperExecutionFixture(
   id: string
 ): { workspace: TerminalWorkspace; execution: PaperExecutionSnapshot } {
@@ -11859,6 +11895,48 @@ describe("terminal workbench model", () => {
       .toMatchObject({ label: "Audit events", status: "ready", exportPath: "auditEvents[]" });
     expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unrelatedPackage })
       .find((row) => row.id === "stage4-portfolio-workflows")).toBeUndefined();
+  });
+
+  test("surfaces Stage 5 shadow sessions as dedicated export and import evidence", () => {
+    const exportPackage = stage3ArchiveBrowserPackage();
+    const workflow = stage4ArchiveWorkflowFixture();
+    const session = stage5ShadowSessionFixture();
+    exportPackage.manifest.runId = workflow.baseRunId;
+    exportPackage.manifest.artifactCounts.auditEvents = 2;
+    exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows = 1;
+    exportPackage.manifest.artifactCounts.stage5ShadowSessions = 1;
+    exportPackage.auditEvents = [
+      {
+        schemaVersion: 1, eventId: workflow.workflowId, eventType: "stage4_portfolio_workflow",
+        runId: workflow.baseRunId, createdAt: workflow.generatedAt, stage: "stage4-portfolio-workflow",
+        source: "local-operator", summary: "Stage 4 workflow recorded.", detail: "Authoritative workflow.",
+        metadata: { snapshot: workflow }
+      },
+      {
+        schemaVersion: 1, eventId: session.sessionId, eventType: "stage5_shadow_execution_session",
+        runId: session.baseRunId, createdAt: session.generatedAt, stage: "stage5-shadow-execution",
+        source: "local-operator", summary: "Stage 5 shadow reconciled.", detail: "Shadow only.",
+        metadata: { snapshot: session }
+      }
+    ];
+
+    expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "stage5-shadow-sessions"))
+      .toMatchObject({ status: "ready", value: "1 manifest / 1 package", detail: expect.stringContaining("live route blocked") });
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage })
+      .find((row) => row.id === "stage5-shadow-sessions"))
+      .toMatchObject({ status: "add", incoming: "1 sessions / 1 manifest" });
+
+    const countMismatchPackage = structuredClone(exportPackage);
+    countMismatchPackage.manifest.artifactCounts.stage5ShadowSessions = 0;
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: countMismatchPackage })
+      .find((row) => row.id === "stage5-shadow-sessions")?.status).toBe("blocked");
+
+    const unsafePackage = structuredClone(exportPackage);
+    (unsafePackage.auditEvents?.[1]?.metadata.snapshot as Record<string, unknown>).orderSubmissionEnabled = true;
+    expect(buildResearchRunExportBrowserRows(unsafePackage).find((row) => row.id === "stage5-shadow-sessions")?.status)
+      .toBe("blocked");
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unsafePackage })
+      .find((row) => row.id === "stage5-shadow-sessions")?.status).toBe("blocked");
   });
 
   test("aligns Decision import diff with persisted prefix and append semantics", () => {

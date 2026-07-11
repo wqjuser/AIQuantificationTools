@@ -13,6 +13,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services.quant_core.tests import test_stage4_portfolio as stage4_tests
+from services.quant_core.tests import test_quant_core as quant_core_tests
 from quant_core.stage5_shadow import (
     build_stage5_shadow_session,
     stage5_shadow_session_hash,
@@ -187,6 +188,14 @@ class Stage5ShadowSessionTest(unittest.TestCase):
             first_attempt=first,
             recovered_attempt=recovered,
             idempotent_attempt=copy.deepcopy(recovered),
+            export_readback={
+                "exportArtifactCount": 2,
+                "importedArtifactCount": 2,
+                "readbackArtifactCount": 2,
+                "exportSessionHashes": sorted([first["sessionHash"], recovered["sessionHash"]]),
+                "importedSessionHashes": sorted([first["sessionHash"], recovered["sessionHash"]]),
+                "readbackSessionHashes": sorted([first["sessionHash"], recovered["sessionHash"]]),
+            },
         )
         self.assertIn("liveBlocked=True", docker_smoke.validate_stage5_shadow_acceptance_manifest(manifest))
 
@@ -200,6 +209,64 @@ class Stage5ShadowSessionTest(unittest.TestCase):
                 mutate(tampered)
                 with self.assertRaises(RuntimeError):
                     docker_smoke.validate_stage5_shadow_acceptance_manifest(tampered)
+
+    def test_export_import_counts_and_rebuilds_shadow_sessions_from_stage4_workflow(self) -> None:
+        from quant_core.runs import (
+            research_run_export_to_payload,
+            research_run_import_audit_events,
+            research_run_import_to_audit,
+        )
+
+        workflow = stage4_workflow()
+        attempts = [
+            build_stage5_shadow_session(workflow, failure_mode="timeout_once", attempt=1),
+            build_stage5_shadow_session(workflow, failure_mode="timeout_once", attempt=2),
+        ]
+        events = [
+            {
+                "schemaVersion": 1,
+                "eventId": workflow["workflowId"],
+                "eventType": "stage4_portfolio_workflow",
+                "runId": workflow["baseRunId"],
+                "createdAt": workflow["generatedAt"],
+                "stage": "stage4-portfolio-workflow",
+                "source": "test",
+                "summary": "Stage 4 source.",
+                "detail": "Authoritative workflow.",
+                "metadata": {"snapshot": workflow},
+            },
+            *(stage5_shadow_session_to_audit_event(session, "test") for session in attempts),
+        ]
+        audit = quant_core_tests.QuantCoreContractTest()._sample_research_run_audit(
+            run_id="run-a", strategy_revision="rev-run-a"
+        )
+        exported = research_run_export_to_payload(audit, audit_events=events)
+
+        self.assertEqual(exported["manifest"]["artifactCounts"]["stage5ShadowSessions"], 2)
+        imported = research_run_import_to_audit(exported)
+        imported_events = research_run_import_audit_events(exported, run_id=imported.run_id)
+        self.assertEqual(
+            [event["metadata"]["snapshot"]["sessionHash"] for event in imported_events[1:]],
+            [session["sessionHash"] for session in attempts],
+        )
+
+        bad_count = copy.deepcopy(exported)
+        bad_count.pop("integrity")
+        bad_count["manifest"]["artifactCounts"]["stage5ShadowSessions"] = 1
+        with self.assertRaisesRegex(ValueError, "artifact_count_stage5_shadow_sessions_mismatch"):
+            research_run_import_to_audit(bad_count)
+
+        missing_workflow = research_run_export_to_payload(audit, audit_events=events[1:])
+        with self.assertRaisesRegex(ValueError, "stage5_shadow_source_workflow_missing"):
+            research_run_import_to_audit(missing_workflow)
+
+        tampered = copy.deepcopy(exported)
+        tampered.pop("integrity")
+        session = tampered["auditEvents"][1]["metadata"]["snapshot"]
+        session["orders"][0]["quantity"] += 1
+        session["sessionHash"] = stage5_shadow_session_hash(session)
+        with self.assertRaisesRegex(ValueError, "stage5_shadow_session_source_mismatch"):
+            research_run_import_to_audit(tampered)
 
 
 if __name__ == "__main__":

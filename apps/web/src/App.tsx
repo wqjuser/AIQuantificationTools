@@ -276,6 +276,7 @@ import {
   PortfolioStage4Section,
   selectCurrentStage4PortfolioWorkflow
 } from "./components/PortfolioStage4Section";
+import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
@@ -284,6 +285,12 @@ import {
   recordStage4PortfolioWorkflow,
   type Stage4PortfolioWorkflow
 } from "./lib/portfolio-stage4";
+import {
+  buildStage5ShadowState,
+  loadStage5ShadowSessions,
+  runStage5ShadowSession,
+  type Stage5ShadowSession
+} from "./lib/stage5-shadow";
 import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
@@ -2221,6 +2228,8 @@ export function App() {
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [portfolioStage4Workflows, setPortfolioStage4Workflows] = useState<Stage4PortfolioWorkflow[]>([]);
   const [portfolioStage4RefreshGeneration, setPortfolioStage4RefreshGeneration] = useState(0);
+  const [stage5ShadowSessions, setStage5ShadowSessions] = useState<Stage5ShadowSession[]>([]);
+  const [stage5ShadowError, setStage5ShadowError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -2265,6 +2274,7 @@ export function App() {
   const [simulatingPortfolioPaperOrderId, setSimulatingPortfolioPaperOrderId] = useState<string | null>(null);
   const [isSimulatingPortfolioPaperOrderBatch, setIsSimulatingPortfolioPaperOrderBatch] = useState(false);
   const [isRecordingPortfolioStage4Workflow, setIsRecordingPortfolioStage4Workflow] = useState(false);
+  const [isRunningStage5Shadow, setIsRunningStage5Shadow] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isLoadingDesktopRelease, setIsLoadingDesktopRelease] = useState(false);
   const [isGeneratingStage1BootstrapPreflight, setIsGeneratingStage1BootstrapPreflight] = useState(false);
@@ -2467,6 +2477,7 @@ export function App() {
   const researchRunImportAuditRequestIdRef = useRef(0);
   const exportPackageRequestCoordinatorRef = useRef(createLatestRequestCoordinator());
   const portfolioStage4RequestCoordinatorRef = useRef(createPortfolioStage4RequestCoordinator());
+  const stage5ShadowRequestIdRef = useRef(0);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
@@ -2524,6 +2535,8 @@ export function App() {
   }, []);
   useLayoutEffect(() => {
     resetStage4PortfolioBusyState();
+    setIsRunningStage5Shadow(false);
+    stage5ShadowRequestIdRef.current += 1;
     portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
   }, [currentResearchRunId, resetStage4PortfolioBusyState]);
   const strategyExperimentUsableSourceKey =
@@ -2746,6 +2759,7 @@ export function App() {
     replay: portfolioPaperOrderReplay,
     workflow: portfolioStage4Workflow
   });
+  const stage5ShadowState = buildStage5ShadowState(portfolioStage4Workflow, stage5ShadowSessions);
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -3601,6 +3615,23 @@ export function App() {
       ].find((result) => result.error)?.error ?? null);
     })();
   }, [currentResearchRunId, portfolioStage4RefreshGeneration]);
+
+  useEffect(() => {
+    const baseRunId = currentResearchRunId;
+    let cancelled = false;
+    if (!baseRunId) {
+      setStage5ShadowSessions([]);
+      setStage5ShadowError(null);
+      return;
+    }
+    setStage5ShadowError(null);
+    void loadStage5ShadowSessions(quantCoreBaseUrl, baseRunId).then((result) => {
+      if (cancelled) return;
+      setStage5ShadowSessions(result.sessions);
+      setStage5ShadowError(result.error ?? null);
+    });
+    return () => { cancelled = true; };
+  }, [currentResearchRunId]);
 
   useEffect(() => {
     const requestId = strategyValidationRequestIdRef.current + 1;
@@ -7134,6 +7165,30 @@ export function App() {
     currentResearchRunId,
     resetStage4PortfolioBusyState
   ]);
+
+  const runStage5ShadowPrimaryAction = useCallback(async () => {
+    if (!portfolioStage4Workflow || isRunningStage5Shadow) return;
+    const requestId = stage5ShadowRequestIdRef.current + 1;
+    stage5ShadowRequestIdRef.current = requestId;
+    setIsRunningStage5Shadow(true);
+    setStage5ShadowError(null);
+    const result = await runStage5ShadowSession(
+      quantCoreBaseUrl,
+      portfolioStage4Workflow,
+      stage5ShadowState.session?.failureMode ?? "none"
+    );
+    if (stage5ShadowRequestIdRef.current !== requestId) return;
+    setIsRunningStage5Shadow(false);
+    if (!result.session) {
+      setStage5ShadowError(result.error ?? "Stage 5 shadow validation failed");
+      return;
+    }
+    const session = result.session;
+    setStage5ShadowSessions((current) => [
+      session,
+      ...current.filter((row) => row.sessionId !== session.sessionId)
+    ]);
+  }, [isRunningStage5Shadow, portfolioStage4Workflow, stage5ShadowState.session]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {
     const portfolio = portfolioBacktestState.portfolio;
@@ -12852,6 +12907,13 @@ export function App() {
     if (activeWorkAreaId === "execution") {
       return (
         <>
+          <ExecutionStage5ShadowSection
+            busy={isRunningStage5Shadow}
+            error={stage5ShadowError}
+            i18n={i18n}
+            onPrimaryAction={() => void runStage5ShadowPrimaryAction()}
+            state={stage5ShadowState}
+          />
           <ExecutionPanel
             className="workflow-execution-panel"
             i18n={i18n}
@@ -28379,6 +28441,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "ai-reviews": "AI 评审",
       "ai-reviews-v2": i18n.t("archive.aiReview.authoritative"),
       "ai-review-decisions": i18n.t("archive.aiReview.decision"),
+      "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
       "audit-summary": "审计摘要",
       "audit-report": "审计报告",
       "execution-handoff": "执行交接"
@@ -28506,6 +28569,8 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "adapter-paper-executions": "适配器模拟执行",
       "portfolio-paper-orders": "组合模拟委托",
       "ai-review-runs": "AI 评审记录",
+      "stage4-portfolio-workflows": "Stage 4 组合工作流",
+      "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
       "audit-summary": "导入审计摘要",
       "audit-report": "导入审计报告",
       "backtest-report": "导入回测报告",

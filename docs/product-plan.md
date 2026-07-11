@@ -1,10 +1,12 @@
 # AIQuant Terminal 产品规划
 
-## 当前阶段：Stage 5 实盘准备（Shadow Execution 第一阶段，2026-07-11）
+## 当前阶段：Stage 5 实盘准备（Shadow Operations 第二阶段，2026-07-11）
 
-Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；第一阶段只实现隔离的本地 shadow execution，不接真实券商或资金账户。
+Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；第二阶段把隔离的本地 shadow execution 收口为可操作、可刷新恢复、可导出导入和可在 Audit 复核的闭环，仍不接真实券商或资金账户。
 
 Stage 5 第一阶段复用权威 `stage4_portfolio_workflow` 和 `AuditEventStore`，新增稳定 `clientOrderId`、shadow 状态机、Stage 4 限额复用、kill switch、超时一次/单次重试、拒绝与对账故障注入、重启恢复和幂等回读。`POST /api/execution/shadow-sessions` 只接受 base run、workflow hash、failure mode 和 operator；服务端从审计账本重验 Stage 4 workflow 后生成 `aiqt.stage5ShadowExecutionSession`。Docker 门禁生成 `aiqt.stage5ShadowExecutionAcceptance`，并继续强制 `paperOnly=true`、`shadowOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+
+Stage 5 第二阶段在 Execution 增加唯一 Shadow 主动作与持久化证据明细，刷新后通过 GET 恢复，不依赖 React 成功状态。研究包新增 `artifactCounts.stage5ShadowSessions`；导入预检复用现有 Stage 4 workflow 和 Stage 5 builder 重建 session，数量、身份、时间、hash、委托自洽或安全边界不一致均在原子写入前失败。Audit 包浏览器和 import diff 提供 Stage 5 专属证据行，Docker acceptance 同时验证 export/import/re-export/readback 的数量与 session hash。
 
 Stage 4 于 2026-07-11 通过发布门禁：fresh Python/Web 测试与生产构建、保留数据卷的 Docker 重建、Stage 3/4 smoke 与离线 validate、桌面发布、DMG 校验和安全审计均通过。最终验证产物 `AIQuantificationTools_0.1.0_x64.dmg` 的 SHA-256 为 `26b986fadffd34f2cf18fc10e48bb2674bae5ecf3ead1836f9d8b04ad9888ebc`。
 
