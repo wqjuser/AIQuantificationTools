@@ -271,7 +271,11 @@ import { PortfolioPaperOrderAuditLedgerPanel } from "./components/PortfolioPaper
 import { ExecutionAdapterPaperExecutionAuditLedgerPanel } from "./components/ExecutionAdapterPaperExecutionAuditLedgerPanel";
 import { StrategyExperimentSection, isStrategyExperimentDraftValid } from "./components/StrategyExperimentSection";
 import { AiReviewStage3Section } from "./components/AiReviewStage3Section";
-import { PortfolioStage4Section } from "./components/PortfolioStage4Section";
+import {
+  createPortfolioStage4RequestCoordinator,
+  PortfolioStage4Section,
+  selectCurrentStage4PortfolioWorkflow
+} from "./components/PortfolioStage4Section";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
@@ -2462,7 +2466,7 @@ export function App() {
   const executionAdapterPaperExecutionAuditRequestIdRef = useRef(0);
   const researchRunImportAuditRequestIdRef = useRef(0);
   const exportPackageRequestCoordinatorRef = useRef(createLatestRequestCoordinator());
-  const portfolioStage4RequestCoordinatorRef = useRef(createLatestRequestCoordinator());
+  const portfolioStage4RequestCoordinatorRef = useRef(createPortfolioStage4RequestCoordinator());
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
@@ -2510,6 +2514,15 @@ export function App() {
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const strategyDraftRequiresReaudit = workspaceNeedsStrategyReaudit(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
+  useLayoutEffect(() => {
+    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
+    setIsRunningPortfolioBacktest(false);
+    setIsRecordingPortfolioPaperOrders(false);
+    setApprovingPortfolioPaperOrderId(null);
+    setSimulatingPortfolioPaperOrderId(null);
+    setIsSimulatingPortfolioPaperOrderBatch(false);
+    setIsRecordingPortfolioStage4Workflow(false);
+  }, [currentResearchRunId]);
   const strategyExperimentUsableSourceKey =
     researchRunContextBinding.canUseRun && workspace.researchRun
       ? `${workspace.researchRun.runId}:${workspace.researchRun.strategyRevision}`
@@ -2709,12 +2722,14 @@ export function App() {
     () => buildPortfolioPaperOrderSimulationRouteRiskRequest(portfolioRouteRiskTemplate, portfolioPaperOrderReplay),
     [portfolioPaperOrderReplay, portfolioRouteRiskTemplate]
   );
-  const portfolioStage4Workflow = portfolioStage4Workflows.find(
-    (workflow) => workflow.baseRunId === currentResearchRunId
-  ) ?? null;
   const portfolioStage4LatestBatch = [...portfolioPaperOrderBatches]
     .filter((batch) => batch.baseRunId === currentResearchRunId)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  const portfolioStage4Workflow = selectCurrentStage4PortfolioWorkflow(
+    portfolioStage4Workflows,
+    currentResearchRunId,
+    portfolioStage4LatestBatch?.batchId
+  );
   const portfolioStage4GoldenPath = buildStage4PortfolioGoldenPath({
     baseRunId: currentResearchRunId ?? "",
     portfolio: portfolioBacktestState.portfolio,
@@ -3521,9 +3536,8 @@ export function App() {
 
   useEffect(() => {
     const baseRunId = currentResearchRunId;
-    const requestToken = portfolioStage4RequestCoordinatorRef.current.begin();
-    const requestIsCurrent = () =>
-      portfolioStage4RequestCoordinatorRef.current.isCurrent(requestToken);
+    const request = portfolioStage4RequestCoordinatorRef.current.begin(baseRunId);
+    const requestIsCurrent = () => portfolioStage4RequestCoordinatorRef.current.isCurrent(request);
     if (!baseRunId) {
       setPortfolioPaperOrderBatches([]);
       setPortfolioPaperOrderLifecycleEvents([]);
@@ -3545,7 +3559,14 @@ export function App() {
       setPortfolioPaperOrderBatches(batchResult.batches);
       setPortfolioPaperOrderReplay(replayResult.replay ?? null);
       setPortfolioStage4Workflows(workflowResult.workflows);
-      const restoredWorkflow = workflowResult.workflows.find((workflow) => workflow.baseRunId === baseRunId);
+      const latestBatch = [...batchResult.batches].sort(
+        (left, right) => right.createdAt.localeCompare(left.createdAt)
+      )[0];
+      const restoredWorkflow = selectCurrentStage4PortfolioWorkflow(
+        workflowResult.workflows,
+        baseRunId,
+        latestBatch?.batchId
+      );
       if (restoredWorkflow) setPortfolioBacktestState({ portfolio: restoredWorkflow.portfolio, source: "core" });
       if (!batchResult.batches.length) {
         setPortfolioPaperOrderLifecycleEvents([]);
@@ -6079,6 +6100,7 @@ export function App() {
       && manualSelectionVersionRef.current === startedSelectionVersion
     );
     setIsRefreshing(true);
+    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
     setPortfolioStage4RefreshGeneration((current) => current + 1);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
     const researchContextUrlState = resolveInitialResearchContextUrlState();
@@ -6649,7 +6671,9 @@ export function App() {
   ]);
 
   const runPortfolioBacktestDraft = useCallback(async () => {
+    const request = portfolioStage4RequestCoordinatorRef.current.begin(currentResearchRunId);
     if (!portfolioBacktestDraft.request) {
+      if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
       setPortfolioBacktestState({
         source: "fallback",
         error: portfolioBacktestDraft.summary
@@ -6659,15 +6683,18 @@ export function App() {
 
     setIsRunningPortfolioBacktest(true);
     const result = await runPortfolioBacktest(quantCoreBaseUrl, portfolioBacktestDraft.request);
+    if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     setPortfolioBacktestState(result);
     setIsRunningPortfolioBacktest(false);
-  }, [portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
+  }, [currentResearchRunId, portfolioBacktestDraft.request, portfolioBacktestDraft.summary]);
 
   const recordPortfolioPaperOrders = useCallback(async () => {
     const portfolio = portfolioBacktestState.portfolio;
-    const baseRunId = workspace.researchRun?.runId;
+    const baseRunId = currentResearchRunId;
+    const request = portfolioStage4RequestCoordinatorRef.current.begin(baseRunId);
     const orders = portfolio?.paperOrderEvents ?? [];
     if (!portfolio || !baseRunId || !orders.length) {
+      if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Portfolio paper order record failed",
@@ -6682,6 +6709,7 @@ export function App() {
       portfolioName: portfolio.name,
       orders
     });
+    if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     setIsRecordingPortfolioPaperOrders(false);
 
     const recordedBatch = result.batch;
@@ -6695,20 +6723,19 @@ export function App() {
           mergePortfolioPaperOrderLifecycleEvents(current, recordedBatch.batchId, result.lifecycle ?? [])
         );
       }
-      void loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, recordedBatch.baseRunId, recordedBatch.batchId).then(
-        (stateHistoryResult) => {
-          const history = stateHistoryResult.stateHistory;
-          if (history) {
-            setPortfolioPaperOrderStateHistories((current) =>
-              mergePortfolioPaperOrderStateHistories(current, history)
-            );
-          }
-          if (stateHistoryResult.error) {
-            setPortfolioPaperOrderHistoryError(stateHistoryResult.error);
-          }
-        }
+      const stateHistoryResult = await loadPortfolioPaperOrderStateHistory(
+        quantCoreBaseUrl,
+        recordedBatch.baseRunId,
+        recordedBatch.batchId
       );
-      setPortfolioPaperOrderHistoryError(null);
+      if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
+      const history = stateHistoryResult.stateHistory;
+      if (history) {
+        setPortfolioPaperOrderStateHistories((current) =>
+          mergePortfolioPaperOrderStateHistories(current, history)
+        );
+      }
+      setPortfolioPaperOrderHistoryError(stateHistoryResult.error ?? null);
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: result.auditEvent
@@ -6725,9 +6752,11 @@ export function App() {
       statusLabel: "Portfolio paper order record failed",
       error: result.error ?? "Portfolio paper order record failed"
     }));
-  }, [portfolioBacktestState.portfolio, workspace.researchRun?.runId]);
+  }, [currentResearchRunId, portfolioBacktestState.portfolio]);
 
   const reviewPortfolioPaperOrder = useCallback(async (row: PortfolioPaperOrderApprovalRow, approved: boolean) => {
+    if (row.baseRunId !== currentResearchRunId) return;
+    const request = portfolioStage4RequestCoordinatorRef.current.begin(row.baseRunId);
     setApprovingPortfolioPaperOrderId(row.id);
     const result = await recordPortfolioPaperOrderApproval(quantCoreBaseUrl, {
       baseRunId: row.baseRunId,
@@ -6740,6 +6769,7 @@ export function App() {
         ? "Operator approved this paper-only portfolio order for simulation."
         : "Operator rejected this paper-only portfolio order before simulation."
     });
+    if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     setApprovingPortfolioPaperOrderId(null);
 
     if (result.approval) {
@@ -6748,24 +6778,19 @@ export function App() {
           mergePortfolioPaperOrderLifecycleEvents(current, row.batchId, result.lifecycle ?? [])
         );
       }
-      void loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, row.baseRunId, row.batchId).then((stateHistoryResult) => {
-        const history = stateHistoryResult.stateHistory;
-        if (history) {
-          setPortfolioPaperOrderStateHistories((current) =>
-            mergePortfolioPaperOrderStateHistories(current, history)
-          );
-        }
-        if (stateHistoryResult.error) {
-          setPortfolioPaperOrderHistoryError(stateHistoryResult.error);
-        }
-      });
-      void loadPortfolioPaperOrderReplay(quantCoreBaseUrl, row.baseRunId).then((replayResult) => {
-        setPortfolioPaperOrderReplay(replayResult.replay ?? null);
-        if (replayResult.error) {
-          setPortfolioPaperOrderHistoryError(replayResult.error);
-        }
-      });
-      setPortfolioPaperOrderHistoryError(null);
+      const [stateHistoryResult, replayResult] = await Promise.all([
+        loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, row.baseRunId, row.batchId),
+        loadPortfolioPaperOrderReplay(quantCoreBaseUrl, row.baseRunId)
+      ]);
+      if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
+      const history = stateHistoryResult.stateHistory;
+      if (history) {
+        setPortfolioPaperOrderStateHistories((current) =>
+          mergePortfolioPaperOrderStateHistories(current, history)
+        );
+      }
+      setPortfolioPaperOrderReplay(replayResult.replay ?? null);
+      setPortfolioPaperOrderHistoryError(stateHistoryResult.error ?? replayResult.error ?? null);
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: approved
@@ -6788,7 +6813,7 @@ export function App() {
       statusLabel: "Portfolio paper order approval failed",
       error: approvalError
     }));
-  }, []);
+  }, [currentResearchRunId, quantCoreBaseUrl]);
 
   const approvePortfolioPaperOrder = useCallback(
     (row: PortfolioPaperOrderApprovalRow) => reviewPortfolioPaperOrder(row, true),
@@ -6811,6 +6836,8 @@ export function App() {
   );
 
   const simulatePortfolioPaperOrder = useCallback(async (row: PortfolioPaperOrderApprovalRow) => {
+    if (row.baseRunId !== currentResearchRunId) return;
+    const request = portfolioStage4RequestCoordinatorRef.current.begin(row.baseRunId);
     setSimulatingPortfolioPaperOrderId(row.id);
     const routeRow = portfolioPaperOrderSimulationRouteRows.find(
       (candidate) => candidate.batchId === row.batchId && candidate.orderId === row.orderId
@@ -6834,6 +6861,7 @@ export function App() {
           }
         : undefined
     });
+    if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     setSimulatingPortfolioPaperOrderId(null);
 
     if (result.simulation) {
@@ -6847,24 +6875,19 @@ export function App() {
           mergePortfolioPaperOrderLifecycleEvents(current, row.batchId, result.lifecycle ?? [])
         );
       }
-      void loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, row.baseRunId, row.batchId).then((stateHistoryResult) => {
-        const history = stateHistoryResult.stateHistory;
-        if (history) {
-          setPortfolioPaperOrderStateHistories((current) =>
-            mergePortfolioPaperOrderStateHistories(current, history)
-          );
-        }
-        if (stateHistoryResult.error) {
-          setPortfolioPaperOrderHistoryError(stateHistoryResult.error);
-        }
-      });
-      void loadPortfolioPaperOrderReplay(quantCoreBaseUrl, row.baseRunId).then((replayResult) => {
-        setPortfolioPaperOrderReplay(replayResult.replay ?? null);
-        if (replayResult.error) {
-          setPortfolioPaperOrderHistoryError(replayResult.error);
-        }
-      });
-      setPortfolioPaperOrderHistoryError(null);
+      const [stateHistoryResult, replayResult] = await Promise.all([
+        loadPortfolioPaperOrderStateHistory(quantCoreBaseUrl, row.baseRunId, row.batchId),
+        loadPortfolioPaperOrderReplay(quantCoreBaseUrl, row.baseRunId)
+      ]);
+      if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
+      const history = stateHistoryResult.stateHistory;
+      if (history) {
+        setPortfolioPaperOrderStateHistories((current) =>
+          mergePortfolioPaperOrderStateHistories(current, history)
+        );
+      }
+      setPortfolioPaperOrderReplay(replayResult.replay ?? null);
+      setPortfolioPaperOrderHistoryError(stateHistoryResult.error ?? replayResult.error ?? null);
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: `Portfolio paper order simulated · ${row.orderId}`,
@@ -6879,19 +6902,27 @@ export function App() {
       statusLabel: "Portfolio paper order simulation failed",
       error: result.error ?? "Portfolio paper order simulation failed"
     }));
-  }, [portfolioPaperOrderRouteRiskRequest, portfolioPaperOrderSimulationRouteRows, quantCoreBaseUrl]);
+  }, [
+    currentResearchRunId,
+    portfolioPaperOrderRouteRiskRequest,
+    portfolioPaperOrderSimulationRouteRows,
+    quantCoreBaseUrl
+  ]);
 
   const simulatePortfolioPaperOrderBatch = useCallback(async () => {
+    const request = portfolioStage4RequestCoordinatorRef.current.begin(currentResearchRunId);
     const simulatedOrderKeys = new Set(
       portfolioPaperOrderSimulations.map((simulation) => `${simulation.batchId}:${simulation.orderId}`)
     );
     const eligibleRows = portfolioPaperOrderApprovalRows.filter(
       (row) =>
+        row.baseRunId === currentResearchRunId &&
         row.state === "ready_for_simulation" &&
         (row.side === "buy" || row.side === "sell") &&
         !simulatedOrderKeys.has(`${row.batchId}:${row.orderId}`)
     );
     if (!eligibleRows.length) {
+      if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Portfolio batch simulation skipped",
@@ -6956,6 +6987,7 @@ export function App() {
               ? adapterPaperExecutionEvidenceByOrderId
               : undefined
         });
+        if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
 
         filledCount += result.batchSimulation?.filledCount ?? result.createdSimulations.length;
         blockedCount += result.batchSimulation?.blockedCount ?? 0;
@@ -6977,6 +7009,7 @@ export function App() {
           firstRow.baseRunId,
           firstRow.batchId
         );
+        if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
         const stateHistory = stateHistoryResult.stateHistory;
         if (stateHistory) {
           setPortfolioPaperOrderStateHistories((current) =>
@@ -6987,15 +7020,19 @@ export function App() {
           errors.push(stateHistoryResult.error);
         }
         const replayResult = await loadPortfolioPaperOrderReplay(quantCoreBaseUrl, firstRow.baseRunId);
+        if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
         setPortfolioPaperOrderReplay(replayResult.replay ?? null);
         if (replayResult.error) {
           errors.push(replayResult.error);
         }
       }
     } finally {
-      setIsSimulatingPortfolioPaperOrderBatch(false);
+      if (portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) {
+        setIsSimulatingPortfolioPaperOrderBatch(false);
+      }
     }
 
+    if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     const statusLabel = `Portfolio batch simulation routed · ${filledCount} filled / ${blockedCount} blocked`;
     const error = errors.length ? errors.join("; ") : undefined;
     setPortfolioPaperOrderHistoryError(error ?? null);
@@ -7005,6 +7042,7 @@ export function App() {
       error
     }));
   }, [
+    currentResearchRunId,
     portfolioPaperOrderApprovalRows,
     portfolioPaperOrderRouteRiskRequest,
     portfolioPaperOrderSimulationRouteRows,
@@ -7013,15 +7051,16 @@ export function App() {
   ]);
 
   const recordPortfolioStage4Workflow = useCallback(async () => {
-    const request = portfolioBacktestDraft.request;
+    const workflowDraft = portfolioBacktestDraft.request;
     const batch = portfolioStage4LatestBatch;
-    if (!request || !currentResearchRunId || !batch) return;
+    if (!workflowDraft || !currentResearchRunId || !batch) return;
+    const request = portfolioStage4RequestCoordinatorRef.current.begin(currentResearchRunId);
     setIsRecordingPortfolioStage4Workflow(true);
     const result = await recordStage4PortfolioWorkflow(quantCoreBaseUrl, {
       baseRunId: currentResearchRunId,
-      name: request.name,
-      initialCash: request.initialCash,
-      legs: request.legs,
+      name: workflowDraft.name,
+      initialCash: workflowDraft.initialCash,
+      legs: workflowDraft.legs,
       riskTemplate: {
         minCashAfter: portfolioPaperOrderRouteRiskRequest.minCashAfter,
         maxSymbolNotional: portfolioPaperOrderRouteRiskRequest.maxSymbolNotional,
@@ -7030,6 +7069,7 @@ export function App() {
       batchId: batch.batchId,
       operator: "local-operator"
     });
+    if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     setIsRecordingPortfolioStage4Workflow(false);
     const workflow = result.workflow;
     if (workflow) {
@@ -7054,19 +7094,24 @@ export function App() {
     if (actionId === "record-paper-order-batch") return void recordPortfolioPaperOrders();
     if (actionId === "simulate-portfolio-batch") return void simulatePortfolioPaperOrderBatch();
     if (actionId === "refresh-account-replay") {
+      portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
       setPortfolioStage4RefreshGeneration((current) => current + 1);
       return;
     }
     if (actionId === "record-stage4-workflow") return void recordPortfolioStage4Workflow();
-    const selector = actionId === "review-route-risk"
-      ? ".portfolio-simulation-route"
-      : ".portfolio-order-approval";
+    const selector = {
+      "review-portfolio-risk": ".workflow-portfolio-panel .risk-ledger",
+      "review-portfolio-orders": ".portfolio-order-approval",
+      "review-route-risk": ".portfolio-route-risk-template"
+    }[actionId];
+    if (!selector) return;
     document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [
     recordPortfolioPaperOrders,
     recordPortfolioStage4Workflow,
     runPortfolioBacktestDraft,
-    simulatePortfolioPaperOrderBatch
+    simulatePortfolioPaperOrderBatch,
+    currentResearchRunId
   ]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {

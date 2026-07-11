@@ -2,7 +2,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { createI18n } from "../lib/i18n";
 import type { Stage4PortfolioGoldenPath, Stage4PortfolioWorkflow } from "../lib/portfolio-stage4";
-import { PortfolioStage4Section } from "./PortfolioStage4Section";
+import {
+  createPortfolioStage4RequestCoordinator,
+  PortfolioStage4Section,
+  selectCurrentStage4PortfolioWorkflow
+} from "./PortfolioStage4Section";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+}
 
 const reviewPath: Stage4PortfolioGoldenPath = {
   status: "review",
@@ -33,6 +43,50 @@ function workflow(): Stage4PortfolioWorkflow {
 }
 
 describe("PortfolioStage4Section", () => {
+  test("does not select an older workflow after the same base run records a newer batch", () => {
+    const oldWorkflow = {
+      ...workflow(),
+      baseRunId: "run-a",
+      batch: { batchId: "batch-1" }
+    } as Stage4PortfolioWorkflow;
+
+    expect(selectCurrentStage4PortfolioWorkflow([oldWorkflow], "run-a", "batch-2")).toBeNull();
+    expect(selectCurrentStage4PortfolioWorkflow([oldWorkflow], "run-a", "batch-1")).toBe(oldWorkflow);
+  });
+
+  test("rejects a late action result after the base run changes", async () => {
+    const coordinator = createPortfolioStage4RequestCoordinator("run-a");
+    const late = deferred<string>();
+    const commits: string[] = [];
+    const request = coordinator.begin("run-a");
+    const completion = late.promise.then((value) => {
+      if (coordinator.isCurrent(request)) commits.push(value);
+    });
+
+    coordinator.invalidate("run-b");
+    late.resolve("run-a-result");
+    await completion;
+
+    expect(commits).toEqual([]);
+  });
+
+  test("rejects an older action when a newer action starts in the same run", async () => {
+    const coordinator = createPortfolioStage4RequestCoordinator("run-a");
+    const late = deferred<string>();
+    const commits: string[] = [];
+    const older = coordinator.begin("run-a");
+    const completion = late.promise.then((value) => {
+      if (coordinator.isCurrent(older)) commits.push(value);
+    });
+
+    const newer = coordinator.begin("run-a");
+    expect(coordinator.isCurrent(newer)).toBe(true);
+    late.resolve("older-result");
+    await completion;
+
+    expect(commits).toEqual([]);
+  });
+
   test("renders five Chinese-first steps, one enabled primary action, blockers and the paper boundary", () => {
     const markup = renderToStaticMarkup(
       <PortfolioStage4Section

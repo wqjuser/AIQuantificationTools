@@ -1,7 +1,40 @@
 import type { createI18n } from "../lib/i18n";
+import { createLatestRequestCoordinator } from "../lib/latest-request";
 import type { Stage4PortfolioGoldenPath, Stage4PortfolioWorkflow } from "../lib/portfolio-stage4";
 
 type AppI18n = ReturnType<typeof createI18n>;
+
+export interface PortfolioStage4Request {
+  baseRunId: string | null | undefined;
+  token: number;
+}
+
+export function createPortfolioStage4RequestCoordinator(initialBaseRunId: string | null | undefined = null) {
+  const latest = createLatestRequestCoordinator();
+  let currentBaseRunId: string | null | undefined = initialBaseRunId;
+  return {
+    begin(baseRunId: string | null | undefined): PortfolioStage4Request {
+      return { baseRunId, token: latest.begin() };
+    },
+    invalidate(baseRunId: string | null | undefined): void {
+      currentBaseRunId = baseRunId;
+      latest.begin();
+    },
+    isCurrent(request: PortfolioStage4Request): boolean {
+      return request.baseRunId === currentBaseRunId && latest.isCurrent(request.token);
+    }
+  };
+}
+
+export function selectCurrentStage4PortfolioWorkflow(
+  workflows: readonly Stage4PortfolioWorkflow[],
+  baseRunId: string | null | undefined,
+  latestBatchId: string | undefined
+): Stage4PortfolioWorkflow | null {
+  if (!baseRunId || !latestBatchId) return null;
+  return workflows.find((workflow) =>
+    workflow.baseRunId === baseRunId && workflow.batch.batchId === latestBatchId) ?? null;
+}
 
 const stepKeys = {
   "portfolio-build": "portfolio.stage4.step.portfolioBuild",

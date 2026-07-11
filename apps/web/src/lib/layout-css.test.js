@@ -92,7 +92,8 @@ describe("terminal layout css", () => {
       'if (activeWorkAreaId === "execution")',
       'if (activeWorkAreaId === "audit")'
     );
-    expect(appSource).toContain('import { PortfolioStage4Section } from "./components/PortfolioStage4Section";');
+    expect(appSource).toContain("PortfolioStage4Section,");
+    expect(appSource).toContain('from "./components/PortfolioStage4Section";');
     expect((appSource.match(/<PortfolioStage4Section/g) ?? [])).toHaveLength(1);
     expect(portfolioSource.indexOf("<PortfolioStage4Section")).toBeGreaterThan(-1);
     expect(portfolioSource.indexOf("<PortfolioStage4Section")).toBeLessThan(portfolioSource.indexOf("<PortfolioWorkspace"));
@@ -107,7 +108,33 @@ describe("terminal layout css", () => {
       "loadStage4PortfolioWorkflows"
     ]) expect(appSource).toContain(loader);
     expect(appSource).toContain("portfolioStage4RequestCoordinatorRef");
-    expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.isCurrent(requestToken)");
+    expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.isCurrent(request)");
+    expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId)");
+    expect(appSource).toContain("selectCurrentStage4PortfolioWorkflow(");
+    expect(appSource).toContain("portfolioStage4LatestBatch?.batchId");
+    expect(appSource).toContain("const request = portfolioStage4RequestCoordinatorRef.current.begin(");
+    for (const action of [
+      "runPortfolioBacktestDraft",
+      "recordPortfolioPaperOrders",
+      "reviewPortfolioPaperOrder",
+      "simulatePortfolioPaperOrder",
+      "simulatePortfolioPaperOrderBatch",
+      "recordPortfolioStage4Workflow"
+    ]) {
+      const actionSource = sourceBetween(`const ${action} = useCallback`, "\n  });");
+      expect(actionSource, action).toContain("portfolioStage4RequestCoordinatorRef.current.begin(");
+      expect(actionSource, action).toContain("portfolioStage4RequestCoordinatorRef.current.isCurrent(request)");
+    }
+  });
+
+  test("navigates each Stage 4 review action to its actual evidence region", () => {
+    const actionSource = sourceBetween(
+      "const runPortfolioStage4PrimaryAction = useCallback",
+      "const exportPortfolioBacktestMarkdown = useCallback"
+    );
+    expect(actionSource).toContain('"review-portfolio-risk": ".workflow-portfolio-panel .risk-ledger"');
+    expect(actionSource).toContain('"review-portfolio-orders": ".portfolio-order-approval"');
+    expect(actionSource).toContain('"review-route-risk": ".portfolio-route-risk-template"');
   });
 
   test("stacks the Stage 4 steps at mobile width without horizontal overflow", () => {
