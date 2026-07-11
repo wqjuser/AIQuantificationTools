@@ -103,19 +103,21 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             "liveExecutionBlocked": True,
         }
 
-    def build(self) -> dict:
-        return build_stage4_portfolio_workflow_snapshot(
-            workflow_id="stage4-workflow-1",
-            base_run_id="run-a",
-            portfolio_request=self.portfolio_request,
-            portfolio=self.portfolio,
-            risk_template={"minCashAfter": 10_000, "maxSymbolNotional": 50_000, "maxBatchNotional": 90_000},
-            batch=self.batch,
-            approvals=self.approvals,
-            simulations=self.simulations,
-            state_history=self.state_history,
-            replay=self.replay,
-        )
+    def build(self, **overrides) -> dict:
+        arguments = {
+            "workflow_id": "stage4-workflow-1",
+            "base_run_id": "run-a",
+            "portfolio_request": self.portfolio_request,
+            "portfolio": self.portfolio,
+            "risk_template": {"minCashAfter": 10_000, "maxSymbolNotional": 50_000, "maxBatchNotional": 90_000},
+            "batch": self.batch,
+            "approvals": self.approvals,
+            "simulations": self.simulations,
+            "state_history": self.state_history,
+            "replay": self.replay,
+        }
+        arguments.update(overrides)
+        return build_stage4_portfolio_workflow_snapshot(**arguments)
 
     def assert_rejected(self, mutate) -> None:
         snapshot = copy.deepcopy(self.build())
@@ -172,6 +174,13 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             with self.subTest(mutate=mutate):
                 self.assert_rejected(mutate)
 
+        def exceed_one_by_a_small_amount(value) -> None:
+            value["portfolioRequest"]["legs"][1]["targetWeight"] = 0.45000001
+            value["portfolio"]["legs"][1]["targetWeight"] = 0.45000001
+            value["portfolio"]["cashWeight"] = -0.00000001
+
+        self.assert_rejected(exceed_one_by_a_small_amount)
+
     def test_rejects_broken_batch_approval_simulation_and_replay_bindings(self) -> None:
         mutations = [
             lambda value: value["batch"].update({"baseRunId": "run-b"}),
@@ -183,10 +192,57 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             lambda value: value["replay"]["summary"].update({"filledOrders": 1}),
             lambda value: value["replay"]["summary"].update({"positionCount": 1}),
             lambda value: value["replay"]["orders"].reverse(),
+            lambda value: value["stateHistory"]["orders"].insert(1, None),
+            lambda value: value["replay"]["orders"].insert(1, None),
         ]
         for mutate in mutations:
             with self.subTest(mutate=mutate):
                 self.assert_rejected(mutate)
+
+        nested = ["batch", "approvals", "simulations", "stateHistory", "replay"]
+        conflicts = {
+            "paperOnly": False,
+            "liveTradingAllowed": True,
+            "orderSubmissionEnabled": True,
+            "routeExecuted": True,
+            "liveBlockedBoundary": False,
+        }
+        for evidence in nested:
+            for field, conflict in conflicts.items():
+                with self.subTest(evidence=evidence, field=field):
+                    self.assert_rejected(
+                        lambda value, evidence=evidence, field=field, conflict=conflict: (
+                            value[evidence][0] if isinstance(value[evidence], list) else value[evidence]
+                        ).update({field: conflict})
+                    )
+
+    def test_rejects_invalid_schema_timestamp_and_builder_ids(self) -> None:
+        mutations = [
+            lambda value: value.update({"schemaVersion": True}),
+            lambda value: value.update({"generatedAt": "2026-07-11T10:00:00"}),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.assert_rejected(mutate)
+
+        for field, invalid in (("workflow_id", 123), ("workflow_id", "  "), ("base_run_id", 123), ("base_run_id", "")):
+            with self.subTest(field=field, invalid=invalid):
+                with self.assertRaises(ValueError):
+                    self.build(**{field: invalid})
+
+    def test_rejects_non_finite_values_outside_numeric_fields(self) -> None:
+        for invalid in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(copy=invalid):
+                request = copy.deepcopy(self.portfolio_request)
+                request["name"] = invalid
+                with self.assertRaises(ValueError):
+                    self.build(portfolio_request=request)
+
+            with self.subTest(hash=invalid):
+                snapshot = self.build()
+                snapshot["batch"]["note"] = invalid
+                with self.assertRaises(ValueError):
+                    stage4_portfolio_workflow_hash(snapshot)
 
     def test_rejects_mutated_safety_fields_nested_live_fields_and_extra_keys(self) -> None:
         mutations = [

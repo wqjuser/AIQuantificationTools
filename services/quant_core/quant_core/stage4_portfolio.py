@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from typing import Any
 
 from quant_core.portfolio_backtest import PortfolioBacktestRun, portfolio_backtest_run_to_payload
@@ -47,12 +48,14 @@ def build_stage4_portfolio_workflow_snapshot(
     state_history: dict[str, Any],
     replay: dict[str, Any],
 ) -> dict[str, Any]:
+    workflow_id = _nonempty_string(workflow_id, "workflowId")
+    base_run_id = _nonempty_string(base_run_id, "baseRunId")
     snapshot = {
         "kind": "aiqt.stage4PortfolioWorkflow",
         "schemaVersion": 1,
-        "workflowId": str(workflow_id or "").strip(),
+        "workflowId": workflow_id,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "baseRunId": str(base_run_id or "").strip(),
+        "baseRunId": base_run_id,
         "portfolioRequest": _plain(portfolio_request),
         "portfolio": _plain(
             portfolio_backtest_run_to_payload(portfolio)
@@ -74,15 +77,21 @@ def build_stage4_portfolio_workflow_snapshot(
 def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != _KEYS:
         raise ValueError("stage4 portfolio workflow must contain exact fields")
-    if value.get("kind") != "aiqt.stage4PortfolioWorkflow" or value.get("schemaVersion") != 1:
+    if (
+        value.get("kind") != "aiqt.stage4PortfolioWorkflow"
+        or isinstance(value.get("schemaVersion"), bool)
+        or value.get("schemaVersion") != 1
+    ):
         raise ValueError("stage4 portfolio workflow schema is invalid")
     for field in ("workflowId", "generatedAt", "baseRunId"):
         if not isinstance(value.get(field), str) or not value[field].strip():
             raise ValueError(f"stage4 portfolio workflow {field} is required")
     try:
-        datetime.fromisoformat(value["generatedAt"])
+        generated_at = datetime.fromisoformat(value["generatedAt"])
     except ValueError as error:
         raise ValueError("stage4 portfolio workflow generatedAt is invalid") from error
+    if generated_at.tzinfo is None or generated_at.utcoffset() is None:
+        raise ValueError("stage4 portfolio workflow generatedAt must include a timezone")
     for field, expected in _SAFETY.items():
         if value.get(field) is not expected:
             raise ValueError(f"stage4 portfolio workflow {field} is immutable")
@@ -110,8 +119,8 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
         if not isinstance(result_leg, dict) or result_leg.get("symbol") != symbol or result_leg.get("targetWeight") != weight:
             raise ValueError("stage4 portfolio workflow portfolio legs do not match request")
         weights.append(weight)
-    total_weight = sum(weights)
-    if total_weight > 1.0000001:
+    total_weight = math.fsum(weights)
+    if total_weight > 1:
         raise ValueError("stage4 portfolio workflow leg weights cannot exceed one")
     if abs(_number(portfolio.get("cashWeight"), "portfolio cashWeight") - (1 - total_weight)) > 1e-9:
         raise ValueError("stage4 portfolio workflow cash weight does not match legs")
@@ -126,6 +135,7 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
     if base_run_id not in [leg["runId"] for leg in legs]:
         raise ValueError("stage4 portfolio workflow base run must be a portfolio leg")
     batch = _object(value, "batch")
+    _safety_declarations(batch, "batch")
     batch_id = _required_string(batch, "batchId")
     if batch.get("baseRunId") != base_run_id:
         raise ValueError("stage4 portfolio workflow batch base run does not match")
@@ -148,9 +158,10 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
         _paper_only(simulation, "simulation")
 
     state_history = _bound_evidence(_object(value, "stateHistory"), base_run_id, batch_id, "state history")
+    _safety_declarations(state_history, "state history")
     _paper_only(state_history, "state history")
     state_orders = state_history.get("orders")
-    if not isinstance(state_orders, list) or [row.get("orderId") for row in state_orders if isinstance(row, dict)] != order_ids:
+    if not isinstance(state_orders, list) or not all(isinstance(row, dict) for row in state_orders) or [row.get("orderId") for row in state_orders] != order_ids:
         raise ValueError("stage4 portfolio workflow state history orders do not match")
     state_summary = _nested_object(state_history, "summary", "state history")
     if state_summary.get("orderCount") != len(order_ids) or state_summary.get("filledOrders") != len(simulations):
@@ -162,8 +173,9 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
     if replay.get("baseRunId") != base_run_id:
         raise ValueError("stage4 portfolio workflow replay base run does not match")
     _paper_only(replay, "replay")
+    _safety_declarations(replay, "replay")
     replay_orders = replay.get("orders")
-    if not isinstance(replay_orders, list) or [row.get("orderId") for row in replay_orders if isinstance(row, dict)] != order_ids:
+    if not isinstance(replay_orders, list) or not all(isinstance(row, dict) for row in replay_orders) or [row.get("orderId") for row in replay_orders] != order_ids:
         raise ValueError("stage4 portfolio workflow replay orders do not match")
     replay_summary = _nested_object(replay, "summary", "replay")
     replay_positions = replay.get("positions")
@@ -187,12 +199,19 @@ def stage4_portfolio_workflow_hash(value: Any) -> str:
     if not isinstance(value, dict):
         raise ValueError("stage4 portfolio workflow must be an object")
     payload = {key: item for key, item in value.items() if key != "workflowHash"}
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = _canonical_json(payload)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _plain(value: Any) -> Any:
-    return json.loads(json.dumps(value, ensure_ascii=False))
+    return json.loads(_canonical_json(value))
+
+
+def _canonical_json(value: Any) -> str:
+    try:
+        return json.dumps(value, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as error:
+        raise ValueError("stage4 portfolio workflow must contain canonical JSON values") from error
 
 
 def _object(value: dict[str, Any], field: str) -> dict[str, Any]:
@@ -210,10 +229,13 @@ def _nested_object(value: dict[str, Any], field: str, label: str) -> dict[str, A
 
 
 def _required_string(value: dict[str, Any], field: str) -> str:
-    item = value.get(field)
-    if not isinstance(item, str) or not item.strip():
-        raise ValueError(f"stage4 portfolio workflow {field} is required")
-    return item.strip()
+    return _nonempty_string(value.get(field), field)
+
+
+def _nonempty_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"stage4 portfolio workflow {label} is required")
+    return value.strip()
 
 
 def _number(value: Any, label: str) -> float:
@@ -230,6 +252,8 @@ def _bound_rows(value: Any, base_run_id: str, batch_id: str, label: str) -> list
         raise ValueError(f"stage4 portfolio workflow {label}s are required")
     if any(row.get("baseRunId") != base_run_id or row.get("batchId") != batch_id for row in value):
         raise ValueError(f"stage4 portfolio workflow {label} binding does not match")
+    for row in value:
+        _safety_declarations(row, label)
     return value
 
 
@@ -242,3 +266,8 @@ def _bound_evidence(value: dict[str, Any], base_run_id: str, batch_id: str, labe
 def _paper_only(value: dict[str, Any], label: str) -> None:
     if value.get("paperOnly") is not True or value.get("liveExecutionBlocked") is not True:
         raise ValueError(f"stage4 portfolio workflow {label} must remain paper-only")
+
+
+def _safety_declarations(value: dict[str, Any], label: str) -> None:
+    if any(field in value and value[field] is not expected for field, expected in _SAFETY.items()):
+        raise ValueError(f"stage4 portfolio workflow {label} safety declaration conflicts")
