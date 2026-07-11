@@ -2042,6 +2042,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("verifiedReportSignatures: auditMetadataVerifiedReportSignatures(record.metadata.verifiedReportSignatures)");
     expect(appSource).toContain("function auditMetadataVerifiedReportSignatures(value: unknown): ResearchRunImportAuditEvent[\"verifiedReportSignatures\"]");
     expect(appSource).toContain("const inspectRunExportPackageByRunId = useCallback");
+    expect(appSource).toContain("[inspectedExportArchiveSnapshot, setInspectedExportArchiveSnapshot]");
+    expect(appSource).toContain("await loadAiReviewArchiveImportSnapshot(");
+    expect(appSource).toContain("setInspectedExportArchiveSnapshot({");
+    expect(appSource).toContain("inspectionRequestId !== inspectedExportArchiveRequestIdRef.current");
+    expect(appSource).toContain("pendingImportPackage?.aiReviewArchiveSnapshot ?? inspectedArchiveSnapshot");
     expect(appSource).toContain("return { ok: false, error: errorMessage };");
     expect(appSource).toContain("return { ok: true };");
     expect(appSource).toContain("const inspectResearchRunImportAuditEvent = useCallback");

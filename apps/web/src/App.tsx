@@ -2309,6 +2309,11 @@ export function App() {
     status: "idle"
   });
   const [inspectedExportPackage, setInspectedExportPackage] = useState<ResearchRunExportPackage | null>(null);
+  const [inspectedExportArchiveSnapshot, setInspectedExportArchiveSnapshot] = useState<{
+    aiReviewArchiveSnapshot: AiReviewArchiveImportSnapshot;
+    exportPackage: ResearchRunExportPackage;
+    runId: string;
+  } | null>(null);
   const [pendingImportPackage, setPendingImportPackage] = useState<{
     aiReviewArchiveSnapshot: AiReviewArchiveImportSnapshot;
     exportPackage: ResearchRunExportPackage;
@@ -2445,6 +2450,7 @@ export function App() {
   const portfolioPaperOrderAuditRequestIdRef = useRef(0);
   const executionAdapterPaperExecutionAuditRequestIdRef = useRef(0);
   const researchRunImportAuditRequestIdRef = useRef(0);
+  const inspectedExportArchiveRequestIdRef = useRef(0);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
@@ -2789,16 +2795,23 @@ export function App() {
     0,
     AUDIT_SIGNING_KEY_ROTATION_EVENTS_PAGE_SIZE
   );
+  const inspectedArchiveSnapshot =
+    inspectedExportArchiveSnapshot?.exportPackage === inspectedExportPackage
+      && inspectedExportArchiveSnapshot.runId === inspectedExportPackage.researchRun.runId
+      ? inspectedExportArchiveSnapshot.aiReviewArchiveSnapshot
+      : undefined;
+  const researchRunImportArchiveSnapshot =
+    pendingImportPackage?.aiReviewArchiveSnapshot ?? inspectedArchiveSnapshot;
   const researchRunImportDiffRows = buildResearchRunImportDiffRows({
-    aiReviewArchiveReadbackErrors: pendingImportPackage?.aiReviewArchiveSnapshot.readbackErrors,
+    aiReviewArchiveReadbackErrors: researchRunImportArchiveSnapshot?.readbackErrors,
     aiReviewDecisions:
-      pendingImportPackage?.aiReviewArchiveSnapshot.aiReviewDecisions ?? aiReviewStage3Decisions,
+      researchRunImportArchiveSnapshot?.aiReviewDecisions ?? aiReviewStage3Decisions,
     aiReviewRecords: activeAiReviewRunRecords,
     authoritativeAiReviewRecords:
-      pendingImportPackage?.aiReviewArchiveSnapshot.authoritativeAiReviewRecords ?? aiReviewStage3History,
+      researchRunImportArchiveSnapshot?.authoritativeAiReviewRecords ?? aiReviewStage3History,
     exportPackage: pendingImportPackage?.exportPackage ?? inspectedExportPackage,
     legacyAiReviewIds:
-      pendingImportPackage?.aiReviewArchiveSnapshot.legacyAiReviewIds
+      researchRunImportArchiveSnapshot?.legacyAiReviewIds
       ?? aiReviewStage3LegacyHistory.map((review) => review.aiReviewId),
     paperExecution: activePaperExecutionRecord,
     workspace
@@ -7500,9 +7513,16 @@ export function App() {
   }, [...[auditEvidenceSummary, persistAuditEvidenceReportEvent, quantCoreBaseUrl, runHistory], visibleStrategyExperimentActive]);
 
   const inspectRunExportPackageByRunId = useCallback(async (runId: string): Promise<ResearchRunExportPackageInspectionResult> => {
+    const inspectionRequestId = ++inspectedExportArchiveRequestIdRef.current;
     setIsInspectingExportPackage(true);
+    setPendingImportPackage(null);
+    setInspectedExportPackage(null);
+    setInspectedExportArchiveSnapshot(null);
     try {
       const result = await loadResearchRunExport(quantCoreBaseUrl, runId);
+      if (inspectionRequestId !== inspectedExportArchiveRequestIdRef.current) {
+        return { ok: false, error: "Research run export inspect superseded" };
+      }
       if (result.source === "fallback" || !result.exportPackage) {
         const errorMessage = result.error ?? `Research run export inspect failed for ${runId}`;
         setInspectedExportPackage(null);
@@ -7514,8 +7534,21 @@ export function App() {
         return { ok: false, error: errorMessage };
       }
 
+      const aiReviewArchiveSnapshot = await loadAiReviewArchiveImportSnapshot(
+        quantCoreBaseUrl,
+        result.exportPackage
+      );
+      if (inspectionRequestId !== inspectedExportArchiveRequestIdRef.current) {
+        return { ok: false, error: "Research run export inspect superseded" };
+      }
+
       setPendingImportPackage(null);
       setInspectedExportPackage(result.exportPackage);
+      setInspectedExportArchiveSnapshot({
+        aiReviewArchiveSnapshot,
+        exportPackage: result.exportPackage,
+        runId
+      });
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Research run export package loaded",
@@ -7524,9 +7557,11 @@ export function App() {
       setActiveWorkAreaId("audit");
       return { ok: true };
     } finally {
-      setIsInspectingExportPackage(false);
+      if (inspectionRequestId === inspectedExportArchiveRequestIdRef.current) {
+        setIsInspectingExportPackage(false);
+      }
     }
-  }, []);
+  }, [quantCoreBaseUrl]);
 
   const copyResearchRunImportAuditEvidenceAnchor = useCallback(async (event: ResearchRunImportAuditEvent) => {
     const anchor = buildResearchRunImportAuditEvidenceUrl(event);
@@ -8234,6 +8269,8 @@ export function App() {
 
   const importRunExportFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
+      inspectedExportArchiveRequestIdRef.current += 1;
+      setIsInspectingExportPackage(false);
       const input = event.currentTarget;
       const file = input.files?.[0];
       input.value = "";
@@ -8258,6 +8295,7 @@ export function App() {
           );
           setPendingImportPackage(null);
           setInspectedExportPackage(null);
+          setInspectedExportArchiveSnapshot(null);
           setWorkspaceState((current) => ({
             ...current,
             statusLabel: "Research run import failed",
@@ -8293,6 +8331,7 @@ export function App() {
         );
         setPendingImportPackage({ aiReviewArchiveSnapshot, exportPackage, fileName: file.name });
         setInspectedExportPackage(exportPackage);
+        setInspectedExportArchiveSnapshot(null);
         setActiveWorkAreaId("audit");
         setWorkspaceState((current) => ({
           ...current,
@@ -8312,6 +8351,7 @@ export function App() {
         );
         setPendingImportPackage(null);
         setInspectedExportPackage(null);
+        setInspectedExportArchiveSnapshot(null);
         setWorkspaceState((current) => ({
           ...current,
           statusLabel: "Research run import failed",
