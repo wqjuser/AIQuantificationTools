@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 import unittest
@@ -13,6 +14,10 @@ from quant_core.stage4_portfolio import (
     build_stage4_portfolio_workflow_snapshot,
     stage4_portfolio_workflow_hash,
     validate_stage4_portfolio_workflow_snapshot,
+)
+from quant_core.execution import (
+    build_portfolio_paper_order_replay,
+    portfolio_paper_order_payload_to_simulation,
 )
 
 
@@ -65,26 +70,12 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             {"baseRunId": "run-a", "batchId": "batch-1", "orderId": "order-a", "approved": True},
             {"baseRunId": "run-a", "batchId": "batch-1", "orderId": "order-b", "approved": True},
         ]
-        self.simulations = [
-            {
-                "baseRunId": "run-a",
-                "batchId": "batch-1",
-                "orderId": "order-a",
-                "orderState": "filled",
-                "fillStatus": "filled",
-                "paperOnly": True,
-                "liveExecutionBlocked": True,
-            },
-            {
-                "baseRunId": "run-a",
-                "batchId": "batch-1",
-                "orderId": "order-b",
-                "orderState": "filled",
-                "fillStatus": "filled",
-                "paperOnly": True,
-                "liveExecutionBlocked": True,
-            },
-        ]
+        self.risk_template = {
+            "minCashAfter": 10_000,
+            "maxSymbolNotional": 50_000,
+            "maxBatchNotional": 90_000,
+        }
+        self.simulations = [self.simulation("order-a", "600000", 100, 100, 1), self.simulation("order-b", "000300", 50, 400, 2)]
         self.state_history = {
             "baseRunId": "run-a",
             "batchId": "batch-1",
@@ -93,12 +84,47 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             "paperOnly": True,
             "liveExecutionBlocked": True,
         }
-        self.replay = {
+        self.replay = build_portfolio_paper_order_replay(
+            [portfolio_paper_order_payload_to_simulation(row) for row in self.simulations],
+            base_run_id="run-a",
+            initial_cash=100_000,
+            generated_at=datetime(2026, 7, 11, 8, 5, tzinfo=timezone.utc),
+        )
+
+    def simulation(self, order_id, symbol, quantity, fill_price, minute) -> dict:
+        notional = quantity * fill_price
+        checks = [
+            {"id": "cash_after_below_minimum", "passed": True, "limit": 10_000},
+            {"id": "insufficient_symbol_position", "passed": True, "limit": 0},
+            {"id": "symbol_notional_limit_exceeded", "passed": True, "limit": 50_000},
+            {"id": "batch_notional_limit_exceeded", "passed": True, "limit": 90_000},
+        ]
+        return {
+            "simulationId": f"simulation-{order_id}",
             "baseRunId": "run-a",
-            "account": {"cash": 20_000, "positions": {"600000": 100, "000300": 50}, "equity": 100_000},
-            "positions": [{"symbol": "000300"}, {"symbol": "600000"}],
-            "orders": [{"orderId": "order-a"}, {"orderId": "order-b"}],
-            "summary": {"filledOrders": 2, "positionCount": 2, "warnings": []},
+            "batchId": "batch-1",
+            "orderId": order_id,
+            "simulatedAt": datetime(2026, 7, 11, 8, minute, tzinfo=timezone.utc).isoformat(),
+            "mode": "portfolio_paper_order_simulation",
+            "symbol": symbol,
+            "sourceRunId": "run-a" if symbol == "600000" else "run-b",
+            "side": "buy",
+            "quantity": quantity,
+            "fillPrice": fill_price,
+            "notionalValue": notional,
+            "orderState": "filled",
+            "fillStatus": "filled",
+            "reason": "Paper fill.",
+            "approvedBy": "local-operator",
+            "routeRisk": {
+                "status": "passed",
+                "baseRunId": "run-a",
+                "batchId": "batch-1",
+                "orderId": order_id,
+                "limits": {"initialCash": 100_000, **self.risk_template},
+                "checks": checks,
+                "blockedReasons": [],
+            },
             "paperOnly": True,
             "liveExecutionBlocked": True,
         }
@@ -109,7 +135,7 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             "base_run_id": "run-a",
             "portfolio_request": self.portfolio_request,
             "portfolio": self.portfolio,
-            "risk_template": {"minCashAfter": 10_000, "maxSymbolNotional": 50_000, "maxBatchNotional": 90_000},
+            "risk_template": self.risk_template,
             "batch": self.batch,
             "approvals": self.approvals,
             "simulations": self.simulations,
@@ -180,6 +206,53 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
             value["portfolio"]["cashWeight"] = -0.00000001
 
         self.assert_rejected(exceed_one_by_a_small_amount)
+
+    def test_rejects_rehashed_request_portfolio_identity_mutations(self) -> None:
+        mutations = [
+            lambda value: value["portfolio"].update({"name": "Other portfolio"}),
+            lambda value: value["portfolio"].update({"initialCash": 99_999}),
+            lambda value: value["portfolio"].update({"market": "us"}),
+            lambda value: value["portfolio"].update({"timeframe": "1m"}),
+            lambda value: value["portfolio"]["legs"][0].update({"symbol": "000001"}),
+            lambda value: value["portfolio"]["legs"][0].update({"targetWeight": 0.5}),
+            lambda value: value["portfolio"].update({"cashWeight": 0.2}),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.assert_rejected(mutate)
+
+    def test_rejects_rehashed_route_risk_mutations(self) -> None:
+        mutations = [
+            lambda value: value["simulations"][0].pop("routeRisk"),
+            lambda value: value["simulations"][0]["routeRisk"].update({"status": "blocked"}),
+            lambda value: value["simulations"][0]["routeRisk"]["limits"].update({"initialCash": 90_000}),
+            lambda value: value["simulations"][0]["routeRisk"]["limits"].update({"minCashAfter": 9_000}),
+            lambda value: value["simulations"][0]["routeRisk"]["limits"].update({"maxSymbolNotional": 40_000}),
+            lambda value: value["simulations"][0]["routeRisk"]["limits"].update({"maxBatchNotional": 80_000}),
+            lambda value: value["simulations"][0]["routeRisk"]["checks"].append(
+                copy.deepcopy(value["simulations"][0]["routeRisk"]["checks"][0])
+            ),
+            lambda value: value["simulations"][0]["routeRisk"]["checks"][0].update({"limit": 9_000}),
+            lambda value: value["simulations"][0]["routeRisk"]["checks"][0].update({"passed": False}),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.assert_rejected(mutate)
+
+    def test_rejects_rehashed_replay_financial_mutations(self) -> None:
+        mutations = [
+            lambda value: value["replay"]["account"].update({"cash": value["replay"]["account"]["cash"] + 1}),
+            lambda value: value["replay"]["account"].update({"equity": value["replay"]["account"]["equity"] + 1}),
+            lambda value: value["replay"]["account"]["positions"].update({"600000": 101}),
+            lambda value: value["replay"]["positions"][0].update(
+                {"quantity": value["replay"]["positions"][0]["quantity"] + 1}
+            ),
+            lambda value: value["replay"]["summary"].update({"buyNotional": 1}),
+            lambda value: value["replay"]["orders"][0].update({"cashAfter": 1}),
+        ]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                self.assert_rejected(mutate)
 
     def test_rejects_broken_batch_approval_simulation_and_replay_bindings(self) -> None:
         mutations = [
@@ -257,10 +330,13 @@ class Stage4PortfolioWorkflowSnapshotTest(unittest.TestCase):
         single["approvals"] = single["approvals"][:1]
         single["simulations"] = single["simulations"][:1]
         single["stateHistory"]["orders"] = single["stateHistory"]["orders"][:1]
-        single["replay"]["orders"] = single["replay"]["orders"][:1]
-        single["replay"]["positions"] = single["replay"]["positions"][:1]
+        single["replay"] = build_portfolio_paper_order_replay(
+            [portfolio_paper_order_payload_to_simulation(single["simulations"][0])],
+            base_run_id="run-a",
+            initial_cash=100_000,
+            generated_at=datetime(2026, 7, 11, 8, 5, tzinfo=timezone.utc),
+        )
         single["stateHistory"]["summary"].update({"orderCount": 1, "filledOrders": 1, "liveBlockedEvents": 1})
-        single["replay"]["summary"].update({"filledOrders": 1, "positionCount": 1})
 
         for evidence, field in fields:
             for baseline, invalid in ((single, True), (self.build(), 2.0)):

@@ -23,6 +23,7 @@ class QuantCoreContractTest(unittest.TestCase):
             PortfolioPaperOrderSimulation,
             PortfolioPaperOrderSimulationStore,
             PortfolioPaperOrderStore,
+            build_portfolio_paper_order_simulation_route_risk,
         )
         from quant_core.runs import ResearchRunAudit, ResearchRunStore
 
@@ -107,31 +108,44 @@ class QuantCoreContractTest(unittest.TestCase):
                     reason="Paper-only approval.",
                 )
             )
+        existing_simulations = []
         for index, (order_id, symbol, source_run_id, quantity, price) in enumerate(
             ((order_ids[0], "600000", "run-a", 100, 100), (order_ids[1], "000001", "run-b", 50, 400))
         ):
-            simulation_store.record(
-                PortfolioPaperOrderSimulation(
-                    simulation_id=f"simulation-{order_id}",
+            simulation = PortfolioPaperOrderSimulation(
+                simulation_id=f"simulation-{order_id}",
+                base_run_id="run-a",
+                batch_id=batch.batch_id,
+                order_id=order_id,
+                simulated_at=created_at + timedelta(
+                    minutes=3 if same_time_reverse_lexical_orders else index + 3
+                ),
+                mode="portfolio_paper_order_simulation",
+                symbol=symbol,
+                source_run_id=source_run_id,
+                side="buy",
+                quantity=quantity,
+                fill_price=price,
+                notional_value=quantity * price,
+                order_state="filled",
+                fill_status="filled",
+                reason="Paper fill.",
+                approved_by="local-operator",
+                route_risk=build_portfolio_paper_order_simulation_route_risk(
+                    batch.orders[index],
                     base_run_id="run-a",
                     batch_id=batch.batch_id,
-                    order_id=order_id,
-                    simulated_at=created_at + timedelta(
-                        minutes=3 if same_time_reverse_lexical_orders else index + 3
-                    ),
-                    mode="portfolio_paper_order_simulation",
-                    symbol=symbol,
-                    source_run_id=source_run_id,
-                    side="buy",
-                    quantity=quantity,
-                    fill_price=price,
-                    notional_value=quantity * price,
-                    order_state="filled",
-                    fill_status="filled",
-                    reason="Paper fill.",
-                    approved_by="local-operator",
-                )
+                    existing_simulations=existing_simulations,
+                    route_risk={
+                        "initialCash": 100_000,
+                        "minCashAfter": 10_000,
+                        "maxSymbolNotional": 50_000,
+                        "maxBatchNotional": 90_000,
+                    },
+                ),
             )
+            simulation_store.record(simulation)
+            existing_simulations.append(simulation)
         return {
             "run_store": run_store,
             "batch_store": batch_store,
@@ -4668,6 +4682,18 @@ class QuantCoreContractTest(unittest.TestCase):
                 value["workflow"]["portfolio"]["legs"][1].update({"symbol": "600000"}),
                 value["workflow"]["batch"]["orders"][1].update({"symbol": "600000"}),
             ),
+            "portfolio request name identity": lambda value: value["workflow"]["portfolio"].update(
+                {"name": "Other portfolio"}
+            ),
+            "portfolio request cash identity": lambda value: value["workflow"]["portfolio"].update(
+                {"initialCash": 99_999}
+            ),
+            "route risk limit": lambda value: value["workflow"]["simulations"][0]["routeRisk"][
+                "limits"
+            ].update({"maxBatchNotional": 80_000}),
+            "route risk check": lambda value: value["workflow"]["simulations"][0]["routeRisk"][
+                "checks"
+            ][0].update({"passed": False}),
             "risk duplicate identity": lambda value: value["workflow"]["portfolio"][
                 "preTradeRiskChecks"
             ].append(copy.deepcopy(value["workflow"]["portfolio"]["preTradeRiskChecks"][0])),
@@ -4779,6 +4805,7 @@ class QuantCoreContractTest(unittest.TestCase):
             workflow["batch"]["orders"][index]["orderId"] = order_id
             workflow["approvals"][index]["orderId"] = order_id
             workflow["simulations"][index]["orderId"] = order_id
+            workflow["simulations"][index]["routeRisk"]["orderId"] = order_id
             workflow["stateHistory"]["orders"][index]["orderId"] = order_id
             workflow["replay"]["orders"][index]["orderId"] = order_id
         workflow["workflowHash"] = docker_smoke._quant_core_validator(
@@ -19965,6 +19992,37 @@ class QuantCoreContractTest(unittest.TestCase):
                             payload = json.loads(response.read().decode("utf-8"))
                             self.assertEqual(response.status, 400)
                             self.assertEqual(payload["detail"], "stage4_portfolio_workflows_count_invalid")
+                    from quant_core.stage4_portfolio import stage4_portfolio_workflow_hash
+
+                    semantic_mutations = {
+                        "portfolio identity": lambda workflow: workflow["portfolio"].update(
+                            {"name": "Other portfolio"}
+                        ),
+                        "route risk": lambda workflow: workflow["simulations"][0]["routeRisk"][
+                            "limits"
+                        ].update({"minCashAfter": 9_999}),
+                        "replay financials": lambda workflow: workflow["replay"]["account"].update(
+                            {"cash": workflow["replay"]["account"]["cash"] + 1}
+                        ),
+                    }
+                    for label, mutate in semantic_mutations.items():
+                        with self.subTest(semantic=label):
+                            tampered = copy.deepcopy(exported)
+                            tampered.pop("integrity")
+                            workflow = tampered["auditEvents"][0]["metadata"]["snapshot"]
+                            mutate(workflow)
+                            workflow["workflowHash"] = stage4_portfolio_workflow_hash(workflow)
+                            body = json.dumps(tampered).encode("utf-8")
+                            connection.request(
+                                "POST",
+                                "/api/research/runs/import",
+                                body=body,
+                                headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                            )
+                            response = connection.getresponse()
+                            payload = json.loads(response.read().decode("utf-8"))
+                            self.assertEqual(response.status, 400)
+                            self.assertIn("stage4 portfolio workflow", payload["detail"])
                     persist.assert_not_called()
             finally:
                 connection.close()

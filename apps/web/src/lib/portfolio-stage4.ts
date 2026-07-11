@@ -251,7 +251,9 @@ export function isStage4PortfolioWorkflow(value: unknown): value is Stage4Portfo
     nonempty(leg.runId) && nonempty(leg.symbol) && leg.market === workflow.portfolio.market &&
     leg.timeframe === workflow.portfolio.timeframe && positive(leg.targetWeight))) return false;
   const totalWeight = legs.reduce((sum, leg) => sum + leg.targetWeight, 0);
-  if (totalWeight > 1 || Math.abs(workflow.portfolio.cashWeight - (1 - totalWeight)) > 1e-9 ||
+  if (workflow.portfolioRequest.name !== workflow.portfolio.name ||
+    workflow.portfolioRequest.initialCash !== workflow.portfolio.initialCash ||
+    totalWeight > 1 || Math.abs(workflow.portfolio.cashWeight - (1 - totalWeight)) > 1e-9 ||
     workflow.portfolio.legs.length !== legs.length || !legs.some((leg) => leg.runId === workflow.baseRunId) ||
     !workflow.portfolio.legs.every((leg, index) => leg.symbol === legs[index].symbol && leg.targetWeight === legs[index].targetWeight)) return false;
 
@@ -260,7 +262,8 @@ export function isStage4PortfolioWorkflow(value: unknown): value is Stage4Portfo
     workflow.batch.baseRunId !== workflow.baseRunId || !orderIds.length || new Set(orderIds).size !== orderIds.length ||
     !boundRows(workflow.approvals, orderIds, workflow.baseRunId, workflow.batch.batchId, (row) => row.approved === true) ||
     !boundRows(workflow.simulations, orderIds, workflow.baseRunId, workflow.batch.batchId,
-      (row) => row.orderState === "filled" && row.fillStatus === "filled" && row.paperOnly === true && row.liveExecutionBlocked === true)) return false;
+      (row) => row.orderState === "filled" && row.fillStatus === "filled" && row.paperOnly === true &&
+        row.liveExecutionBlocked === true && stage4RouteRiskMatches(row, workflow))) return false;
 
   const history = workflow.stateHistory;
   const replay = workflow.replay;
@@ -383,6 +386,37 @@ function boundRows<T extends { orderId: string; baseRunId: string; batchId: stri
 
 function integerEquals(value: unknown, expected: number): boolean {
   return Number.isInteger(value) && value === expected;
+}
+
+function stage4RouteRiskMatches(
+  simulation: PortfolioPaperOrderSimulation,
+  workflow: Stage4PortfolioWorkflow
+): boolean {
+  const routeRisk = simulation.routeRisk;
+  if (!isRecord(routeRisk)) return false;
+  const limits = routeRisk.limits;
+  const checks = routeRisk.checks;
+  if (routeRisk.status !== "passed" || routeRisk.baseRunId !== simulation.baseRunId ||
+    routeRisk.batchId !== simulation.batchId || routeRisk.orderId !== simulation.orderId ||
+    !Array.isArray(routeRisk.blockedReasons) || routeRisk.blockedReasons.length !== 0 || !isRecord(limits) ||
+    !Array.isArray(checks)) return false;
+  const expected = {
+    initialCash: workflow.portfolioRequest.initialCash,
+    minCashAfter: workflow.riskTemplate.minCashAfter,
+    maxSymbolNotional: workflow.riskTemplate.maxSymbolNotional,
+    maxBatchNotional: workflow.riskTemplate.maxBatchNotional
+  };
+  if (!hasExactKeys(limits, Object.keys(expected)) ||
+    Object.entries(expected).some(([key, limit]) => limits[key] !== limit)) return false;
+  const checkLimits: Record<string, number> = {
+    cash_after_below_minimum: expected.minCashAfter,
+    symbol_notional_limit_exceeded: expected.maxSymbolNotional,
+    batch_notional_limit_exceeded: expected.maxBatchNotional
+  };
+  return Object.entries(checkLimits).every(([id, limit]) => {
+    const matching = checks.filter((check: unknown) => isRecord(check) && check.id === id);
+    return matching.length === 1 && isRecord(matching[0]) && matching[0].passed === true && matching[0].limit === limit;
+  });
 }
 
 function isPagination(value: unknown): value is { limit: number; total: number } {

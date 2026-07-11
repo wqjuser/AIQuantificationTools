@@ -6,6 +6,10 @@ import json
 import math
 from typing import Any
 
+from quant_core.execution import (
+    build_portfolio_paper_order_replay,
+    portfolio_paper_order_payload_to_simulation,
+)
 from quant_core.portfolio_backtest import PortfolioBacktestRun, portfolio_backtest_run_to_payload
 
 
@@ -106,6 +110,12 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
         raise ValueError("stage4 portfolio workflow portfolio legs do not match request")
     market = _required_string(portfolio, "market")
     timeframe = _required_string(portfolio, "timeframe")
+    if (
+        request.get("name") != portfolio.get("name")
+        or _number(request.get("initialCash"), "portfolio request initialCash")
+        != _number(portfolio.get("initialCash"), "portfolio initialCash")
+    ):
+        raise ValueError("stage4 portfolio workflow portfolio identity does not match request")
     weights = []
     for index, leg in enumerate(legs):
         if _required_string(leg, "market") != market or _required_string(leg, "timeframe") != timeframe:
@@ -156,6 +166,7 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
         if simulation.get("orderState") != "filled" or simulation.get("fillStatus") != "filled":
             raise ValueError("stage4 portfolio workflow simulations must be filled")
         _paper_only(simulation, "simulation")
+        _route_risk(simulation, request, risk_template)
 
     state_history = _bound_evidence(_object(value, "stateHistory"), base_run_id, batch_id, "state history")
     _safety_declarations(state_history, "state history")
@@ -187,6 +198,17 @@ def validate_stage4_portfolio_workflow_snapshot(value: Any) -> dict[str, Any]:
         raise ValueError("stage4 portfolio workflow replay warnings are invalid")
     for field in ("cash", "equity"):
         _number(account.get(field), f"replay account {field}")
+    try:
+        expected_replay = build_portfolio_paper_order_replay(
+            [portfolio_paper_order_payload_to_simulation(simulation) for simulation in simulations],
+            base_run_id=base_run_id,
+            initial_cash=_number(request.get("initialCash"), "portfolio request initialCash"),
+            generated_at=datetime.fromisoformat(_required_string(replay, "generatedAt")),
+        )
+    except ValueError as error:
+        raise ValueError("stage4 portfolio workflow replay cannot be reconstructed") from error
+    if _canonical_json(replay) != _canonical_json(expected_replay):
+        raise ValueError("stage4 portfolio workflow replay does not match simulations")
 
     workflow_hash = value.get("workflowHash")
     if not isinstance(workflow_hash, str) or len(workflow_hash) != 64 or workflow_hash != stage4_portfolio_workflow_hash(value):
@@ -249,6 +271,54 @@ def _number(value: Any, label: str) -> float:
 def _count(value: dict[str, Any], field: str, expected: int, label: str) -> None:
     if type(value.get(field)) is not int or value[field] != expected:
         raise ValueError(f"stage4 portfolio workflow {label} {field} does not match")
+
+
+def _route_risk(
+    simulation: dict[str, Any],
+    request: dict[str, Any],
+    risk_template: dict[str, Any],
+) -> None:
+    route_risk = simulation.get("routeRisk")
+    if not isinstance(route_risk, dict) or route_risk.get("status") != "passed":
+        raise ValueError("stage4 portfolio workflow filled simulation route risk must pass")
+    if (
+        route_risk.get("baseRunId") != simulation.get("baseRunId")
+        or route_risk.get("batchId") != simulation.get("batchId")
+        or route_risk.get("orderId") != simulation.get("orderId")
+        or route_risk.get("blockedReasons") != []
+    ):
+        raise ValueError("stage4 portfolio workflow simulation route risk binding does not match")
+    limits = _nested_object(route_risk, "limits", "simulation route risk")
+    expected_limits = {
+        "initialCash": request.get("initialCash"),
+        "minCashAfter": risk_template.get("minCashAfter"),
+        "maxSymbolNotional": risk_template.get("maxSymbolNotional"),
+        "maxBatchNotional": risk_template.get("maxBatchNotional"),
+    }
+    if set(limits) != set(expected_limits) or any(
+        _number(limits.get(field), f"route risk {field}")
+        != _number(expected, f"expected route risk {field}")
+        for field, expected in expected_limits.items()
+    ):
+        raise ValueError("stage4 portfolio workflow simulation route risk limits do not match")
+    checks = route_risk.get("checks")
+    expected_checks = {
+        "cash_after_below_minimum": expected_limits["minCashAfter"],
+        "symbol_notional_limit_exceeded": expected_limits["maxSymbolNotional"],
+        "batch_notional_limit_exceeded": expected_limits["maxBatchNotional"],
+    }
+    if not isinstance(checks, list) or not all(isinstance(check, dict) for check in checks):
+        raise ValueError("stage4 portfolio workflow simulation route risk checks are invalid")
+    by_id = {check.get("id"): check for check in checks if check.get("id") in expected_checks}
+    if len(by_id) != len(expected_checks) or sum(check.get("id") in expected_checks for check in checks) != len(expected_checks):
+        raise ValueError("stage4 portfolio workflow simulation route risk checks must be unique")
+    if any(
+        check.get("passed") is not True
+        or _number(check.get("limit"), f"route risk {check_id} limit")
+        != _number(expected_checks[check_id], f"expected route risk {check_id} limit")
+        for check_id, check in by_id.items()
+    ):
+        raise ValueError("stage4 portfolio workflow simulation route risk checks do not match")
 
 
 def _bound_rows(value: Any, base_run_id: str, batch_id: str, label: str) -> list[dict[str, Any]]:

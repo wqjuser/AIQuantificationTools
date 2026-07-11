@@ -50,6 +50,20 @@ function workflow() {
     fillStatus: "filled" as const,
     reason: "Paper fill.",
     approvedBy: "operator",
+    routeRisk: {
+      status: "passed",
+      baseRunId: "run-a",
+      batchId: "batch-1",
+      orderId,
+      limits: { initialCash: 100_000, minCashAfter: 10_000, maxSymbolNotional: 50_000, maxBatchNotional: 90_000 },
+      checks: [
+        { id: "cash_after_below_minimum", passed: true, limit: 10_000 },
+        { id: "insufficient_symbol_position", passed: true, limit: 0 },
+        { id: "symbol_notional_limit_exceeded", passed: true, limit: 50_000 },
+        { id: "batch_notional_limit_exceeded", passed: true, limit: 90_000 }
+      ],
+      blockedReasons: []
+    },
     paperOnly: true,
     liveExecutionBlocked: true
   });
@@ -192,9 +206,14 @@ describe("Stage 4 portfolio workflow contract", () => {
       (value) => { value.extra = true; },
       (value) => { value.portfolioRequest.legs = value.portfolioRequest.legs.slice(0, 1); },
       (value) => { value.portfolio.preTradeRiskChecks = []; },
+      (value) => { value.portfolio.name = "Other portfolio"; },
+      (value) => { value.portfolio.initialCash = 99_999; },
       (value) => { value.approvals[0].approved = false; },
       (value) => { value.approvals[0].liveTradingAllowed = true; },
       (value) => { value.simulations[0].liveExecutionBlocked = false; },
+      (value) => { value.simulations[0].routeRisk.status = "blocked"; },
+      (value) => { value.simulations[0].routeRisk.limits.minCashAfter = 9_999; },
+      (value) => { value.simulations[0].routeRisk.checks[0].passed = false; },
       (value) => { value.stateHistory.summary.filledOrders = 1; },
       (value) => { value.replay.summary.positionCount = 1; },
       (value) => { value.workflowHash = "a".repeat(63); },
