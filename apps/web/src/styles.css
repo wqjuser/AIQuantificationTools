@@ -11771,6 +11771,7 @@ em {
 
 .terminal-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-content: start;
   min-width: 0;
@@ -14107,7 +14108,12 @@ em {
 }
 
 .paper-blotter {
+  min-width: 0;
   margin-top: 12px;
+}
+
+.paper-blotter-table {
+  min-width: 0;
 }
 
 .paper-blotter-title {
@@ -17582,6 +17588,31 @@ button.ai-review-record {
   .backtest-row,
   .workflow-artifact-grid,
   .workflow-canvas-large {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-blotter-row.portfolio-order-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-order-approval,
+  .portfolio-order-approval-list,
+  .portfolio-order-simulation,
+  .portfolio-order-simulation-list,
+  .portfolio-paper-ops-queue,
+  .portfolio-paper-ops-table {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .portfolio-order-approval-row,
+  .portfolio-order-simulation-row,
+  .portfolio-paper-ops-summary,
+  .portfolio-paper-ops-row {
+    grid-template-columns: 1fr;
+  }
+
+  .promotion-queue [class*="-evidence-row"] {
     grid-template-columns: 1fr;
   }
 

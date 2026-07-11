@@ -1259,21 +1259,17 @@ _STAGE5_SAFETY = {
 
 def build_stage5_shadow_acceptance_manifest(
     *,
-    workflow: dict[str, Any],
-    first_attempt: dict[str, Any],
-    recovered_attempt: dict[str, Any],
-    idempotent_attempt: dict[str, Any],
+    failure_drills: list[dict[str, Any]],
+    restart_readback: dict[str, Any],
     export_readback: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "kind": "aiqt.stage5ShadowExecutionAcceptance",
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "status": "passed",
-        "workflow": workflow,
-        "firstAttempt": first_attempt,
-        "recoveredAttempt": recovered_attempt,
-        "idempotentAttempt": idempotent_attempt,
+        "failureDrills": failure_drills,
+        "restartReadback": restart_readback,
         "exportReadback": export_readback,
         **_STAGE5_SAFETY,
     }
@@ -1282,14 +1278,14 @@ def build_stage5_shadow_acceptance_manifest(
 def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
     payload = _require_dict(manifest, "Stage 5 shadow acceptance manifest")
     if set(payload) != {
-        "kind", "schemaVersion", "generatedAt", "status", "workflow", "firstAttempt",
-        "recoveredAttempt", "idempotentAttempt", "exportReadback", *_STAGE5_SAFETY,
+        "kind", "schemaVersion", "generatedAt", "status", "failureDrills",
+        "restartReadback", "exportReadback", *_STAGE5_SAFETY,
     }:
         raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: fields are invalid")
     if (
         payload["kind"] != "aiqt.stage5ShadowExecutionAcceptance"
         or type(payload["schemaVersion"]) is not int
-        or payload["schemaVersion"] != 1
+        or payload["schemaVersion"] != 2
         or payload["status"] != "passed"
         or any(payload[field] is not expected for field, expected in _STAGE5_SAFETY.items())
     ):
@@ -1300,40 +1296,90 @@ def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
     )
     validator = _quant_core_validator("stage5_shadow", "validate_stage5_shadow_session")
     builder = _quant_core_validator("stage5_shadow", "build_stage5_shadow_session")
+    failure_drills = payload["failureDrills"]
+    failure_modes = (
+        "none", "timeout_once", "adapter_rejected", "reconciliation_mismatch", "kill_switch"
+    )
+    if not isinstance(failure_drills, list) or [row.get("failureMode") for row in failure_drills if isinstance(row, dict)] != list(failure_modes):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: failure drills are invalid")
+    expected_statuses = {
+        "none": ("reconciled", "reconciled", False),
+        "timeout_once": ("recoverable_failure", "reconciled", True),
+        "adapter_rejected": ("blocked", "blocked", False),
+        "reconciliation_mismatch": ("blocked", "blocked", False),
+        "kill_switch": ("blocked", "blocked", False),
+    }
+    workflows = []
+    sessions = []
     try:
-        workflow = workflow_validator(payload["workflow"])
-        first = validator(payload["firstAttempt"])
-        recovered = validator(payload["recoveredAttempt"])
-        idempotent = validator(payload["idempotentAttempt"])
-        rebuilt_first = builder(
-            workflow,
-            failure_mode=first["failureMode"],
-            attempt=first["attempt"],
-            generated_at=first["generatedAt"],
-        )
-        rebuilt_recovered = builder(
-            workflow,
-            failure_mode=recovered["failureMode"],
-            attempt=recovered["attempt"],
-            generated_at=recovered["generatedAt"],
-        )
-    except (TypeError, ValueError) as error:
-        raise RuntimeError(f"Invalid Stage 5 shadow acceptance manifest: session is invalid: {error}") from error
+        for drill in failure_drills:
+            if set(drill) != {"failureMode", "workflow", "firstSession", "retrySession", "retryCreated"}:
+                raise ValueError("failure drill fields are invalid")
+            failure_mode = drill["failureMode"]
+            workflow = workflow_validator(drill["workflow"])
+            first = validator(drill["firstSession"])
+            retry = validator(drill["retrySession"])
+            rebuilt_first = builder(
+                workflow,
+                failure_mode=failure_mode,
+                attempt=1,
+                generated_at=first["generatedAt"],
+            )
+            retry_attempt = 2 if failure_mode == "timeout_once" else 1
+            rebuilt_retry = builder(
+                workflow,
+                failure_mode=failure_mode,
+                attempt=retry_attempt,
+                generated_at=retry["generatedAt"],
+            )
+            first_status, retry_status, retry_created = expected_statuses[failure_mode]
+            if (
+                first["workflowHash"] != workflow["workflowHash"]
+                or retry["workflowHash"] != workflow["workflowHash"]
+                or first["failureMode"] != failure_mode
+                or retry["failureMode"] != failure_mode
+                or first["attempt"] != 1
+                or retry["attempt"] != retry_attempt
+                or first["status"] != first_status
+                or retry["status"] != retry_status
+                or drill["retryCreated"] is not retry_created
+                or first != rebuilt_first
+                or retry != rebuilt_retry
+                or (failure_mode != "timeout_once" and first != retry)
+                or (
+                    failure_mode == "timeout_once"
+                    and [order["clientOrderId"] for order in first["orders"]]
+                    != [order["clientOrderId"] for order in retry["orders"]]
+                )
+            ):
+                raise ValueError("failure drill recovery or idempotency is invalid")
+            workflows.append(workflow)
+            sessions.append(first)
+            if retry_created:
+                sessions.append(retry)
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(f"Invalid Stage 5 shadow acceptance manifest: drill is invalid: {error}") from error
+    workflow_hashes = [workflow["workflowHash"] for workflow in workflows]
+    session_hashes = [session["sessionHash"] for session in sessions]
     if (
-        first["failureMode"] != "timeout_once"
-        or first["attempt"] != 1
-        or first["status"] != "recoverable_failure"
-        or recovered["attempt"] != 2
-        or recovered["status"] != "reconciled"
-        or recovered != idempotent
-        or first["sessionKey"] != recovered["sessionKey"]
-        or [row["clientOrderId"] for row in first["orders"]]
-        != [row["clientOrderId"] for row in recovered["orders"]]
-        or first != rebuilt_first
-        or recovered != rebuilt_recovered
+        len(set(workflow_hashes)) != 5
+        or len(set(session_hashes)) != 6
+        or len({workflow["baseRunId"] for workflow in workflows}) != 1
     ):
-        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: recovery or idempotency is invalid")
-    expected_hashes = sorted([first["sessionHash"], recovered["sessionHash"]])
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: drill identities are invalid")
+    expected_hashes = sorted(session_hashes)
+    restart = payload["restartReadback"]
+    if (
+        not isinstance(restart, dict)
+        or set(restart) != {
+            "expectedSessionCount", "actualSessionCount", "expectedSessionHashes", "actualSessionHashes"
+        }
+        or restart["expectedSessionCount"] != 6
+        or restart["actualSessionCount"] != 6
+        or sorted(restart["expectedSessionHashes"]) != expected_hashes
+        or sorted(restart["actualSessionHashes"]) != expected_hashes
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: restart readback is invalid")
     readback = payload["exportReadback"]
     if (
         not isinstance(readback, dict)
@@ -1342,7 +1388,7 @@ def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
             "exportSessionHashes", "importedSessionHashes", "readbackSessionHashes",
         }
         or any(
-            type(readback[field]) is not int or readback[field] != 2
+            type(readback[field]) is not int or readback[field] != 6
             for field in ("exportArtifactCount", "importedArtifactCount", "readbackArtifactCount")
         )
         or any(
@@ -1352,8 +1398,8 @@ def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
     ):
         raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: export readback is invalid")
     return (
-        f"stage5 shadow acceptance run={recovered['baseRunId']} orders={len(recovered['orders'])} "
-        "recovered=True idempotent=True liveBlocked=True"
+        f"stage5 shadow acceptance run={workflows[0]['baseRunId']} drills=5 sessions=6 "
+        "restartExact=True portable=True liveBlocked=True"
     )
 
 
@@ -2224,6 +2270,7 @@ def run_stage4_portfolio_acceptance(
 
 
 def run_stage5_shadow_acceptance(
+    repo_root: Path,
     base_url: str,
     *,
     timeout_seconds: int,
@@ -2232,25 +2279,89 @@ def run_stage5_shadow_acceptance(
 ) -> list[str]:
     stage4_manifest = load_stage4_portfolio_acceptance_report(stage4_report_path)
     validate_stage4_portfolio_acceptance_manifest(stage4_manifest)
-    workflow = _require_dict(stage4_manifest.get("workflow"), "Stage 5 source workflow")
-    request = {
-        "baseRunId": workflow["baseRunId"],
-        "workflowHash": workflow["workflowHash"],
-        "failureMode": "timeout_once",
+    source_workflow = _require_dict(stage4_manifest.get("workflow"), "Stage 5 source workflow")
+    workflows = [source_workflow]
+    source_portfolio_request = _require_dict(
+        source_workflow.get("portfolioRequest"), "Stage 5 source portfolio request"
+    )
+    workflow_request = {
+        "name": source_portfolio_request["name"],
+        "initialCash": source_portfolio_request["initialCash"],
+        "legs": [
+            {"runId": leg["runId"], "targetWeight": leg["targetWeight"]}
+            for leg in source_portfolio_request["legs"]
+        ],
+        "baseRunId": source_workflow["baseRunId"],
+        "riskTemplate": source_workflow["riskTemplate"],
+        "batchId": source_workflow["batch"]["batchId"],
         "operator": "stage5-shadow-smoke",
     }
-    attempts = []
-    for _ in range(3):
+    for _ in range(4):
         response = _require_dict(
             post_json(
-                join_url(base_url, "/api/execution/shadow-sessions"),
-                request,
+                join_url(base_url, "/api/portfolio/workflows"),
+                workflow_request,
                 timeout_seconds=timeout_seconds,
             ),
-            "Stage 5 shadow session",
+            "Stage 5 drill workflow",
         )
-        attempts.append(_require_dict(response.get("shadowSession"), "Stage 5 shadow session"))
-    run_id = str(workflow["baseRunId"])
+        workflows.append(_require_dict(response.get("workflow"), "Stage 5 drill workflow"))
+
+    failure_drills = []
+    for workflow, failure_mode in zip(
+        workflows,
+        ("none", "timeout_once", "adapter_rejected", "reconciliation_mismatch", "kill_switch"),
+        strict=True,
+    ):
+        request = {
+            "baseRunId": workflow["baseRunId"],
+            "workflowHash": workflow["workflowHash"],
+            "failureMode": failure_mode,
+            "operator": "stage5-shadow-smoke",
+        }
+        attempts = []
+        for _ in range(3 if failure_mode == "timeout_once" else 2):
+            response = _require_dict(
+                post_json(
+                    join_url(base_url, "/api/execution/shadow-sessions"),
+                    request,
+                    timeout_seconds=timeout_seconds,
+                ),
+                "Stage 5 shadow session",
+            )
+            attempts.append(_require_dict(response.get("shadowSession"), "Stage 5 shadow session"))
+        if failure_mode == "timeout_once" and attempts[1] != attempts[2]:
+            raise RuntimeError("Invalid Stage 5 timeout drill: third POST is not idempotent")
+        failure_drills.append(
+            {
+                "failureMode": failure_mode,
+                "workflow": workflow,
+                "firstSession": attempts[0],
+                "retrySession": attempts[1],
+                "retryCreated": failure_mode == "timeout_once",
+            }
+        )
+
+    run_id = str(source_workflow["baseRunId"])
+    expected_hashes = sorted(
+        {
+            session["sessionHash"]
+            for drill in failure_drills
+            for session in (drill["firstSession"], drill["retrySession"])
+        }
+    )
+    run_command(["docker", "compose", "restart", "api"], cwd=repo_root)
+    print(validate_health_payload(wait_for_json(join_url(base_url, "/health"), timeout_seconds)))
+    restart_payload = _require_dict(
+        request_json(
+            join_url(base_url, f"/api/execution/shadow-sessions?{urlencode({'baseRunId': run_id, 'limit': 20})}"),
+            timeout_seconds,
+        ),
+        "Stage 5 restart readback",
+    )
+    restart_sessions = restart_payload.get("shadowSessions")
+    if not isinstance(restart_sessions, list):
+        raise RuntimeError("Invalid Stage 5 restart readback: sessions are missing")
     export_url = join_url(base_url, f"/api/research/runs/{quote(run_id, safe='')}/export")
     export_package, exported_sessions = _stage5_export_sessions(
         request_json(export_url, timeout_seconds), run_id
@@ -2277,10 +2388,13 @@ def run_stage5_shadow_acceptance(
     if not isinstance(readback_sessions, list):
         raise RuntimeError("Invalid Stage 5 shadow readback: sessions are missing")
     manifest = build_stage5_shadow_acceptance_manifest(
-        workflow=workflow,
-        first_attempt=attempts[0],
-        recovered_attempt=attempts[1],
-        idempotent_attempt=attempts[2],
+        failure_drills=failure_drills,
+        restart_readback={
+            "expectedSessionCount": 6,
+            "actualSessionCount": len(restart_sessions),
+            "expectedSessionHashes": expected_hashes,
+            "actualSessionHashes": sorted(session["sessionHash"] for session in restart_sessions),
+        },
         export_readback={
             "exportArtifactCount": len(exported_sessions),
             "importedArtifactCount": len(imported_sessions),
@@ -3536,6 +3650,7 @@ def run_smoke(
             )
         if stage5_shadow:
             run_stage5_shadow_acceptance(
+                repo_root,
                 base_url,
                 timeout_seconds=timeout_seconds,
                 stage4_report_path=stage5_shadow_stage4_report,

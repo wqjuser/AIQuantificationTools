@@ -1636,6 +1636,11 @@ def _normalize_portfolio_paper_order_simulation_payloads(
             if isinstance(item.get("adapterPaperExecutionEvidence"), dict)
             else {}
         )
+        route_risk = (
+            json.loads(json.dumps(item.get("routeRisk")))
+            if isinstance(item.get("routeRisk"), dict)
+            else {}
+        )
         if strict:
             if not simulation_id:
                 raise ValueError("portfolio_paper_order_simulation_id_required")
@@ -1673,6 +1678,7 @@ def _normalize_portfolio_paper_order_simulation_payloads(
                 "fillStatus": str(item.get("fillStatus") or ""),
                 "reason": str(item.get("reason") or ""),
                 "approvedBy": str(item.get("approvedBy") or "").strip() or None,
+                "routeRisk": route_risk,
                 "adapterPaperExecutionId": adapter_paper_execution_id,
                 "adapterManifestValidationId": adapter_manifest_validation_id,
                 "adapterPaperExecutionEvidence": adapter_paper_execution_evidence,

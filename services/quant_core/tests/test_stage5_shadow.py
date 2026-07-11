@@ -22,7 +22,7 @@ from quant_core.stage5_shadow import (
 )
 
 
-def stage4_workflow() -> dict:
+def stage4_workflow(workflow_id: str = "stage4-workflow-1") -> dict:
     fixture = stage4_tests.Stage4PortfolioWorkflowSnapshotTest()
     fixture.setUp()
     for order, simulation in zip(fixture.batch["orders"], fixture.simulations, strict=True):
@@ -31,7 +31,7 @@ def stage4_workflow() -> dict:
             quantity=simulation["quantity"],
             notionalValue=simulation["notionalValue"],
         )
-    return fixture.build()
+    return fixture.build(workflow_id=workflow_id)
 
 
 class Stage5ShadowSessionTest(unittest.TestCase):
@@ -105,11 +105,31 @@ class Stage5ShadowSessionTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_stage5_shadow_session(tampered)
 
+    def test_all_failure_modes_have_exact_fail_closed_states(self) -> None:
+        expected = {
+            "none": ("reconciled", ["shadow_acknowledged"] * 2, "shadow_projection_matches_stage4", False),
+            "timeout_once": ("recoverable_failure", ["timeout", "not_attempted"], "shadow_timeout_retry_required", False),
+            "adapter_rejected": ("blocked", ["rejected"] * 2, "shadow_orders_blocked", False),
+            "reconciliation_mismatch": (
+                "blocked", ["shadow_acknowledged"] * 2, "shadow_reconciliation_mismatch", False,
+            ),
+            "kill_switch": ("blocked", ["blocked"] * 2, "shadow_orders_blocked", True),
+        }
+        for index, (failure_mode, (status, states, reason, triggered)) in enumerate(expected.items()):
+            with self.subTest(failure_mode=failure_mode):
+                session = build_stage5_shadow_session(
+                    stage4_workflow(f"stage4-workflow-{index}"), failure_mode=failure_mode,
+                )
+                self.assertEqual(session["status"], status)
+                self.assertEqual([order["state"] for order in session["orders"]], states)
+                self.assertEqual(session["reconciliation"]["reason"], reason)
+                self.assertIs(session["killSwitch"]["triggered"], triggered)
     def test_api_is_idempotent_and_recovers_timeout_from_audit_store(self) -> None:
         from quant_core.api import QuantApiHandler, _stage5_shadow_sessions
         from quant_core.audit_events import AuditEventStore
 
         workflow = stage4_workflow()
+        blocked_workflow = stage4_workflow("stage4-workflow-blocked")
         with tempfile.TemporaryDirectory() as tmp:
             store = AuditEventStore(Path(tmp) / "audit.sqlite")
             store.record(
@@ -124,6 +144,20 @@ class Stage5ShadowSessionTest(unittest.TestCase):
                     "summary": "Stage 4 source.",
                     "detail": "Authoritative source.",
                     "metadata": {"snapshot": workflow},
+                }
+            )
+            store.record(
+                {
+                    "schemaVersion": 1,
+                    "eventId": blocked_workflow["workflowId"],
+                    "eventType": "stage4_portfolio_workflow",
+                    "runId": blocked_workflow["baseRunId"],
+                    "createdAt": blocked_workflow["generatedAt"],
+                    "stage": "stage4-portfolio-workflow",
+                    "source": "test",
+                    "summary": "Stage 4 blocked source.",
+                    "detail": "Authoritative blocked source.",
+                    "metadata": {"snapshot": blocked_workflow},
                 }
             )
 
@@ -158,6 +192,29 @@ class Stage5ShadowSessionTest(unittest.TestCase):
                 connection.request("GET", "/api/execution/shadow-sessions?limit=0")
                 malformed = connection.getresponse()
                 malformed_payload = json.loads(malformed.read())
+                blocked_request = {
+                    "baseRunId": blocked_workflow["baseRunId"],
+                    "workflowHash": blocked_workflow["workflowHash"],
+                    "failureMode": "adapter_rejected",
+                    "operator": "test-operator",
+                }
+                blocked_responses = []
+                for _ in range(2):
+                    body = json.dumps(blocked_request).encode()
+                    connection.request(
+                        "POST", "/api/execution/shadow-sessions", body=body,
+                        headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                    )
+                    response = connection.getresponse()
+                    blocked_responses.append((response.status, json.loads(response.read())))
+                switched = {**blocked_request, "failureMode": "kill_switch"}
+                body = json.dumps(switched).encode()
+                connection.request(
+                    "POST", "/api/execution/shadow-sessions", body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                switched_response = connection.getresponse()
+                switched_payload = json.loads(switched_response.read())
                 stored_count = store.count(event_type="stage5_shadow_execution_session")
                 tampered = copy.deepcopy(listed[0])
                 tampered["orders"][0]["quantity"] += 1
@@ -175,34 +232,67 @@ class Stage5ShadowSessionTest(unittest.TestCase):
         self.assertEqual((malformed.status, malformed_payload["error"]), (400, "invalid_stage5_shadow_session_query"))
         self.assertEqual([payload["shadowSession"]["attempt"] for _, payload in responses], [1, 2, 2])
         self.assertEqual([session["attempt"] for session in listed], [2, 1])
-        self.assertEqual(stored_count, 2)
+        self.assertEqual([status for status, _ in blocked_responses], [201, 200])
+        self.assertEqual(
+            [payload["shadowSession"]["sessionHash"] for _, payload in blocked_responses],
+            [blocked_responses[0][1]["shadowSession"]["sessionHash"]] * 2,
+        )
+        self.assertEqual((switched_response.status, switched_payload["error"]), (400, "invalid_stage5_shadow_session"))
+        self.assertEqual(stored_count, 3)
 
     def test_acceptance_manifest_rejects_unsafe_or_non_idempotent_evidence(self) -> None:
         from tools import docker_smoke
 
-        workflow = stage4_workflow()
-        first = build_stage5_shadow_session(workflow, failure_mode="timeout_once", attempt=1)
-        recovered = build_stage5_shadow_session(workflow, failure_mode="timeout_once", attempt=2)
+        failure_drills = []
+        expected_hashes = []
+        for index, failure_mode in enumerate(
+            ("none", "timeout_once", "adapter_rejected", "reconciliation_mismatch", "kill_switch")
+        ):
+            workflow = stage4_workflow(f"stage4-workflow-{failure_mode}")
+            first = build_stage5_shadow_session(workflow, failure_mode=failure_mode, attempt=1)
+            retry = (
+                build_stage5_shadow_session(workflow, failure_mode=failure_mode, attempt=2)
+                if failure_mode == "timeout_once"
+                else copy.deepcopy(first)
+            )
+            failure_drills.append(
+                {
+                    "failureMode": failure_mode,
+                    "workflow": workflow,
+                    "firstSession": first,
+                    "retrySession": retry,
+                    "retryCreated": failure_mode == "timeout_once",
+                }
+            )
+            expected_hashes.append(first["sessionHash"])
+            if failure_mode == "timeout_once":
+                expected_hashes.append(retry["sessionHash"])
+        expected_hashes.sort()
         manifest = docker_smoke.build_stage5_shadow_acceptance_manifest(
-            workflow=workflow,
-            first_attempt=first,
-            recovered_attempt=recovered,
-            idempotent_attempt=copy.deepcopy(recovered),
+            failure_drills=failure_drills,
+            restart_readback={
+                "expectedSessionCount": 6,
+                "actualSessionCount": 6,
+                "expectedSessionHashes": expected_hashes,
+                "actualSessionHashes": expected_hashes,
+            },
             export_readback={
-                "exportArtifactCount": 2,
-                "importedArtifactCount": 2,
-                "readbackArtifactCount": 2,
-                "exportSessionHashes": sorted([first["sessionHash"], recovered["sessionHash"]]),
-                "importedSessionHashes": sorted([first["sessionHash"], recovered["sessionHash"]]),
-                "readbackSessionHashes": sorted([first["sessionHash"], recovered["sessionHash"]]),
+                "exportArtifactCount": 6,
+                "importedArtifactCount": 6,
+                "readbackArtifactCount": 6,
+                "exportSessionHashes": expected_hashes,
+                "importedSessionHashes": expected_hashes,
+                "readbackSessionHashes": expected_hashes,
             },
         )
         self.assertIn("liveBlocked=True", docker_smoke.validate_stage5_shadow_acceptance_manifest(manifest))
 
         for mutate in (
             lambda value: value.update({"orderSubmissionEnabled": True}),
-            lambda value: value["idempotentAttempt"].update({"sessionHash": "0" * 64}),
-            lambda value: value["recoveredAttempt"]["orders"][0].update({"clientOrderId": "shadow-tampered"}),
+            lambda value: value["failureDrills"].pop(),
+            lambda value: value["failureDrills"][2].update({"retryCreated": True}),
+            lambda value: value["failureDrills"][1]["retrySession"].update({"sessionHash": "0" * 64}),
+            lambda value: value["restartReadback"].update({"actualSessionCount": 5}),
         ):
             with self.subTest(mutate=mutate):
                 tampered = copy.deepcopy(manifest)
@@ -214,6 +304,7 @@ class Stage5ShadowSessionTest(unittest.TestCase):
         from quant_core.runs import (
             research_run_export_to_payload,
             research_run_import_audit_events,
+            research_run_import_portfolio_paper_order_simulations,
             research_run_import_to_audit,
         )
 
@@ -259,6 +350,19 @@ class Stage5ShadowSessionTest(unittest.TestCase):
         missing_workflow = research_run_export_to_payload(audit, audit_events=events[1:])
         with self.assertRaisesRegex(ValueError, "stage5_shadow_source_workflow_missing"):
             research_run_import_to_audit(missing_workflow)
+
+        imported_simulations = research_run_import_portfolio_paper_order_simulations(
+            {
+                "portfolioPaperOrderSimulations": [
+                    {
+                        **workflow["simulations"][0],
+                        "routeRisk": workflow["simulations"][0]["routeRisk"],
+                    }
+                ]
+            },
+            base_run_id=workflow["baseRunId"],
+        )
+        self.assertEqual(imported_simulations[0]["routeRisk"], workflow["simulations"][0]["routeRisk"])
 
         tampered = copy.deepcopy(exported)
         tampered.pop("integrity")

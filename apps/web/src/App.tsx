@@ -2525,6 +2525,8 @@ export function App() {
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const strategyDraftRequiresReaudit = workspaceNeedsStrategyReaudit(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
+  const currentResearchRunIdRef = useRef(currentResearchRunId);
+  currentResearchRunIdRef.current = currentResearchRunId;
   const resetStage4PortfolioBusyState = useCallback(() => {
     setIsRunningPortfolioBacktest(false);
     setIsRecordingPortfolioPaperOrders(false);
@@ -2537,7 +2539,7 @@ export function App() {
     resetStage4PortfolioBusyState();
     setIsRunningStage5Shadow(false);
     stage5ShadowRequestIdRef.current += 1;
-    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
+    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunIdRef.current);
   }, [currentResearchRunId, resetStage4PortfolioBusyState]);
   const strategyExperimentUsableSourceKey =
     researchRunContextBinding.canUseRun && workspace.researchRun
@@ -6135,7 +6137,7 @@ export function App() {
     );
     setIsRefreshing(true);
     resetStage4PortfolioBusyState();
-    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
+    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunIdRef.current);
     setPortfolioStage4RefreshGeneration((current) => current + 1);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
     const researchContextUrlState = resolveInitialResearchContextUrlState();
@@ -6255,7 +6257,6 @@ export function App() {
     await refreshAuditSigningKeys();
     setIsRefreshing(false);
   }, [
-    currentResearchRunId,
     refreshAuditSigningKeys,
     refreshRunHistory,
     refreshSettingsStatus,
@@ -12223,7 +12224,7 @@ export function App() {
   }, [refreshWorkspace]);
 
   useEffect(() => {
-    if (activeWorkAreaId !== "ai-review") {
+    if (activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "execution") {
       initialAiReviewRunIdRef.current = null;
       aiReviewRunRestoreAbortControllerRef.current?.abort();
     }

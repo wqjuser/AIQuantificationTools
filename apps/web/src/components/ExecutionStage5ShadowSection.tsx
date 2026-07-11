@@ -46,6 +46,11 @@ export function ExecutionStage5ShadowSection({
         <div><dt>{i18n.t("execution.stage5.status")}</dt><dd>{session?.status ?? state.status}</dd></div>
         <div><dt>{i18n.t("execution.stage5.attempt")}</dt><dd>{session?.attempt ?? "-"}</dd></div>
         <div><dt>{i18n.t("execution.stage5.adapter")}</dt><dd>{session?.adapter.id ?? "local-fake-shadow"}</dd></div>
+        <div><dt>{i18n.t("execution.stage5.failureMode")}</dt><dd>{session?.failureMode ?? "-"}</dd></div>
+        <div><dt>{i18n.t("execution.stage5.limits")}</dt><dd>{session ? `${session.limits.maxOrders} / ${session.limits.maxGrossNotional}` : "-"}</dd></div>
+        <div><dt>{i18n.t("execution.stage5.timeout")}</dt><dd>{session ? `${session.limits.timeoutSeconds}s / ${session.limits.maxAttempts}` : "-"}</dd></div>
+        <div><dt>{i18n.t("execution.stage5.killSwitch")}</dt><dd>{session ? `${session.killSwitch.enabled} / ${session.killSwitch.triggered}` : "-"}</dd></div>
+        <div><dt>{i18n.t("execution.stage5.reconciliation")}</dt><dd>{session?.reconciliation.reason ?? "-"}</dd></div>
         <div><dt>{i18n.t("execution.stage5.sessionHash")}</dt><dd className="execution-stage5-shadow-hash">{session?.sessionHash ?? "-"}</dd></div>
       </dl>
       {session ? (
@@ -60,6 +65,7 @@ export function ExecutionStage5ShadowSection({
               </li>
             ))}
           </ul>
+          <p>{i18n.t("execution.stage5.reconciliation")}: {session.reconciliation.reconciled ? "true" : "false"} · {session.reconciliation.reason}</p>
           <p>{i18n.t("execution.stage5.safety")}</p>
         </details>
       ) : null}

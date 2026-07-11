@@ -15176,6 +15176,11 @@ export function buildResearchRunExportBrowserRows(
   const hasStage4PortfolioWorkflowAccounting =
     (artifactCounts.stage4PortfolioWorkflows ?? 0) > 0 || stage4PortfolioWorkflows.length > 0;
   const stage5ShadowSessions = stage5ShadowSessionAuditSnapshots(exportPackage.auditEvents);
+  const stage5ShadowFailureModes = [...new Set(stage5ShadowSessions.map((session) => session.failureMode))];
+  const stage5ShadowBlockedCount = stage5ShadowSessions.filter((session) => session.status === "blocked").length;
+  const stage5ShadowRecoveredCount = stage5ShadowSessions.filter(
+    (session) => session.failureMode === "timeout_once" && session.attempt === 2 && session.status === "reconciled"
+  ).length;
   const stage5ShadowSessionEventCount = (exportPackage.auditEvents ?? [])
     .filter((event) => event.eventType === "stage5_shadow_execution_session").length;
   const stage5ShadowSessionsAreValid = stage5ShadowSessions.length === stage5ShadowSessionEventCount;
@@ -15519,7 +15524,7 @@ export function buildResearchRunExportBrowserRows(
           status: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid ? "ready" : "blocked",
           value: `${artifactCounts.stage5ShadowSessions ?? 0} manifest / ${stage5ShadowSessions.length} package`,
           detail: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid
-            ? `${stage5ShadowSessions.map((session) => `${session.sessionId} · ${session.status} · attempt ${session.attempt}`).join(" · ")} · live route blocked`
+            ? `modes ${stage5ShadowFailureModes.join(", ")} · blocked ${stage5ShadowBlockedCount} · recovered ${stage5ShadowRecoveredCount} · hashes ${stage5ShadowSessions.map((session) => session.sessionHash.slice(0, 12)).join(", ")} · live route blocked`
             : "Stage 5 shadow session count, identity, time, or safety contract does not match auditEvents[].",
           exportPath: "auditEvents[].metadata.snapshot",
           tone: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid ? "ai" : "risk"
@@ -23689,7 +23694,9 @@ export function resolveAiReviewRunIdFromUrl(
   }
   const params = search instanceof URLSearchParams ? search : new URLSearchParams(search);
   const runIds = params.getAll("runId");
-  return params.get("workspace") === "ai-review" && runIds.length === 1
+  const workspaceId = params.get("workspace");
+  const restoresRun = workspaceId === "ai-review" || (workspaceId === "execution" && !params.has("paperExecution"));
+  return restoresRun && runIds.length === 1
     ? normalizeAiReviewRunId(runIds[0])
     : null;
 }
@@ -23700,7 +23707,7 @@ export function replaceAiReviewRunIdInUrl(
   runId: string | null | undefined
 ): string {
   const url = new URL(href);
-  if (nextWorkspaceId === "ai-review") {
+  if (nextWorkspaceId === "ai-review" || (nextWorkspaceId === "execution" && !url.searchParams.has("paperExecution"))) {
     url.searchParams.delete("runId");
     const normalizedRunId = normalizeAiReviewRunId(runId);
     if (normalizedRunId) {

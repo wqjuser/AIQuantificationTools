@@ -348,11 +348,15 @@ import {
   strategySnapshotFromStrategyConfig
 } from "./terminal-workbench";
 
-describe("Stage 3 AI review state scopes", () => {
-  test("accepts only one safe research run id for the AI review workspace", () => {
+describe("Stage 3 and Stage 5 research run state scopes", () => {
+  test("accepts only one safe research run id for restorable workspaces", () => {
     expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=run-e390066dd7fa")).toBe(
       "run-e390066dd7fa"
     );
+    expect(resolveAiReviewRunIdFromUrl("?workspace=execution&runId=run-e390066dd7fa")).toBe(
+      "run-e390066dd7fa"
+    );
+    expect(resolveAiReviewRunIdFromUrl("?workspace=execution&runId=run-e390066dd7fa&paperExecution=paper-1")).toBeNull();
     expect(resolveAiReviewRunIdFromUrl("?workspace=audit&runId=run-e390066dd7fa")).toBeNull();
     expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=../run-secret")).toBeNull();
     expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=run-a&runId=run-b")).toBeNull();
@@ -409,9 +413,9 @@ describe("Stage 3 AI review state scopes", () => {
     const plainExecution = new URL(replaceAiReviewRunIdInUrl(
       "http://127.0.0.1:5173/?workspace=ai-review&runId=run-ai-review",
       "execution",
-      null
+      "run-ai-review"
     ));
-    expect(plainExecution.searchParams.has("runId")).toBe(false);
+    expect(plainExecution.searchParams.get("runId")).toBe("run-ai-review");
 
     const nonConsumer = new URL(replaceAiReviewRunIdInUrl(
       "http://127.0.0.1:5173/?workspace=audit&runId=run-audit",
@@ -11921,7 +11925,7 @@ describe("terminal workbench model", () => {
     ];
 
     expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "stage5-shadow-sessions"))
-      .toMatchObject({ status: "ready", value: "1 manifest / 1 package", detail: expect.stringContaining("live route blocked") });
+      .toMatchObject({ status: "ready", value: "1 manifest / 1 package", detail: expect.stringContaining("modes none · blocked 0 · recovered 0") });
     expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage })
       .find((row) => row.id === "stage5-shadow-sessions"))
       .toMatchObject({ status: "add", incoming: "1 sessions / 1 manifest" });
