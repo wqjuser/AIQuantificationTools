@@ -4613,6 +4613,22 @@ class QuantCoreContractTest(unittest.TestCase):
             for field in ("exportWorkflowHash", "importedWorkflowHash", "readbackWorkflowHash"):
                 value["exportReadback"][field] = value["workflowHash"]
 
+        to_simulation = docker_smoke._quant_core_validator(
+            "execution", "portfolio_paper_order_payload_to_simulation"
+        )
+        build_replay = docker_smoke._quant_core_validator(
+            "execution", "build_portfolio_paper_order_replay"
+        )
+
+        def rebuild_replay(value):
+            replay = value["workflow"]["replay"]
+            value["workflow"]["replay"] = build_replay(
+                [to_simulation(row) for row in value["workflow"]["simulations"]],
+                base_run_id=value["workflow"]["baseRunId"],
+                initial_cash=value["workflow"]["portfolioRequest"]["initialCash"],
+                generated_at=datetime.fromisoformat(replay["generatedAt"]),
+            )
+
         semantic_mutations = {
             "workflow identity": lambda value: value["workflow"].update(
                 {"kind": "aiqt.stage4PortfolioWorkflow.tampered"}
@@ -4672,6 +4688,22 @@ class QuantCoreContractTest(unittest.TestCase):
             mutate(invalid)
             rehash(invalid)
             with self.subTest(semantic=label), self.assertRaises(RuntimeError):
+                docker_smoke.validate_stage4_portfolio_acceptance_manifest(invalid)
+
+        simulation_binding_mutations = {
+            "symbol": lambda row: row.update({"symbol": "000300"}),
+            "sourceRunId": lambda row: row.update({"sourceRunId": "run-b"}),
+            "side": lambda row: row.update({"side": "sell"}),
+            "quantity": lambda row: row.update({"quantity": row["quantity"] + 1}),
+            "notionalValue": lambda row: row.update({"notionalValue": row["notionalValue"] + 1}),
+            "fillPrice": lambda row: row.update({"fillPrice": row["fillPrice"] + 1}),
+        }
+        for field, mutate in simulation_binding_mutations.items():
+            invalid = copy.deepcopy(manifest)
+            mutate(invalid["workflow"]["simulations"][0])
+            rebuild_replay(invalid)
+            rehash(invalid)
+            with self.subTest(simulation_binding=field), self.assertRaises(RuntimeError):
                 docker_smoke.validate_stage4_portfolio_acceptance_manifest(invalid)
         for field in (
             "paperOnly",

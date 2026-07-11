@@ -1173,6 +1173,31 @@ def validate_stage4_portfolio_acceptance_manifest(manifest: Any) -> str:
     ):
         raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: risk checks are invalid")
 
+    orders_by_id = {order.get("orderId"): order for order in workflow["batch"]["orders"]}
+    simulations_by_id = {
+        simulation.get("orderId"): simulation for simulation in workflow["simulations"]
+    }
+    if len(orders_by_id) != 2 or len(simulations_by_id) != 2 or set(simulations_by_id) != set(orders_by_id):
+        raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: simulation order binding is invalid")
+    for order_id, order in orders_by_id.items():
+        simulation = simulations_by_id[order_id]
+        quantity = order.get("quantity")
+        notional = order.get("notionalValue")
+        if (
+            isinstance(quantity, bool)
+            or not isinstance(quantity, (int, float))
+            or quantity <= 0
+            or isinstance(notional, bool)
+            or not isinstance(notional, (int, float))
+            or notional <= 0
+            or any(
+                simulation.get(field) != order.get(field)
+                for field in ("symbol", "sourceRunId", "side", "quantity", "notionalValue")
+            )
+            or simulation.get("fillPrice") != round(notional / quantity, 6)
+        ):
+            raise RuntimeError("Invalid Stage 4 portfolio acceptance manifest: simulation facts do not match order")
+
     try:
         to_simulation = _quant_core_validator("execution", "portfolio_paper_order_payload_to_simulation")
         build_replay = _quant_core_validator("execution", "build_portfolio_paper_order_replay")
