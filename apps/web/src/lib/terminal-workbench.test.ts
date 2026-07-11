@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { AiReviewDecision } from "./ai-review-stage3";
+import type { Stage5SandboxReadinessDecision } from "./stage5-shadow";
 import type {
   AuditEvidenceReportLedgerSummary,
   AuditEvidenceReportLedgerRow,
@@ -101,6 +102,8 @@ import {
   buildAuditSigningKeyRotationLedgerRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
+  stage5SandboxReadinessDecisionHash,
+  verifyStage5SandboxReadinessDecisionHashes,
   buildResearchRunExportIndexRows,
   buildResearchRunImportDiffRows,
   buildResearchRunImportAuditEvent,
@@ -11941,6 +11944,71 @@ describe("terminal workbench model", () => {
       .toBe("blocked");
     expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unsafePackage })
       .find((row) => row.id === "stage5-shadow-sessions")?.status).toBe("blocked");
+  });
+
+  test("surfaces Stage 5 sandbox readiness decisions as dedicated fail-closed evidence", async () => {
+    const exportPackage = stage3ArchiveBrowserPackage();
+    const workflow = stage4ArchiveWorkflowFixture();
+    const session = stage5ShadowSessionFixture();
+    const decision: Stage5SandboxReadinessDecision = {
+      kind: "aiqt.stage5SandboxReadinessDecision", schemaVersion: 1,
+      decisionId: "stage5-sandbox-readiness-123456789012345678901234", generatedAt: "2026-07-11T13:00:00+00:00",
+      baseRunId: workflow.baseRunId, workflowId: workflow.workflowId, workflowHash: workflow.workflowHash,
+      shadowSessionId: session.sessionId, shadowSessionHash: session.sessionHash, adapterId: "ashare-live", market: "ashare",
+      adapterPaperExecutionIds: ["adapter-execution-1", "adapter-execution-2"],
+      adapterManifestValidationIds: ["manifest-1", "manifest-2"],
+      adapterAuditEventIds: ["adapter-execution-1", "adapter-execution-2"], operator: "中文操作员",
+      status: "ready_for_manually_authorized_sandbox_phase", paperOnly: true, shadowOnly: true,
+      sandboxOrderSubmissionAllowed: false, liveTradingAllowed: false, orderSubmissionEnabled: false,
+      routeExecuted: false, liveBlockedBoundary: true, decisionHash: "e".repeat(64)
+    };
+    decision.decisionHash = await stage5SandboxReadinessDecisionHash(decision);
+    expect(decision.decisionHash).toBe("81355246a306df1edece178cbbbeb5f08ee46b798f70c05aa5f4c9a753abe504");
+    exportPackage.manifest.runId = workflow.baseRunId;
+    exportPackage.manifest.artifactCounts.auditEvents = 3;
+    exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows = 1;
+    exportPackage.manifest.artifactCounts.stage5ShadowSessions = 1;
+    exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions = 1;
+    exportPackage.auditEvents = [
+      {
+        schemaVersion: 1, eventId: workflow.workflowId, eventType: "stage4_portfolio_workflow",
+        runId: workflow.baseRunId, createdAt: workflow.generatedAt, stage: "stage4-portfolio-workflow",
+        source: "local-operator", summary: "Stage 4 workflow recorded.", detail: "Authoritative workflow.",
+        metadata: { snapshot: workflow }
+      },
+      {
+        schemaVersion: 1, eventId: session.sessionId, eventType: "stage5_shadow_execution_session",
+        runId: session.baseRunId, createdAt: session.generatedAt, stage: "stage5-shadow-execution",
+        source: "local-operator", summary: "Stage 5 shadow reconciled.", detail: "Shadow only.",
+        metadata: { snapshot: session }
+      },
+      {
+        schemaVersion: 1, eventId: decision.decisionId, eventType: "stage5_sandbox_readiness_decision",
+        runId: decision.baseRunId, createdAt: decision.generatedAt, stage: "stage5-sandbox-readiness",
+        source: decision.operator, summary: "Sandbox readiness recorded.", detail: "Order submission blocked.",
+        metadata: { snapshot: decision }
+      }
+    ];
+
+    expect(await verifyStage5SandboxReadinessDecisionHashes(exportPackage)).toBe(true);
+    expect(buildResearchRunExportBrowserRows(exportPackage)
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions"))
+      .toMatchObject({ status: "ready", value: "1 manifest / 1 package", detail: expect.stringContaining("terminal adapter-execution-1, adapter-execution-2") });
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage })
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions"))
+      .toMatchObject({ status: "add", incoming: "1 decisions / 1 manifest" });
+
+    const unsafe = structuredClone(exportPackage);
+    (unsafe.auditEvents?.[2]?.metadata.snapshot as Record<string, unknown>).sandboxOrderSubmissionAllowed = true;
+    expect(await verifyStage5SandboxReadinessDecisionHashes(unsafe)).toBe(false);
+    expect(buildResearchRunExportBrowserRows(unsafe)
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions")?.status).toBe("blocked");
+
+    const hashTampered = structuredClone(exportPackage);
+    (hashTampered.auditEvents?.[2]?.metadata.snapshot as Record<string, unknown>).decisionHash = "f".repeat(64);
+    expect(await verifyStage5SandboxReadinessDecisionHashes(hashTampered)).toBe(false);
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: hashTampered })
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions")?.status).toBe("blocked");
   });
 
   test("aligns Decision import diff with persisted prefix and append semantics", () => {

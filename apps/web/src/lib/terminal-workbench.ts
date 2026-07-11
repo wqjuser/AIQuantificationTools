@@ -1,5 +1,9 @@
 import type { AiReviewDecision, AiReviewRunArchiveRecord, AuthoritativeAiReviewRun } from "./ai-review-stage3";
-import { isStage5ShadowSession } from "./stage5-shadow";
+import {
+  isStage5SandboxReadinessDecision,
+  isStage5ShadowSession,
+  type Stage5SandboxReadinessDecision
+} from "./stage5-shadow";
 
 export type PanelId =
   | "watchlist"
@@ -1756,6 +1760,7 @@ export interface ResearchRunExportBrowserManifest {
     auditEvents?: number;
     stage4PortfolioWorkflows?: number;
     stage5ShadowSessions?: number;
+    stage5SandboxReadinessDecisions?: number;
     handoffNotes?: number;
   };
 }
@@ -2419,6 +2424,7 @@ export interface ResearchRunExportBrowserRow {
     | "ai-reviews-v2"
     | "ai-review-decisions"
     | "stage5-shadow-sessions"
+    | "stage5-sandbox-readiness-decisions"
     | "audit-events"
     | "p0-completeness"
     | "audit-summary"
@@ -2470,6 +2476,7 @@ export type ResearchRunImportDiffRowId =
     | "ai-review-runs"
     | "stage4-portfolio-workflows"
     | "stage5-shadow-sessions"
+    | "stage5-sandbox-readiness-decisions"
     | "audit-summary"
     | "audit-report"
     | "backtest-report"
@@ -14997,6 +15004,70 @@ function stage5ShadowSessionAuditSnapshots(
   });
 }
 
+function stage5SandboxReadinessDecisionAuditSnapshots(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+) {
+  return (auditEvents ?? []).flatMap((event) => {
+    const snapshot = event.metadata.snapshot;
+    return event.eventType === "stage5_sandbox_readiness_decision" && isStage5SandboxReadinessDecision(snapshot)
+      && event.eventId === snapshot.decisionId && event.runId === snapshot.baseRunId
+      && event.createdAt === snapshot.generatedAt && event.stage === "stage5-sandbox-readiness"
+      && event.source === snapshot.operator
+      ? [snapshot]
+      : [];
+  });
+}
+
+const stage5SandboxReadinessHashVerifiedPackages = new WeakSet<object>();
+
+export async function stage5SandboxReadinessDecisionHash(
+  decision: Stage5SandboxReadinessDecision
+): Promise<string> {
+  const { decisionHash: _decisionHash, ...payload } = decision;
+  return sha256TextHex(pythonAsciiCanonicalJson(payload));
+}
+
+function pythonAsciiCanonicalJson(value: unknown): string {
+  if (value === null || typeof value === "boolean" || typeof value === "number") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "string") {
+    return pythonAsciiJsonString(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(pythonAsciiCanonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) =>
+      `${pythonAsciiJsonString(key)}:${pythonAsciiCanonicalJson(record[key])}`
+    ).join(",")}}`;
+  }
+  throw new TypeError("Stage 5 sandbox readiness decision contains an unsupported value");
+}
+
+function pythonAsciiJsonString(value: string): string {
+  return JSON.stringify(value).replace(/[^\x00-\x7f]/g, (character) =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
+}
+
+export async function verifyStage5SandboxReadinessDecisionHashes(
+  exportPackage: ResearchRunExportBrowserPackage
+): Promise<boolean> {
+  const decisions = stage5SandboxReadinessDecisionAuditSnapshots(exportPackage.auditEvents);
+  const eventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_readiness_decision").length;
+  const valid = decisions.length === eventCount && (
+    await Promise.all(decisions.map(async (decision) =>
+      (await stage5SandboxReadinessDecisionHash(decision)) === decision.decisionHash
+    ))
+  ).every(Boolean);
+  if (valid) stage5SandboxReadinessHashVerifiedPackages.add(exportPackage);
+  else stage5SandboxReadinessHashVerifiedPackages.delete(exportPackage);
+  return valid;
+}
+
 function stage4PortfolioWorkflowAuditEventsAreValid(
   auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
 ): boolean {
@@ -15184,6 +15255,12 @@ export function buildResearchRunExportBrowserRows(
   const stage5ShadowSessionEventCount = (exportPackage.auditEvents ?? [])
     .filter((event) => event.eventType === "stage5_shadow_execution_session").length;
   const stage5ShadowSessionsAreValid = stage5ShadowSessions.length === stage5ShadowSessionEventCount;
+  const stage5SandboxReadinessDecisions = stage5SandboxReadinessDecisionAuditSnapshots(exportPackage.auditEvents);
+  const stage5SandboxReadinessDecisionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_readiness_decision").length;
+  const stage5SandboxReadinessDecisionsAreValid =
+    stage5SandboxReadinessDecisions.length === stage5SandboxReadinessDecisionEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
   const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
   const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
     (event) => event.eventType === "p0_paper_simulation"
@@ -15260,6 +15337,8 @@ export function buildResearchRunExportBrowserRows(
     (artifactCounts.stage4PortfolioWorkflows ?? 0) === stage4PortfolioWorkflows.length;
   const stage5ShadowSessionCountMatches =
     (artifactCounts.stage5ShadowSessions ?? 0) === stage5ShadowSessions.length;
+  const stage5SandboxReadinessDecisionCountMatches =
+    (artifactCounts.stage5SandboxReadinessDecisions ?? 0) === stage5SandboxReadinessDecisions.length;
   const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
   const p0PackageCompleteness = exportPackage.p0PackageCompleteness;
   const p0CompletenessIsReady =
@@ -15528,6 +15607,22 @@ export function buildResearchRunExportBrowserRows(
             : "Stage 5 shadow session count, identity, time, or safety contract does not match auditEvents[].",
           exportPath: "auditEvents[].metadata.snapshot",
           tone: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid ? "ai" : "risk"
+        }] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...((artifactCounts.stage5SandboxReadinessDecisions ?? 0) > 0 || stage5SandboxReadinessDecisionEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-readiness-decisions",
+          label: "Stage 5 sandbox readiness decisions",
+          status: stage5SandboxReadinessDecisionCountMatches && stage5SandboxReadinessDecisionsAreValid
+            ? "ready" : "blocked",
+          value: `${artifactCounts.stage5SandboxReadinessDecisions ?? 0} manifest / ${stage5SandboxReadinessDecisions.length} package`,
+          detail: stage5SandboxReadinessDecisionCountMatches && stage5SandboxReadinessDecisionsAreValid
+            ? stage5SandboxReadinessDecisions.map((decision) =>
+                `run ${decision.baseRunId} · session ${decision.shadowSessionHash.slice(0, 12)} · ${decision.adapterId} · terminal ${decision.adapterPaperExecutionIds.join(", ")} · decision SHA-256 ${decision.decisionHash.slice(0, 12)} · sandbox order submission blocked`
+              ).join(" · ")
+            : "Stage 5 sandbox readiness decision count, identity, time, SHA-256, or safety contract does not match auditEvents[].",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: stage5SandboxReadinessDecisionCountMatches && stage5SandboxReadinessDecisionsAreValid ? "ai" : "risk"
         }] satisfies ResearchRunExportBrowserRow[])
       : []),
     {
@@ -15931,6 +16026,7 @@ function researchRunImportArtifactCountMismatches(
     auditEvents: number;
     stage4PortfolioWorkflows: number;
     stage5ShadowSessions: number;
+    stage5SandboxReadinessDecisions: number;
     handoffNotes: number;
   }
 ): string[] {
@@ -15962,6 +16058,11 @@ function researchRunImportArtifactCountMismatches(
     ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents],
     ["stage4PortfolioWorkflows", artifactCounts.stage4PortfolioWorkflows ?? 0, actualCounts.stage4PortfolioWorkflows],
     ["stage5ShadowSessions", artifactCounts.stage5ShadowSessions ?? 0, actualCounts.stage5ShadowSessions],
+    [
+      "stage5SandboxReadinessDecisions",
+      artifactCounts.stage5SandboxReadinessDecisions ?? 0,
+      actualCounts.stage5SandboxReadinessDecisions
+    ],
     ["handoffNotes", artifactCounts.handoffNotes ?? 0, actualCounts.handoffNotes]
   ];
 
@@ -16061,6 +16162,16 @@ export function buildResearchRunImportDiffRows({
     packageStage5ShadowSessions.length === packageStage5ShadowSessionEventCount;
   const packageStage5ShadowSessionCountMatches =
     (exportPackage.manifest.artifactCounts.stage5ShadowSessions ?? 0) === packageStage5ShadowSessions.length;
+  const packageStage5SandboxReadinessDecisions =
+    stage5SandboxReadinessDecisionAuditSnapshots(exportPackage.auditEvents);
+  const packageStage5SandboxReadinessDecisionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_readiness_decision").length;
+  const packageStage5SandboxReadinessDecisionsAreValid =
+    packageStage5SandboxReadinessDecisions.length === packageStage5SandboxReadinessDecisionEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
+  const packageStage5SandboxReadinessDecisionCountMatches =
+    (exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions ?? 0) ===
+    packageStage5SandboxReadinessDecisions.length;
   const packageHandoffNoteCount = exportPackage.handoffNotes?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
@@ -16147,6 +16258,7 @@ export function buildResearchRunImportDiffRows({
     auditEvents: packageAuditEventCount,
     stage4PortfolioWorkflows: packageStage4PortfolioWorkflows.length,
     stage5ShadowSessions: packageStage5ShadowSessions.length,
+    stage5SandboxReadinessDecisions: packageStage5SandboxReadinessDecisions.length,
     handoffNotes: packageHandoffNoteCount
   });
   const authoritativeAiReviewDiffRows = (exportPackage.aiReviewRunsV2 ?? []).map(
@@ -16512,6 +16624,26 @@ export function buildResearchRunImportDiffRows({
           tone: packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches && packageStage5ShadowSessions.length
             ? "ai"
             : packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches ? "neutral" : "risk"
+        }] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...((exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions ?? 0) > 0 ||
+      packageStage5SandboxReadinessDecisionEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-readiness-decisions",
+          label: "Stage 5 sandbox readiness decisions",
+          status: packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches
+            ? packageStage5SandboxReadinessDecisions.length ? "add" : "same"
+            : "blocked",
+          current: "Local audit event store",
+          incoming: `${packageStage5SandboxReadinessDecisions.length} decisions / ${exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions ?? 0} manifest`,
+          detail: packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches
+            ? "Import will restore server-authoritative sandbox readiness decisions while order submission remains blocked."
+            : "Stage 5 sandbox readiness import is blocked by an artifact count mismatch or invalid identity, time, or safety evidence.",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches &&
+            packageStage5SandboxReadinessDecisions.length ? "ai" :
+            packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches
+              ? "neutral" : "risk"
         }] satisfies ResearchRunImportDiffRow[])
       : []),
     {

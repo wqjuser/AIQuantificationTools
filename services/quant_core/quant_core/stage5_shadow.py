@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -19,6 +19,16 @@ _SAFETY = {
 }
 _FAILURE_MODES = {"none", "timeout_once", "adapter_rejected", "reconciliation_mismatch", "kill_switch"}
 _STATUSES = {"reconciled", "recoverable_failure", "blocked"}
+_READINESS_MAX_SOURCE_AGE = timedelta(hours=24)
+_READINESS_SAFETY = {
+    "paperOnly": True,
+    "shadowOnly": True,
+    "sandboxOrderSubmissionAllowed": False,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
 
 
 def stage5_shadow_session_key(workflow_hash: str) -> str:
@@ -246,6 +256,217 @@ def stage5_shadow_session_to_audit_event(session: dict[str, Any], operator: str)
         "detail": "Local fake adapter projection only; no broker connection or order route was used.",
         "metadata": {"snapshot": session},
     }
+
+
+def build_stage5_sandbox_readiness_decision(
+    workflow: dict[str, Any],
+    session: dict[str, Any],
+    adapter_paper_executions: list[dict[str, Any]],
+    *,
+    operator: str,
+    confirmed: bool,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    workflow = validate_stage4_portfolio_workflow_snapshot(workflow)
+    session = validate_stage5_shadow_session(session)
+    if confirmed is not True:
+        raise ValueError("stage5 sandbox readiness scope confirmation is required")
+    operator = operator.strip() if isinstance(operator, str) else ""
+    if not operator:
+        raise ValueError("stage5 sandbox readiness operator is required")
+    if (
+        session["baseRunId"] != workflow["baseRunId"]
+        or session["workflowId"] != workflow["workflowId"]
+        or session["workflowHash"] != workflow["workflowHash"]
+    ):
+        raise ValueError("stage5 sandbox readiness shadow identity does not match workflow")
+    if session["status"] != "reconciled" or (
+        (session["failureMode"], session["attempt"]) not in {("none", 1), ("timeout_once", 2)}
+    ):
+        raise ValueError("stage5 sandbox readiness requires a reconciled shadow session")
+
+    simulations = workflow["simulations"]
+    if not isinstance(adapter_paper_executions, list) or len(adapter_paper_executions) != len(simulations):
+        raise ValueError("stage5 sandbox readiness adapter evidence count does not match simulations")
+    executions_by_id = {
+        execution.get("adapterPaperExecutionId"): execution
+        for execution in adapter_paper_executions
+        if isinstance(execution, dict) and isinstance(execution.get("adapterPaperExecutionId"), str)
+    }
+    execution_ids = []
+    manifest_ids = []
+    adapter_ids = set()
+    markets = set()
+    source_times = [
+        datetime.fromisoformat(workflow["generatedAt"]),
+        datetime.fromisoformat(session["generatedAt"]),
+    ]
+    for simulation in simulations:
+        execution_id = _required_string(simulation.get("adapterPaperExecutionId"), "adapterPaperExecutionId")
+        manifest_id = _required_string(simulation.get("adapterManifestValidationId"), "adapterManifestValidationId")
+        inline = simulation.get("adapterPaperExecutionEvidence")
+        execution = executions_by_id.get(execution_id)
+        if not isinstance(inline, dict) or not isinstance(execution, dict):
+            raise ValueError("stage5 sandbox readiness terminal adapter evidence is missing")
+        expected = {
+            "adapterPaperExecutionId": execution_id,
+            "manifestValidationId": manifest_id,
+            "adapterId": _required_string(execution.get("adapterId"), "adapterId"),
+            "market": _required_string(execution.get("market"), "market"),
+            "route": "paper",
+            "status": "paper_execution_recorded",
+            "paperFillRecorded": True,
+            "paperOnly": True,
+            "orderSubmitted": False,
+            "liveOrderSubmitted": False,
+            "routeExecuted": False,
+            "liveTradingAllowed": False,
+        }
+        for field, expected_value in expected.items():
+            if execution.get(field) != expected_value or inline.get(field) != expected_value:
+                raise ValueError(f"stage5 sandbox readiness adapter evidence {field} does not match")
+        order_intent = execution.get("orderIntent")
+        expected_intent = {
+            "symbol": simulation.get("symbol"),
+            "side": simulation.get("side"),
+            "quantity": simulation.get("quantity"),
+        }
+        if not isinstance(order_intent, dict) or any(
+            order_intent.get(field) != expected_value or inline.get(field) != expected_value
+            for field, expected_value in expected_intent.items()
+        ):
+            raise ValueError("stage5 sandbox readiness adapter order intent does not match simulation")
+        recorded_at = _timestamp(execution.get("recordedAt"), "adapter recordedAt")
+        source_times.append(recorded_at)
+        execution_ids.append(execution_id)
+        manifest_ids.append(manifest_id)
+        adapter_ids.add(expected["adapterId"])
+        markets.add(expected["market"])
+    if len(executions_by_id) != len(simulations) or len(set(execution_ids)) != len(execution_ids):
+        raise ValueError("stage5 sandbox readiness adapter evidence ids must be unique")
+    if len(adapter_ids) != 1 or len(markets) != 1 or next(iter(markets)) != workflow["portfolio"]["market"]:
+        raise ValueError("stage5 sandbox readiness adapter market binding does not match")
+
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+    generated_time = _timestamp(generated_at, "generatedAt")
+    if generated_time < max(source_times):
+        raise ValueError("stage5 sandbox readiness generatedAt precedes source evidence")
+    if any(generated_time - source_time > _READINESS_MAX_SOURCE_AGE for source_time in source_times):
+        raise ValueError("stage5 sandbox readiness source evidence is stale")
+    adapter_id = next(iter(adapter_ids))
+    market = next(iter(markets))
+    decision_id = _stage5_sandbox_readiness_decision_id(session["sessionHash"], execution_ids)
+    decision = {
+        "kind": "aiqt.stage5SandboxReadinessDecision",
+        "schemaVersion": 1,
+        "decisionId": decision_id,
+        "generatedAt": generated_at,
+        "baseRunId": workflow["baseRunId"],
+        "workflowId": workflow["workflowId"],
+        "workflowHash": workflow["workflowHash"],
+        "shadowSessionId": session["sessionId"],
+        "shadowSessionHash": session["sessionHash"],
+        "adapterId": adapter_id,
+        "market": market,
+        "adapterPaperExecutionIds": execution_ids,
+        "adapterManifestValidationIds": manifest_ids,
+        "adapterAuditEventIds": list(execution_ids),
+        "operator": operator,
+        "status": "ready_for_manually_authorized_sandbox_phase",
+        **_READINESS_SAFETY,
+    }
+    decision["decisionHash"] = stage5_sandbox_readiness_decision_hash(decision)
+    return validate_stage5_sandbox_readiness_decision(decision)
+
+
+def validate_stage5_sandbox_readiness_decision(value: Any) -> dict[str, Any]:
+    required = {
+        "kind", "schemaVersion", "decisionId", "decisionHash", "generatedAt", "baseRunId",
+        "workflowId", "workflowHash", "shadowSessionId", "shadowSessionHash", "adapterId", "market",
+        "adapterPaperExecutionIds", "adapterManifestValidationIds", "adapterAuditEventIds", "operator",
+        "status", *_READINESS_SAFETY,
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("stage5 sandbox readiness decision must contain exact fields")
+    if value["kind"] != "aiqt.stage5SandboxReadinessDecision" or value["schemaVersion"] != 1:
+        raise ValueError("stage5 sandbox readiness decision schema is invalid")
+    for field in (
+        "decisionId", "generatedAt", "baseRunId", "workflowId", "workflowHash", "shadowSessionId",
+        "shadowSessionHash", "adapterId", "market", "operator", "status", "decisionHash",
+    ):
+        _required_string(value[field], field)
+    _timestamp(value["generatedAt"], "generatedAt")
+    if value["status"] != "ready_for_manually_authorized_sandbox_phase":
+        raise ValueError("stage5 sandbox readiness status is invalid")
+    for field in ("workflowHash", "shadowSessionHash", "decisionHash"):
+        if len(value[field]) != 64:
+            raise ValueError(f"stage5 sandbox readiness {field} is invalid")
+    evidence_lists = [
+        value["adapterPaperExecutionIds"],
+        value["adapterManifestValidationIds"],
+        value["adapterAuditEventIds"],
+    ]
+    if (
+        any(not isinstance(items, list) or not items or not all(isinstance(item, str) and item for item in items) for items in evidence_lists)
+        or len({len(items) for items in evidence_lists}) != 1
+        or len(set(value["adapterPaperExecutionIds"])) != len(value["adapterPaperExecutionIds"])
+        or value["adapterAuditEventIds"] != value["adapterPaperExecutionIds"]
+    ):
+        raise ValueError("stage5 sandbox readiness adapter evidence references are invalid")
+    for field, expected in _READINESS_SAFETY.items():
+        if value[field] is not expected:
+            raise ValueError(f"stage5 sandbox readiness {field} is immutable")
+    if value["decisionId"] != _stage5_sandbox_readiness_decision_id(
+        value["shadowSessionHash"], value["adapterPaperExecutionIds"]
+    ):
+        raise ValueError("stage5 sandbox readiness decisionId does not match evidence")
+    if value["decisionHash"] != stage5_sandbox_readiness_decision_hash(value):
+        raise ValueError("stage5 sandbox readiness decisionHash does not match")
+    return json.loads(json.dumps(value))
+
+
+def stage5_sandbox_readiness_decision_hash(value: dict[str, Any]) -> str:
+    payload = {key: item for key, item in value.items() if key != "decisionHash"}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def stage5_sandbox_readiness_decision_to_audit_event(decision: dict[str, Any]) -> dict[str, Any]:
+    decision = validate_stage5_sandbox_readiness_decision(decision)
+    return {
+        "schemaVersion": 1,
+        "eventId": decision["decisionId"],
+        "eventType": "stage5_sandbox_readiness_decision",
+        "runId": decision["baseRunId"],
+        "createdAt": decision["generatedAt"],
+        "stage": "stage5-sandbox-readiness",
+        "source": decision["operator"],
+        "summary": f"Recorded Stage 5 sandbox readiness decision for {decision['baseRunId']}.",
+        "detail": "Ready only for a separately authorized sandbox phase; order submission and live routing remain blocked.",
+        "metadata": {"snapshot": decision},
+    }
+
+
+def _stage5_sandbox_readiness_decision_id(session_hash: str, execution_ids: list[str]) -> str:
+    digest = hashlib.sha256(
+        f"stage5-sandbox-readiness:{session_hash}:{','.join(execution_ids)}".encode()
+    ).hexdigest()
+    return f"stage5-sandbox-readiness-{digest[:24]}"
+
+
+def _required_string(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"stage5 sandbox readiness {field} is required")
+    return value.strip()
+
+
+def _timestamp(value: Any, field: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"stage5 sandbox readiness {field} is invalid") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"stage5 sandbox readiness {field} must include timezone")
+    return parsed
 
 
 def _transitions(generated_at: str, state: str) -> list[dict[str, str]]:

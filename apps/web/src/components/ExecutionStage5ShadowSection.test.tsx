@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { createI18n } from "../lib/i18n";
-import type { Stage5ShadowSession } from "../lib/stage5-shadow";
+import type { Stage5SandboxReadinessDecision, Stage5ShadowSession } from "../lib/stage5-shadow";
 import { ExecutionStage5ShadowSection } from "./ExecutionStage5ShadowSection";
 
 const i18n = createI18n("zh-CN");
@@ -18,7 +18,7 @@ describe("ExecutionStage5ShadowSection", () => {
     expect(html).not.toContain(">提交订单</button>");
   });
 
-  test("renders restored order ids and removes actions after reconciliation", () => {
+  test("renders restored order ids and offers the single readiness action after reconciliation", () => {
     const session = {
       status: "reconciled", attempt: 2, adapter: { id: "local-fake-shadow" }, sessionHash: "a".repeat(64),
       failureMode: "timeout_once",
@@ -30,7 +30,7 @@ describe("ExecutionStage5ShadowSection", () => {
     const html = renderToStaticMarkup(<ExecutionStage5ShadowSection
       i18n={i18n}
       onPrimaryAction={() => undefined}
-      state={{ status: "ready", actionId: null, blocker: null, session }}
+      state={{ status: "review", actionId: "review-stage5-sandbox-readiness", blocker: null, session, readinessDecision: null }}
     />);
     expect(html).toContain("shadow-abc");
     expect(html).toContain("projected → reconciled");
@@ -39,6 +39,29 @@ describe("ExecutionStage5ShadowSection", () => {
     expect(html).toContain("3s / 2");
     expect(html).toContain("true / false");
     expect(html).toContain("shadow_projection_matches_stage4");
+    expect(html).toContain("生成 Sandbox 准入决策");
+  });
+
+  test("renders the persisted readiness decision without an order action", () => {
+    const session = {
+      status: "reconciled", attempt: 1, adapter: { id: "local-fake-shadow" }, sessionHash: "a".repeat(64),
+      failureMode: "none", limits: { maxOrders: 1, maxGrossNotional: 90000, timeoutSeconds: 3, maxAttempts: 2 },
+      killSwitch: { enabled: true, triggered: false },
+      reconciliation: { reconciled: true, reason: "shadow_projection_matches_stage4" },
+      orders: [{ orderId: "order-1", symbol: "600000", state: "shadow_acknowledged", clientOrderId: "shadow-abc", transitions: [{ state: "projected" }] }]
+    } as Stage5ShadowSession;
+    const readinessDecision = {
+      adapterId: "ashare-live", decisionHash: "d".repeat(64), status: "ready_for_manually_authorized_sandbox_phase",
+      adapterPaperExecutionIds: ["execution-1"], sandboxOrderSubmissionAllowed: false
+    } as Stage5SandboxReadinessDecision;
+    const html = renderToStaticMarkup(<ExecutionStage5ShadowSection
+      i18n={i18n}
+      onPrimaryAction={() => undefined}
+      state={{ status: "ready", actionId: null, blocker: null, session, readinessDecision }}
+    />);
+    expect(html).toContain("ashare-live");
+    expect(html).toContain("execution-1");
+    expect(html).toContain("仍禁止 Sandbox 下单");
     expect(html).not.toContain("<button");
   });
 

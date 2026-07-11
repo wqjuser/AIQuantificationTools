@@ -111,6 +111,88 @@ def _smoke_token(value: str) -> str:
     return token or "unknown"
 
 
+def _stage5_readiness_adapter_ops_state_audit_event(order: dict[str, Any]) -> dict[str, Any]:
+    ensure_quant_core_import_path()
+    from quant_core.execution import (
+        build_execution_adapter_ops_state,
+        execution_adapter_ops_state_to_audit_event_payload,
+    )
+
+    token = _smoke_token(str(order.get("orderId") or ""))
+    adapter_id = "ashare-live"
+    manifest_id = f"stage5-readiness-manifest-{token}"
+    source = {
+        "paperRouteRunbookId": f"stage5-readiness-runbook-{token}",
+        "paperOrderLifecycleId": f"stage5-readiness-lifecycle-{token}",
+        "sandboxOrderSchemaDryRunId": f"stage5-readiness-schema-{token}",
+        "productionRouteReviewId": f"stage5-readiness-route-review-{token}",
+        "sandboxProbeReviewId": f"stage5-readiness-probe-review-{token}",
+        "sandboxProbeExecutionId": f"stage5-readiness-probe-execution-{token}",
+        "sandboxProbePlanId": f"stage5-readiness-probe-plan-{token}",
+        "humanConfirmationId": f"stage5-readiness-confirmation-{token}",
+        "orchestrationExecutionId": f"stage5-readiness-orchestration-execution-{token}",
+        "dryRunId": f"stage5-readiness-orchestration-dry-run-{token}",
+        "acceptanceId": f"stage5-readiness-reload-acceptance-{token}",
+        "executionId": f"stage5-readiness-reload-execution-{token}",
+        "planId": f"stage5-readiness-reload-plan-{token}",
+        "bindingId": f"stage5-readiness-environment-binding-{token}",
+        "materializationId": f"stage5-readiness-materialization-{token}",
+        "manifestValidationId": manifest_id,
+        "adapterId": adapter_id,
+        "market": "ashare",
+        "route": "paper",
+        "status": "runbook_recorded",
+        "runbookMode": "manual_paper_route_runbook",
+        "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+        "dryRunMode": "manual_sandbox_order_schema_dry_run",
+        "reviewMode": "manual_production_route_review",
+        "sandboxReviewMode": "manual_sandbox_probe_review",
+        "probeExecutionMode": "manual_readonly_sandbox_probe",
+        "probeMode": "manual_sandbox_probe_plan",
+        "confirmationMode": "manual_final_human_confirmation",
+        "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+        "acceptanceMode": "manual_runtime_reload_acceptance",
+        "executionMode": "manual_controlled_reload",
+        "reloadMode": "manual_container_reload_plan",
+        "maintenanceWindowId": f"stage5-readiness-window-{token}",
+        "bindingMode": "container_env_reference",
+        "manifestPath": f"local-secret-store://{adapter_id}/{token}",
+        "requiredEnvVars": ["ASHARE_BROKER_API_KEY"],
+        "orderIntent": {
+            "symbol": order["symbol"],
+            "side": order["side"],
+            "quantity": order["quantity"],
+            "type": "limit",
+            "price": 100,
+            "timeInForce": "GTC",
+        },
+        "lifecycleSteps": [{"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}],
+        "runbookSteps": [{"id": "lifecycle-evidence-linked", "label": "Paper lifecycle evidence linked", "status": "recorded"}],
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+    }
+    ops_state = build_execution_adapter_ops_state(
+        source,
+        adapter_id=adapter_id,
+        ops_mode="manual_adapter_ops_state",
+        confirmations={
+            "paperRouteRunbookAccepted": True,
+            "monitoringChannelReady": True,
+            "killSwitchDrillRecorded": True,
+            "paperAccountReconciled": True,
+            "operatorConfirmedLiveTradingDisabled": True,
+        },
+        operator="stage5-readiness-smoke",
+        metadata={"source": "stage5-readiness-smoke"},
+        adapter_ops_state_id=f"stage5-readiness-ops-{token}",
+    )
+    if ops_state.status != "ops_state_recorded":
+        raise RuntimeError(f"Invalid Stage 5 readiness adapter ops state: {ops_state.blocked_reasons}")
+    return execution_adapter_ops_state_to_audit_event_payload(ops_state)
+
+
 def _p2_replay_seed_order_id(run_id: str, symbol: str) -> str:
     return f"portfolio-paper-{_smoke_token(run_id)}-{_smoke_token(symbol)}-buy"
 
@@ -1414,6 +1496,193 @@ def load_stage5_shadow_acceptance_report(path: Path) -> dict[str, Any]:
     return _load_json_report(path, "Stage 5 shadow acceptance manifest")
 
 
+_STAGE5_READINESS_SAFETY = {
+    **_STAGE5_SAFETY,
+    "sandboxOrderSubmissionAllowed": False,
+}
+
+
+def build_stage5_sandbox_readiness_acceptance_manifest(
+    *,
+    workflow: dict[str, Any],
+    shadow_session: dict[str, Any],
+    adapter_paper_executions: list[dict[str, Any]],
+    readiness_decision: dict[str, Any],
+    blocker_drills: list[dict[str, Any]],
+    restart_readback: dict[str, Any],
+    export_readback: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "aiqt.stage5SandboxReadinessAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed",
+        "workflow": workflow,
+        "shadowSession": shadow_session,
+        "adapterPaperExecutions": adapter_paper_executions,
+        "readinessDecision": readiness_decision,
+        "blockerDrills": blocker_drills,
+        "restartReadback": restart_readback,
+        "exportReadback": export_readback,
+        **_STAGE5_READINESS_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_readiness_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox readiness acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "workflow", "shadowSession",
+        "adapterPaperExecutions", "readinessDecision", "blockerDrills", "restartReadback",
+        "exportReadback", *_STAGE5_READINESS_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5SandboxReadinessAcceptance"
+        or type(payload["schemaVersion"]) is not int
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or any(payload[field] is not expected for field, expected in _STAGE5_READINESS_SAFETY.items())
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5Readiness.generatedAt")
+    workflow_validator = _quant_core_validator(
+        "stage4_portfolio", "validate_stage4_portfolio_workflow_snapshot"
+    )
+    session_validator = _quant_core_validator("stage5_shadow", "validate_stage5_shadow_session")
+    session_builder = _quant_core_validator("stage5_shadow", "build_stage5_shadow_session")
+    decision_validator = _quant_core_validator(
+        "stage5_shadow", "validate_stage5_sandbox_readiness_decision"
+    )
+    decision_builder = _quant_core_validator(
+        "stage5_shadow", "build_stage5_sandbox_readiness_decision"
+    )
+    try:
+        workflow = workflow_validator(payload["workflow"])
+        session = session_validator(payload["shadowSession"])
+        executions = payload["adapterPaperExecutions"]
+        decision = decision_validator(payload["readinessDecision"])
+        if not isinstance(executions, list) or not all(isinstance(row, dict) for row in executions):
+            raise ValueError("adapter paper executions are invalid")
+        rebuilt_session = session_builder(
+            workflow,
+            failure_mode=session["failureMode"],
+            attempt=session["attempt"],
+            generated_at=session["generatedAt"],
+        )
+        rebuilt_decision = decision_builder(
+            workflow,
+            session,
+            executions,
+            operator=decision["operator"],
+            confirmed=True,
+            generated_at=decision["generatedAt"],
+        )
+        if rebuilt_session != session or rebuilt_decision != decision:
+            raise ValueError("readiness sources do not rebuild exactly")
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            f"Invalid Stage 5 sandbox readiness acceptance manifest: source is invalid: {error}"
+        ) from error
+
+    blocker_drills = payload["blockerDrills"]
+    blocker_modes = (
+        "missing_adapter_event", "adapter_market_mismatch", "blocked_session",
+        "unsafe_adapter_evidence", "decision_hash_tamper",
+    )
+    if (
+        not isinstance(blocker_drills, list)
+        or [row.get("mode") for row in blocker_drills if isinstance(row, dict)] != list(blocker_modes)
+        or any(set(row) != {"mode", "blocked"} or row["blocked"] is not True for row in blocker_drills)
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: blocker drills are invalid")
+    def decision_build_is_blocked(
+        candidate_session: dict[str, Any], candidate_executions: list[dict[str, Any]]
+    ) -> bool:
+        try:
+            decision_builder(
+                workflow,
+                candidate_session,
+                candidate_executions,
+                operator=decision["operator"],
+                confirmed=True,
+                generated_at=decision["generatedAt"],
+            )
+        except ValueError:
+            return True
+        return False
+
+    mismatched_executions = json.loads(json.dumps(executions))
+    mismatched_executions[0]["market"] = "mismatch"
+    unsafe_executions = json.loads(json.dumps(executions))
+    unsafe_executions[0]["liveTradingAllowed"] = True
+    blocked_session = session_builder(
+        workflow,
+        failure_mode="adapter_rejected",
+        attempt=1,
+        generated_at=session["generatedAt"],
+    )
+    tampered_decision = json.loads(json.dumps(decision))
+    tampered_decision["decisionHash"] = "0" * 64
+    try:
+        decision_validator(tampered_decision)
+        hash_tamper_blocked = False
+    except ValueError:
+        hash_tamper_blocked = True
+    if not all((
+        decision_build_is_blocked(session, executions[:-1]),
+        decision_build_is_blocked(session, mismatched_executions),
+        decision_build_is_blocked(blocked_session, executions),
+        decision_build_is_blocked(session, unsafe_executions),
+        hash_tamper_blocked,
+    )):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: blocker drill did not fail closed")
+    restart = payload["restartReadback"]
+    expected_hash = decision["decisionHash"]
+    if (
+        not isinstance(restart, dict)
+        or set(restart) != {
+            "expectedDecisionCount", "actualDecisionCount", "expectedDecisionHashes", "actualDecisionHashes"
+        }
+        or restart["expectedDecisionCount"] != 1
+        or restart["actualDecisionCount"] != 1
+        or restart["expectedDecisionHashes"] != [expected_hash]
+        or restart["actualDecisionHashes"] != [expected_hash]
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: restart readback is invalid")
+    readback = payload["exportReadback"]
+    if (
+        not isinstance(readback, dict)
+        or set(readback) != {
+            "exportArtifactCount", "importedArtifactCount", "readbackArtifactCount",
+            "exportDecisionHashes", "importedDecisionHashes", "readbackDecisionHashes",
+        }
+        or any(
+            readback[field] != 1
+            for field in ("exportArtifactCount", "importedArtifactCount", "readbackArtifactCount")
+        )
+        or any(
+            readback[field] != [expected_hash]
+            for field in ("exportDecisionHashes", "importedDecisionHashes", "readbackDecisionHashes")
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: export readback is invalid")
+    return (
+        f"stage5 sandbox readiness run={workflow['baseRunId']} decisions=1 blockers=5 "
+        "restartExact=True portable=True sandboxOrderSubmissionAllowed=False liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_readiness_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox readiness acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_readiness_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox readiness acceptance manifest")
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -2129,6 +2398,68 @@ def run_stage4_portfolio_acceptance(
         if approval.get("orderId") != order_id or approval.get("approved") is not True:
             raise RuntimeError("Invalid Stage 4 portfolio approval: exact approval sequence is invalid")
 
+    adapter_evidence_by_order_id = {}
+    for order in orders:
+        order_id = order["orderId"]
+        ops_state_event = _stage5_readiness_adapter_ops_state_audit_event(order)
+        post_json(
+            join_url(base_url, "/api/audit/events"),
+            ops_state_event,
+            timeout_seconds=timeout_seconds,
+        )
+        execution_response = _require_dict(
+            post_json(
+                join_url(base_url, "/api/execution/adapter-paper-executions"),
+                {
+                    "adapterId": "ashare-live",
+                    "adapterOpsStateId": ops_state_event["eventId"],
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "confirmations": {
+                        "opsStateAccepted": True,
+                        "paperAccountSynced": True,
+                        "riskBudgetBound": True,
+                        "simulatedFillGenerated": True,
+                        "operatorConfirmedNoLiveRouting": True,
+                    },
+                    "operator": "stage5-readiness-smoke",
+                    "metadata": {"source": "stage5-readiness-smoke"},
+                },
+                timeout_seconds=timeout_seconds,
+            ),
+            "Stage 5 readiness adapter paper execution",
+        )
+        terminal = _require_dict(
+            execution_response.get("adapterPaperExecution"),
+            "Stage 5 readiness adapter paper execution payload",
+        )
+        execution_id = str(terminal.get("adapterPaperExecutionId") or "").strip()
+        manifest_id = str(terminal.get("manifestValidationId") or "").strip()
+        evidence = {
+            "adapterPaperExecutionId": execution_id,
+            "manifestValidationId": manifest_id,
+            "adapterId": terminal.get("adapterId"),
+            "market": terminal.get("market"),
+            "symbol": order["symbol"],
+            "side": order["side"],
+            "quantity": order["quantity"],
+            "route": terminal.get("route"),
+            "status": terminal.get("status"),
+            "fillSummary": f"filled {order['side']} {order['quantity']} {order['symbol']} @ 100",
+            "paperFillRecorded": terminal.get("paperFillRecorded"),
+            "paperOnly": terminal.get("paperOnly"),
+            "orderSubmitted": terminal.get("orderSubmitted"),
+            "liveOrderSubmitted": terminal.get("liveOrderSubmitted"),
+            "routeExecuted": terminal.get("routeExecuted"),
+            "liveTradingAllowed": terminal.get("liveTradingAllowed"),
+        }
+        if not execution_id or not manifest_id or evidence["status"] != "paper_execution_recorded":
+            raise RuntimeError("Invalid Stage 5 readiness adapter paper execution terminal evidence")
+        adapter_evidence_by_order_id[order_id] = {
+            "adapterPaperExecutionId": execution_id,
+            "adapterManifestValidationId": manifest_id,
+            "adapterPaperExecutionEvidence": evidence,
+        }
+
     simulation_request = {
         "baseRunId": base_run_id,
         "batchId": batch_id,
@@ -2140,6 +2471,7 @@ def run_stage4_portfolio_acceptance(
             "maxSymbolNotional": 50000,
             "maxBatchNotional": 90000,
         },
+        "adapterPaperExecutionEvidenceByOrderId": adapter_evidence_by_order_id,
     }
     first_simulation = _require_dict(
         post_json(
@@ -2426,6 +2758,167 @@ def _stage5_export_sessions(payload: Any, run_id: str) -> tuple[dict[str, Any], 
     if manifest.get("runId") != run_id or counts.get("stage5ShadowSessions") != len(sessions):
         raise RuntimeError("Invalid Stage 5 research export: session count or run binding is invalid")
     return package, sessions
+
+
+def run_stage5_sandbox_readiness_acceptance(
+    repo_root: Path,
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    stage4_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    stage4_manifest = load_stage4_portfolio_acceptance_report(stage4_report_path)
+    validate_stage4_portfolio_acceptance_manifest(stage4_manifest)
+    workflow = _require_dict(stage4_manifest.get("workflow"), "Stage 5 readiness source workflow")
+    session_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/execution/shadow-sessions"),
+            {
+                "baseRunId": workflow["baseRunId"],
+                "workflowHash": workflow["workflowHash"],
+                "failureMode": "none",
+                "operator": "stage5-readiness-smoke",
+            },
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 5 readiness shadow session",
+    )
+    session = _require_dict(session_response.get("shadowSession"), "Stage 5 readiness shadow session")
+    readiness_request = {
+        "baseRunId": workflow["baseRunId"],
+        "workflowHash": workflow["workflowHash"],
+        "sessionHash": session["sessionHash"],
+        "operator": "stage5-readiness-smoke",
+        "confirmed": True,
+    }
+    first_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/execution/sandbox-readiness-decisions"),
+            readiness_request,
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 5 sandbox readiness decision",
+    )
+    second_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/execution/sandbox-readiness-decisions"),
+            readiness_request,
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 5 sandbox readiness decision retry",
+    )
+    decision = _require_dict(
+        first_response.get("sandboxReadinessDecision"), "Stage 5 sandbox readiness decision"
+    )
+    if second_response.get("sandboxReadinessDecision") != decision:
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance: repeated POST is not idempotent")
+
+    run_id = str(workflow["baseRunId"])
+    run_command(["docker", "compose", "restart", "api"], cwd=repo_root)
+    print(validate_health_payload(wait_for_json(join_url(base_url, "/health"), timeout_seconds)))
+    readiness_url = join_url(
+        base_url,
+        f"/api/execution/sandbox-readiness-decisions?{urlencode({'baseRunId': run_id, 'limit': 20})}",
+    )
+    restart_payload = _require_dict(
+        request_json(readiness_url, timeout_seconds), "Stage 5 readiness restart readback"
+    )
+    restart_decisions = restart_payload.get("sandboxReadinessDecisions")
+    if not isinstance(restart_decisions, list):
+        raise RuntimeError("Invalid Stage 5 readiness restart readback: decisions are missing")
+
+    export_url = join_url(base_url, f"/api/research/runs/{quote(run_id, safe='')}/export")
+    export_package, exported_decisions, adapter_executions = _stage5_export_readiness(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    validate_p0_import_payload(
+        post_json(
+            join_url(base_url, "/api/research/runs/import"),
+            export_package,
+            timeout_seconds=timeout_seconds,
+        ),
+        run_id,
+    )
+    _imported_package, imported_decisions, imported_adapter_executions = _stage5_export_readiness(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    readback_payload = _require_dict(
+        request_json(readiness_url, timeout_seconds), "Stage 5 readiness imported readback"
+    )
+    readback_decisions = readback_payload.get("sandboxReadinessDecisions")
+    if not isinstance(readback_decisions, list):
+        raise RuntimeError("Invalid Stage 5 readiness imported readback: decisions are missing")
+    if imported_adapter_executions != adapter_executions:
+        raise RuntimeError("Invalid Stage 5 readiness imported readback: adapter evidence changed")
+    decision_hash = decision["decisionHash"]
+    manifest = build_stage5_sandbox_readiness_acceptance_manifest(
+        workflow=workflow,
+        shadow_session=session,
+        adapter_paper_executions=adapter_executions,
+        readiness_decision=decision,
+        blocker_drills=[
+            {"mode": mode, "blocked": True}
+            for mode in (
+                "missing_adapter_event", "adapter_market_mismatch", "blocked_session",
+                "unsafe_adapter_evidence", "decision_hash_tamper",
+            )
+        ],
+        restart_readback={
+            "expectedDecisionCount": 1,
+            "actualDecisionCount": len(restart_decisions),
+            "expectedDecisionHashes": [decision_hash],
+            "actualDecisionHashes": [row["decisionHash"] for row in restart_decisions],
+        },
+        export_readback={
+            "exportArtifactCount": len(exported_decisions),
+            "importedArtifactCount": len(imported_decisions),
+            "readbackArtifactCount": len(readback_decisions),
+            "exportDecisionHashes": [row["decisionHash"] for row in exported_decisions],
+            "importedDecisionHashes": [row["decisionHash"] for row in imported_decisions],
+            "readbackDecisionHashes": [row["decisionHash"] for row in readback_decisions],
+        },
+    )
+    summary = validate_stage5_sandbox_readiness_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_readiness_acceptance_report(report_path, manifest)
+    return [summary]
+
+
+def _stage5_export_readiness(
+    payload: Any, run_id: str
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    package = _require_dict(_require_dict(payload, "Stage 5 readiness export").get("export"), "Stage 5 export")
+    manifest = _require_dict(package.get("manifest"), "Stage 5 readiness export manifest")
+    counts = _require_dict(manifest.get("artifactCounts"), "Stage 5 readiness export counts")
+    decisions = [
+        event["metadata"]["snapshot"]
+        for event in package.get("auditEvents") or []
+        if isinstance(event, dict)
+        and event.get("eventType") == "stage5_sandbox_readiness_decision"
+        and isinstance(event.get("metadata"), dict)
+        and isinstance(event["metadata"].get("snapshot"), dict)
+    ]
+    all_executions = [
+        row for row in package.get("adapterPaperExecutions") or [] if isinstance(row, dict)
+    ]
+    execution_by_id = {
+        row.get("adapterPaperExecutionId"): row
+        for row in all_executions
+        if isinstance(row.get("adapterPaperExecutionId"), str)
+    }
+    referenced_ids = decisions[0].get("adapterPaperExecutionIds", []) if len(decisions) == 1 else []
+    executions = [execution_by_id.get(execution_id) for execution_id in referenced_ids]
+    if (
+        manifest.get("runId") != run_id
+        or counts.get("stage5SandboxReadinessDecisions") != len(decisions)
+        or len(decisions) != 1
+        or not referenced_ids
+        or any(execution is None for execution in executions)
+    ):
+        raise RuntimeError("Invalid Stage 5 readiness export: decision or adapter evidence count is invalid")
+    return package, decisions, executions
 
 
 def _stage2_experiment(payload: Any, label: str) -> dict[str, Any]:
@@ -3566,6 +4059,8 @@ def run_smoke(
     stage5_shadow: bool = False,
     stage5_shadow_stage4_report: Path = Path("data") / "stage4-portfolio-paper.json",
     stage5_shadow_report: Path | None = None,
+    stage5_sandbox_readiness: bool = False,
+    stage5_sandbox_readiness_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -3655,6 +4150,14 @@ def run_smoke(
                 timeout_seconds=timeout_seconds,
                 stage4_report_path=stage5_shadow_stage4_report,
                 report_path=stage5_shadow_report,
+            )
+        if stage5_sandbox_readiness:
+            run_stage5_sandbox_readiness_acceptance(
+                repo_root,
+                base_url,
+                timeout_seconds=timeout_seconds,
+                stage4_report_path=stage5_shadow_stage4_report,
+                report_path=stage5_sandbox_readiness_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -3788,6 +4291,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Validate an existing Stage 5 shadow acceptance report and exit.",
     )
+    parser.add_argument(
+        "--stage5-sandbox-readiness",
+        action="store_true",
+        help="Run Stage 5 sandbox readiness decision acceptance without broker or order submission.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-readiness-report",
+        default=None,
+        help="Optional Stage 5 sandbox readiness acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-readiness-report",
+        default=None,
+        help="Validate an existing Stage 5 sandbox readiness acceptance report and exit.",
+    )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
     parser.add_argument("--p2-p1-acceptance-report", default="data/p1-acceptance.json", help="Path to the P1 acceptance manifest used as P2 evidence.")
@@ -3914,6 +4432,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = load_stage5_shadow_acceptance_report(Path(args.validate_stage5_shadow_report))
         print(validate_stage5_shadow_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage5_sandbox_readiness_report:
+        manifest = load_stage5_sandbox_readiness_acceptance_report(
+            Path(args.validate_stage5_sandbox_readiness_report)
+        )
+        print(validate_stage5_sandbox_readiness_acceptance_manifest(manifest))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -3984,6 +4508,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage5_shadow=args.stage5_shadow,
         stage5_shadow_stage4_report=Path(args.stage5_shadow_stage4_report),
         stage5_shadow_report=Path(args.stage5_shadow_report) if args.stage5_shadow_report else None,
+        stage5_sandbox_readiness=args.stage5_sandbox_readiness,
+        stage5_sandbox_readiness_report=(
+            Path(args.stage5_sandbox_readiness_report)
+            if args.stage5_sandbox_readiness_report
+            else None
+        ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,
         p2_run_id=args.p2_run_id,
         p2_p1_acceptance_report=Path(args.p2_p1_acceptance_report),

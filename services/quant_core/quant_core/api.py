@@ -217,9 +217,12 @@ from quant_core.stage4_portfolio import (
     validate_stage4_portfolio_workflow_snapshot,
 )
 from quant_core.stage5_shadow import (
+    build_stage5_sandbox_readiness_decision,
     build_stage5_shadow_session,
+    stage5_sandbox_readiness_decision_to_audit_event,
     stage5_shadow_session_key,
     stage5_shadow_session_to_audit_event,
+    validate_stage5_sandbox_readiness_decision,
     validate_stage5_shadow_session,
 )
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
@@ -2145,6 +2148,79 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"shadowSession": session}, status=201 if created else 200)
             return
+        if parsed.path == "/api/execution/sandbox-readiness-decisions":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "baseRunId", "workflowHash", "sessionHash", "operator", "confirmed"
+                }:
+                    raise ValueError("stage5 sandbox readiness request fields are invalid")
+                base_run_id = _required_stage4_string(payload["baseRunId"])
+                workflow_hash = _required_stage4_string(payload["workflowHash"])
+                session_hash = _required_stage4_string(payload["sessionHash"])
+                operator = _required_stage4_string(payload["operator"])
+                confirmed = payload["confirmed"]
+                if confirmed is not True:
+                    raise ValueError("stage5 sandbox readiness confirmation is required")
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage5_sandbox_readiness_request", "detail": str(error)},
+                    status=400,
+                )
+                return
+            try:
+                workflow = _stage5_shadow_source_workflow(
+                    self.audit_event_store, base_run_id, workflow_hash
+                )
+                session = next(
+                    (
+                        item for item in _stage5_shadow_sessions(
+                            self.audit_event_store, base_run_id, workflow_hash
+                        )
+                        if item["sessionHash"] == session_hash
+                    ),
+                    None,
+                )
+                if session is None:
+                    raise LookupError("reconciled Stage 5 shadow session was not found")
+                executions = _stage5_sandbox_readiness_adapter_executions(
+                    self.audit_event_store, workflow
+                )
+                candidate = build_stage5_sandbox_readiness_decision(
+                    workflow,
+                    session,
+                    executions,
+                    operator=operator,
+                    confirmed=True,
+                )
+                existing = next(
+                    (
+                        item for item in _stage5_sandbox_readiness_decisions(
+                            self.audit_event_store, base_run_id
+                        )
+                        if item["decisionId"] == candidate["decisionId"]
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    decision = existing
+                    created = False
+                else:
+                    self.audit_event_store.record(
+                        stage5_sandbox_readiness_decision_to_audit_event(candidate)
+                    )
+                    decision = candidate
+                    created = True
+            except (LookupError, ValueError) as error:
+                self._send_json(
+                    {"error": "stage5_sandbox_readiness_blocked", "blockers": [str(error)]},
+                    status=409,
+                )
+                return
+            self._send_json(
+                {"sandboxReadinessDecision": decision}, status=201 if created else 200
+            )
+            return
         if parsed.path == "/api/portfolio/backtest":
             try:
                 portfolio = _portfolio_backtest_from_payload(self._read_json_body(), self.run_store)
@@ -3940,6 +4016,25 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"shadowSessions": sessions})
             return
+        if parsed.path == "/api/execution/sandbox-readiness-decisions":
+            try:
+                base_run_id, limit = _stage5_sandbox_readiness_query(parsed.query)
+                decisions = _stage5_sandbox_readiness_decisions(
+                    self.audit_event_store, base_run_id, limit=limit
+                )
+            except ValueError as error:
+                code = (
+                    "invalid_stage5_sandbox_readiness_query"
+                    if str(error) == "invalid_stage5_sandbox_readiness_query"
+                    else "invalid_stage5_sandbox_readiness_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"sandboxReadinessDecisions": decisions})
+            return
         if parsed.path == "/api/portfolio/paper-orders":
             query = parse_qs(parsed.query)
             base_run_id = query.get("baseRunId", [""])[0].strip()
@@ -5156,6 +5251,89 @@ def _stage5_shadow_query(raw_query: str) -> tuple[str, int]:
     limit = int(raw_limit[0])
     if not 1 <= limit <= 50:
         raise ValueError("invalid_stage5_shadow_session_query")
+    return base_run_id, limit
+
+
+def _stage5_sandbox_readiness_adapter_executions(
+    store: AuditEventStore, workflow: dict[str, Any]
+) -> list[dict[str, Any]]:
+    executions = []
+    for simulation in workflow["simulations"]:
+        execution_id = str(simulation.get("adapterPaperExecutionId") or "").strip()
+        if not execution_id:
+            raise LookupError("terminal adapter paper execution id is missing")
+        event = store.get(execution_id)
+        if event is None:
+            raise LookupError(f"terminal adapter paper execution {execution_id} was not found")
+        execution = execution_adapter_paper_execution_payload_from_audit_event(event)
+        if execution is None or execution.get("adapterPaperExecutionId") != event.event_id:
+            raise ValueError("terminal adapter paper execution audit binding does not match")
+        executions.append(execution)
+    return executions
+
+
+def _stage5_sandbox_readiness_decisions(
+    store: AuditEventStore,
+    base_run_id: str,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    decisions = []
+    for event in store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_sandbox_readiness_decision",
+        limit=50,
+    ):
+        decision = validate_stage5_sandbox_readiness_decision(event.metadata.get("snapshot"))
+        if (
+            decision["decisionId"] != event.event_id
+            or decision["baseRunId"] != base_run_id
+            or datetime.fromisoformat(decision["generatedAt"]) != event.created_at
+            or event.stage != "stage5-sandbox-readiness"
+            or event.source != decision["operator"]
+        ):
+            raise ValueError("stage5 sandbox readiness audit binding does not match")
+        workflow = _stage5_shadow_source_workflow(
+            store, base_run_id, decision["workflowHash"]
+        )
+        session = next(
+            (
+                item for item in _stage5_shadow_sessions(
+                    store, base_run_id, decision["workflowHash"]
+                )
+                if item["sessionHash"] == decision["shadowSessionHash"]
+            ),
+            None,
+        )
+        if session is None or session["sessionId"] != decision["shadowSessionId"]:
+            raise ValueError("stage5 sandbox readiness source session is missing")
+        rebuilt = build_stage5_sandbox_readiness_decision(
+            workflow,
+            session,
+            _stage5_sandbox_readiness_adapter_executions(store, workflow),
+            operator=decision["operator"],
+            confirmed=True,
+            generated_at=decision["generatedAt"],
+        )
+        if rebuilt != decision:
+            raise ValueError("stage5 sandbox readiness decision does not match source evidence")
+        decisions.append(decision)
+        if len(decisions) >= limit:
+            break
+    return decisions
+
+
+def _stage5_sandbox_readiness_query(raw_query: str) -> tuple[str, int]:
+    query = parse_qs(raw_query, keep_blank_values=True)
+    if set(query) - {"baseRunId", "limit"} or len(query.get("baseRunId", [])) != 1:
+        raise ValueError("invalid_stage5_sandbox_readiness_query")
+    base_run_id = query["baseRunId"][0].strip()
+    raw_limit = query.get("limit", ["20"])
+    if not base_run_id or len(raw_limit) != 1 or not raw_limit[0].isdigit():
+        raise ValueError("invalid_stage5_sandbox_readiness_query")
+    limit = int(raw_limit[0])
+    if not 1 <= limit <= 50:
+        raise ValueError("invalid_stage5_sandbox_readiness_query")
     return base_run_id, limit
 
 

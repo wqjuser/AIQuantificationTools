@@ -48,11 +48,39 @@ export interface Stage5ShadowSession {
   sessionHash: string;
 }
 
+export interface Stage5SandboxReadinessDecision {
+  kind: "aiqt.stage5SandboxReadinessDecision";
+  schemaVersion: 1;
+  decisionId: string;
+  decisionHash: string;
+  generatedAt: string;
+  baseRunId: string;
+  workflowId: string;
+  workflowHash: string;
+  shadowSessionId: string;
+  shadowSessionHash: string;
+  adapterId: string;
+  market: string;
+  adapterPaperExecutionIds: string[];
+  adapterManifestValidationIds: string[];
+  adapterAuditEventIds: string[];
+  operator: string;
+  status: "ready_for_manually_authorized_sandbox_phase";
+  paperOnly: true;
+  shadowOnly: true;
+  sandboxOrderSubmissionAllowed: false;
+  liveTradingAllowed: false;
+  orderSubmissionEnabled: false;
+  routeExecuted: false;
+  liveBlockedBoundary: true;
+}
+
 export interface Stage5ShadowState {
   status: "blocked" | "review" | "ready";
-  actionId: "start-stage5-shadow" | "retry-stage5-shadow" | null;
+  actionId: "start-stage5-shadow" | "retry-stage5-shadow" | "review-stage5-sandbox-readiness" | null;
   blocker: "stage4-workflow-missing" | "shadow-session-blocked" | null;
   session: Stage5ShadowSession | null;
+  readinessDecision?: Stage5SandboxReadinessDecision | null;
 }
 
 export function buildStage5ShadowSessionsUrl(baseUrl: string, baseRunId?: string, limit = 20): string {
@@ -62,22 +90,36 @@ export function buildStage5ShadowSessionsUrl(baseUrl: string, baseRunId?: string
   });
 }
 
+export function buildStage5SandboxReadinessDecisionsUrl(baseUrl: string, baseRunId?: string, limit = 20): string {
+  return buildApiUrl(baseUrl, "/api/execution/sandbox-readiness-decisions", baseRunId === undefined ? undefined : (url) => {
+    url.searchParams.set("baseRunId", baseRunId);
+    url.searchParams.set("limit", String(limit));
+  });
+}
+
 export function buildStage5ShadowState(
   workflow: Stage4PortfolioWorkflow | null | undefined,
-  sessions: readonly Stage5ShadowSession[]
+  sessions: readonly Stage5ShadowSession[],
+  decisions: readonly Stage5SandboxReadinessDecision[] = []
 ): Stage5ShadowState {
-  if (!workflow) return { status: "blocked", actionId: null, blocker: "stage4-workflow-missing", session: null };
+  if (!workflow) return { status: "blocked", actionId: null, blocker: "stage4-workflow-missing", session: null, readinessDecision: null };
   const session = [...sessions]
     .filter((row) => row.baseRunId === workflow.baseRunId && row.workflowHash === workflow.workflowHash)
     .sort((left, right) => right.attempt - left.attempt || right.generatedAt.localeCompare(left.generatedAt))[0] ?? null;
-  if (!session) return { status: "review", actionId: "start-stage5-shadow", blocker: null, session: null };
+  if (!session) return { status: "review", actionId: "start-stage5-shadow", blocker: null, session: null, readinessDecision: null };
   if (session.status === "recoverable_failure") {
-    return { status: "review", actionId: "retry-stage5-shadow", blocker: null, session };
+    return { status: "review", actionId: "retry-stage5-shadow", blocker: null, session, readinessDecision: null };
   }
   if (session.status === "blocked") {
-    return { status: "blocked", actionId: null, blocker: "shadow-session-blocked", session };
+    return { status: "blocked", actionId: null, blocker: "shadow-session-blocked", session, readinessDecision: null };
   }
-  return { status: "ready", actionId: null, blocker: null, session };
+  const readinessDecision = decisions.find((row) =>
+    row.baseRunId === workflow.baseRunId && row.workflowHash === workflow.workflowHash &&
+    row.shadowSessionHash === session.sessionHash
+  ) ?? null;
+  return readinessDecision
+    ? { status: "ready", actionId: null, blocker: null, session, readinessDecision }
+    : { status: "review", actionId: "review-stage5-sandbox-readiness", blocker: null, session, readinessDecision: null };
 }
 
 export function isStage5ShadowSession(value: unknown): value is Stage5ShadowSession {
@@ -106,6 +148,29 @@ export function isStage5ShadowSession(value: unknown): value is Stage5ShadowSess
     row.reconciliation.stage4OrderCount === row.orders.length && row.reconciliation.shadowOrderCount === row.orders.length &&
     finite(row.reconciliation.grossNotional) && row.reconciliation.grossNotional > 0 &&
     row.reconciliation.reconciled === (row.status === "reconciled");
+}
+
+export function isStage5SandboxReadinessDecision(value: unknown): value is Stage5SandboxReadinessDecision {
+  if (!record(value) || !exact(value, [
+    "kind", "schemaVersion", "decisionId", "generatedAt", "baseRunId", "workflowId", "workflowHash",
+    "shadowSessionId", "shadowSessionHash", "adapterId", "market", "adapterPaperExecutionIds",
+    "adapterManifestValidationIds", "adapterAuditEventIds", "operator", "status", "paperOnly", "shadowOnly",
+    "sandboxOrderSubmissionAllowed", "liveTradingAllowed", "orderSubmissionEnabled", "routeExecuted",
+    "liveBlockedBoundary", "decisionHash"
+  ])) return false;
+  const row = value as unknown as Stage5SandboxReadinessDecision;
+  const refs = [row.adapterPaperExecutionIds, row.adapterManifestValidationIds, row.adapterAuditEventIds];
+  return row.kind === "aiqt.stage5SandboxReadinessDecision" && row.schemaVersion === 1 &&
+    [row.decisionId, row.baseRunId, row.workflowId, row.shadowSessionId, row.adapterId, row.market, row.operator].every(nonempty) &&
+    [row.workflowHash, row.shadowSessionHash, row.decisionHash].every(hash) && zoned(row.generatedAt) &&
+    row.status === "ready_for_manually_authorized_sandbox_phase" &&
+    refs.every((items) => Array.isArray(items) && items.length > 0 && items.every(nonempty)) &&
+    refs.every((items) => items.length === row.adapterPaperExecutionIds.length) &&
+    new Set(row.adapterPaperExecutionIds).size === row.adapterPaperExecutionIds.length &&
+    row.adapterAuditEventIds.every((id, index) => id === row.adapterPaperExecutionIds[index]) &&
+    row.paperOnly === true && row.shadowOnly === true && row.sandboxOrderSubmissionAllowed === false &&
+    row.liveTradingAllowed === false && row.orderSubmissionEnabled === false && row.routeExecuted === false &&
+    row.liveBlockedBoundary === true;
 }
 
 export async function runStage5ShadowSession(
@@ -148,12 +213,61 @@ export async function loadStage5ShadowSessions(
   }
 }
 
+export async function runStage5SandboxReadinessDecision(
+  baseUrl: string,
+  workflow: Stage4PortfolioWorkflow,
+  session: Stage5ShadowSession,
+  fetcher: WorkspaceFetcher = (url, init) => fetch(url, init)
+): Promise<{ decision?: Stage5SandboxReadinessDecision; source: WorkspaceSource; error?: string }> {
+  try {
+    const payload = await request(buildStage5SandboxReadinessDecisionsUrl(baseUrl), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseRunId: workflow.baseRunId,
+        workflowHash: workflow.workflowHash,
+        sessionHash: session.sessionHash,
+        operator: "local-operator",
+        confirmed: true
+      })
+    }, fetcher);
+    if (!record(payload) || !isStage5SandboxReadinessDecision(payload.sandboxReadinessDecision)) {
+      throw new Error("Invalid Stage 5 sandbox readiness decision contract");
+    }
+    return { decision: payload.sandboxReadinessDecision, source: "core" };
+  } catch (error) {
+    return { source: "fallback", error: message(error) };
+  }
+}
+
+export async function loadStage5SandboxReadinessDecisions(
+  baseUrl: string,
+  baseRunId: string,
+  fetcher: WorkspaceFetcher = (url, init) => fetch(url, init),
+  limit = 20
+): Promise<{ decisions: Stage5SandboxReadinessDecision[]; source: WorkspaceSource; error?: string }> {
+  try {
+    const payload = await request(
+      buildStage5SandboxReadinessDecisionsUrl(baseUrl, baseRunId, limit), undefined, fetcher
+    );
+    if (!record(payload) || !Array.isArray(payload.sandboxReadinessDecisions) ||
+      !payload.sandboxReadinessDecisions.every(isStage5SandboxReadinessDecision)) {
+      throw new Error("Invalid Stage 5 sandbox readiness history contract");
+    }
+    return { decisions: payload.sandboxReadinessDecisions, source: "core" };
+  } catch (error) {
+    return { decisions: [], source: "fallback", error: message(error) };
+  }
+}
+
 async function request(url: string, init: RequestInit | undefined, fetcher: WorkspaceFetcher): Promise<unknown> {
   const response = await fetcher(url, init);
   if (!response.ok) {
     let payload: unknown;
     try { payload = await response.json(); } catch { /* status fallback */ }
-    throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    const blockers = record(payload) && Array.isArray(payload.blockers)
+      ? payload.blockers.filter(nonempty).join("; ")
+      : "";
+    throw new Error(blockers || coreErrorDetail(payload) || `HTTP ${response.status ?? "error"}`);
   }
   return response.json();
 }

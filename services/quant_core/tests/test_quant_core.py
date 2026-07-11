@@ -4827,6 +4827,7 @@ class QuantCoreContractTest(unittest.TestCase):
         pipeline_index = 0
         simulation_index = 0
         export_index = 0
+        ops_state_events = {}
 
         export_package = {
             "kind": "aiqt.researchRun.export",
@@ -4861,6 +4862,31 @@ class QuantCoreContractTest(unittest.TestCase):
             if url.endswith("/api/portfolio/paper-order-approvals"):
                 order_id = payload["orderId"]
                 return {"approval": next(row for row in workflow["approvals"] if row["orderId"] == order_id)}
+            if url.endswith("/api/audit/events"):
+                self.assertEqual(payload["eventType"], "execution_adapter_ops_state")
+                self.assertFalse(payload["metadata"].get("liveTradingAllowed", False))
+                ops_state_events[payload["eventId"]] = payload
+                return {"event": payload}
+            if url.endswith("/api/execution/adapter-paper-executions"):
+                ops_event = ops_state_events[payload["adapterOpsStateId"]]
+                metadata = ops_event["metadata"]
+                execution_id = f"paper-{payload['adapterOpsStateId']}"
+                return {
+                    "adapterPaperExecution": {
+                        "adapterPaperExecutionId": execution_id,
+                        "manifestValidationId": metadata["manifestValidationId"],
+                        "adapterId": metadata["adapterId"],
+                        "market": metadata["market"],
+                        "route": "paper",
+                        "status": "paper_execution_recorded",
+                        "paperFillRecorded": True,
+                        "paperOnly": True,
+                        "orderSubmitted": False,
+                        "liveOrderSubmitted": False,
+                        "routeExecuted": False,
+                        "liveTradingAllowed": False,
+                    }
+                }
             if url.endswith("/api/portfolio/paper-order-simulations/batch"):
                 simulation_index += 1
                 retry = simulation_index == 2
@@ -4938,6 +4964,10 @@ class QuantCoreContractTest(unittest.TestCase):
                 ("POST", "/api/portfolio/paper-orders"),
                 ("POST", "/api/portfolio/paper-order-approvals"),
                 ("POST", "/api/portfolio/paper-order-approvals"),
+                ("POST", "/api/audit/events"),
+                ("POST", "/api/execution/adapter-paper-executions"),
+                ("POST", "/api/audit/events"),
+                ("POST", "/api/execution/adapter-paper-executions"),
                 ("POST", "/api/portfolio/paper-order-simulations/batch"),
                 ("POST", "/api/portfolio/paper-order-simulations/batch"),
                 ("GET", "/api/portfolio/paper-order-state-history?baseRunId=run-a&batchId=portfolio-paper-batch-1"),

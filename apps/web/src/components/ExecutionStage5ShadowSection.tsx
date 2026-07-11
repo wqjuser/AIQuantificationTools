@@ -19,7 +19,10 @@ export function ExecutionStage5ShadowSection({
   const session = state.session;
   const actionLabel = state.actionId === "retry-stage5-shadow"
     ? i18n.t("execution.stage5.retry")
-    : i18n.t("execution.stage5.start");
+    : state.actionId === "review-stage5-sandbox-readiness"
+      ? i18n.t("execution.stage5.readinessAction")
+      : i18n.t("execution.stage5.start");
+  const readinessDecision = state.readinessDecision;
   return (
     <section className={`execution-stage5-shadow ${state.status}`} aria-labelledby="execution-stage5-shadow-title">
       <header>
@@ -53,6 +56,15 @@ export function ExecutionStage5ShadowSection({
         <div><dt>{i18n.t("execution.stage5.reconciliation")}</dt><dd>{session?.reconciliation.reason ?? "-"}</dd></div>
         <div><dt>{i18n.t("execution.stage5.sessionHash")}</dt><dd className="execution-stage5-shadow-hash">{session?.sessionHash ?? "-"}</dd></div>
       </dl>
+      {readinessDecision ? (
+        <div className="execution-stage5-readiness" role="status">
+          <strong>{i18n.t("execution.stage5.readinessTitle")}</strong>
+          <span>{readinessDecision.status}</span>
+          <span>{readinessDecision.adapterId} · {readinessDecision.adapterPaperExecutionIds.join(", ")}</span>
+          <small className="execution-stage5-shadow-hash">{readinessDecision.decisionHash}</small>
+          <p>{i18n.t("execution.stage5.readinessBoundary")}</p>
+        </div>
+      ) : null}
       {session ? (
         <details>
           <summary>{i18n.t("execution.stage5.orders")}</summary>

@@ -88,16 +88,19 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 5 当前阶段：Shadow Operations 可操作审计闭环
+## Stage 5 当前阶段：Sandbox 准入门禁
 
-Stage 4 已通过退出门禁并转入维护。Stage 5 先把权威 Stage 4 workflow 投影到本地 `local-fake-shadow` adapter：稳定生成 `clientOrderId`，记录状态迁移、限额、kill switch、超时一次/重试、对账和审计 attempt。第二阶段在 Execution 工作区提供唯一启动/重试入口，并从 `AuditEventStore` 刷新恢复；第三阶段把 `none / timeout_once / adapter_rejected / reconciliation_mismatch / kill_switch` 五种模式收口为真实 HTTP、持久化、API 容器重启和便携恢复演练。Audit 包用 `artifactCounts.stage5ShadowSessions` 专项核对，导入前必须能用包内 Stage 4 workflow 权威重建 session。全程不创建第二套订单库。
+Stage 4 已通过退出门禁并转入维护。Stage 5 前三阶段已经把权威 Stage 4 workflow 投影到本地 `local-fake-shadow` adapter，并完成五类 Shadow 故障演练、刷新恢复、API 重启和便携审计。第四阶段继续复用 Stage 4 workflow、已对账 Stage 5 session、组合模拟引用的 terminal adapter paper evidence 与现有 `AuditEventStore`，生成服务端权威、幂等且可重建的 `aiqt.stage5SandboxReadinessDecision`。该决策只表示证据满足进入后续独立人工授权阶段的条件，不表示已经允许连接 sandbox/testnet 或提交订单；全程没有新增第二套 adapter 链或订单库。
 
 ```powershell
 npm run docker:smoke:stage5 -- --no-build
 npm run docker:smoke:stage5:validate
+# 只运行/复核第四阶段准入门禁
+npm run docker:smoke:stage5:readiness -- --no-build
+npm run docker:smoke:stage5:readiness:validate
 ```
 
-验收产物为 `data/stage5-shadow-execution.json`，kind 为 `aiqt.stage5ShadowExecutionAcceptance`、schemaVersion 为 2；`failureDrills` 保存 5 个独立 workflow 的完整可重建证据，总计恰好 6 个 session，`restartReadback` 校验 API 重启后的精确 hash 集合，`exportReadback` 校验首次导出、原子导入后再导出及 GET 回读。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。本阶段不访问 broker/testnet、不读取 broker secret、不做账户同步、不提交或撤销订单；仍固定 `paperOnly=true`、`shadowOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+验收会同时维护 `data/stage5-shadow-execution.json` 与 `data/stage5-sandbox-readiness.json`。后者 kind 为 `aiqt.stage5SandboxReadinessAcceptance`、schemaVersion 为 1，覆盖成功决策、重复请求幂等、API 重启精确回读、导出/原子导入/再导出，以及缺 adapter event、市场错配、blocked session、不安全 adapter evidence 和 decision hash 篡改五类 blocker。研究包用 `artifactCounts.stage5SandboxReadinessDecisions` 核对决策数量，并按 workflow、session、adapter evidence、decision 的顺序重建。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。本阶段不访问 broker/testnet、不读取 broker secret、不做账户同步、不提交或撤销订单；仍固定 `paperOnly=true`、`shadowOnly=true`、`sandboxOrderSubmissionAllowed=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
 
 ## Stage 4 维护门禁：组合模拟黄金路径
 

@@ -287,8 +287,11 @@ import {
 } from "./lib/portfolio-stage4";
 import {
   buildStage5ShadowState,
+  loadStage5SandboxReadinessDecisions,
   loadStage5ShadowSessions,
+  runStage5SandboxReadinessDecision,
   runStage5ShadowSession,
+  type Stage5SandboxReadinessDecision,
   type Stage5ShadowSession
 } from "./lib/stage5-shadow";
 import {
@@ -504,6 +507,7 @@ import {
   buildResearchWorkspaceStateDraft,
   researchWorkspaceStateMatchesDraft,
   buildResearchRunExportBrowserRows,
+  verifyStage5SandboxReadinessDecisionHashes,
   buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunImportAuditEvent,
@@ -2229,6 +2233,8 @@ export function App() {
   const [portfolioStage4Workflows, setPortfolioStage4Workflows] = useState<Stage4PortfolioWorkflow[]>([]);
   const [portfolioStage4RefreshGeneration, setPortfolioStage4RefreshGeneration] = useState(0);
   const [stage5ShadowSessions, setStage5ShadowSessions] = useState<Stage5ShadowSession[]>([]);
+  const [stage5SandboxReadinessDecisions, setStage5SandboxReadinessDecisions] =
+    useState<Stage5SandboxReadinessDecision[]>([]);
   const [stage5ShadowError, setStage5ShadowError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
@@ -2761,7 +2767,11 @@ export function App() {
     replay: portfolioPaperOrderReplay,
     workflow: portfolioStage4Workflow
   });
-  const stage5ShadowState = buildStage5ShadowState(portfolioStage4Workflow, stage5ShadowSessions);
+  const stage5ShadowState = buildStage5ShadowState(
+    portfolioStage4Workflow,
+    stage5ShadowSessions,
+    stage5SandboxReadinessDecisions
+  );
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -3623,14 +3633,19 @@ export function App() {
     let cancelled = false;
     if (!baseRunId) {
       setStage5ShadowSessions([]);
+      setStage5SandboxReadinessDecisions([]);
       setStage5ShadowError(null);
       return;
     }
     setStage5ShadowError(null);
-    void loadStage5ShadowSessions(quantCoreBaseUrl, baseRunId).then((result) => {
+    void Promise.all([
+      loadStage5ShadowSessions(quantCoreBaseUrl, baseRunId),
+      loadStage5SandboxReadinessDecisions(quantCoreBaseUrl, baseRunId)
+    ]).then(([sessionResult, readinessResult]) => {
       if (cancelled) return;
-      setStage5ShadowSessions(result.sessions);
-      setStage5ShadowError(result.error ?? null);
+      setStage5ShadowSessions(sessionResult.sessions);
+      setStage5SandboxReadinessDecisions(readinessResult.decisions);
+      setStage5ShadowError(sessionResult.error ?? readinessResult.error ?? null);
     });
     return () => { cancelled = true; };
   }, [currentResearchRunId]);
@@ -7173,6 +7188,30 @@ export function App() {
     stage5ShadowRequestIdRef.current = requestId;
     setIsRunningStage5Shadow(true);
     setStage5ShadowError(null);
+    if (stage5ShadowState.actionId === "review-stage5-sandbox-readiness") {
+      if (!stage5ShadowState.session) {
+        setIsRunningStage5Shadow(false);
+        setStage5ShadowError("Stage 5 reconciled shadow session is required");
+        return;
+      }
+      const result = await runStage5SandboxReadinessDecision(
+        quantCoreBaseUrl,
+        portfolioStage4Workflow,
+        stage5ShadowState.session
+      );
+      if (stage5ShadowRequestIdRef.current !== requestId) return;
+      setIsRunningStage5Shadow(false);
+      if (!result.decision) {
+        setStage5ShadowError(result.error ?? "Stage 5 sandbox readiness review failed");
+        return;
+      }
+      const decision = result.decision;
+      setStage5SandboxReadinessDecisions((current) => [
+        decision,
+        ...current.filter((row) => row.decisionId !== decision.decisionId)
+      ]);
+      return;
+    }
     const result = await runStage5ShadowSession(
       quantCoreBaseUrl,
       portfolioStage4Workflow,
@@ -7189,7 +7228,7 @@ export function App() {
       session,
       ...current.filter((row) => row.sessionId !== session.sessionId)
     ]);
-  }, [isRunningStage5Shadow, portfolioStage4Workflow, stage5ShadowState.session]);
+  }, [isRunningStage5Shadow, portfolioStage4Workflow, stage5ShadowState.actionId, stage5ShadowState.session]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {
     const portfolio = portfolioBacktestState.portfolio;
@@ -7733,6 +7772,7 @@ export function App() {
         quantCoreBaseUrl,
         result.exportPackage
       );
+      await verifyStage5SandboxReadinessDecisionHashes(result.exportPackage);
       if (!requestCoordinator.isCurrent(inspectionRequestId)) {
         return { ok: false, error: "Research run export inspect superseded" };
       }
@@ -8507,6 +8547,7 @@ export function App() {
           return;
         }
         exportPackage = await withVerifiedResearchRunExportPackageReportSignatures(quantCoreBaseUrl, exportPackage);
+        await verifyStage5SandboxReadinessDecisionHashes(exportPackage);
         if (!requestCoordinator.isCurrent(requestId)) {
           return;
         }
@@ -28443,6 +28484,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "ai-reviews-v2": i18n.t("archive.aiReview.authoritative"),
       "ai-review-decisions": i18n.t("archive.aiReview.decision"),
       "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
+      "stage5-sandbox-readiness-decisions": "Stage 5 Sandbox 准入决策",
       "audit-summary": "审计摘要",
       "audit-report": "审计报告",
       "execution-handoff": "执行交接"
@@ -28572,6 +28614,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "ai-review-runs": "AI 评审记录",
       "stage4-portfolio-workflows": "Stage 4 组合工作流",
       "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
+      "stage5-sandbox-readiness-decisions": "Stage 5 Sandbox 准入决策",
       "audit-summary": "导入审计摘要",
       "audit-report": "导入审计报告",
       "backtest-report": "导入回测报告",
