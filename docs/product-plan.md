@@ -4,7 +4,7 @@
 
 Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验与 Stage 3 AI Review 现已进入维护状态。唯一当前阶段是 Stage 4 组合与模拟交易，Stage 5 实盘准备仍为后续规划。
 
-Stage 4 于 2026-07-11 通过发布门禁：fresh Python/Web 测试与生产构建、保留数据卷的 Docker 重建、Stage 3/4 smoke 与离线 validate、桌面发布、DMG 校验和安全审计均通过。发布产物 `AIQuantificationTools_0.1.0_x64.dmg` 的 SHA-256 为 `2df16ced73a618a2b9556857c3b02c6b5b69786409f9cfaa781ebac519dcac5e`。
+Stage 4 于 2026-07-11 通过发布门禁：fresh Python/Web 测试与生产构建、保留数据卷的 Docker 重建、Stage 3/4 smoke 与离线 validate、桌面发布、DMG 校验和安全审计均通过。发布产物 `AIQuantificationTools_0.1.0_x64.dmg` 的 SHA-256 为 `8c88abc415388efc281d3be5f74774b9b687083e124107090e45500780a97cef`。
 
 Stage 3 的交付范围是一条可审计且可降级的 AI 评审闭环：从单个已选中的 Strategy Experiment candidate 构造确定性 dossier；先生成本地 deterministic baseline，再按配置选择 `local`、`openai`、`openai-compatible` 或 `ollama` Provider；保存 authoritative v2 Review 与 append-only Decision 链；在 Audit 导出包、Docker、真实浏览器和桌面 DMG 中验证完整回放。Provider 未配置、超时或失败不会阻断本地 baseline，也不会丢失失败证据。
 

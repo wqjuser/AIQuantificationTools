@@ -7,7 +7,14 @@ from unittest.mock import patch
 
 
 class QuantCoreContractTest(unittest.TestCase):
-    def _stage4_portfolio_workflow_dependencies(self, root, *, market_b="ashare", timeframe_b="1d"):
+    def _stage4_portfolio_workflow_dependencies(
+        self,
+        root,
+        *,
+        market_b="ashare",
+        timeframe_b="1d",
+        same_time_reverse_lexical_orders=False,
+    ):
         from quant_core.audit_events import AuditEventStore
         from quant_core.execution import (
             PortfolioPaperOrderApproval,
@@ -50,6 +57,7 @@ class QuantCoreContractTest(unittest.TestCase):
         approval_store = PortfolioPaperOrderApprovalStore(root / "approvals.sqlite")
         simulation_store = PortfolioPaperOrderSimulationStore(root / "simulations.sqlite")
         audit_store = AuditEventStore(root / "audit.sqlite")
+        order_ids = ("order-z", "order-a") if same_time_reverse_lexical_orders else ("order-a", "order-b")
         batch = PortfolioPaperOrderBatch(
             batch_id="portfolio-paper-batch-1",
             base_run_id="run-a",
@@ -61,7 +69,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 {
                     "timestamp": created_at.isoformat(),
                     "eventType": "portfolio_paper_order",
-                    "orderId": "order-a",
+                    "orderId": order_ids[0],
                     "symbol": "600000",
                     "sourceRunId": "run-a",
                     "side": "buy",
@@ -73,7 +81,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 {
                     "timestamp": created_at.isoformat(),
                     "eventType": "portfolio_paper_order",
-                    "orderId": "order-b",
+                    "orderId": order_ids[1],
                     "symbol": "000001",
                     "sourceRunId": "run-b",
                     "side": "buy",
@@ -86,7 +94,7 @@ class QuantCoreContractTest(unittest.TestCase):
             summary={},
         )
         batch_store.record(batch)
-        for index, order_id in enumerate(("order-a", "order-b")):
+        for index, order_id in enumerate(order_ids):
             approval_store.record(
                 PortfolioPaperOrderApproval(
                     approval_id=f"approval-{order_id}",
@@ -100,7 +108,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 )
             )
         for index, (order_id, symbol, source_run_id, quantity, price) in enumerate(
-            (("order-a", "600000", "run-a", 100, 100), ("order-b", "000001", "run-b", 50, 400))
+            ((order_ids[0], "600000", "run-a", 100, 100), (order_ids[1], "000001", "run-b", 50, 400))
         ):
             simulation_store.record(
                 PortfolioPaperOrderSimulation(
@@ -108,7 +116,9 @@ class QuantCoreContractTest(unittest.TestCase):
                     base_run_id="run-a",
                     batch_id=batch.batch_id,
                     order_id=order_id,
-                    simulated_at=created_at + timedelta(minutes=index + 3),
+                    simulated_at=created_at + timedelta(
+                        minutes=3 if same_time_reverse_lexical_orders else index + 3
+                    ),
                     mode="portfolio_paper_order_simulation",
                     symbol=symbol,
                     source_run_id=source_run_id,
@@ -19840,16 +19850,28 @@ class QuantCoreContractTest(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            dependencies = self._stage4_portfolio_workflow_dependencies(Path(tmp))
+            dependencies = self._stage4_portfolio_workflow_dependencies(
+                Path(tmp),
+                same_time_reverse_lexical_orders=True,
+            )
             status, created = self._stage4_portfolio_workflow_http(
                 dependencies,
                 "POST",
                 "/api/portfolio/workflows",
                 self._stage4_portfolio_workflow_request(),
             )
+            stored_order_ids = [
+                item.order_id
+                for item in dependencies["simulation_store"].list_by_batch(
+                    "run-a", "portfolio-paper-batch-1"
+                )
+            ]
         self.assertEqual(status, 201)
         event = created["auditEvent"]
         workflow = created["workflow"]
+        expected_order_ids = ["order-z", "order-a"]
+        self.assertEqual(stored_order_ids, expected_order_ids)
+        self.assertEqual([item["orderId"] for item in workflow["replay"]["orders"]], expected_order_ids)
         audit = self._sample_research_run_audit(run_id="run-a", strategy_revision="rev-run-a")
 
         exported = research_run_export_to_payload(audit, audit_events=[copy.deepcopy(event)])
@@ -19861,6 +19883,13 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(
             reexported["auditEvents"][0]["metadata"]["snapshot"]["workflowHash"],
             workflow["workflowHash"],
+        )
+        self.assertEqual(
+            [
+                item["orderId"]
+                for item in reexported["auditEvents"][0]["metadata"]["snapshot"]["replay"]["orders"]
+            ],
+            expected_order_ids,
         )
 
         for case in ("metadata", "count", "hash"):
@@ -23553,6 +23582,14 @@ class QuantCoreContractTest(unittest.TestCase):
             base_run_id="portfolio-run-replay",
         )
         self.assertEqual([order["orderId"] for order in same_time["orders"]], ["order-buy-late", "order-buy-early"])
+
+    def test_portfolio_paper_order_simulation_store_declares_stable_insertion_tiebreak(self):
+        import inspect
+
+        from quant_core.execution import PortfolioPaperOrderSimulationStore
+
+        source = inspect.getsource(PortfolioPaperOrderSimulationStore)
+        self.assertEqual(source.count("order by simulated_at desc, rowid asc"), 2)
 
     def test_portfolio_paper_order_replay_api_returns_base_run_account_snapshot(self):
         import json

@@ -1513,7 +1513,7 @@ class PortfolioPaperOrderSimulationStore:
                        adapter_paper_execution_evidence_json
                 from portfolio_paper_order_simulations
                 where base_run_id = ? and batch_id = ?
-                order by simulated_at desc
+                order by simulated_at desc, rowid asc
                 """,
                 (base_run_id, batch_id),
             ).fetchall()
@@ -1532,7 +1532,7 @@ class PortfolioPaperOrderSimulationStore:
                        adapter_paper_execution_evidence_json
                 from portfolio_paper_order_simulations
                 where base_run_id = ?
-                order by simulated_at desc
+                order by simulated_at desc, rowid asc
                 """,
                 (base_run_id,),
             ).fetchall()
