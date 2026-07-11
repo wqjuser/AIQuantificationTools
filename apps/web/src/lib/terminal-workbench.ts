@@ -9053,7 +9053,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
     workAreaIds: ["market", "research"],
-    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 2 ships.",
+    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 3 ships.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -9063,7 +9063,7 @@ const productDevelopmentStageDefinitions = [
   {
     id: "strategy-backtest",
     label: "Stage 2 · Strategy and Backtest",
-    status: "current",
+    status: "maintenance",
     workAreaIds: ["strategy", "backtest"],
     focus: "Ship canonical, persisted, holdout-safe strategy experiments from audited single-symbol evidence.",
     exitCriteria: [
@@ -9076,13 +9076,13 @@ const productDevelopmentStageDefinitions = [
   {
     id: "ai-review",
     label: "Stage 3 · AI Review",
-    status: "planned",
+    status: "current",
     workAreaIds: ["ai-review"],
-    focus: "Run TradingAgents-style review only from audited evidence after strategy and backtest contracts are stable.",
+    focus: "Ship deterministic, provider-optional AI review from selected audited experiments with authoritative replayable decisions.",
     exitCriteria: [
-      "AI records cite run id, strategy revision, metrics, data quality, and report artifacts.",
-      "No AI action can bypass evidence or output direct buy or sell advice.",
-      "Saved AI reviews replay correctly from the audit record."
+      "Reviews bind to one selected experiment candidate and reconstruct canonical audited evidence.",
+      "Local deterministic assessment remains authoritative when an external Provider is absent or fails.",
+      "Authoritative v2 Reviews and append-only Decisions replay from archive evidence without enabling live routes."
     ]
   },
   {
