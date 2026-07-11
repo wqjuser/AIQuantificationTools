@@ -88,6 +88,23 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
+## Stage 4 组合模拟黄金路径（已交付，阶段仍为规划）
+
+Portfolio 工作区已经提供唯一的 Stage 4 组合模拟黄金路径：从至少两个同市场、同周期的已审计 research run 完成组合构建、确定性风控复核、人工审批、批量模拟成交和账户回放。页面每一步只保留一个主动作，刷新后从持久化批次、审批、模拟成交、状态历史、账户回放和权威工作流恢复，不依赖临时前端成功状态；Execution 继续展示逐单明细，Audit 负责归档与 hash 回读。该能力虽已交付并完成 Docker/真实浏览器验收，但在 Task 10 发布门禁通过前，Stage 3 仍是唯一 current，Stage 4 仍标记为 planned。
+
+权威工作流通过 `POST /api/portfolio/workflows` 入账。请求只包含 `baseRunId`、`name`、`initialCash`、`legs`、`riskTemplate`、`batchId` 和 `operator`；核心会从既有 stores 重新运行组合并读取批次、审批、模拟成交、状态历史与 replay，通过后写入一条 `stage4_portfolio_workflow` 审计事件。`GET /api/portfolio/workflows?baseRunId=...&limit=20` 按最新优先回读，并重新校验 workflow hash、审计事件身份、时间和完整 paper-only 证据。研究运行导出 manifest 用 `artifactCounts.stage4PortfolioWorkflows` 记录数量，导入预检会拒绝数量、身份、hash 或安全边界不一致；通过原子导入后再导出，可从 Audit 包浏览器回读同一 workflow hash。
+
+Docker 完整链路会写出 `data/stage4-portfolio-paper.json`，其 kind 为 `aiqt.stage4PortfolioPaperAcceptance`；离线校验不启动容器：
+
+```powershell
+npm run docker:smoke:stage4 -- --no-build
+npm run docker:smoke:stage4:validate
+```
+
+smoke 要求正好两个不同的 run/标的、完整风险检查、按批次顺序审批与成交、精确状态历史和账户回放，并重复提交同一批次证明不会产生第二笔成交；manifest 同时绑定 portfolio/workflow hash 和导出、导入、再回读的数量及 hash。缺少已审计 run、市场或周期不一致、非法权重、批次身份错配、审批/route-risk 不完整、重复或错绑成交、replay 不精确、归档数量或 hash 不一致都会确定性失败，已持久化的前序账本仍保留且不会补造后续成功。
+
+真实浏览器验收已覆盖双标的 Portfolio 主路径、明确拒绝证据、审批/模拟/replay、刷新恢复、Audit 18/18 artifact 与 SHA-256 回读，以及 Portfolio/Audit 在 375px 下无横向溢出。全链始终固定五项安全边界：`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`；没有真实券商连接、真实订单、订单提交或 live route 动作。
+
 P2 阶段已经开始推进实盘前准入控制面，计划见 `docs/superpowers/plans/2026-06-24-aiquant-p2-prelive-readiness.md`。Execution 的晋级队列会显示“实盘前清单”，把审计运行、风控审批、模拟执行、适配器认证和人工确认压成一个可读的准入摘要；它只用于人工复核准备，仍固定 `orderSubmissionEnabled=false` 和 `liveTradingAllowed=false`，不会连接券商或提交真实订单。
 
 运行中的核心服务也会通过 `GET /api/p2/pre-live/acceptance/latest` 回读本地 `data/p2-pre-live-acceptance.json`。Execution 与 Audit 会把这份 P2 manifest 显示为通过、缺失或无效三态；如果 manifest 声称允许下单、允许实盘、提交过实盘订单、执行过真实路由或缺少 live-blocked 边界，平台会标记为无效并继续保持 `orderSubmissionEnabled=false`、`liveTradingAllowed=false`。

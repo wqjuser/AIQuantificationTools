@@ -26,6 +26,18 @@ Stage 4/5 仍为后续规划；组合扩展、真实券商、实盘委托和 liv
 - 无论 Provider 成功、未配置或失败，`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 都是不可变边界。
 - Re-run the Stage 1 regression chain: `npm run stage1:prepare`
 
+## Stage 4 已交付架构（阶段仍为 planned）
+
+Stage 4 没有新增订单模型、数据库或第二套模拟器。Portfolio 的五步组合黄金路径复用现有 `ResearchRunStore`、组合回测引擎、纸面批次/审批/模拟 stores、状态历史、账户回放和通用 `AuditEventStore`；前端只编排既有 API，并在刷新后按 base run 恢复持久化证据。Task 10 发布门禁通过前，Stage 3 仍是唯一 current，Stage 4 不得切换阶段状态。
+
+`POST /api/portfolio/workflows` 是权威收口点：服务端只接受 `baseRunId/name/initialCash/legs/riskTemplate/batchId/operator`，重新读取至少两个已审计 run、运行组合、加载并按批次顺序绑定审批与模拟成交，再派生状态历史和 replay；完整验证后才将 canonical `aiqt.stage4PortfolioWorkflow` 快照写入 `stage4_portfolio_workflow` 审计事件。`GET /api/portfolio/workflows?baseRunId=...&limit=20` 按最新优先读取同一账本，逐条重验快照、event/run/time 绑定并对 malformed 持久化记录 fail closed。
+
+研究运行导出不增加第二份 Stage 4 payload，而是从 `auditEvents[].metadata.snapshot` 派生 `manifest.artifactCounts.stage4PortfolioWorkflows`。导入预检复用领域 validator 校验 workflow hash、wrapper 与内部身份、批次/审批/模拟/state/replay 顺序和五项安全字段；数量或证据不一致会在原子写入前阻断，合法包则沿用现有导入/回滚路径，随后可从 Audit 包浏览器和 import diff 回读同一工作流。
+
+`npm run docker:smoke:stage4 -- --no-build` 走真实 HTTP 合同生成 `data/stage4-portfolio-paper.json`，其 kind 为 `aiqt.stage4PortfolioPaperAcceptance`；`npm run docker:smoke:stage4:validate` 可离线重验 portfolio/workflow hash、五条风险检查、精确审批/成交顺序、重复批次模拟的幂等跳过、完整 replay，以及 export/import/readback 的数量和 hash。缺失 run、上下文或身份错配、非法权重、风险/人工拒绝、过期 route-risk、重复或错绑成交、replay/归档/hash/边界不一致都会确定性失败，且不补造后续状态。
+
+Docker 与真实浏览器验收已经覆盖双标的主路径、拒绝证据、审批/模拟/replay、刷新恢复、Audit 18/18 artifact 和 SHA-256 回读，以及 375px Portfolio/Audit 无横向溢出。架构边界仍固定 `paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`；不存在真实券商、真实订单、订单提交或 live route。
+
 ## Backend Core
 
 - `domain.py`：统一 OHLCV、策略、回测、AI 报告、订单和账户模型。
@@ -135,6 +147,7 @@ AI Review 与 Backtest Markdown 现在优先从持久化 Strategy Experiment 生
 - `POST /api/ai-reviews/{aiReviewId}/decisions`：按前序 hash 追加研究流程 Decision；冲突或断链 fail closed，不覆盖已有记录。
 - `GET /api/research/runs/{runId}/ai-reviews?...`：只保留旧版 v1 非权威记录的兼容回读。对应 POST 已退役并返回迁移提示，新的权威记录必须使用 `POST /api/ai-reviews`。
 - `POST /api/portfolio/backtest`：请求体为 `{ "name": "...", "initialCash": 100000, "legs": [{"runId": "...", "targetWeight": 0.6}] }`，从 `ResearchRunStore` 读取已审计 run 的 `backtestEquityCurve`、metrics 和数据质量，转换为组合 leg 后调用 `PortfolioBacktestEngine`。缺失 run 返回 `research_run_not_found`，权重总和超过 100%、缺权益曲线、市场/周期不一致或时间戳不对齐返回 `invalid_portfolio_backtest`；响应 `portfolio` 包含组合 metrics、equityCurve、cashWeight、legs contribution、allocationEvents、rebalanceEvents、covarianceRisk、correlationPairs 和 dataQuality。
+- `POST /api/portfolio/workflows` 与 `GET /api/portfolio/workflows?baseRunId=...&limit=20`：POST 从已审计 run 与既有组合 stores 权威重建 Stage 4 workflow，通过后写入 `stage4_portfolio_workflow`；GET 从通用审计账本按 base run 最新优先回读并重验 hash、身份、时间和 paper-only 边界。POST 缺失证据返回 404、非法合同返回 400；GET 非法 query 返回 400，持久化证据无效返回 500，不把 malformed 行降级为成功。
 - `POST /api/portfolio/paper-orders` 与 `GET /api/portfolio/paper-orders?baseRunId=...&limit=20`：把组合回测输出的 `paperOrderEvents` 入账到 `PortfolioPaperOrderStore`，返回批次、通用 `portfolio_paper_order_batch` 审计事件和 `portfolioPaperOrderLifecycle`；列表接口按 base run 回读最近批次，供 Portfolio 和 Execution 复盘委托准备状态。
 - `POST /api/portfolio/paper-order-approvals` 与 `GET /api/portfolio/paper-order-approvals?baseRunId=...&batchId=...`：把单笔组合纸面委托的人工审批记录写入 `PortfolioPaperOrderApprovalStore`，POST 会确认批次和订单存在，返回审批记录、同批次审批列表、审批后的 `portfolioPaperOrderLifecycle` 和 `portfolio_paper_order_approval` 审计事件；GET 返回同批次审批列表和 lifecycle。前端在读取组合纸面委托批次后会按批次加载审批 lifecycle，通过 `buildPortfolioPaperOrderApprovalRows` 派生单笔审批队列，并在 Execution/Portfolio 中写回通过或拒绝操作；`ready_for_simulation` 仍停留在 paper-only 边界，等待后续模拟成交状态机接管。
 - `POST /api/portfolio/paper-order-simulations` 与 `GET /api/portfolio/paper-order-simulations?baseRunId=...&batchId=...`：把已进入 `ready_for_simulation` 的组合纸面委托写入 `PortfolioPaperOrderSimulationStore`，POST 会按批次读取审批 lifecycle，拒绝未批准、风控复核、跳过或无效委托，仅对可路由买卖委托派生模拟成交价并返回 `portfolio_paper_order_simulation` 审计事件；GET 返回同批次模拟成交回执和当前 lifecycle。前端 Execution/Portfolio 审批队列会对可模拟路由订单显示“模拟成交”动作，并在同一区域显示 paper-only 成交回执。
