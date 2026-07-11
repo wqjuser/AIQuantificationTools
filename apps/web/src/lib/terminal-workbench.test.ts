@@ -22926,6 +22926,16 @@ describe("terminal workbench model", () => {
     expect(draft.summary).toContain("2 audited runs");
   });
 
+  test("blocks a portfolio backtest draft without a bound current run", () => {
+    const run = {
+      ...auditedRunFixture({ runId: "run-600000", symbol: "600000", market: "ashare", timeframe: "1d" }),
+      backtestEquityCurve: [{ timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 }]
+    };
+    const peer = { ...run, runId: "run-000001", symbol: "000001" };
+
+    expect(buildPortfolioBacktestDraft([run, peer], null).status).toBe("blocked");
+  });
+
   test("builds a peer audit plan for missing same-market portfolio runs", () => {
     const current = {
       ...auditedRunFixture({

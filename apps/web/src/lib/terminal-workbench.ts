@@ -24271,7 +24271,7 @@ export function buildPortfolioBacktestDraft(
   runs: ResearchRunAudit[],
   currentRunId: string | null | undefined
 ): PortfolioBacktestDraft {
-  const current = currentRunId ? runs.find((run) => run.runId === currentRunId) : runs[0];
+  const current = currentRunId ? runs.find((run) => run.runId === currentRunId) : undefined;
   if (!current) {
     return blockedPortfolioBacktestDraft("Portfolio backtest blocked", "Run at least one audited research pipeline first.");
   }
