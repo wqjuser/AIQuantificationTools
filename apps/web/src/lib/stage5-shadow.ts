@@ -99,14 +99,48 @@ export interface Stage5SandboxAuthorizationPreflight {
   liveBlockedBoundary: true;
 }
 
+export interface Stage5SandboxAuthorizationReview {
+  kind: "aiqt.stage5SandboxAuthorizationReview";
+  schemaVersion: 1;
+  reviewId: string;
+  reviewHash: string;
+  generatedAt: string;
+  baseRunId: string;
+  preflightId: string;
+  preflightHash: string;
+  adapterId: "ccxt-live";
+  market: "crypto";
+  reviewer: string;
+  outcome: "approved" | "rejected";
+  reason: string;
+  confirmedScopeIds: string[];
+  status: "authorization_review_recorded";
+  authorizationEffective: false;
+  humanAuthorizationRequired: true;
+  sandboxOrderSubmissionAllowed: false;
+  liveTradingAllowed: false;
+  orderSubmissionEnabled: false;
+  routeExecuted: false;
+  liveBlockedBoundary: true;
+}
+
+const STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SCOPE_IDS = [
+  "preflight-hash-reviewed",
+  "sandbox-only-scope",
+  "no-order-submission",
+  "no-live-funds",
+  "kill-switch-and-rollback-owner-reviewed"
+] as const;
+
 export interface Stage5ShadowState {
   status: "blocked" | "review" | "ready";
   actionId: "start-stage5-shadow" | "retry-stage5-shadow" | "review-stage5-sandbox-readiness" |
-    "run-stage5-sandbox-authorization-preflight" | null;
+    "run-stage5-sandbox-authorization-preflight" | "record-stage5-sandbox-authorization-review" | null;
   blocker: "stage4-workflow-missing" | "shadow-session-blocked" | "sandbox-probe-missing" | null;
   session: Stage5ShadowSession | null;
   readinessDecision?: Stage5SandboxReadinessDecision | null;
   authorizationPreflight?: Stage5SandboxAuthorizationPreflight | null;
+  authorizationReview?: Stage5SandboxAuthorizationReview | null;
   sandboxProbeExecutionId?: string | null;
   sandboxProbeReviewId?: string | null;
 }
@@ -132,11 +166,19 @@ export function buildStage5SandboxAuthorizationPreflightsUrl(baseUrl: string, ba
   });
 }
 
+export function buildStage5SandboxAuthorizationReviewsUrl(baseUrl: string, baseRunId?: string, limit = 20): string {
+  return buildApiUrl(baseUrl, "/api/execution/sandbox-authorization-reviews", baseRunId === undefined ? undefined : (url) => {
+    url.searchParams.set("baseRunId", baseRunId);
+    url.searchParams.set("limit", String(limit));
+  });
+}
+
 export function buildStage5ShadowState(
   workflow: Stage4PortfolioWorkflow | null | undefined,
   sessions: readonly Stage5ShadowSession[],
   decisions: readonly Stage5SandboxReadinessDecision[] = [],
   preflights: readonly Stage5SandboxAuthorizationPreflight[] = [],
+  authorizationReviews: readonly Stage5SandboxAuthorizationReview[] = [],
   probeExecutions: readonly { id: string; adapterId: string; market: string; status: string; authoritativeHealthReady: boolean }[] = [],
   probeReviews: readonly { id: string; sandboxProbeExecutionId: string; adapterId: string; market: string; status: string }[] = []
 ): Stage5ShadowState {
@@ -162,7 +204,15 @@ export function buildStage5ShadowState(
     row.baseRunId === workflow.baseRunId && row.readinessDecisionHash === readinessDecision.decisionHash
   ) ?? null;
   if (authorizationPreflight) {
-    return { status: "ready", actionId: null, blocker: null, session, readinessDecision, authorizationPreflight };
+    const authorizationReview = authorizationReviews.find((row) =>
+      row.baseRunId === workflow.baseRunId && row.preflightHash === authorizationPreflight.preflightHash
+    ) ?? null;
+    return authorizationReview
+      ? { status: "ready", actionId: null, blocker: null, session, readinessDecision, authorizationPreflight, authorizationReview }
+      : {
+          status: "review", actionId: "record-stage5-sandbox-authorization-review", blocker: null,
+          session, readinessDecision, authorizationPreflight, authorizationReview: null
+        };
   }
   const execution = probeExecutions.find((row) =>
     row.adapterId === readinessDecision.adapterId && row.market === readinessDecision.market &&
@@ -252,6 +302,28 @@ export function isStage5SandboxAuthorizationPreflight(value: unknown): value is 
     row.status === "ready_for_separate_sandbox_authorization" && row.humanAuthorizationRequired === true &&
     row.sandboxOrderSubmissionAllowed === false && row.liveTradingAllowed === false &&
     row.orderSubmissionEnabled === false && row.routeExecuted === false && row.liveBlockedBoundary === true;
+}
+
+export function isStage5SandboxAuthorizationReview(value: unknown): value is Stage5SandboxAuthorizationReview {
+  if (!record(value) || !exact(value, [
+    "kind", "schemaVersion", "reviewId", "reviewHash", "generatedAt", "baseRunId", "preflightId",
+    "preflightHash", "adapterId", "market", "reviewer", "outcome", "reason", "confirmedScopeIds",
+    "status", "authorizationEffective", "humanAuthorizationRequired", "sandboxOrderSubmissionAllowed",
+    "liveTradingAllowed", "orderSubmissionEnabled", "routeExecuted", "liveBlockedBoundary"
+  ])) return false;
+  const row = value as unknown as Stage5SandboxAuthorizationReview;
+  return row.kind === "aiqt.stage5SandboxAuthorizationReview" && row.schemaVersion === 1 &&
+    [row.reviewId, row.baseRunId, row.preflightId, row.reviewer, row.reason].every(nonempty) &&
+    [row.reviewHash, row.preflightHash].every(hash) && zoned(row.generatedAt) &&
+    row.adapterId === "ccxt-live" && row.market === "crypto" &&
+    ["approved", "rejected"].includes(row.outcome) && row.status === "authorization_review_recorded" &&
+    Array.isArray(row.confirmedScopeIds) &&
+    row.confirmedScopeIds.length === STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SCOPE_IDS.length &&
+    row.confirmedScopeIds.every((id, index) => id === STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SCOPE_IDS[index]) &&
+    row.authorizationEffective === false &&
+    row.humanAuthorizationRequired === true && row.sandboxOrderSubmissionAllowed === false &&
+    row.liveTradingAllowed === false && row.orderSubmissionEnabled === false &&
+    row.routeExecuted === false && row.liveBlockedBoundary === true;
 }
 
 export async function runStage5ShadowSession(
@@ -385,6 +457,60 @@ export async function loadStage5SandboxAuthorizationPreflights(
     return { preflights: payload.sandboxAuthorizationPreflights, source: "core" };
   } catch (error) {
     return { preflights: [], source: "fallback", error: message(error) };
+  }
+}
+
+export async function runStage5SandboxAuthorizationReview(
+  baseUrl: string,
+  preflight: Stage5SandboxAuthorizationPreflight,
+  outcome: "approved" | "rejected",
+  reason: string,
+  fetcher: WorkspaceFetcher = (url, init) => fetch(url, init)
+): Promise<{ review?: Stage5SandboxAuthorizationReview; source: WorkspaceSource; error?: string }> {
+  try {
+    const payload = await request(buildStage5SandboxAuthorizationReviewsUrl(baseUrl), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        baseRunId: preflight.baseRunId,
+        preflightHash: preflight.preflightHash,
+        reviewer: "local-reviewer",
+        outcome,
+        reason,
+        confirmations: {
+          "preflight-hash-reviewed": true,
+          "sandbox-only-scope": true,
+          "no-order-submission": true,
+          "no-live-funds": true,
+          "kill-switch-and-rollback-owner-reviewed": true
+        }
+      })
+    }, fetcher);
+    if (!record(payload) || !isStage5SandboxAuthorizationReview(payload.sandboxAuthorizationReview)) {
+      throw new Error("Invalid Stage 5 sandbox authorization review contract");
+    }
+    return { review: payload.sandboxAuthorizationReview, source: "core" };
+  } catch (error) {
+    return { source: "fallback", error: message(error) };
+  }
+}
+
+export async function loadStage5SandboxAuthorizationReviews(
+  baseUrl: string,
+  baseRunId: string,
+  fetcher: WorkspaceFetcher = (url, init) => fetch(url, init),
+  limit = 20
+): Promise<{ reviews: Stage5SandboxAuthorizationReview[]; source: WorkspaceSource; error?: string }> {
+  try {
+    const payload = await request(
+      buildStage5SandboxAuthorizationReviewsUrl(baseUrl, baseRunId, limit), undefined, fetcher
+    );
+    if (!record(payload) || !Array.isArray(payload.sandboxAuthorizationReviews) ||
+      !payload.sandboxAuthorizationReviews.every(isStage5SandboxAuthorizationReview)) {
+      throw new Error("Invalid Stage 5 sandbox authorization review history contract");
+    }
+    return { reviews: payload.sandboxAuthorizationReviews, source: "core" };
+  } catch (error) {
+    return { reviews: [], source: "fallback", error: message(error) };
   }
 }
 

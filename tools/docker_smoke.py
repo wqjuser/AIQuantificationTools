@@ -1929,6 +1929,94 @@ def load_stage5_sandbox_authorization_preflight_acceptance_report(path: Path) ->
     return _load_json_report(path, "Stage 5 sandbox authorization preflight acceptance manifest")
 
 
+_STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY = {
+    "authorizationEffective": False,
+    "humanAuthorizationRequired": True,
+    "sandboxOrderSubmissionAllowed": False,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_sandbox_authorization_review_acceptance_manifest(
+    *,
+    preflight_acceptance: dict[str, Any],
+    request_status: int,
+    request_payload: dict[str, Any],
+    review_count: int,
+) -> dict[str, Any]:
+    assertions = {
+        "blockedProbeChainInherited": preflight_acceptance.get("status") == "passed"
+            and preflight_acceptance.get("preflightCount") == 0,
+        "reviewRequestBlocked": request_status == 409
+            and request_payload.get("error") == "stage5_sandbox_authorization_review_blocked",
+        "noSuccessfulReview": review_count == 0,
+    }
+    return {
+        "kind": "aiqt.stage5SandboxAuthorizationReviewAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if all(assertions.values()) else "failed",
+        "baseRunId": preflight_acceptance.get("baseRunId"),
+        "preflightAcceptance": preflight_acceptance,
+        "requestStatus": request_status,
+        "requestError": request_payload.get("error"),
+        "reviewCount": review_count,
+        "assertions": assertions,
+        **_STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_authorization_review_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox authorization review acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "baseRunId", "preflightAcceptance",
+        "requestStatus", "requestError", "reviewCount", "assertions",
+        *_STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox authorization review acceptance manifest: fields are invalid")
+    validate_stage5_sandbox_authorization_preflight_acceptance_manifest(payload["preflightAcceptance"])
+    if (
+        payload["kind"] != "aiqt.stage5SandboxAuthorizationReviewAcceptance"
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or not isinstance(payload["baseRunId"], str) or not payload["baseRunId"]
+        or payload["requestStatus"] != 409
+        or payload["requestError"] != "stage5_sandbox_authorization_review_blocked"
+        or payload["reviewCount"] != 0
+        or payload["assertions"] != {
+            "blockedProbeChainInherited": True,
+            "reviewRequestBlocked": True,
+            "noSuccessfulReview": True,
+        }
+        or any(
+            payload[field] is not expected
+            for field, expected in _STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY.items()
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization review acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5SandboxAuthorizationReview.generatedAt")
+    return (
+        f"stage5 sandbox authorization review run={payload['baseRunId']} requestBlocked=True "
+        "reviewCount=0 authorizationEffective=False liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_authorization_review_acceptance_report(
+    path: Path, manifest: dict[str, Any]
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox authorization review acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_authorization_review_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox authorization review acceptance manifest")
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -3320,6 +3408,63 @@ def run_stage5_sandbox_authorization_preflight_acceptance(
     return [summary]
 
 
+def run_stage5_sandbox_authorization_review_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    preflight_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    preflight_acceptance = load_stage5_sandbox_authorization_preflight_acceptance_report(
+        preflight_report_path
+    )
+    validate_stage5_sandbox_authorization_preflight_acceptance_manifest(preflight_acceptance)
+    base_run_id = str(preflight_acceptance["baseRunId"])
+    request_status, request_payload = post_json_with_status(
+        join_url(base_url, "/api/execution/sandbox-authorization-reviews"),
+        {
+            "baseRunId": base_run_id,
+            "preflightHash": preflight_acceptance["readinessDecisionHash"],
+            "reviewer": "docker-smoke",
+            "outcome": "approved",
+            "reason": "Fail-closed acceptance must not create a review without a preflight.",
+            "confirmations": {
+                "preflight-hash-reviewed": True,
+                "sandbox-only-scope": True,
+                "no-order-submission": True,
+                "no-live-funds": True,
+                "kill-switch-and-rollback-owner-reviewed": True,
+            },
+        },
+        timeout_seconds,
+    )
+    request_payload = _require_dict(request_payload, "Stage 5 sandbox authorization review blocked response")
+    readback = _require_dict(
+        request_json(
+            join_url(
+                base_url,
+                f"/api/execution/sandbox-authorization-reviews?{urlencode({'baseRunId': base_run_id, 'limit': 20})}",
+            ),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox authorization review readback",
+    )
+    reviews = readback.get("sandboxAuthorizationReviews")
+    if not isinstance(reviews, list):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization review readback")
+    manifest = build_stage5_sandbox_authorization_review_acceptance_manifest(
+        preflight_acceptance=preflight_acceptance,
+        request_status=request_status,
+        request_payload=request_payload,
+        review_count=len(reviews),
+    )
+    summary = validate_stage5_sandbox_authorization_review_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_authorization_review_acceptance_report(report_path, manifest)
+    return [summary]
+
+
 def _stage5_export_readiness(
     payload: Any, run_id: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -4499,6 +4644,8 @@ def run_smoke(
     stage5_sandbox_readonly_probe_report: Path | None = None,
     stage5_sandbox_authorization_preflight: bool = False,
     stage5_sandbox_authorization_preflight_report: Path | None = None,
+    stage5_sandbox_authorization_review: bool = False,
+    stage5_sandbox_authorization_review_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -4609,6 +4756,14 @@ def run_smoke(
                 timeout_seconds=timeout_seconds,
                 readiness_report_path=stage5_sandbox_readiness_report or Path("data/stage5-sandbox-readiness.json"),
                 report_path=stage5_sandbox_authorization_preflight_report,
+            )
+        if stage5_sandbox_authorization_review:
+            run_stage5_sandbox_authorization_review_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                preflight_report_path=stage5_sandbox_authorization_preflight_report
+                    or Path("data/stage5-sandbox-authorization-preflight.json"),
+                report_path=stage5_sandbox_authorization_review_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -4787,6 +4942,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Validate an existing Stage 5 sandbox authorization preflight acceptance report and exit.",
     )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-review",
+        action="store_true",
+        help="Run the no-credential Stage 5 sandbox authorization review fail-closed acceptance.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-review-report",
+        default=None,
+        help="Optional Stage 5 sandbox authorization review acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-authorization-review-report",
+        default=None,
+        help="Validate an existing Stage 5 sandbox authorization review acceptance report and exit.",
+    )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
     parser.add_argument("--p2-p1-acceptance-report", default="data/p1-acceptance.json", help="Path to the P1 acceptance manifest used as P2 evidence.")
@@ -4931,6 +5101,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(validate_stage5_sandbox_authorization_preflight_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage5_sandbox_authorization_review_report:
+        manifest = load_stage5_sandbox_authorization_review_acceptance_report(
+            Path(args.validate_stage5_sandbox_authorization_review_report)
+        )
+        print(validate_stage5_sandbox_authorization_review_acceptance_manifest(manifest))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -5017,6 +5193,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage5_sandbox_authorization_preflight_report=(
             Path(args.stage5_sandbox_authorization_preflight_report)
             if args.stage5_sandbox_authorization_preflight_report
+            else None
+        ),
+        stage5_sandbox_authorization_review=args.stage5_sandbox_authorization_review,
+        stage5_sandbox_authorization_review_report=(
+            Path(args.stage5_sandbox_authorization_review_report)
+            if args.stage5_sandbox_authorization_review_report
             else None
         ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,

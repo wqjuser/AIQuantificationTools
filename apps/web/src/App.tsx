@@ -288,12 +288,15 @@ import {
 import {
   buildStage5ShadowState,
   loadStage5SandboxAuthorizationPreflights,
+  loadStage5SandboxAuthorizationReviews,
   loadStage5SandboxReadinessDecisions,
   loadStage5ShadowSessions,
   runStage5SandboxAuthorizationPreflight,
+  runStage5SandboxAuthorizationReview,
   runStage5SandboxReadinessDecision,
   runStage5ShadowSession,
   type Stage5SandboxAuthorizationPreflight,
+  type Stage5SandboxAuthorizationReview,
   type Stage5SandboxReadinessDecision,
   type Stage5ShadowSession
 } from "./lib/stage5-shadow";
@@ -2243,6 +2246,8 @@ export function App() {
     useState<Stage5SandboxReadinessDecision[]>([]);
   const [stage5SandboxAuthorizationPreflights, setStage5SandboxAuthorizationPreflights] =
     useState<Stage5SandboxAuthorizationPreflight[]>([]);
+  const [stage5SandboxAuthorizationReviews, setStage5SandboxAuthorizationReviews] =
+    useState<Stage5SandboxAuthorizationReview[]>([]);
   const [stage5ShadowError, setStage5ShadowError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
@@ -2780,6 +2785,7 @@ export function App() {
     stage5ShadowSessions,
     stage5SandboxReadinessDecisions,
     stage5SandboxAuthorizationPreflights,
+    stage5SandboxAuthorizationReviews,
     executionAdapterSandboxProbeExecutionRows,
     executionAdapterSandboxProbeReviewRows
   );
@@ -3646,6 +3652,7 @@ export function App() {
       setStage5ShadowSessions([]);
       setStage5SandboxReadinessDecisions([]);
       setStage5SandboxAuthorizationPreflights([]);
+      setStage5SandboxAuthorizationReviews([]);
       setStage5ShadowError(null);
       return;
     }
@@ -3653,13 +3660,17 @@ export function App() {
     void Promise.all([
       loadStage5ShadowSessions(quantCoreBaseUrl, baseRunId),
       loadStage5SandboxReadinessDecisions(quantCoreBaseUrl, baseRunId),
-      loadStage5SandboxAuthorizationPreflights(quantCoreBaseUrl, baseRunId)
-    ]).then(([sessionResult, readinessResult, preflightResult]) => {
+      loadStage5SandboxAuthorizationPreflights(quantCoreBaseUrl, baseRunId),
+      loadStage5SandboxAuthorizationReviews(quantCoreBaseUrl, baseRunId)
+    ]).then(([sessionResult, readinessResult, preflightResult, reviewResult]) => {
       if (cancelled) return;
       setStage5ShadowSessions(sessionResult.sessions);
       setStage5SandboxReadinessDecisions(readinessResult.decisions);
       setStage5SandboxAuthorizationPreflights(preflightResult.preflights);
-      setStage5ShadowError(sessionResult.error ?? readinessResult.error ?? preflightResult.error ?? null);
+      setStage5SandboxAuthorizationReviews(reviewResult.reviews);
+      setStage5ShadowError(
+        sessionResult.error ?? readinessResult.error ?? preflightResult.error ?? reviewResult.error ?? null
+      );
     });
     return () => { cancelled = true; };
   }, [currentResearchRunId]);
@@ -7199,12 +7210,37 @@ export function App() {
     resetStage4PortfolioBusyState
   ]);
 
-  const runStage5ShadowPrimaryAction = useCallback(async () => {
+  const runStage5ShadowPrimaryAction = useCallback(async (
+    reviewInput?: { outcome: "approved" | "rejected"; reason: string }
+  ) => {
     if (!portfolioStage4Workflow || isRunningStage5Shadow) return;
     const requestId = stage5ShadowRequestIdRef.current + 1;
     stage5ShadowRequestIdRef.current = requestId;
     setIsRunningStage5Shadow(true);
     setStage5ShadowError(null);
+    if (stage5ShadowState.actionId === "record-stage5-sandbox-authorization-review") {
+      const preflight = stage5ShadowState.authorizationPreflight;
+      if (!preflight || !reviewInput?.reason.trim()) {
+        setIsRunningStage5Shadow(false);
+        setStage5ShadowError("Stage 5 sandbox authorization review reason is required");
+        return;
+      }
+      const result = await runStage5SandboxAuthorizationReview(
+        quantCoreBaseUrl, preflight, reviewInput.outcome, reviewInput.reason.trim()
+      );
+      if (stage5ShadowRequestIdRef.current !== requestId) return;
+      setIsRunningStage5Shadow(false);
+      if (!result.review) {
+        setStage5ShadowError(result.error ?? "Stage 5 sandbox authorization review failed");
+        return;
+      }
+      const review = result.review;
+      setStage5SandboxAuthorizationReviews((current) => [
+        review,
+        ...current.filter((row) => row.reviewId !== review.reviewId)
+      ]);
+      return;
+    }
     if (stage5ShadowState.actionId === "run-stage5-sandbox-authorization-preflight") {
       const decision = stage5ShadowState.readinessDecision;
       const executionId = stage5ShadowState.sandboxProbeExecutionId;
@@ -12996,7 +13032,7 @@ export function App() {
             error={stage5ShadowError}
             i18n={i18n}
             onOpenSettings={() => selectProductWorkArea("settings")}
-            onPrimaryAction={() => void runStage5ShadowPrimaryAction()}
+            onPrimaryAction={(reviewInput) => void runStage5ShadowPrimaryAction(reviewInput)}
             state={stage5ShadowState}
           />
           <ExecutionPanel
@@ -28543,6 +28579,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
       "stage5-sandbox-readiness-decisions": "Stage 5 Sandbox 准入决策",
       "stage5-sandbox-authorization-preflights": "Stage 5 Sandbox 授权预检",
+      "stage5-sandbox-authorization-reviews": "Stage 5 Sandbox 授权复核",
       "audit-summary": "审计摘要",
       "audit-report": "审计报告",
       "execution-handoff": "执行交接"

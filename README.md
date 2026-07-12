@@ -88,9 +88,9 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 5 当前阶段：Sandbox 授权预检
+## Stage 5 当前阶段：Sandbox 授权复核（不激活）
 
-Stage 4 已通过退出门禁并转入维护。Stage 5 前五阶段已经完成本地 Shadow 故障演练、刷新/重启恢复、便携审计、`aiqt.stage5SandboxReadinessDecision` 和服务端权威只读探针。第六阶段新增 `aiqt.stage5SandboxAuthorizationPreflight`：服务端把同一 adapter、同一 market 的 readiness decision、权威 probe execution 和人工 probe review 绑定成可恢复预检。预检只说明材料可以提交后续独立人工授权，固定 `humanAuthorizationRequired=true`、`sandboxOrderSubmissionAllowed=false`，不保存密钥、余额、持仓或账户标识。
+Stage 4 已通过退出门禁并转入维护。Stage 5 前六阶段已经完成本地 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针和授权预检。第七阶段新增 `aiqt.stage5SandboxAuthorizationReview`：人工可把批准或拒绝结果与精确 preflight hash 绑定为不可变、可恢复的权威审计 artifact。批准只表示材料复核通过，仍固定 `authorizationEffective=false`、`humanAuthorizationRequired=true`、`sandboxOrderSubmissionAllowed=false`，不保存密钥、余额、持仓或账户标识，也不激活任何订单能力。
 
 ```powershell
 npm run docker:smoke:stage5 -- --no-build
@@ -104,9 +104,12 @@ npm run docker:smoke:stage5:readonly:validate
 # 只运行/复核第六阶段无凭据授权预检阻断
 npm run docker:smoke:stage5:authorization-preflight -- --no-build
 npm run docker:smoke:stage5:authorization-preflight:validate
+# 只运行/复核第七阶段无凭据授权复核阻断
+npm run docker:smoke:stage5:authorization-review -- --no-build
+npm run docker:smoke:stage5:authorization-review:validate
 ```
 
-验收会同时维护 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json`、`data/stage5-sandbox-readonly-probe.json` 与 `data/stage5-sandbox-authorization-preflight.json`。默认无凭据 Docker 环境必须让只读探针和授权预检 fail closed，且成功 preflight 数量为 0。配置明确的测试网凭据时，应用可以只读加载 markets/status/time 和脱敏账户同步，但仍不提交、撤销或查询订单，不开放 sandbox order route，更不开放真实资金路由。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。
+验收会同时维护 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json`、`data/stage5-sandbox-readonly-probe.json`、`data/stage5-sandbox-authorization-preflight.json` 与 `data/stage5-sandbox-authorization-review.json`。默认无凭据 Docker 环境必须让只读探针、授权预检和授权复核 fail closed，成功 preflight 与 review 数量均为 0。配置明确的测试网凭据时，应用可以只读加载 markets/status/time 和脱敏账户同步，但仍不提交、撤销或查询订单，不开放 sandbox order route，更不开放真实资金路由。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。
 
 ## Stage 4 维护门禁：组合模拟黄金路径
 

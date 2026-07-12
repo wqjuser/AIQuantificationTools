@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
-from threading import Thread
+from threading import Barrier, Thread
 from types import SimpleNamespace
 import unittest
 
@@ -24,15 +24,19 @@ from quant_core.execution import (
 )
 from quant_core.stage5_shadow import (
     build_stage5_sandbox_authorization_preflight,
+    build_stage5_sandbox_authorization_review,
     build_stage5_sandbox_readiness_decision,
     build_stage5_shadow_session,
     stage5_sandbox_authorization_preflight_hash,
     stage5_sandbox_authorization_preflight_to_audit_event,
+    stage5_sandbox_authorization_review_hash,
+    stage5_sandbox_authorization_review_to_audit_event,
     stage5_sandbox_readiness_decision_hash,
     stage5_sandbox_readiness_decision_to_audit_event,
     stage5_shadow_session_hash,
     stage5_shadow_session_to_audit_event,
     validate_stage5_sandbox_authorization_preflight,
+    validate_stage5_sandbox_authorization_review,
     validate_stage5_sandbox_readiness_decision,
     validate_stage5_shadow_session,
 )
@@ -253,6 +257,45 @@ def sandbox_probe_audit_events(health: dict) -> tuple[dict, dict]:
 
 
 class Stage5ShadowSessionTest(unittest.TestCase):
+    def test_audit_store_record_if_absent_preserves_the_first_concurrent_review(self) -> None:
+        from quant_core.audit_events import AuditEventStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit.sqlite")
+            barrier = Barrier(2)
+            results = []
+
+            def record(outcome: str) -> None:
+                event = {
+                    "schemaVersion": 1,
+                    "eventId": "stage5-sandbox-authorization-review-concurrent",
+                    "eventType": "stage5_sandbox_authorization_review",
+                    "runId": "run-a",
+                    "createdAt": "2026-07-12T08:04:00+00:00",
+                    "stage": "stage5-sandbox-authorization-review",
+                    "source": "test",
+                    "summary": "Concurrent immutable review.",
+                    "detail": "Only the first result may be stored.",
+                    "metadata": {"snapshot": {"outcome": outcome}},
+                }
+                barrier.wait()
+                results.append(store.record_if_absent(event))
+
+            threads = [Thread(target=record, args=(outcome,)) for outcome in ("approved", "rejected")]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=5)
+
+            self.assertEqual(len(results), 2)
+            self.assertEqual(sorted(created for _, created in results), [False, True])
+            stored_outcomes = [item.metadata["snapshot"]["outcome"] for item, _ in results]
+            self.assertEqual(stored_outcomes[0], stored_outcomes[1])
+            self.assertEqual(
+                store.get("stage5-sandbox-authorization-review-concurrent").metadata["snapshot"]["outcome"],
+                stored_outcomes[0],
+            )
+
     def test_sandbox_authorization_preflight_api_is_idempotent_and_recovers_from_sources(self) -> None:
         from quant_core.api import (
             QuantApiHandler,
@@ -356,6 +399,38 @@ class Stage5ShadowSessionTest(unittest.TestCase):
                 )
                 listed_response = connection.getresponse()
                 listed = json.loads(listed_response.read())
+                review_payload = {
+                    "baseRunId": workflow["baseRunId"],
+                    "preflightHash": responses[0][1]["sandboxAuthorizationPreflight"]["preflightHash"],
+                    "reviewer": "reviewer-a",
+                    "outcome": "approved",
+                    "reason": "Sandbox-only evidence reviewed.",
+                    "confirmations": {
+                        "preflight-hash-reviewed": True,
+                        "sandbox-only-scope": True,
+                        "no-order-submission": True,
+                        "no-live-funds": True,
+                        "kill-switch-and-rollback-owner-reviewed": True,
+                    },
+                }
+                review_responses = []
+                for outcome in ("approved", "rejected"):
+                    review_body = json.dumps({**review_payload, "outcome": outcome}).encode()
+                    connection.request(
+                        "POST", "/api/execution/sandbox-authorization-reviews", body=review_body,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Content-Length": str(len(review_body)),
+                        },
+                    )
+                    review_response = connection.getresponse()
+                    review_responses.append((review_response.status, json.loads(review_response.read())))
+                connection.request(
+                    "GET",
+                    f"/api/execution/sandbox-authorization-reviews?baseRunId={workflow['baseRunId']}&limit=10",
+                )
+                review_list_response = connection.getresponse()
+                review_list = json.loads(review_list_response.read())
             finally:
                 connection.close()
                 server.shutdown()
@@ -381,6 +456,16 @@ class Stage5ShadowSessionTest(unittest.TestCase):
         self.assertEqual(listed_response.status, 200)
         self.assertEqual(len(listed["sandboxAuthorizationPreflights"]), 1)
         self.assertEqual(wrong_hash_response.status, 409, wrong_hash_payload)
+        self.assertEqual([status for status, _ in review_responses], [201, 200], review_responses)
+        self.assertEqual(
+            [item[1]["sandboxAuthorizationReview"]["outcome"] for item in review_responses],
+            ["approved", "approved"],
+        )
+        self.assertEqual(review_list_response.status, 200)
+        self.assertEqual(len(review_list["sandboxAuthorizationReviews"]), 1)
+        self.assertFalse(
+            review_list["sandboxAuthorizationReviews"][0]["authorizationEffective"]
+        )
         self.assertTrue(
             {
                 workflow["workflowId"], session["sessionId"], decision["decisionId"],
@@ -536,6 +621,21 @@ class Stage5ShadowSessionTest(unittest.TestCase):
             decision, execution, review, operator="test-operator", confirmed=True,
             generated_at=now.isoformat(),
         )
+        authorization_review = build_stage5_sandbox_authorization_review(
+            preflight,
+            execution,
+            reviewer="reviewer-a",
+            outcome="approved",
+            reason="Sandbox-only evidence reviewed.",
+            confirmations={
+                "preflight-hash-reviewed": True,
+                "sandbox-only-scope": True,
+                "no-order-submission": True,
+                "no-live-funds": True,
+                "kill-switch-and-rollback-owner-reviewed": True,
+            },
+            generated_at=now.isoformat(),
+        )
         for event in (execution_event, review_event):
             event["runId"] = workflow["baseRunId"]
         events = [
@@ -551,6 +651,7 @@ class Stage5ShadowSessionTest(unittest.TestCase):
             execution_event,
             review_event,
             stage5_sandbox_authorization_preflight_to_audit_event(preflight),
+            stage5_sandbox_authorization_review_to_audit_event(authorization_review),
         ]
         audit = quant_core_tests.QuantCoreContractTest()._sample_research_run_audit(
             run_id=workflow["baseRunId"], strategy_revision="rev-run-a"
@@ -562,6 +663,9 @@ class Stage5ShadowSessionTest(unittest.TestCase):
 
         self.assertEqual(
             exported["manifest"]["artifactCounts"]["stage5SandboxAuthorizationPreflights"], 1
+        )
+        self.assertEqual(
+            exported["manifest"]["artifactCounts"]["stage5SandboxAuthorizationReviews"], 1
         )
         research_run_import_to_audit(exported)
 
@@ -587,24 +691,27 @@ class Stage5ShadowSessionTest(unittest.TestCase):
     def test_builds_sandbox_authorization_preflight_from_existing_authoritative_evidence(self) -> None:
         workflow, executions = stage4_workflow_with_adapter_evidence()
         session = build_stage5_shadow_session(workflow, generated_at=workflow["generatedAt"])
+        decision_at = datetime.fromisoformat(workflow["generatedAt"]) + timedelta(minutes=1)
         decision = build_stage5_sandbox_readiness_decision(
             workflow,
             session,
             executions,
             operator="test-operator",
             confirmed=True,
-            generated_at="2026-07-12T08:00:00+00:00",
+            generated_at=decision_at.isoformat(),
         )
         decision.update(adapterId="ccxt-live", market="crypto")
         decision["decisionHash"] = stage5_sandbox_readiness_decision_hash(decision)
-        health = quant_core_tests.QuantCoreContractTest()._ready_ccxt_health_evidence()
+        health = quant_core_tests.QuantCoreContractTest()._ccxt_health_evidence(
+            generated_at=decision_at
+        )
         execution = {
             "sandboxProbeExecutionId": "probe-execution-1",
             "adapterId": "ccxt-live",
             "market": "crypto",
             "route": "live",
             "status": "probe_execution_recorded",
-            "recordedAt": "2026-07-12T08:01:00+00:00",
+            "recordedAt": (decision_at + timedelta(minutes=1)).isoformat(),
             "metadata": {"authoritativeHealthProbe": health},
         }
         review = {
@@ -614,7 +721,7 @@ class Stage5ShadowSessionTest(unittest.TestCase):
             "market": "crypto",
             "route": "live",
             "status": "probe_review_recorded",
-            "recordedAt": "2026-07-12T08:02:00+00:00",
+            "recordedAt": (decision_at + timedelta(minutes=2)).isoformat(),
             "requiredConfirmations": [{"id": "scope", "status": "confirmed"}],
         }
 
@@ -624,7 +731,7 @@ class Stage5ShadowSessionTest(unittest.TestCase):
             review,
             operator="test-operator",
             confirmed=True,
-            generated_at="2026-07-12T08:03:00+00:00",
+            generated_at=(decision_at + timedelta(minutes=3)).isoformat(),
         )
 
         self.assertEqual(preflight["status"], "ready_for_separate_sandbox_authorization")
@@ -648,7 +755,57 @@ class Stage5ShadowSessionTest(unittest.TestCase):
                 review,
                 operator="test-operator",
                 confirmed=True,
-                generated_at="2026-07-12T08:03:00+00:00",
+                generated_at=(decision_at + timedelta(minutes=3)).isoformat(),
+            )
+
+        confirmations = {
+            "preflight-hash-reviewed": True,
+            "sandbox-only-scope": True,
+            "no-order-submission": True,
+            "no-live-funds": True,
+            "kill-switch-and-rollback-owner-reviewed": True,
+        }
+        authorization_review = build_stage5_sandbox_authorization_review(
+            preflight,
+            execution,
+            reviewer="reviewer-a",
+            outcome="approved",
+            reason="Evidence and sandbox-only scope reviewed.",
+            confirmations=confirmations,
+            generated_at=(decision_at + timedelta(minutes=4)).isoformat(),
+        )
+        self.assertEqual(authorization_review["outcome"], "approved")
+        self.assertFalse(authorization_review["authorizationEffective"])
+        self.assertFalse(authorization_review["sandboxOrderSubmissionAllowed"])
+        self.assertEqual(
+            validate_stage5_sandbox_authorization_review(authorization_review),
+            authorization_review,
+        )
+
+        unsafe_review = copy.deepcopy(authorization_review)
+        unsafe_review["authorizationEffective"] = True
+        unsafe_review["reviewHash"] = stage5_sandbox_authorization_review_hash(unsafe_review)
+        with self.assertRaisesRegex(ValueError, "authorizationEffective is immutable"):
+            validate_stage5_sandbox_authorization_review(unsafe_review)
+        with self.assertRaisesRegex(ValueError, "confirmations are incomplete"):
+            build_stage5_sandbox_authorization_review(
+                preflight,
+                execution,
+                reviewer="reviewer-a",
+                outcome="rejected",
+                reason="Scope rejected.",
+                confirmations={**confirmations, "no-order-submission": False},
+                generated_at=(decision_at + timedelta(minutes=4)).isoformat(),
+            )
+        with self.assertRaisesRegex(ValueError, "health evidence is stale"):
+            build_stage5_sandbox_authorization_review(
+                preflight,
+                execution,
+                reviewer="reviewer-a",
+                outcome="approved",
+                reason="Late review.",
+                confirmations=confirmations,
+                generated_at=(decision_at + timedelta(hours=24, minutes=1)).isoformat(),
             )
 
     def test_builds_minimal_sandbox_readiness_decision_from_authoritative_evidence(self) -> None:
@@ -1252,6 +1409,24 @@ class Stage5ShadowSessionTest(unittest.TestCase):
                 authorization_manifest
             ),
         )
+        review_manifest = docker_smoke.build_stage5_sandbox_authorization_review_acceptance_manifest(
+            preflight_acceptance=authorization_manifest,
+            request_status=409,
+            request_payload={"error": "stage5_sandbox_authorization_review_blocked"},
+            review_count=0,
+        )
+        self.assertIn(
+            "authorizationEffective=False",
+            docker_smoke.validate_stage5_sandbox_authorization_review_acceptance_manifest(
+                review_manifest
+            ),
+        )
+        unsafe_review_manifest = copy.deepcopy(review_manifest)
+        unsafe_review_manifest["authorizationEffective"] = True
+        with self.assertRaises(RuntimeError):
+            docker_smoke.validate_stage5_sandbox_authorization_review_acceptance_manifest(
+                unsafe_review_manifest
+            )
         unsafe_authorization = copy.deepcopy(authorization_manifest)
         unsafe_authorization["sandboxOrderSubmissionAllowed"] = True
         with self.assertRaises(RuntimeError):

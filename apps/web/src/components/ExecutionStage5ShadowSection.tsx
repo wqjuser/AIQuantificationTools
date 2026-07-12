@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { createI18n } from "../lib/i18n";
 import type { Stage5ShadowState } from "../lib/stage5-shadow";
 
@@ -15,14 +16,18 @@ export function ExecutionStage5ShadowSection({
   error?: string | null;
   i18n: AppI18n;
   onOpenSettings?: () => void;
-  onPrimaryAction: () => void;
+  onPrimaryAction: (reviewInput?: { outcome: "approved" | "rejected"; reason: string }) => void;
   state: Stage5ShadowState;
 }) {
+  const [reviewOutcome, setReviewOutcome] = useState<"approved" | "rejected">("approved");
+  const [reviewReason, setReviewReason] = useState("");
   const session = state.session;
   const actionLabel = state.actionId === "retry-stage5-shadow"
     ? i18n.t("execution.stage5.retry")
     : state.actionId === "run-stage5-sandbox-authorization-preflight"
       ? i18n.t("execution.stage5.authorizationPreflightAction")
+    : state.actionId === "record-stage5-sandbox-authorization-review"
+      ? i18n.t("execution.stage5.authorizationReviewAction")
     : state.actionId === "review-stage5-sandbox-readiness"
       ? i18n.t("execution.stage5.readinessAction")
       : i18n.t("execution.stage5.start");
@@ -46,8 +51,29 @@ export function ExecutionStage5ShadowSection({
               : "execution.stage5.sessionBlocked")}
         </p>
       ) : null}
+      {state.actionId === "record-stage5-sandbox-authorization-review" ? (
+        <div className="execution-stage5-review-inputs">
+          <label>
+            <span>{i18n.t("execution.stage5.authorizationReviewOutcome")}</span>
+            <select value={reviewOutcome} onChange={(event) => setReviewOutcome(event.target.value as "approved" | "rejected")}>
+              <option value="approved">{i18n.t("execution.stage5.authorizationReviewApproved")}</option>
+              <option value="rejected">{i18n.t("execution.stage5.authorizationReviewRejected")}</option>
+            </select>
+          </label>
+          <label>
+            <span>{i18n.t("execution.stage5.authorizationReviewReason")}</span>
+            <input value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} />
+          </label>
+        </div>
+      ) : null}
       {state.actionId ? (
-        <button disabled={busy} onClick={onPrimaryAction} type="button">
+        <button
+          disabled={busy || (state.actionId === "record-stage5-sandbox-authorization-review" && !reviewReason.trim())}
+          onClick={() => onPrimaryAction(state.actionId === "record-stage5-sandbox-authorization-review"
+            ? { outcome: reviewOutcome, reason: reviewReason.trim() }
+            : undefined)}
+          type="button"
+        >
           {busy ? i18n.t("execution.stage5.busy") : actionLabel}
         </button>
       ) : null}
@@ -83,6 +109,15 @@ export function ExecutionStage5ShadowSection({
           <span>{state.authorizationPreflight.adapterId} · {state.authorizationPreflight.market}</span>
           <small className="execution-stage5-shadow-hash">{state.authorizationPreflight.preflightHash}</small>
           <p>{i18n.t("execution.stage5.authorizationPreflightBoundary")}</p>
+        </div>
+      ) : null}
+      {state.authorizationReview ? (
+        <div className="execution-stage5-readiness" role="status">
+          <strong>{i18n.t("execution.stage5.authorizationReviewTitle")}</strong>
+          <span>{state.authorizationReview.outcome}</span>
+          <span>{state.authorizationReview.reviewer} · authorizationEffective=false</span>
+          <small className="execution-stage5-shadow-hash">{state.authorizationReview.reviewHash}</small>
+          <p>{i18n.t("execution.stage5.authorizationReviewBoundary")}</p>
         </div>
       ) : null}
       {session ? (

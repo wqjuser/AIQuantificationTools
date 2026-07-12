@@ -39,6 +39,22 @@ _SANDBOX_PREFLIGHT_SAFETY = {
     "routeExecuted": False,
     "liveBlockedBoundary": True,
 }
+_SANDBOX_REVIEW_SCOPE_IDS = [
+    "preflight-hash-reviewed",
+    "sandbox-only-scope",
+    "no-order-submission",
+    "no-live-funds",
+    "kill-switch-and-rollback-owner-reviewed",
+]
+_SANDBOX_REVIEW_SAFETY = {
+    "authorizationEffective": False,
+    "humanAuthorizationRequired": True,
+    "sandboxOrderSubmissionAllowed": False,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
 
 
 def stage5_shadow_session_key(workflow_hash: str) -> str:
@@ -599,6 +615,128 @@ def stage5_sandbox_authorization_preflight_to_audit_event(preflight: dict[str, A
         "summary": f"Recorded Stage 5 sandbox authorization preflight for {preflight['baseRunId']}.",
         "detail": "Ready only for separate human authorization; sandbox and live order submission remain blocked.",
         "metadata": {"snapshot": preflight},
+    }
+
+
+def build_stage5_sandbox_authorization_review(
+    preflight: dict[str, Any],
+    sandbox_probe_execution: dict[str, Any],
+    *,
+    reviewer: str,
+    outcome: str,
+    reason: str,
+    confirmations: dict[str, Any],
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    preflight = validate_stage5_sandbox_authorization_preflight(preflight)
+    reviewer = reviewer.strip() if isinstance(reviewer, str) else ""
+    reason = reason.strip() if isinstance(reason, str) else ""
+    if not reviewer or not reason or outcome not in {"approved", "rejected"}:
+        raise ValueError("stage5 sandbox authorization review decision is invalid")
+    if not isinstance(confirmations, dict) or set(confirmations) != set(_SANDBOX_REVIEW_SCOPE_IDS):
+        raise ValueError("stage5 sandbox authorization review confirmations are invalid")
+    if any(confirmations[item] is not True for item in _SANDBOX_REVIEW_SCOPE_IDS):
+        raise ValueError("stage5 sandbox authorization review confirmations are incomplete")
+    if (
+        not isinstance(sandbox_probe_execution, dict)
+        or sandbox_probe_execution.get("sandboxProbeExecutionId") != preflight["sandboxProbeExecutionId"]
+        or sandbox_probe_execution.get("adapterId") != preflight["adapterId"]
+        or sandbox_probe_execution.get("market") != preflight["market"]
+        or sandbox_probe_execution.get("status") != "probe_execution_recorded"
+    ):
+        raise ValueError("stage5 sandbox authorization review probe evidence does not match")
+    metadata = sandbox_probe_execution.get("metadata")
+    health = validate_execution_adapter_health_probe_evidence(
+        metadata.get("authoritativeHealthProbe") if isinstance(metadata, dict) else None
+    )
+    if health["evidenceHash"] != preflight["authoritativeHealthEvidenceHash"]:
+        raise ValueError("stage5 sandbox authorization review health evidence does not match")
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+    generated_time = _timestamp(generated_at, "generatedAt")
+    preflight_time = _timestamp(preflight["generatedAt"], "preflight generatedAt")
+    health_time = _timestamp(health["generatedAt"], "health generatedAt")
+    if not health_time <= preflight_time <= generated_time:
+        raise ValueError("stage5 sandbox authorization review evidence time order is invalid")
+    if generated_time - health_time > _SANDBOX_PREFLIGHT_MAX_PROBE_AGE:
+        raise ValueError("stage5 sandbox authorization review health evidence is stale")
+    review = {
+        "kind": "aiqt.stage5SandboxAuthorizationReview",
+        "schemaVersion": 1,
+        "reviewId": stage5_sandbox_authorization_review_id(preflight["preflightHash"]),
+        "generatedAt": generated_at,
+        "baseRunId": preflight["baseRunId"],
+        "preflightId": preflight["preflightId"],
+        "preflightHash": preflight["preflightHash"],
+        "adapterId": preflight["adapterId"],
+        "market": preflight["market"],
+        "reviewer": reviewer,
+        "outcome": outcome,
+        "reason": reason,
+        "confirmedScopeIds": list(_SANDBOX_REVIEW_SCOPE_IDS),
+        "status": "authorization_review_recorded",
+        **_SANDBOX_REVIEW_SAFETY,
+    }
+    review["reviewHash"] = stage5_sandbox_authorization_review_hash(review)
+    return validate_stage5_sandbox_authorization_review(review)
+
+
+def validate_stage5_sandbox_authorization_review(value: Any) -> dict[str, Any]:
+    required = {
+        "kind", "schemaVersion", "reviewId", "reviewHash", "generatedAt", "baseRunId",
+        "preflightId", "preflightHash", "adapterId", "market", "reviewer", "outcome",
+        "reason", "confirmedScopeIds", "status", *_SANDBOX_REVIEW_SAFETY,
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("stage5 sandbox authorization review must contain exact fields")
+    if value["kind"] != "aiqt.stage5SandboxAuthorizationReview" or value["schemaVersion"] != 1:
+        raise ValueError("stage5 sandbox authorization review schema is invalid")
+    for field in required - {"schemaVersion", "confirmedScopeIds", *_SANDBOX_REVIEW_SAFETY}:
+        _required_string(value[field], field)
+    _timestamp(value["generatedAt"], "generatedAt")
+    if (
+        value["adapterId"] != "ccxt-live"
+        or value["market"] != "crypto"
+        or value["outcome"] not in {"approved", "rejected"}
+        or value["status"] != "authorization_review_recorded"
+        or value["confirmedScopeIds"] != _SANDBOX_REVIEW_SCOPE_IDS
+    ):
+        raise ValueError("stage5 sandbox authorization review contract is invalid")
+    for field in ("reviewHash", "preflightHash"):
+        if len(value[field]) != 64:
+            raise ValueError(f"stage5 sandbox authorization review {field} is invalid")
+    for field, expected in _SANDBOX_REVIEW_SAFETY.items():
+        if value[field] is not expected:
+            raise ValueError(f"stage5 sandbox authorization review {field} is immutable")
+    if value["reviewId"] != stage5_sandbox_authorization_review_id(value["preflightHash"]):
+        raise ValueError("stage5 sandbox authorization review id does not match preflight")
+    if value["reviewHash"] != stage5_sandbox_authorization_review_hash(value):
+        raise ValueError("stage5 sandbox authorization review hash does not match")
+    return json.loads(json.dumps(value))
+
+
+def stage5_sandbox_authorization_review_id(preflight_hash: str) -> str:
+    digest = hashlib.sha256(f"stage5-sandbox-authorization-review:{preflight_hash}".encode()).hexdigest()
+    return f"stage5-sandbox-authorization-review-{digest[:24]}"
+
+
+def stage5_sandbox_authorization_review_hash(value: dict[str, Any]) -> str:
+    payload = {key: item for key, item in value.items() if key != "reviewHash"}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def stage5_sandbox_authorization_review_to_audit_event(review: dict[str, Any]) -> dict[str, Any]:
+    review = validate_stage5_sandbox_authorization_review(review)
+    return {
+        "schemaVersion": 1,
+        "eventId": review["reviewId"],
+        "eventType": "stage5_sandbox_authorization_review",
+        "runId": review["baseRunId"],
+        "createdAt": review["generatedAt"],
+        "stage": "stage5-sandbox-authorization-review",
+        "source": review["reviewer"],
+        "summary": f"Recorded Stage 5 sandbox authorization review for {review['baseRunId']}.",
+        "detail": "Human review only; authorization is not effective and all sandbox/live order routes remain blocked.",
+        "metadata": {"snapshot": review},
     }
 
 

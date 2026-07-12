@@ -16,9 +16,12 @@ npm run docker:smoke:stage5:readonly:validate
 # 只执行第六阶段授权预检 fail-closed 门禁
 npm run docker:smoke:stage5:authorization-preflight -- --no-build
 npm run docker:smoke:stage5:authorization-preflight:validate
+# 只执行第七阶段授权复核 fail-closed 门禁
+npm run docker:smoke:stage5:authorization-review -- --no-build
+npm run docker:smoke:stage5:authorization-review:validate
 ```
 
-完整 smoke 会先生成 5 个独立 Stage 4 权威 workflow，执行五类确定性 Shadow 演练，再为已对账的 workflow 绑定真实持久化 terminal adapter paper evidence，生成 Sandbox 准入决策；随后调用服务端 CCXT 只读健康端点，并通过既有 execution/review API 持久化默认无凭据的 blocked probe 链，验证这些真实源事件不能生成 Sandbox 授权预检。链路输出 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json`、`data/stage5-sandbox-readonly-probe.json` 与 `data/stage5-sandbox-authorization-preflight.json`。所有 validate 命令都只离线复核 manifest，不访问网络。
+完整 smoke 会先生成 5 个独立 Stage 4 权威 workflow，执行五类确定性 Shadow 演练，再为已对账的 workflow 绑定真实持久化 terminal adapter paper evidence，生成 Sandbox 准入决策；随后调用服务端 CCXT 只读健康端点，并通过既有 execution/review API 持久化默认无凭据的 blocked probe 链，验证这些真实源事件既不能生成 Sandbox 授权预检，也不能补造授权复核。链路输出 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json`、`data/stage5-sandbox-readonly-probe.json`、`data/stage5-sandbox-authorization-preflight.json` 与 `data/stage5-sandbox-authorization-review.json`。所有 validate 命令都只离线复核 manifest，不访问网络。
 
 ## 预期结果
 
@@ -52,13 +55,21 @@ Sandbox 授权预检 manifest 还必须满足：
 - `preflightCount=0`，不能因人工确认、blocked 源或跨市场证据补造成功 artifact。
 - `humanAuthorizationRequired=true`、`sandboxOrderSubmissionAllowed=false`，全部 live/order route 字段保持阻断。
 
+Sandbox 授权复核 manifest 还必须满足：
+
+- 完整授权预检 acceptance 有效，但默认环境的成功 `preflightCount=0`，review POST 必须返回 409。
+- `reviewCount=0`，不能从不存在、blocked、过期或错配的 preflight 补造人工批准或拒绝记录。
+- `authorizationEffective=false`、`humanAuthorizationRequired=true`、`sandboxOrderSubmissionAllowed=false`，全部 live/order route 字段保持阻断。
+
 ## 页面操作与恢复
 
 Execution 工作区始终只提供一个 Stage 5 主动作：先启动/重试 Shadow 验证；最新 session 已对账后，主动作切换为“生成 Sandbox 准入决策”。Settings 的 Sandbox 探针执行继续复用原卡片；“只读握手”和“账户快照已脱敏”是禁用的服务端派生项，不能手工勾选。记录时 API 执行探针，结果展示 probe id、exchange、status/hash 摘要；刷新后从审计账本恢复。页面不提供密钥输入、故障绕过或下单动作。
 
 readiness decision、同 adapter/market 的 ready probe execution 和已记录 probe review 同时存在时，唯一主动作切换为“生成 Sandbox 授权预检”。成功后只显示 preflight hash 与“仍需独立人工授权”；缺少或错配证据时提示回到 Settings，不能绕过。当前 A 股 readiness 不会与 `ccxt-live + crypto` 探针拼接。
 
-导出包的 `manifest.artifactCounts.stage5ShadowSessions`、`stage5SandboxReadinessDecisions` 与 `stage5SandboxAuthorizationPreflights` 必须分别匹配合法审计事件数量。预检存在时导出还必须携带其引用的脱敏 probe execution/review；核心按依赖顺序重建，任何数量、身份、时间、hash、自洽字段或安全边界篡改都会在写库前阻断。Audit 专属行会按与 Python 相同的 canonical JSON 规则验证完整 SHA-256。
+授权预检存在且尚未复核时，唯一主动作切换为“记录 Sandbox 授权复核”。操作者选择批准或拒绝并填写原因，服务端固定校验五项范围确认；成功后页面显示 outcome、reviewer、review hash 和 `authorizationEffective=false`。首次结果不可改写，刷新只从 GET 恢复；批准不会出现下单、激活或密钥动作。
+
+导出包的 `manifest.artifactCounts.stage5ShadowSessions`、`stage5SandboxReadinessDecisions`、`stage5SandboxAuthorizationPreflights` 与 `stage5SandboxAuthorizationReviews` 必须分别匹配合法审计事件数量。预检存在时导出还必须携带其引用的脱敏 probe execution/review；核心按依赖顺序重建，任何数量、身份、时间、hash、自洽字段或安全边界篡改都会在写库前阻断。Audit 专属行会按与 Python 相同的 canonical JSON 规则验证完整 SHA-256。
 
 ## 故障处理
 
@@ -74,8 +85,10 @@ readiness decision、同 adapter/market 的 ready probe execution 和已记录 p
 - attempt 2 仍失败、对账错配或 kill switch 触发：停止；保留审计事件，禁止补造成功。
 - 授权预检返回 409：核对 readiness 与 probe 的 adapter/market、探针状态、人工 review 和 24 小时 freshness；禁止替换 id 或跨市场拼接。
 - 预检成功也不得提交订单；它只进入后续独立人工授权材料，不改变运行时 route 开关。
+- 授权复核返回 409：核对精确 preflight hash、权威 health evidence 的 24 小时 freshness、复核人、原因和固定确认项；禁止改写旧 review 或用旧 preflight 续期。
+- 复核 outcome 为 `approved` 也不得提交订单；`authorizationEffective=false` 是权威结果，不是等待前端打开的临时状态。
 - 容器重启后 session 数量或 hash 不一致：停止导入与发布，保留命名卷，检查 `stage4_portfolio_workflow` 与 `stage5_shadow_execution_session` 事件；不要跳过坏记录。
 
 ## 安全边界
 
-Shadow 路径的运行 adapter 仍是 `local-fake-shadow`。第五阶段额外允许 `ccxt-live` 进行明确的 sandbox/testnet 只读健康检查；第六阶段只绑定这些脱敏证据，不保存账户数据，也不调用 create/cancel/order API。准入 decision、授权预检和 acceptance manifest 继续固定 `sandboxOrderSubmissionAllowed=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。任何真实资金连接或委托都需要后续独立设计、人工授权和验收。
+Shadow 路径的运行 adapter 仍是 `local-fake-shadow`。第五阶段额外允许 `ccxt-live` 进行明确的 sandbox/testnet 只读健康检查；第六阶段只绑定这些脱敏证据；第七阶段只记录人工复核结果。全链不保存账户数据，也不调用 create/cancel/order API。准入 decision、授权预检、授权复核和 acceptance manifest 继续固定 `sandboxOrderSubmissionAllowed=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`；复核额外固定 `authorizationEffective=false`。任何真实资金连接或委托都需要后续独立设计、人工授权和验收。

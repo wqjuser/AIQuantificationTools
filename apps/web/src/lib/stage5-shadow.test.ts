@@ -1,19 +1,24 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   buildStage5SandboxAuthorizationPreflightsUrl,
+  buildStage5SandboxAuthorizationReviewsUrl,
   buildStage5SandboxReadinessDecisionsUrl,
   buildStage5ShadowSessionsUrl,
   buildStage5ShadowState,
   isStage5SandboxAuthorizationPreflight,
+  isStage5SandboxAuthorizationReview,
   isStage5SandboxReadinessDecision,
   isStage5ShadowSession,
   loadStage5SandboxAuthorizationPreflights,
+  loadStage5SandboxAuthorizationReviews,
   loadStage5SandboxReadinessDecisions,
   loadStage5ShadowSessions,
   runStage5SandboxAuthorizationPreflight,
+  runStage5SandboxAuthorizationReview,
   runStage5SandboxReadinessDecision,
   runStage5ShadowSession,
   type Stage5SandboxAuthorizationPreflight,
+  type Stage5SandboxAuthorizationReview,
   type Stage5SandboxReadinessDecision,
   type Stage5ShadowSession
 } from "./stage5-shadow";
@@ -70,6 +75,22 @@ function preflight(overrides: Partial<Stage5SandboxAuthorizationPreflight> = {})
   };
 }
 
+function authorizationReview(overrides: Partial<Stage5SandboxAuthorizationReview> = {}): Stage5SandboxAuthorizationReview {
+  return {
+    kind: "aiqt.stage5SandboxAuthorizationReview", schemaVersion: 1,
+    reviewId: "stage5-sandbox-authorization-review-123456789012345678901234",
+    reviewHash: "2".repeat(64), generatedAt: "2026-07-12T08:04:00+00:00", baseRunId: "run-a",
+    preflightId: preflight().preflightId, preflightHash: preflight().preflightHash,
+    adapterId: "ccxt-live", market: "crypto", reviewer: "local-reviewer", outcome: "approved",
+    reason: "Sandbox-only evidence reviewed.", confirmedScopeIds: [
+      "preflight-hash-reviewed", "sandbox-only-scope", "no-order-submission", "no-live-funds",
+      "kill-switch-and-rollback-owner-reviewed"
+    ], status: "authorization_review_recorded", authorizationEffective: false,
+    humanAuthorizationRequired: true, sandboxOrderSubmissionAllowed: false, liveTradingAllowed: false,
+    orderSubmissionEnabled: false, routeExecuted: false, liveBlockedBoundary: true, ...overrides
+  };
+}
+
 describe("Stage 5 shadow client", () => {
   test("builds URLs and derives the one operator action", () => {
     expect(buildStage5ShadowSessionsUrl("http://localhost:8765", "run a", 5)).toBe(
@@ -87,7 +108,7 @@ describe("Stage 5 shadow client", () => {
     expect(buildStage5ShadowState(workflow, [session()], [ccxtDecision])).toMatchObject({
       status: "review", actionId: null, blocker: "sandbox-probe-missing"
     });
-    expect(buildStage5ShadowState(workflow, [session()], [ccxtDecision], [], [{
+    expect(buildStage5ShadowState(workflow, [session()], [ccxtDecision], [], [], [{
       id: "probe-execution-1", adapterId: "ccxt-live", market: "crypto",
       status: "probe_execution_recorded", authoritativeHealthReady: true
     }], [{
@@ -97,7 +118,13 @@ describe("Stage 5 shadow client", () => {
       status: "review", actionId: "run-stage5-sandbox-authorization-preflight"
     });
     expect(buildStage5ShadowState(workflow, [session()], [ccxtDecision], [preflight()])).toMatchObject({
-      status: "ready", actionId: null, authorizationPreflight: preflight()
+      status: "review", actionId: "record-stage5-sandbox-authorization-review",
+      authorizationPreflight: preflight()
+    });
+    expect(buildStage5ShadowState(
+      workflow, [session()], [ccxtDecision], [preflight()], [authorizationReview()]
+    )).toMatchObject({
+      status: "ready", actionId: null, authorizationReview: authorizationReview()
     });
   });
 
@@ -127,6 +154,39 @@ describe("Stage 5 shadow client", () => {
       operator: "local-operator", confirmed: true
     });
     expect(history.preflights).toHaveLength(1);
+  });
+
+  test("validates, posts and restores the immutable sandbox authorization review", async () => {
+    expect(isStage5SandboxAuthorizationReview(authorizationReview())).toBe(true);
+    expect(isStage5SandboxAuthorizationReview({ ...authorizationReview(), authorizationEffective: true })).toBe(false);
+    expect(isStage5SandboxAuthorizationReview({
+      ...authorizationReview(),
+      confirmedScopeIds: [
+        "preflight-hash-reviewed", "sandbox-only-scope", "no-order-submission", "no-live-funds", "wrong-owner"
+      ]
+    })).toBe(false);
+    expect(buildStage5SandboxAuthorizationReviewsUrl("http://localhost:8765", "run a", 5)).toBe(
+      "http://localhost:8765/api/execution/sandbox-authorization-reviews?baseRunId=run+a&limit=5"
+    );
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => ({
+      ok: true, status: init?.method === "POST" ? 201 : 200,
+      json: async () => init?.method === "POST"
+        ? { sandboxAuthorizationReview: authorizationReview() }
+        : { sandboxAuthorizationReviews: [authorizationReview()] }
+    } as Response));
+    const created = await runStage5SandboxAuthorizationReview(
+      "http://localhost:8765", preflight(), "approved", "Sandbox-only evidence reviewed.", fetcher
+    );
+    const history = await loadStage5SandboxAuthorizationReviews(
+      "http://localhost:8765", "run-a", fetcher, 3
+    );
+    expect(created.review?.reviewHash).toBe("2".repeat(64));
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+      baseRunId: "run-a", preflightHash: "f".repeat(64), reviewer: "local-reviewer",
+      outcome: "approved", reason: "Sandbox-only evidence reviewed.",
+      confirmations: { "no-order-submission": true, "no-live-funds": true }
+    });
+    expect(history.reviews).toHaveLength(1);
   });
 
   test("rejects malformed and unsafe sessions", () => {
