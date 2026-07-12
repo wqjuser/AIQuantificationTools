@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from quant_core.domain import OrderResult, PaperAccount
+from quant_core.execution_adapter_health import validate_execution_adapter_health_probe_evidence
 
 
 @dataclass(frozen=True)
@@ -7073,6 +7074,7 @@ def _execution_adapter_sandbox_probe_plan_specs() -> list[tuple[str, str, str, s
 def build_execution_adapter_sandbox_probe_execution(
     sandbox_probe_plan: dict[str, Any],
     *,
+    health_probe_evidence: dict[str, Any] | None = None,
     adapter_id: str = "",
     probe_execution_mode: str = "",
     confirmations: dict[str, Any] | None = None,
@@ -7170,10 +7172,22 @@ def build_execution_adapter_sandbox_probe_execution(
     if not required_env_vars:
         raise ValueError("execution_adapter_sandbox_probe_execution_required_env_vars_required")
 
+    health_evidence = None
+    health_evidence_error = ""
+    try:
+        health_evidence = validate_execution_adapter_health_probe_evidence(health_probe_evidence)
+    except ValueError as error:
+        health_evidence_error = str(error)
+    authoritative_health_ready = _execution_adapter_authoritative_health_ready(
+        health_evidence, adapter_id=plan_adapter_id, market=market
+    )
+
     blocked_reasons = []
     required_confirmations = []
     for confirmation_id, payload_key, label, blocked_reason in _execution_adapter_sandbox_probe_execution_specs():
-        confirmed = bool(confirmations.get(payload_key))
+        confirmed = authoritative_health_ready if payload_key in {
+            "readonlyHandshakeCaptured", "accountSnapshotRedacted"
+        } else bool(confirmations.get(payload_key))
         required_confirmations.append(
             {
                 "id": confirmation_id,
@@ -7190,6 +7204,14 @@ def build_execution_adapter_sandbox_probe_execution(
         blocked_reasons.append("sandbox_probe_execution_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("sandbox_probe_execution_route_not_live")
+    if health_evidence_error == "execution_adapter_health_evidence_required":
+        blocked_reasons.append("sandbox_probe_execution_authoritative_health_missing")
+    elif health_evidence_error:
+        blocked_reasons.append("sandbox_probe_execution_authoritative_health_invalid")
+    elif health_evidence and health_evidence["adapterId"] != plan_adapter_id:
+        blocked_reasons.append("sandbox_probe_execution_authoritative_health_adapter_mismatch")
+    elif not authoritative_health_ready:
+        blocked_reasons.append("sandbox_probe_execution_authoritative_health_not_ready")
 
     recorded = _coerce_optional_datetime(
         recorded_at,
@@ -7232,7 +7254,10 @@ def build_execution_adapter_sandbox_probe_execution(
         required_env_vars=required_env_vars,
         required_confirmations=required_confirmations,
         blocked_reasons=unique_blocked_reasons,
-        metadata=_redact_secret_fields(metadata or {}),
+        metadata={
+            **_redact_secret_fields(metadata or {}),
+            **({"authoritativeHealthProbe": health_evidence} if health_evidence else {}),
+        },
         live_trading_allowed=False,
     )
 
@@ -7364,7 +7389,7 @@ def execution_adapter_sandbox_probe_execution_payload_from_audit_event(event: An
     else:
         recorded_at_value = datetime.now(timezone.utc).isoformat()
 
-    return {
+    result = {
         "schemaVersion": 1,
         "sandboxProbeExecutionId": sandbox_probe_execution_id,
         "sandboxProbePlanId": sandbox_probe_plan_id,
@@ -7405,6 +7430,19 @@ def execution_adapter_sandbox_probe_execution_payload_from_audit_event(event: An
         "liveTradingAllowed": False,
         "paperOnly": True,
     }
+    health_evidence = result["metadata"].get("authoritativeHealthProbe")
+    if health_evidence is not None:
+        try:
+            validated_health_evidence = validate_execution_adapter_health_probe_evidence(health_evidence)
+        except ValueError:
+            return None
+        if not _execution_adapter_authoritative_health_ready(
+            validated_health_evidence, adapter_id=adapter_id, market=market
+        ) and status == "probe_execution_recorded":
+            return None
+    elif status == "probe_execution_recorded":
+        return None
+    return result
 
 
 def execution_adapter_sandbox_probe_execution_to_audit_event_payload(
@@ -7498,6 +7536,29 @@ def _execution_adapter_sandbox_probe_execution_specs() -> list[tuple[str, str, s
             "sandbox_probe_execution_no_order_boundary_missing",
         ),
     ]
+
+
+def _execution_adapter_authoritative_health_ready(
+    evidence: dict[str, Any] | None,
+    *,
+    adapter_id: str,
+    market: str,
+) -> bool:
+    if not evidence:
+        return False
+    checks = {row["id"]: row["status"] for row in evidence["checks"]}
+    return bool(
+        adapter_id == "ccxt-live"
+        and evidence["adapterId"] == "ccxt-live"
+        and market == "crypto"
+        and evidence["status"] == "ready"
+        and evidence["accountSyncState"] == "ready"
+        and not evidence["blockedReasons"]
+        and all(
+            checks.get(check_id) == "passed"
+            for check_id in ("sandbox-mode", "markets-loaded", "account-sync", "order-routing-disabled")
+        )
+    )
 
 
 def build_execution_adapter_sandbox_probe_review(
@@ -7626,6 +7687,20 @@ def build_execution_adapter_sandbox_probe_review(
         blocked_reasons.append("sandbox_probe_review_manifest_validation_missing")
     if route != "live":
         blocked_reasons.append("sandbox_probe_review_route_not_live")
+    execution_metadata = (
+        sandbox_probe_execution.get("metadata")
+        if isinstance(sandbox_probe_execution.get("metadata"), dict)
+        else {}
+    )
+    health_evidence_value = execution_metadata.get("authoritativeHealthProbe")
+    try:
+        health_evidence = validate_execution_adapter_health_probe_evidence(health_evidence_value)
+    except ValueError:
+        health_evidence = None
+    if not _execution_adapter_authoritative_health_ready(
+        health_evidence, adapter_id=execution_adapter_id, market=market
+    ):
+        blocked_reasons.append("sandbox_probe_review_authoritative_health_invalid")
 
     recorded = _coerce_optional_datetime(
         recorded_at,

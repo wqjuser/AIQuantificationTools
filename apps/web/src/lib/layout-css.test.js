@@ -109,7 +109,8 @@ describe("terminal layout css", () => {
     ]) expect(appSource).toContain(loader);
     expect(appSource).toContain("portfolioStage4RequestCoordinatorRef");
     expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.isCurrent(request)");
-    expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId)");
+    expect(appSource).toContain("const currentResearchRunIdRef = useRef(currentResearchRunId)");
+    expect(appSource).toContain("portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunIdRef.current)");
     expect(appSource).toContain("const resetStage4PortfolioBusyState = useCallback");
     expect(appSource).toContain("selectCurrentStage4PortfolioWorkflow(");
     expect(appSource).toContain("portfolioStage4LatestBatch?.batchId");
@@ -138,6 +139,7 @@ describe("terminal layout css", () => {
     const refreshSource = sourceBetween("const refreshWorkspace = useCallback", "const refreshChart = useCallback");
     expect(refreshSource.indexOf("resetStage4PortfolioBusyState()"))
       .toBeLessThan(refreshSource.indexOf("portfolioStage4RequestCoordinatorRef.current.invalidate("));
+    expect(refreshSource).not.toContain("currentResearchRunId,\n    refreshAuditSigningKeys");
   });
 
   test("navigates each Stage 4 review action to its actual evidence region", () => {
@@ -159,8 +161,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".portfolio-stage4-steps")).toContain("grid-template-columns: repeat(5, minmax(0, 1fr));");
     expect(cssBlock(".portfolio-stage4-section")).toContain("min-width: 0;");
     expect(cssBlock(".portfolio-stage4-hash")).toContain("overflow-wrap: anywhere;");
+    expect(cssBlock(".terminal-panel")).toContain("grid-template-columns: minmax(0, 1fr);");
+    expect(cssBlock(".paper-blotter")).toContain("min-width: 0;");
+    expect(hasCssDeclaration(".paper-blotter-table", "min-width: 0;")).toBe(true);
     expect(hasCssBlockWith("  .portfolio-stage4-steps", ["grid-template-columns: 1fr;"])).toBe(true);
     expect(hasCssBlockWith("  .portfolio-stage4-primary", ["width: 100%;"])).toBe(true);
+    expect(hasCssBlockWith("  .paper-blotter-row.portfolio-order-row", ["grid-template-columns: 1fr;"])).toBe(true);
+    expect(styles).toContain("  .portfolio-order-approval-row,\n  .portfolio-order-simulation-row,");
+    expect(hasCssBlockWith("  .portfolio-paper-ops-row", ["grid-template-columns: 1fr;"])).toBe(true);
+    expect(hasCssBlockWith('  .promotion-queue [class*="-evidence-row"]', ["grid-template-columns: 1fr;"])).toBe(true);
   });
 
   test("keeps the authoritative AI review section presentational and responsive", () => {
@@ -216,7 +225,7 @@ describe("terminal layout css", () => {
     expect(refreshWorkspaceSource).toContain("requestedAiReviewRunId,\n        restoreController.signal");
     expect(refreshWorkspaceSource).toContain("manualSelectionVersionRef.current === startedSelectionVersion");
     expect(refreshWorkspaceSource).toContain('strategyExperimentI18nRef.current.t("aiReviewStage3.error.runRestoreFailed")');
-    expect(appSource).toContain('if (activeWorkAreaId !== "ai-review") {\n      initialAiReviewRunIdRef.current = null;');
+    expect(appSource).toContain('if (activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "execution") {\n      initialAiReviewRunIdRef.current = null;');
     expect(appSource).toContain("aiReviewRunRestoreAbortControllerRef.current?.abort()");
     expect(stage3ContextSource).toContain("loadAiReviewRunArchiveSnapshot(");
     expect(stage3ContextSource).toContain("resolveAiReviewRestoredSelection(");

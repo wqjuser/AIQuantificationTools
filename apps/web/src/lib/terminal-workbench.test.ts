@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { AiReviewDecision } from "./ai-review-stage3";
+import type { Stage5SandboxReadinessDecision } from "./stage5-shadow";
 import type {
   AuditEvidenceReportLedgerSummary,
   AuditEvidenceReportLedgerRow,
@@ -101,6 +102,8 @@ import {
   buildAuditSigningKeyRotationLedgerRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunExportBrowserRows,
+  stage5SandboxReadinessDecisionHash,
+  verifyStage5SandboxReadinessDecisionHashes,
   buildResearchRunExportIndexRows,
   buildResearchRunImportDiffRows,
   buildResearchRunImportAuditEvent,
@@ -348,11 +351,15 @@ import {
   strategySnapshotFromStrategyConfig
 } from "./terminal-workbench";
 
-describe("Stage 3 AI review state scopes", () => {
-  test("accepts only one safe research run id for the AI review workspace", () => {
+describe("Stage 3 and Stage 5 research run state scopes", () => {
+  test("accepts only one safe research run id for restorable workspaces", () => {
     expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=run-e390066dd7fa")).toBe(
       "run-e390066dd7fa"
     );
+    expect(resolveAiReviewRunIdFromUrl("?workspace=execution&runId=run-e390066dd7fa")).toBe(
+      "run-e390066dd7fa"
+    );
+    expect(resolveAiReviewRunIdFromUrl("?workspace=execution&runId=run-e390066dd7fa&paperExecution=paper-1")).toBeNull();
     expect(resolveAiReviewRunIdFromUrl("?workspace=audit&runId=run-e390066dd7fa")).toBeNull();
     expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=../run-secret")).toBeNull();
     expect(resolveAiReviewRunIdFromUrl("?workspace=ai-review&runId=run-a&runId=run-b")).toBeNull();
@@ -409,9 +416,9 @@ describe("Stage 3 AI review state scopes", () => {
     const plainExecution = new URL(replaceAiReviewRunIdInUrl(
       "http://127.0.0.1:5173/?workspace=ai-review&runId=run-ai-review",
       "execution",
-      null
+      "run-ai-review"
     ));
-    expect(plainExecution.searchParams.has("runId")).toBe(false);
+    expect(plainExecution.searchParams.get("runId")).toBe("run-ai-review");
 
     const nonConsumer = new URL(replaceAiReviewRunIdInUrl(
       "http://127.0.0.1:5173/?workspace=audit&runId=run-audit",
@@ -1092,6 +1099,42 @@ function stage4ArchiveWorkflowFixture() {
     paperOnly: true, liveTradingAllowed: false, orderSubmissionEnabled: false, routeExecuted: false,
     liveBlockedBoundary: true, workflowHash: "4".repeat(64)
   };
+}
+
+function stage5ShadowSessionFixture() {
+  return {
+    kind: "aiqt.stage5ShadowExecutionSession", schemaVersion: 1,
+    sessionId: "stage5-shadow-session-1", sessionKey: "1".repeat(64),
+    generatedAt: "2026-07-11T08:20:00+00:00", baseRunId: "run-a",
+    workflowId: "stage4-workflow-1", workflowHash: "4".repeat(64),
+    adapter: { id: "local-fake-shadow", environment: "isolated-local", mode: "shadow" },
+    attempt: 1, failureMode: "none", status: "reconciled",
+    limits: { maxOrders: 2, maxGrossNotional: 90_000, timeoutSeconds: 3, maxAttempts: 2 },
+    killSwitch: { enabled: true, triggered: false },
+    orders: [
+      {
+        orderId: "order-a", clientOrderId: `shadow-${"a".repeat(24)}`, symbol: "600000", side: "buy",
+        quantity: 100, notionalValue: 40_000, state: "reconciled", reason: "Shadow reconciled.",
+        transitions: [
+          { state: "projected", at: "2026-07-11T08:20:00+00:00" },
+          { state: "shadow_acknowledged", at: "2026-07-11T08:20:00+00:00" },
+          { state: "reconciled", at: "2026-07-11T08:20:00+00:00" }
+        ]
+      },
+      {
+        orderId: "order-b", clientOrderId: `shadow-${"b".repeat(24)}`, symbol: "000300", side: "buy",
+        quantity: 100, notionalValue: 40_000, state: "reconciled", reason: "Shadow reconciled.",
+        transitions: [
+          { state: "projected", at: "2026-07-11T08:20:00+00:00" },
+          { state: "shadow_acknowledged", at: "2026-07-11T08:20:00+00:00" },
+          { state: "reconciled", at: "2026-07-11T08:20:00+00:00" }
+        ]
+      }
+    ],
+    reconciliation: { reconciled: true, reason: "Exact shadow reconciliation.", stage4OrderCount: 2, shadowOrderCount: 2, grossNotional: 80_000 },
+    paperOnly: true, shadowOnly: true, liveTradingAllowed: false, orderSubmissionEnabled: false,
+    routeExecuted: false, liveBlockedBoundary: true, sessionHash: "5".repeat(64)
+  } as const;
 }
 
 function promotionPaperExecutionFixture(
@@ -2306,30 +2349,26 @@ describe("terminal workbench model", () => {
       label: "Stage 1 · A-share P0 Golden Path",
       status: "maintenance",
       workAreaIds: ["market", "research"],
-      focus: "Preserve the accepted market and research golden path as a regression gate while Stage 4 ships."
+      focus: "Preserve the accepted market and research golden path as a regression gate while the next roadmap decision is pending."
     });
-    expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
-      "portfolio-paper"
-    ]);
+    expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
   });
 
-  test("opens Stage 4 after the Stage 3 exit", () => {
+  test("moves Stage 5 to maintenance after its top-level exit acceptance", () => {
     const stages = buildProductDevelopmentStages();
     const areas = buildProductWorkAreas(buildTerminalWorkspace());
-    expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
-      "portfolio-paper"
-    ]);
+    expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
     expect(stages.find((stage) => stage.id === "market-research")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "strategy-backtest")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "ai-review")?.status).toBe("maintenance");
-    expect(stages.find((stage) => stage.id === "portfolio-paper")?.status).toBe("current");
-    expect(stages.find((stage) => stage.id === "live-readiness")?.status).toBe("planned");
+    expect(stages.find((stage) => stage.id === "portfolio-paper")?.status).toBe("maintenance");
+    expect(stages.find((stage) => stage.id === "live-readiness")?.status).toBe("maintenance");
     expect(areas.find((area) => area.id === "market")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "strategy")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "backtest")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "ai-review")?.deliveryStageStatus).toBe("maintenance");
-    expect(areas.find((area) => area.id === "portfolio")?.deliveryStageStatus).toBe("current");
-    expect(areas.find((area) => area.id === "execution")?.deliveryStageStatus).toBe("current");
+    expect(areas.find((area) => area.id === "portfolio")?.deliveryStageStatus).toBe("maintenance");
+    expect(areas.find((area) => area.id === "execution")?.deliveryStageStatus).toBe("maintenance");
   });
 
   test("builds a Stage 1 research workspace state draft from the selected context", () => {
@@ -3506,8 +3545,8 @@ describe("terminal workbench model", () => {
       quantLoopStepId: "paper",
       workflowStageId: "execution",
       status: "blocked",
-      deliveryStageId: "portfolio-paper",
-      deliveryStageStatus: "current"
+      deliveryStageId: "live-readiness",
+      deliveryStageStatus: "maintenance"
     });
     expect(areas.find((area) => area.id === "market")).toMatchObject({
       deliveryStageId: "market-research",
@@ -11859,6 +11898,113 @@ describe("terminal workbench model", () => {
       .toMatchObject({ label: "Audit events", status: "ready", exportPath: "auditEvents[]" });
     expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unrelatedPackage })
       .find((row) => row.id === "stage4-portfolio-workflows")).toBeUndefined();
+  });
+
+  test("surfaces Stage 5 shadow sessions as dedicated export and import evidence", () => {
+    const exportPackage = stage3ArchiveBrowserPackage();
+    const workflow = stage4ArchiveWorkflowFixture();
+    const session = stage5ShadowSessionFixture();
+    exportPackage.manifest.runId = workflow.baseRunId;
+    exportPackage.manifest.artifactCounts.auditEvents = 2;
+    exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows = 1;
+    exportPackage.manifest.artifactCounts.stage5ShadowSessions = 1;
+    exportPackage.auditEvents = [
+      {
+        schemaVersion: 1, eventId: workflow.workflowId, eventType: "stage4_portfolio_workflow",
+        runId: workflow.baseRunId, createdAt: workflow.generatedAt, stage: "stage4-portfolio-workflow",
+        source: "local-operator", summary: "Stage 4 workflow recorded.", detail: "Authoritative workflow.",
+        metadata: { snapshot: workflow }
+      },
+      {
+        schemaVersion: 1, eventId: session.sessionId, eventType: "stage5_shadow_execution_session",
+        runId: session.baseRunId, createdAt: session.generatedAt, stage: "stage5-shadow-execution",
+        source: "local-operator", summary: "Stage 5 shadow reconciled.", detail: "Shadow only.",
+        metadata: { snapshot: session }
+      }
+    ];
+
+    expect(buildResearchRunExportBrowserRows(exportPackage).find((row) => row.id === "stage5-shadow-sessions"))
+      .toMatchObject({ status: "ready", value: "1 manifest / 1 package", detail: expect.stringContaining("modes none · blocked 0 · recovered 0") });
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage })
+      .find((row) => row.id === "stage5-shadow-sessions"))
+      .toMatchObject({ status: "add", incoming: "1 sessions / 1 manifest" });
+
+    const countMismatchPackage = structuredClone(exportPackage);
+    countMismatchPackage.manifest.artifactCounts.stage5ShadowSessions = 0;
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: countMismatchPackage })
+      .find((row) => row.id === "stage5-shadow-sessions")?.status).toBe("blocked");
+
+    const unsafePackage = structuredClone(exportPackage);
+    (unsafePackage.auditEvents?.[1]?.metadata.snapshot as Record<string, unknown>).orderSubmissionEnabled = true;
+    expect(buildResearchRunExportBrowserRows(unsafePackage).find((row) => row.id === "stage5-shadow-sessions")?.status)
+      .toBe("blocked");
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: unsafePackage })
+      .find((row) => row.id === "stage5-shadow-sessions")?.status).toBe("blocked");
+  });
+
+  test("surfaces Stage 5 sandbox readiness decisions as dedicated fail-closed evidence", async () => {
+    const exportPackage = stage3ArchiveBrowserPackage();
+    const workflow = stage4ArchiveWorkflowFixture();
+    const session = stage5ShadowSessionFixture();
+    const decision: Stage5SandboxReadinessDecision = {
+      kind: "aiqt.stage5SandboxReadinessDecision", schemaVersion: 1,
+      decisionId: "stage5-sandbox-readiness-123456789012345678901234", generatedAt: "2026-07-11T13:00:00+00:00",
+      baseRunId: workflow.baseRunId, workflowId: workflow.workflowId, workflowHash: workflow.workflowHash,
+      shadowSessionId: session.sessionId, shadowSessionHash: session.sessionHash, adapterId: "ashare-live", market: "ashare",
+      adapterPaperExecutionIds: ["adapter-execution-1", "adapter-execution-2"],
+      adapterManifestValidationIds: ["manifest-1", "manifest-2"],
+      adapterAuditEventIds: ["adapter-execution-1", "adapter-execution-2"], operator: "中文操作员",
+      status: "ready_for_manually_authorized_sandbox_phase", paperOnly: true, shadowOnly: true,
+      sandboxOrderSubmissionAllowed: false, liveTradingAllowed: false, orderSubmissionEnabled: false,
+      routeExecuted: false, liveBlockedBoundary: true, decisionHash: "e".repeat(64)
+    };
+    decision.decisionHash = await stage5SandboxReadinessDecisionHash(decision);
+    expect(decision.decisionHash).toBe("81355246a306df1edece178cbbbeb5f08ee46b798f70c05aa5f4c9a753abe504");
+    exportPackage.manifest.runId = workflow.baseRunId;
+    exportPackage.manifest.artifactCounts.auditEvents = 3;
+    exportPackage.manifest.artifactCounts.stage4PortfolioWorkflows = 1;
+    exportPackage.manifest.artifactCounts.stage5ShadowSessions = 1;
+    exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions = 1;
+    exportPackage.auditEvents = [
+      {
+        schemaVersion: 1, eventId: workflow.workflowId, eventType: "stage4_portfolio_workflow",
+        runId: workflow.baseRunId, createdAt: workflow.generatedAt, stage: "stage4-portfolio-workflow",
+        source: "local-operator", summary: "Stage 4 workflow recorded.", detail: "Authoritative workflow.",
+        metadata: { snapshot: workflow }
+      },
+      {
+        schemaVersion: 1, eventId: session.sessionId, eventType: "stage5_shadow_execution_session",
+        runId: session.baseRunId, createdAt: session.generatedAt, stage: "stage5-shadow-execution",
+        source: "local-operator", summary: "Stage 5 shadow reconciled.", detail: "Shadow only.",
+        metadata: { snapshot: session }
+      },
+      {
+        schemaVersion: 1, eventId: decision.decisionId, eventType: "stage5_sandbox_readiness_decision",
+        runId: decision.baseRunId, createdAt: decision.generatedAt, stage: "stage5-sandbox-readiness",
+        source: decision.operator, summary: "Sandbox readiness recorded.", detail: "Order submission blocked.",
+        metadata: { snapshot: decision }
+      }
+    ];
+
+    expect(await verifyStage5SandboxReadinessDecisionHashes(exportPackage)).toBe(true);
+    expect(buildResearchRunExportBrowserRows(exportPackage)
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions"))
+      .toMatchObject({ status: "ready", value: "1 manifest / 1 package", detail: expect.stringContaining("terminal adapter-execution-1, adapter-execution-2") });
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage })
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions"))
+      .toMatchObject({ status: "add", incoming: "1 decisions / 1 manifest" });
+
+    const unsafe = structuredClone(exportPackage);
+    (unsafe.auditEvents?.[2]?.metadata.snapshot as Record<string, unknown>).sandboxOrderSubmissionAllowed = true;
+    expect(await verifyStage5SandboxReadinessDecisionHashes(unsafe)).toBe(false);
+    expect(buildResearchRunExportBrowserRows(unsafe)
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions")?.status).toBe("blocked");
+
+    const hashTampered = structuredClone(exportPackage);
+    (hashTampered.auditEvents?.[2]?.metadata.snapshot as Record<string, unknown>).decisionHash = "f".repeat(64);
+    expect(await verifyStage5SandboxReadinessDecisionHashes(hashTampered)).toBe(false);
+    expect(buildResearchRunImportDiffRows({ workspace: buildTerminalWorkspace(), exportPackage: hashTampered })
+      .find((row) => row.id === "stage5-sandbox-readiness-decisions")?.status).toBe("blocked");
   });
 
   test("aligns Decision import diff with persisted prefix and append semantics", () => {
@@ -27110,7 +27256,16 @@ describe("terminal workbench model", () => {
           }
         ],
         blockedReasons: [],
-        metadata: { token: "[redacted]", fingerprint: "sha256:sandbox-probe-execution" },
+        metadata: {
+          token: "[redacted]",
+          fingerprint: "sha256:sandbox-probe-execution",
+          authoritativeHealthProbe: {
+            status: "ready",
+            exchangeId: "binance",
+            probeId: "execution-adapter-health-ccxt-live-1",
+            evidenceHash: "abcdef1234567890"
+          }
+        },
         liveTradingAllowed: false,
         paperOnly: true
       }
@@ -27148,6 +27303,8 @@ describe("terminal workbench model", () => {
         manifestPath: "local-secret-store://us-live/alpaca-sandbox",
         envVarSummary: "2 env vars",
         confirmationSummary: "5 confirmed / 0 missing",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-us-live",
@@ -29430,6 +29587,8 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-ashare",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         tone: "positive" as const
       }
     ];
@@ -29580,6 +29739,8 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-review",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         tone: "positive" as const
       }
     ];
@@ -29768,6 +29929,8 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-route-review",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         tone: "positive" as const
       }
     ];

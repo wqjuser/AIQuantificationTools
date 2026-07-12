@@ -8950,6 +8950,35 @@ describe("terminal workspace API client", () => {
             liveTradingAllowed: false,
             paperOnly: true
           },
+          adapterHealthProbe: {
+            schemaVersion: 1,
+            probeId: "execution-adapter-health-ccxt-live-1",
+            adapterId: "ccxt-live",
+            provider: "ccxt",
+            exchangeId: "binance",
+            mode: "sandbox",
+            status: "ready",
+            generatedAt: "2026-06-09T10:16:00+00:00",
+            checks: [],
+            capabilities: { sandboxMode: true },
+            credentials: {
+              apiKeyConfigured: true,
+              apiKeySource: "CCXT_BINANCE_API_KEY",
+              secretConfigured: true,
+              secretSource: "CCXT_BINANCE_SECRET",
+              passwordConfigured: false,
+              passwordSource: null
+            },
+            marketCount: 1,
+            exchangeStatus: "ok",
+            serverTimeMs: 1780000000000,
+            accountSyncState: "ready",
+            blockedReasons: [],
+            metadata: { readOnly: true },
+            paperOnly: true,
+            liveTradingAllowed: false,
+            orderRoutingEnabled: false
+          },
           auditEvent: {
             schemaVersion: 1,
             eventId: "execution-adapter-sandbox-probe-execution-us-live",
@@ -8983,6 +9012,7 @@ describe("terminal workspace API client", () => {
       {
         adapterId: "us-live",
         sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+        exchangeId: "binance",
         operator: "sandbox-operator",
         probeExecutionMode: "manual_readonly_sandbox_probe",
         confirmations: {
@@ -9003,6 +9033,7 @@ describe("terminal workspace API client", () => {
     expect(calls[0]?.body).toEqual({
       adapterId: "us-live",
       sandboxProbePlanId: "execution-adapter-sandbox-probe-plan-us-live",
+      exchangeId: "binance",
       operator: "sandbox-operator",
       probeExecutionMode: "manual_readonly_sandbox_probe",
       confirmations: {
@@ -9024,6 +9055,7 @@ describe("terminal workspace API client", () => {
     );
     expect(result.adapterSandboxProbeExecution?.liveTradingAllowed).toBe(false);
     expect(result.adapterSandboxProbeExecution?.paperOnly).toBe(true);
+    expect(result.adapterHealthProbe?.status).toBe("ready");
     expect(result.auditEvent?.eventType).toBe("execution_adapter_sandbox_probe_execution");
   });
 

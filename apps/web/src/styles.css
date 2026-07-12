@@ -3639,6 +3639,7 @@ em {
 .execution-layout {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   grid-template-areas:
+    "stage5 stage5"
     "execution broker"
     "replay-gate replay-manifest"
     "promotion adapter-chain"
@@ -9240,6 +9241,65 @@ em {
   grid-area: execution;
 }
 
+.execution-stage5-shadow {
+  grid-area: stage5;
+  min-width: 0;
+  border: 1px solid #2a3b51;
+  border-radius: 10px;
+  background: #0d1622;
+  padding: 14px;
+}
+
+.execution-stage5-shadow > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.execution-stage5-shadow header span,
+.execution-stage5-shadow header p,
+.execution-stage5-shadow header h2 { margin: 0; }
+.execution-stage5-shadow header span { color: #8fa4b8; font-size: 11px; }
+.execution-stage5-shadow header h2 { margin-top: 3px; color: #f0f7fb; font-size: 17px; }
+.execution-stage5-shadow header p { margin-top: 4px; color: #a8b7c7; font-size: 12px; }
+.execution-stage5-shadow header > strong {
+  max-width: 310px;
+  border: 1px solid #7a552c;
+  border-radius: 999px;
+  color: #f4c46d;
+  font-size: 10px;
+  padding: 5px 9px;
+  text-align: center;
+}
+
+.execution-stage5-shadow > button {
+  min-height: 34px;
+  margin-top: 12px;
+  border: 1px solid #277967;
+  border-radius: 7px;
+  background: #123129;
+  color: #7af5dd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 13px;
+}
+
+.execution-stage5-shadow > button:disabled { cursor: not-allowed; opacity: 0.55; }
+.execution-stage5-shadow-error { color: #f3ae96; font-size: 11px; }
+.execution-stage5-shadow dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
+.execution-stage5-shadow dl > div { min-width: 0; border: 1px solid #293a50; border-radius: 8px; padding: 8px; }
+.execution-stage5-shadow dt { color: #8fa4b8; font-size: 10px; }
+.execution-stage5-shadow dd { margin: 4px 0 0; color: #dce6ee; font: 11px var(--mono); }
+.execution-stage5-shadow-hash,
+.execution-stage5-shadow details span { overflow-wrap: anywhere; }
+.execution-stage5-shadow details { margin-top: 11px; color: #b7c9d8; font-size: 11px; }
+.execution-stage5-shadow details summary { cursor: pointer; font-weight: 800; }
+.execution-stage5-shadow details ul { display: grid; gap: 7px; padding-left: 18px; }
+.execution-stage5-shadow details li > * { display: block; margin-top: 2px; }
+
 .workflow-promotion-panel {
   grid-area: promotion;
   align-self: start;
@@ -11711,6 +11771,7 @@ em {
 
 .terminal-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-content: start;
   min-width: 0;
@@ -14047,7 +14108,12 @@ em {
 }
 
 .paper-blotter {
+  min-width: 0;
   margin-top: 12px;
+}
+
+.paper-blotter-table {
+  min-width: 0;
 }
 
 .paper-blotter-title {
@@ -15871,6 +15937,11 @@ em {
 }
 
 @media (max-width: 560px) {
+  .execution-stage5-shadow > header { flex-direction: column; }
+  .execution-stage5-shadow header > strong { max-width: none; }
+  .execution-stage5-shadow dl { grid-template-columns: 1fr; }
+  .execution-stage5-shadow > button { width: 100%; }
+
   .portfolio-route-risk-template {
     grid-template-columns: 1fr;
   }
@@ -17159,6 +17230,7 @@ button.ai-review-record {
 
   .execution-layout {
     grid-template-areas:
+      "stage5"
       "execution"
       "replay-gate"
       "replay-manifest"
@@ -17519,6 +17591,31 @@ button.ai-review-record {
     grid-template-columns: 1fr;
   }
 
+  .paper-blotter-row.portfolio-order-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-order-approval,
+  .portfolio-order-approval-list,
+  .portfolio-order-simulation,
+  .portfolio-order-simulation-list,
+  .portfolio-paper-ops-queue,
+  .portfolio-paper-ops-table {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .portfolio-order-approval-row,
+  .portfolio-order-simulation-row,
+  .portfolio-paper-ops-summary,
+  .portfolio-paper-ops-row {
+    grid-template-columns: 1fr;
+  }
+
+  .promotion-queue [class*="-evidence-row"] {
+    grid-template-columns: 1fr;
+  }
+
   .audit-ai-drift-row {
     grid-template-columns: 1fr;
   }
@@ -17643,6 +17740,7 @@ button.ai-review-record {
 
   .execution-layout {
     grid-template-areas:
+      "stage5"
       "execution"
       "replay-gate"
       "replay-manifest"

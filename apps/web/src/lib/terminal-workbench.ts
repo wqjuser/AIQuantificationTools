@@ -1,4 +1,13 @@
 import type { AiReviewDecision, AiReviewRunArchiveRecord, AuthoritativeAiReviewRun } from "./ai-review-stage3";
+import {
+  isStage5SandboxAuthorizationPreflight,
+  isStage5SandboxAuthorizationReview,
+  isStage5SandboxReadinessDecision,
+  isStage5ShadowSession,
+  type Stage5SandboxAuthorizationPreflight,
+  type Stage5SandboxAuthorizationReview,
+  type Stage5SandboxReadinessDecision
+} from "./stage5-shadow";
 
 export type PanelId =
   | "watchlist"
@@ -1754,6 +1763,10 @@ export interface ResearchRunExportBrowserManifest {
     aiReviewDecisions?: number;
     auditEvents?: number;
     stage4PortfolioWorkflows?: number;
+    stage5ShadowSessions?: number;
+    stage5SandboxReadinessDecisions?: number;
+    stage5SandboxAuthorizationPreflights?: number;
+    stage5SandboxAuthorizationReviews?: number;
     handoffNotes?: number;
   };
 }
@@ -2416,6 +2429,10 @@ export interface ResearchRunExportBrowserRow {
     | "ai-reviews"
     | "ai-reviews-v2"
     | "ai-review-decisions"
+    | "stage5-shadow-sessions"
+    | "stage5-sandbox-readiness-decisions"
+    | "stage5-sandbox-authorization-preflights"
+    | "stage5-sandbox-authorization-reviews"
     | "audit-events"
     | "p0-completeness"
     | "audit-summary"
@@ -2466,6 +2483,10 @@ export type ResearchRunImportDiffRowId =
     | "portfolio-paper-orders"
     | "ai-review-runs"
     | "stage4-portfolio-workflows"
+    | "stage5-shadow-sessions"
+    | "stage5-sandbox-readiness-decisions"
+    | "stage5-sandbox-authorization-preflights"
+    | "stage5-sandbox-authorization-reviews"
     | "audit-summary"
     | "audit-report"
     | "backtest-report"
@@ -5412,6 +5433,8 @@ export interface ExecutionAdapterSandboxProbeExecutionRow {
   manifestPath: string;
   envVarSummary: string;
   confirmationSummary: string;
+  healthProbeSummary: string;
+  authoritativeHealthReady: boolean;
   blockerSummary: string;
   boundary: string;
   auditEventId: string;
@@ -9055,7 +9078,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
     workAreaIds: ["market", "research"],
-    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 4 ships.",
+    focus: "Preserve the accepted market and research golden path as a regression gate while the next roadmap decision is pending.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -9090,9 +9113,9 @@ const productDevelopmentStageDefinitions = [
   {
     id: "portfolio-paper",
     label: "Stage 4 · Portfolio and Paper Trading",
-    status: "current",
-    workAreaIds: ["portfolio", "execution"],
-    focus: "Move into portfolio risk, paper orders, and lifecycle replay after single-strategy evidence is dependable.",
+    status: "maintenance",
+    workAreaIds: ["portfolio"],
+    focus: "Preserve the accepted portfolio paper workflow as the authoritative source for Stage 5 shadow execution.",
     exitCriteria: [
       "Portfolio backtest, risk checks, paper orders, approvals, and simulations share one auditable lifecycle.",
       "Paper accounts and positions replay deterministically.",
@@ -9102,13 +9125,13 @@ const productDevelopmentStageDefinitions = [
   {
     id: "live-readiness",
     label: "Stage 5 · Live Readiness",
-    status: "planned",
-    workAreaIds: [],
-    focus: "Prepare certified broker and exchange adapters only after paper trading and audit gates are mature.",
+    status: "maintenance",
+    workAreaIds: ["execution"],
+    focus: "Preserve the accepted pre-live safety foundation and its eight release artifacts while all Sandbox and live order routes remain blocked.",
     exitCriteria: [
-      "Adapter authentication, account sync, order lifecycle, and reconciliation are testable without real funds.",
-      "Every live candidate cites strategy, backtest, AI review, risk approval, adapter state, and human confirmation.",
-      "No live route is enabled by default."
+      "Shadow execution, idempotency, recovery, limits, kill switch, and reconciliation remain deterministic and replayable.",
+      "Sandbox readiness, authoritative read-only probe, authorization preflight, and immutable review remain fail closed.",
+      "The top-level exit acceptance binds all release evidence while no Sandbox or live route is enabled."
     ]
   }
 ] as const satisfies readonly ProductDevelopmentStage[];
@@ -9175,7 +9198,7 @@ const productWorkAreaDefinitions = [
     accent: "execution",
     quantLoopStepId: "paper",
     workflowStageId: "execution",
-    deliveryStageId: "portfolio-paper"
+    deliveryStageId: "live-readiness"
   },
   {
     id: "audit",
@@ -14980,6 +15003,140 @@ function stage4PortfolioWorkflowAuditSnapshots(
   });
 }
 
+function stage5ShadowSessionAuditSnapshots(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+) {
+  return (auditEvents ?? []).flatMap((event) => {
+    const snapshot = event.metadata.snapshot;
+    return event.eventType === "stage5_shadow_execution_session" && isStage5ShadowSession(snapshot)
+      && event.eventId === snapshot.sessionId && event.runId === snapshot.baseRunId
+      && event.createdAt === snapshot.generatedAt && event.stage === "stage5-shadow-execution"
+      ? [snapshot]
+      : [];
+  });
+}
+
+function stage5SandboxReadinessDecisionAuditSnapshots(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+) {
+  return (auditEvents ?? []).flatMap((event) => {
+    const snapshot = event.metadata.snapshot;
+    return event.eventType === "stage5_sandbox_readiness_decision" && isStage5SandboxReadinessDecision(snapshot)
+      && event.eventId === snapshot.decisionId && event.runId === snapshot.baseRunId
+      && event.createdAt === snapshot.generatedAt && event.stage === "stage5-sandbox-readiness"
+      && event.source === snapshot.operator
+      ? [snapshot]
+      : [];
+  });
+}
+
+function stage5SandboxAuthorizationPreflightAuditSnapshots(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+) {
+  return (auditEvents ?? []).flatMap((event) => {
+    const snapshot = event.metadata.snapshot;
+    return event.eventType === "stage5_sandbox_authorization_preflight" &&
+      isStage5SandboxAuthorizationPreflight(snapshot) && event.eventId === snapshot.preflightId &&
+      event.runId === snapshot.baseRunId && event.createdAt === snapshot.generatedAt &&
+      event.stage === "stage5-sandbox-authorization-preflight" && event.source === snapshot.operator
+      ? [snapshot]
+      : [];
+  });
+}
+
+function stage5SandboxAuthorizationReviewAuditSnapshots(
+  auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
+) {
+  return (auditEvents ?? []).flatMap((event) => {
+    const snapshot = event.metadata.snapshot;
+    return event.eventType === "stage5_sandbox_authorization_review" &&
+      isStage5SandboxAuthorizationReview(snapshot) && event.eventId === snapshot.reviewId &&
+      event.runId === snapshot.baseRunId && event.createdAt === snapshot.generatedAt &&
+      event.stage === "stage5-sandbox-authorization-review" && event.source === snapshot.reviewer
+      ? [snapshot]
+      : [];
+  });
+}
+
+const stage5SandboxReadinessHashVerifiedPackages = new WeakSet<object>();
+
+export async function stage5SandboxReadinessDecisionHash(
+  decision: Stage5SandboxReadinessDecision
+): Promise<string> {
+  const { decisionHash: _decisionHash, ...payload } = decision;
+  return sha256TextHex(pythonAsciiCanonicalJson(payload));
+}
+
+export async function stage5SandboxAuthorizationPreflightHash(
+  preflight: Stage5SandboxAuthorizationPreflight
+): Promise<string> {
+  const { preflightHash: _preflightHash, ...payload } = preflight;
+  return sha256TextHex(pythonAsciiCanonicalJson(payload));
+}
+
+export async function stage5SandboxAuthorizationReviewHash(
+  review: Stage5SandboxAuthorizationReview
+): Promise<string> {
+  const { reviewHash: _reviewHash, ...payload } = review;
+  return sha256TextHex(pythonAsciiCanonicalJson(payload));
+}
+
+function pythonAsciiCanonicalJson(value: unknown): string {
+  if (value === null || typeof value === "boolean" || typeof value === "number") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "string") {
+    return pythonAsciiJsonString(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(pythonAsciiCanonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) =>
+      `${pythonAsciiJsonString(key)}:${pythonAsciiCanonicalJson(record[key])}`
+    ).join(",")}}`;
+  }
+  throw new TypeError("Stage 5 sandbox readiness decision contains an unsupported value");
+}
+
+function pythonAsciiJsonString(value: string): string {
+  return JSON.stringify(value).replace(/[^\x00-\x7f]/g, (character) =>
+    `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
+}
+
+export async function verifyStage5SandboxReadinessDecisionHashes(
+  exportPackage: ResearchRunExportBrowserPackage
+): Promise<boolean> {
+  const decisions = stage5SandboxReadinessDecisionAuditSnapshots(exportPackage.auditEvents);
+  const preflights = stage5SandboxAuthorizationPreflightAuditSnapshots(exportPackage.auditEvents);
+  const reviews = stage5SandboxAuthorizationReviewAuditSnapshots(exportPackage.auditEvents);
+  const eventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_readiness_decision").length;
+  const preflightEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_authorization_preflight").length;
+  const reviewEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_authorization_review").length;
+  const valid = decisions.length === eventCount && preflights.length === preflightEventCount &&
+    reviews.length === reviewEventCount && (
+    await Promise.all([
+      ...decisions.map(async (decision) =>
+        (await stage5SandboxReadinessDecisionHash(decision)) === decision.decisionHash
+      ),
+      ...preflights.map(async (preflight) =>
+        (await stage5SandboxAuthorizationPreflightHash(preflight)) === preflight.preflightHash
+      ),
+      ...reviews.map(async (review) =>
+        (await stage5SandboxAuthorizationReviewHash(review)) === review.reviewHash
+      )
+    ])
+  ).every(Boolean);
+  if (valid) stage5SandboxReadinessHashVerifiedPackages.add(exportPackage);
+  else stage5SandboxReadinessHashVerifiedPackages.delete(exportPackage);
+  return valid;
+}
+
 function stage4PortfolioWorkflowAuditEventsAreValid(
   auditEvents: ResearchRunExportBrowserPackage["auditEvents"]
 ): boolean {
@@ -15158,6 +15315,35 @@ export function buildResearchRunExportBrowserRows(
   const stage4PortfolioWorkflowsAreValid = stage4PortfolioWorkflowAuditEventsAreValid(exportPackage.auditEvents);
   const hasStage4PortfolioWorkflowAccounting =
     (artifactCounts.stage4PortfolioWorkflows ?? 0) > 0 || stage4PortfolioWorkflows.length > 0;
+  const stage5ShadowSessions = stage5ShadowSessionAuditSnapshots(exportPackage.auditEvents);
+  const stage5ShadowFailureModes = [...new Set(stage5ShadowSessions.map((session) => session.failureMode))];
+  const stage5ShadowBlockedCount = stage5ShadowSessions.filter((session) => session.status === "blocked").length;
+  const stage5ShadowRecoveredCount = stage5ShadowSessions.filter(
+    (session) => session.failureMode === "timeout_once" && session.attempt === 2 && session.status === "reconciled"
+  ).length;
+  const stage5ShadowSessionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_shadow_execution_session").length;
+  const stage5ShadowSessionsAreValid = stage5ShadowSessions.length === stage5ShadowSessionEventCount;
+  const stage5SandboxReadinessDecisions = stage5SandboxReadinessDecisionAuditSnapshots(exportPackage.auditEvents);
+  const stage5SandboxReadinessDecisionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_readiness_decision").length;
+  const stage5SandboxReadinessDecisionsAreValid =
+    stage5SandboxReadinessDecisions.length === stage5SandboxReadinessDecisionEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
+  const stage5SandboxAuthorizationPreflights =
+    stage5SandboxAuthorizationPreflightAuditSnapshots(exportPackage.auditEvents);
+  const stage5SandboxAuthorizationPreflightEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_authorization_preflight").length;
+  const stage5SandboxAuthorizationPreflightsAreValid =
+    stage5SandboxAuthorizationPreflights.length === stage5SandboxAuthorizationPreflightEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
+  const stage5SandboxAuthorizationReviews =
+    stage5SandboxAuthorizationReviewAuditSnapshots(exportPackage.auditEvents);
+  const stage5SandboxAuthorizationReviewEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_authorization_review").length;
+  const stage5SandboxAuthorizationReviewsAreValid =
+    stage5SandboxAuthorizationReviews.length === stage5SandboxAuthorizationReviewEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
   const handoffNotePackageCount = exportPackage.handoffNotes?.length ?? 0;
   const p0PaperSimulationAuditEvents = (exportPackage.auditEvents ?? []).filter(
     (event) => event.eventType === "p0_paper_simulation"
@@ -15232,6 +15418,14 @@ export function buildResearchRunExportBrowserRows(
   const auditEventCountMatches = (artifactCounts.auditEvents ?? 0) === auditEventPackageCount;
   const stage4PortfolioWorkflowCountMatches =
     (artifactCounts.stage4PortfolioWorkflows ?? 0) === stage4PortfolioWorkflows.length;
+  const stage5ShadowSessionCountMatches =
+    (artifactCounts.stage5ShadowSessions ?? 0) === stage5ShadowSessions.length;
+  const stage5SandboxReadinessDecisionCountMatches =
+    (artifactCounts.stage5SandboxReadinessDecisions ?? 0) === stage5SandboxReadinessDecisions.length;
+  const stage5SandboxAuthorizationPreflightCountMatches =
+    (artifactCounts.stage5SandboxAuthorizationPreflights ?? 0) === stage5SandboxAuthorizationPreflights.length;
+  const stage5SandboxAuthorizationReviewCountMatches =
+    (artifactCounts.stage5SandboxAuthorizationReviews ?? 0) === stage5SandboxAuthorizationReviews.length;
   const handoffNoteCountMatches = (artifactCounts.handoffNotes ?? 0) === handoffNotePackageCount;
   const p0PackageCompleteness = exportPackage.p0PackageCompleteness;
   const p0CompletenessIsReady =
@@ -15488,6 +15682,71 @@ export function buildResearchRunExportBrowserRows(
                 : "risk"
         }
       ] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...((artifactCounts.stage5ShadowSessions ?? 0) > 0 || stage5ShadowSessionEventCount > 0
+      ? ([{
+          id: "stage5-shadow-sessions",
+          label: "Stage 5 shadow sessions",
+          status: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid ? "ready" : "blocked",
+          value: `${artifactCounts.stage5ShadowSessions ?? 0} manifest / ${stage5ShadowSessions.length} package`,
+          detail: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid
+            ? `modes ${stage5ShadowFailureModes.join(", ")} · blocked ${stage5ShadowBlockedCount} · recovered ${stage5ShadowRecoveredCount} · hashes ${stage5ShadowSessions.map((session) => session.sessionHash.slice(0, 12)).join(", ")} · live route blocked`
+            : "Stage 5 shadow session count, identity, time, or safety contract does not match auditEvents[].",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: stage5ShadowSessionCountMatches && stage5ShadowSessionsAreValid ? "ai" : "risk"
+        }] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...((artifactCounts.stage5SandboxReadinessDecisions ?? 0) > 0 || stage5SandboxReadinessDecisionEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-readiness-decisions",
+          label: "Stage 5 sandbox readiness decisions",
+          status: stage5SandboxReadinessDecisionCountMatches && stage5SandboxReadinessDecisionsAreValid
+            ? "ready" : "blocked",
+          value: `${artifactCounts.stage5SandboxReadinessDecisions ?? 0} manifest / ${stage5SandboxReadinessDecisions.length} package`,
+          detail: stage5SandboxReadinessDecisionCountMatches && stage5SandboxReadinessDecisionsAreValid
+            ? stage5SandboxReadinessDecisions.map((decision) =>
+                `run ${decision.baseRunId} · session ${decision.shadowSessionHash.slice(0, 12)} · ${decision.adapterId} · terminal ${decision.adapterPaperExecutionIds.join(", ")} · decision SHA-256 ${decision.decisionHash.slice(0, 12)} · sandbox order submission blocked`
+              ).join(" · ")
+            : "Stage 5 sandbox readiness decision count, identity, time, SHA-256, or safety contract does not match auditEvents[].",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: stage5SandboxReadinessDecisionCountMatches && stage5SandboxReadinessDecisionsAreValid ? "ai" : "risk"
+        }] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...((artifactCounts.stage5SandboxAuthorizationPreflights ?? 0) > 0 ||
+      stage5SandboxAuthorizationPreflightEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-authorization-preflights",
+          label: "Stage 5 sandbox authorization preflights",
+          status: stage5SandboxAuthorizationPreflightCountMatches &&
+            stage5SandboxAuthorizationPreflightsAreValid ? "ready" : "blocked",
+          value: `${artifactCounts.stage5SandboxAuthorizationPreflights ?? 0} manifest / ${stage5SandboxAuthorizationPreflights.length} package`,
+          detail: stage5SandboxAuthorizationPreflightCountMatches && stage5SandboxAuthorizationPreflightsAreValid
+            ? stage5SandboxAuthorizationPreflights.map((preflight) =>
+                `${preflight.adapterId} · ${preflight.market} · health ${preflight.authoritativeHealthEvidenceHash.slice(0, 12)} · preflight SHA-256 ${preflight.preflightHash.slice(0, 12)} · human authorization required · orders blocked`
+              ).join(" · ")
+            : "Stage 5 sandbox authorization preflight count, identity, SHA-256, or safety contract does not match auditEvents[].",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: stage5SandboxAuthorizationPreflightCountMatches &&
+            stage5SandboxAuthorizationPreflightsAreValid ? "ai" : "risk"
+        }] satisfies ResearchRunExportBrowserRow[])
+      : []),
+    ...((artifactCounts.stage5SandboxAuthorizationReviews ?? 0) > 0 ||
+      stage5SandboxAuthorizationReviewEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-authorization-reviews",
+          label: "Stage 5 sandbox authorization reviews",
+          status: stage5SandboxAuthorizationReviewCountMatches &&
+            stage5SandboxAuthorizationReviewsAreValid ? "ready" : "blocked",
+          value: `${artifactCounts.stage5SandboxAuthorizationReviews ?? 0} manifest / ${stage5SandboxAuthorizationReviews.length} package`,
+          detail: stage5SandboxAuthorizationReviewCountMatches && stage5SandboxAuthorizationReviewsAreValid
+            ? stage5SandboxAuthorizationReviews.map((review) =>
+                `${review.outcome} · ${review.reviewer} · review SHA-256 ${review.reviewHash.slice(0, 12)} · authorization ineffective · orders blocked`
+              ).join(" · ")
+            : "Stage 5 sandbox authorization review count, identity, SHA-256, or safety contract does not match auditEvents[].",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: stage5SandboxAuthorizationReviewCountMatches &&
+            stage5SandboxAuthorizationReviewsAreValid ? "ai" : "risk"
+        }] satisfies ResearchRunExportBrowserRow[])
       : []),
     {
       id: "audit-events",
@@ -15889,6 +16148,10 @@ function researchRunImportArtifactCountMismatches(
     researchNotes: number;
     auditEvents: number;
     stage4PortfolioWorkflows: number;
+    stage5ShadowSessions: number;
+    stage5SandboxReadinessDecisions: number;
+    stage5SandboxAuthorizationPreflights: number;
+    stage5SandboxAuthorizationReviews: number;
     handoffNotes: number;
   }
 ): string[] {
@@ -15919,6 +16182,22 @@ function researchRunImportArtifactCountMismatches(
     ["aiReviewDecisions", artifactCounts.aiReviewDecisions ?? 0, actualCounts.aiReviewDecisions],
     ["auditEvents", artifactCounts.auditEvents ?? 0, actualCounts.auditEvents],
     ["stage4PortfolioWorkflows", artifactCounts.stage4PortfolioWorkflows ?? 0, actualCounts.stage4PortfolioWorkflows],
+    ["stage5ShadowSessions", artifactCounts.stage5ShadowSessions ?? 0, actualCounts.stage5ShadowSessions],
+    [
+      "stage5SandboxReadinessDecisions",
+      artifactCounts.stage5SandboxReadinessDecisions ?? 0,
+      actualCounts.stage5SandboxReadinessDecisions
+    ],
+    [
+      "stage5SandboxAuthorizationPreflights",
+      artifactCounts.stage5SandboxAuthorizationPreflights ?? 0,
+      actualCounts.stage5SandboxAuthorizationPreflights
+    ],
+    [
+      "stage5SandboxAuthorizationReviews",
+      artifactCounts.stage5SandboxAuthorizationReviews ?? 0,
+      actualCounts.stage5SandboxAuthorizationReviews
+    ],
     ["handoffNotes", artifactCounts.handoffNotes ?? 0, actualCounts.handoffNotes]
   ];
 
@@ -16011,6 +16290,43 @@ export function buildResearchRunImportDiffRows({
   const packageAuditEventCount = exportPackage.auditEvents?.length ?? 0;
   const packageStage4PortfolioWorkflows = stage4PortfolioWorkflowAuditSnapshots(exportPackage.auditEvents);
   const packageStage4PortfolioWorkflowsAreValid = stage4PortfolioWorkflowAuditEventsAreValid(exportPackage.auditEvents);
+  const packageStage5ShadowSessions = stage5ShadowSessionAuditSnapshots(exportPackage.auditEvents);
+  const packageStage5ShadowSessionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_shadow_execution_session").length;
+  const packageStage5ShadowSessionsAreValid =
+    packageStage5ShadowSessions.length === packageStage5ShadowSessionEventCount;
+  const packageStage5ShadowSessionCountMatches =
+    (exportPackage.manifest.artifactCounts.stage5ShadowSessions ?? 0) === packageStage5ShadowSessions.length;
+  const packageStage5SandboxReadinessDecisions =
+    stage5SandboxReadinessDecisionAuditSnapshots(exportPackage.auditEvents);
+  const packageStage5SandboxReadinessDecisionEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_readiness_decision").length;
+  const packageStage5SandboxReadinessDecisionsAreValid =
+    packageStage5SandboxReadinessDecisions.length === packageStage5SandboxReadinessDecisionEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
+  const packageStage5SandboxReadinessDecisionCountMatches =
+    (exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions ?? 0) ===
+    packageStage5SandboxReadinessDecisions.length;
+  const packageStage5SandboxAuthorizationPreflights =
+    stage5SandboxAuthorizationPreflightAuditSnapshots(exportPackage.auditEvents);
+  const packageStage5SandboxAuthorizationPreflightEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_authorization_preflight").length;
+  const packageStage5SandboxAuthorizationPreflightsAreValid =
+    packageStage5SandboxAuthorizationPreflights.length === packageStage5SandboxAuthorizationPreflightEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
+  const packageStage5SandboxAuthorizationPreflightCountMatches =
+    (exportPackage.manifest.artifactCounts.stage5SandboxAuthorizationPreflights ?? 0) ===
+    packageStage5SandboxAuthorizationPreflights.length;
+  const packageStage5SandboxAuthorizationReviews =
+    stage5SandboxAuthorizationReviewAuditSnapshots(exportPackage.auditEvents);
+  const packageStage5SandboxAuthorizationReviewEventCount = (exportPackage.auditEvents ?? [])
+    .filter((event) => event.eventType === "stage5_sandbox_authorization_review").length;
+  const packageStage5SandboxAuthorizationReviewsAreValid =
+    packageStage5SandboxAuthorizationReviews.length === packageStage5SandboxAuthorizationReviewEventCount &&
+    stage5SandboxReadinessHashVerifiedPackages.has(exportPackage);
+  const packageStage5SandboxAuthorizationReviewCountMatches =
+    (exportPackage.manifest.artifactCounts.stage5SandboxAuthorizationReviews ?? 0) ===
+    packageStage5SandboxAuthorizationReviews.length;
   const packageHandoffNoteCount = exportPackage.handoffNotes?.length ?? 0;
   const currentAiReviewCount = currentRun
     ? aiReviewRecords.filter((record) => record.runId === currentRun.runId).length
@@ -16096,6 +16412,10 @@ export function buildResearchRunImportDiffRows({
     researchNotes: incomingNote ? 1 : 0,
     auditEvents: packageAuditEventCount,
     stage4PortfolioWorkflows: packageStage4PortfolioWorkflows.length,
+    stage5ShadowSessions: packageStage5ShadowSessions.length,
+    stage5SandboxReadinessDecisions: packageStage5SandboxReadinessDecisions.length,
+    stage5SandboxAuthorizationPreflights: packageStage5SandboxAuthorizationPreflights.length,
+    stage5SandboxAuthorizationReviews: packageStage5SandboxAuthorizationReviews.length,
     handoffNotes: packageHandoffNoteCount
   });
   const authoritativeAiReviewDiffRows = (exportPackage.aiReviewRunsV2 ?? []).map(
@@ -16443,6 +16763,90 @@ export function buildResearchRunImportDiffRows({
             : "Package does not include Stage 4 workflow evidence.",
           exportPath: "auditEvents[].metadata.snapshot",
           tone: packageStage4PortfolioWorkflows.length ? "ai" : "neutral"
+        }] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...((exportPackage.manifest.artifactCounts.stage5ShadowSessions ?? 0) > 0 || packageStage5ShadowSessionEventCount > 0
+      ? ([{
+          id: "stage5-shadow-sessions",
+          label: "Stage 5 shadow sessions",
+          status: packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches
+            ? packageStage5ShadowSessions.length ? "add" : "same"
+            : "blocked",
+          current: "Local audit event store",
+          incoming: `${packageStage5ShadowSessions.length} sessions / ${exportPackage.manifest.artifactCounts.stage5ShadowSessions ?? 0} manifest`,
+          detail: packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches
+            ? "Import will restore Stage 5 shadow attempts with stable clientOrderId, reconciliation, and blocked live boundaries."
+            : "Stage 5 shadow import is blocked by an artifact count mismatch or invalid identity, time, or safety evidence.",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches && packageStage5ShadowSessions.length
+            ? "ai"
+            : packageStage5ShadowSessionsAreValid && packageStage5ShadowSessionCountMatches ? "neutral" : "risk"
+        }] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...((exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions ?? 0) > 0 ||
+      packageStage5SandboxReadinessDecisionEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-readiness-decisions",
+          label: "Stage 5 sandbox readiness decisions",
+          status: packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches
+            ? packageStage5SandboxReadinessDecisions.length ? "add" : "same"
+            : "blocked",
+          current: "Local audit event store",
+          incoming: `${packageStage5SandboxReadinessDecisions.length} decisions / ${exportPackage.manifest.artifactCounts.stage5SandboxReadinessDecisions ?? 0} manifest`,
+          detail: packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches
+            ? "Import will restore server-authoritative sandbox readiness decisions while order submission remains blocked."
+            : "Stage 5 sandbox readiness import is blocked by an artifact count mismatch or invalid identity, time, or safety evidence.",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches &&
+            packageStage5SandboxReadinessDecisions.length ? "ai" :
+            packageStage5SandboxReadinessDecisionsAreValid && packageStage5SandboxReadinessDecisionCountMatches
+              ? "neutral" : "risk"
+        }] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...((exportPackage.manifest.artifactCounts.stage5SandboxAuthorizationPreflights ?? 0) > 0 ||
+      packageStage5SandboxAuthorizationPreflightEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-authorization-preflights",
+          label: "Stage 5 sandbox authorization preflights",
+          status: packageStage5SandboxAuthorizationPreflightsAreValid &&
+            packageStage5SandboxAuthorizationPreflightCountMatches
+            ? packageStage5SandboxAuthorizationPreflights.length ? "add" : "same"
+            : "blocked",
+          current: "Local audit event store",
+          incoming: `${packageStage5SandboxAuthorizationPreflights.length} preflights / ${exportPackage.manifest.artifactCounts.stage5SandboxAuthorizationPreflights ?? 0} manifest`,
+          detail: packageStage5SandboxAuthorizationPreflightsAreValid &&
+            packageStage5SandboxAuthorizationPreflightCountMatches
+            ? "Import will restore server-authoritative sandbox authorization preflights while human authorization and all order routes remain blocked."
+            : "Stage 5 sandbox authorization preflight import is blocked by an artifact count mismatch or invalid identity, hash, or safety evidence.",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: packageStage5SandboxAuthorizationPreflightsAreValid &&
+            packageStage5SandboxAuthorizationPreflightCountMatches &&
+            packageStage5SandboxAuthorizationPreflights.length ? "ai" :
+            packageStage5SandboxAuthorizationPreflightsAreValid &&
+            packageStage5SandboxAuthorizationPreflightCountMatches ? "neutral" : "risk"
+        }] satisfies ResearchRunImportDiffRow[])
+      : []),
+    ...((exportPackage.manifest.artifactCounts.stage5SandboxAuthorizationReviews ?? 0) > 0 ||
+      packageStage5SandboxAuthorizationReviewEventCount > 0
+      ? ([{
+          id: "stage5-sandbox-authorization-reviews",
+          label: "Stage 5 sandbox authorization reviews",
+          status: packageStage5SandboxAuthorizationReviewsAreValid &&
+            packageStage5SandboxAuthorizationReviewCountMatches
+            ? packageStage5SandboxAuthorizationReviews.length ? "add" : "same"
+            : "blocked",
+          current: "Local audit event store",
+          incoming: `${packageStage5SandboxAuthorizationReviews.length} reviews / ${exportPackage.manifest.artifactCounts.stage5SandboxAuthorizationReviews ?? 0} manifest`,
+          detail: packageStage5SandboxAuthorizationReviewsAreValid &&
+            packageStage5SandboxAuthorizationReviewCountMatches
+            ? "Import will restore immutable sandbox authorization reviews while authorization remains ineffective and all order routes stay blocked."
+            : "Stage 5 sandbox authorization review import is blocked by an artifact count mismatch or invalid identity, hash, or safety evidence.",
+          exportPath: "auditEvents[].metadata.snapshot",
+          tone: packageStage5SandboxAuthorizationReviewsAreValid &&
+            packageStage5SandboxAuthorizationReviewCountMatches &&
+            packageStage5SandboxAuthorizationReviews.length ? "ai" :
+            packageStage5SandboxAuthorizationReviewsAreValid &&
+            packageStage5SandboxAuthorizationReviewCountMatches ? "neutral" : "risk"
         }] satisfies ResearchRunImportDiffRow[])
       : []),
     {
@@ -23625,7 +24029,9 @@ export function resolveAiReviewRunIdFromUrl(
   }
   const params = search instanceof URLSearchParams ? search : new URLSearchParams(search);
   const runIds = params.getAll("runId");
-  return params.get("workspace") === "ai-review" && runIds.length === 1
+  const workspaceId = params.get("workspace");
+  const restoresRun = workspaceId === "ai-review" || (workspaceId === "execution" && !params.has("paperExecution"));
+  return restoresRun && runIds.length === 1
     ? normalizeAiReviewRunId(runIds[0])
     : null;
 }
@@ -23636,7 +24042,7 @@ export function replaceAiReviewRunIdInUrl(
   runId: string | null | undefined
 ): string {
   const url = new URL(href);
-  if (nextWorkspaceId === "ai-review") {
+  if (nextWorkspaceId === "ai-review" || (nextWorkspaceId === "execution" && !url.searchParams.has("paperExecution"))) {
     url.searchParams.delete("runId");
     const normalizedRunId = normalizeAiReviewRunId(runId);
     if (normalizedRunId) {
@@ -27548,6 +27954,8 @@ export function buildExecutionAdapterSandboxProbeExecutionRows(
       manifestPath: row.manifestPath,
       envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
       confirmationSummary: executionAdapterSandboxProbeExecutionConfirmationSummary(row.requiredConfirmations),
+      healthProbeSummary: executionAdapterSandboxProbeHealthSummary(row.metadata),
+      authoritativeHealthReady: executionAdapterSandboxProbeAuthoritativeHealthReady(row),
       blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
       boundary: row.liveTradingAllowed
         ? "Live trading allowed"
@@ -33010,6 +33418,30 @@ function executionAdapterSandboxProbeExecutionConfirmationSummary(
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
   return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterSandboxProbeHealthSummary(metadata: Record<string, unknown>): string {
+  const evidence = metadata.authoritativeHealthProbe;
+  if (!evidence || typeof evidence !== "object") {
+    return "Authoritative health probe missing";
+  }
+  const payload = evidence as Record<string, unknown>;
+  const status = typeof payload.status === "string" ? payload.status : "unknown";
+  const exchangeId = typeof payload.exchangeId === "string" ? payload.exchangeId : "unknown";
+  const probeId = typeof payload.probeId === "string" ? payload.probeId : "unknown";
+  const evidenceHash = typeof payload.evidenceHash === "string" ? payload.evidenceHash : "";
+  return `${status} · ${exchangeId} · ${probeId} · sha256 ${evidenceHash.slice(0, 12) || "missing"}`;
+}
+
+function executionAdapterSandboxProbeAuthoritativeHealthReady(
+  execution: ExecutionAdapterSandboxProbeExecutionSnapshot
+): boolean {
+  const confirmations = new Map(execution.requiredConfirmations.map((row) => [row.id, row.status]));
+  return Boolean(
+    execution.metadata.authoritativeHealthProbe &&
+    confirmations.get("readonly-handshake-captured") === "confirmed" &&
+    confirmations.get("account-snapshot-redacted") === "confirmed"
+  );
 }
 
 function executionAdapterSandboxProbeReviewTone(

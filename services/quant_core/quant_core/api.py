@@ -205,7 +205,11 @@ from quant_core.execution import (
     portfolio_paper_order_simulation_to_payload,
     validate_paper_execution_handoff,
 )
-from quant_core.execution_adapter_health import execution_adapter_health_probe_to_payload, probe_ccxt_sandbox_health
+from quant_core.execution_adapter_health import (
+    execution_adapter_health_probe_to_evidence,
+    execution_adapter_health_probe_to_payload,
+    probe_ccxt_sandbox_health,
+)
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_calendar import build_market_calendar_status
@@ -215,6 +219,23 @@ from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg,
 from quant_core.stage4_portfolio import (
     build_stage4_portfolio_workflow_snapshot,
     validate_stage4_portfolio_workflow_snapshot,
+)
+from quant_core.stage5_shadow import (
+    build_stage5_sandbox_authorization_preflight,
+    build_stage5_sandbox_authorization_review,
+    build_stage5_sandbox_readiness_decision,
+    build_stage5_shadow_session,
+    stage5_sandbox_authorization_preflight_id,
+    stage5_sandbox_authorization_preflight_to_audit_event,
+    stage5_sandbox_authorization_review_id,
+    stage5_sandbox_authorization_review_to_audit_event,
+    stage5_sandbox_readiness_decision_to_audit_event,
+    stage5_shadow_session_key,
+    stage5_shadow_session_to_audit_event,
+    validate_stage5_sandbox_authorization_preflight,
+    validate_stage5_sandbox_authorization_review,
+    validate_stage5_sandbox_readiness_decision,
+    validate_stage5_shadow_session,
 )
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
@@ -240,6 +261,10 @@ from quant_core.p2_readiness_acceptance import (
     load_p2_readiness_acceptance_status,
     p2_readiness_acceptance_to_audit_event_payload,
     write_p2_readiness_acceptance_report,
+)
+from quant_core.stage5_exit import (
+    DEFAULT_STAGE5_EXIT_ACCEPTANCE_REPORT_PATH,
+    load_stage5_exit_acceptance_status,
 )
 from quant_core.p2_manifest_chain_preflight import (
     DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH,
@@ -470,6 +495,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     p2_pre_live_acceptance_report_path = DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH
     p2_paper_replay_report_path = DEFAULT_P2_PAPER_REPLAY_REPORT_PATH
     p2_readiness_acceptance_report_path = DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH
+    stage5_exit_acceptance_report_path = DEFAULT_STAGE5_EXIT_ACCEPTANCE_REPORT_PATH
     p2_manifest_chain_preflight_report_path = DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH
     desktop_release_report_path = DEFAULT_DESKTOP_RELEASE_REPORT_PATH
     stage1_daily_use_report_path = DEFAULT_STAGE1_DAILY_USE_REPORT_PATH
@@ -1565,9 +1591,28 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     status=404,
                 )
                 return
+            health_probe = None
+            health_probe_evidence = None
+            if (
+                sandbox_probe_plan.get("adapterId") == "ccxt-live"
+                and sandbox_probe_plan.get("market") == "crypto"
+            ):
+                exchange_id = (
+                    str(payload.get("exchangeId") or "").strip()
+                    or os.environ.get("CCXT_DEFAULT_EXCHANGE", "binance").strip()
+                    or "binance"
+                )
+                health_probe = probe_ccxt_sandbox_health(
+                    adapter_id="ccxt-live",
+                    exchange_id=exchange_id,
+                    environ=type(self).execution_adapter_health_environ,
+                    exchange_factory=type(self).execution_adapter_health_exchange_factory,
+                )
+                health_probe_evidence = execution_adapter_health_probe_to_evidence(health_probe)
             try:
                 sandbox_probe_execution = build_execution_adapter_sandbox_probe_execution(
                     sandbox_probe_plan,
+                    health_probe_evidence=health_probe_evidence,
                     adapter_id=str(payload.get("adapterId") or ""),
                     probe_execution_mode=str(payload.get("probeExecutionMode") or "manual_readonly_sandbox_probe"),
                     confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
@@ -1586,6 +1631,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         sandbox_probe_execution
                     ),
                     "auditEvent": audit_event_record_to_payload(audit_event),
+                    **(
+                        {"adapterHealthProbe": execution_adapter_health_probe_to_payload(health_probe)}
+                        if health_probe
+                        else {}
+                    ),
                 },
                 status=409 if sandbox_probe_execution.status == "blocked" else 201,
             )
@@ -2090,6 +2140,255 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {"workflow": snapshot, "auditEvent": audit_event_record_to_payload(audit_event)},
                 status=201,
             )
+            return
+        if parsed.path == "/api/execution/shadow-sessions":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "baseRunId", "workflowHash", "failureMode", "operator"
+                }:
+                    raise ValueError("stage5 shadow request fields are invalid")
+                base_run_id = _required_stage4_string(payload["baseRunId"])
+                workflow_hash = _required_stage4_string(payload["workflowHash"])
+                failure_mode = _required_stage4_string(payload["failureMode"])
+                operator = _required_stage4_string(payload["operator"])
+                workflow = _stage5_shadow_source_workflow(
+                    self.audit_event_store, base_run_id, workflow_hash
+                )
+                existing = _stage5_shadow_sessions(
+                    self.audit_event_store, base_run_id, workflow_hash
+                )
+                latest = existing[0] if existing else None
+                if latest and latest["failureMode"] != failure_mode:
+                    raise ValueError("stage5 shadow failureMode does not match existing session")
+                if latest and latest["status"] != "recoverable_failure":
+                    session = latest
+                    created = False
+                else:
+                    attempt = 2 if latest else 1
+                    session = build_stage5_shadow_session(
+                        workflow,
+                        failure_mode=failure_mode,
+                        attempt=attempt,
+                    )
+                    self.audit_event_store.record(
+                        stage5_shadow_session_to_audit_event(session, operator)
+                    )
+                    created = True
+            except LookupError as error:
+                self._send_json(
+                    {"error": "stage5_shadow_workflow_not_found", "detail": str(error)},
+                    status=404,
+                )
+                return
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage5_shadow_session", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json({"shadowSession": session}, status=201 if created else 200)
+            return
+        if parsed.path == "/api/execution/sandbox-readiness-decisions":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "baseRunId", "workflowHash", "sessionHash", "operator", "confirmed"
+                }:
+                    raise ValueError("stage5 sandbox readiness request fields are invalid")
+                base_run_id = _required_stage4_string(payload["baseRunId"])
+                workflow_hash = _required_stage4_string(payload["workflowHash"])
+                session_hash = _required_stage4_string(payload["sessionHash"])
+                operator = _required_stage4_string(payload["operator"])
+                confirmed = payload["confirmed"]
+                if confirmed is not True:
+                    raise ValueError("stage5 sandbox readiness confirmation is required")
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage5_sandbox_readiness_request", "detail": str(error)},
+                    status=400,
+                )
+                return
+            try:
+                workflow = _stage5_shadow_source_workflow(
+                    self.audit_event_store, base_run_id, workflow_hash
+                )
+                session = next(
+                    (
+                        item for item in _stage5_shadow_sessions(
+                            self.audit_event_store, base_run_id, workflow_hash
+                        )
+                        if item["sessionHash"] == session_hash
+                    ),
+                    None,
+                )
+                if session is None:
+                    raise LookupError("reconciled Stage 5 shadow session was not found")
+                executions = _stage5_sandbox_readiness_adapter_executions(
+                    self.audit_event_store, workflow
+                )
+                candidate = build_stage5_sandbox_readiness_decision(
+                    workflow,
+                    session,
+                    executions,
+                    operator=operator,
+                    confirmed=True,
+                )
+                existing = next(
+                    (
+                        item for item in _stage5_sandbox_readiness_decisions(
+                            self.audit_event_store, base_run_id
+                        )
+                        if item["decisionId"] == candidate["decisionId"]
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    decision = existing
+                    created = False
+                else:
+                    self.audit_event_store.record(
+                        stage5_sandbox_readiness_decision_to_audit_event(candidate)
+                    )
+                    decision = candidate
+                    created = True
+            except (LookupError, ValueError) as error:
+                self._send_json(
+                    {"error": "stage5_sandbox_readiness_blocked", "blockers": [str(error)]},
+                    status=409,
+                )
+                return
+            self._send_json(
+                {"sandboxReadinessDecision": decision}, status=201 if created else 200
+            )
+            return
+        if parsed.path == "/api/execution/sandbox-authorization-preflights":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "baseRunId", "readinessDecisionHash", "sandboxProbeExecutionId",
+                    "sandboxProbeReviewId", "operator", "confirmed",
+                }:
+                    raise ValueError("stage5 sandbox authorization preflight request fields are invalid")
+                base_run_id = _required_stage4_string(payload["baseRunId"])
+                decision_hash = _required_stage4_string(payload["readinessDecisionHash"])
+                execution_id = _required_stage4_string(payload["sandboxProbeExecutionId"])
+                review_id = _required_stage4_string(payload["sandboxProbeReviewId"])
+                operator = _required_stage4_string(payload["operator"])
+                if payload["confirmed"] is not True:
+                    raise ValueError("stage5 sandbox authorization preflight confirmation is required")
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage5_sandbox_authorization_preflight_request", "detail": str(error)},
+                    status=400,
+                )
+                return
+            try:
+                decision = _stage5_sandbox_readiness_decision_by_hash(
+                    self.audit_event_store, base_run_id, decision_hash
+                )
+                execution_event = self.audit_event_store.get(execution_id)
+                review_event = self.audit_event_store.get(review_id)
+                execution = _stage5_sandbox_authorization_probe_execution(execution_event)
+                review = _stage5_sandbox_authorization_probe_review(review_event)
+                if decision is None or execution is None or review is None:
+                    raise LookupError("stage5 sandbox authorization preflight source evidence was not found")
+                existing_event = self.audit_event_store.get(
+                    stage5_sandbox_authorization_preflight_id(
+                        decision_hash, execution_id, review_id
+                    )
+                )
+                existing = (
+                    _stage5_sandbox_authorization_preflight_from_event(
+                        self.audit_event_store, base_run_id, existing_event
+                    )
+                    if existing_event is not None
+                    else None
+                )
+                if existing is not None:
+                    self._send_json({"sandboxAuthorizationPreflight": existing})
+                    return
+                candidate = build_stage5_sandbox_authorization_preflight(
+                    decision,
+                    execution,
+                    review,
+                    operator=operator,
+                    confirmed=True,
+                )
+                self.audit_event_store.record(
+                    stage5_sandbox_authorization_preflight_to_audit_event(candidate)
+                )
+                preflight, created = candidate, True
+            except (LookupError, ValueError) as error:
+                self._send_json(
+                    {"error": "stage5_sandbox_authorization_preflight_blocked", "blockers": [str(error)]},
+                    status=409,
+                )
+                return
+            self._send_json(
+                {"sandboxAuthorizationPreflight": preflight}, status=201 if created else 200
+            )
+            return
+        if parsed.path == "/api/execution/sandbox-authorization-reviews":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "baseRunId", "preflightHash", "reviewer", "outcome", "reason", "confirmations",
+                }:
+                    raise ValueError("stage5 sandbox authorization review request fields are invalid")
+                base_run_id = _required_stage4_string(payload["baseRunId"])
+                preflight_hash = _required_stage4_string(payload["preflightHash"])
+                reviewer = _required_stage4_string(payload["reviewer"])
+                outcome = _required_stage4_string(payload["outcome"])
+                reason = _required_stage4_string(payload["reason"])
+                confirmations = payload["confirmations"]
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage5_sandbox_authorization_review_request", "detail": str(error)},
+                    status=400,
+                )
+                return
+            try:
+                preflight = _stage5_sandbox_authorization_preflight_by_hash(
+                    self.audit_event_store, base_run_id, preflight_hash
+                )
+                if preflight is None:
+                    raise LookupError("stage5 sandbox authorization review preflight was not found")
+                existing_event = self.audit_event_store.get(
+                    stage5_sandbox_authorization_review_id(preflight_hash)
+                )
+                if existing_event is not None:
+                    review = _stage5_sandbox_authorization_review_from_event(
+                        self.audit_event_store, base_run_id, existing_event
+                    )
+                    self._send_json({"sandboxAuthorizationReview": review})
+                    return
+                execution = _stage5_sandbox_authorization_probe_execution(
+                    self.audit_event_store.get(preflight["sandboxProbeExecutionId"])
+                )
+                if execution is None:
+                    raise LookupError("stage5 sandbox authorization review probe evidence was not found")
+                review = build_stage5_sandbox_authorization_review(
+                    preflight,
+                    execution,
+                    reviewer=reviewer,
+                    outcome=outcome,
+                    reason=reason,
+                    confirmations=confirmations,
+                )
+                stored_event, created = self.audit_event_store.record_if_absent(
+                    stage5_sandbox_authorization_review_to_audit_event(review)
+                )
+                review = _stage5_sandbox_authorization_review_from_event(
+                    self.audit_event_store, base_run_id, stored_event
+                )
+            except (LookupError, ValueError) as error:
+                self._send_json(
+                    {"error": "stage5_sandbox_authorization_review_blocked", "blockers": [str(error)]},
+                    status=409,
+                )
+                return
+            self._send_json({"sandboxAuthorizationReview": review}, status=201 if created else 200)
             return
         if parsed.path == "/api/portfolio/backtest":
             try:
@@ -3276,6 +3575,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {"acceptance": load_p2_readiness_acceptance_status(Path(self.p2_readiness_acceptance_report_path))}
             )
             return
+        if parsed.path == "/api/stage5/exit-acceptance/latest":
+            self._send_json(
+                {"acceptance": load_stage5_exit_acceptance_status(Path(self.stage5_exit_acceptance_report_path))}
+            )
+            return
         if parsed.path == "/api/p2/manifest-chain/preflight/latest":
             self._send_json(
                 {"preflight": load_p2_manifest_chain_preflight_status(Path(self.p2_manifest_chain_preflight_report_path))}
@@ -3867,6 +4171,82 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/execution/shadow-sessions":
+            try:
+                base_run_id, limit = _stage5_shadow_query(parsed.query)
+                sessions = _stage5_shadow_sessions(
+                    self.audit_event_store, base_run_id, None, limit=limit
+                )
+            except ValueError as error:
+                code = (
+                    "invalid_stage5_shadow_session_query"
+                    if str(error) == "invalid_stage5_shadow_session_query"
+                    else "invalid_stage5_shadow_session_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"shadowSessions": sessions})
+            return
+        if parsed.path == "/api/execution/sandbox-readiness-decisions":
+            try:
+                base_run_id, limit = _stage5_sandbox_readiness_query(parsed.query)
+                decisions = _stage5_sandbox_readiness_decisions(
+                    self.audit_event_store, base_run_id, limit=limit
+                )
+            except ValueError as error:
+                code = (
+                    "invalid_stage5_sandbox_readiness_query"
+                    if str(error) == "invalid_stage5_sandbox_readiness_query"
+                    else "invalid_stage5_sandbox_readiness_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"sandboxReadinessDecisions": decisions})
+            return
+        if parsed.path == "/api/execution/sandbox-authorization-preflights":
+            try:
+                base_run_id, limit = _stage5_sandbox_authorization_preflight_query(parsed.query)
+                preflights = _stage5_sandbox_authorization_preflights(
+                    self.audit_event_store, base_run_id, limit=limit
+                )
+            except ValueError as error:
+                code = (
+                    "invalid_stage5_sandbox_authorization_preflight_query"
+                    if str(error) == "invalid_stage5_sandbox_authorization_preflight_query"
+                    else "invalid_stage5_sandbox_authorization_preflight_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"sandboxAuthorizationPreflights": preflights})
+            return
+        if parsed.path == "/api/execution/sandbox-authorization-reviews":
+            try:
+                base_run_id, limit = _stage5_sandbox_authorization_preflight_query(parsed.query)
+                reviews = _stage5_sandbox_authorization_reviews(
+                    self.audit_event_store, base_run_id, limit=limit
+                )
+            except ValueError as error:
+                code = (
+                    "invalid_stage5_sandbox_authorization_review_query"
+                    if str(error) == "invalid_stage5_sandbox_authorization_preflight_query"
+                    else "invalid_stage5_sandbox_authorization_review_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"sandboxAuthorizationReviews": reviews})
+            return
         if parsed.path == "/api/portfolio/paper-orders":
             query = parse_qs(parsed.query)
             base_run_id = query.get("baseRunId", [""])[0].strip()
@@ -4438,8 +4818,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_ai_review_archive"}, status=400)
                 return
             audit_events = [
-                audit_event_record_to_payload(event) for event in self.audit_event_store.list_recent(run_id=run_id, limit=50)
+                audit_event_record_to_payload(event)
+                for event in self.audit_event_store.list_all_by_run(run_id)
             ]
+            audit_events = _stage5_sandbox_authorization_sources_for_export(
+                self.audit_event_store, run_id, audit_events
+            )
             handoff_notes = [handoff_note_to_payload(note) for note in self.handoff_note_store.list_by_run(run_id, limit=50)]
             promotion_candidate = build_promotion_candidate(audit, self.paper_execution_store.list_by_run(run_id, limit=20))
             self._send_json(
@@ -5011,6 +5395,377 @@ def _stage4_portfolio_workflow_query(raw_query: str) -> tuple[str, int]:
     if not 1 <= limit <= 50:
         raise ValueError("invalid_stage4_portfolio_workflow_query")
     return base_run_id, limit
+
+
+def _stage5_shadow_source_workflow(
+    store: AuditEventStore, base_run_id: str, workflow_hash: str
+) -> dict[str, Any]:
+    for event in store.list_recent(
+        run_id=base_run_id, event_type="stage4_portfolio_workflow", limit=50
+    ):
+        workflow = validate_stage4_portfolio_workflow_snapshot(
+            event.metadata.get("snapshot")
+        )
+        if (
+            workflow["workflowId"] != event.event_id
+            or workflow["baseRunId"] != base_run_id
+            or datetime.fromisoformat(workflow["generatedAt"]) != event.created_at
+        ):
+            raise ValueError("stage4 portfolio workflow audit binding does not match")
+        if workflow["workflowHash"] == workflow_hash:
+            return workflow
+    raise LookupError("authoritative Stage 4 workflow was not found")
+
+
+def _stage5_shadow_sessions(
+    store: AuditEventStore,
+    base_run_id: str,
+    workflow_hash: str | None,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    expected_key = stage5_shadow_session_key(workflow_hash) if workflow_hash else None
+    sessions = []
+    for event in store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_shadow_execution_session",
+        limit=50,
+    ):
+        session = validate_stage5_shadow_session(event.metadata.get("snapshot"))
+        if (
+            session["sessionId"] != event.event_id
+            or session["baseRunId"] != base_run_id
+        ):
+            raise ValueError("stage5 shadow audit binding does not match")
+        if expected_key and session["sessionKey"] != expected_key:
+            continue
+        workflow = _stage5_shadow_source_workflow(
+            store, base_run_id, session["workflowHash"]
+        )
+        rebuilt = build_stage5_shadow_session(
+            workflow,
+            failure_mode=session["failureMode"],
+            attempt=session["attempt"],
+            generated_at=session["generatedAt"],
+        )
+        if rebuilt != session:
+            raise ValueError("stage5 shadow session does not match source workflow")
+        sessions.append(session)
+        if len(sessions) >= limit:
+            break
+    return sessions
+
+
+def _stage5_shadow_query(raw_query: str) -> tuple[str, int]:
+    query = parse_qs(raw_query, keep_blank_values=True)
+    if set(query) - {"baseRunId", "limit"} or len(query.get("baseRunId", [])) != 1:
+        raise ValueError("invalid_stage5_shadow_session_query")
+    base_run_id = query["baseRunId"][0].strip()
+    raw_limit = query.get("limit", ["20"])
+    if not base_run_id or len(raw_limit) != 1 or not raw_limit[0].isdigit():
+        raise ValueError("invalid_stage5_shadow_session_query")
+    limit = int(raw_limit[0])
+    if not 1 <= limit <= 50:
+        raise ValueError("invalid_stage5_shadow_session_query")
+    return base_run_id, limit
+
+
+def _stage5_sandbox_readiness_adapter_executions(
+    store: AuditEventStore, workflow: dict[str, Any]
+) -> list[dict[str, Any]]:
+    executions = []
+    for simulation in workflow["simulations"]:
+        execution_id = str(simulation.get("adapterPaperExecutionId") or "").strip()
+        if not execution_id:
+            raise LookupError("terminal adapter paper execution id is missing")
+        event = store.get(execution_id)
+        if event is None:
+            raise LookupError(f"terminal adapter paper execution {execution_id} was not found")
+        execution = execution_adapter_paper_execution_payload_from_audit_event(event)
+        if execution is None or execution.get("adapterPaperExecutionId") != event.event_id:
+            raise ValueError("terminal adapter paper execution audit binding does not match")
+        executions.append(execution)
+    return executions
+
+
+def _stage5_sandbox_readiness_decisions(
+    store: AuditEventStore,
+    base_run_id: str,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    decisions = []
+    for event in store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_sandbox_readiness_decision",
+        limit=50,
+    ):
+        decisions.append(_stage5_sandbox_readiness_decision_from_event(store, base_run_id, event))
+        if len(decisions) >= limit:
+            break
+    return decisions
+
+
+def _stage5_sandbox_readiness_decision_from_event(
+    store: AuditEventStore, base_run_id: str, event: Any
+) -> dict[str, Any]:
+    decision = validate_stage5_sandbox_readiness_decision(event.metadata.get("snapshot"))
+    if (
+        decision["decisionId"] != event.event_id
+        or decision["baseRunId"] != base_run_id
+        or datetime.fromisoformat(decision["generatedAt"]) != event.created_at
+        or event.stage != "stage5-sandbox-readiness"
+        or event.source != decision["operator"]
+    ):
+        raise ValueError("stage5 sandbox readiness audit binding does not match")
+    workflow = _stage5_shadow_source_workflow(store, base_run_id, decision["workflowHash"])
+    session = next(
+        (
+            item for item in _stage5_shadow_sessions(store, base_run_id, decision["workflowHash"])
+            if item["sessionHash"] == decision["shadowSessionHash"]
+        ),
+        None,
+    )
+    if session is None or session["sessionId"] != decision["shadowSessionId"]:
+        raise ValueError("stage5 sandbox readiness source session is missing")
+    rebuilt = build_stage5_sandbox_readiness_decision(
+        workflow,
+        session,
+        _stage5_sandbox_readiness_adapter_executions(store, workflow),
+        operator=decision["operator"],
+        confirmed=True,
+        generated_at=decision["generatedAt"],
+    )
+    if rebuilt != decision:
+        raise ValueError("stage5 sandbox readiness decision does not match source evidence")
+    return decision
+
+
+def _stage5_sandbox_readiness_decision_by_hash(
+    store: AuditEventStore, base_run_id: str, decision_hash: str
+) -> dict[str, Any] | None:
+    events = store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_sandbox_readiness_decision",
+        query=decision_hash,
+        limit=1,
+    )
+    if not events:
+        return None
+    decision = _stage5_sandbox_readiness_decision_from_event(store, base_run_id, events[0])
+    return decision if decision["decisionHash"] == decision_hash else None
+
+
+def _stage5_sandbox_readiness_query(raw_query: str) -> tuple[str, int]:
+    query = parse_qs(raw_query, keep_blank_values=True)
+    if set(query) - {"baseRunId", "limit"} or len(query.get("baseRunId", [])) != 1:
+        raise ValueError("invalid_stage5_sandbox_readiness_query")
+    base_run_id = query["baseRunId"][0].strip()
+    raw_limit = query.get("limit", ["20"])
+    if not base_run_id or len(raw_limit) != 1 or not raw_limit[0].isdigit():
+        raise ValueError("invalid_stage5_sandbox_readiness_query")
+    limit = int(raw_limit[0])
+    if not 1 <= limit <= 50:
+        raise ValueError("invalid_stage5_sandbox_readiness_query")
+    return base_run_id, limit
+
+
+def _stage5_sandbox_authorization_preflights(
+    store: AuditEventStore,
+    base_run_id: str,
+    *,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    preflights = []
+    for event in store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_sandbox_authorization_preflight",
+        limit=50,
+    ):
+        preflights.append(
+            _stage5_sandbox_authorization_preflight_from_event(store, base_run_id, event)
+        )
+        if len(preflights) >= limit:
+            break
+    return preflights
+
+
+def _stage5_sandbox_authorization_preflight_from_event(
+    store: AuditEventStore, base_run_id: str, event: Any
+) -> dict[str, Any]:
+    preflight = validate_stage5_sandbox_authorization_preflight(event.metadata.get("snapshot"))
+    if (
+        preflight["preflightId"] != event.event_id
+        or preflight["baseRunId"] != base_run_id
+        or datetime.fromisoformat(preflight["generatedAt"]) != event.created_at
+        or event.stage != "stage5-sandbox-authorization-preflight"
+        or event.source != preflight["operator"]
+    ):
+        raise ValueError("stage5 sandbox authorization preflight audit binding does not match")
+    decision_event = store.get(preflight["readinessDecisionId"])
+    decision = (
+        _stage5_sandbox_readiness_decision_from_event(store, base_run_id, decision_event)
+        if decision_event is not None
+        else None
+    )
+    execution = _stage5_sandbox_authorization_probe_execution(
+        store.get(preflight["sandboxProbeExecutionId"])
+    )
+    review = _stage5_sandbox_authorization_probe_review(
+        store.get(preflight["sandboxProbeReviewId"])
+    )
+    if decision is None or execution is None or review is None:
+        raise ValueError("stage5 sandbox authorization preflight source evidence is missing")
+    rebuilt = build_stage5_sandbox_authorization_preflight(
+        decision,
+        execution,
+        review,
+        operator=preflight["operator"],
+        confirmed=True,
+        generated_at=preflight["generatedAt"],
+    )
+    if rebuilt != preflight:
+        raise ValueError("stage5 sandbox authorization preflight does not match source evidence")
+    return preflight
+
+
+def _stage5_sandbox_authorization_preflight_by_hash(
+    store: AuditEventStore, base_run_id: str, preflight_hash: str
+) -> dict[str, Any] | None:
+    events = store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_sandbox_authorization_preflight",
+        query=preflight_hash,
+        limit=1,
+    )
+    if not events:
+        return None
+    preflight = _stage5_sandbox_authorization_preflight_from_event(
+        store, base_run_id, events[0]
+    )
+    return preflight if preflight["preflightHash"] == preflight_hash else None
+
+
+def _stage5_sandbox_authorization_reviews(
+    store: AuditEventStore, base_run_id: str, *, limit: int = 50
+) -> list[dict[str, Any]]:
+    reviews = []
+    for event in store.list_recent(
+        run_id=base_run_id,
+        event_type="stage5_sandbox_authorization_review",
+        limit=50,
+    ):
+        reviews.append(
+            _stage5_sandbox_authorization_review_from_event(store, base_run_id, event)
+        )
+        if len(reviews) >= limit:
+            break
+    return reviews
+
+
+def _stage5_sandbox_authorization_review_from_event(
+    store: AuditEventStore, base_run_id: str, event: Any
+) -> dict[str, Any]:
+    review = validate_stage5_sandbox_authorization_review(event.metadata.get("snapshot"))
+    if (
+        review["reviewId"] != event.event_id
+        or review["baseRunId"] != base_run_id
+        or datetime.fromisoformat(review["generatedAt"]) != event.created_at
+        or event.stage != "stage5-sandbox-authorization-review"
+        or event.source != review["reviewer"]
+    ):
+        raise ValueError("stage5 sandbox authorization review audit binding does not match")
+    preflight_event = store.get(review["preflightId"])
+    preflight = (
+        _stage5_sandbox_authorization_preflight_from_event(store, base_run_id, preflight_event)
+        if preflight_event is not None
+        else None
+    )
+    execution = (
+        _stage5_sandbox_authorization_probe_execution(
+            store.get(preflight["sandboxProbeExecutionId"])
+        )
+        if preflight is not None
+        else None
+    )
+    if preflight is None or preflight["preflightHash"] != review["preflightHash"] or execution is None:
+        raise ValueError("stage5 sandbox authorization review source evidence is missing")
+    rebuilt = build_stage5_sandbox_authorization_review(
+        preflight,
+        execution,
+        reviewer=review["reviewer"],
+        outcome=review["outcome"],
+        reason=review["reason"],
+        confirmations={item: True for item in review["confirmedScopeIds"]},
+        generated_at=review["generatedAt"],
+    )
+    if rebuilt != review:
+        raise ValueError("stage5 sandbox authorization review does not match source evidence")
+    return review
+
+
+def _stage5_sandbox_authorization_preflight_query(raw_query: str) -> tuple[str, int]:
+    try:
+        return _stage5_sandbox_readiness_query(raw_query)
+    except ValueError as error:
+        raise ValueError("invalid_stage5_sandbox_authorization_preflight_query") from error
+
+
+def _stage5_sandbox_authorization_probe_event_is_safe(event: Any, expected_stage: str) -> bool:
+    metadata = getattr(event, "metadata", None)
+    return bool(
+        getattr(event, "stage", "") == expected_stage
+        and getattr(event, "source", "") == "execution-adapter-ledger"
+        and isinstance(metadata, dict)
+        and metadata.get("paperOnly") is True
+        and metadata.get("liveTradingAllowed") is False
+    )
+
+
+def _stage5_sandbox_authorization_sources_for_export(
+    store: AuditEventStore, run_id: str, audit_events: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    result = list(audit_events)
+    event_ids = {event["eventId"] for event in result}
+    source_ids = [
+        source_id
+        for event in result
+        if event.get("eventType") == "stage5_sandbox_authorization_preflight"
+        for source_id in (
+            event.get("metadata", {}).get("snapshot", {}).get("readinessDecisionId"),
+            event.get("metadata", {}).get("snapshot", {}).get("sandboxProbeExecutionId"),
+            event.get("metadata", {}).get("snapshot", {}).get("sandboxProbeReviewId"),
+        )
+        if isinstance(source_id, str) and source_id
+    ]
+    for source_id in source_ids:
+        source_event = store.get(source_id)
+        if source_event is not None and source_id not in event_ids:
+            result.append({**audit_event_record_to_payload(source_event), "runId": run_id})
+            event_ids.add(source_id)
+    return result
+
+
+def _stage5_sandbox_authorization_probe_execution(event: Any) -> dict[str, Any] | None:
+    payload = (
+        execution_adapter_sandbox_probe_execution_payload_from_audit_event(event)
+        if event and _stage5_sandbox_authorization_probe_event_is_safe(
+            event, "execution-adapter-sandbox-probe-execution"
+        )
+        else None
+    )
+    return payload if payload and payload["sandboxProbeExecutionId"] == event.event_id else None
+
+
+def _stage5_sandbox_authorization_probe_review(event: Any) -> dict[str, Any] | None:
+    payload = (
+        execution_adapter_sandbox_probe_review_payload_from_audit_event(event)
+        if event and _stage5_sandbox_authorization_probe_event_is_safe(
+            event, "execution-adapter-sandbox-probe-review"
+        )
+        else None
+    )
+    return payload if payload and payload["sandboxProbeReviewId"] == event.event_id else None
 
 
 def _portfolio_backtest_from_payload(payload: dict[str, object], run_store: ResearchRunStore):

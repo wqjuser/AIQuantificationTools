@@ -66,17 +66,7 @@ class AuditEventStore:
 
     def record(self, event: dict[str, Any]) -> AuditEventRecord:
         normalized = _normalize_audit_event(event)
-        stored = AuditEventRecord(
-            event_id=str(normalized["eventId"]),
-            event_type=str(normalized["eventType"]),
-            run_id=_optional_string(normalized.get("runId")),
-            created_at=_parse_datetime(str(normalized["createdAt"])),
-            stage=str(normalized["stage"]),
-            source=str(normalized["source"]),
-            summary=str(normalized["summary"]),
-            detail=str(normalized["detail"]),
-            metadata=_dict_or_empty(normalized.get("metadata")),
-        )
+        stored = _normalized_to_audit_event_record(normalized)
         connection = self._connect()
         try:
             connection.execute(
@@ -119,6 +109,59 @@ class AuditEventStore:
         finally:
             connection.close()
         return stored
+
+    def record_if_absent(self, event: dict[str, Any]) -> tuple[AuditEventRecord, bool]:
+        normalized = _normalize_audit_event(event)
+        candidate = _normalized_to_audit_event_record(normalized)
+        connection = self._connect()
+        try:
+            cursor = connection.execute(
+                """
+                insert into audit_events (
+                    event_id,
+                    event_type,
+                    run_id,
+                    created_at,
+                    stage,
+                    source,
+                    summary,
+                    detail,
+                    metadata_json
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(event_id) do nothing
+                """,
+                (
+                    candidate.event_id,
+                    candidate.event_type,
+                    candidate.run_id,
+                    candidate.created_at.isoformat(),
+                    candidate.stage,
+                    candidate.source,
+                    candidate.summary,
+                    candidate.detail,
+                    json.dumps(candidate.metadata, ensure_ascii=False, sort_keys=True),
+                ),
+            )
+            created = cursor.rowcount == 1
+            if created:
+                stored = candidate
+            else:
+                row = connection.execute(
+                    """
+                    select event_id, event_type, run_id, created_at, stage, source, summary, detail, metadata_json
+                    from audit_events
+                    where event_id = ?
+                    """,
+                    (candidate.event_id,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError("audit_event_insert_conflict_without_existing_record")
+                stored = _row_to_audit_event_record(row)
+            connection.commit()
+        finally:
+            connection.close()
+        return stored, created
 
     def get(self, event_id: str) -> AuditEventRecord | None:
         normalized_event_id = _optional_string(event_id)
@@ -275,6 +318,20 @@ def _row_to_audit_event_record(row: tuple[Any, ...]) -> AuditEventRecord:
         summary=str(row[6]),
         detail=str(row[7]),
         metadata=_dict_or_empty(json.loads(row[8])),
+    )
+
+
+def _normalized_to_audit_event_record(normalized: dict[str, Any]) -> AuditEventRecord:
+    return AuditEventRecord(
+        event_id=str(normalized["eventId"]),
+        event_type=str(normalized["eventType"]),
+        run_id=_optional_string(normalized.get("runId")),
+        created_at=_parse_datetime(str(normalized["createdAt"])),
+        stage=str(normalized["stage"]),
+        source=str(normalized["source"]),
+        summary=str(normalized["summary"]),
+        detail=str(normalized["detail"]),
+        metadata=_dict_or_empty(normalized.get("metadata")),
     )
 
 

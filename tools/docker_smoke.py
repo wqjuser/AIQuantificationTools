@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -109,6 +110,88 @@ def _smoke_token(value: str) -> str:
     token = "".join(ch.lower() if ch.isalnum() else "-" for ch in str(value or "").strip())
     token = "-".join(part for part in token.split("-") if part)
     return token or "unknown"
+
+
+def _stage5_readiness_adapter_ops_state_audit_event(order: dict[str, Any]) -> dict[str, Any]:
+    ensure_quant_core_import_path()
+    from quant_core.execution import (
+        build_execution_adapter_ops_state,
+        execution_adapter_ops_state_to_audit_event_payload,
+    )
+
+    token = _smoke_token(str(order.get("orderId") or ""))
+    adapter_id = "ashare-live"
+    manifest_id = f"stage5-readiness-manifest-{token}"
+    source = {
+        "paperRouteRunbookId": f"stage5-readiness-runbook-{token}",
+        "paperOrderLifecycleId": f"stage5-readiness-lifecycle-{token}",
+        "sandboxOrderSchemaDryRunId": f"stage5-readiness-schema-{token}",
+        "productionRouteReviewId": f"stage5-readiness-route-review-{token}",
+        "sandboxProbeReviewId": f"stage5-readiness-probe-review-{token}",
+        "sandboxProbeExecutionId": f"stage5-readiness-probe-execution-{token}",
+        "sandboxProbePlanId": f"stage5-readiness-probe-plan-{token}",
+        "humanConfirmationId": f"stage5-readiness-confirmation-{token}",
+        "orchestrationExecutionId": f"stage5-readiness-orchestration-execution-{token}",
+        "dryRunId": f"stage5-readiness-orchestration-dry-run-{token}",
+        "acceptanceId": f"stage5-readiness-reload-acceptance-{token}",
+        "executionId": f"stage5-readiness-reload-execution-{token}",
+        "planId": f"stage5-readiness-reload-plan-{token}",
+        "bindingId": f"stage5-readiness-environment-binding-{token}",
+        "materializationId": f"stage5-readiness-materialization-{token}",
+        "manifestValidationId": manifest_id,
+        "adapterId": adapter_id,
+        "market": "ashare",
+        "route": "paper",
+        "status": "runbook_recorded",
+        "runbookMode": "manual_paper_route_runbook",
+        "lifecycleMode": "manual_paper_order_lifecycle_adapter",
+        "dryRunMode": "manual_sandbox_order_schema_dry_run",
+        "reviewMode": "manual_production_route_review",
+        "sandboxReviewMode": "manual_sandbox_probe_review",
+        "probeExecutionMode": "manual_readonly_sandbox_probe",
+        "probeMode": "manual_sandbox_probe_plan",
+        "confirmationMode": "manual_final_human_confirmation",
+        "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+        "acceptanceMode": "manual_runtime_reload_acceptance",
+        "executionMode": "manual_controlled_reload",
+        "reloadMode": "manual_container_reload_plan",
+        "maintenanceWindowId": f"stage5-readiness-window-{token}",
+        "bindingMode": "container_env_reference",
+        "manifestPath": f"local-secret-store://{adapter_id}/{token}",
+        "requiredEnvVars": ["ASHARE_BROKER_API_KEY"],
+        "orderIntent": {
+            "symbol": order["symbol"],
+            "side": order["side"],
+            "quantity": order["quantity"],
+            "type": "limit",
+            "price": 100,
+            "timeInForce": "GTC",
+        },
+        "lifecycleSteps": [{"id": "intent-validated", "label": "Order intent validated", "status": "recorded"}],
+        "runbookSteps": [{"id": "lifecycle-evidence-linked", "label": "Paper lifecycle evidence linked", "status": "recorded"}],
+        "orderSubmitted": False,
+        "liveOrderSubmitted": False,
+        "routeExecuted": False,
+    }
+    ops_state = build_execution_adapter_ops_state(
+        source,
+        adapter_id=adapter_id,
+        ops_mode="manual_adapter_ops_state",
+        confirmations={
+            "paperRouteRunbookAccepted": True,
+            "monitoringChannelReady": True,
+            "killSwitchDrillRecorded": True,
+            "paperAccountReconciled": True,
+            "operatorConfirmedLiveTradingDisabled": True,
+        },
+        operator="stage5-readiness-smoke",
+        metadata={"source": "stage5-readiness-smoke"},
+        adapter_ops_state_id=f"stage5-readiness-ops-{token}",
+    )
+    if ops_state.status != "ops_state_recorded":
+        raise RuntimeError(f"Invalid Stage 5 readiness adapter ops state: {ops_state.blocked_reasons}")
+    return execution_adapter_ops_state_to_audit_event_payload(ops_state)
 
 
 def _p2_replay_seed_order_id(run_id: str, symbol: str) -> str:
@@ -1247,6 +1330,693 @@ def validate_stage4_portfolio_acceptance_manifest(manifest: Any) -> str:
     )
 
 
+_STAGE5_SAFETY = {
+    "paperOnly": True,
+    "shadowOnly": True,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_shadow_acceptance_manifest(
+    *,
+    failure_drills: list[dict[str, Any]],
+    restart_readback: dict[str, Any],
+    export_readback: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "aiqt.stage5ShadowExecutionAcceptance",
+        "schemaVersion": 2,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed",
+        "failureDrills": failure_drills,
+        "restartReadback": restart_readback,
+        "exportReadback": export_readback,
+        **_STAGE5_SAFETY,
+    }
+
+
+def validate_stage5_shadow_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 shadow acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "failureDrills",
+        "restartReadback", "exportReadback", *_STAGE5_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5ShadowExecutionAcceptance"
+        or type(payload["schemaVersion"]) is not int
+        or payload["schemaVersion"] != 2
+        or payload["status"] != "passed"
+        or any(payload[field] is not expected for field, expected in _STAGE5_SAFETY.items())
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5.generatedAt")
+    workflow_validator = _quant_core_validator(
+        "stage4_portfolio", "validate_stage4_portfolio_workflow_snapshot"
+    )
+    validator = _quant_core_validator("stage5_shadow", "validate_stage5_shadow_session")
+    builder = _quant_core_validator("stage5_shadow", "build_stage5_shadow_session")
+    failure_drills = payload["failureDrills"]
+    failure_modes = (
+        "none", "timeout_once", "adapter_rejected", "reconciliation_mismatch", "kill_switch"
+    )
+    if not isinstance(failure_drills, list) or [row.get("failureMode") for row in failure_drills if isinstance(row, dict)] != list(failure_modes):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: failure drills are invalid")
+    expected_statuses = {
+        "none": ("reconciled", "reconciled", False),
+        "timeout_once": ("recoverable_failure", "reconciled", True),
+        "adapter_rejected": ("blocked", "blocked", False),
+        "reconciliation_mismatch": ("blocked", "blocked", False),
+        "kill_switch": ("blocked", "blocked", False),
+    }
+    workflows = []
+    sessions = []
+    try:
+        for drill in failure_drills:
+            if set(drill) != {"failureMode", "workflow", "firstSession", "retrySession", "retryCreated"}:
+                raise ValueError("failure drill fields are invalid")
+            failure_mode = drill["failureMode"]
+            workflow = workflow_validator(drill["workflow"])
+            first = validator(drill["firstSession"])
+            retry = validator(drill["retrySession"])
+            rebuilt_first = builder(
+                workflow,
+                failure_mode=failure_mode,
+                attempt=1,
+                generated_at=first["generatedAt"],
+            )
+            retry_attempt = 2 if failure_mode == "timeout_once" else 1
+            rebuilt_retry = builder(
+                workflow,
+                failure_mode=failure_mode,
+                attempt=retry_attempt,
+                generated_at=retry["generatedAt"],
+            )
+            first_status, retry_status, retry_created = expected_statuses[failure_mode]
+            if (
+                first["workflowHash"] != workflow["workflowHash"]
+                or retry["workflowHash"] != workflow["workflowHash"]
+                or first["failureMode"] != failure_mode
+                or retry["failureMode"] != failure_mode
+                or first["attempt"] != 1
+                or retry["attempt"] != retry_attempt
+                or first["status"] != first_status
+                or retry["status"] != retry_status
+                or drill["retryCreated"] is not retry_created
+                or first != rebuilt_first
+                or retry != rebuilt_retry
+                or (failure_mode != "timeout_once" and first != retry)
+                or (
+                    failure_mode == "timeout_once"
+                    and [order["clientOrderId"] for order in first["orders"]]
+                    != [order["clientOrderId"] for order in retry["orders"]]
+                )
+            ):
+                raise ValueError("failure drill recovery or idempotency is invalid")
+            workflows.append(workflow)
+            sessions.append(first)
+            if retry_created:
+                sessions.append(retry)
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(f"Invalid Stage 5 shadow acceptance manifest: drill is invalid: {error}") from error
+    workflow_hashes = [workflow["workflowHash"] for workflow in workflows]
+    session_hashes = [session["sessionHash"] for session in sessions]
+    if (
+        len(set(workflow_hashes)) != 5
+        or len(set(session_hashes)) != 6
+        or len({workflow["baseRunId"] for workflow in workflows}) != 1
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: drill identities are invalid")
+    expected_hashes = sorted(session_hashes)
+    restart = payload["restartReadback"]
+    if (
+        not isinstance(restart, dict)
+        or set(restart) != {
+            "expectedSessionCount", "actualSessionCount", "expectedSessionHashes", "actualSessionHashes"
+        }
+        or restart["expectedSessionCount"] != 6
+        or restart["actualSessionCount"] != 6
+        or sorted(restart["expectedSessionHashes"]) != expected_hashes
+        or sorted(restart["actualSessionHashes"]) != expected_hashes
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: restart readback is invalid")
+    readback = payload["exportReadback"]
+    if (
+        not isinstance(readback, dict)
+        or set(readback) != {
+            "exportArtifactCount", "importedArtifactCount", "readbackArtifactCount",
+            "exportSessionHashes", "importedSessionHashes", "readbackSessionHashes",
+        }
+        or any(
+            type(readback[field]) is not int or readback[field] != 6
+            for field in ("exportArtifactCount", "importedArtifactCount", "readbackArtifactCount")
+        )
+        or any(
+            sorted(readback[field]) != expected_hashes
+            for field in ("exportSessionHashes", "importedSessionHashes", "readbackSessionHashes")
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 shadow acceptance manifest: export readback is invalid")
+    return (
+        f"stage5 shadow acceptance run={workflows[0]['baseRunId']} drills=5 sessions=6 "
+        "restartExact=True portable=True liveBlocked=True"
+    )
+
+
+def write_stage5_shadow_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 shadow acceptance report={path}")
+    return path
+
+
+def load_stage5_shadow_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 shadow acceptance manifest")
+
+
+_STAGE5_READINESS_SAFETY = {
+    **_STAGE5_SAFETY,
+    "sandboxOrderSubmissionAllowed": False,
+}
+
+
+def build_stage5_sandbox_readiness_acceptance_manifest(
+    *,
+    workflow: dict[str, Any],
+    shadow_session: dict[str, Any],
+    adapter_paper_executions: list[dict[str, Any]],
+    readiness_decision: dict[str, Any],
+    blocker_drills: list[dict[str, Any]],
+    restart_readback: dict[str, Any],
+    export_readback: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "aiqt.stage5SandboxReadinessAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed",
+        "workflow": workflow,
+        "shadowSession": shadow_session,
+        "adapterPaperExecutions": adapter_paper_executions,
+        "readinessDecision": readiness_decision,
+        "blockerDrills": blocker_drills,
+        "restartReadback": restart_readback,
+        "exportReadback": export_readback,
+        **_STAGE5_READINESS_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_readiness_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox readiness acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "workflow", "shadowSession",
+        "adapterPaperExecutions", "readinessDecision", "blockerDrills", "restartReadback",
+        "exportReadback", *_STAGE5_READINESS_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5SandboxReadinessAcceptance"
+        or type(payload["schemaVersion"]) is not int
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or any(payload[field] is not expected for field, expected in _STAGE5_READINESS_SAFETY.items())
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5Readiness.generatedAt")
+    workflow_validator = _quant_core_validator(
+        "stage4_portfolio", "validate_stage4_portfolio_workflow_snapshot"
+    )
+    session_validator = _quant_core_validator("stage5_shadow", "validate_stage5_shadow_session")
+    session_builder = _quant_core_validator("stage5_shadow", "build_stage5_shadow_session")
+    decision_validator = _quant_core_validator(
+        "stage5_shadow", "validate_stage5_sandbox_readiness_decision"
+    )
+    decision_builder = _quant_core_validator(
+        "stage5_shadow", "build_stage5_sandbox_readiness_decision"
+    )
+    try:
+        workflow = workflow_validator(payload["workflow"])
+        session = session_validator(payload["shadowSession"])
+        executions = payload["adapterPaperExecutions"]
+        decision = decision_validator(payload["readinessDecision"])
+        if not isinstance(executions, list) or not all(isinstance(row, dict) for row in executions):
+            raise ValueError("adapter paper executions are invalid")
+        rebuilt_session = session_builder(
+            workflow,
+            failure_mode=session["failureMode"],
+            attempt=session["attempt"],
+            generated_at=session["generatedAt"],
+        )
+        rebuilt_decision = decision_builder(
+            workflow,
+            session,
+            executions,
+            operator=decision["operator"],
+            confirmed=True,
+            generated_at=decision["generatedAt"],
+        )
+        if rebuilt_session != session or rebuilt_decision != decision:
+            raise ValueError("readiness sources do not rebuild exactly")
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            f"Invalid Stage 5 sandbox readiness acceptance manifest: source is invalid: {error}"
+        ) from error
+
+    blocker_drills = payload["blockerDrills"]
+    blocker_modes = (
+        "missing_adapter_event", "adapter_market_mismatch", "blocked_session",
+        "unsafe_adapter_evidence", "decision_hash_tamper",
+    )
+    if (
+        not isinstance(blocker_drills, list)
+        or [row.get("mode") for row in blocker_drills if isinstance(row, dict)] != list(blocker_modes)
+        or any(set(row) != {"mode", "blocked"} or row["blocked"] is not True for row in blocker_drills)
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: blocker drills are invalid")
+    def decision_build_is_blocked(
+        candidate_session: dict[str, Any], candidate_executions: list[dict[str, Any]]
+    ) -> bool:
+        try:
+            decision_builder(
+                workflow,
+                candidate_session,
+                candidate_executions,
+                operator=decision["operator"],
+                confirmed=True,
+                generated_at=decision["generatedAt"],
+            )
+        except ValueError:
+            return True
+        return False
+
+    mismatched_executions = json.loads(json.dumps(executions))
+    mismatched_executions[0]["market"] = "mismatch"
+    unsafe_executions = json.loads(json.dumps(executions))
+    unsafe_executions[0]["liveTradingAllowed"] = True
+    blocked_session = session_builder(
+        workflow,
+        failure_mode="adapter_rejected",
+        attempt=1,
+        generated_at=session["generatedAt"],
+    )
+    tampered_decision = json.loads(json.dumps(decision))
+    tampered_decision["decisionHash"] = "0" * 64
+    try:
+        decision_validator(tampered_decision)
+        hash_tamper_blocked = False
+    except ValueError:
+        hash_tamper_blocked = True
+    if not all((
+        decision_build_is_blocked(session, executions[:-1]),
+        decision_build_is_blocked(session, mismatched_executions),
+        decision_build_is_blocked(blocked_session, executions),
+        decision_build_is_blocked(session, unsafe_executions),
+        hash_tamper_blocked,
+    )):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: blocker drill did not fail closed")
+    restart = payload["restartReadback"]
+    expected_hash = decision["decisionHash"]
+    if (
+        not isinstance(restart, dict)
+        or set(restart) != {
+            "expectedDecisionCount", "actualDecisionCount", "expectedDecisionHashes", "actualDecisionHashes"
+        }
+        or restart["expectedDecisionCount"] != 1
+        or restart["actualDecisionCount"] != 1
+        or restart["expectedDecisionHashes"] != [expected_hash]
+        or restart["actualDecisionHashes"] != [expected_hash]
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: restart readback is invalid")
+    readback = payload["exportReadback"]
+    if (
+        not isinstance(readback, dict)
+        or set(readback) != {
+            "exportArtifactCount", "importedArtifactCount", "readbackArtifactCount",
+            "exportDecisionHashes", "importedDecisionHashes", "readbackDecisionHashes",
+        }
+        or any(
+            readback[field] != 1
+            for field in ("exportArtifactCount", "importedArtifactCount", "readbackArtifactCount")
+        )
+        or any(
+            readback[field] != [expected_hash]
+            for field in ("exportDecisionHashes", "importedDecisionHashes", "readbackDecisionHashes")
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance manifest: export readback is invalid")
+    return (
+        f"stage5 sandbox readiness run={workflow['baseRunId']} decisions=1 blockers=5 "
+        "restartExact=True portable=True sandboxOrderSubmissionAllowed=False liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_readiness_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox readiness acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_readiness_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox readiness acceptance manifest")
+
+
+_STAGE5_READONLY_PROBE_SAFETY = {
+    "readOnly": True,
+    "paperOnly": True,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "orderRoutingEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_sandbox_readonly_probe_acceptance_manifest(
+    probe: dict[str, Any],
+) -> dict[str, Any]:
+    credentials = probe.get("credentials") if isinstance(probe.get("credentials"), dict) else {}
+    assertions = {
+        "statusNotReady": probe.get("status") in {"review", "blocked"},
+        "credentialsAbsent": all(
+            credentials.get(field) is False
+            for field in ("apiKeyConfigured", "secretConfigured", "passwordConfigured")
+        ),
+        "serverReportedReadOnly": (
+            isinstance(probe.get("metadata"), dict) and probe["metadata"].get("readOnly") is True
+        ),
+        "orderRoutingDisabled": probe.get("orderRoutingEnabled") is False,
+    }
+    canonical_probe = json.dumps(probe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return {
+        "kind": "aiqt.stage5SandboxReadonlyProbeAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if all(assertions.values()) else "failed",
+        "adapterHealthProbe": probe,
+        "probeDigest": hashlib.sha256(canonical_probe.encode()).hexdigest(),
+        "assertions": assertions,
+        **_STAGE5_READONLY_PROBE_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox readonly probe acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "adapterHealthProbe", "probeDigest",
+        "assertions", *_STAGE5_READONLY_PROBE_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5SandboxReadonlyProbeAcceptance"
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or any(payload[field] is not expected for field, expected in _STAGE5_READONLY_PROBE_SAFETY.items())
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5SandboxReadonlyProbe.generatedAt")
+    probe = _require_dict(payload["adapterHealthProbe"], "Stage 5 sandbox readonly probe")
+    credentials = _require_dict(probe.get("credentials"), "Stage 5 sandbox readonly probe credentials")
+    metadata = _require_dict(probe.get("metadata"), "Stage 5 sandbox readonly probe metadata")
+    expected_probe_fields = {
+        "schemaVersion", "probeId", "adapterId", "provider", "exchangeId", "mode", "status",
+        "generatedAt", "checks", "capabilities", "credentials", "marketCount", "exchangeStatus",
+        "serverTimeMs", "accountSyncState", "blockedReasons", "metadata", "paperOnly",
+        "liveTradingAllowed", "orderRoutingEnabled",
+    }
+    expected_credential_fields = {
+        "apiKeyConfigured", "apiKeySource", "secretConfigured", "secretSource",
+        "passwordConfigured", "passwordSource",
+    }
+    checks = probe.get("checks")
+    capabilities = probe.get("capabilities")
+    if (
+        set(probe) != expected_probe_fields
+        or probe.get("schemaVersion") != 1
+        or probe.get("adapterId") != "ccxt-live"
+        or probe.get("provider") != "ccxt"
+        or probe.get("mode") != "sandbox"
+        or probe.get("status") not in {"review", "blocked"}
+        or metadata.get("readOnly") is not True
+        or probe.get("paperOnly") is not True
+        or probe.get("liveTradingAllowed") is not False
+        or probe.get("orderRoutingEnabled") is not False
+        or set(credentials) != expected_credential_fields
+        or any(
+            credentials.get(field) is not False
+            for field in ("apiKeyConfigured", "secretConfigured", "passwordConfigured")
+        )
+        or any(
+            credentials.get(field) is not None
+            for field in ("apiKeySource", "secretSource", "passwordSource")
+        )
+        or set(metadata) != {"readOnly"}
+        or not isinstance(checks, list)
+        or any(
+            not isinstance(row, dict)
+            or set(row) != {"id", "label", "status", "detail", "latencyMs"}
+            for row in checks
+        )
+        or not isinstance(capabilities, dict)
+        or any(type(enabled) is not bool for enabled in capabilities.values())
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: probe is not fail-closed")
+    expected_assertions = {
+        "statusNotReady": True,
+        "credentialsAbsent": True,
+        "serverReportedReadOnly": True,
+        "orderRoutingDisabled": True,
+    }
+    if payload["assertions"] != expected_assertions:
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: assertions are invalid")
+    canonical_probe = json.dumps(probe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    if payload["probeDigest"] != hashlib.sha256(canonical_probe.encode()).hexdigest():
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: digest is invalid")
+    return (
+        f"stage5 sandbox readonly probe exchange={probe.get('exchangeId')} status={probe['status']} "
+        "credentialsAbsent=True orderRoutingDisabled=True liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_readonly_probe_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox readonly probe acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_readonly_probe_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox readonly probe acceptance manifest")
+
+
+_STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY = {
+    "humanAuthorizationRequired": True,
+    "sandboxOrderSubmissionAllowed": False,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_sandbox_authorization_preflight_acceptance_manifest(
+    *,
+    base_run_id: str,
+    readiness_decision_hash: str,
+    readonly_probe_acceptance: dict[str, Any],
+    request_status: int,
+    request_payload: dict[str, Any],
+    probe_execution: dict[str, Any],
+    probe_review: dict[str, Any],
+    preflight_count: int,
+) -> dict[str, Any]:
+    request_blockers = request_payload.get("blockers")
+    assertions = {
+        "readonlyProbeBlocked": readonly_probe_acceptance.get("status") == "passed",
+        "blockedSourcesPersisted": (
+            probe_execution.get("status") == "blocked"
+            and probe_review.get("status") == "blocked"
+            and bool(probe_execution.get("sandboxProbeExecutionId"))
+            and bool(probe_review.get("sandboxProbeReviewId"))
+        ),
+        "preflightRequestBlocked": request_status == 409 and
+            request_payload.get("error") == "stage5_sandbox_authorization_preflight_blocked",
+        "blockedSourceRejected": isinstance(request_blockers, list) and any(
+            "recorded probe review" in str(blocker) for blocker in request_blockers
+        ),
+        "noSuccessfulPreflight": preflight_count == 0,
+    }
+    return {
+        "kind": "aiqt.stage5SandboxAuthorizationPreflightAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if all(assertions.values()) else "failed",
+        "baseRunId": base_run_id,
+        "readinessDecisionHash": readiness_decision_hash,
+        "readonlyProbeAcceptance": readonly_probe_acceptance,
+        "requestStatus": request_status,
+        "requestError": request_payload.get("error"),
+        "requestBlockers": request_blockers,
+        "probeExecutionId": probe_execution.get("sandboxProbeExecutionId"),
+        "probeExecutionStatus": probe_execution.get("status"),
+        "probeReviewId": probe_review.get("sandboxProbeReviewId"),
+        "probeReviewStatus": probe_review.get("status"),
+        "preflightCount": preflight_count,
+        "assertions": assertions,
+        **_STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_authorization_preflight_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox authorization preflight acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "baseRunId", "readinessDecisionHash",
+        "readonlyProbeAcceptance", "requestStatus", "requestError", "requestBlockers",
+        "probeExecutionId", "probeExecutionStatus", "probeReviewId", "probeReviewStatus",
+        "preflightCount", "assertions",
+        *_STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox authorization preflight acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5SandboxAuthorizationPreflightAcceptance"
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or not isinstance(payload["baseRunId"], str) or not payload["baseRunId"]
+        or not isinstance(payload["readinessDecisionHash"], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", payload["readinessDecisionHash"])
+        or payload["requestStatus"] != 409
+        or payload["requestError"] != "stage5_sandbox_authorization_preflight_blocked"
+        or not isinstance(payload["requestBlockers"], list)
+        or not payload["probeExecutionId"]
+        or payload["probeExecutionStatus"] != "blocked"
+        or not payload["probeReviewId"]
+        or payload["probeReviewStatus"] != "blocked"
+        or payload["preflightCount"] != 0
+        or payload["assertions"] != {
+            "readonlyProbeBlocked": True,
+            "blockedSourcesPersisted": True,
+            "preflightRequestBlocked": True,
+            "blockedSourceRejected": True,
+            "noSuccessfulPreflight": True,
+        }
+        or any(
+            payload[field] is not expected
+            for field, expected in _STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY.items()
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization preflight acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5SandboxAuthorizationPreflight.generatedAt")
+    validate_stage5_sandbox_readonly_probe_acceptance_manifest(payload["readonlyProbeAcceptance"])
+    return (
+        f"stage5 sandbox authorization preflight run={payload['baseRunId']} requestBlocked=True "
+        "preflightCount=0 sandboxOrderSubmissionAllowed=False liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_authorization_preflight_acceptance_report(
+    path: Path, manifest: dict[str, Any]
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox authorization preflight acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_authorization_preflight_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox authorization preflight acceptance manifest")
+
+
+_STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY = {
+    "authorizationEffective": False,
+    "humanAuthorizationRequired": True,
+    "sandboxOrderSubmissionAllowed": False,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_sandbox_authorization_review_acceptance_manifest(
+    *,
+    preflight_acceptance: dict[str, Any],
+    request_status: int,
+    request_payload: dict[str, Any],
+    review_count: int,
+) -> dict[str, Any]:
+    assertions = {
+        "blockedProbeChainInherited": preflight_acceptance.get("status") == "passed"
+            and preflight_acceptance.get("preflightCount") == 0,
+        "reviewRequestBlocked": request_status == 409
+            and request_payload.get("error") == "stage5_sandbox_authorization_review_blocked",
+        "noSuccessfulReview": review_count == 0,
+    }
+    return {
+        "kind": "aiqt.stage5SandboxAuthorizationReviewAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if all(assertions.values()) else "failed",
+        "baseRunId": preflight_acceptance.get("baseRunId"),
+        "preflightAcceptance": preflight_acceptance,
+        "requestStatus": request_status,
+        "requestError": request_payload.get("error"),
+        "reviewCount": review_count,
+        "assertions": assertions,
+        **_STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_authorization_review_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox authorization review acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "baseRunId", "preflightAcceptance",
+        "requestStatus", "requestError", "reviewCount", "assertions",
+        *_STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox authorization review acceptance manifest: fields are invalid")
+    validate_stage5_sandbox_authorization_preflight_acceptance_manifest(payload["preflightAcceptance"])
+    if (
+        payload["kind"] != "aiqt.stage5SandboxAuthorizationReviewAcceptance"
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or not isinstance(payload["baseRunId"], str) or not payload["baseRunId"]
+        or payload["requestStatus"] != 409
+        or payload["requestError"] != "stage5_sandbox_authorization_review_blocked"
+        or payload["reviewCount"] != 0
+        or payload["assertions"] != {
+            "blockedProbeChainInherited": True,
+            "reviewRequestBlocked": True,
+            "noSuccessfulReview": True,
+        }
+        or any(
+            payload[field] is not expected
+            for field, expected in _STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SAFETY.items()
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization review acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5SandboxAuthorizationReview.generatedAt")
+    return (
+        f"stage5 sandbox authorization review run={payload['baseRunId']} requestBlocked=True "
+        "reviewCount=0 authorizationEffective=False liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_authorization_review_acceptance_report(
+    path: Path, manifest: dict[str, Any]
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox authorization review acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_authorization_review_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox authorization review acceptance manifest")
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1962,6 +2732,68 @@ def run_stage4_portfolio_acceptance(
         if approval.get("orderId") != order_id or approval.get("approved") is not True:
             raise RuntimeError("Invalid Stage 4 portfolio approval: exact approval sequence is invalid")
 
+    adapter_evidence_by_order_id = {}
+    for order in orders:
+        order_id = order["orderId"]
+        ops_state_event = _stage5_readiness_adapter_ops_state_audit_event(order)
+        post_json(
+            join_url(base_url, "/api/audit/events"),
+            ops_state_event,
+            timeout_seconds=timeout_seconds,
+        )
+        execution_response = _require_dict(
+            post_json(
+                join_url(base_url, "/api/execution/adapter-paper-executions"),
+                {
+                    "adapterId": "ashare-live",
+                    "adapterOpsStateId": ops_state_event["eventId"],
+                    "paperExecutionMode": "manual_adapter_paper_execution",
+                    "confirmations": {
+                        "opsStateAccepted": True,
+                        "paperAccountSynced": True,
+                        "riskBudgetBound": True,
+                        "simulatedFillGenerated": True,
+                        "operatorConfirmedNoLiveRouting": True,
+                    },
+                    "operator": "stage5-readiness-smoke",
+                    "metadata": {"source": "stage5-readiness-smoke"},
+                },
+                timeout_seconds=timeout_seconds,
+            ),
+            "Stage 5 readiness adapter paper execution",
+        )
+        terminal = _require_dict(
+            execution_response.get("adapterPaperExecution"),
+            "Stage 5 readiness adapter paper execution payload",
+        )
+        execution_id = str(terminal.get("adapterPaperExecutionId") or "").strip()
+        manifest_id = str(terminal.get("manifestValidationId") or "").strip()
+        evidence = {
+            "adapterPaperExecutionId": execution_id,
+            "manifestValidationId": manifest_id,
+            "adapterId": terminal.get("adapterId"),
+            "market": terminal.get("market"),
+            "symbol": order["symbol"],
+            "side": order["side"],
+            "quantity": order["quantity"],
+            "route": terminal.get("route"),
+            "status": terminal.get("status"),
+            "fillSummary": f"filled {order['side']} {order['quantity']} {order['symbol']} @ 100",
+            "paperFillRecorded": terminal.get("paperFillRecorded"),
+            "paperOnly": terminal.get("paperOnly"),
+            "orderSubmitted": terminal.get("orderSubmitted"),
+            "liveOrderSubmitted": terminal.get("liveOrderSubmitted"),
+            "routeExecuted": terminal.get("routeExecuted"),
+            "liveTradingAllowed": terminal.get("liveTradingAllowed"),
+        }
+        if not execution_id or not manifest_id or evidence["status"] != "paper_execution_recorded":
+            raise RuntimeError("Invalid Stage 5 readiness adapter paper execution terminal evidence")
+        adapter_evidence_by_order_id[order_id] = {
+            "adapterPaperExecutionId": execution_id,
+            "adapterManifestValidationId": manifest_id,
+            "adapterPaperExecutionEvidence": evidence,
+        }
+
     simulation_request = {
         "baseRunId": base_run_id,
         "batchId": batch_id,
@@ -1973,6 +2805,7 @@ def run_stage4_portfolio_acceptance(
             "maxSymbolNotional": 50000,
             "maxBatchNotional": 90000,
         },
+        "adapterPaperExecutionEvidenceByOrderId": adapter_evidence_by_order_id,
     }
     first_simulation = _require_dict(
         post_json(
@@ -2100,6 +2933,571 @@ def run_stage4_portfolio_acceptance(
     if report_path is not None:
         write_stage4_portfolio_acceptance_report(report_path, manifest)
     return [summary]
+
+
+def run_stage5_shadow_acceptance(
+    repo_root: Path,
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    stage4_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    stage4_manifest = load_stage4_portfolio_acceptance_report(stage4_report_path)
+    validate_stage4_portfolio_acceptance_manifest(stage4_manifest)
+    source_workflow = _require_dict(stage4_manifest.get("workflow"), "Stage 5 source workflow")
+    workflows = [source_workflow]
+    source_portfolio_request = _require_dict(
+        source_workflow.get("portfolioRequest"), "Stage 5 source portfolio request"
+    )
+    workflow_request = {
+        "name": source_portfolio_request["name"],
+        "initialCash": source_portfolio_request["initialCash"],
+        "legs": [
+            {"runId": leg["runId"], "targetWeight": leg["targetWeight"]}
+            for leg in source_portfolio_request["legs"]
+        ],
+        "baseRunId": source_workflow["baseRunId"],
+        "riskTemplate": source_workflow["riskTemplate"],
+        "batchId": source_workflow["batch"]["batchId"],
+        "operator": "stage5-shadow-smoke",
+    }
+    for _ in range(4):
+        response = _require_dict(
+            post_json(
+                join_url(base_url, "/api/portfolio/workflows"),
+                workflow_request,
+                timeout_seconds=timeout_seconds,
+            ),
+            "Stage 5 drill workflow",
+        )
+        workflows.append(_require_dict(response.get("workflow"), "Stage 5 drill workflow"))
+
+    failure_drills = []
+    for workflow, failure_mode in zip(
+        workflows,
+        ("none", "timeout_once", "adapter_rejected", "reconciliation_mismatch", "kill_switch"),
+        strict=True,
+    ):
+        request = {
+            "baseRunId": workflow["baseRunId"],
+            "workflowHash": workflow["workflowHash"],
+            "failureMode": failure_mode,
+            "operator": "stage5-shadow-smoke",
+        }
+        attempts = []
+        for _ in range(3 if failure_mode == "timeout_once" else 2):
+            response = _require_dict(
+                post_json(
+                    join_url(base_url, "/api/execution/shadow-sessions"),
+                    request,
+                    timeout_seconds=timeout_seconds,
+                ),
+                "Stage 5 shadow session",
+            )
+            attempts.append(_require_dict(response.get("shadowSession"), "Stage 5 shadow session"))
+        if failure_mode == "timeout_once" and attempts[1] != attempts[2]:
+            raise RuntimeError("Invalid Stage 5 timeout drill: third POST is not idempotent")
+        failure_drills.append(
+            {
+                "failureMode": failure_mode,
+                "workflow": workflow,
+                "firstSession": attempts[0],
+                "retrySession": attempts[1],
+                "retryCreated": failure_mode == "timeout_once",
+            }
+        )
+
+    run_id = str(source_workflow["baseRunId"])
+    expected_hashes = sorted(
+        {
+            session["sessionHash"]
+            for drill in failure_drills
+            for session in (drill["firstSession"], drill["retrySession"])
+        }
+    )
+    run_command(["docker", "compose", "restart", "api"], cwd=repo_root)
+    print(validate_health_payload(wait_for_json(join_url(base_url, "/health"), timeout_seconds)))
+    restart_payload = _require_dict(
+        request_json(
+            join_url(base_url, f"/api/execution/shadow-sessions?{urlencode({'baseRunId': run_id, 'limit': 20})}"),
+            timeout_seconds,
+        ),
+        "Stage 5 restart readback",
+    )
+    restart_sessions = restart_payload.get("shadowSessions")
+    if not isinstance(restart_sessions, list):
+        raise RuntimeError("Invalid Stage 5 restart readback: sessions are missing")
+    export_url = join_url(base_url, f"/api/research/runs/{quote(run_id, safe='')}/export")
+    export_package, exported_sessions = _stage5_export_sessions(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    validate_p0_import_payload(
+        post_json(
+            join_url(base_url, "/api/research/runs/import"),
+            export_package,
+            timeout_seconds=timeout_seconds,
+        ),
+        run_id,
+    )
+    _imported_package, imported_sessions = _stage5_export_sessions(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    readback_payload = _require_dict(
+        request_json(
+            join_url(base_url, f"/api/execution/shadow-sessions?{urlencode({'baseRunId': run_id, 'limit': 20})}"),
+            timeout_seconds,
+        ),
+        "Stage 5 shadow readback",
+    )
+    readback_sessions = readback_payload.get("shadowSessions")
+    if not isinstance(readback_sessions, list):
+        raise RuntimeError("Invalid Stage 5 shadow readback: sessions are missing")
+    manifest = build_stage5_shadow_acceptance_manifest(
+        failure_drills=failure_drills,
+        restart_readback={
+            "expectedSessionCount": 6,
+            "actualSessionCount": len(restart_sessions),
+            "expectedSessionHashes": expected_hashes,
+            "actualSessionHashes": sorted(session["sessionHash"] for session in restart_sessions),
+        },
+        export_readback={
+            "exportArtifactCount": len(exported_sessions),
+            "importedArtifactCount": len(imported_sessions),
+            "readbackArtifactCount": len(readback_sessions),
+            "exportSessionHashes": sorted(session["sessionHash"] for session in exported_sessions),
+            "importedSessionHashes": sorted(session["sessionHash"] for session in imported_sessions),
+            "readbackSessionHashes": sorted(session["sessionHash"] for session in readback_sessions),
+        },
+    )
+    summary = validate_stage5_shadow_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_shadow_acceptance_report(report_path, manifest)
+    return [summary]
+
+
+def _stage5_export_sessions(payload: Any, run_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    package = _require_dict(_require_dict(payload, "Stage 5 research export").get("export"), "Stage 5 export")
+    manifest = _require_dict(package.get("manifest"), "Stage 5 export manifest")
+    counts = _require_dict(manifest.get("artifactCounts"), "Stage 5 export artifact counts")
+    sessions = [
+        event["metadata"]["snapshot"]
+        for event in package.get("auditEvents") or []
+        if isinstance(event, dict)
+        and event.get("eventType") == "stage5_shadow_execution_session"
+        and isinstance(event.get("metadata"), dict)
+        and isinstance(event["metadata"].get("snapshot"), dict)
+    ]
+    if manifest.get("runId") != run_id or counts.get("stage5ShadowSessions") != len(sessions):
+        raise RuntimeError("Invalid Stage 5 research export: session count or run binding is invalid")
+    return package, sessions
+
+
+def run_stage5_sandbox_readiness_acceptance(
+    repo_root: Path,
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    stage4_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    stage4_manifest = load_stage4_portfolio_acceptance_report(stage4_report_path)
+    validate_stage4_portfolio_acceptance_manifest(stage4_manifest)
+    workflow = _require_dict(stage4_manifest.get("workflow"), "Stage 5 readiness source workflow")
+    session_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/execution/shadow-sessions"),
+            {
+                "baseRunId": workflow["baseRunId"],
+                "workflowHash": workflow["workflowHash"],
+                "failureMode": "none",
+                "operator": "stage5-readiness-smoke",
+            },
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 5 readiness shadow session",
+    )
+    session = _require_dict(session_response.get("shadowSession"), "Stage 5 readiness shadow session")
+    readiness_request = {
+        "baseRunId": workflow["baseRunId"],
+        "workflowHash": workflow["workflowHash"],
+        "sessionHash": session["sessionHash"],
+        "operator": "stage5-readiness-smoke",
+        "confirmed": True,
+    }
+    first_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/execution/sandbox-readiness-decisions"),
+            readiness_request,
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 5 sandbox readiness decision",
+    )
+    second_response = _require_dict(
+        post_json(
+            join_url(base_url, "/api/execution/sandbox-readiness-decisions"),
+            readiness_request,
+            timeout_seconds=timeout_seconds,
+        ),
+        "Stage 5 sandbox readiness decision retry",
+    )
+    decision = _require_dict(
+        first_response.get("sandboxReadinessDecision"), "Stage 5 sandbox readiness decision"
+    )
+    if second_response.get("sandboxReadinessDecision") != decision:
+        raise RuntimeError("Invalid Stage 5 sandbox readiness acceptance: repeated POST is not idempotent")
+
+    run_id = str(workflow["baseRunId"])
+    run_command(["docker", "compose", "restart", "api"], cwd=repo_root)
+    print(validate_health_payload(wait_for_json(join_url(base_url, "/health"), timeout_seconds)))
+    readiness_url = join_url(
+        base_url,
+        f"/api/execution/sandbox-readiness-decisions?{urlencode({'baseRunId': run_id, 'limit': 20})}",
+    )
+    restart_payload = _require_dict(
+        request_json(readiness_url, timeout_seconds), "Stage 5 readiness restart readback"
+    )
+    restart_decisions = restart_payload.get("sandboxReadinessDecisions")
+    if not isinstance(restart_decisions, list):
+        raise RuntimeError("Invalid Stage 5 readiness restart readback: decisions are missing")
+
+    export_url = join_url(base_url, f"/api/research/runs/{quote(run_id, safe='')}/export")
+    export_package, exported_decisions, adapter_executions = _stage5_export_readiness(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    validate_p0_import_payload(
+        post_json(
+            join_url(base_url, "/api/research/runs/import"),
+            export_package,
+            timeout_seconds=timeout_seconds,
+        ),
+        run_id,
+    )
+    _imported_package, imported_decisions, imported_adapter_executions = _stage5_export_readiness(
+        request_json(export_url, timeout_seconds), run_id
+    )
+    readback_payload = _require_dict(
+        request_json(readiness_url, timeout_seconds), "Stage 5 readiness imported readback"
+    )
+    readback_decisions = readback_payload.get("sandboxReadinessDecisions")
+    if not isinstance(readback_decisions, list):
+        raise RuntimeError("Invalid Stage 5 readiness imported readback: decisions are missing")
+    if imported_adapter_executions != adapter_executions:
+        raise RuntimeError("Invalid Stage 5 readiness imported readback: adapter evidence changed")
+    decision_hash = decision["decisionHash"]
+    manifest = build_stage5_sandbox_readiness_acceptance_manifest(
+        workflow=workflow,
+        shadow_session=session,
+        adapter_paper_executions=adapter_executions,
+        readiness_decision=decision,
+        blocker_drills=[
+            {"mode": mode, "blocked": True}
+            for mode in (
+                "missing_adapter_event", "adapter_market_mismatch", "blocked_session",
+                "unsafe_adapter_evidence", "decision_hash_tamper",
+            )
+        ],
+        restart_readback={
+            "expectedDecisionCount": 1,
+            "actualDecisionCount": len(restart_decisions),
+            "expectedDecisionHashes": [decision_hash],
+            "actualDecisionHashes": [row["decisionHash"] for row in restart_decisions],
+        },
+        export_readback={
+            "exportArtifactCount": len(exported_decisions),
+            "importedArtifactCount": len(imported_decisions),
+            "readbackArtifactCount": len(readback_decisions),
+            "exportDecisionHashes": [row["decisionHash"] for row in exported_decisions],
+            "importedDecisionHashes": [row["decisionHash"] for row in imported_decisions],
+            "readbackDecisionHashes": [row["decisionHash"] for row in readback_decisions],
+        },
+    )
+    summary = validate_stage5_sandbox_readiness_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_readiness_acceptance_report(report_path, manifest)
+    return [summary]
+
+
+def run_stage5_sandbox_readonly_probe_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    report_path: Path | None = None,
+) -> list[str]:
+    response = _require_dict(
+        request_json(
+            join_url(
+                base_url,
+                "/api/execution/adapter-health/ccxt-sandbox?exchange=binance&adapterId=ccxt-live",
+            ),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox readonly probe response",
+    )
+    probe = _require_dict(response.get("adapterHealthProbe"), "Stage 5 sandbox readonly probe")
+    manifest = build_stage5_sandbox_readonly_probe_acceptance_manifest(probe)
+    summary = validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_readonly_probe_acceptance_report(report_path, manifest)
+    return [summary]
+
+
+def run_stage5_sandbox_authorization_preflight_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    readiness_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    readiness_manifest = load_stage5_sandbox_readiness_acceptance_report(readiness_report_path)
+    validate_stage5_sandbox_readiness_acceptance_manifest(readiness_manifest)
+    decision = _require_dict(
+        readiness_manifest.get("readinessDecision"), "Stage 5 sandbox authorization source decision"
+    )
+    health_response = _require_dict(
+        request_json(
+            join_url(base_url, "/api/execution/adapter-health/ccxt-sandbox?exchange=binance&adapterId=ccxt-live"),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox authorization readonly probe response",
+    )
+    probe = _require_dict(health_response.get("adapterHealthProbe"), "Stage 5 sandbox authorization probe")
+    readonly_acceptance = build_stage5_sandbox_readonly_probe_acceptance_manifest(probe)
+    validate_stage5_sandbox_readonly_probe_acceptance_manifest(readonly_acceptance)
+    token = _smoke_token(decision["baseRunId"])
+    plan_id = f"stage5-authorization-blocked-plan-{token}"
+    shared = {
+        "sandboxProbePlanId": plan_id,
+        "humanConfirmationId": f"stage5-authorization-confirmation-{token}",
+        "orchestrationExecutionId": f"stage5-authorization-orchestration-{token}",
+        "dryRunId": f"stage5-authorization-dry-run-{token}",
+        "acceptanceId": f"stage5-authorization-acceptance-{token}",
+        "executionId": f"stage5-authorization-reload-execution-{token}",
+        "planId": f"stage5-authorization-reload-plan-{token}",
+        "bindingId": f"stage5-authorization-binding-{token}",
+        "materializationId": f"stage5-authorization-materialization-{token}",
+        "manifestValidationId": f"stage5-authorization-manifest-{token}",
+        "adapterId": "ccxt-live",
+        "market": "crypto",
+        "route": "live",
+        "status": "probe_plan_recorded",
+        "operator": "docker-smoke",
+        "recordedAt": datetime.now(timezone.utc).isoformat(),
+        "probeMode": "manual_sandbox_probe_plan",
+        "confirmationMode": "manual_final_human_confirmation",
+        "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+        "acceptanceMode": "manual_runtime_reload_acceptance",
+        "executionMode": "manual_controlled_reload",
+        "reloadMode": "manual_container_reload_plan",
+        "maintenanceWindowId": f"stage5-authorization-window-{token}",
+        "bindingMode": "container_env_reference",
+        "manifestPath": f"local-secret-store://ccxt-live/{token}",
+        "requiredEnvVars": ["CCXT_SANDBOX_API_KEY", "CCXT_SANDBOX_SECRET"],
+        "requiredConfirmationIds": [],
+        "confirmedConfirmationIds": [],
+        "blockedReasons": [],
+        "metadata": {},
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+    post_json(
+        join_url(base_url, "/api/audit/events"),
+        {
+            "schemaVersion": 1,
+            "eventId": plan_id,
+            "eventType": "execution_adapter_sandbox_probe_plan",
+            "runId": "",
+            "createdAt": shared["recordedAt"],
+            "stage": "execution-adapter-sandbox-probe-plan",
+            "source": "execution-adapter-ledger",
+            "summary": "CCXT sandbox probe plan for blocked authorization acceptance.",
+            "detail": "The plan permits only a read-only sandbox probe; all order routing stays disabled.",
+            "metadata": shared,
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    execution_status, execution_response = post_json_with_status(
+        join_url(base_url, "/api/execution/adapter-sandbox-probe-executions"),
+        {
+            "sandboxProbePlanId": plan_id,
+            "adapterId": "ccxt-live",
+            "exchangeId": "binance",
+            "confirmations": {
+                "probePlanReviewed": True,
+                "readonlyHandshakeCaptured": True,
+                "accountSnapshotRedacted": True,
+                "orderSchemaValidated": True,
+                "operatorConfirmedNoOrdersSubmitted": True,
+            },
+            "operator": "docker-smoke",
+        },
+        timeout_seconds,
+    )
+    execution_response = _require_dict(execution_response, "Stage 5 blocked probe execution response")
+    probe_execution = _require_dict(
+        execution_response.get("adapterSandboxProbeExecution"), "Stage 5 blocked probe execution"
+    )
+    if execution_status != 409 or probe_execution.get("status") != "blocked":
+        raise RuntimeError("Stage 5 sandbox authorization expected a persisted blocked probe execution")
+    review_status, review_response = post_json_with_status(
+        join_url(base_url, "/api/execution/adapter-sandbox-probe-reviews"),
+        {
+            "sandboxProbeExecutionId": probe_execution["sandboxProbeExecutionId"],
+            "adapterId": "ccxt-live",
+            "confirmations": {
+                "probeExecutionReviewed": True,
+                "readonlyEvidenceMatchesPlan": True,
+                "redactedSnapshotArchived": True,
+                "orderSchemaRiskReviewed": True,
+                "productionRouteStillBlocked": True,
+            },
+            "operator": "docker-smoke",
+        },
+        timeout_seconds,
+    )
+    review_response = _require_dict(review_response, "Stage 5 blocked probe review response")
+    probe_review = _require_dict(
+        review_response.get("adapterSandboxProbeReview"), "Stage 5 blocked probe review"
+    )
+    if review_status != 409 or probe_review.get("status") != "blocked":
+        raise RuntimeError("Stage 5 sandbox authorization expected a persisted blocked probe review")
+    request_status, request_payload = post_json_with_status(
+        join_url(base_url, "/api/execution/sandbox-authorization-preflights"),
+        {
+            "baseRunId": decision["baseRunId"],
+            "readinessDecisionHash": decision["decisionHash"],
+            "sandboxProbeExecutionId": probe_execution["sandboxProbeExecutionId"],
+            "sandboxProbeReviewId": probe_review["sandboxProbeReviewId"],
+            "operator": "docker-smoke",
+            "confirmed": True,
+        },
+        timeout_seconds,
+    )
+    request_payload = _require_dict(request_payload, "Stage 5 sandbox authorization blocked response")
+    readback = _require_dict(
+        request_json(
+            join_url(
+                base_url,
+                f"/api/execution/sandbox-authorization-preflights?{urlencode({'baseRunId': decision['baseRunId'], 'limit': 20})}",
+            ),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox authorization preflight readback",
+    )
+    preflights = readback.get("sandboxAuthorizationPreflights")
+    if not isinstance(preflights, list):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization preflight readback")
+    manifest = build_stage5_sandbox_authorization_preflight_acceptance_manifest(
+        base_run_id=decision["baseRunId"],
+        readiness_decision_hash=decision["decisionHash"],
+        readonly_probe_acceptance=readonly_acceptance,
+        request_status=request_status,
+        request_payload=request_payload,
+        probe_execution=probe_execution,
+        probe_review=probe_review,
+        preflight_count=len(preflights),
+    )
+    summary = validate_stage5_sandbox_authorization_preflight_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_authorization_preflight_acceptance_report(report_path, manifest)
+    return [summary]
+
+
+def run_stage5_sandbox_authorization_review_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    preflight_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    preflight_acceptance = load_stage5_sandbox_authorization_preflight_acceptance_report(
+        preflight_report_path
+    )
+    validate_stage5_sandbox_authorization_preflight_acceptance_manifest(preflight_acceptance)
+    base_run_id = str(preflight_acceptance["baseRunId"])
+    request_status, request_payload = post_json_with_status(
+        join_url(base_url, "/api/execution/sandbox-authorization-reviews"),
+        {
+            "baseRunId": base_run_id,
+            "preflightHash": preflight_acceptance["readinessDecisionHash"],
+            "reviewer": "docker-smoke",
+            "outcome": "approved",
+            "reason": "Fail-closed acceptance must not create a review without a preflight.",
+            "confirmations": {
+                "preflight-hash-reviewed": True,
+                "sandbox-only-scope": True,
+                "no-order-submission": True,
+                "no-live-funds": True,
+                "kill-switch-and-rollback-owner-reviewed": True,
+            },
+        },
+        timeout_seconds,
+    )
+    request_payload = _require_dict(request_payload, "Stage 5 sandbox authorization review blocked response")
+    readback = _require_dict(
+        request_json(
+            join_url(
+                base_url,
+                f"/api/execution/sandbox-authorization-reviews?{urlencode({'baseRunId': base_run_id, 'limit': 20})}",
+            ),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox authorization review readback",
+    )
+    reviews = readback.get("sandboxAuthorizationReviews")
+    if not isinstance(reviews, list):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization review readback")
+    manifest = build_stage5_sandbox_authorization_review_acceptance_manifest(
+        preflight_acceptance=preflight_acceptance,
+        request_status=request_status,
+        request_payload=request_payload,
+        review_count=len(reviews),
+    )
+    summary = validate_stage5_sandbox_authorization_review_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_authorization_review_acceptance_report(report_path, manifest)
+    return [summary]
+
+
+def _stage5_export_readiness(
+    payload: Any, run_id: str
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    package = _require_dict(_require_dict(payload, "Stage 5 readiness export").get("export"), "Stage 5 export")
+    manifest = _require_dict(package.get("manifest"), "Stage 5 readiness export manifest")
+    counts = _require_dict(manifest.get("artifactCounts"), "Stage 5 readiness export counts")
+    decisions = [
+        event["metadata"]["snapshot"]
+        for event in package.get("auditEvents") or []
+        if isinstance(event, dict)
+        and event.get("eventType") == "stage5_sandbox_readiness_decision"
+        and isinstance(event.get("metadata"), dict)
+        and isinstance(event["metadata"].get("snapshot"), dict)
+    ]
+    all_executions = [
+        row for row in package.get("adapterPaperExecutions") or [] if isinstance(row, dict)
+    ]
+    execution_by_id = {
+        row.get("adapterPaperExecutionId"): row
+        for row in all_executions
+        if isinstance(row.get("adapterPaperExecutionId"), str)
+    }
+    referenced_ids = decisions[0].get("adapterPaperExecutionIds", []) if len(decisions) == 1 else []
+    executions = [execution_by_id.get(execution_id) for execution_id in referenced_ids]
+    if (
+        manifest.get("runId") != run_id
+        or counts.get("stage5SandboxReadinessDecisions") != len(decisions)
+        or len(decisions) != 1
+        or not referenced_ids
+        or any(execution is None for execution in executions)
+    ):
+        raise RuntimeError("Invalid Stage 5 readiness export: decision or adapter evidence count is invalid")
+    return package, decisions, executions
 
 
 def _stage2_experiment(payload: Any, label: str) -> dict[str, Any]:
@@ -3207,6 +4605,106 @@ def run_p2_pre_live_acceptance(
     return summaries
 
 
+def run_stage5_exit_acceptance(
+    repo_root: Path,
+    *,
+    base_url: str,
+    timeout_seconds: int,
+    report_path: Path,
+) -> str:
+    ensure_quant_core_import_path()
+    from quant_core.stage5_exit import (
+        STAGE5_EXIT_SOURCE_SPECS,
+        build_stage5_exit_acceptance_manifest,
+        validate_stage5_exit_acceptance_manifest,
+        write_stage5_exit_acceptance_report,
+    )
+
+    source_paths = {
+        source_id: repo_root / relative_path
+        for source_id, relative_path in STAGE5_EXIT_SOURCE_SPECS
+    }
+    stage3_path = source_paths["stage3-ai-review"]
+    stage4_path = source_paths["stage4-portfolio-paper"]
+    shadow_path = source_paths["stage5-shadow-execution"]
+    readiness_path = source_paths["stage5-sandbox-readiness"]
+    readonly_path = source_paths["stage5-sandbox-readonly-probe"]
+    preflight_path = source_paths["stage5-sandbox-authorization-preflight"]
+    review_path = source_paths["stage5-sandbox-authorization-review"]
+
+    stage3 = load_stage3_ai_review_report(stage3_path)
+    stage4 = load_stage4_portfolio_acceptance_report(stage4_path)
+    shadow = load_stage5_shadow_acceptance_report(shadow_path)
+    readiness = load_stage5_sandbox_readiness_acceptance_report(readiness_path)
+    readonly = load_stage5_sandbox_readonly_probe_acceptance_report(readonly_path)
+    preflight = load_stage5_sandbox_authorization_preflight_acceptance_report(preflight_path)
+    review = load_stage5_sandbox_authorization_review_acceptance_report(review_path)
+    validate_stage3_ai_review_manifest(stage3)
+    validate_stage4_portfolio_acceptance_manifest(stage4)
+    validate_stage5_shadow_acceptance_manifest(shadow)
+    validate_stage5_sandbox_readiness_acceptance_manifest(readiness)
+    validate_stage5_sandbox_readonly_probe_acceptance_manifest(readonly)
+    validate_stage5_sandbox_authorization_preflight_acceptance_manifest(preflight)
+    validate_stage5_sandbox_authorization_review_acceptance_manifest(review)
+
+    run_ids = {
+        str(stage4.get("workflow", {}).get("baseRunId") or "").strip(),
+        str(shadow.get("failureDrills", [{}])[0].get("firstSession", {}).get("baseRunId") or "").strip(),
+        str(readiness.get("readinessDecision", {}).get("baseRunId") or "").strip(),
+        str(preflight.get("baseRunId") or "").strip(),
+        str(review.get("baseRunId") or "").strip(),
+    }
+    if "" in run_ids or len(run_ids) != 1:
+        raise RuntimeError("Invalid Stage 5 exit acceptance inputs: Stage 4/5 base run identity differs")
+
+    manifest = build_stage5_exit_acceptance_manifest(
+        repo_root=repo_root,
+        stage5_base_run_id=run_ids.pop(),
+    )
+    summary = validate_stage5_exit_acceptance_manifest(
+        manifest,
+        repo_root=repo_root,
+        verify_sources=True,
+    )
+    write_stage5_exit_acceptance_report(report_path, manifest)
+    for source in (
+        stage3_path,
+        stage4_path,
+        shadow_path,
+        readiness_path,
+        readonly_path,
+        preflight_path,
+        review_path,
+        report_path,
+    ):
+        run_command(
+            ["docker", "compose", "cp", str(source), f"api:/app/data/{source.name}"],
+            cwd=repo_root,
+        )
+    readback = request_json(join_url(base_url, "/api/stage5/exit-acceptance/latest"), timeout_seconds)
+    acceptance = readback.get("acceptance") if isinstance(readback, dict) else None
+    if (
+        not isinstance(acceptance, dict)
+        or acceptance.get("status") != "accepted"
+        or acceptance.get("artifactCount") != 7
+        or acceptance.get("exitHash") != manifest["exitHash"]
+        or acceptance.get("liveBlockedBoundary") is not True
+        or any(
+            acceptance.get(field) is not False
+            for field in (
+                "authorizationEffective",
+                "sandboxOrderSubmissionAllowed",
+                "liveTradingAllowed",
+                "orderSubmissionEnabled",
+                "routeExecuted",
+            )
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 exit acceptance API readback")
+    print(summary)
+    return summary
+
+
 def run_smoke(
     repo_root: Path,
     base_url: str,
@@ -3237,6 +4735,19 @@ def run_smoke(
     stage3_ai_review_live_report: Path | None = None,
     stage4_portfolio_paper: bool = False,
     stage4_portfolio_paper_report: Path | None = None,
+    stage5_shadow: bool = False,
+    stage5_shadow_stage4_report: Path = Path("data") / "stage4-portfolio-paper.json",
+    stage5_shadow_report: Path | None = None,
+    stage5_sandbox_readiness: bool = False,
+    stage5_sandbox_readiness_report: Path | None = None,
+    stage5_sandbox_readonly_probe: bool = False,
+    stage5_sandbox_readonly_probe_report: Path | None = None,
+    stage5_sandbox_authorization_preflight: bool = False,
+    stage5_sandbox_authorization_preflight_report: Path | None = None,
+    stage5_sandbox_authorization_review: bool = False,
+    stage5_sandbox_authorization_review_report: Path | None = None,
+    stage5_exit_acceptance: bool = False,
+    stage5_exit_acceptance_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -3318,6 +4829,51 @@ def run_smoke(
                 base_url,
                 timeout_seconds=timeout_seconds,
                 report_path=stage4_portfolio_paper_report,
+            )
+        if stage5_shadow:
+            run_stage5_shadow_acceptance(
+                repo_root,
+                base_url,
+                timeout_seconds=timeout_seconds,
+                stage4_report_path=stage5_shadow_stage4_report,
+                report_path=stage5_shadow_report,
+            )
+        if stage5_sandbox_readiness:
+            run_stage5_sandbox_readiness_acceptance(
+                repo_root,
+                base_url,
+                timeout_seconds=timeout_seconds,
+                stage4_report_path=stage5_shadow_stage4_report,
+                report_path=stage5_sandbox_readiness_report,
+            )
+        if stage5_sandbox_readonly_probe:
+            run_stage5_sandbox_readonly_probe_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                report_path=stage5_sandbox_readonly_probe_report,
+            )
+        if stage5_sandbox_authorization_preflight:
+            run_stage5_sandbox_authorization_preflight_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                readiness_report_path=stage5_sandbox_readiness_report or Path("data/stage5-sandbox-readiness.json"),
+                report_path=stage5_sandbox_authorization_preflight_report,
+            )
+        if stage5_sandbox_authorization_review:
+            run_stage5_sandbox_authorization_review_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                preflight_report_path=stage5_sandbox_authorization_preflight_report
+                    or Path("data/stage5-sandbox-authorization-preflight.json"),
+                report_path=stage5_sandbox_authorization_review_report,
+            )
+        if stage5_exit_acceptance:
+            run_stage5_exit_acceptance(
+                repo_root,
+                base_url=base_url,
+                timeout_seconds=timeout_seconds,
+                report_path=stage5_exit_acceptance_report
+                    or repo_root / "data/stage5-exit-acceptance.json",
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -3438,6 +4994,93 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--validate-stage4-portfolio-paper-report",
         default=None,
         help="Validate an existing Stage 4 portfolio paper acceptance manifest and exit.",
+    )
+    parser.add_argument("--stage5-shadow", action="store_true", help="Run isolated Stage 5 shadow execution acceptance.")
+    parser.add_argument(
+        "--stage5-shadow-stage4-report",
+        default="data/stage4-portfolio-paper.json",
+        help="Stage 4 acceptance manifest used as authoritative Stage 5 input.",
+    )
+    parser.add_argument("--stage5-shadow-report", default=None, help="Optional Stage 5 shadow acceptance report path.")
+    parser.add_argument(
+        "--validate-stage5-shadow-report",
+        default=None,
+        help="Validate an existing Stage 5 shadow acceptance report and exit.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-readiness",
+        action="store_true",
+        help="Run Stage 5 sandbox readiness decision acceptance without broker or order submission.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-readiness-report",
+        default=None,
+        help="Optional Stage 5 sandbox readiness acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-readiness-report",
+        default=None,
+        help="Validate an existing Stage 5 sandbox readiness acceptance report and exit.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-readonly-probe",
+        action="store_true",
+        help="Run the no-credential Stage 5 server-authoritative readonly sandbox probe acceptance.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-readonly-probe-report",
+        default=None,
+        help="Optional Stage 5 readonly sandbox probe acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-readonly-probe-report",
+        default=None,
+        help="Validate an existing Stage 5 readonly sandbox probe acceptance report and exit.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-preflight",
+        action="store_true",
+        help="Run the no-credential Stage 5 sandbox authorization preflight fail-closed acceptance.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-preflight-report",
+        default=None,
+        help="Optional Stage 5 sandbox authorization preflight acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-authorization-preflight-report",
+        default=None,
+        help="Validate an existing Stage 5 sandbox authorization preflight acceptance report and exit.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-review",
+        action="store_true",
+        help="Run the no-credential Stage 5 sandbox authorization review fail-closed acceptance.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-review-report",
+        default=None,
+        help="Optional Stage 5 sandbox authorization review acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-authorization-review-report",
+        default=None,
+        help="Validate an existing Stage 5 sandbox authorization review acceptance report and exit.",
+    )
+    parser.add_argument(
+        "--stage5-exit-acceptance",
+        action="store_true",
+        help="Aggregate all validated Stage 3/4/5 release evidence into the Stage 5 exit manifest.",
+    )
+    parser.add_argument(
+        "--stage5-exit-acceptance-report",
+        default=None,
+        help="Optional Stage 5 exit acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-exit-acceptance-report",
+        default=None,
+        help="Validate an existing Stage 5 exit acceptance report and its source artifacts, then exit.",
     )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
@@ -3561,6 +5204,46 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = load_stage4_portfolio_acceptance_report(Path(args.validate_stage4_portfolio_paper_report))
         print(validate_stage4_portfolio_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage5_shadow_report:
+        manifest = load_stage5_shadow_acceptance_report(Path(args.validate_stage5_shadow_report))
+        print(validate_stage5_shadow_acceptance_manifest(manifest))
+        return 0
+    if args.validate_stage5_sandbox_readiness_report:
+        manifest = load_stage5_sandbox_readiness_acceptance_report(
+            Path(args.validate_stage5_sandbox_readiness_report)
+        )
+        print(validate_stage5_sandbox_readiness_acceptance_manifest(manifest))
+        return 0
+    if args.validate_stage5_sandbox_readonly_probe_report:
+        manifest = load_stage5_sandbox_readonly_probe_acceptance_report(
+            Path(args.validate_stage5_sandbox_readonly_probe_report)
+        )
+        print(validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest))
+        return 0
+    if args.validate_stage5_sandbox_authorization_preflight_report:
+        manifest = load_stage5_sandbox_authorization_preflight_acceptance_report(
+            Path(args.validate_stage5_sandbox_authorization_preflight_report)
+        )
+        print(validate_stage5_sandbox_authorization_preflight_acceptance_manifest(manifest))
+        return 0
+    if args.validate_stage5_sandbox_authorization_review_report:
+        manifest = load_stage5_sandbox_authorization_review_acceptance_report(
+            Path(args.validate_stage5_sandbox_authorization_review_report)
+        )
+        print(validate_stage5_sandbox_authorization_review_acceptance_manifest(manifest))
+        return 0
+    if args.validate_stage5_exit_acceptance_report:
+        ensure_quant_core_import_path()
+        from quant_core.stage5_exit import (
+            load_stage5_exit_acceptance_report,
+            validate_stage5_exit_acceptance_manifest,
+        )
+
+        report_path = Path(args.validate_stage5_exit_acceptance_report)
+        manifest = load_stage5_exit_acceptance_report(report_path)
+        repo_root = report_path.resolve().parent.parent if report_path.parent.name == "data" else Path.cwd()
+        print(validate_stage5_exit_acceptance_manifest(manifest, repo_root=repo_root, verify_sources=True))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -3627,6 +5310,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage4_portfolio_paper=args.stage4_portfolio_paper,
         stage4_portfolio_paper_report=(
             Path(args.stage4_portfolio_paper_report) if args.stage4_portfolio_paper_report else None
+        ),
+        stage5_shadow=args.stage5_shadow,
+        stage5_shadow_stage4_report=Path(args.stage5_shadow_stage4_report),
+        stage5_shadow_report=Path(args.stage5_shadow_report) if args.stage5_shadow_report else None,
+        stage5_sandbox_readiness=args.stage5_sandbox_readiness,
+        stage5_sandbox_readiness_report=(
+            Path(args.stage5_sandbox_readiness_report)
+            if args.stage5_sandbox_readiness_report
+            else None
+        ),
+        stage5_sandbox_readonly_probe=args.stage5_sandbox_readonly_probe,
+        stage5_sandbox_readonly_probe_report=(
+            Path(args.stage5_sandbox_readonly_probe_report)
+            if args.stage5_sandbox_readonly_probe_report
+            else None
+        ),
+        stage5_sandbox_authorization_preflight=args.stage5_sandbox_authorization_preflight,
+        stage5_sandbox_authorization_preflight_report=(
+            Path(args.stage5_sandbox_authorization_preflight_report)
+            if args.stage5_sandbox_authorization_preflight_report
+            else None
+        ),
+        stage5_sandbox_authorization_review=args.stage5_sandbox_authorization_review,
+        stage5_sandbox_authorization_review_report=(
+            Path(args.stage5_sandbox_authorization_review_report)
+            if args.stage5_sandbox_authorization_review_report
+            else None
+        ),
+        stage5_exit_acceptance=args.stage5_exit_acceptance,
+        stage5_exit_acceptance_report=(
+            Path(args.stage5_exit_acceptance_report) if args.stage5_exit_acceptance_report else None
         ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,
         p2_run_id=args.p2_run_id,

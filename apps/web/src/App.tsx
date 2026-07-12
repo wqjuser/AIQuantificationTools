@@ -276,6 +276,7 @@ import {
   PortfolioStage4Section,
   selectCurrentStage4PortfolioWorkflow
 } from "./components/PortfolioStage4Section";
+import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
@@ -284,6 +285,23 @@ import {
   recordStage4PortfolioWorkflow,
   type Stage4PortfolioWorkflow
 } from "./lib/portfolio-stage4";
+import {
+  buildStage5ShadowState,
+  loadStage5SandboxAuthorizationPreflights,
+  loadStage5SandboxAuthorizationReviews,
+  loadStage5SandboxReadinessDecisions,
+  loadStage5ExitAcceptance,
+  loadStage5ShadowSessions,
+  runStage5SandboxAuthorizationPreflight,
+  runStage5SandboxAuthorizationReview,
+  runStage5SandboxReadinessDecision,
+  runStage5ShadowSession,
+  type Stage5SandboxAuthorizationPreflight,
+  type Stage5SandboxAuthorizationReview,
+  type Stage5SandboxReadinessDecision,
+  type Stage5ExitAcceptanceStatus,
+  type Stage5ShadowSession
+} from "./lib/stage5-shadow";
 import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
@@ -497,6 +515,7 @@ import {
   buildResearchWorkspaceStateDraft,
   researchWorkspaceStateMatchesDraft,
   buildResearchRunExportBrowserRows,
+  verifyStage5SandboxReadinessDecisionHashes,
   buildResearchRunExportIndexRows,
   buildResearchRunExportPreviewRows,
   buildResearchRunImportAuditEvent,
@@ -1360,6 +1379,7 @@ const executionAdapterSandboxProbeExecutionConfirmationRows: Array<{
   key: keyof ExecutionAdapterSandboxProbeExecutionConfirmations;
   labelEn: string;
   labelZh: string;
+  authoritative?: boolean;
 }> = [
   {
     key: "probePlanReviewed",
@@ -1369,12 +1389,14 @@ const executionAdapterSandboxProbeExecutionConfirmationRows: Array<{
   {
     key: "readonlyHandshakeCaptured",
     labelEn: "Read-only handshake captured",
-    labelZh: "只读握手证据已记录"
+    labelZh: "只读握手证据已记录",
+    authoritative: true
   },
   {
     key: "accountSnapshotRedacted",
     labelEn: "Account snapshot redacted",
-    labelZh: "账户快照已脱敏"
+    labelZh: "账户快照已脱敏",
+    authoritative: true
   },
   {
     key: "orderSchemaValidated",
@@ -2221,6 +2243,16 @@ export function App() {
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [portfolioStage4Workflows, setPortfolioStage4Workflows] = useState<Stage4PortfolioWorkflow[]>([]);
   const [portfolioStage4RefreshGeneration, setPortfolioStage4RefreshGeneration] = useState(0);
+  const [stage5ShadowSessions, setStage5ShadowSessions] = useState<Stage5ShadowSession[]>([]);
+  const [stage5SandboxReadinessDecisions, setStage5SandboxReadinessDecisions] =
+    useState<Stage5SandboxReadinessDecision[]>([]);
+  const [stage5SandboxAuthorizationPreflights, setStage5SandboxAuthorizationPreflights] =
+    useState<Stage5SandboxAuthorizationPreflight[]>([]);
+  const [stage5SandboxAuthorizationReviews, setStage5SandboxAuthorizationReviews] =
+    useState<Stage5SandboxAuthorizationReview[]>([]);
+  const [stage5ExitAcceptance, setStage5ExitAcceptance] = useState<Stage5ExitAcceptanceStatus | null>(null);
+  const [stage5ExitAcceptanceError, setStage5ExitAcceptanceError] = useState<string | null>(null);
+  const [stage5ShadowError, setStage5ShadowError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -2265,6 +2297,7 @@ export function App() {
   const [simulatingPortfolioPaperOrderId, setSimulatingPortfolioPaperOrderId] = useState<string | null>(null);
   const [isSimulatingPortfolioPaperOrderBatch, setIsSimulatingPortfolioPaperOrderBatch] = useState(false);
   const [isRecordingPortfolioStage4Workflow, setIsRecordingPortfolioStage4Workflow] = useState(false);
+  const [isRunningStage5Shadow, setIsRunningStage5Shadow] = useState(false);
   const [isPreparingPortfolioPeers, setIsPreparingPortfolioPeers] = useState(false);
   const [isLoadingDesktopRelease, setIsLoadingDesktopRelease] = useState(false);
   const [isGeneratingStage1BootstrapPreflight, setIsGeneratingStage1BootstrapPreflight] = useState(false);
@@ -2467,6 +2500,7 @@ export function App() {
   const researchRunImportAuditRequestIdRef = useRef(0);
   const exportPackageRequestCoordinatorRef = useRef(createLatestRequestCoordinator());
   const portfolioStage4RequestCoordinatorRef = useRef(createPortfolioStage4RequestCoordinator());
+  const stage5ShadowRequestIdRef = useRef(0);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
@@ -2514,6 +2548,8 @@ export function App() {
   const researchRunContextBinding = buildResearchRunContextBinding(workspace);
   const strategyDraftRequiresReaudit = workspaceNeedsStrategyReaudit(workspace);
   const currentResearchRunId = researchRunContextBinding.canUseRun ? workspace.researchRun?.runId : null;
+  const currentResearchRunIdRef = useRef(currentResearchRunId);
+  currentResearchRunIdRef.current = currentResearchRunId;
   const resetStage4PortfolioBusyState = useCallback(() => {
     setIsRunningPortfolioBacktest(false);
     setIsRecordingPortfolioPaperOrders(false);
@@ -2524,7 +2560,9 @@ export function App() {
   }, []);
   useLayoutEffect(() => {
     resetStage4PortfolioBusyState();
-    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
+    setIsRunningStage5Shadow(false);
+    stage5ShadowRequestIdRef.current += 1;
+    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunIdRef.current);
   }, [currentResearchRunId, resetStage4PortfolioBusyState]);
   const strategyExperimentUsableSourceKey =
     researchRunContextBinding.canUseRun && workspace.researchRun
@@ -2746,6 +2784,15 @@ export function App() {
     replay: portfolioPaperOrderReplay,
     workflow: portfolioStage4Workflow
   });
+  const stage5ShadowState = buildStage5ShadowState(
+    portfolioStage4Workflow,
+    stage5ShadowSessions,
+    stage5SandboxReadinessDecisions,
+    stage5SandboxAuthorizationPreflights,
+    stage5SandboxAuthorizationReviews,
+    executionAdapterSandboxProbeExecutionRows,
+    executionAdapterSandboxProbeReviewRows
+  );
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -3538,6 +3585,16 @@ export function App() {
   }, [portfolioBacktestDraftKey]);
 
   useEffect(() => {
+    let cancelled = false;
+    void loadStage5ExitAcceptance(quantCoreBaseUrl).then((result) => {
+      if (cancelled) return;
+      setStage5ExitAcceptance(result.acceptance);
+      setStage5ExitAcceptanceError(result.error ?? null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const baseRunId = currentResearchRunId;
     const request = portfolioStage4RequestCoordinatorRef.current.begin(baseRunId);
     const requestIsCurrent = () => portfolioStage4RequestCoordinatorRef.current.isCurrent(request);
@@ -3601,6 +3658,36 @@ export function App() {
       ].find((result) => result.error)?.error ?? null);
     })();
   }, [currentResearchRunId, portfolioStage4RefreshGeneration]);
+
+  useEffect(() => {
+    const baseRunId = currentResearchRunId;
+    let cancelled = false;
+    if (!baseRunId) {
+      setStage5ShadowSessions([]);
+      setStage5SandboxReadinessDecisions([]);
+      setStage5SandboxAuthorizationPreflights([]);
+      setStage5SandboxAuthorizationReviews([]);
+      setStage5ShadowError(null);
+      return;
+    }
+    setStage5ShadowError(null);
+    void Promise.all([
+      loadStage5ShadowSessions(quantCoreBaseUrl, baseRunId),
+      loadStage5SandboxReadinessDecisions(quantCoreBaseUrl, baseRunId),
+      loadStage5SandboxAuthorizationPreflights(quantCoreBaseUrl, baseRunId),
+      loadStage5SandboxAuthorizationReviews(quantCoreBaseUrl, baseRunId)
+    ]).then(([sessionResult, readinessResult, preflightResult, reviewResult]) => {
+      if (cancelled) return;
+      setStage5ShadowSessions(sessionResult.sessions);
+      setStage5SandboxReadinessDecisions(readinessResult.decisions);
+      setStage5SandboxAuthorizationPreflights(preflightResult.preflights);
+      setStage5SandboxAuthorizationReviews(reviewResult.reviews);
+      setStage5ShadowError(
+        sessionResult.error ?? readinessResult.error ?? preflightResult.error ?? reviewResult.error ?? null
+      );
+    });
+    return () => { cancelled = true; };
+  }, [currentResearchRunId]);
 
   useEffect(() => {
     const requestId = strategyValidationRequestIdRef.current + 1;
@@ -5370,6 +5457,9 @@ export function App() {
             )
           ]);
         }
+        if (result.adapterHealthProbe) {
+          setExecutionAdapterHealthProbe({ adapterHealthProbe: result.adapterHealthProbe, source: "core" });
+        }
         if (result.error) {
           setWorkspaceState((current) => ({
             ...current,
@@ -6104,7 +6194,7 @@ export function App() {
     );
     setIsRefreshing(true);
     resetStage4PortfolioBusyState();
-    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunId);
+    portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunIdRef.current);
     setPortfolioStage4RefreshGeneration((current) => current + 1);
     const result = await loadTerminalWorkspace(quantCoreBaseUrl);
     const researchContextUrlState = resolveInitialResearchContextUrlState();
@@ -6224,7 +6314,6 @@ export function App() {
     await refreshAuditSigningKeys();
     setIsRefreshing(false);
   }, [
-    currentResearchRunId,
     refreshAuditSigningKeys,
     refreshRunHistory,
     refreshSettingsStatus,
@@ -7135,6 +7224,104 @@ export function App() {
     resetStage4PortfolioBusyState
   ]);
 
+  const runStage5ShadowPrimaryAction = useCallback(async (
+    reviewInput?: { outcome: "approved" | "rejected"; reason: string }
+  ) => {
+    if (!portfolioStage4Workflow || isRunningStage5Shadow) return;
+    const requestId = stage5ShadowRequestIdRef.current + 1;
+    stage5ShadowRequestIdRef.current = requestId;
+    setIsRunningStage5Shadow(true);
+    setStage5ShadowError(null);
+    if (stage5ShadowState.actionId === "record-stage5-sandbox-authorization-review") {
+      const preflight = stage5ShadowState.authorizationPreflight;
+      if (!preflight || !reviewInput?.reason.trim()) {
+        setIsRunningStage5Shadow(false);
+        setStage5ShadowError("Stage 5 sandbox authorization review reason is required");
+        return;
+      }
+      const result = await runStage5SandboxAuthorizationReview(
+        quantCoreBaseUrl, preflight, reviewInput.outcome, reviewInput.reason.trim()
+      );
+      if (stage5ShadowRequestIdRef.current !== requestId) return;
+      setIsRunningStage5Shadow(false);
+      if (!result.review) {
+        setStage5ShadowError(result.error ?? "Stage 5 sandbox authorization review failed");
+        return;
+      }
+      const review = result.review;
+      setStage5SandboxAuthorizationReviews((current) => [
+        review,
+        ...current.filter((row) => row.reviewId !== review.reviewId)
+      ]);
+      return;
+    }
+    if (stage5ShadowState.actionId === "run-stage5-sandbox-authorization-preflight") {
+      const decision = stage5ShadowState.readinessDecision;
+      const executionId = stage5ShadowState.sandboxProbeExecutionId;
+      const reviewId = stage5ShadowState.sandboxProbeReviewId;
+      if (!decision || !executionId || !reviewId) {
+        setIsRunningStage5Shadow(false);
+        setStage5ShadowError("Stage 5 authoritative sandbox probe evidence is required");
+        return;
+      }
+      const result = await runStage5SandboxAuthorizationPreflight(
+        quantCoreBaseUrl, decision, executionId, reviewId
+      );
+      if (stage5ShadowRequestIdRef.current !== requestId) return;
+      setIsRunningStage5Shadow(false);
+      if (!result.preflight) {
+        setStage5ShadowError(result.error ?? "Stage 5 sandbox authorization preflight failed");
+        return;
+      }
+      const preflight = result.preflight;
+      setStage5SandboxAuthorizationPreflights((current) => [
+        preflight,
+        ...current.filter((row) => row.preflightId !== preflight.preflightId)
+      ]);
+      return;
+    }
+    if (stage5ShadowState.actionId === "review-stage5-sandbox-readiness") {
+      if (!stage5ShadowState.session) {
+        setIsRunningStage5Shadow(false);
+        setStage5ShadowError("Stage 5 reconciled shadow session is required");
+        return;
+      }
+      const result = await runStage5SandboxReadinessDecision(
+        quantCoreBaseUrl,
+        portfolioStage4Workflow,
+        stage5ShadowState.session
+      );
+      if (stage5ShadowRequestIdRef.current !== requestId) return;
+      setIsRunningStage5Shadow(false);
+      if (!result.decision) {
+        setStage5ShadowError(result.error ?? "Stage 5 sandbox readiness review failed");
+        return;
+      }
+      const decision = result.decision;
+      setStage5SandboxReadinessDecisions((current) => [
+        decision,
+        ...current.filter((row) => row.decisionId !== decision.decisionId)
+      ]);
+      return;
+    }
+    const result = await runStage5ShadowSession(
+      quantCoreBaseUrl,
+      portfolioStage4Workflow,
+      stage5ShadowState.session?.failureMode ?? "none"
+    );
+    if (stage5ShadowRequestIdRef.current !== requestId) return;
+    setIsRunningStage5Shadow(false);
+    if (!result.session) {
+      setStage5ShadowError(result.error ?? "Stage 5 shadow validation failed");
+      return;
+    }
+    const session = result.session;
+    setStage5ShadowSessions((current) => [
+      session,
+      ...current.filter((row) => row.sessionId !== session.sessionId)
+    ]);
+  }, [isRunningStage5Shadow, portfolioStage4Workflow, stage5ShadowState]);
+
   const exportPortfolioBacktestMarkdown = useCallback(() => {
     const portfolio = portfolioBacktestState.portfolio;
     const markdown = buildPortfolioBacktestReportMarkdown(portfolio, portfolioBacktestDraft);
@@ -7677,6 +7864,7 @@ export function App() {
         quantCoreBaseUrl,
         result.exportPackage
       );
+      await verifyStage5SandboxReadinessDecisionHashes(result.exportPackage);
       if (!requestCoordinator.isCurrent(inspectionRequestId)) {
         return { ok: false, error: "Research run export inspect superseded" };
       }
@@ -8451,6 +8639,7 @@ export function App() {
           return;
         }
         exportPackage = await withVerifiedResearchRunExportPackageReportSignatures(quantCoreBaseUrl, exportPackage);
+        await verifyStage5SandboxReadinessDecisionHashes(exportPackage);
         if (!requestCoordinator.isCurrent(requestId)) {
           return;
         }
@@ -12168,7 +12357,7 @@ export function App() {
   }, [refreshWorkspace]);
 
   useEffect(() => {
-    if (activeWorkAreaId !== "ai-review") {
+    if (activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "execution") {
       initialAiReviewRunIdRef.current = null;
       aiReviewRunRestoreAbortControllerRef.current?.abort();
     }
@@ -12852,6 +13041,16 @@ export function App() {
     if (activeWorkAreaId === "execution") {
       return (
         <>
+          <ExecutionStage5ShadowSection
+            busy={isRunningStage5Shadow}
+            error={stage5ShadowError}
+            exitAcceptance={stage5ExitAcceptance}
+            exitAcceptanceError={stage5ExitAcceptanceError}
+            i18n={i18n}
+            onOpenSettings={() => selectProductWorkArea("settings")}
+            onPrimaryAction={(reviewInput) => void runStage5ShadowPrimaryAction(reviewInput)}
+            state={stage5ShadowState}
+          />
           <ExecutionPanel
             className="workflow-execution-panel"
             i18n={i18n}
@@ -21649,6 +21848,7 @@ function PlatformSettingsPanel({
             const probeExecution = sandboxProbeExecutionRows.find(
               (item) => item.adapterId === row.adapterId && item.sandboxProbePlanId === row.id
             );
+            const authoritativeHealthReady = probeExecution?.authoritativeHealthReady ?? false;
             return (
               <article className={`adapter-sandbox-probe-execution-row ${probeExecution?.tone ?? row.tone}`} key={row.id}>
                 <div>
@@ -21663,23 +21863,32 @@ function PlatformSettingsPanel({
                   {adapterCertificationBoundaryLabel(i18n, row.boundary)}
                 </p>
                 <div className="adapter-sandbox-probe-execution-confirmations">
-                  {executionAdapterSandboxProbeExecutionConfirmationRows.map((item) => (
-                    <label
-                      className={`adapter-sandbox-probe-execution-confirmation ${
-                        confirmations[item.key] ? "positive" : "warning"
-                      }`}
-                      key={`${row.id}-${item.key}`}
-                    >
-                      <input
-                        checked={confirmations[item.key]}
-                        onChange={(event) =>
-                          onSandboxProbeExecutionConfirmationChange?.(row.id, item.key, event.currentTarget.checked)
-                        }
-                        type="checkbox"
-                      />
-                      <span>{i18n.locale === "zh-CN" ? item.labelZh : item.labelEn}</span>
-                    </label>
-                  ))}
+                  {executionAdapterSandboxProbeExecutionConfirmationRows.map((item) => {
+                    const checked = item.authoritative ? authoritativeHealthReady : confirmations[item.key];
+                    return (
+                      <label
+                        className={`adapter-sandbox-probe-execution-confirmation ${checked ? "positive" : "warning"}`}
+                        key={`${row.id}-${item.key}`}
+                      >
+                        <input
+                          checked={checked}
+                          disabled={item.authoritative}
+                          onChange={(event) =>
+                            onSandboxProbeExecutionConfirmationChange?.(row.id, item.key, event.currentTarget.checked)
+                          }
+                          type="checkbox"
+                        />
+                        <span>
+                          {i18n.locale === "zh-CN" ? item.labelZh : item.labelEn}
+                          {item.authoritative
+                            ? i18n.locale === "zh-CN"
+                              ? "（服务端探针）"
+                              : " (server probe)"
+                            : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
                 <button
                   className="adapter-certification-apply-button"
@@ -21703,6 +21912,10 @@ function PlatformSettingsPanel({
                       {adapterSandboxProbeExecutionConfirmationSummary(i18n, probeExecution.confirmationSummary)} ·{" "}
                       {adapterCertificationApplyBlockerSummary(i18n, probeExecution.blockerSummary)} ·{" "}
                       {adapterCertificationBoundaryLabel(i18n, probeExecution.boundary)}
+                    </span>
+                    <span>
+                      {i18n.locale === "zh-CN" ? "权威探针" : "Authoritative probe"} ·{" "}
+                      {probeExecution.healthProbeSummary}
                     </span>
                     <em>{probeExecution.auditEventId}</em>
                   </div>
@@ -28379,6 +28592,10 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "ai-reviews": "AI 评审",
       "ai-reviews-v2": i18n.t("archive.aiReview.authoritative"),
       "ai-review-decisions": i18n.t("archive.aiReview.decision"),
+      "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
+      "stage5-sandbox-readiness-decisions": "Stage 5 Sandbox 准入决策",
+      "stage5-sandbox-authorization-preflights": "Stage 5 Sandbox 授权预检",
+      "stage5-sandbox-authorization-reviews": "Stage 5 Sandbox 授权复核",
       "audit-summary": "审计摘要",
       "audit-report": "审计报告",
       "execution-handoff": "执行交接"
@@ -28506,6 +28723,10 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "adapter-paper-executions": "适配器模拟执行",
       "portfolio-paper-orders": "组合模拟委托",
       "ai-review-runs": "AI 评审记录",
+      "stage4-portfolio-workflows": "Stage 4 组合工作流",
+      "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
+      "stage5-sandbox-readiness-decisions": "Stage 5 Sandbox 准入决策",
+      "stage5-sandbox-authorization-preflights": "Stage 5 Sandbox 授权预检",
       "audit-summary": "导入审计摘要",
       "audit-report": "导入审计报告",
       "backtest-report": "导入回测报告",
