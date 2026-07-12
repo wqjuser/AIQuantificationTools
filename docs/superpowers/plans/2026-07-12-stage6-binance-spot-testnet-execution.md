@@ -65,14 +65,21 @@
 
 - [x] 同步 README、产品规划、架构、`CONTEXT.md`、ADR 和中文 `docs/stage6-sandbox-operations.md`。
 - [x] 运维文档覆盖密钥配置、启动检查、黄金路径、kill switch、未知状态恢复、对账、撤单和凭据轮换。
-- [ ] 运行聚焦测试、Python/Web 全量测试、生产构建与 Stage 3/4/5 回归门禁。
+- [x] 运行聚焦测试、Python/Web 全量测试、生产构建与 Stage 3/4/5 回归门禁。
 - [ ] 运行 Stage 6 无密钥 Docker smoke/validate、真实 Testnet smoke/validate和浏览器验收。（无密钥与浏览器已通过；真实 Testnet 等待专用凭据）
-- [ ] 执行 Standards/Spec 双轴独立审查并修复全部重要问题。
+- [x] 执行 Standards/Spec 双轴独立审查并修复全部重要问题。
 - [ ] 更新本计划的实际验证结果，提交、推送、创建 PR、等待 CI 通过并合并到 main。
 
 ## 验收记录
 
-实施完成后填写测试数量、构建结果、Docker manifest hash、真实 Testnet 最终订单状态、浏览器覆盖、审查结论、提交与 PR。
+- 聚焦 Stage 6：13 项 Python 测试通过，覆盖超过 50 条事件的分页回读、崩溃 pending 查询后同 ID 一次重试、撤单缺单禁止反向提交、终态恢复与 detached 导入阻断。
+- 全量回归：Python 619/619、Web 936/936；`npm run build` 通过，仅保留既有 chunk size 提示。
+- Docker 回归：Stage 3 local baseline、Stage 4 2 legs/2 orders/replayExact、Stage 5 5 drills/6 sessions/restartExact/portable 和 exit maintenance 全部通过；Stage 6 无密钥 smoke/validate 通过。
+- Stage 6 无密钥 manifest hash 为 `40eacb8bc5c6db3514e2d1da27aedcb5675630f8f4617d1f6d1284c779e827ed`；专用凭据缺失、通用凭据拒绝、全部 live 字段为 false、`liveBlockedBoundary=true`。
+- 浏览器验收：375px 无横向溢出；Execution Stage 6 阻断证据、独立 kill switch、刷新持久化与 exit missing 状态已验证，无控制台错误。
+- 首轮 Standards/Spec 审查发现 5 个 Important，已修复事件分页、pending 恢复重试、统一交易所证据入口、撤单禁止反向提交，以及真实门禁绕过 API/硬编码 checks 的问题；最终复审为 Critical 0、Important 0、Minor 0。
+- 真实 Binance Spot Testnet smoke 未运行：当前环境没有 `CCXT_SANDBOX_API_KEY` / `CCXT_SANDBOX_SECRET`。因此不生成真实 manifest，不生成 Stage 6 exit acceptance，Stage 6 保持 current。
+- 实现提交：`2071065 feat: implement stage6 sandbox execution`；审查修复提交与 PR 待填写。
 
 ## 明确不做
 

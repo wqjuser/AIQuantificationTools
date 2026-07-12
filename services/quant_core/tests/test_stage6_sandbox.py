@@ -50,6 +50,7 @@ class FakeBinance:
     def __init__(self, config: dict) -> None:
         self.config = config
         self.calls: list[str] = []
+        self.statuses: dict[str, str] = {}
         self.__class__.instances.append(self)
 
     def set_sandbox_mode(self, enabled: bool) -> None:
@@ -77,15 +78,29 @@ class FakeBinance:
 
     def create_order(self, symbol: str, _type: str, _side: str, amount: float, _price: float, params: dict) -> dict:
         self.calls.append("create")
+        self.statuses[params["newClientOrderId"]] = "open"
         return _exchange_order(params["newClientOrderId"], symbol=symbol, amount=amount)
 
     def fetch_order(self, _order_id: str | None, symbol: str, params: dict) -> dict:
         self.calls.append("fetch")
-        return _exchange_order(params["origClientOrderId"], symbol=symbol)
+        client_id = params["origClientOrderId"]
+        return _exchange_order(client_id, symbol=symbol, status=self.statuses.get(client_id, "open"))
 
     def cancel_order(self, _order_id: str | None, symbol: str, params: dict) -> dict:
         self.calls.append("cancel")
-        return _exchange_order(params["origClientOrderId"], symbol=symbol, status="canceled")
+        client_id = params["origClientOrderId"]
+        self.statuses[client_id] = "canceled"
+        return _exchange_order(client_id, symbol=symbol, status="canceled")
+
+
+class OrderNotFound(Exception):
+    pass
+
+
+class MissingThenCreatedBinance(FakeBinance):
+    def fetch_order(self, _order_id: str | None, symbol: str, params: dict) -> dict:
+        self.calls.append("fetch")
+        raise OrderNotFound("missing")
 
 
 def _exchange_order(client_order_id: str, *, symbol: str = "BTC/USDT", amount: float = 1, status: str = "open") -> dict:
@@ -256,6 +271,65 @@ class Stage6SandboxTest(unittest.TestCase):
                 ),
             )
             self.assertEqual(service.submit(authorization["authorizationId"])["orders"][0]["state"], "open")
+
+    def test_restart_retries_pending_order_once_after_query_proves_missing(self) -> None:
+        workflow, session, readiness, preflight, review = _authority_chain()
+        route = BinanceSpotTestnetRoute(
+            env={"CCXT_SANDBOX_API_KEY": "sandbox-key", "CCXT_SANDBOX_SECRET": "sandbox-secret"},
+            ccxt_module=SimpleNamespace(binance=MissingThenCreatedBinance),
+        )
+        authorization = build_stage6_sandbox_batch_authorization(
+            workflow, session, readiness, preflight, review, route.normalize_orders(workflow), operator="operator"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            service = Stage6SandboxExecutionService(AuditEventStore(Path(directory) / "audit.sqlite"), route)
+            service.record_authorization(authorization)
+            first = authorization["orders"][0]
+            service._record_transition(authorization, first, "submission_pending", attempt=1)
+            recovered = service.reconcile(authorization["authorizationId"])
+            row = recovered["orders"][0]
+            self.assertEqual((row["state"], row["attempt"]), ("open", 2))
+            self.assertEqual(MissingThenCreatedBinance.instances[-1].calls[-3:], ["fetch", "fetch", "create"])
+
+    def test_transition_readback_paginates_beyond_store_page_limit(self) -> None:
+        workflow, session, readiness, preflight, review = _authority_chain()
+        authorization = build_stage6_sandbox_batch_authorization(
+            workflow, session, readiness, preflight, review, self.route.normalize_orders(workflow), operator="operator"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            service = Stage6SandboxExecutionService(AuditEventStore(Path(directory) / "audit.sqlite"), self.route)
+            service.record_authorization(authorization)
+            first = authorization["orders"][0]
+            for sequence in range(55):
+                service._record_transition(
+                    authorization,
+                    first,
+                    "open" if sequence < 54 else "canceled",
+                    attempt=1,
+                    exchange_evidence={"operation": "query", "clientOrderId": first["clientOrderId"]},
+                )
+            transitions = service._transitions(authorization["authorizationId"])
+            self.assertEqual(len(transitions), 55)
+            self.assertEqual(service.batch(authorization["authorizationId"])["orders"][0]["state"], "canceled")
+
+    def test_cancel_reconciliation_never_turns_missing_order_into_submission(self) -> None:
+        workflow, session, readiness, preflight, review = _authority_chain()
+        route = BinanceSpotTestnetRoute(
+            env={"CCXT_SANDBOX_API_KEY": "sandbox-key", "CCXT_SANDBOX_SECRET": "sandbox-secret"},
+            ccxt_module=SimpleNamespace(binance=MissingThenCreatedBinance),
+        )
+        authorization = build_stage6_sandbox_batch_authorization(
+            workflow, session, readiness, preflight, review, route.normalize_orders(workflow), operator="operator"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            service = Stage6SandboxExecutionService(AuditEventStore(Path(directory) / "audit.sqlite"), route)
+            service.record_authorization(authorization)
+            first = authorization["orders"][0]
+            service._record_transition(authorization, first, "submission_pending", attempt=1)
+            result = service.cancel(authorization["authorizationId"], first["orderId"])
+            calls = MissingThenCreatedBinance.instances[-1].calls
+            self.assertEqual(result["orders"][0]["state"], "reconciliation_required")
+            self.assertNotIn("create", calls)
 
     def test_http_golden_path_rebuilds_authority_then_submits(self) -> None:
         workflow, session, readiness, preflight, review = _authority_chain()

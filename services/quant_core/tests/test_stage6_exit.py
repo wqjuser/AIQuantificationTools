@@ -28,6 +28,7 @@ def _source(*, real: bool) -> dict:
         "kind": "aiqt.stage6BinanceSpotTestnetAcceptance" if real else "aiqt.stage6SandboxSafetyAcceptance",
         "schemaVersion": 1, "generatedAt": "2026-07-12T10:00:00+00:00", "status": "accepted",
         "checks": [{"id": "accepted", "passed": True}], "orders": [{"state": "canceled"}] if real else [],
+        "actionEvidence": ([{"operation": operation} for operation in ("create", "query", "cancel")] if real else []),
         "authorizationId": "stage6-auth-1" if real else "", "authorizationHash": "a" * 64 if real else "",
         "sandboxOrderSubmissionAllowed": real, "sandboxOrderSubmitted": real, "sandboxRouteExecuted": real,
         "sandboxOnly": True, "liveTradingAllowed": False, "liveOrderSubmissionAllowed": False,

@@ -128,8 +128,21 @@ def _validate_stage6_source(value: dict[str, Any], *, real: bool) -> None:
             raise ValueError("Stage 6 source live boundary is invalid")
     if value.get("manifestHash") != _hash(value, "manifestHash"):
         raise ValueError("Stage 6 source manifest hash is invalid")
-    if real and (not value.get("authorizationId") or not value.get("orders")):
-        raise ValueError("Stage 6 real Testnet evidence is incomplete")
+    checks = value.get("checks")
+    if not isinstance(checks, list) or not checks or any(
+        not isinstance(check, dict) or check.get("passed") is not True for check in checks
+    ):
+        raise ValueError("Stage 6 source acceptance checks are invalid")
+    if real:
+        orders = value.get("orders")
+        actions = value.get("actionEvidence")
+        operations = {row.get("operation") for row in actions if isinstance(row, dict)} if isinstance(actions, list) else set()
+        if (
+            not value.get("authorizationId") or not isinstance(orders, list) or not orders
+            or any(order.get("state") not in {"filled", "canceled", "expired", "rejected"} for order in orders)
+            or not {"create", "query", "cancel"}.issubset(operations)
+        ):
+            raise ValueError("Stage 6 real Testnet evidence is incomplete")
 
 
 def _status(status: str, available: bool, path: Path, value: dict[str, Any] | None, summary: str, reason: str) -> dict[str, Any]:

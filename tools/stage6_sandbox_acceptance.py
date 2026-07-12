@@ -9,8 +9,11 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Any
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 
 LIVE_SAFETY = {
@@ -34,7 +37,7 @@ def _validate(manifest: Any, *, real: bool | None = None) -> str:
     if real is not None and is_real is not real:
         raise ValueError("stage6 acceptance kind is invalid")
     expected = {
-        "kind", "schemaVersion", "generatedAt", "status", "checks", "orders",
+        "kind", "schemaVersion", "generatedAt", "status", "checks", "orders", "actionEvidence",
         "authorizationId", "authorizationHash", "manifestHash", "sandboxOrderSubmissionAllowed",
         "sandboxOrderSubmitted", "sandboxRouteExecuted", *LIVE_SAFETY,
     }
@@ -53,11 +56,16 @@ def _validate(manifest: Any, *, real: bool | None = None) -> str:
     if not all(isinstance(check, dict) and set(check) == {"id", "passed"} and check["passed"] is True for check in manifest["checks"]):
         raise ValueError("stage6 acceptance check failed")
     if is_real:
-        if not manifest["authorizationId"] or not manifest["authorizationHash"] or not manifest["orders"]:
+        operations = {row.get("operation") for row in manifest["actionEvidence"] if isinstance(row, dict)}
+        if (
+            not manifest["authorizationId"] or not manifest["authorizationHash"] or not manifest["orders"]
+            or not isinstance(manifest["actionEvidence"], list) or not manifest["actionEvidence"]
+            or not {"create", "query", "cancel"}.issubset(operations)
+        ):
             raise ValueError("stage6 real acceptance evidence is incomplete")
         if any(order.get("state") not in {"filled", "canceled", "expired", "rejected"} for order in manifest["orders"]):
             raise ValueError("stage6 real acceptance has unreconciled orders")
-    elif manifest["authorizationId"] or manifest["authorizationHash"] or manifest["orders"]:
+    elif manifest["authorizationId"] or manifest["authorizationHash"] or manifest["orders"] or manifest["actionEvidence"]:
         raise ValueError("stage6 no-credential acceptance must not contain order evidence")
     if manifest["manifestHash"] != _hash({key: value for key, value in manifest.items() if key != "manifestHash"}):
         raise ValueError("stage6 acceptance hash is invalid")
@@ -65,7 +73,8 @@ def _validate(manifest: Any, *, real: bool | None = None) -> str:
 
 
 def _manifest(*, kind: str, checks: list[dict[str, Any]], orders: list[dict[str, Any]] | None = None,
-              authorization: dict[str, Any] | None = None) -> dict[str, Any]:
+              authorization: dict[str, Any] | None = None,
+              action_evidence: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     value = {
         "kind": kind,
         "schemaVersion": 1,
@@ -73,6 +82,7 @@ def _manifest(*, kind: str, checks: list[dict[str, Any]], orders: list[dict[str,
         "status": "accepted",
         "checks": checks,
         "orders": orders or [],
+        "actionEvidence": action_evidence or [],
         "authorizationId": str((authorization or {}).get("authorizationId") or ""),
         "authorizationHash": str((authorization or {}).get("authorizationHash") or ""),
         "sandboxOrderSubmissionAllowed": kind == "aiqt.stage6BinanceSpotTestnetAcceptance",
@@ -108,36 +118,59 @@ def _container_no_credentials() -> dict[str, Any]:
     )
 
 
-def _container_real(path: Path) -> dict[str, Any]:
+def _detached_import_readback(export_payload: dict[str, Any], authorization_id: str) -> bool:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "quant_core"))
     from quant_core.audit_events import AuditEventStore
+    from quant_core.runs import research_run_import_audit_events
     from quant_core.stage6_sandbox import BinanceSpotTestnetRoute, Stage6SandboxExecutionService
 
-    authorization = json.loads(path.read_text())
     with tempfile.TemporaryDirectory() as directory:
         store = AuditEventStore(Path(directory) / "audit.sqlite")
-        service = Stage6SandboxExecutionService(store, BinanceSpotTestnetRoute())
-        service.record_authorization(authorization)
-        batch = service.submit(authorization["authorizationId"])
-        service = Stage6SandboxExecutionService(store, BinanceSpotTestnetRoute())
-        batch = service.reconcile(authorization["authorizationId"])
-        for order in batch["orders"]:
-            if order["state"] in {"open", "partially_filled", "submission_pending", "reconciliation_required"}:
-                batch = service.cancel(authorization["authorizationId"], order["orderId"])
-        batch = service.reconcile(authorization["authorizationId"])
-    orders = [{key: order.get(key) for key in ("orderId", "clientOrderId", "state", "attempt")} for order in batch["orders"]]
-    return _manifest(
-        kind="aiqt.stage6BinanceSpotTestnetAcceptance",
-        authorization=authorization,
-        orders=orders,
-        checks=[
-            {"id": "sandbox-submission", "passed": True},
-            {"id": "query-before-recovery", "passed": True},
-            {"id": "restart-readback", "passed": True},
-            {"id": "terminal-reconciliation", "passed": not any(order["state"] in {"open", "partially_filled", "submission_pending", "reconciliation_required"} for order in batch["orders"])},
-            {"id": "live-boundary-immutable", "passed": True},
-        ],
+        events = research_run_import_audit_events(
+            export_payload, run_id=export_payload["export"]["manifest"]["runId"]
+        )
+        for event in events:
+            store.record(event)
+        service = Stage6SandboxExecutionService(store, BinanceSpotTestnetRoute(env={}))
+        if service.batch(authorization_id)["authorizationId"] != authorization_id:
+            return False
+        try:
+            service.reconcile(authorization_id)
+        except ValueError as error:
+            return "detached" in str(error)
+        return False
+
+
+def _api(method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    body = json.dumps(payload).encode() if payload is not None else None
+    request = Request(
+        f"http://127.0.0.1:5173{path}",
+        data=body,
+        method=method,
+        headers={"Content-Type": "application/json"} if body is not None else {},
     )
+    try:
+        with urlopen(request, timeout=30) as response:
+            value = json.load(response)
+    except HTTPError as error:
+        detail = error.read().decode(errors="replace")
+        raise RuntimeError(f"stage6 API {method} {path} failed: {error.code} {detail}") from error
+    if not isinstance(value, dict):
+        raise RuntimeError(f"stage6 API {method} {path} returned invalid JSON")
+    return value
+
+
+def _wait_for_api() -> None:
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        try:
+            with urlopen("http://127.0.0.1:5173/health", timeout=2) as response:
+                if json.load(response).get("status") == "ok":
+                    return
+        except OSError:
+            pass
+        time.sleep(0.5)
+    raise RuntimeError("stage6 Docker API did not recover after restart")
 
 
 def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
@@ -148,7 +181,7 @@ def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) ->
     return completed.stdout
 
 
-def _orchestrate(repo: Path, report: Path, authorization: Path | None, *, build: bool = True) -> dict[str, Any]:
+def _orchestrate(repo: Path, report: Path, real_request: Path | None, *, build: bool = True) -> dict[str, Any]:
     env = dict(os.environ)
     env["INSTALL_DATA_DEPS"] = "true"
     _run(["docker", "compose", "config"], cwd=repo, env=env)
@@ -156,18 +189,66 @@ def _orchestrate(repo: Path, report: Path, authorization: Path | None, *, build:
     with urlopen("http://127.0.0.1:5173/health", timeout=30) as response:
         if json.load(response).get("status") != "ok":
             raise RuntimeError("stage6 Docker API health check failed")
-    if authorization:
+    if real_request:
         if not os.environ.get("CCXT_SANDBOX_API_KEY") or not os.environ.get("CCXT_SANDBOX_SECRET"):
             raise RuntimeError("stage6 real Testnet acceptance requires dedicated sandbox credentials")
-        command = ["docker", "compose", "run", "--rm", "-T", "-v", f"{authorization.resolve()}:/tmp/stage6-authorization.json:ro", "api", "python", "tools/stage6_sandbox_acceptance.py", "--container-real", "/tmp/stage6-authorization.json"]
+        request_payload = json.loads(real_request.read_text())
+        required = {"workflowId", "shadowSessionId", "readinessDecisionId", "preflightId", "reviewId", "operator"}
+        if not isinstance(request_payload, dict) or set(request_payload) != required:
+            raise ValueError("stage6 real acceptance request fields are invalid")
+        authorization = _api("POST", "/api/execution/stage6/sandbox-authorizations", request_payload)["sandboxBatchAuthorization"]
+        authorization_id = authorization["authorizationId"]
+        batch = _api("POST", "/api/execution/stage6/sandbox-batches", {"authorizationId": authorization_id})["sandboxBatch"]
+        batch = _api("POST", "/api/execution/stage6/sandbox-reconciliations", {"authorizationId": authorization_id})["sandboxBatch"]
+        for order in batch["orders"]:
+            batch = _api("POST", "/api/execution/stage6/sandbox-cancellations", {
+                "authorizationId": authorization_id, "orderId": order["orderId"],
+            })["sandboxBatch"]
+        batch = _api("POST", "/api/execution/stage6/sandbox-reconciliations", {"authorizationId": authorization_id})["sandboxBatch"]
+        before_restart = batch
+        _run(["docker", "compose", "restart", "api"], cwd=repo, env=env)
+        _wait_for_api()
+        batch = _api("GET", f"/api/execution/stage6/sandbox-batches?authorizationId={quote(authorization_id)}")["sandboxBatch"]
+        export_payload = _api("GET", f"/api/research/runs/{quote(authorization['baseRunId'])}/export")
+        transitions = [
+            event["metadata"]["snapshot"] for event in export_payload["export"]["auditEvents"]
+            if event.get("eventType") == "stage6_sandbox_order_transition"
+            and event.get("metadata", {}).get("snapshot", {}).get("authorizationId") == authorization_id
+        ]
+        action_evidence = [
+            {
+                "sequence": row["sequence"], "orderId": row["orderId"], "state": row["state"],
+                "operation": row.get("exchangeEvidence", {}).get("operation", ""),
+                "exchangeOrderId": row.get("exchangeEvidence", {}).get("exchangeOrderId", ""),
+                "error": row.get("exchangeEvidence", {}).get("error", row.get("error", "")),
+            }
+            for row in transitions if row.get("exchangeEvidence", {}).get("operation")
+        ]
+        operations = {row["operation"] for row in action_evidence}
+        orders = [{key: order.get(key) for key in ("orderId", "clientOrderId", "state", "attempt")} for order in batch["orders"]]
+        terminal = not any(order["state"] in {"open", "partially_filled", "submission_pending", "reconciliation_required"} for order in orders)
+        manifest = _manifest(
+            kind="aiqt.stage6BinanceSpotTestnetAcceptance", authorization=authorization,
+            orders=orders, action_evidence=action_evidence,
+            checks=[
+                {"id": "authoritative-api-authorization", "passed": authorization["baseRunId"] == batch["baseRunId"]},
+                {"id": "sandbox-submission-audited", "passed": "create" in operations},
+                {"id": "exchange-query-audited", "passed": "query" in operations},
+                {"id": "cancel-attempt-audited", "passed": "cancel" in operations},
+                {"id": "api-restart-readback", "passed": before_restart["authorizationId"] == batch["authorizationId"]},
+                {"id": "detached-import-readback", "passed": _detached_import_readback(export_payload, authorization_id)},
+                {"id": "terminal-reconciliation", "passed": terminal},
+                {"id": "live-boundary-immutable", "passed": True},
+            ],
+        )
     else:
         command = ["docker", "compose", "exec", "-T", "-e", "CCXT_SANDBOX_API_KEY=", "-e", "CCXT_SANDBOX_SECRET=", "api", "python", "tools/stage6_sandbox_acceptance.py", "--container-no-credentials"]
-    output = _run(command, cwd=repo, env=env)
-    manifest = json.loads(next(line for line in reversed(output.splitlines()) if line.startswith("{")))
-    _validate(manifest, real=authorization is not None)
+        output = _run(command, cwd=repo, env=env)
+        manifest = json.loads(next(line for line in reversed(output.splitlines()) if line.startswith("{")))
+    _validate(manifest, real=real_request is not None)
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
-    if authorization:
+    if real_request:
         sys.path.insert(0, str(repo / "services" / "quant_core"))
         from quant_core.stage6_exit import build_stage6_exit_acceptance_manifest, write_stage6_exit_acceptance_report
 
@@ -188,10 +269,9 @@ def main() -> int:
     parser.add_argument("--report", type=Path, default=Path("data/stage6-sandbox-safety.json"))
     parser.add_argument("--validate", type=Path)
     parser.add_argument("--validate-exit", type=Path)
-    parser.add_argument("--real-authorization", type=Path)
+    parser.add_argument("--real-request", "--real-authorization", dest="real_request", type=Path)
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--container-no-credentials", action="store_true")
-    parser.add_argument("--container-real", type=Path)
     args = parser.parse_args()
     if args.validate:
         print(_validate(json.loads(args.validate.read_text())))
@@ -205,11 +285,9 @@ def main() -> int:
         return 0
     if args.container_no_credentials:
         manifest = _container_no_credentials()
-    elif args.container_real:
-        manifest = _container_real(args.container_real)
     else:
         repo = Path(__file__).resolve().parents[1]
-        manifest = _orchestrate(repo, args.report, args.real_authorization, build=not args.no_build)
+        manifest = _orchestrate(repo, args.report, args.real_request, build=not args.no_build)
     print(json.dumps(manifest, separators=(",", ":")))
     return 0
 

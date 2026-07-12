@@ -92,12 +92,12 @@ npm run docker:smoke:p1:validate
 
 Stage 6 在 Execution 提供唯一 Sandbox 黄金路径：从同一条 Stage 4 workflow 与 Stage 5 已批准证据链生成规范化 GTC 限价单，进行 10 分钟批次授权，再提交、查询、撤单和事件驱动对账。实现只复用现有 `AuditEventStore`、Stage 4 风险限额和稳定 `clientOrderId`，固定 Binance Spot Testnet；不支持生产 endpoint、真实资金、Futures、杠杆、多交易所或手填委托。
 
-API 服务的写路由只读取 `CCXT_SANDBOX_API_KEY` 与 `CCXT_SANDBOX_SECRET`，不回退到通用 CCXT 变量。无密钥 Docker 门禁必须 fail closed；真实 Testnet 验收需要一份 10 分钟内生成的 canonical authorization，并输出完全脱敏的终态清单：
+API 服务的写路由只读取 `CCXT_SANDBOX_API_KEY` 与 `CCXT_SANDBOX_SECRET`，不回退到通用 CCXT 变量。无密钥 Docker 门禁必须 fail closed；真实 Testnet 验收只接收权威证据 ID，由运行中的 API 重建 10 分钟授权，并输出完全脱敏的终态清单：
 
 ```powershell
 npm run docker:smoke:stage6
 npm run docker:smoke:stage6:validate
-# 人工发布环境：先把权威授权保存为 data/stage6-sandbox-authorization.json
+# 人工发布环境：先按运维文档填写 data/stage6-sandbox-acceptance-request.json
 npm run docker:smoke:stage6:real
 npm run docker:smoke:stage6:real:validate
 npm run docker:smoke:stage6:exit:validate

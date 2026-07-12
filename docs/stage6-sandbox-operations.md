@@ -42,7 +42,18 @@ npm run docker:smoke:stage6
 npm run docker:smoke:stage6:validate
 ```
 
-真实 Testnet 验收只能在受保护人工环境运行。先从 API 回读一份刚生成的 canonical authorization，原样保存为 `data/stage6-sandbox-authorization.json`，再执行：
+真实 Testnet 验收只能在受保护人工环境运行。先把已持久化的 Stage 4/5 权威证据 ID 写入 `data/stage6-sandbox-acceptance-request.json`；文件只能包含 `workflowId`、`shadowSessionId`、`readinessDecisionId`、`preflightId`、`reviewId` 与 `operator`。验收程序必须通过运行中的 API 重建授权，不能接受外部拼装的订单或 authorization，再执行：
+
+```json
+{
+  "workflowId": "stage4-workflow-...",
+  "shadowSessionId": "stage5-shadow-...",
+  "readinessDecisionId": "stage5-readiness-...",
+  "preflightId": "stage5-preflight-...",
+  "reviewId": "stage5-review-...",
+  "operator": "release-operator"
+}
+```
 
 ```powershell
 npm run docker:smoke:stage6:real
@@ -50,4 +61,4 @@ npm run docker:smoke:stage6:real:validate
 npm run docker:smoke:stage6:exit:validate
 ```
 
-验收会提交、查询、重启回读、撤销并最终对账，输出 `data/stage6-binance-spot-testnet.json`，并在 Stage 5 exit、无密钥门禁和真实清单全部有效时生成 `data/stage6-exit-acceptance.json`。网络偶发成交会如实记录为 `filled`，不会伪造成撤单成功。缺少该真实清单时 Stage 6 不能退出。
+验收会提交、查询、对仍未终态的每单发起撤单尝试并最终对账，随后真实重启 API、从同一数据卷回读，导出研究包并验证 Stage 6 导入事件固定为 `detached`。清单检查项由持久化 transition 的 `create/query/cancel` 证据生成，不能硬编码通过。网络偶发成交会如实记录为 `filled`；若全部委托在撤单前成交，门禁不会伪造撤单动作，必须使用新的小额批次重新完成撤单验收。验收输出 `data/stage6-binance-spot-testnet.json`，并在 Stage 5 exit、无密钥门禁和真实清单全部有效时生成 `data/stage6-exit-acceptance.json`。缺少该真实清单时 Stage 6 不能退出。

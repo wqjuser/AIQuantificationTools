@@ -399,7 +399,7 @@ class Stage6SandboxExecutionService:
             authorization = self.get_authorization(authorization_id)
             if self.kill_switch()["triggered"]:
                 raise ValueError("stage6_sandbox_kill_switch_triggered")
-            for event in self.audit_store.list_recent(event_type="stage6_sandbox_batch_authorization", limit=50):
+            for event in self._events("stage6_sandbox_batch_authorization"):
                 other = event.metadata.get("snapshot")
                 if (
                     event.metadata.get("detached") is not True
@@ -420,10 +420,13 @@ class Stage6SandboxExecutionService:
                 attempt = int(current.get("attempt") or 0) + 1
                 self._record_transition(authorization, order, "submission_pending", attempt=attempt)
                 evidence = self._submit_with_query_first(order, attempt=attempt)
-                self._record_transition(
-                    authorization, order, evidence["state"], attempt=attempt, exchange_evidence=evidence
+                self._record_exchange_evidence(authorization, order, evidence, attempt=attempt)
+                confirmed = self._reconcile_order(
+                    authorization,
+                    order,
+                    {**current, "state": evidence["state"], "attempt": attempt, "exchangeEvidence": evidence},
                 )
-                if evidence["state"] in {"rejected", "reconciliation_required"}:
+                if confirmed["state"] in {"rejected", "reconciliation_required"}:
                     self._cancel_open_orders(authorization)
                     break
             return self.batch(authorization_id)
@@ -435,19 +438,7 @@ class Stage6SandboxExecutionService:
                 if row["state"] not in _NONTERMINAL:
                     continue
                 order = next(item for item in authorization["orders"] if item["orderId"] == row["orderId"])
-                try:
-                    evidence = {
-                        **self.route.fetch_order(order, row.get("exchangeEvidence", {}).get("exchangeOrderId")),
-                        "operation": "query",
-                    }
-                except Exception as error:
-                    self._record_transition(
-                        authorization, order, "reconciliation_required", attempt=int(row.get("attempt") or 1), error=error
-                    )
-                else:
-                    self._record_transition(
-                        authorization, order, evidence["state"], attempt=int(row.get("attempt") or 1), exchange_evidence=evidence
-                    )
+                self._reconcile_order(authorization, order, row)
             return self.batch(authorization_id)
 
     def cancel(self, authorization_id: str, order_id: str) -> dict[str, Any]:
@@ -459,24 +450,12 @@ class Stage6SandboxExecutionService:
                 raise ValueError("stage6_sandbox_order_not_found")
             if row["state"] not in {"open", "partially_filled", "submission_pending", "reconciliation_required"}:
                 return self.batch(authorization_id)
-            try:
-                evidence = {
-                    **self.route.cancel_order(order, row.get("exchangeEvidence", {}).get("exchangeOrderId")),
-                    "operation": "cancel",
-                }
-            except Exception as error:
-                self._record_transition(
-                    authorization, order, "reconciliation_required", attempt=int(row.get("attempt") or 1), error=error
-                )
-            else:
-                self._record_transition(
-                    authorization, order, evidence["state"], attempt=int(row.get("attempt") or 1), exchange_evidence=evidence
-                )
+            self._cancel_and_reconcile(authorization, order, row)
             return self.batch(authorization_id)
 
     def recover_active_batches(self) -> list[dict[str, Any]]:
         recovered = []
-        for event in self.audit_store.list_recent(event_type="stage6_sandbox_batch_authorization", limit=50):
+        for event in self._events("stage6_sandbox_batch_authorization"):
             if event.metadata.get("detached") is True:
                 continue
             try:
@@ -488,7 +467,7 @@ class Stage6SandboxExecutionService:
         return recovered
 
     def kill_switch(self) -> dict[str, Any]:
-        events = [event for event in self.audit_store.list_recent(event_type="stage6_sandbox_kill_switch", limit=50)
+        events = [event for event in self._events("stage6_sandbox_kill_switch")
                   if event.metadata.get("detached") is not True]
         if not events:
             return {"enabled": True, "triggered": False, "recordedAt": None, "operator": None}
@@ -501,7 +480,7 @@ class Stage6SandboxExecutionService:
             raise ValueError("stage6_sandbox_kill_switch_operator_required")
         with self._lock:
             authorization_events = [
-                event for event in self.audit_store.list_recent(event_type="stage6_sandbox_batch_authorization", limit=50)
+                event for event in self._events("stage6_sandbox_batch_authorization")
                 if event.metadata.get("detached") is not True and isinstance(event.metadata.get("snapshot"), dict)
             ]
             active = [event for event in authorization_events if is_active_batch(self.batch(event.event_id)["orders"])]
@@ -510,8 +489,8 @@ class Stage6SandboxExecutionService:
                     raise ValueError("stage6_sandbox_kill_switch_reset_requires_reconciliation")
             now = datetime.now(timezone.utc).isoformat()
             snapshot = {"enabled": True, "triggered": triggered, "recordedAt": now, "operator": operator}
-            previous = next((event for event in self.audit_store.list_recent(
-                event_type="stage6_sandbox_kill_switch", limit=50
+            previous = next((event for event in self._events(
+                "stage6_sandbox_kill_switch"
             ) if event.metadata.get("detached") is not True), None)
             run_id = active[0].run_id if active else (previous.run_id if previous else None)
             self.audit_store.record(
@@ -546,26 +525,74 @@ class Stage6SandboxExecutionService:
             try:
                 return {**self.route.fetch_order(order), "operation": "query"}
             except Exception as query_error:
-                if _order_not_found(query_error) and attempt < 2:
-                    try:
-                        return {**self.route.create_order(order), "operation": "create"}
-                    except Exception as retry_error:
-                        return _unknown_evidence(retry_error, "create")
-                return _unknown_evidence(first_error, "query")
+                return _unknown_evidence(query_error if not _order_not_found(query_error) else first_error, "query")
 
     def _cancel_open_orders(self, authorization: dict[str, Any]) -> None:
         for row in self.batch(authorization["authorizationId"])["orders"]:
             if row["state"] in {"open", "partially_filled"}:
                 order = next(item for item in authorization["orders"] if item["orderId"] == row["orderId"])
-                try:
-                    evidence = {
-                        **self.route.cancel_order(order, row.get("exchangeEvidence", {}).get("exchangeOrderId")),
-                        "operation": "cancel",
-                    }
-                except Exception as error:
-                    self._record_transition(authorization, order, "reconciliation_required", attempt=row["attempt"], error=error)
-                else:
-                    self._record_transition(authorization, order, evidence["state"], attempt=row["attempt"], exchange_evidence=evidence)
+                self._cancel_and_reconcile(authorization, order, row)
+
+    def _reconcile_order(
+        self,
+        authorization: dict[str, Any],
+        order: dict[str, Any],
+        row: dict[str, Any],
+        *,
+        allow_submission_retry: bool = True,
+    ) -> dict[str, Any]:
+        attempt = int(row.get("attempt") or 1)
+        try:
+            evidence = {
+                **self.route.fetch_order(order, row.get("exchangeEvidence", {}).get("exchangeOrderId")),
+                "operation": "query",
+            }
+        except Exception as error:
+            if (
+                allow_submission_retry and _order_not_found(error)
+                and row["state"] in {"submission_pending", "reconciliation_required"} and attempt < 2
+            ):
+                attempt += 1
+                self._record_transition(authorization, order, "submission_pending", attempt=attempt)
+                evidence = self._submit_with_query_first(order, attempt=attempt)
+                return self._record_exchange_evidence(authorization, order, evidence, attempt=attempt)
+            evidence = _unknown_evidence(error, "query")
+        return self._record_exchange_evidence(authorization, order, evidence, attempt=attempt)
+
+    def _cancel_and_reconcile(
+        self, authorization: dict[str, Any], order: dict[str, Any], row: dict[str, Any]
+    ) -> dict[str, Any]:
+        attempt = int(row.get("attempt") or 1)
+        try:
+            evidence = {
+                **self.route.cancel_order(order, row.get("exchangeEvidence", {}).get("exchangeOrderId")),
+                "operation": "cancel",
+            }
+        except Exception as error:
+            self._record_exchange_evidence(
+                authorization, order, _unknown_evidence(error, "cancel"), attempt=attempt
+            )
+        else:
+            self._record_exchange_evidence(authorization, order, evidence, attempt=attempt)
+        return self._reconcile_order(
+            authorization, order, row, allow_submission_retry=False
+        )
+
+    def _record_exchange_evidence(
+        self,
+        authorization: dict[str, Any],
+        order: dict[str, Any],
+        evidence: dict[str, Any],
+        *,
+        attempt: int,
+    ) -> dict[str, Any]:
+        return self._record_transition(
+            authorization,
+            order,
+            evidence["state"],
+            attempt=attempt,
+            exchange_evidence=evidence,
+        )
 
     def _record_transition(
         self,
@@ -611,11 +638,21 @@ class Stage6SandboxExecutionService:
 
     def _transitions(self, authorization_id: str) -> list[dict[str, Any]]:
         rows = []
-        for event in self.audit_store.list_recent(event_type="stage6_sandbox_order_transition", limit=50):
+        for event in self._events("stage6_sandbox_order_transition"):
             snapshot = event.metadata.get("snapshot")
             if isinstance(snapshot, dict) and snapshot.get("authorizationId") == authorization_id:
                 rows.append(validate_stage6_order_transition(snapshot))
         return sorted(rows, key=lambda row: row["sequence"])
+
+    def _events(self, event_type: str) -> list[Any]:
+        rows = []
+        offset = 0
+        while True:
+            page = self.audit_store.list_recent(event_type=event_type, limit=50, offset=offset)
+            rows.extend(page)
+            if len(page) < 50:
+                return rows
+            offset += len(page)
 
 
 def _validate_normalized_order(order: Any, workflow_hash: str) -> None:
