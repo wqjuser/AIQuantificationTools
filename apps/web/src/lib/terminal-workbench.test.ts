@@ -2349,30 +2349,26 @@ describe("terminal workbench model", () => {
       label: "Stage 1 · A-share P0 Golden Path",
       status: "maintenance",
       workAreaIds: ["market", "research"],
-      focus: "Preserve the accepted market and research golden path as a regression gate while Stage 5 ships."
+      focus: "Preserve the accepted market and research golden path as a regression gate while the next roadmap decision is pending."
     });
-    expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
-      "live-readiness"
-    ]);
+    expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
   });
 
-  test("opens Stage 5 shadow readiness after the Stage 4 exit", () => {
+  test("moves Stage 5 to maintenance after its top-level exit acceptance", () => {
     const stages = buildProductDevelopmentStages();
     const areas = buildProductWorkAreas(buildTerminalWorkspace());
-    expect(stages.filter((stage) => stage.status === "current").map((stage) => stage.id)).toEqual([
-      "live-readiness"
-    ]);
+    expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
     expect(stages.find((stage) => stage.id === "market-research")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "strategy-backtest")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "ai-review")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "portfolio-paper")?.status).toBe("maintenance");
-    expect(stages.find((stage) => stage.id === "live-readiness")?.status).toBe("current");
+    expect(stages.find((stage) => stage.id === "live-readiness")?.status).toBe("maintenance");
     expect(areas.find((area) => area.id === "market")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "strategy")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "backtest")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "ai-review")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "portfolio")?.deliveryStageStatus).toBe("maintenance");
-    expect(areas.find((area) => area.id === "execution")?.deliveryStageStatus).toBe("current");
+    expect(areas.find((area) => area.id === "execution")?.deliveryStageStatus).toBe("maintenance");
   });
 
   test("builds a Stage 1 research workspace state draft from the selected context", () => {
@@ -3550,7 +3546,7 @@ describe("terminal workbench model", () => {
       workflowStageId: "execution",
       status: "blocked",
       deliveryStageId: "live-readiness",
-      deliveryStageStatus: "current"
+      deliveryStageStatus: "maintenance"
     });
     expect(areas.find((area) => area.id === "market")).toMatchObject({
       deliveryStageId: "market-research",

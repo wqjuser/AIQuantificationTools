@@ -124,6 +124,27 @@ export interface Stage5SandboxAuthorizationReview {
   liveBlockedBoundary: true;
 }
 
+export interface Stage5ExitAcceptanceStatus {
+  kind: "aiqt.stage5ExitAcceptanceStatus";
+  schemaVersion: 1;
+  status: "accepted" | "missing" | "invalid";
+  available: boolean;
+  sourcePath: string;
+  summary: string;
+  reason: string;
+  generatedAt: string | null;
+  stage5BaseRunId: string | null;
+  artifactCount: number;
+  exitHash: string | null;
+  paperOnly: boolean;
+  authorizationEffective: boolean;
+  sandboxOrderSubmissionAllowed: boolean;
+  liveTradingAllowed: boolean;
+  orderSubmissionEnabled: boolean;
+  routeExecuted: boolean;
+  liveBlockedBoundary: boolean;
+}
+
 const STAGE5_SANDBOX_AUTHORIZATION_REVIEW_SCOPE_IDS = [
   "preflight-hash-reviewed",
   "sandbox-only-scope",
@@ -171,6 +192,10 @@ export function buildStage5SandboxAuthorizationReviewsUrl(baseUrl: string, baseR
     url.searchParams.set("baseRunId", baseRunId);
     url.searchParams.set("limit", String(limit));
   });
+}
+
+export function buildStage5ExitAcceptanceUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "/api/stage5/exit-acceptance/latest");
 }
 
 export function buildStage5ShadowState(
@@ -324,6 +349,32 @@ export function isStage5SandboxAuthorizationReview(value: unknown): value is Sta
     row.humanAuthorizationRequired === true && row.sandboxOrderSubmissionAllowed === false &&
     row.liveTradingAllowed === false && row.orderSubmissionEnabled === false &&
     row.routeExecuted === false && row.liveBlockedBoundary === true;
+}
+
+export function isStage5ExitAcceptanceStatus(value: unknown): value is Stage5ExitAcceptanceStatus {
+  if (!record(value) || !exact(value, [
+    "kind", "schemaVersion", "status", "available", "sourcePath", "summary", "reason", "generatedAt",
+    "stage5BaseRunId", "artifactCount", "exitHash", "paperOnly", "authorizationEffective",
+    "sandboxOrderSubmissionAllowed", "liveTradingAllowed", "orderSubmissionEnabled", "routeExecuted",
+    "liveBlockedBoundary"
+  ])) return false;
+  const row = value as unknown as Stage5ExitAcceptanceStatus;
+  const optionalString = (item: unknown) => item === null || nonempty(item);
+  const common = row.kind === "aiqt.stage5ExitAcceptanceStatus" && row.schemaVersion === 1 &&
+    ["accepted", "missing", "invalid"].includes(row.status) && typeof row.available === "boolean" &&
+    [row.sourcePath, row.summary].every(nonempty) && typeof row.reason === "string" &&
+    optionalString(row.generatedAt) && optionalString(row.stage5BaseRunId) && optionalString(row.exitHash) &&
+    Number.isInteger(row.artifactCount) && row.artifactCount >= 0 &&
+    [row.paperOnly, row.authorizationEffective, row.sandboxOrderSubmissionAllowed, row.liveTradingAllowed,
+      row.orderSubmissionEnabled, row.routeExecuted, row.liveBlockedBoundary].every((item) => typeof item === "boolean");
+  if (!common) return false;
+  return row.status === "accepted"
+    ? row.available === true && row.artifactCount === 7 && zoned(row.generatedAt) &&
+      nonempty(row.stage5BaseRunId) && hash(row.exitHash) && row.paperOnly === true &&
+      row.authorizationEffective === false && row.sandboxOrderSubmissionAllowed === false &&
+      row.liveTradingAllowed === false && row.orderSubmissionEnabled === false &&
+      row.routeExecuted === false && row.liveBlockedBoundary === true
+    : row.available === false;
 }
 
 export async function runStage5ShadowSession(
@@ -511,6 +562,21 @@ export async function loadStage5SandboxAuthorizationReviews(
     return { reviews: payload.sandboxAuthorizationReviews, source: "core" };
   } catch (error) {
     return { reviews: [], source: "fallback", error: message(error) };
+  }
+}
+
+export async function loadStage5ExitAcceptance(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = (url, init) => fetch(url, init)
+): Promise<{ acceptance: Stage5ExitAcceptanceStatus | null; source: WorkspaceSource; error?: string }> {
+  try {
+    const payload = await request(buildStage5ExitAcceptanceUrl(baseUrl), undefined, fetcher);
+    if (!record(payload) || !isStage5ExitAcceptanceStatus(payload.acceptance)) {
+      throw new Error("Invalid Stage 5 exit acceptance contract");
+    }
+    return { acceptance: payload.acceptance, source: "core" };
+  } catch (error) {
+    return { acceptance: null, source: "fallback", error: message(error) };
   }
 }
 

@@ -4605,6 +4605,106 @@ def run_p2_pre_live_acceptance(
     return summaries
 
 
+def run_stage5_exit_acceptance(
+    repo_root: Path,
+    *,
+    base_url: str,
+    timeout_seconds: int,
+    report_path: Path,
+) -> str:
+    ensure_quant_core_import_path()
+    from quant_core.stage5_exit import (
+        STAGE5_EXIT_SOURCE_SPECS,
+        build_stage5_exit_acceptance_manifest,
+        validate_stage5_exit_acceptance_manifest,
+        write_stage5_exit_acceptance_report,
+    )
+
+    source_paths = {
+        source_id: repo_root / relative_path
+        for source_id, relative_path in STAGE5_EXIT_SOURCE_SPECS
+    }
+    stage3_path = source_paths["stage3-ai-review"]
+    stage4_path = source_paths["stage4-portfolio-paper"]
+    shadow_path = source_paths["stage5-shadow-execution"]
+    readiness_path = source_paths["stage5-sandbox-readiness"]
+    readonly_path = source_paths["stage5-sandbox-readonly-probe"]
+    preflight_path = source_paths["stage5-sandbox-authorization-preflight"]
+    review_path = source_paths["stage5-sandbox-authorization-review"]
+
+    stage3 = load_stage3_ai_review_report(stage3_path)
+    stage4 = load_stage4_portfolio_acceptance_report(stage4_path)
+    shadow = load_stage5_shadow_acceptance_report(shadow_path)
+    readiness = load_stage5_sandbox_readiness_acceptance_report(readiness_path)
+    readonly = load_stage5_sandbox_readonly_probe_acceptance_report(readonly_path)
+    preflight = load_stage5_sandbox_authorization_preflight_acceptance_report(preflight_path)
+    review = load_stage5_sandbox_authorization_review_acceptance_report(review_path)
+    validate_stage3_ai_review_manifest(stage3)
+    validate_stage4_portfolio_acceptance_manifest(stage4)
+    validate_stage5_shadow_acceptance_manifest(shadow)
+    validate_stage5_sandbox_readiness_acceptance_manifest(readiness)
+    validate_stage5_sandbox_readonly_probe_acceptance_manifest(readonly)
+    validate_stage5_sandbox_authorization_preflight_acceptance_manifest(preflight)
+    validate_stage5_sandbox_authorization_review_acceptance_manifest(review)
+
+    run_ids = {
+        str(stage4.get("workflow", {}).get("baseRunId") or "").strip(),
+        str(shadow.get("failureDrills", [{}])[0].get("firstSession", {}).get("baseRunId") or "").strip(),
+        str(readiness.get("readinessDecision", {}).get("baseRunId") or "").strip(),
+        str(preflight.get("baseRunId") or "").strip(),
+        str(review.get("baseRunId") or "").strip(),
+    }
+    if "" in run_ids or len(run_ids) != 1:
+        raise RuntimeError("Invalid Stage 5 exit acceptance inputs: Stage 4/5 base run identity differs")
+
+    manifest = build_stage5_exit_acceptance_manifest(
+        repo_root=repo_root,
+        stage5_base_run_id=run_ids.pop(),
+    )
+    summary = validate_stage5_exit_acceptance_manifest(
+        manifest,
+        repo_root=repo_root,
+        verify_sources=True,
+    )
+    write_stage5_exit_acceptance_report(report_path, manifest)
+    for source in (
+        stage3_path,
+        stage4_path,
+        shadow_path,
+        readiness_path,
+        readonly_path,
+        preflight_path,
+        review_path,
+        report_path,
+    ):
+        run_command(
+            ["docker", "compose", "cp", str(source), f"api:/app/data/{source.name}"],
+            cwd=repo_root,
+        )
+    readback = request_json(join_url(base_url, "/api/stage5/exit-acceptance/latest"), timeout_seconds)
+    acceptance = readback.get("acceptance") if isinstance(readback, dict) else None
+    if (
+        not isinstance(acceptance, dict)
+        or acceptance.get("status") != "accepted"
+        or acceptance.get("artifactCount") != 7
+        or acceptance.get("exitHash") != manifest["exitHash"]
+        or acceptance.get("liveBlockedBoundary") is not True
+        or any(
+            acceptance.get(field) is not False
+            for field in (
+                "authorizationEffective",
+                "sandboxOrderSubmissionAllowed",
+                "liveTradingAllowed",
+                "orderSubmissionEnabled",
+                "routeExecuted",
+            )
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 exit acceptance API readback")
+    print(summary)
+    return summary
+
+
 def run_smoke(
     repo_root: Path,
     base_url: str,
@@ -4646,6 +4746,8 @@ def run_smoke(
     stage5_sandbox_authorization_preflight_report: Path | None = None,
     stage5_sandbox_authorization_review: bool = False,
     stage5_sandbox_authorization_review_report: Path | None = None,
+    stage5_exit_acceptance: bool = False,
+    stage5_exit_acceptance_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -4764,6 +4866,14 @@ def run_smoke(
                 preflight_report_path=stage5_sandbox_authorization_preflight_report
                     or Path("data/stage5-sandbox-authorization-preflight.json"),
                 report_path=stage5_sandbox_authorization_review_report,
+            )
+        if stage5_exit_acceptance:
+            run_stage5_exit_acceptance(
+                repo_root,
+                base_url=base_url,
+                timeout_seconds=timeout_seconds,
+                report_path=stage5_exit_acceptance_report
+                    or repo_root / "data/stage5-exit-acceptance.json",
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -4957,6 +5067,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Validate an existing Stage 5 sandbox authorization review acceptance report and exit.",
     )
+    parser.add_argument(
+        "--stage5-exit-acceptance",
+        action="store_true",
+        help="Aggregate all validated Stage 3/4/5 release evidence into the Stage 5 exit manifest.",
+    )
+    parser.add_argument(
+        "--stage5-exit-acceptance-report",
+        default=None,
+        help="Optional Stage 5 exit acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-exit-acceptance-report",
+        default=None,
+        help="Validate an existing Stage 5 exit acceptance report and its source artifacts, then exit.",
+    )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
     parser.add_argument("--p2-p1-acceptance-report", default="data/p1-acceptance.json", help="Path to the P1 acceptance manifest used as P2 evidence.")
@@ -5107,6 +5232,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(validate_stage5_sandbox_authorization_review_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage5_exit_acceptance_report:
+        ensure_quant_core_import_path()
+        from quant_core.stage5_exit import (
+            load_stage5_exit_acceptance_report,
+            validate_stage5_exit_acceptance_manifest,
+        )
+
+        report_path = Path(args.validate_stage5_exit_acceptance_report)
+        manifest = load_stage5_exit_acceptance_report(report_path)
+        repo_root = report_path.resolve().parent.parent if report_path.parent.name == "data" else Path.cwd()
+        print(validate_stage5_exit_acceptance_manifest(manifest, repo_root=repo_root, verify_sources=True))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -5200,6 +5337,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(args.stage5_sandbox_authorization_review_report)
             if args.stage5_sandbox_authorization_review_report
             else None
+        ),
+        stage5_exit_acceptance=args.stage5_exit_acceptance,
+        stage5_exit_acceptance_report=(
+            Path(args.stage5_exit_acceptance_report) if args.stage5_exit_acceptance_report else None
         ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,
         p2_run_id=args.p2_run_id,

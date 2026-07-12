@@ -3,15 +3,18 @@ import {
   buildStage5SandboxAuthorizationPreflightsUrl,
   buildStage5SandboxAuthorizationReviewsUrl,
   buildStage5SandboxReadinessDecisionsUrl,
+  buildStage5ExitAcceptanceUrl,
   buildStage5ShadowSessionsUrl,
   buildStage5ShadowState,
   isStage5SandboxAuthorizationPreflight,
   isStage5SandboxAuthorizationReview,
   isStage5SandboxReadinessDecision,
+  isStage5ExitAcceptanceStatus,
   isStage5ShadowSession,
   loadStage5SandboxAuthorizationPreflights,
   loadStage5SandboxAuthorizationReviews,
   loadStage5SandboxReadinessDecisions,
+  loadStage5ExitAcceptance,
   loadStage5ShadowSessions,
   runStage5SandboxAuthorizationPreflight,
   runStage5SandboxAuthorizationReview,
@@ -20,6 +23,7 @@ import {
   type Stage5SandboxAuthorizationPreflight,
   type Stage5SandboxAuthorizationReview,
   type Stage5SandboxReadinessDecision,
+  type Stage5ExitAcceptanceStatus,
   type Stage5ShadowSession
 } from "./stage5-shadow";
 import type { Stage4PortfolioWorkflow } from "./portfolio-stage4";
@@ -91,7 +95,36 @@ function authorizationReview(overrides: Partial<Stage5SandboxAuthorizationReview
   };
 }
 
+function exitAcceptance(overrides: Partial<Stage5ExitAcceptanceStatus> = {}): Stage5ExitAcceptanceStatus {
+  return {
+    kind: "aiqt.stage5ExitAcceptanceStatus", schemaVersion: 1, status: "accepted", available: true,
+    sourcePath: "data/stage5-exit-acceptance.json", summary: "Stage 5 accepted for maintenance.", reason: "",
+    generatedAt: "2026-07-12T09:00:00+00:00", stage5BaseRunId: "run-a", artifactCount: 7,
+    exitHash: "3".repeat(64), paperOnly: true, authorizationEffective: false,
+    sandboxOrderSubmissionAllowed: false, liveTradingAllowed: false, orderSubmissionEnabled: false,
+    routeExecuted: false, liveBlockedBoundary: true, ...overrides
+  };
+}
+
 describe("Stage 5 shadow client", () => {
+  test("validates and loads the top-level Stage 5 exit acceptance", async () => {
+    expect(isStage5ExitAcceptanceStatus(exitAcceptance())).toBe(true);
+    expect(isStage5ExitAcceptanceStatus(exitAcceptance({ liveTradingAllowed: true }))).toBe(false);
+    expect(isStage5ExitAcceptanceStatus(exitAcceptance({ status: "missing", available: false, artifactCount: 0,
+      generatedAt: null, stage5BaseRunId: null, exitHash: null, paperOnly: false, liveBlockedBoundary: false }))).toBe(true);
+    expect(buildStage5ExitAcceptanceUrl("http://localhost:8765")).toBe(
+      "http://localhost:8765/api/stage5/exit-acceptance/latest"
+    );
+    const fetcher = vi.fn(async () => ({
+      ok: true, status: 200, json: async () => ({ acceptance: exitAcceptance() })
+    } as Response));
+
+    const result = await loadStage5ExitAcceptance("http://localhost:8765", fetcher);
+
+    expect(result.source).toBe("core");
+    expect(result.acceptance?.artifactCount).toBe(7);
+  });
+
   test("builds URLs and derives the one operator action", () => {
     expect(buildStage5ShadowSessionsUrl("http://localhost:8765", "run a", 5)).toBe(
       "http://localhost:8765/api/execution/shadow-sessions?baseRunId=run+a&limit=5"

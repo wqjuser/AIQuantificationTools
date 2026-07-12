@@ -262,6 +262,10 @@ from quant_core.p2_readiness_acceptance import (
     p2_readiness_acceptance_to_audit_event_payload,
     write_p2_readiness_acceptance_report,
 )
+from quant_core.stage5_exit import (
+    DEFAULT_STAGE5_EXIT_ACCEPTANCE_REPORT_PATH,
+    load_stage5_exit_acceptance_status,
+)
 from quant_core.p2_manifest_chain_preflight import (
     DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH,
     build_p2_manifest_chain_preflight,
@@ -491,6 +495,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     p2_pre_live_acceptance_report_path = DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH
     p2_paper_replay_report_path = DEFAULT_P2_PAPER_REPLAY_REPORT_PATH
     p2_readiness_acceptance_report_path = DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH
+    stage5_exit_acceptance_report_path = DEFAULT_STAGE5_EXIT_ACCEPTANCE_REPORT_PATH
     p2_manifest_chain_preflight_report_path = DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH
     desktop_release_report_path = DEFAULT_DESKTOP_RELEASE_REPORT_PATH
     stage1_daily_use_report_path = DEFAULT_STAGE1_DAILY_USE_REPORT_PATH
@@ -3568,6 +3573,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/p2/readiness/acceptance/latest":
             self._send_json(
                 {"acceptance": load_p2_readiness_acceptance_status(Path(self.p2_readiness_acceptance_report_path))}
+            )
+            return
+        if parsed.path == "/api/stage5/exit-acceptance/latest":
+            self._send_json(
+                {"acceptance": load_stage5_exit_acceptance_status(Path(self.stage5_exit_acceptance_report_path))}
             )
             return
         if parsed.path == "/api/p2/manifest-chain/preflight/latest":

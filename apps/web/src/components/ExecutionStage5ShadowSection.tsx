@@ -1,12 +1,14 @@
 import { useState } from "react";
 import type { createI18n } from "../lib/i18n";
-import type { Stage5ShadowState } from "../lib/stage5-shadow";
+import type { Stage5ExitAcceptanceStatus, Stage5ShadowState } from "../lib/stage5-shadow";
 
 type AppI18n = ReturnType<typeof createI18n>;
 
 export function ExecutionStage5ShadowSection({
   busy = false,
   error,
+  exitAcceptance,
+  exitAcceptanceError,
   i18n,
   onOpenSettings = () => {},
   onPrimaryAction,
@@ -14,6 +16,8 @@ export function ExecutionStage5ShadowSection({
 }: {
   busy?: boolean;
   error?: string | null;
+  exitAcceptance?: Stage5ExitAcceptanceStatus | null;
+  exitAcceptanceError?: string | null;
   i18n: AppI18n;
   onOpenSettings?: () => void;
   onPrimaryAction: (reviewInput?: { outcome: "approved" | "rejected"; reason: string }) => void;
@@ -42,6 +46,13 @@ export function ExecutionStage5ShadowSection({
         </div>
         <strong>{i18n.t("execution.stage5.boundary")}</strong>
       </header>
+      <div className={`execution-stage5-readiness ${exitAcceptance?.status ?? "missing"}`} role="status">
+        <strong>{i18n.t("execution.stage5.exitTitle")}</strong>
+        <span>{exitAcceptance?.status ?? "missing"} · {exitAcceptance?.artifactCount ?? 0}/7</span>
+        <span>{exitAcceptance?.stage5BaseRunId ?? i18n.t("execution.stage5.exitUnavailable")}</span>
+        <small className="execution-stage5-shadow-hash">{exitAcceptance?.exitHash ?? "-"}</small>
+        <p>{exitAcceptanceError || exitAcceptance?.reason || i18n.t("execution.stage5.exitBoundary")}</p>
+      </div>
       {state.blocker || error ? (
         <p className="execution-stage5-shadow-error" role="status">
           {error ?? i18n.t(state.blocker === "stage4-workflow-missing"

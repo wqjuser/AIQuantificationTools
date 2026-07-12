@@ -88,9 +88,9 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 5 当前阶段：CI 发布门禁
+## Stage 5 已完成并进入维护
 
-Stage 4 已通过退出门禁并转入维护。Stage 5 前七阶段已经完成本地 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针、授权预检和不可变授权复核。第八阶段把 Stage 3 deterministic AI baseline、Stage 4 权威组合输入和 Stage 5 五段安全链纳入 GitHub CI：每次 push/PR 都执行 Docker smoke、离线 validate，并上传七份发布 manifest。批准复核仍固定 `authorizationEffective=false`、`sandboxOrderSubmissionAllowed=false`，不激活任何订单能力。
+Stage 5 已完成 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针、授权预检、不可变授权复核和 CI 发布门禁。顶层 `aiqt.stage5ExitAcceptance` 会把 Stage 3 deterministic baseline、Stage 4 权威组合输入与五份 Stage 5 安全证据收束为一个退出结论；API 和 Execution 从同一份清单回读 accepted/missing/invalid。Stage 0 至 Stage 5 均为 maintenance，下一交付阶段等待单独路线决策。
 
 ```powershell
 npm run docker:smoke:stage5 -- --no-build
@@ -109,11 +109,11 @@ npm run docker:smoke:stage5:authorization-review -- --no-build
 npm run docker:smoke:stage5:authorization-review:validate
 ```
 
-验收会同时维护 `data/stage3-ai-review.json`、`data/stage4-portfolio-paper.json` 和五份 `data/stage5-*.json`。GitHub CI 将它们上传为 `stage5-release-manifests`；默认无凭据环境必须让只读探针、授权预检和授权复核 fail closed，成功 preflight 与 review 数量均为 0。配置明确的测试网凭据时，应用可以只读加载 markets/status/time 和脱敏账户同步，但仍不提交、撤销或查询订单，不开放 sandbox order route，更不开放真实资金路由。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。
+完整 Stage 5 命令会自行生成并验证 Stage 3、Stage 4、五份 Stage 5 链路 manifest 和 `data/stage5-exit-acceptance.json`，CI 统一上传八份 `stage5-release-manifests`。默认无凭据环境必须让只读探针、授权预检和授权复核 fail closed，成功 preflight 与 review 数量均为 0。配置明确的测试网凭据时，应用可以只读加载 markets/status/time 和脱敏账户同步，但仍不提交、撤销或查询订单，不开放 sandbox order route，更不开放真实资金路由。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。
 
 ## Stage 4 维护门禁：组合模拟黄金路径
 
-Portfolio 工作区已经提供唯一的 Stage 4 组合模拟黄金路径：从至少两个同市场、同周期的已审计 research run 完成组合构建、确定性风控复核、人工审批、批量模拟成交和账户回放。页面每一步只保留一个主动作，刷新后从持久化批次、审批、模拟成交、状态历史、账户回放和权威工作流恢复，不依赖临时前端成功状态；Execution 继续展示逐单明细，Audit 负责归档与 hash 回读。2026-07-11 Stage 4 完成退出并转入 maintenance，Stage 5 shadow execution 第一阶段成为唯一 current。
+Portfolio 工作区已经提供唯一的 Stage 4 组合模拟黄金路径：从至少两个同市场、同周期的已审计 research run 完成组合构建、确定性风控复核、人工审批、批量模拟成交和账户回放。页面每一步只保留一个主动作，刷新后从持久化批次、审批、模拟成交、状态历史、账户回放和权威工作流恢复，不依赖临时前端成功状态；Execution 继续展示逐单明细，Audit 负责归档与 hash 回读。2026-07-11 Stage 4 完成退出并转入 maintenance；2026-07-12 Stage 5 也已通过顶层退出验收并转入 maintenance。
 
 权威工作流通过 `POST /api/portfolio/workflows` 入账。请求只包含 `baseRunId`、`name`、`initialCash`、`legs`、`riskTemplate`、`batchId` 和 `operator`；核心会从既有 stores 重新运行组合并读取批次、审批、模拟成交、状态历史与 replay，通过后写入一条 `stage4_portfolio_workflow` 审计事件。`GET /api/portfolio/workflows?baseRunId=...&limit=20` 按最新优先回读，并重新校验 workflow hash、审计事件身份、时间和完整 paper-only 证据。研究运行导出 manifest 用 `artifactCounts.stage4PortfolioWorkflows` 记录数量，导入预检会拒绝数量、身份、hash 或安全边界不一致；通过原子导入后再导出，可从 Audit 包浏览器回读同一 workflow hash。
 

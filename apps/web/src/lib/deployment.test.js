@@ -46,10 +46,7 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke -- --no-build --down");
     expect(workflow).toContain("npm run docker:smoke:p0 -- --no-build --down");
     expect(workflow).toContain("npm run docker:smoke:p0:validate");
-    expect(workflow).toContain("npm run docker:smoke:stage3 -- --no-build");
-    expect(workflow).toContain("npm run docker:smoke:stage3:validate");
     expect(workflow).toContain("npm run docker:smoke:stage5 -- --no-build --down");
-    expect(workflow).toContain("npm run docker:smoke:stage4:validate");
     expect(workflow).toContain("npm run docker:smoke:stage5:validate");
     expect(workflow).toContain("actions/upload-artifact@v5");
     expect(workflow).toContain("p0-acceptance-manifest");
@@ -63,14 +60,12 @@ describe("docker deployment contract", () => {
       "data/stage5-sandbox-readonly-probe.json",
       "data/stage5-sandbox-authorization-preflight.json",
       "data/stage5-sandbox-authorization-review.json",
+      "data/stage5-exit-acceptance.json",
     ]) {
       expect(workflow).toContain(path);
     }
     const releaseCommands = [
-      "npm run docker:smoke:stage3 -- --no-build",
-      "npm run docker:smoke:stage3:validate",
       "npm run docker:smoke:stage5 -- --no-build --down",
-      "npm run docker:smoke:stage4:validate",
       "npm run docker:smoke:stage5:validate",
     ];
     expect(releaseCommands.map((command) => workflow.indexOf(command))).toEqual(
@@ -112,6 +107,15 @@ describe("docker deployment contract", () => {
     );
     expect(packageJson.scripts["docker:smoke:stage4:validate"]).toBe(
       `${pythonLauncher} tools/docker_smoke.py --validate-stage4-portfolio-paper-report data/stage4-portfolio-paper.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage5"]).toContain(
+      "--stage3-ai-review --stage3-ai-review-report data/stage3-ai-review.json",
+    );
+    expect(packageJson.scripts["docker:smoke:stage5"]).toContain(
+      "--stage5-exit-acceptance --stage5-exit-acceptance-report data/stage5-exit-acceptance.json",
+    );
+    expect(packageJson.scripts["docker:smoke:stage5:validate"]).toContain(
+      "--validate-stage5-exit-acceptance-report data/stage5-exit-acceptance.json",
     );
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });

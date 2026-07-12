@@ -9078,7 +9078,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
     workAreaIds: ["market", "research"],
-    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 5 ships.",
+    focus: "Preserve the accepted market and research golden path as a regression gate while the next roadmap decision is pending.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -9125,13 +9125,13 @@ const productDevelopmentStageDefinitions = [
   {
     id: "live-readiness",
     label: "Stage 5 · Live Readiness",
-    status: "current",
+    status: "maintenance",
     workAreaIds: ["execution"],
-    focus: "Validate isolated shadow execution, idempotency, recovery, limits, kill switch, and reconciliation without a broker connection.",
+    focus: "Preserve the accepted pre-live safety foundation and its eight release artifacts while all Sandbox and live order routes remain blocked.",
     exitCriteria: [
-      "Adapter authentication, account sync, order lifecycle, and reconciliation are testable without real funds.",
-      "Every live candidate cites strategy, backtest, AI review, risk approval, adapter state, and human confirmation.",
-      "No live route is enabled by default."
+      "Shadow execution, idempotency, recovery, limits, kill switch, and reconciliation remain deterministic and replayable.",
+      "Sandbox readiness, authoritative read-only probe, authorization preflight, and immutable review remain fail closed.",
+      "The top-level exit acceptance binds all release evidence while no Sandbox or live route is enabled."
     ]
   }
 ] as const satisfies readonly ProductDevelopmentStage[];

@@ -290,6 +290,7 @@ import {
   loadStage5SandboxAuthorizationPreflights,
   loadStage5SandboxAuthorizationReviews,
   loadStage5SandboxReadinessDecisions,
+  loadStage5ExitAcceptance,
   loadStage5ShadowSessions,
   runStage5SandboxAuthorizationPreflight,
   runStage5SandboxAuthorizationReview,
@@ -298,6 +299,7 @@ import {
   type Stage5SandboxAuthorizationPreflight,
   type Stage5SandboxAuthorizationReview,
   type Stage5SandboxReadinessDecision,
+  type Stage5ExitAcceptanceStatus,
   type Stage5ShadowSession
 } from "./lib/stage5-shadow";
 import {
@@ -2248,6 +2250,8 @@ export function App() {
     useState<Stage5SandboxAuthorizationPreflight[]>([]);
   const [stage5SandboxAuthorizationReviews, setStage5SandboxAuthorizationReviews] =
     useState<Stage5SandboxAuthorizationReview[]>([]);
+  const [stage5ExitAcceptance, setStage5ExitAcceptance] = useState<Stage5ExitAcceptanceStatus | null>(null);
+  const [stage5ExitAcceptanceError, setStage5ExitAcceptanceError] = useState<string | null>(null);
   const [stage5ShadowError, setStage5ShadowError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
@@ -3579,6 +3583,16 @@ export function App() {
   useEffect(() => {
     setPortfolioBacktestState(initialPortfolioBacktestState);
   }, [portfolioBacktestDraftKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadStage5ExitAcceptance(quantCoreBaseUrl).then((result) => {
+      if (cancelled) return;
+      setStage5ExitAcceptance(result.acceptance);
+      setStage5ExitAcceptanceError(result.error ?? null);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const baseRunId = currentResearchRunId;
@@ -13030,6 +13044,8 @@ export function App() {
           <ExecutionStage5ShadowSection
             busy={isRunningStage5Shadow}
             error={stage5ShadowError}
+            exitAcceptance={stage5ExitAcceptance}
+            exitAcceptanceError={stage5ExitAcceptanceError}
             i18n={i18n}
             onOpenSettings={() => selectProductWorkArea("settings")}
             onPrimaryAction={(reviewInput) => void runStage5ShadowPrimaryAction(reviewInput)}
