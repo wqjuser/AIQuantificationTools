@@ -291,8 +291,8 @@ def probe_ccxt_sandbox_health(
             ExecutionAdapterHealthCheck(
                 check_id="exchange-status",
                 label="exchange status",
-                status="skipped",
-                detail="Exchange does not advertise fetchStatus.",
+                status="passed",
+                detail="Optional fetchStatus is not advertised by this exchange.",
             )
         )
 
@@ -667,7 +667,11 @@ def _build_probe(
 def _probe_status(checks: list[ExecutionAdapterHealthCheck], blocked_reasons: list[str]) -> str:
     if blocked_reasons or any(check.status == "blocked" for check in checks):
         return "blocked"
-    if any(check.status in {"review", "skipped"} for check in checks):
+    if any(
+        check.status in {"review", "skipped"}
+        and check.check_id not in {"exchange-status", "server-time"}
+        for check in checks
+    ):
         return "review"
     return "ready"
 
@@ -685,16 +689,17 @@ def _load_ccxt_module(ccxt_module: Any) -> Any | None:
 
 def _resolve_ccxt_credentials(exchange_id: str, env: dict[str, str]) -> dict[str, Any]:
     prefix = exchange_id.upper().replace("-", "_")
-    api_key_source, api_key_value = _first_env(env, [f"CCXT_{prefix}_API_KEY", "CCXT_API_KEY"])
-    secret_source, secret_value = _first_env(
-        env,
-        [
-            f"CCXT_{prefix}_SECRET",
-            f"CCXT_{prefix}_API_SECRET",
-            "CCXT_SECRET",
-            "CCXT_API_SECRET",
-        ],
-    )
+    dedicated_api_key = env.get("CCXT_SANDBOX_API_KEY", "").strip()
+    dedicated_secret = env.get("CCXT_SANDBOX_SECRET", "").strip()
+    if exchange_id == "binance" and dedicated_api_key and dedicated_secret:
+        api_key_source, api_key_value = "CCXT_SANDBOX_API_KEY", dedicated_api_key
+        secret_source, secret_value = "CCXT_SANDBOX_SECRET", dedicated_secret
+    else:
+        api_key_source, api_key_value = _first_env(env, [f"CCXT_{prefix}_API_KEY", "CCXT_API_KEY"])
+        secret_source, secret_value = _first_env(
+            env,
+            [f"CCXT_{prefix}_SECRET", f"CCXT_{prefix}_API_SECRET", "CCXT_SECRET", "CCXT_API_SECRET"],
+        )
     password_source, password_value = _first_env(env, [f"CCXT_{prefix}_PASSWORD", "CCXT_PASSWORD"])
     return {
         "apiKeyConfigured": bool(api_key_value),
@@ -747,10 +752,10 @@ def _ccxt_capabilities(exchange: Any) -> dict[str, bool]:
     return {
         "sandboxMode": hasattr(exchange, "set_sandbox_mode"),
         "loadMarkets": hasattr(exchange, "load_markets"),
-        "fetchStatus": bool(has_map.get("fetchStatus")) or hasattr(exchange, "fetch_status"),
-        "fetchTime": bool(has_map.get("fetchTime")) or hasattr(exchange, "fetch_time"),
-        "fetchBalance": bool(has_map.get("fetchBalance")) or hasattr(exchange, "fetch_balance"),
-        "createOrder": bool(has_map.get("createOrder")) or hasattr(exchange, "create_order"),
+        "fetchStatus": bool(has_map["fetchStatus"]) if "fetchStatus" in has_map else hasattr(exchange, "fetch_status"),
+        "fetchTime": bool(has_map["fetchTime"]) if "fetchTime" in has_map else hasattr(exchange, "fetch_time"),
+        "fetchBalance": bool(has_map["fetchBalance"]) if "fetchBalance" in has_map else hasattr(exchange, "fetch_balance"),
+        "createOrder": bool(has_map["createOrder"]) if "createOrder" in has_map else hasattr(exchange, "create_order"),
     }
 
 

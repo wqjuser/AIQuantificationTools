@@ -196,10 +196,50 @@ def _orchestrate(repo: Path, report: Path, real_request: Path | None, *, build: 
         required = {"workflowId", "shadowSessionId", "readinessDecisionId", "preflightId", "reviewId", "operator"}
         if not isinstance(request_payload, dict) or set(request_payload) != required:
             raise ValueError("stage6 real acceptance request fields are invalid")
-        authorization = _api("POST", "/api/execution/stage6/sandbox-authorizations", request_payload)["sandboxBatchAuthorization"]
+        authorizations = _api("GET", "/api/execution/stage6/sandbox-authorizations?limit=20")["sandboxBatchAuthorizations"]
+        authorization = next(
+            (row for row in authorizations if row.get("workflowId") == request_payload["workflowId"]), None
+        )
+        if authorization is None:
+            authorization = _api(
+                "POST", "/api/execution/stage6/sandbox-authorizations", request_payload
+            )["sandboxBatchAuthorization"]
+        else:
+            base_run_id = quote(authorization["baseRunId"])
+            sources = (
+                ("workflowId", "workflowHash", "workflowHash", _api(
+                    "GET", f"/api/portfolio/workflows?baseRunId={base_run_id}&limit=20"
+                )["workflows"]),
+                ("shadowSessionId", "sessionHash", "shadowSessionHash", _api(
+                    "GET", f"/api/execution/shadow-sessions?baseRunId={base_run_id}&limit=20"
+                )["shadowSessions"]),
+                ("readinessDecisionId", "decisionHash", "readinessDecisionHash", _api(
+                    "GET", f"/api/execution/sandbox-readiness-decisions?baseRunId={base_run_id}&limit=20"
+                )["sandboxReadinessDecisions"]),
+                ("preflightId", "preflightHash", "preflightHash", _api(
+                    "GET", f"/api/execution/sandbox-authorization-preflights?baseRunId={base_run_id}&limit=20"
+                )["sandboxAuthorizationPreflights"]),
+                ("reviewId", "reviewHash", "reviewHash", _api(
+                    "GET", f"/api/execution/sandbox-authorization-reviews?baseRunId={base_run_id}&limit=20"
+                )["sandboxAuthorizationReviews"]),
+            )
+            if authorization["operator"] != request_payload["operator"] or any(
+                not any(
+                    row.get(id_field) == request_payload[id_field]
+                    and row.get(source_hash) == authorization[authorization_hash]
+                    for row in rows
+                )
+                for id_field, source_hash, authorization_hash, rows in sources
+            ):
+                raise ValueError("stage6 real acceptance request does not match existing authorization")
         authorization_id = authorization["authorizationId"]
-        batch = _api("POST", "/api/execution/stage6/sandbox-batches", {"authorizationId": authorization_id})["sandboxBatch"]
-        batch = _api("POST", "/api/execution/stage6/sandbox-reconciliations", {"authorizationId": authorization_id})["sandboxBatch"]
+        for _ in authorization["orders"]:
+            batch = _api("POST", "/api/execution/stage6/sandbox-batches", {"authorizationId": authorization_id})["sandboxBatch"]
+            batch = _api("POST", "/api/execution/stage6/sandbox-reconciliations", {"authorizationId": authorization_id})["sandboxBatch"]
+            if not any(order["state"] == "authorized" for order in batch["orders"]):
+                break
+            if any(order["state"] == "reconciliation_required" for order in batch["orders"]):
+                break
         for order in batch["orders"]:
             batch = _api("POST", "/api/execution/stage6/sandbox-cancellations", {
                 "authorizationId": authorization_id, "orderId": order["orderId"],

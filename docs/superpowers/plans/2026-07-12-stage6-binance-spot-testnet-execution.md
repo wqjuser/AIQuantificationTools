@@ -2,7 +2,7 @@
 
 ## 状态
 
-已确认并实施。代码、无密钥门禁与回归验收已完成；真实 Binance Spot Testnet 退出验收因当前环境缺少专用 Sandbox 凭据而保持待执行，Stage 6 继续为 current。
+已完成。代码、无密钥门禁、真实 Binance Spot Testnet 双订单验收与顶层退出门禁全部通过，Stage 6 于 2026-07-13 转入 maintenance。
 
 设计依据：[Stage 6 Binance Spot Testnet 执行设计](../specs/2026-07-12-stage6-binance-spot-testnet-execution-design.md)。
 
@@ -56,8 +56,8 @@
 ### 7. Docker、真实 Testnet 与顶层退出门禁
 
 - [x] 增加无密钥 Stage 6 Docker smoke/validate，确定性证明 fail closed 和故障恢复。
-- [ ] 增加显式凭据的 Binance Spot Testnet smoke/validate，完成真实提交、查询、撤单、对账和重启恢复。
-- [ ] 生成脱敏 `data/stage6-binance-spot-testnet.json`，不把网络偶发成交伪造成撤单成功。
+- [x] 增加显式凭据的 Binance Spot Testnet smoke/validate，完成真实提交、查询、撤单、对账和重启恢复。
+- [x] 生成脱敏 `data/stage6-binance-spot-testnet.json`，不把网络偶发成交伪造成撤单成功。
 - [x] 新增 `aiqt.stage6ExitAcceptance`，绑定 Stage 5 exit、无密钥门禁、真实 Testnet manifest 与安全字段。
 - [x] 接入 CI：无密钥门禁始终运行；真实 Testnet 门禁只在受保护的人工发布验收环境运行，最终退出必须具备其 manifest。
 
@@ -66,7 +66,7 @@
 - [x] 同步 README、产品规划、架构、`CONTEXT.md`、ADR 和中文 `docs/stage6-sandbox-operations.md`。
 - [x] 运维文档覆盖密钥配置、启动检查、黄金路径、kill switch、未知状态恢复、对账、撤单和凭据轮换。
 - [x] 运行聚焦测试、Python/Web 全量测试、生产构建与 Stage 3/4/5 回归门禁。
-- [ ] 运行 Stage 6 无密钥 Docker smoke/validate、真实 Testnet smoke/validate和浏览器验收。（无密钥与浏览器已通过；真实 Testnet 等待专用凭据）
+- [x] 运行 Stage 6 无密钥 Docker smoke/validate、真实 Testnet smoke/validate 和浏览器验收。
 - [x] 执行 Standards/Spec 双轴独立审查并修复全部重要问题。
 - [x] 更新本计划的实际验证结果，提交、推送、创建 PR、等待 CI 通过并合并到 main。
 
@@ -78,7 +78,8 @@
 - Stage 6 无密钥 manifest hash 为 `40eacb8bc5c6db3514e2d1da27aedcb5675630f8f4617d1f6d1284c779e827ed`；专用凭据缺失、通用凭据拒绝、全部 live 字段为 false、`liveBlockedBoundary=true`。
 - 浏览器验收：375px 无横向溢出；Execution Stage 6 阻断证据、独立 kill switch、刷新持久化与 exit missing 状态已验证，无控制台错误。
 - 首轮 Standards/Spec 审查发现 5 个 Important，已修复事件分页、pending 恢复重试、统一交易所证据入口、撤单禁止反向提交，以及真实门禁绕过 API/硬编码 checks 的问题；最终复审为 Critical 0、Important 0、Minor 0。
-- 真实 Binance Spot Testnet smoke 未运行：当前环境没有 `CCXT_SANDBOX_API_KEY` / `CCXT_SANDBOX_SECRET`。因此不生成真实 manifest，不生成 Stage 6 exit acceptance，Stage 6 保持 current。
+- 真实 Binance Spot Testnet：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成真实创建、查询、撤销和终态 `canceled` 对账；API 重启、detached 导入回读与八项检查全部通过。
+- 真实 manifest hash：`096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`；`aiqt.stage6ExitAcceptance.status=accepted_for_maintenance`，全部 live 字段为 false。
 - 实现提交：`2071065 feat: implement stage6 sandbox execution`；审查修复提交：`eb67192 fix: harden stage6 recovery acceptance`；PR [#3](https://github.com/wqjuser/AIQuantificationTools/pull/3) 的双 quality-gate 与 GitGuardian 全部通过，已以 merge commit `3b7314c` 合并到 main。
 
 ## 明确不做

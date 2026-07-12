@@ -50,6 +50,7 @@ _Avoid_: 浏览器临时刷新、后台轮询服务、另一套恢复任务
 
 **Stage 6 退出验收**：
 由无密钥确定性 CI 证据和一次真实 Binance Spot Testnet 提交、查询、撤单、对账的脱敏 manifest 共同组成。测试替身只验证故障与恢复逻辑，不是产品适配器；缺少真实 Testnet manifest 时 Stage 6 不能退出。
+2026-07-13 已以 BTC/USDT、ETH/USDT 两笔终态 `canceled` 委托完成该验收，Stage 6 转入 maintenance；该结论不授权生产或真实资金路由。
 _Avoid_: 仅单元测试通过、伪造交易所成功、含密钥的验收包
 
 **Sandbox 写路由凭据**：

@@ -35,6 +35,8 @@ INSTALL_DATA_DEPS=true
 
 ## 验收
 
+2026-07-13 已完成一次真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔委托均完成创建、查询、撤销和终态对账，API 重启与 detached 导入回读通过；真实 manifest hash 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。后续重跑仍必须使用新的人工复核链和隔离数据卷，不得删除或改写历史失败批次。
+
 无密钥门禁可在任何开发/CI 环境运行：
 
 ```powershell

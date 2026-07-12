@@ -88,7 +88,7 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 6 当前阶段：Binance Spot Testnet
+## Stage 6 已完成并进入维护
 
 Stage 6 在 Execution 提供唯一 Sandbox 黄金路径：从同一条 Stage 4 workflow 与 Stage 5 已批准证据链生成规范化 GTC 限价单，进行 10 分钟批次授权，再提交、查询、撤单和事件驱动对账。实现只复用现有 `AuditEventStore`、Stage 4 风险限额和稳定 `clientOrderId`，固定 Binance Spot Testnet；不支持生产 endpoint、真实资金、Futures、杠杆、多交易所或手填委托。
 
@@ -103,11 +103,11 @@ npm run docker:smoke:stage6:real:validate
 npm run docker:smoke:stage6:exit:validate
 ```
 
-当前 Stage 6 为 current。代码、确定性测试、便携审计和无密钥门禁完成后，仍必须取得真实 Binance Spot Testnet 清单才能退出并转为 maintenance；不能用 fake/CI 结果替代。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
+Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 6 现均为 maintenance；下一阶段尚未激活，生产 endpoint、真实资金和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
 
 ## Stage 5 已完成并进入维护
 
-Stage 5 已完成 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针、授权预检、不可变授权复核和 CI 发布门禁。顶层 `aiqt.stage5ExitAcceptance` 会把 Stage 3 deterministic baseline、Stage 4 权威组合输入与五份 Stage 5 安全证据收束为一个退出结论；API 和 Execution 从同一份清单回读 accepted/missing/invalid。Stage 0 至 Stage 5 均为 maintenance，Stage 6 为 current。
+Stage 5 已完成 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针、授权预检、不可变授权复核和 CI 发布门禁。顶层 `aiqt.stage5ExitAcceptance` 会把 Stage 3 deterministic baseline、Stage 4 权威组合输入与五份 Stage 5 安全证据收束为一个退出结论；API 和 Execution 从同一份清单回读 accepted/missing/invalid。Stage 5 现作为 Stage 6 Sandbox 执行的维护门禁。
 
 ```powershell
 npm run docker:smoke:stage5 -- --no-build
