@@ -237,6 +237,13 @@ from quant_core.stage5_shadow import (
     validate_stage5_sandbox_readiness_decision,
     validate_stage5_shadow_session,
 )
+from quant_core.stage6_sandbox import (
+    BinanceSpotTestnetRoute,
+    Stage6SandboxExecutionService,
+    build_stage6_sandbox_batch_authorization,
+    validate_stage6_sandbox_batch_authorization,
+)
+from quant_core.stage6_exit import DEFAULT_STAGE6_EXIT_ACCEPTANCE_REPORT_PATH, load_stage6_exit_acceptance_status
 from quant_core.desktop_release import DEFAULT_DESKTOP_RELEASE_REPORT_PATH, load_desktop_release_status
 from quant_core.p0_acceptance import DEFAULT_P0_ACCEPTANCE_REPORT_PATH, load_p0_acceptance_status
 from quant_core.p1_acceptance import DEFAULT_P1_ACCEPTANCE_REPORT_PATH, load_p1_acceptance_status
@@ -490,12 +497,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     audit_signing_keys_json = os.environ.get("AIQT_AUDIT_SIGNING_KEYS_JSON", "")
     execution_adapter_health_exchange_factory = None
     execution_adapter_health_environ = None
+    stage6_sandbox_route_factory = None
     p0_acceptance_report_path = DEFAULT_P0_ACCEPTANCE_REPORT_PATH
     p1_acceptance_report_path = DEFAULT_P1_ACCEPTANCE_REPORT_PATH
     p2_pre_live_acceptance_report_path = DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH
     p2_paper_replay_report_path = DEFAULT_P2_PAPER_REPLAY_REPORT_PATH
     p2_readiness_acceptance_report_path = DEFAULT_P2_READINESS_ACCEPTANCE_REPORT_PATH
     stage5_exit_acceptance_report_path = DEFAULT_STAGE5_EXIT_ACCEPTANCE_REPORT_PATH
+    stage6_exit_acceptance_report_path = DEFAULT_STAGE6_EXIT_ACCEPTANCE_REPORT_PATH
     p2_manifest_chain_preflight_report_path = DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH
     desktop_release_report_path = DEFAULT_DESKTOP_RELEASE_REPORT_PATH
     stage1_daily_use_report_path = DEFAULT_STAGE1_DAILY_USE_REPORT_PATH
@@ -2390,6 +2399,96 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"sandboxAuthorizationReview": review}, status=201 if created else 200)
             return
+        if parsed.path == "/api/execution/stage6/sandbox-authorizations":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "workflowId", "shadowSessionId", "readinessDecisionId", "preflightId", "reviewId", "operator"
+                }:
+                    raise ValueError("stage6 sandbox authorization request fields are invalid")
+                workflow = _stage6_event_snapshot(
+                    self.audit_event_store, payload["workflowId"], "stage4_portfolio_workflow",
+                    validate_stage4_portfolio_workflow_snapshot,
+                )
+                shadow = _stage6_event_snapshot(
+                    self.audit_event_store, payload["shadowSessionId"], "stage5_shadow_execution_session",
+                    validate_stage5_shadow_session,
+                )
+                readiness = _stage6_event_snapshot(
+                    self.audit_event_store, payload["readinessDecisionId"], "stage5_sandbox_readiness_decision",
+                    validate_stage5_sandbox_readiness_decision,
+                )
+                preflight = _stage6_event_snapshot(
+                    self.audit_event_store, payload["preflightId"], "stage5_sandbox_authorization_preflight",
+                    validate_stage5_sandbox_authorization_preflight,
+                )
+                review = _stage6_event_snapshot(
+                    self.audit_event_store, payload["reviewId"], "stage5_sandbox_authorization_review",
+                    validate_stage5_sandbox_authorization_review,
+                )
+                service = self._stage6_sandbox_service()
+                orders = service.route.normalize_orders(workflow)
+                authorization = build_stage6_sandbox_batch_authorization(
+                    workflow, shadow, readiness, preflight, review, orders,
+                    operator=_required_stage4_string(payload["operator"]),
+                )
+                service.record_authorization(authorization)
+            except (LookupError, ValueError, RuntimeError) as error:
+                self._send_json(
+                    {"error": "stage6_sandbox_authorization_blocked", "blockers": [str(error)]}, status=409
+                )
+                return
+            self._send_json({"sandboxBatchAuthorization": authorization}, status=201)
+            return
+        if parsed.path == "/api/execution/stage6/sandbox-batches":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {"authorizationId"}:
+                    raise ValueError("stage6 sandbox submit request fields are invalid")
+                batch = self._stage6_sandbox_service().submit(_required_stage4_string(payload["authorizationId"]))
+            except (ValueError, RuntimeError) as error:
+                self._send_json({"error": "stage6_sandbox_submit_blocked", "blockers": [str(error)]}, status=409)
+                return
+            self._send_json({"sandboxBatch": batch}, status=200)
+            return
+        if parsed.path == "/api/execution/stage6/sandbox-reconciliations":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {"authorizationId"}:
+                    raise ValueError("stage6 sandbox reconcile request fields are invalid")
+                batch = self._stage6_sandbox_service().reconcile(_required_stage4_string(payload["authorizationId"]))
+            except (ValueError, RuntimeError) as error:
+                self._send_json({"error": "stage6_sandbox_reconciliation_blocked", "blockers": [str(error)]}, status=409)
+                return
+            self._send_json({"sandboxBatch": batch})
+            return
+        if parsed.path == "/api/execution/stage6/sandbox-cancellations":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {"authorizationId", "orderId"}:
+                    raise ValueError("stage6 sandbox cancel request fields are invalid")
+                batch = self._stage6_sandbox_service().cancel(
+                    _required_stage4_string(payload["authorizationId"]),
+                    _required_stage4_string(payload["orderId"]),
+                )
+            except (ValueError, RuntimeError) as error:
+                self._send_json({"error": "stage6_sandbox_cancel_blocked", "blockers": [str(error)]}, status=409)
+                return
+            self._send_json({"sandboxBatch": batch})
+            return
+        if parsed.path == "/api/execution/stage6/kill-switch":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {"triggered", "operator"} or type(payload["triggered"]) is not bool:
+                    raise ValueError("stage6 sandbox kill switch request fields are invalid")
+                kill_switch = self._stage6_sandbox_service().set_kill_switch(
+                    triggered=payload["triggered"], operator=_required_stage4_string(payload["operator"])
+                )
+            except (ValueError, RuntimeError) as error:
+                self._send_json({"error": "stage6_sandbox_kill_switch_blocked", "blockers": [str(error)]}, status=409)
+                return
+            self._send_json({"killSwitch": kill_switch})
+            return
         if parsed.path == "/api/portfolio/backtest":
             try:
                 portfolio = _portfolio_backtest_from_payload(self._read_json_body(), self.run_store)
@@ -3580,6 +3679,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {"acceptance": load_stage5_exit_acceptance_status(Path(self.stage5_exit_acceptance_report_path))}
             )
             return
+        if parsed.path == "/api/stage6/exit-acceptance/latest":
+            self._send_json(
+                {"acceptance": load_stage6_exit_acceptance_status(Path(self.stage6_exit_acceptance_report_path))}
+            )
+            return
         if parsed.path == "/api/p2/manifest-chain/preflight/latest":
             self._send_json(
                 {"preflight": load_p2_manifest_chain_preflight_status(Path(self.p2_manifest_chain_preflight_report_path))}
@@ -4246,6 +4350,40 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 return
             self._send_json({"sandboxAuthorizationReviews": reviews})
+            return
+        if parsed.path == "/api/execution/stage6/sandbox-authorizations":
+            try:
+                query = parse_qs(parsed.query)
+                base_run_id = query.get("baseRunId", [""])[0].strip()
+                limit = _parse_limit(query.get("limit", ["20"])[0])
+                events = self.audit_event_store.list_recent(
+                    run_id=base_run_id or None,
+                    event_type="stage6_sandbox_batch_authorization",
+                    limit=limit,
+                )
+                authorizations = [
+                    validate_stage6_sandbox_batch_authorization(event.metadata.get("snapshot"))
+                    for event in events
+                ]
+            except ValueError as error:
+                self._send_json({"error": "invalid_stage6_sandbox_authorization_store", "detail": str(error)}, status=500)
+                return
+            self._send_json({"sandboxBatchAuthorizations": authorizations})
+            return
+        if parsed.path == "/api/execution/stage6/sandbox-batches":
+            authorization_id = parse_qs(parsed.query).get("authorizationId", [""])[0].strip()
+            if not authorization_id:
+                self._send_json({"error": "stage6_sandbox_authorization_id_required"}, status=400)
+                return
+            try:
+                batch = self._stage6_sandbox_service().batch(authorization_id)
+            except ValueError as error:
+                self._send_json({"error": "stage6_sandbox_batch_not_found", "detail": str(error)}, status=404)
+                return
+            self._send_json({"sandboxBatch": batch})
+            return
+        if parsed.path == "/api/execution/stage6/kill-switch":
+            self._send_json({"killSwitch": self._stage6_sandbox_service().kill_switch()})
             return
         if parsed.path == "/api/portfolio/paper-orders":
             query = parse_qs(parsed.query)
@@ -5001,6 +5139,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             status = 409
         self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=status)
 
+    def _stage6_sandbox_service(self) -> Stage6SandboxExecutionService:
+        factory = self.stage6_sandbox_route_factory
+        route = factory() if callable(factory) else BinanceSpotTestnetRoute()
+        return Stage6SandboxExecutionService(self.audit_event_store, route)
+
     def _settings_status_payload(self) -> dict[str, object]:
         return build_settings_status(
             cache_path=self.cache.path,
@@ -5053,6 +5196,22 @@ def _adapter_error_target(market: str) -> tuple[str, str] | None:
     if market == "crypto":
         return "ccxt-ohlcv", "ccxt"
     return None
+
+
+def _stage6_event_snapshot(
+    store: AuditEventStore,
+    event_id: object,
+    event_type: str,
+    validator,
+) -> dict[str, object]:
+    normalized_id = _required_stage4_string(event_id)
+    event = store.get(normalized_id)
+    if event is None or event.event_type != event_type:
+        raise LookupError(f"{event_type} source evidence was not found")
+    snapshot = validator(event.metadata.get("snapshot"))
+    if event.event_id != normalized_id or snapshot.get("baseRunId") != event.run_id:
+        raise ValueError(f"{event_type} audit binding does not match")
+    return snapshot
 
 
 def _adapter_error_message(*, quality: DataQuality | None, error: str | None) -> str | None:
@@ -5195,6 +5354,9 @@ def resolve_api_bind(
 
 def run(host: str | None = None, port: int | str | None = None) -> None:
     bind_host, bind_port = resolve_api_bind(host=host, port=port)
+    factory = QuantApiHandler.stage6_sandbox_route_factory
+    route = factory() if callable(factory) else BinanceSpotTestnetRoute()
+    Stage6SandboxExecutionService(QuantApiHandler.audit_event_store, route).recover_active_batches()
     server = ThreadingHTTPServer((bind_host, bind_port), QuantApiHandler)
     print(f"quant-core API listening on http://{bind_host}:{bind_port}")
     server.serve_forever()

@@ -48,10 +48,14 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke:p0:validate");
     expect(workflow).toContain("npm run docker:smoke:stage5 -- --no-build --down");
     expect(workflow).toContain("npm run docker:smoke:stage5:validate");
+    expect(workflow).toContain("npm run docker:smoke:stage6 -- --no-build");
+    expect(workflow).toContain("npm run docker:smoke:stage6:validate");
     expect(workflow).toContain("actions/upload-artifact@v5");
     expect(workflow).toContain("p0-acceptance-manifest");
     expect(workflow).toContain("data/p0-acceptance.json");
     expect(workflow).toContain("stage5-release-manifests");
+    expect(workflow).toContain("stage6-sandbox-safety-manifest");
+    expect(workflow).toContain("data/stage6-sandbox-safety.json");
     for (const path of [
       "data/stage3-ai-review.json",
       "data/stage4-portfolio-paper.json",
@@ -117,6 +121,12 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:stage5:validate"]).toContain(
       "--validate-stage5-exit-acceptance-report data/stage5-exit-acceptance.json",
     );
+    expect(packageJson.scripts["docker:smoke:stage6"]).toBe(
+      `${pythonLauncher} tools/stage6_sandbox_acceptance.py --report data/stage6-sandbox-safety.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage6:validate"]).toBe(
+      `${pythonLauncher} tools/stage6_sandbox_acceptance.py --validate data/stage6-sandbox-safety.json`,
+    );
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 
@@ -146,6 +156,8 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("dockerfile: apps/web/Dockerfile");
     expect(compose).toContain("QUANT_CORE_HOST: 0.0.0.0");
     expect(compose).toContain("QUANT_CORE_PORT: \"8765\"");
+    expect(compose).toContain("CCXT_SANDBOX_API_KEY: ${CCXT_SANDBOX_API_KEY:-}");
+    expect(compose).toContain("CCXT_SANDBOX_SECRET: ${CCXT_SANDBOX_SECRET:-}");
     expect(compose).toContain("quant-data:/app/data");
     expect(compose).toContain("${AIQT_WEB_PORT:-5173}:80");
     expect(compose).toContain("condition: service_healthy");

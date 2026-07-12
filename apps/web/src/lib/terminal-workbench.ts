@@ -53,7 +53,8 @@ export type ProductDevelopmentStageId =
   | "strategy-backtest"
   | "ai-review"
   | "portfolio-paper"
-  | "live-readiness";
+  | "live-readiness"
+  | "sandbox-execution";
 export type ProductDevelopmentStageStatus = "maintenance" | "current" | "planned";
 
 export interface ProductDevelopmentStage {
@@ -9078,7 +9079,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
     workAreaIds: ["market", "research"],
-    focus: "Preserve the accepted market and research golden path as a regression gate while the next roadmap decision is pending.",
+    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 6 validates Sandbox execution.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -9132,6 +9133,18 @@ const productDevelopmentStageDefinitions = [
       "Shadow execution, idempotency, recovery, limits, kill switch, and reconciliation remain deterministic and replayable.",
       "Sandbox readiness, authoritative read-only probe, authorization preflight, and immutable review remain fail closed.",
       "The top-level exit acceptance binds all release evidence while no Sandbox or live route is enabled."
+    ]
+  },
+  {
+    id: "sandbox-execution",
+    label: "Stage 6 · Sandbox Execution",
+    status: "current",
+    workAreaIds: ["execution"],
+    focus: "Execute one authoritative Binance Spot Testnet batch with idempotent recovery while every live route remains blocked.",
+    exitCriteria: [
+      "Only approved Stage 4/5 authority chains can create a ten-minute batch authorization.",
+      "GTC limit orders submit, query, cancel, reconcile, and recover from restart by stable clientOrderId.",
+      "The account kill switch, detached imports, Docker gates, and real Testnet manifest remain auditable without exposing credentials."
     ]
   }
 ] as const satisfies readonly ProductDevelopmentStage[];
@@ -9198,7 +9211,7 @@ const productWorkAreaDefinitions = [
     accent: "execution",
     quantLoopStepId: "paper",
     workflowStageId: "execution",
-    deliveryStageId: "live-readiness"
+    deliveryStageId: "sandbox-execution"
   },
   {
     id: "audit",

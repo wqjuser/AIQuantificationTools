@@ -16,6 +16,7 @@ jobs:
       contents: read
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      INSTALL_DATA_DEPS: "true"
 
     steps:
       - name: Checkout
@@ -68,6 +69,12 @@ jobs:
       - name: Validate complete Stage 5 release evidence
         run: npm run docker:smoke:stage5:validate
 
+      - name: Run Stage 6 no-credential safety smoke
+        run: npm run docker:smoke:stage6 -- --no-build
+
+      - name: Validate Stage 6 no-credential safety evidence
+        run: npm run docker:smoke:stage6:validate
+
       - name: Upload P0 acceptance manifest
         if: always()
         uses: actions/upload-artifact@v5
@@ -98,4 +105,12 @@ jobs:
             data/stage5-sandbox-authorization-preflight.json
             data/stage5-sandbox-authorization-review.json
             data/stage5-exit-acceptance.json
+          if-no-files-found: warn
+
+      - name: Upload Stage 6 safety manifest
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: stage6-sandbox-safety-manifest
+          path: data/stage6-sandbox-safety.json
           if-no-files-found: warn
