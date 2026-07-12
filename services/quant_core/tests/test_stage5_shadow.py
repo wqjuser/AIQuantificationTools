@@ -637,6 +637,66 @@ class Stage5ShadowSessionTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             docker_smoke.validate_stage5_sandbox_readiness_acceptance_manifest(unsafe)
 
+    def test_sandbox_readonly_probe_acceptance_requires_no_credentials_and_fail_closed_status(self) -> None:
+        from tools import docker_smoke
+
+        probe = {
+            "schemaVersion": 1,
+            "probeId": "execution-adapter-health-ccxt-live-no-credentials",
+            "adapterId": "ccxt-live",
+            "provider": "ccxt",
+            "exchangeId": "binance",
+            "mode": "sandbox",
+            "status": "blocked",
+            "generatedAt": "2026-07-12T08:00:00+00:00",
+            "checks": [],
+            "capabilities": {},
+            "credentials": {
+                "apiKeyConfigured": False,
+                "apiKeySource": None,
+                "secretConfigured": False,
+                "secretSource": None,
+                "passwordConfigured": False,
+                "passwordSource": None,
+            },
+            "marketCount": 0,
+            "exchangeStatus": None,
+            "serverTimeMs": None,
+            "accountSyncState": "blocked",
+            "blockedReasons": ["ccxt_not_installed"],
+            "metadata": {"readOnly": True},
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+            "orderRoutingEnabled": False,
+        }
+        manifest = docker_smoke.build_stage5_sandbox_readonly_probe_acceptance_manifest(probe)
+        self.assertIn(
+            "credentialsAbsent=True",
+            docker_smoke.validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest),
+        )
+
+        for field, value in (
+            ("probeDigest", "0" * 64),
+            ("orderSubmissionEnabled", True),
+        ):
+            with self.subTest(field=field):
+                tampered = copy.deepcopy(manifest)
+                tampered[field] = value
+                with self.assertRaises(RuntimeError):
+                    docker_smoke.validate_stage5_sandbox_readonly_probe_acceptance_manifest(tampered)
+
+        ready = copy.deepcopy(probe)
+        ready["status"] = "ready"
+        ready_manifest = docker_smoke.build_stage5_sandbox_readonly_probe_acceptance_manifest(ready)
+        with self.assertRaises(RuntimeError):
+            docker_smoke.validate_stage5_sandbox_readonly_probe_acceptance_manifest(ready_manifest)
+
+        leaked = copy.deepcopy(probe)
+        leaked["rawSecret"] = "must-not-enter-acceptance"
+        leaked_manifest = docker_smoke.build_stage5_sandbox_readonly_probe_acceptance_manifest(leaked)
+        with self.assertRaises(RuntimeError):
+            docker_smoke.validate_stage5_sandbox_readonly_probe_acceptance_manifest(leaked_manifest)
+
     def test_export_import_counts_and_rebuilds_shadow_sessions_from_stage4_workflow(self) -> None:
         from quant_core.runs import (
             research_run_export_to_payload,

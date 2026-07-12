@@ -1371,6 +1371,7 @@ const executionAdapterSandboxProbeExecutionConfirmationRows: Array<{
   key: keyof ExecutionAdapterSandboxProbeExecutionConfirmations;
   labelEn: string;
   labelZh: string;
+  authoritative?: boolean;
 }> = [
   {
     key: "probePlanReviewed",
@@ -1380,12 +1381,14 @@ const executionAdapterSandboxProbeExecutionConfirmationRows: Array<{
   {
     key: "readonlyHandshakeCaptured",
     labelEn: "Read-only handshake captured",
-    labelZh: "只读握手证据已记录"
+    labelZh: "只读握手证据已记录",
+    authoritative: true
   },
   {
     key: "accountSnapshotRedacted",
     labelEn: "Account snapshot redacted",
-    labelZh: "账户快照已脱敏"
+    labelZh: "账户快照已脱敏",
+    authoritative: true
   },
   {
     key: "orderSchemaValidated",
@@ -5417,6 +5420,9 @@ export function App() {
                 currentRow.sandboxProbeExecutionId !== result.adapterSandboxProbeExecution!.sandboxProbeExecutionId
             )
           ]);
+        }
+        if (result.adapterHealthProbe) {
+          setExecutionAdapterHealthProbe({ adapterHealthProbe: result.adapterHealthProbe, source: "core" });
         }
         if (result.error) {
           setWorkspaceState((current) => ({
@@ -21753,6 +21759,7 @@ function PlatformSettingsPanel({
             const probeExecution = sandboxProbeExecutionRows.find(
               (item) => item.adapterId === row.adapterId && item.sandboxProbePlanId === row.id
             );
+            const authoritativeHealthReady = probeExecution?.authoritativeHealthReady ?? false;
             return (
               <article className={`adapter-sandbox-probe-execution-row ${probeExecution?.tone ?? row.tone}`} key={row.id}>
                 <div>
@@ -21767,23 +21774,32 @@ function PlatformSettingsPanel({
                   {adapterCertificationBoundaryLabel(i18n, row.boundary)}
                 </p>
                 <div className="adapter-sandbox-probe-execution-confirmations">
-                  {executionAdapterSandboxProbeExecutionConfirmationRows.map((item) => (
-                    <label
-                      className={`adapter-sandbox-probe-execution-confirmation ${
-                        confirmations[item.key] ? "positive" : "warning"
-                      }`}
-                      key={`${row.id}-${item.key}`}
-                    >
-                      <input
-                        checked={confirmations[item.key]}
-                        onChange={(event) =>
-                          onSandboxProbeExecutionConfirmationChange?.(row.id, item.key, event.currentTarget.checked)
-                        }
-                        type="checkbox"
-                      />
-                      <span>{i18n.locale === "zh-CN" ? item.labelZh : item.labelEn}</span>
-                    </label>
-                  ))}
+                  {executionAdapterSandboxProbeExecutionConfirmationRows.map((item) => {
+                    const checked = item.authoritative ? authoritativeHealthReady : confirmations[item.key];
+                    return (
+                      <label
+                        className={`adapter-sandbox-probe-execution-confirmation ${checked ? "positive" : "warning"}`}
+                        key={`${row.id}-${item.key}`}
+                      >
+                        <input
+                          checked={checked}
+                          disabled={item.authoritative}
+                          onChange={(event) =>
+                            onSandboxProbeExecutionConfirmationChange?.(row.id, item.key, event.currentTarget.checked)
+                          }
+                          type="checkbox"
+                        />
+                        <span>
+                          {i18n.locale === "zh-CN" ? item.labelZh : item.labelEn}
+                          {item.authoritative
+                            ? i18n.locale === "zh-CN"
+                              ? "（服务端探针）"
+                              : " (server probe)"
+                            : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
                 <button
                   className="adapter-certification-apply-button"
@@ -21807,6 +21823,10 @@ function PlatformSettingsPanel({
                       {adapterSandboxProbeExecutionConfirmationSummary(i18n, probeExecution.confirmationSummary)} ·{" "}
                       {adapterCertificationApplyBlockerSummary(i18n, probeExecution.blockerSummary)} ·{" "}
                       {adapterCertificationBoundaryLabel(i18n, probeExecution.boundary)}
+                    </span>
+                    <span>
+                      {i18n.locale === "zh-CN" ? "权威探针" : "Authoritative probe"} ·{" "}
+                      {probeExecution.healthProbeSummary}
                     </span>
                     <em>{probeExecution.auditEventId}</em>
                   </div>

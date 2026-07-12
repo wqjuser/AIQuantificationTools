@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Callable
 from uuid import uuid4
+
+from quant_core.audit_signing import AuditSigningKeyRegistry
 
 
 _CCXT_UNSET = object()
@@ -424,6 +429,202 @@ def execution_adapter_health_probe_to_payload(probe: ExecutionAdapterHealthProbe
         "liveTradingAllowed": probe.live_trading_allowed,
         "orderRoutingEnabled": probe.order_routing_enabled,
     }
+
+
+def execution_adapter_health_probe_to_evidence(
+    probe: ExecutionAdapterHealthProbe,
+    *,
+    signing_secret: str | None = None,
+    signing_key_id: str | None = None,
+    signing_keys_json: str | None = None,
+) -> dict[str, Any]:
+    payload = execution_adapter_health_probe_to_payload(probe)
+    evidence = {
+        "kind": "aiqt.executionAdapterSandboxHealthEvidence",
+        "schemaVersion": 1,
+        "probeId": payload["probeId"],
+        "adapterId": payload["adapterId"],
+        "provider": payload["provider"],
+        "exchangeId": payload["exchangeId"],
+        "mode": payload["mode"],
+        "status": payload["status"],
+        "generatedAt": payload["generatedAt"],
+        "checks": [{"id": row["id"], "status": row["status"]} for row in payload["checks"]],
+        "capabilities": payload["capabilities"],
+        "credentialFlags": {
+            "keyConfigured": payload["credentials"]["apiKeyConfigured"],
+            "signingConfigured": payload["credentials"]["secretConfigured"],
+            "passphraseConfigured": payload["credentials"]["passwordConfigured"],
+        },
+        "marketCount": payload["marketCount"],
+        "accountSyncState": payload["accountSyncState"],
+        "blockedReasons": payload["blockedReasons"],
+        "readOnly": payload["metadata"].get("readOnly") is True,
+        "paperOnly": payload["paperOnly"],
+        "liveTradingAllowed": payload["liveTradingAllowed"],
+        "orderRoutingEnabled": payload["orderRoutingEnabled"],
+    }
+    evidence["evidenceHash"] = _execution_adapter_health_evidence_hash(evidence)
+    registry = _execution_adapter_health_signing_registry(
+        signing_secret=signing_secret,
+        signing_key_id=signing_key_id,
+        signing_keys_json=signing_keys_json,
+    )
+    key = registry.active_key
+    evidence["authority"] = {
+        "algorithm": "hmac-sha256",
+        "keyId": key.key_id,
+        "keyFingerprint": key.fingerprint,
+        "value": "",
+    }
+    evidence["authority"]["value"] = _execution_adapter_health_authority_mac(evidence, key.secret)
+    return validate_execution_adapter_health_probe_evidence(
+        evidence,
+        signing_secret=signing_secret,
+        signing_key_id=signing_key_id,
+        signing_keys_json=signing_keys_json,
+    )
+
+
+def validate_execution_adapter_health_probe_evidence(
+    value: Any,
+    *,
+    signing_secret: str | None = None,
+    signing_key_id: str | None = None,
+    signing_keys_json: str | None = None,
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError("execution_adapter_health_evidence_required")
+    required_fields = {
+        "kind", "schemaVersion", "probeId", "adapterId", "provider", "exchangeId", "mode", "status",
+        "generatedAt", "checks", "capabilities", "credentialFlags", "marketCount", "accountSyncState",
+        "blockedReasons", "readOnly", "paperOnly", "liveTradingAllowed", "orderRoutingEnabled", "evidenceHash",
+        "authority",
+    }
+    if set(value) != required_fields:
+        raise ValueError("execution_adapter_health_evidence_fields_invalid")
+    if value["kind"] != "aiqt.executionAdapterSandboxHealthEvidence" or value["schemaVersion"] != 1:
+        raise ValueError("execution_adapter_health_evidence_schema_invalid")
+    for field in ("probeId", "adapterId", "exchangeId", "accountSyncState"):
+        if not isinstance(value[field], str) or not value[field].strip():
+            raise ValueError(f"execution_adapter_health_evidence_{field}_invalid")
+    if value["provider"] != "ccxt" or value["mode"] != "sandbox":
+        raise ValueError("execution_adapter_health_evidence_provider_invalid")
+    if value["status"] not in {"ready", "review", "blocked"}:
+        raise ValueError("execution_adapter_health_evidence_status_invalid")
+    try:
+        generated_at = datetime.fromisoformat(value["generatedAt"])
+    except (TypeError, ValueError) as error:
+        raise ValueError("execution_adapter_health_evidence_generated_at_invalid") from error
+    if generated_at.tzinfo is None or generated_at.utcoffset() is None:
+        raise ValueError("execution_adapter_health_evidence_generated_at_invalid")
+    if type(value["marketCount"]) is not int or value["marketCount"] < 0:
+        raise ValueError("execution_adapter_health_evidence_market_count_invalid")
+    checks = value["checks"]
+    if not isinstance(checks, list) or not checks:
+        raise ValueError("execution_adapter_health_evidence_checks_invalid")
+    check_ids = []
+    for row in checks:
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"id", "status"}
+            or not isinstance(row["id"], str)
+            or not row["id"].strip()
+            or row["status"] not in {"passed", "review", "blocked", "skipped"}
+        ):
+            raise ValueError("execution_adapter_health_evidence_checks_invalid")
+        check_ids.append(row["id"])
+    if len(check_ids) != len(set(check_ids)):
+        raise ValueError("execution_adapter_health_evidence_checks_invalid")
+    if not isinstance(value["capabilities"], dict) or any(
+        not isinstance(key, str) or type(enabled) is not bool
+        for key, enabled in value["capabilities"].items()
+    ):
+        raise ValueError("execution_adapter_health_evidence_capabilities_invalid")
+    credential_flags = value["credentialFlags"]
+    if (
+        not isinstance(credential_flags, dict)
+        or set(credential_flags) != {"keyConfigured", "signingConfigured", "passphraseConfigured"}
+        or any(type(configured) is not bool for configured in credential_flags.values())
+    ):
+        raise ValueError("execution_adapter_health_evidence_credentials_invalid")
+    if not isinstance(value["blockedReasons"], list) or any(
+        not isinstance(reason, str) or not reason.strip() for reason in value["blockedReasons"]
+    ):
+        raise ValueError("execution_adapter_health_evidence_blockers_invalid")
+    if any(
+        type(value[field]) is not bool
+        for field in ("readOnly", "paperOnly", "liveTradingAllowed", "orderRoutingEnabled")
+    ):
+        raise ValueError("execution_adapter_health_evidence_boundary_invalid")
+    if value["readOnly"] is not True or value["paperOnly"] is not True or value["liveTradingAllowed"] or value["orderRoutingEnabled"]:
+        raise ValueError("execution_adapter_health_evidence_boundary_invalid")
+    if not isinstance(value["evidenceHash"], str) or value["evidenceHash"] != _execution_adapter_health_evidence_hash(value):
+        raise ValueError("execution_adapter_health_evidence_hash_invalid")
+    authority = value["authority"]
+    if not isinstance(authority, dict) or set(authority) != {
+        "algorithm", "keyId", "keyFingerprint", "value"
+    } or authority["algorithm"] != "hmac-sha256":
+        raise ValueError("execution_adapter_health_evidence_authority_invalid")
+    registry = _execution_adapter_health_signing_registry(
+        signing_secret=signing_secret,
+        signing_key_id=signing_key_id,
+        signing_keys_json=signing_keys_json,
+    )
+    key = registry.find(str(authority["keyId"]))
+    if (
+        key is None
+        or not key.can_verify
+        or authority["keyFingerprint"] != key.fingerprint
+        or not isinstance(authority["value"], str)
+        or not hmac.compare_digest(
+            authority["value"], _execution_adapter_health_authority_mac(value, key.secret)
+        )
+    ):
+        raise ValueError("execution_adapter_health_evidence_authority_invalid")
+    return value
+
+
+def _execution_adapter_health_evidence_hash(value: dict[str, Any]) -> str:
+    payload = {key: item for key, item in value.items() if key not in {"evidenceHash", "authority"}}
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def _execution_adapter_health_authority_mac(value: dict[str, Any], secret: str) -> str:
+    payload = {
+        **value,
+        "authority": {
+            key: item
+            for key, item in value["authority"].items()
+            if key != "value"
+        },
+    }
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+
+
+def _execution_adapter_health_signing_registry(
+    *,
+    signing_secret: str | None,
+    signing_key_id: str | None,
+    signing_keys_json: str | None,
+) -> AuditSigningKeyRegistry:
+    active_secret = signing_secret if signing_secret is not None else os.environ.get(
+        "AIQT_AUDIT_SIGNING_SECRET", "local-dev-audit-secret"
+    )
+    active_key_id = signing_key_id if signing_key_id is not None else os.environ.get(
+        "AIQT_AUDIT_SIGNING_KEY_ID", "local-audit-key"
+    )
+    return AuditSigningKeyRegistry.from_config(
+        secret=active_secret.strip() or "local-dev-audit-secret",
+        key_id=active_key_id.strip() or "local-audit-key",
+        signer="Execution Adapter Health Authority",
+        chain_id=os.environ.get("AIQT_AUDIT_CHAIN_ID", "audit-chain-local"),
+        keys_json=signing_keys_json if signing_keys_json is not None else os.environ.get(
+            "AIQT_AUDIT_SIGNING_KEYS_JSON", ""
+        ),
+    )
 
 
 def _build_probe(

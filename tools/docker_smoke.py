@@ -1683,6 +1683,134 @@ def load_stage5_sandbox_readiness_acceptance_report(path: Path) -> dict[str, Any
     return _load_json_report(path, "Stage 5 sandbox readiness acceptance manifest")
 
 
+_STAGE5_READONLY_PROBE_SAFETY = {
+    "readOnly": True,
+    "paperOnly": True,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "orderRoutingEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_sandbox_readonly_probe_acceptance_manifest(
+    probe: dict[str, Any],
+) -> dict[str, Any]:
+    credentials = probe.get("credentials") if isinstance(probe.get("credentials"), dict) else {}
+    assertions = {
+        "statusNotReady": probe.get("status") in {"review", "blocked"},
+        "credentialsAbsent": all(
+            credentials.get(field) is False
+            for field in ("apiKeyConfigured", "secretConfigured", "passwordConfigured")
+        ),
+        "serverReportedReadOnly": (
+            isinstance(probe.get("metadata"), dict) and probe["metadata"].get("readOnly") is True
+        ),
+        "orderRoutingDisabled": probe.get("orderRoutingEnabled") is False,
+    }
+    canonical_probe = json.dumps(probe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return {
+        "kind": "aiqt.stage5SandboxReadonlyProbeAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if all(assertions.values()) else "failed",
+        "adapterHealthProbe": probe,
+        "probeDigest": hashlib.sha256(canonical_probe.encode()).hexdigest(),
+        "assertions": assertions,
+        **_STAGE5_READONLY_PROBE_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox readonly probe acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "adapterHealthProbe", "probeDigest",
+        "assertions", *_STAGE5_READONLY_PROBE_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5SandboxReadonlyProbeAcceptance"
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or any(payload[field] is not expected for field, expected in _STAGE5_READONLY_PROBE_SAFETY.items())
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5SandboxReadonlyProbe.generatedAt")
+    probe = _require_dict(payload["adapterHealthProbe"], "Stage 5 sandbox readonly probe")
+    credentials = _require_dict(probe.get("credentials"), "Stage 5 sandbox readonly probe credentials")
+    metadata = _require_dict(probe.get("metadata"), "Stage 5 sandbox readonly probe metadata")
+    expected_probe_fields = {
+        "schemaVersion", "probeId", "adapterId", "provider", "exchangeId", "mode", "status",
+        "generatedAt", "checks", "capabilities", "credentials", "marketCount", "exchangeStatus",
+        "serverTimeMs", "accountSyncState", "blockedReasons", "metadata", "paperOnly",
+        "liveTradingAllowed", "orderRoutingEnabled",
+    }
+    expected_credential_fields = {
+        "apiKeyConfigured", "apiKeySource", "secretConfigured", "secretSource",
+        "passwordConfigured", "passwordSource",
+    }
+    checks = probe.get("checks")
+    capabilities = probe.get("capabilities")
+    if (
+        set(probe) != expected_probe_fields
+        or probe.get("schemaVersion") != 1
+        or probe.get("adapterId") != "ccxt-live"
+        or probe.get("provider") != "ccxt"
+        or probe.get("mode") != "sandbox"
+        or probe.get("status") not in {"review", "blocked"}
+        or metadata.get("readOnly") is not True
+        or probe.get("paperOnly") is not True
+        or probe.get("liveTradingAllowed") is not False
+        or probe.get("orderRoutingEnabled") is not False
+        or set(credentials) != expected_credential_fields
+        or any(
+            credentials.get(field) is not False
+            for field in ("apiKeyConfigured", "secretConfigured", "passwordConfigured")
+        )
+        or any(
+            credentials.get(field) is not None
+            for field in ("apiKeySource", "secretSource", "passwordSource")
+        )
+        or set(metadata) != {"readOnly"}
+        or not isinstance(checks, list)
+        or any(
+            not isinstance(row, dict)
+            or set(row) != {"id", "label", "status", "detail", "latencyMs"}
+            for row in checks
+        )
+        or not isinstance(capabilities, dict)
+        or any(type(enabled) is not bool for enabled in capabilities.values())
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: probe is not fail-closed")
+    expected_assertions = {
+        "statusNotReady": True,
+        "credentialsAbsent": True,
+        "serverReportedReadOnly": True,
+        "orderRoutingDisabled": True,
+    }
+    if payload["assertions"] != expected_assertions:
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: assertions are invalid")
+    canonical_probe = json.dumps(probe, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    if payload["probeDigest"] != hashlib.sha256(canonical_probe.encode()).hexdigest():
+        raise RuntimeError("Invalid Stage 5 sandbox readonly probe acceptance manifest: digest is invalid")
+    return (
+        f"stage5 sandbox readonly probe exchange={probe.get('exchangeId')} status={probe['status']} "
+        "credentialsAbsent=True orderRoutingDisabled=True liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_readonly_probe_acceptance_report(path: Path, manifest: dict[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox readonly probe acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_readonly_probe_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox readonly probe acceptance manifest")
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -2886,6 +3014,31 @@ def run_stage5_sandbox_readiness_acceptance(
     return [summary]
 
 
+def run_stage5_sandbox_readonly_probe_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    report_path: Path | None = None,
+) -> list[str]:
+    response = _require_dict(
+        request_json(
+            join_url(
+                base_url,
+                "/api/execution/adapter-health/ccxt-sandbox?exchange=binance&adapterId=ccxt-live",
+            ),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox readonly probe response",
+    )
+    probe = _require_dict(response.get("adapterHealthProbe"), "Stage 5 sandbox readonly probe")
+    manifest = build_stage5_sandbox_readonly_probe_acceptance_manifest(probe)
+    summary = validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_readonly_probe_acceptance_report(report_path, manifest)
+    return [summary]
+
+
 def _stage5_export_readiness(
     payload: Any, run_id: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -4061,6 +4214,8 @@ def run_smoke(
     stage5_shadow_report: Path | None = None,
     stage5_sandbox_readiness: bool = False,
     stage5_sandbox_readiness_report: Path | None = None,
+    stage5_sandbox_readonly_probe: bool = False,
+    stage5_sandbox_readonly_probe_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -4158,6 +4313,12 @@ def run_smoke(
                 timeout_seconds=timeout_seconds,
                 stage4_report_path=stage5_shadow_stage4_report,
                 report_path=stage5_sandbox_readiness_report,
+            )
+        if stage5_sandbox_readonly_probe:
+            run_stage5_sandbox_readonly_probe_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                report_path=stage5_sandbox_readonly_probe_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -4306,6 +4467,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Validate an existing Stage 5 sandbox readiness acceptance report and exit.",
     )
+    parser.add_argument(
+        "--stage5-sandbox-readonly-probe",
+        action="store_true",
+        help="Run the no-credential Stage 5 server-authoritative readonly sandbox probe acceptance.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-readonly-probe-report",
+        default=None,
+        help="Optional Stage 5 readonly sandbox probe acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-readonly-probe-report",
+        default=None,
+        help="Validate an existing Stage 5 readonly sandbox probe acceptance report and exit.",
+    )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
     parser.add_argument("--p2-p1-acceptance-report", default="data/p1-acceptance.json", help="Path to the P1 acceptance manifest used as P2 evidence.")
@@ -4438,6 +4614,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(validate_stage5_sandbox_readiness_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage5_sandbox_readonly_probe_report:
+        manifest = load_stage5_sandbox_readonly_probe_acceptance_report(
+            Path(args.validate_stage5_sandbox_readonly_probe_report)
+        )
+        print(validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -4512,6 +4694,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage5_sandbox_readiness_report=(
             Path(args.stage5_sandbox_readiness_report)
             if args.stage5_sandbox_readiness_report
+            else None
+        ),
+        stage5_sandbox_readonly_probe=args.stage5_sandbox_readonly_probe,
+        stage5_sandbox_readonly_probe_report=(
+            Path(args.stage5_sandbox_readonly_probe_report)
+            if args.stage5_sandbox_readonly_probe_report
             else None
         ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,

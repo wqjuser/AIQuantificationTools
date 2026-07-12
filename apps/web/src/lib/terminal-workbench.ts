@@ -5423,6 +5423,8 @@ export interface ExecutionAdapterSandboxProbeExecutionRow {
   manifestPath: string;
   envVarSummary: string;
   confirmationSummary: string;
+  healthProbeSummary: string;
+  authoritativeHealthReady: boolean;
   blockerSummary: string;
   boundary: string;
   auditEventId: string;
@@ -27751,6 +27753,8 @@ export function buildExecutionAdapterSandboxProbeExecutionRows(
       manifestPath: row.manifestPath,
       envVarSummary: executionAdapterSecretReferenceEnvVarSummary(row.requiredEnvVars),
       confirmationSummary: executionAdapterSandboxProbeExecutionConfirmationSummary(row.requiredConfirmations),
+      healthProbeSummary: executionAdapterSandboxProbeHealthSummary(row.metadata),
+      authoritativeHealthReady: executionAdapterSandboxProbeAuthoritativeHealthReady(row),
       blockerSummary: executionAdapterSecretReferenceBlockerSummary(row.blockedReasons),
       boundary: row.liveTradingAllowed
         ? "Live trading allowed"
@@ -33213,6 +33217,30 @@ function executionAdapterSandboxProbeExecutionConfirmationSummary(
   const confirmed = confirmations.filter((confirmation) => confirmation.status === "confirmed").length;
   const missing = confirmations.filter((confirmation) => confirmation.status === "missing").length;
   return `${confirmed} confirmed / ${missing} missing`;
+}
+
+function executionAdapterSandboxProbeHealthSummary(metadata: Record<string, unknown>): string {
+  const evidence = metadata.authoritativeHealthProbe;
+  if (!evidence || typeof evidence !== "object") {
+    return "Authoritative health probe missing";
+  }
+  const payload = evidence as Record<string, unknown>;
+  const status = typeof payload.status === "string" ? payload.status : "unknown";
+  const exchangeId = typeof payload.exchangeId === "string" ? payload.exchangeId : "unknown";
+  const probeId = typeof payload.probeId === "string" ? payload.probeId : "unknown";
+  const evidenceHash = typeof payload.evidenceHash === "string" ? payload.evidenceHash : "";
+  return `${status} · ${exchangeId} · ${probeId} · sha256 ${evidenceHash.slice(0, 12) || "missing"}`;
+}
+
+function executionAdapterSandboxProbeAuthoritativeHealthReady(
+  execution: ExecutionAdapterSandboxProbeExecutionSnapshot
+): boolean {
+  const confirmations = new Map(execution.requiredConfirmations.map((row) => [row.id, row.status]));
+  return Boolean(
+    execution.metadata.authoritativeHealthProbe &&
+    confirmations.get("readonly-handshake-captured") === "confirmed" &&
+    confirmations.get("account-snapshot-redacted") === "confirmed"
+  );
 }
 
 function executionAdapterSandboxProbeReviewTone(

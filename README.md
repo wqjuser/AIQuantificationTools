@@ -88,9 +88,9 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 5 当前阶段：Sandbox 准入门禁
+## Stage 5 当前阶段：权威只读 Sandbox 探针
 
-Stage 4 已通过退出门禁并转入维护。Stage 5 前三阶段已经把权威 Stage 4 workflow 投影到本地 `local-fake-shadow` adapter，并完成五类 Shadow 故障演练、刷新恢复、API 重启和便携审计。第四阶段继续复用 Stage 4 workflow、已对账 Stage 5 session、组合模拟引用的 terminal adapter paper evidence 与现有 `AuditEventStore`，生成服务端权威、幂等且可重建的 `aiqt.stage5SandboxReadinessDecision`。该决策只表示证据满足进入后续独立人工授权阶段的条件，不表示已经允许连接 sandbox/testnet 或提交订单；全程没有新增第二套 adapter 链或订单库。
+Stage 4 已通过退出门禁并转入维护。Stage 5 前四阶段已经完成本地 Shadow 故障演练、刷新/重启恢复、便携审计和 `aiqt.stage5SandboxReadinessDecision`。第五阶段把既有 `probe_ccxt_sandbox_health` 绑定到原有 sandbox probe execution：`ccxt-live + crypto` 的执行请求必须由 API 服务先完成只读 Sandbox 健康探针，浏览器不能再用布尔值伪造“只读握手”或“账户快照已脱敏”。权威证据只保存状态、检查结果、配置布尔值、canonical SHA-256 和复用审计签名 key registry 的 authority HMAC，不保存密钥、余额、持仓或账户标识。
 
 ```powershell
 npm run docker:smoke:stage5 -- --no-build
@@ -98,9 +98,12 @@ npm run docker:smoke:stage5:validate
 # 只运行/复核第四阶段准入门禁
 npm run docker:smoke:stage5:readiness -- --no-build
 npm run docker:smoke:stage5:readiness:validate
+# 只运行/复核第五阶段无凭据 fail-closed 探针
+npm run docker:smoke:stage5:readonly -- --no-build
+npm run docker:smoke:stage5:readonly:validate
 ```
 
-验收会同时维护 `data/stage5-shadow-execution.json` 与 `data/stage5-sandbox-readiness.json`。后者 kind 为 `aiqt.stage5SandboxReadinessAcceptance`、schemaVersion 为 1，覆盖成功决策、重复请求幂等、API 重启精确回读、导出/原子导入/再导出，以及缺 adapter event、市场错配、blocked session、不安全 adapter evidence 和 decision hash 篡改五类 blocker。研究包用 `artifactCounts.stage5SandboxReadinessDecisions` 核对决策数量，并按 workflow、session、adapter evidence、decision 的顺序重建。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。本阶段不访问 broker/testnet、不读取 broker secret、不做账户同步、不提交或撤销订单；仍固定 `paperOnly=true`、`shadowOnly=true`、`sandboxOrderSubmissionAllowed=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+验收会同时维护 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json` 与 `data/stage5-sandbox-readonly-probe.json`。第三份 manifest 的 kind 为 `aiqt.stage5SandboxReadonlyProbeAcceptance`；默认无凭据 Docker 环境必须返回 review/blocked，并离线复核 digest、凭据缺失、服务端只读、订单路由关闭和 live-blocked 边界。配置明确的测试网凭据时，应用可以只读加载 markets/status/time 和脱敏账户同步，但仍不提交、撤销或查询订单，不开放 sandbox order route，更不开放真实资金路由。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。
 
 ## Stage 4 维护门禁：组合模拟黄金路径
 

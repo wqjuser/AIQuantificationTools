@@ -7,6 +7,56 @@ from unittest.mock import patch
 
 
 class QuantCoreContractTest(unittest.TestCase):
+    def _ccxt_health_evidence(self, *, credentials_configured=True, adapter_id="ccxt-live"):
+        from quant_core.execution_adapter_health import (
+            execution_adapter_health_probe_to_evidence,
+            probe_ccxt_sandbox_health,
+        )
+
+        class FakeExchange:
+            has = {"fetchStatus": True, "fetchTime": True, "fetchBalance": True, "createOrder": True}
+
+            def __init__(self, config):
+                self.config = config
+                self.markets = {"BTC/USDT": {}}
+
+            def set_sandbox_mode(self, enabled):
+                if enabled is not True:
+                    raise AssertionError("sandbox mode must be enabled before any probe")
+
+            def load_markets(self):
+                return self.markets
+
+            def fetch_status(self):
+                return {"status": "ok"}
+
+            def fetch_time(self):
+                return 1780000000000
+
+            def fetch_balance(self):
+                return {"free": {"USDT": 100}}
+
+            def create_order(self, *args, **kwargs):
+                raise AssertionError("authoritative health probe must never place orders")
+
+        environ = {}
+        if credentials_configured:
+            environ = {
+                "CCXT_BINANCE_API_KEY": "test-health-api-key",
+                "CCXT_BINANCE_SECRET": "test-health-api-secret",
+            }
+        probe = probe_ccxt_sandbox_health(
+            adapter_id=adapter_id,
+            exchange_id="binance",
+            environ=environ,
+            exchange_factory=lambda exchange_id, config: FakeExchange(config),
+            generated_at=datetime(2026, 7, 12, 8, 0, tzinfo=timezone.utc),
+        )
+        return execution_adapter_health_probe_to_evidence(probe)
+
+    def _ready_ccxt_health_evidence(self):
+        return self._ccxt_health_evidence()
+
     def _stage4_portfolio_workflow_dependencies(
         self,
         root,
@@ -12766,6 +12816,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "manifestPath": "local-secret-store://ccxt-live/sandbox-probe",
                 "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
             },
+            health_probe_evidence=self._ready_ccxt_health_evidence(),
             adapter_id="ccxt-live",
             probe_execution_mode="manual_readonly_sandbox_probe",
             confirmations={
@@ -12785,6 +12836,75 @@ class QuantCoreContractTest(unittest.TestCase):
             sandbox_probe_execution.blocked_reasons,
         )
         self.assertFalse(sandbox_probe_execution.live_trading_allowed)
+
+    def test_execution_adapter_sandbox_probe_execution_ignores_browser_readonly_claims(self):
+        from quant_core.execution import (
+            _execution_adapter_authoritative_health_ready,
+            build_execution_adapter_sandbox_probe_execution,
+        )
+
+        sandbox_probe_execution = build_execution_adapter_sandbox_probe_execution(
+            {
+                "sandboxProbePlanId": "execution-adapter-sandbox-probe-plan-ccxt-live",
+                "humanConfirmationId": "execution-adapter-human-confirmation-ccxt-live",
+                "orchestrationExecutionId": "execution-adapter-orchestration-execution-ccxt-live",
+                "dryRunId": "execution-adapter-orchestration-dry-run-ccxt-live",
+                "acceptanceId": "execution-adapter-runtime-reload-acceptance-ccxt-live",
+                "executionId": "execution-adapter-runtime-reload-execution-ccxt-live",
+                "planId": "execution-adapter-runtime-reload-plan-ccxt-live",
+                "bindingId": "execution-adapter-environment-binding-ccxt-live",
+                "materializationId": "execution-adapter-secret-materialization-ccxt-live",
+                "manifestValidationId": "execution-adapter-secret-manifest-validation-ccxt-live",
+                "adapterId": "ccxt-live",
+                "market": "crypto",
+                "route": "live",
+                "status": "probe_plan_recorded",
+                "probeMode": "manual_sandbox_probe_plan",
+                "confirmationMode": "manual_final_human_confirmation",
+                "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+                "orchestrationMode": "manual_adapter_orchestration_dry_run",
+                "acceptanceMode": "manual_runtime_reload_acceptance",
+                "executionMode": "manual_controlled_reload",
+                "reloadMode": "manual_container_reload_plan",
+                "maintenanceWindowId": "window-ccxt-sandbox-probe-1",
+                "bindingMode": "container_env_reference",
+                "manifestPath": "local-secret-store://ccxt-live/sandbox",
+                "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+            },
+            health_probe_evidence=self._ccxt_health_evidence(credentials_configured=False),
+            adapter_id="ccxt-live",
+            probe_execution_mode="manual_readonly_sandbox_probe",
+            confirmations={
+                "probePlanReviewed": True,
+                "readonlyHandshakeCaptured": True,
+                "accountSnapshotRedacted": True,
+                "orderSchemaValidated": True,
+                "operatorConfirmedNoOrdersSubmitted": True,
+            },
+            operator="sandbox-operator",
+        )
+
+        self.assertEqual(sandbox_probe_execution.status, "blocked")
+        self.assertIn(
+            "sandbox_probe_execution_readonly_handshake_missing",
+            sandbox_probe_execution.blocked_reasons,
+        )
+        self.assertIn(
+            "sandbox_probe_execution_account_snapshot_not_redacted",
+            sandbox_probe_execution.blocked_reasons,
+        )
+        self.assertIn(
+            "sandbox_probe_execution_authoritative_health_not_ready",
+            sandbox_probe_execution.blocked_reasons,
+        )
+        self.assertFalse(sandbox_probe_execution.live_trading_allowed)
+        self.assertFalse(
+            _execution_adapter_authoritative_health_ready(
+                self._ccxt_health_evidence(adapter_id="another-ccxt-adapter"),
+                adapter_id="another-ccxt-adapter",
+                market="crypto",
+            )
+        )
 
     def test_execution_adapter_sandbox_probe_plan_records_next_gate_without_enabling_live(self):
         import json
@@ -13042,8 +13162,41 @@ class QuantCoreContractTest(unittest.TestCase):
             execution_adapter_sandbox_probe_plan_to_audit_event_payload,
         )
 
+        class FakeExchange:
+            has = {"fetchStatus": True, "fetchTime": True, "fetchBalance": True, "createOrder": True}
+
+            def __init__(self, config):
+                self.config = config
+                self.markets = {"BTC/USDT": {}}
+
+            def set_sandbox_mode(self, enabled):
+                if enabled is not True:
+                    raise AssertionError("sandbox mode must be enabled")
+
+            def load_markets(self):
+                return self.markets
+
+            def fetch_status(self):
+                return {"status": "ok"}
+
+            def fetch_time(self):
+                return 1780000000000
+
+            def fetch_balance(self):
+                return {"free": {"USDT": 100}}
+
+            def create_order(self, *args, **kwargs):
+                raise AssertionError("sandbox probe execution must never place orders")
+
+        def exchange_factory(exchange_id, config):
+            return FakeExchange(config)
+
         class TestHandler(QuantApiHandler):
-            pass
+            execution_adapter_health_exchange_factory = exchange_factory
+            execution_adapter_health_environ = {
+                "CCXT_BINANCE_API_KEY": "probe-api-key-should-not-leak",
+                "CCXT_BINANCE_SECRET": "probe-api-secret-should-not-leak",
+            }
 
         with tempfile.TemporaryDirectory() as tmp:
             TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit_events.sqlite")
@@ -13177,13 +13330,12 @@ class QuantCoreContractTest(unittest.TestCase):
             blocked_payload["adapterSandboxProbeExecution"]["blockedReasons"],
             [
                 "sandbox_probe_execution_plan_not_reviewed",
-                "sandbox_probe_execution_readonly_handshake_missing",
-                "sandbox_probe_execution_account_snapshot_not_redacted",
                 "sandbox_probe_execution_order_schema_not_validated",
                 "sandbox_probe_execution_no_order_boundary_missing",
             ],
         )
         self.assertEqual(recorded_response.status, 201)
+        self.assertEqual(recorded_payload["adapterHealthProbe"]["status"], "ready")
         self.assertEqual(recorded_payload["adapterSandboxProbeExecution"]["status"], "probe_execution_recorded")
         self.assertEqual(
             recorded_payload["adapterSandboxProbeExecution"]["sandboxProbePlanId"],
@@ -13204,6 +13356,11 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertFalse(recorded_payload["adapterSandboxProbeExecution"]["liveTradingAllowed"])
         self.assertTrue(recorded_payload["adapterSandboxProbeExecution"]["paperOnly"])
+        authoritative_health = recorded_payload["adapterSandboxProbeExecution"]["metadata"][
+            "authoritativeHealthProbe"
+        ]
+        self.assertEqual(authoritative_health["status"], "ready")
+        self.assertEqual(len(authoritative_health["evidenceHash"]), 64)
         self.assertEqual(recorded_payload["auditEvent"]["eventType"], "execution_adapter_sandbox_probe_execution")
         self.assertEqual(
             recorded_payload["auditEvent"]["metadata"]["manifestValidationId"],
@@ -13217,6 +13374,8 @@ class QuantCoreContractTest(unittest.TestCase):
             "execution-adapter-secret-manifest-validation-ccxt-live",
         )
         self.assertEqual(history_payload["adapterSandboxProbeExecutions"][1]["status"], "blocked")
+        self.assertNotIn("probe-api-key-should-not-leak", serialized)
+        self.assertNotIn("probe-api-secret-should-not-leak", serialized)
         self.assertNotIn("sandbox-probe-execution-blocked-secret-should-not-leak", serialized)
         self.assertNotIn("sandbox-probe-execution-private-key-should-not-leak", serialized)
 
@@ -13261,6 +13420,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "manifestPath": "local-secret-store://ccxt-live/sandbox",
                     "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
                 },
+                health_probe_evidence=self._ready_ccxt_health_evidence(),
                 adapter_id="ccxt-live",
                 probe_execution_mode="manual_readonly_sandbox_probe",
                 confirmations={
@@ -13284,12 +13444,19 @@ class QuantCoreContractTest(unittest.TestCase):
             projected = execution_adapter_sandbox_probe_execution_payload_from_audit_event(
                 store.get("execution-adapter-sandbox-probe-execution-ccxt-live")
             )
+            tampered_audit_payload = json.loads(json.dumps(audit_payload))
+            tampered_audit_payload["metadata"]["metadata"]["authoritativeHealthProbe"]["evidenceHash"] = "0" * 64
+            store.record(tampered_audit_payload)
+            tampered_projected = execution_adapter_sandbox_probe_execution_payload_from_audit_event(
+                store.get("execution-adapter-sandbox-probe-execution-ccxt-live")
+            )
 
         serialized = json.dumps({"payload": payload, "audit": audit_payload, "projected": projected}, sort_keys=True)
         self.assertEqual(payload["manifestValidationId"], validation_id)
         self.assertEqual(audit_payload["metadata"]["manifestValidationId"], validation_id)
         self.assertIsNotNone(projected)
         self.assertEqual(projected["manifestValidationId"], validation_id)
+        self.assertIsNone(tampered_projected)
         self.assertFalse(payload["liveTradingAllowed"])
         self.assertTrue(payload["paperOnly"])
         self.assertNotIn("sandbox-probe-execution-validation-private-key-should-not-leak", serialized)
@@ -13381,6 +13548,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "liveTradingAllowed": False,
                     "paperOnly": True,
                 },
+                health_probe_evidence=self._ready_ccxt_health_evidence(),
                 adapter_id="ccxt-live",
                 probe_execution_mode="manual_readonly_sandbox_probe",
                 confirmations={
@@ -13566,6 +13734,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "bindingMode": "container_env_reference",
                 "manifestPath": "local-secret-store://ccxt-live/sandbox",
                 "requiredEnvVars": ["CCXT_API_KEY", "CCXT_API_SECRET"],
+                "metadata": {"authoritativeHealthProbe": self._ready_ccxt_health_evidence()},
             },
             adapter_id="ccxt-live",
             review_mode="manual_sandbox_probe_review",
@@ -13743,6 +13912,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     "liveTradingAllowed": False,
                     "paperOnly": True,
                 },
+                health_probe_evidence=self._ready_ccxt_health_evidence(),
                 adapter_id="ccxt-live",
                 probe_execution_mode="manual_readonly_sandbox_probe",
                 confirmations={
@@ -14069,8 +14239,11 @@ class QuantCoreContractTest(unittest.TestCase):
         import json
 
         from quant_core.execution_adapter_health import (
+            _execution_adapter_health_evidence_hash,
+            execution_adapter_health_probe_to_evidence,
             execution_adapter_health_probe_to_payload,
             probe_ccxt_sandbox_health,
+            validate_execution_adapter_health_probe_evidence,
         )
 
         class FakeExchange:
@@ -14123,6 +14296,7 @@ class QuantCoreContractTest(unittest.TestCase):
             generated_at=datetime(2026, 6, 14, 8, 0, tzinfo=timezone.utc),
         )
         payload = execution_adapter_health_probe_to_payload(probe)
+        evidence = execution_adapter_health_probe_to_evidence(probe)
         serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
         exchange = created["exchange"]
@@ -14144,6 +14318,20 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(payload["paperOnly"])
         self.assertFalse(payload["liveTradingAllowed"])
         self.assertFalse(payload["orderRoutingEnabled"])
+        self.assertIs(validate_execution_adapter_health_probe_evidence(evidence), evidence)
+        self.assertEqual(evidence["status"], "ready")
+        self.assertEqual(len(evidence["evidenceHash"]), 64)
+        invalid_evidence = {**evidence, "evidenceHash": "0" * 64}
+        with self.assertRaisesRegex(ValueError, "execution_adapter_health_evidence_hash_invalid"):
+            validate_execution_adapter_health_probe_evidence(invalid_evidence)
+        unsafe_evidence = {**evidence, "liveTradingAllowed": True}
+        with self.assertRaisesRegex(ValueError, "execution_adapter_health_evidence_boundary_invalid"):
+            validate_execution_adapter_health_probe_evidence(unsafe_evidence)
+        rehashed_evidence = json.loads(json.dumps(evidence))
+        rehashed_evidence["status"] = "blocked"
+        rehashed_evidence["evidenceHash"] = _execution_adapter_health_evidence_hash(rehashed_evidence)
+        with self.assertRaisesRegex(ValueError, "execution_adapter_health_evidence_authority_invalid"):
+            validate_execution_adapter_health_probe_evidence(rehashed_evidence)
         self.assertNotIn("apiKey", payload["metadata"])
         self.assertNotIn("secret", payload["metadata"])
         self.assertNotIn("password", payload["metadata"])

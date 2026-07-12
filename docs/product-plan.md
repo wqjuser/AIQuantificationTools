@@ -1,14 +1,18 @@
 # AIQuant Terminal 产品规划
 
-## 当前阶段：Stage 5 实盘准备（Shadow Safety Drills 第三阶段，2026-07-11）
+## 当前阶段：Stage 5 实盘准备（权威只读 Sandbox 探针第五阶段，2026-07-12）
 
-Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；第三阶段把隔离的本地 shadow execution 收口为五类故障、持久化、API 重启、导出导入和离线复核的完整安全演练，仍不接真实券商或资金账户。
+Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；当前第五阶段只把已有 CCXT Sandbox 健康检查升级为服务端权威的只读探针证据，不接真实资金账户，不提交或撤销任何订单。
 
 Stage 5 第一阶段复用权威 `stage4_portfolio_workflow` 和 `AuditEventStore`，新增稳定 `clientOrderId`、shadow 状态机、Stage 4 限额复用、kill switch、超时一次/单次重试、拒绝与对账故障注入、重启恢复和幂等回读。`POST /api/execution/shadow-sessions` 只接受 base run、workflow hash、failure mode 和 operator；服务端从审计账本重验 Stage 4 workflow 后生成 `aiqt.stage5ShadowExecutionSession`。Docker 门禁生成 `aiqt.stage5ShadowExecutionAcceptance`，并继续强制 `paperOnly=true`、`shadowOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
 
 Stage 5 第二阶段在 Execution 增加唯一 Shadow 主动作与持久化证据明细，刷新后通过 GET 恢复，不依赖 React 成功状态。研究包新增 `artifactCounts.stage5ShadowSessions`；导入预检复用现有 Stage 4 workflow 和 Stage 5 builder 重建 session，数量、身份、时间、hash、委托自洽或安全边界不一致均在原子写入前失败。Audit 包浏览器和 import diff 提供 Stage 5 专属证据行，Docker acceptance 同时验证 export/import/re-export/readback 的数量与 session hash。
 
 Stage 5 第三阶段为 `none`、`timeout_once`、`adapter_rejected`、`reconciliation_mismatch` 和 `kill_switch` 各创建独立的权威 Stage 4 workflow，保持 failureMode 幂等边界不变。completed/blocked 重复 POST 只能回读同一 session，超时只允许生成 attempt 2；Docker 在 6 个 session 入账后真实重启 API 容器，再对 GET、研究包导出、原子导入和重导出的 hash 集合做精确比对。`aiqt.stage5ShadowExecutionAcceptance` schemaVersion 2 携带可离线重建的 `failureDrills`、`restartReadback` 与 `exportReadback`；Execution 和 Audit 只解释 mode、限额、kill switch、对账与 blocked/recovered 证据，不开放故障选择或绕过动作。
+
+Stage 5 第四阶段复用 Stage 4 workflow、已对账 Shadow session 和 terminal adapter paper evidence，生成服务端权威、幂等、可重建的 `aiqt.stage5SandboxReadinessDecision`。它只说明证据满足后续独立人工授权阶段的条件，固定 `sandboxOrderSubmissionAllowed=false`，不连接 broker/testnet。
+
+Stage 5 第五阶段复用现有 `probe_ccxt_sandbox_health`、sandbox probe plan/execution、`AuditEventStore`、审计签名 key registry 和 Settings 卡片。`POST /api/execution/adapter-sandbox-probe-executions` 只为 `ccxt-live + crypto` 执行服务端探针，并从 ready 结果派生只读握手和账户脱敏确认；请求体中的同名布尔值不再具备授权力。成功证据保存为 `metadata.authoritativeHealthProbe`，包含最小脱敏字段、canonical SHA-256 和 authority HMAC，回读和后续 review 都重新验证。无 ccxt、无测试网凭据、网络失败、账户同步失败、adapter 错配或 hash/HMAC/边界篡改一律 fail closed。独立 Docker manifest `aiqt.stage5SandboxReadonlyProbeAcceptance` 明确验证默认无凭据容器不能被报告为 ready；本阶段仍不调用 create/cancel/order API。
 
 Stage 4 于 2026-07-11 通过发布门禁：fresh Python/Web 测试与生产构建、保留数据卷的 Docker 重建、Stage 3/4 smoke 与离线 validate、桌面发布、DMG 校验和安全审计均通过。最终验证产物 `AIQuantificationTools_0.1.0_x64.dmg` 的 SHA-256 为 `26b986fadffd34f2cf18fc10e48bb2674bae5ecf3ead1836f9d8b04ad9888ebc`。
 

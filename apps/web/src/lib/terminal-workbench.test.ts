@@ -27260,7 +27260,16 @@ describe("terminal workbench model", () => {
           }
         ],
         blockedReasons: [],
-        metadata: { token: "[redacted]", fingerprint: "sha256:sandbox-probe-execution" },
+        metadata: {
+          token: "[redacted]",
+          fingerprint: "sha256:sandbox-probe-execution",
+          authoritativeHealthProbe: {
+            status: "ready",
+            exchangeId: "binance",
+            probeId: "execution-adapter-health-ccxt-live-1",
+            evidenceHash: "abcdef1234567890"
+          }
+        },
         liveTradingAllowed: false,
         paperOnly: true
       }
@@ -27298,6 +27307,8 @@ describe("terminal workbench model", () => {
         manifestPath: "local-secret-store://us-live/alpaca-sandbox",
         envVarSummary: "2 env vars",
         confirmationSummary: "5 confirmed / 0 missing",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-us-live",
@@ -29580,6 +29591,8 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-ashare",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         tone: "positive" as const
       }
     ];
@@ -29730,6 +29743,8 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-review",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         tone: "positive" as const
       }
     ];
@@ -29918,6 +29933,8 @@ describe("terminal workbench model", () => {
         blockerSummary: "No blockers",
         boundary: "Paper only · live trading blocked",
         auditEventId: "execution-adapter-sandbox-probe-execution-route-review",
+        healthProbeSummary: "ready · binance · execution-adapter-health-ccxt-live-1 · sha256 abcdef123456",
+        authoritativeHealthReady: true,
         tone: "positive" as const
       }
     ];

@@ -205,7 +205,11 @@ from quant_core.execution import (
     portfolio_paper_order_simulation_to_payload,
     validate_paper_execution_handoff,
 )
-from quant_core.execution_adapter_health import execution_adapter_health_probe_to_payload, probe_ccxt_sandbox_health
+from quant_core.execution_adapter_health import (
+    execution_adapter_health_probe_to_evidence,
+    execution_adapter_health_probe_to_payload,
+    probe_ccxt_sandbox_health,
+)
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_calendar import build_market_calendar_status
@@ -1574,9 +1578,28 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     status=404,
                 )
                 return
+            health_probe = None
+            health_probe_evidence = None
+            if (
+                sandbox_probe_plan.get("adapterId") == "ccxt-live"
+                and sandbox_probe_plan.get("market") == "crypto"
+            ):
+                exchange_id = (
+                    str(payload.get("exchangeId") or "").strip()
+                    or os.environ.get("CCXT_DEFAULT_EXCHANGE", "binance").strip()
+                    or "binance"
+                )
+                health_probe = probe_ccxt_sandbox_health(
+                    adapter_id="ccxt-live",
+                    exchange_id=exchange_id,
+                    environ=type(self).execution_adapter_health_environ,
+                    exchange_factory=type(self).execution_adapter_health_exchange_factory,
+                )
+                health_probe_evidence = execution_adapter_health_probe_to_evidence(health_probe)
             try:
                 sandbox_probe_execution = build_execution_adapter_sandbox_probe_execution(
                     sandbox_probe_plan,
+                    health_probe_evidence=health_probe_evidence,
                     adapter_id=str(payload.get("adapterId") or ""),
                     probe_execution_mode=str(payload.get("probeExecutionMode") or "manual_readonly_sandbox_probe"),
                     confirmations=payload.get("confirmations") if isinstance(payload.get("confirmations"), dict) else {},
@@ -1595,6 +1618,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                         sandbox_probe_execution
                     ),
                     "auditEvent": audit_event_record_to_payload(audit_event),
+                    **(
+                        {"adapterHealthProbe": execution_adapter_health_probe_to_payload(health_probe)}
+                        if health_probe
+                        else {}
+                    ),
                 },
                 status=409 if sandbox_probe_execution.status == "blocked" else 201,
             )

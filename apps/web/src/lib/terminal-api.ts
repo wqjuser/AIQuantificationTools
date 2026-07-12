@@ -3167,6 +3167,7 @@ export interface ExecutionAdapterSandboxProbeExecutionResult {
 export interface ExecutionAdapterSandboxProbeExecutionRequest {
   adapterId: string;
   sandboxProbePlanId: string;
+  exchangeId?: string;
   operator?: string;
   probeExecutionMode?: string;
   confirmations?: {
@@ -3181,6 +3182,7 @@ export interface ExecutionAdapterSandboxProbeExecutionRequest {
 
 export interface ExecutionAdapterSandboxProbeExecutionRecordResult {
   adapterSandboxProbeExecution?: ExecutionAdapterSandboxProbeExecutionResult;
+  adapterHealthProbe?: ExecutionAdapterHealthProbeResult;
   auditEvent?: AuditEventRecord;
   source: WorkspaceSource;
   error?: string;
@@ -10441,6 +10443,7 @@ export async function recordExecutionAdapterSandboxProbeExecution(
       body: JSON.stringify({
         adapterId: request.adapterId,
         sandboxProbePlanId: request.sandboxProbePlanId,
+        exchangeId: request.exchangeId,
         operator: request.operator ?? "local-operator",
         probeExecutionMode: request.probeExecutionMode ?? "manual_readonly_sandbox_probe",
         confirmations: request.confirmations ?? {},
@@ -10451,6 +10454,7 @@ export async function recordExecutionAdapterSandboxProbeExecution(
     if (isExecutionAdapterSandboxProbeExecutionRecordPayload(payload)) {
       return {
         adapterSandboxProbeExecution: payload.adapterSandboxProbeExecution,
+        adapterHealthProbe: payload.adapterHealthProbe,
         auditEvent: payload.auditEvent,
         source: "core"
       };
@@ -16186,14 +16190,20 @@ function isExecutionAdapterSandboxProbeExecutionRecordPayload(
   value: unknown
 ): value is {
   adapterSandboxProbeExecution: ExecutionAdapterSandboxProbeExecutionResult;
+  adapterHealthProbe?: ExecutionAdapterHealthProbeResult;
   auditEvent?: AuditEventRecord;
 } {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const payload = value as { adapterSandboxProbeExecution?: unknown; auditEvent?: unknown };
+  const payload = value as {
+    adapterSandboxProbeExecution?: unknown;
+    adapterHealthProbe?: unknown;
+    auditEvent?: unknown;
+  };
   return (
     isExecutionAdapterSandboxProbeExecutionResult(payload.adapterSandboxProbeExecution) &&
+    (payload.adapterHealthProbe === undefined || isExecutionAdapterHealthProbeResult(payload.adapterHealthProbe)) &&
     (payload.auditEvent === undefined || isAuditEventRecord(payload.auditEvent))
   );
 }
