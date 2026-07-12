@@ -68,7 +68,7 @@
 - [x] 运行聚焦测试、Python/Web 全量测试、生产构建与 Stage 3/4/5 回归门禁。
 - [ ] 运行 Stage 6 无密钥 Docker smoke/validate、真实 Testnet smoke/validate和浏览器验收。（无密钥与浏览器已通过；真实 Testnet 等待专用凭据）
 - [x] 执行 Standards/Spec 双轴独立审查并修复全部重要问题。
-- [ ] 更新本计划的实际验证结果，提交、推送、创建 PR、等待 CI 通过并合并到 main。
+- [x] 更新本计划的实际验证结果，提交、推送、创建 PR、等待 CI 通过并合并到 main。
 
 ## 验收记录
 
@@ -79,7 +79,7 @@
 - 浏览器验收：375px 无横向溢出；Execution Stage 6 阻断证据、独立 kill switch、刷新持久化与 exit missing 状态已验证，无控制台错误。
 - 首轮 Standards/Spec 审查发现 5 个 Important，已修复事件分页、pending 恢复重试、统一交易所证据入口、撤单禁止反向提交，以及真实门禁绕过 API/硬编码 checks 的问题；最终复审为 Critical 0、Important 0、Minor 0。
 - 真实 Binance Spot Testnet smoke 未运行：当前环境没有 `CCXT_SANDBOX_API_KEY` / `CCXT_SANDBOX_SECRET`。因此不生成真实 manifest，不生成 Stage 6 exit acceptance，Stage 6 保持 current。
-- 实现提交：`2071065 feat: implement stage6 sandbox execution`；审查修复提交与 PR 待填写。
+- 实现提交：`2071065 feat: implement stage6 sandbox execution`；审查修复提交：`eb67192 fix: harden stage6 recovery acceptance`；PR [#3](https://github.com/wqjuser/AIQuantificationTools/pull/3) 的双 quality-gate 与 GitGuardian 全部通过，已以 merge commit `3b7314c` 合并到 main。
 
 ## 明确不做
 
