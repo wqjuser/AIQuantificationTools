@@ -1058,7 +1058,8 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "strategy-backtest": "Stage 2 · Strategy and Backtest",
       "ai-review": "Stage 3 · AI Review",
       "portfolio-paper": "Stage 4 · Portfolio and Paper",
-      "live-readiness": "Stage 5 · Live Readiness"
+      "live-readiness": "Stage 5 · Live Readiness",
+      "sandbox-execution": "Stage 6 · Sandbox Execution"
     },
     productDevelopmentStageStatuses: {
       maintenance: "Maintenance",
@@ -1217,7 +1218,8 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "strategy-backtest": "阶段 2 · 策略与回测",
       "ai-review": "阶段 3 · AI 评审",
       "portfolio-paper": "阶段 4 · 组合与模拟",
-      "live-readiness": "阶段 5 · 实盘准备"
+      "live-readiness": "阶段 5 · 实盘准备",
+      "sandbox-execution": "阶段 6 · 测试网执行"
     },
     productDevelopmentStageStatuses: {
       maintenance: "基础维护",

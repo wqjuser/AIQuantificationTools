@@ -28,6 +28,11 @@ from quant_core.stage5_shadow import (
     validate_stage5_sandbox_readiness_decision,
     validate_stage5_shadow_session,
 )
+from quant_core.stage6_sandbox import (
+    validate_stage6_kill_switch,
+    validate_stage6_order_transition,
+    validate_stage6_sandbox_batch_authorization,
+)
 
 
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
@@ -622,6 +627,9 @@ def research_run_export_to_payload(
         "stage5SandboxReadinessDecisions": _stage5_sandbox_readiness_decision_count(audit_event_payloads),
         "stage5SandboxAuthorizationPreflights": _stage5_sandbox_authorization_preflight_count(audit_event_payloads),
         "stage5SandboxAuthorizationReviews": _stage5_sandbox_authorization_review_count(audit_event_payloads),
+        "stage6SandboxBatchAuthorizations": _stage6_sandbox_authorization_count(audit_event_payloads),
+        "stage6SandboxOrderTransitions": _stage6_sandbox_transition_count(audit_event_payloads),
+        "stage6SandboxKillSwitchEvents": _stage6_sandbox_kill_switch_count(audit_event_payloads),
         "handoffNotes": len(handoff_note_payloads),
     }
     export_package = {
@@ -869,6 +877,10 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
     _stage5_shadow_session_manifest_count(counts)
     _stage5_sandbox_readiness_decision_manifest_count(counts)
     _stage5_sandbox_authorization_preflight_manifest_count(counts)
+    _stage5_sandbox_authorization_review_manifest_count(counts)
+    _stage6_sandbox_authorization_manifest_count(counts)
+    _stage6_sandbox_transition_manifest_count(counts)
+    _stage6_sandbox_kill_switch_manifest_count(counts)
     data_snapshot = research_run.get("dataSnapshot")
     ai_report = research_run.get("aiReport")
     expected = {
@@ -905,6 +917,12 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
         expected["stage5SandboxAuthorizationPreflights"] = _stage5_sandbox_authorization_preflight_count(audit_events)
     if "stage5SandboxAuthorizationReviews" in counts or _stage5_sandbox_authorization_review_count(audit_events):
         expected["stage5SandboxAuthorizationReviews"] = _stage5_sandbox_authorization_review_count(audit_events)
+    if "stage6SandboxBatchAuthorizations" in counts or _stage6_sandbox_authorization_count(audit_events):
+        expected["stage6SandboxBatchAuthorizations"] = _stage6_sandbox_authorization_count(audit_events)
+    if "stage6SandboxOrderTransitions" in counts or _stage6_sandbox_transition_count(audit_events):
+        expected["stage6SandboxOrderTransitions"] = _stage6_sandbox_transition_count(audit_events)
+    if "stage6SandboxKillSwitchEvents" in counts or _stage6_sandbox_kill_switch_count(audit_events):
+        expected["stage6SandboxKillSwitchEvents"] = _stage6_sandbox_kill_switch_count(audit_events)
     if "promotionCandidates" in counts or export_package.get("promotionCandidate"):
         expected["promotionCandidates"] = 1 if isinstance(export_package.get("promotionCandidate"), dict) else 0
     research_note = research_run.get("researchNote")
@@ -1206,6 +1224,9 @@ def _validate_manifest_consistency(
     _stage5_sandbox_readiness_decision_manifest_count(counts)
     _stage5_sandbox_authorization_preflight_manifest_count(counts)
     _stage5_sandbox_authorization_review_manifest_count(counts)
+    _stage6_sandbox_authorization_manifest_count(counts)
+    _stage6_sandbox_transition_manifest_count(counts)
+    _stage6_sandbox_kill_switch_manifest_count(counts)
     expected_counts = {
         "bars": bar_count,
         "trades": len(_list_of_dicts(research_run.get("backtestTrades"))),
@@ -1243,6 +1264,12 @@ def _validate_manifest_consistency(
         expected_counts["stage5SandboxAuthorizationPreflights"] = _stage5_sandbox_authorization_preflight_count(audit_events)
     if "stage5SandboxAuthorizationReviews" in counts or _stage5_sandbox_authorization_review_count(audit_events):
         expected_counts["stage5SandboxAuthorizationReviews"] = _stage5_sandbox_authorization_review_count(audit_events)
+    if "stage6SandboxBatchAuthorizations" in counts or _stage6_sandbox_authorization_count(audit_events):
+        expected_counts["stage6SandboxBatchAuthorizations"] = _stage6_sandbox_authorization_count(audit_events)
+    if "stage6SandboxOrderTransitions" in counts or _stage6_sandbox_transition_count(audit_events):
+        expected_counts["stage6SandboxOrderTransitions"] = _stage6_sandbox_transition_count(audit_events)
+    if "stage6SandboxKillSwitchEvents" in counts or _stage6_sandbox_kill_switch_count(audit_events):
+        expected_counts["stage6SandboxKillSwitchEvents"] = _stage6_sandbox_kill_switch_count(audit_events)
     if "handoffNotes" in counts or handoff_notes:
         expected_counts["handoffNotes"] = len(handoff_notes or [])
     research_note = _normalize_research_note(
@@ -1476,6 +1503,41 @@ def _normalize_audit_event_payloads(
                     or source != snapshot["reviewer"]
                 ):
                     raise ValueError("stage5_sandbox_authorization_review_audit_binding_mismatch")
+            if event_type == "stage6_sandbox_batch_authorization":
+                snapshot = validate_stage6_sandbox_batch_authorization(
+                    _dict_or_empty(item.get("metadata")).get("snapshot")
+                )
+                if (
+                    event_id != snapshot["authorizationId"]
+                    or event_run_id != snapshot["baseRunId"]
+                    or created_at != snapshot["generatedAt"]
+                    or stage != "stage6-sandbox-batch-authorization"
+                    or source != snapshot["operator"]
+                ):
+                    raise ValueError("stage6_sandbox_authorization_audit_binding_mismatch")
+            if event_type == "stage6_sandbox_order_transition":
+                snapshot = validate_stage6_order_transition(
+                    _dict_or_empty(item.get("metadata")).get("snapshot")
+                )
+                if (
+                    event_run_id != expected_run_id
+                    or created_at != snapshot["recordedAt"]
+                    or stage != "stage6-sandbox-order-transition"
+                    or event_id != f"stage6-transition-{snapshot['authorizationId']}-{snapshot['sequence']}"
+                ):
+                    raise ValueError("stage6_sandbox_transition_audit_binding_mismatch")
+            if event_type == "stage6_sandbox_kill_switch":
+                snapshot = validate_stage6_kill_switch(_dict_or_empty(item.get("metadata")).get("snapshot"))
+                if (
+                    created_at != snapshot["recordedAt"] or stage != "stage6-sandbox-kill-switch"
+                    or source != snapshot["operator"] or not event_id.startswith("stage6-kill-switch-")
+                ):
+                    raise ValueError("stage6_sandbox_kill_switch_audit_binding_mismatch")
+        metadata = _dict_or_empty(item.get("metadata"))
+        if strict and event_type in {
+            "stage6_sandbox_batch_authorization", "stage6_sandbox_order_transition", "stage6_sandbox_kill_switch"
+        }:
+            metadata = {**metadata, "detached": True}
         normalized.append(
             {
                 "schemaVersion": 1,
@@ -1487,7 +1549,7 @@ def _normalize_audit_event_payloads(
                 "source": source,
                 "summary": summary,
                 "detail": detail,
-                "metadata": _dict_or_empty(item.get("metadata")),
+                "metadata": metadata,
             }
         )
     if strict:
@@ -1684,6 +1746,54 @@ def _stage5_sandbox_authorization_review_manifest_count(counts: dict[str, Any]) 
     value = counts["stage5SandboxAuthorizationReviews"]
     if type(value) is not int or value < 0:
         raise ValueError("stage5_sandbox_authorization_reviews_count_invalid")
+    return value
+
+
+def _stage6_sandbox_authorization_count(value: Any) -> int:
+    return sum(
+        1 for item in value or []
+        if isinstance(item, dict) and item.get("eventType") == "stage6_sandbox_batch_authorization"
+    )
+
+
+def _stage6_sandbox_authorization_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage6SandboxBatchAuthorizations" not in counts:
+        return None
+    value = counts["stage6SandboxBatchAuthorizations"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage6_sandbox_batch_authorizations_count_invalid")
+    return value
+
+
+def _stage6_sandbox_transition_count(value: Any) -> int:
+    return sum(
+        1 for item in value or []
+        if isinstance(item, dict) and item.get("eventType") == "stage6_sandbox_order_transition"
+    )
+
+
+def _stage6_sandbox_transition_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage6SandboxOrderTransitions" not in counts:
+        return None
+    value = counts["stage6SandboxOrderTransitions"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage6_sandbox_order_transitions_count_invalid")
+    return value
+
+
+def _stage6_sandbox_kill_switch_count(value: Any) -> int:
+    return sum(
+        1 for item in _list_of_dicts(value)
+        if item.get("eventType") == "stage6_sandbox_kill_switch"
+    )
+
+
+def _stage6_sandbox_kill_switch_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage6SandboxKillSwitchEvents" not in counts:
+        return None
+    value = counts["stage6SandboxKillSwitchEvents"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage6_sandbox_kill_switch_events_count_invalid")
     return value
 
 

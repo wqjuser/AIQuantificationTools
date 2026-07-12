@@ -277,6 +277,7 @@ import {
   selectCurrentStage4PortfolioWorkflow
 } from "./components/PortfolioStage4Section";
 import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
+import { ExecutionStage6SandboxSection } from "./components/ExecutionStage6SandboxSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
@@ -302,6 +303,22 @@ import {
   type Stage5ExitAcceptanceStatus,
   type Stage5ShadowSession
 } from "./lib/stage5-shadow";
+import {
+  authorizeStage6SandboxBatch,
+  buildStage6GoldenPath,
+  cancelStage6SandboxOrder,
+  loadStage6SandboxAuthorizations,
+  loadStage6SandboxBatch,
+  loadStage6ExitAcceptance,
+  loadStage6KillSwitch,
+  reconcileStage6SandboxBatch,
+  setStage6KillSwitch,
+  submitStage6SandboxBatch,
+  type Stage6SandboxBatch,
+  type Stage6SandboxBatchAuthorization,
+  type Stage6ExitAcceptanceStatus,
+  type Stage6KillSwitch
+} from "./lib/stage6-sandbox";
 import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
@@ -2253,6 +2270,12 @@ export function App() {
   const [stage5ExitAcceptance, setStage5ExitAcceptance] = useState<Stage5ExitAcceptanceStatus | null>(null);
   const [stage5ExitAcceptanceError, setStage5ExitAcceptanceError] = useState<string | null>(null);
   const [stage5ShadowError, setStage5ShadowError] = useState<string | null>(null);
+  const [stage6SandboxAuthorizations, setStage6SandboxAuthorizations] = useState<Stage6SandboxBatchAuthorization[]>([]);
+  const [stage6SandboxBatch, setStage6SandboxBatch] = useState<Stage6SandboxBatch | null>(null);
+  const [stage6ExitAcceptance, setStage6ExitAcceptance] = useState<Stage6ExitAcceptanceStatus | null>(null);
+  const [stage6KillSwitch, setStage6KillSwitchState] = useState<Stage6KillSwitch | null>(null);
+  const [stage6SandboxError, setStage6SandboxError] = useState<string | null>(null);
+  const [isRunningStage6Sandbox, setIsRunningStage6Sandbox] = useState(false);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -2792,6 +2815,19 @@ export function App() {
     stage5SandboxAuthorizationReviews,
     executionAdapterSandboxProbeExecutionRows,
     executionAdapterSandboxProbeReviewRows
+  );
+  const stage6SandboxAuthorization = stage6SandboxAuthorizations.find((row) =>
+    row.workflowHash === portfolioStage4Workflow?.workflowHash &&
+    row.reviewHash === stage5ShadowState.authorizationReview?.reviewHash
+  ) ?? null;
+  const stage6GoldenPath = buildStage6GoldenPath(
+    portfolioStage4Workflow,
+    stage5ShadowState.session,
+    stage5ShadowState.readinessDecision,
+    stage5ShadowState.authorizationPreflight,
+    stage5ShadowState.authorizationReview,
+    stage6SandboxAuthorization,
+    stage6SandboxBatch
   );
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
@@ -3513,6 +3549,11 @@ export function App() {
   );
 
   useEffect(() => {
+    void loadStage6ExitAcceptance(quantCoreBaseUrl).then((result) => setStage6ExitAcceptance(result.acceptance ?? null));
+    void loadStage6KillSwitch(quantCoreBaseUrl).then((result) => setStage6KillSwitchState(result.killSwitch ?? null));
+  }, []);
+
+  useEffect(() => {
     klinesStateRef.current = klinesState;
   }, [klinesState]);
 
@@ -3685,6 +3726,30 @@ export function App() {
       setStage5ShadowError(
         sessionResult.error ?? readinessResult.error ?? preflightResult.error ?? reviewResult.error ?? null
       );
+    });
+    return () => { cancelled = true; };
+  }, [currentResearchRunId]);
+
+  useEffect(() => {
+    const baseRunId = currentResearchRunId;
+    let cancelled = false;
+    if (!baseRunId) {
+      setStage6SandboxAuthorizations([]);
+      setStage6SandboxBatch(null);
+      setStage6SandboxError(null);
+      return;
+    }
+    void loadStage6SandboxAuthorizations(quantCoreBaseUrl, baseRunId).then(async (result) => {
+      if (cancelled) return;
+      setStage6SandboxAuthorizations(result.authorizations);
+      setStage6SandboxError(result.error ?? null);
+      const latest = result.authorizations[0];
+      if (!latest) return setStage6SandboxBatch(null);
+      const batchResult = await loadStage6SandboxBatch(quantCoreBaseUrl, latest.authorizationId);
+      if (cancelled) return;
+      setStage6SandboxBatch(batchResult.batch ?? null);
+      if (batchResult.batch) setStage6KillSwitchState(batchResult.batch.killSwitch);
+      setStage6SandboxError(batchResult.error ?? result.error ?? null);
     });
     return () => { cancelled = true; };
   }, [currentResearchRunId]);
@@ -7321,6 +7386,74 @@ export function App() {
       ...current.filter((row) => row.sessionId !== session.sessionId)
     ]);
   }, [isRunningStage5Shadow, portfolioStage4Workflow, stage5ShadowState]);
+
+  const runStage6SandboxAction = useCallback(async () => {
+    if (isRunningStage6Sandbox || !stage6GoldenPath.action) return;
+    setIsRunningStage6Sandbox(true);
+    setStage6SandboxError(null);
+    try {
+      if (stage6GoldenPath.action === "authorize") {
+        const { session, readinessDecision, authorizationPreflight, authorizationReview } = stage5ShadowState;
+        if (!portfolioStage4Workflow || !session || !readinessDecision || !authorizationPreflight || !authorizationReview) {
+          throw new Error("Stage 4/5 权威证据链不完整");
+        }
+        const result = await authorizeStage6SandboxBatch(
+          quantCoreBaseUrl, portfolioStage4Workflow, session, readinessDecision, authorizationPreflight, authorizationReview
+        );
+        if (!result.authorization) throw new Error(result.error ?? "Stage 6 批次授权失败");
+        setStage6SandboxAuthorizations((current) => [
+          result.authorization!, ...current.filter((row) => row.authorizationId !== result.authorization!.authorizationId)
+        ]);
+        setStage6SandboxBatch(null);
+        return;
+      }
+      if (!stage6SandboxAuthorization) throw new Error("Stage 6 批次授权不存在");
+      const result = stage6GoldenPath.action === "submit"
+        ? await submitStage6SandboxBatch(quantCoreBaseUrl, stage6SandboxAuthorization.authorizationId)
+        : stage6GoldenPath.action === "reconcile"
+          ? await reconcileStage6SandboxBatch(quantCoreBaseUrl, stage6SandboxAuthorization.authorizationId)
+          : await cancelStage6SandboxOrder(
+              quantCoreBaseUrl,
+              stage6SandboxAuthorization.authorizationId,
+              stage6SandboxBatch?.orders.find((order) =>
+                ["submission_pending", "open", "partially_filled", "reconciliation_required"].includes(order.state)
+              )?.orderId ?? ""
+            );
+      if (!result.batch) throw new Error(result.error ?? "Stage 6 Sandbox 操作失败");
+      setStage6SandboxBatch(result.batch);
+      setStage6KillSwitchState(result.batch.killSwitch);
+    } catch (error) {
+      setStage6SandboxError(error instanceof Error ? error.message : "Stage 6 Sandbox 操作失败");
+    } finally {
+      setIsRunningStage6Sandbox(false);
+    }
+  }, [
+    isRunningStage6Sandbox,
+    portfolioStage4Workflow,
+    stage5ShadowState,
+    stage6GoldenPath.action,
+    stage6SandboxAuthorization,
+    stage6SandboxBatch
+  ]);
+
+  const runStage6KillSwitchAction = useCallback(async (triggered: boolean) => {
+    if (isRunningStage6Sandbox) return;
+    setIsRunningStage6Sandbox(true);
+    setStage6SandboxError(null);
+    try {
+      const result = await setStage6KillSwitch(quantCoreBaseUrl, triggered);
+      if (!result.killSwitch) throw new Error(result.error ?? "Stage 6 Kill Switch 操作失败");
+      setStage6KillSwitchState(result.killSwitch);
+      if (stage6SandboxAuthorization) {
+        const batchResult = await loadStage6SandboxBatch(quantCoreBaseUrl, stage6SandboxAuthorization.authorizationId);
+        if (batchResult.batch) setStage6SandboxBatch(batchResult.batch);
+      }
+    } catch (error) {
+      setStage6SandboxError(error instanceof Error ? error.message : "Stage 6 Kill Switch 操作失败");
+    } finally {
+      setIsRunningStage6Sandbox(false);
+    }
+  }, [isRunningStage6Sandbox, stage6SandboxAuthorization]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {
     const portfolio = portfolioBacktestState.portfolio;
@@ -13041,6 +13174,18 @@ export function App() {
     if (activeWorkAreaId === "execution") {
       return (
         <>
+          <ExecutionStage6SandboxSection
+            action={stage6GoldenPath.action}
+            authorization={stage6SandboxAuthorization}
+            batch={stage6SandboxBatch}
+            busy={isRunningStage6Sandbox}
+            detail={stage6GoldenPath.detail}
+            error={stage6SandboxError}
+            exitAcceptance={stage6ExitAcceptance}
+            killSwitch={stage6KillSwitch}
+            onAction={() => void runStage6SandboxAction()}
+            onKillSwitch={(triggered) => void runStage6KillSwitchAction(triggered)}
+          />
           <ExecutionStage5ShadowSection
             busy={isRunningStage5Shadow}
             error={stage5ShadowError}

@@ -1,8 +1,14 @@
 # AIQuant Terminal 产品规划
 
-## 当前阶段：Stage 5 已完成，等待下一路线决策（2026-07-12）
+## 当前阶段：Stage 6 Binance Spot Testnet 执行（2026-07-12）
 
-Stage 0 至 Stage 5 现已全部进入维护状态，当前没有自动开启的下一交付阶段。Stage 5 的 Shadow、恢复、便携审计、Sandbox 准入、权威只读探针、授权预检、不可变授权复核、CI 发布门禁和顶层退出验收均已完成；真实券商、真实资金、测试网委托和 live route 仍需单独路线设计、人工授权与验收。
+Stage 0 至 Stage 5 已全部进入维护状态，Stage 6 为唯一 current。Stage 6 只连接 Binance Spot Testnet，以无真实价值测试资产验证真实交易所协议；生产 endpoint、真实资金、Futures、杠杆、多交易所和 live route 均不在范围内。
+
+Stage 6 复用 Stage 4 canonical workflow、Stage 5 reconciled shadow/readiness/preflight/approved review、`AuditEventStore`、稳定 `clientOrderId` 和 `maxBatchNotional`。服务端先用 CCXT markets/余额规范化并校验 GTC 限价单，再生成绑定完整订单 hash、10 分钟有效的一次性批次授权。外部提交前持久化 `submission_pending`；超时按原 `clientOrderId` 先查询，确认不存在时最多同 ID 重试一次。批次失败立即停止并尽力撤单，所有事实通过最小状态机和事件驱动对账恢复。
+
+账户级持久化 kill switch 会阻断新提交并尽力撤销本系统未成交委托；完成权威对账后才能人工重置。同一 Sandbox 账户只允许一个活动批次。研究包沿用 `auditEvents[]` 和原子导入链，Stage 6 导入事件标记 `detached`，只允许校验与回读，不恢复执行权。
+
+退出采用双层门禁：无密钥 Docker/CI 必须确定性证明专用凭据缺失时 fail closed、通用凭据不能回退；人工发布环境还必须使用 `CCXT_SANDBOX_API_KEY` / `CCXT_SANDBOX_SECRET` 完成真实提交、查询、撤单、重启回读和终态对账，生成脱敏 `data/stage6-binance-spot-testnet.json`。缺少真实 Testnet manifest 时 Stage 6 保持 current，不能宣布退出。
 
 Stage 5 第一阶段复用权威 `stage4_portfolio_workflow` 和 `AuditEventStore`，新增稳定 `clientOrderId`、shadow 状态机、Stage 4 限额复用、kill switch、超时一次/单次重试、拒绝与对账故障注入、重启恢复和幂等回读。`POST /api/execution/shadow-sessions` 只接受 base run、workflow hash、failure mode 和 operator；服务端从审计账本重验 Stage 4 workflow 后生成 `aiqt.stage5ShadowExecutionSession`。Docker 门禁生成 `aiqt.stage5ShadowExecutionAcceptance`，并继续强制 `paperOnly=true`、`shadowOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
 

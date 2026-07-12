@@ -1,0 +1,77 @@
+# AIQuant Terminal
+
+本上下文描述本地优先量化研究、模拟执行与受控交易路由中的核心产品概念。
+
+## Language
+
+**Sandbox 委托路由**：
+只连接交易所测试网、只使用无真实价值测试资产的委托通道。它可以提交、查询、撤销和对账测试网委托，但不构成实盘授权。
+_Avoid_: 实盘路由、模拟成交、Paper Trading
+
+**Sandbox 交易场所**：
+Stage 6 唯一允许连接的交易场所，固定为通过 CCXT 接入的 Binance Spot Testnet。它不包含 Futures、杠杆、保证金或其它交易所。
+_Avoid_: Binance Futures Testnet、生产环境、通用多交易所路由
+
+**Sandbox GTC 限价委托**：
+Stage 6 首版唯一允许提交的测试网委托类型，必须同时包含买卖方向、交易对、数量和限价，并固定使用 GTC。市价单、IOC、FOK 和其它订单类型不在首版范围内。
+_Avoid_: 市价委托、实盘委托、模拟成交
+
+**Sandbox 委托候选**：
+从同一条 Stage 4 canonical workflow、Stage 5 reconciled shadow session、readiness、preflight 和 approved authorization review 权威证据链派生的测试网委托意图。只有候选可以进入 Stage 6 提交流程，不能通过 UI 或 API 任意手填委托绕过证据链。
+_Avoid_: 手工委托、临时订单、独立 Sandbox 订单入口
+
+**Sandbox 批次授权**：
+操作者对一个 Sandbox 委托候选批次作出的一次性提交授权，精确绑定 `workflowHash`、`batchId` 和全部订单内容 hash。首次提交必须在授权后 10 分钟内开始；同一内容的幂等恢复不受过期影响，批次或订单内容变化后必须重新授权。
+_Avoid_: 长期授权、全局授权、逐单授权
+
+**Sandbox 未知提交状态**：
+委托请求超时或断线后，系统无法确认交易所是否已接收委托的状态。系统必须先使用原 `clientOrderId` 查询；确认不存在时最多以同一 ID 重试一次，仍无法确认则进入 `reconciliation_required` 并停止批次。
+_Avoid_: 提交失败、新 ID 补单、无限重试
+
+**Sandbox 批次补偿**：
+批次按 canonical 顺序逐单提交，任一委托被拒绝、状态未知或对账失败时立即停止后续提交，并尽力撤销已经提交但尚未成交的委托。已成交事实只能通过对账记录，不能伪造事务回滚。
+_Avoid_: 原子批次、成交回滚、失败后继续提交
+
+**Sandbox Kill Switch**：
+Stage 6 唯一 Sandbox 账户的持久化急停开关。触发后阻止新批次、停止当前批次后续提交，并尽力撤销本系统创建的全部未成交委托；状态跨重启保持，完成对账后只能由人工重置。
+_Avoid_: 页面临时状态、自动重置、多级急停系统
+
+**Sandbox 规范化委托**：
+使用 CCXT 市场元数据规范化数量和价格，并通过交易对、精度、最小数量/金额、Sandbox 可用余额及 Stage 4 `maxBatchNotional` 校验后的精确委托内容。批次授权绑定该内容；校验失败时不得自动缩量、改价或拆单。
+_Avoid_: 原始未校验委托、提交时隐式改价、自动缩量
+
+**Sandbox 订单状态**：
+本地持久化的最小测试网订单生命周期：`authorized`、`submission_pending`、`open`、`partially_filled`、`filled`、`canceled`、`expired`、`rejected` 或 `reconciliation_required`。外部调用前必须先记录 pending 状态，交易所原始状态与成交数量作为证据保留。
+_Avoid_: Shadow 状态、CCXT 原始状态副本、仅存在于页面的状态
+
+**Sandbox 对账**：
+使用同一权威函数在 API 启动恢复、提交或撤单完成、人工刷新以及 kill switch 触发时查询交易所并更新非终态订单。Stage 6 不运行常驻轮询器，所有对账结果写入审计账本。
+_Avoid_: 浏览器临时刷新、后台轮询服务、另一套恢复任务
+
+**Stage 6 退出验收**：
+由无密钥确定性 CI 证据和一次真实 Binance Spot Testnet 提交、查询、撤单、对账的脱敏 manifest 共同组成。测试替身只验证故障与恢复逻辑，不是产品适配器；缺少真实 Testnet manifest 时 Stage 6 不能退出。
+_Avoid_: 仅单元测试通过、伪造交易所成功、含密钥的验收包
+
+**Sandbox 写路由凭据**：
+Stage 6 API 服务唯一允许用于测试网写操作的 `CCXT_SANDBOX_API_KEY` 与 `CCXT_SANDBOX_SECRET`。不得回退到通用或生产风格的 CCXT 变量，密钥不得进入 Web、日志、审计、导出包、镜像或 manifest。
+_Avoid_: CCXT_API_KEY、CCXT_BINANCE_API_KEY、浏览器密钥配置
+
+**Detached Sandbox 审计副本**：
+从研究包导入的 Stage 6 订单与批次证据，只能用于校验和回读，不能提交、撤单、重试、对账或连接交易所。执行恢复权只来自同一 API 数据卷中的本地权威账本。
+_Avoid_: 可执行导入、跨环境恢复、导入后继续路由
+
+**Stage 6 执行黄金路径**：
+Execution 工作区中的唯一测试网执行流程：检查规范化批次、一次性人工授权、提交、对账或撤单。Portfolio 只生成候选并跳转，Settings 只显示配置状态，Audit 只读回放证据。
+_Avoid_: 多工作区提交入口、Settings 下单、Audit 重试
+
+**活动 Sandbox 批次**：
+唯一 Sandbox 账户中尚有 `submission_pending`、`open`、`partially_filled` 或 `reconciliation_required` 订单的批次。任一活动批次存在时不得启动新批次，完成终态对账后才释放账户。
+_Avoid_: 并发批次、余额预留池、多账户调度
+
+**实盘委托路由**：
+连接真实资金账户并可能产生真实成交的委托通道。它不属于 Stage 6。
+_Avoid_: Sandbox 委托路由、Shadow Execution
+
+**Shadow Execution**：
+把权威组合意图投影到隔离的本地适配器，不连接交易所也不提交委托。
+_Avoid_: Sandbox 委托路由、Paper Trading
