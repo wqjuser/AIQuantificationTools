@@ -6,6 +6,7 @@ import json
 import math
 from typing import Any
 
+from quant_core.execution_adapter_health import validate_execution_adapter_health_probe_evidence
 from quant_core.stage4_portfolio import validate_stage4_portfolio_workflow_snapshot
 
 
@@ -20,9 +21,18 @@ _SAFETY = {
 _FAILURE_MODES = {"none", "timeout_once", "adapter_rejected", "reconciliation_mismatch", "kill_switch"}
 _STATUSES = {"reconciled", "recoverable_failure", "blocked"}
 _READINESS_MAX_SOURCE_AGE = timedelta(hours=24)
+_SANDBOX_PREFLIGHT_MAX_PROBE_AGE = timedelta(hours=24)
 _READINESS_SAFETY = {
     "paperOnly": True,
     "shadowOnly": True,
+    "sandboxOrderSubmissionAllowed": False,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+_SANDBOX_PREFLIGHT_SAFETY = {
+    "humanAuthorizationRequired": True,
     "sandboxOrderSubmissionAllowed": False,
     "liveTradingAllowed": False,
     "orderSubmissionEnabled": False,
@@ -446,11 +456,166 @@ def stage5_sandbox_readiness_decision_to_audit_event(decision: dict[str, Any]) -
     }
 
 
+def build_stage5_sandbox_authorization_preflight(
+    readiness_decision: dict[str, Any],
+    sandbox_probe_execution: dict[str, Any],
+    sandbox_probe_review: dict[str, Any],
+    *,
+    operator: str,
+    confirmed: bool,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    decision = validate_stage5_sandbox_readiness_decision(readiness_decision)
+    operator = operator.strip() if isinstance(operator, str) else ""
+    if not operator or confirmed is not True:
+        raise ValueError("stage5 sandbox authorization preflight scope confirmation is required")
+    if not isinstance(sandbox_probe_execution, dict) or not isinstance(sandbox_probe_review, dict):
+        raise ValueError("stage5 sandbox authorization preflight probe evidence is required")
+    execution_id = _required_string(
+        sandbox_probe_execution.get("sandboxProbeExecutionId"), "sandboxProbeExecutionId"
+    )
+    review_id = _required_string(
+        sandbox_probe_review.get("sandboxProbeReviewId"), "sandboxProbeReviewId"
+    )
+    if (
+        sandbox_probe_execution.get("status") != "probe_execution_recorded"
+        or sandbox_probe_review.get("status") != "probe_review_recorded"
+        or sandbox_probe_review.get("sandboxProbeExecutionId") != execution_id
+    ):
+        raise ValueError("stage5 sandbox authorization preflight requires a recorded probe review")
+    review_confirmations = sandbox_probe_review.get("requiredConfirmations")
+    if not isinstance(review_confirmations, list) or not review_confirmations or any(
+        not isinstance(row, dict) or row.get("status") != "confirmed"
+        for row in review_confirmations
+    ):
+        raise ValueError("stage5 sandbox authorization preflight review confirmations are incomplete")
+    adapter_id = decision["adapterId"]
+    market = decision["market"]
+    if adapter_id != "ccxt-live" or market != "crypto" or any(
+        source.get("adapterId") != adapter_id or source.get("market") != market
+        for source in (sandbox_probe_execution, sandbox_probe_review)
+    ):
+        raise ValueError("stage5 sandbox authorization preflight adapter or market does not match")
+    if any(source.get("route") != "live" for source in (sandbox_probe_execution, sandbox_probe_review)):
+        raise ValueError("stage5 sandbox authorization preflight probe route is invalid")
+    metadata = sandbox_probe_execution.get("metadata")
+    health = validate_execution_adapter_health_probe_evidence(
+        metadata.get("authoritativeHealthProbe") if isinstance(metadata, dict) else None
+    )
+    if (
+        health["status"] != "ready"
+        or health["adapterId"] != adapter_id
+        or health["readOnly"] is not True
+        or health["paperOnly"] is not True
+        or health["liveTradingAllowed"] is not False
+        or health["orderRoutingEnabled"] is not False
+        or health["blockedReasons"]
+    ):
+        raise ValueError("stage5 sandbox authorization preflight authoritative health is not ready")
+
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+    generated_time = _timestamp(generated_at, "generatedAt")
+    decision_time = _timestamp(decision["generatedAt"], "readiness generatedAt")
+    execution_time = _timestamp(sandbox_probe_execution.get("recordedAt"), "probe recordedAt")
+    review_time = _timestamp(sandbox_probe_review.get("recordedAt"), "review recordedAt")
+    health_time = _timestamp(health["generatedAt"], "health generatedAt")
+    if not decision_time <= generated_time or not health_time <= execution_time <= review_time <= generated_time:
+        raise ValueError("stage5 sandbox authorization preflight evidence time order is invalid")
+    if generated_time - health_time > _SANDBOX_PREFLIGHT_MAX_PROBE_AGE:
+        raise ValueError("stage5 sandbox authorization preflight health evidence is stale")
+
+    preflight_id = stage5_sandbox_authorization_preflight_id(
+        decision["decisionHash"], execution_id, review_id
+    )
+    preflight = {
+        "kind": "aiqt.stage5SandboxAuthorizationPreflight",
+        "schemaVersion": 1,
+        "preflightId": preflight_id,
+        "generatedAt": generated_at,
+        "baseRunId": decision["baseRunId"],
+        "readinessDecisionId": decision["decisionId"],
+        "readinessDecisionHash": decision["decisionHash"],
+        "adapterId": adapter_id,
+        "market": market,
+        "sandboxProbeExecutionId": execution_id,
+        "authoritativeHealthEvidenceHash": health["evidenceHash"],
+        "sandboxProbeReviewId": review_id,
+        "operator": operator,
+        "status": "ready_for_separate_sandbox_authorization",
+        **_SANDBOX_PREFLIGHT_SAFETY,
+    }
+    preflight["preflightHash"] = stage5_sandbox_authorization_preflight_hash(preflight)
+    return validate_stage5_sandbox_authorization_preflight(preflight)
+
+
+def validate_stage5_sandbox_authorization_preflight(value: Any) -> dict[str, Any]:
+    required = {
+        "kind", "schemaVersion", "preflightId", "preflightHash", "generatedAt", "baseRunId",
+        "readinessDecisionId", "readinessDecisionHash", "adapterId", "market",
+        "sandboxProbeExecutionId", "authoritativeHealthEvidenceHash", "sandboxProbeReviewId",
+        "operator", "status", *_SANDBOX_PREFLIGHT_SAFETY,
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValueError("stage5 sandbox authorization preflight must contain exact fields")
+    if value["kind"] != "aiqt.stage5SandboxAuthorizationPreflight" or value["schemaVersion"] != 1:
+        raise ValueError("stage5 sandbox authorization preflight schema is invalid")
+    for field in required - {"schemaVersion", *_SANDBOX_PREFLIGHT_SAFETY}:
+        _required_string(value[field], field)
+    _timestamp(value["generatedAt"], "generatedAt")
+    if value["adapterId"] != "ccxt-live" or value["market"] != "crypto":
+        raise ValueError("stage5 sandbox authorization preflight adapter boundary is invalid")
+    if value["status"] != "ready_for_separate_sandbox_authorization":
+        raise ValueError("stage5 sandbox authorization preflight status is invalid")
+    for field in ("preflightHash", "readinessDecisionHash", "authoritativeHealthEvidenceHash"):
+        if len(value[field]) != 64:
+            raise ValueError(f"stage5 sandbox authorization preflight {field} is invalid")
+    for field, expected in _SANDBOX_PREFLIGHT_SAFETY.items():
+        if value[field] is not expected:
+            raise ValueError(f"stage5 sandbox authorization preflight {field} is immutable")
+    if value["preflightId"] != stage5_sandbox_authorization_preflight_id(
+        value["readinessDecisionHash"], value["sandboxProbeExecutionId"], value["sandboxProbeReviewId"]
+    ):
+        raise ValueError("stage5 sandbox authorization preflight id does not match evidence")
+    if value["preflightHash"] != stage5_sandbox_authorization_preflight_hash(value):
+        raise ValueError("stage5 sandbox authorization preflight hash does not match")
+    return json.loads(json.dumps(value))
+
+
+def stage5_sandbox_authorization_preflight_hash(value: dict[str, Any]) -> str:
+    payload = {key: item for key, item in value.items() if key != "preflightHash"}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def stage5_sandbox_authorization_preflight_to_audit_event(preflight: dict[str, Any]) -> dict[str, Any]:
+    preflight = validate_stage5_sandbox_authorization_preflight(preflight)
+    return {
+        "schemaVersion": 1,
+        "eventId": preflight["preflightId"],
+        "eventType": "stage5_sandbox_authorization_preflight",
+        "runId": preflight["baseRunId"],
+        "createdAt": preflight["generatedAt"],
+        "stage": "stage5-sandbox-authorization-preflight",
+        "source": preflight["operator"],
+        "summary": f"Recorded Stage 5 sandbox authorization preflight for {preflight['baseRunId']}.",
+        "detail": "Ready only for separate human authorization; sandbox and live order submission remain blocked.",
+        "metadata": {"snapshot": preflight},
+    }
+
+
 def _stage5_sandbox_readiness_decision_id(session_hash: str, execution_ids: list[str]) -> str:
     digest = hashlib.sha256(
         f"stage5-sandbox-readiness:{session_hash}:{','.join(execution_ids)}".encode()
     ).hexdigest()
     return f"stage5-sandbox-readiness-{digest[:24]}"
+
+
+def stage5_sandbox_authorization_preflight_id(
+    decision_hash: str, execution_id: str, review_id: str
+) -> str:
+    digest = hashlib.sha256(
+        f"stage5-sandbox-authorization-preflight:{decision_hash}:{execution_id}:{review_id}".encode()
+    ).hexdigest()
+    return f"stage5-sandbox-authorization-preflight-{digest[:24]}"
 
 
 def _required_string(value: Any, field: str) -> str:

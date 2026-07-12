@@ -6,16 +6,23 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from quant_core.ai_review_runs import validate_ai_review_run_record
 
 from quant_core.canonical import DATA_SNAPSHOT_HASH_VERSION, canonical_data_hash, normalize_snapshot_bars
 from quant_core.handoff_notes import normalize_handoff_note_payloads
+from quant_core.execution import (
+    execution_adapter_sandbox_probe_execution_payload_from_audit_event,
+    execution_adapter_sandbox_probe_review_payload_from_audit_event,
+)
 from quant_core.stage4_portfolio import validate_stage4_portfolio_workflow_snapshot
 from quant_core.stage5_shadow import (
+    build_stage5_sandbox_authorization_preflight,
     build_stage5_sandbox_readiness_decision,
     build_stage5_shadow_session,
+    validate_stage5_sandbox_authorization_preflight,
     validate_stage5_sandbox_readiness_decision,
     validate_stage5_shadow_session,
 )
@@ -611,6 +618,7 @@ def research_run_export_to_payload(
         "stage4PortfolioWorkflows": _stage4_portfolio_workflow_count(audit_event_payloads),
         "stage5ShadowSessions": _stage5_shadow_session_count(audit_event_payloads),
         "stage5SandboxReadinessDecisions": _stage5_sandbox_readiness_decision_count(audit_event_payloads),
+        "stage5SandboxAuthorizationPreflights": _stage5_sandbox_authorization_preflight_count(audit_event_payloads),
         "handoffNotes": len(handoff_note_payloads),
     }
     export_package = {
@@ -857,6 +865,7 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
     _stage4_portfolio_workflow_manifest_count(counts)
     _stage5_shadow_session_manifest_count(counts)
     _stage5_sandbox_readiness_decision_manifest_count(counts)
+    _stage5_sandbox_authorization_preflight_manifest_count(counts)
     data_snapshot = research_run.get("dataSnapshot")
     ai_report = research_run.get("aiReport")
     expected = {
@@ -889,6 +898,8 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
         expected["stage5ShadowSessions"] = _stage5_shadow_session_count(audit_events)
     if "stage5SandboxReadinessDecisions" in counts or _stage5_sandbox_readiness_decision_count(audit_events):
         expected["stage5SandboxReadinessDecisions"] = _stage5_sandbox_readiness_decision_count(audit_events)
+    if "stage5SandboxAuthorizationPreflights" in counts or _stage5_sandbox_authorization_preflight_count(audit_events):
+        expected["stage5SandboxAuthorizationPreflights"] = _stage5_sandbox_authorization_preflight_count(audit_events)
     if "promotionCandidates" in counts or export_package.get("promotionCandidate"):
         expected["promotionCandidates"] = 1 if isinstance(export_package.get("promotionCandidate"), dict) else 0
     research_note = research_run.get("researchNote")
@@ -1188,6 +1199,7 @@ def _validate_manifest_consistency(
     _stage4_portfolio_workflow_manifest_count(counts)
     _stage5_shadow_session_manifest_count(counts)
     _stage5_sandbox_readiness_decision_manifest_count(counts)
+    _stage5_sandbox_authorization_preflight_manifest_count(counts)
     expected_counts = {
         "bars": bar_count,
         "trades": len(_list_of_dicts(research_run.get("backtestTrades"))),
@@ -1221,6 +1233,8 @@ def _validate_manifest_consistency(
         expected_counts["stage5ShadowSessions"] = _stage5_shadow_session_count(audit_events)
     if "stage5SandboxReadinessDecisions" in counts or _stage5_sandbox_readiness_decision_count(audit_events):
         expected_counts["stage5SandboxReadinessDecisions"] = _stage5_sandbox_readiness_decision_count(audit_events)
+    if "stage5SandboxAuthorizationPreflights" in counts or _stage5_sandbox_authorization_preflight_count(audit_events):
+        expected_counts["stage5SandboxAuthorizationPreflights"] = _stage5_sandbox_authorization_preflight_count(audit_events)
     if "handoffNotes" in counts or handoff_notes:
         expected_counts["handoffNotes"] = len(handoff_notes or [])
     research_note = _normalize_research_note(
@@ -1430,6 +1444,18 @@ def _normalize_audit_event_payloads(
                     or source != snapshot["operator"]
                 ):
                     raise ValueError("stage5_sandbox_readiness_audit_binding_mismatch")
+            if event_type == "stage5_sandbox_authorization_preflight":
+                snapshot = validate_stage5_sandbox_authorization_preflight(
+                    _dict_or_empty(item.get("metadata")).get("snapshot")
+                )
+                if (
+                    event_id != snapshot["preflightId"]
+                    or event_run_id != snapshot["baseRunId"]
+                    or created_at != snapshot["generatedAt"]
+                    or stage != "stage5-sandbox-authorization-preflight"
+                    or source != snapshot["operator"]
+                ):
+                    raise ValueError("stage5_sandbox_authorization_preflight_audit_binding_mismatch")
         normalized.append(
             {
                 "schemaVersion": 1,
@@ -1459,6 +1485,21 @@ def _normalize_audit_event_payloads(
             item["adapterPaperExecutionId"]: item
             for item in adapter_paper_executions or []
             if isinstance(item, dict) and isinstance(item.get("adapterPaperExecutionId"), str)
+        }
+        readiness_decisions = {
+            item["metadata"]["snapshot"]["decisionHash"]: item["metadata"]["snapshot"]
+            for item in normalized
+            if item["eventType"] == "stage5_sandbox_readiness_decision"
+        }
+        probe_executions = {
+            item["eventId"]: _stage5_probe_execution_from_export_event(item)
+            for item in normalized
+            if item["eventType"] == "execution_adapter_sandbox_probe_execution"
+        }
+        probe_reviews = {
+            item["eventId"]: _stage5_probe_review_from_export_event(item)
+            for item in normalized
+            if item["eventType"] == "execution_adapter_sandbox_probe_review"
         }
         for item in normalized:
             if item["eventType"] == "stage5_shadow_execution_session":
@@ -1495,6 +1536,23 @@ def _normalize_audit_event_payloads(
                 )
                 if rebuilt != decision:
                     raise ValueError("stage5_sandbox_readiness_source_mismatch")
+            if item["eventType"] == "stage5_sandbox_authorization_preflight":
+                preflight = item["metadata"]["snapshot"]
+                decision = readiness_decisions.get(preflight["readinessDecisionHash"])
+                execution = probe_executions.get(preflight["sandboxProbeExecutionId"])
+                review = probe_reviews.get(preflight["sandboxProbeReviewId"])
+                if decision is None or execution is None or review is None:
+                    raise ValueError("stage5_sandbox_authorization_preflight_source_missing")
+                rebuilt = build_stage5_sandbox_authorization_preflight(
+                    decision,
+                    execution,
+                    review,
+                    operator=preflight["operator"],
+                    confirmed=True,
+                    generated_at=preflight["generatedAt"],
+                )
+                if rebuilt != preflight:
+                    raise ValueError("stage5_sandbox_authorization_preflight_source_mismatch")
     return normalized
 
 
@@ -1547,6 +1605,59 @@ def _stage5_sandbox_readiness_decision_manifest_count(counts: dict[str, Any]) ->
     if type(value) is not int or value < 0:
         raise ValueError("stage5_sandbox_readiness_decisions_count_invalid")
     return value
+
+
+def _stage5_sandbox_authorization_preflight_count(value: Any) -> int:
+    return sum(
+        1
+        for item in value or []
+        if isinstance(item, dict) and item.get("eventType") == "stage5_sandbox_authorization_preflight"
+    )
+
+
+def _stage5_sandbox_authorization_preflight_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage5SandboxAuthorizationPreflights" not in counts:
+        return None
+    value = counts["stage5SandboxAuthorizationPreflights"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage5_sandbox_authorization_preflights_count_invalid")
+    return value
+
+
+def _stage5_export_event_view(item: dict[str, Any]) -> SimpleNamespace:
+    return SimpleNamespace(
+        event_type=item["eventType"],
+        event_id=item["eventId"],
+        metadata=item["metadata"],
+        created_at=datetime.fromisoformat(item["createdAt"]),
+    )
+
+
+def _stage5_probe_execution_from_export_event(item: dict[str, Any]) -> dict[str, Any] | None:
+    if not _stage5_probe_export_event_is_safe(item, "execution-adapter-sandbox-probe-execution"):
+        return None
+    return execution_adapter_sandbox_probe_execution_payload_from_audit_event(
+        _stage5_export_event_view(item)
+    )
+
+
+def _stage5_probe_review_from_export_event(item: dict[str, Any]) -> dict[str, Any] | None:
+    if not _stage5_probe_export_event_is_safe(item, "execution-adapter-sandbox-probe-review"):
+        return None
+    return execution_adapter_sandbox_probe_review_payload_from_audit_event(
+        _stage5_export_event_view(item)
+    )
+
+
+def _stage5_probe_export_event_is_safe(item: dict[str, Any], expected_stage: str) -> bool:
+    metadata = item.get("metadata")
+    return bool(
+        item.get("stage") == expected_stage
+        and item.get("source") == "execution-adapter-ledger"
+        and isinstance(metadata, dict)
+        and metadata.get("paperOnly") is True
+        and metadata.get("liveTradingAllowed") is False
+    )
 
 
 def _normalize_adapter_paper_execution_payloads(

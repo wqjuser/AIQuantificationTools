@@ -13,9 +13,12 @@ npm run docker:smoke:stage5:readiness:validate
 # 只执行第五阶段无凭据只读探针
 npm run docker:smoke:stage5:readonly -- --no-build
 npm run docker:smoke:stage5:readonly:validate
+# 只执行第六阶段授权预检 fail-closed 门禁
+npm run docker:smoke:stage5:authorization-preflight -- --no-build
+npm run docker:smoke:stage5:authorization-preflight:validate
 ```
 
-完整 smoke 会先生成 5 个独立 Stage 4 权威 workflow，执行五类确定性 Shadow 演练，再为已对账的 workflow 绑定真实持久化 terminal adapter paper evidence，生成 Sandbox 准入决策；最后调用服务端 CCXT 只读健康端点验证默认无凭据环境安全阻断。链路输出 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json` 与 `data/stage5-sandbox-readonly-probe.json`。所有 validate 命令都只离线复核 manifest，不访问网络。
+完整 smoke 会先生成 5 个独立 Stage 4 权威 workflow，执行五类确定性 Shadow 演练，再为已对账的 workflow 绑定真实持久化 terminal adapter paper evidence，生成 Sandbox 准入决策；随后调用服务端 CCXT 只读健康端点，并通过既有 execution/review API 持久化默认无凭据的 blocked probe 链，验证这些真实源事件不能生成 Sandbox 授权预检。链路输出 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json`、`data/stage5-sandbox-readonly-probe.json` 与 `data/stage5-sandbox-authorization-preflight.json`。所有 validate 命令都只离线复核 manifest，不访问网络。
 
 ## 预期结果
 
@@ -42,11 +45,20 @@ Sandbox 准入 manifest 还必须满足：
 - `metadata.readOnly=true`、`paperOnly=true`、`liveTradingAllowed=false`、`orderRoutingEnabled=false`。
 - probe canonical digest 离线复核一致；任一边界、状态或 digest 篡改必须失败。
 
+Sandbox 授权预检 manifest 还必须满足：
+
+- readiness decision 存在，但默认只读 probe 为 blocked，预检 POST 必须返回 409。
+- acceptance 引用真实持久化且状态为 `blocked` 的 probe execution/review id，并命中“必须为 recorded probe review”服务端 blocker。
+- `preflightCount=0`，不能因人工确认、blocked 源或跨市场证据补造成功 artifact。
+- `humanAuthorizationRequired=true`、`sandboxOrderSubmissionAllowed=false`，全部 live/order route 字段保持阻断。
+
 ## 页面操作与恢复
 
 Execution 工作区始终只提供一个 Stage 5 主动作：先启动/重试 Shadow 验证；最新 session 已对账后，主动作切换为“生成 Sandbox 准入决策”。Settings 的 Sandbox 探针执行继续复用原卡片；“只读握手”和“账户快照已脱敏”是禁用的服务端派生项，不能手工勾选。记录时 API 执行探针，结果展示 probe id、exchange、status/hash 摘要；刷新后从审计账本恢复。页面不提供密钥输入、故障绕过或下单动作。
 
-导出包的 `manifest.artifactCounts.stage5ShadowSessions` 与 `stage5SandboxReadinessDecisions` 必须分别匹配合法审计事件数量。导入时包内必须同时包含对应的 Stage 4 workflow、Stage 5 session 和 decision 引用的顶层脱敏 adapter paper executions；核心按依赖顺序重建，任何数量、身份、时间、hash、自洽字段或安全边界篡改都会在写库前阻断。Audit 专属行会先按与 Python 相同的 canonical JSON 规则验证完整 SHA-256，再显示 decision 数量、adapter、hash 摘要和 blocked 安全边界。
+readiness decision、同 adapter/market 的 ready probe execution 和已记录 probe review 同时存在时，唯一主动作切换为“生成 Sandbox 授权预检”。成功后只显示 preflight hash 与“仍需独立人工授权”；缺少或错配证据时提示回到 Settings，不能绕过。当前 A 股 readiness 不会与 `ccxt-live + crypto` 探针拼接。
+
+导出包的 `manifest.artifactCounts.stage5ShadowSessions`、`stage5SandboxReadinessDecisions` 与 `stage5SandboxAuthorizationPreflights` 必须分别匹配合法审计事件数量。预检存在时导出还必须携带其引用的脱敏 probe execution/review；核心按依赖顺序重建，任何数量、身份、时间、hash、自洽字段或安全边界篡改都会在写库前阻断。Audit 专属行会按与 Python 相同的 canonical JSON 规则验证完整 SHA-256。
 
 ## 故障处理
 
@@ -60,8 +72,10 @@ Execution 工作区始终只提供一个 Stage 5 主动作：先启动/重试 Sh
 - source evidence 距 decision 超过 24 小时：按 stale 阻断；重新执行权威 Shadow/terminal paper evidence 链，不修改旧时间戳续期。
 - attempt 1 超时：使用完全相同的请求重试一次；不要更换 workflow hash 或订单身份。
 - attempt 2 仍失败、对账错配或 kill switch 触发：停止；保留审计事件，禁止补造成功。
+- 授权预检返回 409：核对 readiness 与 probe 的 adapter/market、探针状态、人工 review 和 24 小时 freshness；禁止替换 id 或跨市场拼接。
+- 预检成功也不得提交订单；它只进入后续独立人工授权材料，不改变运行时 route 开关。
 - 容器重启后 session 数量或 hash 不一致：停止导入与发布，保留命名卷，检查 `stage4_portfolio_workflow` 与 `stage5_shadow_execution_session` 事件；不要跳过坏记录。
 
 ## 安全边界
 
-Shadow 路径的运行 adapter 仍是 `local-fake-shadow`。第五阶段额外允许 `ccxt-live` 进行明确的 sandbox/testnet 只读健康检查；配置测试网凭据时只读取 markets/status/time 和脱敏 balance，不保存账户数据，也不调用 create/cancel/order API。准入 decision 和 acceptance manifest 继续固定 `paperOnly=true`、`shadowOnly=true`、`sandboxOrderSubmissionAllowed=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。任何真实资金连接或委托都需要后续独立设计、人工授权和验收。
+Shadow 路径的运行 adapter 仍是 `local-fake-shadow`。第五阶段额外允许 `ccxt-live` 进行明确的 sandbox/testnet 只读健康检查；第六阶段只绑定这些脱敏证据，不保存账户数据，也不调用 create/cancel/order API。准入 decision、授权预检和 acceptance manifest 继续固定 `sandboxOrderSubmissionAllowed=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。任何真实资金连接或委托都需要后续独立设计、人工授权和验收。

@@ -287,10 +287,13 @@ import {
 } from "./lib/portfolio-stage4";
 import {
   buildStage5ShadowState,
+  loadStage5SandboxAuthorizationPreflights,
   loadStage5SandboxReadinessDecisions,
   loadStage5ShadowSessions,
+  runStage5SandboxAuthorizationPreflight,
   runStage5SandboxReadinessDecision,
   runStage5ShadowSession,
+  type Stage5SandboxAuthorizationPreflight,
   type Stage5SandboxReadinessDecision,
   type Stage5ShadowSession
 } from "./lib/stage5-shadow";
@@ -2238,6 +2241,8 @@ export function App() {
   const [stage5ShadowSessions, setStage5ShadowSessions] = useState<Stage5ShadowSession[]>([]);
   const [stage5SandboxReadinessDecisions, setStage5SandboxReadinessDecisions] =
     useState<Stage5SandboxReadinessDecision[]>([]);
+  const [stage5SandboxAuthorizationPreflights, setStage5SandboxAuthorizationPreflights] =
+    useState<Stage5SandboxAuthorizationPreflight[]>([]);
   const [stage5ShadowError, setStage5ShadowError] = useState<string | null>(null);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
@@ -2773,7 +2778,10 @@ export function App() {
   const stage5ShadowState = buildStage5ShadowState(
     portfolioStage4Workflow,
     stage5ShadowSessions,
-    stage5SandboxReadinessDecisions
+    stage5SandboxReadinessDecisions,
+    stage5SandboxAuthorizationPreflights,
+    executionAdapterSandboxProbeExecutionRows,
+    executionAdapterSandboxProbeReviewRows
   );
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
@@ -3637,18 +3645,21 @@ export function App() {
     if (!baseRunId) {
       setStage5ShadowSessions([]);
       setStage5SandboxReadinessDecisions([]);
+      setStage5SandboxAuthorizationPreflights([]);
       setStage5ShadowError(null);
       return;
     }
     setStage5ShadowError(null);
     void Promise.all([
       loadStage5ShadowSessions(quantCoreBaseUrl, baseRunId),
-      loadStage5SandboxReadinessDecisions(quantCoreBaseUrl, baseRunId)
-    ]).then(([sessionResult, readinessResult]) => {
+      loadStage5SandboxReadinessDecisions(quantCoreBaseUrl, baseRunId),
+      loadStage5SandboxAuthorizationPreflights(quantCoreBaseUrl, baseRunId)
+    ]).then(([sessionResult, readinessResult, preflightResult]) => {
       if (cancelled) return;
       setStage5ShadowSessions(sessionResult.sessions);
       setStage5SandboxReadinessDecisions(readinessResult.decisions);
-      setStage5ShadowError(sessionResult.error ?? readinessResult.error ?? null);
+      setStage5SandboxAuthorizationPreflights(preflightResult.preflights);
+      setStage5ShadowError(sessionResult.error ?? readinessResult.error ?? preflightResult.error ?? null);
     });
     return () => { cancelled = true; };
   }, [currentResearchRunId]);
@@ -7194,6 +7205,31 @@ export function App() {
     stage5ShadowRequestIdRef.current = requestId;
     setIsRunningStage5Shadow(true);
     setStage5ShadowError(null);
+    if (stage5ShadowState.actionId === "run-stage5-sandbox-authorization-preflight") {
+      const decision = stage5ShadowState.readinessDecision;
+      const executionId = stage5ShadowState.sandboxProbeExecutionId;
+      const reviewId = stage5ShadowState.sandboxProbeReviewId;
+      if (!decision || !executionId || !reviewId) {
+        setIsRunningStage5Shadow(false);
+        setStage5ShadowError("Stage 5 authoritative sandbox probe evidence is required");
+        return;
+      }
+      const result = await runStage5SandboxAuthorizationPreflight(
+        quantCoreBaseUrl, decision, executionId, reviewId
+      );
+      if (stage5ShadowRequestIdRef.current !== requestId) return;
+      setIsRunningStage5Shadow(false);
+      if (!result.preflight) {
+        setStage5ShadowError(result.error ?? "Stage 5 sandbox authorization preflight failed");
+        return;
+      }
+      const preflight = result.preflight;
+      setStage5SandboxAuthorizationPreflights((current) => [
+        preflight,
+        ...current.filter((row) => row.preflightId !== preflight.preflightId)
+      ]);
+      return;
+    }
     if (stage5ShadowState.actionId === "review-stage5-sandbox-readiness") {
       if (!stage5ShadowState.session) {
         setIsRunningStage5Shadow(false);
@@ -7234,7 +7270,7 @@ export function App() {
       session,
       ...current.filter((row) => row.sessionId !== session.sessionId)
     ]);
-  }, [isRunningStage5Shadow, portfolioStage4Workflow, stage5ShadowState.actionId, stage5ShadowState.session]);
+  }, [isRunningStage5Shadow, portfolioStage4Workflow, stage5ShadowState]);
 
   const exportPortfolioBacktestMarkdown = useCallback(() => {
     const portfolio = portfolioBacktestState.portfolio;
@@ -12959,6 +12995,7 @@ export function App() {
             busy={isRunningStage5Shadow}
             error={stage5ShadowError}
             i18n={i18n}
+            onOpenSettings={() => selectProductWorkArea("settings")}
             onPrimaryAction={() => void runStage5ShadowPrimaryAction()}
             state={stage5ShadowState}
           />
@@ -28505,6 +28542,7 @@ function researchExportBrowserLabel(i18n: AppI18n, row: ResearchRunExportBrowser
       "ai-review-decisions": i18n.t("archive.aiReview.decision"),
       "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
       "stage5-sandbox-readiness-decisions": "Stage 5 Sandbox 准入决策",
+      "stage5-sandbox-authorization-preflights": "Stage 5 Sandbox 授权预检",
       "audit-summary": "审计摘要",
       "audit-report": "审计报告",
       "execution-handoff": "执行交接"
@@ -28635,6 +28673,7 @@ function researchImportDiffLabel(i18n: AppI18n, row: ResearchRunImportDiffRow): 
       "stage4-portfolio-workflows": "Stage 4 组合工作流",
       "stage5-shadow-sessions": "Stage 5 Shadow Sessions",
       "stage5-sandbox-readiness-decisions": "Stage 5 Sandbox 准入决策",
+      "stage5-sandbox-authorization-preflights": "Stage 5 Sandbox 授权预检",
       "audit-summary": "导入审计摘要",
       "audit-report": "导入审计报告",
       "backtest-report": "导入回测报告",

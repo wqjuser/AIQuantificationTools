@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timedelta
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 from http.server import HTTPServer
 import json
@@ -9,20 +10,29 @@ from pathlib import Path
 import sys
 import tempfile
 from threading import Thread
+from types import SimpleNamespace
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services.quant_core.tests import test_stage4_portfolio as stage4_tests
 from services.quant_core.tests import test_quant_core as quant_core_tests
-from quant_core.execution import build_portfolio_paper_order_replay, portfolio_paper_order_payload_to_simulation
+from quant_core.execution import (
+    build_portfolio_paper_order_replay,
+    build_portfolio_paper_order_simulation_route_risk,
+    portfolio_paper_order_payload_to_simulation,
+)
 from quant_core.stage5_shadow import (
+    build_stage5_sandbox_authorization_preflight,
     build_stage5_sandbox_readiness_decision,
     build_stage5_shadow_session,
+    stage5_sandbox_authorization_preflight_hash,
+    stage5_sandbox_authorization_preflight_to_audit_event,
     stage5_sandbox_readiness_decision_hash,
     stage5_sandbox_readiness_decision_to_audit_event,
     stage5_shadow_session_hash,
     stage5_shadow_session_to_audit_event,
+    validate_stage5_sandbox_authorization_preflight,
     validate_stage5_sandbox_readiness_decision,
     validate_stage5_shadow_session,
 )
@@ -40,8 +50,47 @@ def stage4_workflow(workflow_id: str = "stage4-workflow-1") -> dict:
     return fixture.build(workflow_id=workflow_id)
 
 
-def stage4_workflow_with_adapter_evidence(workflow_id: str = "stage4-workflow-readiness") -> tuple[dict, list[dict]]:
-    workflow = stage4_workflow(workflow_id)
+def stage4_workflow_with_adapter_evidence(
+    workflow_id: str = "stage4-workflow-readiness",
+    *,
+    market: str = "ashare",
+    adapter_id: str = "ashare-live",
+) -> tuple[dict, list[dict]]:
+    if market == "ashare":
+        workflow = stage4_workflow(workflow_id)
+    else:
+        fixture = stage4_tests.Stage4PortfolioWorkflowSnapshotTest()
+        fixture.setUp()
+        symbols = ("BTC/USDT", "ETH/USDT")
+        fixture.portfolio["market"] = market
+        for index, symbol in enumerate(symbols):
+            fixture.portfolio_request["legs"][index].update(market=market, symbol=symbol)
+            fixture.portfolio["legs"][index]["symbol"] = symbol
+            fixture.batch["orders"][index]["symbol"] = symbol
+            fixture.simulations[index]["symbol"] = symbol
+        existing_simulations = []
+        for simulation in fixture.simulations:
+            simulation["routeRisk"] = build_portfolio_paper_order_simulation_route_risk(
+                simulation,
+                base_run_id=fixture.batch["baseRunId"],
+                batch_id=fixture.batch["batchId"],
+                existing_simulations=existing_simulations,
+                route_risk={"initialCash": fixture.portfolio_request["initialCash"], **fixture.risk_template},
+            )
+            existing_simulations.append(portfolio_paper_order_payload_to_simulation(simulation))
+        fixture.replay = build_portfolio_paper_order_replay(
+            [portfolio_paper_order_payload_to_simulation(row) for row in fixture.simulations],
+            base_run_id=fixture.batch["baseRunId"],
+            initial_cash=fixture.portfolio_request["initialCash"],
+            generated_at=datetime.fromisoformat(fixture.replay["generatedAt"]),
+        )
+        for order, simulation in zip(fixture.batch["orders"], fixture.simulations, strict=True):
+            order.update(
+                side=simulation["side"],
+                quantity=simulation["quantity"],
+                notionalValue=simulation["notionalValue"],
+            )
+        workflow = fixture.build(workflow_id=workflow_id)
     executions = []
     for index, simulation in enumerate(workflow["simulations"], start=1):
         execution_id = f"adapter-paper-execution-{index}"
@@ -49,7 +98,7 @@ def stage4_workflow_with_adapter_evidence(workflow_id: str = "stage4-workflow-re
         evidence = {
             "adapterPaperExecutionId": execution_id,
             "manifestValidationId": manifest_id,
-            "adapterId": "ashare-live",
+            "adapterId": adapter_id,
             "market": workflow["portfolio"]["market"],
             "symbol": simulation["symbol"],
             "side": simulation["side"],
@@ -114,7 +163,494 @@ def adapter_paper_execution_audit_event(execution: dict, run_id: str = "") -> di
     }
 
 
+def sandbox_probe_audit_events(health: dict) -> tuple[dict, dict]:
+    shared = {
+        "sandboxProbePlanId": "probe-plan-1",
+        "humanConfirmationId": "human-confirmation-1",
+        "orchestrationExecutionId": "orchestration-execution-1",
+        "dryRunId": "dry-run-1",
+        "acceptanceId": "acceptance-1",
+        "executionId": "execution-1",
+        "planId": "plan-1",
+        "bindingId": "binding-1",
+        "materializationId": "materialization-1",
+        "manifestValidationId": "manifest-validation-1",
+        "adapterId": "ccxt-live",
+        "market": "crypto",
+        "route": "live",
+        "operator": "test-operator",
+        "probeExecutionMode": "manual_readonly_sandbox_probe",
+        "probeMode": "manual_sandbox_probe_plan",
+        "confirmationMode": "manual_final_human_confirmation",
+        "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+        "acceptanceMode": "manual_runtime_reload_acceptance",
+        "executionMode": "manual_runtime_reload_execution",
+        "reloadMode": "manual_runtime_reload_plan",
+        "maintenanceWindowId": "window-1",
+        "bindingMode": "env_ref_only",
+        "manifestPath": "data/adapter-manifest.json",
+        "requiredEnvVars": ["CCXT_BINANCE_API_KEY", "CCXT_BINANCE_SECRET"],
+        "blockedReasons": [],
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+    execution_id = "probe-execution-1"
+    execution_time = health["generatedAt"]
+    execution_confirmations = [
+        "probe-plan-reviewed", "readonly-handshake-captured", "account-snapshot-redacted",
+        "order-schema-validated", "operator-confirmed-no-orders-submitted",
+    ]
+    execution = {
+        "schemaVersion": 1,
+        "eventId": execution_id,
+        "eventType": "execution_adapter_sandbox_probe_execution",
+        "runId": "",
+        "createdAt": execution_time,
+        "stage": "execution-adapter-sandbox-probe-execution",
+        "source": "execution-adapter-ledger",
+        "summary": "ccxt-live adapter sandbox probe execution recorded.",
+        "detail": "Read-only probe; order submission blocked.",
+        "metadata": {
+            **shared,
+            "sandboxProbeExecutionId": execution_id,
+            "status": "probe_execution_recorded",
+            "recordedAt": execution_time,
+            "requiredConfirmationIds": execution_confirmations,
+            "confirmedConfirmationIds": execution_confirmations,
+            "metadata": {"authoritativeHealthProbe": health},
+        },
+    }
+    review_id = "probe-review-1"
+    review_time = execution_time
+    review_confirmations = [
+        "probe-execution-reviewed", "readonly-evidence-matches-plan", "redacted-snapshot-archived",
+        "order-schema-risk-reviewed", "production-route-still-blocked",
+    ]
+    review = {
+        "schemaVersion": 1,
+        "eventId": review_id,
+        "eventType": "execution_adapter_sandbox_probe_review",
+        "runId": "",
+        "createdAt": review_time,
+        "stage": "execution-adapter-sandbox-probe-review",
+        "source": "execution-adapter-ledger",
+        "summary": "ccxt-live adapter sandbox probe review recorded.",
+        "detail": "Read-only review; order submission blocked.",
+        "metadata": {
+            **shared,
+            "sandboxProbeReviewId": review_id,
+            "sandboxProbeExecutionId": execution_id,
+            "status": "probe_review_recorded",
+            "recordedAt": review_time,
+            "reviewMode": "manual_sandbox_probe_review",
+            "requiredConfirmationIds": review_confirmations,
+            "confirmedConfirmationIds": review_confirmations,
+            "metadata": {},
+        },
+    }
+    return execution, review
+
+
 class Stage5ShadowSessionTest(unittest.TestCase):
+    def test_sandbox_authorization_preflight_api_is_idempotent_and_recovers_from_sources(self) -> None:
+        from quant_core.api import (
+            QuantApiHandler,
+            _stage5_sandbox_authorization_sources_for_export,
+        )
+        from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
+
+        workflow, executions = stage4_workflow_with_adapter_evidence(
+            market="crypto",
+            adapter_id="ccxt-live",
+        )
+        now = datetime.now(timezone.utc)
+        session = build_stage5_shadow_session(workflow, generated_at=workflow["generatedAt"])
+        decision = build_stage5_sandbox_readiness_decision(
+            workflow,
+            session,
+            executions,
+            operator="test-operator",
+            confirmed=True,
+            generated_at=now.isoformat(),
+        )
+        health = quant_core_tests.QuantCoreContractTest()._ccxt_health_evidence(
+            generated_at=now
+        )
+        probe_execution_event, probe_review_event = sandbox_probe_audit_events(health)
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit.sqlite")
+            store.record({
+                "schemaVersion": 1,
+                "eventId": workflow["workflowId"],
+                "eventType": "stage4_portfolio_workflow",
+                "runId": workflow["baseRunId"],
+                "createdAt": workflow["generatedAt"],
+                "stage": "stage4-portfolio-workflow",
+                "source": "test",
+                "summary": "Stage 4 source.",
+                "detail": "Authoritative source.",
+                "metadata": {"snapshot": workflow},
+            })
+            store.record(stage5_shadow_session_to_audit_event(session, "test"))
+            for execution in executions:
+                store.record(adapter_paper_execution_audit_event(execution, workflow["baseRunId"]))
+            store.record(stage5_sandbox_readiness_decision_to_audit_event(decision))
+            store.record(probe_execution_event)
+            store.record(probe_review_event)
+            for index in range(55):
+                store.record({
+                    "schemaVersion": 1,
+                    "eventId": f"superseded-readiness-{index}",
+                    "eventType": "stage5_sandbox_readiness_decision",
+                    "runId": workflow["baseRunId"],
+                    "createdAt": (now + timedelta(minutes=index + 1)).isoformat(),
+                    "stage": "superseded-test-evidence",
+                    "source": "test",
+                    "summary": "Superseded readiness evidence.",
+                    "detail": "Used to prove exact source recovery beyond the recent-event window.",
+                    "metadata": {"snapshot": {"decisionHash": f"superseded-{index}"}},
+                })
+
+            class Handler(QuantApiHandler):
+                audit_event_store = store
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            payload = {
+                "baseRunId": workflow["baseRunId"],
+                "readinessDecisionHash": decision["decisionHash"],
+                "sandboxProbeExecutionId": probe_execution_event["eventId"],
+                "sandboxProbeReviewId": probe_review_event["eventId"],
+                "operator": "test-operator",
+                "confirmed": True,
+            }
+            try:
+                responses = []
+                for _ in range(2):
+                    body = json.dumps(payload).encode()
+                    connection.request(
+                        "POST", "/api/execution/sandbox-authorization-preflights", body=body,
+                        headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                    )
+                    response = connection.getresponse()
+                    responses.append((response.status, json.loads(response.read())))
+                wrong_hash_body = json.dumps({
+                    **payload,
+                    "readinessDecisionHash": decision["workflowHash"],
+                }).encode()
+                connection.request(
+                    "POST", "/api/execution/sandbox-authorization-preflights", body=wrong_hash_body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(wrong_hash_body)),
+                    },
+                )
+                wrong_hash_response = connection.getresponse()
+                wrong_hash_payload = json.loads(wrong_hash_response.read())
+                connection.request(
+                    "GET",
+                    f"/api/execution/sandbox-authorization-preflights?baseRunId={workflow['baseRunId']}&limit=10",
+                )
+                listed_response = connection.getresponse()
+                listed = json.loads(listed_response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+            preflight_event = store.get(
+                responses[0][1]["sandboxAuthorizationPreflight"]["preflightId"]
+            )
+            exported_events = _stage5_sandbox_authorization_sources_for_export(
+                store,
+                workflow["baseRunId"],
+                [
+                    audit_event_record_to_payload(event)
+                    for event in store.list_all_by_run(workflow["baseRunId"])
+                ],
+            )
+
+        self.assertEqual([status for status, _ in responses], [201, 200], responses)
+        self.assertEqual(
+            responses[0][1]["sandboxAuthorizationPreflight"]["preflightHash"],
+            responses[1][1]["sandboxAuthorizationPreflight"]["preflightHash"],
+        )
+        self.assertEqual(listed_response.status, 200)
+        self.assertEqual(len(listed["sandboxAuthorizationPreflights"]), 1)
+        self.assertEqual(wrong_hash_response.status, 409, wrong_hash_payload)
+        self.assertTrue(
+            {
+                workflow["workflowId"], session["sessionId"], decision["decisionId"],
+                preflight_event.event_id, probe_execution_event["eventId"],
+                probe_review_event["eventId"],
+            }.issubset({event["eventId"] for event in exported_events})
+        )
+
+    def test_sandbox_authorization_preflight_rejects_probe_metadata_identity_tamper(self) -> None:
+        from quant_core.api import _stage5_sandbox_authorization_probe_execution
+        from quant_core.audit_events import AuditEventStore
+
+        health = quant_core_tests.QuantCoreContractTest()._ccxt_health_evidence(
+            generated_at=datetime.now(timezone.utc)
+        )
+        execution_event, _ = sandbox_probe_audit_events(health)
+        execution_event["metadata"]["sandboxProbeExecutionId"] = "forged-probe-execution-id"
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit.sqlite")
+            event = store.record(execution_event)
+            self.assertIsNone(_stage5_sandbox_authorization_probe_execution(event))
+
+    def test_sandbox_authorization_preflight_replays_existing_artifact_after_freshness_window(self) -> None:
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        workflow, executions = stage4_workflow_with_adapter_evidence(
+            market="crypto", adapter_id="ccxt-live"
+        )
+        source_time = datetime.now(timezone.utc)
+        artifact_time = source_time + timedelta(hours=1)
+        session = build_stage5_shadow_session(workflow, generated_at=workflow["generatedAt"])
+        decision = build_stage5_sandbox_readiness_decision(
+            workflow, session, executions, operator="test-operator", confirmed=True,
+            generated_at=source_time.isoformat(),
+        )
+        health = quant_core_tests.QuantCoreContractTest()._ccxt_health_evidence(
+            generated_at=source_time
+        )
+        execution_event, review_event = sandbox_probe_audit_events(health)
+        from quant_core.execution import (
+            execution_adapter_sandbox_probe_execution_payload_from_audit_event,
+            execution_adapter_sandbox_probe_review_payload_from_audit_event,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            store = AuditEventStore(Path(tmp) / "audit.sqlite")
+            for event in (
+                {
+                    "schemaVersion": 1, "eventId": workflow["workflowId"],
+                    "eventType": "stage4_portfolio_workflow", "runId": workflow["baseRunId"],
+                    "createdAt": workflow["generatedAt"], "stage": "stage4-portfolio-workflow",
+                    "source": "test", "summary": "Stage 4 source.", "detail": "Authoritative source.",
+                    "metadata": {"snapshot": workflow},
+                },
+                stage5_shadow_session_to_audit_event(session, "test"),
+                *(adapter_paper_execution_audit_event(item, workflow["baseRunId"]) for item in executions),
+                stage5_sandbox_readiness_decision_to_audit_event(decision),
+                execution_event,
+                review_event,
+            ):
+                store.record(event)
+            execution = execution_adapter_sandbox_probe_execution_payload_from_audit_event(
+                store.get(execution_event["eventId"])
+            )
+            review = execution_adapter_sandbox_probe_review_payload_from_audit_event(
+                store.get(review_event["eventId"])
+            )
+            with self.assertRaisesRegex(ValueError, "health evidence is stale"):
+                build_stage5_sandbox_authorization_preflight(
+                    decision, execution, review, operator="test-operator", confirmed=True,
+                    generated_at=(source_time + timedelta(hours=25)).isoformat(),
+                )
+            preflight = build_stage5_sandbox_authorization_preflight(
+                decision, execution, review, operator="test-operator", confirmed=True,
+                generated_at=artifact_time.isoformat(),
+            )
+            store.record(stage5_sandbox_authorization_preflight_to_audit_event(preflight))
+            for index in range(55):
+                store.record({
+                    "schemaVersion": 1,
+                    "eventId": f"newer-preflight-{index}",
+                    "eventType": "stage5_sandbox_authorization_preflight",
+                    "runId": workflow["baseRunId"],
+                    "createdAt": (artifact_time + timedelta(minutes=index + 1)).isoformat(),
+                    "stage": "superseded-test-evidence",
+                    "source": "test",
+                    "summary": "Newer preflight evidence.",
+                    "detail": "Used to prove exact idempotent recovery beyond the recent-event window.",
+                    "metadata": {"snapshot": {"preflightId": f"newer-preflight-{index}"}},
+                })
+
+            class Handler(QuantApiHandler):
+                audit_event_store = store
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            body = json.dumps({
+                "baseRunId": workflow["baseRunId"],
+                "readinessDecisionHash": decision["decisionHash"],
+                "sandboxProbeExecutionId": execution_event["eventId"],
+                "sandboxProbeReviewId": review_event["eventId"],
+                "operator": "test-operator", "confirmed": True,
+            }).encode()
+            try:
+                connection.request(
+                    "POST", "/api/execution/sandbox-authorization-preflights", body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200, payload)
+        self.assertEqual(payload["sandboxAuthorizationPreflight"], preflight)
+
+    def test_export_import_rebuilds_sandbox_authorization_preflight_sources(self) -> None:
+        from quant_core.execution import (
+            execution_adapter_sandbox_probe_execution_payload_from_audit_event,
+            execution_adapter_sandbox_probe_review_payload_from_audit_event,
+        )
+        from quant_core.runs import research_run_export_to_payload, research_run_import_to_audit
+
+        workflow, executions = stage4_workflow_with_adapter_evidence(
+            market="crypto", adapter_id="ccxt-live"
+        )
+        now = datetime.now(timezone.utc)
+        session = build_stage5_shadow_session(workflow, generated_at=workflow["generatedAt"])
+        decision = build_stage5_sandbox_readiness_decision(
+            workflow, session, executions, operator="test-operator", confirmed=True,
+            generated_at=now.isoformat(),
+        )
+        health = quant_core_tests.QuantCoreContractTest()._ccxt_health_evidence(generated_at=now)
+        execution_event, review_event = sandbox_probe_audit_events(health)
+        execution = execution_adapter_sandbox_probe_execution_payload_from_audit_event(
+            SimpleNamespace(
+                event_type=execution_event["eventType"], event_id=execution_event["eventId"],
+                metadata=execution_event["metadata"], created_at=datetime.fromisoformat(execution_event["createdAt"]),
+            )
+        )
+        review = execution_adapter_sandbox_probe_review_payload_from_audit_event(
+            SimpleNamespace(
+                event_type=review_event["eventType"], event_id=review_event["eventId"],
+                metadata=review_event["metadata"], created_at=datetime.fromisoformat(review_event["createdAt"]),
+            )
+        )
+        preflight = build_stage5_sandbox_authorization_preflight(
+            decision, execution, review, operator="test-operator", confirmed=True,
+            generated_at=now.isoformat(),
+        )
+        for event in (execution_event, review_event):
+            event["runId"] = workflow["baseRunId"]
+        events = [
+            {
+                "schemaVersion": 1, "eventId": workflow["workflowId"],
+                "eventType": "stage4_portfolio_workflow", "runId": workflow["baseRunId"],
+                "createdAt": workflow["generatedAt"], "stage": "stage4-portfolio-workflow",
+                "source": "test", "summary": "Stage 4 source.", "detail": "Authoritative source.",
+                "metadata": {"snapshot": workflow},
+            },
+            stage5_shadow_session_to_audit_event(session, "test"),
+            stage5_sandbox_readiness_decision_to_audit_event(decision),
+            execution_event,
+            review_event,
+            stage5_sandbox_authorization_preflight_to_audit_event(preflight),
+        ]
+        audit = quant_core_tests.QuantCoreContractTest()._sample_research_run_audit(
+            run_id=workflow["baseRunId"], strategy_revision="rev-run-a"
+        )
+        audit = replace(audit, market="crypto", symbol="BTC/USDT")
+        exported = research_run_export_to_payload(
+            audit, adapter_paper_executions=executions, audit_events=events
+        )
+
+        self.assertEqual(
+            exported["manifest"]["artifactCounts"]["stage5SandboxAuthorizationPreflights"], 1
+        )
+        research_run_import_to_audit(exported)
+
+        missing_review = copy.deepcopy(exported)
+        missing_review.pop("integrity")
+        missing_review["auditEvents"] = [
+            event for event in missing_review["auditEvents"]
+            if event["eventType"] != "execution_adapter_sandbox_probe_review"
+        ]
+        missing_review["manifest"]["artifactCounts"]["auditEvents"] -= 1
+        with self.assertRaisesRegex(ValueError, "stage5_sandbox_authorization_preflight_source_missing"):
+            research_run_import_to_audit(missing_review)
+
+        unsafe_review = copy.deepcopy(exported)
+        unsafe_review.pop("integrity")
+        next(
+            event for event in unsafe_review["auditEvents"]
+            if event["eventType"] == "execution_adapter_sandbox_probe_review"
+        )["metadata"]["liveTradingAllowed"] = True
+        with self.assertRaisesRegex(ValueError, "stage5_sandbox_authorization_preflight_source_missing"):
+            research_run_import_to_audit(unsafe_review)
+
+    def test_builds_sandbox_authorization_preflight_from_existing_authoritative_evidence(self) -> None:
+        workflow, executions = stage4_workflow_with_adapter_evidence()
+        session = build_stage5_shadow_session(workflow, generated_at=workflow["generatedAt"])
+        decision = build_stage5_sandbox_readiness_decision(
+            workflow,
+            session,
+            executions,
+            operator="test-operator",
+            confirmed=True,
+            generated_at="2026-07-12T08:00:00+00:00",
+        )
+        decision.update(adapterId="ccxt-live", market="crypto")
+        decision["decisionHash"] = stage5_sandbox_readiness_decision_hash(decision)
+        health = quant_core_tests.QuantCoreContractTest()._ready_ccxt_health_evidence()
+        execution = {
+            "sandboxProbeExecutionId": "probe-execution-1",
+            "adapterId": "ccxt-live",
+            "market": "crypto",
+            "route": "live",
+            "status": "probe_execution_recorded",
+            "recordedAt": "2026-07-12T08:01:00+00:00",
+            "metadata": {"authoritativeHealthProbe": health},
+        }
+        review = {
+            "sandboxProbeReviewId": "probe-review-1",
+            "sandboxProbeExecutionId": execution["sandboxProbeExecutionId"],
+            "adapterId": "ccxt-live",
+            "market": "crypto",
+            "route": "live",
+            "status": "probe_review_recorded",
+            "recordedAt": "2026-07-12T08:02:00+00:00",
+            "requiredConfirmations": [{"id": "scope", "status": "confirmed"}],
+        }
+
+        preflight = build_stage5_sandbox_authorization_preflight(
+            decision,
+            execution,
+            review,
+            operator="test-operator",
+            confirmed=True,
+            generated_at="2026-07-12T08:03:00+00:00",
+        )
+
+        self.assertEqual(preflight["status"], "ready_for_separate_sandbox_authorization")
+        self.assertTrue(preflight["humanAuthorizationRequired"])
+        self.assertFalse(preflight["sandboxOrderSubmissionAllowed"])
+        self.assertEqual(validate_stage5_sandbox_authorization_preflight(preflight), preflight)
+
+        tampered = copy.deepcopy(preflight)
+        tampered["orderSubmissionEnabled"] = True
+        tampered["preflightHash"] = stage5_sandbox_authorization_preflight_hash(tampered)
+        with self.assertRaisesRegex(ValueError, "orderSubmissionEnabled is immutable"):
+            validate_stage5_sandbox_authorization_preflight(tampered)
+
+        stale = copy.deepcopy(health)
+        stale["generatedAt"] = "2026-07-10T08:00:00+00:00"
+        stale["evidenceHash"] = "0" * 64
+        with self.assertRaises(ValueError):
+            build_stage5_sandbox_authorization_preflight(
+                decision,
+                {**execution, "metadata": {"authoritativeHealthProbe": stale}},
+                review,
+                operator="test-operator",
+                confirmed=True,
+                generated_at="2026-07-12T08:03:00+00:00",
+            )
+
     def test_builds_minimal_sandbox_readiness_decision_from_authoritative_evidence(self) -> None:
         workflow, executions = stage4_workflow_with_adapter_evidence()
         session = build_stage5_shadow_session(
@@ -697,6 +1233,32 @@ class Stage5ShadowSessionTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             docker_smoke.validate_stage5_sandbox_readonly_probe_acceptance_manifest(leaked_manifest)
 
+        authorization_manifest = docker_smoke.build_stage5_sandbox_authorization_preflight_acceptance_manifest(
+            base_run_id="run-a",
+            readiness_decision_hash="a" * 64,
+            readonly_probe_acceptance=manifest,
+            request_status=409,
+            request_payload={
+                "error": "stage5_sandbox_authorization_preflight_blocked",
+                "blockers": ["stage5 sandbox authorization preflight requires a recorded probe review"],
+            },
+            probe_execution={"sandboxProbeExecutionId": "execution-1", "status": "blocked"},
+            probe_review={"sandboxProbeReviewId": "review-1", "status": "blocked"},
+            preflight_count=0,
+        )
+        self.assertIn(
+            "preflightCount=0",
+            docker_smoke.validate_stage5_sandbox_authorization_preflight_acceptance_manifest(
+                authorization_manifest
+            ),
+        )
+        unsafe_authorization = copy.deepcopy(authorization_manifest)
+        unsafe_authorization["sandboxOrderSubmissionAllowed"] = True
+        with self.assertRaises(RuntimeError):
+            docker_smoke.validate_stage5_sandbox_authorization_preflight_acceptance_manifest(
+                unsafe_authorization
+            )
+
     def test_export_import_counts_and_rebuilds_shadow_sessions_from_stage4_workflow(self) -> None:
         from quant_core.runs import (
             research_run_export_to_payload,
@@ -772,3 +1334,5 @@ class Stage5ShadowSessionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    stage5_sandbox_authorization_preflight_hash,
+    validate_stage5_sandbox_authorization_preflight,

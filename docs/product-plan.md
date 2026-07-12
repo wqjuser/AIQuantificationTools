@@ -1,8 +1,8 @@
 # AIQuant Terminal 产品规划
 
-## 当前阶段：Stage 5 实盘准备（权威只读 Sandbox 探针第五阶段，2026-07-12）
+## 当前阶段：Stage 5 实盘准备（Sandbox 授权预检第六阶段，2026-07-12）
 
-Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；当前第五阶段只把已有 CCXT Sandbox 健康检查升级为服务端权威的只读探针证据，不接真实资金账户，不提交或撤销任何订单。
+Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；当前第六阶段只把已有准入决策、权威只读探针和人工复核绑定成 Sandbox 授权预检，不接真实资金账户，不提交或撤销任何订单。
 
 Stage 5 第一阶段复用权威 `stage4_portfolio_workflow` 和 `AuditEventStore`，新增稳定 `clientOrderId`、shadow 状态机、Stage 4 限额复用、kill switch、超时一次/单次重试、拒绝与对账故障注入、重启恢复和幂等回读。`POST /api/execution/shadow-sessions` 只接受 base run、workflow hash、failure mode 和 operator；服务端从审计账本重验 Stage 4 workflow 后生成 `aiqt.stage5ShadowExecutionSession`。Docker 门禁生成 `aiqt.stage5ShadowExecutionAcceptance`，并继续强制 `paperOnly=true`、`shadowOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
 
@@ -13,6 +13,8 @@ Stage 5 第三阶段为 `none`、`timeout_once`、`adapter_rejected`、`reconcil
 Stage 5 第四阶段复用 Stage 4 workflow、已对账 Shadow session 和 terminal adapter paper evidence，生成服务端权威、幂等、可重建的 `aiqt.stage5SandboxReadinessDecision`。它只说明证据满足后续独立人工授权阶段的条件，固定 `sandboxOrderSubmissionAllowed=false`，不连接 broker/testnet。
 
 Stage 5 第五阶段复用现有 `probe_ccxt_sandbox_health`、sandbox probe plan/execution、`AuditEventStore`、审计签名 key registry 和 Settings 卡片。`POST /api/execution/adapter-sandbox-probe-executions` 只为 `ccxt-live + crypto` 执行服务端探针，并从 ready 结果派生只读握手和账户脱敏确认；请求体中的同名布尔值不再具备授权力。成功证据保存为 `metadata.authoritativeHealthProbe`，包含最小脱敏字段、canonical SHA-256 和 authority HMAC，回读和后续 review 都重新验证。无 ccxt、无测试网凭据、网络失败、账户同步失败、adapter 错配或 hash/HMAC/边界篡改一律 fail closed。独立 Docker manifest `aiqt.stage5SandboxReadonlyProbeAcceptance` 明确验证默认无凭据容器不能被报告为 ready；本阶段仍不调用 create/cancel/order API。
+
+Stage 5 第六阶段新增 `aiqt.stage5SandboxAuthorizationPreflight`，只引用同一 `baseRunId` 的 readiness decision、同 adapter/market 的权威 probe execution 和人工 probe review。POST/GET 都从 AuditEventStore 重新验证上游身份、时间、HMAC/hash 和安全边界；重复 POST 回读同一 preflight。研究包新增 `artifactCounts.stage5SandboxAuthorizationPreflights` 并携带被引用的脱敏 probe execution/review，导入前按依赖顺序重建。默认 Docker 的 A 股 readiness 与无凭据 CCXT probe 不匹配，必须返回 409 且成功 preflight 数量为 0；跨市场证据不得拼接。
 
 Stage 4 于 2026-07-11 通过发布门禁：fresh Python/Web 测试与生产构建、保留数据卷的 Docker 重建、Stage 3/4 smoke 与离线 validate、桌面发布、DMG 校验和安全审计均通过。最终验证产物 `AIQuantificationTools_0.1.0_x64.dmg` 的 SHA-256 为 `26b986fadffd34f2cf18fc10e48bb2674bae5ecf3ead1836f9d8b04ad9888ebc`。
 

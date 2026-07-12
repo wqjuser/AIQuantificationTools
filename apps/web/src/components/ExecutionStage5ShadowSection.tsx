@@ -7,18 +7,22 @@ export function ExecutionStage5ShadowSection({
   busy = false,
   error,
   i18n,
+  onOpenSettings = () => {},
   onPrimaryAction,
   state
 }: {
   busy?: boolean;
   error?: string | null;
   i18n: AppI18n;
+  onOpenSettings?: () => void;
   onPrimaryAction: () => void;
   state: Stage5ShadowState;
 }) {
   const session = state.session;
   const actionLabel = state.actionId === "retry-stage5-shadow"
     ? i18n.t("execution.stage5.retry")
+    : state.actionId === "run-stage5-sandbox-authorization-preflight"
+      ? i18n.t("execution.stage5.authorizationPreflightAction")
     : state.actionId === "review-stage5-sandbox-readiness"
       ? i18n.t("execution.stage5.readinessAction")
       : i18n.t("execution.stage5.start");
@@ -37,12 +41,19 @@ export function ExecutionStage5ShadowSection({
         <p className="execution-stage5-shadow-error" role="status">
           {error ?? i18n.t(state.blocker === "stage4-workflow-missing"
             ? "execution.stage5.workflowMissing"
-            : "execution.stage5.sessionBlocked")}
+            : state.blocker === "sandbox-probe-missing"
+              ? "execution.stage5.probeMissing"
+              : "execution.stage5.sessionBlocked")}
         </p>
       ) : null}
       {state.actionId ? (
         <button disabled={busy} onClick={onPrimaryAction} type="button">
           {busy ? i18n.t("execution.stage5.busy") : actionLabel}
+        </button>
+      ) : null}
+      {state.blocker === "sandbox-probe-missing" ? (
+        <button onClick={onOpenSettings} type="button">
+          {i18n.t("execution.stage5.openProbeSettings")}
         </button>
       ) : null}
       <dl>
@@ -63,6 +74,15 @@ export function ExecutionStage5ShadowSection({
           <span>{readinessDecision.adapterId} · {readinessDecision.adapterPaperExecutionIds.join(", ")}</span>
           <small className="execution-stage5-shadow-hash">{readinessDecision.decisionHash}</small>
           <p>{i18n.t("execution.stage5.readinessBoundary")}</p>
+        </div>
+      ) : null}
+      {state.authorizationPreflight ? (
+        <div className="execution-stage5-readiness" role="status">
+          <strong>{i18n.t("execution.stage5.authorizationPreflightTitle")}</strong>
+          <span>{state.authorizationPreflight.status}</span>
+          <span>{state.authorizationPreflight.adapterId} · {state.authorizationPreflight.market}</span>
+          <small className="execution-stage5-shadow-hash">{state.authorizationPreflight.preflightHash}</small>
+          <p>{i18n.t("execution.stage5.authorizationPreflightBoundary")}</p>
         </div>
       ) : null}
       {session ? (

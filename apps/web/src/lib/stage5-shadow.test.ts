@@ -1,14 +1,19 @@
 import { describe, expect, test, vi } from "vitest";
 import {
+  buildStage5SandboxAuthorizationPreflightsUrl,
   buildStage5SandboxReadinessDecisionsUrl,
   buildStage5ShadowSessionsUrl,
   buildStage5ShadowState,
+  isStage5SandboxAuthorizationPreflight,
   isStage5SandboxReadinessDecision,
   isStage5ShadowSession,
+  loadStage5SandboxAuthorizationPreflights,
   loadStage5SandboxReadinessDecisions,
   loadStage5ShadowSessions,
+  runStage5SandboxAuthorizationPreflight,
   runStage5SandboxReadinessDecision,
   runStage5ShadowSession,
+  type Stage5SandboxAuthorizationPreflight,
   type Stage5SandboxReadinessDecision,
   type Stage5ShadowSession
 } from "./stage5-shadow";
@@ -50,6 +55,21 @@ function decision(overrides: Partial<Stage5SandboxReadinessDecision> = {}): Stag
   };
 }
 
+function preflight(overrides: Partial<Stage5SandboxAuthorizationPreflight> = {}): Stage5SandboxAuthorizationPreflight {
+  return {
+    kind: "aiqt.stage5SandboxAuthorizationPreflight", schemaVersion: 1,
+    preflightId: "stage5-sandbox-authorization-preflight-123456789012345678901234",
+    preflightHash: "f".repeat(64), generatedAt: "2026-07-12T08:03:00+00:00", baseRunId: "run-a",
+    readinessDecisionId: "stage5-sandbox-readiness-123456789012345678901234",
+    readinessDecisionHash: "e".repeat(64), adapterId: "ccxt-live", market: "crypto",
+    sandboxProbeExecutionId: "probe-execution-1", authoritativeHealthEvidenceHash: "1".repeat(64),
+    sandboxProbeReviewId: "probe-review-1", operator: "local-operator",
+    status: "ready_for_separate_sandbox_authorization", humanAuthorizationRequired: true,
+    sandboxOrderSubmissionAllowed: false, liveTradingAllowed: false, orderSubmissionEnabled: false,
+    routeExecuted: false, liveBlockedBoundary: true, ...overrides
+  };
+}
+
 describe("Stage 5 shadow client", () => {
   test("builds URLs and derives the one operator action", () => {
     expect(buildStage5ShadowSessionsUrl("http://localhost:8765", "run a", 5)).toBe(
@@ -63,9 +83,50 @@ describe("Stage 5 shadow client", () => {
     expect(buildStage5ShadowState(workflow, [session()])).toMatchObject({
       status: "review", actionId: "review-stage5-sandbox-readiness"
     });
-    expect(buildStage5ShadowState(workflow, [session()], [decision()])).toMatchObject({
-      status: "ready", actionId: null, readinessDecision: decision()
+    const ccxtDecision = decision({ adapterId: "ccxt-live", market: "crypto" });
+    expect(buildStage5ShadowState(workflow, [session()], [ccxtDecision])).toMatchObject({
+      status: "review", actionId: null, blocker: "sandbox-probe-missing"
     });
+    expect(buildStage5ShadowState(workflow, [session()], [ccxtDecision], [], [{
+      id: "probe-execution-1", adapterId: "ccxt-live", market: "crypto",
+      status: "probe_execution_recorded", authoritativeHealthReady: true
+    }], [{
+      id: "probe-review-1", sandboxProbeExecutionId: "probe-execution-1", adapterId: "ccxt-live",
+      market: "crypto", status: "probe_review_recorded"
+    }])).toMatchObject({
+      status: "review", actionId: "run-stage5-sandbox-authorization-preflight"
+    });
+    expect(buildStage5ShadowState(workflow, [session()], [ccxtDecision], [preflight()])).toMatchObject({
+      status: "ready", actionId: null, authorizationPreflight: preflight()
+    });
+  });
+
+  test("validates, posts and restores the sandbox authorization preflight", async () => {
+    const ccxtDecision = decision({ adapterId: "ccxt-live", market: "crypto" });
+    expect(isStage5SandboxAuthorizationPreflight(preflight())).toBe(true);
+    expect(isStage5SandboxAuthorizationPreflight({ ...preflight(), orderSubmissionEnabled: true })).toBe(false);
+    expect(buildStage5SandboxAuthorizationPreflightsUrl("http://localhost:8765", "run a", 5)).toBe(
+      "http://localhost:8765/api/execution/sandbox-authorization-preflights?baseRunId=run+a&limit=5"
+    );
+    const fetcher = vi.fn(async (_url: string, init?: RequestInit) => ({
+      ok: true, status: init?.method === "POST" ? 201 : 200,
+      json: async () => init?.method === "POST"
+        ? { sandboxAuthorizationPreflight: preflight() }
+        : { sandboxAuthorizationPreflights: [preflight()] }
+    } as Response));
+    const created = await runStage5SandboxAuthorizationPreflight(
+      "http://localhost:8765", ccxtDecision, "probe-execution-1", "probe-review-1", fetcher
+    );
+    const history = await loadStage5SandboxAuthorizationPreflights(
+      "http://localhost:8765", "run-a", fetcher, 3
+    );
+    expect(created.preflight?.preflightHash).toBe("f".repeat(64));
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({
+      baseRunId: "run-a", readinessDecisionHash: "e".repeat(64),
+      sandboxProbeExecutionId: "probe-execution-1", sandboxProbeReviewId: "probe-review-1",
+      operator: "local-operator", confirmed: true
+    });
+    expect(history.preflights).toHaveLength(1);
   });
 
   test("rejects malformed and unsafe sessions", () => {

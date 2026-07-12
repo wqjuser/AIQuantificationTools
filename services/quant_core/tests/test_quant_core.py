@@ -7,7 +7,9 @@ from unittest.mock import patch
 
 
 class QuantCoreContractTest(unittest.TestCase):
-    def _ccxt_health_evidence(self, *, credentials_configured=True, adapter_id="ccxt-live"):
+    def _ccxt_health_evidence(
+        self, *, credentials_configured=True, adapter_id="ccxt-live", generated_at=None
+    ):
         from quant_core.execution_adapter_health import (
             execution_adapter_health_probe_to_evidence,
             probe_ccxt_sandbox_health,
@@ -50,7 +52,7 @@ class QuantCoreContractTest(unittest.TestCase):
             exchange_id="binance",
             environ=environ,
             exchange_factory=lambda exchange_id, config: FakeExchange(config),
-            generated_at=datetime(2026, 7, 12, 8, 0, tzinfo=timezone.utc),
+            generated_at=generated_at or datetime(2026, 7, 12, 8, 0, tzinfo=timezone.utc),
         )
         return execution_adapter_health_probe_to_evidence(probe)
 

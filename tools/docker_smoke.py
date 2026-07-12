@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -1811,6 +1812,123 @@ def load_stage5_sandbox_readonly_probe_acceptance_report(path: Path) -> dict[str
     return _load_json_report(path, "Stage 5 sandbox readonly probe acceptance manifest")
 
 
+_STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY = {
+    "humanAuthorizationRequired": True,
+    "sandboxOrderSubmissionAllowed": False,
+    "liveTradingAllowed": False,
+    "orderSubmissionEnabled": False,
+    "routeExecuted": False,
+    "liveBlockedBoundary": True,
+}
+
+
+def build_stage5_sandbox_authorization_preflight_acceptance_manifest(
+    *,
+    base_run_id: str,
+    readiness_decision_hash: str,
+    readonly_probe_acceptance: dict[str, Any],
+    request_status: int,
+    request_payload: dict[str, Any],
+    probe_execution: dict[str, Any],
+    probe_review: dict[str, Any],
+    preflight_count: int,
+) -> dict[str, Any]:
+    request_blockers = request_payload.get("blockers")
+    assertions = {
+        "readonlyProbeBlocked": readonly_probe_acceptance.get("status") == "passed",
+        "blockedSourcesPersisted": (
+            probe_execution.get("status") == "blocked"
+            and probe_review.get("status") == "blocked"
+            and bool(probe_execution.get("sandboxProbeExecutionId"))
+            and bool(probe_review.get("sandboxProbeReviewId"))
+        ),
+        "preflightRequestBlocked": request_status == 409 and
+            request_payload.get("error") == "stage5_sandbox_authorization_preflight_blocked",
+        "blockedSourceRejected": isinstance(request_blockers, list) and any(
+            "recorded probe review" in str(blocker) for blocker in request_blockers
+        ),
+        "noSuccessfulPreflight": preflight_count == 0,
+    }
+    return {
+        "kind": "aiqt.stage5SandboxAuthorizationPreflightAcceptance",
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "status": "passed" if all(assertions.values()) else "failed",
+        "baseRunId": base_run_id,
+        "readinessDecisionHash": readiness_decision_hash,
+        "readonlyProbeAcceptance": readonly_probe_acceptance,
+        "requestStatus": request_status,
+        "requestError": request_payload.get("error"),
+        "requestBlockers": request_blockers,
+        "probeExecutionId": probe_execution.get("sandboxProbeExecutionId"),
+        "probeExecutionStatus": probe_execution.get("status"),
+        "probeReviewId": probe_review.get("sandboxProbeReviewId"),
+        "probeReviewStatus": probe_review.get("status"),
+        "preflightCount": preflight_count,
+        "assertions": assertions,
+        **_STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY,
+    }
+
+
+def validate_stage5_sandbox_authorization_preflight_acceptance_manifest(manifest: Any) -> str:
+    payload = _require_dict(manifest, "Stage 5 sandbox authorization preflight acceptance manifest")
+    if set(payload) != {
+        "kind", "schemaVersion", "generatedAt", "status", "baseRunId", "readinessDecisionHash",
+        "readonlyProbeAcceptance", "requestStatus", "requestError", "requestBlockers",
+        "probeExecutionId", "probeExecutionStatus", "probeReviewId", "probeReviewStatus",
+        "preflightCount", "assertions",
+        *_STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY,
+    }:
+        raise RuntimeError("Invalid Stage 5 sandbox authorization preflight acceptance manifest: fields are invalid")
+    if (
+        payload["kind"] != "aiqt.stage5SandboxAuthorizationPreflightAcceptance"
+        or payload["schemaVersion"] != 1
+        or payload["status"] != "passed"
+        or not isinstance(payload["baseRunId"], str) or not payload["baseRunId"]
+        or not isinstance(payload["readinessDecisionHash"], str)
+        or not re.fullmatch(r"[0-9a-f]{64}", payload["readinessDecisionHash"])
+        or payload["requestStatus"] != 409
+        or payload["requestError"] != "stage5_sandbox_authorization_preflight_blocked"
+        or not isinstance(payload["requestBlockers"], list)
+        or not payload["probeExecutionId"]
+        or payload["probeExecutionStatus"] != "blocked"
+        or not payload["probeReviewId"]
+        or payload["probeReviewStatus"] != "blocked"
+        or payload["preflightCount"] != 0
+        or payload["assertions"] != {
+            "readonlyProbeBlocked": True,
+            "blockedSourcesPersisted": True,
+            "preflightRequestBlocked": True,
+            "blockedSourceRejected": True,
+            "noSuccessfulPreflight": True,
+        }
+        or any(
+            payload[field] is not expected
+            for field, expected in _STAGE5_SANDBOX_AUTHORIZATION_PREFLIGHT_SAFETY.items()
+        )
+    ):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization preflight acceptance manifest: boundary is invalid")
+    _stage4_utc(payload["generatedAt"], "stage5SandboxAuthorizationPreflight.generatedAt")
+    validate_stage5_sandbox_readonly_probe_acceptance_manifest(payload["readonlyProbeAcceptance"])
+    return (
+        f"stage5 sandbox authorization preflight run={payload['baseRunId']} requestBlocked=True "
+        "preflightCount=0 sandboxOrderSubmissionAllowed=False liveBlocked=True"
+    )
+
+
+def write_stage5_sandbox_authorization_preflight_acceptance_report(
+    path: Path, manifest: dict[str, Any]
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"stage5 sandbox authorization preflight acceptance report={path}")
+    return path
+
+
+def load_stage5_sandbox_authorization_preflight_acceptance_report(path: Path) -> dict[str, Any]:
+    return _load_json_report(path, "Stage 5 sandbox authorization preflight acceptance manifest")
+
+
 def _load_json_report(path: Path, label: str) -> dict[str, Any]:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -3039,6 +3157,169 @@ def run_stage5_sandbox_readonly_probe_acceptance(
     return [summary]
 
 
+def run_stage5_sandbox_authorization_preflight_acceptance(
+    base_url: str,
+    *,
+    timeout_seconds: int,
+    readiness_report_path: Path,
+    report_path: Path | None = None,
+) -> list[str]:
+    readiness_manifest = load_stage5_sandbox_readiness_acceptance_report(readiness_report_path)
+    validate_stage5_sandbox_readiness_acceptance_manifest(readiness_manifest)
+    decision = _require_dict(
+        readiness_manifest.get("readinessDecision"), "Stage 5 sandbox authorization source decision"
+    )
+    health_response = _require_dict(
+        request_json(
+            join_url(base_url, "/api/execution/adapter-health/ccxt-sandbox?exchange=binance&adapterId=ccxt-live"),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox authorization readonly probe response",
+    )
+    probe = _require_dict(health_response.get("adapterHealthProbe"), "Stage 5 sandbox authorization probe")
+    readonly_acceptance = build_stage5_sandbox_readonly_probe_acceptance_manifest(probe)
+    validate_stage5_sandbox_readonly_probe_acceptance_manifest(readonly_acceptance)
+    token = _smoke_token(decision["baseRunId"])
+    plan_id = f"stage5-authorization-blocked-plan-{token}"
+    shared = {
+        "sandboxProbePlanId": plan_id,
+        "humanConfirmationId": f"stage5-authorization-confirmation-{token}",
+        "orchestrationExecutionId": f"stage5-authorization-orchestration-{token}",
+        "dryRunId": f"stage5-authorization-dry-run-{token}",
+        "acceptanceId": f"stage5-authorization-acceptance-{token}",
+        "executionId": f"stage5-authorization-reload-execution-{token}",
+        "planId": f"stage5-authorization-reload-plan-{token}",
+        "bindingId": f"stage5-authorization-binding-{token}",
+        "materializationId": f"stage5-authorization-materialization-{token}",
+        "manifestValidationId": f"stage5-authorization-manifest-{token}",
+        "adapterId": "ccxt-live",
+        "market": "crypto",
+        "route": "live",
+        "status": "probe_plan_recorded",
+        "operator": "docker-smoke",
+        "recordedAt": datetime.now(timezone.utc).isoformat(),
+        "probeMode": "manual_sandbox_probe_plan",
+        "confirmationMode": "manual_final_human_confirmation",
+        "orchestrationExecutionMode": "manual_adapter_orchestration_execution",
+        "orchestrationMode": "manual_adapter_orchestration_dry_run",
+        "acceptanceMode": "manual_runtime_reload_acceptance",
+        "executionMode": "manual_controlled_reload",
+        "reloadMode": "manual_container_reload_plan",
+        "maintenanceWindowId": f"stage5-authorization-window-{token}",
+        "bindingMode": "container_env_reference",
+        "manifestPath": f"local-secret-store://ccxt-live/{token}",
+        "requiredEnvVars": ["CCXT_SANDBOX_API_KEY", "CCXT_SANDBOX_SECRET"],
+        "requiredConfirmationIds": [],
+        "confirmedConfirmationIds": [],
+        "blockedReasons": [],
+        "metadata": {},
+        "liveTradingAllowed": False,
+        "paperOnly": True,
+    }
+    post_json(
+        join_url(base_url, "/api/audit/events"),
+        {
+            "schemaVersion": 1,
+            "eventId": plan_id,
+            "eventType": "execution_adapter_sandbox_probe_plan",
+            "runId": "",
+            "createdAt": shared["recordedAt"],
+            "stage": "execution-adapter-sandbox-probe-plan",
+            "source": "execution-adapter-ledger",
+            "summary": "CCXT sandbox probe plan for blocked authorization acceptance.",
+            "detail": "The plan permits only a read-only sandbox probe; all order routing stays disabled.",
+            "metadata": shared,
+        },
+        timeout_seconds=timeout_seconds,
+    )
+    execution_status, execution_response = post_json_with_status(
+        join_url(base_url, "/api/execution/adapter-sandbox-probe-executions"),
+        {
+            "sandboxProbePlanId": plan_id,
+            "adapterId": "ccxt-live",
+            "exchangeId": "binance",
+            "confirmations": {
+                "probePlanReviewed": True,
+                "readonlyHandshakeCaptured": True,
+                "accountSnapshotRedacted": True,
+                "orderSchemaValidated": True,
+                "operatorConfirmedNoOrdersSubmitted": True,
+            },
+            "operator": "docker-smoke",
+        },
+        timeout_seconds,
+    )
+    execution_response = _require_dict(execution_response, "Stage 5 blocked probe execution response")
+    probe_execution = _require_dict(
+        execution_response.get("adapterSandboxProbeExecution"), "Stage 5 blocked probe execution"
+    )
+    if execution_status != 409 or probe_execution.get("status") != "blocked":
+        raise RuntimeError("Stage 5 sandbox authorization expected a persisted blocked probe execution")
+    review_status, review_response = post_json_with_status(
+        join_url(base_url, "/api/execution/adapter-sandbox-probe-reviews"),
+        {
+            "sandboxProbeExecutionId": probe_execution["sandboxProbeExecutionId"],
+            "adapterId": "ccxt-live",
+            "confirmations": {
+                "probeExecutionReviewed": True,
+                "readonlyEvidenceMatchesPlan": True,
+                "redactedSnapshotArchived": True,
+                "orderSchemaRiskReviewed": True,
+                "productionRouteStillBlocked": True,
+            },
+            "operator": "docker-smoke",
+        },
+        timeout_seconds,
+    )
+    review_response = _require_dict(review_response, "Stage 5 blocked probe review response")
+    probe_review = _require_dict(
+        review_response.get("adapterSandboxProbeReview"), "Stage 5 blocked probe review"
+    )
+    if review_status != 409 or probe_review.get("status") != "blocked":
+        raise RuntimeError("Stage 5 sandbox authorization expected a persisted blocked probe review")
+    request_status, request_payload = post_json_with_status(
+        join_url(base_url, "/api/execution/sandbox-authorization-preflights"),
+        {
+            "baseRunId": decision["baseRunId"],
+            "readinessDecisionHash": decision["decisionHash"],
+            "sandboxProbeExecutionId": probe_execution["sandboxProbeExecutionId"],
+            "sandboxProbeReviewId": probe_review["sandboxProbeReviewId"],
+            "operator": "docker-smoke",
+            "confirmed": True,
+        },
+        timeout_seconds,
+    )
+    request_payload = _require_dict(request_payload, "Stage 5 sandbox authorization blocked response")
+    readback = _require_dict(
+        request_json(
+            join_url(
+                base_url,
+                f"/api/execution/sandbox-authorization-preflights?{urlencode({'baseRunId': decision['baseRunId'], 'limit': 20})}",
+            ),
+            timeout_seconds,
+        ),
+        "Stage 5 sandbox authorization preflight readback",
+    )
+    preflights = readback.get("sandboxAuthorizationPreflights")
+    if not isinstance(preflights, list):
+        raise RuntimeError("Invalid Stage 5 sandbox authorization preflight readback")
+    manifest = build_stage5_sandbox_authorization_preflight_acceptance_manifest(
+        base_run_id=decision["baseRunId"],
+        readiness_decision_hash=decision["decisionHash"],
+        readonly_probe_acceptance=readonly_acceptance,
+        request_status=request_status,
+        request_payload=request_payload,
+        probe_execution=probe_execution,
+        probe_review=probe_review,
+        preflight_count=len(preflights),
+    )
+    summary = validate_stage5_sandbox_authorization_preflight_acceptance_manifest(manifest)
+    print(summary)
+    if report_path is not None:
+        write_stage5_sandbox_authorization_preflight_acceptance_report(report_path, manifest)
+    return [summary]
+
+
 def _stage5_export_readiness(
     payload: Any, run_id: str
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -4216,6 +4497,8 @@ def run_smoke(
     stage5_sandbox_readiness_report: Path | None = None,
     stage5_sandbox_readonly_probe: bool = False,
     stage5_sandbox_readonly_probe_report: Path | None = None,
+    stage5_sandbox_authorization_preflight: bool = False,
+    stage5_sandbox_authorization_preflight_report: Path | None = None,
     approve_external_evidence: bool = False,
     p2_readiness_acceptance: bool = False,
     p2_run_id: str = "run-p2-readiness-smoke",
@@ -4319,6 +4602,13 @@ def run_smoke(
                 base_url,
                 timeout_seconds=timeout_seconds,
                 report_path=stage5_sandbox_readonly_probe_report,
+            )
+        if stage5_sandbox_authorization_preflight:
+            run_stage5_sandbox_authorization_preflight_acceptance(
+                base_url,
+                timeout_seconds=timeout_seconds,
+                readiness_report_path=stage5_sandbox_readiness_report or Path("data/stage5-sandbox-readiness.json"),
+                report_path=stage5_sandbox_authorization_preflight_report,
             )
         if p2_paper_replay:
             run_p2_paper_replay(
@@ -4482,6 +4772,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="Validate an existing Stage 5 readonly sandbox probe acceptance report and exit.",
     )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-preflight",
+        action="store_true",
+        help="Run the no-credential Stage 5 sandbox authorization preflight fail-closed acceptance.",
+    )
+    parser.add_argument(
+        "--stage5-sandbox-authorization-preflight-report",
+        default=None,
+        help="Optional Stage 5 sandbox authorization preflight acceptance report path.",
+    )
+    parser.add_argument(
+        "--validate-stage5-sandbox-authorization-preflight-report",
+        default=None,
+        help="Validate an existing Stage 5 sandbox authorization preflight acceptance report and exit.",
+    )
     parser.add_argument("--p2-readiness-acceptance", action="store_true", help="Aggregate P1/P2 evidence into a P2 readiness acceptance manifest.")
     parser.add_argument("--p2-run-id", default="run-p2-readiness-smoke", help="P2 readiness acceptance run id.")
     parser.add_argument("--p2-p1-acceptance-report", default="data/p1-acceptance.json", help="Path to the P1 acceptance manifest used as P2 evidence.")
@@ -4620,6 +4925,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(validate_stage5_sandbox_readonly_probe_acceptance_manifest(manifest))
         return 0
+    if args.validate_stage5_sandbox_authorization_preflight_report:
+        manifest = load_stage5_sandbox_authorization_preflight_acceptance_report(
+            Path(args.validate_stage5_sandbox_authorization_preflight_report)
+        )
+        print(validate_stage5_sandbox_authorization_preflight_acceptance_manifest(manifest))
+        return 0
     if args.validate_p2_paper_replay_report:
         manifest = load_p2_paper_replay_report(Path(args.validate_p2_paper_replay_report))
         print(validate_p2_paper_replay_manifest(manifest))
@@ -4700,6 +5011,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         stage5_sandbox_readonly_probe_report=(
             Path(args.stage5_sandbox_readonly_probe_report)
             if args.stage5_sandbox_readonly_probe_report
+            else None
+        ),
+        stage5_sandbox_authorization_preflight=args.stage5_sandbox_authorization_preflight,
+        stage5_sandbox_authorization_preflight_report=(
+            Path(args.stage5_sandbox_authorization_preflight_report)
+            if args.stage5_sandbox_authorization_preflight_report
             else None
         ),
         p2_readiness_acceptance=args.p2_readiness_acceptance,
