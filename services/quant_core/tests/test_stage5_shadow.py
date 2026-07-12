@@ -123,7 +123,7 @@ def stage4_workflow_with_adapter_evidence(
         )
         executions.append({
             **evidence,
-            "recordedAt": "2026-07-11T09:00:00+00:00",
+            "recordedAt": workflow["generatedAt"],
             "orderIntent": {
                 "symbol": simulation["symbol"],
                 "side": simulation["side"],

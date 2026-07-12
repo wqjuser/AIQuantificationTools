@@ -88,9 +88,9 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 5 当前阶段：Sandbox 授权复核（不激活）
+## Stage 5 当前阶段：CI 发布门禁
 
-Stage 4 已通过退出门禁并转入维护。Stage 5 前六阶段已经完成本地 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针和授权预检。第七阶段新增 `aiqt.stage5SandboxAuthorizationReview`：人工可把批准或拒绝结果与精确 preflight hash 绑定为不可变、可恢复的权威审计 artifact。批准只表示材料复核通过，仍固定 `authorizationEffective=false`、`humanAuthorizationRequired=true`、`sandboxOrderSubmissionAllowed=false`，不保存密钥、余额、持仓或账户标识，也不激活任何订单能力。
+Stage 4 已通过退出门禁并转入维护。Stage 5 前七阶段已经完成本地 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针、授权预检和不可变授权复核。第八阶段把 Stage 3 deterministic AI baseline、Stage 4 权威组合输入和 Stage 5 五段安全链纳入 GitHub CI：每次 push/PR 都执行 Docker smoke、离线 validate，并上传七份发布 manifest。批准复核仍固定 `authorizationEffective=false`、`sandboxOrderSubmissionAllowed=false`，不激活任何订单能力。
 
 ```powershell
 npm run docker:smoke:stage5 -- --no-build
@@ -109,7 +109,7 @@ npm run docker:smoke:stage5:authorization-review -- --no-build
 npm run docker:smoke:stage5:authorization-review:validate
 ```
 
-验收会同时维护 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json`、`data/stage5-sandbox-readonly-probe.json`、`data/stage5-sandbox-authorization-preflight.json` 与 `data/stage5-sandbox-authorization-review.json`。默认无凭据 Docker 环境必须让只读探针、授权预检和授权复核 fail closed，成功 preflight 与 review 数量均为 0。配置明确的测试网凭据时，应用可以只读加载 markets/status/time 和脱敏账户同步，但仍不提交、撤销或查询订单，不开放 sandbox order route，更不开放真实资金路由。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。
+验收会同时维护 `data/stage3-ai-review.json`、`data/stage4-portfolio-paper.json` 和五份 `data/stage5-*.json`。GitHub CI 将它们上传为 `stage5-release-manifests`；默认无凭据环境必须让只读探针、授权预检和授权复核 fail closed，成功 preflight 与 review 数量均为 0。配置明确的测试网凭据时，应用可以只读加载 markets/status/time 和脱敏账户同步，但仍不提交、撤销或查询订单，不开放 sandbox order route，更不开放真实资金路由。完整运维说明见 [docs/stage5-shadow-operations.md](docs/stage5-shadow-operations.md)。
 
 ## Stage 4 维护门禁：组合模拟黄金路径
 

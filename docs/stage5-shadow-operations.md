@@ -23,6 +23,20 @@ npm run docker:smoke:stage5:authorization-review:validate
 
 完整 smoke 会先生成 5 个独立 Stage 4 权威 workflow，执行五类确定性 Shadow 演练，再为已对账的 workflow 绑定真实持久化 terminal adapter paper evidence，生成 Sandbox 准入决策；随后调用服务端 CCXT 只读健康端点，并通过既有 execution/review API 持久化默认无凭据的 blocked probe 链，验证这些真实源事件既不能生成 Sandbox 授权预检，也不能补造授权复核。链路输出 `data/stage5-shadow-execution.json`、`data/stage5-sandbox-readiness.json`、`data/stage5-sandbox-readonly-probe.json`、`data/stage5-sandbox-authorization-preflight.json` 与 `data/stage5-sandbox-authorization-review.json`。所有 validate 命令都只离线复核 manifest，不访问网络。
 
+## CI 发布门禁
+
+GitHub Actions 在已有 Docker 镜像上依次运行 Stage 3 smoke/validate、完整 Stage 5 smoke、Stage 4 validate 和 Stage 5 validate。Stage 5 smoke 已内含 Stage 4 portfolio acceptance，并在结束时关闭容器；随后两个 validator 只读取 JSON。CI 不注入交易所密钥。每次运行都会上传 `stage5-release-manifests`，其中包含：
+
+- `data/stage3-ai-review.json`
+- `data/stage4-portfolio-paper.json`
+- `data/stage5-shadow-execution.json`
+- `data/stage5-sandbox-readiness.json`
+- `data/stage5-sandbox-readonly-probe.json`
+- `data/stage5-sandbox-authorization-preflight.json`
+- `data/stage5-sandbox-authorization-review.json`
+
+CI 失败时 artifact 仍会尽可能保留已生成的 manifest；缺失文件本身不会覆盖原始 smoke/validate 失败。下载后使用本页对应 validate 命令离线复核，不需要恢复数据卷或配置密钥。
+
 ## 预期结果
 
 - `none`：attempt 1 为 `reconciled`，重复调用回读同一 session。

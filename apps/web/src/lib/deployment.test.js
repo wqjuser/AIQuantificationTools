@@ -46,9 +46,37 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke -- --no-build --down");
     expect(workflow).toContain("npm run docker:smoke:p0 -- --no-build --down");
     expect(workflow).toContain("npm run docker:smoke:p0:validate");
+    expect(workflow).toContain("npm run docker:smoke:stage3 -- --no-build");
+    expect(workflow).toContain("npm run docker:smoke:stage3:validate");
+    expect(workflow).toContain("npm run docker:smoke:stage5 -- --no-build --down");
+    expect(workflow).toContain("npm run docker:smoke:stage4:validate");
+    expect(workflow).toContain("npm run docker:smoke:stage5:validate");
     expect(workflow).toContain("actions/upload-artifact@v5");
     expect(workflow).toContain("p0-acceptance-manifest");
     expect(workflow).toContain("data/p0-acceptance.json");
+    expect(workflow).toContain("stage5-release-manifests");
+    for (const path of [
+      "data/stage3-ai-review.json",
+      "data/stage4-portfolio-paper.json",
+      "data/stage5-shadow-execution.json",
+      "data/stage5-sandbox-readiness.json",
+      "data/stage5-sandbox-readonly-probe.json",
+      "data/stage5-sandbox-authorization-preflight.json",
+      "data/stage5-sandbox-authorization-review.json",
+    ]) {
+      expect(workflow).toContain(path);
+    }
+    const releaseCommands = [
+      "npm run docker:smoke:stage3 -- --no-build",
+      "npm run docker:smoke:stage3:validate",
+      "npm run docker:smoke:stage5 -- --no-build --down",
+      "npm run docker:smoke:stage4:validate",
+      "npm run docker:smoke:stage5:validate",
+    ];
+    expect(releaseCommands.map((command) => workflow.indexOf(command))).toEqual(
+      [...releaseCommands].map((command) => workflow.indexOf(command)).sort((left, right) => left - right),
+    );
+    expect(workflow).toMatch(/- name: Upload Stage 5 release manifests\n\s+if: always\(\)/);
   });
 
   test("exposes Docker lifecycle and smoke test commands from the root package", () => {

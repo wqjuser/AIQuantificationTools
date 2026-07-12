@@ -62,6 +62,21 @@ jobs:
       - name: Validate P1 acceptance manifest
         run: npm run docker:smoke:p1:validate
 
+      - name: Run Stage 3 AI review smoke
+        run: npm run docker:smoke:stage3 -- --no-build
+
+      - name: Validate Stage 3 AI review manifest
+        run: npm run docker:smoke:stage3:validate
+
+      - name: Run Stage 5 release smoke
+        run: npm run docker:smoke:stage5 -- --no-build --down
+
+      - name: Validate Stage 4 portfolio manifest
+        run: npm run docker:smoke:stage4:validate
+
+      - name: Validate Stage 5 release manifests
+        run: npm run docker:smoke:stage5:validate
+
       - name: Upload P0 acceptance manifest
         if: always()
         uses: actions/upload-artifact@v5
@@ -76,4 +91,19 @@ jobs:
         with:
           name: p1-acceptance-manifest
           path: data/p1-acceptance.json
+          if-no-files-found: warn
+
+      - name: Upload Stage 5 release manifests
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: stage5-release-manifests
+          path: |
+            data/stage3-ai-review.json
+            data/stage4-portfolio-paper.json
+            data/stage5-shadow-execution.json
+            data/stage5-sandbox-readiness.json
+            data/stage5-sandbox-readonly-probe.json
+            data/stage5-sandbox-authorization-preflight.json
+            data/stage5-sandbox-authorization-review.json
           if-no-files-found: warn

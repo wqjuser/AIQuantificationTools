@@ -1,8 +1,8 @@
 # AIQuant Terminal 产品规划
 
-## 当前阶段：Stage 5 实盘准备（Sandbox 授权复核第七阶段，2026-07-12）
+## 当前阶段：Stage 5 实盘准备（CI 发布门禁第八阶段，2026-07-12）
 
-Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；当前第七阶段只把人工批准或拒绝与精确 Sandbox 授权预检绑定成不可变审计记录，不让复核结果获得技术授权，不接真实资金账户，不提交、撤销或查询任何订单。
+Stage 0 平台基础、Stage 1 行情研究、Stage 2 策略实验、Stage 3 AI Review 与 Stage 4 组合模拟现已进入维护状态。唯一当前阶段是 Stage 5 实盘准备；当前第八阶段把既有 Stage 3/4/5 Docker 验收和离线复核纳入 push/PR 发布门禁，不新增交易能力，不接真实资金账户，不提交、撤销或查询任何订单。
 
 Stage 5 第一阶段复用权威 `stage4_portfolio_workflow` 和 `AuditEventStore`，新增稳定 `clientOrderId`、shadow 状态机、Stage 4 限额复用、kill switch、超时一次/单次重试、拒绝与对账故障注入、重启恢复和幂等回读。`POST /api/execution/shadow-sessions` 只接受 base run、workflow hash、failure mode 和 operator；服务端从审计账本重验 Stage 4 workflow 后生成 `aiqt.stage5ShadowExecutionSession`。Docker 门禁生成 `aiqt.stage5ShadowExecutionAcceptance`，并继续强制 `paperOnly=true`、`shadowOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
 
@@ -17,6 +17,8 @@ Stage 5 第五阶段复用现有 `probe_ccxt_sandbox_health`、sandbox probe pla
 Stage 5 第六阶段新增 `aiqt.stage5SandboxAuthorizationPreflight`，只引用同一 `baseRunId` 的 readiness decision、同 adapter/market 的权威 probe execution 和人工 probe review。POST/GET 都从 AuditEventStore 重新验证上游身份、时间、HMAC/hash 和安全边界；重复 POST 回读同一 preflight。研究包新增 `artifactCounts.stage5SandboxAuthorizationPreflights` 并携带被引用的脱敏 probe execution/review，导入前按依赖顺序重建。默认 Docker 的 A 股 readiness 与无凭据 CCXT probe 不匹配，必须返回 409 且成功 preflight 数量为 0；跨市场证据不得拼接。
 
 Stage 5 第七阶段新增 `aiqt.stage5SandboxAuthorizationReview`，复用既有 preflight、权威 health evidence、`AuditEventStore` 和研究包导入导出。每份 preflight 只能记录一份不可改写的 `approved` 或 `rejected` 结果；服务端要求固定五项范围确认、非空复核人和原因，并在写入及回读时重新验证全部上游证据与 24 小时 freshness。Execution 只在 preflight 存在且尚未复核时提供一个记录动作，刷新后从 GET 恢复；Audit 包按 canonical SHA-256 回读。批准仍固定 `authorizationEffective=false`、`sandboxOrderSubmissionAllowed=false`、`liveTradingAllowed=false` 和 `orderSubmissionEnabled=false`。默认无凭据 Docker 必须证明 review POST 被拒绝且 `reviewCount=0`。
+
+Stage 5 第八阶段不新增业务 artifact，而是把现有发布证据接入 `.github/workflows/ci.yml`。CI 在同一组已构建镜像上执行 Stage 3 smoke/validate、完整 Stage 5 smoke，以及 Stage 4/5 离线 validate；Stage 5 链内复用 Stage 4 portfolio acceptance。无论成功或失败，CI 都以 `stage5-release-manifests` 上传 Stage 3、Stage 4 和五份 Stage 5 JSON，供发布复核和故障定位。deployment contract 锁定命令顺序、`if: always()` 与七个路径，防止后续修改静默移除门禁。默认 CI 不注入交易所密钥，成功仍代表 fail-closed 安全链有效，不代表 Sandbox 或实盘授权。
 
 Stage 4 于 2026-07-11 通过发布门禁：fresh Python/Web 测试与生产构建、保留数据卷的 Docker 重建、Stage 3/4 smoke 与离线 validate、桌面发布、DMG 校验和安全审计均通过。最终验证产物 `AIQuantificationTools_0.1.0_x64.dmg` 的 SHA-256 为 `26b986fadffd34f2cf18fc10e48bb2674bae5ecf3ead1836f9d8b04ad9888ebc`。
 
