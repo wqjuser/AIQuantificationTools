@@ -20,6 +20,10 @@ _Avoid_: 通用重试框架、Stage 9、生产订单授权
 P1 Docker acceptance 仍完整校验工作区至少有 3 个标的，但只按工作区顺序刷新前三个固定验收样本，避免产品自选增长无界放大发布门禁的外部请求耗时。产品端完整 watchlist refresh、行情 Provider 和 90 秒请求预算不变。
 _Avoid_: 通用重试、并发刷新框架、产品自选上限
 
+**Stage 0 Stage 6 启动等待收口**：
+Stage 6 acceptance 在初次 `docker compose up -d` 后复用已有 `_wait_for_api`，允许 Web/API 在现有 30 秒预算内完成健康恢复，避免单次探测撞上容器启动时的连接重置。重启恢复继续复用同一函数。
+_Avoid_: 固定 sleep、第二套重试器、放宽 Sandbox 安全边界
+
 **Stage 8 产品阶段状态收口**：
 前端唯一产品阶段模型对 Stage 0 至 Stage 8 已退出事实的同步：全部阶段为 maintenance、Execution 归属 Stage 8、当前阶段集合为空。它只影响导航中的交付状态说明，不改变 Stage 6/7/8 执行能力或审计证据。
 _Avoid_: Stage 9、动态阶段配置、生产订单授权

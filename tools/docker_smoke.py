@@ -4407,11 +4407,11 @@ def run_p1_acceptance(
     workspace_payload = request_json(join_url(base_url, "/api/workspace"), timeout_seconds)
     watchlist, _selected_symbol, workspace_summary = p1_watchlist_from_workspace_payload(workspace_payload)
     summaries.append(workspace_summary)
-    watchlist = watchlist[:3]
+    acceptance_watchlist = watchlist[:3]
 
     refresh_payload = post_json(
         join_url(base_url, "/api/cache/watchlist-refreshes"),
-        build_p1_watchlist_refresh_payload(watchlist, timeframe=timeframe, limit=limit),
+        build_p1_watchlist_refresh_payload(acceptance_watchlist, timeframe=timeframe, limit=limit),
         timeout_seconds=timeout_seconds,
     )
     watchlist_refresh_run_id, queued_market, queued_symbol, refresh_summary = validate_p1_watchlist_refresh_payload(
@@ -4490,7 +4490,7 @@ def run_p1_acceptance(
                 watchlist_refresh_run_id=watchlist_refresh_run_id,
                 queued_market=queued_market,
                 queued_symbol=queued_symbol,
-                watchlist=watchlist,
+                watchlist=acceptance_watchlist,
                 summaries=summaries,
             ),
         )

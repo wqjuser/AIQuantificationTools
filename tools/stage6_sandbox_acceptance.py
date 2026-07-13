@@ -186,9 +186,7 @@ def _orchestrate(repo: Path, report: Path, real_request: Path | None, *, build: 
     env["INSTALL_DATA_DEPS"] = "true"
     _run(["docker", "compose", "config"], cwd=repo, env=env)
     _run(["docker", "compose", "up", "-d", *(["--build"] if build else [])], cwd=repo, env=env)
-    with urlopen("http://127.0.0.1:5173/health", timeout=30) as response:
-        if json.load(response).get("status") != "ok":
-            raise RuntimeError("stage6 Docker API health check failed")
+    _wait_for_api()
     if real_request:
         if not os.environ.get("CCXT_SANDBOX_API_KEY") or not os.environ.get("CCXT_SANDBOX_SECRET"):
             raise RuntimeError("stage6 real Testnet acceptance requires dedicated sandbox credentials")

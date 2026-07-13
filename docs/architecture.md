@@ -34,6 +34,8 @@ Compose 只向 API 服务传递两项专用凭据和可选 `HTTPS_PROXY`；Web s
 
 导出继续使用 `auditEvents[]`，artifact counts 新增 Stage 6 authorization 与 transition；导入按依赖顺序重验并标记 `detached`。detached 事件可回读但不能提交、撤单、重试或对账。Docker 双层门禁分别生成无密钥 `aiqt.stage6SandboxSafetyAcceptance` 和真实 Testnet `aiqt.stage6BinanceSpotTestnetAcceptance`；2026-07-13 的真实验收已覆盖双订单创建、查询、撤销、终态对账、API 重启与 detached 回读，`aiqt.stage6ExitAcceptance` 状态为 `accepted_for_maintenance`。所有 live 字段始终为 false。
 
+Stage 6 acceptance 的初次 Compose 启动与 API 重启都复用已有 `_wait_for_api`；它只在 30 秒内等待本地 `/health` 恢复并容忍容器启动期连接重置，不重试 CCXT、订单提交或撤单。这样发布门禁启动恢复与交易故障语义保持分离。
+
 ## Stage 5 维护边界
 
 Stage 0 至 Stage 6 均已进入维护状态。Stage 5 顶层退出清单把既有 Stage 3/4/5 Docker 证据收束为可离线复核、可运行时回读的结论；授权复核只作为 Stage 6 权威输入，不构成实盘授权。

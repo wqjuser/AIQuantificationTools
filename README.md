@@ -147,6 +147,8 @@ npm run docker:smoke:stage6:exit:validate
 
 Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 8 现均为 maintenance；下一阶段必须单独设计和确认，真实资金委托和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
 
+Stage 6 acceptance 的初次 Compose 启动和 API 重启现在复用同一份 30 秒健康等待，连接在 Web 容器启动期间被重置时会继续等待，而不是让单次 `/health` 探测误判发布失败；该等待不重试任何交易所或委托请求。
+
 ## Stage 5 已完成并进入维护
 
 Stage 5 已完成 Shadow 故障演练、刷新/重启恢复、便携审计、Sandbox 准入决策、服务端权威只读探针、授权预检、不可变授权复核和 CI 发布门禁。顶层 `aiqt.stage5ExitAcceptance` 会把 Stage 3 deterministic baseline、Stage 4 权威组合输入与五份 Stage 5 安全证据收束为一个退出结论；API 和 Execution 从同一份清单回读 accepted/missing/invalid。Stage 5 现作为 Stage 6 Sandbox 执行的维护门禁。
