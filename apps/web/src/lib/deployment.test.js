@@ -23,6 +23,38 @@ function renderComposeDefaults(service) {
   return service.replace(/\$\{[A-Z0-9_]+:-([^}]*)\}/g, (_match, fallback) => fallback);
 }
 
+function workflowSteps(workflow) {
+  return workflow
+    .split("\n      - name: ")
+    .slice(1)
+    .map((block) => ({ name: block.slice(0, block.indexOf("\n")), block }));
+}
+
+function workflowInput(block, inputName) {
+  const lines = block.split("\n");
+  const withIndex = lines.indexOf("        with:");
+  const inputPrefix = `          ${inputName}: `;
+  const inputIndex = lines.findIndex((line, index) => index > withIndex && line.startsWith(inputPrefix));
+  if (withIndex < 0 || inputIndex < 0) return undefined;
+
+  const value = lines[inputIndex].slice(inputPrefix.length);
+  if (value !== "|") return value;
+  const values = [];
+  for (const line of lines.slice(inputIndex + 1)) {
+    if (!line.startsWith("            ")) break;
+    values.push(line.trim());
+  }
+  return values;
+}
+
+function workflowStepField(block, fieldName) {
+  const prefix = `        ${fieldName}: `;
+  return block
+    .split("\n")
+    .find((line) => line.startsWith(prefix))
+    ?.slice(prefix.length);
+}
+
 describe("docker deployment contract", () => {
   test("runs tests, build, Docker build, and Docker smoke in GitHub Actions", () => {
     expect(existsSync(repoFile(".github/workflows/ci.yml"))).toBe(true);
@@ -57,10 +89,21 @@ describe("docker deployment contract", () => {
     expect(workflow).not.toContain("actions/upload-artifact@v5");
     expect(workflow.match(/actions\/upload-artifact@v7/g)).toHaveLength(6);
     const artifactUploads = [
-      ["Upload P0 acceptance manifest", "p0-acceptance-manifest", ["data/p0-acceptance.json"]],
-      ["Upload P1 acceptance manifest", "p1-acceptance-manifest", ["data/p1-acceptance.json"]],
+      [
+        "Upload P0 acceptance manifest",
+        "Validate P0 acceptance manifest",
+        "p0-acceptance-manifest",
+        ["data/p0-acceptance.json"],
+      ],
+      [
+        "Upload P1 acceptance manifest",
+        "Validate P1 acceptance manifest",
+        "p1-acceptance-manifest",
+        ["data/p1-acceptance.json"],
+      ],
       [
         "Upload Stage 5 release manifests",
+        "Validate complete Stage 5 release evidence",
         "stage5-release-manifests",
         [
           "data/stage3-ai-review.json",
@@ -73,31 +116,40 @@ describe("docker deployment contract", () => {
           "data/stage5-exit-acceptance.json",
         ],
       ],
-      ["Upload Stage 6 safety manifest", "stage6-sandbox-safety-manifest", ["data/stage6-sandbox-safety.json"]],
+      [
+        "Upload Stage 6 safety manifest",
+        "Validate Stage 6 no-credential safety evidence",
+        "stage6-sandbox-safety-manifest",
+        ["data/stage6-sandbox-safety.json"],
+      ],
       [
         "Upload Stage 7 production read-only safety manifest",
+        "Validate Stage 7 production read-only safety evidence",
         "stage7-production-readonly-safety-manifest",
         ["data/stage7-production-readonly-safety.json"],
       ],
       [
         "Upload Stage 8 production read-only continuity manifest",
+        "Validate Stage 8 production read-only continuity evidence",
         "stage8-production-readonly-continuity-manifest",
         ["data/stage8-production-readonly-continuity.json"],
       ],
     ];
-    const artifactUploadBlocks = workflow
-      .split("\n      - name: ")
-      .filter((block) => block.startsWith("Upload "));
+    const steps = workflowSteps(workflow);
+    const artifactUploadBlocks = steps.filter(({ name }) => name.startsWith("Upload "));
     expect(artifactUploadBlocks).toHaveLength(artifactUploads.length);
-    for (const [index, [stepName, artifactName, paths]] of artifactUploads.entries()) {
-      const block = artifactUploadBlocks[index];
-      expect(block).toContain(`${stepName}\n`);
-      expect(block).toContain("if: always()");
-      expect(block).toContain("uses: actions/upload-artifact@v7");
-      expect(block).toContain(`name: ${artifactName}`);
-      for (const path of paths) {
-        expect(block).toContain(path);
-      }
+    for (const [index, artifactUpload] of artifactUploads.entries()) {
+      const [stepName, producerName, artifactName, paths] = artifactUpload;
+      const { name, block } = artifactUploadBlocks[index];
+      expect(name).toBe(stepName);
+      expect(workflowStepField(block, "if")).toBe("always()");
+      expect(workflowStepField(block, "uses")).toBe("actions/upload-artifact@v7");
+      expect(workflowInput(block, "name")).toBe(artifactName);
+      const artifactPaths = workflowInput(block, "path");
+      expect(Array.isArray(artifactPaths) ? artifactPaths : [artifactPaths]).toEqual(paths);
+      const producerIndex = steps.findIndex((step) => step.name === producerName);
+      expect(producerIndex).toBeGreaterThanOrEqual(0);
+      expect(producerIndex).toBeLessThan(steps.findIndex((step) => step.name === stepName));
     }
     const releaseCommands = [
       "npm run docker:smoke:stage5 -- --no-build --down",
