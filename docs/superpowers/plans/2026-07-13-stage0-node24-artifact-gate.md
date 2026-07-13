@@ -2,7 +2,7 @@
 
 ## 状态
 
-审查中。设计依据：[Stage 0 CI Artifact Node 24 收口设计](../specs/2026-07-13-stage0-node24-artifact-gate-design.md)。
+远端验收中。设计依据：[Stage 0 CI Artifact Node 24 收口设计](../specs/2026-07-13-stage0-node24-artifact-gate-design.md)。
 
 ## 工作项
 
@@ -23,7 +23,18 @@
 - [x] 运行聚焦 deployment contract、全量 Python/Web 和生产构建。
 - [x] 运行 Docker 基础 smoke 与 Stage 8 smoke/validate。
 - [x] 同步 README、产品规划、架构和 CONTEXT。
-- [ ] 完成 Standards/Spec 独立审查、提交、推送、PR 和远端门禁。
+- [x] 完成 Standards/Spec 独立审查，两个维度均为 PASS。
+- [ ] 完成提交、推送、PR 和远端门禁。
+
+## 本地验收结果
+
+- deployment contract：12 tests passed。
+- Python：638 tests passed。
+- Web：944 tests passed。
+- `npm run build`：通过。
+- Docker 基础 smoke：通过。
+- Stage 8 Docker smoke/validate：通过，`restartExact=true`、`liveBlocked=true`。
+- 独立审查：Standards PASS、Spec PASS；初审发现的两项问题均已修复并复审通过。
 
 ## 明确不做
 
