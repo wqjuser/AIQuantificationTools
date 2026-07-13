@@ -326,6 +326,11 @@ import {
   type Stage7ProductionReadonlyProbe
 } from "./lib/stage7-production-readonly";
 import {
+  loadStage8ProductionReadonlyContinuity,
+  setStage8ProductionReadonlyAccess,
+  type Stage8ProductionReadonlyContinuity
+} from "./lib/stage8-readonly-continuity";
+import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
   canRunAiReviewStage3,
@@ -2286,6 +2291,10 @@ export function App() {
     useState<Stage7ProductionReadonlyProbe[]>([]);
   const [stage7ProductionReadonlyError, setStage7ProductionReadonlyError] = useState<string | null>(null);
   const [isRunningStage7ProductionReadonly, setIsRunningStage7ProductionReadonly] = useState(false);
+  const [stage8ProductionReadonlyContinuity, setStage8ProductionReadonlyContinuity] =
+    useState<Stage8ProductionReadonlyContinuity | null>(null);
+  const [stage8ProductionReadonlyError, setStage8ProductionReadonlyError] = useState<string | null>(null);
+  const [isUpdatingStage8ProductionReadonly, setIsUpdatingStage8ProductionReadonly] = useState(false);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -3571,6 +3580,10 @@ export function App() {
     void loadStage7ProductionReadonlyProbes(quantCoreBaseUrl).then((result) => {
       setStage7ProductionReadonlyProbes(result.probes);
       setStage7ProductionReadonlyError(result.error ?? null);
+    });
+    void loadStage8ProductionReadonlyContinuity(quantCoreBaseUrl).then((result) => {
+      setStage8ProductionReadonlyContinuity(result.continuity ?? null);
+      setStage8ProductionReadonlyError(result.error ?? null);
     });
   }, []);
 
@@ -7472,12 +7485,38 @@ export function App() {
         result.probe!, ...current.filter((row) => row.probeId !== result.probe!.probeId)
       ]);
       setStage7ProductionReadonlyError(result.error ?? null);
+      const continuity = await loadStage8ProductionReadonlyContinuity(quantCoreBaseUrl);
+      setStage8ProductionReadonlyContinuity(continuity.continuity ?? null);
+      setStage8ProductionReadonlyError(continuity.error ?? null);
     } catch (error) {
       setStage7ProductionReadonlyError(error instanceof Error ? error.message : "Stage 7 生产只读准入失败");
     } finally {
       setIsRunningStage7ProductionReadonly(false);
     }
   }, [isRunningStage7ProductionReadonly, latestCcxtProductionRouteReviewId]);
+
+  const runStage8ProductionReadonlyAccessAction = useCallback(async (
+    action: "revoke" | "restore",
+    reason: string
+  ) => {
+    if (isUpdatingStage8ProductionReadonly) return;
+    setIsUpdatingStage8ProductionReadonly(true);
+    setStage8ProductionReadonlyError(null);
+    try {
+      const result = await setStage8ProductionReadonlyAccess(
+        quantCoreBaseUrl,
+        action,
+        reason,
+        action === "restore" ? latestCcxtProductionRouteReviewId || null : null
+      );
+      if (!result.continuity) throw new Error(result.error ?? "Stage 8 生产只读控制失败");
+      setStage8ProductionReadonlyContinuity(result.continuity);
+    } catch (error) {
+      setStage8ProductionReadonlyError(error instanceof Error ? error.message : "Stage 8 生产只读控制失败");
+    } finally {
+      setIsUpdatingStage8ProductionReadonly(false);
+    }
+  }, [isUpdatingStage8ProductionReadonly, latestCcxtProductionRouteReviewId]);
 
   const runStage6KillSwitchAction = useCallback(async (triggered: boolean) => {
     if (isRunningStage6Sandbox) return;
@@ -13219,9 +13258,13 @@ export function App() {
         <>
           <ExecutionStage7ProductionReadonlySection
             busy={isRunningStage7ProductionReadonly}
+            continuity={stage8ProductionReadonlyContinuity}
+            continuityBusy={isUpdatingStage8ProductionReadonly}
+            continuityError={stage8ProductionReadonlyError}
             error={stage7ProductionReadonlyError}
             onOpenSettings={() => selectProductWorkArea("settings")}
             onRun={(eligibilityConfirmed) => void runStage7ProductionReadonlyAction(eligibilityConfirmed)}
+            onSetAccess={(action, reason) => void runStage8ProductionReadonlyAccessAction(action, reason)}
             probe={latestStage7ProductionReadonlyProbe}
             productionRouteReviewId={latestCcxtProductionRouteReviewId}
           />
