@@ -16,7 +16,6 @@ jobs:
     permissions:
       contents: read
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       INSTALL_DATA_DEPS: "true"
 
     steps:
@@ -90,7 +89,7 @@ jobs:
 
       - name: Upload P0 acceptance manifest
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: p0-acceptance-manifest
           path: data/p0-acceptance.json
@@ -98,7 +97,7 @@ jobs:
 
       - name: Upload P1 acceptance manifest
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: p1-acceptance-manifest
           path: data/p1-acceptance.json
@@ -106,7 +105,7 @@ jobs:
 
       - name: Upload Stage 5 release manifests
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: stage5-release-manifests
           path: |
@@ -122,7 +121,7 @@ jobs:
 
       - name: Upload Stage 6 safety manifest
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: stage6-sandbox-safety-manifest
           path: data/stage6-sandbox-safety.json
@@ -130,7 +129,7 @@ jobs:
 
       - name: Upload Stage 7 production read-only safety manifest
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: stage7-production-readonly-safety-manifest
           path: data/stage7-production-readonly-safety.json
@@ -138,7 +137,7 @@ jobs:
 
       - name: Upload Stage 8 production read-only continuity manifest
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: stage8-production-readonly-continuity-manifest
           path: data/stage8-production-readonly-continuity.json
