@@ -2361,6 +2361,7 @@ describe("terminal workbench model", () => {
     const stages = buildProductDevelopmentStages();
     const areas = buildProductWorkAreas(buildTerminalWorkspace());
     expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
+    expect(stages.find((stage) => stage.id === "foundation")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "market-research")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "strategy-backtest")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "ai-review")?.status).toBe("maintenance");
