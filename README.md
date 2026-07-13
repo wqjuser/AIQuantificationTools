@@ -451,7 +451,7 @@ docker compose down -v
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` 会在 push 和 pull request 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，然后通过 `npm run docker:smoke -- --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。
+`.github/workflows/ci.yml` 会在 pull request 和 `main` push 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，然后通过 `npm run docker:smoke -- --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。feature branch push 不再与 pull request 重复运行完整链路；Nginx `/api/` 的 upstream read timeout 与 smoke helper 的 90 秒请求预算一致，避免 P1 自选行情长刷新先被代理以 504 切断。
 
 CI 还会运行 `npm run docker:smoke:p0 -- --no-build --down`，把 P0 策略流水线、AI 评审、纸面模拟、导出、导入和重导出作为产品验收门禁，并上传 `data/p0-acceptance.json` 为 `p0-acceptance-manifest` artifact。
 

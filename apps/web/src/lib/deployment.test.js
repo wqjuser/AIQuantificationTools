@@ -29,7 +29,7 @@ describe("docker deployment contract", () => {
 
     const workflow = readRepoFile(".github/workflows/ci.yml");
     expect(workflow).toContain("name: CI");
-    expect(workflow).toContain("push:");
+    expect(workflow).toContain("push:\n    branches: [main]");
     expect(workflow).toContain("pull_request:");
     expect(workflow).toContain('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"');
     expect(workflow).toContain("actions/checkout@v6");
@@ -302,6 +302,7 @@ describe("docker deployment contract", () => {
     expect(nginx).toContain("try_files $uri $uri/ /index.html;");
     expect(nginx).toContain("location /api/");
     expect(nginx).toContain("proxy_pass http://api:8765;");
+    expect(nginx).toContain("proxy_read_timeout 90s;");
     expect(nginx).toContain("location = /health");
     expect(nginx).toContain("proxy_pass http://api:8765/health;");
   });
