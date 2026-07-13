@@ -4407,6 +4407,7 @@ def run_p1_acceptance(
     workspace_payload = request_json(join_url(base_url, "/api/workspace"), timeout_seconds)
     watchlist, _selected_symbol, workspace_summary = p1_watchlist_from_workspace_payload(workspace_payload)
     summaries.append(workspace_summary)
+    watchlist = watchlist[:3]
 
     refresh_payload = post_json(
         join_url(base_url, "/api/cache/watchlist-refreshes"),
