@@ -486,6 +486,8 @@ def probe_ccxt_production_readonly(
     try:
         config = _build_ccxt_config(credentials, env)
         config["options"]["defaultType"] = "spot"
+        api_key = config.pop("apiKey")
+        secret = config.pop("secret")
         exchange = exchange_factory(clean_exchange_id, config)
     except Exception as error:
         blocked_reasons.append("ccxt_exchange_init_failed")
@@ -547,6 +549,8 @@ def probe_ccxt_production_readonly(
             market_count=market_count,
         )
 
+    exchange.apiKey = api_key
+    exchange.secret = secret
     permission_reader = _production_permission_reader(exchange)
     if permission_reader is None:
         blocked_reasons.append("production_readonly_permission_check_unavailable")
@@ -1204,6 +1208,9 @@ def _build_ccxt_config(credentials: dict[str, Any], env: dict[str, str]) -> dict
     timeout = _parse_positive_int(env.get("CCXT_TIMEOUT"))
     if timeout is not None:
         config["timeout"] = timeout
+    https_proxy = (env.get("HTTPS_PROXY") or env.get("https_proxy") or "").strip()
+    if https_proxy:
+        config["httpsProxy"] = https_proxy
     if credentials.get("apiKeyConfigured") and credentials.get("apiKeySource"):
         config["apiKey"] = env[str(credentials["apiKeySource"])].strip()
     if credentials.get("secretConfigured") and credentials.get("secretSource"):

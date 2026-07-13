@@ -88,7 +88,7 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
-## Stage 7 当前阶段：生产只读准入
+## Stage 7 已完成并进入维护
 
 Stage 7 只连接 Binance Spot 生产环境的市场元数据、API Key 权限接口和脱敏账户摘要，不创建、查询或撤销生产订单。服务端只读取独立的 `CCXT_PRODUCTION_READONLY_API_KEY` 与 `CCXT_PRODUCTION_READONLY_SECRET`，不会回退到 Sandbox 或通用 CCXT 变量；读取账户前必须确认读取权限开启，Spot/Margin/Futures/Options 交易、提现和内部/通用划转权限全部明确为关闭。
 
@@ -104,7 +104,7 @@ npm run docker:smoke:stage7:real -- --no-build
 npm run docker:smoke:stage7:real:validate
 ```
 
-真实生产只读验收尚未执行，因此 Stage 7 保持 current，不能转入 maintenance。完整配置、失败处理、轮换与撤销步骤见 [docs/stage7-production-readonly-operations.md](docs/stage7-production-readonly-operations.md)。所有生产委托字段继续固定为 false，`liveBlockedBoundary=true`；生产订单、成交、转账、提现和 live route 不在 Stage 7 范围内。
+Stage 7 已于 2026-07-13 完成真实生产只读退出验收：加载 4497 个 Binance Spot 生产市场，确认读取权限开启且 Spot/Margin/Futures/Options 交易、提现、内部/通用划转权限全部关闭，仅回读 `SPOT` 账户类型和非零资产数量 0；API 重启后的 evidence hash 与首次探针一致。真实 manifest SHA-256 为 `5eba10c5549e64a4fa12b727c648a96bb66416b25672d32a17042b482895bd6c`。Stage 7 现转入 maintenance；完整配置、失败处理、轮换与撤销步骤见 [docs/stage7-production-readonly-operations.md](docs/stage7-production-readonly-operations.md)。所有生产委托字段继续固定为 false，`liveBlockedBoundary=true`；生产订单、成交、转账、提现和 live route 不在 Stage 7 范围内。
 
 ## Stage 6 已完成并进入维护
 
@@ -121,7 +121,7 @@ npm run docker:smoke:stage6:real:validate
 npm run docker:smoke:stage6:exit:validate
 ```
 
-Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 6 现均为 maintenance；Stage 7 已激活为生产只读准入，但真实资金委托和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
+Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 7 现均为 maintenance；下一阶段必须单独设计和确认，真实资金委托和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
 
 ## Stage 5 已完成并进入维护
 

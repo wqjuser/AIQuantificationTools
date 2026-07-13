@@ -14513,12 +14513,16 @@ class QuantCoreContractTest(unittest.TestCase):
             def __init__(self, config):
                 created["config"] = config
                 created["calls"] = []
+                created["exchange"] = self
 
             def load_markets(self):
+                self.assert_credentials_absent()
                 created["calls"].append("load_markets")
                 return {"BTC/USDT": {}, "ETH/USDT": {}}
 
             def sapi_get_account_apirestrictions(self):
+                if self.apiKey != "read-key" or self.secret != "read-secret":
+                    raise AssertionError("credentials must be attached after public market loading")
                 created["calls"].append("permissions")
                 return {
                     "enableReading": True,
@@ -14530,6 +14534,10 @@ class QuantCoreContractTest(unittest.TestCase):
                     "enableInternalTransfer": False,
                     "permitsUniversalTransfer": False,
                 }
+
+            def assert_credentials_absent(self):
+                if getattr(self, "apiKey", None) or getattr(self, "secret", None):
+                    raise AssertionError("public market loading must not carry private credentials")
 
             def fetch_balance(self, params):
                 created["calls"].append(("fetch_balance", params))
@@ -14548,6 +14556,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 "CCXT_PRODUCTION_READONLY_API_KEY": " read-key ",
                 "CCXT_PRODUCTION_READONLY_SECRET": " read-secret ",
                 "CCXT_DEFAULT_TYPE": "spot",
+                "HTTPS_PROXY": "http://proxy.internal:7890",
             },
             exchange_factory=lambda exchange_id, config: FakeExchange(config),
             generated_at=datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc),
@@ -14563,8 +14572,11 @@ class QuantCoreContractTest(unittest.TestCase):
         serialized = json.dumps(payload, sort_keys=True)
 
         self.assertEqual(probe.status, "ready")
-        self.assertEqual(created["config"]["apiKey"], "read-key")
-        self.assertEqual(created["config"]["secret"], "read-secret")
+        self.assertNotIn("apiKey", created["config"])
+        self.assertNotIn("secret", created["config"])
+        self.assertEqual(created["exchange"].apiKey, "read-key")
+        self.assertEqual(created["exchange"].secret, "read-secret")
+        self.assertEqual(created["config"]["httpsProxy"], "http://proxy.internal:7890")
         self.assertEqual(created["calls"], ["load_markets", "permissions", ("fetch_balance", {"type": "spot", "omitZeroBalances": True})])
         self.assertEqual(payload["mode"], "production-readonly")
         self.assertFalse(payload["paperOnly"])

@@ -19,6 +19,8 @@
 ```dotenv
 CCXT_PRODUCTION_READONLY_API_KEY=...
 CCXT_PRODUCTION_READONLY_SECRET=...
+# 容器需要经宿主机代理访问 Binance 时可选配置
+HTTPS_PROXY=http://host.docker.internal:7890
 ```
 
 不要把值写进 Web 环境、Dockerfile、请求 JSON、Git、日志、截图或验收清单。Compose 只把这两个变量传给 `api` 服务。
@@ -58,7 +60,9 @@ npm run docker:smoke:stage7:real -- --no-build
 npm run docker:smoke:stage7:real:validate
 ```
 
-真实命令会运行一次权威 POST，重启 API，再通过 GET 回读同一 evidence hash，输出 `data/stage7-production-readonly.json`。文件只包含权限布尔值、市场数、账户类型、非零资产数和 hash，不包含资产名称或余额。真实清单完成前 Stage 7 保持 current。
+真实命令会运行一次权威 POST，重启 API，再通过 GET 回读同一 evidence hash，输出 `data/stage7-production-readonly.json`。文件只包含权限布尔值、市场数、账户类型、非零资产数和 hash，不包含资产名称或余额。
+
+2026-07-13 已完成真实退出验收：加载 4497 个生产市场，确认读取权限开启且全部交易、提现和划转权限关闭，只回读 `SPOT` 账户类型与非零资产数量 0；API 重启后 evidence hash 保持 `21ae79056f2fa4d738e42a2a096a6caf4c154cdb38659db20c669f7a0d78f029`，真实 manifest hash 为 `5eba10c5549e64a4fa12b727c648a96bb66416b25672d32a17042b482895bd6c`。Stage 7 已转入 maintenance，但不产生任何生产订单授权。
 
 ## 失败分类
 

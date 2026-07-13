@@ -2,7 +2,9 @@
 
 ## 状态
 
-实施中。Stage 0 至 Stage 6 维护；Stage 7 为 current。真实生产只读 manifest 完成前不得退出。
+已完成。2026-07-13 真实生产只读 manifest 已通过生成、API 重启回读和离线校验；Stage 0 至 Stage 7 均为 maintenance，下一阶段待单独规划。
+
+退出证据：4497 个 Binance Spot 生产市场，全部 mutation 权限关闭，脱敏 `SPOT` 账户摘要，evidence hash `21ae79056f2fa4d738e42a2a096a6caf4c154cdb38659db20c669f7a0d78f029`，manifest hash `5eba10c5549e64a4fa12b727c648a96bb66416b25672d32a17042b482895bd6c`。
 
 设计依据：[Stage 7 生产只读准入设计](../specs/2026-07-13-stage7-production-readonly-admission-design.md)。
 

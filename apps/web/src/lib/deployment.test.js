@@ -147,6 +147,17 @@ describe("docker deployment contract", () => {
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 
+  test("waits for the Stage 7 API before the first real acceptance request", () => {
+    const acceptance = readRepoFile("tools/stage7_production_readonly_acceptance.py");
+    const composeUp = acceptance.indexOf('"compose", "up", "-d"');
+    const waitForApi = acceptance.indexOf("_wait_for_api(repo, env)", composeUp);
+    const realRequest = acceptance.indexOf('"--container-real-request"', waitForApi);
+
+    expect(composeUp).toBeGreaterThan(-1);
+    expect(waitForApi).toBeGreaterThan(composeUp);
+    expect(realRequest).toBeGreaterThan(waitForApi);
+  });
+
   test("runs Python entrypoints through a cross-platform launcher", () => {
     const packageJson = JSON.parse(readRepoFile("package.json"));
     const launcher = readRepoFile("tools/run_python.mjs");
@@ -177,6 +188,7 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("CCXT_SANDBOX_SECRET: ${CCXT_SANDBOX_SECRET:-}");
     expect(compose).toContain("CCXT_PRODUCTION_READONLY_API_KEY: ${CCXT_PRODUCTION_READONLY_API_KEY:-}");
     expect(compose).toContain("CCXT_PRODUCTION_READONLY_SECRET: ${CCXT_PRODUCTION_READONLY_SECRET:-}");
+    expect(compose).toContain("HTTPS_PROXY: ${HTTPS_PROXY:-}");
     expect(compose).toContain("quant-data:/app/data");
     expect(compose).toContain("${AIQT_WEB_PORT:-5173}:80");
     expect(compose).toContain("condition: service_healthy");
@@ -208,6 +220,18 @@ describe("docker deployment contract", () => {
     }
     expect(renderComposeDefaults(apiEnvironment)).toContain("OLLAMA_BASE_URL: http://host.docker.internal:11434");
     expect(composeEnvironment(apiService.replace("    environment:", "    labels:"))).toBe("");
+  });
+
+  test("passes an optional HTTPS proxy to the API service only", () => {
+    const compose = readRepoFile("compose.yaml");
+    const apiService = composeService(compose, "api");
+    const webService = composeService(compose, "web");
+    const example = readRepoFile(".env.example");
+
+    expect(apiService).toContain("HTTPS_PROXY: ${HTTPS_PROXY:-}");
+    expect(webService).not.toContain("HTTPS_PROXY");
+    expect(example).toContain("HTTPS_PROXY=\n");
+    expect(example).toContain("http://host.docker.internal:7890");
   });
 
   test("documents safe Stage 3 provider defaults in Chinese", () => {
