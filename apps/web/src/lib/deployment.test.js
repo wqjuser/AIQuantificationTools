@@ -153,6 +153,12 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:stage8:validate"]).toBe(
       `${pythonLauncher} tools/stage8_production_readonly_continuity_acceptance.py --validate data/stage8-production-readonly-continuity.json`,
     );
+    expect(packageJson.scripts["docker:smoke:stage8:real"]).toContain(
+      "--real-request data/stage7-production-readonly-acceptance-request.json",
+    );
+    expect(packageJson.scripts["docker:smoke:stage8:real:validate"]).toBe(
+      `${pythonLauncher} tools/stage8_production_readonly_continuity_acceptance.py --validate data/stage8-production-readonly-recovery.json`,
+    );
     expect(existsSync(repoFile("tools/stage7_production_readonly_acceptance.py"))).toBe(true);
     expect(existsSync(repoFile("tools/stage8_production_readonly_continuity_acceptance.py"))).toBe(true);
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);

@@ -12,6 +12,10 @@ _Avoid_: 后台账户同步、生产订单监控、自动探针
 Stage 8 保存在当前 API 数据卷中的人工 `revoke / restore` 事件。revoke 在生产网络访问前阻断 Stage 7；restore 必须绑定当前 production route review。它不自动撤销交易所 Key，也不赋予生产委托权。
 _Avoid_: 生产 kill switch、交易所 Key 管理、实盘授权
 
+**Stage 8 真实恢复退出验收**：
+在已有 current Stage 7 生产只读证据、当前 route review 和专用只读凭据的数据卷中，复用 Stage 8 revoke/restore 与 Stage 7 probe 完成一次真实恢复演练。验收必须证明 revoke 在网络前阻断、restore 链接本次 revoke、新 probe 权限安全、continuity 恢复 current 且 API 重启后 probe/control hash 一致；它仍不授权生产订单或资金操作。
+_Avoid_: Key 自动轮换、生产订单恢复、live route 验收
+
 **生产只读准入**：
 Stage 7 对 Binance Spot 生产环境执行的只读连接验收，只允许检查市场元数据、API Key 权限和脱敏账户摘要。它不创建、查询或撤销生产委托，也不构成实盘授权。
 _Avoid_: 实盘接入、生产委托路由、生产交易
