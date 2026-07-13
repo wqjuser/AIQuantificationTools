@@ -475,7 +475,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def test_initializes_exact_tables_and_query_indexes(self):
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             tables = {
                 row[0]
                 for row in connection.execute(
@@ -528,7 +528,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
 
         self.assertEqual(first, snapshot)
         self.assertEqual(second, first)
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             count = connection.execute(
                 "select count(*) from strategy_experiment_snapshots"
             ).fetchone()[0]
@@ -554,7 +554,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
             ):
                 self.store.put_snapshot(replace(snapshot, **{field: value}))
 
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             count = connection.execute(
                 "select count(*) from strategy_experiment_snapshots"
             ).fetchone()[0]
@@ -585,7 +585,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
             "replay",
         )
         self.assertEqual(self.store.claimed_definition(snapshot.snapshot_id), "definition-a")
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             owner, consumed_at = connection.execute(
                 """
                 select test_owner_experiment_id, test_consumed_at
@@ -648,7 +648,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
         winning_definition, winning_experiment, _ = next(
             outcome for outcome in outcomes if outcome[2] == "claimed"
         )
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             stored = connection.execute(
                 """
                 select test_definition_hash, test_owner_experiment_id
@@ -676,7 +676,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
                 candidates=candidates,
             ),
         )
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             experiment_count = connection.execute(
                 "select count(*) from strategy_experiments"
             ).fetchone()[0]
@@ -695,7 +695,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
             self.store.record_completed(experiment, [duplicate, duplicate])
 
         self.assertIsNone(self.store.get(experiment.experiment_id))
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             experiment_count = connection.execute(
                 "select count(*) from strategy_experiments"
             ).fetchone()[0]
@@ -713,7 +713,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
         ):
             self.store.record_completed(experiment, [wrong_owner])
 
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             experiment_count = connection.execute(
                 "select count(*) from strategy_experiments"
             ).fetchone()[0]
@@ -735,7 +735,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
         self.assertEqual(detail.experiment, experiment)
         self.assertEqual(detail.snapshot, snapshot)
         self.assertEqual(detail.candidates, [])
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             candidate_count = connection.execute(
                 "select count(*) from strategy_experiment_candidates"
             ).fetchone()[0]
@@ -807,7 +807,7 @@ class StrategyExperimentStoreTests(unittest.TestCase):
 
         recent = self.store.list_recent()
         detail = self.store.get(earlier.experiment_id)
-        with sqlite3.connect(self.database_path) as connection:
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
             stored_snapshot_times = connection.execute(
                 """
                 select created_at, test_consumed_at

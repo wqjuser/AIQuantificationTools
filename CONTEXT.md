@@ -4,6 +4,10 @@
 
 ## Language
 
+**Stage 0 SQLite 测试资源生命周期收口**：
+Python 测试直接打开 SQLite 时必须同时保留连接事务上下文和显式关闭：先由连接上下文提交或回滚，再由 `contextlib.closing` 关闭连接。契约测试拒绝新增裸 `with sqlite3.connect(...)`，避免全量测试在 Python 3.14 下留下 `ResourceWarning`；生产 store 的既有显式关闭行为不变。
+_Avoid_: 第二套数据库 helper、生产 store 重构、全局 warning 框架
+
 **Stage 0 发布门禁稳定性收口**：
 PR 和 `main` 各运行一次完整质量门禁，feature branch 不再因 `push + pull_request` 重复执行；Docker Web 的 `/api/` upstream read timeout 与现有 90 秒 smoke 请求预算一致，避免 P1 长刷新先被 Nginx 以 504 切断。它不改变 P1 业务语义或任何交易能力。
 _Avoid_: 通用重试框架、Stage 9、生产订单授权

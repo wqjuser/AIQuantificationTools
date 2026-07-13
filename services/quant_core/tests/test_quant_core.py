@@ -6303,6 +6303,18 @@ class QuantCoreContractTest(unittest.TestCase):
         )
         self.assertEqual(resolve_api_bind(environ={"QUANT_CORE_PORT": "not-a-number"}), ("127.0.0.1", 8765))
 
+    def test_python_tests_close_direct_sqlite_connections(self):
+        tests_root = Path(__file__).resolve().parent
+        bare_sqlite_context = "with sqlite3." + "connect("
+        offenders = [
+            f"{path.name}:{line_number}"
+            for path in sorted(tests_root.glob("test_*.py"))
+            for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+            if bare_sqlite_context in line
+        ]
+
+        self.assertEqual(offenders, [])
+
     def test_compose_passes_stage3_provider_environment_to_api_only(self):
         import re
 
