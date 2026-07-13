@@ -75,6 +75,12 @@ jobs:
       - name: Validate Stage 6 no-credential safety evidence
         run: npm run docker:smoke:stage6:validate
 
+      - name: Run Stage 7 no-credential production read-only safety smoke
+        run: npm run docker:smoke:stage7 -- --no-build
+
+      - name: Validate Stage 7 production read-only safety evidence
+        run: npm run docker:smoke:stage7:validate
+
       - name: Upload P0 acceptance manifest
         if: always()
         uses: actions/upload-artifact@v5
@@ -113,4 +119,12 @@ jobs:
         with:
           name: stage6-sandbox-safety-manifest
           path: data/stage6-sandbox-safety.json
+          if-no-files-found: warn
+
+      - name: Upload Stage 7 production read-only safety manifest
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: stage7-production-readonly-safety-manifest
+          path: data/stage7-production-readonly-safety.json
           if-no-files-found: warn

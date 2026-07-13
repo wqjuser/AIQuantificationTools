@@ -278,6 +278,7 @@ import {
 } from "./components/PortfolioStage4Section";
 import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
 import { ExecutionStage6SandboxSection } from "./components/ExecutionStage6SandboxSection";
+import { ExecutionStage7ProductionReadonlySection } from "./components/ExecutionStage7ProductionReadonlySection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
@@ -319,6 +320,11 @@ import {
   type Stage6ExitAcceptanceStatus,
   type Stage6KillSwitch
 } from "./lib/stage6-sandbox";
+import {
+  loadStage7ProductionReadonlyProbes,
+  runStage7ProductionReadonlyProbe,
+  type Stage7ProductionReadonlyProbe
+} from "./lib/stage7-production-readonly";
 import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
@@ -2276,6 +2282,10 @@ export function App() {
   const [stage6KillSwitch, setStage6KillSwitchState] = useState<Stage6KillSwitch | null>(null);
   const [stage6SandboxError, setStage6SandboxError] = useState<string | null>(null);
   const [isRunningStage6Sandbox, setIsRunningStage6Sandbox] = useState(false);
+  const [stage7ProductionReadonlyProbes, setStage7ProductionReadonlyProbes] =
+    useState<Stage7ProductionReadonlyProbe[]>([]);
+  const [stage7ProductionReadonlyError, setStage7ProductionReadonlyError] = useState<string | null>(null);
+  const [isRunningStage7ProductionReadonly, setIsRunningStage7ProductionReadonly] = useState(false);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -2710,6 +2720,13 @@ export function App() {
   const executionAdapterProductionRouteReviewRows = buildExecutionAdapterProductionRouteReviewRows(
     executionAdapterProductionRouteReviews
   );
+  const latestCcxtProductionRouteReviewId = latestRecordedProductionRouteReviewIdForAdapter(
+    executionAdapterProductionRouteReviews,
+    "ccxt-live"
+  );
+  const latestStage7ProductionReadonlyProbe = stage7ProductionReadonlyProbes.find(
+    (probe) => probe.productionRouteReviewId === latestCcxtProductionRouteReviewId
+  ) ?? null;
   const executionAdapterSandboxOrderSchemaDryRunRows = buildExecutionAdapterSandboxOrderSchemaDryRunRows(
     executionAdapterSandboxOrderSchemaDryRuns
   );
@@ -3551,6 +3568,10 @@ export function App() {
   useEffect(() => {
     void loadStage6ExitAcceptance(quantCoreBaseUrl).then((result) => setStage6ExitAcceptance(result.acceptance ?? null));
     void loadStage6KillSwitch(quantCoreBaseUrl).then((result) => setStage6KillSwitchState(result.killSwitch ?? null));
+    void loadStage7ProductionReadonlyProbes(quantCoreBaseUrl).then((result) => {
+      setStage7ProductionReadonlyProbes(result.probes);
+      setStage7ProductionReadonlyError(result.error ?? null);
+    });
   }, []);
 
   useEffect(() => {
@@ -7435,6 +7456,28 @@ export function App() {
     stage6SandboxAuthorization,
     stage6SandboxBatch
   ]);
+
+  const runStage7ProductionReadonlyAction = useCallback(async (eligibilityConfirmed: boolean) => {
+    if (isRunningStage7ProductionReadonly || !latestCcxtProductionRouteReviewId) return;
+    setIsRunningStage7ProductionReadonly(true);
+    setStage7ProductionReadonlyError(null);
+    try {
+      const result = await runStage7ProductionReadonlyProbe(
+        quantCoreBaseUrl,
+        latestCcxtProductionRouteReviewId,
+        eligibilityConfirmed
+      );
+      if (!result.probe) throw new Error(result.error ?? "Stage 7 生产只读准入失败");
+      setStage7ProductionReadonlyProbes((current) => [
+        result.probe!, ...current.filter((row) => row.probeId !== result.probe!.probeId)
+      ]);
+      setStage7ProductionReadonlyError(result.error ?? null);
+    } catch (error) {
+      setStage7ProductionReadonlyError(error instanceof Error ? error.message : "Stage 7 生产只读准入失败");
+    } finally {
+      setIsRunningStage7ProductionReadonly(false);
+    }
+  }, [isRunningStage7ProductionReadonly, latestCcxtProductionRouteReviewId]);
 
   const runStage6KillSwitchAction = useCallback(async (triggered: boolean) => {
     if (isRunningStage6Sandbox) return;
@@ -13174,6 +13217,14 @@ export function App() {
     if (activeWorkAreaId === "execution") {
       return (
         <>
+          <ExecutionStage7ProductionReadonlySection
+            busy={isRunningStage7ProductionReadonly}
+            error={stage7ProductionReadonlyError}
+            onOpenSettings={() => selectProductWorkArea("settings")}
+            onRun={(eligibilityConfirmed) => void runStage7ProductionReadonlyAction(eligibilityConfirmed)}
+            probe={latestStage7ProductionReadonlyProbe}
+            productionRouteReviewId={latestCcxtProductionRouteReviewId}
+          />
           <ExecutionStage6SandboxSection
             action={stage6GoldenPath.action}
             authorization={stage6SandboxAuthorization}

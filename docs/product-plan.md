@@ -1,8 +1,12 @@
 # AIQuant Terminal 产品规划
 
-## 当前阶段：Stage 6 已退出，等待下一阶段设计（2026-07-13）
+## 当前阶段：Stage 7 生产只读准入（2026-07-13）
 
-Stage 0 至 Stage 6 已全部进入维护状态，当前没有已激活的下一开发阶段。Stage 6 只连接 Binance Spot Testnet，以无真实价值测试资产验证真实交易所协议；生产 endpoint、真实资金、Futures、杠杆、多交易所和 live route 均不在范围内。
+Stage 0 至 Stage 6 已全部进入维护状态，Stage 7 为唯一 current。当前目标是连接 Binance Spot 生产环境的市场元数据、API Key 权限和脱敏账户摘要，验证生产认证与只读边界；不创建、查询、撤销或同步生产订单，不访问成交、转账或提现接口，不开放真实资金委托和 live route。
+
+Stage 7 复用 `execution_adapter_health.py`、现有 `execution_adapter_production_route_review` 和 `AuditEventStore`。服务端只读取 `CCXT_PRODUCTION_READONLY_API_KEY` / `CCXT_PRODUCTION_READONLY_SECRET`，固定 Spot 生产环境且不调用 `set_sandbox_mode`。私有调用先检查 Binance API Key restrictions；只有读取权限开启，Spot/Margin/Futures/Options 交易、提现、内部划转和通用划转权限全部明确为关闭时，才调用一次 `fetch_balance` 并只保留账户类型与非零资产数量。
+
+`POST /api/execution/stage7/production-readonly-probes` 绑定已接受的 Stage 6 exit、最近 24 小时内同一 `ccxt-live + crypto + live` maintenance window 的 production route review 和操作者资格确认；`GET` 从账本回读并重验 authority、exact schema、SHA-256 和 live-blocked 边界。Execution 只提供单一人工触发动作，不接收密钥。默认 Docker/CI 生成 `aiqt.stage7ProductionReadonlySafetyAcceptance`，必须证明无专用凭据时通用/Sandbox 凭据不能回退且生产网络未被构造。Stage 7 退出还需要人工生成并验证 `aiqt.stage7ProductionReadonlyAcceptance`，覆盖真实只读权限、脱敏摘要、API 重启和 hash 一致回读；该清单当前尚未生成，因此 Stage 7 保持 current。
 
 Stage 6 复用 Stage 4 canonical workflow、Stage 5 reconciled shadow/readiness/preflight/approved review、`AuditEventStore`、稳定 `clientOrderId` 和 `maxBatchNotional`。服务端先用 CCXT markets/余额规范化并校验 GTC 限价单，再生成绑定完整订单 hash、10 分钟有效的一次性批次授权。外部提交前持久化 `submission_pending`；超时按原 `clientOrderId` 先查询，确认不存在时最多同 ID 重试一次。批次失败立即停止并尽力撤单，所有事实通过最小状态机和事件驱动对账恢复。
 
