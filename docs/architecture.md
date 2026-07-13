@@ -90,7 +90,7 @@ Docker Web 继续作为 smoke 的唯一 `5173` 入口。Nginx `/api/` 的 `proxy
 
 生产 `quant_core` store 继续使用既有的显式连接关闭路径，本阶段不新增数据库层。测试代码直接创建 SQLite 连接时，复用标准库 `contextlib.closing` 包裹连接资源，并让同一连接继续进入 SQLite 自身的事务上下文；退出顺序固定为先提交或回滚、再关闭连接，从而保持原测试语义并消除 Python 3.14 的未关闭数据库 `ResourceWarning`。
 
-现有 Python 契约测试扫描 `test_*.py` 并拒绝裸 `with sqlite3.connect(...)`，防止把事务上下文再次误当成连接生命周期管理。该规则不升级全局 warning 策略、不改变 schema、迁移、生产 API 或交易安全边界。
+现有 Python 契约测试通过 AST 扫描 `test_*.py` 并拒绝裸 `with sqlite3.connect(...)`，包括换行和空格变体，防止把事务上下文再次误当成连接生命周期管理。该规则不升级全局 warning 策略、不改变 schema、迁移、生产 API 或交易安全边界。
 
 ### Stage 5 CI 发布门禁架构
 
