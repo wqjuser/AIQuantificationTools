@@ -2,7 +2,7 @@
 
 ## 状态
 
-已实现，本地验收与独立审查通过，远端验收中。追踪问题：[GitHub Issue #13](https://github.com/wqjuser/AIQuantificationTools/issues/13)。
+已完成。追踪问题：[GitHub Issue #13](https://github.com/wqjuser/AIQuantificationTools/issues/13)。
 
 ## 问题
 
