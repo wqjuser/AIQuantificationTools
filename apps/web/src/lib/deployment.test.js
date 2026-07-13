@@ -56,26 +56,48 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke:stage8:validate");
     expect(workflow).not.toContain("actions/upload-artifact@v5");
     expect(workflow.match(/actions\/upload-artifact@v7/g)).toHaveLength(6);
-    expect(workflow).toContain("p0-acceptance-manifest");
-    expect(workflow).toContain("data/p0-acceptance.json");
-    expect(workflow).toContain("stage5-release-manifests");
-    expect(workflow).toContain("stage6-sandbox-safety-manifest");
-    expect(workflow).toContain("data/stage6-sandbox-safety.json");
-    expect(workflow).toContain("stage7-production-readonly-safety-manifest");
-    expect(workflow).toContain("data/stage7-production-readonly-safety.json");
-    expect(workflow).toContain("stage8-production-readonly-continuity-manifest");
-    expect(workflow).toContain("data/stage8-production-readonly-continuity.json");
-    for (const path of [
-      "data/stage3-ai-review.json",
-      "data/stage4-portfolio-paper.json",
-      "data/stage5-shadow-execution.json",
-      "data/stage5-sandbox-readiness.json",
-      "data/stage5-sandbox-readonly-probe.json",
-      "data/stage5-sandbox-authorization-preflight.json",
-      "data/stage5-sandbox-authorization-review.json",
-      "data/stage5-exit-acceptance.json",
-    ]) {
-      expect(workflow).toContain(path);
+    const artifactUploads = [
+      ["Upload P0 acceptance manifest", "p0-acceptance-manifest", ["data/p0-acceptance.json"]],
+      ["Upload P1 acceptance manifest", "p1-acceptance-manifest", ["data/p1-acceptance.json"]],
+      [
+        "Upload Stage 5 release manifests",
+        "stage5-release-manifests",
+        [
+          "data/stage3-ai-review.json",
+          "data/stage4-portfolio-paper.json",
+          "data/stage5-shadow-execution.json",
+          "data/stage5-sandbox-readiness.json",
+          "data/stage5-sandbox-readonly-probe.json",
+          "data/stage5-sandbox-authorization-preflight.json",
+          "data/stage5-sandbox-authorization-review.json",
+          "data/stage5-exit-acceptance.json",
+        ],
+      ],
+      ["Upload Stage 6 safety manifest", "stage6-sandbox-safety-manifest", ["data/stage6-sandbox-safety.json"]],
+      [
+        "Upload Stage 7 production read-only safety manifest",
+        "stage7-production-readonly-safety-manifest",
+        ["data/stage7-production-readonly-safety.json"],
+      ],
+      [
+        "Upload Stage 8 production read-only continuity manifest",
+        "stage8-production-readonly-continuity-manifest",
+        ["data/stage8-production-readonly-continuity.json"],
+      ],
+    ];
+    const artifactUploadBlocks = workflow
+      .split("\n      - name: ")
+      .filter((block) => block.startsWith("Upload "));
+    expect(artifactUploadBlocks).toHaveLength(artifactUploads.length);
+    for (const [index, [stepName, artifactName, paths]] of artifactUploads.entries()) {
+      const block = artifactUploadBlocks[index];
+      expect(block).toContain(`${stepName}\n`);
+      expect(block).toContain("if: always()");
+      expect(block).toContain("uses: actions/upload-artifact@v7");
+      expect(block).toContain(`name: ${artifactName}`);
+      for (const path of paths) {
+        expect(block).toContain(path);
+      }
     }
     const releaseCommands = [
       "npm run docker:smoke:stage5 -- --no-build --down",
@@ -84,7 +106,6 @@ describe("docker deployment contract", () => {
     expect(releaseCommands.map((command) => workflow.indexOf(command))).toEqual(
       [...releaseCommands].map((command) => workflow.indexOf(command)).sort((left, right) => left - right),
     );
-    expect(workflow).toMatch(/- name: Upload Stage 5 release manifests\n\s+if: always\(\)/);
   });
 
   test("exposes Docker lifecycle and smoke test commands from the root package", () => {
