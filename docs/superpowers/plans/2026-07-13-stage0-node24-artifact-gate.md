@@ -2,7 +2,7 @@
 
 ## 状态
 
-远端验收中。设计依据：[Stage 0 CI Artifact Node 24 收口设计](../specs/2026-07-13-stage0-node24-artifact-gate-design.md)。
+已完成。设计依据：[Stage 0 CI Artifact Node 24 收口设计](../specs/2026-07-13-stage0-node24-artifact-gate-design.md)。
 
 ## 工作项
 
@@ -24,7 +24,7 @@
 - [x] 运行 Docker 基础 smoke 与 Stage 8 smoke/validate。
 - [x] 同步 README、产品规划、架构和 CONTEXT。
 - [x] 完成 Standards/Spec 独立审查，两个维度均为 PASS。
-- [ ] 完成提交、推送、PR 和远端门禁。
+- [x] 完成提交、推送、PR 和远端门禁。
 
 ## 本地验收结果
 
@@ -35,6 +35,8 @@
 - Docker 基础 smoke：通过。
 - Stage 8 Docker smoke/validate：通过，`restartExact=true`、`liveBlocked=true`。
 - 独立审查：Standards PASS、Spec PASS；初审发现的两项问题均已修复并复审通过。
+- PR #12 quality-gate、CodeRabbit、GitGuardian：通过；CodeRabbit 的一项契约补强建议已修复并复审通过。
+- GitHub Actions 六个 v7 artifact 上传步骤：全部通过；check run annotations 为空，Node 20 弃用告警已消失。
 
 ## 明确不做
 
