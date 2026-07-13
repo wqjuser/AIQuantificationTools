@@ -170,7 +170,7 @@ def _wait_for_api() -> None:
         except OSError:
             pass
         time.sleep(0.5)
-    raise RuntimeError("stage6 Docker API did not recover after restart")
+    raise RuntimeError("stage6 Docker API did not become healthy within 30 seconds")
 
 
 def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
