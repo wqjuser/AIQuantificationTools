@@ -14376,8 +14376,8 @@ class QuantCoreContractTest(unittest.TestCase):
             adapter_id="ccxt-live",
             exchange_id="binance",
             environ={
-                "CCXT_SANDBOX_API_KEY": "dedicated-key",
-                "CCXT_SANDBOX_SECRET": "dedicated-secret",
+                "CCXT_SANDBOX_API_KEY": " dedicated-key ",
+                "CCXT_SANDBOX_SECRET": " dedicated-secret ",
                 "CCXT_BINANCE_API_KEY": "compatible-key",
                 "CCXT_BINANCE_SECRET": "compatible-secret",
             },

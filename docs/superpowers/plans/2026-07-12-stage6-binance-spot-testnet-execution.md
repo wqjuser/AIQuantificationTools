@@ -10,7 +10,7 @@
 
 ### 1. 阶段与权威契约
 
-- [x] 将 Stage 6 标为 current，保持 Stage 0 至 Stage 5 为 maintenance。
+- [x] 实施开始时将 Stage 6 标为 current；退出验收通过后将 Stage 0 至 Stage 6 全部转为 maintenance。
 - [x] 在独立分支实现 Stage 6 canonical batch/authorization/order transition/kill switch builder、validator 与 hash。
 - [x] 只接受同一 Stage 4/5 权威证据链，复用稳定 `clientOrderId`、批次顺序和 `maxBatchNotional`。
 - [x] 固定 Sandbox/live 分离字段，拒绝含糊 route、越权字段和自洽重算后的篡改。
@@ -73,7 +73,7 @@
 ## 验收记录
 
 - 聚焦 Stage 6：13 项 Python 测试通过，覆盖超过 50 条事件的分页回读、崩溃 pending 查询后同 ID 一次重试、撤单缺单禁止反向提交、终态恢复与 detached 导入阻断。
-- 全量回归：Python 619/619、Web 936/936；`npm run build` 通过，仅保留既有 chunk size 提示。
+- 全量回归：Python 623/623、Web 936/936；`npm run build` 通过，仅保留既有 chunk size 提示。
 - Docker 回归：Stage 3 local baseline、Stage 4 2 legs/2 orders/replayExact、Stage 5 5 drills/6 sessions/restartExact/portable 和 exit maintenance 全部通过；Stage 6 无密钥 smoke/validate 通过。
 - Stage 6 无密钥 manifest hash 为 `40eacb8bc5c6db3514e2d1da27aedcb5675630f8f4617d1f6d1284c779e827ed`；专用凭据缺失、通用凭据拒绝、全部 live 字段为 false、`liveBlockedBoundary=true`。
 - 浏览器验收：375px 无横向溢出；Execution Stage 6 阻断证据、独立 kill switch、刷新持久化与 exit missing 状态已验证，无控制台错误。

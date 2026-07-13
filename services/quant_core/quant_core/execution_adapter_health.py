@@ -720,17 +720,17 @@ def _build_ccxt_config(credentials: dict[str, Any], env: dict[str, str]) -> dict
     if timeout is not None:
         config["timeout"] = timeout
     if credentials.get("apiKeyConfigured") and credentials.get("apiKeySource"):
-        config["apiKey"] = env[str(credentials["apiKeySource"])]
+        config["apiKey"] = env[str(credentials["apiKeySource"])].strip()
     if credentials.get("secretConfigured") and credentials.get("secretSource"):
-        config["secret"] = env[str(credentials["secretSource"])]
+        config["secret"] = env[str(credentials["secretSource"])].strip()
     if credentials.get("passwordConfigured") and credentials.get("passwordSource"):
-        config["password"] = env[str(credentials["passwordSource"])]
+        config["password"] = env[str(credentials["passwordSource"])].strip()
     return config
 
 
 def _first_env(env: dict[str, str], keys: list[str]) -> tuple[str | None, str | None]:
     for key in keys:
-        value = env.get(key)
+        value = env.get(key, "").strip()
         if value:
             return key, value
     return None, None
