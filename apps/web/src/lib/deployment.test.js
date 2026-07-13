@@ -156,6 +156,9 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:stage8:real"]).toContain(
       "--real-request data/stage7-production-readonly-acceptance-request.json",
     );
+    expect(packageJson.scripts["docker:smoke:stage8:real"]).toContain(
+      "--report data/stage8-production-readonly-recovery.json",
+    );
     expect(packageJson.scripts["docker:smoke:stage8:real:validate"]).toBe(
       `${pythonLauncher} tools/stage8_production_readonly_continuity_acceptance.py --validate data/stage8-production-readonly-recovery.json`,
     );
