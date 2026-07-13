@@ -4,6 +4,10 @@
 
 ## Language
 
+**Stage 0 发布门禁稳定性收口**：
+PR 和 `main` 各运行一次完整质量门禁，feature branch 不再因 `push + pull_request` 重复执行；Docker Web 的 `/api/` upstream read timeout 与现有 90 秒 smoke 请求预算一致，避免 P1 长刷新先被 Nginx 以 504 切断。它不改变 P1 业务语义或任何交易能力。
+_Avoid_: 通用重试框架、Stage 9、生产订单授权
+
 **Stage 8 产品阶段状态收口**：
 前端唯一产品阶段模型对 Stage 0 至 Stage 8 已退出事实的同步：全部阶段为 maintenance、Execution 归属 Stage 8、当前阶段集合为空。它只影响导航中的交付状态说明，不改变 Stage 6/7/8 执行能力或审计证据。
 _Avoid_: Stage 9、动态阶段配置、生产订单授权
