@@ -409,6 +409,8 @@ class Stage6SandboxExecutionService:
                     if is_active_batch(self.batch(str(other.get("authorizationId")))["orders"]):
                         raise ValueError("stage6_sandbox_active_batch_exists")
             batch = self.batch(authorization_id)
+            if any(order["state"] == "rejected" for order in batch["orders"]):
+                return batch
             if all(order["state"] == "authorized" for order in batch["orders"]):
                 validate_stage6_sandbox_batch_authorization(authorization, require_fresh=True)
             for order in authorization["orders"]:
@@ -420,11 +422,9 @@ class Stage6SandboxExecutionService:
                 attempt = int(current.get("attempt") or 0) + 1
                 self._record_transition(authorization, order, "submission_pending", attempt=attempt)
                 evidence = self._submit_with_query_first(order, attempt=attempt)
-                self._record_exchange_evidence(authorization, order, evidence, attempt=attempt)
-                confirmed = self._reconcile_order(
-                    authorization,
-                    order,
-                    {**current, "state": evidence["state"], "attempt": attempt, "exchangeEvidence": evidence},
+                recorded = self._record_exchange_evidence(authorization, order, evidence, attempt=attempt)
+                confirmed = recorded if recorded["state"] == "rejected" else self._reconcile_order(
+                    authorization, order, recorded
                 )
                 if confirmed["state"] in {"rejected", "reconciliation_required"}:
                     self._cancel_open_orders(authorization)
@@ -522,6 +522,8 @@ class Stage6SandboxExecutionService:
         try:
             return {**self.route.create_order(order), "operation": "create"}
         except Exception as first_error:
+            if _definitive_submission_rejection(first_error):
+                return _rejected_evidence(first_error)
             try:
                 return {**self.route.fetch_order(order), "operation": "query"}
             except Exception as query_error:
@@ -751,6 +753,27 @@ def _batch_status(orders: list[dict[str, Any]]) -> str:
 
 def _order_not_found(error: Exception) -> bool:
     return error.__class__.__name__ == "OrderNotFound"
+
+
+def _definitive_submission_rejection(error: Exception) -> bool:
+    return error.__class__.__name__ in {
+        "AuthenticationError", "BadRequest", "BadSymbol", "InsufficientFunds", "InvalidOrder", "PermissionDenied"
+    }
+
+
+def _rejected_evidence(error: Exception) -> dict[str, Any]:
+    return {
+        "exchangeOrderId": "",
+        "clientOrderId": "",
+        "state": "rejected",
+        "filledQuantity": 0.0,
+        "remainingQuantity": 0.0,
+        "averagePrice": 0.0,
+        "exchangeStatus": "rejected",
+        "timestamp": None,
+        "operation": "create",
+        "error": _safe_error(error),
+    }
 
 
 def _unknown_evidence(error: Exception, operation: str) -> dict[str, Any]:

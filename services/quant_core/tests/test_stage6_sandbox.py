@@ -97,8 +97,22 @@ class OrderNotFound(Exception):
     pass
 
 
+class InvalidOrder(Exception):
+    pass
+
+
 class MissingThenCreatedBinance(FakeBinance):
     def fetch_order(self, _order_id: str | None, symbol: str, params: dict) -> dict:
+        self.calls.append("fetch")
+        raise OrderNotFound("missing")
+
+
+class RejectingBinance(FakeBinance):
+    def create_order(self, *_args, **_kwargs) -> dict:
+        self.calls.append("create")
+        raise InvalidOrder("price outside testnet filter")
+
+    def fetch_order(self, *_args, **_kwargs) -> dict:
         self.calls.append("fetch")
         raise OrderNotFound("missing")
 
@@ -290,6 +304,26 @@ class Stage6SandboxTest(unittest.TestCase):
             row = recovered["orders"][0]
             self.assertEqual((row["state"], row["attempt"]), ("open", 2))
             self.assertEqual(MissingThenCreatedBinance.instances[-1].calls[-3:], ["fetch", "fetch", "create"])
+
+    def test_definitive_exchange_rejection_does_not_enter_unknown_recovery(self) -> None:
+        workflow, session, readiness, preflight, review = _authority_chain()
+        route = BinanceSpotTestnetRoute(
+            env={"CCXT_SANDBOX_API_KEY": "sandbox-key", "CCXT_SANDBOX_SECRET": "sandbox-secret"},
+            ccxt_module=SimpleNamespace(binance=RejectingBinance),
+        )
+        authorization = build_stage6_sandbox_batch_authorization(
+            workflow, session, readiness, preflight, review, route.normalize_orders(workflow), operator="operator"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            service = Stage6SandboxExecutionService(AuditEventStore(Path(directory) / "audit.sqlite"), route)
+            service.record_authorization(authorization)
+            batch = service.submit(authorization["authorizationId"])
+            retried = service.submit(authorization["authorizationId"])
+
+        self.assertEqual([row["state"] for row in batch["orders"]], ["rejected", "authorized"])
+        self.assertEqual([row["state"] for row in retried["orders"]], ["rejected", "authorized"])
+        self.assertEqual(RejectingBinance.instances[-1].calls.count("create"), 1)
+        self.assertNotIn("fetch", RejectingBinance.instances[-1].calls)
 
     def test_transition_readback_paginates_beyond_store_page_limit(self) -> None:
         workflow, session, readiness, preflight, review = _authority_chain()

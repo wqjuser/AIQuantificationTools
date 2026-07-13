@@ -14342,6 +14342,139 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertNotIn("status-secret-should-not-leak", serialized)
         self.assertNotIn("balance-secret-should-not-leak", serialized)
 
+    def test_ccxt_sandbox_health_probe_prefers_dedicated_sandbox_credentials(self):
+        from quant_core.execution_adapter_health import (
+            execution_adapter_health_probe_to_payload,
+            probe_ccxt_sandbox_health,
+        )
+
+        created = {}
+
+        class FakeExchange:
+            has = {"fetchStatus": True, "fetchTime": True, "fetchBalance": True}
+            markets = {"BTC/USDT": {}}
+
+            def __init__(self, config):
+                created["config"] = config
+
+            def set_sandbox_mode(self, enabled):
+                self.sandbox = enabled
+
+            def load_markets(self):
+                return self.markets
+
+            def fetch_status(self):
+                raise RuntimeError("sandbox endpoint does not support fetchStatus")
+
+            def fetch_time(self):
+                return 1780000000000
+
+            def fetch_balance(self):
+                return {"total": {"USDT": 1000}}
+
+        probe = probe_ccxt_sandbox_health(
+            adapter_id="ccxt-live",
+            exchange_id="binance",
+            environ={
+                "CCXT_SANDBOX_API_KEY": " dedicated-key ",
+                "CCXT_SANDBOX_SECRET": " dedicated-secret ",
+                "CCXT_BINANCE_API_KEY": "compatible-key",
+                "CCXT_BINANCE_SECRET": "compatible-secret",
+            },
+            exchange_factory=lambda exchange_id, config: FakeExchange(config),
+            generated_at=datetime(2026, 7, 13, 8, 0, tzinfo=timezone.utc),
+        )
+        payload = execution_adapter_health_probe_to_payload(probe)
+
+        self.assertEqual(payload["credentials"]["apiKeySource"], "CCXT_SANDBOX_API_KEY")
+        self.assertEqual(payload["credentials"]["secretSource"], "CCXT_SANDBOX_SECRET")
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(
+            next(check for check in payload["checks"] if check["id"] == "exchange-status")["status"],
+            "review",
+        )
+        self.assertEqual(created["config"]["apiKey"], "dedicated-key")
+        self.assertEqual(created["config"]["secret"], "dedicated-secret")
+
+    def test_ccxt_sandbox_health_probe_does_not_send_dedicated_credentials_to_other_exchange(self):
+        from quant_core.execution_adapter_health import execution_adapter_health_probe_to_payload, probe_ccxt_sandbox_health
+
+        created = {}
+
+        class FakeExchange:
+            has = {"fetchStatus": False, "fetchTime": False, "fetchBalance": True}
+            markets = {"BTC/USDT": {}}
+
+            def __init__(self, config):
+                created["config"] = config
+
+            def set_sandbox_mode(self, enabled):
+                self.sandbox = enabled
+
+            def load_markets(self):
+                return self.markets
+
+            def fetch_balance(self):
+                return {"total": {"USDT": 1000}}
+
+        probe = probe_ccxt_sandbox_health(
+            adapter_id="ccxt-live",
+            exchange_id="kraken",
+            environ={
+                "CCXT_SANDBOX_API_KEY": "binance-only-key",
+                "CCXT_SANDBOX_SECRET": "binance-only-secret",
+                "CCXT_KRAKEN_API_KEY": "kraken-key",
+                "CCXT_KRAKEN_SECRET": "kraken-secret",
+            },
+            exchange_factory=lambda exchange_id, config: FakeExchange(config),
+            generated_at=datetime(2026, 7, 13, 8, 0, tzinfo=timezone.utc),
+        )
+
+        payload = execution_adapter_health_probe_to_payload(probe)
+        self.assertEqual(payload["credentials"]["apiKeySource"], "CCXT_KRAKEN_API_KEY")
+        self.assertEqual(payload["credentials"]["secretSource"], "CCXT_KRAKEN_SECRET")
+        self.assertEqual(created["config"]["apiKey"], "kraken-key")
+        self.assertEqual(created["config"]["secret"], "kraken-secret")
+
+    def test_ccxt_sandbox_health_probe_requires_complete_dedicated_credential_pair(self):
+        from quant_core.execution_adapter_health import execution_adapter_health_probe_to_payload, probe_ccxt_sandbox_health
+
+        created = {}
+
+        class FakeExchange:
+            has = {"fetchStatus": False, "fetchTime": False, "fetchBalance": True}
+            markets = {"BTC/USDT": {}}
+
+            def __init__(self, config):
+                created["config"] = config
+
+            def set_sandbox_mode(self, enabled):
+                self.sandbox = enabled
+
+            def load_markets(self):
+                return self.markets
+
+            def fetch_balance(self):
+                return {"total": {"USDT": 1000}}
+
+        probe = probe_ccxt_sandbox_health(
+            adapter_id="ccxt-live",
+            exchange_id="binance",
+            environ={
+                "CCXT_SANDBOX_API_KEY": "incomplete-dedicated-key",
+                "CCXT_BINANCE_API_KEY": "compatible-key",
+                "CCXT_BINANCE_SECRET": "compatible-secret",
+            },
+            exchange_factory=lambda exchange_id, config: FakeExchange(config),
+            generated_at=datetime(2026, 7, 13, 8, 0, tzinfo=timezone.utc),
+        )
+
+        payload = execution_adapter_health_probe_to_payload(probe)
+        self.assertEqual(payload["credentials"]["apiKeySource"], "CCXT_BINANCE_API_KEY")
+        self.assertEqual(payload["credentials"]["secretSource"], "CCXT_BINANCE_SECRET")
+        self.assertEqual(created["config"]["apiKey"], "compatible-key")
+        self.assertEqual(created["config"]["secret"], "compatible-secret")
+
     def test_ccxt_sandbox_health_probe_blocks_when_ccxt_package_is_missing(self):
         import json
 
