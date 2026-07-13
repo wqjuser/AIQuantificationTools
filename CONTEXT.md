@@ -4,6 +4,10 @@
 
 ## Language
 
+**Stage 8 产品阶段状态收口**：
+前端唯一产品阶段模型对 Stage 0 至 Stage 8 已退出事实的同步：全部阶段为 maintenance、Execution 归属 Stage 8、当前阶段集合为空。它只影响导航中的交付状态说明，不改变 Stage 6/7/8 执行能力或审计证据。
+_Avoid_: Stage 9、动态阶段配置、生产订单授权
+
 **生产只读连续性**：
 Stage 8 从最新 Stage 7 probe、Stage 6 exit、production route review 和本地访问控制派生的当前运维状态，区分 `current`、`stale`、`blocked`、`revoked` 与 `missing`。它只引用脱敏证据，不重新访问交易所。
 _Avoid_: 后台账户同步、生产订单监控、自动探针

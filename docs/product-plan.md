@@ -4,6 +4,8 @@
 
 Stage 0 至 Stage 8 已全部进入维护状态，当前不自动激活新的开发阶段。下一阶段需要单独完成路线设计、人工确认和安全验收；在此之前不创建、查询、撤销或同步生产订单，不访问成交、转账或提现接口，不开放真实资金委托和 live route。
 
+运行时产品阶段模型已完成同源收口：`buildProductDevelopmentStages` 精确列出 Stage 0 至 Stage 8 且全部为 maintenance，`buildProductWorkAreas` 将 Execution 映射到最新已交付的 Stage 8，中英文导航不再把 Stage 6 标为 current。该改动只同步产品状态，不新增阶段、API 或执行能力。
+
 Stage 8 复用 Stage 7 probe、production route review 和 `AuditEventStore`，从当前 Stage 6 authority、route review、24 小时探针新鲜度、权限状态和本地访问控制派生 `current / stale / blocked / revoked / missing`。人工 revoke 不依赖外部证据，并在 Stage 7 构造生产 CCXT 连接前阻断；restore 必须绑定当前 route review。Docker acceptance 在独立临时数据卷中验证 revoke、网络前阻断、无效 restore、API 重启回读和 live-blocked 边界，manifest hash 为 `65702de501a8cddfb5a02ca698e77323eeef9b0ddfa3c9fc33dc32f96ddaf60e`。
 
 Stage 8 真实恢复退出验收继续复用同一 acceptance 工具和保留的真实 Stage 7 数据卷，不新增模型或 API。2026-07-13 已完成一次 `current → revoke → 网络前阻断 → restore → 新生产只读 probe → current → API 重启回读`，加载 4497 个市场，确认读取权限开启、全部 mutation 权限关闭，恢复 probe/control hash 重启后一致；真实恢复 manifest hash 为 `8742af66d2dd6659e3114f82f1aec5a88c6df29e99d49ffa2cc1f229c6a04893`。Stage 8 已转入 maintenance，不运行后台同步，也不管理交易所 Key 或生产订单。
