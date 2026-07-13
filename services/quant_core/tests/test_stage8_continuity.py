@@ -302,6 +302,156 @@ class Stage8ContinuityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "liveTradingAllowed is immutable"):
             validate({**manifest, "liveTradingAllowed": True})
 
+    def test_real_recovery_manifest_rebuilds_existing_stage7_and_stage8_evidence(self):
+        from tools.stage8_production_readonly_continuity_acceptance import _hash, _real_manifest, validate
+
+        now = datetime(2026, 7, 13, 12, 0, tzinfo=timezone.utc)
+        initial_probe = _probe(now - timedelta(hours=1))
+        recovery_probe = _probe(now)
+        initial = build_production_readonly_continuity(
+            latest_probe=initial_probe,
+            access_control=None,
+            stage6_hash_matches=True,
+            route_review_current=True,
+            route_review_recorded_at=now.isoformat(),
+            generated_at=now,
+        )
+        revoke = build_production_readonly_access_control(
+            action="revoke", operator="operator", reason="recovery drill", recorded_at=now
+        )
+        restore = build_production_readonly_access_control(
+            action="restore",
+            operator="operator",
+            reason="recovered",
+            previous_control_id=revoke["controlId"],
+            production_route_review_id="route-review-1",
+            recorded_at=now,
+        )
+        recovered = build_production_readonly_continuity(
+            latest_probe=recovery_probe,
+            access_control=restore,
+            stage6_hash_matches=True,
+            route_review_current=True,
+            route_review_recorded_at=now.isoformat(),
+            generated_at=now,
+        )
+        manifest = _real_manifest({
+            "initialStatus": 200,
+            "initialContinuity": initial,
+            "revokeStatus": 201,
+            "revokeControl": revoke,
+            "blockedProbeStatus": 409,
+            "blockedProbeReasons": ["stage8_production_readonly_access_revoked"],
+            "restoreStatus": 201,
+            "restoreControl": restore,
+            "recoveryProbeStatus": 201,
+            "recoveryProbe": recovery_probe,
+            "continuityStatus": 200,
+            "recoveredContinuity": recovered,
+        }, {"status": 200, "continuity": recovered, "probe": recovery_probe})
+
+        self.assertIn("recovery=accepted", validate(manifest))
+        tampered = {
+            **manifest,
+            "apiPermissions": {**manifest["apiPermissions"], "spotTradingEnabled": True},
+        }
+        tampered["manifestHash"] = _hash({
+            key: value for key, value in tampered.items() if key != "manifestHash"
+        })
+        with self.assertRaisesRegex(ValueError, "permissions are invalid"):
+            validate(tampered)
+        wrong_chain = {**manifest, "restorePreviousControlId": manifest["restoreControlId"]}
+        wrong_chain["manifestHash"] = _hash({
+            key: value for key, value in wrong_chain.items() if key != "manifestHash"
+        })
+        with self.assertRaisesRegex(ValueError, "source chain is invalid"):
+            validate(wrong_chain)
+
+    def test_real_recovery_rejects_route_drift_before_revoke(self):
+        from tools.stage8_production_readonly_continuity_acceptance import _container_real_recovery
+
+        with tempfile.TemporaryDirectory() as tmp:
+            request = Path(tmp) / "request.json"
+            request.write_text(json.dumps({
+                "productionRouteReviewId": "route-review-2",
+                "operator": "operator",
+                "eligibilityConfirmed": True,
+            }))
+            with patch(
+                "tools.stage8_production_readonly_continuity_acceptance._api",
+                return_value=(200, {"productionReadonlyContinuity": {
+                    "status": "current",
+                    "latestProbe": {"productionRouteReviewId": "route-review-1"},
+                }}),
+            ) as api:
+                with self.assertRaisesRegex(RuntimeError, "must match the current probe route review"):
+                    _container_real_recovery(request)
+
+        self.assertEqual(api.call_count, 1)
+
+    def test_real_recovery_re_revokes_when_post_restore_probe_fails(self):
+        from tools.stage8_production_readonly_continuity_acceptance import _container_real_recovery
+
+        with tempfile.TemporaryDirectory() as tmp:
+            request = Path(tmp) / "request.json"
+            request.write_text(json.dumps({
+                "productionRouteReviewId": "route-review-1",
+                "operator": "operator",
+                "eligibilityConfirmed": True,
+            }))
+            responses = [
+                (200, {"productionReadonlyContinuity": {
+                    "status": "current",
+                    "latestProbe": {"productionRouteReviewId": "route-review-1"},
+                }}),
+                (201, {"productionReadonlyAccessControl": {"status": "revoked"}}),
+                (409, {"blockers": ["stage8_production_readonly_access_revoked"]}),
+                (201, {"productionReadonlyAccessControl": {"status": "active"}}),
+                (409, {"blockers": ["production_readonly_permissions_unsafe"]}),
+                (200, {"productionReadonlyContinuity": {"status": "blocked"}}),
+                (201, {"productionReadonlyAccessControl": {"status": "revoked"}}),
+            ]
+            with patch(
+                "tools.stage8_production_readonly_continuity_acceptance._api",
+                side_effect=responses,
+            ) as api:
+                with self.assertRaisesRegex(RuntimeError, "probe was not ready"):
+                    _container_real_recovery(request)
+
+        self.assertEqual(api.call_args_list[-1].args[:2], (
+            "POST", "/api/execution/stage8/production-readonly-access-controls"
+        ))
+        self.assertEqual(api.call_args_list[-1].args[2]["action"], "revoke")
+
+    def test_real_recovery_re_revokes_when_restore_response_is_lost(self):
+        from tools.stage8_production_readonly_continuity_acceptance import _container_real_recovery
+
+        with tempfile.TemporaryDirectory() as tmp:
+            request = Path(tmp) / "request.json"
+            request.write_text(json.dumps({
+                "productionRouteReviewId": "route-review-1",
+                "operator": "operator",
+                "eligibilityConfirmed": True,
+            }))
+            responses = [
+                (200, {"productionReadonlyContinuity": {
+                    "status": "current",
+                    "latestProbe": {"productionRouteReviewId": "route-review-1"},
+                }}),
+                (201, {"productionReadonlyAccessControl": {"status": "revoked"}}),
+                (409, {"blockers": ["stage8_production_readonly_access_revoked"]}),
+                RuntimeError("restore response lost"),
+                (201, {"productionReadonlyAccessControl": {"status": "revoked"}}),
+            ]
+            with patch(
+                "tools.stage8_production_readonly_continuity_acceptance._api",
+                side_effect=responses,
+            ) as api:
+                with self.assertRaisesRegex(RuntimeError, "restore response lost"):
+                    _container_real_recovery(request)
+
+        self.assertEqual(api.call_args_list[-1].args[2]["action"], "revoke")
+
     @staticmethod
     def _request(connection, method, path, payload=None):
         connection.request(

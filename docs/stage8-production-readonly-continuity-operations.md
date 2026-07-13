@@ -69,4 +69,17 @@ npm run docker:smoke:stage8
 npm run docker:smoke:stage8:validate
 ```
 
-验收使用独立 Compose 项目和临时数据卷，验证 revoke、Stage 7 网络前阻断、无效 restore、API 重启回读和 live-blocked 边界，结束后删除临时卷。2026-07-13 本地 accepted manifest SHA-256 为 `7d0effee4503722f1df991bba72ef7430fe3a909a3cb9ea53b1b7ea16b399467`。
+验收使用独立 Compose 项目和临时数据卷，验证 revoke、Stage 7 网络前阻断、无效 restore、API 重启回读和 live-blocked 边界，结束后删除临时卷。2026-07-13 本地 accepted manifest SHA-256 为 `65702de501a8cddfb5a02ca698e77323eeef9b0ddfa3c9fc33dc32f96ddaf60e`。
+
+## 真实恢复退出验收
+
+真实模式要求目标数据卷的 continuity 已为 `current`，`data/stage7-production-readonly-acceptance-request.json` 仍引用最近 24 小时内有效的 route review，且 API 服务配置专用只读凭据。它会真实写入一对本地 revoke/restore 控制，并执行一次 Stage 7 生产只读探针；不修改交易所 Key，不访问生产订单、成交、转账或提现接口。
+
+```shell
+COMPOSE_PROJECT_NAME=stage6-real-exit npm run docker:smoke:stage8:real -- --no-build
+npm run docker:smoke:stage8:real:validate
+```
+
+脚本依次要求起始 current、revoke 后 Stage 7 在网络前返回 409、restore 链接本次 revoke 和当前 route review、新 probe 为 ready、全部 mutation 权限关闭、continuity 恢复 current，并在 API 重启后精确回读 probe/control hash。若 restore 前失败，访问控制可能保持 revoked；按“人工恢复”步骤排查后再运行，不得绕过。
+
+2026-07-13 已在保留的真实 Stage 7 数据卷完成验收：4497 个 Binance Spot 市场、读取权限开启、全部 mutation 权限关闭、`SPOT` 账户非零资产数量 0，恢复后 continuity 为 current。`data/stage8-production-readonly-recovery.json` SHA-256 为 `8742af66d2dd6659e3114f82f1aec5a88c6df29e99d49ffa2cc1f229c6a04893`。

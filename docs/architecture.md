@@ -12,7 +12,7 @@ Stage 8 没有创建第二套 CCXT 探针、后台轮询器或通用 control fra
 
 `GET /api/execution/stage8/production-readonly-continuity` 每次从账本与当前 authority 重建 `current / stale / blocked / revoked / missing`；`POST /api/execution/stage8/production-readonly-access-controls` 只允许人工 revoke/restore，restore 复用 `_stage7_production_route_review_is_current`。控制事件属于当前 API 数据卷，不通过研究包恢复。Execution 复用 Stage 7 卡片和现有 API client 模式，不接收密钥或生产账户明细。
 
-CI 使用独立 Compose project/data volume 运行 `tools/stage8_production_readonly_continuity_acceptance.py`，证明 revoke 在生产网络前阻断、无当前 route review 的 restore 失败、API 重启 control hash 一致且所有 live/order 边界关闭；结束后删除临时卷。Stage 8 不自动修改 Binance Key，不创建生产订单 store、生产 kill switch、成交同步或资金操作。
+CI 使用独立 Compose project/data volume 运行 `tools/stage8_production_readonly_continuity_acceptance.py`，证明 revoke 在生产网络前阻断、无当前 route review 的 restore 失败、API 重启 control hash 一致且所有 live/order 边界关闭；结束后删除临时卷。相同工具的显式 `--real-request` 模式复用已有 Stage 7 请求和数据卷，编排 `current → revoke → 阻断 → restore → 新 probe → current → restart`，只输出脱敏 `aiqt.stage8ProductionReadonlyRecoveryAcceptance`。真实模式不进入默认 CI，也不删除权威数据卷；2026-07-13 的 accepted manifest hash 为 `8742af66d2dd6659e3114f82f1aec5a88c6df29e99d49ffa2cc1f229c6a04893`。Stage 8 不自动修改 Binance Key，不创建生产订单 store、生产 kill switch、成交同步或资金操作。
 
 ## Stage 7 维护架构
 
