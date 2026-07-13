@@ -2,7 +2,7 @@
 
 ## 状态
 
-审查中。设计依据：[Stage 0 P1 验收工作量收口设计](../specs/2026-07-14-stage0-p1-acceptance-budget-design.md)。
+远端验收中。设计依据：[Stage 0 P1 验收工作量收口设计](../specs/2026-07-14-stage0-p1-acceptance-budget-design.md)。
 
 ## 工作项
 
@@ -22,7 +22,8 @@
 
 - [x] 运行聚焦测试、全量 Python/Web 和生产构建。
 - [x] 运行 Docker P1 与 Stage 8 smoke/validate。
-- [ ] 完成独立审查、提交、推送、PR 和远端门禁。
+- [x] 完成独立 Standards/Spec 审查，两个维度均为 PASS。
+- [ ] 完成推送、PR 和远端门禁。
 
 ## 本地验收结果
 
@@ -32,6 +33,7 @@
 - `npm run build` 与 `docker compose config`：通过。
 - P1 Docker：23 秒完成，`watchlist=3`、9 checks、`liveBlocked=true`。
 - Stage 8 Docker：`restartExact=true`、`liveBlocked=true`。
+- 独立审查：Standards PASS、Spec PASS；初审命名问题已修复。
 
 ## 明确不做
 
