@@ -31,7 +31,7 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("name: CI");
     expect(workflow).toContain("push:\n    branches: [main]");
     expect(workflow).toContain("pull_request:");
-    expect(workflow).toContain('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"');
+    expect(workflow).not.toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24");
     expect(workflow).toContain("actions/checkout@v6");
     expect(workflow).toContain("actions/setup-node@v6");
     expect(workflow).toContain("node-version: 24");
@@ -54,7 +54,8 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke:stage7:validate");
     expect(workflow).toContain("npm run docker:smoke:stage8 -- --no-build");
     expect(workflow).toContain("npm run docker:smoke:stage8:validate");
-    expect(workflow).toContain("actions/upload-artifact@v5");
+    expect(workflow).not.toContain("actions/upload-artifact@v5");
+    expect(workflow.match(/actions\/upload-artifact@v7/g)).toHaveLength(6);
     expect(workflow).toContain("p0-acceptance-manifest");
     expect(workflow).toContain("data/p0-acceptance.json");
     expect(workflow).toContain("stage5-release-manifests");
