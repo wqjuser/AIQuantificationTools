@@ -5,7 +5,7 @@
 ## Language
 
 **Stage 0 SQLite 测试资源生命周期收口**：
-Python 测试直接打开 SQLite 时必须同时保留连接事务上下文和显式关闭：先由连接上下文提交或回滚，再由 `contextlib.closing` 关闭连接。契约测试拒绝新增裸 `with sqlite3.connect(...)`，避免全量测试在 Python 3.14 下留下 `ResourceWarning`；生产 store 的既有显式关闭行为不变。
+本批修复的 23 处 Python 测试连接同时保留原有事务上下文和显式关闭：先由连接上下文提交或回滚，再由 `contextlib.closing` 关闭连接。契约测试只负责拒绝新增裸 `with sqlite3.connect(...)`，避免把事务上下文误当成资源关闭并在 Python 3.14 下留下 `ResourceWarning`；既有只读或显式提交的 `closing` 用法、生产 store 的关闭行为均不变。
 _Avoid_: 第二套数据库 helper、生产 store 重构、全局 warning 框架
 
 **Stage 0 发布门禁稳定性收口**：
