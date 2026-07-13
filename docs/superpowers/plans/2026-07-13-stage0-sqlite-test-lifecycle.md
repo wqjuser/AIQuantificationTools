@@ -2,7 +2,7 @@
 
 ## 状态
 
-审查中。设计依据：[Stage 0 SQLite 测试资源生命周期收口设计](../specs/2026-07-13-stage0-sqlite-test-lifecycle-design.md)。
+已完成。设计依据：[Stage 0 SQLite 测试资源生命周期收口设计](../specs/2026-07-13-stage0-sqlite-test-lifecycle-design.md)。
 
 ## 工作项
 
@@ -23,7 +23,14 @@
 - [x] 运行聚焦 warning 验收、全量 Python/Web 和生产构建。
 - [x] 运行 Docker 基础 smoke 与 Stage 8 smoke/validate。
 - [x] 同步 README、产品规划、架构和 CONTEXT。
-- [ ] 完成独立规格/标准审查、提交、推送、PR 和远端门禁。
+- [x] 完成独立规格/标准审查、提交、推送、PR 和远端门禁。
+
+## 验收结果
+
+- 策略实验 54 项、Stage 3 AI 评审 129 项在显式 `ResourceWarning` 模式下通过且无 SQLite 资源告警。
+- 全量 Python 638 项、Web 944 项和生产构建通过。
+- Docker 基础 smoke、Stage 8 smoke/validate 通过，5173 健康且 live/order 边界保持关闭。
+- Standards 与 Spec 独立审查均为 PASS。
 
 ## 明确不做
 
