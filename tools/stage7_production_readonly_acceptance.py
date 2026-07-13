@@ -282,9 +282,8 @@ def _orchestrate(repo: Path, report: Path, real_request: Path | None, *, build: 
     env["INSTALL_DATA_DEPS"] = "true"
     _run(["docker", "compose", "config"], repo, env)
     _run(["docker", "compose", "up", "-d", *( ["--build"] if build else []), "api"], repo, env)
+    _wait_for_api(repo, env)
     if real_request:
-        if not env.get("CCXT_PRODUCTION_READONLY_API_KEY") or not env.get("CCXT_PRODUCTION_READONLY_SECRET"):
-            raise RuntimeError("stage7 real acceptance requires dedicated production read-only credentials")
         _run(["docker", "compose", "cp", str(real_request), "api:/tmp/stage7-real-request.json"], repo, env)
         output = _run([
             "docker", "compose", "exec", "-T", "api", "python", "tools/stage7_production_readonly_acceptance.py",
