@@ -453,6 +453,8 @@ docker compose down -v
 
 `.github/workflows/ci.yml` 会在 pull request 和 `main` push 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，然后通过 `npm run docker:smoke -- --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。feature branch push 不再与 pull request 重复运行完整链路；Nginx `/api/` 的 upstream read timeout 与 smoke helper 的 90 秒请求预算一致，避免 P1 自选行情长刷新先被代理以 504 切断。
 
+Python 测试中直接创建的 SQLite 连接会复用连接自身的事务上下文，并在事务退出后由 `contextlib.closing` 显式关闭；契约测试拒绝新的裸 `with sqlite3.connect(...)`。该约束消除 Python 3.14 全量测试中的未关闭数据库 `ResourceWarning`，不改变生产 store、schema 或事务行为。
+
 CI 还会运行 `npm run docker:smoke:p0 -- --no-build --down`，把 P0 策略流水线、AI 评审、纸面模拟、导出、导入和重导出作为产品验收门禁，并上传 `data/p0-acceptance.json` 为 `p0-acceptance-manifest` artifact。
 
 CI 同时运行 `npm run docker:smoke:p1 -- --no-build --down`，把自选列表刷新、queue-ready 审计 run、AI 评审、paper-only 模拟、P2 replay seed、导出/导入和 watchlist refresh provenance 作为 P1 研究运营验收门禁，并上传 `data/p1-acceptance.json`。本地服务会通过 `/api/p1/acceptance/latest` 将同一份 artifact 投影成产品状态，便于工作台直接显示 P1 验收是否可复核。

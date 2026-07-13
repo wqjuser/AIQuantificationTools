@@ -1,6 +1,7 @@
+import ast
+import importlib.util
 import tempfile
 import unittest
-import importlib.util
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -6302,6 +6303,32 @@ class QuantCoreContractTest(unittest.TestCase):
             ("0.0.0.0", 8765),
         )
         self.assertEqual(resolve_api_bind(environ={"QUANT_CORE_PORT": "not-a-number"}), ("127.0.0.1", 8765))
+
+    def test_python_tests_close_direct_sqlite_connections(self):
+        def bare_sqlite_context_lines(source):
+            return [
+                item.context_expr.lineno
+                for node in ast.walk(ast.parse(source))
+                if isinstance(node, ast.With)
+                for item in node.items
+                if isinstance(item.context_expr, ast.Call)
+                and isinstance(item.context_expr.func, ast.Attribute)
+                and isinstance(item.context_expr.func.value, ast.Name)
+                and item.context_expr.func.value.id == "sqlite3"
+                and item.context_expr.func.attr == "connect"
+            ]
+
+        multiline_bare_context = "with sqlite3 . connect(\n    ':memory:'\n) as connection:\n    pass\n"
+        self.assertEqual(bare_sqlite_context_lines(multiline_bare_context), [1])
+
+        tests_root = Path(__file__).resolve().parent
+        offenders = [
+            f"{path.name}:{line_number}"
+            for path in sorted(tests_root.glob("test_*.py"))
+            for line_number in bare_sqlite_context_lines(path.read_text(encoding="utf-8"))
+        ]
+
+        self.assertEqual(offenders, [])
 
     def test_compose_passes_stage3_provider_environment_to_api_only(self):
         import re

@@ -2442,7 +2442,7 @@ class AiReviewArchiveTests(unittest.TestCase):
             review_store=self.review_store,
             decision_store=self.decision_store,
         )
-        with sqlite3.connect(self.review_store.path) as connection:
+        with closing(sqlite3.connect(self.review_store.path)) as connection, connection:
             connection.execute(
                 f"""
                 create trigger abort_atomic_second_decision
@@ -2470,7 +2470,7 @@ class AiReviewArchiveTests(unittest.TestCase):
             before,
         )
 
-        with sqlite3.connect(self.review_store.path) as connection:
+        with closing(sqlite3.connect(self.review_store.path)) as connection, connection:
             connection.execute("drop trigger abort_atomic_second_decision")
             connection.execute(
                 """
@@ -2509,7 +2509,7 @@ class AiReviewArchiveTests(unittest.TestCase):
             before,
         )
 
-        with sqlite3.connect(self.review_store.path) as connection:
+        with closing(sqlite3.connect(self.review_store.path)) as connection, connection:
             connection.execute("drop trigger abort_all_atomic_decisions")
             connection.execute(
                 f"""
@@ -2874,7 +2874,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 }
             ],
         }
-        with sqlite3.connect(self.review_store.path) as connection:
+        with closing(sqlite3.connect(self.review_store.path)) as connection, connection:
             connection.execute(
                 """
                 insert into ai_review_runs (
@@ -2912,7 +2912,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 **copy.deepcopy(unsafe_legacy),
                 "aiReviewId": secret_identity,
             }
-            with sqlite3.connect(self.review_store.path) as connection:
+            with closing(sqlite3.connect(self.review_store.path)) as connection, connection:
                 connection.execute(
                     """
                     update ai_review_runs
@@ -3179,7 +3179,7 @@ class _AiReviewStage3Fixture:
         return raised.exception
 
     def _update_experiment(self, experiment_id: str, assignment: str, values: tuple[Any, ...]) -> None:
-        with sqlite3.connect(self.experiment_store.path) as connection:
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection, connection:
             connection.execute(
                 f"update strategy_experiments set {assignment} where experiment_id = ?",
                 (*values, experiment_id),
@@ -3237,7 +3237,7 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
     def test_rejects_invalid_snapshot_definition_and_source_run_bindings(self) -> None:
         experiment_id = "snapshot-bindings"
         self._record_experiment(experiment_id, seed=30)
-        with sqlite3.connect(self.experiment_store.path) as connection:
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection, connection:
             connection.execute(
                 "update strategy_experiment_snapshots set test_definition_hash = ? where test_owner_experiment_id = ?",
                 ("wrong-definition", experiment_id),
@@ -3266,7 +3266,7 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
 
         experiment_id = "run-bindings"
         self._record_experiment(experiment_id, seed=31)
-        with sqlite3.connect(self.run_store.path) as connection:
+        with closing(sqlite3.connect(self.run_store.path)) as connection, connection:
             connection.execute(
                 "update research_runs set strategy_revision = ? where run_id = ?",
                 ("wrong-revision", f"run-{experiment_id}"),
@@ -3282,7 +3282,7 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
         self._record_experiment(experiment_id, seed=40)
         detail = self.experiment_store.get(experiment_id)
         self.assertIsNotNone(detail)
-        with sqlite3.connect(self.experiment_store.path) as connection:
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection, connection:
             connection.execute(
                 "update strategy_experiment_candidates set test_metrics_json = null "
                 "where experiment_id = ? and candidate_id = ?",
@@ -3304,7 +3304,7 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
             for candidate in detail.candidates  # type: ignore[union-attr]
             if candidate.candidate_id != detail.experiment.selected_candidate_id  # type: ignore[union-attr]
         )
-        with sqlite3.connect(self.experiment_store.path) as connection:
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection, connection:
             connection.execute(
                 "update strategy_experiment_candidates set test_metrics_json = ? "
                 "where experiment_id = ? and candidate_id = ?",
@@ -3467,7 +3467,7 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
         experiment_id = "key-order"
         self._record_experiment(experiment_id, seed=90)
         first = self.assembler.assemble(experiment_id, [])
-        with sqlite3.connect(self.experiment_store.path) as connection:
+        with closing(sqlite3.connect(self.experiment_store.path)) as connection, connection:
             row = connection.execute(
                 "select candidate_id, validation_metrics_json from strategy_experiment_candidates "
                 "where experiment_id = ? order by candidate_id limit 1",
@@ -5864,7 +5864,7 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
         self.assertEqual(missing_decision_status, 404)
         self.assertEqual(missing_decision["error"], "ai_review_not_found")
 
-        with sqlite3.connect(self.review_store.path) as connection:
+        with closing(sqlite3.connect(self.review_store.path)) as connection, connection:
             connection.execute(
                 "update ai_review_decisions set review_record_hash = ? where decision_id = ?",
                 ("0" * 64, first["decision"]["decisionId"]),
@@ -5879,7 +5879,7 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
     def test_review_read_hash_conflict_is_mapped_to_409(self) -> None:
         _, created = self._create_review()
         review_id = created["review"]["aiReviewId"]
-        with sqlite3.connect(self.review_store.path) as connection:
+        with closing(sqlite3.connect(self.review_store.path)) as connection, connection:
             row = connection.execute(
                 "select record_json from ai_review_runs where ai_review_id = ?",
                 (review_id,),
