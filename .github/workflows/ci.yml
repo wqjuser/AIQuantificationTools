@@ -81,6 +81,12 @@ jobs:
       - name: Validate Stage 7 production read-only safety evidence
         run: npm run docker:smoke:stage7:validate
 
+      - name: Run Stage 8 production read-only continuity smoke
+        run: npm run docker:smoke:stage8 -- --no-build
+
+      - name: Validate Stage 8 production read-only continuity evidence
+        run: npm run docker:smoke:stage8:validate
+
       - name: Upload P0 acceptance manifest
         if: always()
         uses: actions/upload-artifact@v5
@@ -127,4 +133,12 @@ jobs:
         with:
           name: stage7-production-readonly-safety-manifest
           path: data/stage7-production-readonly-safety.json
+          if-no-files-found: warn
+
+      - name: Upload Stage 8 production read-only continuity manifest
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: stage8-production-readonly-continuity-manifest
+          path: data/stage8-production-readonly-continuity.json
           if-no-files-found: warn

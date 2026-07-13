@@ -9259,9 +9259,11 @@ em {
 
 .execution-stage5-shadow header span,
 .execution-stage5-shadow header p,
-.execution-stage5-shadow header h2 { margin: 0; }
+.execution-stage5-shadow header h2,
+.execution-stage5-shadow header h3 { margin: 0; }
 .execution-stage5-shadow header span { color: #8fa4b8; font-size: 11px; }
 .execution-stage5-shadow header h2 { margin-top: 3px; color: #f0f7fb; font-size: 17px; }
+.execution-stage5-shadow header h3 { margin-top: 3px; color: #f0f7fb; font-size: 15px; }
 .execution-stage5-shadow header p { margin-top: 4px; color: #a8b7c7; font-size: 12px; }
 .execution-stage5-shadow header > strong {
   max-width: 310px;
@@ -9288,6 +9290,9 @@ em {
 }
 
 .execution-stage5-shadow > button:disabled { cursor: not-allowed; opacity: 0.55; }
+.execution-stage5-shadow > hr { margin: 14px 0; border: 0; border-top: 1px solid #293a50; }
+.execution-stage5-shadow > label { display: grid; gap: 5px; margin-top: 12px; color: #a8b7c7; font-size: 11px; }
+.execution-stage5-shadow > label input { box-sizing: border-box; width: 100%; border: 1px solid #293a50; border-radius: 7px; background: #0a121c; color: #dce6ee; padding: 8px; }
 .execution-stage5-shadow-error { color: #f3ae96; font-size: 11px; }
 .execution-stage5-shadow dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 12px 0 0; }
 .execution-stage5-shadow dl > div { min-width: 0; border: 1px solid #293a50; border-radius: 8px; padding: 8px; }

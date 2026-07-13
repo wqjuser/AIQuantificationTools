@@ -58,6 +58,8 @@
     "docker:smoke:stage7:validate": "node tools/run_python.mjs tools/stage7_production_readonly_acceptance.py --validate data/stage7-production-readonly-safety.json",
     "docker:smoke:stage7:real": "node tools/run_python.mjs tools/stage7_production_readonly_acceptance.py --real-request data/stage7-production-readonly-acceptance-request.json --report data/stage7-production-readonly.json",
     "docker:smoke:stage7:real:validate": "node tools/run_python.mjs tools/stage7_production_readonly_acceptance.py --validate data/stage7-production-readonly.json",
+    "docker:smoke:stage8": "node tools/run_python.mjs tools/stage8_production_readonly_continuity_acceptance.py --report data/stage8-production-readonly-continuity.json",
+    "docker:smoke:stage8:validate": "node tools/run_python.mjs tools/stage8_production_readonly_continuity_acceptance.py --validate data/stage8-production-readonly-continuity.json",
     "docker:smoke:p2:preflight": "node tools/run_python.mjs tools/docker_smoke.py --p2-chain-preflight-report data/p2-chain-preflight.json",
     "docker:smoke:p2:paper-replay": "node tools/run_python.mjs tools/docker_smoke.py --p2-paper-replay --p2-paper-replay-report data/p2-paper-replay.json",
     "docker:smoke:p2:paper-replay:validate": "node tools/run_python.mjs tools/docker_smoke.py --validate-p2-paper-replay-report data/p2-paper-replay.json",

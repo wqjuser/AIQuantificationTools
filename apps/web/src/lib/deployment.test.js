@@ -52,6 +52,8 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke:stage6:validate");
     expect(workflow).toContain("npm run docker:smoke:stage7 -- --no-build");
     expect(workflow).toContain("npm run docker:smoke:stage7:validate");
+    expect(workflow).toContain("npm run docker:smoke:stage8 -- --no-build");
+    expect(workflow).toContain("npm run docker:smoke:stage8:validate");
     expect(workflow).toContain("actions/upload-artifact@v5");
     expect(workflow).toContain("p0-acceptance-manifest");
     expect(workflow).toContain("data/p0-acceptance.json");
@@ -60,6 +62,8 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("data/stage6-sandbox-safety.json");
     expect(workflow).toContain("stage7-production-readonly-safety-manifest");
     expect(workflow).toContain("data/stage7-production-readonly-safety.json");
+    expect(workflow).toContain("stage8-production-readonly-continuity-manifest");
+    expect(workflow).toContain("data/stage8-production-readonly-continuity.json");
     for (const path of [
       "data/stage3-ai-review.json",
       "data/stage4-portfolio-paper.json",
@@ -143,7 +147,14 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:stage7:real:validate"]).toBe(
       `${pythonLauncher} tools/stage7_production_readonly_acceptance.py --validate data/stage7-production-readonly.json`,
     );
+    expect(packageJson.scripts["docker:smoke:stage8"]).toBe(
+      `${pythonLauncher} tools/stage8_production_readonly_continuity_acceptance.py --report data/stage8-production-readonly-continuity.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage8:validate"]).toBe(
+      `${pythonLauncher} tools/stage8_production_readonly_continuity_acceptance.py --validate data/stage8-production-readonly-continuity.json`,
+    );
     expect(existsSync(repoFile("tools/stage7_production_readonly_acceptance.py"))).toBe(true);
+    expect(existsSync(repoFile("tools/stage8_production_readonly_continuity_acceptance.py"))).toBe(true);
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 

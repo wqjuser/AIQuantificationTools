@@ -241,6 +241,12 @@ from quant_core.stage5_shadow import (
     validate_stage5_sandbox_readiness_decision,
     validate_stage5_shadow_session,
 )
+from quant_core.stage8_continuity import (
+    build_production_readonly_access_control,
+    build_production_readonly_continuity,
+    production_readonly_access_control_from_audit_event,
+    production_readonly_access_control_to_audit_event,
+)
 from quant_core.stage6_sandbox import (
     BinanceSpotTestnetRoute,
     Stage6SandboxExecutionService,
@@ -2403,6 +2409,68 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"sandboxAuthorizationReview": review}, status=201 if created else 200)
             return
+        if parsed.path == "/api/execution/stage8/production-readonly-access-controls":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "action", "operator", "reason", "productionRouteReviewId"
+                }:
+                    raise ValueError("stage8 production read-only access control request fields are invalid")
+                action = _required_stage4_string(payload["action"])
+                operator = _required_stage4_string(payload["operator"])
+                reason = _required_stage4_string(payload["reason"])
+                review_id = payload["productionRouteReviewId"]
+                if review_id is not None and not isinstance(review_id, str):
+                    raise ValueError("stage8 production read-only route review id is invalid")
+                current = _latest_stage8_production_readonly_access_control(self.audit_event_store)
+                desired = "revoked" if action == "revoke" else "active" if action == "restore" else ""
+                if not desired:
+                    raise ValueError("stage8 production read-only action is invalid")
+                if action == "revoke" and review_id is not None:
+                    raise ValueError("stage8 revoke must not bind a production route review")
+                if action == "restore":
+                    review_id = _required_stage4_string(review_id)
+                    route_review_event = self.audit_event_store.get(review_id)
+                    route_review = (
+                        execution_adapter_production_route_review_payload_from_audit_event(route_review_event)
+                        if route_review_event else None
+                    )
+                    if not route_review or not _stage7_production_route_review_is_current(route_review):
+                        raise ValueError("stage8 restore requires a current ccxt-live production route review")
+                created = False
+                equivalent = bool(
+                    current is not None
+                    and current["status"] == desired
+                    and current["operator"] == operator
+                    and current["reason"] == reason
+                    and current["productionRouteReviewId"] == (review_id if action == "restore" else None)
+                )
+                if equivalent:
+                    control = current
+                else:
+                    control = build_production_readonly_access_control(
+                        action=action,
+                        operator=operator,
+                        reason=reason,
+                        previous_control_id=current["controlId"] if current else None,
+                        production_route_review_id=review_id if action == "restore" else None,
+                    )
+                    self.audit_event_store.record(production_readonly_access_control_to_audit_event(control))
+                    created = True
+                continuity = _stage8_production_readonly_continuity(
+                    self.audit_event_store, self.stage6_exit_acceptance_report_path
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "stage8_production_readonly_access_control_blocked", "blockers": [str(error)]},
+                    status=409,
+                )
+                return
+            self._send_json(
+                {"productionReadonlyAccessControl": control, "productionReadonlyContinuity": continuity},
+                status=201 if created else 200,
+            )
+            return
         if parsed.path == "/api/execution/stage7/production-readonly-probes":
             try:
                 payload = self._read_json_body()
@@ -2414,6 +2482,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 operator = _required_stage4_string(payload["operator"])
                 if payload["eligibilityConfirmed"] is not True:
                     raise ValueError("stage7 production eligibility confirmation is required")
+                access_control = _latest_stage8_production_readonly_access_control(self.audit_event_store)
+                if access_control is not None and access_control["status"] == "revoked":
+                    raise ValueError("stage8_production_readonly_access_revoked")
                 stage6_status = load_stage6_exit_acceptance_status(self.stage6_exit_acceptance_report_path)
                 if stage6_status["status"] != "accepted" or not stage6_status["exitHash"]:
                     raise ValueError("stage7 requires accepted Stage 6 exit evidence")
@@ -4407,6 +4478,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"sandboxAuthorizationReviews": reviews})
             return
+        if parsed.path == "/api/execution/stage8/production-readonly-continuity":
+            try:
+                continuity = _stage8_production_readonly_continuity(
+                    self.audit_event_store, self.stage6_exit_acceptance_report_path
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage8_production_readonly_continuity_store", "detail": str(error)},
+                    status=500,
+                )
+                return
+            self._send_json({"productionReadonlyContinuity": continuity})
+            return
         if parsed.path == "/api/execution/stage7/production-readonly-probes":
             try:
                 limit = _parse_limit(parse_qs(parsed.query).get("limit", ["20"])[0])
@@ -5316,6 +5400,60 @@ def _stage7_production_route_review_is_current(value: dict[str, object]) -> bool
         and value.get("route") == "live"
         and bool(str(value.get("maintenanceWindowId") or "").strip())
         and timedelta(0) <= age <= timedelta(hours=24)
+    )
+
+
+def _latest_stage8_production_readonly_access_control(
+    audit_event_store: AuditEventStore,
+) -> dict[str, object] | None:
+    events = audit_event_store.list_recent(
+        event_type="stage8_production_readonly_access_control", limit=1
+    )
+    if not events:
+        return None
+    control = production_readonly_access_control_from_audit_event(events[0])
+    if control is None:
+        raise ValueError("stage8_production_readonly_access_control_invalid")
+    return control
+
+
+def _stage8_production_readonly_continuity(
+    audit_event_store: AuditEventStore,
+    stage6_exit_acceptance_report_path: Path,
+) -> dict[str, object]:
+    control = _latest_stage8_production_readonly_access_control(audit_event_store)
+    probe_events = audit_event_store.list_recent(
+        event_type="stage7_production_readonly_probe", limit=1
+    )
+    probe = None
+    if probe_events:
+        probe = production_readonly_probe_from_audit_event(probe_events[0])
+        if probe is None:
+            raise ValueError("stage7_production_readonly_evidence_invalid")
+    stage6_status = load_stage6_exit_acceptance_status(stage6_exit_acceptance_report_path)
+    stage6_hash_matches = bool(
+        probe
+        and stage6_status["status"] == "accepted"
+        and stage6_status["exitHash"] == probe["stage6ExitHash"]
+    )
+    route_review = None
+    if probe:
+        review_event = audit_event_store.get(probe["productionRouteReviewId"])
+        route_review = (
+            execution_adapter_production_route_review_payload_from_audit_event(review_event)
+            if review_event else None
+        )
+    route_review_recorded_at = route_review.get("recordedAt") if route_review else None
+    return build_production_readonly_continuity(
+        latest_probe=probe,
+        access_control=control,
+        stage6_hash_matches=stage6_hash_matches,
+        route_review_current=bool(route_review and _stage7_production_route_review_is_current(route_review)),
+        route_review_recorded_at=(
+            route_review_recorded_at.strip()
+            if isinstance(route_review_recorded_at, str) and route_review_recorded_at.strip()
+            else None
+        ),
     )
 
 
