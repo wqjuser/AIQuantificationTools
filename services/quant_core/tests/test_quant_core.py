@@ -14475,6 +14475,318 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(created["config"]["apiKey"], "compatible-key")
         self.assertEqual(created["config"]["secret"], "compatible-secret")
 
+    def test_production_readonly_probe_ignores_generic_credentials_and_stops_before_network(self):
+        from quant_core.execution_adapter_health import probe_ccxt_production_readonly
+
+        called = False
+
+        def exchange_factory(_exchange_id, _config):
+            nonlocal called
+            called = True
+            raise AssertionError("production network must not be reached")
+
+        probe = probe_ccxt_production_readonly(
+            adapter_id="ccxt-live",
+            exchange_id="binance",
+            environ={"CCXT_API_KEY": "generic-key", "CCXT_SECRET": "generic-secret"},
+            exchange_factory=exchange_factory,
+            generated_at=datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(probe.status, "blocked")
+        self.assertEqual(probe.blocked_reasons, ["production_readonly_credentials_missing"])
+        self.assertFalse(called)
+
+    def test_production_readonly_probe_redacts_safe_account_summary(self):
+        import json
+
+        from quant_core.execution_adapter_health import (
+            execution_adapter_health_probe_to_payload,
+            production_readonly_probe_to_evidence,
+            probe_ccxt_production_readonly,
+            validate_production_readonly_probe_evidence,
+        )
+
+        created = {}
+
+        class FakeExchange:
+            def __init__(self, config):
+                created["config"] = config
+                created["calls"] = []
+
+            def load_markets(self):
+                created["calls"].append("load_markets")
+                return {"BTC/USDT": {}, "ETH/USDT": {}}
+
+            def sapi_get_account_apirestrictions(self):
+                created["calls"].append("permissions")
+                return {
+                    "enableReading": True,
+                    "enableSpotAndMarginTrading": False,
+                    "enableMargin": False,
+                    "enableFutures": False,
+                    "enableVanillaOptions": False,
+                    "enableWithdrawals": False,
+                    "enableInternalTransfer": False,
+                    "permitsUniversalTransfer": False,
+                }
+
+            def fetch_balance(self, params):
+                created["calls"].append(("fetch_balance", params))
+                return {
+                    "total": {"BTC": 1.25, "ETH": 0.0, "USDT": 100.0},
+                    "info": {"accountType": "SPOT", "sensitive": "must-not-leak"},
+                }
+
+            def create_order(self, *_args):
+                raise AssertionError("order API must not be called")
+
+        probe = probe_ccxt_production_readonly(
+            adapter_id="ccxt-live",
+            exchange_id="binance",
+            environ={
+                "CCXT_PRODUCTION_READONLY_API_KEY": " read-key ",
+                "CCXT_PRODUCTION_READONLY_SECRET": " read-secret ",
+                "CCXT_DEFAULT_TYPE": "spot",
+            },
+            exchange_factory=lambda exchange_id, config: FakeExchange(config),
+            generated_at=datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc),
+        )
+        payload = execution_adapter_health_probe_to_payload(probe)
+        evidence = production_readonly_probe_to_evidence(
+            probe,
+            stage6_exit_hash="a" * 64,
+            production_route_review_id="production-route-review-1",
+            operator="operator",
+            eligibility_confirmed=True,
+        )
+        serialized = json.dumps(payload, sort_keys=True)
+
+        self.assertEqual(probe.status, "ready")
+        self.assertEqual(created["config"]["apiKey"], "read-key")
+        self.assertEqual(created["config"]["secret"], "read-secret")
+        self.assertEqual(created["calls"], ["load_markets", "permissions", ("fetch_balance", {"type": "spot", "omitZeroBalances": True})])
+        self.assertEqual(payload["mode"], "production-readonly")
+        self.assertFalse(payload["paperOnly"])
+        self.assertFalse(payload["liveTradingAllowed"])
+        self.assertFalse(payload["orderRoutingEnabled"])
+        self.assertEqual(payload["metadata"]["nonZeroAssetCount"], 2)
+        self.assertTrue(payload["metadata"]["accountDataAccessed"])
+        self.assertNotIn("BTC", serialized)
+        self.assertNotIn("USDT", serialized)
+        self.assertNotIn("must-not-leak", serialized)
+        self.assertNotIn("read-secret", serialized)
+        self.assertEqual(validate_production_readonly_probe_evidence(evidence), evidence)
+        tampered = {**evidence, "marketCount": 3}
+        with self.assertRaisesRegex(ValueError, "stage7_production_readonly_evidence_hash_invalid"):
+            validate_production_readonly_probe_evidence(tampered)
+
+    def test_production_readonly_probe_blocks_unsafe_key_before_balance(self):
+        from quant_core.execution_adapter_health import probe_ccxt_production_readonly
+
+        for unsafe_field in (
+            None, "enableSpotAndMarginTrading", "enableMargin", "enableFutures", "enableVanillaOptions",
+            "enableWithdrawals", "enableInternalTransfer", "permitsUniversalTransfer",
+        ):
+            with self.subTest(unsafe_field=unsafe_field):
+                calls = []
+
+                class FakeExchange:
+                    def __init__(self, _config):
+                        pass
+
+                    def load_markets(self):
+                        calls.append("load_markets")
+                        return {"BTC/USDT": {}}
+
+                    def sapi_get_account_apirestrictions(self):
+                        calls.append("permissions")
+                        permissions = {"enableReading": True}
+                        if unsafe_field:
+                            permissions[unsafe_field] = True
+                        return permissions
+
+                    def fetch_balance(self, _params):
+                        calls.append("fetch_balance")
+                        raise AssertionError("unsafe key must not reach balance")
+
+                probe = probe_ccxt_production_readonly(
+                    adapter_id="ccxt-live",
+                    exchange_id="binance",
+                    environ={
+                        "CCXT_PRODUCTION_READONLY_API_KEY": "read-key",
+                        "CCXT_PRODUCTION_READONLY_SECRET": "read-secret",
+                    },
+                    exchange_factory=lambda exchange_id, config: FakeExchange(config),
+                    generated_at=datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc),
+                )
+
+                self.assertEqual(probe.status, "blocked")
+                self.assertEqual(probe.blocked_reasons, ["production_readonly_permissions_unsafe"])
+                self.assertEqual(calls, ["load_markets", "permissions"])
+
+    def test_production_readonly_probe_api_binds_authority_and_reads_back_redacted_evidence(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+        from unittest.mock import patch
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+
+        class FakeExchange:
+            def __init__(self, _config):
+                pass
+
+            def load_markets(self):
+                return {"BTC/USDT": {}}
+
+            def sapi_get_account_apirestrictions(self):
+                return {
+                    "enableReading": True,
+                    "enableSpotAndMarginTrading": False,
+                    "enableMargin": False,
+                    "enableFutures": False,
+                    "enableVanillaOptions": False,
+                    "enableWithdrawals": False,
+                    "enableInternalTransfer": False,
+                    "permitsUniversalTransfer": False,
+                }
+
+            def fetch_balance(self, _params):
+                return {"total": {"BTC": 1.0}, "info": {"accountType": "SPOT", "secret": "hidden"}}
+
+        class TestHandler(QuantApiHandler):
+            execution_adapter_health_exchange_factory = lambda exchange_id, config: FakeExchange(config)
+            execution_adapter_health_environ = {
+                "CCXT_PRODUCTION_READONLY_API_KEY": "production-key-should-not-leak",
+                "CCXT_PRODUCTION_READONLY_SECRET": "production-secret-should-not-leak",
+            }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            TestHandler.audit_event_store = AuditEventStore(Path(tmp) / "audit.sqlite")
+            TestHandler.audit_event_store.record({
+                "schemaVersion": 1,
+                "eventId": "production-route-review-1",
+                "eventType": "execution_adapter_production_route_review",
+                "runId": "",
+                "createdAt": "2026-07-13T09:00:00+00:00",
+                "stage": "execution-adapter-production-route-review",
+                "source": "operator",
+                "summary": "recorded",
+                "detail": "recorded",
+                "metadata": {},
+            })
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            with patch("quant_core.api.load_stage6_exit_acceptance_status", side_effect=[
+                {"status": "accepted", "exitHash": "a" * 64},
+                {"status": "accepted", "exitHash": "a" * 64},
+                {"status": "accepted", "exitHash": "b" * 64},
+            ]), patch("quant_core.api.execution_adapter_production_route_review_payload_from_audit_event", return_value={
+                "productionRouteReviewId": "production-route-review-1",
+                "adapterId": "ccxt-live",
+                "status": "route_review_recorded",
+                "market": "crypto",
+                "route": "live",
+                "maintenanceWindowId": "stage7-window",
+                "recordedAt": datetime.now(timezone.utc).isoformat(),
+            }):
+                thread.start()
+                connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+                try:
+                    connection.request(
+                        "POST",
+                        "/api/execution/stage7/production-readonly-probes",
+                        body=json.dumps({
+                            "productionRouteReviewId": "production-route-review-1",
+                            "operator": "operator",
+                            "eligibilityConfirmed": True,
+                        }),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response = connection.getresponse()
+                    created = json.loads(response.read())
+                    connection.request("GET", "/api/execution/stage7/production-readonly-probes?limit=5")
+                    read_response = connection.getresponse()
+                    readback = json.loads(read_response.read())
+                    connection.request("GET", "/api/execution/stage7/production-readonly-probes?limit=5")
+                    drift_response = connection.getresponse()
+                    drift_readback = json.loads(drift_response.read())
+                finally:
+                    connection.close()
+                    server.shutdown()
+                    thread.join(timeout=5)
+                    server.server_close()
+
+        serialized = json.dumps({"created": created, "readback": readback}, sort_keys=True)
+        self.assertEqual(response.status, 201)
+        self.assertEqual(read_response.status, 200)
+        self.assertEqual(drift_response.status, 500)
+        self.assertEqual(drift_readback["error"], "invalid_stage7_production_readonly_probe_store")
+        self.assertEqual(created["productionReadonlyProbe"], readback["productionReadonlyProbes"][0])
+        self.assertEqual(created["productionReadonlyProbe"]["status"], "ready")
+        self.assertFalse(created["productionReadonlyProbe"]["liveTradingAllowed"])
+        self.assertNotIn("BTC", serialized)
+        self.assertNotIn("hidden", serialized)
+        self.assertNotIn("production-key-should-not-leak", serialized)
+        self.assertNotIn("production-secret-should-not-leak", serialized)
+
+    def test_stage7_production_route_review_expires_after_24_hours(self):
+        from quant_core.api import _stage7_production_route_review_is_current
+
+        current = {
+            "status": "route_review_recorded",
+            "adapterId": "ccxt-live",
+            "market": "crypto",
+            "route": "live",
+            "maintenanceWindowId": "window-1",
+            "recordedAt": datetime.now(timezone.utc).isoformat(),
+        }
+
+        self.assertTrue(_stage7_production_route_review_is_current(current))
+        self.assertFalse(_stage7_production_route_review_is_current({
+            **current,
+            "recordedAt": (datetime.now(timezone.utc) - timedelta(hours=25)).isoformat(),
+        }))
+        self.assertFalse(_stage7_production_route_review_is_current({**current, "maintenanceWindowId": ""}))
+
+    def test_stage7_real_acceptance_manifest_rejects_live_boundary_tampering(self):
+        from tools.stage7_production_readonly_acceptance import _real_manifest, validate
+
+        permissions = {
+            "readingEnabled": True,
+            "spotTradingEnabled": False,
+            "marginTradingEnabled": False,
+            "futuresTradingEnabled": False,
+            "optionsTradingEnabled": False,
+            "withdrawalsEnabled": False,
+            "internalTransferEnabled": False,
+            "universalTransferEnabled": False,
+        }
+        probe = {
+            "status": "ready",
+            "probeId": "stage7-probe",
+            "evidenceHash": "a" * 64,
+            "stage6ExitHash": "b" * 64,
+            "productionRouteReviewId": "route-review",
+            "marketCount": 100,
+            "apiPermissions": permissions,
+            "accountSummary": {
+                "accountType": "SPOT",
+                "nonZeroAssetCount": 2,
+                "observedAt": "2026-07-13T00:00:00+00:00",
+            },
+            "accountDataAccessed": True,
+            "orderRoutingEnabled": False,
+        }
+        manifest = _real_manifest(probe, {"evidenceHash": probe["evidenceHash"]})
+
+        self.assertIn("acceptance=accepted", validate(manifest))
+        with self.assertRaisesRegex(ValueError, "orderRoutingEnabled is immutable"):
+            validate({**manifest, "orderRoutingEnabled": True})
+
     def test_ccxt_sandbox_health_probe_blocks_when_ccxt_package_is_missing(self):
         import json
 

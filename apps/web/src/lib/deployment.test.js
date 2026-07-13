@@ -50,12 +50,16 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke:stage5:validate");
     expect(workflow).toContain("npm run docker:smoke:stage6 -- --no-build");
     expect(workflow).toContain("npm run docker:smoke:stage6:validate");
+    expect(workflow).toContain("npm run docker:smoke:stage7 -- --no-build");
+    expect(workflow).toContain("npm run docker:smoke:stage7:validate");
     expect(workflow).toContain("actions/upload-artifact@v5");
     expect(workflow).toContain("p0-acceptance-manifest");
     expect(workflow).toContain("data/p0-acceptance.json");
     expect(workflow).toContain("stage5-release-manifests");
     expect(workflow).toContain("stage6-sandbox-safety-manifest");
     expect(workflow).toContain("data/stage6-sandbox-safety.json");
+    expect(workflow).toContain("stage7-production-readonly-safety-manifest");
+    expect(workflow).toContain("data/stage7-production-readonly-safety.json");
     for (const path of [
       "data/stage3-ai-review.json",
       "data/stage4-portfolio-paper.json",
@@ -127,6 +131,19 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:stage6:validate"]).toBe(
       `${pythonLauncher} tools/stage6_sandbox_acceptance.py --validate data/stage6-sandbox-safety.json`,
     );
+    expect(packageJson.scripts["docker:smoke:stage7"]).toBe(
+      `${pythonLauncher} tools/stage7_production_readonly_acceptance.py --report data/stage7-production-readonly-safety.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage7:validate"]).toBe(
+      `${pythonLauncher} tools/stage7_production_readonly_acceptance.py --validate data/stage7-production-readonly-safety.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage7:real"]).toContain(
+      "--real-request data/stage7-production-readonly-acceptance-request.json",
+    );
+    expect(packageJson.scripts["docker:smoke:stage7:real:validate"]).toBe(
+      `${pythonLauncher} tools/stage7_production_readonly_acceptance.py --validate data/stage7-production-readonly.json`,
+    );
+    expect(existsSync(repoFile("tools/stage7_production_readonly_acceptance.py"))).toBe(true);
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 
@@ -158,6 +175,8 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("QUANT_CORE_PORT: \"8765\"");
     expect(compose).toContain("CCXT_SANDBOX_API_KEY: ${CCXT_SANDBOX_API_KEY:-}");
     expect(compose).toContain("CCXT_SANDBOX_SECRET: ${CCXT_SANDBOX_SECRET:-}");
+    expect(compose).toContain("CCXT_PRODUCTION_READONLY_API_KEY: ${CCXT_PRODUCTION_READONLY_API_KEY:-}");
+    expect(compose).toContain("CCXT_PRODUCTION_READONLY_SECRET: ${CCXT_PRODUCTION_READONLY_SECRET:-}");
     expect(compose).toContain("quant-data:/app/data");
     expect(compose).toContain("${AIQT_WEB_PORT:-5173}:80");
     expect(compose).toContain("condition: service_healthy");

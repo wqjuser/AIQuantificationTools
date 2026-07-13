@@ -88,6 +88,24 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
+## Stage 7 当前阶段：生产只读准入
+
+Stage 7 只连接 Binance Spot 生产环境的市场元数据、API Key 权限接口和脱敏账户摘要，不创建、查询或撤销生产订单。服务端只读取独立的 `CCXT_PRODUCTION_READONLY_API_KEY` 与 `CCXT_PRODUCTION_READONLY_SECRET`，不会回退到 Sandbox 或通用 CCXT 变量；读取账户前必须确认读取权限开启，Spot/Margin/Futures/Options 交易、提现和内部/通用划转权限全部明确为关闭。
+
+Execution 工作区提供唯一“运行生产只读准入”动作。POST 会绑定已接受的 Stage 6 退出清单、既有 `ccxt-live` production route review 和操作者资格确认；GET 从 `AuditEventStore` 回读并重验 canonical SHA-256。页面、响应、审计和验收清单只显示权限布尔值、市场数量、账户类型和非零资产数量，不显示资产名称、余额或交易所原始响应。
+
+```powershell
+# 默认 CI：无生产凭据，必须在网络连接前确定性 fail closed
+npm run docker:smoke:stage7 -- --no-build
+npm run docker:smoke:stage7:validate
+
+# 人工环境：配置专用只读 Key，并准备权威 route review 请求后执行
+npm run docker:smoke:stage7:real -- --no-build
+npm run docker:smoke:stage7:real:validate
+```
+
+真实生产只读验收尚未执行，因此 Stage 7 保持 current，不能转入 maintenance。完整配置、失败处理、轮换与撤销步骤见 [docs/stage7-production-readonly-operations.md](docs/stage7-production-readonly-operations.md)。所有生产委托字段继续固定为 false，`liveBlockedBoundary=true`；生产订单、成交、转账、提现和 live route 不在 Stage 7 范围内。
+
 ## Stage 6 已完成并进入维护
 
 Stage 6 在 Execution 提供唯一 Sandbox 黄金路径：从同一条 Stage 4 workflow 与 Stage 5 已批准证据链生成规范化 GTC 限价单，进行 10 分钟批次授权，再提交、查询、撤单和事件驱动对账。实现只复用现有 `AuditEventStore`、Stage 4 风险限额和稳定 `clientOrderId`，固定 Binance Spot Testnet；不支持生产 endpoint、真实资金、Futures、杠杆、多交易所或手填委托。
@@ -103,7 +121,7 @@ npm run docker:smoke:stage6:real:validate
 npm run docker:smoke:stage6:exit:validate
 ```
 
-Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 6 现均为 maintenance；下一阶段尚未激活，生产 endpoint、真实资金和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
+Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 6 现均为 maintenance；Stage 7 已激活为生产只读准入，但真实资金委托和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
 
 ## Stage 5 已完成并进入维护
 

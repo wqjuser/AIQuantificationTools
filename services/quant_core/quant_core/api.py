@@ -4,7 +4,7 @@ import json
 import os
 import uuid
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -208,7 +208,11 @@ from quant_core.execution import (
 from quant_core.execution_adapter_health import (
     execution_adapter_health_probe_to_evidence,
     execution_adapter_health_probe_to_payload,
+    probe_ccxt_production_readonly,
     probe_ccxt_sandbox_health,
+    production_readonly_probe_from_audit_event,
+    production_readonly_probe_to_audit_event_payload,
+    production_readonly_probe_to_evidence,
 )
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
@@ -2399,6 +2403,58 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"sandboxAuthorizationReview": review}, status=201 if created else 200)
             return
+        if parsed.path == "/api/execution/stage7/production-readonly-probes":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "productionRouteReviewId", "operator", "eligibilityConfirmed"
+                } or type(payload["eligibilityConfirmed"]) is not bool:
+                    raise ValueError("stage7 production read-only request fields are invalid")
+                production_route_review_id = _required_stage4_string(payload["productionRouteReviewId"])
+                operator = _required_stage4_string(payload["operator"])
+                if payload["eligibilityConfirmed"] is not True:
+                    raise ValueError("stage7 production eligibility confirmation is required")
+                stage6_status = load_stage6_exit_acceptance_status(self.stage6_exit_acceptance_report_path)
+                if stage6_status["status"] != "accepted" or not stage6_status["exitHash"]:
+                    raise ValueError("stage7 requires accepted Stage 6 exit evidence")
+                route_review_event = self.audit_event_store.get(production_route_review_id)
+                route_review = (
+                    execution_adapter_production_route_review_payload_from_audit_event(route_review_event)
+                    if route_review_event else None
+                )
+                if (
+                    not route_review or not _stage7_production_route_review_is_current(route_review)
+                ):
+                    raise ValueError("stage7 requires a current ccxt-live production route review")
+                probe = probe_ccxt_production_readonly(
+                    adapter_id="ccxt-live",
+                    exchange_id="binance",
+                    environ=type(self).execution_adapter_health_environ,
+                    exchange_factory=type(self).execution_adapter_health_exchange_factory,
+                )
+                evidence = production_readonly_probe_to_evidence(
+                    probe,
+                    stage6_exit_hash=stage6_status["exitHash"],
+                    production_route_review_id=production_route_review_id,
+                    operator=operator,
+                    eligibility_confirmed=True,
+                )
+                audit_event = self.audit_event_store.record(
+                    production_readonly_probe_to_audit_event_payload(evidence)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {"error": "stage7_production_readonly_probe_blocked", "blockers": [str(error)]}, status=409
+                )
+                return
+            self._send_json(
+                {
+                    "productionReadonlyProbe": evidence,
+                    "auditEvent": audit_event_record_to_payload(audit_event),
+                },
+                status=201 if evidence["status"] == "ready" else 409,
+            )
+            return
         if parsed.path == "/api/execution/stage6/sandbox-authorizations":
             try:
                 payload = self._read_json_body()
@@ -4351,6 +4407,37 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"sandboxAuthorizationReviews": reviews})
             return
+        if parsed.path == "/api/execution/stage7/production-readonly-probes":
+            try:
+                limit = _parse_limit(parse_qs(parsed.query).get("limit", ["20"])[0])
+                events = self.audit_event_store.list_recent(
+                    event_type="stage7_production_readonly_probe", limit=limit
+                )
+                stage6_status = load_stage6_exit_acceptance_status(self.stage6_exit_acceptance_report_path)
+                probes = []
+                for event in events:
+                    probe = production_readonly_probe_from_audit_event(event)
+                    if probe is None:
+                        raise ValueError("stage7 production read-only evidence is invalid")
+                    if stage6_status["status"] != "accepted" or stage6_status["exitHash"] != probe["stage6ExitHash"]:
+                        raise ValueError("stage7 production read-only Stage 6 authority is invalid")
+                    route_review_event = self.audit_event_store.get(probe["productionRouteReviewId"])
+                    route_review = (
+                        execution_adapter_production_route_review_payload_from_audit_event(route_review_event)
+                        if route_review_event else None
+                    )
+                    if (
+                        not route_review or not _stage7_production_route_review_is_current(route_review)
+                    ):
+                        raise ValueError("stage7 production read-only route review authority is invalid")
+                    probes.append(probe)
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_stage7_production_readonly_probe_store", "detail": str(error)}, status=500
+                )
+                return
+            self._send_json({"productionReadonlyProbes": probes})
+            return
         if parsed.path == "/api/execution/stage6/sandbox-authorizations":
             try:
                 query = parse_qs(parsed.query)
@@ -5212,6 +5299,24 @@ def _stage6_event_snapshot(
     if event.event_id != normalized_id or snapshot.get("baseRunId") != event.run_id:
         raise ValueError(f"{event_type} audit binding does not match")
     return snapshot
+
+
+def _stage7_production_route_review_is_current(value: dict[str, object]) -> bool:
+    try:
+        recorded_at = datetime.fromisoformat(str(value.get("recordedAt") or ""))
+    except ValueError:
+        return False
+    if recorded_at.tzinfo is None or recorded_at.utcoffset() is None:
+        return False
+    age = datetime.now(timezone.utc) - recorded_at.astimezone(timezone.utc)
+    return (
+        value.get("status") == "route_review_recorded"
+        and value.get("adapterId") == "ccxt-live"
+        and value.get("market") == "crypto"
+        and value.get("route") == "live"
+        and bool(str(value.get("maintenanceWindowId") or "").strip())
+        and timedelta(0) <= age <= timedelta(hours=24)
+    )
 
 
 def _adapter_error_message(*, quality: DataQuality | None, error: str | None) -> str | None:

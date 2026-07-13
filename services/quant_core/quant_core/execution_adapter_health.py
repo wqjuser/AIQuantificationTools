@@ -397,6 +397,262 @@ def probe_ccxt_sandbox_health(
     )
 
 
+def probe_ccxt_production_readonly(
+    *,
+    adapter_id: str,
+    exchange_id: str,
+    environ: dict[str, str] | None = None,
+    exchange_factory: ExchangeFactory | None = None,
+    ccxt_module: Any = _CCXT_UNSET,
+    generated_at: datetime | None = None,
+) -> ExecutionAdapterHealthProbe:
+    env = environ if environ is not None else os.environ
+    now = generated_at or datetime.now(timezone.utc)
+    clean_adapter_id = adapter_id.strip() or "ccxt-live"
+    clean_exchange_id = exchange_id.strip().lower() or "binance"
+    checks: list[ExecutionAdapterHealthCheck] = []
+    blocked_reasons: list[str] = []
+    credentials = _resolve_production_readonly_credentials(env)
+    capabilities = {
+        "loadMarkets": False,
+        "fetchTime": False,
+        "fetchBalance": False,
+        "apiRestrictions": False,
+        "createOrder": False,
+    }
+    metadata: dict[str, Any] = {
+        "readOnly": True,
+        "productionReadOnly": True,
+        "accountDataAccessed": False,
+        "nonZeroAssetCount": 0,
+        "accountType": None,
+        "observedAt": None,
+        "apiPermissions": _empty_production_permissions(),
+    }
+
+    if clean_exchange_id != "binance":
+        blocked_reasons.append("production_readonly_exchange_not_allowed")
+    if (env.get("CCXT_DEFAULT_TYPE", "spot").strip().lower() or "spot") != "spot":
+        blocked_reasons.append("production_readonly_spot_required")
+    if not credentials["apiKeyConfigured"] or not credentials["secretConfigured"]:
+        blocked_reasons.append("production_readonly_credentials_missing")
+    if blocked_reasons:
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="production-boundary",
+                label="production read-only boundary",
+                status="blocked",
+                detail="Binance Spot and a complete dedicated production read-only credential pair are required.",
+            )
+        )
+        return _build_production_probe(
+            adapter_id=clean_adapter_id,
+            exchange_id=clean_exchange_id,
+            generated_at=now,
+            checks=checks,
+            capabilities=capabilities,
+            credentials=credentials,
+            blocked_reasons=blocked_reasons,
+            metadata=metadata,
+        )
+
+    if exchange_factory is None:
+        ccxt_module = _load_ccxt_module(ccxt_module)
+        exchange_class = getattr(ccxt_module, clean_exchange_id, None) if ccxt_module is not None else None
+        if not callable(exchange_class):
+            blocked_reasons.append("ccxt_exchange_not_found")
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="ccxt-exchange",
+                    label="ccxt exchange class",
+                    status="blocked",
+                    detail="Binance exchange class is not available in ccxt.",
+                )
+            )
+            return _build_production_probe(
+                adapter_id=clean_adapter_id,
+                exchange_id=clean_exchange_id,
+                generated_at=now,
+                checks=checks,
+                capabilities=capabilities,
+                credentials=credentials,
+                blocked_reasons=blocked_reasons,
+                metadata=metadata,
+            )
+
+        def exchange_factory(exchange_id_arg: str, config: dict[str, Any]) -> Any:
+            return exchange_class(config)
+
+    try:
+        config = _build_ccxt_config(credentials, env)
+        config["options"]["defaultType"] = "spot"
+        exchange = exchange_factory(clean_exchange_id, config)
+    except Exception as error:
+        blocked_reasons.append("ccxt_exchange_init_failed")
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="exchange-init",
+                label="production exchange instance",
+                status="blocked",
+                detail=f"Exchange initialization failed: {type(error).__name__}",
+            )
+        )
+        return _build_production_probe(
+            adapter_id=clean_adapter_id,
+            exchange_id=clean_exchange_id,
+            generated_at=now,
+            checks=checks,
+            capabilities=capabilities,
+            credentials=credentials,
+            blocked_reasons=blocked_reasons,
+            metadata=metadata,
+        )
+
+    try:
+        markets, latency_ms = _timed(exchange.load_markets)
+        market_count = len(markets or {})
+        capabilities["loadMarkets"] = True
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="production-markets-loaded",
+                label="production markets loaded",
+                status="passed" if market_count else "blocked",
+                detail=f"Loaded {market_count} Binance Spot production markets.",
+                latency_ms=latency_ms,
+            )
+        )
+        if not market_count:
+            blocked_reasons.append("production_readonly_markets_empty")
+    except Exception as error:
+        market_count = 0
+        blocked_reasons.append("production_readonly_load_markets_failed")
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="production-markets-loaded",
+                label="production markets loaded",
+                status="blocked",
+                detail=f"load_markets failed: {type(error).__name__}",
+            )
+        )
+    if blocked_reasons:
+        return _build_production_probe(
+            adapter_id=clean_adapter_id,
+            exchange_id=clean_exchange_id,
+            generated_at=now,
+            checks=checks,
+            capabilities=capabilities,
+            credentials=credentials,
+            blocked_reasons=blocked_reasons,
+            metadata=metadata,
+            market_count=market_count,
+        )
+
+    permission_reader = _production_permission_reader(exchange)
+    if permission_reader is None:
+        blocked_reasons.append("production_readonly_permission_check_unavailable")
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="api-key-permissions",
+                label="API key permissions",
+                status="blocked",
+                detail="Binance API key restrictions endpoint is unavailable.",
+            )
+        )
+    else:
+        try:
+            raw_permissions, latency_ms = _timed(permission_reader)
+            permissions, permissions_authoritative = _production_permissions(raw_permissions)
+            metadata["apiPermissions"] = permissions
+            capabilities["apiRestrictions"] = True
+            permissions_safe = permissions_authoritative and permissions["readingEnabled"] and not any(
+                permissions[field]
+                for field in (
+                    "spotTradingEnabled", "marginTradingEnabled", "futuresTradingEnabled",
+                    "optionsTradingEnabled", "withdrawalsEnabled",
+                    "internalTransferEnabled", "universalTransferEnabled",
+                )
+            )
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="api-key-permissions",
+                    label="API key permissions",
+                    status="passed" if permissions_safe else "blocked",
+                    detail="API key is read-only." if permissions_safe else "API key exposes trading, withdrawal, transfer, or missing read permission.",
+                    latency_ms=latency_ms,
+                )
+            )
+            if not permissions_safe:
+                blocked_reasons.append("production_readonly_permissions_unsafe")
+        except Exception as error:
+            blocked_reasons.append("production_readonly_permission_check_failed")
+            checks.append(
+                ExecutionAdapterHealthCheck(
+                    check_id="api-key-permissions",
+                    label="API key permissions",
+                    status="blocked",
+                    detail=f"API key permission check failed: {type(error).__name__}",
+                )
+            )
+    if blocked_reasons:
+        return _build_production_probe(
+            adapter_id=clean_adapter_id,
+            exchange_id=clean_exchange_id,
+            generated_at=now,
+            checks=checks,
+            capabilities=capabilities,
+            credentials=credentials,
+            blocked_reasons=blocked_reasons,
+            metadata=metadata,
+            market_count=market_count,
+        )
+
+    try:
+        balance, latency_ms = _timed(lambda: exchange.fetch_balance({"type": "spot", "omitZeroBalances": True}))
+        capabilities["fetchBalance"] = True
+        metadata.update(_redacted_production_account_snapshot(balance, now))
+        metadata["accountDataAccessed"] = True
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="redacted-account-summary",
+                label="redacted account summary",
+                status="passed",
+                detail=f"Read a redacted production account summary with {metadata['nonZeroAssetCount']} non-zero assets.",
+                latency_ms=latency_ms,
+            )
+        )
+    except Exception as error:
+        blocked_reasons.append("production_readonly_account_sync_failed")
+        checks.append(
+            ExecutionAdapterHealthCheck(
+                check_id="redacted-account-summary",
+                label="redacted account summary",
+                status="blocked",
+                detail=f"fetch_balance failed: {type(error).__name__}",
+            )
+        )
+
+    checks.append(
+        ExecutionAdapterHealthCheck(
+            check_id="production-order-routing-disabled",
+            label="production order routing disabled",
+            status="passed",
+            detail="Probe does not call order, trade, transfer, withdrawal, or mutation APIs.",
+        )
+    )
+    return _build_production_probe(
+        adapter_id=clean_adapter_id,
+        exchange_id=clean_exchange_id,
+        generated_at=now,
+        checks=checks,
+        capabilities=capabilities,
+        credentials=credentials,
+        blocked_reasons=blocked_reasons,
+        metadata=metadata,
+        market_count=market_count,
+        account_sync_state="ready" if not blocked_reasons else "blocked",
+    )
+
+
 def execution_adapter_health_probe_to_payload(probe: ExecutionAdapterHealthProbe) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
@@ -429,6 +685,182 @@ def execution_adapter_health_probe_to_payload(probe: ExecutionAdapterHealthProbe
         "liveTradingAllowed": probe.live_trading_allowed,
         "orderRoutingEnabled": probe.order_routing_enabled,
     }
+
+
+def production_readonly_probe_to_evidence(
+    probe: ExecutionAdapterHealthProbe,
+    *,
+    stage6_exit_hash: str,
+    production_route_review_id: str,
+    operator: str,
+    eligibility_confirmed: bool,
+) -> dict[str, Any]:
+    payload = execution_adapter_health_probe_to_payload(probe)
+    metadata = payload["metadata"]
+    value = {
+        "kind": "aiqt.stage7ProductionReadonlyProbe",
+        "schemaVersion": 1,
+        "probeId": payload["probeId"],
+        "adapterId": payload["adapterId"],
+        "exchangeId": payload["exchangeId"],
+        "mode": payload["mode"],
+        "status": payload["status"],
+        "generatedAt": payload["generatedAt"],
+        "stage6ExitHash": stage6_exit_hash,
+        "productionRouteReviewId": production_route_review_id,
+        "operator": operator.strip() or "local-operator",
+        "eligibilityConfirmed": eligibility_confirmed,
+        "checks": [{"id": row["id"], "status": row["status"]} for row in payload["checks"]],
+        "credentialFlags": {
+            "keyConfigured": payload["credentials"]["apiKeyConfigured"],
+            "signingConfigured": payload["credentials"]["secretConfigured"],
+        },
+        "marketCount": payload["marketCount"],
+        "apiPermissions": dict(metadata.get("apiPermissions") or _empty_production_permissions()),
+        "accountSummary": {
+            "accountType": metadata.get("accountType"),
+            "nonZeroAssetCount": metadata.get("nonZeroAssetCount", 0),
+            "observedAt": metadata.get("observedAt"),
+        },
+        "accountSyncState": payload["accountSyncState"],
+        "accountDataAccessed": metadata.get("accountDataAccessed") is True,
+        "blockedReasons": payload["blockedReasons"],
+        "productionReadOnly": True,
+        "paperOnly": False,
+        "liveTradingAllowed": False,
+        "orderRoutingEnabled": False,
+        "liveOrderSubmitted": False,
+        "liveRouteExecuted": False,
+        "liveBlockedBoundary": True,
+    }
+    value["evidenceHash"] = _execution_adapter_health_evidence_hash(value)
+    return validate_production_readonly_probe_evidence(value)
+
+
+def validate_production_readonly_probe_evidence(value: Any) -> dict[str, Any]:
+    fields = {
+        "kind", "schemaVersion", "probeId", "adapterId", "exchangeId", "mode", "status", "generatedAt",
+        "stage6ExitHash", "productionRouteReviewId", "operator", "eligibilityConfirmed", "checks",
+        "credentialFlags", "marketCount", "apiPermissions", "accountSummary", "accountSyncState",
+        "accountDataAccessed", "blockedReasons", "productionReadOnly", "paperOnly", "liveTradingAllowed",
+        "orderRoutingEnabled", "liveOrderSubmitted", "liveRouteExecuted", "liveBlockedBoundary", "evidenceHash",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError("stage7_production_readonly_evidence_fields_invalid")
+    if value["kind"] != "aiqt.stage7ProductionReadonlyProbe" or value["schemaVersion"] != 1:
+        raise ValueError("stage7_production_readonly_evidence_schema_invalid")
+    if value["exchangeId"] != "binance" or value["mode"] != "production-readonly":
+        raise ValueError("stage7_production_readonly_evidence_route_invalid")
+    if value["status"] not in {"ready", "review", "blocked"}:
+        raise ValueError("stage7_production_readonly_evidence_status_invalid")
+    for field in ("probeId", "adapterId", "productionRouteReviewId", "operator", "accountSyncState"):
+        if not isinstance(value[field], str) or not value[field].strip():
+            raise ValueError(f"stage7_production_readonly_evidence_{field}_invalid")
+    if not _is_sha256(value["stage6ExitHash"]):
+        raise ValueError("stage7_production_readonly_evidence_stage6_hash_invalid")
+    try:
+        generated_at = datetime.fromisoformat(value["generatedAt"])
+    except (TypeError, ValueError) as error:
+        raise ValueError("stage7_production_readonly_evidence_generated_at_invalid") from error
+    if generated_at.tzinfo is None or generated_at.utcoffset() is None:
+        raise ValueError("stage7_production_readonly_evidence_generated_at_invalid")
+    if type(value["eligibilityConfirmed"]) is not bool:
+        raise ValueError("stage7_production_readonly_evidence_eligibility_invalid")
+    if type(value["marketCount"]) is not int or value["marketCount"] < 0:
+        raise ValueError("stage7_production_readonly_evidence_market_count_invalid")
+    if not isinstance(value["checks"], list) or not value["checks"] or any(
+        not isinstance(row, dict) or set(row) != {"id", "status"}
+        or not isinstance(row["id"], str) or not row["id"].strip()
+        or row["status"] not in {"passed", "review", "blocked", "skipped"}
+        for row in value["checks"]
+    ):
+        raise ValueError("stage7_production_readonly_evidence_checks_invalid")
+    credential_flags = value["credentialFlags"]
+    if not isinstance(credential_flags, dict) or set(credential_flags) != {"keyConfigured", "signingConfigured"} or any(
+        type(flag) is not bool for flag in credential_flags.values()
+    ):
+        raise ValueError("stage7_production_readonly_evidence_credentials_invalid")
+    permissions = value["apiPermissions"]
+    if not isinstance(permissions, dict) or set(permissions) != set(_empty_production_permissions()) or any(
+        type(flag) is not bool for flag in permissions.values()
+    ):
+        raise ValueError("stage7_production_readonly_evidence_permissions_invalid")
+    account = value["accountSummary"]
+    if not isinstance(account, dict) or set(account) != {"accountType", "nonZeroAssetCount", "observedAt"}:
+        raise ValueError("stage7_production_readonly_evidence_account_invalid")
+    if type(account["nonZeroAssetCount"]) is not int or account["nonZeroAssetCount"] < 0:
+        raise ValueError("stage7_production_readonly_evidence_account_invalid")
+    if account["accountType"] is not None and (not isinstance(account["accountType"], str) or not account["accountType"]):
+        raise ValueError("stage7_production_readonly_evidence_account_invalid")
+    if account["observedAt"] is not None:
+        try:
+            observed_at = datetime.fromisoformat(account["observedAt"])
+        except (TypeError, ValueError) as error:
+            raise ValueError("stage7_production_readonly_evidence_account_invalid") from error
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            raise ValueError("stage7_production_readonly_evidence_account_invalid")
+    if not isinstance(value["blockedReasons"], list) or any(
+        not isinstance(reason, str) or not reason.strip() for reason in value["blockedReasons"]
+    ):
+        raise ValueError("stage7_production_readonly_evidence_blockers_invalid")
+    boundaries = {
+        "productionReadOnly": True, "paperOnly": False, "liveTradingAllowed": False,
+        "orderRoutingEnabled": False, "liveOrderSubmitted": False, "liveRouteExecuted": False,
+        "liveBlockedBoundary": True,
+    }
+    if any(value[field] is not expected for field, expected in boundaries.items()) or type(value["accountDataAccessed"]) is not bool:
+        raise ValueError("stage7_production_readonly_evidence_boundary_invalid")
+    unsafe_permissions = any(
+        permissions[field]
+        for field in (
+            "spotTradingEnabled", "marginTradingEnabled", "futuresTradingEnabled",
+            "optionsTradingEnabled", "withdrawalsEnabled",
+            "internalTransferEnabled", "universalTransferEnabled",
+        )
+    )
+    if value["status"] == "ready" and (
+        value["adapterId"] != "ccxt-live" or not value["probeId"].startswith("stage7-production-readonly-")
+        or not value["eligibilityConfirmed"] or not credential_flags["keyConfigured"]
+        or not credential_flags["signingConfigured"] or value["marketCount"] <= 0
+        or not permissions["readingEnabled"] or unsafe_permissions or not value["accountDataAccessed"]
+        or value["accountSyncState"] != "ready" or value["blockedReasons"]
+        or account["accountType"] != "SPOT" or account["observedAt"] is None
+        or not {"production-markets-loaded", "api-key-permissions", "redacted-account-summary",
+                "production-order-routing-disabled"}.issubset({
+                    row["id"] for row in value["checks"] if row["status"] == "passed"
+                })
+    ):
+        raise ValueError("stage7_production_readonly_evidence_ready_invalid")
+    if value["evidenceHash"] != _execution_adapter_health_evidence_hash(value):
+        raise ValueError("stage7_production_readonly_evidence_hash_invalid")
+    return value
+
+
+def production_readonly_probe_to_audit_event_payload(value: dict[str, Any]) -> dict[str, Any]:
+    evidence = validate_production_readonly_probe_evidence(value)
+    return {
+        "schemaVersion": 1,
+        "eventId": evidence["probeId"],
+        "eventType": "stage7_production_readonly_probe",
+        "runId": "",
+        "createdAt": evidence["generatedAt"],
+        "stage": "stage7-production-readonly-probe",
+        "source": evidence["operator"],
+        "summary": f"Stage 7 production read-only probe {evidence['status']}.",
+        "detail": "Binance Spot production access was evaluated without order, trade, transfer, or withdrawal APIs.",
+        "metadata": {"snapshot": evidence},
+    }
+
+
+def production_readonly_probe_from_audit_event(event: Any) -> dict[str, Any] | None:
+    if getattr(event, "event_type", "") != "stage7_production_readonly_probe":
+        return None
+    metadata = getattr(event, "metadata", None)
+    snapshot = metadata.get("snapshot") if isinstance(metadata, dict) else None
+    try:
+        return validate_production_readonly_probe_evidence(snapshot)
+    except ValueError:
+        return None
 
 
 def execution_adapter_health_probe_to_evidence(
@@ -591,6 +1023,10 @@ def _execution_adapter_health_evidence_hash(value: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
 def _execution_adapter_health_authority_mac(value: dict[str, Any], secret: str) -> str:
     payload = {
         **value,
@@ -664,6 +1100,42 @@ def _build_probe(
     )
 
 
+def _build_production_probe(
+    *,
+    adapter_id: str,
+    exchange_id: str,
+    generated_at: datetime,
+    checks: list[ExecutionAdapterHealthCheck],
+    capabilities: dict[str, bool],
+    credentials: dict[str, Any],
+    blocked_reasons: list[str],
+    metadata: dict[str, Any],
+    market_count: int = 0,
+    account_sync_state: str = "blocked",
+) -> ExecutionAdapterHealthProbe:
+    return ExecutionAdapterHealthProbe(
+        probe_id=f"stage7-production-readonly-{uuid4()}",
+        adapter_id=adapter_id,
+        provider="ccxt",
+        exchange_id=exchange_id,
+        mode="production-readonly",
+        status=_probe_status(checks, blocked_reasons),
+        generated_at=generated_at,
+        checks=checks,
+        capabilities=capabilities,
+        credentials=credentials,
+        market_count=market_count,
+        exchange_status=None,
+        server_time_ms=None,
+        account_sync_state=account_sync_state,
+        blocked_reasons=list(dict.fromkeys(blocked_reasons)),
+        metadata=metadata,
+        paper_only=False,
+        live_trading_allowed=False,
+        order_routing_enabled=False,
+    )
+
+
 def _probe_status(checks: list[ExecutionAdapterHealthCheck], blocked_reasons: list[str]) -> str:
     if blocked_reasons or any(check.status == "blocked" for check in checks):
         return "blocked"
@@ -711,6 +1183,19 @@ def _resolve_ccxt_credentials(exchange_id: str, env: dict[str, str]) -> dict[str
     }
 
 
+def _resolve_production_readonly_credentials(env: dict[str, str]) -> dict[str, Any]:
+    api_key = env.get("CCXT_PRODUCTION_READONLY_API_KEY", "").strip()
+    secret = env.get("CCXT_PRODUCTION_READONLY_SECRET", "").strip()
+    return {
+        "apiKeyConfigured": bool(api_key),
+        "apiKeySource": "CCXT_PRODUCTION_READONLY_API_KEY" if api_key else None,
+        "secretConfigured": bool(secret),
+        "secretSource": "CCXT_PRODUCTION_READONLY_SECRET" if secret else None,
+        "passwordConfigured": False,
+        "passwordSource": None,
+    }
+
+
 def _build_ccxt_config(credentials: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
     config: dict[str, Any] = {
         "enableRateLimit": True,
@@ -734,6 +1219,61 @@ def _first_env(env: dict[str, str], keys: list[str]) -> tuple[str | None, str | 
         if value:
             return key, value
     return None, None
+
+
+def _production_permission_reader(exchange: Any) -> Callable[[], Any] | None:
+    for name in ("sapi_get_account_apirestrictions", "sapiGetAccountApiRestrictions"):
+        reader = getattr(exchange, name, None)
+        if callable(reader):
+            return reader
+    return None
+
+
+def _empty_production_permissions() -> dict[str, bool]:
+    return {
+        "readingEnabled": False,
+        "spotTradingEnabled": False,
+        "marginTradingEnabled": False,
+        "futuresTradingEnabled": False,
+        "optionsTradingEnabled": False,
+        "withdrawalsEnabled": False,
+        "internalTransferEnabled": False,
+        "universalTransferEnabled": False,
+    }
+
+
+def _production_permissions(value: Any) -> tuple[dict[str, bool], bool]:
+    payload = value if isinstance(value, dict) else {}
+    fields = {
+        "readingEnabled": "enableReading",
+        "spotTradingEnabled": "enableSpotAndMarginTrading",
+        "marginTradingEnabled": "enableMargin",
+        "futuresTradingEnabled": "enableFutures",
+        "optionsTradingEnabled": "enableVanillaOptions",
+        "withdrawalsEnabled": "enableWithdrawals",
+        "internalTransferEnabled": "enableInternalTransfer",
+        "universalTransferEnabled": "permitsUniversalTransfer",
+    }
+    return (
+        {target: payload.get(source) is True for target, source in fields.items()},
+        all(type(payload.get(source)) is bool for source in fields.values()),
+    )
+
+
+def _redacted_production_account_snapshot(value: Any, observed_at: datetime) -> dict[str, Any]:
+    balance = value if isinstance(value, dict) else {}
+    totals = balance.get("total") if isinstance(balance.get("total"), dict) else {}
+    non_zero_asset_count = sum(
+        1
+        for amount in totals.values()
+        if isinstance(amount, (int, float)) and not isinstance(amount, bool) and float(amount) != 0
+    )
+    info = balance.get("info") if isinstance(balance.get("info"), dict) else {}
+    return {
+        "nonZeroAssetCount": non_zero_asset_count,
+        "accountType": str(info.get("accountType") or "SPOT").strip().upper() or "SPOT",
+        "observedAt": observed_at.isoformat(),
+    }
 
 
 def _parse_positive_int(raw: str | None) -> int | None:
