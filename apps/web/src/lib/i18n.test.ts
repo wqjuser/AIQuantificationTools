@@ -41,6 +41,7 @@ describe("i18n", () => {
     const workAreas = buildProductWorkAreas(buildTerminalWorkspace());
     const marketArea = workAreas.find((area) => area.id === "market");
     const auditArea = workAreas.find((area) => area.id === "audit");
+    const executionArea = workAreas.find((area) => area.id === "execution");
 
     expect(zh.t("topbar.eyebrow")).toBe("专业量化工作台");
     expect(zh.quantLoopLabel("research", "Market Research")).toBe("行情研究");
@@ -69,6 +70,8 @@ describe("i18n", () => {
     expect(marketArea ? zh.productWorkAreaDeliveryStage(marketArea) : "").toBe("阶段 1 · 行情与研究");
     expect(marketArea ? zh.productDevelopmentStageStatus(marketArea.deliveryStageStatus) : "").toBe("基础维护");
     expect(auditArea ? zh.productDevelopmentStageStatus(auditArea.deliveryStageStatus) : "").toBe("基础维护");
+    expect(executionArea ? zh.productWorkAreaDeliveryStage(executionArea) : "").toBe("阶段 8 · 生产只读连续性");
+    expect(executionArea ? zh.productDevelopmentStageStatus(executionArea.deliveryStageStatus) : "").toBe("基础维护");
   });
 
   test("provides dropdown labels for every supported locale", () => {

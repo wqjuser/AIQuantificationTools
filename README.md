@@ -110,6 +110,8 @@ npm run docker:smoke:stage8:real:validate
 
 2026-07-13 真实恢复验收已完成一次 `current → revoke → 网络前阻断 → restore → 新 probe → current → API 重启回读`：加载 4497 个 Binance Spot 市场，读取权限开启，全部 mutation 权限关闭，脱敏账户类型为 `SPOT`、非零资产数量为 0；恢复 probe 与 control 在重启后 hash 精确一致。真实恢复 manifest SHA-256 为 `8742af66d2dd6659e3114f82f1aec5a88c6df29e99d49ffa2cc1f229c6a04893`。
 
+前端产品阶段模型也已同步到 Stage 8：Stage 0 至 Stage 8 全部显示为 maintenance，Execution 归属最新已交付的 Stage 8，当前不显示任何 `current` 阶段。该状态只修正发布事实，不创建 Stage 9，也不改变生产只读或订单安全边界。
+
 ## Stage 7 已完成并进入维护
 
 Stage 7 只连接 Binance Spot 生产环境的市场元数据、API Key 权限接口和脱敏账户摘要，不创建、查询或撤销生产订单。服务端只读取独立的 `CCXT_PRODUCTION_READONLY_API_KEY` 与 `CCXT_PRODUCTION_READONLY_SECRET`，不会回退到 Sandbox 或通用 CCXT 变量；读取账户前必须确认读取权限开启，Spot/Margin/Futures/Options 交易、提现和内部/通用划转权限全部明确为关闭。

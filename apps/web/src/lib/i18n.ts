@@ -1059,7 +1059,9 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "Stage 3 · AI Review",
       "portfolio-paper": "Stage 4 · Portfolio and Paper",
       "live-readiness": "Stage 5 · Live Readiness",
-      "sandbox-execution": "Stage 6 · Sandbox Execution"
+      "sandbox-execution": "Stage 6 · Sandbox Execution",
+      "production-readonly-admission": "Stage 7 · Production Read-only Admission",
+      "production-readonly-continuity": "Stage 8 · Production Read-only Continuity"
     },
     productDevelopmentStageStatuses: {
       maintenance: "Maintenance",
@@ -1219,7 +1221,9 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "阶段 3 · AI 评审",
       "portfolio-paper": "阶段 4 · 组合与模拟",
       "live-readiness": "阶段 5 · 实盘准备",
-      "sandbox-execution": "阶段 6 · 测试网执行"
+      "sandbox-execution": "阶段 6 · 测试网执行",
+      "production-readonly-admission": "阶段 7 · 生产只读准入",
+      "production-readonly-continuity": "阶段 8 · 生产只读连续性"
     },
     productDevelopmentStageStatuses: {
       maintenance: "基础维护",

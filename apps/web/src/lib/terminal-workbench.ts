@@ -54,7 +54,9 @@ export type ProductDevelopmentStageId =
   | "ai-review"
   | "portfolio-paper"
   | "live-readiness"
-  | "sandbox-execution";
+  | "sandbox-execution"
+  | "production-readonly-admission"
+  | "production-readonly-continuity";
 export type ProductDevelopmentStageStatus = "maintenance" | "current" | "planned";
 
 export interface ProductDevelopmentStage {
@@ -9079,7 +9081,7 @@ const productDevelopmentStageDefinitions = [
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
     workAreaIds: ["market", "research"],
-    focus: "Preserve the accepted market and research golden path as a regression gate while Stage 6 validates Sandbox execution.",
+    focus: "Preserve the accepted market and research golden path as a regression gate for later maintenance stages.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
       "One selected symbol can move through strategy configuration, audited backtest, AI review, and paper execution without manual state repair.",
@@ -9138,13 +9140,37 @@ const productDevelopmentStageDefinitions = [
   {
     id: "sandbox-execution",
     label: "Stage 6 · Sandbox Execution",
-    status: "current",
+    status: "maintenance",
     workAreaIds: ["execution"],
-    focus: "Execute one authoritative Binance Spot Testnet batch with idempotent recovery while every live route remains blocked.",
+    focus: "Preserve accepted Binance Spot Testnet execution and recovery as Stage 7/8 authority while every live route remains blocked.",
     exitCriteria: [
       "Only approved Stage 4/5 authority chains can create a ten-minute batch authorization.",
       "GTC limit orders submit, query, cancel, reconcile, and recover from restart by stable clientOrderId.",
       "The account kill switch, detached imports, Docker gates, and real Testnet manifest remain auditable without exposing credentials."
+    ]
+  },
+  {
+    id: "production-readonly-admission",
+    label: "Stage 7 · Production Read-only Admission",
+    status: "maintenance",
+    workAreaIds: ["execution"],
+    focus: "Preserve production authentication, permission checks, and redacted account evidence without exposing an order route.",
+    exitCriteria: [
+      "Only dedicated production read-only credentials can reach Binance Spot production metadata and private permission checks.",
+      "Trading, withdrawal, and transfer permissions remain disabled before the redacted account summary is read.",
+      "No production order, trade, transfer, withdrawal, or live route capability is created."
+    ]
+  },
+  {
+    id: "production-readonly-continuity",
+    label: "Stage 8 · Production Read-only Continuity",
+    status: "maintenance",
+    workAreaIds: ["execution"],
+    focus: "Preserve revocable production read-only continuity and recovery evidence while the next stage remains unplanned.",
+    exitCriteria: [
+      "Continuity derives current, stale, blocked, revoked, or missing from existing Stage 6/7 authority.",
+      "Local revoke blocks production access before network use and restore requires a current route review.",
+      "Docker and real recovery manifests remain exact across API restart with all live and order routes blocked."
     ]
   }
 ] as const satisfies readonly ProductDevelopmentStage[];
@@ -9211,7 +9237,7 @@ const productWorkAreaDefinitions = [
     accent: "execution",
     quantLoopStepId: "paper",
     workflowStageId: "execution",
-    deliveryStageId: "sandbox-execution"
+    deliveryStageId: "production-readonly-continuity"
   },
   {
     id: "audit",
