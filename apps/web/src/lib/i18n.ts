@@ -1061,7 +1061,8 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "live-readiness": "Stage 5 · Live Readiness",
       "sandbox-execution": "Stage 6 · Sandbox Execution",
       "production-readonly-admission": "Stage 7 · Production Read-only Admission",
-      "production-readonly-continuity": "Stage 8 · Production Read-only Continuity"
+      "production-readonly-continuity": "Stage 8 · Production Read-only Continuity",
+      "production-order-admission": "Stage 9 · Production Order Admission"
     },
     productDevelopmentStageStatuses: {
       maintenance: "Maintenance",
@@ -1223,7 +1224,8 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "live-readiness": "阶段 5 · 实盘准备",
       "sandbox-execution": "阶段 6 · 测试网执行",
       "production-readonly-admission": "阶段 7 · 生产只读准入",
-      "production-readonly-continuity": "阶段 8 · 生产只读连续性"
+      "production-readonly-continuity": "阶段 8 · 生产只读连续性",
+      "production-order-admission": "阶段 9 · 生产委托准入"
     },
     productDevelopmentStageStatuses: {
       maintenance: "基础维护",

@@ -2,20 +2,26 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
-from http.server import HTTPServer
+from http.server import HTTPServer, ThreadingHTTPServer
 import json
 from pathlib import Path
 import tempfile
-from threading import Thread
+from threading import Event, Thread
 import unittest
 from unittest.mock import patch
 
 from quant_core.api import QuantApiHandler
 from quant_core.audit_events import AuditEventStore
-from quant_core.execution_adapter_health import production_readonly_probe_to_evidence, probe_ccxt_production_readonly
+from quant_core.execution_adapter_health import (
+    probe_ccxt_production_readonly,
+    production_readonly_probe_to_audit_event_payload,
+    production_readonly_probe_to_evidence,
+)
+from quant_core.handoff_notes import HandoffNoteStore
 from quant_core.stage8_continuity import (
     build_production_readonly_access_control,
     build_production_readonly_continuity,
+    production_readonly_access_control_to_audit_event,
     validate_production_readonly_access_control,
     validate_production_readonly_continuity,
 )
@@ -132,6 +138,7 @@ class Stage8ContinuityTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             Handler.audit_event_store = AuditEventStore(Path(tmp) / "audit.sqlite")
+            Handler.handoff_note_store = HandoffNoteStore(Path(tmp) / "handoff.sqlite")
             Handler.stage6_exit_acceptance_report_path = Path(tmp) / "missing-stage6.json"
             server = HTTPServer(("127.0.0.1", 0), Handler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -146,6 +153,34 @@ class Stage8ContinuityTests(unittest.TestCase):
                     "POST",
                     "/api/execution/stage8/production-readonly-access-controls",
                     {"action": "revoke", "operator": "operator", "reason": "incident", "productionRouteReviewId": None},
+                )
+                forged_restore = build_production_readonly_access_control(
+                    action="restore",
+                    operator="attacker",
+                    reason="bypass the authority route",
+                    production_route_review_id="unvalidated-review",
+                )
+                generic_status, generic_write = self._request(
+                    connection,
+                    "POST",
+                    "/api/audit/events",
+                    production_readonly_access_control_to_audit_event(forged_restore),
+                )
+                forged_probe = _probe(datetime.now(timezone.utc))
+                probe_write_status, probe_write = self._request(
+                    connection,
+                    "POST",
+                    "/api/audit/events",
+                    production_readonly_probe_to_audit_event_payload(forged_probe),
+                )
+                handoff_status, handoff_write = self._request(
+                    connection,
+                    "POST",
+                    "/api/handoff-notes",
+                    {
+                        "noteId": "overwrite-revoke",
+                        "auditEventId": revoked["productionReadonlyAccessControl"]["controlId"],
+                    },
                 )
                 repeat_status, repeated = self._request(
                     connection,
@@ -184,6 +219,12 @@ class Stage8ContinuityTests(unittest.TestCase):
         control = changed["productionReadonlyAccessControl"]
         self.assertEqual((missing_status, missing["productionReadonlyContinuity"]["status"]), (200, "missing"))
         self.assertEqual(revoke_status, 201)
+        self.assertEqual(generic_status, 400, generic_write)
+        self.assertIn("reserved", generic_write["detail"])
+        self.assertEqual(probe_write_status, 400, probe_write)
+        self.assertIn("reserved", probe_write["detail"])
+        self.assertEqual(handoff_status, 400, handoff_write)
+        self.assertIn("reserved", handoff_write["detail"])
         self.assertEqual(repeat_status, 200)
         self.assertEqual(repeated["productionReadonlyAccessControl"]["controlHash"], first_control["controlHash"])
         self.assertEqual(changed_status, 201)
@@ -195,6 +236,107 @@ class Stage8ContinuityTests(unittest.TestCase):
         self.assertEqual(readback_status, 200)
         self.assertEqual(readback["productionReadonlyContinuity"]["accessControl"]["controlHash"], control["controlHash"])
         self.assertFalse(factory_called)
+
+    def test_revoke_cannot_overtake_inflight_stage7_readonly_probe(self):
+        network_started = Event()
+        revoke_finished = Event()
+        revoke_overtook_probe = False
+
+        class BlockingExchange(_Exchange):
+            def load_markets(self):
+                nonlocal revoke_overtook_probe
+                network_started.set()
+                revoke_overtook_probe = revoke_finished.wait(timeout=0.5)
+                return super().load_markets()
+
+        class Handler(QuantApiHandler):
+            execution_adapter_health_exchange_factory = staticmethod(
+                lambda _exchange_id, config: BlockingExchange(config)
+            )
+            execution_adapter_health_environ = {
+                "CCXT_PRODUCTION_READONLY_API_KEY": "configured",
+                "CCXT_PRODUCTION_READONLY_SECRET": "configured",
+            }
+
+        route_review = {
+            "productionRouteReviewId": "route-review-1",
+            "adapterId": "ccxt-live",
+            "status": "route_review_recorded",
+            "market": "crypto",
+            "route": "live",
+            "maintenanceWindowId": "stage7-window",
+            "recordedAt": datetime.now(timezone.utc).isoformat(),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            Handler.audit_event_store = AuditEventStore(Path(tmp) / "audit.sqlite")
+            Handler.audit_event_store.record({
+                "schemaVersion": 1,
+                "eventId": route_review["productionRouteReviewId"],
+                "eventType": "execution_adapter_production_route_review",
+                "runId": None,
+                "createdAt": route_review["recordedAt"],
+                "stage": "execution-adapter-production-route-review",
+                "source": "operator",
+                "summary": "recorded",
+                "detail": "recorded",
+                "metadata": {},
+            })
+            server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            server_thread = Thread(target=server.serve_forever, daemon=True)
+            responses = {}
+
+            def request(name, path, payload):
+                connection = HTTPConnection(*server.server_address, timeout=5)
+                try:
+                    responses[name] = self._request(connection, "POST", path, payload)
+                finally:
+                    if name == "revoke":
+                        revoke_finished.set()
+                    connection.close()
+
+            with patch(
+                "quant_core.api.load_stage6_exit_acceptance_status",
+                return_value={"status": "accepted", "exitHash": "a" * 64},
+            ), patch(
+                "quant_core.api.execution_adapter_production_route_review_payload_from_audit_event",
+                return_value=route_review,
+            ):
+                server_thread.start()
+                probe_thread = Thread(target=request, args=(
+                    "probe",
+                    "/api/execution/stage7/production-readonly-probes",
+                    {
+                        "productionRouteReviewId": route_review["productionRouteReviewId"],
+                        "operator": "operator",
+                        "eligibilityConfirmed": True,
+                    },
+                ))
+                revoke_thread = Thread(target=request, args=(
+                    "revoke",
+                    "/api/execution/stage8/production-readonly-access-controls",
+                    {
+                        "action": "revoke",
+                        "operator": "operator",
+                        "reason": "concurrent Stage 7 safety drill",
+                        "productionRouteReviewId": None,
+                    },
+                ))
+                try:
+                    probe_thread.start()
+                    self.assertTrue(network_started.wait(timeout=2))
+                    revoke_thread.start()
+                    probe_thread.join(timeout=5)
+                    revoke_thread.join(timeout=5)
+                finally:
+                    server.shutdown()
+                    server_thread.join(timeout=5)
+                    server.server_close()
+
+        self.assertFalse(probe_thread.is_alive())
+        self.assertFalse(revoke_thread.is_alive())
+        self.assertFalse(revoke_overtook_probe)
+        self.assertEqual(responses["probe"][0], 201, responses["probe"][1])
+        self.assertEqual(responses["revoke"][0], 201, responses["revoke"][1])
 
     def test_restore_requires_current_route_review_and_links_previous_control(self):
         class Handler(QuantApiHandler):

@@ -33,6 +33,10 @@ from quant_core.stage6_sandbox import (
     validate_stage6_order_transition,
     validate_stage6_sandbox_batch_authorization,
 )
+from quant_core.stage9_production_admission import (
+    validate_production_order_admission_candidate,
+    validate_production_order_admission_review,
+)
 
 
 DEFAULT_BACKTEST_ASSUMPTIONS = {"initialCash": 100_000, "feeBps": 3, "slippageBps": 2}
@@ -630,6 +634,8 @@ def research_run_export_to_payload(
         "stage6SandboxBatchAuthorizations": _stage6_sandbox_authorization_count(audit_event_payloads),
         "stage6SandboxOrderTransitions": _stage6_sandbox_transition_count(audit_event_payloads),
         "stage6SandboxKillSwitchEvents": _stage6_sandbox_kill_switch_count(audit_event_payloads),
+        "stage9ProductionAdmissionCandidates": _stage9_production_admission_candidate_count(audit_event_payloads),
+        "stage9ProductionAdmissionReviews": _stage9_production_admission_review_count(audit_event_payloads),
         "handoffNotes": len(handoff_note_payloads),
     }
     export_package = {
@@ -832,12 +838,27 @@ def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | N
         export_package.get("adapterPaperExecutions", []),
         strict=True,
     )
-    return _normalize_audit_event_payloads(
+    events = _normalize_audit_event_payloads(
         raw_events,
         run_id=run_id,
         strict=True,
         adapter_paper_executions=adapter_paper_executions,
     )
+    if any(
+        event["eventType"] in {
+            "execution_adapter_production_route_review",
+            "stage7_production_readonly_probe",
+            "stage8_production_readonly_access_control",
+        }
+        or event["eventId"].startswith((
+            "execution-adapter-production-route-review-",
+            "stage7-production-readonly-",
+            "stage8-production-readonly-",
+        ))
+        for event in events
+    ):
+        raise ValueError("production_authority_audit_event_import_forbidden")
+    return events
 
 
 def research_run_import_handoff_notes(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
@@ -881,6 +902,8 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
     _stage6_sandbox_authorization_manifest_count(counts)
     _stage6_sandbox_transition_manifest_count(counts)
     _stage6_sandbox_kill_switch_manifest_count(counts)
+    _stage9_production_admission_candidate_manifest_count(counts)
+    _stage9_production_admission_review_manifest_count(counts)
     data_snapshot = research_run.get("dataSnapshot")
     ai_report = research_run.get("aiReport")
     expected = {
@@ -923,6 +946,10 @@ def research_run_import_precheck(payload: dict[str, Any]) -> str:
         expected["stage6SandboxOrderTransitions"] = _stage6_sandbox_transition_count(audit_events)
     if "stage6SandboxKillSwitchEvents" in counts or _stage6_sandbox_kill_switch_count(audit_events):
         expected["stage6SandboxKillSwitchEvents"] = _stage6_sandbox_kill_switch_count(audit_events)
+    if "stage9ProductionAdmissionCandidates" in counts or _stage9_production_admission_candidate_count(audit_events):
+        expected["stage9ProductionAdmissionCandidates"] = _stage9_production_admission_candidate_count(audit_events)
+    if "stage9ProductionAdmissionReviews" in counts or _stage9_production_admission_review_count(audit_events):
+        expected["stage9ProductionAdmissionReviews"] = _stage9_production_admission_review_count(audit_events)
     if "promotionCandidates" in counts or export_package.get("promotionCandidate"):
         expected["promotionCandidates"] = 1 if isinstance(export_package.get("promotionCandidate"), dict) else 0
     research_note = research_run.get("researchNote")
@@ -1227,6 +1254,8 @@ def _validate_manifest_consistency(
     _stage6_sandbox_authorization_manifest_count(counts)
     _stage6_sandbox_transition_manifest_count(counts)
     _stage6_sandbox_kill_switch_manifest_count(counts)
+    _stage9_production_admission_candidate_manifest_count(counts)
+    _stage9_production_admission_review_manifest_count(counts)
     expected_counts = {
         "bars": bar_count,
         "trades": len(_list_of_dicts(research_run.get("backtestTrades"))),
@@ -1270,6 +1299,10 @@ def _validate_manifest_consistency(
         expected_counts["stage6SandboxOrderTransitions"] = _stage6_sandbox_transition_count(audit_events)
     if "stage6SandboxKillSwitchEvents" in counts or _stage6_sandbox_kill_switch_count(audit_events):
         expected_counts["stage6SandboxKillSwitchEvents"] = _stage6_sandbox_kill_switch_count(audit_events)
+    if "stage9ProductionAdmissionCandidates" in counts or _stage9_production_admission_candidate_count(audit_events):
+        expected_counts["stage9ProductionAdmissionCandidates"] = _stage9_production_admission_candidate_count(audit_events)
+    if "stage9ProductionAdmissionReviews" in counts or _stage9_production_admission_review_count(audit_events):
+        expected_counts["stage9ProductionAdmissionReviews"] = _stage9_production_admission_review_count(audit_events)
     if "handoffNotes" in counts or handoff_notes:
         expected_counts["handoffNotes"] = len(handoff_notes or [])
     research_note = _normalize_research_note(
@@ -1533,9 +1566,34 @@ def _normalize_audit_event_payloads(
                     or source != snapshot["operator"] or not event_id.startswith("stage6-kill-switch-")
                 ):
                     raise ValueError("stage6_sandbox_kill_switch_audit_binding_mismatch")
+            if event_type == "stage9_production_order_admission_candidate":
+                snapshot = validate_production_order_admission_candidate(
+                    _dict_or_empty(item.get("metadata")).get("snapshot")
+                )
+                if (
+                    event_id != snapshot["candidateId"]
+                    or event_run_id != snapshot["baseRunId"]
+                    or created_at != snapshot["generatedAt"]
+                    or stage != "stage9-production-order-admission"
+                    or source != snapshot["operator"]
+                ):
+                    raise ValueError("stage9_production_admission_candidate_audit_binding_mismatch")
+            if event_type == "stage9_production_order_admission_review":
+                snapshot = validate_production_order_admission_review(
+                    _dict_or_empty(item.get("metadata")).get("snapshot")
+                )
+                if (
+                    event_id != snapshot["reviewId"]
+                    or event_run_id != snapshot["baseRunId"]
+                    or created_at != snapshot["reviewedAt"]
+                    or stage != "stage9-production-order-admission-review"
+                    or source != snapshot["reviewer"]
+                ):
+                    raise ValueError("stage9_production_admission_review_audit_binding_mismatch")
         metadata = _dict_or_empty(item.get("metadata"))
         if strict and event_type in {
-            "stage6_sandbox_batch_authorization", "stage6_sandbox_order_transition", "stage6_sandbox_kill_switch"
+            "stage6_sandbox_batch_authorization", "stage6_sandbox_order_transition", "stage6_sandbox_kill_switch",
+            "stage9_production_order_admission_candidate", "stage9_production_order_admission_review",
         }:
             metadata = {**metadata, "detached": True}
         normalized.append(
@@ -1587,6 +1645,16 @@ def _normalize_audit_event_payloads(
             item["metadata"]["snapshot"]["preflightHash"]: item["metadata"]["snapshot"]
             for item in normalized
             if item["eventType"] == "stage5_sandbox_authorization_preflight"
+        }
+        authorizations = {
+            item["metadata"]["snapshot"]["authorizationHash"]: item["metadata"]["snapshot"]
+            for item in normalized
+            if item["eventType"] == "stage6_sandbox_batch_authorization"
+        }
+        candidates = {
+            item["metadata"]["snapshot"]["candidateHash"]: item["metadata"]["snapshot"]
+            for item in normalized
+            if item["eventType"] == "stage9_production_order_admission_candidate"
         }
         for item in normalized:
             if item["eventType"] == "stage5_shadow_execution_session":
@@ -1661,6 +1729,46 @@ def _normalize_audit_event_payloads(
                 )
                 if rebuilt != review:
                     raise ValueError("stage5_sandbox_authorization_review_source_mismatch")
+            if item["eventType"] == "stage9_production_order_admission_candidate":
+                candidate = item["metadata"]["snapshot"]
+                workflow = workflows.get(candidate["workflowHash"])
+                authorization = authorizations.get(candidate["sandboxAuthorizationHash"])
+                if workflow is None or authorization is None:
+                    raise ValueError("stage9_production_admission_candidate_source_missing")
+                if (
+                    candidate["baseRunId"] != workflow["baseRunId"]
+                    or candidate["workflowId"] != workflow["workflowId"]
+                    or candidate["sandboxAuthorizationId"] != authorization["authorizationId"]
+                    or candidate["batchId"] != authorization["batchId"]
+                    or candidate["orders"] != authorization["orders"]
+                    or candidate["ordersHash"] != authorization["ordersHash"]
+                    or candidate["stage8Continuity"]["status"] != "current"
+                    or candidate["stage8Continuity"]["continuityHash"] != candidate["stage8ContinuityHash"]
+                    or candidate["stage8Continuity"]["latestProbe"]["productionRouteReviewId"]
+                    != candidate["productionRouteReviewId"]
+                ):
+                    raise ValueError("stage9_production_admission_candidate_source_mismatch")
+            if item["eventType"] == "stage9_production_order_admission_review":
+                review = item["metadata"]["snapshot"]
+                candidate = candidates.get(review["candidateHash"])
+                if candidate is None:
+                    raise ValueError("stage9_production_admission_review_source_missing")
+                if (
+                    review["candidateId"] != candidate["candidateId"]
+                    or review["baseRunId"] != candidate["baseRunId"]
+                    or review["sandboxAuthorizationId"] != candidate["sandboxAuthorizationId"]
+                    or review["stage8ContinuityHash"] != candidate["stage8ContinuityHash"]
+                    or any(
+                        [row["orderId"] for row in review["reviewObservation"][field]]
+                        != [row["orderId"] for row in candidate["orders"]]
+                        for field in ("marketChecks", "priceChecks", "fundingChecks")
+                    )
+                    or not datetime.fromisoformat(candidate["generatedAt"])
+                    <= datetime.fromisoformat(review["reviewObservation"]["observedAt"])
+                    <= datetime.fromisoformat(review["reviewedAt"])
+                    <= datetime.fromisoformat(candidate["expiresAt"])
+                ):
+                    raise ValueError("stage9_production_admission_review_source_mismatch")
     return normalized
 
 
@@ -1794,6 +1902,38 @@ def _stage6_sandbox_kill_switch_manifest_count(counts: dict[str, Any]) -> int | 
     value = counts["stage6SandboxKillSwitchEvents"]
     if type(value) is not int or value < 0:
         raise ValueError("stage6_sandbox_kill_switch_events_count_invalid")
+    return value
+
+
+def _stage9_production_admission_candidate_count(value: Any) -> int:
+    return sum(
+        1 for item in _list_of_dicts(value)
+        if item.get("eventType") == "stage9_production_order_admission_candidate"
+    )
+
+
+def _stage9_production_admission_candidate_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage9ProductionAdmissionCandidates" not in counts:
+        return None
+    value = counts["stage9ProductionAdmissionCandidates"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage9_production_admission_candidates_count_invalid")
+    return value
+
+
+def _stage9_production_admission_review_count(value: Any) -> int:
+    return sum(
+        1 for item in _list_of_dicts(value)
+        if item.get("eventType") == "stage9_production_order_admission_review"
+    )
+
+
+def _stage9_production_admission_review_manifest_count(counts: dict[str, Any]) -> int | None:
+    if "stage9ProductionAdmissionReviews" not in counts:
+        return None
+    value = counts["stage9ProductionAdmissionReviews"]
+    if type(value) is not int or value < 0:
+        raise ValueError("stage9_production_admission_reviews_count_invalid")
     return value
 
 

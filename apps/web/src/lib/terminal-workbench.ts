@@ -56,7 +56,8 @@ export type ProductDevelopmentStageId =
   | "live-readiness"
   | "sandbox-execution"
   | "production-readonly-admission"
-  | "production-readonly-continuity";
+  | "production-readonly-continuity"
+  | "production-order-admission";
 export type ProductDevelopmentStageStatus = "maintenance" | "current" | "planned";
 
 export interface ProductDevelopmentStage {
@@ -9172,6 +9173,18 @@ const productDevelopmentStageDefinitions = [
       "Local revoke blocks production access before network use and restore requires a current route review.",
       "Docker and real recovery manifests remain exact across API restart with all live and order routes blocked."
     ]
+  },
+  {
+    id: "production-order-admission",
+    label: "Stage 9 · Production Order Admission",
+    status: "maintenance",
+    workAreaIds: ["execution", "audit"],
+    focus: "Preserve the accepted production order admission evidence chain without introducing production execution authority.",
+    exitCriteria: [
+      "Only terminal Stage 6 authority and current Stage 8 continuity can create a ten-minute Binance Spot admission candidate.",
+      "Current market rules, price deviation, and redacted funding sufficiency are rechecked before one immutable human review.",
+      "Research packages, detached replay, Docker gates, and recovery remain auditable while production order APIs do not exist."
+    ]
   }
 ] as const satisfies readonly ProductDevelopmentStage[];
 
@@ -9237,7 +9250,7 @@ const productWorkAreaDefinitions = [
     accent: "execution",
     quantLoopStepId: "paper",
     workflowStageId: "execution",
-    deliveryStageId: "production-readonly-continuity"
+    deliveryStageId: "production-order-admission"
   },
   {
     id: "audit",

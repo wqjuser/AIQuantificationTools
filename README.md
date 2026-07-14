@@ -88,6 +88,21 @@ npm run docker:smoke:p1 -- --no-build --down
 npm run docker:smoke:p1:validate
 ```
 
+## Stage 9 已完成并进入维护
+
+Stage 9 交付生产委托准入准备，不交付生产执行。它从同一条 Stage 4 workflow、已完成终态对账的 Stage 6 批次和当前 Stage 8 continuity 生成 10 分钟一次性候选，固定只覆盖 Binance Spot 的 `BTC/USDT`、`ETH/USDT`、1–2 笔 GTC 限价单、单笔不超过 10 USDT、批次不超过 20 USDT。候选生成和一次不可改写的具名人工复核都会重新检查生产市场精度/最小值、30 秒报价新鲜度、1% 逆向价格偏离和候选资金充分性；不会自动改价、缩量或拆单。
+
+候选与复核写入现有 `AuditEventStore` 并随研究包导出；候选携带经既有 validator 校验且必须等于 canonical 重建结果的 Stage 8 continuity 来源快照与 hash，导入时重验完整来源链和 SHA-256 后标记 detached。Audit 工作区提供候选/复核专属只读行并明确标识 detached，Execution 不会把导入副本恢复为权威；页面静置超过 10 分钟也会自动移除过期候选的复核入口。Stage 9 急停直接复用 Stage 8 revoke；批准复核仍固定 `authorizationEffective=false`。
+
+```powershell
+npm run docker:smoke:stage9
+npm run docker:smoke:stage9:validate
+```
+
+默认 Docker 门禁不读取生产凭据、不访问真实生产网络，验证无凭据 API 失败前后零制品、两笔 deterministic-ready 候选、非生效复核、规则漂移、陈旧报价、不利价格、资金不足、连续性漂移、候选过期、Stage 8 revoke 网络前阻断、候选/复核重复请求幂等、detached 阻断和 API 重启精确回读；线程化回归测试另行覆盖并发幂等。Stage 4→9 准入权威链只能由专用 API 写入，通用审计入口不能创建、预占或覆盖权威事件，研究包也不能恢复 Stage 7 probe 或 Stage 8 control；回读会重验事件绑定。可选 real-readonly 门禁只接受 ready 或纯资金不足安全阻断，并用实际 CCXT 调用守卫及重启回读证明只读边界。2026-07-14 最新 accepted manifest hash 为 `d3c53eccd6e3689ddfde808dca1b1d68f90abda4af62268b7fd60347248605c3`，报告文件 SHA-256 为 `ac01b186bac1cc0223cca17494f854ef683011e80170582bf9b2f862356a94f5`。完整操作见 [docs/stage9-production-order-admission-operations.md](docs/stage9-production-order-admission-operations.md)。本阶段没有生产订单创建、查询、撤销、同步、成交、转账或提现 API，也不使用生产交易 Key 或要求生产账户入金。
+
+前端产品阶段模型现已同步到 Stage 9：Stage 0 至 Stage 9 全部显示为 maintenance，Execution 归属最新已交付的 Stage 9，当前不显示任何 `current` 阶段。后续受限生产试单必须重新完成独立设计、人工授权和真实资金安全验收。
+
 ## Stage 8 已完成并进入维护
 
 Stage 8 复用 Stage 7 probe、production route review 与 `AuditEventStore`，提供 `current / stale / blocked / revoked / missing` 生产只读连续性状态和持久化人工 `revoke / restore`。revoke 不依赖外部证据，并在 Stage 7 构造 CCXT 生产连接前阻断；restore 必须绑定最近 24 小时内有效的 `ccxt-live + crypto + live` route review。没有后台轮询器，也不会自动修改 Binance Key。
@@ -110,7 +125,7 @@ npm run docker:smoke:stage8:real:validate
 
 2026-07-13 真实恢复验收已完成一次 `current → revoke → 网络前阻断 → restore → 新 probe → current → API 重启回读`：加载 4497 个 Binance Spot 市场，读取权限开启，全部 mutation 权限关闭，脱敏账户类型为 `SPOT`、非零资产数量为 0；恢复 probe 与 control 在重启后 hash 精确一致。真实恢复 manifest SHA-256 为 `8742af66d2dd6659e3114f82f1aec5a88c6df29e99d49ffa2cc1f229c6a04893`。
 
-前端产品阶段模型也已同步到 Stage 8：Stage 0 至 Stage 8 全部显示为 maintenance，Execution 归属最新已交付的 Stage 8，当前不显示任何 `current` 阶段。该状态只修正发布事实，不创建 Stage 9，也不改变生产只读或订单安全边界。
+Stage 8 继续作为 Stage 9 的连续性与撤销权威；Stage 9 没有创建第二套访问控制或 kill switch。
 
 ## Stage 7 已完成并进入维护
 
@@ -145,7 +160,7 @@ npm run docker:smoke:stage6:real:validate
 npm run docker:smoke:stage6:exit:validate
 ```
 
-Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 8 现均为 maintenance；下一阶段必须单独设计和确认，真实资金委托和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
+Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 6 现作为 Stage 9 候选的终态 Sandbox 权威来源；真实资金委托和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
 
 Stage 6 acceptance 的初次 Compose 启动和 API 重启现在复用同一份 30 秒健康等待，连接在 Web 容器启动期间被重置时会继续等待，而不是让单次 `/health` 探测误判发布失败；该等待不重试任何交易所或委托请求。
 
@@ -455,7 +470,7 @@ docker compose down -v
 
 `.github/workflows/ci.yml` 会在 pull request 和 `main` push 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，然后通过 `npm run docker:smoke -- --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。feature branch push 不再与 pull request 重复运行完整链路；Nginx `/api/` 的 upstream read timeout 与 smoke helper 的 90 秒请求预算一致，避免 P1 自选行情长刷新先被代理以 504 切断。
 
-六类验收清单使用原生 Node 24 的 `actions/upload-artifact@v7` 上传，CI 不再设置 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`。P0、P1、Stage 5、Stage 6、Stage 7 和 Stage 8 artifact 的名称、路径与 `if: always()` 语义保持不变。
+七类验收清单使用原生 Node 24 的 `actions/upload-artifact@v7` 上传，CI 不再设置 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`。P0、P1、Stage 5、Stage 6、Stage 7、Stage 8 和 Stage 9 artifact 都使用稳定名称、路径与 `if: always()` 语义。
 
 Python 测试中直接创建的 SQLite 连接会复用连接自身的事务上下文，并在事务退出后由 `contextlib.closing` 显式关闭；契约测试拒绝新的裸 `with sqlite3.connect(...)`。该约束消除 Python 3.14 全量测试中的未关闭数据库 `ResourceWarning`，不改变生产 store、schema 或事务行为。
 
