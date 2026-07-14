@@ -1727,6 +1727,10 @@ def _normalize_audit_event_payloads(
                     or candidate["batchId"] != authorization["batchId"]
                     or candidate["orders"] != authorization["orders"]
                     or candidate["ordersHash"] != authorization["ordersHash"]
+                    or candidate["stage8Continuity"]["status"] != "current"
+                    or candidate["stage8Continuity"]["continuityHash"] != candidate["stage8ContinuityHash"]
+                    or candidate["stage8Continuity"]["latestProbe"]["productionRouteReviewId"]
+                    != candidate["productionRouteReviewId"]
                 ):
                     raise ValueError("stage9_production_admission_candidate_source_mismatch")
             if item["eventType"] == "stage9_production_order_admission_review":
@@ -1739,6 +1743,15 @@ def _normalize_audit_event_payloads(
                     or review["baseRunId"] != candidate["baseRunId"]
                     or review["sandboxAuthorizationId"] != candidate["sandboxAuthorizationId"]
                     or review["stage8ContinuityHash"] != candidate["stage8ContinuityHash"]
+                    or any(
+                        [row["orderId"] for row in review["reviewObservation"][field]]
+                        != [row["orderId"] for row in candidate["orders"]]
+                        for field in ("marketChecks", "priceChecks", "fundingChecks")
+                    )
+                    or not datetime.fromisoformat(candidate["generatedAt"])
+                    <= datetime.fromisoformat(review["reviewObservation"]["observedAt"])
+                    <= datetime.fromisoformat(review["reviewedAt"])
+                    <= datetime.fromisoformat(candidate["expiresAt"])
                 ):
                     raise ValueError("stage9_production_admission_review_source_mismatch")
     return normalized

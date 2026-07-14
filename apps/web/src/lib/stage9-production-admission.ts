@@ -1,5 +1,9 @@
 import { buildApiUrl, coreErrorDetail, type WorkspaceFetcher, type WorkspaceSource } from "./terminal-api";
 import type { Stage6SandboxOrder } from "./stage6-sandbox";
+import {
+  isStage8ProductionReadonlyContinuity,
+  type Stage8ProductionReadonlyContinuity
+} from "./stage8-readonly-continuity";
 
 const reviewScopeIds = [
   "candidate-hash-reviewed",
@@ -27,7 +31,8 @@ export interface Stage9ProductionAdmissionCandidate extends Stage9Boundary {
   candidateId: string; candidateKey: string; candidateHash: string; generatedAt: string; expiresAt: string;
   baseRunId: string; workflowId: string; workflowHash: string; batchId: string;
   sandboxAuthorizationId: string; sandboxAuthorizationHash: string; sandboxBatchStatus: "reconciled";
-  stage8ContinuityHash: string; productionRouteReviewId: string; orders: Stage6SandboxOrder[];
+  stage8Continuity: Stage8ProductionReadonlyContinuity; stage8ContinuityHash: string;
+  productionRouteReviewId: string; orders: Stage6SandboxOrder[];
   ordersHash: string; observation: Stage9ProductionAdmissionObservation; operator: string;
   status: "ready_for_review";
 }
@@ -114,11 +119,21 @@ export async function createStage9ProductionAdmissionReview(
   }
 }
 
+export function selectCurrentStage9ProductionAdmissionCandidate(
+  candidates: Stage9ProductionAdmissionCandidate[], authorizationId: string | undefined, now = Date.now()
+): Stage9ProductionAdmissionCandidate | null {
+  if (!authorizationId) return null;
+  return candidates.find((candidate) =>
+    candidate.sandboxAuthorizationId === authorizationId && Date.parse(candidate.expiresAt) >= now
+  ) ?? null;
+}
+
 export function isStage9ProductionAdmissionCandidate(value: unknown): value is Stage9ProductionAdmissionCandidate {
   if (!record(value) || !hasExactKeys(value, [
     "kind", "schemaVersion", "candidateId", "candidateKey", "candidateHash", "generatedAt", "expiresAt",
     "baseRunId", "workflowId", "workflowHash", "batchId", "sandboxAuthorizationId", "sandboxAuthorizationHash",
-    "sandboxBatchStatus", "stage8ContinuityHash", "productionRouteReviewId", "orders", "ordersHash", "observation",
+    "sandboxBatchStatus", "stage8Continuity", "stage8ContinuityHash", "productionRouteReviewId", "orders",
+    "ordersHash", "observation",
     "operator", "status", ...boundaryKeys
   ])) return false;
   return value.kind === "aiqt.stage9ProductionOrderAdmissionCandidate" && value.schemaVersion === 1 &&
@@ -127,6 +142,8 @@ export function isStage9ProductionAdmissionCandidate(value: unknown): value is S
     [value.candidateKey, value.candidateHash, value.workflowHash, value.sandboxAuthorizationHash,
       value.stage8ContinuityHash, value.ordersHash].every(hash) && zoned(value.generatedAt) && zoned(value.expiresAt) &&
     value.sandboxBatchStatus === "reconciled" && value.status === "ready_for_review" &&
+    isStage8ProductionReadonlyContinuity(value.stage8Continuity) &&
+    value.stage8Continuity.status === "current" && value.stage8Continuity.continuityHash === value.stage8ContinuityHash &&
     Array.isArray(value.orders) && value.orders.length > 0 && value.orders.every(order) &&
     isObservation(value.observation) && boundary(value);
 }

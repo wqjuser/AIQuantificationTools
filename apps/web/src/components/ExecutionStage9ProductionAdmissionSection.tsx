@@ -1,10 +1,13 @@
 import { useState } from "react";
 import type { Stage6SandboxBatch, Stage6SandboxBatchAuthorization } from "../lib/stage6-sandbox";
 import type { Stage8ProductionReadonlyContinuity } from "../lib/stage8-readonly-continuity";
-import type {
-  Stage9ProductionAdmissionCandidate,
-  Stage9ProductionAdmissionReview
+import {
+  isStage9ProductionAdmissionCandidate,
+  isStage9ProductionAdmissionReview,
+  type Stage9ProductionAdmissionCandidate,
+  type Stage9ProductionAdmissionReview
 } from "../lib/stage9-production-admission";
+import type { AuditEventRecord } from "../lib/terminal-api";
 
 export function ExecutionStage9ProductionAdmissionSection({
   authorization = null, batch = null, busy = false, candidate = null, continuity = null,
@@ -91,6 +94,74 @@ export function ExecutionStage9ProductionAdmissionSection({
         </>
       ) : null}
       <p>准入急停复用 Stage 8 撤销；系统不存在第二套 Kill Switch，也没有生产订单 API。</p>
+    </section>
+  );
+}
+
+const stage9AuditEventTypes = new Set([
+  "stage9_production_order_admission_candidate",
+  "stage9_production_order_admission_review"
+]);
+
+export function Stage9ProductionAdmissionAuditLedgerPanel({
+  className, events, locale
+}: {
+  className?: string;
+  events: AuditEventRecord[];
+  locale: "zh-CN" | "en-US";
+}) {
+  const rows = events.filter((event) => stage9AuditEventTypes.has(event.eventType));
+  return (
+    <section className={`execution-stage5-shadow ${className ?? ""}`}
+      aria-labelledby="stage9-production-admission-audit-title">
+      <header>
+        <div>
+          <span>Stage 9 · Audit</span>
+          <h2 id="stage9-production-admission-audit-title">
+            {locale === "zh-CN" ? "生产委托准入审计" : "Production admission audit"}
+          </h2>
+          <p>{locale === "zh-CN" ? "候选与人工复核只读回放，不提供任何执行操作" : "Read-only candidate and review evidence with no execution actions"}</p>
+        </div>
+        <strong>Audit-only · Orders blocked</strong>
+      </header>
+      <details open>
+        <summary>{locale === "zh-CN" ? `准入证据 ${rows.length}` : `Admission evidence ${rows.length}`}</summary>
+        {rows.length ? (
+          <ul>{rows.map((event) => {
+            const snapshot = event.metadata.snapshot;
+            const record = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+              ? snapshot as Record<string, unknown> : {};
+            const isReview = event.eventType.endsWith("_review");
+            const candidate = !isReview && isStage9ProductionAdmissionCandidate(record) ? record : null;
+            const review = isReview && isStage9ProductionAdmissionReview(record) ? record : null;
+            const valid = candidate
+              ? event.eventId === candidate.candidateId
+                && event.runId === candidate.baseRunId
+                && event.createdAt === candidate.generatedAt
+                && event.stage === "stage9-production-order-admission"
+                && event.source === candidate.operator
+              : review
+                ? event.eventId === review.reviewId
+                  && event.runId === review.baseRunId
+                  && event.createdAt === review.reviewedAt
+                  && event.stage === "stage9-production-order-admission-review"
+                  && event.source === review.reviewer
+                : false;
+            const identity = candidate?.candidateId ?? review?.reviewId ?? event.eventId;
+            const hash = candidate?.candidateHash ?? review?.reviewHash ?? "";
+            const detached = event.metadata.detached === true;
+            return (
+              <li key={event.eventId}>
+                <strong>{isReview ? (locale === "zh-CN" ? "人工复核" : "Review") : (locale === "zh-CN" ? "准入候选" : "Candidate")}</strong>
+                <span>{identity}</span>
+                <small>{!valid ? "invalid · audit-only" : detached ? "detached · audit-only" : "local · audit-only"}</small>
+                <small>{hash}</small>
+              </li>
+            );
+          })}</ul>
+        ) : <p>{locale === "zh-CN" ? "暂无 Stage 9 准入审计证据。" : "No Stage 9 admission evidence yet."}</p>}
+      </details>
+      <p>authorizationEffective=false · liveBlockedBoundary=true</p>
     </section>
   );
 }

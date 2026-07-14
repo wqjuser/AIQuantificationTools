@@ -92,14 +92,14 @@ npm run docker:smoke:p1:validate
 
 Stage 9 交付生产委托准入准备，不交付生产执行。它从同一条 Stage 4 workflow、已完成终态对账的 Stage 6 批次和当前 Stage 8 continuity 生成 10 分钟一次性候选，固定只覆盖 Binance Spot 的 `BTC/USDT`、`ETH/USDT`、1–2 笔 GTC 限价单、单笔不超过 10 USDT、批次不超过 20 USDT。候选生成和一次不可改写的具名人工复核都会重新检查生产市场精度/最小值、30 秒报价新鲜度、1% 逆向价格偏离和候选资金充分性；不会自动改价、缩量或拆单。
 
-候选与复核写入现有 `AuditEventStore` 并随研究包导出，导入时重验来源链和 SHA-256 后标记 detached，只供 Audit 回放。Execution 不会把导入副本恢复为权威。Stage 9 急停直接复用 Stage 8 revoke；批准复核仍固定 `authorizationEffective=false`。
+候选与复核写入现有 `AuditEventStore` 并随研究包导出；候选携带经既有 validator 校验且必须等于 canonical 重建结果的 Stage 8 continuity 来源快照与 hash，导入时重验完整来源链和 SHA-256 后标记 detached。Audit 工作区提供候选/复核专属只读行并明确标识 detached，Execution 不会把导入副本恢复为权威；页面静置超过 10 分钟也会自动移除过期候选的复核入口。Stage 9 急停直接复用 Stage 8 revoke；批准复核仍固定 `authorizationEffective=false`。
 
 ```powershell
 npm run docker:smoke:stage9
 npm run docker:smoke:stage9:validate
 ```
 
-默认 Docker 门禁不读取生产凭据、不访问生产网络，验证两笔候选、非生效复核、无凭据 fail closed、连续性漂移、候选过期、detached 阻断和 API 重启精确回读。2026-07-14 accepted manifest hash 为 `d3cf7d74677e02347fbc6d5c1d4e2e1c8c22370b84f862f99f8c8c45f2bf5d84`，报告文件 SHA-256 为 `47fa95a82ccb3355c2dc4b9121f3baeb491773d4b11985559784ca0251746aa2`。完整操作见 [docs/stage9-production-order-admission-operations.md](docs/stage9-production-order-admission-operations.md)。本阶段没有生产订单创建、查询、撤销、同步、成交、转账或提现 API，也不使用生产交易 Key 或要求生产账户入金。
+默认 Docker 门禁不读取生产凭据、不访问真实生产网络，验证无凭据零制品、两笔 deterministic-ready 候选、非生效复核、规则漂移、陈旧报价、不利价格、资金不足、连续性漂移、候选过期、Stage 8 revoke 网络前阻断、真实 POST 幂等回读、detached 阻断和 API 重启精确回读；可选 real-readonly 门禁只接受 ready 或纯资金不足安全阻断，并用实际 CCXT 调用守卫及重启回读证明只读边界。2026-07-14 accepted manifest hash 为 `6eae5b6844a7e74d7cd4a4ec062a24b5cfac23b2f5677f31716bf8753912fec4`，报告文件 SHA-256 为 `c35ec9b065feff1424010ee23e3266a6b28821d75b9f521aca696481a7bacc20`。完整操作见 [docs/stage9-production-order-admission-operations.md](docs/stage9-production-order-admission-operations.md)。本阶段没有生产订单创建、查询、撤销、同步、成交、转账或提现 API，也不使用生产交易 Key 或要求生产账户入金。
 
 前端产品阶段模型现已同步到 Stage 9：Stage 0 至 Stage 9 全部显示为 maintenance，Execution 归属最新已交付的 Stage 9，当前不显示任何 `current` 阶段。后续受限生产试单必须重新完成独立设计、人工授权和真实资金安全验收。
 

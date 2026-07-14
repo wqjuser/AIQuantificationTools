@@ -6,9 +6,9 @@ Stage 0 至 Stage 9 已全部进入维护状态，当前不自动激活新的开
 
 运行时产品阶段模型已完成同源收口：`buildProductDevelopmentStages` 精确列出 Stage 0 至 Stage 9 且全部为 maintenance，`buildProductWorkAreas` 将 Execution 映射到最新已交付的 Stage 9，中英文导航不显示 `current` 阶段。
 
-Stage 9 复用 Stage 4 workflow、Stage 6 终态批次、Stage 8 continuity、Stage 7 专用生产只读凭据与 `AuditEventStore`。候选固定 10 分钟有效，首版仅允许 Binance Spot、`BTC/USDT`/`ETH/USDT`、GTC limit、最多 2 笔、单笔 10 USDT 和批次 20 USDT；生成候选和人工复核分别重验生产市场规则、30 秒报价、1% 逆向偏离与资金充分性。候选和复核进入研究包并在导入后 detached，批准复核仍为 `authorizationEffective=false`。Stage 8 revoke 是唯一急停。
+Stage 9 复用 Stage 4 workflow、Stage 6 终态批次、Stage 8 continuity、Stage 7 专用生产只读凭据与 `AuditEventStore`。候选固定 10 分钟有效，首版仅允许 Binance Spot、`BTC/USDT`/`ETH/USDT`、GTC limit、最多 2 笔、单笔 10 USDT 和批次 20 USDT；生成候选和人工复核分别重验生产市场规则、30 秒报价、1% 逆向偏离与资金充分性。候选嵌入并校验精确等于 canonical 重建结果的 Stage 8 continuity 来源快照，候选和复核进入研究包并在导入后 detached；Audit 提供专属只读行，Execution 会在页面静置到期时自动撤下复核入口，批准复核仍为 `authorizationEffective=false`。Stage 8 revoke 是唯一急停。
 
-Stage 9 默认 Docker acceptance 不使用宿主生产凭据或生产网络，覆盖确定性成功、无凭据 fail closed、连续性漂移、候选过期、detached 阻断和 API 重启 hash 精确回读。2026-07-14 accepted manifest hash 为 `d3cf7d74677e02347fbc6d5c1d4e2e1c8c22370b84f862f99f8c8c45f2bf5d84`。退出不要求生产账户入金；生产订单创建、查询、撤销、成交、转账、提现和 live route 仍不存在。
+Stage 9 默认 Docker acceptance 不使用宿主生产凭据或真实生产网络，覆盖无凭据零制品、确定性 ready、规则/行情/价格/资金故障、连续性漂移、候选过期、真实 POST 幂等、revoke 网络前阻断、detached 阻断和 API 重启 hash 精确回读；可选真实只读门禁用实际 CCXT 方法守卫验证只读调用，只接受 ready 或纯资金不足安全阻断，并在重启后回读。2026-07-14 accepted manifest hash 为 `6eae5b6844a7e74d7cd4a4ec062a24b5cfac23b2f5677f31716bf8753912fec4`。退出不要求生产账户入金；生产订单创建、查询、撤销、成交、转账、提现和 live route 仍不存在。
 
 Stage 8 复用 Stage 7 probe、production route review 和 `AuditEventStore`，从当前 Stage 6 authority、route review、24 小时探针新鲜度、权限状态和本地访问控制派生 `current / stale / blocked / revoked / missing`。人工 revoke 不依赖外部证据，并在 Stage 7 构造生产 CCXT 连接前阻断；restore 必须绑定当前 route review。Docker acceptance 在独立临时数据卷中验证 revoke、网络前阻断、无效 restore、API 重启回读和 live-blocked 边界，manifest hash 为 `65702de501a8cddfb5a02ca698e77323eeef9b0ddfa3c9fc33dc32f96ddaf60e`。
 

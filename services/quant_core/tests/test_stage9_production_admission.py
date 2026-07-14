@@ -27,11 +27,15 @@ from quant_core.stage6_sandbox import (
     authorization_to_audit_event,
     build_stage6_sandbox_batch_authorization,
 )
-from quant_core.stage8_continuity import build_production_readonly_continuity
+from quant_core.stage8_continuity import (
+    build_production_readonly_access_control,
+    build_production_readonly_continuity,
+)
 from quant_core.stage9_production_admission import (
     BinanceSpotProductionAdmissionRoute,
     build_production_order_admission_review,
     build_production_order_admission_candidate,
+    canonical_production_order_admission_continuity,
     production_order_admission_candidate_to_audit_event,
     production_order_admission_review_to_audit_event,
     validate_production_order_admission_review,
@@ -240,6 +244,23 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         self.assertFalse(observation["liveTradingAllowed"])
         self.assertTrue(observation["liveBlockedBoundary"])
 
+        class MissingMinimumExchange(FakeExchange):
+            def load_markets(self):
+                markets = super().load_markets()
+                markets["BTC/USDT"]["limits"]["cost"] = {}
+                return markets
+
+        blocked = BinanceSpotProductionAdmissionRoute(
+            env={
+                "CCXT_PRODUCTION_READONLY_API_KEY": "read-key",
+                "CCXT_PRODUCTION_READONLY_SECRET": "read-secret",
+            },
+            exchange_factory=lambda _exchange_id, config: MissingMinimumExchange(config),
+        ).observe(orders, observed_at=observed_at)
+        self.assertFalse(blocked["passed"])
+        self.assertFalse(blocked["marketChecks"][0]["passed"])
+        self.assertIn("production_market_rule_blocked:order-btc", blocked["blockedReasons"])
+
     def test_candidate_binds_terminal_sandbox_batch_current_continuity_and_exact_orders(self) -> None:
         workflow, session, readiness, preflight, review = _authority_chain()
         now = datetime.now(timezone.utc)
@@ -302,6 +323,27 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         self.assertFalse(candidate["liveTradingAllowed"])
         self.assertTrue(candidate["liveBlockedBoundary"])
 
+        forged = copy.deepcopy(candidate)
+        forged["stage8Continuity"]["generatedAt"] = (now + timedelta(seconds=1)).isoformat()
+        forged["stage8Continuity"]["continuityHash"] = _hash({
+            key: item for key, item in forged["stage8Continuity"].items() if key != "continuityHash"
+        })
+        forged["stage8ContinuityHash"] = forged["stage8Continuity"]["continuityHash"]
+        forged["candidateKey"] = _hash({
+            "workflowHash": forged["workflowHash"],
+            "authorizationHash": forged["sandboxAuthorizationHash"],
+            "continuityHash": forged["stage8ContinuityHash"],
+            "ordersHash": forged["ordersHash"],
+        })
+        forged["candidateId"] = "stage9-production-admission-" + hashlib.sha256(
+            f"{forged['candidateKey']}:{forged['observation']['observationHash']}".encode()
+        ).hexdigest()[:24]
+        forged["candidateHash"] = _hash({
+            key: item for key, item in forged.items() if key != "candidateHash"
+        })
+        with self.assertRaisesRegex(ValueError, "candidate_continuity_invalid"):
+            validate_production_order_admission_candidate(forged)
+
     def test_candidate_http_post_is_idempotent_and_get_restores_persisted_evidence(self) -> None:
         workflow, session, readiness, preflight, review = _authority_chain()
         now = datetime.now(timezone.utc)
@@ -344,7 +386,10 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                 )
 
             class Route:
+                calls = 0
+
                 def observe(self, candidate_orders, *, observed_at=None):
+                    type(self).calls += 1
                     self.assert_orders = candidate_orders
                     return _passing_observation(
                         candidate_orders, observed_at or datetime.now(timezone.utc)
@@ -357,7 +402,7 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
 
             server = HTTPServer(("127.0.0.1", 0), Handler)
             thread = Thread(target=server.serve_forever, daemon=True)
-            with patch("quant_core.api._stage8_production_readonly_continuity", return_value=continuity):
+            with patch("quant_core.api._stage8_production_readonly_continuity", return_value=continuity) as continuity_patch:
                 thread.start()
                 connection = HTTPConnection(*server.server_address, timeout=5)
                 body = json.dumps({
@@ -377,6 +422,16 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     )
                     repeated_response = connection.getresponse()
                     repeated = json.loads(repeated_response.read())
+                    conflicting_candidate_body = json.dumps({
+                        "authorizationId": authorization["authorizationId"],
+                        "operator": "different-operator",
+                    })
+                    connection.request(
+                        "POST", "/api/execution/stage9/production-order-admission-candidates",
+                        conflicting_candidate_body, {"Content-Type": "application/json"},
+                    )
+                    conflicting_candidate_response = connection.getresponse()
+                    conflicting_candidate = json.loads(conflicting_candidate_response.read())
                     connection.request(
                         "GET",
                         f"/api/execution/stage9/production-order-admission-candidates?baseRunId={workflow['baseRunId']}",
@@ -408,12 +463,42 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     )
                     repeated_review_response = connection.getresponse()
                     repeated_review = json.loads(repeated_review_response.read())
+                    conflicting_review_payload = json.loads(review_body)
+                    conflicting_review_payload["outcome"] = "rejected"
+                    conflicting_review_payload["reason"] = "冲突结果不得覆盖。"
+                    connection.request(
+                        "POST", "/api/execution/stage9/production-order-admission-reviews",
+                        json.dumps(conflicting_review_payload), {"Content-Type": "application/json"},
+                    )
+                    conflicting_review_response = connection.getresponse()
+                    conflicting_review = json.loads(conflicting_review_response.read())
                     connection.request(
                         "GET",
                         f"/api/execution/stage9/production-order-admission-reviews?baseRunId={workflow['baseRunId']}",
                     )
                     review_read_response = connection.getresponse()
                     review_readback = json.loads(review_read_response.read())
+                    control = build_production_readonly_access_control(
+                        action="revoke", operator="test", reason="stage9 network precheck"
+                    )
+                    revoked = {
+                        **continuity,
+                        "status": "revoked",
+                        "accessState": "revoked",
+                        "accessControl": control,
+                        "blockedReasons": ["production_readonly_access_revoked"],
+                    }
+                    revoked["continuityHash"] = _hash({
+                        key: value for key, value in revoked.items() if key != "continuityHash"
+                    })
+                    continuity_patch.return_value = revoked
+                    calls_before_revoke = Route.calls
+                    connection.request(
+                        "POST", "/api/execution/stage9/production-order-admission-candidates", body,
+                        {"Content-Type": "application/json"},
+                    )
+                    revoked_response = connection.getresponse()
+                    revoked_result = json.loads(revoked_response.read())
                 finally:
                     connection.close()
                     server.shutdown()
@@ -422,12 +507,16 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
 
         self.assertEqual(created_response.status, 201, created)
         self.assertEqual(repeated_response.status, 200, repeated)
+        self.assertEqual(conflicting_candidate_response.status, 409, conflicting_candidate)
+        self.assertIn("conflicts with immutable evidence", conflicting_candidate["blockers"][0])
         self.assertEqual(read_response.status, 200, readback)
         self.assertEqual(created["productionOrderAdmissionCandidate"], repeated["productionOrderAdmissionCandidate"])
         self.assertEqual(readback["productionOrderAdmissionCandidates"], [created["productionOrderAdmissionCandidate"]])
         self.assertEqual(created["auditEvent"]["eventType"], "stage9_production_order_admission_candidate")
         self.assertEqual(review_response.status, 201, review_result)
         self.assertEqual(repeated_review_response.status, 200, repeated_review)
+        self.assertEqual(conflicting_review_response.status, 409, conflicting_review)
+        self.assertIn("conflicts with immutable evidence", conflicting_review["blockers"][0])
         self.assertEqual(review_read_response.status, 200, review_readback)
         self.assertEqual(review_result, repeated_review)
         self.assertEqual(
@@ -436,6 +525,9 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         )
         self.assertFalse(review_result["productionOrderAdmissionReview"]["authorizationEffective"])
         self.assertEqual(review_result["auditEvent"]["eventType"], "stage9_production_order_admission_review")
+        self.assertEqual(revoked_response.status, 409, revoked_result)
+        self.assertIn("current_continuity_required", revoked_result["blockers"][0])
+        self.assertEqual(Route.calls, calls_before_revoke)
 
     def test_review_revalidates_fresh_candidate_without_granting_execution_authority(self) -> None:
         workflow, session, readiness, preflight, stage5_review = _authority_chain()
@@ -465,10 +557,19 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
             operator="candidate-operator", generated_at=now.isoformat(),
         )
         reviewed_at = now + timedelta(minutes=1)
+        later_continuity = copy.deepcopy(continuity)
+        later_continuity["generatedAt"] = reviewed_at.isoformat()
+        later_continuity["continuityHash"] = _hash({
+            key: value for key, value in later_continuity.items() if key != "continuityHash"
+        })
+        self.assertEqual(
+            canonical_production_order_admission_continuity(later_continuity),
+            candidate["stage8Continuity"],
+        )
 
         review = build_production_order_admission_review(
             candidate,
-            continuity,
+            later_continuity,
             _passing_observation(orders, reviewed_at),
             reviewer="named-reviewer",
             outcome="approved",
@@ -491,7 +592,26 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         self.assertFalse(review["liveTradingAllowed"])
         self.assertTrue(review["liveBlockedBoundary"])
 
-        changed_continuity = {**continuity, "continuityHash": "b" * 64}
+        tampered_review = copy.deepcopy(review)
+        tampered_review["reviewObservation"]["marketChecks"][0]["passed"] = False
+        tampered_review["reviewObservation"]["passed"] = False
+        tampered_review["reviewObservation"]["blockedReasons"] = ["production_market_rule_blocked"]
+        tampered_review["reviewObservation"]["observationHash"] = _hash({
+            key: value
+            for key, value in tampered_review["reviewObservation"].items()
+            if key != "observationHash"
+        })
+        tampered_review["reviewHash"] = _hash({
+            key: value for key, value in tampered_review.items() if key != "reviewHash"
+        })
+        with self.assertRaisesRegex(ValueError, "review_observation_invalid"):
+            validate_production_order_admission_review(tampered_review)
+
+        changed_continuity = copy.deepcopy(later_continuity)
+        changed_continuity["latestProbe"]["evidenceHash"] = "b" * 64
+        changed_continuity["continuityHash"] = _hash({
+            key: value for key, value in changed_continuity.items() if key != "continuityHash"
+        })
         with self.assertRaisesRegex(ValueError, "continuity"):
             build_production_order_admission_review(
                 candidate,
@@ -606,12 +726,41 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "stage9_production_admission_review_source_missing"):
             research_run_import_to_audit(tampered)
 
+        continuity_tampered = copy.deepcopy(exported)
+        continuity_tampered.pop("integrity")
+        candidate_snapshot = continuity_tampered["auditEvents"][2]["metadata"]["snapshot"]
+        candidate_snapshot["stage8Continuity"]["latestProbe"]["productionRouteReviewId"] = "other-review"
+        candidate_snapshot["stage8Continuity"]["continuityHash"] = _hash({
+            key: value
+            for key, value in candidate_snapshot["stage8Continuity"].items()
+            if key != "continuityHash"
+        })
+        with self.assertRaisesRegex(ValueError, "candidate_continuity_invalid"):
+            research_run_import_to_audit(continuity_tampered)
+
+        order_tampered = copy.deepcopy(exported)
+        order_tampered.pop("integrity")
+        review_snapshot = order_tampered["auditEvents"][3]["metadata"]["snapshot"]
+        review_snapshot["reviewObservation"]["marketChecks"][0]["orderId"] = "other-order"
+        review_snapshot["reviewObservation"]["observationHash"] = _hash({
+            key: value
+            for key, value in review_snapshot["reviewObservation"].items()
+            if key != "observationHash"
+        })
+        review_snapshot["reviewHash"] = _hash({
+            key: value for key, value in review_snapshot.items() if key != "reviewHash"
+        })
+        with self.assertRaisesRegex(ValueError, "stage9_production_admission_review_source_mismatch"):
+            research_run_import_to_audit(order_tampered)
+
     def test_stage9_acceptance_manifest_requires_restart_exact_and_live_blocked(self) -> None:
-        from tools.stage9_production_admission_acceptance import _manifest, validate
+        from tools.stage9_production_admission_acceptance import _manifest, _real_manifest, validate
 
         exercise = {
             "candidate": {
                 "candidateId": "candidate-a", "candidateHash": "a" * 64,
+                "workflowHash": "c" * 64, "sandboxAuthorizationHash": "d" * 64,
+                "stage8ContinuityHash": "e" * 64, "ordersHash": "f" * 64,
                 "orders": [{}, {}], "orderSubmissionEnabled": False, "liveTradingAllowed": False,
                 "liveRouteExecuted": False, "liveBlockedBoundary": True,
             },
@@ -621,8 +770,19 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                 "liveTradingAllowed": False, "liveRouteExecuted": False, "liveBlockedBoundary": True,
             },
             "noCredentialBlocker": "stage9_production_readonly_credentials_required",
+            "noCredentialFactoryCalled": False,
+            "noCredentialCandidateCount": 0,
+            "noCredentialReviewCount": 0,
+            "readyObservationPassed": True,
+            "ruleDriftBlocked": True,
+            "staleQuoteBlocked": True,
+            "adversePriceBlocked": True,
+            "insufficientFundsBlocked": True,
             "continuityDriftBlocked": True,
             "expiredCandidateBlocked": True,
+            "revokeBlockedBeforeNetwork": True,
+            "duplicateCandidateExact": True,
+            "duplicateReviewExact": True,
             "detachedAuthorityBlocked": True,
         }
         readback = {"status": 200, "candidates": [exercise["candidate"]], "reviews": [exercise["review"]]}
@@ -633,6 +793,59 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         self.assertFalse(manifest["orderSubmissionEnabled"])
         self.assertFalse(manifest["liveTradingAllowed"])
         self.assertTrue(manifest["liveBlockedBoundary"])
+
+        read_only_calls = [
+            "load_markets", "amount_to_precision", "price_to_precision",
+            "fetch_ticker", "fetch_balance",
+        ]
+        real_ready_exercise = {
+            "status": 201, "authorizationId": "authorization-a", "candidateId": "candidate-a",
+            "candidateHash": "a" * 64, "candidateBoundarySafe": True, "redacted": True,
+            "observationPassed": True, "observationBlockedReasons": [],
+            "blockers": [],
+            "readOnlyMethodsCalled": read_only_calls, "unexpectedMethodsCalled": [],
+        }
+        real_ready = _real_manifest(real_ready_exercise, {
+            "status": 200,
+            "candidates": [{
+                "sandboxAuthorizationId": "authorization-a", "candidateHash": "a" * 64
+            }],
+        })
+        self.assertIn("outcome=ready", validate(real_ready))
+        real_blocked = _real_manifest({
+            "status": 409, "authorizationId": "authorization-a", "candidateId": "",
+            "candidateHash": "", "observationPassed": False,
+            "observationBlockedReasons": ["production_funding_check_blocked:order-a"],
+            "blockers": ["production_funding_check_blocked:order-a"],
+            "readOnlyMethodsCalled": read_only_calls, "unexpectedMethodsCalled": [],
+            "candidateBoundarySafe": False, "redacted": True,
+        }, {"status": 200, "candidates": []})
+        self.assertIn("outcome=funding_blocked", validate(real_blocked))
+
+        mixed_blocked = _real_manifest({
+            "status": 409, "authorizationId": "authorization-a", "candidateId": "",
+            "candidateHash": "", "observationPassed": False,
+            "observationBlockedReasons": [
+                "production_funding_check_blocked:order-a",
+                "production_market_rule_blocked:order-a",
+            ],
+            "blockers": [
+                "production_funding_check_blocked:order-a;production_market_rule_blocked:order-a"
+            ],
+            "readOnlyMethodsCalled": read_only_calls, "unexpectedMethodsCalled": [],
+            "candidateBoundarySafe": False, "redacted": True,
+        }, {"status": 200, "candidates": []})
+        self.assertEqual(mixed_blocked["status"], "blocked")
+
+        divergent_api_blocked = _real_manifest({
+            "status": 409, "authorizationId": "authorization-a", "candidateId": "",
+            "candidateHash": "", "observationPassed": False,
+            "observationBlockedReasons": ["production_funding_check_blocked:order-a"],
+            "blockers": ["stage9_production_admission_current_continuity_required"],
+            "readOnlyMethodsCalled": read_only_calls, "unexpectedMethodsCalled": [],
+            "candidateBoundarySafe": False, "redacted": True,
+        }, {"status": 200, "candidates": []})
+        self.assertEqual(divergent_api_blocked["status"], "blocked")
 
 
 if __name__ == "__main__":

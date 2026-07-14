@@ -2274,6 +2274,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain(
       '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,daily_start_brief_review,stage1_daily_archive_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
+    expect(auditWorkspaceSource).toContain("Stage9ProductionAdmissionAuditLedgerPanel");
+    expect(appSource).toContain('eventType: "stage9_production_order_admission_candidate,stage9_production_order_admission_review"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");

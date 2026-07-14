@@ -3,6 +3,7 @@ import {
   createStage9ProductionAdmissionCandidate,
   createStage9ProductionAdmissionReview,
   loadStage9ProductionAdmissionCandidates,
+  selectCurrentStage9ProductionAdmissionCandidate,
   type Stage9ProductionAdmissionCandidate
 } from "./stage9-production-admission";
 
@@ -26,13 +27,26 @@ const observation = {
   fundingChecks: [{ orderId: order.orderId, passed: true }],
   passed: true, blockedReasons: [], ...boundary, observationHash: hash
 };
+const continuity = {
+  kind: "aiqt.stage8ProductionReadonlyContinuity" as const, schemaVersion: 1 as const,
+  generatedAt: observedAt, status: "current" as const, accessState: "active" as const,
+  accessControl: null, latestProbe: {
+    probeId: "stage7-production-readonly-a", evidenceHash: hash, status: "ready" as const,
+    generatedAt: observedAt, productionRouteReviewId: "route-review-a"
+  },
+  expiresAt: "2026-07-15T06:00:00+00:00", stage6HashMatches: true, routeReviewCurrent: true,
+  probeFresh: true, permissionDrift: false, blockedReasons: [], continuityHash: hash,
+  productionReadOnly: true as const, liveTradingAllowed: false as const,
+  orderRoutingEnabled: false as const, liveOrderSubmitted: false as const,
+  liveRouteExecuted: false as const, liveBlockedBoundary: true as const
+};
 const candidate: Stage9ProductionAdmissionCandidate = {
   kind: "aiqt.stage9ProductionOrderAdmissionCandidate", schemaVersion: 1,
   candidateId: "stage9-production-admission-1234567890abcdef12345678", candidateKey: hash,
   candidateHash: hash, generatedAt: observedAt, expiresAt: "2026-07-14T06:10:00+00:00",
   baseRunId: "run-a", workflowId: "workflow-a", workflowHash: hash, batchId: "batch-a",
   sandboxAuthorizationId: "authorization-a", sandboxAuthorizationHash: hash,
-  sandboxBatchStatus: "reconciled", stage8ContinuityHash: hash,
+  sandboxBatchStatus: "reconciled", stage8Continuity: continuity, stage8ContinuityHash: hash,
   productionRouteReviewId: "route-review-a", orders: [order], ordersHash: hash,
   observation, operator: "execution-workspace", status: "ready_for_review", ...boundary
 };
@@ -96,5 +110,15 @@ describe("Stage 9 production order admission", () => {
     const result = await loadStage9ProductionAdmissionCandidates("http://localhost:8765", "run-a", fetcher);
     expect(result.source).toBe("fallback");
     expect(result.error).toContain("Invalid Stage 9 candidate history contract");
+  });
+
+  test("ignores an expired candidate when restoring the current authorization", () => {
+    const expired = { ...candidate, expiresAt: "2026-07-14T05:59:59+00:00" };
+    expect(selectCurrentStage9ProductionAdmissionCandidate(
+      [expired, candidate], "authorization-a", Date.parse("2026-07-14T06:05:00+00:00")
+    )).toEqual(candidate);
+    expect(selectCurrentStage9ProductionAdmissionCandidate(
+      [expired], "authorization-a", Date.parse("2026-07-14T06:05:00+00:00")
+    )).toBeNull();
   });
 });

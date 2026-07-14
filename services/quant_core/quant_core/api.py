@@ -249,12 +249,15 @@ from quant_core.stage8_continuity import (
 )
 from quant_core.stage9_production_admission import (
     BinanceSpotProductionAdmissionRoute,
+    PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS,
     build_production_order_admission_candidate,
     build_production_order_admission_review,
+    canonical_production_order_admission_continuity,
     production_order_admission_candidate_from_audit_event,
     production_order_admission_candidate_to_audit_event,
     production_order_admission_review_from_audit_event,
     production_order_admission_review_to_audit_event,
+    validate_production_order_admission_preconditions,
 )
 from quant_core.stage6_sandbox import (
     BinanceSpotTestnetRoute,
@@ -2555,6 +2558,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 continuity = _stage8_production_readonly_continuity(
                     self.audit_event_store, self.stage6_exit_acceptance_report_path
                 )
+                validate_production_order_admission_preconditions(
+                    workflow, authorization, batch, continuity
+                )
+                continuity = canonical_production_order_admission_continuity(continuity)
                 existing = next((
                     candidate
                     for candidate in _stage9_production_admission_candidates(
@@ -2565,6 +2572,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     and datetime.fromisoformat(candidate["expiresAt"]) >= datetime.now(timezone.utc)
                 ), None)
                 if existing is not None:
+                    if existing["operator"] != operator:
+                        raise ValueError("stage9 production admission candidate request conflicts with immutable evidence")
                     event = self.audit_event_store.get(existing["candidateId"])
                     self._send_json({
                         "productionOrderAdmissionCandidate": existing,
@@ -2572,6 +2581,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     })
                     return
                 observation = self._stage9_production_admission_route().observe(authorization["orders"])
+                if not observation["passed"]:
+                    raise ValueError(";".join(observation["blockedReasons"]))
                 candidate = build_production_order_admission_candidate(
                     workflow,
                     authorization,
@@ -2612,11 +2623,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 outcome = _required_stage4_string(payload["outcome"])
                 reason = _required_stage4_string(payload["reason"])
                 confirmations = payload["confirmations"]
-                expected_confirmations = {
-                    "candidate-hash-reviewed", "production-envelope-reviewed",
-                    "market-and-funding-checks-reviewed", "stage8-continuity-current",
-                    "no-production-execution-authority",
-                }
+                expected_confirmations = set(PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS)
                 if (
                     outcome not in {"approved", "rejected"}
                     or not isinstance(confirmations, dict)
@@ -2634,6 +2641,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     if review["candidateId"] == candidate_id
                 ), None)
                 if existing is not None:
+                    if (
+                        existing["reviewer"] != reviewer
+                        or existing["outcome"] != outcome
+                        or existing["reason"] != reason
+                    ):
+                        raise ValueError("stage9 production admission review request conflicts with immutable evidence")
                     event = self.audit_event_store.get(existing["reviewId"])
                     self._send_json({
                         "productionOrderAdmissionReview": existing,
@@ -2664,6 +2677,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if rebuilt != candidate:
                     raise ValueError("stage9 production admission candidate authority changed")
                 observation = self._stage9_production_admission_route().observe(candidate["orders"])
+                if not observation["passed"]:
+                    raise ValueError(";".join(observation["blockedReasons"]))
                 review = build_production_order_admission_review(
                     candidate,
                     continuity,
@@ -5798,6 +5813,15 @@ def _stage9_production_admission_reviews(
             review["candidateHash"] != candidate["candidateHash"]
             or review["sandboxAuthorizationId"] != candidate["sandboxAuthorizationId"]
             or review["stage8ContinuityHash"] != candidate["stage8ContinuityHash"]
+            or any(
+                [row["orderId"] for row in review["reviewObservation"][field]]
+                != [row["orderId"] for row in candidate["orders"]]
+                for field in ("marketChecks", "priceChecks", "fundingChecks")
+            )
+            or not datetime.fromisoformat(candidate["generatedAt"])
+            <= datetime.fromisoformat(review["reviewObservation"]["observedAt"])
+            <= datetime.fromisoformat(review["reviewedAt"])
+            <= datetime.fromisoformat(candidate["expiresAt"])
         ):
             raise ValueError("stage9_production_admission_review_authority_invalid")
         reviews.append(review)

@@ -14,7 +14,7 @@ from quant_core.stage8_continuity import validate_production_readonly_continuity
 
 _ALLOWED_SYMBOLS = {"BTC/USDT", "ETH/USDT"}
 _CANDIDATE_TTL = timedelta(minutes=10)
-_REVIEW_SCOPE_IDS = [
+PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS = [
     "candidate-hash-reviewed",
     "production-envelope-reviewed",
     "market-and-funding-checks-reviewed",
@@ -155,23 +155,30 @@ class BinanceSpotProductionAdmissionRoute:
         return lambda _exchange_id, config: exchange_class(config)
 
 
-def build_production_order_admission_candidate(
+def canonical_production_order_admission_continuity(value: dict[str, Any]) -> dict[str, Any]:
+    continuity = validate_production_readonly_continuity(value)
+    if continuity["status"] != "current" or not isinstance(continuity["latestProbe"], dict):
+        raise ValueError("stage9_production_admission_current_continuity_required")
+    source_times = [_utc(continuity["latestProbe"]["generatedAt"])]
+    if isinstance(continuity["accessControl"], dict):
+        source_times.append(_utc(continuity["accessControl"]["recordedAt"]))
+    snapshot = json.loads(json.dumps(continuity))
+    snapshot["generatedAt"] = max(source_times).isoformat()
+    snapshot["continuityHash"] = _hash({
+        key: item for key, item in snapshot.items() if key != "continuityHash"
+    })
+    return validate_production_readonly_continuity(snapshot)
+
+
+def validate_production_order_admission_preconditions(
     workflow: dict[str, Any],
     authorization: dict[str, Any],
     sandbox_batch: dict[str, Any],
     continuity: dict[str, Any],
-    observation: dict[str, Any],
-    *,
-    operator: str,
-    generated_at: str | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     workflow = validate_stage4_portfolio_workflow_snapshot(workflow)
     authorization = validate_stage6_sandbox_batch_authorization(authorization)
     continuity = validate_production_readonly_continuity(continuity)
-    observation = validate_production_admission_observation(observation)
-    operator = operator.strip() if isinstance(operator, str) else ""
-    if not operator:
-        raise ValueError("stage9_production_admission_operator_required")
     if (
         authorization["baseRunId"] != workflow["baseRunId"]
         or authorization["workflowId"] != workflow["workflowId"]
@@ -203,6 +210,28 @@ def build_production_order_admission_candidate(
         raise ValueError("stage9_production_admission_sandbox_terminal_evidence_required")
     if continuity["status"] != "current" or not isinstance(continuity["latestProbe"], dict):
         raise ValueError("stage9_production_admission_current_continuity_required")
+    _validate_orders(authorization["orders"])
+    return workflow, authorization, sandbox_batch, continuity
+
+
+def build_production_order_admission_candidate(
+    workflow: dict[str, Any],
+    authorization: dict[str, Any],
+    sandbox_batch: dict[str, Any],
+    continuity: dict[str, Any],
+    observation: dict[str, Any],
+    *,
+    operator: str,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    workflow, authorization, _sandbox_batch, continuity = validate_production_order_admission_preconditions(
+        workflow, authorization, sandbox_batch, continuity
+    )
+    continuity = canonical_production_order_admission_continuity(continuity)
+    observation = validate_production_admission_observation(observation)
+    operator = operator.strip() if isinstance(operator, str) else ""
+    if not operator:
+        raise ValueError("stage9_production_admission_operator_required")
     if not observation["passed"]:
         raise ValueError("stage9_production_admission_observation_blocked")
 
@@ -214,7 +243,8 @@ def build_production_order_admission_candidate(
     ):
         raise ValueError("stage9_production_admission_observation_orders_mismatch")
     generated = _utc(generated_at or datetime.now(timezone.utc).isoformat())
-    if generated < _utc(observation["observedAt"]):
+    observed = _utc(observation["observedAt"])
+    if not observed <= generated <= observed + timedelta(seconds=30):
         raise ValueError("stage9_production_admission_time_invalid")
     orders_hash = _hash(orders)
     if orders_hash != authorization["ordersHash"]:
@@ -242,6 +272,7 @@ def build_production_order_admission_candidate(
         "sandboxAuthorizationId": authorization["authorizationId"],
         "sandboxAuthorizationHash": authorization["authorizationHash"],
         "sandboxBatchStatus": "reconciled",
+        "stage8Continuity": json.loads(json.dumps(continuity)),
         "stage8ContinuityHash": continuity["continuityHash"],
         "productionRouteReviewId": continuity["latestProbe"]["productionRouteReviewId"],
         "orders": orders,
@@ -259,7 +290,8 @@ def validate_production_order_admission_candidate(value: Any) -> dict[str, Any]:
     fields = {
         "kind", "schemaVersion", "candidateId", "candidateKey", "candidateHash", "generatedAt", "expiresAt",
         "baseRunId", "workflowId", "workflowHash", "batchId", "sandboxAuthorizationId",
-        "sandboxAuthorizationHash", "sandboxBatchStatus", "stage8ContinuityHash", "productionRouteReviewId",
+        "sandboxAuthorizationHash", "sandboxBatchStatus", "stage8Continuity", "stage8ContinuityHash",
+        "productionRouteReviewId",
         "orders", "ordersHash", "observation", "operator", "status", *_BOUNDARY,
     }
     if not isinstance(value, dict) or set(value) != fields:
@@ -291,6 +323,19 @@ def validate_production_order_admission_candidate(value: Any) -> dict[str, Any]:
     if value["ordersHash"] != _hash(value["orders"]):
         raise ValueError("stage9_production_admission_candidate_orders_hash_invalid")
     observation = validate_production_admission_observation(value["observation"])
+    observed = _utc(observation["observedAt"])
+    if not observed <= generated <= observed + timedelta(seconds=30):
+        raise ValueError("stage9_production_admission_candidate_time_invalid")
+    continuity = validate_production_readonly_continuity(value["stage8Continuity"])
+    if (
+        canonical_production_order_admission_continuity(continuity) != continuity
+        or continuity["status"] != "current"
+        or continuity["continuityHash"] != value["stage8ContinuityHash"]
+        or continuity["latestProbe"]["productionRouteReviewId"] != value["productionRouteReviewId"]
+        or _utc(continuity["generatedAt"]) > observed
+        or _utc(continuity["expiresAt"]) < generated
+    ):
+        raise ValueError("stage9_production_admission_candidate_continuity_invalid")
     order_ids = [row["orderId"] for row in value["orders"]]
     if not observation["passed"] or any(
         [row["orderId"] for row in observation[field]] != order_ids
@@ -353,15 +398,15 @@ def build_production_order_admission_review(
     reviewed_at: str | None = None,
 ) -> dict[str, Any]:
     candidate = validate_production_order_admission_candidate(candidate)
-    continuity = validate_production_readonly_continuity(continuity)
+    continuity = canonical_production_order_admission_continuity(continuity)
     observation = validate_production_admission_observation(observation)
     reviewer = reviewer.strip() if isinstance(reviewer, str) else ""
     reason = reason.strip() if isinstance(reason, str) else ""
     if not reviewer or not reason or outcome not in {"approved", "rejected"}:
         raise ValueError("stage9_production_admission_review_decision_invalid")
-    if not isinstance(confirmations, dict) or set(confirmations) != set(_REVIEW_SCOPE_IDS):
+    if not isinstance(confirmations, dict) or set(confirmations) != set(PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS):
         raise ValueError("stage9_production_admission_review_confirmations_invalid")
-    if any(confirmations[item] is not True for item in _REVIEW_SCOPE_IDS):
+    if any(confirmations[item] is not True for item in PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS):
         raise ValueError("stage9_production_admission_review_confirmations_incomplete")
     if continuity["status"] != "current" or continuity["continuityHash"] != candidate["stage8ContinuityHash"]:
         raise ValueError("stage9_production_admission_review_continuity_drift")
@@ -396,7 +441,7 @@ def build_production_order_admission_review(
         "reviewer": reviewer,
         "outcome": outcome,
         "reason": reason,
-        "confirmedScopeIds": list(_REVIEW_SCOPE_IDS),
+        "confirmedScopeIds": list(PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS),
         "status": "admission_review_recorded",
         "authorizationEffective": False,
         **_BOUNDARY,
@@ -420,7 +465,7 @@ def validate_production_order_admission_review(value: Any) -> dict[str, Any]:
         or value["status"] != "admission_review_recorded"
         or value["outcome"] not in {"approved", "rejected"}
         or value["authorizationEffective"] is not False
-        or value["confirmedScopeIds"] != _REVIEW_SCOPE_IDS
+        or value["confirmedScopeIds"] != PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS
     ):
         raise ValueError("stage9_production_admission_review_schema_invalid")
     for field in ("reviewId", "baseRunId", "candidateId", "sandboxAuthorizationId", "reviewer", "reason"):
@@ -429,9 +474,14 @@ def validate_production_order_admission_review(value: Any) -> dict[str, Any]:
     for field in ("reviewHash", "candidateHash", "stage8ContinuityHash"):
         if not _is_hash(value[field]):
             raise ValueError("stage9_production_admission_review_hash_invalid")
-    _utc(value["reviewedAt"])
+    reviewed = _utc(value["reviewedAt"])
     _validate_boundary(value, "stage9_production_admission_review_boundary_invalid")
-    validate_production_admission_observation(value["reviewObservation"])
+    observation = validate_production_admission_observation(value["reviewObservation"])
+    if not observation["passed"]:
+        raise ValueError("stage9_production_admission_review_observation_invalid")
+    observed = _utc(observation["observedAt"])
+    if not observed <= reviewed <= observed + timedelta(seconds=30):
+        raise ValueError("stage9_production_admission_review_time_invalid")
     expected_id = "stage9-production-admission-review-" + hashlib.sha256(
         value["candidateHash"].encode()
     ).hexdigest()[:24]
@@ -573,12 +623,23 @@ def _market_rule_passed(exchange: Any, market: Any, order: dict[str, Any]) -> bo
 
 def _within(value: float, limit: Any) -> bool:
     if not isinstance(limit, dict):
-        return True
+        return False
     minimum, maximum = limit.get("min"), limit.get("max")
-    return not (
-        isinstance(minimum, (int, float)) and not isinstance(minimum, bool) and value < float(minimum)
-        or isinstance(maximum, (int, float)) and not isinstance(maximum, bool) and value > float(maximum)
-    )
+    if (
+        isinstance(minimum, bool)
+        or not isinstance(minimum, (int, float))
+        or not math.isfinite(float(minimum))
+        or float(minimum) <= 0
+    ):
+        return False
+    if maximum is not None and (
+        isinstance(maximum, bool)
+        or not isinstance(maximum, (int, float))
+        or not math.isfinite(float(maximum))
+        or float(maximum) < float(minimum)
+    ):
+        return False
+    return value >= float(minimum) and (maximum is None or value <= float(maximum))
 
 
 def _reference_quote(value: Any, side: str) -> tuple[float, datetime]:

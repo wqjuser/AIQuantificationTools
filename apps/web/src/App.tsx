@@ -279,7 +279,10 @@ import {
 import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
 import { ExecutionStage6SandboxSection } from "./components/ExecutionStage6SandboxSection";
 import { ExecutionStage7ProductionReadonlySection } from "./components/ExecutionStage7ProductionReadonlySection";
-import { ExecutionStage9ProductionAdmissionSection } from "./components/ExecutionStage9ProductionAdmissionSection";
+import {
+  ExecutionStage9ProductionAdmissionSection,
+  Stage9ProductionAdmissionAuditLedgerPanel
+} from "./components/ExecutionStage9ProductionAdmissionSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
@@ -336,6 +339,7 @@ import {
   createStage9ProductionAdmissionReview,
   loadStage9ProductionAdmissionCandidates,
   loadStage9ProductionAdmissionReviews,
+  selectCurrentStage9ProductionAdmissionCandidate,
   type Stage9ProductionAdmissionCandidate,
   type Stage9ProductionAdmissionReview
 } from "./lib/stage9-production-admission";
@@ -2306,6 +2310,7 @@ export function App() {
   const [isUpdatingStage8ProductionReadonly, setIsUpdatingStage8ProductionReadonly] = useState(false);
   const [stage9ProductionAdmissionCandidates, setStage9ProductionAdmissionCandidates] =
     useState<Stage9ProductionAdmissionCandidate[]>([]);
+  const [stage9ProductionAdmissionClock, setStage9ProductionAdmissionClock] = useState(Date.now);
   const [stage9ProductionAdmissionReviews, setStage9ProductionAdmissionReviews] =
     useState<Stage9ProductionAdmissionReview[]>([]);
   const [stage9ProductionAdmissionError, setStage9ProductionAdmissionError] = useState<string | null>(null);
@@ -2427,6 +2432,8 @@ export function App() {
   const initialImportAuditEvidenceDeepLink = resolveInitialImportAuditEvidenceDeepLink();
   const initialPaperExecutionDeepLink = resolveInitialPaperExecutionDeepLink();
   const [auditEvidenceReportEvents, setAuditEvidenceReportEvents] = useState<AuditEventRecord[]>([]);
+  const [stage9ProductionAdmissionAuditEvents, setStage9ProductionAdmissionAuditEvents] =
+    useState<AuditEventRecord[]>([]);
   const [marketDataRefreshOverrideAuditEvents, setMarketDataRefreshOverrideAuditEvents] = useState<AuditEventRecord[]>([]);
   const [portfolioPaperOrderAuditEvents, setPortfolioPaperOrderAuditEvents] = useState<AuditEventRecord[]>([]);
   const [executionAdapterPaperExecutionAuditEvents, setExecutionAdapterPaperExecutionAuditEvents] = useState<
@@ -2870,12 +2877,23 @@ export function App() {
     stage6SandboxAuthorization,
     stage6SandboxBatch
   );
-  const stage9ProductionAdmissionCandidate = stage9ProductionAdmissionCandidates.find((row) =>
-    row.sandboxAuthorizationId === stage6SandboxAuthorization?.authorizationId
-  ) ?? null;
+  const stage9ProductionAdmissionCandidate = selectCurrentStage9ProductionAdmissionCandidate(
+    stage9ProductionAdmissionCandidates, stage6SandboxAuthorization?.authorizationId,
+    stage9ProductionAdmissionClock
+  );
   const stage9ProductionAdmissionReview = stage9ProductionAdmissionReviews.find((row) =>
     row.candidateId === stage9ProductionAdmissionCandidate?.candidateId
   ) ?? null;
+  const stage9ProductionAdmissionExpiry = stage9ProductionAdmissionCandidate?.expiresAt ?? null;
+  useEffect(() => {
+    if (!stage9ProductionAdmissionExpiry) return;
+    const delay = Math.max(0, Math.min(
+      Date.parse(stage9ProductionAdmissionExpiry) - Date.now() + 1,
+      2_147_483_647
+    ));
+    const timer = window.setTimeout(() => setStage9ProductionAdmissionClock(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [stage9ProductionAdmissionExpiry]);
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -4538,6 +4556,15 @@ export function App() {
     return auditHistory;
   }, [auditEvidenceReportOffset, auditEvidenceReportQuery, quantCoreBaseUrl]);
 
+  const refreshStage9ProductionAdmissionAuditEvents = useCallback(async () => {
+    const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
+      eventType: "stage9_production_order_admission_candidate,stage9_production_order_admission_review",
+      limit: 50
+    });
+    setStage9ProductionAdmissionAuditEvents(auditHistory.source === "core" ? auditHistory.events : []);
+    return auditHistory;
+  }, [quantCoreBaseUrl]);
+
   const refreshMarketDataRefreshOverrideAuditEvents = useCallback(async () => {
     const requestId = marketDataRefreshOverrideAuditRequestIdRef.current + 1;
     marketDataRefreshOverrideAuditRequestIdRef.current = requestId;
@@ -4853,6 +4880,7 @@ export function App() {
       return;
     }
     void refreshAuditEvidenceReportEvents();
+    void refreshStage9ProductionAdmissionAuditEvents();
     void refreshMarketDataRefreshOverrideAuditEvents();
     void refreshPortfolioPaperOrderAuditEvents();
     void refreshExecutionAdapterPaperExecutionAuditEvents();
@@ -4861,6 +4889,7 @@ export function App() {
   }, [
     activeWorkAreaId,
     refreshAuditEvidenceReportEvents,
+    refreshStage9ProductionAdmissionAuditEvents,
     refreshMarketDataRefreshOverrideAuditEvents,
     refreshPortfolioPaperOrderAuditEvents,
     refreshExecutionAdapterPaperExecutionAuditEvents,
@@ -13626,6 +13655,11 @@ export function App() {
             pagination={executionAdapterPaperExecutionAuditPagination}
             query={executionAdapterPaperExecutionAuditQuery}
             rows={executionAdapterPaperExecutionAuditRows}
+          />
+          <Stage9ProductionAdmissionAuditLedgerPanel
+            className="workflow-stage9-production-admission-audit-panel"
+            events={stage9ProductionAdmissionAuditEvents}
+            locale={i18n.locale}
           />
           <P2PreLiveAcceptancePanel
             className="workflow-p2-pre-live-acceptance-audit-panel"

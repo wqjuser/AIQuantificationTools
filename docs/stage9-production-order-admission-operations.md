@@ -43,7 +43,7 @@ GET  /api/execution/stage9/production-order-admission-reviews?baseRunId=...
 
 ## 导出与恢复
 
-候选与复核随研究运行包导出，manifest 使用 `stage9ProductionAdmissionCandidates` 和 `stage9ProductionAdmissionReviews` 计数。导入会重验 schema、hash、事件绑定和来源链，然后加上 `metadata.detached=true`。detached 事件可在 Audit 查看，但候选/复核 GET 不把它恢复到 Execution，POST 也不能引用它。
+候选与复核随研究运行包导出，manifest 使用 `stage9ProductionAdmissionCandidates` 和 `stage9ProductionAdmissionReviews` 计数。导入会重验 schema、hash、事件绑定、canonical Stage 8 快照和来源链，然后加上 `metadata.detached=true`。Audit 的 Stage 9 专属只读面板会在运行时验证 exact contract 与事件绑定，并区分 `local · audit-only`、`detached · audit-only` 和 `invalid · audit-only` 行；候选/复核 GET 不把 detached 副本恢复到 Execution，POST 也不能引用它。
 
 ## Docker 验收
 
@@ -52,7 +52,29 @@ npm run docker:smoke:stage9
 npm run docker:smoke:stage9:validate
 ```
 
-默认门禁使用独立 Compose 项目和临时数据卷，不读取宿主生产凭据、不访问生产网络。它验证两笔订单候选、不可改写非生效复核、无凭据 fail closed、连续性漂移、候选过期、detached 阻断、API 重启精确回读和全部 live-blocked 字段，结束后删除临时卷。2026-07-14 accepted manifest hash 为 `d3cf7d74677e02347fbc6d5c1d4e2e1c8c22370b84f862f99f8c8c45f2bf5d84`，报告文件 SHA-256 为 `47fa95a82ccb3355c2dc4b9121f3baeb491773d4b11985559784ca0251746aa2`。
+默认门禁使用独立 Compose 项目和临时数据卷，不读取宿主生产凭据、不访问生产网络。它验证两笔订单候选、不可改写非生效复核、无凭据 fail closed、连续性漂移、候选过期、detached 阻断、API 重启精确回读和全部 live-blocked 字段，结束后删除临时卷。candidate/review 重复请求与 Stage 8 revoke 通过本地 HTTP handler 的真实 POST 路径验证，而不是只调用 builder。2026-07-14 accepted manifest hash 为 `6eae5b6844a7e74d7cd4a4ec062a24b5cfac23b2f5677f31716bf8753912fec4`，报告文件 SHA-256 为 `c35ec9b065feff1424010ee23e3266a6b28821d75b9f521aca696481a7bacc20`。
+
+确定性替身还覆盖生产规则缺失/漂移、31 秒陈旧报价、超过 1% 的不利价格、资金不足、Stage 8 revoke 网络前阻断，以及 candidate/review 重复请求精确回读。无专用生产只读凭据时，即使存在通用或 Sandbox 变量也不会构造生产连接，且阻断时 candidate/review 计数保持为零。manifest 在离线校验前先落盘，因此门禁失败时 CI 仍会上传故障证据。
+
+可选真实只读验收不属于发布必跑项。先在 `data/stage9-production-admission-acceptance-request.json` 写入当前权威 Stage 6 authorization：
+
+```json
+{
+  "authorizationId": "stage6-sandbox-auth-...",
+  "operator": "具名操作人"
+}
+```
+
+然后运行：
+
+```powershell
+npm run docker:smoke:stage9:real
+npm run docker:smoke:stage9:real:validate
+```
+
+真实模式复用当前 API 数据卷、Stage 8 continuity 和专用生产只读凭据，并强制使用包含 `ccxt` 的 data-deps 镜像。运行时守卫被注入同一次权威 candidate POST，只允许 `load_markets`、本地精度换算、`fetch_ticker` 和 `fetch_balance`，任何其他 CCXT 顶层方法都会立即失败；结果判定同时要求方法轨迹、逐项 observation blocker 与 API blocker 精确对应。随后重启 API 并回读同一候选或零候选阻断结果。结果允许 `ready`，也允许仅因资金不足而安全 `funding_blocked`；混合 blocker、来源链、市场或价格阻断都会使验收失败。报告只保存候选 identity/hash、只读方法名或脱敏 blocker，不保存资产名称、余额、Key 或原始交易所响应。
+
+2026-07-14 使用既有 Sandbox 授权执行的最终可选真实只读演练在权威 POST 前置校验中被正确阻断：该批次当前为 `reconciliation_required` 而不是 `reconciled`，因此生产网络调用数为零、没有生成候选，API 重启后仍为零候选；这不属于 accepted real-readonly 证据。需要 accepted 证据时，应先按正常 Stage 4/6 流程生成并终态对账新的权威批次，不能绕过前置校验、放宽价格阈值或给生产账户充值。
 
 ## 明确禁止
 
