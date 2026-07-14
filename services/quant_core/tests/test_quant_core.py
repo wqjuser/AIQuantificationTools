@@ -5630,6 +5630,7 @@ class QuantCoreContractTest(unittest.TestCase):
                         {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
                         {"market": "ashare", "symbol": "000300", "name": "沪深300"},
                         {"market": "us", "symbol": "AAPL", "name": "Apple"},
+                        {"market": "crypto", "symbol": "BTC/USDT", "name": "Bitcoin"},
                     ],
                 }
             if url == "http://aiqt.local/api/research/runs/run-p1-smoke/export":
@@ -5643,6 +5644,10 @@ class QuantCoreContractTest(unittest.TestCase):
             events.append(("POST", url))
             if url.endswith("/api/cache/watchlist-refreshes"):
                 self.assertEqual(len(payload["watchlist"]), 3)
+                self.assertEqual(
+                    [item["symbol"] for item in payload["watchlist"]],
+                    ["600000", "000300", "AAPL"],
+                )
                 self.assertEqual(payload["timeframe"], "1d")
                 return {
                     "watchlistRefresh": {
@@ -5813,7 +5818,7 @@ class QuantCoreContractTest(unittest.TestCase):
             events.index(("POST", "http://aiqt.local/api/portfolio/paper-order-simulations/batch")),
             events.index(("GET", "http://aiqt.local/api/research/runs/run-p1-smoke/export")),
         )
-        self.assertIn("p1 workspace watchlist=3 selected=600000", summaries)
+        self.assertIn("p1 workspace watchlist=4 selected=600000", summaries)
         self.assertIn("p1 queue-pipeline run=run-p1-smoke symbol=600000 refresh=cache-refresh-p1", summaries)
         self.assertIn(
             "p1 p2-replay-seed run=run-p1-smoke batch=portfolio-paper-batch-p2-replay filled=1 liveBlocked=True",
@@ -5823,6 +5828,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(report_payload["kind"], "aiqt.p1AcceptanceManifest")
         self.assertEqual(report_payload["watchlistRefreshRunId"], "cache-refresh-p1")
         self.assertEqual(report_payload["queuedSymbol"], "600000")
+        self.assertEqual(report_payload["watchlistCount"], 3)
         self.assertEqual(report_payload["status"], "passed")
         self.assertIn("p2-replay-seed", [check["id"] for check in report_payload["checks"]])
 

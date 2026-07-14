@@ -82,7 +82,7 @@ npm run docker:smoke:p0:validate
 npm run docker:smoke:p1 -- --no-build --down
 ```
 
-`docker:smoke:p1` 会读取 `/api/workspace` 的自选列表，要求至少 3 个标的，运行 watchlist cache refresh，选择一只刷新成功的 queue-ready 标的运行审计流水线、AI 评审、paper-only 模拟、P2 replay seed 组合证据、研究包导出、复现包导入和导入后重导出，并把验收结果写入 `data/p1-acceptance.json`。该 manifest 会记录 `watchlistRefreshRunId`、queued symbol、`p2-replay-seed` 检查步骤和 `paperOnly=true / liveTradingAllowed=false` 边界，用于证明 P1 研究运营链路可复现，并为后续 P2 paper replay 准备组合委托、审批、模拟成交和 adapter paper execution 证据；它同样不会触发真实下单。工作台会通过 `GET /api/p1/acceptance/latest` 读取这份报告，并在 P1 研究运营验收卡显示 watchlist 数量、队列标的、检查覆盖和来源路径。
+`docker:smoke:p1` 会读取 `/api/workspace` 的自选列表，要求至少 3 个标的，并按工作区顺序固定取前三个作为验收样本运行 watchlist cache refresh；这避免产品自选增长无界增加 CI 外部请求量，不限制用户保存或手动刷新的完整自选列表。验收随后选择一只刷新成功的 queue-ready 标的运行审计流水线、AI 评审、paper-only 模拟、P2 replay seed 组合证据、研究包导出、复现包导入和导入后重导出，并把结果写入 `data/p1-acceptance.json`。该 manifest 会记录 `watchlistRefreshRunId`、queued symbol、`p2-replay-seed` 检查步骤和 `paperOnly=true / liveTradingAllowed=false` 边界，用于证明 P1 研究运营链路可复现，并为后续 P2 paper replay 准备组合委托、审批、模拟成交和 adapter paper execution 证据；它同样不会触发真实下单。工作台会通过 `GET /api/p1/acceptance/latest` 读取这份报告，并在 P1 研究运营验收卡显示 watchlist 数量、队列标的、检查覆盖和来源路径。
 
 ```powershell
 npm run docker:smoke:p1:validate
@@ -146,6 +146,8 @@ npm run docker:smoke:stage6:exit:validate
 ```
 
 Stage 6 已于 2026-07-13 通过真实 Binance Spot Testnet 退出验收：BTC/USDT 与 ETH/USDT 两笔 GTC 限价委托均完成创建、查询、撤销、终态对账、API 重启回读和 detached 导入回读，真实 manifest SHA-256 为 `096e5df28a48c7f7a6e99632622daacfd06da480c50b1f7daa83331492db884d`。Stage 0 至 Stage 8 现均为 maintenance；下一阶段必须单独设计和确认，真实资金委托和 live route 继续不在范围内。完整操作见 [docs/stage6-sandbox-operations.md](docs/stage6-sandbox-operations.md)。所有实盘字段继续固定为 false，`liveBlockedBoundary=true`。
+
+Stage 6 acceptance 的初次 Compose 启动和 API 重启现在复用同一份 30 秒健康等待，连接在 Web 容器启动期间被重置时会继续等待，而不是让单次 `/health` 探测误判发布失败；该等待不重试任何交易所或委托请求。
 
 ## Stage 5 已完成并进入维护
 
