@@ -17,7 +17,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quant_core.audit_events import AuditEventStore
-from quant_core.api import QuantApiHandler
+from quant_core.api import (
+    QuantApiHandler,
+    _stage9_production_admission_candidates,
+    _stage9_production_admission_reviews,
+)
 from quant_core.execution_adapter_health import (
     probe_ccxt_production_readonly,
     production_readonly_probe_to_evidence,
@@ -406,16 +410,24 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
 
             class Route:
                 calls = 0
+                review_phase = False
                 first_observation_started = Event()
                 concurrent_observation_started = Event()
+                review_observation_started = Event()
+                concurrent_review_observation_started = Event()
 
                 def observe(self, candidate_orders, *, observed_at=None):
                     type(self).calls += 1
-                    if type(self).calls == 1:
+                    if not type(self).review_phase and not type(self).first_observation_started.is_set():
                         type(self).first_observation_started.set()
                         time.sleep(0.25)
-                    else:
+                    elif not type(self).review_phase:
                         type(self).concurrent_observation_started.set()
+                    elif not type(self).review_observation_started.is_set():
+                        type(self).review_observation_started.set()
+                        time.sleep(0.25)
+                    else:
+                        type(self).concurrent_review_observation_started.set()
                     self.assert_orders = candidate_orders
                     return _passing_observation(
                         candidate_orders, observed_at or datetime.now(timezone.utc)
@@ -460,6 +472,71 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                 self.assertFalse(Route.concurrent_observation_started.is_set())
                 created_status, created = next(row for row in candidate_responses if row[0] == 201)
                 repeated_status, repeated = next(row for row in candidate_responses if row[0] == 200)
+                future_review_id = "stage9-production-admission-review-" + hashlib.sha256(
+                    created["productionOrderAdmissionCandidate"]["candidateHash"].encode()
+                ).hexdigest()[:24]
+                future_review_connection = HTTPConnection(*server.server_address, timeout=5)
+                try:
+                    future_review_connection.request(
+                        "POST", "/api/audit/events", json.dumps({
+                            "schemaVersion": 1,
+                            "eventId": future_review_id,
+                            "eventType": "attacker_controlled_event",
+                            "runId": workflow["baseRunId"],
+                            "createdAt": now.isoformat(),
+                            "stage": "attacker-controlled-stage",
+                            "source": "attacker",
+                            "summary": "Attempt to reserve a future Stage 9 review id.",
+                            "detail": "This otherwise valid generic audit event must be rejected.",
+                            "metadata": {},
+                        }), {"Content-Type": "application/json"},
+                    )
+                    future_review_overwrite_response = future_review_connection.getresponse()
+                    future_review_overwrite = json.loads(future_review_overwrite_response.read())
+                finally:
+                    future_review_connection.close()
+                review_body = json.dumps({
+                    "candidateId": created["productionOrderAdmissionCandidate"]["candidateId"],
+                    "reviewer": "named-reviewer",
+                    "outcome": "approved",
+                    "reason": "已核对候选与生产只读证据。",
+                    "confirmations": {
+                        "candidate-hash-reviewed": True,
+                        "production-envelope-reviewed": True,
+                        "market-and-funding-checks-reviewed": True,
+                        "stage8-continuity-current": True,
+                        "no-production-execution-authority": True,
+                    },
+                })
+                review_responses = [None, None]
+
+                def post_review(index):
+                    review_connection = HTTPConnection(*server.server_address, timeout=5)
+                    try:
+                        review_connection.request(
+                            "POST", "/api/execution/stage9/production-order-admission-reviews",
+                            review_body, {"Content-Type": "application/json"},
+                        )
+                        response = review_connection.getresponse()
+                        review_responses[index] = (response.status, json.loads(response.read()))
+                    finally:
+                        review_connection.close()
+
+                Route.review_phase = True
+                first_review_thread = Thread(target=post_review, args=(0,))
+                second_review_thread = Thread(target=post_review, args=(1,))
+                first_review_thread.start()
+                self.assertTrue(Route.review_observation_started.wait(timeout=2))
+                second_review_thread.start()
+                first_review_thread.join(timeout=5)
+                second_review_thread.join(timeout=5)
+                self.assertFalse(first_review_thread.is_alive())
+                self.assertFalse(second_review_thread.is_alive())
+                self.assertFalse(Route.concurrent_review_observation_started.is_set())
+                review_status, review_result = next(row for row in review_responses if row[0] == 201)
+                repeated_review_status, repeated_review = next(
+                    row for row in review_responses if row[0] == 200
+                )
 
                 connection = HTTPConnection(*server.server_address, timeout=5)
                 try:
@@ -479,31 +556,6 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     )
                     read_response = connection.getresponse()
                     readback = json.loads(read_response.read())
-                    review_body = json.dumps({
-                        "candidateId": created["productionOrderAdmissionCandidate"]["candidateId"],
-                        "reviewer": "named-reviewer",
-                        "outcome": "approved",
-                        "reason": "已核对候选与生产只读证据。",
-                        "confirmations": {
-                            "candidate-hash-reviewed": True,
-                            "production-envelope-reviewed": True,
-                            "market-and-funding-checks-reviewed": True,
-                            "stage8-continuity-current": True,
-                            "no-production-execution-authority": True,
-                        },
-                    })
-                    connection.request(
-                        "POST", "/api/execution/stage9/production-order-admission-reviews", review_body,
-                        {"Content-Type": "application/json"},
-                    )
-                    review_response = connection.getresponse()
-                    review_result = json.loads(review_response.read())
-                    connection.request(
-                        "POST", "/api/execution/stage9/production-order-admission-reviews", review_body,
-                        {"Content-Type": "application/json"},
-                    )
-                    repeated_review_response = connection.getresponse()
-                    repeated_review = json.loads(repeated_review_response.read())
                     conflicting_review_payload = json.loads(review_body)
                     conflicting_review_payload["outcome"] = "rejected"
                     conflicting_review_payload["reason"] = "冲突结果不得覆盖。"
@@ -519,6 +571,33 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     )
                     review_read_response = connection.getresponse()
                     review_readback = json.loads(review_read_response.read())
+                    connection.request(
+                        "POST", "/api/audit/events", json.dumps(created["auditEvent"]),
+                        {"Content-Type": "application/json"},
+                    )
+                    candidate_overwrite_response = connection.getresponse()
+                    candidate_overwrite = json.loads(candidate_overwrite_response.read())
+                    tampered_review = copy.deepcopy(review_result["productionOrderAdmissionReview"])
+                    tampered_review["reason"] = "通用审计接口不得改写已记录的人工结论。"
+                    tampered_review["reviewHash"] = _hash({
+                        key: value for key, value in tampered_review.items() if key != "reviewHash"
+                    })
+                    tampered_review_event = production_order_admission_review_to_audit_event(
+                        tampered_review
+                    )
+                    tampered_review_event["eventType"] = "attacker_controlled_event"
+                    connection.request(
+                        "POST", "/api/audit/events", json.dumps(tampered_review_event),
+                        {"Content-Type": "application/json"},
+                    )
+                    review_overwrite_response = connection.getresponse()
+                    review_overwrite = json.loads(review_overwrite_response.read())
+                    connection.request(
+                        "GET",
+                        f"/api/execution/stage9/production-order-admission-reviews?baseRunId={workflow['baseRunId']}",
+                    )
+                    protected_review_read_response = connection.getresponse()
+                    protected_review_readback = json.loads(protected_review_read_response.read())
                     with patch(
                         "quant_core.api._stage9_production_admission_reviews",
                         side_effect=LookupError("candidate source missing"),
@@ -555,23 +634,46 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     server.shutdown()
                     thread.join(timeout=5)
                     server.server_close()
+                candidate_binding = copy.deepcopy(created["auditEvent"])
+                candidate_binding["source"] = "attacker"
+                store.record(candidate_binding)
+                with self.assertRaisesRegex(ValueError, "candidate_audit_binding_invalid"):
+                    _stage9_production_admission_candidates(
+                        store, workflow["baseRunId"], limit=50
+                    )
+                store.record(created["auditEvent"])
+                review_binding = copy.deepcopy(review_result["auditEvent"])
+                review_binding["stage"] = "attacker-controlled-stage"
+                store.record(review_binding)
+                with self.assertRaisesRegex(ValueError, "review_audit_binding_invalid"):
+                    _stage9_production_admission_reviews(
+                        store, workflow["baseRunId"], limit=50
+                    )
 
         self.assertEqual(created_status, 201, created)
         self.assertEqual(repeated_status, 200, repeated)
+        self.assertEqual(future_review_overwrite_response.status, 400, future_review_overwrite)
+        self.assertIn("reserved", future_review_overwrite["detail"])
         self.assertEqual(conflicting_candidate_response.status, 409, conflicting_candidate)
         self.assertIn("conflicts with immutable evidence", conflicting_candidate["blockers"][0])
         self.assertEqual(read_response.status, 200, readback)
         self.assertEqual(created["productionOrderAdmissionCandidate"], repeated["productionOrderAdmissionCandidate"])
         self.assertEqual(readback["productionOrderAdmissionCandidates"], [created["productionOrderAdmissionCandidate"]])
         self.assertEqual(created["auditEvent"]["eventType"], "stage9_production_order_admission_candidate")
-        self.assertEqual(review_response.status, 201, review_result)
-        self.assertEqual(repeated_review_response.status, 200, repeated_review)
+        self.assertEqual(review_status, 201, review_result)
+        self.assertEqual(repeated_review_status, 200, repeated_review)
         self.assertEqual(conflicting_review_response.status, 409, conflicting_review)
         self.assertIn("conflicts with immutable evidence", conflicting_review["blockers"][0])
         self.assertEqual(review_read_response.status, 200, review_readback)
         self.assertEqual(review_result, repeated_review)
         self.assertEqual(
             review_readback["productionOrderAdmissionReviews"],
+            [review_result["productionOrderAdmissionReview"]],
+        )
+        self.assertEqual(candidate_overwrite_response.status, 400, candidate_overwrite)
+        self.assertEqual(review_overwrite_response.status, 400, review_overwrite)
+        self.assertEqual(
+            protected_review_readback["productionOrderAdmissionReviews"],
             [review_result["productionOrderAdmissionReview"]],
         )
         self.assertEqual(invalid_review_read_response.status, 500, invalid_review_readback)
@@ -826,6 +928,7 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
             "noCredentialFactoryCalled": False,
             "noCredentialCandidateCount": 0,
             "noCredentialReviewCount": 0,
+            "noCredentialArtifactCountsUnchanged": True,
             "readyObservationPassed": True,
             "ruleDriftBlocked": True,
             "staleQuoteBlocked": True,

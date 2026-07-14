@@ -134,10 +134,10 @@ def _container_exercise() -> dict[str, Any]:
     continuity = _current_continuity(now)
 
     store = AuditEventStore("data/audit_events.sqlite")
-    no_credential_candidate_count = len(store.list_recent(
+    candidate_count_before_no_credential = len(store.list_recent(
         event_type="stage9_production_order_admission_candidate", limit=100
     ))
-    no_credential_review_count = len(store.list_recent(
+    review_count_before_no_credential = len(store.list_recent(
         event_type="stage9_production_order_admission_review", limit=100
     ))
     no_credential_blocker = ""
@@ -147,19 +147,6 @@ def _container_exercise() -> dict[str, Any]:
         nonlocal no_credential_factory_called
         no_credential_factory_called = True
         raise RuntimeError("production network must not be constructed")
-
-    try:
-        BinanceSpotProductionAdmissionRoute(
-            env={
-                "CCXT_API_KEY": "generic-key-must-not-be-used",
-                "CCXT_SECRET": "generic-secret-must-not-be-used",
-                "CCXT_SANDBOX_API_KEY": "sandbox-key-must-not-be-used",
-                "CCXT_SANDBOX_SECRET": "sandbox-secret-must-not-be-used",
-            },
-            exchange_factory=forbidden_factory,
-        ).observe(orders, observed_at=now)
-    except ValueError as error:
-        no_credential_blocker = str(error)
 
     store.record({
         "schemaVersion": 1,
@@ -181,6 +168,61 @@ def _container_exercise() -> dict[str, Any]:
             exchange_evidence={"operation": "cancel", "clientOrderId": order["clientOrderId"]},
         )
     batch = service.batch(authorization["authorizationId"])
+    candidate_request = {
+        "authorizationId": authorization["authorizationId"],
+        "operator": "stage9-acceptance",
+    }
+
+    def post(connection: HTTPConnection, path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        connection.request(
+            "POST", path, json.dumps(payload), {"Content-Type": "application/json"}
+        )
+        response = connection.getresponse()
+        return response.status, json.loads(response.read())
+
+    class NoCredentialHandler(QuantApiHandler):
+        audit_event_store = store
+        stage6_sandbox_route_factory = staticmethod(lambda: sandbox_route)
+        stage9_production_admission_route_factory = staticmethod(lambda: (
+            BinanceSpotProductionAdmissionRoute(
+                env={
+                    "CCXT_API_KEY": "generic-key-must-not-be-used",
+                    "CCXT_SECRET": "generic-secret-must-not-be-used",
+                    "CCXT_SANDBOX_API_KEY": "sandbox-key-must-not-be-used",
+                    "CCXT_SANDBOX_SECRET": "sandbox-secret-must-not-be-used",
+                },
+                exchange_factory=forbidden_factory,
+            )
+        ))
+
+    no_credential_server = HTTPServer(("127.0.0.1", 0), NoCredentialHandler)
+    no_credential_thread = Thread(target=no_credential_server.serve_forever, daemon=True)
+    with patch("quant_core.api._stage8_production_readonly_continuity", return_value=continuity):
+        no_credential_thread.start()
+        no_credential_connection = HTTPConnection(*no_credential_server.server_address, timeout=10)
+        try:
+            no_credential_status, no_credential_payload = post(
+                no_credential_connection,
+                "/api/execution/stage9/production-order-admission-candidates",
+                candidate_request,
+            )
+        finally:
+            no_credential_connection.close()
+            no_credential_server.shutdown()
+            no_credential_thread.join(timeout=5)
+            no_credential_server.server_close()
+    if no_credential_status == 409:
+        no_credential_blocker = ";".join(no_credential_payload.get("blockers", []))
+    no_credential_candidate_count = len(store.list_recent(
+        event_type="stage9_production_order_admission_candidate", limit=100
+    ))
+    no_credential_review_count = len(store.list_recent(
+        event_type="stage9_production_order_admission_review", limit=100
+    ))
+    no_credential_artifact_counts_unchanged = (
+        no_credential_candidate_count == candidate_count_before_no_credential
+        and no_credential_review_count == review_count_before_no_credential
+    )
 
     ready_observation = _deterministic_observation(orders, now)
     model_candidate = build_production_order_admission_candidate(
@@ -264,19 +306,8 @@ def _container_exercise() -> dict[str, Any]:
         stage6_sandbox_route_factory = staticmethod(lambda: sandbox_route)
         stage9_production_admission_route_factory = staticmethod(DeterministicRoute)
 
-    def post(connection: HTTPConnection, path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        connection.request(
-            "POST", path, json.dumps(payload), {"Content-Type": "application/json"}
-        )
-        response = connection.getresponse()
-        return response.status, json.loads(response.read())
-
     server = HTTPServer(("127.0.0.1", 0), Handler)
     thread = Thread(target=server.serve_forever, daemon=True)
-    candidate_request = {
-        "authorizationId": authorization["authorizationId"],
-        "operator": "stage9-acceptance",
-    }
     review_request = {
         "candidateId": "",
         "reviewer": "stage9-acceptance-reviewer",
@@ -322,6 +353,7 @@ def _container_exercise() -> dict[str, Any]:
         "noCredentialFactoryCalled": no_credential_factory_called,
         "noCredentialCandidateCount": no_credential_candidate_count,
         "noCredentialReviewCount": no_credential_review_count,
+        "noCredentialArtifactCountsUnchanged": no_credential_artifact_counts_unchanged,
         "readyObservationPassed": ready_observation["passed"],
         "ruleDriftBlocked": not fault_observations["rule-drift"]["passed"],
         "staleQuoteBlocked": not fault_observations["stale-quote"]["passed"],
@@ -606,7 +638,7 @@ def _manifest(exercise: dict[str, Any], readback: dict[str, Any]) -> dict[str, A
         {"id": "deterministic-ready-observation", "passed": exercise.get("readyObservationPassed") is True and len(candidate.get("orders", [])) == 2},
         {"id": "immutable-review-non-effective", "passed": review.get("outcome") == "approved" and review.get("authorizationEffective") is False},
         {"id": "dedicated-credential-fail-closed-before-network", "passed": exercise.get("noCredentialBlocker") == "stage9_production_readonly_credentials_required" and exercise.get("noCredentialFactoryCalled") is False},
-        {"id": "no-credential-zero-stage9-artifacts", "passed": exercise.get("noCredentialCandidateCount") == 0 and exercise.get("noCredentialReviewCount") == 0},
+        {"id": "no-credential-zero-stage9-artifacts", "passed": exercise.get("noCredentialCandidateCount") == 0 and exercise.get("noCredentialReviewCount") == 0 and exercise.get("noCredentialArtifactCountsUnchanged") is True},
         {"id": "production-rule-drift-blocked", "passed": exercise.get("ruleDriftBlocked") is True},
         {"id": "stale-quote-blocked", "passed": exercise.get("staleQuoteBlocked") is True},
         {"id": "adverse-price-blocked", "passed": exercise.get("adversePriceBlocked") is True},

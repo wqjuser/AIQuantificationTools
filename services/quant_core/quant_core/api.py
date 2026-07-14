@@ -489,7 +489,7 @@ def _stage1_daily_use_project_root(report_path: Path) -> Path:
 class QuantApiHandler(BaseHTTPRequestHandler):
     # ponytail: one local API process has low-volume admission writes;
     # use a DB uniqueness constraint for multi-worker deployment.
-    stage9_production_admission_candidate_lock = Lock()
+    stage9_production_admission_lock = Lock()
     cache = MarketDataCache(Path("data/market.sqlite"))
     adapter = DemoMarketDataAdapter()
     assistant = LocalResearchAssistant()
@@ -2550,7 +2550,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     raise ValueError("stage9 production admission request fields are invalid")
                 authorization_id = _required_stage4_string(payload["authorizationId"])
                 operator = _required_stage4_string(payload["operator"])
-                with type(self).stage9_production_admission_candidate_lock:
+                with type(self).stage9_production_admission_lock:
                     service = self._stage6_sandbox_service()
                     authorization = service.get_authorization(authorization_id)
                     workflow = _stage6_event_snapshot(
@@ -2636,69 +2636,70 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     or any(confirmations[item] is not True for item in expected_confirmations)
                 ):
                     raise ValueError("stage9 production admission review request is invalid")
-                candidate = _stage9_production_admission_candidate(
-                    self.audit_event_store, candidate_id
-                )
-                existing = next((
-                    review for review in _stage9_production_admission_reviews(
-                        self.audit_event_store, candidate["baseRunId"], limit=50
+                with type(self).stage9_production_admission_lock:
+                    candidate = _stage9_production_admission_candidate(
+                        self.audit_event_store, candidate_id
                     )
-                    if review["candidateId"] == candidate_id
-                ), None)
-                if existing is not None:
-                    if (
-                        existing["reviewer"] != reviewer
-                        or existing["outcome"] != outcome
-                        or existing["reason"] != reason
-                    ):
-                        raise ValueError("stage9 production admission review request conflicts with immutable evidence")
-                    event = self.audit_event_store.get(existing["reviewId"])
-                    self._send_json({
-                        "productionOrderAdmissionReview": existing,
-                        "auditEvent": audit_event_record_to_payload(event),
-                    })
-                    return
-                service = self._stage6_sandbox_service()
-                authorization = service.get_authorization(candidate["sandboxAuthorizationId"])
-                workflow = _stage6_event_snapshot(
-                    self.audit_event_store,
-                    authorization["workflowId"],
-                    "stage4_portfolio_workflow",
-                    validate_stage4_portfolio_workflow_snapshot,
-                )
-                batch = service.batch(authorization["authorizationId"])
-                continuity = _stage8_production_readonly_continuity(
-                    self.audit_event_store, self.stage6_exit_acceptance_report_path
-                )
-                rebuilt = build_production_order_admission_candidate(
-                    workflow,
-                    authorization,
-                    batch,
-                    continuity,
-                    candidate["observation"],
-                    operator=candidate["operator"],
-                    generated_at=candidate["generatedAt"],
-                )
-                if rebuilt != candidate:
-                    raise ValueError("stage9 production admission candidate authority changed")
-                observation = self._stage9_production_admission_route().observe(candidate["orders"])
-                if not observation["passed"]:
-                    raise ValueError(";".join(observation["blockedReasons"]))
-                review = build_production_order_admission_review(
-                    candidate,
-                    continuity,
-                    observation,
-                    reviewer=reviewer,
-                    outcome=outcome,
-                    reason=reason,
-                    confirmations=confirmations,
-                )
-                event, created = self.audit_event_store.record_if_absent(
-                    production_order_admission_review_to_audit_event(review)
-                )
-                stored = production_order_admission_review_from_audit_event(event)
-                if stored != review:
-                    raise ValueError("stage9 production admission review conflict")
+                    existing = next((
+                        review for review in _stage9_production_admission_reviews(
+                            self.audit_event_store, candidate["baseRunId"], limit=50
+                        )
+                        if review["candidateId"] == candidate_id
+                    ), None)
+                    if existing is not None:
+                        if (
+                            existing["reviewer"] != reviewer
+                            or existing["outcome"] != outcome
+                            or existing["reason"] != reason
+                        ):
+                            raise ValueError("stage9 production admission review request conflicts with immutable evidence")
+                        event = self.audit_event_store.get(existing["reviewId"])
+                        self._send_json({
+                            "productionOrderAdmissionReview": existing,
+                            "auditEvent": audit_event_record_to_payload(event),
+                        })
+                        return
+                    service = self._stage6_sandbox_service()
+                    authorization = service.get_authorization(candidate["sandboxAuthorizationId"])
+                    workflow = _stage6_event_snapshot(
+                        self.audit_event_store,
+                        authorization["workflowId"],
+                        "stage4_portfolio_workflow",
+                        validate_stage4_portfolio_workflow_snapshot,
+                    )
+                    batch = service.batch(authorization["authorizationId"])
+                    continuity = _stage8_production_readonly_continuity(
+                        self.audit_event_store, self.stage6_exit_acceptance_report_path
+                    )
+                    rebuilt = build_production_order_admission_candidate(
+                        workflow,
+                        authorization,
+                        batch,
+                        continuity,
+                        candidate["observation"],
+                        operator=candidate["operator"],
+                        generated_at=candidate["generatedAt"],
+                    )
+                    if rebuilt != candidate:
+                        raise ValueError("stage9 production admission candidate authority changed")
+                    observation = self._stage9_production_admission_route().observe(candidate["orders"])
+                    if not observation["passed"]:
+                        raise ValueError(";".join(observation["blockedReasons"]))
+                    review = build_production_order_admission_review(
+                        candidate,
+                        continuity,
+                        observation,
+                        reviewer=reviewer,
+                        outcome=outcome,
+                        reason=reason,
+                        confirmations=confirmations,
+                    )
+                    event, created = self.audit_event_store.record_if_absent(
+                        production_order_admission_review_to_audit_event(review)
+                    )
+                    stored = production_order_admission_review_from_audit_event(event)
+                    if stored != review:
+                        raise ValueError("stage9 production admission review conflict")
             except (LookupError, ValueError, RuntimeError) as error:
                 self._send_json(
                     {"error": "stage9_production_order_admission_review_blocked", "blockers": [str(error)]},
@@ -3210,7 +3211,20 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/audit/events":
             try:
-                event = self.audit_event_store.record(self._read_json_body())
+                payload = self._read_json_body()
+                reserved_types = {
+                    "stage9_production_order_admission_candidate",
+                    "stage9_production_order_admission_review",
+                }
+                event_id = str(payload.get("eventId") or "") if isinstance(payload, dict) else ""
+                existing = self.audit_event_store.get(event_id) if event_id else None
+                if (
+                    isinstance(payload, dict) and payload.get("eventType") in reserved_types
+                    or event_id.startswith("stage9-production-admission-")
+                    or existing is not None and existing.event_type in reserved_types
+                ):
+                    raise ValueError("stage9 production admission audit events are reserved")
+                event = self.audit_event_store.record(payload)
             except ValueError as error:
                 self._send_json({"error": "invalid_audit_event", "detail": str(error)}, status=400)
                 return
@@ -5723,6 +5737,8 @@ def _stage9_production_admission_candidates(
             or candidate["candidateId"] != event.event_id
             or candidate["baseRunId"] != event.run_id
             or datetime.fromisoformat(candidate["generatedAt"]) != event.created_at
+            or event.stage != "stage9-production-order-admission"
+            or event.source != candidate["operator"]
         ):
             raise ValueError("stage9_production_admission_candidate_audit_binding_invalid")
         _validate_stage9_production_admission_candidate_authority(audit_event_store, candidate)
@@ -5743,6 +5759,8 @@ def _stage9_production_admission_candidate(
         or candidate["candidateId"] != event.event_id
         or candidate["baseRunId"] != event.run_id
         or datetime.fromisoformat(candidate["generatedAt"]) != event.created_at
+        or event.stage != "stage9-production-order-admission"
+        or event.source != candidate["operator"]
     ):
         raise ValueError("stage9_production_admission_candidate_audit_binding_invalid")
     _validate_stage9_production_admission_candidate_authority(audit_event_store, candidate)
@@ -5809,6 +5827,8 @@ def _stage9_production_admission_reviews(
             or review["reviewId"] != event.event_id
             or review["baseRunId"] != event.run_id
             or datetime.fromisoformat(review["reviewedAt"]) != event.created_at
+            or event.stage != "stage9-production-order-admission-review"
+            or event.source != review["reviewer"]
         ):
             raise ValueError("stage9_production_admission_review_audit_binding_invalid")
         candidate = _stage9_production_admission_candidate(
