@@ -4,12 +4,13 @@ import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
 from http.client import HTTPConnection
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
 import sys
 import tempfile
-from threading import Thread
+import time
+from threading import Event, Thread
 import unittest
 from unittest.mock import patch
 
@@ -261,6 +262,24 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         self.assertFalse(blocked["marketChecks"][0]["passed"])
         self.assertIn("production_market_rule_blocked:order-btc", blocked["blockedReasons"])
 
+        class OfflineExchange:
+            def __init__(self, _config):
+                pass
+
+            def load_markets(self):
+                raise OSError("upstream detail must not escape")
+
+        offline = BinanceSpotProductionAdmissionRoute(
+            env={
+                "CCXT_PRODUCTION_READONLY_API_KEY": "read-key",
+                "CCXT_PRODUCTION_READONLY_SECRET": "read-secret",
+            },
+            exchange_factory=lambda _exchange_id, config: OfflineExchange(config),
+        )
+        with self.assertRaisesRegex(RuntimeError, "stage9_production_readonly_exchange_unavailable") as error:
+            offline.observe(orders, observed_at=observed_at)
+        self.assertNotIn("upstream detail", str(error.exception))
+
     def test_candidate_binds_terminal_sandbox_batch_current_continuity_and_exact_orders(self) -> None:
         workflow, session, readiness, preflight, review = _authority_chain()
         now = datetime.now(timezone.utc)
@@ -387,9 +406,16 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
 
             class Route:
                 calls = 0
+                first_observation_started = Event()
+                concurrent_observation_started = Event()
 
                 def observe(self, candidate_orders, *, observed_at=None):
                     type(self).calls += 1
+                    if type(self).calls == 1:
+                        type(self).first_observation_started.set()
+                        time.sleep(0.25)
+                    else:
+                        type(self).concurrent_observation_started.set()
                     self.assert_orders = candidate_orders
                     return _passing_observation(
                         candidate_orders, observed_at or datetime.now(timezone.utc)
@@ -400,28 +426,43 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                 stage6_sandbox_route_factory = staticmethod(lambda: sandbox_route)
                 stage9_production_admission_route_factory = staticmethod(Route)
 
-            server = HTTPServer(("127.0.0.1", 0), Handler)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
             thread = Thread(target=server.serve_forever, daemon=True)
             with patch("quant_core.api._stage8_production_readonly_continuity", return_value=continuity) as continuity_patch:
                 thread.start()
-                connection = HTTPConnection(*server.server_address, timeout=5)
                 body = json.dumps({
                     "authorizationId": authorization["authorizationId"],
                     "operator": "production-admission-operator",
                 })
+                candidate_responses = [None, None]
+
+                def post_candidate(index):
+                    candidate_connection = HTTPConnection(*server.server_address, timeout=5)
+                    try:
+                        candidate_connection.request(
+                            "POST", "/api/execution/stage9/production-order-admission-candidates", body,
+                            {"Content-Type": "application/json"},
+                        )
+                        response = candidate_connection.getresponse()
+                        candidate_responses[index] = (response.status, json.loads(response.read()))
+                    finally:
+                        candidate_connection.close()
+
+                first_candidate_thread = Thread(target=post_candidate, args=(0,))
+                second_candidate_thread = Thread(target=post_candidate, args=(1,))
+                first_candidate_thread.start()
+                self.assertTrue(Route.first_observation_started.wait(timeout=2))
+                second_candidate_thread.start()
+                first_candidate_thread.join(timeout=5)
+                second_candidate_thread.join(timeout=5)
+                self.assertFalse(first_candidate_thread.is_alive())
+                self.assertFalse(second_candidate_thread.is_alive())
+                self.assertFalse(Route.concurrent_observation_started.is_set())
+                created_status, created = next(row for row in candidate_responses if row[0] == 201)
+                repeated_status, repeated = next(row for row in candidate_responses if row[0] == 200)
+
+                connection = HTTPConnection(*server.server_address, timeout=5)
                 try:
-                    connection.request(
-                        "POST", "/api/execution/stage9/production-order-admission-candidates", body,
-                        {"Content-Type": "application/json"},
-                    )
-                    created_response = connection.getresponse()
-                    created = json.loads(created_response.read())
-                    connection.request(
-                        "POST", "/api/execution/stage9/production-order-admission-candidates", body,
-                        {"Content-Type": "application/json"},
-                    )
-                    repeated_response = connection.getresponse()
-                    repeated = json.loads(repeated_response.read())
                     conflicting_candidate_body = json.dumps({
                         "authorizationId": authorization["authorizationId"],
                         "operator": "different-operator",
@@ -478,6 +519,16 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     )
                     review_read_response = connection.getresponse()
                     review_readback = json.loads(review_read_response.read())
+                    with patch(
+                        "quant_core.api._stage9_production_admission_reviews",
+                        side_effect=LookupError("candidate source missing"),
+                    ):
+                        connection.request(
+                            "GET",
+                            f"/api/execution/stage9/production-order-admission-reviews?baseRunId={workflow['baseRunId']}",
+                        )
+                        invalid_review_read_response = connection.getresponse()
+                        invalid_review_readback = json.loads(invalid_review_read_response.read())
                     control = build_production_readonly_access_control(
                         action="revoke", operator="test", reason="stage9 network precheck"
                     )
@@ -505,8 +556,8 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     thread.join(timeout=5)
                     server.server_close()
 
-        self.assertEqual(created_response.status, 201, created)
-        self.assertEqual(repeated_response.status, 200, repeated)
+        self.assertEqual(created_status, 201, created)
+        self.assertEqual(repeated_status, 200, repeated)
         self.assertEqual(conflicting_candidate_response.status, 409, conflicting_candidate)
         self.assertIn("conflicts with immutable evidence", conflicting_candidate["blockers"][0])
         self.assertEqual(read_response.status, 200, readback)
@@ -523,6 +574,8 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
             review_readback["productionOrderAdmissionReviews"],
             [review_result["productionOrderAdmissionReview"]],
         )
+        self.assertEqual(invalid_review_read_response.status, 500, invalid_review_readback)
+        self.assertEqual(invalid_review_readback["error"], "invalid_stage9_production_admission_review_store")
         self.assertFalse(review_result["productionOrderAdmissionReview"]["authorizationEffective"])
         self.assertEqual(review_result["auditEvent"]["eventType"], "stage9_production_order_admission_review")
         self.assertEqual(revoked_response.status, 409, revoked_result)

@@ -2276,6 +2276,8 @@ describe("terminal layout css", () => {
     );
     expect(auditWorkspaceSource).toContain("Stage9ProductionAdmissionAuditLedgerPanel");
     expect(appSource).toContain('eventType: "stage9_production_order_admission_candidate,stage9_production_order_admission_review"');
+    expect(appSource).toContain("const stage9ProductionAdmissionAuditRequestIdRef = useRef(0);");
+    expect(appSource).toContain("if (stage9ProductionAdmissionAuditRequestIdRef.current !== requestId)");
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");

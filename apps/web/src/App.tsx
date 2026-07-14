@@ -2558,6 +2558,7 @@ export function App() {
   const aiReviewHistoryRequestIdRef = useRef(0);
   const aiReviewArchivePreviewRequestIdRef = useRef(0);
   const auditEvidenceReportRequestIdRef = useRef(0);
+  const stage9ProductionAdmissionAuditRequestIdRef = useRef(0);
   const marketDataRefreshOverrideAuditRequestIdRef = useRef(0);
   const portfolioPaperOrderAuditRequestIdRef = useRef(0);
   const executionAdapterPaperExecutionAuditRequestIdRef = useRef(0);
@@ -4557,10 +4558,15 @@ export function App() {
   }, [auditEvidenceReportOffset, auditEvidenceReportQuery, quantCoreBaseUrl]);
 
   const refreshStage9ProductionAdmissionAuditEvents = useCallback(async () => {
+    const requestId = stage9ProductionAdmissionAuditRequestIdRef.current + 1;
+    stage9ProductionAdmissionAuditRequestIdRef.current = requestId;
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
       eventType: "stage9_production_order_admission_candidate,stage9_production_order_admission_review",
       limit: 50
     });
+    if (stage9ProductionAdmissionAuditRequestIdRef.current !== requestId) {
+      return auditHistory;
+    }
     setStage9ProductionAdmissionAuditEvents(auditHistory.source === "core" ? auditHistory.events : []);
     return auditHistory;
   }, [quantCoreBaseUrl]);

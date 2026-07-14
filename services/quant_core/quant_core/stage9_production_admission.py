@@ -61,8 +61,8 @@ class BinanceSpotProductionAdmissionRoute:
             common_config["httpsProxy"] = proxy
 
         factory = self._factory()
-        public_exchange = factory("binance", dict(common_config))
-        markets = public_exchange.load_markets()
+        public_exchange = _production_readonly_call(factory, "binance", dict(common_config))
+        markets = _production_readonly_call(public_exchange.load_markets)
         if not isinstance(markets, dict):
             raise ValueError("stage9_production_markets_unavailable")
 
@@ -79,7 +79,7 @@ class BinanceSpotProductionAdmissionRoute:
             if not market_passed:
                 blockers.append(f"production_market_rule_blocked:{order_id}")
 
-            ticker = public_exchange.fetch_ticker(symbol)
+            ticker = _production_readonly_call(public_exchange.fetch_ticker, symbol)
             reference, quoted_at = _reference_quote(ticker, order["side"])
             age_seconds = (now - quoted_at).total_seconds()
             adverse = (
@@ -107,8 +107,12 @@ class BinanceSpotProductionAdmissionRoute:
                 continue
             order_requirements.append((order_id, currency, needed))
 
-        private_exchange = factory("binance", {**common_config, "apiKey": api_key, "secret": secret})
-        balance = private_exchange.fetch_balance({"type": "spot", "omitZeroBalances": False})
+        private_exchange = _production_readonly_call(
+            factory, "binance", {**common_config, "apiKey": api_key, "secret": secret}
+        )
+        balance = _production_readonly_call(
+            private_exchange.fetch_balance, {"type": "spot", "omitZeroBalances": False}
+        )
         free = balance.get("free") if isinstance(balance, dict) else None
         if not isinstance(free, dict):
             raise ValueError("stage9_production_balance_unavailable")
@@ -608,9 +612,13 @@ def _market_rule_passed(exchange: Any, market: Any, order: dict[str, Any]) -> bo
         quantity = float(order["quantity"])
         price = float(order["price"])
         cost = float(order["notionalValue"])
-        if not math.isclose(float(exchange.amount_to_precision(order["symbol"], quantity)), quantity, rel_tol=1e-12):
+        if not math.isclose(float(_production_readonly_call(
+            exchange.amount_to_precision, order["symbol"], quantity
+        )), quantity, rel_tol=1e-12):
             return False
-        if not math.isclose(float(exchange.price_to_precision(order["symbol"], price)), price, rel_tol=1e-12):
+        if not math.isclose(float(_production_readonly_call(
+            exchange.price_to_precision, order["symbol"], price
+        )), price, rel_tol=1e-12):
             return False
         limits = market.get("limits") if isinstance(market.get("limits"), dict) else {}
         return all(
@@ -619,6 +627,13 @@ def _market_rule_passed(exchange: Any, market: Any, order: dict[str, Any]) -> bo
         )
     except (TypeError, ValueError):
         return False
+
+
+def _production_readonly_call(call: Callable[..., Any], *args: Any) -> Any:
+    try:
+        return call(*args)
+    except Exception as error:
+        raise RuntimeError("stage9_production_readonly_exchange_unavailable") from error
 
 
 def _within(value: float, limit: Any) -> bool:

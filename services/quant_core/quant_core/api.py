@@ -7,6 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
 from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
@@ -486,6 +487,9 @@ def _stage1_daily_use_project_root(report_path: Path) -> Path:
 
 
 class QuantApiHandler(BaseHTTPRequestHandler):
+    # ponytail: one local API process has low-volume admission writes;
+    # use a DB uniqueness constraint for multi-worker deployment.
+    stage9_production_admission_candidate_lock = Lock()
     cache = MarketDataCache(Path("data/market.sqlite"))
     adapter = DemoMarketDataAdapter()
     assistant = LocalResearchAssistant()
@@ -2546,57 +2550,58 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     raise ValueError("stage9 production admission request fields are invalid")
                 authorization_id = _required_stage4_string(payload["authorizationId"])
                 operator = _required_stage4_string(payload["operator"])
-                service = self._stage6_sandbox_service()
-                authorization = service.get_authorization(authorization_id)
-                workflow = _stage6_event_snapshot(
-                    self.audit_event_store,
-                    authorization["workflowId"],
-                    "stage4_portfolio_workflow",
-                    validate_stage4_portfolio_workflow_snapshot,
-                )
-                batch = service.batch(authorization_id)
-                continuity = _stage8_production_readonly_continuity(
-                    self.audit_event_store, self.stage6_exit_acceptance_report_path
-                )
-                validate_production_order_admission_preconditions(
-                    workflow, authorization, batch, continuity
-                )
-                continuity = canonical_production_order_admission_continuity(continuity)
-                existing = next((
-                    candidate
-                    for candidate in _stage9_production_admission_candidates(
-                        self.audit_event_store, authorization["baseRunId"], limit=50
+                with type(self).stage9_production_admission_candidate_lock:
+                    service = self._stage6_sandbox_service()
+                    authorization = service.get_authorization(authorization_id)
+                    workflow = _stage6_event_snapshot(
+                        self.audit_event_store,
+                        authorization["workflowId"],
+                        "stage4_portfolio_workflow",
+                        validate_stage4_portfolio_workflow_snapshot,
                     )
-                    if candidate["sandboxAuthorizationId"] == authorization_id
-                    and candidate["stage8ContinuityHash"] == continuity["continuityHash"]
-                    and datetime.fromisoformat(candidate["expiresAt"]) >= datetime.now(timezone.utc)
-                ), None)
-                if existing is not None:
-                    if existing["operator"] != operator:
-                        raise ValueError("stage9 production admission candidate request conflicts with immutable evidence")
-                    event = self.audit_event_store.get(existing["candidateId"])
-                    self._send_json({
-                        "productionOrderAdmissionCandidate": existing,
-                        "auditEvent": audit_event_record_to_payload(event),
-                    })
-                    return
-                observation = self._stage9_production_admission_route().observe(authorization["orders"])
-                if not observation["passed"]:
-                    raise ValueError(";".join(observation["blockedReasons"]))
-                candidate = build_production_order_admission_candidate(
-                    workflow,
-                    authorization,
-                    batch,
-                    continuity,
-                    observation,
-                    operator=operator,
-                )
-                event, created = self.audit_event_store.record_if_absent(
-                    production_order_admission_candidate_to_audit_event(candidate)
-                )
-                stored = production_order_admission_candidate_from_audit_event(event)
-                if stored != candidate:
-                    raise ValueError("stage9 production admission candidate conflict")
+                    batch = service.batch(authorization_id)
+                    continuity = _stage8_production_readonly_continuity(
+                        self.audit_event_store, self.stage6_exit_acceptance_report_path
+                    )
+                    validate_production_order_admission_preconditions(
+                        workflow, authorization, batch, continuity
+                    )
+                    continuity = canonical_production_order_admission_continuity(continuity)
+                    existing = next((
+                        candidate
+                        for candidate in _stage9_production_admission_candidates(
+                            self.audit_event_store, authorization["baseRunId"], limit=50
+                        )
+                        if candidate["sandboxAuthorizationId"] == authorization_id
+                        and candidate["stage8ContinuityHash"] == continuity["continuityHash"]
+                        and datetime.fromisoformat(candidate["expiresAt"]) >= datetime.now(timezone.utc)
+                    ), None)
+                    if existing is not None:
+                        if existing["operator"] != operator:
+                            raise ValueError("stage9 production admission candidate request conflicts with immutable evidence")
+                        event = self.audit_event_store.get(existing["candidateId"])
+                        self._send_json({
+                            "productionOrderAdmissionCandidate": existing,
+                            "auditEvent": audit_event_record_to_payload(event),
+                        })
+                        return
+                    observation = self._stage9_production_admission_route().observe(authorization["orders"])
+                    if not observation["passed"]:
+                        raise ValueError(";".join(observation["blockedReasons"]))
+                    candidate = build_production_order_admission_candidate(
+                        workflow,
+                        authorization,
+                        batch,
+                        continuity,
+                        observation,
+                        operator=operator,
+                    )
+                    event, created = self.audit_event_store.record_if_absent(
+                        production_order_admission_candidate_to_audit_event(candidate)
+                    )
+                    stored = production_order_admission_candidate_from_audit_event(event)
+                    if stored != candidate:
+                        raise ValueError("stage9 production admission candidate conflict")
             except (LookupError, ValueError, RuntimeError) as error:
                 self._send_json(
                     {"error": "stage9_production_order_admission_candidate_blocked", "blockers": [str(error)]},
@@ -4744,7 +4749,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 reviews = _stage9_production_admission_reviews(
                     self.audit_event_store, base_run_id, limit=limit
                 )
-            except ValueError as error:
+            except (LookupError, ValueError) as error:
                 code = (
                     "invalid_stage9_production_admission_review_query"
                     if str(error) == "invalid_stage9_production_admission_review_query"
