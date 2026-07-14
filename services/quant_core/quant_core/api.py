@@ -11,7 +11,12 @@ from threading import Lock
 from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
-from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
+from quant_core.audit_events import (
+    AuditEventStore,
+    audit_event_payload_matches_record,
+    audit_event_record_to_payload,
+    is_protected_production_authority_audit_event,
+)
 from quant_core.audit_signing import (
     AUDIT_REPORT_IMPORT_VERIFICATION_INVALID_REASON,
     AuditReportSigner,
@@ -487,9 +492,9 @@ def _stage1_daily_use_project_root(report_path: Path) -> Path:
 
 
 class QuantApiHandler(BaseHTTPRequestHandler):
-    # ponytail: one local API process has low-volume admission writes;
+    # ponytail: one local API process has low-volume admission authority changes and writes;
     # use a DB uniqueness constraint for multi-worker deployment.
-    stage9_production_admission_lock = Lock()
+    production_readonly_authority_lock = Lock()
     cache = MarketDataCache(Path("data/market.sqlite"))
     adapter = DemoMarketDataAdapter()
     assistant = LocalResearchAssistant()
@@ -2439,44 +2444,45 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 review_id = payload["productionRouteReviewId"]
                 if review_id is not None and not isinstance(review_id, str):
                     raise ValueError("stage8 production read-only route review id is invalid")
-                current = _latest_stage8_production_readonly_access_control(self.audit_event_store)
-                desired = "revoked" if action == "revoke" else "active" if action == "restore" else ""
-                if not desired:
-                    raise ValueError("stage8 production read-only action is invalid")
-                if action == "revoke" and review_id is not None:
-                    raise ValueError("stage8 revoke must not bind a production route review")
-                if action == "restore":
-                    review_id = _required_stage4_string(review_id)
-                    route_review_event = self.audit_event_store.get(review_id)
-                    route_review = (
-                        execution_adapter_production_route_review_payload_from_audit_event(route_review_event)
-                        if route_review_event else None
+                with type(self).production_readonly_authority_lock:
+                    current = _latest_stage8_production_readonly_access_control(self.audit_event_store)
+                    desired = "revoked" if action == "revoke" else "active" if action == "restore" else ""
+                    if not desired:
+                        raise ValueError("stage8 production read-only action is invalid")
+                    if action == "revoke" and review_id is not None:
+                        raise ValueError("stage8 revoke must not bind a production route review")
+                    if action == "restore":
+                        review_id = _required_stage4_string(review_id)
+                        route_review_event = self.audit_event_store.get(review_id)
+                        route_review = (
+                            execution_adapter_production_route_review_payload_from_audit_event(route_review_event)
+                            if route_review_event else None
+                        )
+                        if not route_review or not _stage7_production_route_review_is_current(route_review):
+                            raise ValueError("stage8 restore requires a current ccxt-live production route review")
+                    created = False
+                    equivalent = bool(
+                        current is not None
+                        and current["status"] == desired
+                        and current["operator"] == operator
+                        and current["reason"] == reason
+                        and current["productionRouteReviewId"] == (review_id if action == "restore" else None)
                     )
-                    if not route_review or not _stage7_production_route_review_is_current(route_review):
-                        raise ValueError("stage8 restore requires a current ccxt-live production route review")
-                created = False
-                equivalent = bool(
-                    current is not None
-                    and current["status"] == desired
-                    and current["operator"] == operator
-                    and current["reason"] == reason
-                    and current["productionRouteReviewId"] == (review_id if action == "restore" else None)
-                )
-                if equivalent:
-                    control = current
-                else:
-                    control = build_production_readonly_access_control(
-                        action=action,
-                        operator=operator,
-                        reason=reason,
-                        previous_control_id=current["controlId"] if current else None,
-                        production_route_review_id=review_id if action == "restore" else None,
+                    if equivalent:
+                        control = current
+                    else:
+                        control = build_production_readonly_access_control(
+                            action=action,
+                            operator=operator,
+                            reason=reason,
+                            previous_control_id=current["controlId"] if current else None,
+                            production_route_review_id=review_id if action == "restore" else None,
+                        )
+                        self.audit_event_store.record(production_readonly_access_control_to_audit_event(control))
+                        created = True
+                    continuity = _stage8_production_readonly_continuity(
+                        self.audit_event_store, self.stage6_exit_acceptance_report_path
                     )
-                    self.audit_event_store.record(production_readonly_access_control_to_audit_event(control))
-                    created = True
-                continuity = _stage8_production_readonly_continuity(
-                    self.audit_event_store, self.stage6_exit_acceptance_report_path
-                )
             except ValueError as error:
                 self._send_json(
                     {"error": "stage8_production_readonly_access_control_blocked", "blockers": [str(error)]},
@@ -2499,37 +2505,38 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 operator = _required_stage4_string(payload["operator"])
                 if payload["eligibilityConfirmed"] is not True:
                     raise ValueError("stage7 production eligibility confirmation is required")
-                access_control = _latest_stage8_production_readonly_access_control(self.audit_event_store)
-                if access_control is not None and access_control["status"] == "revoked":
-                    raise ValueError("stage8_production_readonly_access_revoked")
-                stage6_status = load_stage6_exit_acceptance_status(self.stage6_exit_acceptance_report_path)
-                if stage6_status["status"] != "accepted" or not stage6_status["exitHash"]:
-                    raise ValueError("stage7 requires accepted Stage 6 exit evidence")
-                route_review_event = self.audit_event_store.get(production_route_review_id)
-                route_review = (
-                    execution_adapter_production_route_review_payload_from_audit_event(route_review_event)
-                    if route_review_event else None
-                )
-                if (
-                    not route_review or not _stage7_production_route_review_is_current(route_review)
-                ):
-                    raise ValueError("stage7 requires a current ccxt-live production route review")
-                probe = probe_ccxt_production_readonly(
-                    adapter_id="ccxt-live",
-                    exchange_id="binance",
-                    environ=type(self).execution_adapter_health_environ,
-                    exchange_factory=type(self).execution_adapter_health_exchange_factory,
-                )
-                evidence = production_readonly_probe_to_evidence(
-                    probe,
-                    stage6_exit_hash=stage6_status["exitHash"],
-                    production_route_review_id=production_route_review_id,
-                    operator=operator,
-                    eligibility_confirmed=True,
-                )
-                audit_event = self.audit_event_store.record(
-                    production_readonly_probe_to_audit_event_payload(evidence)
-                )
+                with type(self).production_readonly_authority_lock:
+                    access_control = _latest_stage8_production_readonly_access_control(self.audit_event_store)
+                    if access_control is not None and access_control["status"] == "revoked":
+                        raise ValueError("stage8_production_readonly_access_revoked")
+                    stage6_status = load_stage6_exit_acceptance_status(self.stage6_exit_acceptance_report_path)
+                    if stage6_status["status"] != "accepted" or not stage6_status["exitHash"]:
+                        raise ValueError("stage7 requires accepted Stage 6 exit evidence")
+                    route_review_event = self.audit_event_store.get(production_route_review_id)
+                    route_review = (
+                        execution_adapter_production_route_review_payload_from_audit_event(route_review_event)
+                        if route_review_event else None
+                    )
+                    if (
+                        not route_review or not _stage7_production_route_review_is_current(route_review)
+                    ):
+                        raise ValueError("stage7 requires a current ccxt-live production route review")
+                    probe = probe_ccxt_production_readonly(
+                        adapter_id="ccxt-live",
+                        exchange_id="binance",
+                        environ=type(self).execution_adapter_health_environ,
+                        exchange_factory=type(self).execution_adapter_health_exchange_factory,
+                    )
+                    evidence = production_readonly_probe_to_evidence(
+                        probe,
+                        stage6_exit_hash=stage6_status["exitHash"],
+                        production_route_review_id=production_route_review_id,
+                        operator=operator,
+                        eligibility_confirmed=True,
+                    )
+                    audit_event = self.audit_event_store.record(
+                        production_readonly_probe_to_audit_event_payload(evidence)
+                    )
             except ValueError as error:
                 self._send_json(
                     {"error": "stage7_production_readonly_probe_blocked", "blockers": [str(error)]}, status=409
@@ -2550,7 +2557,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     raise ValueError("stage9 production admission request fields are invalid")
                 authorization_id = _required_stage4_string(payload["authorizationId"])
                 operator = _required_stage4_string(payload["operator"])
-                with type(self).stage9_production_admission_lock:
+                with type(self).production_readonly_authority_lock:
                     service = self._stage6_sandbox_service()
                     authorization = service.get_authorization(authorization_id)
                     workflow = _stage6_event_snapshot(
@@ -2570,7 +2577,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     existing = next((
                         candidate
                         for candidate in _stage9_production_admission_candidates(
-                            self.audit_event_store, authorization["baseRunId"], limit=50
+                            self.audit_event_store, authorization["baseRunId"], limit=None
                         )
                         if candidate["sandboxAuthorizationId"] == authorization_id
                         and candidate["stage8ContinuityHash"] == continuity["continuityHash"]
@@ -2636,13 +2643,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     or any(confirmations[item] is not True for item in expected_confirmations)
                 ):
                     raise ValueError("stage9 production admission review request is invalid")
-                with type(self).stage9_production_admission_lock:
+                with type(self).production_readonly_authority_lock:
                     candidate = _stage9_production_admission_candidate(
                         self.audit_event_store, candidate_id
                     )
                     existing = next((
                         review for review in _stage9_production_admission_reviews(
-                            self.audit_event_store, candidate["baseRunId"], limit=50
+                            self.audit_event_store, candidate["baseRunId"], limit=None
                         )
                         if review["candidateId"] == candidate_id
                     ), None)
@@ -3187,6 +3194,15 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 payload = self._read_json_body()
                 note_id = str(payload.get("noteId") or "").strip() or create_handoff_note_id()
                 audit_event_id = str(payload.get("auditEventId") or "").strip() or f"handoff-note:{note_id}"
+                existing_event = self.audit_event_store.get(audit_event_id)
+                if (
+                    is_protected_production_authority_audit_event("", audit_event_id)
+                    or existing_event is not None
+                    and is_protected_production_authority_audit_event(
+                        existing_event.event_type, existing_event.event_id
+                    )
+                ):
+                    raise ValueError("production authority audit events are reserved")
                 note = self.handoff_note_store.save(
                     note_id=note_id,
                     subject_type=str(payload.get("subjectType") or ""),
@@ -3212,18 +3228,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/audit/events":
             try:
                 payload = self._read_json_body()
-                reserved_types = {
-                    "stage9_production_order_admission_candidate",
-                    "stage9_production_order_admission_review",
-                }
                 event_id = str(payload.get("eventId") or "") if isinstance(payload, dict) else ""
                 existing = self.audit_event_store.get(event_id) if event_id else None
                 if (
-                    isinstance(payload, dict) and payload.get("eventType") in reserved_types
-                    or event_id.startswith("stage9-production-admission-")
-                    or existing is not None and existing.event_type in reserved_types
+                    isinstance(payload, dict)
+                    and is_protected_production_authority_audit_event(
+                        payload.get("eventType"), event_id
+                    )
+                    or existing is not None
+                    and is_protected_production_authority_audit_event(
+                        existing.event_type, existing.event_id
+                    )
                 ):
-                    raise ValueError("stage9 production admission audit events are reserved")
+                    raise ValueError("production authority audit events are reserved")
                 event = self.audit_event_store.record(payload)
             except ValueError as error:
                 self._send_json({"error": "invalid_audit_event", "detail": str(error)}, status=400)
@@ -5721,14 +5738,22 @@ def _stage9_production_admission_candidates(
     audit_event_store: AuditEventStore,
     base_run_id: str,
     *,
-    limit: int,
+    limit: int | None,
 ) -> list[dict[str, object]]:
     candidates = []
-    for event in audit_event_store.list_recent(
-        run_id=base_run_id,
-        event_type="stage9_production_order_admission_candidate",
-        limit=limit,
-    ):
+    events = (
+        audit_event_store.list_recent(
+            run_id=base_run_id,
+            event_type="stage9_production_order_admission_candidate",
+            limit=limit,
+        )
+        if limit is not None
+        else [
+            event for event in audit_event_store.list_all_by_run(base_run_id)
+            if event.event_type == "stage9_production_order_admission_candidate"
+        ]
+    )
+    for event in events:
         if event.metadata.get("detached") is True:
             continue
         candidate = production_order_admission_candidate_from_audit_event(event)
@@ -5811,14 +5836,22 @@ def _stage9_production_admission_reviews(
     audit_event_store: AuditEventStore,
     base_run_id: str,
     *,
-    limit: int,
+    limit: int | None,
 ) -> list[dict[str, object]]:
     reviews = []
-    for event in audit_event_store.list_recent(
-        run_id=base_run_id,
-        event_type="stage9_production_order_admission_review",
-        limit=limit,
-    ):
+    events = (
+        audit_event_store.list_recent(
+            run_id=base_run_id,
+            event_type="stage9_production_order_admission_review",
+            limit=limit,
+        )
+        if limit is not None
+        else [
+            event for event in audit_event_store.list_all_by_run(base_run_id)
+            if event.event_type == "stage9_production_order_admission_review"
+        ]
+    )
+    for event in events:
         if event.metadata.get("detached") is True:
             continue
         review = production_order_admission_review_from_audit_event(event)
@@ -7503,6 +7536,17 @@ def _persist_research_run_import(
         authoritative_records=ai_review_records_v2,
         decision_records=ai_review_decision_records,
     )
+    for audit_event_payload in audit_event_payloads:
+        event_id = str(audit_event_payload.get("eventId") or "")
+        existing_event = audit_event_store.get(event_id)
+        if existing_event is not None and (
+            existing_event.run_id != audit.run_id
+            or is_protected_production_authority_audit_event(
+                existing_event.event_type, existing_event.event_id
+            )
+            and not audit_event_payload_matches_record(existing_event, audit_event_payload)
+        ):
+            raise ValueError("audit_event_import_identity_conflict")
 
     previous_run = run_store.get(audit.run_id)
     previous_note = (

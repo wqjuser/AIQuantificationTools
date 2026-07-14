@@ -134,12 +134,12 @@ def _container_exercise() -> dict[str, Any]:
     continuity = _current_continuity(now)
 
     store = AuditEventStore("data/audit_events.sqlite")
-    candidate_count_before_no_credential = len(store.list_recent(
-        event_type="stage9_production_order_admission_candidate", limit=100
-    ))
-    review_count_before_no_credential = len(store.list_recent(
-        event_type="stage9_production_order_admission_review", limit=100
-    ))
+    candidate_count_before_no_credential = store.count(
+        event_type="stage9_production_order_admission_candidate"
+    )
+    review_count_before_no_credential = store.count(
+        event_type="stage9_production_order_admission_review"
+    )
     no_credential_blocker = ""
     no_credential_factory_called = False
 
@@ -213,15 +213,18 @@ def _container_exercise() -> dict[str, Any]:
             no_credential_server.server_close()
     if no_credential_status == 409:
         no_credential_blocker = ";".join(no_credential_payload.get("blockers", []))
-    no_credential_candidate_count = len(store.list_recent(
-        event_type="stage9_production_order_admission_candidate", limit=100
-    ))
-    no_credential_review_count = len(store.list_recent(
-        event_type="stage9_production_order_admission_review", limit=100
-    ))
+    candidate_count_after_no_credential = store.count(
+        event_type="stage9_production_order_admission_candidate"
+    )
+    review_count_after_no_credential = store.count(
+        event_type="stage9_production_order_admission_review"
+    )
+    no_credential_candidate_count = (
+        candidate_count_after_no_credential - candidate_count_before_no_credential
+    )
+    no_credential_review_count = review_count_after_no_credential - review_count_before_no_credential
     no_credential_artifact_counts_unchanged = (
-        no_credential_candidate_count == candidate_count_before_no_credential
-        and no_credential_review_count == review_count_before_no_credential
+        no_credential_candidate_count == 0 and no_credential_review_count == 0
     )
 
     ready_observation = _deterministic_observation(orders, now)

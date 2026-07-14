@@ -99,7 +99,7 @@ npm run docker:smoke:stage9
 npm run docker:smoke:stage9:validate
 ```
 
-默认 Docker 门禁不读取生产凭据、不访问真实生产网络，验证无凭据 API 失败前后零制品、两笔 deterministic-ready 候选、非生效复核、规则漂移、陈旧报价、不利价格、资金不足、连续性漂移、候选过期、Stage 8 revoke 网络前阻断、候选/复核重复请求幂等、detached 阻断和 API 重启精确回读；线程化回归测试另行覆盖并发幂等。通用审计写入口不能创建、预占或覆盖 Stage 9 权威证据，回读会重验事件绑定。可选 real-readonly 门禁只接受 ready 或纯资金不足安全阻断，并用实际 CCXT 调用守卫及重启回读证明只读边界。2026-07-14 最新 accepted manifest hash 为 `ada2845de5f6dc3df14fd6c00afccdc8c9214da94f52f28bf8961248da5fe0cc`，报告文件 SHA-256 为 `434c1aa269dcb81572bbfdba699749f070447610e52dc7c0eaed9f04221ddcc7`。完整操作见 [docs/stage9-production-order-admission-operations.md](docs/stage9-production-order-admission-operations.md)。本阶段没有生产订单创建、查询、撤销、同步、成交、转账或提现 API，也不使用生产交易 Key 或要求生产账户入金。
+默认 Docker 门禁不读取生产凭据、不访问真实生产网络，验证无凭据 API 失败前后零制品、两笔 deterministic-ready 候选、非生效复核、规则漂移、陈旧报价、不利价格、资金不足、连续性漂移、候选过期、Stage 8 revoke 网络前阻断、候选/复核重复请求幂等、detached 阻断和 API 重启精确回读；线程化回归测试另行覆盖并发幂等。Stage 4→9 准入权威链只能由专用 API 写入，通用审计入口不能创建、预占或覆盖权威事件，研究包也不能恢复 Stage 7 probe 或 Stage 8 control；回读会重验事件绑定。可选 real-readonly 门禁只接受 ready 或纯资金不足安全阻断，并用实际 CCXT 调用守卫及重启回读证明只读边界。2026-07-14 最新 accepted manifest hash 为 `d3c53eccd6e3689ddfde808dca1b1d68f90abda4af62268b7fd60347248605c3`，报告文件 SHA-256 为 `ac01b186bac1cc0223cca17494f854ef683011e80170582bf9b2f862356a94f5`。完整操作见 [docs/stage9-production-order-admission-operations.md](docs/stage9-production-order-admission-operations.md)。本阶段没有生产订单创建、查询、撤销、同步、成交、转账或提现 API，也不使用生产交易 Key 或要求生产账户入金。
 
 前端产品阶段模型现已同步到 Stage 9：Stage 0 至 Stage 9 全部显示为 maintenance，Execution 归属最新已交付的 Stage 9，当前不显示任何 `current` 阶段。后续受限生产试单必须重新完成独立设计、人工授权和真实资金安全验收。
 

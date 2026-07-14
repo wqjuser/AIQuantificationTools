@@ -12,7 +12,7 @@ import tempfile
 import time
 from threading import Event, Thread
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -35,9 +35,11 @@ from quant_core.stage6_sandbox import (
 from quant_core.stage8_continuity import (
     build_production_readonly_access_control,
     build_production_readonly_continuity,
+    production_readonly_access_control_to_audit_event,
 )
 from quant_core.stage9_production_admission import (
     BinanceSpotProductionAdmissionRoute,
+    PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS,
     build_production_order_admission_review,
     build_production_order_admission_candidate,
     canonical_production_order_admission_continuity,
@@ -346,6 +348,54 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         self.assertFalse(candidate["liveTradingAllowed"])
         self.assertTrue(candidate["liveBlockedBoundary"])
 
+        with tempfile.TemporaryDirectory() as directory:
+            history_store = AuditEventStore(Path(directory) / "history.sqlite")
+            history_store.record({
+                "schemaVersion": 1,
+                "eventId": workflow["workflowId"],
+                "eventType": "stage4_portfolio_workflow",
+                "runId": workflow["baseRunId"],
+                "createdAt": workflow["generatedAt"],
+                "stage": "stage4-portfolio-workflow",
+                "source": "test",
+                "summary": "Stage 4 workflow.",
+                "detail": "Authoritative workflow.",
+                "metadata": {"snapshot": workflow},
+            })
+            history_store.record(authorization_to_audit_event(authorization))
+            for index in range(51):
+                observed_at = now + timedelta(microseconds=index)
+                historical_observation = _passing_observation(orders, observed_at)
+                historical_candidate = build_production_order_admission_candidate(
+                    workflow, authorization, batch, continuity, historical_observation,
+                    operator="production-admission-operator",
+                    generated_at=observed_at.isoformat(),
+                )
+                history_store.record(
+                    production_order_admission_candidate_to_audit_event(historical_candidate)
+                )
+                historical_review = build_production_order_admission_review(
+                    historical_candidate,
+                    continuity,
+                    historical_observation,
+                    reviewer="named-reviewer",
+                    outcome="approved",
+                    reason="验证幂等索引不受五十条历史窗口限制。",
+                    confirmations={
+                        item: True for item in PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS
+                    },
+                    reviewed_at=observed_at.isoformat(),
+                )
+                history_store.record(
+                    production_order_admission_review_to_audit_event(historical_review)
+                )
+            self.assertEqual(len(_stage9_production_admission_candidates(
+                history_store, workflow["baseRunId"], limit=None
+            )), 51)
+            self.assertEqual(len(_stage9_production_admission_reviews(
+                history_store, workflow["baseRunId"], limit=None
+            )), 51)
+
         forged = copy.deepcopy(candidate)
         forged["stage8Continuity"]["generatedAt"] = (now + timedelta(seconds=1)).isoformat()
         forged["stage8Continuity"]["continuityHash"] = _hash({
@@ -408,6 +458,9 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     exchange_evidence={"operation": "cancel", "clientOrderId": order["clientOrderId"]},
                 )
 
+            revoke_finished = Event()
+            revoke_overtook_observation = False
+
             class Route:
                 calls = 0
                 review_phase = False
@@ -417,10 +470,11 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                 concurrent_review_observation_started = Event()
 
                 def observe(self, candidate_orders, *, observed_at=None):
+                    nonlocal revoke_overtook_observation
                     type(self).calls += 1
                     if not type(self).review_phase and not type(self).first_observation_started.is_set():
                         type(self).first_observation_started.set()
-                        time.sleep(0.25)
+                        revoke_overtook_observation = revoke_finished.wait(timeout=0.5)
                     elif not type(self).review_phase:
                         type(self).concurrent_observation_started.set()
                     elif not type(self).review_observation_started.is_set():
@@ -460,16 +514,42 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     finally:
                         candidate_connection.close()
 
+                revoke_response = [None]
+
+                def revoke_access():
+                    revoke_connection = HTTPConnection(*server.server_address, timeout=5)
+                    try:
+                        revoke_connection.request(
+                            "POST", "/api/execution/stage8/production-readonly-access-controls",
+                            json.dumps({
+                                "action": "revoke",
+                                "operator": "test",
+                                "reason": "concurrent admission safety drill",
+                                "productionRouteReviewId": None,
+                            }), {"Content-Type": "application/json"},
+                        )
+                        response = revoke_connection.getresponse()
+                        revoke_response[0] = (response.status, json.loads(response.read()))
+                    finally:
+                        revoke_finished.set()
+                        revoke_connection.close()
+
                 first_candidate_thread = Thread(target=post_candidate, args=(0,))
                 second_candidate_thread = Thread(target=post_candidate, args=(1,))
+                revoke_thread = Thread(target=revoke_access)
                 first_candidate_thread.start()
                 self.assertTrue(Route.first_observation_started.wait(timeout=2))
                 second_candidate_thread.start()
+                revoke_thread.start()
                 first_candidate_thread.join(timeout=5)
                 second_candidate_thread.join(timeout=5)
+                revoke_thread.join(timeout=5)
                 self.assertFalse(first_candidate_thread.is_alive())
                 self.assertFalse(second_candidate_thread.is_alive())
+                self.assertFalse(revoke_thread.is_alive())
+                self.assertFalse(revoke_overtook_observation)
                 self.assertFalse(Route.concurrent_observation_started.is_set())
+                self.assertEqual(revoke_response[0][0], 201, revoke_response[0][1])
                 created_status, created = next(row for row in candidate_responses if row[0] == 201)
                 repeated_status, repeated = next(row for row in candidate_responses if row[0] == 200)
                 future_review_id = "stage9-production-admission-review-" + hashlib.sha256(
@@ -787,6 +867,7 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
 
     def test_research_package_preserves_stage9_chain_as_detached_audit_only_evidence(self) -> None:
         from services.quant_core.tests import test_quant_core as quant_core_tests
+        from quant_core.api import _persist_research_run_import
         from quant_core.runs import (
             research_run_export_to_payload,
             research_run_import_audit_events,
@@ -862,6 +943,137 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
         stage9_events = [event for event in imported_events if event["eventType"].startswith("stage9_")]
         self.assertEqual(len(stage9_events), 2)
         self.assertTrue(all(event["metadata"]["detached"] for event in stage9_events))
+
+        for event_type, event_id in (
+            (
+                "execution_adapter_production_route_review",
+                "execution-adapter-production-route-review-forged",
+            ),
+            ("stage7_production_readonly_probe", "stage7-production-readonly-forged"),
+            ("stage8_production_readonly_access_control", "stage8-production-readonly-restore-forged"),
+            (
+                "attacker_controlled_event",
+                "execution-adapter-production-route-review-existing",
+            ),
+            ("attacker_controlled_event", "stage7-production-readonly-existing"),
+            ("attacker_controlled_event", "stage8-production-readonly-revoke-existing"),
+        ):
+            with self.subTest(forbidden_import_type=event_type):
+                authority_import = copy.deepcopy(exported)
+                authority_import.pop("integrity")
+                authority_import["auditEvents"].append({
+                    "schemaVersion": 1,
+                    "eventId": event_id,
+                    "eventType": event_type,
+                    "runId": imported.run_id,
+                    "createdAt": now.isoformat(),
+                    "stage": "forged-production-authority",
+                    "source": "attacker",
+                    "summary": "Forged production authority.",
+                    "detail": "Research imports must not restore production authority.",
+                    "metadata": {},
+                })
+                with self.assertRaisesRegex(
+                    ValueError, "production_authority_audit_event_import_forbidden"
+                ):
+                    research_run_import_audit_events(authority_import, run_id=imported.run_id)
+
+        with tempfile.TemporaryDirectory() as directory:
+            authority_store = AuditEventStore(Path(directory) / "authority.sqlite")
+            control = build_production_readonly_access_control(
+                action="revoke", operator="operator", reason="preserve revoke"
+            )
+            control_event = production_readonly_access_control_to_audit_event(control)
+            authority_store.record(control_event)
+            attacker_event = {
+                "schemaVersion": 1,
+                "eventId": control["controlId"],
+                "eventType": "attacker_controlled_event",
+                "runId": audit.run_id,
+                "createdAt": now.isoformat(),
+                "stage": "attacker-controlled-stage",
+                "source": "attacker",
+                "summary": "Attempt to overwrite a cross-run authority event.",
+                "detail": "Import preflight must reject this before any write.",
+                "metadata": {},
+            }
+            run_store = MagicMock()
+            with self.assertRaisesRegex(ValueError, "audit_event_import_identity_conflict"):
+                _persist_research_run_import(
+                    run_store=run_store,
+                    note_store=MagicMock(),
+                    strategy_store=MagicMock(),
+                    paper_execution_store=MagicMock(),
+                    portfolio_paper_order_store=MagicMock(),
+                    portfolio_paper_order_approval_store=MagicMock(),
+                    portfolio_paper_order_simulation_store=MagicMock(),
+                    ai_review_store=MagicMock(),
+                    ai_review_decision_store=MagicMock(),
+                    audit_event_store=authority_store,
+                    audit=audit,
+                    imported_note=None,
+                    paper_execution_records=[],
+                    portfolio_paper_order_batches=[],
+                    portfolio_paper_order_approvals=[],
+                    portfolio_paper_order_simulations=[],
+                    ai_review_records=[],
+                    audit_event_payloads=[attacker_event],
+                )
+            run_store.record.assert_not_called()
+            self.assertEqual(
+                authority_store.get(control["controlId"]).event_type,
+                "stage8_production_readonly_access_control",
+            )
+
+            kill_switch_event = {
+                "schemaVersion": 1,
+                "eventId": "stage6-kill-switch-preserved",
+                "eventType": "stage6_sandbox_kill_switch",
+                "runId": audit.run_id,
+                "createdAt": now.isoformat(),
+                "stage": "stage6-sandbox-kill-switch",
+                "source": "sandbox-operator",
+                "summary": "Triggered Stage 6 sandbox kill switch.",
+                "detail": "Sandbox account control only; live trading remains blocked.",
+                "metadata": {
+                    "snapshot": {
+                        "enabled": True,
+                        "triggered": True,
+                        "recordedAt": now.isoformat(),
+                        "operator": "sandbox-operator",
+                    }
+                },
+            }
+            authority_store.record(kill_switch_event)
+            detached_overwrite = copy.deepcopy(kill_switch_event)
+            detached_overwrite["metadata"]["detached"] = True
+            same_run_store = MagicMock()
+            with self.assertRaisesRegex(ValueError, "audit_event_import_identity_conflict"):
+                _persist_research_run_import(
+                    run_store=same_run_store,
+                    note_store=MagicMock(),
+                    strategy_store=MagicMock(),
+                    paper_execution_store=MagicMock(),
+                    portfolio_paper_order_store=MagicMock(),
+                    portfolio_paper_order_approval_store=MagicMock(),
+                    portfolio_paper_order_simulation_store=MagicMock(),
+                    ai_review_store=MagicMock(),
+                    ai_review_decision_store=MagicMock(),
+                    audit_event_store=authority_store,
+                    audit=audit,
+                    imported_note=None,
+                    paper_execution_records=[],
+                    portfolio_paper_order_batches=[],
+                    portfolio_paper_order_approvals=[],
+                    portfolio_paper_order_simulations=[],
+                    ai_review_records=[],
+                    audit_event_payloads=[detached_overwrite],
+                )
+            same_run_store.record.assert_not_called()
+            self.assertNotIn(
+                "detached",
+                authority_store.get(kill_switch_event["eventId"]).metadata,
+            )
 
         missing_candidate = research_run_export_to_payload(audit, audit_events=[*events[:2], events[3]])
         with self.assertRaisesRegex(ValueError, "stage9_production_admission_review_source_missing"):

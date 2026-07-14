@@ -838,12 +838,27 @@ def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | N
         export_package.get("adapterPaperExecutions", []),
         strict=True,
     )
-    return _normalize_audit_event_payloads(
+    events = _normalize_audit_event_payloads(
         raw_events,
         run_id=run_id,
         strict=True,
         adapter_paper_executions=adapter_paper_executions,
     )
+    if any(
+        event["eventType"] in {
+            "execution_adapter_production_route_review",
+            "stage7_production_readonly_probe",
+            "stage8_production_readonly_access_control",
+        }
+        or event["eventId"].startswith((
+            "execution-adapter-production-route-review-",
+            "stage7-production-readonly-",
+            "stage8-production-readonly-",
+        ))
+        for event in events
+    ):
+        raise ValueError("production_authority_audit_event_import_forbidden")
+    return events
 
 
 def research_run_import_handoff_notes(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:

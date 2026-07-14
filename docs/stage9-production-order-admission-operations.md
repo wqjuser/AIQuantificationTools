@@ -52,9 +52,9 @@ npm run docker:smoke:stage9
 npm run docker:smoke:stage9:validate
 ```
 
-默认门禁使用独立 Compose 项目和临时数据卷，不读取宿主生产凭据、不访问生产网络。它验证两笔订单候选、不可改写非生效复核、无凭据 API fail closed 前后零制品、连续性漂移、候选过期、detached 阻断、API 重启精确回读和全部 live-blocked 字段，结束后删除临时卷。candidate/review 重复请求与 Stage 8 revoke 通过本地 HTTP handler 的真实 POST 路径验证，而不是只调用 builder；线程化回归测试另行覆盖并发幂等。通用审计写入口不能创建、预占或覆盖 Stage 9 权威证据，回读会重验事件绑定。2026-07-14 最新 accepted manifest hash 为 `ada2845de5f6dc3df14fd6c00afccdc8c9214da94f52f28bf8961248da5fe0cc`，报告文件 SHA-256 为 `434c1aa269dcb81572bbfdba699749f070447610e52dc7c0eaed9f04221ddcc7`。
+默认门禁使用独立 Compose 项目和临时数据卷，不读取宿主生产凭据、不访问生产网络。它验证两笔订单候选、不可改写非生效复核、无凭据 API fail closed 前后零制品、连续性漂移、候选过期、detached 阻断、API 重启精确回读和全部 live-blocked 字段，结束后删除临时卷。candidate/review 重复请求与 Stage 8 revoke 通过本地 HTTP handler 的真实 POST 路径验证，而不是只调用 builder；线程化回归测试另行覆盖并发幂等。通用审计写入口不能创建、预占或覆盖 Stage 9 权威证据，回读会重验事件绑定。2026-07-14 最新 accepted manifest hash 为 `d3c53eccd6e3689ddfde808dca1b1d68f90abda4af62268b7fd60347248605c3`，报告文件 SHA-256 为 `ac01b186bac1cc0223cca17494f854ef683011e80170582bf9b2f862356a94f5`。
 
-确定性替身还覆盖生产规则缺失/漂移、31 秒陈旧报价、超过 1% 的不利价格、资金不足、Stage 8 revoke 网络前阻断，以及 candidate/review 重复请求精确回读。无专用生产只读凭据时，即使存在通用或 Sandbox 变量也不会构造生产连接，且阻断时 candidate/review 计数保持为零。manifest 在离线校验前先落盘，因此门禁失败时 CI 仍会上传故障证据。
+确定性替身还覆盖生产规则缺失/漂移、31 秒陈旧报价、超过 1% 的不利价格、资金不足、Stage 8 revoke 网络前阻断，以及 candidate/review 重复请求精确回读。线程化测试会分别交错 Stage 8 revoke 与 Stage 7 probe、Stage 9 observation，验证三者共用本地低频 authority 锁，control 不能在检查和网络边界之间穿越；同一测试用 51 组候选/复核证明幂等查找不受展示分页限制。Stage 4→9 准入链及 adapter route review 来源的 type 与 ID 命名空间只能由专用 API 写入，通用 audit 和 handoff 自定义 event ID 都不能绕过校验；研究包导入会拒绝 production route review、Stage 7 probe、Stage 8 control 及跨 run event ID 冲突，不能恢复或覆盖生产 authority。无专用生产只读凭据时，即使存在通用或 Sandbox 变量也不会构造生产连接，且 `AuditEventStore.count()` 在阻断请求前后精确无增量，不依赖空卷或有上限的最近列表。manifest 在离线校验前先落盘，因此门禁失败时 CI 仍会上传故障证据。
 
 可选真实只读验收不属于发布必跑项。先在 `data/stage9-production-admission-acceptance-request.json` 写入当前权威 Stage 6 authorization：
 

@@ -8,6 +8,51 @@ from pathlib import Path
 from typing import Any
 
 
+PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPES = frozenset({
+    "stage4_portfolio_workflow",
+    "stage5_shadow_execution_session",
+    "stage5_sandbox_readiness_decision",
+    "stage5_sandbox_authorization_preflight",
+    "stage5_sandbox_authorization_review",
+    "stage6_sandbox_batch_authorization",
+    "stage6_sandbox_kill_switch",
+    "stage6_sandbox_order_transition",
+    "execution_adapter_sandbox_probe_execution",
+    "execution_adapter_sandbox_probe_review",
+    "execution_adapter_production_route_review",
+    "stage7_production_readonly_probe",
+    "stage8_production_readonly_access_control",
+    "stage9_production_order_admission_candidate",
+    "stage9_production_order_admission_review",
+})
+
+PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES = (
+    "stage4-portfolio-workflow-",
+    "stage5-shadow-",
+    "stage5-sandbox-readiness-",
+    "stage5-sandbox-authorization-preflight-",
+    "stage5-sandbox-authorization-review-",
+    "stage6-kill-switch-",
+    "stage6-sandbox-auth-",
+    "stage6-transition-",
+    "execution-adapter-sandbox-probe-execution-",
+    "execution-adapter-sandbox-probe-review-",
+    "execution-adapter-production-route-review-",
+    "stage7-production-readonly-",
+    "stage8-production-readonly-",
+    "stage9-production-admission-",
+)
+
+
+def is_protected_production_authority_audit_event(event_type: Any, event_id: Any) -> bool:
+    normalized_type = str(event_type or "").strip()
+    normalized_id = str(event_id or "").strip()
+    return (
+        normalized_type in PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPES
+        or normalized_id.startswith(PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES)
+    )
+
+
 @dataclass(frozen=True)
 class AuditEventRecord:
     event_id: str
@@ -276,6 +321,10 @@ def audit_event_record_to_payload(record: AuditEventRecord) -> dict[str, Any]:
         "detail": record.detail,
         "metadata": record.metadata,
     }
+
+
+def audit_event_payload_matches_record(record: AuditEventRecord, payload: dict[str, Any]) -> bool:
+    return record == _normalized_to_audit_event_record(_normalize_audit_event(payload))
 
 
 def _normalize_audit_event(value: dict[str, Any]) -> dict[str, Any]:
