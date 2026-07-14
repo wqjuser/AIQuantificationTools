@@ -86,8 +86,10 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("npm run docker:smoke:stage7:validate");
     expect(workflow).toContain("npm run docker:smoke:stage8 -- --no-build");
     expect(workflow).toContain("npm run docker:smoke:stage8:validate");
+    expect(workflow).toContain("npm run docker:smoke:stage9 -- --no-build");
+    expect(workflow).toContain("npm run docker:smoke:stage9:validate");
     expect(workflow).not.toContain("actions/upload-artifact@v5");
-    expect(workflow.match(/actions\/upload-artifact@v7/g)).toHaveLength(6);
+    expect(workflow.match(/actions\/upload-artifact@v7/g)).toHaveLength(7);
     const artifactUploads = [
       [
         "Upload P0 acceptance manifest",
@@ -133,6 +135,12 @@ describe("docker deployment contract", () => {
         "Validate Stage 8 production read-only continuity evidence",
         "stage8-production-readonly-continuity-manifest",
         ["data/stage8-production-readonly-continuity.json"],
+      ],
+      [
+        "Upload Stage 9 production order admission manifest",
+        "Validate Stage 9 production order admission evidence",
+        "stage9-production-order-admission-manifest",
+        ["data/stage9-production-admission.json"],
       ],
     ];
     const steps = workflowSteps(workflow);
@@ -236,8 +244,15 @@ describe("docker deployment contract", () => {
     expect(packageJson.scripts["docker:smoke:stage8:real:validate"]).toBe(
       `${pythonLauncher} tools/stage8_production_readonly_continuity_acceptance.py --validate data/stage8-production-readonly-recovery.json`,
     );
+    expect(packageJson.scripts["docker:smoke:stage9"]).toBe(
+      `${pythonLauncher} tools/stage9_production_admission_acceptance.py --report data/stage9-production-admission.json`,
+    );
+    expect(packageJson.scripts["docker:smoke:stage9:validate"]).toBe(
+      `${pythonLauncher} tools/stage9_production_admission_acceptance.py --validate data/stage9-production-admission.json`,
+    );
     expect(existsSync(repoFile("tools/stage7_production_readonly_acceptance.py"))).toBe(true);
     expect(existsSync(repoFile("tools/stage8_production_readonly_continuity_acceptance.py"))).toBe(true);
+    expect(existsSync(repoFile("tools/stage9_production_admission_acceptance.py"))).toBe(true);
     expect(existsSync(repoFile("tools/docker_smoke.py"))).toBe(true);
   });
 

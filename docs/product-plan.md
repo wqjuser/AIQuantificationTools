@@ -1,10 +1,14 @@
 # AIQuant Terminal 产品规划
 
-## 当前阶段：Stage 8 已退出，下一阶段待规划（2026-07-13）
+## 当前阶段：Stage 9 已退出并进入维护（2026-07-14）
 
-Stage 0 至 Stage 8 已全部进入维护状态，当前不自动激活新的开发阶段。下一阶段需要单独完成路线设计、人工确认和安全验收；在此之前不创建、查询、撤销或同步生产订单，不访问成交、转账或提现接口，不开放真实资金委托和 live route。
+Stage 0 至 Stage 9 已全部进入维护状态，当前不自动激活新的开发阶段。Stage 9 只完成生产委托准入准备：它证明某个已在 Sandbox 终态对账的精确批次通过当前生产只读检查和一次人工复核，但不授予生产执行权。后续受限生产试单必须单独完成路线设计、生产交易凭据隔离、人工授权和真实资金安全验收。
 
-运行时产品阶段模型已完成同源收口：`buildProductDevelopmentStages` 精确列出 Stage 0 至 Stage 8 且全部为 maintenance，`buildProductWorkAreas` 将 Execution 映射到最新已交付的 Stage 8，中英文导航不再把 Stage 6 标为 current。该改动只同步产品状态，不新增阶段、API 或执行能力。
+运行时产品阶段模型已完成同源收口：`buildProductDevelopmentStages` 精确列出 Stage 0 至 Stage 9 且全部为 maintenance，`buildProductWorkAreas` 将 Execution 映射到最新已交付的 Stage 9，中英文导航不显示 `current` 阶段。
+
+Stage 9 复用 Stage 4 workflow、Stage 6 终态批次、Stage 8 continuity、Stage 7 专用生产只读凭据与 `AuditEventStore`。候选固定 10 分钟有效，首版仅允许 Binance Spot、`BTC/USDT`/`ETH/USDT`、GTC limit、最多 2 笔、单笔 10 USDT 和批次 20 USDT；生成候选和人工复核分别重验生产市场规则、30 秒报价、1% 逆向偏离与资金充分性。候选和复核进入研究包并在导入后 detached，批准复核仍为 `authorizationEffective=false`。Stage 8 revoke 是唯一急停。
+
+Stage 9 默认 Docker acceptance 不使用宿主生产凭据或生产网络，覆盖确定性成功、无凭据 fail closed、连续性漂移、候选过期、detached 阻断和 API 重启 hash 精确回读。2026-07-14 accepted manifest hash 为 `d3cf7d74677e02347fbc6d5c1d4e2e1c8c22370b84f862f99f8c8c45f2bf5d84`。退出不要求生产账户入金；生产订单创建、查询、撤销、成交、转账、提现和 live route 仍不存在。
 
 Stage 8 复用 Stage 7 probe、production route review 和 `AuditEventStore`，从当前 Stage 6 authority、route review、24 小时探针新鲜度、权限状态和本地访问控制派生 `current / stale / blocked / revoked / missing`。人工 revoke 不依赖外部证据，并在 Stage 7 构造生产 CCXT 连接前阻断；restore 必须绑定当前 route review。Docker acceptance 在独立临时数据卷中验证 revoke、网络前阻断、无效 restore、API 重启回读和 live-blocked 边界，manifest hash 为 `65702de501a8cddfb5a02ca698e77323eeef9b0ddfa3c9fc33dc32f96ddaf60e`。
 

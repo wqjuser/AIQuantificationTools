@@ -2346,7 +2346,8 @@ describe("terminal workbench model", () => {
       "live-readiness",
       "sandbox-execution",
       "production-readonly-admission",
-      "production-readonly-continuity"
+      "production-readonly-continuity",
+      "production-order-admission"
     ]);
     expect(stages.find((stage) => stage.id === "market-research")).toMatchObject({
       label: "Stage 1 · A-share P0 Golden Path",
@@ -2357,7 +2358,7 @@ describe("terminal workbench model", () => {
     expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
   });
 
-  test("moves Stage 0 through Stage 8 to maintenance after the Stage 8 exit", () => {
+  test("moves Stage 0 through Stage 9 to maintenance after the Stage 9 exit", () => {
     const stages = buildProductDevelopmentStages();
     const areas = buildProductWorkAreas(buildTerminalWorkspace());
     expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
@@ -2370,13 +2371,14 @@ describe("terminal workbench model", () => {
     expect(stages.find((stage) => stage.id === "sandbox-execution")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "production-readonly-admission")?.status).toBe("maintenance");
     expect(stages.find((stage) => stage.id === "production-readonly-continuity")?.status).toBe("maintenance");
+    expect(stages.find((stage) => stage.id === "production-order-admission")?.status).toBe("maintenance");
     expect(areas.find((area) => area.id === "market")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "strategy")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "backtest")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "ai-review")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "portfolio")?.deliveryStageStatus).toBe("maintenance");
     expect(areas.find((area) => area.id === "execution")).toMatchObject({
-      deliveryStageId: "production-readonly-continuity",
+      deliveryStageId: "production-order-admission",
       deliveryStageStatus: "maintenance"
     });
   });
@@ -3555,7 +3557,7 @@ describe("terminal workbench model", () => {
       quantLoopStepId: "paper",
       workflowStageId: "execution",
       status: "blocked",
-      deliveryStageId: "production-readonly-continuity",
+      deliveryStageId: "production-order-admission",
       deliveryStageStatus: "maintenance"
     });
     expect(areas.find((area) => area.id === "market")).toMatchObject({

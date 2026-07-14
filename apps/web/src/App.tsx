@@ -279,6 +279,7 @@ import {
 import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
 import { ExecutionStage6SandboxSection } from "./components/ExecutionStage6SandboxSection";
 import { ExecutionStage7ProductionReadonlySection } from "./components/ExecutionStage7ProductionReadonlySection";
+import { ExecutionStage9ProductionAdmissionSection } from "./components/ExecutionStage9ProductionAdmissionSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
@@ -330,6 +331,14 @@ import {
   setStage8ProductionReadonlyAccess,
   type Stage8ProductionReadonlyContinuity
 } from "./lib/stage8-readonly-continuity";
+import {
+  createStage9ProductionAdmissionCandidate,
+  createStage9ProductionAdmissionReview,
+  loadStage9ProductionAdmissionCandidates,
+  loadStage9ProductionAdmissionReviews,
+  type Stage9ProductionAdmissionCandidate,
+  type Stage9ProductionAdmissionReview
+} from "./lib/stage9-production-admission";
 import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
@@ -2295,6 +2304,12 @@ export function App() {
     useState<Stage8ProductionReadonlyContinuity | null>(null);
   const [stage8ProductionReadonlyError, setStage8ProductionReadonlyError] = useState<string | null>(null);
   const [isUpdatingStage8ProductionReadonly, setIsUpdatingStage8ProductionReadonly] = useState(false);
+  const [stage9ProductionAdmissionCandidates, setStage9ProductionAdmissionCandidates] =
+    useState<Stage9ProductionAdmissionCandidate[]>([]);
+  const [stage9ProductionAdmissionReviews, setStage9ProductionAdmissionReviews] =
+    useState<Stage9ProductionAdmissionReview[]>([]);
+  const [stage9ProductionAdmissionError, setStage9ProductionAdmissionError] = useState<string | null>(null);
+  const [isRunningStage9ProductionAdmission, setIsRunningStage9ProductionAdmission] = useState(false);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
@@ -2855,6 +2870,12 @@ export function App() {
     stage6SandboxAuthorization,
     stage6SandboxBatch
   );
+  const stage9ProductionAdmissionCandidate = stage9ProductionAdmissionCandidates.find((row) =>
+    row.sandboxAuthorizationId === stage6SandboxAuthorization?.authorizationId
+  ) ?? null;
+  const stage9ProductionAdmissionReview = stage9ProductionAdmissionReviews.find((row) =>
+    row.candidateId === stage9ProductionAdmissionCandidate?.candidateId
+  ) ?? null;
   const persistedPaperTradingRows = activePaperExecutionRecord
     ? paperTradingRowsFromExecutionRecord(activePaperExecutionRecord)
     : null;
@@ -3760,6 +3781,27 @@ export function App() {
       setStage5ShadowError(
         sessionResult.error ?? readinessResult.error ?? preflightResult.error ?? reviewResult.error ?? null
       );
+    });
+    return () => { cancelled = true; };
+  }, [currentResearchRunId]);
+
+  useEffect(() => {
+    const baseRunId = currentResearchRunId;
+    let cancelled = false;
+    if (!baseRunId) {
+      setStage9ProductionAdmissionCandidates([]);
+      setStage9ProductionAdmissionReviews([]);
+      setStage9ProductionAdmissionError(null);
+      return;
+    }
+    void Promise.all([
+      loadStage9ProductionAdmissionCandidates(quantCoreBaseUrl, baseRunId),
+      loadStage9ProductionAdmissionReviews(quantCoreBaseUrl, baseRunId)
+    ]).then(([candidateResult, reviewResult]) => {
+      if (cancelled) return;
+      setStage9ProductionAdmissionCandidates(candidateResult.candidates);
+      setStage9ProductionAdmissionReviews(reviewResult.reviews);
+      setStage9ProductionAdmissionError(candidateResult.error ?? reviewResult.error ?? null);
     });
     return () => { cancelled = true; };
   }, [currentResearchRunId]);
@@ -7517,6 +7559,48 @@ export function App() {
       setIsUpdatingStage8ProductionReadonly(false);
     }
   }, [isUpdatingStage8ProductionReadonly, latestCcxtProductionRouteReviewId]);
+
+  const runStage9ProductionAdmissionCandidateAction = useCallback(async () => {
+    if (isRunningStage9ProductionAdmission || !stage6SandboxAuthorization) return;
+    setIsRunningStage9ProductionAdmission(true);
+    setStage9ProductionAdmissionError(null);
+    try {
+      const result = await createStage9ProductionAdmissionCandidate(
+        quantCoreBaseUrl, stage6SandboxAuthorization.authorizationId
+      );
+      if (!result.candidate) throw new Error(result.error ?? "Stage 9 准入候选生成失败");
+      setStage9ProductionAdmissionCandidates((current) => [
+        result.candidate!, ...current.filter((row) => row.candidateId !== result.candidate!.candidateId)
+      ]);
+    } catch (error) {
+      setStage9ProductionAdmissionError(error instanceof Error ? error.message : "Stage 9 准入候选生成失败");
+    } finally {
+      setIsRunningStage9ProductionAdmission(false);
+    }
+  }, [isRunningStage9ProductionAdmission, stage6SandboxAuthorization]);
+
+  const runStage9ProductionAdmissionReviewAction = useCallback(async (
+    reviewer: string,
+    outcome: "approved" | "rejected",
+    reason: string
+  ) => {
+    if (isRunningStage9ProductionAdmission || !stage9ProductionAdmissionCandidate) return;
+    setIsRunningStage9ProductionAdmission(true);
+    setStage9ProductionAdmissionError(null);
+    try {
+      const result = await createStage9ProductionAdmissionReview(
+        quantCoreBaseUrl, stage9ProductionAdmissionCandidate.candidateId, reviewer, outcome, reason
+      );
+      if (!result.review) throw new Error(result.error ?? "Stage 9 准入复核失败");
+      setStage9ProductionAdmissionReviews((current) => [
+        result.review!, ...current.filter((row) => row.reviewId !== result.review!.reviewId)
+      ]);
+    } catch (error) {
+      setStage9ProductionAdmissionError(error instanceof Error ? error.message : "Stage 9 准入复核失败");
+    } finally {
+      setIsRunningStage9ProductionAdmission(false);
+    }
+  }, [isRunningStage9ProductionAdmission, stage9ProductionAdmissionCandidate]);
 
   const runStage6KillSwitchAction = useCallback(async (triggered: boolean) => {
     if (isRunningStage6Sandbox) return;
@@ -13256,6 +13340,19 @@ export function App() {
     if (activeWorkAreaId === "execution") {
       return (
         <>
+          <ExecutionStage9ProductionAdmissionSection
+            authorization={stage6SandboxAuthorization}
+            batch={stage6SandboxBatch}
+            busy={isRunningStage9ProductionAdmission}
+            candidate={stage9ProductionAdmissionCandidate}
+            continuity={stage8ProductionReadonlyContinuity}
+            error={stage9ProductionAdmissionError}
+            onCreateCandidate={() => void runStage9ProductionAdmissionCandidateAction()}
+            onReview={(reviewer, outcome, reason) => void runStage9ProductionAdmissionReviewAction(
+              reviewer, outcome, reason
+            )}
+            review={stage9ProductionAdmissionReview}
+          />
           <ExecutionStage7ProductionReadonlySection
             busy={isRunningStage7ProductionReadonly}
             continuity={stage8ProductionReadonlyContinuity}

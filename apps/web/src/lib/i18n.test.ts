@@ -87,9 +87,9 @@ describe("i18n", () => {
           })
         : ""
     ).toBe("Stage 7 · Production Read-only Admission");
-    expect(executionArea ? zh.productWorkAreaDeliveryStage(executionArea) : "").toBe("阶段 8 · 生产只读连续性");
+    expect(executionArea ? zh.productWorkAreaDeliveryStage(executionArea) : "").toBe("阶段 9 · 生产委托准入");
     expect(executionArea ? en.productWorkAreaDeliveryStage(executionArea) : "").toBe(
-      "Stage 8 · Production Read-only Continuity"
+      "Stage 9 · Production Order Admission"
     );
     expect(executionArea ? zh.productDevelopmentStageStatus(executionArea.deliveryStageStatus) : "").toBe("基础维护");
   });
