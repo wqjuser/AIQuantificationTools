@@ -87,6 +87,16 @@ function SurfacePanel({
   );
 }
 
+function EmptyState({ detail, title }: { detail: string; title: string }) {
+  return (
+    <div className="design-empty-state">
+      <FileText aria-hidden="true" size={20} />
+      <strong>{title}</strong>
+      <span>{detail}</span>
+    </div>
+  );
+}
+
 function Status({
   children,
   tone = "positive",
@@ -853,7 +863,12 @@ function BacktestSurface({
                   tone="blue"
                 />
                 {!curveForChart.length ? (
-                  <p className="design-chart-empty">运行现有回测流程后显示权威净值。</p>
+                  <div className="design-chart-empty">
+                    <EmptyState
+                      detail="点击右上角“运行回测”，完成后在此显示净值与基准。"
+                      title="暂无权威净值曲线"
+                    />
+                  </div>
                 ) : null}
               </div>
               <div className="design-drawdown-strip">
@@ -910,7 +925,10 @@ function BacktestSurface({
                 {!workspace.backtestTrades?.length ? (
                   <tr>
                     <td className="design-empty" colSpan={8}>
-                      当前运行未产生交易；净值、假设和验证结果仍可复核。
+                      <EmptyState
+                        detail="净值、成本假设与验证结果仍可独立复核。"
+                        title="当前运行未产生交易"
+                      />
                     </td>
                   </tr>
                 ) : null}
@@ -1239,7 +1257,10 @@ function PortfolioSurface({
               {!legs.length ? (
                 <tr>
                   <td colSpan={7} className="design-empty">
-                    运行现有组合构建流程后显示权威组合腿。
+                    <EmptyState
+                      detail="继续右上角黄金路径，通过同市场、同周期审计后显示。"
+                      title="暂无可展示的组合腿"
+                    />
                   </td>
                 </tr>
               ) : null}
@@ -1437,7 +1458,10 @@ function ExecutionSurface({
               {!orders.length ? (
                 <tr>
                   <td colSpan={8} className="design-empty">
-                    当前没有权威影子候选；创建 Stage 9 候选后显示。
+                    <EmptyState
+                      detail="创建 Stage 9 候选并通过路由预检后显示；不会提交真实订单。"
+                      title="暂无权威影子候选"
+                    />
                   </td>
                 </tr>
               ) : null}
@@ -1524,7 +1548,10 @@ function ExecutionSurface({
               {!orders.length ? (
                 <tr>
                   <td className="design-empty" colSpan={6}>
-                    尚无执行事件；Stage 9 影子候选创建后按时间追加显示。
+                    <EmptyState
+                      detail="Stage 9 影子候选创建后，事件将按权威时间顺序追加。"
+                      title="尚无执行事件"
+                    />
                   </td>
                 </tr>
               ) : null}
@@ -1856,7 +1883,7 @@ function SettingsSurface({
             </div>
           </SurfacePanel>
           <SurfacePanel title="执行适配器（只读）">
-            <table className="design-table compact">
+            <table className="design-table compact design-adapter-table">
               <thead>
                 <tr>
                   <th>适配器</th>

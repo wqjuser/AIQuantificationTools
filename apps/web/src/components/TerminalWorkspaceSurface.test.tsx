@@ -56,4 +56,22 @@ describe("TerminalWorkspaceSurface", () => {
     expect(execution).toContain("orderSubmissionEnabled=false");
     expect(settings).toContain("实盘阻断边界");
   });
+
+  it("turns authoritative empty data into an explicit next-step state", () => {
+    const backtest = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="backtest" />,
+    );
+    const portfolio = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="portfolio" />,
+    );
+    const execution = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="execution" />,
+    );
+
+    expect(backtest).toContain("暂无权威净值曲线");
+    expect(backtest).toContain("当前运行未产生交易");
+    expect(portfolio).toContain("暂无可展示的组合腿");
+    expect(execution).toContain("暂无权威影子候选");
+    expect(execution).toContain("不会提交真实订单");
+  });
 });
