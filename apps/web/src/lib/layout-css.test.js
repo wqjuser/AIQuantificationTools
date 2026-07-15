@@ -84,6 +84,11 @@ function i18nSnippet(zh, en) {
 
 describe("terminal layout css", () => {
   test("opens advanced evidence as a bounded native dialog instead of a floating details panel", () => {
+    const marketWorkspaceSource = sourceBetween(
+      'if (activeWorkAreaId === "market")',
+      'if (activeWorkAreaId === "strategy")'
+    );
+
     expect(appSource).toContain('className="terminal-evidence-trigger"');
     expect(appSource).toContain('aria-label="高级功能与证据"');
     expect(appSource).toContain("legacyWorkspaceDialogRef.current?.showModal()");
@@ -94,6 +99,17 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-legacy-workspace-body")).toContain("overflow: auto;");
     expect(cssBlock(".terminal-legacy-workspace-dialog::backdrop")).toContain("background: rgb(1 7 12 / 78%);");
     expect(hasCssBlockWith("  .topbar-actions .symbol-switcher", ["flex: 1 1 auto;", "min-width: 0;"])).toBe(true);
+    expect(marketWorkspaceSource).not.toContain('renderChartPanel("chart-panel workflow-chart-panel")');
+    expect(cssBlock(
+      ".terminal-legacy-workspace-dialog .terminal-overview-grid .ticker,\n.terminal-legacy-workspace-dialog .terminal-overview-grid .metrics-row"
+    )).toContain("display: none;");
+    expect(cssBlock(".terminal-legacy-workspace-dialog")).toContain("width: min(1120px, calc(100vw - 236px));");
+  });
+
+  test("keeps market status and chart metadata away from panel edges", () => {
+    expect(cssBlock(".design-watchlist-panel .design-table th:nth-child(8)")).toContain("width: 12%;");
+    expect(cssBlock(".design-watchlist-panel .design-table td:last-child")).toContain("text-align: center;");
+    expect(cssBlock(".design-chart-host .chart-data-strip")).toContain("padding: 4px 10px 5px;");
   });
 
   test("renders the Stage 4 golden path once in Portfolio and restores all authoritative evidence", () => {
@@ -3583,7 +3599,7 @@ describe("terminal layout css", () => {
         '"decision workflow"'
       ])
     ).toBe(true);
-    expect(hasCssBlockWith(".market-layout", ['"chart data"', '"chart calendar"', '"research-ops research-ops"', '"scanner workflow"'])).toBe(true);
+    expect(hasCssBlockWith(".market-layout", ['"research-ops data"', '"scanner data"', '"workflow calendar"'])).toBe(true);
     expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith(".agent-review-layout", ['"ai workflow"', '"decision history"'])).toBe(true);
     expect(cssBlock(".paper-layout")).toContain(

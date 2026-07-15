@@ -3800,10 +3800,9 @@ em {
 .market-layout {
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   grid-template-areas:
-    "chart data"
-    "chart calendar"
-    "research-ops research-ops"
-    "scanner workflow";
+    "research-ops data"
+    "scanner data"
+    "workflow calendar";
 }
 
 .strategy-layout {
@@ -16523,10 +16522,6 @@ em {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .design-market-toolbar {
-    grid-template-columns: minmax(0, 1fr) 66px;
-  }
-
   .terminal-status-bar {
     position: fixed;
     right: 0;
@@ -17080,60 +17075,10 @@ em {
 }
 
 .design-chart-host .chart-data-strip {
-  min-height: 26px;
+  min-height: 34px;
   border-top: 1px solid #1b3043;
+  padding: 4px 10px 5px;
   font-size: 9px;
-}
-
-.design-market-toolbar {
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) 110px;
-  gap: 8px;
-  min-height: 36px;
-}
-
-.surface-market .design-page-header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: 38px;
-}
-
-.surface-market .design-page-header > div:first-child {
-  display: contents;
-}
-
-.surface-market .design-page-header > button {
-  grid-column: 3;
-}
-
-.design-market-toolbar label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #21384a;
-  border-radius: 3px;
-  padding: 0 11px;
-  background: #0d1b28;
-  color: #718598;
-}
-
-.design-market-toolbar input,
-.design-market-toolbar select {
-  width: 100%;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #cbd6df;
-  font: inherit;
-  font-size: 10px;
-}
-
-.design-market-toolbar select {
-  border: 1px solid #21384a;
-  border-radius: 3px;
-  padding: 0 10px;
-  background: #0d1b28;
 }
 
 .design-market-grid {
@@ -17974,8 +17919,8 @@ em {
 
 .terminal-legacy-workspace-dialog {
   position: fixed;
-  inset: 60px 14px 74px 222px;
-  width: auto;
+  inset: 60px 14px 74px auto;
+  width: min(1120px, calc(100vw - 236px));
   max-width: none;
   height: auto;
   max-height: none;
@@ -18052,6 +17997,32 @@ em {
   overflow: auto;
   padding: 12px;
   background: #08131e;
+}
+
+.terminal-legacy-workspace-dialog .terminal-overview-grid {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 10px;
+}
+
+.terminal-legacy-workspace-dialog .terminal-overview-grid .ticker,
+.terminal-legacy-workspace-dialog .terminal-overview-grid .metrics-row {
+  display: none;
+}
+
+.terminal-legacy-workspace-dialog .terminal-overview-grid .watchlist-strip {
+  display: block;
+}
+
+.terminal-legacy-workspace-dialog .watchlist-save-action {
+  display: flex;
+  align-items: center;
+  min-height: 100%;
+  padding-inline: 12px;
+}
+
+.terminal-legacy-workspace-dialog .watchlist-save-action span,
+.terminal-legacy-workspace-dialog .watchlist-save-action em {
+  display: inline;
 }
 
 .terminal-status-bar {
@@ -18299,6 +18270,14 @@ em {
   }
   .terminal-legacy-workspace-dialog {
     inset: 56px 8px 118px;
+    width: auto;
+  }
+  .terminal-legacy-workspace-dialog .terminal-overview-grid {
+    grid-template-columns: 1fr;
+  }
+  .terminal-legacy-workspace-dialog .watchlist-save-action {
+    width: 100%;
+    min-height: 36px;
   }
 }
 
@@ -19629,11 +19608,10 @@ button.ai-review-record {
 
   .market-layout {
     grid-template-areas:
-      "chart"
-      "data"
-      "calendar"
       "research-ops"
+      "data"
       "scanner"
+      "calendar"
       "workflow";
   }
 
@@ -20205,11 +20183,10 @@ button.ai-review-record {
 
   .market-layout {
     grid-template-areas:
-      "chart"
-      "data"
-      "calendar"
       "research-ops"
+      "data"
       "scanner"
+      "calendar"
       "workflow";
   }
 
@@ -20553,10 +20530,6 @@ button.ai-review-record {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .design-market-toolbar {
-    grid-template-columns: minmax(0, 1fr) 66px;
-  }
-
   .terminal-status-bar {
     position: fixed;
     right: 0;
@@ -20861,13 +20834,20 @@ button.ai-review-record {
   width: 14%;
 }
 
-.design-watchlist-panel .design-table th:nth-child(5),
+.design-watchlist-panel .design-table th:nth-child(5) {
+  width: 10%;
+}
+
 .design-watchlist-panel .design-table th:nth-child(7) {
-  width: 11%;
+  width: 9%;
 }
 
 .design-watchlist-panel .design-table th:nth-child(8) {
-  width: 9%;
+  width: 12%;
+}
+
+.design-watchlist-panel .design-table td:last-child {
+  text-align: center;
 }
 
 .design-watchlist-overview {
@@ -21029,19 +21009,6 @@ button.ai-review-record {
 
   .design-page-header h2 {
     font-size: 19px;
-  }
-
-  .surface-market .design-page-header {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .surface-market .design-page-header > button {
-    grid-column: 2;
-  }
-
-  .surface-market .design-market-toolbar {
-    grid-column: 1 / -1;
-    grid-row: 2;
   }
 
   .design-primary-action {

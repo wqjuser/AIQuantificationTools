@@ -13180,7 +13180,6 @@ export function App() {
     if (activeWorkAreaId === "market") {
       return (
         <>
-          {renderChartPanel("chart-panel workflow-chart-panel")}
           <MarketDataHealthPanel
             cacheContext={activeCacheContext}
             className="workflow-data-panel"

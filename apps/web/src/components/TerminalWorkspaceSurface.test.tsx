@@ -86,6 +86,8 @@ describe("TerminalWorkspaceSurface", () => {
     expect(market).toContain("市场分布");
     expect(market).toContain("加密货币");
     expect(market).toContain("自选弱势排行");
+    expect(market).not.toContain('aria-label="搜索行情"');
+    expect(market).not.toContain("design-market-toolbar");
     expect(market).not.toContain("今开 —");
   });
 });
