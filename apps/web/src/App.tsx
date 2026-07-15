@@ -3,6 +3,7 @@ import {
   BookmarkPlus,
   BrainCircuit,
   Check,
+  Cog,
   Copy,
   Database,
   Download,
@@ -1663,7 +1664,7 @@ const workAreaIcons: Record<ProductWorkAreaId, typeof BarChart3> = {
   portfolio: ShieldCheck,
   execution: WalletCards,
   audit: Download,
-  settings: Languages
+  settings: Cog
 };
 
 const workflowAccentByStep: Record<string, TerminalModule["accent"]> = {
@@ -1684,6 +1685,38 @@ const productWorkAreaIds: ProductWorkAreaId[] = [
   "execution",
   "audit",
   "settings"
+];
+
+const productWorkAreaGroups: Array<{
+  id: string;
+  labelEn: string;
+  labelZh: string;
+  workAreaIds: ProductWorkAreaId[];
+}> = [
+  {
+    id: "market-research",
+    labelEn: "Market & Research",
+    labelZh: "市场与研究",
+    workAreaIds: ["market", "research"]
+  },
+  {
+    id: "decision-validation",
+    labelEn: "Decision & Validation",
+    labelZh: "决策与验证",
+    workAreaIds: ["strategy", "backtest", "ai-review"]
+  },
+  {
+    id: "portfolio-execution",
+    labelEn: "Portfolio & Execution",
+    labelZh: "组合与执行",
+    workAreaIds: ["portfolio", "execution"]
+  },
+  {
+    id: "governance-system",
+    labelEn: "Governance & System",
+    labelZh: "治理与系统",
+    workAreaIds: ["audit", "settings"]
+  }
 ];
 
 function researchOpsActionTargetWorkspace(actionId: ResearchOpsQueueRow["nextActionId"]): ProductWorkAreaId {
@@ -13375,6 +13408,12 @@ export function App() {
     if (activeWorkAreaId === "execution") {
       return (
         <>
+          <details className="execution-readiness-stack">
+            <summary>
+              <span>{i18n.locale === "zh-CN" ? "生产准入与测试网证据" : "Admission & sandbox evidence"}</span>
+              <strong>{i18n.locale === "zh-CN" ? "实盘路由持续阻断" : "Live routing remains blocked"}</strong>
+            </summary>
+            <div className="execution-readiness-stack-body">
           <ExecutionStage9ProductionAdmissionSection
             authorization={stage6SandboxAuthorization}
             batch={stage6SandboxBatch}
@@ -13422,6 +13461,8 @@ export function App() {
             onPrimaryAction={(reviewInput) => void runStage5ShadowPrimaryAction(reviewInput)}
             state={stage5ShadowState}
           />
+            </div>
+          </details>
           <ExecutionPanel
             className="workflow-execution-panel"
             i18n={i18n}
@@ -14084,57 +14125,78 @@ export function App() {
     <div className="terminal-shell">
       <aside className="left-rail">
         <div className="brand">
-          <span className="brand-mark">AQ</span>
+          <img className="brand-mark" src="/aiqt-logo.png" alt="AIQuantificationTools" />
           <div>
-            <strong>AIQuant Terminal</strong>
+            <strong>AIQuantificationTools</strong>
             <span>{i18n.t("brand.subtitle")}</span>
           </div>
         </div>
 
         <section className="rail-section">
-          <p className="section-label">{i18n.t("section.quantLoop")}</p>
           <nav className="work-area-nav">
-            {productWorkAreas.map((area, index) => {
-              const Icon = workAreaIcons[area.id] ?? Radar;
-              return (
-                <button
-                  className={`work-area-button ${area.accent} ${area.status} ${
-                    activeWorkAreaId === area.id ? "selected active" : ""
-                  }`}
-                  key={area.id}
-                  onClick={() => selectProductWorkArea(area.id)}
-                  title={`${i18n.productWorkAreaLabel(area)} · ${i18n.productWorkAreaDescription(area)} · ${i18n.productWorkAreaDeliveryStage(area)}`}
-                  type="button"
-                >
-                  <span className="work-area-index">{index + 1}</span>
-                  <Icon size={15} />
-                  <span className="work-area-copy">
-                    <strong>{i18n.productWorkAreaLabel(area)}</strong>
-                    <small>{i18n.productWorkAreaDescription(area)}</small>
-                    <span className="work-area-stage">
-                      <span>{i18n.productWorkAreaDeliveryStage(area)}</span>
-                      <em>{i18n.productDevelopmentStageStatus(area.deliveryStageStatus)}</em>
-                    </span>
-                  </span>
-                  <em className="work-area-status">{i18n.productWorkAreaStatus(area.status)}</em>
-                </button>
-              );
-            })}
+            {productWorkAreaGroups.map((group) => (
+              <section className="work-area-group" key={group.id}>
+                <p className="work-area-group-label">
+                  {i18n.locale === "zh-CN" ? group.labelZh : group.labelEn}
+                </p>
+                <div className="work-area-group-items">
+                  {group.workAreaIds.map((workAreaId) => {
+                    const area = productWorkAreas.find((candidate) => candidate.id === workAreaId);
+                    if (!area) {
+                      return null;
+                    }
+                    const Icon = workAreaIcons[area.id] ?? Radar;
+                    const index = productWorkAreaIds.indexOf(area.id);
+                    return (
+                      <button
+                        aria-current={activeWorkAreaId === area.id ? "page" : undefined}
+                        className={`work-area-button ${area.accent} ${area.status} ${
+                          activeWorkAreaId === area.id ? "selected active" : ""
+                        }`}
+                        key={area.id}
+                        onClick={() => selectProductWorkArea(area.id)}
+                        title={`${i18n.productWorkAreaLabel(area)} · ${i18n.productWorkAreaDescription(area)} · ${i18n.productWorkAreaDeliveryStage(area)}`}
+                        type="button"
+                      >
+                        <span className="work-area-index">{index + 1}</span>
+                        <Icon size={16} />
+                        <span className="work-area-copy">
+                          <strong>{i18n.productWorkAreaLabel(area)}</strong>
+                          <small>{i18n.productWorkAreaDescription(area)}</small>
+                          <span className="work-area-stage">
+                            <span>{i18n.productWorkAreaDeliveryStage(area)}</span>
+                            <em>{i18n.productDevelopmentStageStatus(area.deliveryStageStatus)}</em>
+                          </span>
+                        </span>
+                        <em className="work-area-status">{i18n.productWorkAreaStatus(area.status)}</em>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </nav>
         </section>
 
-        <section className="workspace-card">
-          <span className="section-label">{i18n.t("section.auditTrail")}</span>
-          <strong>{workspace.selectedInstrument.symbol} · {workspace.selectedTimeframe}</strong>
-          <p>{i18n.researchRunLabel(workspace.researchRun)}</p>
+        <section className="rail-profile">
+          <span className="rail-avatar">AQ</span>
+          <span>
+            <strong>quant.user</strong>
+            <small>{i18n.locale === "zh-CN" ? "研究员 · Level 3" : "Researcher · Level 3"}</small>
+          </span>
         </section>
       </aside>
 
-      <main className="terminal-main">
+      <main className="terminal-main" data-workspace={activeWorkAreaId}>
         <header className="terminal-topbar">
           <div>
-            <p className="section-label">{i18n.t("topbar.eyebrow")}</p>
-            <h1>{workspace.selectedInstrument.name} · {workspace.selectedInstrument.symbol}</h1>
+            <p className="section-label">
+              {workspace.selectedInstrument.symbol} · {i18n.marketLabel(workspace.selectedInstrument.market)} · {workspace.selectedTimeframe}
+            </p>
+            <h1>
+              {activeWorkArea ? i18n.productWorkAreaLabel(activeWorkArea) : i18n.t("topbar.eyebrow")}
+              <small>{workspace.selectedInstrument.name}</small>
+            </h1>
           </div>
           <div className="topbar-actions">
             <form className="symbol-switcher" onSubmit={submitSymbol} aria-label={i18n.t("aria.symbolSwitcher")}>
@@ -14300,6 +14362,9 @@ export function App() {
                   ? i18n.productWorkAreaDescription(activeWorkArea)
                   : i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}
               </p>
+              <details className="workspace-command-center">
+                <summary>{i18n.locale === "zh-CN" ? "工作区上下文" : "Workspace context"}</summary>
+                <div className="workspace-command-center-body">
               {goldenPath ? (
                 <div className={`golden-path-status ${goldenPath.status}`}>
                   <span>{goldenPathProgressLabel(i18n, goldenPath)}</span>
@@ -15610,6 +15675,8 @@ export function App() {
                   ))}
                 </div>
               ) : null}
+                </div>
+              </details>
             </div>
             <div className="module-focus-actions">
               {canSaveResearchWorkspace ? (
@@ -15717,6 +15784,30 @@ export function App() {
           {renderActiveProductWorkspace()}
         </section>
       </main>
+
+      <footer className="terminal-status-bar" aria-label={i18n.locale === "zh-CN" ? "系统状态" : "System status"}>
+        <div className="terminal-status-item">
+          <span>{i18n.locale === "zh-CN" ? "数据" : "Data"}</span>
+          <strong><i className="status-dot" />{source === "core" ? (i18n.locale === "zh-CN" ? "正常" : "Healthy") : (i18n.locale === "zh-CN" ? "离线快照" : "Offline snapshot")}</strong>
+        </div>
+        <div className="terminal-status-item">
+          <span>{i18n.locale === "zh-CN" ? "模型" : "Model"}</span>
+          <strong><i className="status-dot" />{i18n.locale === "zh-CN" ? "本地基线有效" : "Local baseline ready"}</strong>
+        </div>
+        <div className="terminal-status-item paper">
+          <span>Paper Broker</span>
+          <strong>{i18n.executionMode(workspace.execution)}</strong>
+        </div>
+        <div className="terminal-status-item">
+          <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
+          <strong><i className="status-dot" />{workspace.researchRun?.runId ? (i18n.locale === "zh-CN" ? "证据已绑定" : "Evidence bound") : (i18n.locale === "zh-CN" ? "等待运行" : "Awaiting run")}</strong>
+        </div>
+        <div className="terminal-live-block">
+          <span>{i18n.locale === "zh-CN" ? "实盘交易" : "Live trading"}</span>
+          <strong>{i18n.locale === "zh-CN" ? "已阻断" : "Blocked"}</strong>
+          <small>{i18n.locale === "zh-CN" ? "不发送真实指令" : "No live order submission"}</small>
+        </div>
+      </footer>
 
       {isChartExpanded ? (
         <div className="chart-modal-backdrop" role="dialog" aria-modal="true" aria-label={i18n.t("panel.chart.title")}>

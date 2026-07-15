@@ -251,7 +251,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildProductWorkAreas(workspace)");
     expect(appSource).toContain("resolveInitialWorkAreaId");
     expect(appSource).toContain('new URLSearchParams(window.location.search).get("workspace")');
-    expect(appSource).toContain("productWorkAreas.map");
+    expect(appSource).toContain("productWorkAreaGroups.map");
     expect(leftRailSource).toContain('className={`work-area-button');
     expect(leftRailSource).toContain("i18n.productWorkAreaLabel");
     expect(leftRailSource).toContain("i18n.productWorkAreaDescription");
@@ -321,7 +321,7 @@ describe("terminal layout css", () => {
   test("uses the document as the single desktop scroll surface", () => {
     expect(appSource).not.toContain('<aside className="agent-rail">');
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
-    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 232px minmax(0, 1fr);");
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 208px minmax(0, 1fr);");
     expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
     expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
     expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
@@ -331,16 +331,16 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-main")).not.toContain("overflow: auto;");
     expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto;");
     expect(cssBlock(".brand > div")).toContain("display: block;");
-    expect(cssBlock(".work-area-button")).toContain("grid-template-columns: auto minmax(0, 1fr) auto;");
-    expect(cssBlock(".work-area-copy")).toContain("display: block;");
+    expect(cssBlock(".work-area-button")).toContain("grid-template-columns: 18px minmax(0, 1fr);");
+    expect(hasCssDeclaration(".work-area-copy", "display: block;")).toBe(true);
     expect(cssBlock(".work-area-stage")).toContain("display: flex;");
     expect(hasCssDeclaration(".work-area-copy small", "display: block;")).toBe(true);
   });
 
   test("keeps the left navigation readable on desktop before collapsing to icon mode", () => {
-    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 232px minmax(0, 1fr);");
+    expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 208px minmax(0, 1fr);");
     expect(hasCssDeclaration(".left-rail", "padding: 14px;")).toBe(true);
-    expect(cssBlock(".work-area-button")).toContain("min-height: 64px;");
+    expect(cssBlock(".work-area-button")).toContain("min-height: 36px;");
     expect(cssBlock(".work-area-copy small")).toContain("display: block;");
     expect(styles).toContain("@media (max-width: 960px)");
     expect(styles).not.toContain("@media (max-width: 1180px)");
@@ -352,6 +352,27 @@ describe("terminal layout css", () => {
 
     expect(leftRailSource).not.toContain('disabled={area.status === "blocked"}');
     expect(cssBlock(".work-area-button.blocked")).toContain("border-color: #7a3a32;");
+  });
+
+  test("uses the approved grouped terminal shell, branded logo, and persistent safety status", () => {
+    const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
+    const footerSource = sourceBetween('<footer className="terminal-status-bar"', "</footer>");
+
+    expect(appSource).toContain('src="/aiqt-logo.png"');
+    expect(appSource).toContain("productWorkAreaGroups.map");
+    expect(leftRailSource).toContain('className="work-area-group-label"');
+    expect(leftRailSource).toContain('className="rail-profile"');
+    expect(appSource).toContain('className="workspace-command-center"');
+    expect(appSource).toContain('className="execution-readiness-stack"');
+    expect(cssBlock(".execution-readiness-stack")).toContain("grid-area: stage5;");
+    expect(cssBlock(".execution-readiness-stack-body .execution-stage5-shadow")).toContain("grid-area: auto;");
+    expect(footerSource).toContain('className="terminal-live-block"');
+    expect(footerSource).toContain('i18n.locale === "zh-CN" ? "已阻断" : "Blocked"');
+    expect(cssBlock(".terminal-status-bar")).toContain("position: fixed;");
+    expect(hasCssDeclaration(".terminal-live-block", "border: 1px solid #8b2d2d;")).toBe(true);
+    expect(styles).toContain("--canvas: #090d13;");
+    expect(styles).toContain("--teal: #71dfc5;");
+    expect(cssBlock("h1")).toContain("white-space: nowrap;");
   });
 
   test("lets operators generate the P2 manifest chain preflight from the execution panel", () => {
@@ -389,10 +410,10 @@ describe("terminal layout css", () => {
   test("keeps market context in one compact desktop band above the workflow", () => {
     expect(appSource).toContain('className="terminal-overview-grid market-tape"');
     expect(cssBlock(".terminal-overview-grid")).toContain(
-      "grid-template-columns: minmax(220px, 0.65fr) minmax(500px, 1.7fr) minmax(300px, 0.9fr);"
+      "grid-template-columns: minmax(250px, 0.72fr) minmax(500px, 1.6fr) minmax(250px, 0.78fr);"
     );
     expect(cssBlock(".terminal-overview-grid")).toContain("align-items: stretch;");
-    expect(cssBlock(".terminal-overview-grid .watchlist-strip")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(cssBlock(".terminal-overview-grid .watchlist-strip")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr)) auto;");
     expect(cssBlock(".terminal-overview-grid .metrics-row")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(cssBlock(".terminal-overview-grid .ticker,\n.terminal-overview-grid .metric-card")).toContain("min-height: 42px;");
     expect(cssBlock(".terminal-overview-grid .module-focus-card")).toContain("min-height: 42px;");
@@ -3989,8 +4010,8 @@ describe("terminal layout css", () => {
 
     expect(tabletLeftRail).toContain("position: sticky;");
     expect(tabletLeftRail).toContain("height: 100vh;");
-    expect(narrowLeftRail).toContain("position: static;");
-    expect(narrowLeftRail).toContain("align-self: stretch;");
+    expect(narrowLeftRail).toContain("position: sticky;");
+    expect(narrowLeftRail).toContain("grid-template-columns: auto minmax(0, 1fr);");
     expect(narrowLeftRail).toContain("height: auto;");
     expect(narrowLeftRail).toContain("overflow: visible;");
   });

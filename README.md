@@ -21,6 +21,12 @@
 - 行情适配器状态：`GET /api/settings/status` 会把 AKShare、yfinance 和 ccxt 的公开 OHLCV adapter、能力、周期覆盖、Key 需求、缓存 scope 和按市场聚合的缓存诊断暴露给 Settings 页面；该状态只读且不返回任何密钥值。
 - ccxt sandbox 健康检查：`GET /api/execution/adapter-health/ccxt-sandbox` 会在只读模式下检查 ccxt sandbox/testnet 的 `set_sandbox_mode(true)`、markets、status/time 和可选账户同步；Settings 页面会显示检查结果。该能力不下单、不撤单、不写密钥、不启用实盘。
 
+## 统一终端 UI
+
+Web 与 Tauri 桌面端共用同一套深色量化终端外壳。左侧导航按“市场与研究、决策与验证、组合与执行、治理与系统”组织九个既有工作区；顶部保留标的、周期、语言和流水线操作；底部状态条持续显示数据、模型、Paper Broker、审计与“实盘已阻断”。低频 P0/Golden Path 证据通过“工作区上下文”按需展开，避免遮挡当前工作区主任务。
+
+品牌图使用 `apps/web/public/aiqt-logo.png`，桌面应用图标同步为 `apps/web/src-tauri/icons/icon.png`。UI 重构没有复制业务模型或 API，仍复用现有工作区、store、构建器和安全边界。设计验收见 [design-qa.md](design-qa.md)。
+
 ## Commands
 
 ```powershell

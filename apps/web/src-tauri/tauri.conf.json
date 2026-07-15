@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "AI Quantification Tools",
-        "width": 1280,
-        "height": 860,
+        "title": "AIQuantificationTools",
+        "width": 1440,
+        "height": 960,
         "minWidth": 960,
         "minHeight": 680
       }
