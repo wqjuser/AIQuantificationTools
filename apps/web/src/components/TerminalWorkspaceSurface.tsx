@@ -263,6 +263,13 @@ function MarketSurface({
   const sorted = [...workspace.watchlist].sort(
     (left, right) => right.changePct - left.changePct,
   );
+  const advancingCount = workspace.watchlist.filter(
+    (instrument) => instrument.changePct >= 0,
+  ).length;
+  const decliningCount = workspace.watchlist.length - advancingCount;
+  const marketCount = new Set(
+    workspace.watchlist.map((instrument) => instrument.market),
+  ).size;
   const price = workspace.selectedInstrument.price ?? 0;
   const formatQuoteTime = (quoteAsOf: string | null | undefined) =>
     quoteAsOf
@@ -339,6 +346,34 @@ function MarketSurface({
               ))}
             </tbody>
           </table>
+          {workspace.watchlist.length < 8 ? (
+            <div className="design-watchlist-overview">
+              <div className="design-watchlist-overview-head">
+                <span>当前自选概览</span>
+                <strong>{workspace.watchlist.length} 个标的</strong>
+              </div>
+              <div className="design-watchlist-overview-stats">
+                <article>
+                  <span>上涨</span>
+                  <strong className="up">{advancingCount}</strong>
+                </article>
+                <article>
+                  <span>下跌</span>
+                  <strong className="down">{decliningCount}</strong>
+                </article>
+                <article>
+                  <span>覆盖市场</span>
+                  <strong>{marketCount}</strong>
+                </article>
+              </div>
+              <div className="design-watchlist-overview-foot">
+                <span>当前标的</span>
+                <strong>{workspace.selectedInstrument.name}</strong>
+                <span>最近更新</span>
+                <strong>{latestQuoteTime}</strong>
+              </div>
+            </div>
+          ) : null}
         </SurfacePanel>
         <SurfacePanel
           className="design-market-chart"
@@ -351,9 +386,9 @@ function MarketSurface({
               {workspace.selectedInstrument.changePct >= 0 ? "+" : ""}
               {workspace.selectedInstrument.changePct.toFixed(2)}%
             </em>
-            <span>今开 —</span>
-            <span>最高 —</span>
-            <span>最低 —</span>
+            <span>更新 {latestQuoteTime}</span>
+            <span>来源 {workspace.selectedInstrument.quoteSource ?? "本地"}</span>
+            <span>{source === "core" ? "实时数据" : "离线快照"}</span>
           </div>
           <div className="design-market-timeframes">
             {['1 分', '5 分', '日 K', '周 K'].map((label, index) => <span className={index === 2 ? 'active' : ''} key={label}>{label}</span>)}
@@ -412,7 +447,7 @@ function MarketSurface({
         <div className="design-market-bottom">
           {[sorted.slice(0, 5), sorted.slice().reverse().slice(0, 5)].map(
             (rows, groupIndex) => (
-              <SurfacePanel key={groupIndex} title={groupIndex === 0 ? "市场涨幅排行" : "市场跌幅排行"}>
+              <SurfacePanel key={groupIndex} title={groupIndex === 0 ? "自选涨幅排行" : "自选弱势排行"}>
                 <table className="design-table compact" key={groupIndex}>
                   <thead>
                     <tr>
@@ -439,7 +474,7 @@ function MarketSurface({
               </SurfacePanel>
             ),
           )}
-          <SurfacePanel title="最近搜索">
+          <SurfacePanel title="关注标的">
             <table className="design-table compact"><thead><tr><th>名称</th><th>代码</th><th>类型</th></tr></thead><tbody>{workspace.watchlist.slice(0, 5).map((row) => <tr key={row.symbol}><td>{row.name}</td><td>{row.symbol}</td><td>{row.market === "ashare" ? "A 股" : row.market === "us" ? "美股" : "加密货币"}</td></tr>)}</tbody></table>
           </SurfacePanel>
         </div>

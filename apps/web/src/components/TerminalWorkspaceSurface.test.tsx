@@ -74,4 +74,16 @@ describe("TerminalWorkspaceSurface", () => {
     expect(execution).toContain("暂无权威影子候选");
     expect(execution).toContain("不会提交真实订单");
   });
+
+  it("uses the spare watchlist space for a truthful overview", () => {
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="market" />,
+    );
+
+    expect(market).toContain("当前自选概览");
+    expect(market).toContain("4 个标的");
+    expect(market).toContain("覆盖市场");
+    expect(market).toContain("自选弱势排行");
+    expect(market).not.toContain("今开 —");
+  });
 });

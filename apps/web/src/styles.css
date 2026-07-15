@@ -20745,6 +20745,101 @@ button.ai-review-record {
   white-space: normal;
 }
 
+.design-watchlist-panel .design-panel-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.design-watchlist-panel .design-table {
+  table-layout: fixed;
+}
+
+.design-watchlist-panel .design-table th,
+.design-watchlist-panel .design-table td {
+  overflow: hidden;
+  padding-inline: 5px;
+  text-overflow: ellipsis;
+}
+
+.design-watchlist-panel .design-table th:nth-child(1) {
+  width: 16%;
+}
+
+.design-watchlist-panel .design-table th:nth-child(2) {
+  width: 15%;
+}
+
+.design-watchlist-panel .design-table th:nth-child(3),
+.design-watchlist-panel .design-table th:nth-child(6) {
+  width: 12%;
+}
+
+.design-watchlist-panel .design-table th:nth-child(4) {
+  width: 14%;
+}
+
+.design-watchlist-panel .design-table th:nth-child(5),
+.design-watchlist-panel .design-table th:nth-child(7) {
+  width: 11%;
+}
+
+.design-watchlist-panel .design-table th:nth-child(8) {
+  width: 9%;
+}
+
+.design-watchlist-overview {
+  display: grid;
+  flex: 1;
+  align-content: center;
+  gap: 16px;
+  min-height: 0;
+  border-top: 1px solid #1c3346;
+  padding: 22px;
+  background: rgb(7 20 31 / 24%);
+}
+
+.design-watchlist-overview-head,
+.design-watchlist-overview-foot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  color: #879aaa;
+  font-size: 10px;
+}
+
+.design-watchlist-overview-head strong,
+.design-watchlist-overview-foot strong {
+  color: #cbd6df;
+}
+
+.design-watchlist-overview-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.design-watchlist-overview-stats article {
+  display: grid;
+  gap: 5px;
+  min-height: 68px;
+  border: 1px solid #243b4f;
+  border-radius: 5px;
+  padding: 10px;
+  background: #0b1b29;
+}
+
+.design-watchlist-overview-stats span {
+  color: #8295a6;
+  font-size: 9px;
+}
+
+.design-watchlist-overview-stats strong {
+  color: #dce6ee;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+}
+
 .terminal-legacy-workspace > summary {
   opacity: 0.72;
   transition: border-color 120ms ease, color 120ms ease, opacity 120ms ease;
@@ -20809,6 +20904,29 @@ button.ai-review-record {
 
   .design-panel-body {
     padding: 9px 10px;
+  }
+
+  .design-watchlist-panel .design-table {
+    min-width: 0;
+  }
+
+  .design-watchlist-panel .design-table th:nth-child(n + 5),
+  .design-watchlist-panel .design-table td:nth-child(n + 5),
+  .design-watchlist-overview {
+    display: none;
+  }
+
+  .design-watchlist-panel .design-table th:nth-child(1) {
+    width: 26%;
+  }
+
+  .design-watchlist-panel .design-table th:nth-child(2) {
+    width: 29%;
+  }
+
+  .design-watchlist-panel .design-table th:nth-child(3),
+  .design-watchlist-panel .design-table th:nth-child(4) {
+    width: 22.5%;
   }
 
   .design-market-chart .design-panel-body {
