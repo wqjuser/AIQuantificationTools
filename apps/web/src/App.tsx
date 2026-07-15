@@ -2604,6 +2604,7 @@ export function App() {
   const exportPackageRequestCoordinatorRef = useRef(createLatestRequestCoordinator());
   const portfolioStage4RequestCoordinatorRef = useRef(createPortfolioStage4RequestCoordinator());
   const stage5ShadowRequestIdRef = useRef(0);
+  const legacyWorkspaceDialogRef = useRef<HTMLDialogElement | null>(null);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
@@ -14351,6 +14352,20 @@ export function App() {
                 {i18n.t("action.switchSymbol")}
               </button>
             </form>
+            <button
+              aria-haspopup="dialog"
+              aria-label="高级功能与证据"
+              className="terminal-evidence-trigger"
+              onClick={() => {
+                if (!legacyWorkspaceDialogRef.current?.open) {
+                  legacyWorkspaceDialogRef.current?.showModal();
+                }
+              }}
+              type="button"
+            >
+              <Database size={14} />
+              <span>高级功能与证据</span>
+            </button>
             <span className="terminal-paper-badge">纸面环境</span>
             <span className="terminal-live-badge">实盘阻断</span>
             <span className="terminal-notification" aria-label="通知"><Activity size={16} /><em>3</em></span>
@@ -14442,8 +14457,28 @@ export function App() {
           workspace={workspace}
         />
 
-        <details className="terminal-legacy-workspace">
-          <summary>高级功能与证据</summary>
+        <dialog
+          aria-describedby="terminal-legacy-workspace-description"
+          aria-labelledby="terminal-legacy-workspace-title"
+          className="terminal-legacy-workspace-dialog"
+          ref={legacyWorkspaceDialogRef}
+        >
+          <header className="terminal-legacy-workspace-header">
+            <div>
+              <span>高级工作区</span>
+              <h2 id="terminal-legacy-workspace-title">高级功能与证据</h2>
+              <p id="terminal-legacy-workspace-description">
+                低频操作、运行证据与恢复工具 · {activeWorkArea ? i18n.productWorkAreaLabel(activeWorkArea) : "当前工作区"}
+              </p>
+            </div>
+            <button
+              aria-label="关闭高级功能与证据"
+              onClick={() => legacyWorkspaceDialogRef.current?.close()}
+              type="button"
+            >
+              <X size={17} />
+            </button>
+          </header>
           <div className="terminal-legacy-workspace-body">
 
         <section className="terminal-overview-grid market-tape">
@@ -15880,7 +15915,7 @@ export function App() {
           {renderActiveProductWorkspace()}
         </section>
           </div>
-        </details>
+        </dialog>
       </main>
 
       <footer className="terminal-status-bar" aria-label={i18n.locale === "zh-CN" ? "系统状态" : "System status"}>

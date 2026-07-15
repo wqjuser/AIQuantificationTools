@@ -83,6 +83,19 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
+  test("opens advanced evidence as a bounded native dialog instead of a floating details panel", () => {
+    expect(appSource).toContain('className="terminal-evidence-trigger"');
+    expect(appSource).toContain('aria-label="高级功能与证据"');
+    expect(appSource).toContain("legacyWorkspaceDialogRef.current?.showModal()");
+    expect(appSource).toContain('<dialog\n          aria-describedby="terminal-legacy-workspace-description"');
+    expect(appSource).toContain('aria-label="关闭高级功能与证据"');
+    expect(appSource).not.toContain('<details className="terminal-legacy-workspace">');
+    expect(cssBlock(".terminal-legacy-workspace-dialog")).toContain("overflow: hidden;");
+    expect(cssBlock(".terminal-legacy-workspace-body")).toContain("overflow: auto;");
+    expect(cssBlock(".terminal-legacy-workspace-dialog::backdrop")).toContain("background: rgb(1 7 12 / 78%);");
+    expect(hasCssBlockWith("  .topbar-actions .symbol-switcher", ["flex: 1 1 auto;", "min-width: 0;"])).toBe(true);
+  });
+
   test("renders the Stage 4 golden path once in Portfolio and restores all authoritative evidence", () => {
     const portfolioSource = sourceBetween(
       'if (activeWorkAreaId === "portfolio")',

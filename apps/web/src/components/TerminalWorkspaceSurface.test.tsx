@@ -83,6 +83,8 @@ describe("TerminalWorkspaceSurface", () => {
     expect(market).toContain("当前自选概览");
     expect(market).toContain("4 个标的");
     expect(market).toContain("覆盖市场");
+    expect(market).toContain("市场分布");
+    expect(market).toContain("加密货币");
     expect(market).toContain("自选弱势排行");
     expect(market).not.toContain("今开 —");
   });

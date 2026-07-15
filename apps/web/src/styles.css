@@ -17094,7 +17094,7 @@ em {
 
 .surface-market .design-page-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 168px auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   min-height: 38px;
 }
@@ -17104,7 +17104,7 @@ em {
 }
 
 .surface-market .design-page-header > button {
-  grid-column: 4;
+  grid-column: 3;
 }
 
 .design-market-toolbar label {
@@ -17950,43 +17950,108 @@ em {
   padding: 0 10px;
 }
 
-.terminal-legacy-workspace {
-  position: fixed;
-  z-index: 70;
-  top: 58px;
-  right: 248px;
-}
-
-.terminal-legacy-workspace > summary {
-  list-style: none;
-  cursor: pointer;
+.terminal-evidence-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 32px;
   border: 1px solid #2b4960;
   border-radius: 4px;
-  padding: 6px 9px;
+  padding: 0 10px;
   background: #0e2030;
-  color: #8296a8;
+  color: #9db0bf;
+  font: inherit;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.terminal-evidence-trigger:hover,
+.terminal-evidence-trigger:focus-visible {
+  border-color: #58d6b9;
+  color: #77e3ca;
+}
+
+.terminal-legacy-workspace-dialog {
+  position: fixed;
+  inset: 60px 14px 74px 222px;
+  width: auto;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid #2c4559;
+  border-radius: 8px;
+  padding: 0;
+  background: #08131e;
+  color: #dce6ee;
+  box-shadow: 0 28px 80px rgb(0 0 0 / 70%);
+}
+
+.terminal-legacy-workspace-dialog::backdrop {
+  background: rgb(1 7 12 / 78%);
+  backdrop-filter: blur(3px);
+}
+
+.terminal-legacy-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 66px;
+  border-bottom: 1px solid #233b4e;
+  padding: 10px 14px;
+  background: #0b1b28;
+}
+
+.terminal-legacy-workspace-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.terminal-legacy-workspace-header span {
+  color: #58d6b9;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.terminal-legacy-workspace-header h2 {
+  color: #e2ebf2;
+  font-size: 14px;
+}
+
+.terminal-legacy-workspace-header p {
+  margin: 0;
+  color: #8094a5;
   font-size: 9px;
 }
 
-.terminal-legacy-workspace > summary::-webkit-details-marker {
-  display: none;
+.terminal-legacy-workspace-header > button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border: 1px solid #2a4356;
+  border-radius: 5px;
+  background: #0d2232;
+  color: #a7b6c2;
 }
 
-.terminal-legacy-workspace[open] > summary {
+.terminal-legacy-workspace-header > button:hover,
+.terminal-legacy-workspace-header > button:focus-visible {
   border-color: #58d6b9;
-  color: #58d6b9;
+  color: #77e3ca;
 }
 
 .terminal-legacy-workspace-body {
-  position: fixed;
-  z-index: 80;
-  inset: 96px 10px 78px 218px;
+  height: calc(100% - 66px);
   overflow: auto;
-  border: 1px solid #2c4559;
-  border-radius: 6px;
   padding: 12px;
   background: #08131e;
-  box-shadow: 0 22px 60px rgb(0 0 0 / 55%);
 }
 
 .terminal-status-bar {
@@ -18232,12 +18297,8 @@ em {
     grid-column: 1 / 5;
     display: none;
   }
-  .terminal-legacy-workspace {
-    top: 48px;
-    right: 8px;
-  }
-  .terminal-legacy-workspace-body {
-    inset: 82px 8px 118px 8px;
+  .terminal-legacy-workspace-dialog {
+    inset: 56px 8px 118px;
   }
 }
 
@@ -20812,8 +20873,8 @@ button.ai-review-record {
 .design-watchlist-overview {
   display: grid;
   flex: 1;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  align-content: stretch;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: start;
   gap: 12px;
   min-height: 0;
   border-top: 1px solid #1c3346;
@@ -20839,18 +20900,21 @@ button.ai-review-record {
 .design-watchlist-overview-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  border-block: 1px solid #223a4d;
 }
 
 .design-watchlist-overview-stats article {
   display: grid;
-  align-content: center;
-  gap: 5px;
-  min-height: 0;
-  border: 1px solid #243b4f;
-  border-radius: 5px;
-  padding: 10px;
-  background: #0b1b29;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 58px;
+  border-right: 1px solid #223a4d;
+  padding: 13px 12px;
+}
+
+.design-watchlist-overview-stats article:last-child {
+  border-right: 0;
 }
 
 .design-watchlist-overview-stats span {
@@ -20864,14 +20928,47 @@ button.ai-review-record {
   font-size: 18px;
 }
 
-.terminal-legacy-workspace > summary {
-  opacity: 0.72;
-  transition: border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+.design-watchlist-market-breakdown {
+  display: grid;
+  grid-auto-rows: minmax(24px, 1fr);
+  align-content: stretch;
+  gap: 7px;
 }
 
-.terminal-legacy-workspace > summary:hover,
-.terminal-legacy-workspace[open] > summary {
-  opacity: 1;
+.design-watchlist-market-breakdown-head,
+.design-watchlist-market-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 8px;
+  color: #879aaa;
+  font-size: 9px;
+}
+
+.design-watchlist-market-breakdown-head {
+  grid-template-columns: 1fr auto;
+  min-height: 18px;
+  color: #71879a;
+}
+
+.design-watchlist-market-breakdown-head strong,
+.design-watchlist-market-row strong {
+  color: #cbd6df;
+  text-align: right;
+}
+
+.design-watchlist-market-row i {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #162b3b;
+}
+
+.design-watchlist-market-row b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #58d6b9;
 }
 
 .terminal-status-bar {
@@ -20895,6 +20992,23 @@ button.ai-review-record {
 }
 
 @media (max-width: 760px) {
+  .topbar-actions {
+    min-width: 0;
+  }
+
+  .topbar-actions .symbol-switcher {
+    display: block;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .topbar-actions .symbol-field,
+  .topbar-actions .symbol-field input {
+    width: 100%;
+    min-width: 0;
+  }
+
   .left-rail {
     height: 58px;
   }
@@ -20970,9 +21084,19 @@ button.ai-review-record {
     height: 500px;
   }
 
-  .terminal-legacy-workspace {
-    top: 52px;
-    right: 126px;
+  .terminal-evidence-trigger span {
+    display: none;
+  }
+
+  .terminal-evidence-trigger {
+    flex-basis: 34px;
+    width: 34px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .terminal-legacy-workspace-dialog {
+    inset: 52px 8px 104px;
   }
 
   .terminal-status-bar {

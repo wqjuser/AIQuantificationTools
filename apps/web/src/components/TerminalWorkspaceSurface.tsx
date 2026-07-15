@@ -270,6 +270,17 @@ function MarketSurface({
   const marketCount = new Set(
     workspace.watchlist.map((instrument) => instrument.market),
   ).size;
+  const marketBreakdown = ([
+    ["ashare", "A 股"],
+    ["us", "美股"],
+    ["crypto", "加密货币"],
+  ] as const)
+    .map(([market, label]) => ({
+      count: workspace.watchlist.filter((instrument) => instrument.market === market).length,
+      label,
+      market,
+    }))
+    .filter((item) => item.count > 0);
   const price = workspace.selectedInstrument.price ?? 0;
   const formatQuoteTime = (quoteAsOf: string | null | undefined) =>
     quoteAsOf
@@ -355,17 +366,32 @@ function MarketSurface({
               </div>
               <div className="design-watchlist-overview-stats">
                 <article>
-                  <span>上涨</span>
                   <strong className="up">{advancingCount}</strong>
+                  <span>上涨</span>
                 </article>
                 <article>
-                  <span>下跌</span>
                   <strong className="down">{decliningCount}</strong>
+                  <span>下跌</span>
                 </article>
                 <article>
-                  <span>覆盖市场</span>
                   <strong>{marketCount}</strong>
+                  <span>覆盖市场</span>
                 </article>
+              </div>
+              <div className="design-watchlist-market-breakdown">
+                <div className="design-watchlist-market-breakdown-head">
+                  <span>市场分布</span>
+                  <strong>{workspace.watchlist.length} 个标的</strong>
+                </div>
+                {marketBreakdown.map((item) => (
+                  <div className="design-watchlist-market-row" key={item.market}>
+                    <span>{item.label}</span>
+                    <i aria-hidden="true">
+                      <b style={{ width: `${Math.max(12, (item.count / workspace.watchlist.length) * 100)}%` }} />
+                    </i>
+                    <strong>{item.count}</strong>
+                  </div>
+                ))}
               </div>
               <div className="design-watchlist-overview-foot">
                 <span>当前标的</span>
