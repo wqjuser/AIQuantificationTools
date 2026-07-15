@@ -285,18 +285,19 @@ function MarketSurface({
   );
   return (
     <>
-      <PageHeader action={action} title="行情中心" />
-      <div className="design-market-toolbar">
-        <label>
-          <Search size={14} />
-          <input aria-label="搜索行情" placeholder="搜索 A 股 / 美股 / 加密货币" />
-        </label>
-        <select aria-label="市场" defaultValue={workspace.selectedInstrument.market}>
-          <option value="ashare">A 股</option>
-          <option value="us">美股</option>
-          <option value="crypto">加密货币</option>
-        </select>
-      </div>
+      <PageHeader action={action} title="行情中心">
+        <div className="design-market-toolbar">
+          <label>
+            <Search size={14} />
+            <input aria-label="搜索行情" placeholder="搜索 A 股 / 美股 / 加密货币" />
+          </label>
+          <select aria-label="市场" defaultValue={workspace.selectedInstrument.market}>
+            <option value="ashare">A 股</option>
+            <option value="us">美股</option>
+            <option value="crypto">加密货币</option>
+          </select>
+        </div>
+      </PageHeader>
       <div className="design-market-grid">
         <SurfacePanel
           className="design-watchlist-panel"

@@ -17087,10 +17087,24 @@ em {
 
 .design-market-toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 420px) 110px;
+  grid-template-columns: minmax(280px, 1fr) 110px;
   gap: 8px;
   min-height: 36px;
-  margin-bottom: 8px;
+}
+
+.surface-market .design-page-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 168px auto;
+  align-items: center;
+  min-height: 38px;
+}
+
+.surface-market .design-page-header > div:first-child {
+  display: contents;
+}
+
+.surface-market .design-page-header > button {
+  grid-column: 4;
 }
 
 .design-market-toolbar label {
@@ -17129,10 +17143,18 @@ em {
   gap: 10px;
 }
 
+.design-watchlist-panel,
+.design-market-chart,
+.design-research-chart {
+  display: flex;
+  flex-direction: column;
+}
+
 .design-watchlist-panel .design-panel-body,
 .design-market-chart .design-panel-body,
 .design-research-chart .design-panel-body {
-  height: calc(100% - 38px);
+  flex: 1;
+  height: auto;
   padding: 0;
 }
 
@@ -20790,11 +20812,12 @@ button.ai-review-record {
 .design-watchlist-overview {
   display: grid;
   flex: 1;
-  align-content: center;
-  gap: 16px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  gap: 12px;
   min-height: 0;
   border-top: 1px solid #1c3346;
-  padding: 22px;
+  padding: 16px 20px;
   background: rgb(7 20 31 / 24%);
 }
 
@@ -20821,8 +20844,9 @@ button.ai-review-record {
 
 .design-watchlist-overview-stats article {
   display: grid;
+  align-content: center;
   gap: 5px;
-  min-height: 68px;
+  min-height: 0;
   border: 1px solid #243b4f;
   border-radius: 5px;
   padding: 10px;
@@ -20893,6 +20917,19 @@ button.ai-review-record {
     font-size: 19px;
   }
 
+  .surface-market .design-page-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .surface-market .design-page-header > button {
+    grid-column: 2;
+  }
+
+  .surface-market .design-market-toolbar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .design-primary-action {
     min-height: 36px;
   }
@@ -20934,8 +20971,8 @@ button.ai-review-record {
   }
 
   .terminal-legacy-workspace {
-    top: 96px;
-    right: 8px;
+    top: 52px;
+    right: 126px;
   }
 
   .terminal-status-bar {
