@@ -1,26 +1,46 @@
-# UI 重构设计验收
+# 终端 UI 逐页设计验收
 
-- 验收日期：2026-07-15
-- 设计来源：[Figma 九工作区终端设计](https://www.figma.com/design/qbF7LVyzZ0RL5uYjZzqf06?node-id=3-2)
-- 实现入口：`http://127.0.0.1:5173/?workspace=market`（Docker 构建）
-- 桌面验收视口：1440 × 1024
-- 移动验收视口：375 × 812
+验收日期：2026-07-15
 
-## 对照截图
+## 验收基准
 
-- [行情中心：设计稿与实现并排对照](docs/assets/ui-redesign/market-reference-vs-implementation.jpg)
-- [执行中心：设计稿与实现并排对照](docs/assets/ui-redesign/execution-reference-vs-implementation.jpg)
-- [375px 移动布局实现](docs/assets/ui-redesign/mobile-375-implementation.png)
+- Figma 文件：`qbF7LVyzZ0RL5uYjZzqf06`
+- 桌面视口：`1440 × 1024`
+- 移动视口：`375 × 812`
+- 运行状态：本地 Docker `api + web`，页面读取当前 quant-core 与持久化运行；没有权威组合、订单或成交时显示明确空状态，不补造设计稿中的业务记录。
+- 安全状态：`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
 
-## 验收结论
+## 九页逐张证据
 
-九个既有工作区全部复用原有模型、store、API 与组件，只替换统一终端外壳、导航组织、视觉 tokens 和响应式布局。设计稿中的示例行情与订单不作为实现数据源；实现继续展示真实 API/readback 状态，在本地核心不可用时明确显示离线快照或 HTTP 错误，不伪造成功数据。
+| 页面 | Figma 基准 | Docker 实现 | 并排对照 |
+| --- | --- | --- | --- |
+| 行情中心 | `docs/assets/ui-redesign/figma/01-market.png` | `docs/assets/ui-redesign/implementation/01-market.png` | `docs/assets/ui-redesign/comparisons/01-market.png` |
+| 研究工作台 | `docs/assets/ui-redesign/figma/02-research.png` | `docs/assets/ui-redesign/implementation/02-research.png` | `docs/assets/ui-redesign/comparisons/02-research.png` |
+| 策略工坊 | `docs/assets/ui-redesign/figma/03-strategy.png` | `docs/assets/ui-redesign/implementation/03-strategy.png` | `docs/assets/ui-redesign/comparisons/03-strategy.png` |
+| 回测实验室 | `docs/assets/ui-redesign/figma/04-backtest.png` | `docs/assets/ui-redesign/implementation/04-backtest.png` | `docs/assets/ui-redesign/comparisons/04-backtest.png` |
+| AI 评审 | `docs/assets/ui-redesign/figma/05-ai-review.png` | `docs/assets/ui-redesign/implementation/05-ai-review.png` | `docs/assets/ui-redesign/comparisons/05-ai-review.png` |
+| 组合风控 | `docs/assets/ui-redesign/figma/06-portfolio.png` | `docs/assets/ui-redesign/implementation/06-portfolio.png` | `docs/assets/ui-redesign/comparisons/06-portfolio.png` |
+| 执行中心 | `docs/assets/ui-redesign/figma/07-execution.png` | `docs/assets/ui-redesign/implementation/07-execution.png` | `docs/assets/ui-redesign/comparisons/07-execution.png` |
+| 审计回放 | `docs/assets/ui-redesign/figma/08-audit.png` | `docs/assets/ui-redesign/implementation/08-audit.png` | `docs/assets/ui-redesign/comparisons/08-audit.png` |
+| 设置 | `docs/assets/ui-redesign/figma/09-settings.png` | `docs/assets/ui-redesign/implementation/09-settings.png` | `docs/assets/ui-redesign/comparisons/09-settings.png` |
 
-- P0：已修复。左侧九工作区不再以大卡片常驻挤压主内容；Stage 5/6/7/9 组件不再占用同一网格区域互相覆盖；实盘阻断状态在所有工作区持续可见。
-- P1：已修复。低频 P0/Golden Path 证据收进可展开的“工作区上下文”；执行准入与测试网证据收进独立展开区；默认视图优先呈现当前工作区主任务。
-- P2：已修复。应用选定 Logo、统一边框/圆角/色彩/密度，补齐 375px 横向图标导航和移动状态条。
-- 浏览器：九个 `workspace` 路由均唯一渲染；Docker 最终回读确认 Logo、工作区、状态条存在，标题不换行，控制台错误为 0。
-- 桌面包：`AIQuantificationTools_0.1.0_x64.dmg` 已重新生成并通过 `hdiutil verify`，SHA-256 为 `edd2cbe82237013398eed51cd7cc5cf4905573f86c968918b568a501679c3401`。
-- 安全边界：`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、真实委托持续阻断；本轮没有新增券商或下单路径。
+移动证据：`docs/assets/ui-redesign/implementation/mobile-market-375.png`。
+
+## 检查结果
+
+- 字体与层级：页面标题、面板标题、等宽行情/审计数据和状态文字层级与设计稿一致，没有大字号营销化处理。
+- 间距与布局：208px 左栏、48px 顶栏、固定状态栏和九套工作区网格通过；AI 右栏跨两行，不再把 Decision 追加链推到首屏之外。
+- 颜色与边界：深蓝黑底、青绿成功、琥珀复核、红色阻断与设计稿一致；实盘阻断状态始终可见。
+- 图表质量：行情页复用真实 500 根 K 线、成交量和 MACD；研究页复用同一行情数据；回测页把净值/基准与回撤分层显示。没有用占位图或 CSS 图形替代数据可视化。
+- 数据诚实性：watchlist、research runs、审计行、组合腿和执行订单都来自现有模型/API；当前 Docker 没有权威组合或 Stage 9 候选时使用空状态，不为凑齐设计稿行数伪造持仓、订单或成交。
+- 文案与动作：九个页面主动作继续调用现有 App 回调；高频主任务留在首屏，P0/Golden Path 证据收进“高级功能与证据”。
+- 响应式：375px 下页面 `clientWidth=375`、`scrollWidth=375`，主内容单列，底部导航和实盘阻断状态可见，无页面级横向溢出。
+
+## 迭代记录
+
+1. 第一轮对照发现所有页面只换了统一外壳，主内容仍是通用卡片；据此拆成九个路由专属 surface。
+2. 第二轮补齐行情搜索/八列自选/右栏/排行、研究第四侧栏、AI 证据侧栏、MACD、左栏个人状态和 375px 单列布局。
+3. Docker 逐页对照发现首次行情截图过早、回测净值与回撤重叠、组合/执行空状态留白过大、AI 侧栏推高首行；分别延后到真实 K 线完成、拆分回测图层、补充真实空状态与计数、让 AI 侧栏跨两行。
+4. 最终在相同桌面视口重拍九页并生成并排图，同时复核移动宽度和安全边界。
 
 final result: passed

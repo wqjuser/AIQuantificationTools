@@ -23,9 +23,9 @@
 
 ## 统一终端 UI
 
-Web 与 Tauri 桌面端共用同一套深色量化终端外壳。左侧导航按“市场与研究、决策与验证、组合与执行、治理与系统”组织九个既有工作区；顶部保留标的、周期、语言和流水线操作；底部状态条持续显示数据、模型、Paper Broker、审计与“实盘已阻断”。低频 P0/Golden Path 证据通过“工作区上下文”按需展开，避免遮挡当前工作区主任务。
+Web 与 Tauri 桌面端共用同一套深色量化终端外壳。左侧导航按“市场与研究、决策与验证、组合与执行、治理与系统”组织九个既有工作区；每个工作区都有与 Figma 对应的独立主任务布局，不再只是把同一组通用卡片换标题。顶部保留标的、周期、语言和流水线操作；底部状态条持续显示数据、模型、Paper Broker、审计与“实盘已阻断”。低频 P0/Golden Path 证据通过“高级功能与证据”按需展开，避免遮挡当前工作区主任务。
 
-品牌图使用 `apps/web/public/aiqt-logo.png`，桌面应用图标同步为 `apps/web/src-tauri/icons/icon.png`。UI 重构没有复制业务模型或 API，仍复用现有工作区、store、构建器和安全边界。设计验收见 [design-qa.md](design-qa.md)。
+品牌图使用 `apps/web/public/aiqt-logo.png`，桌面应用图标同步为 `apps/web/src-tauri/icons/icon.png`。行情和研究图表继续读取现有行情与运行数据，行情图复用当前 klinecharts 实例增加 MACD 副图；页面没有伪造设计图中的示例行数。375px 宽度下内容改为单列并保持底部导航可用。UI 重构没有复制业务模型或 API，仍复用现有工作区、store、构建器和安全边界。设计验收见 [design-qa.md](design-qa.md)。
 
 ## Commands
 

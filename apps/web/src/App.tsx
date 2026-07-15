@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   BookmarkPlus,
   BrainCircuit,
@@ -280,6 +281,10 @@ import {
 import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
 import { ExecutionStage6SandboxSection } from "./components/ExecutionStage6SandboxSection";
 import { ExecutionStage7ProductionReadonlySection } from "./components/ExecutionStage7ProductionReadonlySection";
+import {
+  TerminalWorkspaceSurface,
+  type TerminalWorkspaceSurfaceAction
+} from "./components/TerminalWorkspaceSurface";
 import {
   ExecutionStage9ProductionAdmissionSection,
   Stage9ProductionAdmissionAuditLedgerPanel
@@ -14121,6 +14126,38 @@ export function App() {
     );
   };
 
+  const terminalSurfaceAction: TerminalWorkspaceSurfaceAction = (() => {
+    switch (activeWorkAreaId) {
+      case "market":
+        return { label: "刷新行情", onClick: () => void refreshWatchlistMarketCache() };
+      case "research":
+        return { label: "运行研究", onClick: () => void runPipeline(), disabled: isRunning };
+      case "strategy":
+        return { label: "保存版本", onClick: () => void saveCurrentStrategyVersion() };
+      case "backtest":
+        return { label: "运行回测", onClick: () => void runPipeline(), disabled: isRunning };
+      case "ai-review":
+        return { label: "运行 AI 评审", onClick: () => void runAiReviewStage3(), disabled: isRunningAiReviewStage3 };
+      case "portfolio":
+        return { label: "继续黄金路径", onClick: runActiveWorkflowAction };
+      case "execution":
+        return {
+          label: "创建影子候选",
+          onClick: () => void runStage9ProductionAdmissionCandidateAction(),
+          disabled: !stage6SandboxAuthorization || isRunningStage9ProductionAdmission,
+          tone: "warning"
+        };
+      case "audit":
+        return {
+          label: "导出审计包",
+          onClick: () => runHistory[0] && void exportRun(runHistory[0]),
+          disabled: !runHistory.length
+        };
+      case "settings":
+        return { label: "运行健康检查", onClick: () => void refreshExecutionAdapterHealthProbe() };
+    }
+  })();
+
   return (
     <div className="terminal-shell">
       <aside className="left-rail">
@@ -14184,12 +14221,37 @@ export function App() {
             <strong>quant.user</strong>
             <small>{i18n.locale === "zh-CN" ? "研究员 · Level 3" : "Researcher · Level 3"}</small>
           </span>
+          <div className="rail-profile-controls">
+            <span>{i18n.locale === "zh-CN" ? "深色模式" : "Dark mode"}</span>
+            <i aria-hidden="true" />
+          </div>
+          <time dateTime={workspace.researchRun?.createdAt ?? ""}>
+            {workspace.researchRun
+              ? new Date(workspace.researchRun.createdAt).toLocaleString("zh-CN", {
+                  timeZone: "Asia/Shanghai"
+                })
+              : i18n.locale === "zh-CN"
+                ? "等待首次运行"
+                : "Waiting for first run"}
+            <br />Asia/Shanghai
+          </time>
         </section>
       </aside>
 
       <main className="terminal-main" data-workspace={activeWorkAreaId}>
         <header className="terminal-topbar">
-          <div>
+          <div className="terminal-global-tape" aria-label="全球市场快照">
+            {workspace.watchlist.slice(0, 3).map((instrument) => (
+              <span key={`${instrument.market}-${instrument.symbol}`}>
+                {instrument.name} <em>
+                  {instrument.price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "—"}
+                  {" "}{instrument.changePct >= 0 ? "+" : ""}{instrument.changePct.toFixed(2)}%
+                </em>
+              </span>
+            ))}
+            <span className="terminal-data-fresh"><Activity size={12} />{source === "core" ? "实时数据已连接" : "本地快照"}</span>
+          </div>
+          <div className="terminal-route-heading">
             <p className="section-label">
               {workspace.selectedInstrument.symbol} · {i18n.marketLabel(workspace.selectedInstrument.market)} · {workspace.selectedTimeframe}
             </p>
@@ -14289,6 +14351,10 @@ export function App() {
                 {i18n.t("action.switchSymbol")}
               </button>
             </form>
+            <span className="terminal-paper-badge">纸面环境</span>
+            <span className="terminal-live-badge">实盘阻断</span>
+            <span className="terminal-notification" aria-label="通知"><Activity size={16} /><em>3</em></span>
+            <span className="terminal-top-avatar">AQ</span>
             <button
               className="context-link-button"
               onClick={() => void copyResearchContextLink()}
@@ -14349,6 +14415,36 @@ export function App() {
             </button>
           </div>
         </header>
+
+        <TerminalWorkspaceSurface
+          action={terminalSurfaceAction}
+          activeWorkAreaId={activeWorkAreaId}
+          adapterRows={brokerAdapterRows}
+          chart={
+            <>
+              <KlineChartCanvas
+                key={`surface-${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
+                bars={klinesState.bars}
+                locale={locale}
+                market={klinesState.market}
+                onLoadHistorical={loadHistoricalKlines}
+                symbol={klinesState.symbol}
+                timeframe={klinesState.timeframe}
+              />
+              <ChartDataStrip i18n={i18n} latestChartBar={latestChartBar} state={klinesState} />
+            </>
+          }
+          executionCandidate={stage9ProductionAdmissionCandidate}
+          onSelectInstrument={selectInstrument}
+          portfolio={portfolioBacktestState.portfolio ?? null}
+          runs={runHistory}
+          source={source}
+          workspace={workspace}
+        />
+
+        <details className="terminal-legacy-workspace">
+          <summary>高级功能与证据</summary>
+          <div className="terminal-legacy-workspace-body">
 
         <section className="terminal-overview-grid market-tape">
           <section className={`module-focus-card ${activeWorkflowAccent}`}>
@@ -15783,6 +15879,8 @@ export function App() {
         <section className={`center-grid workflow-layout product-workspace-layout ${activeLoopStepId}-layout ${activeWorkAreaId}-layout`}>
           {renderActiveProductWorkspace()}
         </section>
+          </div>
+        </details>
       </main>
 
       <footer className="terminal-status-bar" aria-label={i18n.locale === "zh-CN" ? "系统状态" : "System status"}>
@@ -36011,6 +36109,7 @@ function KlineChartCanvas({
     chart?.setOffsetRightDistance(chartRightBoundaryDistance);
     chart?.setRightMinVisibleBarCount(2);
     chart?.createIndicator("VOL", false, { height: 72, minHeight: 48 });
+    chart?.createIndicator("MACD", false, { height: 68, minHeight: 46 });
     chart?.setLoadDataCallback(({ type, data, callback }) => {
       if (type === LoadDataType.Forward && data?.timestamp) {
         const loader = historicalLoaderRef.current;

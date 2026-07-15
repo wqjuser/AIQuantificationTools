@@ -1198,3 +1198,5 @@ P0 完成时必须满足：
 最新更新：Stage 1 首页最新归档入账卡和 Daily Startup Snapshot 现在会直接显示已入账归档绑定的 P2 chain source。启动快照的 `Archive Reference` 段会列出 archived P2 chain source 和 archived bootstrap checks；首页卡片也会在 event id 下方显示同一条 archived P2 chain source。这样 stale 归档时，操作者可以直接对比“当前 Bootstrap Preflight Evidence”和“归档绑定证据”，不需要打开 Audit 详情；该能力只展示既有归档 metadata，不写新事件、不刷新自检、不运行 Docker、不连接券商、不提交订单。
 
 最新更新：九个产品工作区已经完成统一终端 UI 重构。导航按市场研究、决策验证、组合执行、治理系统分组，选定品牌 Logo 同步到 Web 与 Tauri；P0/Golden Path 低频证据改为按需展开，Execution 的 Stage 5/6/7/9 证据改为单一可展开栈，消除共享网格区域导致的互相覆盖。固定底部状态条在所有工作区持续展示数据、模型、Paper Broker、审计和实盘阻断状态；375px 下使用横向图标导航。实现只复用现有 `ProductWorkArea`、store、API、Stage 组件和构建器，没有新增交易模型、券商连接或订单路由，`liveTradingAllowed=false`、`orderSubmissionEnabled=false` 继续保持。
+
+最新更新：统一终端 UI 已完成第二轮逐页收敛。九个工作区不再复用同一套通用三卡布局，而是分别实现与 Figma 对应的行情列表与多指标图表、研究因子与结论、策略参数与版本、回测指标与交易明细、AI 评审与证据、组合配置与风控、执行队列与状态、审计台账与导出、系统设置与连接健康布局。验收使用相同的 1440×1024 视口把九张 Figma 截图与 Docker 页面逐张并排比较，并补充 375×812 单列移动验收；动态列表保留当前 API 的真实行数，不为匹配设计稿伪造业务数据。Web 入口 HTML 禁止缓存、内容 hash 资源使用 immutable 缓存，避免部署后旧入口残留。所有动作继续调用原有回调、store、API 和构建器，实盘与订单提交边界未改变。
