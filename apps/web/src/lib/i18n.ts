@@ -1033,6 +1033,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "AI Review Board",
       portfolio: "Portfolio & Risk",
       execution: "Execution Center",
+      operations: "Operations",
       audit: "Audit & Replay",
       settings: "Settings"
     },
@@ -1044,6 +1045,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "Evidence-locked agent committee",
       portfolio: "Exposure, positions, live gates",
       execution: "Paper orders and adapter readiness",
+      operations: "Data maintenance, research queue, scanners, evidence",
       audit: "Run history, import, export, replay",
       settings: "Data sources, API keys, safety gates"
     },
@@ -1196,6 +1198,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "AI 评审",
       portfolio: "组合风控",
       execution: "执行中心",
+      operations: "运行管理",
       audit: "审计回放",
       settings: "设置"
     },
@@ -1207,6 +1210,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "绑定证据的智能体委员会",
       portfolio: "敞口、持仓、实盘闸门",
       execution: "模拟委托和适配器状态",
+      operations: "数据维护、研究队列、市场扫描、运行证据",
       audit: "运行历史、导入、导出、回放",
       settings: "数据源、API Key、安全闸门"
     },

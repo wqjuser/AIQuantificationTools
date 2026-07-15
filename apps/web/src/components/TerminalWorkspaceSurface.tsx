@@ -56,6 +56,7 @@ const pageTitles: Record<ProductWorkAreaId, string> = {
   "ai-review": "AI 评审",
   portfolio: "组合风控",
   execution: "执行中心",
+  operations: "运行管理",
   audit: "审计回放",
   settings: "设置",
 };

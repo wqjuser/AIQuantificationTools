@@ -1668,6 +1668,7 @@ const workAreaIcons: Record<ProductWorkAreaId, typeof BarChart3> = {
   "ai-review": BrainCircuit,
   portfolio: ShieldCheck,
   execution: WalletCards,
+  operations: Activity,
   audit: Download,
   settings: Cog
 };
@@ -1688,6 +1689,7 @@ const productWorkAreaIds: ProductWorkAreaId[] = [
   "ai-review",
   "portfolio",
   "execution",
+  "operations",
   "audit",
   "settings"
 ];
@@ -1720,7 +1722,7 @@ const productWorkAreaGroups: Array<{
     id: "governance-system",
     labelEn: "Governance & System",
     labelZh: "治理与系统",
-    workAreaIds: ["audit", "settings"]
+    workAreaIds: ["operations", "audit", "settings"]
   }
 ];
 
@@ -2604,7 +2606,6 @@ export function App() {
   const exportPackageRequestCoordinatorRef = useRef(createLatestRequestCoordinator());
   const portfolioStage4RequestCoordinatorRef = useRef(createPortfolioStage4RequestCoordinator());
   const stage5ShadowRequestIdRef = useRef(0);
-  const legacyWorkspaceDialogRef = useRef<HTMLDialogElement | null>(null);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceReportCopyResetTimerRef = useRef<number | null>(null);
@@ -13177,7 +13178,7 @@ export function App() {
   );
 
   const renderActiveProductWorkspace = () => {
-    if (activeWorkAreaId === "market") {
+    if (activeWorkAreaId === "operations") {
       return (
         <>
           <MarketDataHealthPanel
@@ -14126,7 +14127,7 @@ export function App() {
     );
   };
 
-  const terminalSurfaceAction: TerminalWorkspaceSurfaceAction = (() => {
+  const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {
     switch (activeWorkAreaId) {
       case "market":
         return { label: "刷新行情", onClick: () => void refreshWatchlistMarketCache() };
@@ -14147,6 +14148,8 @@ export function App() {
           disabled: !stage6SandboxAuthorization || isRunningStage9ProductionAdmission,
           tone: "warning"
         };
+      case "operations":
+        return null;
       case "audit":
         return {
           label: "导出审计包",
@@ -14351,20 +14354,6 @@ export function App() {
                 {i18n.t("action.switchSymbol")}
               </button>
             </form>
-            <button
-              aria-haspopup="dialog"
-              aria-label="高级功能与证据"
-              className="terminal-evidence-trigger"
-              onClick={() => {
-                if (!legacyWorkspaceDialogRef.current?.open) {
-                  legacyWorkspaceDialogRef.current?.showModal();
-                }
-              }}
-              type="button"
-            >
-              <Database size={14} />
-              <span>高级功能与证据</span>
-            </button>
             <span className="terminal-paper-badge">纸面环境</span>
             <span className="terminal-live-badge">实盘阻断</span>
             <span className="terminal-notification" aria-label="通知"><Activity size={16} /><em>3</em></span>
@@ -14430,6 +14419,7 @@ export function App() {
           </div>
         </header>
 
+        {activeWorkAreaId === "operations" || !terminalSurfaceAction ? null : (
         <TerminalWorkspaceSurface
           action={terminalSurfaceAction}
           activeWorkAreaId={activeWorkAreaId}
@@ -14455,30 +14445,26 @@ export function App() {
           source={source}
           workspace={workspace}
         />
+        )}
 
-        <dialog
-          aria-describedby="terminal-legacy-workspace-description"
-          aria-labelledby="terminal-legacy-workspace-title"
-          className="terminal-legacy-workspace-dialog"
-          ref={legacyWorkspaceDialogRef}
+        {activeWorkAreaId === "operations" ? (
+        <section
+          aria-labelledby="terminal-operations-title"
+          className="terminal-design-surface terminal-operations-workspace"
         >
-          <header className="terminal-legacy-workspace-header">
+          <header className="design-page-header terminal-operations-header">
             <div>
-              <span>高级工作区</span>
-              <h2 id="terminal-legacy-workspace-title">高级功能与证据</h2>
-              <p id="terminal-legacy-workspace-description">
-                低频操作、运行证据与恢复工具 · {activeWorkArea ? i18n.productWorkAreaLabel(activeWorkArea) : "当前工作区"}
-              </p>
+              <h2 id="terminal-operations-title">
+                {activeWorkArea ? i18n.productWorkAreaLabel(activeWorkArea) : "运行管理"}
+              </h2>
+              <span>
+                {activeWorkArea
+                  ? i18n.productWorkAreaDescription(activeWorkArea)
+                  : "数据维护、研究队列、市场扫描与运行证据"}
+              </span>
             </div>
-            <button
-              aria-label="关闭高级功能与证据"
-              onClick={() => legacyWorkspaceDialogRef.current?.close()}
-              type="button"
-            >
-              <X size={17} />
-            </button>
           </header>
-          <div className="terminal-legacy-workspace-body">
+          <div className="terminal-operations-body">
 
         <section className="terminal-overview-grid market-tape">
           <section className={`module-focus-card ${activeWorkflowAccent}`}>
@@ -15914,7 +15900,8 @@ export function App() {
           {renderActiveProductWorkspace()}
         </section>
           </div>
-        </dialog>
+        </section>
+        ) : null}
       </main>
 
       <footer className="terminal-status-bar" aria-label={i18n.locale === "zh-CN" ? "系统状态" : "System status"}>

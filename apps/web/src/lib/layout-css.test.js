@@ -83,27 +83,26 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
-  test("opens advanced evidence as a bounded native dialog instead of a floating details panel", () => {
-    const marketWorkspaceSource = sourceBetween(
-      'if (activeWorkAreaId === "market")',
+  test("routes low-frequency operations through the left navigation instead of a modal", () => {
+    const operationsWorkspaceSource = sourceBetween(
+      'if (activeWorkAreaId === "operations")',
       'if (activeWorkAreaId === "strategy")'
     );
 
-    expect(appSource).toContain('className="terminal-evidence-trigger"');
-    expect(appSource).toContain('aria-label="高级功能与证据"');
-    expect(appSource).toContain("legacyWorkspaceDialogRef.current?.showModal()");
-    expect(appSource).toContain('<dialog\n          aria-describedby="terminal-legacy-workspace-description"');
-    expect(appSource).toContain('aria-label="关闭高级功能与证据"');
-    expect(appSource).not.toContain('<details className="terminal-legacy-workspace">');
-    expect(cssBlock(".terminal-legacy-workspace-dialog")).toContain("overflow: hidden;");
-    expect(cssBlock(".terminal-legacy-workspace-body")).toContain("overflow: auto;");
-    expect(cssBlock(".terminal-legacy-workspace-dialog::backdrop")).toContain("background: rgb(1 7 12 / 78%);");
-    expect(hasCssBlockWith("  .topbar-actions .symbol-switcher", ["flex: 1 1 auto;", "min-width: 0;"])).toBe(true);
-    expect(marketWorkspaceSource).not.toContain('renderChartPanel("chart-panel workflow-chart-panel")');
+    expect(appSource).toContain('workAreaIds: ["operations", "audit", "settings"]');
+    expect(appSource).toContain('activeWorkAreaId === "operations" || !terminalSurfaceAction ? null : (');
+    expect(appSource).toContain('className="terminal-design-surface terminal-operations-workspace"');
+    expect(appSource).toContain('${activeWorkAreaId}-layout');
+    expect(cssBlock(".market-layout,\n.operations-layout")).toContain('"research-ops data"');
+    expect(appSource).not.toContain('className="terminal-evidence-trigger"');
+    expect(appSource).not.toContain("legacyWorkspaceDialogRef");
+    expect(appSource).not.toContain("<dialog");
+    expect(cssBlock(".terminal-operations-workspace")).toContain("overflow-y: auto;");
+    expect(operationsWorkspaceSource).not.toContain('renderChartPanel("chart-panel workflow-chart-panel")');
     expect(cssBlock(
-      ".terminal-legacy-workspace-dialog .terminal-overview-grid .ticker,\n.terminal-legacy-workspace-dialog .terminal-overview-grid .metrics-row"
+      ".terminal-operations-workspace .terminal-overview-grid .ticker,\n.terminal-operations-workspace .terminal-overview-grid .metrics-row"
     )).toContain("display: none;");
-    expect(cssBlock(".terminal-legacy-workspace-dialog")).toContain("width: min(1120px, calc(100vw - 236px));");
+    expect(styles).toContain(".terminal-operations-workspace .research-ops-row {\n    grid-template-columns: minmax(0, 1fr) auto;");
   });
 
   test("keeps market status and chart metadata away from panel edges", () => {
@@ -3599,7 +3598,7 @@ describe("terminal layout css", () => {
         '"decision workflow"'
       ])
     ).toBe(true);
-    expect(hasCssBlockWith(".market-layout", ['"research-ops data"', '"scanner data"', '"workflow calendar"'])).toBe(true);
+    expect(hasCssBlockWith(".market-layout,\n.operations-layout", ['"research-ops data"', '"scanner data"', '"workflow calendar"'])).toBe(true);
     expect(hasCssBlockWith(".backtest-layout", ['"backtest workflow"', '"history history"', '"ai ai"'])).toBe(true);
     expect(hasCssBlockWith(".agent-review-layout", ['"ai workflow"', '"decision history"'])).toBe(true);
     expect(cssBlock(".paper-layout")).toContain(
@@ -3663,33 +3662,34 @@ describe("terminal layout css", () => {
   test("renders distinct product work-area compositions", () => {
     expect(appSource).toContain("renderActiveProductWorkspace()");
     expect(appSource).toContain('activeWorkAreaId === "market"');
+    expect(appSource).toContain('activeWorkAreaId === "operations"');
     expect(appSource).toContain('activeWorkAreaId === "settings"');
     expect(appSource).toContain("MarketDataHealthPanel");
     expect(appSource).toContain("PlatformSettingsPanel");
     expect(cssBlock(".product-workspace-layout")).toContain("display: grid;");
   });
 
-  test("lets the market work area refresh the selected cache context", () => {
-    const marketWorkspaceSource = sourceBetween('if (activeWorkAreaId === "market")', 'if (activeWorkAreaId === "strategy")');
+  test("lets operations refresh the selected cache context", () => {
+    const operationsWorkspaceSource = sourceBetween('if (activeWorkAreaId === "operations")', 'if (activeWorkAreaId === "strategy")');
     const healthPanelSource = sourceBetween("function MarketDataHealthPanel", "function ResearchNotesPanel");
 
     expect(appSource).toContain("refreshSelectedMarketCache");
-    expect(marketWorkspaceSource).toContain("activeCacheContext");
-    expect(marketWorkspaceSource).toContain("refreshGuard={marketDataRefreshGuard}");
-    expect(marketWorkspaceSource).toContain("onRefreshCache={refreshSelectedMarketCache}");
+    expect(operationsWorkspaceSource).toContain("activeCacheContext");
+    expect(operationsWorkspaceSource).toContain("refreshGuard={marketDataRefreshGuard}");
+    expect(operationsWorkspaceSource).toContain("onRefreshCache={refreshSelectedMarketCache}");
     expect(healthPanelSource).toContain("market-cache-refresh");
     expect(healthPanelSource).toContain("刷新当前缓存");
     expect(healthPanelSource).toContain("disabled={isRefreshingCache || isRefreshBlocked}");
     expect(cssBlock(".market-cache-refresh")).toContain("display: inline-flex;");
   });
 
-  test("lets the market work area refresh watchlist cache as a batch", () => {
-    const marketWorkspaceSource = sourceBetween('if (activeWorkAreaId === "market")', 'if (activeWorkAreaId === "strategy")');
+  test("lets operations refresh watchlist cache as a batch", () => {
+    const operationsWorkspaceSource = sourceBetween('if (activeWorkAreaId === "operations")', 'if (activeWorkAreaId === "strategy")');
     const healthPanelSource = sourceBetween("function MarketDataHealthPanel", "function ResearchNotesPanel");
 
     expect(appSource).toContain("refreshWatchlistMarketCache");
     expect(appSource).toContain("watchlistCacheSummary");
-    expect(marketWorkspaceSource).toContain("onRefreshWatchlistCache={refreshWatchlistMarketCache}");
+    expect(operationsWorkspaceSource).toContain("onRefreshWatchlistCache={refreshWatchlistMarketCache}");
     expect(healthPanelSource).toContain("market-cache-bulk-refresh");
     expect(healthPanelSource).toContain("刷新自选缓存");
     expect(healthPanelSource).toContain("!workspace.watchlist.length || isRefreshBlocked");
@@ -3719,15 +3719,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".market-refresh-override-audit-status.failed")).toContain("color:");
   });
 
-  test("renders selected market calendar session status in the market work area", () => {
-    const marketWorkspaceSource = sourceBetween('if (activeWorkAreaId === "market")', 'if (activeWorkAreaId === "strategy")');
+  test("renders selected market calendar session status in operations", () => {
+    const operationsWorkspaceSource = sourceBetween('if (activeWorkAreaId === "operations")', 'if (activeWorkAreaId === "strategy")');
 
     expect(appSource).toContain("loadMarketCalendarStatus");
     expect(appSource).toContain("const [marketCalendarState, setMarketCalendarState]");
     expect(appSource).toContain("refreshMarketCalendarStatus");
     expect(appSource).toContain("workspace.selectedInstrument.market");
-    expect(marketWorkspaceSource).toContain("<MarketCalendarStatusCard");
-    expect(marketWorkspaceSource).toContain("calendar={marketCalendarState.calendar}");
+    expect(operationsWorkspaceSource).toContain("<MarketCalendarStatusCard");
+    expect(operationsWorkspaceSource).toContain("calendar={marketCalendarState.calendar}");
     expect(appSource).toContain("function MarketCalendarStatusCard");
     expect(appSource).toContain("className={`market-calendar-card ${status} ${className ?? \"\"}`}");
     expect(appSource).toContain("marketCalendarStatusLabel");
