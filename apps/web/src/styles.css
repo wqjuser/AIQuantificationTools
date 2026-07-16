@@ -17252,7 +17252,7 @@ em {
 
 @media (min-width: 1301px) {
   .design-research-grid {
-    min-height: max(744px, calc(100vh - 190px));
+    min-height: max(744px, calc(100vh - 180px));
     grid-template-rows: 470px minmax(264px, 1fr);
   }
 
