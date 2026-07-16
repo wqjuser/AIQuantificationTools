@@ -115,6 +115,9 @@ describe("terminal layout css", () => {
 
   test("fills the desktop research workspace without orphan grid cells", () => {
     expect(styles).toContain("@media (min-width: 1301px) {");
+    expect(hasCssBlockWith('  .terminal-main[data-workspace="research"]', [
+      "row-gap: 0;",
+    ])).toBe(true);
     expect(hasCssBlockWith("  .design-research-grid", [
       "min-height: max(744px, calc(100vh - 180px));",
       "grid-template-rows: 470px minmax(264px, 1fr);",
