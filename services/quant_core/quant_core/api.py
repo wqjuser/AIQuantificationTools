@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -223,7 +224,12 @@ from quant_core.execution_adapter_health import (
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_calendar import build_market_calendar_status
-from quant_core.market_klines import QuantDingerKlineAdapter, build_market_data_readiness, market_klines_to_payload
+from quant_core.market_klines import (
+    QuantDingerKlineAdapter,
+    build_market_data_readiness,
+    kline_http_timeout,
+    market_klines_to_payload,
+)
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
 from quant_core.stage4_portfolio import (
@@ -1093,48 +1099,67 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 timeframe = str(payload.get("timeframe") or "1d")
                 limit = _parse_kline_limit(str(payload.get("limit") or "160"))
                 override_audit_event_id = _optional_audit_event_id(payload.get("overrideAuditEventId"))
-                items = []
-                for instrument in instruments:
-                    request = MarketDataRequest(market=instrument.market, symbol=instrument.symbol, timeframe=timeframe)
+
+                def fetch_instrument(instrument):
+                    request = MarketDataRequest(
+                        market=instrument.market,
+                        symbol=instrument.symbol,
+                        timeframe=timeframe,
+                    )
                     try:
-                        bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
-                        self._record_adapter_error_if_needed(
-                            request,
-                            quality=quality,
-                            context="watchlist-cache-refresh",
-                        )
-                        upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
-                        items.append(
-                            watchlist_cache_refresh_item_from_quality(
-                                instrument=instrument,
-                                timeframe=timeframe,
-                                requested_limit=limit,
-                                quality=quality,
-                                upserted_rows=upserted_rows,
-                            )
-                        )
+                        with kline_http_timeout(3):
+                            bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
+                        return request, bars, quality, None
                     except Exception as error:
-                        self._record_adapter_error_if_needed(
-                            request,
-                            quality=None,
-                            context="watchlist-cache-refresh",
-                            error=str(error),
-                        )
-                        items.append(
-                            watchlist_cache_refresh_item_from_quality(
-                                instrument=instrument,
-                                timeframe=timeframe,
-                                requested_limit=limit,
-                                quality=DataQuality(
-                                    source="unavailable",
-                                    is_complete=False,
-                                    warnings=[str(error)],
-                                    rows=0,
-                                ),
-                                upserted_rows=0,
-                                error=str(error),
+                        return request, [], None, str(error)
+
+                with ThreadPoolExecutor(max_workers=min(4, len(instruments))) as executor:
+                    fetch_results = list(executor.map(fetch_instrument, instruments))
+
+                items = []
+                for instrument, (request, bars, quality, error) in zip(instruments, fetch_results):
+                    if quality is not None:
+                        try:
+                            self._record_adapter_error_if_needed(
+                                request,
+                                quality=quality,
+                                context="watchlist-cache-refresh",
                             )
+                            upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
+                            items.append(
+                                watchlist_cache_refresh_item_from_quality(
+                                    instrument=instrument,
+                                    timeframe=timeframe,
+                                    requested_limit=limit,
+                                    quality=quality,
+                                    upserted_rows=upserted_rows,
+                                )
+                            )
+                            continue
+                        except Exception as item_error:
+                            error = str(item_error)
+                    failure = error or "unknown market data error"
+                    self._record_adapter_error_if_needed(
+                        request,
+                        quality=None,
+                        context="watchlist-cache-refresh",
+                        error=failure,
+                    )
+                    items.append(
+                        watchlist_cache_refresh_item_from_quality(
+                            instrument=instrument,
+                            timeframe=timeframe,
+                            requested_limit=limit,
+                            quality=DataQuality(
+                                source="unavailable",
+                                is_complete=False,
+                                warnings=[failure],
+                                rows=0,
+                            ),
+                            upserted_rows=0,
+                            error=failure,
                         )
+                    )
                 refresh_run = self.watchlist_cache_refresh_store.record(
                     create_watchlist_cache_refresh_run(
                         items=items,

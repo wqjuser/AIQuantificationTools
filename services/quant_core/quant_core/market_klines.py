@@ -4,6 +4,7 @@ import json
 import os
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -22,6 +23,16 @@ from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_cryp
 
 FetchText = Callable[[str, str], str]
 Now = Callable[[], float]
+_KLINE_HTTP_TIMEOUT_SECONDS = ContextVar("kline_http_timeout_seconds", default=10)
+
+
+@contextmanager
+def kline_http_timeout(seconds: int):
+    token = _KLINE_HTTP_TIMEOUT_SECONDS.set(max(1, int(seconds)))
+    try:
+        yield
+    finally:
+        _KLINE_HTTP_TIMEOUT_SECONDS.reset(token)
 
 
 class KlineCache:
@@ -879,7 +890,7 @@ def coerce_datetime(value: object) -> datetime:
 
 def default_fetch_text(url: str, encoding: str = "utf-8") -> str:
     request = Request(url, headers={"User-Agent": "AIQuantificationTools/0.1"})
-    with urlopen(request, timeout=10) as response:
+    with urlopen(request, timeout=_KLINE_HTTP_TIMEOUT_SECONDS.get()) as response:
         return response.read().decode(encoding, errors="ignore")
 
 

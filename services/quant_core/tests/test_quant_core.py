@@ -17399,12 +17399,13 @@ class QuantCoreContractTest(unittest.TestCase):
                 server.server_close()
 
         self.assertEqual(response.status, 201)
-        self.assertEqual(adapter.calls, [("ashare", "600000", "1d", 240), ("us", "AAPL", "1d", 240)])
+        self.assertCountEqual(adapter.calls, [("ashare", "600000", "1d", 240), ("us", "AAPL", "1d", 240)])
         self.assertEqual(payload["watchlistRefresh"]["overrideAuditEventId"], "market-data-refresh-override-watchlist")
         self.assertEqual(payload["watchlistRefresh"]["summary"]["totalSymbols"], 2)
         self.assertEqual(payload["watchlistRefresh"]["summary"]["refreshed"], 2)
         self.assertEqual(payload["watchlistRefresh"]["summary"]["failed"], 0)
         self.assertEqual(payload["watchlistRefresh"]["summary"]["upsertedRows"], 4)
+        self.assertEqual([item["symbol"] for item in payload["watchlistRefresh"]["items"]], ["600000", "AAPL"])
         self.assertEqual(payload["watchlistRefresh"]["items"][0]["symbol"], "600000")
         self.assertEqual(payload["watchlistRefresh"]["items"][0]["status"], "refreshed")
         self.assertEqual(payload["settings"]["cache"]["rowCount"], 4)
@@ -17415,6 +17416,94 @@ class QuantCoreContractTest(unittest.TestCase):
             "market-data-refresh-override-watchlist",
         )
         self.assertEqual(history_payload["watchlistRefreshes"][0]["summary"]["refreshed"], 2)
+
+    def test_watchlist_cache_refresh_api_fetches_upstream_in_parallel(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Event, Lock, Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import WatchlistCacheRefreshRunStore
+        from quant_core.domain import DataQuality, OHLCVBar
+
+        class OverlapKlineAdapter:
+            def __init__(self):
+                self.calls = []
+                self.call_lock = Lock()
+                self.second_fetch_started = Event()
+                self.overlap_observed = False
+
+            def fetch_ohlcv(self, request, limit=160):
+                with self.call_lock:
+                    self.calls.append((request.market, request.symbol, request.timeframe, limit))
+                    call_index = len(self.calls) - 1
+                if call_index == 0:
+                    self.overlap_observed = self.second_fetch_started.wait(timeout=0.5)
+                else:
+                    self.second_fetch_started.set()
+                if request.symbol == "AAPL":
+                    raise RuntimeError("AAPL provider unavailable")
+                bar = OHLCVBar(
+                    market=request.market,
+                    symbol=request.symbol,
+                    timeframe=request.timeframe,
+                    timestamp=datetime(2026, 5, 25, tzinfo=timezone.utc),
+                    open=10,
+                    high=11,
+                    low=9,
+                    close=10.5,
+                    volume=1000,
+                )
+                return [bar], DataQuality(source="test-kline", is_complete=True, warnings=[], rows=1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter = OverlapKlineAdapter()
+
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
+                kline_adapter = adapter
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/cache/watchlist-refreshes",
+                    body=json.dumps(
+                        {
+                            "timeframe": "1d",
+                            "limit": 500,
+                            "watchlist": [
+                                {"market": "ashare", "symbol": "600000", "name": "浦发银行"},
+                                {"market": "ashare", "symbol": "000300", "name": "沪深300"},
+                                {"market": "us", "symbol": "AAPL", "name": "Apple"},
+                                {"market": "crypto", "symbol": "BTC/USDT", "name": "Bitcoin"},
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 201)
+        self.assertTrue(adapter.overlap_observed)
+        self.assertEqual(len(adapter.calls), 4)
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["refreshed"], 3)
+        self.assertEqual(payload["watchlistRefresh"]["summary"]["failed"], 1)
+        self.assertEqual([item["symbol"] for item in payload["watchlistRefresh"]["items"]], ["600000", "000300", "AAPL", "BTC/USDT"])
+        self.assertEqual(payload["watchlistRefresh"]["items"][2]["status"], "failed")
+        self.assertEqual(payload["watchlistRefresh"]["items"][2]["error"], "AAPL provider unavailable")
 
     def test_market_calendar_builds_deterministic_session_status(self):
         from quant_core.market_calendar import build_market_calendar_status
@@ -30889,6 +30978,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(akshare_adapter.calls[0]["limit"], 1)
 
     def test_yfinance_market_data_adapter_normalizes_history_rows(self):
+        import sys
+
         from quant_core.adapters import YFinanceMarketDataAdapter
         from quant_core.domain import MarketDataRequest
 
@@ -30906,11 +30997,13 @@ class QuantCoreContractTest(unittest.TestCase):
 
         class FakeTicker:
             calls = []
+            observed_stderr = None
 
             def __init__(self, symbol: str):
                 self.symbol = symbol
 
             def history(self, *, period: str, interval: str, auto_adjust: bool):
+                FakeTicker.observed_stderr = sys.stderr
                 FakeTicker.calls.append(
                     {
                         "symbol": self.symbol,
@@ -30936,6 +31029,7 @@ class QuantCoreContractTest(unittest.TestCase):
             Ticker = FakeTicker
 
         adapter = YFinanceMarketDataAdapter(yfinance_module=FakeYFinance)
+        stderr = sys.stderr
         bars, quality = adapter.fetch_ohlcv(
             MarketDataRequest(market="us", symbol="aapl", timeframe="60m"),
             limit=2,
@@ -30943,6 +31037,8 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(FakeTicker.calls, [{"symbol": "AAPL", "period": "3mo", "interval": "60m", "auto_adjust": False}])
         self.assertEqual(quality.source, "yfinance")
+        self.assertIs(FakeTicker.observed_stderr, stderr)
+        self.assertIs(sys.stderr, stderr)
         self.assertTrue(quality.is_complete)
         self.assertEqual(quality.rows, 2)
         self.assertEqual(bars[0].open, 190.1112)
@@ -31023,6 +31119,28 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].market, "us")
         self.assertEqual(bars[-1].close, 194.8)
         self.assertEqual(bars[-1].volume, 55200000.0)
+
+    def test_market_kline_default_fetch_caps_interactive_provider_timeout(self):
+        from unittest.mock import patch
+
+        from quant_core.market_klines import default_fetch_text, kline_http_timeout
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        with patch("quant_core.market_klines.urlopen", return_value=FakeResponse()) as urlopen:
+            self.assertEqual(default_fetch_text("https://example.test/market"), "{}")
+            with kline_http_timeout(3):
+                self.assertEqual(default_fetch_text("https://example.test/market"), "{}")
+
+        self.assertEqual([call.kwargs["timeout"] for call in urlopen.call_args_list], [10, 3])
 
     def test_ccxt_market_data_adapter_normalizes_ohlcv_rows(self):
         from quant_core.adapters import CcxtMarketDataAdapter

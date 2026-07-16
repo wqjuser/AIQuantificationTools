@@ -3,9 +3,7 @@ from __future__ import annotations
 import math
 import os
 from abc import ABC, abstractmethod
-from contextlib import redirect_stderr
 from datetime import datetime, timedelta, timezone
-from io import StringIO
 from typing import Any
 
 from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
@@ -154,8 +152,7 @@ class YFinanceMarketDataAdapter(OptionalDependencyAdapter):
         yf = self._load_yfinance_module()
         bounded_limit = max(1, min(int(limit or 160), 500))
         interval, period = yfinance_period(request.timeframe)
-        with redirect_stderr(StringIO()):
-            frame = yf.Ticker(request.symbol.upper()).history(period=period, interval=interval, auto_adjust=False)
+        frame = yf.Ticker(request.symbol.upper()).history(period=period, interval=interval, auto_adjust=False)
         bars = yfinance_history_to_bars(frame, request=request, limit=bounded_limit)
         if not bars:
             return [], DataQuality(
