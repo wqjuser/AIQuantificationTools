@@ -924,6 +924,10 @@ h2 {
   color: #71dfc5;
 }
 
+.theme-toggle-button {
+  color: #e8be62;
+}
+
 .spin {
   animation: spin 0.9s linear infinite;
 }
@@ -16731,60 +16735,11 @@ em {
   background: #0d1a27;
 }
 
-.rail-profile-controls,
 .rail-profile time {
   grid-column: 1 / 3;
   width: 100%;
   color: #718598;
   font-size: 9px;
-}
-
-.rail-profile-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  border: 0;
-  border-top: 1px solid #1f3447;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  padding: 9px 0 0;
-  text-align: left;
-}
-
-.rail-profile-controls:focus-visible {
-  border-radius: 3px;
-  outline: 2px solid #58d6b9;
-  outline-offset: 3px;
-}
-
-.rail-profile-controls i {
-  position: relative;
-  width: 27px;
-  height: 14px;
-  border-radius: 99px;
-  background: #58d6b9;
-}
-
-.rail-profile-controls i::after {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #0a1724;
-  content: "";
-}
-
-.rail-profile-controls[aria-checked="false"] i {
-  background: #41586c;
-}
-
-.rail-profile-controls[aria-checked="false"] i::after {
-  right: auto;
-  left: 2px;
 }
 
 .rail-profile time {
@@ -21216,8 +21171,7 @@ button.ai-review-record {
 }
 
 .terminal-shell[data-theme="light"] .brand,
-.terminal-shell[data-theme="light"] .work-area-group,
-.terminal-shell[data-theme="light"] .rail-profile-controls {
+.terminal-shell[data-theme="light"] .work-area-group {
   border-color: #d6e0e7;
 }
 
@@ -21233,7 +21187,6 @@ button.ai-review-record {
 .terminal-shell[data-theme="light"] .brand span,
 .terminal-shell[data-theme="light"] .rail-profile small,
 .terminal-shell[data-theme="light"] .rail-profile time,
-.terminal-shell[data-theme="light"] .rail-profile-controls,
 .terminal-shell[data-theme="light"] .work-area-group-label {
   color: #65788a;
 }
@@ -21249,13 +21202,10 @@ button.ai-review-record {
   background: #f0f5f8;
 }
 
-.terminal-shell[data-theme="light"] .rail-profile-controls[aria-checked="false"] i {
-  background: #9cadba;
-}
-
-.terminal-shell[data-theme="light"] .rail-profile-controls i::after {
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgb(45 67 84 / 24%);
+.terminal-shell[data-theme="light"] .theme-toggle-button {
+  border-color: #b8c8d4;
+  background: #f0f5f8;
+  color: #536779;
 }
 
 .terminal-shell[data-theme="light"] .work-area-button svg,
@@ -21506,53 +21456,4 @@ button.ai-review-record {
 
 .terminal-shell[data-theme="light"] .terminal-live-block small {
   color: #8b5653;
-}
-
-@media (max-width: 760px) {
-  .left-rail {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px;
-    gap: 4px;
-  }
-
-  .left-rail .rail-section {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .left-rail .rail-profile[data-theme-available="true"] {
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr;
-    width: 48px;
-    min-height: 48px;
-    border-radius: 5px;
-    padding: 0;
-    place-items: center;
-  }
-
-  .left-rail .rail-profile[data-theme-available="true"] > .rail-avatar,
-  .left-rail .rail-profile[data-theme-available="true"] > span,
-  .left-rail .rail-profile[data-theme-available="true"] > time {
-    display: none;
-  }
-
-  .left-rail .rail-profile[data-theme-available="true"] .rail-profile-controls {
-    grid-column: auto;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    padding: 0;
-  }
-
-  .left-rail .rail-profile[data-theme-available="true"] .rail-profile-controls span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
 }

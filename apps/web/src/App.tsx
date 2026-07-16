@@ -11,12 +11,14 @@ import {
   GitBranch,
   Languages,
   Maximize2,
+  Moon,
   Play,
   Radar,
   RefreshCw,
   Save,
   Search,
   ShieldCheck,
+  Sun,
   Timer,
   Upload,
   WalletCards,
@@ -2373,7 +2375,6 @@ export function App() {
   );
   const initialWorkAreaSelection = resolveInitialWorkAreaSelection(workspace);
   const [activeWorkAreaId, setActiveWorkAreaId] = useState<ProductWorkAreaId>(() => initialWorkAreaSelection.areaId);
-  const appliedColorScheme: ColorScheme = activeWorkAreaId === "market" ? colorScheme : "dark";
   const [activeLoopStepId, setActiveLoopStepId] = useState(() => initialWorkAreaSelection.quantLoopStepId);
   const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(
     () => initialWorkAreaSelection.workflowStageId
@@ -12859,9 +12860,9 @@ export function App() {
   }, [colorScheme]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = appliedColorScheme;
-    document.documentElement.style.colorScheme = appliedColorScheme;
-  }, [appliedColorScheme]);
+    document.documentElement.dataset.theme = colorScheme;
+    document.documentElement.style.colorScheme = colorScheme;
+  }, [colorScheme]);
 
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
@@ -13182,7 +13183,7 @@ export function App() {
         <KlineChartCanvas
           key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
           bars={klinesState.bars}
-          colorScheme={appliedColorScheme}
+          colorScheme={colorScheme}
           locale={locale}
           market={klinesState.market}
           onLoadHistorical={loadHistoricalKlines}
@@ -14269,9 +14270,12 @@ export function App() {
         return { label: "运行健康检查", onClick: () => void refreshExecutionAdapterHealthProbe() };
     }
   })();
+  const colorSchemeToggleLabel = i18n.locale === "zh-CN"
+    ? colorScheme === "dark" ? "切换到浅色模式" : "切换到深色模式"
+    : colorScheme === "dark" ? "Switch to light mode" : "Switch to dark mode";
 
   return (
-    <div className="terminal-shell" data-theme={appliedColorScheme}>
+    <div className="terminal-shell" data-theme={colorScheme}>
       <aside className="left-rail">
         <div className="brand">
           <img className="brand-mark" src="/aiqt-logo.png" alt="AIQuantificationTools" />
@@ -14327,29 +14331,12 @@ export function App() {
           </nav>
         </section>
 
-        <section className="rail-profile" data-theme-available={activeWorkAreaId === "market"}>
+        <section className="rail-profile">
           <span className="rail-avatar">AQ</span>
           <span>
             <strong>quant.user</strong>
             <small>{i18n.locale === "zh-CN" ? "研究员 · Level 3" : "Researcher · Level 3"}</small>
           </span>
-          {activeWorkAreaId === "market" ? (
-            <button
-              aria-checked={colorScheme === "dark"}
-              className="rail-profile-controls"
-              onClick={() => setColorScheme((current) => (current === "dark" ? "light" : "dark"))}
-              role="switch"
-              title={
-                i18n.locale === "zh-CN"
-                  ? colorScheme === "dark" ? "切换到浅色模式" : "切换到深色模式"
-                  : colorScheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
-              }
-              type="button"
-            >
-              <span>{i18n.locale === "zh-CN" ? "深色模式" : "Dark mode"}</span>
-              <i aria-hidden="true" />
-            </button>
-          ) : null}
           <time dateTime={workspace.researchRun?.createdAt ?? ""}>
             {workspace.researchRun
               ? new Date(workspace.researchRun.createdAt).toLocaleString("zh-CN", {
@@ -14536,6 +14523,15 @@ export function App() {
               {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
               {i18n.t("action.runPipeline")}
             </button>
+            <button
+              aria-label={colorSchemeToggleLabel}
+              className="panel-icon-button theme-toggle-button"
+              onClick={() => setColorScheme((current) => (current === "dark" ? "light" : "dark"))}
+              title={colorSchemeToggleLabel}
+              type="button"
+            >
+              {colorScheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
           </div>
         </header>
 
@@ -14549,7 +14545,7 @@ export function App() {
               <KlineChartCanvas
                 key={`surface-${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
                 bars={klinesState.bars}
-                colorScheme={appliedColorScheme}
+                colorScheme={colorScheme}
                 locale={locale}
                 market={klinesState.market}
                 onLoadHistorical={loadHistoricalKlines}
@@ -16139,7 +16135,7 @@ export function App() {
               <KlineChartCanvas
                 key={`expanded-${klinesState.market}-${klinesState.symbol}-${klinesState.timeframe}`}
                 bars={klinesState.bars}
-                colorScheme={appliedColorScheme}
+                colorScheme={colorScheme}
                 locale={locale}
                 market={klinesState.market}
                 onLoadHistorical={loadHistoricalKlines}

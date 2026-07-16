@@ -417,25 +417,32 @@ describe("terminal layout css", () => {
     expect(cssBlock("h1")).toContain("white-space: nowrap;");
   });
 
-  test("uses a real persisted Market color-scheme switch without fake notification or account controls", () => {
+  test("uses one persisted topbar color-scheme icon across every work area", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
     const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
     const chartSource = sourceBetween("function KlineChartCanvas", "function toKlineChartData");
 
-    expect(appSource).toContain('activeWorkAreaId === "market" ? colorScheme : "dark"');
-    expect(appSource).toContain('data-theme={appliedColorScheme}');
+    expect(appSource).not.toContain('activeWorkAreaId === "market" ? colorScheme : "dark"');
+    expect(appSource).not.toContain("appliedColorScheme");
+    expect(appSource).toContain('data-theme={colorScheme}');
     expect(appSource).toContain('window.localStorage.setItem("aiqt.theme", colorScheme)');
-    expect(leftRailSource).toContain('role="switch"');
-    expect(leftRailSource).toContain('data-theme-available={activeWorkAreaId === "market"}');
-    expect(leftRailSource).toContain('aria-checked={colorScheme === "dark"}');
-    expect(leftRailSource).toContain('setColorScheme((current) => (current === "dark" ? "light" : "dark"))');
+    expect(leftRailSource).not.toContain('role="switch"');
+    expect(leftRailSource).not.toContain("rail-profile-controls");
+    expect(leftRailSource).not.toContain("data-theme-available");
+    expect(topbarSource).toContain('className="panel-icon-button theme-toggle-button"');
+    expect(topbarSource).toContain("aria-label={colorSchemeToggleLabel}");
+    expect(topbarSource).toContain('setColorScheme((current) => (current === "dark" ? "light" : "dark"))');
+    expect(topbarSource).toContain('colorScheme === "dark" ? <Sun size={16} /> : <Moon size={16} />');
     expect(topbarSource).not.toContain('className="terminal-notification"');
     expect(topbarSource).not.toContain('className="terminal-top-avatar"');
     expect(chartSource).toContain("styles: colorScheme");
     expect(chartSource).toContain("setStyles(colorScheme)");
     expect(styles).toContain(':root[data-theme="light"]');
     expect(styles).toContain('.terminal-shell[data-theme="light"]');
-    expect(styles).toContain('.left-rail .rail-profile[data-theme-available="true"]');
+    expect(styles).not.toContain("data-theme-available");
+    expect(styles).not.toContain("rail-profile-controls");
+    expect(cssBlock(".theme-toggle-button")).toContain("color: #e8be62;");
+    expect(styles).toContain('.terminal-shell[data-theme="light"] .theme-toggle-button');
   });
 
   test("lets operators generate the P2 manifest chain preflight from the execution panel", () => {
