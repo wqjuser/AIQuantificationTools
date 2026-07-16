@@ -988,7 +988,7 @@ const initialPortfolioBacktestState: PortfolioBacktestResult = {
   source: "fallback"
 };
 
-const timeframeOptions: Timeframe[] = ["1d", "1m", "5m", "15m", "30m", "60m"];
+const timeframeOptions: Timeframe[] = ["1d", "1w", "1m", "5m", "15m", "30m", "60m"];
 const chartKlineLimit = 500;
 const chartRightBoundaryDistance = 0;
 const AI_REVIEW_HISTORY_PAGE_SIZE = 5;
@@ -2441,6 +2441,7 @@ export function App() {
   const [recordingAdapterOpsStateId, setRecordingAdapterOpsStateId] = useState<string | null>(null);
   const [recordingAdapterPaperExecutionId, setRecordingAdapterPaperExecutionId] = useState<string | null>(null);
   const [isRefreshingWatchlistCache, setIsRefreshingWatchlistCache] = useState(false);
+  const [marketRefreshIssue, setMarketRefreshIssue] = useState<string | null>(null);
   const [watchlistCacheRefreshHistory, setWatchlistCacheRefreshHistory] = useState<CacheWatchlistRefreshRun[]>([]);
   const [selectedWatchlistCacheRefreshRunId, setSelectedWatchlistCacheRefreshRunId] = useState<string | null>(
     resolveInitialWatchlistCacheRefreshRunId
@@ -2580,6 +2581,8 @@ export function App() {
   const [verifyingAuditReportEventId, setVerifyingAuditReportEventId] = useState<string | null>(null);
   const [revokingAuditReportEventId, setRevokingAuditReportEventId] = useState<string | null>(null);
   const manualSelectionVersionRef = useRef(0);
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
   const savedResearchWorkspaceSelectionAppliedRef = useRef(hasExplicitWorkAreaUrl());
   const chartRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
@@ -6726,6 +6729,7 @@ export function App() {
 
   const refreshWatchlistMarketCache = useCallback(async () => {
     if (!workspace.watchlist.length) {
+      setMarketRefreshIssue("自选列表为空，无法刷新行情。");
       return;
     }
     const refreshGuard = buildMarketDataRefreshGuard(
@@ -6734,13 +6738,16 @@ export function App() {
       activeMarketDataRefreshOverride
     );
     if (refreshGuard.blocked) {
+      const blockedReason = marketDataRefreshGuardLabel(i18n, refreshGuard);
+      setMarketRefreshIssue(blockedReason);
       setSettingsStatus((current) => ({
         settings: current.settings,
         source: current.source,
-        error: marketDataRefreshGuardLabel(i18n, refreshGuard)
+        error: blockedReason
       }));
       return;
     }
+    setMarketRefreshIssue(null);
     setIsRefreshingWatchlistCache(true);
     try {
       const overrideAuditEventId = refreshGuard.overrideApplied ? activeMarketDataRefreshOverride?.auditEventId : null;
@@ -6761,6 +6768,8 @@ export function App() {
           ...current.filter((run) => run.runId !== result.watchlistRefresh!.runId)
         ].slice(0, 4));
         setWatchlistCacheRefreshRunSelection(result.watchlistRefresh.runId);
+      } else {
+        setMarketRefreshIssue(result.error ?? "行情刷新未生成可追踪运行记录。");
       }
       if (
         result.watchlistRefresh?.items.some(
@@ -6774,6 +6783,8 @@ export function App() {
         await refreshChart();
       }
       await refreshGoldenPathStatus();
+    } catch (error) {
+      setMarketRefreshIssue(error instanceof Error ? error.message : "行情刷新失败。");
     } finally {
       if (refreshGuard.overrideApplied) {
         setMarketDataRefreshOverride(null);
@@ -9585,7 +9596,7 @@ export function App() {
   }, [setWatchlistCacheRefreshRunSelection]);
 
   const selectTimeframe = useCallback(
-    (timeframe: Timeframe) => {
+    (timeframe: Timeframe, targetWorkAreaId: "market" | "research" = "research") => {
       manualSelectionVersionRef.current += 1;
       workflowRunIdRef.current += 1;
       setIsRunning(false);
@@ -9597,7 +9608,7 @@ export function App() {
         source: "core",
         statusLabel: "Timeframe selected"
       }));
-      setActiveWorkAreaId("research");
+      setActiveWorkAreaId(targetWorkAreaId);
       setActiveLoopStepId("research");
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
@@ -9782,6 +9793,75 @@ export function App() {
     }
     setIsSavingWatchlist(false);
   }, [workspace.watchlist]);
+
+  const removeWatchlistInstrument = useCallback(async (instrument: TerminalWorkspace["selectedInstrument"]) => {
+    const nextWatchlist = workspace.watchlist.filter(
+      (candidate) => candidate.market !== instrument.market || candidate.symbol !== instrument.symbol
+    );
+    if (!nextWatchlist.length || nextWatchlist.length === workspace.watchlist.length) {
+      return;
+    }
+    const selectionVersionAtRequest = manualSelectionVersionRef.current;
+    const selectedWasRemoved =
+      workspace.selectedInstrument.market === instrument.market &&
+      workspace.selectedInstrument.symbol === instrument.symbol;
+    setIsSavingWatchlist(true);
+    try {
+      const result = await saveWatchlist(quantCoreBaseUrl, nextWatchlist);
+      if (result.source !== "core" || !result.watchlist.length) {
+        setWorkspaceState((current) => ({
+          ...current,
+          source: result.source,
+          statusLabel: "Watchlist save failed",
+          error: result.error ?? "Watchlist save failed"
+        }));
+        return;
+      }
+      const shouldSelectFallback =
+        selectedWasRemoved && manualSelectionVersionRef.current === selectionVersionAtRequest;
+      const selectionChangedDuringSave = manualSelectionVersionRef.current !== selectionVersionAtRequest;
+      const latestWorkspace = workspaceRef.current;
+      const concurrentAdditions = selectionChangedDuringSave
+        ? latestWorkspace.watchlist.filter(
+            (candidate) =>
+              !watchlistIncludesInstrument(workspace.watchlist, candidate) ||
+              (
+                candidate.market === instrument.market &&
+                candidate.symbol === instrument.symbol &&
+                latestWorkspace.selectedInstrument.market === instrument.market &&
+                latestWorkspace.selectedInstrument.symbol === instrument.symbol
+              )
+          )
+        : [];
+      if (shouldSelectFallback) {
+        manualSelectionVersionRef.current += 1;
+        workflowRunIdRef.current += 1;
+        setIsRunning(false);
+        setPaperExecutionRecord(null);
+        setPromotionCandidateRecord(null);
+        resetAiReviewHistoryState();
+        setWorkflowRunState(createWorkflowRunState());
+      }
+      setWorkspaceState((current) => {
+        const savedWatchlist = [
+          ...concurrentAdditions,
+          ...result.watchlist.filter((candidate) => !watchlistIncludesInstrument(concurrentAdditions, candidate))
+        ].slice(0, 8);
+        const savedWorkspace = { ...current.workspace, watchlist: savedWatchlist };
+        return {
+          workspace: shouldSelectFallback
+            ? workspaceWithSelectedInstrument(savedWorkspace, savedWatchlist[0])
+            : savedWorkspace,
+          source: "core",
+          statusLabel: "Watchlist saved",
+          error: undefined
+        };
+      });
+      setHasUnsavedWatchlistChanges(concurrentAdditions.length > 0);
+    } finally {
+      setIsSavingWatchlist(false);
+    }
+  }, [resetAiReviewHistoryState, workspace.selectedInstrument, workspace.watchlist]);
 
   const saveCurrentResearchWorkspace = useCallback(async () => {
     setIsSavingResearchWorkspace(true);
@@ -14130,7 +14210,11 @@ export function App() {
   const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {
     switch (activeWorkAreaId) {
       case "market":
-        return { label: "刷新行情", onClick: () => void refreshWatchlistMarketCache() };
+        return {
+          label: isRefreshingWatchlistCache ? "刷新中…" : "刷新行情",
+          onClick: () => void refreshWatchlistMarketCache(),
+          disabled: isRefreshingWatchlistCache
+        };
       case "research":
         return { label: "运行研究", onClick: () => void runPipeline(), disabled: isRunning };
       case "strategy":
@@ -14439,7 +14523,12 @@ export function App() {
             </>
           }
           executionCandidate={stage9ProductionAdmissionCandidate}
+          isSavingWatchlist={isSavingWatchlist}
+          latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
+          marketRefreshIssue={marketRefreshIssue}
+          onRemoveWatchlistInstrument={(instrument) => void removeWatchlistInstrument(instrument)}
           onSelectInstrument={selectInstrument}
+          onSelectTimeframe={(timeframe) => selectTimeframe(timeframe, "market")}
           portfolio={portfolioBacktestState.portfolio ?? null}
           runs={runHistory}
           source={source}
@@ -34169,7 +34258,7 @@ function portfolioBacktestSummary(i18n: AppI18n, summary: string): string {
   if (summary === "Need at least two audited runs from the same market and timeframe with equity curves.") {
     return "需要至少两个同市场、同周期且带权益曲线的审计运行。";
   }
-  const ready = summary.match(/^(\d+) audited runs from (ashare|us|crypto) (1d|1m|5m|15m|30m|60m); cash buffer (.+)\.$/u);
+  const ready = summary.match(/^(\d+) audited runs from (ashare|us|crypto) (1d|1w|1m|5m|15m|30m|60m); cash buffer (.+)\.$/u);
   if (ready) {
     return `${ready[1]} 个同市场同周期审计运行 · ${i18n.marketLabel(ready[2] as Market)} ${ready[3]} · 现金缓冲 ${ready[4]}。`;
   }

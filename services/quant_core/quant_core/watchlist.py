@@ -176,6 +176,8 @@ def _instrument_from_payload(value: object) -> Instrument:
         name=name,
         change_pct=_finite_float(value.get("changePct"), 0.0),
         price=_optional_finite_float(value.get("price")),
+        quote_source=str(value.get("quoteSource") or "").strip() or None,
+        quote_as_of=_parse_datetime(value.get("quoteAsOf")),
     )
 
 

@@ -25,7 +25,12 @@ describe("TerminalWorkspaceSurface", () => {
     adapterRows: buildBrokerAdapterRows(workspace),
     chart: <div>chart</div>,
     executionCandidate: null,
+    isSavingWatchlist: false,
+    latestWatchlistCacheRefresh: null,
+    marketRefreshIssue: null,
+    onRemoveWatchlistInstrument: () => undefined,
     onSelectInstrument: () => undefined,
+    onSelectTimeframe: () => undefined,
     portfolio: null,
     runs: [],
     source: "fallback" as const,
@@ -89,5 +94,77 @@ describe("TerminalWorkspaceSurface", () => {
     expect(market).not.toContain('aria-label="搜索行情"');
     expect(market).not.toContain("design-market-toolbar");
     expect(market).not.toContain("今开 —");
+  });
+
+  it("renders market editing and timeframe controls as real buttons", () => {
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="market" />,
+    );
+
+    expect(market).toContain('aria-pressed="false" class="design-link-button" type="button">编辑</button>');
+    expect(market).toContain('aria-pressed="false" class="" type="button">1 分</button>');
+    expect(market).toContain('aria-pressed="false" class="" type="button">5 分</button>');
+    expect(market).toContain('aria-pressed="true" class="active" type="button">日 K</button>');
+    expect(market).toContain('aria-pressed="false" class="" type="button">周 K</button>');
+    expect(market).not.toContain("<span>1 分</span>");
+  });
+
+  it("shows the latest watchlist refresh result instead of a fixed success state", () => {
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        latestWatchlistCacheRefresh={{
+          runId: "cache-refresh-test",
+          createdAt: "2026-07-16T02:30:00+00:00",
+          timeframe: "1d",
+          requestedLimit: 500,
+          summary: { totalSymbols: 4, refreshed: 3, skipped: 0, failed: 1, upsertedRows: 1500 },
+          items: [],
+        }}
+      />,
+    );
+
+    expect(market).toContain("部分失败");
+    expect(market).toContain("1,500");
+    expect(market).not.toContain("等待首次刷新");
+  });
+
+  it("surfaces skipped and failed refresh attempts instead of reusing an old success", () => {
+    const skipped = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        latestWatchlistCacheRefresh={{
+          runId: "cache-refresh-skipped",
+          createdAt: "2026-07-16T02:30:00+00:00",
+          timeframe: "1d",
+          requestedLimit: 500,
+          summary: { totalSymbols: 4, refreshed: 0, skipped: 4, failed: 0, upsertedRows: 0 },
+          items: [],
+        }}
+      />,
+    );
+    const failed = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        latestWatchlistCacheRefresh={{
+          runId: "cache-refresh-old-success",
+          createdAt: "2026-07-16T01:30:00+00:00",
+          timeframe: "1d",
+          requestedLimit: 500,
+          summary: { totalSymbols: 4, refreshed: 4, skipped: 0, failed: 0, upsertedRows: 1500 },
+          items: [],
+        }}
+        marketRefreshIssue="数据源当前不可用"
+      />,
+    );
+
+    expect(skipped).toContain("全部跳过");
+    expect(failed).toContain("刷新未完成");
+    expect(failed).toContain("数据源当前不可用");
+    expect(failed).toContain("本次尝试");
+    expect(failed).toContain("更新条数</span><strong>—</strong>");
   });
 });

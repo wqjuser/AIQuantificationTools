@@ -181,7 +181,7 @@ def _market_data_adapter_statuses(
             "status": _market_data_adapter_status_from_telemetry(akshare_telemetry),
             "route": "public_ohlcv",
             "capabilities": ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
-            "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
+            "timeframes": ["1d", "1w", "1m", "5m", "15m", "30m", "60m"],
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
@@ -197,7 +197,7 @@ def _market_data_adapter_statuses(
             "status": _market_data_adapter_status_from_telemetry(yfinance_telemetry),
             "route": "public_ohlcv",
             "capabilities": ["Ticker.history"],
-            "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
+            "timeframes": ["1d", "1w", "1m", "5m", "15m", "30m", "60m"],
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
@@ -213,7 +213,7 @@ def _market_data_adapter_statuses(
             "status": _market_data_adapter_status_from_telemetry(ccxt_telemetry),
             "route": "public_ohlcv",
             "capabilities": ["fetch_ohlcv"],
-            "timeframes": ["1d", "1m", "5m", "15m", "30m", "60m"],
+            "timeframes": ["1d", "1w", "1m", "5m", "15m", "30m", "60m"],
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
@@ -767,7 +767,7 @@ def _cache_context_freshness(
         return "empty", None
     reference = generated_at if generated_at.tzinfo else generated_at.replace(tzinfo=timezone.utc)
     age_hours = max(0, int((reference.astimezone(timezone.utc) - end).total_seconds() // 3600))
-    fresh_threshold_hours = 96 if timeframe == "1d" else 24
+    fresh_threshold_hours = {"1d": 96, "1w": 240}.get(timeframe, 24)
     return ("fresh" if age_hours <= fresh_threshold_hours else "stale"), age_hours
 
 

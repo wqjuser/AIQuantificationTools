@@ -6541,6 +6541,20 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(result.trades[0].reason, "entry_conditions")
         self.assertEqual(result.trades[1].reason, "exit_conditions")
 
+    def test_weekly_backtests_use_weekly_annualization(self):
+        from quant_core.backtest import BacktestEngine
+        from quant_core.portfolio_backtest import PortfolioBacktestEngine
+
+        metrics = BacktestEngine(initial_cash=100_000)._metrics(
+            trades=[],
+            equity_values=[100_000, 110_000],
+            bar_count=52,
+            timeframe="1w",
+        )
+
+        self.assertAlmostEqual(metrics.annual_return_pct, 10.0, places=4)
+        self.assertEqual(PortfolioBacktestEngine()._periods_per_year("1w"), 52)
+
     def test_portfolio_backtest_combines_symbol_runs_with_weights_and_cash_buffer(self):
         from quant_core.domain import BacktestMetrics, BacktestRun, DataQuality, EquityPoint
         from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg
@@ -26278,7 +26292,15 @@ class QuantCoreContractTest(unittest.TestCase):
                     body=json.dumps(
                         {
                             "watchlist": [
-                                {"market": "us", "symbol": "MSFT", "name": "Microsoft", "price": 420.5, "changePct": 1.2},
+                                {
+                                    "market": "us",
+                                    "symbol": "MSFT",
+                                    "name": "Microsoft",
+                                    "price": 420.5,
+                                    "changePct": 1.2,
+                                    "quoteSource": "finnhub",
+                                    "quoteAsOf": "2026-07-16T02:30:00+00:00",
+                                },
                                 {"market": "ashare", "symbol": "600000", "name": "浦发银行", "price": 9.21, "changePct": -2.33},
                             ]
                         },
@@ -26303,6 +26325,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspace_response.status, 200)
         self.assertEqual(workspace_payload["watchlist"][0]["symbol"], "MSFT")
         self.assertEqual(workspace_payload["watchlist"][0]["name"], "Microsoft")
+        self.assertEqual(workspace_payload["watchlist"][0]["quoteSource"], "finnhub")
+        self.assertEqual(workspace_payload["watchlist"][0]["quoteAsOf"], "2026-07-16T02:30:00+00:00")
         self.assertEqual(workspace_payload["selectedInstrument"]["symbol"], "MSFT")
 
     def test_research_workspace_state_store_persists_context(self):
@@ -30596,6 +30620,28 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["bars"][-1]["timestampMs"], int(bars[-1].timestamp.timestamp() * 1000))
         self.assertEqual(payload["bars"][-1]["volume"], 120000.0)
 
+    def test_quantdinger_style_kline_adapter_maps_tencent_week_rows(self):
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            self.assertIn("sh600000%2Cweek", url)
+            return (
+                '{"code":0,"data":{"sh600000":{"qfqweek":['
+                '["2026-07-03","8.80","9.05","9.12","8.70","500000"],'
+                '["2026-07-10","9.05","9.31","9.40","8.98","620000"]'
+                ']}}}'
+            )
+
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="ashare", symbol="600000", timeframe="1w"),
+            limit=2,
+        )
+
+        self.assertEqual(quality.source, "tencent")
+        self.assertEqual([bar.timeframe for bar in bars], ["1w", "1w"])
+        self.assertEqual(bars[-1].close, 9.31)
+
     def test_quantdinger_style_kline_cache_key_includes_time_window(self):
         from datetime import datetime, timezone
 
@@ -31068,6 +31114,52 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].close, 101.2)
         self.assertEqual(ccxt_adapter.calls[0]["request"].symbol, "BTCUSDT")
         self.assertEqual(ccxt_adapter.calls[0]["limit"], 1)
+
+    def test_crypto_week_kline_skips_unsupported_coinbase_and_uses_ccxt(self):
+        from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        class FakeCcxtAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request: MarketDataRequest, limit: int = 160):
+                self.calls.append({"request": request, "limit": limit})
+                return [
+                    OHLCVBar(
+                        symbol=request.symbol,
+                        market="crypto",
+                        timeframe="1w",
+                        timestamp=datetime(2026, 7, 10, tzinfo=timezone.utc),
+                        open=100.0,
+                        high=112.0,
+                        low=98.0,
+                        close=109.0,
+                        volume=1234.0,
+                    )
+                ], DataQuality(source="ccxt:testexchange", is_complete=True, warnings=[], rows=1)
+
+        requested_urls = []
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            requested_urls.append(url)
+            if "api.binance.com" in url:
+                return '{"code":451,"msg":"restricted"}'
+            raise AssertionError(f"unexpected url {url}")
+
+        ccxt_adapter = FakeCcxtAdapter()
+        bars, quality = QuantDingerKlineAdapter(
+            fetch_text=fake_fetch_text,
+            ccxt_adapter=ccxt_adapter,
+        ).fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTC/USDT", timeframe="1w"),
+            limit=1,
+        )
+
+        self.assertEqual(quality.source, "ccxt:testexchange")
+        self.assertEqual(bars[0].timeframe, "1w")
+        self.assertEqual(ccxt_adapter.calls[0]["request"].timeframe, "1w")
+        self.assertFalse(any("coinbase" in url for url in requested_urls))
 
     def test_crypto_kline_adapter_uses_binance_without_ccxt(self):
         from quant_core.domain import MarketDataRequest

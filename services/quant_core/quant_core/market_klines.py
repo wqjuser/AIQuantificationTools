@@ -92,7 +92,7 @@ class QuantDingerKlineAdapter:
         return self.cache.set(key, bars, quality)
 
     def _fetch_ashare_bars(self, request: MarketDataRequest, limit: int) -> tuple[list[OHLCVBar], DataQuality]:
-        if request.timeframe != "1d":
+        if request.timeframe not in {"1d", "1w"}:
             bars = self._fetch_eastmoney_ashare_minute_bars(request, limit)
             if bars:
                 return bars[-limit:], DataQuality(source="eastmoney", is_complete=True, warnings=[], rows=len(bars[-limit:]))
@@ -114,9 +114,10 @@ class QuantDingerKlineAdapter:
             return self._fallback(request, limit, f"Eastmoney unavailable; {warning}")
 
         code = normalize_ashare_tencent_code(request.symbol).lower()
-        params = urlencode({"param": f"{code},day,,,{limit},qfq"})
+        period = "week" if request.timeframe == "1w" else "day"
+        params = urlencode({"param": f"{code},{period},,,{limit},qfq"})
         payload = json.loads(self.fetch_text(f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?{params}", "utf-8"))
-        rows = extract_tencent_kline_rows(payload, code, "day")
+        rows = extract_tencent_kline_rows(payload, code, period)
         bars = [
             row_to_ohlcv_bar(row, market="ashare", symbol=request.symbol, timeframe=request.timeframe)
             for row in rows
@@ -252,12 +253,15 @@ class QuantDingerKlineAdapter:
             binance_warning = str(exc)
 
         coinbase_warning: str | None = None
-        try:
-            bars = self._fetch_coinbase_crypto_bars(request, limit)
-            if bars:
-                return bars[-limit:], DataQuality(source="coinbase", is_complete=True, warnings=[], rows=len(bars[-limit:]))
-        except Exception as exc:
-            coinbase_warning = str(exc)
+        if request.timeframe == "1w":
+            coinbase_warning = "Coinbase does not provide native weekly candles"
+        else:
+            try:
+                bars = self._fetch_coinbase_crypto_bars(request, limit)
+                if bars:
+                    return bars[-limit:], DataQuality(source="coinbase", is_complete=True, warnings=[], rows=len(bars[-limit:]))
+            except Exception as exc:
+                coinbase_warning = str(exc)
 
         try:
             bars, quality = self.ccxt_adapter.fetch_ohlcv(request, limit=limit)
@@ -800,7 +804,7 @@ def _market_data_readiness_cache_freshness(
         return "empty", None
     reference = generated_at if generated_at.tzinfo else generated_at.replace(tzinfo=timezone.utc)
     age_hours = max(0, int((reference.astimezone(timezone.utc) - end).total_seconds() // 3600))
-    fresh_threshold_hours = 96 if timeframe == "1d" else 24
+    fresh_threshold_hours = {"1d": 96, "1w": 240}.get(timeframe, 24)
     return ("fresh" if age_hours <= fresh_threshold_hours else "stale"), age_hours
 
 
@@ -844,6 +848,8 @@ def bar_to_payload(bar: OHLCVBar) -> dict[str, object]:
 def yfinance_period(timeframe: Timeframe) -> tuple[str, str]:
     if timeframe == "1d":
         return "1d", "1y"
+    if timeframe == "1w":
+        return "1wk", "10y"
     if timeframe == "60m":
         return "60m", "3mo"
     return timeframe, "1mo"
@@ -852,6 +858,8 @@ def yfinance_period(timeframe: Timeframe) -> tuple[str, str]:
 def yahoo_chart_range_interval(timeframe: Timeframe) -> tuple[str, str]:
     if timeframe == "1d":
         return "1d", "1y"
+    if timeframe == "1w":
+        return "1wk", "10y"
     if timeframe == "60m":
         return "60m", "3mo"
     return timeframe, "1mo"

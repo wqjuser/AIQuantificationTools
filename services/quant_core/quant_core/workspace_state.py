@@ -13,7 +13,7 @@ from quant_core.watchlist import MAX_WATCHLIST_ITEMS, normalize_watchlist
 
 
 VALID_MARKETS = {"ashare", "us", "crypto"}
-VALID_TIMEFRAMES = {"1d", "1m", "5m", "15m", "30m", "60m"}
+VALID_TIMEFRAMES = {"1d", "1w", "1m", "5m", "15m", "30m", "60m"}
 VALID_STAGE1_WORKSPACES = {"market", "research"}
 
 

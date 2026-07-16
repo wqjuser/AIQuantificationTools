@@ -109,6 +109,8 @@ describe("terminal layout css", () => {
     expect(cssBlock(".design-watchlist-panel .design-table th:nth-child(8)")).toContain("width: 12%;");
     expect(cssBlock(".design-watchlist-panel .design-table td:last-child")).toContain("text-align: center;");
     expect(cssBlock(".design-chart-host .chart-data-strip")).toContain("padding: 4px 10px 5px;");
+    expect(styles).toContain(".design-watchlist-panel .design-table.editing th:nth-child(8)");
+    expect(styles).toContain("display: table-cell;");
   });
 
   test("renders the Stage 4 golden path once in Portfolio and restores all authoritative evidence", () => {
@@ -398,6 +400,9 @@ describe("terminal layout css", () => {
     expect(footerSource).toContain('i18n.locale === "zh-CN" ? "已阻断" : "Blocked"');
     expect(cssBlock(".terminal-status-bar")).toContain("position: fixed;");
     expect(hasCssDeclaration(".terminal-live-block", "border: 1px solid #8b2d2d;")).toBe(true);
+    expect(cssBlock(".terminal-live-block > strong")).toContain("grid-area: status;");
+    expect(cssBlock(".terminal-live-block > strong")).toContain("min-height: 12px;");
+    expect(styles).toContain(".terminal-live-block > span,\n  .terminal-live-block small {\n    display: block;");
     expect(styles).toContain("--canvas: #090d13;");
     expect(styles).toContain("--teal: #71dfc5;");
     expect(cssBlock("h1")).toContain("white-space: nowrap;");

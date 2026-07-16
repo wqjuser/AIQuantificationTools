@@ -134,7 +134,7 @@ def _normalize_context(market: str, symbol: str, timeframe: str) -> tuple[str, s
         raise ValueError("market_required")
     if not normalized_symbol:
         raise ValueError("symbol_required")
-    if normalized_timeframe not in {"1d", "1m", "5m", "15m", "30m", "60m"}:
+    if normalized_timeframe not in {"1d", "1w", "1m", "5m", "15m", "30m", "60m"}:
         raise ValueError("unsupported_timeframe")
     return normalized_market, normalized_symbol, normalized_timeframe
 

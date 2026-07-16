@@ -29,8 +29,14 @@ class DemoMarketDataAdapter(MarketDataAdapter):
 
     def fetch_ohlcv(self, request: MarketDataRequest, limit: int | None = None) -> tuple[list[OHLCVBar], DataQuality]:
         end = request.end or datetime.now(timezone.utc)
-        step = timedelta(days=1) if request.timeframe == "1d" else timedelta(minutes=1)
-        default_rows = 120 if request.timeframe == "1d" else 240
+        step = (
+            timedelta(days=7)
+            if request.timeframe == "1w"
+            else timedelta(days=1)
+            if request.timeframe == "1d"
+            else timedelta(minutes=1)
+        )
+        default_rows = 120 if request.timeframe in {"1d", "1w"} else 240
         rows = max(1, min(int(limit or default_rows), 500))
         start = request.start or (end - step * rows)
 
@@ -57,7 +63,7 @@ class DemoMarketDataAdapter(MarketDataAdapter):
             index += 1
 
         warnings = []
-        if request.timeframe != "1d":
+        if request.timeframe not in {"1d", "1w"}:
             warnings.append("分钟级数据当前使用近期窗口和本地缓存策略。")
         return bars, DataQuality(source=self.source, is_complete=True, warnings=warnings, rows=len(bars))
 
@@ -83,11 +89,14 @@ class AkShareMarketDataAdapter(OptionalDependencyAdapter):
         ak = self._load_akshare_module()
         bounded_limit = max(1, min(int(limit or 160), 500))
         symbol = ashare_digits(request.symbol)
-        if request.timeframe == "1d":
+        if request.timeframe in {"1d", "1w"}:
             frame = ak.stock_zh_a_hist(
                 symbol=symbol,
-                period="daily",
-                start_date=akshare_daily_date(request.start, fallback_days=bounded_limit * 3),
+                period="weekly" if request.timeframe == "1w" else "daily",
+                start_date=akshare_daily_date(
+                    request.start,
+                    fallback_days=bounded_limit * (10 if request.timeframe == "1w" else 3),
+                ),
                 end_date=akshare_daily_date(request.end),
                 adjust="qfq",
             )
@@ -257,6 +266,8 @@ def ccxt_timeframe(timeframe: str) -> str:
 def yfinance_period(timeframe: str) -> tuple[str, str]:
     if timeframe == "1d":
         return "1d", "1y"
+    if timeframe == "1w":
+        return "1wk", "10y"
     if timeframe == "60m":
         return "60m", "3mo"
     return timeframe, "1mo"

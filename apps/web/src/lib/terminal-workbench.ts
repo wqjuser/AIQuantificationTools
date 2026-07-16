@@ -19,7 +19,7 @@ export type PanelId =
   | "agent-committee";
 
 export type Market = "ashare" | "us" | "crypto";
-export type Timeframe = "1d" | "1m" | "5m" | "15m" | "30m" | "60m";
+export type Timeframe = "1d" | "1w" | "1m" | "5m" | "15m" | "30m" | "60m";
 
 export interface QuantLoopStep {
   id: string;
@@ -34697,6 +34697,7 @@ function parseMarket(value: string | null | undefined): Market | null {
 function parseTimeframe(value: string | null | undefined): Timeframe | null {
   const normalized = value?.trim();
   return normalized === "1d" ||
+    normalized === "1w" ||
     normalized === "1m" ||
     normalized === "5m" ||
     normalized === "15m" ||

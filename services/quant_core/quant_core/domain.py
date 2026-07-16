@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 Market = Literal["ashare", "us", "crypto"]
-Timeframe = Literal["1d", "1m", "5m", "15m", "30m", "60m"]
+Timeframe = Literal["1d", "1w", "1m", "5m", "15m", "30m", "60m"]
 OrderSide = Literal["buy", "sell"]
 
 

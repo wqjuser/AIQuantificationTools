@@ -1,5 +1,5 @@
 export type Market = "ashare" | "us" | "crypto";
-export type Timeframe = "1d" | "1m" | "5m" | "15m" | "30m" | "60m";
+export type Timeframe = "1d" | "1w" | "1m" | "5m" | "15m" | "30m" | "60m";
 
 export interface BacktestMetrics {
   total_return_pct: number;

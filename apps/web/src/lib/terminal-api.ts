@@ -5790,7 +5790,9 @@ export async function saveWatchlist(
           symbol: instrument.symbol,
           name: instrument.name,
           price: instrument.price,
-          changePct: instrument.changePct
+          changePct: instrument.changePct,
+          quoteSource: instrument.quoteSource,
+          quoteAsOf: instrument.quoteAsOf
         }))
       })
     });
@@ -20267,6 +20269,7 @@ function isResearchWorkspaceState(value: unknown): value is ResearchWorkspaceSta
 function isTimeframe(value: unknown): value is Timeframe {
   return (
     value === "1d" ||
+    value === "1w" ||
     value === "1m" ||
     value === "5m" ||
     value === "15m" ||

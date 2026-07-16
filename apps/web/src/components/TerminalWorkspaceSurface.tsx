@@ -17,15 +17,16 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Stage9ProductionAdmissionCandidate } from "../lib/stage9-production-admission";
-import type { PortfolioBacktestRun } from "../lib/terminal-api";
+import type { CacheWatchlistRefreshRun, PortfolioBacktestRun } from "../lib/terminal-api";
 import type {
   BrokerAdapterRow,
   Instrument,
   ProductWorkAreaId,
   ResearchRunAudit,
   TerminalWorkspace,
+  Timeframe,
 } from "../lib/terminal-workbench";
 
 export interface TerminalWorkspaceSurfaceAction {
@@ -41,7 +42,12 @@ interface TerminalWorkspaceSurfaceProps {
   adapterRows: BrokerAdapterRow[];
   chart: ReactNode;
   executionCandidate: Stage9ProductionAdmissionCandidate | null;
+  isSavingWatchlist: boolean;
+  latestWatchlistCacheRefresh: CacheWatchlistRefreshRun | null;
+  marketRefreshIssue: string | null;
+  onRemoveWatchlistInstrument: (instrument: Instrument) => void;
   onSelectInstrument: (instrument: Instrument) => void;
+  onSelectTimeframe: (timeframe: Timeframe) => void;
   portfolio: PortfolioBacktestRun | null;
   runs: ResearchRunAudit[];
   source: "core" | "fallback";
@@ -60,6 +66,13 @@ const pageTitles: Record<ProductWorkAreaId, string> = {
   audit: "审计回放",
   settings: "设置",
 };
+
+const marketTimeframeOptions: Array<{ label: string; value: Timeframe }> = [
+  { label: "1 分", value: "1m" },
+  { label: "5 分", value: "5m" },
+  { label: "日 K", value: "1d" },
+  { label: "周 K", value: "1w" },
+];
 
 function SurfacePanel({
   action,
@@ -254,13 +267,28 @@ function DonutCanvas({ cashWeight }: { cashWeight: number }) {
 function MarketSurface({
   action,
   chart,
+  isSavingWatchlist,
+  latestWatchlistCacheRefresh,
+  marketRefreshIssue,
+  onRemoveWatchlistInstrument,
   onSelectInstrument,
+  onSelectTimeframe,
   source,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "chart" | "onSelectInstrument" | "source" | "workspace"
+  | "action"
+  | "chart"
+  | "isSavingWatchlist"
+  | "latestWatchlistCacheRefresh"
+  | "marketRefreshIssue"
+  | "onRemoveWatchlistInstrument"
+  | "onSelectInstrument"
+  | "onSelectTimeframe"
+  | "source"
+  | "workspace"
 >) {
+  const [isEditingWatchlist, setIsEditingWatchlist] = useState(false);
   const sorted = [...workspace.watchlist].sort(
     (left, right) => right.changePct - left.changePct,
   );
@@ -295,6 +323,29 @@ function MarketSurface({
   const latestQuoteTime = formatQuoteTime(
     workspace.selectedInstrument.quoteAsOf,
   );
+  let latestRefreshStatus = "等待首次刷新";
+  let latestRefreshTone: "positive" | "warning" | "risk" | "neutral" = "neutral";
+  if (marketRefreshIssue) {
+    latestRefreshStatus = "刷新未完成";
+    latestRefreshTone = "risk";
+  } else if (latestWatchlistCacheRefresh) {
+    const { failed, refreshed, skipped } = latestWatchlistCacheRefresh.summary;
+    if (failed > 0) {
+      latestRefreshStatus = refreshed > 0 ? "部分失败" : "失败";
+      latestRefreshTone = "warning";
+    } else if (skipped > 0) {
+      latestRefreshStatus = refreshed > 0 ? "部分跳过" : "全部跳过";
+      latestRefreshTone = "warning";
+    } else {
+      latestRefreshStatus = "成功";
+      latestRefreshTone = "positive";
+    }
+  }
+  const latestRefreshTime = marketRefreshIssue
+    ? "本次尝试"
+    : latestWatchlistCacheRefresh
+      ? formatQuoteTime(latestWatchlistCacheRefresh.createdAt)
+      : "—";
   return (
     <>
       <PageHeader action={action} title="行情中心" />
@@ -303,12 +354,17 @@ function MarketSurface({
           className="design-watchlist-panel"
           title="自选列表"
           action={
-            <button className="design-link-button" type="button">
-              编辑
+            <button
+              aria-pressed={isEditingWatchlist}
+              className="design-link-button"
+              onClick={() => setIsEditingWatchlist((current) => !current)}
+              type="button"
+            >
+              {isEditingWatchlist ? "完成" : "编辑"}
             </button>
           }
         >
-          <table className="design-table compact">
+          <table className={`design-table compact${isEditingWatchlist ? " editing" : ""}`}>
             <thead>
               <tr>
                 <th>代码</th>
@@ -318,7 +374,7 @@ function MarketSurface({
                 <th>成交量</th>
                 <th>更新</th>
                 <th>来源</th>
-                <th>缓存</th>
+                <th>{isEditingWatchlist ? "操作" : "缓存"}</th>
               </tr>
             </thead>
             <tbody>
@@ -330,7 +386,7 @@ function MarketSurface({
                       : ""
                   }
                   key={`${instrument.market}-${instrument.symbol}`}
-                  onClick={() => onSelectInstrument(instrument)}
+                  onClick={isEditingWatchlist ? undefined : () => onSelectInstrument(instrument)}
                 >
                   <td>{instrument.symbol}</td>
                   <td>{instrument.name}</td>
@@ -342,7 +398,21 @@ function MarketSurface({
                   <td>—</td>
                   <td>{formatQuoteTime(instrument.quoteAsOf)}</td>
                   <td>{instrument.quoteSource ?? "本地"}</td>
-                  <td><Status tone={source === "core" ? "positive" : "warning"}>{source === "core" ? "最新" : "缓存"}</Status></td>
+                  <td>
+                    {isEditingWatchlist ? (
+                      <button
+                        aria-label={`从自选列表移除 ${instrument.name}`}
+                        className="design-watchlist-remove"
+                        disabled={isSavingWatchlist || workspace.watchlist.length <= 1}
+                        onClick={() => onRemoveWatchlistInstrument(instrument)}
+                        type="button"
+                      >
+                        {isSavingWatchlist ? "保存中" : "移除"}
+                      </button>
+                    ) : (
+                      <Status tone={source === "core" ? "positive" : "warning"}>{source === "core" ? "最新" : "缓存"}</Status>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -407,7 +477,17 @@ function MarketSurface({
             <span>{source === "core" ? "实时数据" : "离线快照"}</span>
           </div>
           <div className="design-market-timeframes">
-            {['1 分', '5 分', '日 K', '周 K'].map((label, index) => <span className={index === 2 ? 'active' : ''} key={label}>{label}</span>)}
+            {marketTimeframeOptions.map(({ label, value }) => (
+              <button
+                aria-pressed={workspace.selectedTimeframe === value}
+                className={workspace.selectedTimeframe === value ? "active" : ""}
+                key={value}
+                onClick={() => onSelectTimeframe(value)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <div className="design-chart-host">{chart}</div>
         </SurfacePanel>
@@ -450,9 +530,10 @@ function MarketSurface({
             </div>
           </SurfacePanel>
           <SurfacePanel title="最新刷新运行">
-            <div className="design-kv-row"><span>最近刷新</span><strong>{latestQuoteTime}</strong></div>
-            <div className="design-kv-row"><span>状态</span><Status>{source === "core" ? "成功" : "等待连接"}</Status></div>
-            <div className="design-kv-row"><span>更新条数</span><strong>{workspace.watchlist.length.toLocaleString()}</strong></div>
+            <div className="design-kv-row"><span>最近刷新</span><strong>{latestRefreshTime}</strong></div>
+            <div className="design-kv-row"><span>状态</span><Status tone={latestRefreshTone}>{latestRefreshStatus}</Status></div>
+            <div className="design-kv-row"><span>更新条数</span><strong>{marketRefreshIssue ? "—" : (latestWatchlistCacheRefresh?.summary.upsertedRows ?? 0).toLocaleString()}</strong></div>
+            {marketRefreshIssue ? <p className="design-refresh-issue">{marketRefreshIssue}</p> : null}
           </SurfacePanel>
           <SurfacePanel title="重试与恢复">
             <div className="design-kv-row"><span>自动重试</span><Status>已启用</Status></div>

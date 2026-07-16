@@ -257,7 +257,7 @@ class PortfolioBacktestEngine:
         equity_values = [point.equity for point in equity_curve]
         ending_equity = equity_values[-1]
         total_return = (ending_equity / self.initial_cash - 1) * 100
-        periods_per_year = 252 if timeframe == "1d" else 252 * 240
+        periods_per_year = self._periods_per_year(timeframe)
         annual_return = ((ending_equity / self.initial_cash) ** (periods_per_year / max(len(equity_curve), 1)) - 1) * 100
         trade_count = sum(leg.run.metrics.trade_count for leg in legs)
         win_rate = self._trade_weighted_metric(legs, "win_rate_pct", trade_count)
@@ -663,7 +663,7 @@ class PortfolioBacktestEngine:
         return matrix
 
     def _periods_per_year(self, timeframe: Timeframe) -> int:
-        return 252 if timeframe == "1d" else 252 * 240
+        return 52 if timeframe == "1w" else 252 if timeframe == "1d" else 252 * 240
 
     def _period_returns(self, equity_curve: list[EquityPoint]) -> list[float]:
         returns: list[float] = []

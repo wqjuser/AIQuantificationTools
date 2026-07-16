@@ -171,7 +171,7 @@ class BacktestEngine:
     def _metrics(self, trades: list[Trade], equity_values: list[float], bar_count: int, timeframe: str) -> BacktestMetrics:
         ending_equity = equity_values[-1] if equity_values else self.initial_cash
         total_return = (ending_equity / self.initial_cash - 1) * 100
-        periods_per_year = 252 if timeframe == "1d" else 252 * 240
+        periods_per_year = 52 if timeframe == "1w" else 252 if timeframe == "1d" else 252 * 240
         annual_return = ((ending_equity / self.initial_cash) ** (periods_per_year / max(bar_count, 1)) - 1) * 100
 
         wins = 0

@@ -1051,7 +1051,9 @@ describe("terminal workspace API client", () => {
               symbol: "MSFT",
               name: "Microsoft",
               changePct: 1.2,
-              price: 420.5
+              price: 420.5,
+              quoteSource: "finnhub",
+              quoteAsOf: "2026-07-16T02:30:00+00:00"
             }
           ]
         })
@@ -1062,7 +1064,15 @@ describe("terminal workspace API client", () => {
 
     const result = await saveWatchlist(
       "/",
-      [{ market: "us", symbol: "MSFT", name: "Microsoft", changePct: 1.2, price: 420.5 }],
+      [{
+        market: "us",
+        symbol: "MSFT",
+        name: "Microsoft",
+        changePct: 1.2,
+        price: 420.5,
+        quoteSource: "finnhub",
+        quoteAsOf: "2026-07-16T02:30:00+00:00"
+      }],
       fetcher
     );
 
@@ -1072,7 +1082,15 @@ describe("terminal workspace API client", () => {
         method: "PUT",
         body: {
           watchlist: [
-            { market: "us", symbol: "MSFT", name: "Microsoft", price: 420.5, changePct: 1.2 }
+            {
+              market: "us",
+              symbol: "MSFT",
+              name: "Microsoft",
+              price: 420.5,
+              changePct: 1.2,
+              quoteSource: "finnhub",
+              quoteAsOf: "2026-07-16T02:30:00+00:00"
+            }
           ]
         }
       }

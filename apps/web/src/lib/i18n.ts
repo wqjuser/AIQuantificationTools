@@ -1512,11 +1512,11 @@ function translateStrategyText(locale: Locale, text: string): string {
   if (direct) {
     return direct;
   }
-  const researchContext = text.match(/^(.+) ((?:1d|1m|5m|15m|30m|60m)) research context$/);
+  const researchContext = text.match(/^(.+) ((?:1d|1w|1m|5m|15m|30m|60m)) research context$/);
   if (researchContext) {
     return `${researchContext[1]} ${researchContext[2]} 研究上下文`;
   }
-  const originalTimeframe = text.match(/^Original timeframe ((?:1d|1m|5m|15m|30m|60m))$/);
+  const originalTimeframe = text.match(/^Original timeframe ((?:1d|1w|1m|5m|15m|30m|60m))$/);
   if (originalTimeframe) {
     return `原始周期 ${originalTimeframe[1]}`;
   }
@@ -1562,7 +1562,7 @@ function translateDecisionMessage(locale: Locale, message: string): string {
     return direct;
   }
   const contextSelected = message.match(
-    /^(.+) ((?:1d|1m|5m|15m|30m|60m)) selected\. Run Pipeline to generate an audited backtest and agent review\.$/
+    /^(.+) ((?:1d|1w|1m|5m|15m|30m|60m)) selected\. Run Pipeline to generate an audited backtest and agent review\.$/
   );
   if (contextSelected) {
     return `${contextSelected[1]} ${contextSelected[2]} 已选中。运行流水线以生成可审计回测和智能体评审。`;
@@ -1615,7 +1615,7 @@ function translateDecisionMessage(locale: Locale, message: string): string {
     return `策略字段 ${strategyFieldText(locale, strategyEdited[1])} 已本地更新。运行流水线以生成新的可审计回测。`;
   }
   const strategyLibraryLoaded = message.match(
-    /^Strategy revision (.+) loaded for (.+) ((?:1d|1m|5m|15m|30m|60m))\. (?:Archived audit run (.+) remains read-only; )?Run Pipeline to generate a fresh audited backtest\.$/
+    /^Strategy revision (.+) loaded for (.+) ((?:1d|1w|1m|5m|15m|30m|60m))\. (?:Archived audit run (.+) remains read-only; )?Run Pipeline to generate a fresh audited backtest\.$/
   );
   if (strategyLibraryLoaded) {
     const archivedRun = strategyLibraryLoaded[4]

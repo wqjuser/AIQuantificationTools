@@ -13,7 +13,7 @@ DATA_SNAPSHOT_HASH_VERSION = "aiqt-data-v2"
 MAX_SNAPSHOT_BARS = 500
 
 _SUPPORTED_MARKETS = {"ashare", "us", "crypto"}
-_SUPPORTED_TIMEFRAMES = {"1d", "1m", "5m", "15m", "30m", "60m"}
+_SUPPORTED_TIMEFRAMES = {"1d", "1w", "1m", "5m", "15m", "30m", "60m"}
 _CONDITION_PARAMETERS = {
     "close_above_sma": ("window",),
     "close_below_sma": ("window",),
