@@ -549,9 +549,115 @@ describe("terminal layout css", () => {
       "border-color: var(--border);",
       "background: var(--surface-raised);",
     ])).toBe(true);
-    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-backtest .design-history-row', [
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] :is(.surface-strategy, .surface-backtest, .surface-audit) .design-history-row', [
       "border-color: var(--border);",
       "color: var(--muted);",
+    ])).toBe(true);
+  });
+
+  test("uses the light palette throughout execution and governance workspaces", () => {
+    expect(hasCssBlockWith(".stage1-p0-daily-use-footer", [
+      "flex-wrap: wrap;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".stage1-p0-daily-use-footer small", [
+      "flex: 1 1 240px;",
+      "max-width: 100%;",
+      "min-width: 0;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".stage1-p0-daily-use-footer small", [
+      "flex: 0 1 auto;",
+      "width: 100%;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".stage1-p0-daily-use-footer-actions", [
+      "flex: 1 1 520px;",
+      "flex-wrap: wrap;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".stage1-p0-daily-use-footer-actions", [
+      "flex: 0 1 auto;",
+      "flex-direction: column;",
+      "width: 100%;",
+    ])).toBe(true);
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      'className={`design-check-row ${gate.passed ? "positive" : "warning"}`}'
+    );
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article', [
+      "border-color: var(--border);",
+      "background: var(--surface-raised);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-check-row.warning svg', [
+      "color: var(--amber);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] :is(.surface-execution, .surface-settings) .design-live-warning', [
+      "border-color: #c9a34c;",
+      "background: #fff6da;",
+      "color: var(--amber);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .terminal-panel', [
+      "border-color: var(--border);",
+      "background: var(--surface);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row', [
+      "border-color: var(--border);",
+      "background: var(--surface-raised);",
+      "color: var(--text);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-cache-bulk-refresh', [
+      "background: #f0edff;",
+      "color: #5f549d;",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage.blocked', [
+      "border-color: #d08782;",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-status.ready span', [
+      "background: var(--teal-dim);",
+      "color: var(--teal);",
+    ])).toBe(true);
+    expect(styles).not.toContain(
+      '.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body em {'
+    );
+    expect(styles).toContain(
+      '.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step.done em,'
+    );
+    expect(styles).toContain(
+      '.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-complete,'
+    );
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body span.p0-golden-path-complete', [
+      "color: var(--teal);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-recovery', [
+      "border-color: #72ad9f;",
+      "background: var(--teal-dim);",
+      "color: var(--teal);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-recovery em', [
+      "color: var(--teal);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-preflight-gate.passed', [
+      "border-left-color: var(--teal);",
+      "background: var(--teal-dim);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip', [
+      "border-left-color: var(--teal);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log-entry.error', [
+      "border-left-color: #d08782;",
+    ])).toBe(true);
+    expect(styles).toContain(
+      '.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-share-deep-link,'
+    );
+    expect(styles).toContain(
+      '.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-acceptance-summary.positive,'
+    );
+    expect(styles).toContain(
+      '.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome.ready,'
+    );
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-audit .design-audit-filters', [
+      "border-color: var(--border);",
+      "background: var(--surface-raised);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav', [
+      "border-color: var(--border);",
+      "background: var(--surface-raised);",
     ])).toBe(true);
   });
 

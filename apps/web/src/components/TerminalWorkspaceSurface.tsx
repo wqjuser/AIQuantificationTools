@@ -1623,7 +1623,10 @@ function ExecutionSurface({
         <div className="design-execution-side">
           <SurfacePanel title="路由预检">
             {workspace.execution.gates.map((gate) => (
-              <div className="design-check-row" key={gate.id}>
+              <div
+                className={`design-check-row ${gate.passed ? "positive" : "warning"}`}
+                key={gate.id}
+              >
                 {gate.passed ? (
                   <CheckCircle2 size={15} />
                 ) : (

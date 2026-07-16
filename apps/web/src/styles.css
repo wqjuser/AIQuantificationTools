@@ -1941,6 +1941,7 @@ em {
 
 .stage1-p0-daily-use-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -1948,12 +1949,15 @@ em {
 }
 
 .stage1-p0-daily-use-footer small {
+  flex: 1 1 240px;
+  max-width: 100%;
   min-width: 0;
 }
 
 .stage1-p0-daily-use-footer-actions {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 520px;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
@@ -20002,8 +20006,14 @@ button.ai-review-record {
     flex-direction: column;
   }
 
+  .stage1-p0-daily-use-footer small {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+
   .stage1-p0-daily-use-footer-actions {
     align-items: stretch;
+    flex: 0 1 auto;
     flex-direction: column;
     width: 100%;
   }
@@ -21455,18 +21465,8 @@ button.ai-review-record {
   color: var(--muted);
 }
 
-.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row em,
-.terminal-shell[data-theme="light"] .surface-strategy .design-big-metric span,
-.terminal-shell[data-theme="light"] .surface-strategy .design-history-row {
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row em {
   color: var(--muted);
-}
-
-.terminal-shell[data-theme="light"] .surface-strategy .design-history-row {
-  border-color: var(--border);
-}
-
-.terminal-shell[data-theme="light"] .surface-strategy .design-history-row i {
-  border-color: var(--border-strong);
 }
 
 .terminal-shell[data-theme="light"] .surface-backtest .design-equity-main,
@@ -21490,14 +21490,6 @@ button.ai-review-record {
   color: var(--muted);
 }
 
-.terminal-shell[data-theme="light"] .surface-backtest .design-empty-state svg {
-  color: var(--muted);
-}
-
-.terminal-shell[data-theme="light"] .surface-backtest .design-empty-state strong {
-  color: var(--text);
-}
-
 .terminal-shell[data-theme="light"] .surface-backtest .design-metric-row {
   border-color: var(--border);
   background: var(--surface-raised);
@@ -21507,19 +21499,716 @@ button.ai-review-record {
   border-color: var(--border);
 }
 
-.terminal-shell[data-theme="light"] .surface-backtest .design-history-row {
+.terminal-shell[data-theme="light"] :is(.surface-backtest, .surface-execution) .design-empty-state,
+.terminal-shell[data-theme="light"] :is(.surface-backtest, .surface-execution) .design-empty-state svg,
+.terminal-shell[data-theme="light"] :is(.surface-backtest, .surface-execution) .design-empty-state span,
+.terminal-shell[data-theme="light"] :is(.surface-strategy, .surface-audit) .design-big-metric span {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] :is(.surface-backtest, .surface-execution) .design-empty-state strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] :is(.surface-strategy, .surface-audit) .design-big-metric {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] :is(.surface-strategy, .surface-backtest, .surface-audit) .design-history-row {
   border-color: var(--border);
   color: var(--muted);
 }
 
-.terminal-shell[data-theme="light"] .surface-backtest .design-history-row i {
+.terminal-shell[data-theme="light"] :is(.surface-strategy, .surface-backtest, .surface-audit) .design-history-row i {
   border-color: var(--border-strong);
+}
+
+.terminal-shell[data-theme="light"] :is(.surface-strategy, .surface-backtest, .surface-audit) .design-history-row i.done {
+  border-color: var(--teal);
+  background: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] :is(.surface-execution, .surface-audit, .surface-settings) .design-check-row svg {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .surface-execution .design-check-row.warning svg {
+  color: var(--amber);
+}
+
+.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article span,
+.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article svg,
+.terminal-shell[data-theme="light"] .surface-execution .design-kill-switch span,
+.terminal-shell[data-theme="light"] .surface-execution .design-kill-switch small {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article strong,
+.terminal-shell[data-theme="light"] .surface-execution .design-kill-switch strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article .positive,
+.terminal-shell[data-theme="light"] .surface-execution .design-kill-switch {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article .warning {
+  color: var(--amber);
+}
+
+.terminal-shell[data-theme="light"] :is(.surface-execution, .surface-settings) .design-live-warning {
+  border-color: #c9a34c;
+  background: #fff6da;
+  color: var(--amber);
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-audit-filters {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-audit-filters label,
+.terminal-shell[data-theme="light"] .surface-settings .design-form-row label {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-audit-filters input,
+.terminal-shell[data-theme="light"] .surface-audit .design-audit-filters select,
+.terminal-shell[data-theme="light"] .surface-settings .design-form-row input,
+.terminal-shell[data-theme="light"] .surface-settings .design-form-row select {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-detail-grid article {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-detail-grid article > strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav button {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav button.selected {
+  border-left-color: var(--teal);
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .terminal-panel {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .module-focus-card {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .module-focus-card p,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .terminal-panel header span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .section-label {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 22px 64px rgb(34 57 76 / 18%);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body small,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body p {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-head em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-head em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-head em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-ops-head em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-context-row em {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body button {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-status span {
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-status.ready span {
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-status.review span {
+  background: #fff6da;
+  color: var(--amber);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-status.blocked span {
+  background: #fff0ef;
+  color: var(--danger);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-journey,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-closure,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-summary,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-acceptance-summary,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p1-acceptance-summary,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-ops-control-room,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-completion-checklist,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-evidence-drawer,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-preflight {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-complete,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-recovery,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome-entry,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-archive-reference,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-meter,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-review-reference,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-checkpoint,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-review-reference,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-item,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-ledger-echo,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-preflight-gate,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-backlog-row,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-runbook-item {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-share-deep-link,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-simulation-result {
+  border-color: #72ad9f;
+  background: var(--teal-dim);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-share-deep-link.invalid {
+  border-color: #d08782;
+  border-left-color: var(--danger);
+  background: #fff0ef;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-share-deep-link span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-share-deep-link small,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-simulation-result span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-simulation-result small {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-share-deep-link strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-simulation-result strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-simulation-result b {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-share-deep-link-actions button,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-simulation-result-grid > span {
+  border-color: #72ad9f;
+  background: var(--surface);
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-closure.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-acceptance-summary.positive,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p1-acceptance-summary.positive,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-ops-control-room.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-summary.paper_ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-summary.live_ready {
+  border-color: #72ad9f;
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-closure.review,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-acceptance-summary.warning,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p1-acceptance-summary.warning,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief.attention,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness.attention,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-ops-control-room.attention,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-summary.review {
+  border-color: #c9a34c;
+  background: #fff6da;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-closure.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-acceptance-summary.risk,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p1-acceptance-summary.risk,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-ops-control-room.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-summary.blocked {
+  border-color: #d08782;
+  background: #fff0ef;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step.current,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step.done,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row.shared-focus,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome-entry.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome-entry.shared-focus,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-archive-reference.current,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-review-reference.current,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-checkpoint.ready,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-checkpoint.current,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-review-reference.current {
+  border-color: #72ad9f;
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome-entry.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-checkpoint.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-item.blocked {
+  border-color: #d08782;
+  background: #fff0ef;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row.review,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome.review,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-outcome-entry.review,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-archive-reference.stale,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-review-reference.stale,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-checkpoint.review,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-checkpoint.stale,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-checkpoint.missing,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-review-reference.stale,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-item.review {
+  border-color: #c9a34c;
+  background: #fff6da;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-archive-reference.missing,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-review-reference.missing,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-review-reference.missing {
+  border-color: var(--border-strong);
+  border-style: dashed;
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-complete,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-recovery {
+  border-color: #72ad9f;
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workspace-command-center-body span.p0-golden-path-complete {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh-recovery em {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step.done em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step.current em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row.ready em {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row.review em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-backlog-row.review em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-summary.review em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-runbook-item.review em {
+  color: var(--amber);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-step.blocked em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-row.blocked em {
+  color: var(--danger);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-backlog-row.blocked em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-readiness-summary.blocked em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-runbook-item.blocked em {
+  color: var(--amber);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-preflight-gate.passed {
+  border-left-color: var(--teal);
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-preflight-gate.review {
+  border-left-color: #c9a34c;
+  background: #fff6da;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-preflight-gate.blocked,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-runbook-item.current {
+  border-left-color: #d08782;
+  background: #fff0ef;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .golden-path-runbook-item.current {
+  border-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-golden-path-primary-action,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-copy,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-download,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .stage1-p0-daily-use-refresh,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-acceptance-actions button,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .daily-start-brief-actions button,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .personal-team-readiness-actions button,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .p0-paper-preflight-action {
+  border-color: #65a899;
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-summary,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .module-toolbar {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-summary strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .module-toolbar strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-summary.positive {
+  border-color: #72ad9f;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-summary.warning {
+  border-color: #c9a34c;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-summary.risk {
+  border-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-head {
+  border-left-color: var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row.selected {
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row em {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row.positive {
+  border-left-color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row.warning {
+  border-left-color: #b9903c;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row.risk {
+  border-left-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .research-ops-row button,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .scanner-row button,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .run-button.compact,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-cache-refresh,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage button {
+  border-color: #65a899;
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-cache-bulk-refresh {
+  border-color: #9b91ca;
+  background: #f0edff;
+  color: #5f549d;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .risk-chip.low {
+  border-color: #72ad9f;
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .risk-chip.medium {
+  border-color: #c9a34c;
+  background: #fff6da;
+  color: var(--amber);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .risk-chip.high {
+  border-color: #d08782;
+  background: #fff0ef;
+  color: var(--danger);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .health-grid article,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .settings-grid article,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-grid article,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-items {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .health-grid article strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .settings-grid article strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-grid strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-head strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .health-grid article span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .health-grid article p,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .settings-grid article span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .settings-grid article p,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-head span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-head em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-grid span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-grid small,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-detail,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip dt,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip p,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage p,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-head span {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .health-grid article.positive,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .settings-grid article.positive,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage.positive {
+  border-left-color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip {
+  border-left-color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .health-grid article.warning,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .settings-grid article.warning,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage.warning,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip.stale {
+  border-left-color: #c9a34c;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .health-grid article.risk,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .settings-grid article.risk,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-coverage.risk,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-data-readiness-strip.blocked {
+  border-left-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-head {
+  border-color: #7eb7aa;
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-card.closed .market-calendar-head,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-card.unknown .market-calendar-head {
+  border-color: #d08782;
+  background: #fff0ef;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-card.break .market-calendar-head {
+  border-color: #c9a34c;
+  background: #fff6da;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .market-calendar-head strong {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .scanner-row,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .scanner-head {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .scanner-row strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .scanner-row b,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row em {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .scanner-row em,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row p,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row p {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row:hover,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row:focus-visible,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row.selected,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row:hover,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row:focus-visible {
+  border-color: #72ad9f;
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row.positive,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row.positive {
+  border-left-color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row.warning,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row.warning {
+  border-left-color: #c9a34c;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-history-row.risk,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .watchlist-refresh-item-row.risk {
+  border-left-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifacts,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log-entry {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact.positive {
+  border-left-color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact.warning {
+  border-left-color: #c9a34c;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact.risk {
+  border-left-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact.ai {
+  border-left-color: #8d80c7;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage:hover,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage.selected,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage.running {
+  border-color: #72ad9f;
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage.failed {
+  border-color: #d08782;
+  background: #fff0ef;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage.blocked {
+  border-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage.completed {
+  border-color: #72ad9f;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log-entry.success {
+  border-left-color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log-entry.warning {
+  border-left-color: #c9a34c;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log-entry.error {
+  border-left-color: #d08782;
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifacts > span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log > span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact span,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact p,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log-entry small {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-stage strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-artifact strong,
+.terminal-shell[data-theme="light"] .terminal-operations-workspace .workflow-log-entry span {
+  color: var(--text);
 }
 
 .terminal-shell[data-theme="light"] .design-primary-action,
 .terminal-shell[data-theme="light"] .design-secondary-action,
 .terminal-shell[data-theme="light"] .design-link-button,
-.terminal-shell[data-theme="light"] .design-header-actions button {
+.terminal-shell[data-theme="light"] .design-header-actions button,
+.terminal-shell[data-theme="light"] .design-settings-bottom button,
+.terminal-shell[data-theme="light"] .design-audit-filters button {
   border-color: #65a899;
   background: #e1f1ec;
   color: #087563;
