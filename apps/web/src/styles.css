@@ -287,17 +287,6 @@ button {
   padding: 7px 8px;
 }
 
-.left-rail .work-area-button::before {
-  position: absolute;
-  top: 5px;
-  bottom: 5px;
-  left: -1px;
-  width: 2px;
-  border-radius: 2px;
-  background: transparent;
-  content: "";
-}
-
 .left-rail .work-area-button:hover {
   border-color: #24374b;
   background: #132230;
@@ -307,10 +296,6 @@ button {
   border-color: #285e55;
   background: #12342e;
   box-shadow: inset 0 0 24px rgb(61 209 177 / 5%);
-}
-
-.left-rail .work-area-button.selected::before {
-  background: var(--teal);
 }
 
 .left-rail .work-area-button > svg {

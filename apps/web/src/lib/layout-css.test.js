@@ -384,6 +384,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(".work-area-button.blocked")).toContain("border-color: #7a3a32;");
   });
 
+  test("keeps decorative navigation state inside the button hit target", () => {
+    expect(styles).not.toContain(".left-rail .work-area-button::before");
+    expect(
+      hasCssBlockWith(".work-area-button.selected,\n.work-area-button.active", [
+        "border-left: 3px solid #58d6b9;"
+      ])
+    ).toBe(true);
+  });
+
   test("uses the approved grouped terminal shell, branded logo, and persistent safety status", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
     const footerSource = sourceBetween('<footer className="terminal-status-bar"', "</footer>");
