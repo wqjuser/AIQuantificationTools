@@ -14555,6 +14555,7 @@ export function App() {
               <ChartDataStrip i18n={i18n} latestChartBar={latestChartBar} state={klinesState} />
             </>
           }
+          colorScheme={colorScheme}
           executionCandidate={stage9ProductionAdmissionCandidate}
           isSavingWatchlist={isSavingWatchlist}
           latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}

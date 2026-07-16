@@ -21249,7 +21249,18 @@ button.ai-review-record {
   background: var(--canvas);
 }
 
+.terminal-shell[data-theme="dark"] {
+  --chart-grid: #183047;
+  --chart-teal: #58d6b9;
+  --chart-blue: #5f9fff;
+  --chart-red: #ff6257;
+}
+
 .terminal-shell[data-theme="light"] {
+  --chart-grid: #c9d6e0;
+  --chart-teal: #087f6d;
+  --chart-blue: #2563eb;
+  --chart-red: #c83f38;
   color: var(--text);
   background: var(--canvas);
 }
@@ -21455,6 +21466,53 @@ button.ai-review-record {
 }
 
 .terminal-shell[data-theme="light"] .surface-strategy .design-history-row i {
+  border-color: var(--border-strong);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-equity-main,
+.terminal-shell[data-theme="light"] .surface-backtest .design-drawdown-strip {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-equity-main > span,
+.terminal-shell[data-theme="light"] .surface-backtest .design-drawdown-strip > span,
+.terminal-shell[data-theme="light"] .surface-backtest .design-metric span {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-equity-main > span {
+  z-index: 4;
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-chart-empty {
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-empty-state svg {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-empty-state strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-metric-row {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-metric {
+  border-color: var(--border);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-history-row {
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-backtest .design-history-row i {
   border-color: var(--border-strong);
 }
 

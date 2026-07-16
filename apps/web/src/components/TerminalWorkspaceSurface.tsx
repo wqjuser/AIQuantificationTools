@@ -20,6 +20,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Stage9ProductionAdmissionCandidate } from "../lib/stage9-production-admission";
 import type { CacheWatchlistRefreshRun, PortfolioBacktestRun } from "../lib/terminal-api";
+import type { ColorScheme } from "../lib/theme";
 import type {
   BrokerAdapterRow,
   Instrument,
@@ -41,6 +42,7 @@ interface TerminalWorkspaceSurfaceProps {
   activeWorkAreaId: ProductWorkAreaId;
   adapterRows: BrokerAdapterRow[];
   chart: ReactNode;
+  colorScheme: ColorScheme;
   executionCandidate: Stage9ProductionAdmissionCandidate | null;
   isSavingWatchlist: boolean;
   latestWatchlistCacheRefresh: CacheWatchlistRefreshRun | null;
@@ -170,9 +172,11 @@ function compactRunId(runId: string | null | undefined): string {
 }
 
 function LineChartCanvas({
+  colorScheme,
   points,
   tone = "teal",
 }: {
+  colorScheme: ColorScheme;
   points: number[];
   tone?: "teal" | "blue" | "red";
 }) {
@@ -189,9 +193,12 @@ function LineChartCanvas({
       canvas.height = height * ratio;
       const context = canvas.getContext("2d");
       if (!context) return;
+      const themeStyles = getComputedStyle(canvas);
+      const themeColor = (property: string, fallback: string) =>
+        themeStyles.getPropertyValue(property).trim() || fallback;
       context.scale(ratio, ratio);
       context.clearRect(0, 0, width, height);
-      context.strokeStyle = "#183047";
+      context.strokeStyle = themeColor("--chart-grid", "#183047");
       context.lineWidth = 1;
       for (let row = 1; row < 5; row += 1) {
         const y = (height / 5) * row;
@@ -205,7 +212,11 @@ function LineChartCanvas({
       const max = Math.max(...points);
       const range = Math.max(max - min, 1);
       context.strokeStyle =
-        tone === "blue" ? "#5f9fff" : tone === "red" ? "#ff6257" : "#58d6b9";
+        tone === "blue"
+          ? themeColor("--chart-blue", "#5f9fff")
+          : tone === "red"
+            ? themeColor("--chart-red", "#ff6257")
+            : themeColor("--chart-teal", "#58d6b9");
       context.lineWidth = 2;
       context.beginPath();
       points.forEach((point, index) => {
@@ -221,7 +232,7 @@ function LineChartCanvas({
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [points, tone]);
+  }, [colorScheme, points, tone]);
 
   return <canvas className="design-line-chart" ref={ref} />;
 }
@@ -929,9 +940,13 @@ function StrategySurface({
 
 function BacktestSurface({
   action,
+  colorScheme,
   runs,
   workspace,
-}: Pick<TerminalWorkspaceSurfaceProps, "action" | "runs" | "workspace">) {
+}: Pick<
+  TerminalWorkspaceSurfaceProps,
+  "action" | "colorScheme" | "runs" | "workspace"
+>) {
   const curve =
     workspace.backtestEquityCurve?.map((point) => point.equity) ?? [];
   const curveForChart = curve;
@@ -987,8 +1002,9 @@ function BacktestSurface({
             <div className="design-equity-chart">
               <div className="design-equity-main">
                 <span>组合净值 / 基准</span>
-                <LineChartCanvas points={curveForChart} />
+                <LineChartCanvas colorScheme={colorScheme} points={curveForChart} />
                 <LineChartCanvas
+                  colorScheme={colorScheme}
                   points={curveForChart.map((value, index) =>
                     1 + (value - 1) * 0.42 + index * 0.002,
                   )}
@@ -1005,7 +1021,11 @@ function BacktestSurface({
               </div>
               <div className="design-drawdown-strip">
                 <span>回撤（%）</span>
-                <LineChartCanvas points={drawdown} tone="red" />
+                <LineChartCanvas
+                  colorScheme={colorScheme}
+                  points={drawdown}
+                  tone="red"
+                />
               </div>
             </div>
           </SurfacePanel>

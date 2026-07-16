@@ -3,6 +3,10 @@ import { describe, expect, test } from "vitest";
 
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const terminalWorkspaceSurfaceSource = readFileSync(
+  new URL("../components/TerminalWorkspaceSurface.tsx", import.meta.url),
+  "utf8"
+);
 const strategyExperimentSectionSource = readFileSync(
   new URL("../components/StrategyExperimentSection.tsx", import.meta.url),
   "utf8"
@@ -514,6 +518,38 @@ describe("terminal layout css", () => {
       "color: var(--text);",
     ])).toBe(true);
     expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row', [
+      "border-color: var(--border);",
+      "color: var(--muted);",
+    ])).toBe(true);
+  });
+
+  test("uses the light palette throughout the backtest workspace", () => {
+    expect(terminalWorkspaceSurfaceSource).toContain("getComputedStyle(canvas)");
+    expect(terminalWorkspaceSurfaceSource).toContain("colorScheme: ColorScheme;");
+    expect(terminalWorkspaceSurfaceSource).toContain("[colorScheme, points, tone]");
+    expect(terminalWorkspaceSurfaceSource).toContain('themeColor("--chart-grid"');
+    expect(terminalWorkspaceSurfaceSource).toContain('themeColor("--chart-teal"');
+    expect(terminalWorkspaceSurfaceSource).toContain('themeColor("--chart-red"');
+    expect(hasCssBlockWith('.terminal-shell[data-theme="dark"]', [
+      "--chart-grid: #183047;",
+      "--chart-teal: #58d6b9;",
+      "--chart-blue: #5f9fff;",
+      "--chart-red: #ff6257;",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"]', [
+      "--chart-grid: #c9d6e0;",
+      "--chart-teal: #087f6d;",
+      "--chart-blue: #2563eb;",
+      "--chart-red: #c83f38;",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-backtest .design-chart-empty', [
+      "background: var(--surface-raised);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-backtest .design-metric-row', [
+      "border-color: var(--border);",
+      "background: var(--surface-raised);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-backtest .design-history-row', [
       "border-color: var(--border);",
       "color: var(--muted);",
     ])).toBe(true);

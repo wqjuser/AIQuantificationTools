@@ -24,6 +24,7 @@ describe("TerminalWorkspaceSurface", () => {
     action: { label: "运行", onClick: () => undefined },
     adapterRows: buildBrokerAdapterRows(workspace),
     chart: <div>chart</div>,
+    colorScheme: "dark" as const,
     executionCandidate: null,
     isSavingWatchlist: false,
     latestWatchlistCacheRefresh: null,
