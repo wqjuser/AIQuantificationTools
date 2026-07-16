@@ -2452,6 +2452,9 @@ export function App() {
     resolveInitialWatchlistCacheRefreshRunId
   );
   const [isChartExpanded, setIsChartExpanded] = useState(false);
+  const [isResearchPipelineConfirmationOpen, setIsResearchPipelineConfirmationOpen] = useState(false);
+  const researchPipelineConfirmationDialogRef = useRef<HTMLDialogElement | null>(null);
+  const researchPipelineConfirmationCancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [p0PaperSimulationRecord, setP0PaperSimulationRecord] = useState<P0PaperSimulationResponse | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -6850,8 +6853,9 @@ export function App() {
     }
   }, []);
 
-  const runPipeline = useCallback(async () => {
+  const runPipeline = useCallback(async (confirmation?: "accepted") => {
     if (!researchPipelinePreflight.canRun) {
+      setIsResearchPipelineConfirmationOpen(false);
       setActiveWorkAreaId("research");
       setActiveLoopStepId("research");
       setWorkspaceState((current) => ({
@@ -6861,12 +6865,11 @@ export function App() {
       }));
       return;
     }
-    if (
-      researchPipelinePreflight.requiresConfirmation &&
-      !window.confirm(researchPipelinePreflightConfirmMessage(i18n, researchPipelinePreflight))
-    ) {
+    if (researchPipelinePreflight.requiresConfirmation && confirmation !== "accepted") {
+      setIsResearchPipelineConfirmationOpen(true);
       return;
     }
+    setIsResearchPipelineConfirmationOpen(false);
 
     const runId = workflowRunIdRef.current + 1;
     workflowRunIdRef.current = runId;
@@ -12951,6 +12954,13 @@ export function App() {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [isChartExpanded]);
 
+  useEffect(() => {
+    if (isResearchPipelineConfirmationOpen && !researchPipelineConfirmationDialogRef.current?.open) {
+      researchPipelineConfirmationDialogRef.current?.showModal();
+      researchPipelineConfirmationCancelButtonRef.current?.focus();
+    }
+  }, [isResearchPipelineConfirmationOpen]);
+
   const runActiveWorkflowAction = useCallback(() => {
     if (activeLoopStepId === "strategy") {
       runAiWorkbenchAction("strategy-draft");
@@ -14520,7 +14530,7 @@ export function App() {
             <button
               className="run-button"
               disabled={isRefreshing || isRunning || !researchPipelinePreflight.canRun}
-              onClick={runPipeline}
+              onClick={() => void runPipeline()}
               title={researchPipelinePreflightStatusLabel(i18n, researchPipelinePreflight)}
             >
               {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
@@ -16043,6 +16053,69 @@ export function App() {
           <small>{i18n.locale === "zh-CN" ? "不发送真实指令" : "No live order submission"}</small>
         </div>
       </footer>
+
+      {isResearchPipelineConfirmationOpen ? (
+        <dialog
+          aria-describedby="research-pipeline-confirmation-detail"
+          aria-labelledby="research-pipeline-confirmation-title"
+          aria-modal="true"
+          className="research-confirmation-dialog"
+          onCancel={() => setIsResearchPipelineConfirmationOpen(false)}
+          ref={researchPipelineConfirmationDialogRef}
+          role="alertdialog"
+        >
+          <section className="research-confirmation-modal">
+            <header>
+              <div>
+                <span className="research-confirmation-kicker">
+                  <ShieldCheck size={15} />
+                  {i18n.locale === "zh-CN" ? "研究上下文复核" : "Research context review"}
+                </span>
+                <h2 id="research-pipeline-confirmation-title">
+                  {i18n.locale === "zh-CN"
+                    ? `仍有 ${researchPipelinePreflight.issues.length} 项需要确认`
+                    : `${researchPipelinePreflight.issues.length} items still need confirmation`}
+                </h2>
+              </div>
+              <button
+                aria-label={i18n.locale === "zh-CN" ? "关闭复核" : "Close review"}
+                className="panel-icon-button"
+                onClick={() => setIsResearchPipelineConfirmationOpen(false)}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <p id="research-pipeline-confirmation-detail">
+              {i18n.locale === "zh-CN"
+                ? "这些项目不会阻止审计运行，但可能影响研究结果的解释。请确认后继续。"
+                : "These items do not block the audited run, but they may affect how its results are interpreted."}
+            </p>
+            <div className="research-confirmation-issues">
+              {researchPipelinePreflight.issues.map((issue) => (
+                <article key={issue.id}>
+                  <span>{researchPipelinePreflightIssueLabel(i18n, issue)}</span>
+                  <strong>{issue.value}</strong>
+                </article>
+              ))}
+            </div>
+            <footer className="research-confirmation-actions">
+              <button
+                className="design-secondary-action"
+                onClick={() => setIsResearchPipelineConfirmationOpen(false)}
+                ref={researchPipelineConfirmationCancelButtonRef}
+                type="button"
+              >
+                {i18n.locale === "zh-CN" ? "返回检查" : "Review first"}
+              </button>
+              <button className="run-button" onClick={() => void runPipeline("accepted")} type="button">
+                <Play size={15} />
+                {i18n.locale === "zh-CN" ? "仍然运行" : "Run anyway"}
+              </button>
+            </footer>
+          </section>
+        </dialog>
+      ) : null}
 
       {isChartExpanded ? (
         <div className="chart-modal-backdrop" role="dialog" aria-modal="true" aria-label={i18n.t("panel.chart.title")}>
@@ -21279,16 +21352,6 @@ function strategyDraftReauditHint(
   return i18n.locale === "zh-CN"
     ? "请先运行流水线审计当前策略草稿，再提交模拟委托。"
     : "Run Pipeline to audit this strategy draft before paper execution.";
-}
-
-function researchPipelinePreflightConfirmMessage(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {
-  const issues = preflight.issues
-    .map((issue) => `- ${researchPipelinePreflightIssueLabel(i18n, issue)}: ${issue.value}`)
-    .join("\n");
-  if (i18n.locale === "zh-CN") {
-    return `研究上下文仍有 ${preflight.issues.length} 项需复核：\n${issues}\n\n仍然运行审计流水线吗？`;
-  }
-  return `${preflight.summary}\n${issues}\n\nRun the audited pipeline anyway?`;
 }
 
 function researchPipelinePreflightIssueLabel(

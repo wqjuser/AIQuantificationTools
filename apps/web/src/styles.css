@@ -12337,6 +12337,117 @@ em {
   min-height: 0;
 }
 
+.research-confirmation-dialog {
+  max-width: none;
+  max-height: none;
+  border: 0;
+  background: transparent;
+  color: #dce6ee;
+  padding: 0;
+}
+
+.research-confirmation-dialog::backdrop {
+  background: rgb(4 8 13 / 78%);
+  backdrop-filter: blur(3px);
+}
+
+.research-confirmation-modal {
+  display: grid;
+  gap: 14px;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  border: 1px solid #385168;
+  border-top-color: #d3a947;
+  border-radius: 10px;
+  background: #0f1a26;
+  box-shadow: 0 28px 80px rgb(0 0 0 / 58%);
+  padding: 20px;
+}
+
+.research-confirmation-modal header,
+.research-confirmation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.research-confirmation-modal header > div {
+  display: grid;
+  gap: 5px;
+}
+
+.research-confirmation-modal h2,
+.research-confirmation-modal p {
+  margin: 0;
+}
+
+.research-confirmation-modal h2 {
+  font-size: 18px;
+}
+
+.research-confirmation-modal p {
+  color: #93a3b3;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.research-confirmation-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #e8be62;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.research-confirmation-issues {
+  display: grid;
+  gap: 7px;
+}
+
+.research-confirmation-issues article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #2a3b51;
+  border-radius: 7px;
+  background: #121d2a;
+  padding: 10px 12px;
+}
+
+.research-confirmation-issues span {
+  color: #aebbc6;
+  font-size: 11px;
+}
+
+.research-confirmation-issues strong {
+  min-width: 0;
+  color: #f0c765;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.research-confirmation-actions {
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.research-confirmation-actions button {
+  min-height: 36px;
+  padding: 0 14px;
+}
+
+.research-confirmation-actions .design-secondary-action {
+  border-color: #3a4a5d;
+  background: #151f2b;
+  color: #b6c2cc;
+}
+
 .strategy-workbench {
   display: grid;
   gap: 10px;

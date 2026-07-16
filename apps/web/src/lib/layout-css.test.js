@@ -96,7 +96,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".market-layout,\n.operations-layout")).toContain('"research-ops data"');
     expect(appSource).not.toContain('className="terminal-evidence-trigger"');
     expect(appSource).not.toContain("legacyWorkspaceDialogRef");
-    expect(appSource).not.toContain("<dialog");
+    expect(operationsWorkspaceSource).not.toContain("<dialog");
     expect(cssBlock(".terminal-operations-workspace")).toContain("overflow-y: auto;");
     expect(operationsWorkspaceSource).not.toContain('renderChartPanel("chart-panel workflow-chart-panel")');
     expect(cssBlock(
@@ -3822,6 +3822,27 @@ describe("terminal layout css", () => {
     expect(runPipelineSource).toContain('setActiveWorkAreaId("strategy")');
     expect(runPipelineSource).toContain("setStrategyValidationState(preflight)");
     expect(runPipelineSource).toContain("Strategy preflight blocked");
+  });
+
+  test("uses a themed research preflight dialog instead of browser confirmation", () => {
+    const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
+    const confirmationDialogSource = sourceBetween("{isResearchPipelineConfirmationOpen ? (", "{isChartExpanded ? (");
+
+    expect(appSource).not.toContain("window.confirm");
+    expect(runPipelineSource).toContain("setIsResearchPipelineConfirmationOpen(true)");
+    expect(runPipelineSource).toContain('confirmation !== "accepted"');
+    expect(appSource).toContain("researchPipelineConfirmationDialogRef.current?.showModal()");
+    expect(appSource).toContain("researchPipelineConfirmationCancelButtonRef.current?.focus()");
+    expect(appSource).toContain("<dialog");
+    expect(appSource).toContain('role="alertdialog"');
+    expect(appSource).toContain('className="research-confirmation-dialog"');
+    expect(appSource).toContain('className="research-confirmation-modal"');
+    expect(appSource).toContain("!researchPipelineConfirmationDialogRef.current?.open");
+    expect(confirmationDialogSource).toContain("onCancel={() => setIsResearchPipelineConfirmationOpen(false)}");
+    expect(confirmationDialogSource).toContain("ref={researchPipelineConfirmationCancelButtonRef}");
+    expect(appSource).toContain('void runPipeline("accepted")');
+    expect(cssBlock(".research-confirmation-dialog")).toContain("background: transparent;");
+    expect(cssBlock(".research-confirmation-modal")).toContain("width: min(520px, calc(100vw - 32px));");
   });
 
   test("preflights strategy readiness before saving a strategy version", () => {
