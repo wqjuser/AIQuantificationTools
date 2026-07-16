@@ -52,5 +52,6 @@
 8. 研究工作台底部贴合第一轮只比较了主网格底边与状态栏上沿，虽然两者同为 900px，但遗漏了外层内容容器只显示到 884px，导致 16px 仍被裁掉；用户复验因此正确判定间距仍在。
 9. 根因修复专项：源图为 `/Users/wenqingjie/Library/Containers/com.sw33tlie.macshot.macshot/Data/Library/Application Support/com.sw33tlie.macshot/clipboard/Screenshot 2026-07-16 at 17-51-10.png`，最终实现截图为 `/private/tmp/aiquant-research-gap-root-final.png`；视口 `1680 × 962`，浅色主题，研究工作台、`600000`、日 K 状态。外层主容器遗留的三行网格产生两个 8px 空行间隔；研究页桌面端清除该行间距后，主网格、可见内容容器与状态栏边界均为 900px，可见间距为 0px，页面无横向溢出。字体、颜色、图表资产、文案和交互均未改动，复验无 P0/P1/P2 遗留。
 10. 全工作区复验确认该缺陷属于共享主布局，而非研究页专属：研究页临时修复前，其余 9 个工作区的主容器均为 `row-gap: 8px`，两个遗留空行间隔使内容底边停在 884px，距 900px 状态栏上沿恰好 16px。桌面端现统一由共享 `.terminal-main` 清除行间距；在 `1680 × 962` Docker 页面逐一复验行情、研究、策略、回测、AI、组合、执行、运行管理、审计和设置，10 个工作区的内容底边与状态栏上沿均为 900px，可见间距全部为 0px，且均无页面级横向溢出。
+11. 策略工坊日间配色专项：源图为 `/Users/wenqingjie/Library/Containers/com.sw33tlie.macshot.macshot/Data/Library/Application Support/com.sw33tlie.macshot/clipboard/Screenshot 2026-07-16 at 19-19-03.png`，实现截图为 `/private/tmp/aiquant-strategy-light-after.png`；视口 `2048 × 1027`，浅色主题，策略工坊状态。首轮全图对照发现搜索输入、策略卡片和规则标题仍使用深色背景，规则正文、验证指标和修订记录沿用深色主题低对比前景色，均记为 P2。修复后这些组件统一复用现有浅色 surface、border、text、muted、teal 变量，选中卡片使用浅青绿色背景；同尺寸复验无横向溢出，切换主题动作正常，字体与层级、间距与布局、颜色与状态语义、品牌图标资产、文案内容均无新增偏差。受影响控件在原始全图尺寸已清晰可读，因此不再制作独立裁剪；最终无 P0/P1/P2 遗留。
 
 final result: passed

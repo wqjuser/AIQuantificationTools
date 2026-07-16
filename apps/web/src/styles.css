@@ -21397,6 +21397,67 @@ button.ai-review-record {
   border-color: #d3dde5;
 }
 
+.terminal-shell[data-theme="light"] .surface-strategy .design-search,
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-group {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-search input {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-search input::placeholder {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card.selected {
+  border-left-color: var(--teal);
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card strong,
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card span,
+.terminal-shell[data-theme="light"] .surface-strategy .design-big-metric {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-group > header {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row em,
+.terminal-shell[data-theme="light"] .surface-strategy .design-big-metric span,
+.terminal-shell[data-theme="light"] .surface-strategy .design-history-row {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-history-row {
+  border-color: var(--border);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-history-row i {
+  border-color: var(--border-strong);
+}
+
 .terminal-shell[data-theme="light"] .design-primary-action,
 .terminal-shell[data-theme="light"] .design-secondary-action,
 .terminal-shell[data-theme="light"] .design-link-button,

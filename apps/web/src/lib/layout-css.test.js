@@ -495,6 +495,30 @@ describe("terminal layout css", () => {
     expect(styles).toContain('.terminal-shell[data-theme="light"] .theme-toggle-button');
   });
 
+  test("keeps strategy workshop controls readable in the light theme", () => {
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-strategy .design-search input', [
+      "background: var(--surface);",
+      "color: var(--text);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-strategy .design-list-card', [
+      "border-color: var(--border);",
+      "background: var(--surface-raised);",
+      "color: var(--muted);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-strategy .design-list-card.selected', [
+      "border-left-color: var(--teal);",
+      "background: var(--teal-dim);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-strategy .design-rule-group > header', [
+      "background: var(--surface-raised);",
+      "color: var(--text);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row', [
+      "border-color: var(--border);",
+      "color: var(--muted);",
+    ])).toBe(true);
+  });
+
   test("lets operators generate the P2 manifest chain preflight from the execution panel", () => {
     const panelSource = sourceBetween("function P2ManifestChainPreflightPanel", "function AdapterChainHealthPanel");
 
