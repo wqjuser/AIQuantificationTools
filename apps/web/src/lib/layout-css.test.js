@@ -113,11 +113,14 @@ describe("terminal layout css", () => {
     expect(styles).toContain("display: table-cell;");
   });
 
-  test("fills the desktop research workspace without orphan grid cells", () => {
+  test("removes legacy desktop row gaps from every workspace", () => {
     expect(styles).toContain("@media (min-width: 1301px) {");
-    expect(hasCssBlockWith('  .terminal-main[data-workspace="research"]', [
+    expect(hasCssBlockWith("  .terminal-main", [
       "row-gap: 0;",
     ])).toBe(true);
+  });
+
+  test("fills the desktop research workspace without orphan grid cells", () => {
     expect(hasCssBlockWith("  .design-research-grid", [
       "min-height: max(744px, calc(100vh - 180px));",
       "grid-template-rows: 470px minmax(264px, 1fr);",

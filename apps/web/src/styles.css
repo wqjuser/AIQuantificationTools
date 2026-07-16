@@ -17251,7 +17251,7 @@ em {
 }
 
 @media (min-width: 1301px) {
-  .terminal-main[data-workspace="research"] {
+  .terminal-main {
     row-gap: 0;
   }
 
