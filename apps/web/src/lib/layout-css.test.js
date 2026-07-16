@@ -113,6 +113,50 @@ describe("terminal layout css", () => {
     expect(styles).toContain("display: table-cell;");
   });
 
+  test("fills the desktop research workspace without orphan grid cells", () => {
+    expect(styles).toContain("@media (min-width: 1301px) {");
+    expect(hasCssBlockWith("  .design-research-grid", [
+      "min-height: max(744px, calc(100vh - 190px));",
+      "grid-template-rows: 470px minmax(264px, 1fr);",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-timeline", [
+      "grid-column: 3 / 5;",
+      "grid-row: 1;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-runs", [
+      "grid-column: 1 / 3;",
+      "grid-row: 2;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-side", [
+      "grid-column: 3 / 5;",
+      "grid-row: 2;",
+      "grid-template-columns: repeat(2, minmax(0, 1fr));",
+      "grid-template-rows: minmax(132px, 1fr) minmax(110px, 1fr);",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-side .design-panel-head", [
+      "min-height: 30px;",
+      "padding: 4px 8px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-side .design-kv-row", [
+      "min-height: 22px;",
+    ])).toBe(true);
+    expect(styles).toContain("@media (min-width: 1101px) and (max-width: 1300px) {");
+    expect(hasCssBlockWith("  .design-research-grid", [
+      "grid-template-columns: minmax(0, 1fr) 270px;",
+      "grid-template-rows: 470px minmax(225px, auto);",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-factor-panel,\n  .design-research-timeline", [
+      "display: none;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-side", [
+      "grid-column: 2;",
+      "grid-row: 1 / 3;",
+      "grid-template-columns: minmax(0, 1fr);",
+      "grid-template-rows: none;",
+      "align-content: stretch;",
+    ])).toBe(true);
+  });
+
   test("renders the Stage 4 golden path once in Portfolio and restores all authoritative evidence", () => {
     const portfolioSource = sourceBetween(
       'if (activeWorkAreaId === "portfolio")',
