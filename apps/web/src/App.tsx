@@ -290,6 +290,7 @@ import {
   Stage9ProductionAdmissionAuditLedgerPanel
 } from "./components/ExecutionStage9ProductionAdmissionSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
+import { resolveInitialColorScheme, type ColorScheme } from "./lib/theme";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
   buildStage4PortfolioGoldenPath,
@@ -2367,8 +2368,12 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(() =>
+    resolveInitialColorScheme(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.theme"))
+  );
   const initialWorkAreaSelection = resolveInitialWorkAreaSelection(workspace);
   const [activeWorkAreaId, setActiveWorkAreaId] = useState<ProductWorkAreaId>(() => initialWorkAreaSelection.areaId);
+  const appliedColorScheme: ColorScheme = activeWorkAreaId === "market" ? colorScheme : "dark";
   const [activeLoopStepId, setActiveLoopStepId] = useState(() => initialWorkAreaSelection.quantLoopStepId);
   const [activeWorkflowStageId, setActiveWorkflowStageId] = useState(
     () => initialWorkAreaSelection.workflowStageId
@@ -12847,6 +12852,15 @@ export function App() {
   }, [locale]);
 
   useEffect(() => {
+    window.localStorage.setItem("aiqt.theme", colorScheme);
+  }, [colorScheme]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = appliedColorScheme;
+    document.documentElement.style.colorScheme = appliedColorScheme;
+  }, [appliedColorScheme]);
+
+  useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const url = new URL(replaceAiReviewRunIdInUrl(
       currentUrl.toString(),
@@ -13158,6 +13172,7 @@ export function App() {
         <KlineChartCanvas
           key={`${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
           bars={klinesState.bars}
+          colorScheme={appliedColorScheme}
           locale={locale}
           market={klinesState.market}
           onLoadHistorical={loadHistoricalKlines}
@@ -14246,7 +14261,7 @@ export function App() {
   })();
 
   return (
-    <div className="terminal-shell">
+    <div className="terminal-shell" data-theme={appliedColorScheme}>
       <aside className="left-rail">
         <div className="brand">
           <img className="brand-mark" src="/aiqt-logo.png" alt="AIQuantificationTools" />
@@ -14302,16 +14317,29 @@ export function App() {
           </nav>
         </section>
 
-        <section className="rail-profile">
+        <section className="rail-profile" data-theme-available={activeWorkAreaId === "market"}>
           <span className="rail-avatar">AQ</span>
           <span>
             <strong>quant.user</strong>
             <small>{i18n.locale === "zh-CN" ? "研究员 · Level 3" : "Researcher · Level 3"}</small>
           </span>
-          <div className="rail-profile-controls">
-            <span>{i18n.locale === "zh-CN" ? "深色模式" : "Dark mode"}</span>
-            <i aria-hidden="true" />
-          </div>
+          {activeWorkAreaId === "market" ? (
+            <button
+              aria-checked={colorScheme === "dark"}
+              className="rail-profile-controls"
+              onClick={() => setColorScheme((current) => (current === "dark" ? "light" : "dark"))}
+              role="switch"
+              title={
+                i18n.locale === "zh-CN"
+                  ? colorScheme === "dark" ? "切换到浅色模式" : "切换到深色模式"
+                  : colorScheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+              }
+              type="button"
+            >
+              <span>{i18n.locale === "zh-CN" ? "深色模式" : "Dark mode"}</span>
+              <i aria-hidden="true" />
+            </button>
+          ) : null}
           <time dateTime={workspace.researchRun?.createdAt ?? ""}>
             {workspace.researchRun
               ? new Date(workspace.researchRun.createdAt).toLocaleString("zh-CN", {
@@ -14440,8 +14468,6 @@ export function App() {
             </form>
             <span className="terminal-paper-badge">纸面环境</span>
             <span className="terminal-live-badge">实盘阻断</span>
-            <span className="terminal-notification" aria-label="通知"><Activity size={16} /><em>3</em></span>
-            <span className="terminal-top-avatar">AQ</span>
             <button
               className="context-link-button"
               onClick={() => void copyResearchContextLink()}
@@ -14513,6 +14539,7 @@ export function App() {
               <KlineChartCanvas
                 key={`surface-${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
                 bars={klinesState.bars}
+                colorScheme={appliedColorScheme}
                 locale={locale}
                 market={klinesState.market}
                 onLoadHistorical={loadHistoricalKlines}
@@ -16039,6 +16066,7 @@ export function App() {
               <KlineChartCanvas
                 key={`expanded-${klinesState.market}-${klinesState.symbol}-${klinesState.timeframe}`}
                 bars={klinesState.bars}
+                colorScheme={appliedColorScheme}
                 locale={locale}
                 market={klinesState.market}
                 onLoadHistorical={loadHistoricalKlines}
@@ -36182,6 +36210,7 @@ function agentEvidenceDetail(i18n: AppI18n, card: AiEvidenceCard): string {
 
 function KlineChartCanvas({
   bars,
+  colorScheme,
   locale,
   market,
   onLoadHistorical,
@@ -36189,6 +36218,7 @@ function KlineChartCanvas({
   timeframe
 }: {
   bars: MarketKlinesResult["bars"];
+  colorScheme: ColorScheme;
   locale: Locale;
   market: Market;
   onLoadHistorical?: (beforeTimestampMs: number) => Promise<MarketKlinesResult["bars"]>;
@@ -36210,7 +36240,7 @@ function KlineChartCanvas({
     }
     const chart = init(containerRef.current, {
       locale,
-      styles: "dark",
+      styles: colorScheme,
       timezone: "Asia/Shanghai"
     });
     chartRef.current = chart;
@@ -36271,6 +36301,10 @@ function KlineChartCanvas({
   useEffect(() => {
     chartRef.current?.setLocale(locale);
   }, [locale]);
+
+  useEffect(() => {
+    chartRef.current?.setStyles(colorScheme);
+  }, [colorScheme]);
 
   useEffect(() => {
     const chart = chartRef.current;

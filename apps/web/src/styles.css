@@ -16647,8 +16647,20 @@ em {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
+  border: 0;
   border-top: 1px solid #1f3447;
-  padding-top: 9px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  padding: 9px 0 0;
+  text-align: left;
+}
+
+.rail-profile-controls:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid #58d6b9;
+  outline-offset: 3px;
 }
 
 .rail-profile-controls i {
@@ -16668,6 +16680,15 @@ em {
   border-radius: 50%;
   background: #0a1724;
   content: "";
+}
+
+.rail-profile-controls[aria-checked="false"] i {
+  background: #41586c;
+}
+
+.rail-profile-controls[aria-checked="false"] i::after {
+  right: auto;
+  left: 2px;
 }
 
 .rail-profile time {
@@ -16760,6 +16781,12 @@ em {
   font-size: 10px;
 }
 
+.symbol-field input:focus-visible {
+  border-color: #58d6b9;
+  outline: 2px solid rgb(88 214 185 / 24%);
+  outline-offset: 1px;
+}
+
 .terminal-paper-badge,
 .terminal-live-badge {
   display: inline-flex;
@@ -16776,43 +16803,6 @@ em {
 .terminal-live-badge {
   border-color: #a93332;
   color: #ff6257;
-}
-
-.terminal-notification {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  color: #bdc9d3;
-}
-
-.terminal-notification em {
-  position: absolute;
-  top: -3px;
-  right: -2px;
-  display: grid;
-  place-items: center;
-  width: 15px;
-  height: 15px;
-  border-radius: 999px;
-  background: #e94d43;
-  color: white;
-  font-size: 9px;
-  font-style: normal;
-}
-
-.terminal-top-avatar {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid #2b4055;
-  border-radius: 999px;
-  background: #172536;
-  color: #cbd6df;
-  font-size: 10px;
 }
 
 .terminal-design-surface {
@@ -18074,8 +18064,7 @@ em {
     padding: 5px 8px;
   }
   .terminal-global-tape span:not(.terminal-data-fresh),
-  .terminal-paper-badge,
-  .terminal-notification {
+  .terminal-paper-badge {
     display: none;
   }
   .symbol-field input {
@@ -21094,5 +21083,380 @@ button.ai-review-record {
 
   .design-empty-state span {
     font-size: 9.5px;
+  }
+}
+
+/* The terminal defaults to dark, but the operator can persist a light workspace. */
+:root[data-theme="light"] {
+  --canvas: #edf3f7;
+  --rail: #f7fafc;
+  --surface: #ffffff;
+  --surface-raised: #f2f6f9;
+  --border: #c9d6e0;
+  --border-strong: #aebfcd;
+  --text: #172536;
+  --muted: #607386;
+  --teal: #087f6d;
+  --teal-dim: #d9f1eb;
+  --amber: #936207;
+  --danger: #c83f38;
+  color: var(--text);
+  background: var(--canvas);
+}
+
+:root[data-theme="light"] body {
+  background: var(--canvas);
+}
+
+.terminal-shell[data-theme="light"] {
+  color: var(--text);
+  background: var(--canvas);
+}
+
+.terminal-shell[data-theme="light"] .left-rail {
+  border-color: #c8d5df;
+  background: var(--rail);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .brand,
+.terminal-shell[data-theme="light"] .work-area-group,
+.terminal-shell[data-theme="light"] .rail-profile-controls {
+  border-color: #d6e0e7;
+}
+
+.terminal-shell[data-theme="light"] .brand-mark {
+  border-color: #b8c8d4;
+}
+
+.terminal-shell[data-theme="light"] .brand strong,
+.terminal-shell[data-theme="light"] .rail-profile strong {
+  color: #1e2d3d;
+}
+
+.terminal-shell[data-theme="light"] .brand span,
+.terminal-shell[data-theme="light"] .rail-profile small,
+.terminal-shell[data-theme="light"] .rail-profile time,
+.terminal-shell[data-theme="light"] .rail-profile-controls,
+.terminal-shell[data-theme="light"] .work-area-group-label {
+  color: #65788a;
+}
+
+.terminal-shell[data-theme="light"] .rail-avatar {
+  border-color: #aebfcd;
+  background: #e4ebf1;
+  color: #33495e;
+}
+
+.terminal-shell[data-theme="light"] .rail-profile {
+  border-color: #c8d6e1;
+  background: #f0f5f8;
+}
+
+.terminal-shell[data-theme="light"] .rail-profile-controls[aria-checked="false"] i {
+  background: #9cadba;
+}
+
+.terminal-shell[data-theme="light"] .rail-profile-controls i::after {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(45 67 84 / 24%);
+}
+
+.terminal-shell[data-theme="light"] .work-area-button svg,
+.terminal-shell[data-theme="light"] .work-area-button .work-area-copy strong {
+  color: #536779;
+}
+
+.terminal-shell[data-theme="light"] .left-rail .work-area-button:hover {
+  border-color: #b8c9d5;
+  background: #e7eef3;
+}
+
+.terminal-shell[data-theme="light"] .left-rail .work-area-button.selected,
+.terminal-shell[data-theme="light"] .left-rail .work-area-button.active {
+  border-color: #72ad9f;
+  border-left-color: #168b77;
+  background: #dcefe9;
+}
+
+.terminal-shell[data-theme="light"] .work-area-button.selected svg,
+.terminal-shell[data-theme="light"] .work-area-button.selected .work-area-copy strong {
+  color: #087f6d;
+}
+
+.terminal-shell[data-theme="light"] .terminal-main {
+  background: var(--canvas);
+}
+
+.terminal-shell[data-theme="light"] .terminal-topbar {
+  border-color: #cad6df;
+  background: rgb(248 251 253 / 96%);
+}
+
+.terminal-shell[data-theme="light"] .terminal-global-tape,
+.terminal-shell[data-theme="light"] .terminal-data-fresh {
+  color: #627587;
+}
+
+.terminal-shell[data-theme="light"] .terminal-global-tape em {
+  color: #087f6d;
+}
+
+.terminal-shell[data-theme="light"] .symbol-switcher {
+  border-color: #b9c9d5;
+  background: #ffffff;
+}
+
+.terminal-shell[data-theme="light"] .symbol-field input,
+.terminal-shell[data-theme="light"] .symbol-suggestions,
+.terminal-shell[data-theme="light"] .symbol-suggestions button,
+.terminal-shell[data-theme="light"] .symbol-suggestion-state {
+  border-color: #b9c9d5;
+  background: #ffffff;
+  color: #213346;
+}
+
+.terminal-shell[data-theme="light"] .symbol-field input::placeholder,
+.terminal-shell[data-theme="light"] .symbol-suggestions button em,
+.terminal-shell[data-theme="light"] .symbol-suggestions button small,
+.terminal-shell[data-theme="light"] .symbol-suggestion-state {
+  color: #6c7e8f;
+}
+
+.terminal-shell[data-theme="light"] .symbol-suggestions {
+  box-shadow: 0 18px 42px rgb(34 57 76 / 18%);
+}
+
+.terminal-shell[data-theme="light"] .symbol-suggestions button:hover {
+  background: #e6f2ee;
+}
+
+.terminal-shell[data-theme="light"] .terminal-design-surface {
+  color: #243648;
+  scrollbar-color: #9eafbc transparent;
+}
+
+.terminal-shell[data-theme="light"] .design-page-header h2,
+.terminal-shell[data-theme="light"] .design-panel-head h3 {
+  color: #172536;
+}
+
+.terminal-shell[data-theme="light"] .design-page-header > div > span,
+.terminal-shell[data-theme="light"] .design-panel-head span,
+.terminal-shell[data-theme="light"] .design-meta-line,
+.terminal-shell[data-theme="light"] .design-inline-quote {
+  color: #65788a;
+}
+
+.terminal-shell[data-theme="light"] .design-panel {
+  border-color: #c4d2dc;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(34 57 76 / 7%);
+}
+
+.terminal-shell[data-theme="light"] .design-panel-head,
+.terminal-shell[data-theme="light"] .design-market-quote,
+.terminal-shell[data-theme="light"] .design-market-timeframes,
+.terminal-shell[data-theme="light"] .design-chart-host .chart-data-strip {
+  border-color: #d3dde5;
+}
+
+.terminal-shell[data-theme="light"] .design-primary-action,
+.terminal-shell[data-theme="light"] .design-secondary-action,
+.terminal-shell[data-theme="light"] .design-link-button,
+.terminal-shell[data-theme="light"] .design-header-actions button {
+  border-color: #65a899;
+  background: #e1f1ec;
+  color: #087563;
+}
+
+.terminal-shell[data-theme="light"] .design-table {
+  color: #42576a;
+}
+
+.terminal-shell[data-theme="light"] .design-table th,
+.terminal-shell[data-theme="light"] .design-table td {
+  border-color: #d9e2e8;
+}
+
+.terminal-shell[data-theme="light"] .design-table th {
+  background: #f4f7f9;
+  color: #607486;
+}
+
+.terminal-shell[data-theme="light"] .design-table tr.selected {
+  background: #dcefe9;
+}
+
+.terminal-shell[data-theme="light"] .design-table tbody tr:hover {
+  background: #eef4f7;
+}
+
+.terminal-shell[data-theme="light"] .design-status {
+  border-color: #6eaa9c;
+  color: #087f6d;
+}
+
+.terminal-shell[data-theme="light"] .design-status.warning {
+  border-color: #b9903c;
+  color: #8a5e0c;
+}
+
+.terminal-shell[data-theme="light"] .design-status.risk {
+  border-color: #d08782;
+  color: #b93731;
+}
+
+.terminal-shell[data-theme="light"] .design-status.neutral {
+  border-color: #9cabb8;
+  color: #52677a;
+}
+
+.terminal-shell[data-theme="light"] .design-kv-row,
+.terminal-shell[data-theme="light"] .design-check-row,
+.terminal-shell[data-theme="light"] .design-factor-row,
+.terminal-shell[data-theme="light"] .design-coverage-row {
+  border-color: #d9e2e8;
+  color: #52677a;
+}
+
+.terminal-shell[data-theme="light"] .design-market-quote,
+.terminal-shell[data-theme="light"] .design-market-timeframes {
+  color: #607486;
+}
+
+.terminal-shell[data-theme="light"] .design-market-quote strong,
+.terminal-shell[data-theme="light"] .design-market-timeframes button.active,
+.terminal-shell[data-theme="light"] .up {
+  color: #087f6d !important;
+}
+
+.terminal-shell[data-theme="light"] .down {
+  color: #c83f38 !important;
+}
+
+.terminal-shell[data-theme="light"] .design-progress,
+.terminal-shell[data-theme="light"] .design-watchlist-market-row i {
+  background: #d9e3ea;
+}
+
+.terminal-shell[data-theme="light"] .design-progress span,
+.terminal-shell[data-theme="light"] .design-watchlist-market-row b {
+  background: #168b77;
+}
+
+.terminal-shell[data-theme="light"] .design-watchlist-overview {
+  border-color: #d5dfe6;
+  background: #f8fafb;
+}
+
+.terminal-shell[data-theme="light"] .design-watchlist-overview-head,
+.terminal-shell[data-theme="light"] .design-watchlist-overview-foot,
+.terminal-shell[data-theme="light"] .design-watchlist-market-breakdown-head,
+.terminal-shell[data-theme="light"] .design-watchlist-market-row,
+.terminal-shell[data-theme="light"] .design-watchlist-overview-stats span {
+  color: #66798b;
+}
+
+.terminal-shell[data-theme="light"] .design-watchlist-overview-head strong,
+.terminal-shell[data-theme="light"] .design-watchlist-overview-foot strong,
+.terminal-shell[data-theme="light"] .design-watchlist-market-breakdown-head strong,
+.terminal-shell[data-theme="light"] .design-watchlist-market-row strong,
+.terminal-shell[data-theme="light"] .design-watchlist-overview-stats strong {
+  color: #26394b;
+}
+
+.terminal-shell[data-theme="light"] .design-watchlist-overview-stats,
+.terminal-shell[data-theme="light"] .design-watchlist-overview-stats article {
+  border-color: #d4dee6;
+}
+
+.terminal-shell[data-theme="light"] .chart-canvas {
+  border-color: #c7d4de;
+  background: #ffffff;
+}
+
+.terminal-shell[data-theme="light"] .chart-data-strip span,
+.terminal-shell[data-theme="light"] .chart-empty {
+  border-color: #c9d6df;
+  background: #f2f6f8;
+  color: #52677a;
+}
+
+.terminal-shell[data-theme="light"] .terminal-status-bar {
+  border-color: #c7d4dd;
+  background: rgb(247 250 252 / 97%);
+  box-shadow: 0 -10px 28px rgb(39 64 83 / 10%);
+}
+
+.terminal-shell[data-theme="light"] .terminal-status-item {
+  border-color: #cbd7e0;
+  background: #ffffff;
+}
+
+.terminal-shell[data-theme="light"] .terminal-status-item > span,
+.terminal-shell[data-theme="light"] .terminal-live-block > span {
+  color: #34495c;
+}
+
+.terminal-shell[data-theme="light"] .terminal-live-block {
+  border-color: #c77772;
+  background: #fff0ef;
+}
+
+.terminal-shell[data-theme="light"] .terminal-live-block strong {
+  color: #bd3731;
+}
+
+.terminal-shell[data-theme="light"] .terminal-live-block small {
+  color: #8b5653;
+}
+
+@media (max-width: 760px) {
+  .left-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    gap: 4px;
+  }
+
+  .left-rail .rail-section {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .left-rail .rail-profile[data-theme-available="true"] {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    width: 48px;
+    min-height: 48px;
+    border-radius: 5px;
+    padding: 0;
+    place-items: center;
+  }
+
+  .left-rail .rail-profile[data-theme-available="true"] > .rail-avatar,
+  .left-rail .rail-profile[data-theme-available="true"] > span,
+  .left-rail .rail-profile[data-theme-available="true"] > time {
+    display: none;
+  }
+
+  .left-rail .rail-profile[data-theme-available="true"] .rail-profile-controls {
+    grid-column: auto;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    padding: 0;
+  }
+
+  .left-rail .rail-profile[data-theme-available="true"] .rail-profile-controls span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }

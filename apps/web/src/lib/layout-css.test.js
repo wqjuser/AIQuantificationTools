@@ -408,6 +408,27 @@ describe("terminal layout css", () => {
     expect(cssBlock("h1")).toContain("white-space: nowrap;");
   });
 
+  test("uses a real persisted Market color-scheme switch without fake notification or account controls", () => {
+    const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
+    const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
+    const chartSource = sourceBetween("function KlineChartCanvas", "function toKlineChartData");
+
+    expect(appSource).toContain('activeWorkAreaId === "market" ? colorScheme : "dark"');
+    expect(appSource).toContain('data-theme={appliedColorScheme}');
+    expect(appSource).toContain('window.localStorage.setItem("aiqt.theme", colorScheme)');
+    expect(leftRailSource).toContain('role="switch"');
+    expect(leftRailSource).toContain('data-theme-available={activeWorkAreaId === "market"}');
+    expect(leftRailSource).toContain('aria-checked={colorScheme === "dark"}');
+    expect(leftRailSource).toContain('setColorScheme((current) => (current === "dark" ? "light" : "dark"))');
+    expect(topbarSource).not.toContain('className="terminal-notification"');
+    expect(topbarSource).not.toContain('className="terminal-top-avatar"');
+    expect(chartSource).toContain("styles: colorScheme");
+    expect(chartSource).toContain("setStyles(colorScheme)");
+    expect(styles).toContain(':root[data-theme="light"]');
+    expect(styles).toContain('.terminal-shell[data-theme="light"]');
+    expect(styles).toContain('.left-rail .rail-profile[data-theme-available="true"]');
+  });
+
   test("lets operators generate the P2 manifest chain preflight from the execution panel", () => {
     const panelSource = sourceBetween("function P2ManifestChainPreflightPanel", "function AdapterChainHealthPanel");
 
