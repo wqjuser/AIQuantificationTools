@@ -1,3 +1,4 @@
+import { createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -30,11 +31,13 @@ describe("TerminalWorkspaceSurface", () => {
     latestWatchlistCacheRefresh: null,
     marketRefreshIssue: null,
     onRemoveWatchlistInstrument: () => undefined,
+    onScrollPositionChange: () => undefined,
     onSelectInstrument: () => undefined,
     onSelectTimeframe: () => undefined,
     portfolio: null,
     runs: [],
     source: "fallback" as const,
+    surfaceRef: createRef<HTMLElement>(),
     workspace,
   };
 

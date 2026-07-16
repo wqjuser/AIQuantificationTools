@@ -17,7 +17,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Stage9ProductionAdmissionCandidate } from "../lib/stage9-production-admission";
 import type { CacheWatchlistRefreshRun, PortfolioBacktestRun } from "../lib/terminal-api";
 import type { ColorScheme } from "../lib/theme";
@@ -48,11 +48,13 @@ interface TerminalWorkspaceSurfaceProps {
   latestWatchlistCacheRefresh: CacheWatchlistRefreshRun | null;
   marketRefreshIssue: string | null;
   onRemoveWatchlistInstrument: (instrument: Instrument) => void;
+  onScrollPositionChange: (scrollTop: number) => void;
   onSelectInstrument: (instrument: Instrument) => void;
   onSelectTimeframe: (timeframe: Timeframe) => void;
   portfolio: PortfolioBacktestRun | null;
   runs: ResearchRunAudit[];
   source: "core" | "fallback";
+  surfaceRef: RefObject<HTMLElement | null>;
   workspace: TerminalWorkspace;
 }
 
@@ -2211,6 +2213,8 @@ export function TerminalWorkspaceSurface(props: TerminalWorkspaceSurfaceProps) {
     <section
       className={`terminal-design-surface surface-${props.activeWorkAreaId}`}
       aria-label={pageTitles[props.activeWorkAreaId]}
+      onScroll={(event) => props.onScrollPositionChange(event.currentTarget.scrollTop)}
+      ref={props.surfaceRef}
     >
       {content}
     </section>

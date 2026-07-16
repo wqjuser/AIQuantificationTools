@@ -18061,8 +18061,31 @@ em {
 }
 
 .terminal-operations-workspace .terminal-overview-grid {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   margin-bottom: 10px;
+}
+
+.terminal-operations-workspace .terminal-overview-grid .module-focus-card {
+  justify-content: space-between;
+  min-height: 68px;
+  padding: 10px 12px;
+}
+
+.terminal-operations-workspace .terminal-overview-grid .module-focus-card > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.terminal-operations-workspace .terminal-overview-grid .module-focus-actions {
+  display: grid;
+  flex: 0 1 520px;
+  grid-template-columns: auto minmax(220px, 1fr);
+  align-items: center;
+  max-width: 520px;
+}
+
+.terminal-operations-workspace .terminal-overview-grid .golden-path-action-hint {
+  margin: 0;
 }
 
 .terminal-operations-workspace .terminal-overview-grid .ticker,
@@ -18071,7 +18094,7 @@ em {
 }
 
 .terminal-operations-workspace .terminal-overview-grid .watchlist-strip {
-  display: block;
+  display: none;
 }
 
 .terminal-operations-workspace .watchlist-save-action {
@@ -18084,6 +18107,25 @@ em {
 .terminal-operations-workspace .watchlist-save-action span,
 .terminal-operations-workspace .watchlist-save-action em {
   display: inline;
+}
+
+.center-grid.operations-layout {
+  grid-template-areas: none;
+}
+
+.operations-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.operations-side-column .market-data-readiness-strip {
+  grid-template-columns: 1fr;
+}
+
+.operations-side-column .market-data-readiness-strip dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .terminal-status-bar {
@@ -19640,6 +19682,19 @@ button.ai-review-record {
     grid-template-columns: 1fr;
   }
 
+  .operations-layout > .operations-column {
+    display: contents;
+  }
+
+  .center-grid.operations-layout {
+    grid-template-areas:
+      "research-ops"
+      "data"
+      "scanner"
+      "calendar"
+      "workflow";
+  }
+
   .watchlist-layout {
     grid-template-areas:
       "chart"
@@ -21103,6 +21158,16 @@ button.ai-review-record {
   .terminal-operations-workspace .research-ops-row > span:nth-child(3),
   .terminal-operations-workspace .research-ops-row > button {
     grid-column: 1 / -1;
+  }
+
+  .terminal-operations-workspace .terminal-overview-grid .module-focus-actions {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
+  }
+
+  .terminal-operations-workspace .terminal-overview-grid .module-focus-actions .run-button.compact {
+    width: 100%;
   }
 
   .design-page-header {

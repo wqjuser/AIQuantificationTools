@@ -2631,6 +2631,51 @@ export function App() {
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
   const skipNextSymbolSearchRef = useRef(false);
+  const workspaceScrollPositionsRef = useRef<
+    Partial<Record<ProductWorkAreaId, { surfaceTop: number; windowTop: number }>>
+  >({});
+  const activeWorkAreaIdRef = useRef(activeWorkAreaId);
+  const activeWorkspaceSurfaceRef = useRef<HTMLElement | null>(null);
+  const rememberActiveWorkspaceScrollPosition = useCallback((surfaceTop: number) => {
+    const workAreaId = activeWorkAreaIdRef.current;
+    workspaceScrollPositionsRef.current[workAreaId] = {
+      surfaceTop,
+      windowTop:
+        typeof window === "undefined"
+          ? (workspaceScrollPositionsRef.current[workAreaId]?.windowTop ?? 0)
+          : window.scrollY
+    };
+  }, []);
+  useLayoutEffect(() => {
+    activeWorkAreaIdRef.current = activeWorkAreaId;
+    const position = workspaceScrollPositionsRef.current[activeWorkAreaId] ?? {
+      surfaceTop: 0,
+      windowTop: 0
+    };
+    if (activeWorkspaceSurfaceRef.current) {
+      activeWorkspaceSurfaceRef.current.scrollTop = position.surfaceTop;
+    }
+    if (typeof window !== "undefined") {
+      window.scrollTo(0, position.windowTop);
+    }
+  }, [activeWorkAreaId]);
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const rememberWindowScroll = () => {
+      const workAreaId = activeWorkAreaIdRef.current;
+      workspaceScrollPositionsRef.current[workAreaId] = {
+        surfaceTop:
+          activeWorkspaceSurfaceRef.current?.scrollTop ??
+          workspaceScrollPositionsRef.current[workAreaId]?.surfaceTop ??
+          0,
+        windowTop: window.scrollY
+      };
+    };
+    window.addEventListener("scroll", rememberWindowScroll, { passive: true });
+    return () => window.removeEventListener("scroll", rememberWindowScroll);
+  }, []);
   const setWatchlistCacheRefreshRunSelection = useCallback((runId: string | null) => {
     setSelectedWatchlistCacheRefreshRunId(runId);
     replaceWatchlistCacheRefreshRunUrlParam(runId);
@@ -13287,52 +13332,56 @@ export function App() {
     if (activeWorkAreaId === "operations") {
       return (
         <>
-          <MarketDataHealthPanel
-            cacheContext={activeCacheContext}
-            className="workflow-data-panel"
-            i18n={i18n}
-            isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
-            isRefreshingWatchlistCache={isRefreshingWatchlistCache}
-            latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
-            marketDataReadiness={marketDataReadinessState}
-            refreshGuard={marketDataRefreshGuard}
-            refreshOverrideAuditStatus={marketDataRefreshOverrideAuditStatus}
-            refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
-            onApplyRefreshOverride={enableMarketDataRefreshOverride}
-            onClearRefreshOverride={clearMarketDataRefreshOverride}
-            onRefreshCache={refreshSelectedMarketCache}
-            onRefreshWatchlistCache={refreshWatchlistMarketCache}
-            onOpenCoverageResearch={openSelectedRefreshCoverageInResearch}
-            onSelectWatchlistCacheRefreshRun={selectWatchlistCacheRefreshRun}
-            onSelectWatchlistCacheRefreshItem={selectWatchlistCacheRefreshItem}
-            state={klinesState}
-            watchlistCacheRefreshCoverageRow={watchlistCacheRefreshCoverageRow}
-            watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
-            watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
-            watchlistCacheSummary={watchlistCacheSummary}
-            workspace={workspace}
-          />
-          <MarketCalendarStatusCard
-            calendar={marketCalendarState.calendar}
-            className="workflow-market-calendar-panel"
-            error={marketCalendarState.error}
-            i18n={i18n}
-            source={marketCalendarState.source}
-          />
-          <ResearchOpsQueuePanel
-            className="workflow-research-ops-panel"
-            i18n={i18n}
-            isRunningAction={Boolean(pendingResearchOpsAction)}
-            onRunAction={runResearchOpsQueueAction}
-            queue={researchOpsQueue}
-          />
-          <ScannerWorkspace
-            candidates={scannerCandidates}
-            className="workflow-scanner-panel"
-            i18n={i18n}
-            onSelectInstrument={selectInstrument}
-          />
-          {renderWorkflowNodesPanel("workflow-nodes-panel")}
+          <div className="operations-column operations-primary-column">
+            <ResearchOpsQueuePanel
+              className="workflow-research-ops-panel"
+              i18n={i18n}
+              isRunningAction={Boolean(pendingResearchOpsAction)}
+              onRunAction={runResearchOpsQueueAction}
+              queue={researchOpsQueue}
+            />
+            <ScannerWorkspace
+              candidates={scannerCandidates}
+              className="workflow-scanner-panel"
+              i18n={i18n}
+              onSelectInstrument={selectInstrument}
+            />
+            {renderWorkflowNodesPanel("workflow-nodes-panel")}
+          </div>
+          <div className="operations-column operations-side-column">
+            <MarketDataHealthPanel
+              cacheContext={activeCacheContext}
+              className="workflow-data-panel"
+              i18n={i18n}
+              isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
+              isRefreshingWatchlistCache={isRefreshingWatchlistCache}
+              latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
+              marketDataReadiness={marketDataReadinessState}
+              refreshGuard={marketDataRefreshGuard}
+              refreshOverrideAuditStatus={marketDataRefreshOverrideAuditStatus}
+              refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
+              onApplyRefreshOverride={enableMarketDataRefreshOverride}
+              onClearRefreshOverride={clearMarketDataRefreshOverride}
+              onRefreshCache={refreshSelectedMarketCache}
+              onRefreshWatchlistCache={refreshWatchlistMarketCache}
+              onOpenCoverageResearch={openSelectedRefreshCoverageInResearch}
+              onSelectWatchlistCacheRefreshRun={selectWatchlistCacheRefreshRun}
+              onSelectWatchlistCacheRefreshItem={selectWatchlistCacheRefreshItem}
+              state={klinesState}
+              watchlistCacheRefreshCoverageRow={watchlistCacheRefreshCoverageRow}
+              watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
+              watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
+              watchlistCacheSummary={watchlistCacheSummary}
+              workspace={workspace}
+            />
+            <MarketCalendarStatusCard
+              calendar={marketCalendarState.calendar}
+              className="workflow-market-calendar-panel"
+              error={marketCalendarState.error}
+              i18n={i18n}
+              source={marketCalendarState.source}
+            />
+          </div>
         </>
       );
     }
@@ -14561,11 +14610,13 @@ export function App() {
           latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
           marketRefreshIssue={marketRefreshIssue}
           onRemoveWatchlistInstrument={(instrument) => void removeWatchlistInstrument(instrument)}
+          onScrollPositionChange={rememberActiveWorkspaceScrollPosition}
           onSelectInstrument={selectInstrument}
           onSelectTimeframe={(timeframe) => selectTimeframe(timeframe, "market")}
           portfolio={portfolioBacktestState.portfolio ?? null}
           runs={runHistory}
           source={source}
+          surfaceRef={activeWorkspaceSurfaceRef}
           workspace={workspace}
         />
         )}
@@ -14574,6 +14625,8 @@ export function App() {
         <section
           aria-labelledby="terminal-operations-title"
           className="terminal-design-surface terminal-operations-workspace"
+          onScroll={(event) => rememberActiveWorkspaceScrollPosition(event.currentTarget.scrollTop)}
+          ref={activeWorkspaceSurfaceRef}
         >
           <header className="design-page-header terminal-operations-header">
             <div>

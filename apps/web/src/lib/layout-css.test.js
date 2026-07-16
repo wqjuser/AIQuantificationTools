@@ -97,15 +97,38 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('activeWorkAreaId === "operations" || !terminalSurfaceAction ? null : (');
     expect(appSource).toContain('className="terminal-design-surface terminal-operations-workspace"');
     expect(appSource).toContain('${activeWorkAreaId}-layout');
-    expect(cssBlock(".market-layout,\n.operations-layout")).toContain('"research-ops data"');
     expect(appSource).not.toContain('className="terminal-evidence-trigger"');
     expect(appSource).not.toContain("legacyWorkspaceDialogRef");
     expect(operationsWorkspaceSource).not.toContain("<dialog");
     expect(cssBlock(".terminal-operations-workspace")).toContain("overflow-y: auto;");
     expect(operationsWorkspaceSource).not.toContain('renderChartPanel("chart-panel workflow-chart-panel")');
+    expect(operationsWorkspaceSource).toContain('className="operations-column operations-primary-column"');
+    expect(operationsWorkspaceSource).toContain('className="operations-column operations-side-column"');
+    expect(cssBlock(".center-grid.operations-layout")).toContain("grid-template-areas: none;");
+    expect(cssBlock(".operations-column")).toContain("display: flex;");
+    expect(cssBlock(".operations-column")).toContain("flex-direction: column;");
+    expect(hasCssDeclaration(".operations-layout > .operations-column", "display: contents;")).toBe(true);
+    expect(
+      hasCssBlockWith(".center-grid.operations-layout", [
+        "grid-template-areas:",
+        '"research-ops"',
+        '"data"',
+        '"scanner"',
+        '"calendar"',
+        '"workflow"'
+      ])
+    ).toBe(true);
     expect(cssBlock(
       ".terminal-operations-workspace .terminal-overview-grid .ticker,\n.terminal-operations-workspace .terminal-overview-grid .metrics-row"
     )).toContain("display: none;");
+    expect(cssBlock(".terminal-operations-workspace .terminal-overview-grid .watchlist-strip")).toContain("display: none;");
+    expect(cssBlock(".terminal-operations-workspace .terminal-overview-grid .module-focus-card")).toContain(
+      "justify-content: space-between;"
+    );
+    expect(cssBlock(".operations-side-column .market-data-readiness-strip")).toContain("grid-template-columns: 1fr;");
+    expect(cssBlock(".operations-side-column .market-data-readiness-strip dl")).toContain(
+      "grid-template-columns: repeat(3, minmax(0, 1fr));"
+    );
     expect(styles).toContain(".terminal-operations-workspace .research-ops-row {\n    grid-template-columns: minmax(0, 1fr) auto;");
   });
 
@@ -402,18 +425,28 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("renderActiveProductWorkspace()");
   });
 
-  test("uses the document as the single desktop scroll surface", () => {
+  test("keeps workspace scroll positions independent inside the bounded surface", () => {
     expect(appSource).not.toContain('<aside className="agent-rail">');
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
     expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 208px minmax(0, 1fr);");
-    expect(cssBlock(".terminal-shell")).toContain("overflow: visible;");
-    expect(hasExactCssDeclaration(".terminal-shell", "height: 100vh;")).toBe(false);
-    expect(cssBlock(".terminal-shell")).not.toContain("overflow: hidden;");
-    expect(cssBlock(".left-rail")).not.toContain("max-height: 100vh;");
-    expect(cssBlock(".left-rail")).not.toContain("overflow: auto;");
-    expect(cssBlock(".terminal-main")).not.toContain("max-height: 100vh;");
-    expect(cssBlock(".terminal-main")).not.toContain("overflow: auto;");
-    expect(cssBlock(".terminal-main")).toContain("grid-template-rows: auto auto auto;");
+    expect(hasCssDeclaration(".terminal-main", "overflow: hidden;")).toBe(true);
+    expect(hasCssDeclaration(".terminal-design-surface", "overflow: auto;")).toBe(true);
+    expect(appSource).toContain("workspaceScrollPositionsRef");
+    expect(appSource).toContain("activeWorkAreaIdRef");
+    expect(appSource).toContain("activeWorkspaceSurfaceRef");
+    expect(appSource).toContain("activeWorkAreaIdRef.current = activeWorkAreaId;");
+    expect(appSource).toContain("const workAreaId = activeWorkAreaIdRef.current;");
+    expect(appSource).not.toContain("workspaceScrollPositionsRef.current[activeWorkAreaId] =");
+    expect(appSource).toContain("activeWorkspaceSurfaceRef.current.scrollTop =");
+    expect(appSource).toContain("rememberActiveWorkspaceScrollPosition");
+    expect(appSource).toContain('window.addEventListener("scroll", rememberWindowScroll, { passive: true });');
+    expect(appSource).toContain("window.scrollTo(0, position.windowTop);");
+    expect(appSource).toContain("ref={activeWorkspaceSurfaceRef}");
+    expect(appSource).toContain("onScroll={(event) => rememberActiveWorkspaceScrollPosition(event.currentTarget.scrollTop)}");
+    expect(terminalWorkspaceSurfaceSource).toContain("ref={props.surfaceRef}");
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      "onScroll={(event) => props.onScrollPositionChange(event.currentTarget.scrollTop)}"
+    );
     expect(cssBlock(".brand > div")).toContain("display: block;");
     expect(cssBlock(".work-area-button")).toContain("grid-template-columns: 18px minmax(0, 1fr);");
     expect(hasCssDeclaration(".work-area-copy", "display: block;")).toBe(true);
