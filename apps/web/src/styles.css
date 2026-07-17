@@ -694,22 +694,23 @@ h2 {
   display: grid;
   gap: 6px;
   top: calc(100% + 6px);
-  left: 0;
-  width: min(320px, 72vw);
+  right: 0;
+  width: min(400px, calc(100vw - 24px));
   max-height: 280px;
   overflow: auto;
   border: 1px solid #2a3b51;
   border-radius: 7px;
   background: #0f1722;
   box-shadow: 0 18px 42px rgb(0 0 0 / 42%);
-  padding: 8px;
+  padding: 6px;
 }
 
 .symbol-suggestion-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px;
-  align-items: stretch;
+  align-items: center;
+  border: 1px solid #2a3b51;
+  border-radius: 7px;
 }
 
 .symbol-suggestions button,
@@ -738,11 +739,12 @@ h2 {
 }
 
 .symbol-suggestion-refresh {
-  align-self: start;
+  align-self: center;
   justify-content: center;
   width: auto;
-  min-width: 76px;
-  min-height: 42px;
+  min-width: 88px;
+  min-height: 36px;
+  margin-right: 8px;
   border-color: #27594f;
   color: #5eead4;
   font-size: 10px;
@@ -785,6 +787,31 @@ h2 {
   text-align: right;
 }
 
+.symbol-suggestions .symbol-suggestion-select {
+  display: grid;
+  align-content: center;
+  justify-content: stretch;
+  gap: 3px;
+  min-height: 64px;
+  border: 0;
+  border-radius: 0;
+  padding: 9px 10px;
+}
+
+.symbol-suggestions .symbol-suggestion-select > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.symbol-suggestions .symbol-suggestion-select em {
+  margin-top: 0;
+}
+
+.symbol-suggestions .symbol-suggestion-select small {
+  text-align: left;
+}
+
 .symbol-suggestion-cache {
   flex: 1 0 100%;
   color: #94a3b8;
@@ -808,6 +835,27 @@ h2 {
   color: #8fa0b2;
   font-size: 11px;
   font-weight: 800;
+}
+
+@media (max-width: 560px) {
+  .symbol-field .symbol-suggestions {
+    position: fixed;
+    top: 50px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 120px);
+  }
+
+  .symbol-suggestion-row {
+    grid-template-columns: 1fr;
+  }
+
+  .symbol-suggestion-refresh {
+    justify-self: stretch;
+    width: auto;
+    margin: 0 8px 8px;
+  }
 }
 
 .symbol-switcher button {
@@ -21509,6 +21557,17 @@ button.ai-review-record {
 
 .terminal-shell[data-theme="light"] .symbol-suggestions button strong {
   color: #213346;
+}
+
+.terminal-shell[data-theme="light"] .symbol-suggestion-row {
+  border-color: #b9c9d5;
+  background: #ffffff;
+}
+
+.terminal-shell[data-theme="light"] .symbol-suggestion-refresh {
+  border-color: #7fb5a8;
+  background: #f7fbfa;
+  color: #177966;
 }
 
 .terminal-shell[data-theme="light"] .symbol-suggestions {

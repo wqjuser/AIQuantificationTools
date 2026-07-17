@@ -14465,7 +14465,7 @@ export function App() {
                   value={symbolDraft}
                 />
                 {isSearchOpen && symbolDraft.trim() ? (
-                  <div className="symbol-suggestions" role="listbox">
+                  <div className="symbol-suggestions">
                     {isSymbolSearching ? (
                       <span className="symbol-suggestion-state">{i18n.t("symbol.searching")}</span>
                     ) : null}
@@ -14475,7 +14475,6 @@ export function App() {
                             <button
                               className="symbol-suggestion-select"
                               onClick={() => selectSearchSuggestion(suggestion)}
-                              role="option"
                               type="button"
                             >
                               <span>
@@ -14497,6 +14496,7 @@ export function App() {
                             {canRefreshSearchSuggestionCache(suggestion) ? (
                               <button
                                 className="symbol-suggestion-refresh"
+                                aria-label={`${marketSearchRefreshLabel(i18n, suggestion)} ${suggestion.symbol}`}
                                 disabled={
                                   refreshingCacheKey ===
                                   cacheContextKey({
@@ -14509,13 +14509,7 @@ export function App() {
                                 type="button"
                               >
                                 <RefreshCw size={12} />
-                                {suggestion.cache?.freshness === "stale"
-                                  ? i18n.locale === "zh-CN"
-                                    ? "尝试更新"
-                                    : "Update data"
-                                  : i18n.locale === "zh-CN"
-                                    ? "获取数据"
-                                    : "Fetch data"}
+                                {marketSearchRefreshLabel(i18n, suggestion)}
                               </button>
                             ) : null}
                           </div>
@@ -36212,7 +36206,10 @@ function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearch
       : `${cache.rowCount.toLocaleString("en-US")} rows`;
   if (cache.freshness === "stale") {
     const status = i18n.locale === "zh-CN" ? "历史数据" : "Historical data";
-    return `${status} · ${rowsLabel} · ${formatCacheContextRange(cache.startTimestamp, cache.endTimestamp)}`;
+    const endLabel = cache.endTimestamp ? formatChartDate(cache.endTimestamp) : "n/a";
+    return i18n.locale === "zh-CN"
+      ? `${status} · 截至 ${endLabel} · ${rowsLabel}`
+      : `${status} · through ${endLabel} · ${rowsLabel}`;
   }
   const freshnessLabel = cacheFreshnessLabel(i18n, cache.freshness, cache.ageHours);
   return `${freshnessLabel} · ${rowsLabel} · ${formatCacheContextRange(cache.startTimestamp, cache.endTimestamp)}`;
@@ -36220,6 +36217,13 @@ function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearch
 
 function canRefreshSearchSuggestionCache(suggestion: MarketSearchSuggestion): boolean {
   return Boolean(suggestion.cache && suggestion.cache.freshness !== "fresh");
+}
+
+function marketSearchRefreshLabel(i18n: AppI18n, suggestion: MarketSearchSuggestion): string {
+  if (suggestion.cache?.freshness === "stale") {
+    return i18n.locale === "zh-CN" ? "检查更新" : "Check for updates";
+  }
+  return i18n.locale === "zh-CN" ? "获取数据" : "Fetch data";
 }
 
 function cacheFreshnessLabel(

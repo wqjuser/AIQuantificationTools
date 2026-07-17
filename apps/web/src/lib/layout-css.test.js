@@ -394,8 +394,11 @@ describe("terminal layout css", () => {
 
   test("keeps light market search results readable and evenly spaced", () => {
     expect(hasCssDeclaration(".symbol-suggestions", "display: grid;")).toBe(true);
-    expect(hasCssDeclaration(".symbol-suggestions", "gap: 6px;")).toBe(true);
-    expect(hasCssDeclaration(".symbol-suggestions", "padding: 8px;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestions", "overflow: auto;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestion-row", "grid-template-columns: minmax(0, 1fr) auto;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestion-select", "min-width: 0;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestion-refresh", "width: auto;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestion-refresh", "white-space: nowrap;")).toBe(true);
     expect(hasCssDeclaration(".symbol-suggestion-select:only-child", "grid-column: 1 / -1;")).toBe(true);
     expect(
       hasCssDeclaration(
@@ -432,10 +435,15 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("const refreshSearchSuggestionCache = useCallback(");
     expect(appSource).toContain("await refreshCacheContext({");
-    expect(appSource).toContain('"尝试更新"');
+    expect(appSource).toContain("marketSearchRefreshLabel(i18n, suggestion)");
+    expect(appSource).toContain('return i18n.locale === "zh-CN" ? "检查更新" : "Check for updates";');
+    expect(appSource).toContain('return i18n.locale === "zh-CN" ? "获取数据" : "Fetch data";');
     expect(appSource).toContain("timeframe: workspace.selectedTimeframe");
     expect(symbolSwitcherSource).toContain('className="symbol-suggestion-row"');
     expect(symbolSwitcherSource).toContain('className="symbol-suggestion-select"');
+    expect(symbolSwitcherSource).not.toContain('role="listbox"');
+    expect(symbolSwitcherSource).not.toContain('role="option"');
+    expect(symbolSwitcherSource).toContain("marketSearchRefreshLabel(i18n, suggestion)} ${suggestion.symbol}");
     expect(symbolSwitcherSource).toContain("canRefreshSearchSuggestionCache(suggestion)");
     expect(symbolSwitcherSource).toContain("refreshSearchSuggestionCache(suggestion)");
     expect(symbolSwitcherSource).toContain('className="symbol-suggestion-refresh"');
