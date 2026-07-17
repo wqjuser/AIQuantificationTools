@@ -21324,6 +21324,54 @@ button.ai-review-record {
   background: var(--canvas);
 }
 
+:root[data-theme="light"] .research-confirmation-dialog {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .research-confirmation-dialog::backdrop {
+  background: rgb(23 37 54 / 38%);
+}
+
+:root[data-theme="light"] .research-confirmation-modal {
+  border-color: var(--border-strong);
+  border-top-color: var(--amber);
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgb(23 37 54 / 22%);
+}
+
+:root[data-theme="light"] .research-confirmation-modal p,
+:root[data-theme="light"] .research-confirmation-issues span {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .research-confirmation-kicker,
+:root[data-theme="light"] .research-confirmation-issues strong {
+  color: var(--amber);
+}
+
+:root[data-theme="light"] .research-confirmation-issues article {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+:root[data-theme="light"] .research-confirmation-modal .panel-icon-button {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .research-confirmation-modal .panel-icon-button:hover {
+  border-color: #65a899;
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+:root[data-theme="light"] .research-confirmation-actions .design-secondary-action {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
 .terminal-shell[data-theme="dark"] {
   --chart-grid: #183047;
   --chart-teal: #58d6b9;

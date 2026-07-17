@@ -1,7 +1,7 @@
 # 终端 UI 逐页设计验收
 
 验收日期：2026-07-15
-最近专项验收：2026-07-16
+最近专项验收：2026-07-17
 
 ## 验收基准
 
@@ -57,5 +57,6 @@
 13. 执行与治理工作区日间配色专项：源图依次为 `/private/tmp/aiquant-execution-light-before.png`、`/private/tmp/aiquant-operations-light-before.png`、`/private/tmp/aiquant-audit-light-before.png`、`/private/tmp/aiquant-settings-light-before.png`，实现截图依次为同目录下对应的 `*-light-after.png`；视口统一为 `2048 × 1027`，浅色主题。执行中心统计卡和安全提示、审计回放筛选器、设置页导航/表单/告警均因新版组件缺少浅色覆盖而形成深色孤岛；运行管理则仍复用旧版 `terminal-panel`、队列、健康卡、扫描器、日历和工作流组件，连“工作区上下文”展开层也保留整套深色前景与背景，均记为 P2。修复优先复用现有 `surface`、`surface-raised`、`border`、`text`、`muted`、`teal`、`amber` 语义变量，并保留成功、复核、阻断的状态边；运行管理展开态另以 `/private/tmp/aiquant-operations-context-light-after.png` 验收。最终四页可见区域与展开层的深色背景扫描均为 0，页面和工作区横向溢出均为 0；深色切换后面板恢复 `rgb(16, 24, 35)`，切回浅色后恢复 `rgb(255, 255, 255)`，控制台无错误，最终无 P0/P1/P2 遗留。
 14. 执行与治理配色独立复审：逐项补齐运行管理隐藏状态中的分享链接、模拟成交结果、完成/恢复提示以及成功、复核、阻断状态级联，执行中心未通过闸门图标保持琥珀色，设置页小型外部服务告警也改用同一浅色告警语义。`2048 × 1027` Docker 终态再次扫描执行中心、运行管理、审计回放、设置及运行管理展开层，深色背景与横向溢出均为 0；`375 × 812` 展开层通过 footer 换行与响应式 basis 复位后，页面和浮层横向溢出均为 0，提示行高度为 13.5px，不再产生空白。深浅主题往返结果仍为 `rgb(255, 255, 255) → rgb(16, 24, 35) → rgb(255, 255, 255)`，浏览器日志为空；独立代码复审为 Critical 0、Important 0、Minor 0。
 15. 运行管理布局与全局滚动隔离专项：源图为 `/Users/wenqingjie/Library/Containers/com.sw33tlie.macshot.macshot/Data/Library/Application Support/com.sw33tlie.macshot/clipboard/Screenshot 2026-07-16 at 23-47-27.png`，实现截图为 `/private/tmp/aiquant-operations-layout-scroll-final.png`，同状态并排图为 `/private/tmp/aiquant-operations-layout-scroll-comparison.png`；桌面 CSS 视口 `2048 × 1178`，浅色主题，运行管理状态。旧布局的左右内容共享 Grid 行高，右侧长数据健康面板会把左侧市场扫描器向下推开；顶部还残留孤立的“保存自选”卡和窄操作列。现改为左右两条独立纵向内容栈，队列与扫描器、数据健康与市场日历的相邻间距均为 10px，首行对齐，无页面或工作区横向溢出，右侧就绪指标按三列排布。移动证据为 `/private/tmp/aiquant-operations-layout-scroll-mobile.png`，`375 × 812` 下操作区、队列卡片和底部安全状态完整可见，`scrollWidth=clientWidth=375`；断点内保持“研究队列、数据健康、市场扫描、交易日历、工作流”的任务顺序。滚动状态按工作区 ID 分别保存：桌面端行情 `220px`、研究 `140px`、运行管理 `310px` 在往返切换后分别恢复；移动端行情 `420px`、研究 `260px` 同样独立恢复。独立复审进一步消除了旧监听器在切换瞬间误写位置的竞态，并补齐同等 specificity 的窄屏网格顺序规则；终态复审为 Critical 0、Important 0、Minor 0。字体、状态色、Logo、业务数据与动作均继续复用现有组件和 API，桌面与移动浏览器错误日志均为空，最终无 P0/P1/P2 遗留。
+16. 研究确认弹窗日间配色专项：源图为 `/var/folders/pn/mpj6bdfj1b91_cv0s4b5462m0000gn/T/codex-clipboard-b9645595-8d12-425a-91e3-98adf447d5cd.png`，实现截图为 `/private/tmp/aiquant-research-confirmation-light-final.png`，并排对照为 `/private/tmp/aiquant-research-confirmation-light-comparison.png`；浅色主题、研究工作台、3 项上下文复核状态。根因是弹窗主体、问题卡片和控制按钮只声明了深色硬编码，未跟随根节点主题。现直接复用已有 `surface`、`surface-raised`、`border`、`text`、`muted`、`amber` 变量补齐根级浅色覆盖：弹窗主体计算背景为 `rgb(255, 255, 255)`，问题卡片与按钮为 `rgb(242, 246, 249)`，遮罩从 78% 近黑改为 38% 深灰；深色主题往返复验仍保持原有 `rgb(15, 26, 38)` 主体和 `rgb(18, 29, 42)` 卡片。默认 `1280 × 720` 预览无浏览器错误，`375 × 700` 下弹窗宽 343px、左右各 16px 且页面无横向溢出；字体层级、间距、图标资产、文案和研究动作均未改动，最终无 P0/P1/P2 遗留。
 
 final result: passed

@@ -4099,6 +4099,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('void runPipeline("accepted")');
     expect(cssBlock(".research-confirmation-dialog")).toContain("background: transparent;");
     expect(cssBlock(".research-confirmation-modal")).toContain("width: min(520px, calc(100vw - 32px));");
+    expect(cssBlock(':root[data-theme="light"] .research-confirmation-dialog')).toContain("color: var(--text);");
+    expect(cssBlock(':root[data-theme="light"] .research-confirmation-modal')).toContain("background: var(--surface);");
+    expect(cssBlock(':root[data-theme="light"] .research-confirmation-issues article')).toContain(
+      "background: var(--surface-raised);"
+    );
   });
 
   test("preflights strategy readiness before saving a strategy version", () => {
