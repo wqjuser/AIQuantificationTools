@@ -387,6 +387,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("loadMarketSearch(quantCoreBaseUrl, { market: marketDraft, query, limit: 8, timeframe: workspace.selectedTimeframe })");
     expect(symbolSwitcherSource).toContain("suggestion.cache");
     expect(symbolSwitcherSource).toContain("marketSearchCacheSummary(i18n, suggestion.cache)");
+    expect(appSource).toContain('cache.freshness === "stale"');
+    expect(appSource).toContain('"历史数据"');
     expect(styles).toContain(".symbol-suggestion-cache");
   });
 
@@ -430,6 +432,7 @@ describe("terminal layout css", () => {
 
     expect(appSource).toContain("const refreshSearchSuggestionCache = useCallback(");
     expect(appSource).toContain("await refreshCacheContext({");
+    expect(appSource).toContain('"尝试更新"');
     expect(appSource).toContain("timeframe: workspace.selectedTimeframe");
     expect(symbolSwitcherSource).toContain('className="symbol-suggestion-row"');
     expect(symbolSwitcherSource).toContain('className="symbol-suggestion-select"');

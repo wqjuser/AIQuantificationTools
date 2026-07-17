@@ -14509,7 +14509,13 @@ export function App() {
                                 type="button"
                               >
                                 <RefreshCw size={12} />
-                                {i18n.locale === "zh-CN" ? "刷新缓存" : "Refresh cache"}
+                                {suggestion.cache?.freshness === "stale"
+                                  ? i18n.locale === "zh-CN"
+                                    ? "尝试更新"
+                                    : "Update data"
+                                  : i18n.locale === "zh-CN"
+                                    ? "获取数据"
+                                    : "Fetch data"}
                               </button>
                             ) : null}
                           </div>
@@ -36200,11 +36206,15 @@ function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearch
   if (cache.freshness === "empty") {
     return i18n.locale === "zh-CN" ? "当前周期无缓存" : "No cache for this timeframe";
   }
-  const freshnessLabel = cacheFreshnessLabel(i18n, cache.freshness, cache.ageHours);
   const rowsLabel =
     i18n.locale === "zh-CN"
       ? `${cache.rowCount.toLocaleString("zh-CN")} 行`
       : `${cache.rowCount.toLocaleString("en-US")} rows`;
+  if (cache.freshness === "stale") {
+    const status = i18n.locale === "zh-CN" ? "历史数据" : "Historical data";
+    return `${status} · ${rowsLabel} · ${formatCacheContextRange(cache.startTimestamp, cache.endTimestamp)}`;
+  }
+  const freshnessLabel = cacheFreshnessLabel(i18n, cache.freshness, cache.ageHours);
   return `${freshnessLabel} · ${rowsLabel} · ${formatCacheContextRange(cache.startTimestamp, cache.endTimestamp)}`;
 }
 
