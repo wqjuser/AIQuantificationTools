@@ -154,6 +154,19 @@ describe("terminal layout css", () => {
     expect(marketSurfaceSource).not.toContain("workspace.watchlist.slice(0, 5)");
   });
 
+  test("keeps the watchlist overview focused on counts and market distribution", () => {
+    expect(
+      hasCssDeclaration(
+        ".design-watchlist-overview",
+        "grid-template-rows: auto auto minmax(min-content, 1fr);",
+      ),
+    ).toBe(true);
+    expect(hasCssDeclaration(".design-watchlist-overview", "gap: 8px;")).toBe(true);
+    expect(terminalWorkspaceSurfaceSource).not.toContain("design-watchlist-overview-foot");
+    expect(terminalWorkspaceSurfaceSource).not.toContain("<span>当前标的</span>");
+    expect(terminalWorkspaceSurfaceSource).not.toContain("<span>最近更新</span>");
+  });
+
   test("removes legacy desktop row gaps from every workspace", () => {
     expect(styles).toContain("@media (min-width: 1301px) {");
     expect(hasCssBlockWith("  .terminal-main", [

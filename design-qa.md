@@ -66,4 +66,6 @@
 
 21. 行情搜索多结果密度专项：源图为 `/var/folders/pn/mpj6bdfj1b91_cv0s4b5462m0000gn/T/codex-clipboard-e6357c95-0d7d-4cb5-bf71-e8fc530c86e6.png`，实现截图为 `/tmp/aiqt-search-list-compact-final.png`，移动实现为 `/tmp/aiqt-search-list-compact-mobile-final.png`，同框对照为 `/tmp/aiqt-search-list-compact-comparison.png`；查询 `60000`，浅色主题。上一轮单结果布局扩展到多结果后形成“浮层外框、结果卡外框、操作按钮外框”三层嵌套，每行约 130px，更新按钮视觉权重过高，最新缓存还展示了冗长的起止日期。现保留唯一浮层外框，结果改为 53px 扁平行与中性分隔线；证券代码和名称位于首行，来源与缓存状态合并到次行，最新缓存只显示更新时间和行数，历史缓存继续明确截至日期。桌面操作按钮高 30px，标签收敛为“更新 / 获取”，列表 `280px` 高度内独立滚动；`375 × 844` 下浮层宽 351px，隐藏冗余来源信息并保留完整缓存状态，按钮宽 72px。桌面和移动页面均无横向溢出，结果选择、缓存动作和包含证券代码的可访问名称保持不变。
 
+22. 行情自选概览层级专项：源图为 `/var/folders/pn/mpj6bdfj1b91_cv0s4b5462m0000gn/T/codex-clipboard-c2f736d0-dfae-454c-8d68-ff4f37246ed8.png`，实现截图为 `/tmp/aiqt-watchlist-overview-final-1680.png`，同框对照为 `/tmp/aiqt-watchlist-overview-comparison.png`；桌面视口 `1680 × 962`，浅色主题，7 条自选状态。根因是概览把“市场分布”放入可压缩到 0 的网格轨道，同时在末尾重复展示已由选中行、图表标题和刷新状态表达的“当前标的 / 最近更新”，空间不足时两组内容会交错。现删除重复摘要，概览只保留“标的总数、涨跌统计、市场分布”三层信息，并把市场分布轨道改为最小内容高度、组间距收敛为 8px。Docker 实测三条市场行重叠均为 0px，概览自身溢出为 0px，页面横向溢出为 0px；既有自选选择、编辑、报价和刷新行为均未改动。
+
 final result: passed

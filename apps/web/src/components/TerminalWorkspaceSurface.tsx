@@ -465,12 +465,6 @@ function MarketSurface({
                   </div>
                 ))}
               </div>
-              <div className="design-watchlist-overview-foot">
-                <span>当前标的</span>
-                <strong>{workspace.selectedInstrument.name}</strong>
-                <span>最近更新</span>
-                <strong>{latestQuoteTime}</strong>
-              </div>
             </div>
           ) : null}
         </SurfacePanel>
