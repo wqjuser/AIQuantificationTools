@@ -14481,17 +14481,20 @@ export function App() {
                                 <strong>{suggestion.symbol}</strong>
                                 <em>{suggestion.name}</em>
                               </span>
-                              <small>
-                                {i18n.marketLabel(suggestion.market)}
-                                {suggestion.exchange ? ` · ${suggestion.exchange}` : ""}
-                                {" · "}
-                                {suggestion.source}
-                              </small>
-                              {suggestion.cache ? (
-                                <small className={`symbol-suggestion-cache ${suggestion.cache.freshness}`}>
-                                  {marketSearchCacheSummary(i18n, suggestion.cache)}
+                              <span className="symbol-suggestion-meta">
+                                <small className="symbol-suggestion-venue">
+                                  {suggestion.exchange ? `${suggestion.exchange} · ` : ""}
+                                  {suggestion.source}
                                 </small>
-                              ) : null}
+                                {suggestion.cache ? (
+                                  <>
+                                    <span aria-hidden="true" className="symbol-suggestion-divider">·</span>
+                                    <small className={`symbol-suggestion-cache ${suggestion.cache.freshness}`}>
+                                      {marketSearchCacheSummary(i18n, suggestion.cache)}
+                                    </small>
+                                  </>
+                                ) : null}
+                              </span>
                             </button>
                             {canRefreshSearchSuggestionCache(suggestion) ? (
                               <button
@@ -36211,8 +36214,11 @@ function marketSearchCacheSummary(i18n: AppI18n, cache: NonNullable<MarketSearch
       ? `${status} · 截至 ${endLabel} · ${rowsLabel}`
       : `${status} · through ${endLabel} · ${rowsLabel}`;
   }
-  const freshnessLabel = cacheFreshnessLabel(i18n, cache.freshness, cache.ageHours);
-  return `${freshnessLabel} · ${rowsLabel} · ${formatCacheContextRange(cache.startTimestamp, cache.endTimestamp)}`;
+  const status = i18n.locale === "zh-CN" ? "新鲜" : "Fresh";
+  const endLabel = cache.endTimestamp ? formatChartDate(cache.endTimestamp) : "n/a";
+  return i18n.locale === "zh-CN"
+    ? `${status} · 更新至 ${endLabel} · ${rowsLabel}`
+    : `${status} · updated through ${endLabel} · ${rowsLabel}`;
 }
 
 function canRefreshSearchSuggestionCache(suggestion: MarketSearchSuggestion): boolean {
@@ -36221,9 +36227,9 @@ function canRefreshSearchSuggestionCache(suggestion: MarketSearchSuggestion): bo
 
 function marketSearchRefreshLabel(i18n: AppI18n, suggestion: MarketSearchSuggestion): string {
   if (suggestion.cache?.freshness === "stale") {
-    return i18n.locale === "zh-CN" ? "检查更新" : "Check for updates";
+    return i18n.locale === "zh-CN" ? "更新" : "Update";
   }
-  return i18n.locale === "zh-CN" ? "获取数据" : "Fetch data";
+  return i18n.locale === "zh-CN" ? "获取" : "Fetch";
 }
 
 function cacheFreshnessLabel(

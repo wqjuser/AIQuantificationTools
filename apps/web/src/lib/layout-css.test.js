@@ -392,14 +392,24 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".symbol-suggestion-cache");
   });
 
-  test("keeps light market search results readable and evenly spaced", () => {
+  test("keeps market search results compact, readable, and scrollable", () => {
     expect(hasCssDeclaration(".symbol-suggestions", "display: grid;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestions", "gap: 0;")).toBe(true);
     expect(hasCssDeclaration(".symbol-suggestions", "overflow: auto;")).toBe(true);
     expect(hasCssDeclaration(".symbol-suggestion-row", "grid-template-columns: minmax(0, 1fr) auto;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestion-row", "border-radius: 0;")).toBe(true);
     expect(hasCssDeclaration(".symbol-suggestion-select", "min-width: 0;")).toBe(true);
-    expect(hasCssDeclaration(".symbol-suggestion-refresh", "width: auto;")).toBe(true);
-    expect(hasCssDeclaration(".symbol-suggestion-refresh", "white-space: nowrap;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestions .symbol-suggestion-refresh", "width: auto;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestions .symbol-suggestion-refresh", "white-space: nowrap;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestions .symbol-suggestion-refresh", "min-height: 30px;")).toBe(true);
     expect(hasCssDeclaration(".symbol-suggestion-select:only-child", "grid-column: 1 / -1;")).toBe(true);
+    expect(styles).toContain(".symbol-suggestion-meta");
+    expect(
+      hasCssDeclaration(
+        '.terminal-shell[data-theme="light"] .symbol-suggestions .symbol-suggestion-refresh',
+        "background: #eef7f4;"
+      )
+    ).toBe(true);
     expect(
       hasCssDeclaration(
         '.terminal-shell[data-theme="light"] .symbol-suggestions button strong',
@@ -436,8 +446,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("const refreshSearchSuggestionCache = useCallback(");
     expect(appSource).toContain("await refreshCacheContext({");
     expect(appSource).toContain("marketSearchRefreshLabel(i18n, suggestion)");
-    expect(appSource).toContain('return i18n.locale === "zh-CN" ? "检查更新" : "Check for updates";');
-    expect(appSource).toContain('return i18n.locale === "zh-CN" ? "获取数据" : "Fetch data";');
+    expect(appSource).toContain('return i18n.locale === "zh-CN" ? "更新" : "Update";');
+    expect(appSource).toContain('return i18n.locale === "zh-CN" ? "获取" : "Fetch";');
     expect(appSource).toContain("timeframe: workspace.selectedTimeframe");
     expect(symbolSwitcherSource).toContain('className="symbol-suggestion-row"');
     expect(symbolSwitcherSource).toContain('className="symbol-suggestion-select"');
