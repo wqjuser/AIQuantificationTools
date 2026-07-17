@@ -1697,6 +1697,65 @@ const productWorkAreaIds: ProductWorkAreaId[] = [
   "settings"
 ];
 
+const researchPipelinePreflightIssueTargets: Record<
+  ResearchContextReadinessRow["id"],
+  {
+    actionLabelEn: string;
+    actionLabelZh: string;
+    selector: string;
+    workspaceId: ProductWorkAreaId;
+  }
+> = {
+  instrument: {
+    actionLabelEn: "Select symbol",
+    actionLabelZh: "切换标的",
+    selector: "#terminal-symbol-input",
+    workspaceId: "market"
+  },
+  watchlist: {
+    actionLabelEn: "Save watchlist",
+    actionLabelZh: "保存自选",
+    selector: "#market-watchlist-save",
+    workspaceId: "market"
+  },
+  calendar: {
+    actionLabelEn: "View calendar",
+    actionLabelZh: "查看交易日历",
+    selector: "#operations-market-calendar",
+    workspaceId: "operations"
+  },
+  klines: {
+    actionLabelEn: "Refresh data",
+    actionLabelZh: "前往数据刷新",
+    selector: "#operations-market-data",
+    workspaceId: "operations"
+  },
+  cache: {
+    actionLabelEn: "Refresh data",
+    actionLabelZh: "前往数据刷新",
+    selector: "#operations-market-data",
+    workspaceId: "operations"
+  },
+  refresh: {
+    actionLabelEn: "Refresh data",
+    actionLabelZh: "前往数据刷新",
+    selector: "#operations-market-data",
+    workspaceId: "operations"
+  },
+  note: {
+    actionLabelEn: "Edit note",
+    actionLabelZh: "填写研究笔记",
+    selector: "#research-note-input",
+    workspaceId: "research"
+  },
+  workspace: {
+    actionLabelEn: "Save workspace",
+    actionLabelZh: "保存工作区",
+    selector: "#research-workspace-save",
+    workspaceId: "research"
+  }
+};
+
 const productWorkAreaGroups: Array<{
   id: string;
   labelEn: string;
@@ -10340,6 +10399,23 @@ export function App() {
     [activeWorkAreaId, workspace]
   );
 
+  const openResearchPipelinePreflightIssue = useCallback(
+    (issue: ResearchPipelinePreflight["issues"][number]) => {
+      const target = researchPipelinePreflightIssueTargets[issue.id];
+      setIsResearchPipelineConfirmationOpen(false);
+      selectProductWorkArea(target.workspaceId);
+      window.setTimeout(() => {
+        const element = document.querySelector<HTMLElement>(target.selector);
+        if (!element) {
+          return;
+        }
+        element.scrollIntoView({ block: "center" });
+        element.focus({ preventScroll: true });
+      }, 0);
+    },
+    [selectProductWorkArea]
+  );
+
   const focusExecutionAdapterPaperExecutionAudit = useCallback(
     (row: ExecutionAdapterPaperExecutionRow) => {
       updateExecutionAdapterPaperExecutionAuditQuery(buildExecutionAdapterPaperExecutionAuditQuery(row));
@@ -13363,38 +13439,42 @@ export function App() {
             {renderWorkflowNodesPanel("workflow-nodes-panel")}
           </div>
           <div className="operations-column operations-side-column">
-            <MarketDataHealthPanel
-              cacheContext={activeCacheContext}
-              className="workflow-data-panel"
-              i18n={i18n}
-              isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
-              isRefreshingWatchlistCache={isRefreshingWatchlistCache}
-              latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
-              marketDataReadiness={marketDataReadinessState}
-              refreshGuard={marketDataRefreshGuard}
-              refreshOverrideAuditStatus={marketDataRefreshOverrideAuditStatus}
-              refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
-              onApplyRefreshOverride={enableMarketDataRefreshOverride}
-              onClearRefreshOverride={clearMarketDataRefreshOverride}
-              onRefreshCache={refreshSelectedMarketCache}
-              onRefreshWatchlistCache={refreshWatchlistMarketCache}
-              onOpenCoverageResearch={openSelectedRefreshCoverageInResearch}
-              onSelectWatchlistCacheRefreshRun={selectWatchlistCacheRefreshRun}
-              onSelectWatchlistCacheRefreshItem={selectWatchlistCacheRefreshItem}
-              state={klinesState}
-              watchlistCacheRefreshCoverageRow={watchlistCacheRefreshCoverageRow}
-              watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
-              watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
-              watchlistCacheSummary={watchlistCacheSummary}
-              workspace={workspace}
-            />
-            <MarketCalendarStatusCard
-              calendar={marketCalendarState.calendar}
-              className="workflow-market-calendar-panel"
-              error={marketCalendarState.error}
-              i18n={i18n}
-              source={marketCalendarState.source}
-            />
+            <div className="operations-focus-target" id="operations-market-data" tabIndex={-1}>
+              <MarketDataHealthPanel
+                cacheContext={activeCacheContext}
+                className="workflow-data-panel"
+                i18n={i18n}
+                isRefreshingCache={refreshingCacheKey === activeCacheContextKey}
+                isRefreshingWatchlistCache={isRefreshingWatchlistCache}
+                latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
+                marketDataReadiness={marketDataReadinessState}
+                refreshGuard={marketDataRefreshGuard}
+                refreshOverrideAuditStatus={marketDataRefreshOverrideAuditStatus}
+                refreshOverrideReason={activeMarketDataRefreshOverride?.reason ?? null}
+                onApplyRefreshOverride={enableMarketDataRefreshOverride}
+                onClearRefreshOverride={clearMarketDataRefreshOverride}
+                onRefreshCache={refreshSelectedMarketCache}
+                onRefreshWatchlistCache={refreshWatchlistMarketCache}
+                onOpenCoverageResearch={openSelectedRefreshCoverageInResearch}
+                onSelectWatchlistCacheRefreshRun={selectWatchlistCacheRefreshRun}
+                onSelectWatchlistCacheRefreshItem={selectWatchlistCacheRefreshItem}
+                state={klinesState}
+                watchlistCacheRefreshCoverageRow={watchlistCacheRefreshCoverageRow}
+                watchlistCacheRefreshItemRows={watchlistCacheRefreshItemRows}
+                watchlistCacheRefreshHistoryRows={watchlistCacheRefreshHistoryRows}
+                watchlistCacheSummary={watchlistCacheSummary}
+                workspace={workspace}
+              />
+            </div>
+            <div className="operations-focus-target" id="operations-market-calendar" tabIndex={-1}>
+              <MarketCalendarStatusCard
+                calendar={marketCalendarState.calendar}
+                className="workflow-market-calendar-panel"
+                error={marketCalendarState.error}
+                i18n={i18n}
+                source={marketCalendarState.source}
+              />
+            </div>
           </div>
         </>
       );
@@ -14452,6 +14532,7 @@ export function App() {
                 <input
                   aria-label={i18n.t("symbol.placeholder")}
                   autoComplete="off"
+                  id="terminal-symbol-input"
                   onChange={(event) => {
                     setSymbolDraft(event.currentTarget.value);
                     setIsSearchOpen(true);
@@ -14627,10 +14708,21 @@ export function App() {
           latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
           marketRefreshIssue={marketRefreshIssue}
           onRemoveWatchlistInstrument={(instrument) => void removeWatchlistInstrument(instrument)}
+          onSaveWatchlist={() => void saveCurrentWatchlist()}
           onScrollPositionChange={rememberActiveWorkspaceScrollPosition}
           onSelectInstrument={selectInstrument}
           onSelectTimeframe={(timeframe) => selectTimeframe(timeframe, "market")}
           portfolio={portfolioBacktestState.portfolio ?? null}
+          researchPreparation={{
+            isSavingNote: isSavingResearchNote,
+            isSavingWorkspace: isSavingResearchWorkspace,
+            note: researchNoteState,
+            noteDraft: researchNoteDraft,
+            onNoteChange: setResearchNoteDraft,
+            onSaveNote: () => void saveCurrentResearchNote(),
+            onSaveWorkspace: () => void saveCurrentResearchWorkspace(),
+            workspaceSaved: isResearchWorkspaceSaved
+          }}
           runs={runHistory}
           source={source}
           surfaceRef={activeWorkspaceSurfaceRef}
@@ -16159,12 +16251,27 @@ export function App() {
                 : "These items do not block the audited run, but they may affect how its results are interpreted."}
             </p>
             <div className="research-confirmation-issues">
-              {researchPipelinePreflight.issues.map((issue) => (
-                <article key={issue.id}>
-                  <span>{researchPipelinePreflightIssueLabel(i18n, issue)}</span>
-                  <strong>{issue.value}</strong>
-                </article>
-              ))}
+              {researchPipelinePreflight.issues.map((issue) => {
+                const target = researchPipelinePreflightIssueTargets[issue.id];
+                return (
+                  <article key={issue.id}>
+                    <div className="research-confirmation-issue-copy">
+                      <div>
+                        <span>{researchPipelinePreflightIssueLabel(i18n, issue)}</span>
+                        <strong>{researchContextReadinessValue(i18n, issue)}</strong>
+                      </div>
+                      <p>{researchContextReadinessDetail(i18n, issue)}</p>
+                    </div>
+                    <button
+                      className="research-confirmation-issue-action"
+                      onClick={() => openResearchPipelinePreflightIssue(issue)}
+                      type="button"
+                    >
+                      {i18n.locale === "zh-CN" ? target.actionLabelZh : target.actionLabelEn}
+                    </button>
+                  </article>
+                );
+              })}
             </div>
             <footer className="research-confirmation-actions">
               <button
@@ -21247,9 +21354,24 @@ function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadin
   return labels[row.id];
 }
 
-function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadinessRow): string {
+export function researchContextReadinessValue(
+  i18n: AppI18n,
+  row: Pick<ResearchContextReadinessRow, "id" | "value">
+): string {
   if (i18n.locale !== "zh-CN") {
     return row.value;
+  }
+  if (row.id === "instrument") {
+    const timeframeLabels: Record<string, string> = {
+      "1m": "1 分",
+      "5m": "5 分",
+      "1d": "日 K",
+      "1w": "周 K"
+    };
+    return row.value
+      .split(" · ")
+      .map((token) => token === "N/A" ? "未选择" : timeframeLabels[token] ?? token)
+      .join(" · ");
   }
   if (row.id === "klines") {
     return row.value.replace(" bars", " 根K线");
@@ -21296,12 +21418,25 @@ function researchContextReadinessValue(i18n: AppI18n, row: ResearchContextReadin
     return row.value === "saved" ? "已保存" : "未保存更改";
   }
   if (row.id === "calendar") {
+    const calendarLabels: Record<string, string> = {
+      always_open: "连续交易",
+      open: "开市",
+      closed: "休市",
+      break: "盘中休市",
+      unknown: "未知",
+      after_hours: "盘后",
+      morning: "上午盘",
+      afternoon: "下午盘",
+      regular: "常规时段",
+      continuous: "连续交易",
+      weekend: "周末",
+      pre_open: "盘前",
+      lunch_break: "午间休市"
+    };
     return row.value
-      .replace("always_open", "连续交易")
-      .replace("open", "开市")
-      .replace("closed", "休市")
-      .replace("break", "盘中休市")
-      .replace("unknown", "未知");
+      .split(" · ")
+      .map((token) => calendarLabels[token] ?? token)
+      .join(" · ");
   }
   return row.value;
 }
@@ -21391,7 +21526,10 @@ function compactEvidenceRunId(runId: string): string {
 function researchPipelinePreflightIssueDetail(i18n: AppI18n, preflight: ResearchPipelinePreflight): string {
   const issueSummary = preflight.issues
     .slice(0, 3)
-    .map((issue) => `${researchPipelinePreflightIssueLabel(i18n, issue)}: ${issue.value}`)
+    .map(
+      (issue) =>
+        `${researchPipelinePreflightIssueLabel(i18n, issue)}: ${researchContextReadinessValue(i18n, issue)}`
+    )
     .join(" · ");
   const summary = researchPipelinePreflightStatusLabel(i18n, preflight);
   return issueSummary ? `${summary} ${issueSummary}` : summary;
@@ -21438,7 +21576,10 @@ function researchPipelinePreflightIssueLabel(
   return i18n.locale === "zh-CN" ? labels[issue.id] : issue.label;
 }
 
-function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadinessRow): string {
+export function researchContextReadinessDetail(
+  i18n: AppI18n,
+  row: Pick<ResearchContextReadinessRow, "detail" | "id">
+): string {
   if (i18n.locale !== "zh-CN") {
     return row.detail;
   }
@@ -21450,6 +21591,22 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
   }
   if (row.detail === "Save a note to bind the research hypothesis to this symbol and timeframe.") {
     return "保存笔记，把研究假设绑定到当前标的和周期。";
+  }
+  if (row.id === "klines") {
+    return "当前 K 线数据质量需要复核，请前往数据刷新检查并重试。";
+  }
+  if (row.id === "note") {
+    if (
+      row.detail.startsWith("Draft not saved · ") ||
+      row.detail.startsWith("Unsaved changes since ") ||
+      row.detail.startsWith("Saved ")
+    ) {
+      return row.detail
+        .replace("Draft not saved", "草稿未保存")
+        .replace("Unsaved changes since", "自上次保存后有未保存更改")
+        .replace(/^Saved /, "已保存 ");
+    }
+    return "研究笔记尚未保存，请填写并保存后继续。";
   }
   if (row.id === "cache") {
     return row.detail
@@ -21468,6 +21625,13 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
   }
   if (row.id === "workspace") {
     return row.detail
+      .replace(/\bASHARE\b/g, "A 股")
+      .replace(/\bCRYPTO\b/g, "加密货币")
+      .replace(/\bUS\b/g, "美股")
+      .replace(/\b1m\b/g, "1 分")
+      .replace(/\b5m\b/g, "5 分")
+      .replace(/\b1d\b/g, "日 K")
+      .replace(/\b1w\b/g, "周 K")
       .replace(/^Saved /, "已保存 ")
       .replace("time unknown", "时间未知")
       .replace("research entry", "研究入口")
@@ -21484,24 +21648,36 @@ function researchContextReadinessDetail(i18n: AppI18n, row: ResearchContextReadi
       .replace(" watched symbols are persisted for local research.", " 个自选标的已为本地研究持久化。");
   }
   if (row.id === "refresh") {
-    return row.detail
-      .replace(/^Run watchlist cache refresh for /, "为 ")
-      .replace(" before relying on this context.", " 运行自选缓存刷新后再信任当前上下文。")
-      .replace(" rows cached", " 行已缓存")
-      .replace("refresh skipped", "刷新已跳过")
-      .replace("refresh failed", "刷新失败")
-      .replace("refresh quality incomplete", "刷新质量不完整")
-      .replace("source requires review", "来源需复核")
-      .replace("refresh requires review", "刷新需复核");
+    if (row.detail.startsWith("Run watchlist cache refresh for ")) {
+      return "当前研究上下文缺少匹配的刷新证据，请前往数据刷新运行自选缓存刷新。";
+    }
+    return "当前刷新证据需要复核，请前往数据刷新检查并重新刷新自选缓存。";
   }
   if (row.id === "calendar") {
-    return row.detail
+    const detail = row.detail
+      .replace("Asia/Shanghai", "上海时区")
+      .replace("America/New_York", "纽约时区")
+      .replace(/\bUTC\b/g, "协调世界时")
+      .replace(/\bunknown\b/g, "未知时区")
+      .replace(/\bfallback\b/g, "备用日历")
+      .replace(/\bcore\b/g, "核心日历")
       .replace("next close", "下一次收盘")
       .replace("next open", "下一次开盘")
       .replace("continuous trading", "连续交易")
       .replace("no scheduled event", "无计划事件")
       .replace("Static session template only; exchange holiday calendar is not configured.", "仅静态时段模板；未配置交易所节假日历。")
       .replace("static-session-template", "静态时段模板");
+    return /[A-Za-z_]{3,}/.test(detail)
+      ? "当前交易日历信息需要复核，请打开交易日历查看市场时段。"
+      : detail;
+  }
+  if (row.id === "instrument") {
+    return row.detail
+      .replace("Unknown", "未知标的")
+      .replace("ashare", "A 股")
+      .replace("crypto", "加密货币")
+      .replace(/\bus\b/, "美股")
+      .replace("watched", "个自选");
   }
   return row.detail
     .replace("Draft not saved", "草稿未保存")

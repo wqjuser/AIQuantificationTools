@@ -19,7 +19,11 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Stage9ProductionAdmissionCandidate } from "../lib/stage9-production-admission";
-import type { CacheWatchlistRefreshRun, PortfolioBacktestRun } from "../lib/terminal-api";
+import type {
+  CacheWatchlistRefreshRun,
+  PortfolioBacktestRun,
+  ResearchNoteResult,
+} from "../lib/terminal-api";
 import type { ColorScheme } from "../lib/theme";
 import type {
   BrokerAdapterRow,
@@ -48,10 +52,21 @@ interface TerminalWorkspaceSurfaceProps {
   latestWatchlistCacheRefresh: CacheWatchlistRefreshRun | null;
   marketRefreshIssue: string | null;
   onRemoveWatchlistInstrument: (instrument: Instrument) => void;
+  onSaveWatchlist: () => void;
   onScrollPositionChange: (scrollTop: number) => void;
   onSelectInstrument: (instrument: Instrument) => void;
   onSelectTimeframe: (timeframe: Timeframe) => void;
   portfolio: PortfolioBacktestRun | null;
+  researchPreparation: {
+    isSavingNote: boolean;
+    isSavingWorkspace: boolean;
+    note: ResearchNoteResult;
+    noteDraft: string;
+    onNoteChange: (value: string) => void;
+    onSaveNote: () => void;
+    onSaveWorkspace: () => void;
+    workspaceSaved: boolean;
+  };
   runs: ResearchRunAudit[];
   source: "core" | "fallback";
   surfaceRef: RefObject<HTMLElement | null>;
@@ -284,6 +299,7 @@ function MarketSurface({
   latestWatchlistCacheRefresh,
   marketRefreshIssue,
   onRemoveWatchlistInstrument,
+  onSaveWatchlist,
   onSelectInstrument,
   onSelectTimeframe,
   source,
@@ -296,6 +312,7 @@ function MarketSurface({
   | "latestWatchlistCacheRefresh"
   | "marketRefreshIssue"
   | "onRemoveWatchlistInstrument"
+  | "onSaveWatchlist"
   | "onSelectInstrument"
   | "onSelectTimeframe"
   | "source"
@@ -367,14 +384,26 @@ function MarketSurface({
           className="design-watchlist-panel"
           title="自选列表"
           action={
-            <button
-              aria-pressed={isEditingWatchlist}
-              className="design-link-button"
-              onClick={() => setIsEditingWatchlist((current) => !current)}
-              type="button"
-            >
-              {isEditingWatchlist ? "完成" : "编辑"}
-            </button>
+            <div className="design-watchlist-actions">
+              <button
+                className="design-link-button"
+                disabled={isSavingWatchlist}
+                id="market-watchlist-save"
+                onClick={onSaveWatchlist}
+                type="button"
+              >
+                <Save aria-hidden="true" size={12} />
+                {isSavingWatchlist ? "保存中" : "保存"}
+              </button>
+              <button
+                aria-pressed={isEditingWatchlist}
+                className="design-link-button"
+                onClick={() => setIsEditingWatchlist((current) => !current)}
+                type="button"
+              >
+                {isEditingWatchlist ? "完成" : "编辑"}
+              </button>
+            </div>
           }
         >
           <table className={`design-table compact${isEditingWatchlist ? " editing" : ""}`}>
@@ -590,13 +619,23 @@ function MarketSurface({
 function ResearchSurface({
   action,
   chart,
+  researchPreparation,
   runs,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "chart" | "runs" | "workspace"
+  "action" | "chart" | "researchPreparation" | "runs" | "workspace"
 >) {
   const activeRun = workspace.researchRun;
+  const noteDraftBody = researchPreparation.noteDraft.trim();
+  const savedNote = researchPreparation.note.note;
+  const savedNoteBody = savedNote?.body.trim() ?? "";
+  const noteIsSaved = Boolean(
+    noteDraftBody &&
+    savedNote &&
+    noteDraftBody === savedNoteBody,
+  );
+  const preparationIsSaved = noteIsSaved && researchPreparation.workspaceSaved;
   return (
     <>
       <PageHeader
@@ -743,6 +782,69 @@ function ResearchSurface({
               ))}
             </tbody>
           </table>
+        </SurfacePanel>
+        <SurfacePanel
+          action={
+            <Status tone={preparationIsSaved ? "positive" : "warning"}>
+              {preparationIsSaved ? "准备已保存" : "有未保存项"}
+            </Status>
+          }
+          className="design-research-preparation"
+          subtitle="运行前保存研究假设和当前工作区上下文"
+          title="研究准备"
+        >
+          <div className="design-research-preparation-body">
+            <label className="design-research-note-field" htmlFor="research-note-input">
+              <span>研究笔记</span>
+              <textarea
+                id="research-note-input"
+                onChange={(event) => researchPreparation.onNoteChange(event.currentTarget.value)}
+                placeholder="记录研究假设、观察重点和风险条件"
+                rows={4}
+                value={researchPreparation.noteDraft}
+              />
+            </label>
+            <div className="design-research-preparation-actions">
+              <div>
+                <span>笔记状态</span>
+                <strong>
+                  {researchPreparation.note.error
+                    ? "保存失败，请重试"
+                    : !noteDraftBody
+                      ? "尚未填写"
+                      : noteIsSaved
+                      ? `已保存${savedNote?.updatedAt
+                        ? ` · ${new Date(savedNote.updatedAt).toLocaleString("zh-CN")}`
+                        : ""}`
+                      : "有未保存更改"}
+                </strong>
+              </div>
+              <button
+                className="design-secondary-action"
+                disabled={researchPreparation.isSavingNote || !noteDraftBody}
+                id="research-note-save"
+                onClick={researchPreparation.onSaveNote}
+                type="button"
+              >
+                <Save aria-hidden="true" size={13} />
+                {researchPreparation.isSavingNote ? "正在保存笔记" : "保存研究笔记"}
+              </button>
+              <button
+                className="design-secondary-action"
+                disabled={researchPreparation.isSavingWorkspace}
+                id="research-workspace-save"
+                onClick={researchPreparation.onSaveWorkspace}
+                type="button"
+              >
+                <Save aria-hidden="true" size={13} />
+                {researchPreparation.isSavingWorkspace
+                  ? "正在保存工作区"
+                  : researchPreparation.workspaceSaved
+                    ? "工作区已保存"
+                    : "保存当前工作区"}
+              </button>
+            </div>
+          </div>
         </SurfacePanel>
       </div>
     </>

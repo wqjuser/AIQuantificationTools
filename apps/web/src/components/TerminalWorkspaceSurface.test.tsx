@@ -31,10 +31,21 @@ describe("TerminalWorkspaceSurface", () => {
     latestWatchlistCacheRefresh: null,
     marketRefreshIssue: null,
     onRemoveWatchlistInstrument: () => undefined,
+    onSaveWatchlist: () => undefined,
     onScrollPositionChange: () => undefined,
     onSelectInstrument: () => undefined,
     onSelectTimeframe: () => undefined,
     portfolio: null,
+    researchPreparation: {
+      isSavingNote: false,
+      isSavingWorkspace: false,
+      note: { source: "fallback" as const },
+      noteDraft: "",
+      onNoteChange: () => undefined,
+      onSaveNote: () => undefined,
+      onSaveWorkspace: () => undefined,
+      workspaceSaved: false,
+    },
     runs: [],
     source: "fallback" as const,
     surfaceRef: createRef<HTMLElement>(),
@@ -64,6 +75,46 @@ describe("TerminalWorkspaceSurface", () => {
     expect(execution).toContain("liveTradingAllowed=false");
     expect(execution).toContain("orderSubmissionEnabled=false");
     expect(settings).toContain("实盘阻断边界");
+  });
+
+  it("keeps research preparation controls reachable in the redesigned surface", () => {
+    const research = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="research" />,
+    );
+
+    expect(research).toContain("研究准备");
+    expect(research).toContain('id="research-note-input"');
+    expect(research).toContain('id="research-note-save"');
+    expect(research).toContain('id="research-workspace-save"');
+    expect(research).toContain("尚未填写");
+  });
+
+  it("does not label an edited research note as saved", () => {
+    const research = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="research"
+        researchPreparation={{
+          ...baseProps.researchPreparation,
+          note: {
+            source: "core",
+            note: {
+              body: "已保存的假设",
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              updatedAt: "2026-07-17T12:00:00+08:00",
+            },
+          },
+          noteDraft: "尚未保存的新假设",
+          workspaceSaved: true,
+        }}
+      />,
+    );
+
+    expect(research).toContain("有未保存项");
+    expect(research).toContain("有未保存更改");
+    expect(research).not.toContain("准备已保存");
   });
 
   it("turns authoritative empty data into an explicit next-step state", () => {

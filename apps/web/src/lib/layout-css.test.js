@@ -4183,9 +4183,19 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("!researchPipelineConfirmationDialogRef.current?.open");
     expect(confirmationDialogSource).toContain("onCancel={() => setIsResearchPipelineConfirmationOpen(false)}");
     expect(confirmationDialogSource).toContain("ref={researchPipelineConfirmationCancelButtonRef}");
+    expect(confirmationDialogSource).toContain("researchContextReadinessValue(i18n, issue)");
+    expect(confirmationDialogSource).toContain("researchContextReadinessDetail(i18n, issue)");
+    expect(confirmationDialogSource).toContain("openResearchPipelinePreflightIssue(issue)");
+    expect(confirmationDialogSource).toContain('className="research-confirmation-issue-action"');
+    expect(confirmationDialogSource).not.toContain("<strong>{issue.value}</strong>");
     expect(appSource).toContain('void runPipeline("accepted")');
+    expect(appSource).toContain('id="terminal-symbol-input"');
+    expect(appSource).toContain('id="operations-market-data"');
+    expect(appSource).toContain('id="operations-market-calendar"');
+    expect(appSource).toContain("researchPipelinePreflightIssueTargets");
     expect(cssBlock(".research-confirmation-dialog")).toContain("background: transparent;");
     expect(cssBlock(".research-confirmation-modal")).toContain("width: min(520px, calc(100vw - 32px));");
+    expect(cssBlock(".research-confirmation-issue-action:focus-visible")).toContain("outline:");
     expect(cssBlock(':root[data-theme="light"] .research-confirmation-dialog')).toContain("color: var(--text);");
     expect(cssBlock(':root[data-theme="light"] .research-confirmation-modal')).toContain("background: var(--surface);");
     expect(cssBlock(':root[data-theme="light"] .research-confirmation-issues article')).toContain(
