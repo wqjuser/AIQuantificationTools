@@ -390,6 +390,19 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".symbol-suggestion-cache");
   });
 
+  test("keeps light market search results readable and evenly spaced", () => {
+    expect(hasCssDeclaration(".symbol-suggestions", "display: grid;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestions", "gap: 6px;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestions", "padding: 8px;")).toBe(true);
+    expect(hasCssDeclaration(".symbol-suggestion-select:only-child", "grid-column: 1 / -1;")).toBe(true);
+    expect(
+      hasCssDeclaration(
+        '.terminal-shell[data-theme="light"] .symbol-suggestions button strong',
+        "color: #213346;"
+      )
+    ).toBe(true);
+  });
+
   test("does not restart symbol search when only the chart timeframe changes", () => {
     const selectTimeframeSource = sourceBetween("const selectTimeframe = useCallback(", "const runAiWorkbenchAction");
 
