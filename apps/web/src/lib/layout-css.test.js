@@ -513,7 +513,11 @@ describe("terminal layout css", () => {
     expect(cssBlock(".terminal-shell")).toContain("min-height: 100vh;");
     expect(cssBlock(".terminal-shell")).toContain("grid-template-columns: 208px minmax(0, 1fr);");
     expect(hasCssDeclaration(".terminal-main", "overflow: hidden;")).toBe(true);
+    expect(hasCssDeclaration(".terminal-main", "grid-template-rows: minmax(0, 1fr);")).toBe(true);
+    expect(hasCssDeclaration(".terminal-main", "align-content: stretch;")).toBe(true);
     expect(hasCssDeclaration(".terminal-design-surface", "overflow: auto;")).toBe(true);
+    expect(hasCssDeclaration(".terminal-design-surface", "overscroll-behavior-y: none;")).toBe(true);
+    expect(hasCssDeclaration(".terminal-design-surface", "padding: 12px 14px 0;")).toBe(true);
     expect(appSource).toContain("workspaceScrollPositionsRef");
     expect(appSource).toContain("activeWorkAreaIdRef");
     expect(appSource).toContain("activeWorkspaceSurfaceRef");

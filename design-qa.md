@@ -68,4 +68,6 @@
 
 22. 行情自选概览层级专项：源图为 `/var/folders/pn/mpj6bdfj1b91_cv0s4b5462m0000gn/T/codex-clipboard-c2f736d0-dfae-454c-8d68-ff4f37246ed8.png`，实现截图为 `/tmp/aiqt-watchlist-overview-final-1680.png`，同框对照为 `/tmp/aiqt-watchlist-overview-comparison.png`；桌面视口 `1680 × 962`，浅色主题，7 条自选状态。根因是概览把“市场分布”放入可压缩到 0 的网格轨道，同时在末尾重复展示已由选中行、图表标题和刷新状态表达的“当前标的 / 最近更新”，空间不足时两组内容会交错。现删除重复摘要，概览只保留“标的总数、涨跌统计、市场分布”三层信息，并把市场分布轨道改为最小内容高度、组间距收敛为 8px。Docker 实测三条市场行重叠均为 0px，概览自身溢出为 0px，页面横向溢出为 0px；既有自选选择、编辑、报价和刷新行为均未改动。
 
+23. 全工作区底部回弹与空白专项：源图为 `/var/folders/pn/mpj6bdfj1b91_cv0s4b5462m0000gn/T/codex-clipboard-7dfbf6d2-a3f0-4c8d-97a0-cf92e79a27ff.png`，实现截图为 `/tmp/aiqt-shared-scroll-final-1680.png`，同框对照为 `/tmp/aiqt-shared-scroll-comparison.png`。共享工作区仍保留旧版状态栏避让用的 `76px` 底部内边距，主容器也继续使用三个自动网格轨道；状态栏已独立占据底部 62px 后，这两处遗留会让短页面露出空轨道，并让原本到达底部的页面继续滚动 76px。现把桌面主容器收敛为唯一可伸缩工作区轨道，工作区底部内边距改为 0，并用 `overscroll-behavior-y: none` 禁止边界回弹。`1680 × 962` Docker 逐页复验行情、研究、策略、回测、AI、组合、执行、运行管理、审计和设置：工作区底边到状态栏间距全部为 0px，人工增加的滚动距离从 76px 降为 0px；运行管理保留 804px、审计保留 8px 的真实内容滚动，其余短页面最大滚动均为 0px。`375 × 812` 下继续保留底部固定导航所需的移动端 70px 避让，页面横向溢出为 0px。
+
 final result: passed

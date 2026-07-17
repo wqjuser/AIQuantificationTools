@@ -20758,6 +20758,11 @@ button.ai-review-record {
   height: calc(100vh - 62px);
 }
 
+.terminal-main {
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
+}
+
 .left-rail .work-area-button {
   border-color: transparent;
   border-radius: 5px;
@@ -20794,7 +20799,8 @@ button.ai-review-record {
 }
 
 .terminal-design-surface {
-  padding: 12px 14px 76px;
+  padding: 12px 14px 0;
+  overscroll-behavior-y: none;
 }
 
 .design-page-header {
