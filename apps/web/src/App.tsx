@@ -9651,6 +9651,11 @@ export function App() {
 
   const selectTimeframe = useCallback(
     (timeframe: Timeframe, targetWorkAreaId: "market" | "research" = "research") => {
+      if (workspaceRef.current.selectedTimeframe !== timeframe) {
+        skipNextSymbolSearchRef.current = true;
+      }
+      setSearchSuggestions([]);
+      setIsSearchOpen(false);
       manualSelectionVersionRef.current += 1;
       workflowRunIdRef.current += 1;
       setIsRunning(false);

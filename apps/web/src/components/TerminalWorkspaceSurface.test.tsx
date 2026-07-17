@@ -100,6 +100,24 @@ describe("TerminalWorkspaceSurface", () => {
     expect(market).not.toContain("今开 —");
   });
 
+  it("renders every dense watchlist row in all market tables", () => {
+    const denseWorkspace: typeof workspace = {
+      ...workspace,
+      watchlist: [
+        ...workspace.watchlist,
+        { symbol: "600001", name: "邯郸钢铁", market: "ashare", changePct: 0 },
+        { symbol: "600005", name: "武钢股份", market: "ashare", changePct: 0 },
+        { symbol: "601398", name: "工商银行", market: "ashare", changePct: 0 },
+      ],
+    };
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="market" workspace={denseWorkspace} />,
+    );
+
+    expect(market).toContain("7 个标的");
+    expect(market.match(/>601398</g)).toHaveLength(4);
+  });
+
   it("renders market editing and timeframe controls as real buttons", () => {
     const market = renderToStaticMarkup(
       <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="market" />,

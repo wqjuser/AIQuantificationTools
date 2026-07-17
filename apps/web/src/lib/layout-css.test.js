@@ -140,6 +140,20 @@ describe("terminal layout css", () => {
     expect(styles).toContain("display: table-cell;");
   });
 
+  test("keeps dense market watchlist and ranking rows scrollable", () => {
+    const marketSurfaceSource = sourceBetweenText(
+      terminalWorkspaceSurfaceSource,
+      "function MarketSurface",
+      "function ResearchSurface"
+    );
+
+    expect(hasCssDeclaration(".design-watchlist-panel .design-panel-body", "overflow-y: auto;")).toBe(true);
+    expect(hasCssDeclaration(".design-market-bottom .design-panel-body", "overflow-y: auto;")).toBe(true);
+    expect(marketSurfaceSource).not.toContain("sorted.slice(0, 5)");
+    expect(marketSurfaceSource).not.toContain("sorted.slice().reverse().slice(0, 5)");
+    expect(marketSurfaceSource).not.toContain("workspace.watchlist.slice(0, 5)");
+  });
+
   test("removes legacy desktop row gaps from every workspace", () => {
     expect(styles).toContain("@media (min-width: 1301px) {");
     expect(hasCssBlockWith("  .terminal-main", [
@@ -374,6 +388,15 @@ describe("terminal layout css", () => {
     expect(symbolSwitcherSource).toContain("suggestion.cache");
     expect(symbolSwitcherSource).toContain("marketSearchCacheSummary(i18n, suggestion.cache)");
     expect(styles).toContain(".symbol-suggestion-cache");
+  });
+
+  test("does not restart symbol search when only the chart timeframe changes", () => {
+    const selectTimeframeSource = sourceBetween("const selectTimeframe = useCallback(", "const runAiWorkbenchAction");
+
+    expect(selectTimeframeSource).toContain("if (workspaceRef.current.selectedTimeframe !== timeframe)");
+    expect(selectTimeframeSource).toContain("skipNextSymbolSearchRef.current = true;");
+    expect(selectTimeframeSource).toContain("setSearchSuggestions([]);");
+    expect(selectTimeframeSource).toContain("setIsSearchOpen(false);");
   });
 
   test("lets stale or empty market search suggestions refresh cache without nested buttons", () => {

@@ -555,7 +555,7 @@ function MarketSurface({
           </SurfacePanel>
         </div>
         <div className="design-market-bottom">
-          {[sorted.slice(0, 5), sorted.slice().reverse().slice(0, 5)].map(
+          {[sorted, sorted.slice().reverse()].map(
             (rows, groupIndex) => (
               <SurfacePanel key={groupIndex} title={groupIndex === 0 ? "自选涨幅排行" : "自选弱势排行"}>
                 <table className="design-table compact" key={groupIndex}>
@@ -585,7 +585,7 @@ function MarketSurface({
             ),
           )}
           <SurfacePanel title="关注标的">
-            <table className="design-table compact"><thead><tr><th>名称</th><th>代码</th><th>类型</th></tr></thead><tbody>{workspace.watchlist.slice(0, 5).map((row) => <tr key={row.symbol}><td>{row.name}</td><td>{row.symbol}</td><td>{row.market === "ashare" ? "A 股" : row.market === "us" ? "美股" : "加密货币"}</td></tr>)}</tbody></table>
+            <table className="design-table compact"><thead><tr><th>名称</th><th>代码</th><th>类型</th></tr></thead><tbody>{workspace.watchlist.map((row) => <tr key={row.symbol}><td>{row.name}</td><td>{row.symbol}</td><td>{row.market === "ashare" ? "A 股" : row.market === "us" ? "美股" : "加密货币"}</td></tr>)}</tbody></table>
           </SurfacePanel>
         </div>
       </div>

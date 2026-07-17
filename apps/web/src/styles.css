@@ -17231,7 +17231,14 @@ em {
   gap: 8px;
 }
 
+.design-market-bottom .design-panel {
+  display: flex;
+  flex-direction: column;
+}
+
 .design-market-bottom .design-panel-body {
+  flex: 1;
+  overflow-y: auto;
   padding: 0;
 }
 
@@ -20923,6 +20930,7 @@ button.ai-review-record {
 .design-watchlist-panel .design-panel-body {
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .design-watchlist-panel .design-table {
