@@ -12448,7 +12448,6 @@ em {
   max-height: calc(100vh - 32px);
   overflow: auto;
   border: 1px solid #385168;
-  border-top-color: #d3a947;
   border-radius: 10px;
   background: #0f1a26;
   box-shadow: 0 28px 80px rgb(0 0 0 / 58%);
@@ -21428,7 +21427,6 @@ button.ai-review-record {
 
 :root[data-theme="light"] .research-confirmation-modal {
   border-color: var(--border-strong);
-  border-top-color: var(--amber);
   background: var(--surface);
   box-shadow: 0 24px 64px rgb(23 37 54 / 22%);
 }
