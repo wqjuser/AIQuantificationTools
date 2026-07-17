@@ -9582,7 +9582,10 @@ export function App() {
   }, [aiReviewHistoryPagination?.total]);
 
   const selectInstrument = useCallback(
-    (instrument: TerminalWorkspace["selectedInstrument"]) => {
+    (
+      instrument: TerminalWorkspace["selectedInstrument"],
+      targetWorkAreaId: ProductWorkAreaId = "research"
+    ) => {
       const isExistingWatchlistInstrument = watchlistIncludesInstrument(workspace.watchlist, instrument);
       manualSelectionVersionRef.current += 1;
       workflowRunIdRef.current += 1;
@@ -9596,7 +9599,7 @@ export function App() {
         source: "core",
         statusLabel: "Instrument selected"
       }));
-      setActiveWorkAreaId("research");
+      setActiveWorkAreaId(targetWorkAreaId);
       setActiveLoopStepId("research");
       setActiveWorkflowStageId("data");
       setWorkflowRunState(createWorkflowRunState());
@@ -12804,11 +12807,11 @@ export function App() {
       if (!instrument) {
         return;
       }
-      selectInstrument(instrument);
+      selectInstrument(instrument, activeWorkAreaId);
       setSearchSuggestions([]);
       setIsSearchOpen(false);
     },
-    [marketDraft, searchSuggestions, selectInstrument, symbolDraft]
+    [activeWorkAreaId, marketDraft, searchSuggestions, selectInstrument, symbolDraft]
   );
 
   const selectSearchSuggestion = useCallback(
@@ -12818,14 +12821,17 @@ export function App() {
       setSymbolDraft(suggestion.symbol);
       setSearchSuggestions([]);
       setIsSearchOpen(false);
-      selectInstrument({
-        symbol: suggestion.symbol,
-        name: suggestion.name,
-        market: suggestion.market,
-        changePct: 0
-      });
+      selectInstrument(
+        {
+          symbol: suggestion.symbol,
+          name: suggestion.name,
+          market: suggestion.market,
+          changePct: 0
+        },
+        activeWorkAreaId
+      );
     },
-    [selectInstrument]
+    [activeWorkAreaId, selectInstrument]
   );
 
   const refreshSearchSuggestionCache = useCallback(
@@ -12836,12 +12842,15 @@ export function App() {
       setSymbolDraft(suggestion.symbol);
       setSearchSuggestions([]);
       setIsSearchOpen(false);
-      selectInstrument({
-        symbol: suggestion.symbol,
-        name: suggestion.name,
-        market: suggestion.market,
-        changePct: 0
-      });
+      selectInstrument(
+        {
+          symbol: suggestion.symbol,
+          name: suggestion.name,
+          market: suggestion.market,
+          changePct: 0
+        },
+        activeWorkAreaId
+      );
       await refreshCacheContext({
         market: suggestion.market,
         symbol: suggestion.symbol,
@@ -12861,7 +12870,7 @@ export function App() {
         })
       );
     },
-    [refreshCacheContext, selectInstrument, workspace.selectedTimeframe]
+    [activeWorkAreaId, refreshCacheContext, selectInstrument, workspace.selectedTimeframe]
   );
 
   useEffect(() => {

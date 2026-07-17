@@ -412,6 +412,19 @@ describe("terminal layout css", () => {
     expect(selectTimeframeSource).toContain("setIsSearchOpen(false);");
   });
 
+  test("keeps global symbol search selections in the current work area", () => {
+    const selectInstrumentSource = sourceBetween("const selectInstrument = useCallback(", "const runResearchOpsQueueAction");
+    const submitSymbolSource = sourceBetween("const submitSymbol = useCallback(", "const selectSearchSuggestion");
+    const selectSuggestionSource = sourceBetween("const selectSearchSuggestion = useCallback(", "const refreshSearchSuggestionCache");
+    const refreshSuggestionSource = sourceBetween("const refreshSearchSuggestionCache = useCallback(", "useEffect(() =>");
+
+    expect(selectInstrumentSource).toContain('targetWorkAreaId: ProductWorkAreaId = "research"');
+    expect(selectInstrumentSource).toContain("setActiveWorkAreaId(targetWorkAreaId);");
+    expect(submitSymbolSource).toContain("selectInstrument(instrument, activeWorkAreaId);");
+    expect(selectSuggestionSource).toMatch(/selectInstrument\([\s\S]*?,\s*activeWorkAreaId\s*\);/);
+    expect(refreshSuggestionSource).toMatch(/selectInstrument\([\s\S]*?,\s*activeWorkAreaId\s*\);/);
+  });
+
   test("lets stale or empty market search suggestions refresh cache without nested buttons", () => {
     const symbolSwitcherSource = sourceBetween('<form className="symbol-switcher"', "</form>");
 
