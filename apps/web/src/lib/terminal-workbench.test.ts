@@ -38,6 +38,7 @@ import {
   buildAiReviewAuditTimelineItems,
   buildAiReviewStage3CandidateKey,
   buildAiReviewStage3ContextKey,
+  resolveAiReviewDraftExperiment,
   buildAiReviewExportEvidenceIndexRows,
   buildAuditEvidenceReportMarkdown,
   buildAuditEvidenceSummary,
@@ -158,6 +159,7 @@ import {
   buildGoldenPathRunbookPreview,
   buildGoldenPathWorkspaceContext,
   buildInstrumentFromSymbol,
+  resolveMarketSearchMarket,
   buildMarketDataRefreshGuard,
   buildMarketDataProviderHealthTrendRows,
   buildMarketDataProviderHealthTrendSummary,
@@ -259,6 +261,7 @@ import {
   buildResearchPipelinePreflight,
   resolveResearchPipelinePreparationEvidenceRunId,
   buildResearchRunContextBinding,
+  findLatestResearchRunForContext,
   buildResearchWorkspaceStateDraft,
   buildResearchOpsQueueRows,
   workspaceWithSavedResearchWorkspaceState,
@@ -339,6 +342,7 @@ import {
   workspaceWithPreservedInteractiveState,
   workspaceWithPreservedSelection,
   workspaceWithSavedWatchlist,
+  workspaceWithAiStrategyDraft,
   workspaceWithStrategyLibraryItem,
   workspaceWithStrategyExperimentCandidate,
   workspaceNeedsStrategyReaudit,
@@ -346,6 +350,7 @@ import {
   workspaceWithStrategyTemplate,
   workspaceWithStrategyField,
   workspaceWithSelectedTimeframe,
+  workspaceWithPortfolioPeerAuditInstrument,
   workspaceWithSelectedInstrument,
   workspaceFromResearchRunAudit,
   strategySnapshotFromStrategyConfig
@@ -458,6 +463,24 @@ describe("Stage 3 and Stage 5 research run state scopes", () => {
     expect(buildAiReviewStage3CandidateKey("experiment-1", [
       { ...candidates[0], resultHash: "c".repeat(64) }
     ])).not.toBe(key);
+  });
+
+  test("does not reuse an experiment whose evidence differs from the current draft", () => {
+    const experiment = strategyExperimentFixture();
+    expect(resolveAiReviewDraftExperiment(
+      experiment.experimentId,
+      [experiment],
+      experiment.definition.dimensions,
+      experiment.definition.guardrails,
+      { trainBars: 40, validationBars: 10, stepBars: 10 }
+    )).toBeNull();
+    expect(resolveAiReviewDraftExperiment(
+      experiment.experimentId,
+      [experiment],
+      experiment.definition.dimensions,
+      experiment.definition.guardrails,
+      null
+    )).toBe(experiment);
   });
 });
 
@@ -2627,7 +2650,7 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("marks open market calendar as ready in Stage 1 calendar readiness", () => {
+  test("keeps an open static-template market calendar ready without prompting for confirmation", () => {
     const rows = buildResearchContextReadinessRows({
       workspace: workspaceWithSavedResearchWorkspaceState(buildTerminalWorkspace(), {
         market: "ashare",
@@ -2650,7 +2673,7 @@ describe("terminal workbench model", () => {
         nextOpen: null,
         nextClose: "2026-06-11T11:30:00+08:00",
         detail: "A-share market is open in the morning session.",
-        warnings: [],
+        warnings: ["Static session template only; exchange holiday calendar is not configured."],
         source: "static-session-template"
       },
       cacheContext: {
@@ -2671,11 +2694,17 @@ describe("terminal workbench model", () => {
     expect(rows.find((row) => row.id === "calendar")).toMatchObject({
       label: "Market calendar",
       value: "open · morning",
-      detail: "Asia/Shanghai · next close 2026-06-11T11:30:00+08:00 · static-session-template",
+      detail:
+        "Asia/Shanghai · next close 2026-06-11T11:30:00+08:00 · Static session template only; exchange holiday calendar is not configured.",
       status: "ready",
       tone: "positive"
     });
     expect(rows.find((row) => row.id === "calendar")?.action).toBeUndefined();
+    expect(buildResearchPipelinePreflight(rows)).toMatchObject({
+      status: "ready",
+      requiresConfirmation: false,
+      issues: []
+    });
   });
 
   test("marks static-template market calendar readiness warnings as review without blocking research", () => {
@@ -8735,6 +8764,24 @@ describe("terminal workbench model", () => {
     });
   });
 
+  test("does not retain a duplicate RSI confirmation when RSI is the primary entry rule", () => {
+    const workspace = workspaceWithStrategyRuleDraftField(
+      workspaceWithStrategyRuleDraftField(
+        workspaceWithStrategyRuleDraftField(buildTerminalWorkspace(), "entryRsiConfirm", true),
+        "entryKind",
+        "rsi_below"
+      ),
+      "entryRsiConfirm",
+      true
+    );
+
+    expect(buildStrategyRuleDraft(workspace)).toMatchObject({
+      entryKind: "rsi_below",
+      entryRsiConfirm: false
+    });
+    expect(workspace.strategy.entry).toBe("RSI20 < 30");
+  });
+
   test("restores structured RSI strategy snapshots into editable draft fields", () => {
     const workspace = workspaceWithStrategyField(
       workspaceWithStrategyField(buildTerminalWorkspace(), "entry", "RSI14 < 30"),
@@ -8896,6 +8943,66 @@ describe("terminal workbench model", () => {
       exitKind: "close_below_sma",
       exitWindow: 13
     });
+  });
+
+  test("applies one validated AI strategy draft atomically without saving or retaining stale audit evidence", () => {
+    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
+      runId: "run-before-ai-draft",
+      createdAt: "2026-07-21T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      strategyName: "Old audited strategy",
+      strategyRevision: "rev-before-ai-draft",
+      dataRows: 500,
+      metrics: {
+        total_return_pct: 4.2,
+        max_drawdown_pct: 6.1,
+        win_rate_pct: 51,
+        trade_count: 22
+      },
+      decisions: [],
+      executionMode: "paper_only"
+    });
+    const currentDraft = buildStrategyRuleDraft(auditedWorkspace);
+
+    const workspace = workspaceWithAiStrategyDraft(
+      auditedWorkspace,
+      {
+        ...currentDraft,
+        name: "AI 中低风险趋势",
+        entryWindow: 30,
+        entryRsiConfirm: true,
+        entryRsiThreshold: 55,
+        entryVolumeConfirm: true,
+        positionPct: 15,
+        paperOnly: false
+      },
+      [
+        "三十日均线用于降低短期噪声。",
+        "相对强弱和成交量确认用于减少单一信号误触发。",
+        "仓位限制为百分之十五并保留止损和回撤保护。"
+      ]
+    );
+
+    expect(workspace.selectedInstrument).toEqual(auditedWorkspace.selectedInstrument);
+    expect(workspace.selectedTimeframe).toBe(auditedWorkspace.selectedTimeframe);
+    expect(workspace.strategy).toEqual({
+      name: "AI 中低风险趋势",
+      entry: "Close > SMA30 AND RSI14 > 55 AND Volume > VOL20",
+      exit: "Close < SMA20",
+      position: "15% max capital allocation",
+      risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
+    });
+    expect(workspace.researchRun).toBeNull();
+    expect(workspace.backtestTrades).toEqual([]);
+    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
+    expect(workspace.decisionLog[0]).toMatchObject({
+      agent: "AI Strategy Assistant",
+      tone: "warning"
+    });
+    expect(workspace.decisionLog[0]?.message).toContain("编写原因");
+    expect(workspace.decisionLog[0]?.message).toContain("尚未保存或运行");
   });
 
   test("keeps strategy rule matrix parameters aligned with structured edits", () => {
@@ -9170,6 +9277,39 @@ describe("terminal workbench model", () => {
       runContext: "ASHARE · 600000 · 1d",
       detail: "Audited run run-context-match belongs to ASHARE · 600000 · 1d, not US · AAPL · 1d."
     });
+  });
+
+  test("finds the latest audited run for the selected AI review context", () => {
+    const olderMatch = auditedRunFixture({
+      runId: "run-older-match",
+      createdAt: "2026-07-20T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600519",
+      timeframe: "1d",
+    });
+    const newerMatch = auditedRunFixture({
+      runId: "run-newer-match",
+      createdAt: "2026-07-22T08:00:00+00:00",
+      market: "ashare",
+      symbol: "600519",
+      timeframe: "1d",
+    });
+    const otherContext = auditedRunFixture({
+      runId: "run-other-context",
+      createdAt: "2026-07-23T08:00:00+00:00",
+      market: "crypto",
+      symbol: "BTC/USDT",
+      timeframe: "1d",
+    });
+
+    expect(findLatestResearchRunForContext(
+      [olderMatch, otherContext, newerMatch],
+      { market: "ashare", symbol: "600519", timeframe: "1d" },
+    )?.runId).toBe("run-newer-match");
+    expect(findLatestResearchRunForContext(
+      [olderMatch],
+      { market: "ashare", symbol: "600519", timeframe: "1w" },
+    )).toBeNull();
   });
 
   test("blocks Backtest report evidence when an audited run belongs to another context", () => {
@@ -23097,6 +23237,78 @@ describe("terminal workbench model", () => {
     expect(draft.summary).toContain("2 audited runs");
   });
 
+  test("uses the newest peer whose equity timestamps align with the current run", () => {
+    const current = {
+      ...auditedRunFixture({
+        runId: "run-current-600000",
+        symbol: "600000",
+        market: "ashare",
+        timeframe: "1d",
+        createdAt: "2026-05-28T08:00:00+00:00"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 105000 }
+      ]
+    };
+    const alignedPeer = {
+      ...auditedRunFixture({
+        runId: "run-peer-000300-aligned",
+        symbol: "000300",
+        market: "ashare",
+        timeframe: "1d",
+        createdAt: "2026-05-26T07:00:00+00:00"
+      }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 101000 }
+      ]
+    };
+    const newerMisalignedPeer = {
+      ...alignedPeer,
+      runId: "run-peer-000300-misaligned",
+      createdAt: "2026-05-27T07:00:00+00:00",
+      backtestEquityCurve: [
+        { timestamp: "2026-05-25T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 102000 }
+      ]
+    };
+
+    const draft = buildPortfolioBacktestDraft(
+      [newerMisalignedPeer, alignedPeer, current],
+      current.runId
+    );
+
+    expect(draft.status).toBe("ready");
+    expect(draft.request?.legs.map((leg) => leg.runId)).toEqual([
+      "run-current-600000",
+      "run-peer-000300-aligned"
+    ]);
+  });
+
+  test("blocks a portfolio backtest before submitting misaligned equity curves", () => {
+    const current = {
+      ...auditedRunFixture({ runId: "run-current-600000", symbol: "600000", market: "ashare", timeframe: "1d" }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 105000 }
+      ]
+    };
+    const misalignedPeer = {
+      ...auditedRunFixture({ runId: "run-peer-000300", symbol: "000300", market: "ashare", timeframe: "1d" }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-25T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 101000 }
+      ]
+    };
+
+    const draft = buildPortfolioBacktestDraft([misalignedPeer, current], current.runId);
+
+    expect(draft.status).toBe("blocked");
+    expect(draft.request).toBeNull();
+    expect(draft.summary).toContain("aligned equity curves");
+  });
+
   test("blocks a portfolio backtest draft without a bound current run", () => {
     const run = {
       ...auditedRunFixture({ runId: "run-600000", symbol: "600000", market: "ashare", timeframe: "1d" }),
@@ -23159,7 +23371,11 @@ describe("terminal workbench model", () => {
         { timestamp: "2026-05-27T08:00:00+00:00", equity: 101000 }
       ]
     };
-    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), current);
+    const workspaceWithRun = workspaceFromResearchRunAudit(buildTerminalWorkspace(), current);
+    const workspace = {
+      ...workspaceWithRun,
+      watchlist: [workspaceWithRun.selectedInstrument]
+    };
 
     const plan = buildPortfolioPeerAuditPlan(workspace, [peer, current]);
 
@@ -23169,6 +23385,33 @@ describe("terminal workbench model", () => {
     expect(plan.candidates.map((candidate) => `${candidate.symbol}:${candidate.status}:${candidate.runId ?? "missing"}`)).toEqual([
       "600000:audited:run-current-600000",
       "000300:audited:run-peer-000300"
+    ]);
+  });
+
+  test("treats a same-period peer with misaligned equity timestamps as needing a fresh audit", () => {
+    const current = {
+      ...auditedRunFixture({ runId: "run-current-600000", symbol: "600000", market: "ashare", timeframe: "1d" }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-26T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 105000 }
+      ]
+    };
+    const peer = {
+      ...auditedRunFixture({ runId: "run-peer-000300", symbol: "000300", market: "ashare", timeframe: "1d" }),
+      backtestEquityCurve: [
+        { timestamp: "2026-05-25T08:00:00+00:00", equity: 100000 },
+        { timestamp: "2026-05-27T08:00:00+00:00", equity: 101000 }
+      ]
+    };
+    const workspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), current);
+
+    const plan = buildPortfolioPeerAuditPlan(workspace, [peer, current]);
+
+    expect(plan.status).toBe("ready");
+    expect(plan.auditedCount).toBe(1);
+    expect(plan.candidates.map((candidate) => `${candidate.symbol}:${candidate.status}`)).toEqual([
+      "600000:audited",
+      "000300:missing"
     ]);
   });
 
@@ -31582,16 +31825,6 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("keeps timeframe text from becoming a volume window", () => {
-    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
-    const rows = buildStrategyRuleRows(workspace);
-
-    expect(workspace.strategy.entry).toBe("Close above SMA20 with volume confirmation after 1d research context");
-    expect(rows[0]).toMatchObject({
-      parameter: "SMA20 / VOL20"
-    });
-  });
-
   test("derives audited backtest trade rows from strategy and metrics", () => {
     const rows = buildBacktestTradeRows(buildTerminalWorkspace());
 
@@ -32285,19 +32518,6 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("builds a visible workflow trail for generated strategy drafts", () => {
-    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
-    const state = buildAiActionWorkflowState(workspace, "strategy-draft");
-
-    expect(state.activeStageId).toBe("factor");
-    expect(state.completedStageIds).toEqual(["data"]);
-    expect(state.log.map((entry) => [entry.stageId, entry.level])).toEqual([
-      ["data", "success"],
-      ["factor", "warning"]
-    ]);
-    expect(state.log[1].message).toBe("Strategy draft staged: 600000 1d AI draft; audit required before backtest.");
-  });
-
   test("blocks AI explanation and debate workflow trails until an audited run is bound", () => {
     const workspace = buildTerminalWorkspace();
 
@@ -32483,76 +32703,6 @@ describe("terminal workbench model", () => {
     );
   });
 
-  test("generates a paper-only strategy draft from the current context", () => {
-    const workspace = workspaceWithAiAction(buildTerminalWorkspace(), "strategy-draft");
-
-    expect(workspace.strategy.name).toBe("600000 1d AI draft");
-    expect(workspace.strategy.entry).toBe("Close above SMA20 with volume confirmation after 1d research context");
-    expect(workspace.strategy.risk).toBe("Stop -8%, take profit +18%, drawdown guard 12%, paper only");
-    expect(workspace.decisionLog[0]).toMatchObject({
-      agent: "Strategy Drafter",
-      tone: "warning"
-    });
-  });
-
-  test("invalidates stale audit results when a strategy draft is generated", () => {
-    const auditedWorkspace = workspaceFromResearchRunAudit(buildTerminalWorkspace(), {
-      runId: "run-history",
-      createdAt: "2026-05-26T08:00:00+00:00",
-      market: "ashare",
-      symbol: "600000",
-      timeframe: "1d",
-      strategyName: "SMA trend demo",
-      strategyRevision: "rev123",
-      dataRows: 120,
-      metrics: {
-        total_return_pct: 8.2,
-        max_drawdown_pct: 3.1,
-        win_rate_pct: 55,
-        trade_count: 9
-      },
-      decisions: [{ agent: "AI Summary", message: "Previous run", tone: "ai" }],
-      executionMode: "paper_only",
-      backtestTrades: [
-        {
-          id: "old-trade",
-          timestamp: "T+0",
-          symbol: "600000",
-          side: "BUY",
-          status: "filled",
-          price: "8.66",
-          quantity: "2100",
-          exposure: "20%",
-          pnl: "+8.20%",
-          reason: "previous strategy",
-          tone: "positive"
-        }
-      ],
-      backtestEquityCurve: [{ timestamp: "2026-05-26T08:00:00+00:00", equity: 108200 }],
-      backtestDiagnostics: [
-        {
-          id: "old-diagnostic",
-          label: "Old diagnostic",
-          value: "stale",
-          detail: "Previous run diagnostic",
-          tone: "neutral"
-        }
-      ]
-    });
-
-    const workspace = workspaceWithAiAction(auditedWorkspace, "strategy-draft");
-
-    expect(workspace.researchRun).toBeNull();
-    expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
-    expect(workspace.backtestTrades).toEqual([]);
-    expect(workspace.backtestEquityCurve).toEqual([]);
-    expect(workspace.backtestDiagnostics).toEqual([]);
-    expect(workspace.decisionLog[0]).toEqual({
-      agent: "Strategy Drafter",
-      message: "Strategy draft generated for 600000 from run-history. Run Pipeline to audit the new rules before backtest or paper execution.",
-      tone: "warning"
-    });
-  });
 
   test("formats research run audit summaries for the terminal", () => {
     expect(
@@ -33458,6 +33608,16 @@ describe("terminal workbench model", () => {
     expect(buildInstrumentFromSymbol("us", "   ")).toBeNull();
   });
 
+  test("routes unambiguous symbol codes and Chinese stock names to their market before searching", () => {
+    expect(resolveMarketSearchMarket("crypto", "600000")).toBe("ashare");
+    expect(resolveMarketSearchMarket("crypto", "60000")).toBe("ashare");
+    expect(resolveMarketSearchMarket("crypto", "sh600000")).toBe("ashare");
+    expect(resolveMarketSearchMarket("ashare", "AAPL")).toBe("us");
+    expect(resolveMarketSearchMarket("ashare", "BTC/USDT")).toBe("crypto");
+    expect(resolveMarketSearchMarket("crypto", "贵州茅台")).toBe("ashare");
+    expect(resolveMarketSearchMarket("us", "贵州茅台")).toBe("ashare");
+  });
+
   test("adds a manually selected instrument to the watchlist context", () => {
     const workspace = workspaceWithSelectedInstrument(
       buildTerminalWorkspace(),
@@ -33473,6 +33633,66 @@ describe("terminal workbench model", () => {
     expect(workspace.watchlist[0].symbol).toBe("MSFT");
     expect(workspace.watchlist).toHaveLength(5);
     expect(workspace.researchRun).toBeNull();
+  });
+
+  test("selects a portfolio peer without replacing the audited strategy with a placeholder", () => {
+    const currentWorkspace = workspaceWithStrategyField(
+      buildTerminalWorkspace(),
+      "entry",
+      "Close > SMA20 and volume confirms"
+    );
+
+    const peerWorkspace = workspaceWithPortfolioPeerAuditInstrument(currentWorkspace, {
+      market: "ashare",
+      symbol: "600519",
+      name: "贵州茅台",
+      changePct: -0.48,
+      price: 1253
+    });
+
+    expect(peerWorkspace.selectedInstrument).toMatchObject({
+      market: "ashare",
+      symbol: "600519",
+      name: "贵州茅台"
+    });
+    expect(peerWorkspace.strategy).toEqual(currentWorkspace.strategy);
+    expect(peerWorkspace.strategy).not.toBe(currentWorkspace.strategy);
+    expect(peerWorkspace.researchRun).toBeNull();
+  });
+
+  test("enriches an existing watchlist instrument without dropping its quote", () => {
+    const workspace = workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
+      symbol: "600519",
+      name: "600519",
+      market: "ashare",
+      changePct: -0.48,
+      price: 1253,
+      quoteSource: "tencent",
+      quoteAsOf: "2026-07-17T07:03:00Z"
+    });
+
+    const enriched = workspaceWithSelectedInstrument(workspace, {
+      symbol: "600519",
+      name: "贵州茅台",
+      market: "ashare",
+      changePct: 0
+    });
+
+    expect(enriched.selectedInstrument).toEqual({
+      symbol: "600519",
+      name: "贵州茅台",
+      market: "ashare",
+      changePct: -0.48,
+      price: 1253,
+      quoteSource: "tencent",
+      quoteAsOf: "2026-07-17T07:03:00Z"
+    });
+    expect(enriched.watchlist[0]).toEqual(enriched.selectedInstrument);
+    expect(
+      enriched.watchlist.filter(
+        (instrument) => instrument.market === "ashare" && instrument.symbol === "600519"
+      )
+    ).toHaveLength(1);
   });
 
   test("detects whether an instrument already belongs to the active watchlist", () => {

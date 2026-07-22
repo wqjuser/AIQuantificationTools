@@ -88,13 +88,12 @@ class AkShareMarketDataAdapter(OptionalDependencyAdapter):
         bounded_limit = max(1, min(int(limit or 160), 500))
         symbol = ashare_digits(request.symbol)
         if request.timeframe in {"1d", "1w"}:
+            fallback_days = bounded_limit * (10 if request.timeframe == "1w" else 3)
+            start = request.start or (request.end - timedelta(days=fallback_days) if request.end else None)
             frame = ak.stock_zh_a_hist(
                 symbol=symbol,
                 period="weekly" if request.timeframe == "1w" else "daily",
-                start_date=akshare_daily_date(
-                    request.start,
-                    fallback_days=bounded_limit * (10 if request.timeframe == "1w" else 3),
-                ),
+                start_date=akshare_daily_date(start, fallback_days=fallback_days),
                 end_date=akshare_daily_date(request.end),
                 adjust="qfq",
             )
@@ -152,7 +151,26 @@ class YFinanceMarketDataAdapter(OptionalDependencyAdapter):
         yf = self._load_yfinance_module()
         bounded_limit = max(1, min(int(limit or 160), 500))
         interval, period = yfinance_period(request.timeframe)
-        frame = yf.Ticker(request.symbol.upper()).history(period=period, interval=interval, auto_adjust=False)
+        if request.end:
+            step_seconds = {
+                "1m": 60,
+                "5m": 300,
+                "15m": 900,
+                "30m": 1800,
+                "60m": 3600,
+                "1d": 86400,
+                "1w": 604800,
+            }[request.timeframe]
+            multiplier = 2 if request.timeframe in {"1d", "1w"} else 4
+            start = request.start or request.end - timedelta(seconds=step_seconds * bounded_limit * multiplier)
+            frame = yf.Ticker(request.symbol.upper()).history(
+                start=start,
+                end=request.end + timedelta(seconds=1),
+                interval=interval,
+                auto_adjust=False,
+            )
+        else:
+            frame = yf.Ticker(request.symbol.upper()).history(period=period, interval=interval, auto_adjust=False)
         bars = yfinance_history_to_bars(frame, request=request, limit=bounded_limit)
         if not bars:
             return [], DataQuality(
@@ -219,8 +237,25 @@ class CcxtMarketDataAdapter(OptionalDependencyAdapter):
         }
         if request.start:
             fetch_kwargs["since"] = int(request.start.timestamp() * 1000)
+        elif request.end:
+            step_ms = {
+                "1m": 60_000,
+                "5m": 300_000,
+                "15m": 900_000,
+                "30m": 1_800_000,
+                "60m": 3_600_000,
+                "1d": 86_400_000,
+                "1w": 604_800_000,
+            }[request.timeframe]
+            fetch_kwargs["since"] = int(request.end.timestamp() * 1000) - step_ms * (bounded_limit - 1)
         rows = exchange.fetch_ohlcv(normalize_crypto_symbol(request.symbol), **fetch_kwargs)
         bars = ccxt_ohlcv_rows_to_bars(rows, request=request)
+        if request.end:
+            bars = [
+                bar
+                for bar in bars
+                if (request.start is None or bar.timestamp >= request.start) and bar.timestamp <= request.end
+            ]
         if not bars:
             return [], DataQuality(
                 source=f"ccxt:{self.exchange_id}",

@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import select
+import socket
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 from urllib.parse import parse_qs, unquote, urlparse
 
 from quant_core.adapters import DemoMarketDataAdapter
@@ -329,6 +332,11 @@ from quant_core.handoff_notes import (
     handoff_note_to_payload,
 )
 from quant_core.research_notes import ResearchNote, ResearchNoteStore, research_note_to_payload
+from quant_core.research_note_drafts import (
+    ResearchNoteDraftError,
+    generate_research_note_draft,
+    iter_generate_research_note_draft_stream_events,
+)
 from quant_core.runs import (
     ResearchRunAudit,
     ResearchRunStore,
@@ -353,6 +361,10 @@ from quant_core.strategy_library import (
     StrategyLibraryStore,
     strategy_library_record_to_payload,
     strategy_library_records_to_payload,
+)
+from quant_core.strategy_ai_drafts import (
+    StrategyAiDraftError,
+    generate_strategy_ai_draft,
 )
 from quant_core.strategy_experiment_store import StrategyExperimentStore
 from quant_core.strategy_experiments import (
@@ -381,6 +393,21 @@ def _json_default(value):
 
 def _response(payload: object) -> bytes:
     return json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
+
+
+def _client_connection_closed(connection: socket.socket) -> bool:
+    try:
+        readable, _, _ = select.select([connection], [], [], 0)
+    except (OSError, ValueError):
+        return True
+    if not readable:
+        return False
+    try:
+        return connection.recv(1, socket.MSG_PEEK) == b""
+    except (BlockingIOError, InterruptedError):
+        return False
+    except OSError:
+        return True
 
 
 def _execution_adapter_secret_store_root(audit_event_store: AuditEventStore) -> Path:
@@ -574,6 +601,22 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "invalid_watchlist", "detail": str(error)}, status=400)
                 return
             self._send_json({"watchlist": [instrument_to_payload(instrument) for instrument in watchlist]})
+            return
+        self._send_json({"error": "not_found"}, status=404)
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/strategies/"):
+            revision = unquote(parsed.path.removeprefix("/api/strategies/")).strip()
+            if not revision or "/" in revision:
+                self._send_json({"error": "strategy_not_found", "revision": revision}, status=404)
+                return
+            record = self.strategy_store.get(revision)
+            if record is None:
+                self._send_json({"error": "strategy_not_found", "revision": revision}, status=404)
+                return
+            self.strategy_store.delete(revision)
+            self._send_json({"deleted": True, "revision": revision})
             return
         self._send_json({"error": "not_found"}, status=404)
 
@@ -985,6 +1028,30 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 ),
                 status=201,
             )
+            return
+        if parsed.path == "/api/strategies/ai-drafts":
+            try:
+                payload = self._read_json_body()
+                draft = generate_strategy_ai_draft(
+                    provider_registry=self._current_ai_review_provider_registry(),
+                    payload=payload,
+                )
+            except StrategyAiDraftError as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=error.status,
+                )
+                return
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_strategy_ai_draft_request",
+                        "detail": str(error),
+                    },
+                    status=400,
+                )
+                return
+            self._send_json(draft)
             return
         if parsed.path == "/api/strategies/validate":
             try:
@@ -3200,6 +3267,92 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=201,
             )
             return
+        if parsed.path == "/api/research/note-drafts":
+            try:
+                payload = self._read_json_body()
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_research_note_draft_request",
+                        "detail": str(error),
+                    },
+                    status=400,
+                )
+                return
+            stream_requested = "application/x-ndjson" in (
+                self.headers.get("Accept") or ""
+            ).casefold()
+            if stream_requested:
+                self._begin_ndjson_stream()
+                if not self._send_ndjson_event({"type": "started"}):
+                    return
+                cancelled = Event()
+                stream_items: queue.Queue[object] = queue.Queue()
+                stream_end = object()
+
+                def generate_stream_events() -> None:
+                    try:
+                        for event in iter_generate_research_note_draft_stream_events(
+                            cache=self.cache,
+                            provider_registry=self._current_ai_review_provider_registry(),
+                            payload=payload,
+                            cancelled=cancelled,
+                        ):
+                            if cancelled.is_set():
+                                break
+                            stream_items.put(event)
+                    except Exception as error:
+                        stream_items.put(error)
+                    finally:
+                        stream_items.put(stream_end)
+
+                worker = Thread(
+                    target=generate_stream_events,
+                    name="research-note-draft-stream",
+                    daemon=True,
+                )
+                worker.start()
+                try:
+                    while True:
+                        if _client_connection_closed(self.connection):
+                            return
+                        try:
+                            item = stream_items.get(timeout=0.1)
+                        except queue.Empty:
+                            continue
+                        if item is stream_end:
+                            return
+                        if isinstance(item, Exception):
+                            raise item
+                        if not self._send_ndjson_event(item):
+                            return
+                except ResearchNoteDraftError as error:
+                    self._send_ndjson_event(
+                        {
+                            "type": "error",
+                            "error": error.code,
+                            "detail": error.detail,
+                            "status": error.status,
+                        }
+                    )
+                finally:
+                    cancelled.set()
+                    worker.join(timeout=0.5)
+                return
+            try:
+                draft = generate_research_note_draft(
+                    cache=self.cache,
+                    provider_registry=self._current_ai_review_provider_registry(),
+                    payload=payload,
+                )
+            except ResearchNoteDraftError as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=error.status,
+                )
+                return
+            self._send_json(draft)
+            return
         if parsed.path == "/api/research/notes":
             try:
                 payload = self._read_json_body()
@@ -3879,6 +4032,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/ai-reviews":
             try:
                 query = _validated_ai_review_query(parsed.query)
+            except ValueError:
+                self._send_json(
+                    {
+                        "error": "invalid_ai_review_query",
+                        "detail": _ai_review_error_detail("invalid_ai_review_query"),
+                    },
+                    status=400,
+                )
+                return
+            try:
                 reviews = self.ai_review_store.list_recent(
                     run_id=query["runId"],
                     experiment_id=query["experimentId"],
@@ -3892,11 +4055,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     query=query["query"],
                 )
             except ValueError as error:
-                code = str(error) or "invalid_ai_review_query"
-                if not _is_ai_review_conflict(code):
-                    code = "invalid_ai_review_query"
-                status = 409 if _is_ai_review_conflict(code) else 400
-                self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=status)
+                code = _ai_review_read_error_code(error)
+                self._send_json(
+                    {"error": code, "detail": _ai_review_error_detail(code)},
+                    status=409,
+                )
                 return
             self._send_json(
                 {
@@ -3915,7 +4078,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             try:
                 review = self.ai_review_store.get(ai_review_id) if ai_review_id and "/" not in ai_review_id else None
             except ValueError as error:
-                code = str(error) or "ai_review_record_conflict"
+                code = _ai_review_read_error_code(error)
                 self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=409)
                 return
             if review is None:
@@ -5183,11 +5346,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", ["600000"])[0]
             timeframe = query.get("timeframe", ["1d"])[0]
             limit = _parse_kline_limit(query.get("limit", ["160"])[0])
+            try:
+                data_end = _parse_kline_end(query.get("end", [""])[0])
+            except ValueError as error:
+                self._send_json({"error": "invalid_kline_end", "detail": str(error)}, status=400)
+                return
             request = MarketDataRequest(
                 market=market,
                 symbol=symbol,
                 timeframe=timeframe,
-                end=_parse_kline_end(query.get("end", [""])[0]),
+                end=data_end,
             )
             try:
                 bars, quality = _fetch_market_klines_with_cache(
@@ -5272,6 +5440,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             symbol = query.get("symbol", ["600000"])[0]
             timeframe = query.get("timeframe", ["1d"])[0]
             watchlist_refresh_run_id = query.get("watchlistRefreshRunId", [""])[0].strip()
+            try:
+                data_end = _parse_kline_end(query.get("end", [""])[0])
+            except ValueError as error:
+                self._send_json({"error": "invalid_kline_end", "detail": str(error)}, status=400)
+                return
             strategy_snapshot = _strategy_snapshot_from_query(query)
             if strategy_snapshot:
                 validation = validate_strategy_snapshot(
@@ -5309,6 +5482,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 cache=self.cache,
                 run_store=self.run_store,
                 data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
+                data_end=data_end,
                 strategy_snapshot=strategy_snapshot,
                 research_note=research_note,
                 data_preparation_evidence=data_preparation_evidence,
@@ -5506,11 +5680,38 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except OSError:
+            # Browsers can intentionally abort a long-running AI request. Treat
+            # that disconnect like the NDJSON transport does instead of letting
+            # socketserver print a traceback for a successful cancellation.
+            self.close_connection = True
+
+    def _begin_ndjson_stream(self) -> None:
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "application/x-ndjson; charset=utf-8",
+        )
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+    def _send_ndjson_event(self, payload: object) -> bool:
+        try:
+            self.wfile.write(_response(payload) + b"\n")
+            self.wfile.flush()
+        except OSError:
+            return False
+        return True
 
     def _read_json_body(self) -> dict[str, object]:
         raw_content_length = self.headers.get("Content-Length")
@@ -6030,6 +6231,18 @@ def _ai_review_error_detail(code: str) -> str:
         "decision_conflict": "The decision does not supersede the current latest decision.",
     }
     return details.get(code, "Stored AI review evidence conflicts with the requested operation.")
+
+
+def _ai_review_read_error_code(error: ValueError) -> str:
+    code = str(error)
+    if code in {
+        "ai_review_evidence_hash_mismatch",
+        "ai_review_external_assessment_invalid",
+        "ai_review_record_conflict",
+        "ai_review_record_hash_mismatch",
+    }:
+        return code
+    return "ai_review_record_conflict"
 
 
 def resolve_api_bind(
@@ -8244,13 +8457,13 @@ def _parse_kline_end(raw: str) -> datetime | None:
         if timestamp > 10**12:
             timestamp /= 1000
         return datetime.fromtimestamp(timestamp, tz=timezone.utc)
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
         pass
     normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     try:
         parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
+    except ValueError as error:
+        raise ValueError("invalid_kline_end") from error
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)

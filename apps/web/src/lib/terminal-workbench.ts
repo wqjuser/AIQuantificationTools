@@ -6819,7 +6819,7 @@ export interface WorkflowStageView {
   artifacts: WorkflowStageArtifact[];
 }
 
-export type AiWorkbenchAction = "debate" | "explain" | "strategy-draft";
+export type AiWorkbenchAction = "debate" | "explain";
 
 export interface ResearchRunSummary {
   runId: string;
@@ -8688,6 +8688,12 @@ export interface StrategyExperimentWalkForward {
   stepBars: number;
 }
 
+export const DEFAULT_STRATEGY_EXPERIMENT_WALK_FORWARD: StrategyExperimentWalkForward = {
+  trainBars: 80,
+  validationBars: 20,
+  stepBars: 60,
+};
+
 export interface StrategyExperimentWalkForwardWindow {
   index: number;
   trainStartIndex: number;
@@ -8794,6 +8800,24 @@ export function buildAiReviewStage3CandidateKey(
     .sort()
     .join("|");
   return `${activeExperimentId ?? "none"}::${evidence}`;
+}
+
+export function resolveAiReviewDraftExperiment(
+  experimentId: string | null,
+  experiments: readonly StrategyExperimentListItem[],
+  dimensions: readonly StrategyExperimentDimension[],
+  guardrails: StrategyExperimentGuardrails,
+  walkForward: StrategyExperimentWalkForward | null
+): StrategyExperimentListItem | null {
+  const experiment = experiments.find((candidate) => (
+    candidate.experimentId === experimentId && candidate.status === "completed"
+  ));
+  if (!experiment) return null;
+  return JSON.stringify([
+    experiment.definition.dimensions,
+    experiment.definition.guardrails,
+    experiment.definition.walkForward
+  ]) === JSON.stringify([dimensions, guardrails, walkForward]) ? experiment : null;
 }
 
 export interface StrategyExperimentSnapshot {
@@ -23859,7 +23883,11 @@ export function buildResearchContextReadinessRows(
 
 function buildMarketCalendarReadinessRow(calendar: ResearchContextMarketCalendar): ResearchContextReadinessRow {
   const warnings = calendar.warnings.filter((warning) => warning.trim());
-  const isReady = (calendar.status === "open" || calendar.status === "always_open") && warnings.length === 0;
+  const hasOnlyStaticCalendarCoverageWarnings = warnings.every(
+    (warning) => warning === "Static session template only; exchange holiday calendar is not configured."
+  );
+  const isReady =
+    (calendar.status === "open" || calendar.status === "always_open") && hasOnlyStaticCalendarCoverageWarnings;
   return {
     id: "calendar",
     label: "Market calendar",
@@ -24744,6 +24772,13 @@ export function buildPortfolioBacktestDraft(
   if (!current) {
     return blockedPortfolioBacktestDraft("Portfolio backtest blocked", "Run at least one audited research pipeline first.");
   }
+  const currentEquityCurve = current.backtestEquityCurve;
+  if (!Array.isArray(currentEquityCurve) || currentEquityCurve.length === 0) {
+    return blockedPortfolioBacktestDraft(
+      "Portfolio backtest blocked",
+      "Run at least one audited research pipeline with an equity curve first."
+    );
+  }
 
   const candidates = runs
     .filter(
@@ -24751,7 +24786,7 @@ export function buildPortfolioBacktestDraft(
         run.market === current.market &&
         run.timeframe === current.timeframe &&
         Array.isArray(run.backtestEquityCurve) &&
-        run.backtestEquityCurve.length > 0
+        hasAlignedEquityTimestamps(currentEquityCurve, run.backtestEquityCurve)
     )
     .sort((left, right) => timestampSortValue(right.createdAt) - timestampSortValue(left.createdAt));
 
@@ -24768,7 +24803,7 @@ export function buildPortfolioBacktestDraft(
   if (selected.length < 2) {
     return blockedPortfolioBacktestDraft(
       "Portfolio backtest needs peers",
-      "Need at least two audited runs from the same market and timeframe with equity curves."
+      "Need at least two audited runs from the same market and timeframe with aligned equity curves."
     );
   }
 
@@ -24807,7 +24842,22 @@ export function buildPortfolioPeerAuditPlan(
 ): PortfolioPeerAuditPlan {
   const market = workspace.selectedInstrument.market;
   const timeframe = workspace.selectedTimeframe;
-  const sameMarketWatchlist = workspace.watchlist
+  const sameMarketWatchlist = [
+    workspace.selectedInstrument,
+    ...workspace.watchlist,
+    ...runs
+      .filter((run) => run.market === market && run.timeframe === timeframe)
+      .map(
+        (run) =>
+          buildInstrumentFromSymbol(run.market, run.symbol) ?? {
+            market: run.market,
+            symbol: run.symbol,
+            name: run.symbol,
+            changePct: 0,
+            price: null
+          }
+      )
+  ]
     .filter((instrument) => instrument.market === market)
     .filter(
       (instrument, index, instruments) =>
@@ -24834,12 +24884,13 @@ export function buildPortfolioPeerAuditPlan(
   }
 
   const auditedBySymbol = new Map<string, ResearchRunAudit>();
+  const currentEquityCurve = workspace.backtestEquityCurve ?? [];
   for (const run of runs) {
     if (
       run.market === market &&
       run.timeframe === timeframe &&
       Array.isArray(run.backtestEquityCurve) &&
-      run.backtestEquityCurve.length > 0 &&
+      hasAlignedEquityTimestamps(currentEquityCurve, run.backtestEquityCurve) &&
       !auditedBySymbol.has(run.symbol)
     ) {
       auditedBySymbol.set(run.symbol, run);
@@ -24882,6 +24933,18 @@ export function buildPortfolioPeerAuditPlan(
     missingCount,
     candidates
   };
+}
+
+function hasAlignedEquityTimestamps(
+  reference: readonly BacktestEquityPoint[],
+  candidate: readonly BacktestEquityPoint[] | undefined
+): boolean {
+  return Boolean(
+    candidate &&
+      reference.length > 0 &&
+      candidate.length === reference.length &&
+      candidate.every((point, index) => point.timestamp === reference[index]?.timestamp)
+  );
 }
 
 export function buildPortfolioBacktestDiagnosticRows<T extends PortfolioBacktestDiagnosticInput>(
@@ -31741,6 +31804,20 @@ function strategyContextLabel(market: Market, symbol: string, timeframe: Timefra
   return `${market.toUpperCase()} · ${symbol} · ${timeframe}`;
 }
 
+export function findLatestResearchRunForContext(
+  runs: readonly ResearchRunAudit[],
+  context: { market: Market; symbol: string; timeframe: Timeframe }
+): ResearchRunAudit | null {
+  const symbol = normalizeInstrumentSymbol(context.market, context.symbol);
+  return [...runs]
+    .filter((run) =>
+      run.market === context.market
+      && normalizeInstrumentSymbol(run.market, run.symbol) === symbol
+      && run.timeframe === context.timeframe
+    )
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null;
+}
+
 export function buildResearchRunContextBinding(workspace: TerminalWorkspace): ResearchRunContextBinding {
   const selectedContext = strategyContextLabel(
     workspace.selectedInstrument.market,
@@ -32868,12 +32945,13 @@ function inferPercentNearKeywords(text: string, keywords: string[], fallback: nu
 }
 
 function normalizeStrategyRuleDraft(draft: StrategyRuleDraft): StrategyRuleDraft {
+  const entryKind = normalizeStrategyConditionKind(draft.entryKind, defaultStrategyRuleDraft.entryKind);
   return {
     name: draft.name.trim() || defaultStrategyRuleDraft.name,
-    entryKind: normalizeStrategyConditionKind(draft.entryKind, defaultStrategyRuleDraft.entryKind),
+    entryKind,
     entryWindow: normalizeStrategyWindow(draft.entryWindow),
     entryThreshold: normalizeStrategyThreshold(draft.entryThreshold, defaultStrategyRuleDraft.entryThreshold),
-    entryRsiConfirm: Boolean(draft.entryRsiConfirm),
+    entryRsiConfirm: !isRsiConditionKind(entryKind) && Boolean(draft.entryRsiConfirm),
     entryRsiWindow: normalizeStrategyWindow(draft.entryRsiWindow),
     entryRsiThreshold: normalizeStrategyThreshold(draft.entryRsiThreshold, defaultStrategyRuleDraft.entryRsiThreshold),
     entryVolumeConfirm: Boolean(draft.entryVolumeConfirm),
@@ -34046,38 +34124,6 @@ function buildWorkflowStageArtifacts(workspace: TerminalWorkspace, stageId: stri
 }
 
 export function workspaceWithAiAction(workspace: TerminalWorkspace, action: AiWorkbenchAction): TerminalWorkspace {
-  if (action === "strategy-draft") {
-    const previousRunId = workspace.researchRun?.runId;
-    const note = previousRunId
-      ? `Strategy draft generated for ${workspace.selectedInstrument.symbol} from ${previousRunId}. Run Pipeline to audit the new rules before backtest or paper execution.`
-      : `Strategy draft generated for ${workspace.selectedInstrument.symbol}. Run Pipeline to audit the new rules before backtest or paper execution.`;
-    return clearAuditedResearchResults(
-      {
-        ...workspace,
-        strategy: {
-          name: `${workspace.selectedInstrument.symbol} ${workspace.selectedTimeframe} AI draft`,
-          entry: `Close above SMA20 with volume confirmation after ${workspace.selectedTimeframe} research context`,
-          exit: "Close below trend support or risk manager downgrade",
-          position: isPendingStrategyText(workspace.strategy.position)
-            ? "20% cap per instrument until audited sizing is rerun"
-            : workspace.strategy.position,
-          risk: isPendingStrategyText(workspace.strategy.risk)
-            ? "Paper only; require adapter certification, risk approval, and human confirmation"
-            : workspace.strategy.risk
-        },
-        decisionLog: [
-          {
-            agent: "Strategy Drafter",
-            message: note,
-            tone: "warning"
-          },
-          ...workspace.decisionLog
-        ]
-      },
-      "strategy"
-    );
-  }
-
   const auditBinding = buildResearchRunContextBinding(workspace);
   const run = workspace.researchRun;
   if (!auditBinding.canUseRun || !run) {
@@ -34142,27 +34188,6 @@ function aiReviewActionBlockedMessage(
 
 export function buildAiActionWorkflowState(workspace: TerminalWorkspace, action: AiWorkbenchAction): WorkflowRunState {
   const context = `${workspace.selectedInstrument.symbol} · ${workspace.selectedTimeframe}`;
-  if (action === "strategy-draft") {
-    return {
-      activeStageId: "factor",
-      completedStageIds: ["data"],
-      log: [
-        {
-          id: `ai-action-${workspace.selectedInstrument.symbol}-data`,
-          stageId: "data",
-          level: "success",
-          message: `Research context selected: ${context}`
-        },
-        {
-          id: `ai-action-${workspace.selectedInstrument.symbol}-factor`,
-          stageId: "factor",
-          level: "warning",
-          message: `Strategy draft staged: ${workspace.strategy.name}; audit required before backtest.`
-        }
-      ]
-    };
-  }
-
   const returnMetric = metricValue(workspace, "Return", "N/A");
   const drawdownMetric = metricValue(workspace, "Max DD", "N/A");
   const benchmark = buildBacktestBenchmark(workspace);
@@ -34729,6 +34754,20 @@ export function normalizeInstrumentSymbol(market: Market, rawSymbol: string): st
   return compact;
 }
 
+export function resolveMarketSearchMarket(currentMarket: Market, rawQuery: string): Market {
+  const query = rawQuery.trim().toUpperCase().replace(/\s+/g, "");
+  if (/^(?:SH|SZ|SSE|SZSE|CN:)?\d{1,6}(?:\.(?:SH|SZ|SS|SSE|SZSE))?$/.test(query)) {
+    return "ashare";
+  }
+  if (/[\u3400-\u9fff]/u.test(query)) {
+    return "ashare";
+  }
+  if (query.includes("/") || query.includes("-") || (query.length > 4 && query.endsWith("USDT"))) {
+    return "crypto";
+  }
+  return /^[A-Z]{1,5}(?:\.[A-Z])?$/.test(query) ? "us" : currentMarket;
+}
+
 export function workspaceFromResearchRunAudit(
   currentWorkspace: TerminalWorkspace,
   run: ResearchRunAudit
@@ -34998,15 +35037,49 @@ export function workspaceWithSelectedInstrument(
   currentWorkspace: TerminalWorkspace,
   instrument: Instrument
 ): TerminalWorkspace {
-  const watchlist = currentWorkspace.watchlist.some(
+  const existingInstrument = currentWorkspace.watchlist.find(
     (candidate) => candidate.symbol === instrument.symbol && candidate.market === instrument.market
-  )
-    ? currentWorkspace.watchlist
-    : [instrument, ...currentWorkspace.watchlist].slice(0, 8);
+  );
+  const hasIncomingQuote =
+    instrument.price !== undefined ||
+    instrument.quoteSource !== undefined ||
+    instrument.quoteAsOf !== undefined;
+  const selectedInstrument = existingInstrument
+    ? {
+        ...existingInstrument,
+        ...instrument,
+        name:
+          instrument.name.trim() && instrument.name !== instrument.symbol
+            ? instrument.name
+            : existingInstrument.name,
+        changePct: hasIncomingQuote ? instrument.changePct : existingInstrument.changePct,
+        price: instrument.price !== undefined ? instrument.price : existingInstrument.price,
+        quoteSource:
+          instrument.quoteSource !== undefined ? instrument.quoteSource : existingInstrument.quoteSource,
+        quoteAsOf: instrument.quoteAsOf !== undefined ? instrument.quoteAsOf : existingInstrument.quoteAsOf
+      }
+    : instrument;
+  const watchlist = existingInstrument
+    ? currentWorkspace.watchlist.map((candidate) =>
+        candidate.symbol === instrument.symbol && candidate.market === instrument.market
+          ? selectedInstrument
+          : candidate
+      )
+    : [selectedInstrument, ...currentWorkspace.watchlist].slice(0, 8);
 
   return {
-    ...freshResearchContext(currentWorkspace, instrument, currentWorkspace.selectedTimeframe),
+    ...freshResearchContext(currentWorkspace, selectedInstrument, currentWorkspace.selectedTimeframe),
     watchlist
+  };
+}
+
+export function workspaceWithPortfolioPeerAuditInstrument(
+  currentWorkspace: TerminalWorkspace,
+  instrument: Instrument
+): TerminalWorkspace {
+  return {
+    ...workspaceWithSelectedInstrument(currentWorkspace, instrument),
+    strategy: { ...currentWorkspace.strategy }
   };
 }
 
@@ -35328,6 +35401,42 @@ export function workspaceWithStrategyTemplate(
     {
       ...currentWorkspace,
       strategy: nextStrategy,
+      decisionLog: [note, ...existingLog]
+    },
+    "strategy"
+  );
+}
+
+export function workspaceWithAiStrategyDraft(
+  currentWorkspace: TerminalWorkspace,
+  draft: StrategyRuleDraft,
+  reasons: string[]
+): TerminalWorkspace {
+  const nextDraft = normalizeStrategyRuleDraft({
+    ...draft,
+    paperOnly: true
+  });
+  const normalizedReasons = reasons
+    .map((reason) => reason.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const note: DecisionLogEntry = {
+    agent: "AI Strategy Assistant",
+    message: [
+      "AI 策略草稿已应用到当前结构化构建器，仍为仅模拟盘草稿。",
+      normalizedReasons.length ? `编写原因：${normalizedReasons.join("；")}` : "",
+      "该草稿尚未保存或运行；请重新运行研究流水线生成新的回测与审计证据。"
+    ].filter(Boolean).join(" "),
+    tone: "warning"
+  };
+  const existingLog = currentWorkspace.decisionLog[0]?.agent === note.agent
+    ? currentWorkspace.decisionLog.slice(1)
+    : currentWorkspace.decisionLog;
+
+  return clearAuditedResearchResults(
+    {
+      ...currentWorkspace,
+      strategy: strategySnapshotFromRuleDraft(nextDraft),
       decisionLog: [note, ...existingLog]
     },
     "strategy"

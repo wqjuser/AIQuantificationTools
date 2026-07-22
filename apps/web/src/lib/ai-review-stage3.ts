@@ -79,7 +79,7 @@ export interface AiReviewExternalAssessment {
   model: string | null;
   sanitizedBaseUrl: string | null;
   endpointHash: string | null;
-  promptTemplateVersion: "aiqt-ai-review-v1";
+  promptTemplateVersion: "aiqt-ai-review-v1" | "aiqt-ai-review-v2";
   outputSchemaVersion: "aiqt-ai-review-assessment-v1";
   renderedPrompt: string;
   renderedPromptHash: string;
@@ -659,7 +659,8 @@ function isExternalAssessment(
     "responseHash", "assessment", "usage", "latencyMs", "error"
   ]) || (value.status !== "completed" && value.status !== "failed" && value.status !== "skipped")
     || typeof value.provider !== "string" || !providerIds.has(value.provider as AiReviewProviderId)
-    || value.promptTemplateVersion !== "aiqt-ai-review-v1"
+    || (value.promptTemplateVersion !== "aiqt-ai-review-v1"
+      && value.promptTemplateVersion !== "aiqt-ai-review-v2")
     || value.outputSchemaVersion !== "aiqt-ai-review-assessment-v1"
     || typeof value.renderedPrompt !== "string"
     || !isHash(value.renderedPromptHash)
@@ -839,7 +840,12 @@ export function resolveAiReviewRestoredSelection(
   reviews: readonly AuthoritativeAiReviewRun[],
   decisions: readonly AiReviewDecision[],
   sourceRunId: string
-): { review: AuthoritativeAiReviewRun | null; decisions: AiReviewDecision[] } | null {
+): {
+  review: AuthoritativeAiReviewRun | null;
+  decisions: AiReviewDecision[];
+  primaryExperimentId: string | null;
+  comparisonExperimentIds: string[];
+} | null {
   if (!reviews.every((review) => isAuthoritativeAiReviewRun(review)
     && review.primaryExperiment.sourceRunId === sourceRunId)
     || new Set(reviews.map((review) => review.aiReviewId)).size !== reviews.length
@@ -863,7 +869,9 @@ export function resolveAiReviewRestoredSelection(
   )[0] ?? null;
   return {
     review,
-    decisions: review ? decisions.filter((decision) => decision.aiReviewId === review.aiReviewId) : []
+    decisions: review ? decisions.filter((decision) => decision.aiReviewId === review.aiReviewId) : [],
+    primaryExperimentId: review?.primaryExperiment.experimentId ?? null,
+    comparisonExperimentIds: review?.comparisonExperiments.map((experiment) => experiment.experimentId) ?? []
   };
 }
 

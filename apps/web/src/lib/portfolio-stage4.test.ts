@@ -514,6 +514,56 @@ describe("Stage 4 portfolio golden path", () => {
     }
   });
 
+  test("restores an in-progress approval step from the persisted batch after refresh", () => {
+    const restored: any = goldenPathInput();
+    restored.portfolio = null;
+    restored.lifecycle.forEach((row: any) => {
+      row.state = "awaiting_operator_review";
+      row.approvedBy = null;
+    });
+    restored.approvalRows.forEach((row: any) => {
+      row.state = "awaiting_operator_review";
+      row.approvedBy = null;
+    });
+    restored.routeRows = [];
+    restored.stateHistory = null;
+    restored.replay = null;
+
+    expect(buildStage4PortfolioGoldenPath(restored)).toMatchObject({
+      currentStepId: "operator-approval",
+      primaryActionId: "review-portfolio-orders",
+      blockers: ["operator-approval-required"]
+    });
+  });
+
+  test("completes an all-skipped hold batch without requiring operator approval", () => {
+    const noOp: any = goldenPathInput();
+    noOp.batches[0].orders.forEach((order: any) => {
+      order.side = "hold";
+      order.status = "skipped";
+      order.quantity = 0;
+      order.notionalValue = 0;
+    });
+    noOp.lifecycle.forEach((row: any) => {
+      row.state = "skipped";
+      row.approvedBy = null;
+    });
+    noOp.approvalRows.forEach((row: any) => {
+      row.state = "skipped";
+      row.approvedBy = null;
+    });
+    noOp.routeRows = [];
+    noOp.stateHistory = null;
+    noOp.replay = null;
+
+    expect(buildStage4PortfolioGoldenPath(noOp)).toMatchObject({
+      status: "ready",
+      currentStepId: "account-replay",
+      primaryActionId: null,
+      blockers: []
+    });
+  });
+
   test("treats duplicate fills as completed simulation and restores a complete authoritative workflow", () => {
     const duplicate = buildStage4PortfolioGoldenPath(goldenPathInput());
     expect(duplicate.steps.find((step) => step.id === "paper-simulation")?.status).toBe("passed");

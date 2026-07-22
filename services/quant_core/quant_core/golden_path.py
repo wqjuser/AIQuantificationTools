@@ -246,7 +246,10 @@ def _market_calendar_review_detail(market_calendar: dict[str, Any] | None) -> st
         return None
     warnings = [str(warning).strip() for warning in (_field(market_calendar, "warnings") or []) if str(warning).strip()]
     status = str(_field(market_calendar, "status") or "unknown").strip()
-    if status in {"open", "always_open"} and not warnings:
+    has_only_static_calendar_coverage_warnings = all(
+        warning == "Static session template only; exchange holiday calendar is not configured." for warning in warnings
+    )
+    if status in {"open", "always_open"} and has_only_static_calendar_coverage_warnings:
         return None
     session = str(_field(market_calendar, "session") or "unknown").strip()
     reason = warnings[0] if warnings else str(_field(market_calendar, "source") or "calendar status requires review")

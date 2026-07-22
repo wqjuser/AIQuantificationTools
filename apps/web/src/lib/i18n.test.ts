@@ -12,21 +12,28 @@ describe("i18n", () => {
     expect(en.t("aiReviewStage3.reason.context-mismatch")).toBe("Research context mismatch");
     expect(zh.t("aiReviewStage3.legacyNonAuthoritative")).toBe("旧版 · 非权威记录");
     expect(en.t("aiReviewStage3.legacyNonAuthoritative")).toBe("Legacy · non-authoritative");
-    expect(zh.t("aiReviewStage3.error.decisionReadbackFailed")).toBe("AI 评审 Decision 回读失败。");
+    expect(zh.t("aiReviewStage3.error.decisionReadbackFailed")).toBe("AI 评审决策回读失败。");
     expect(en.t("aiReviewStage3.error.decisionReadbackFailed")).toBe("AI review Decision readback failed.");
     expect(en.t("archive.aiReview.group.authoritative")).toBe("Package authoritative Review");
     expect(en.t("archive.aiReview.group.decision")).toBe("Package Decision");
     expect(zh.t("archive.aiReview.authoritative")).toBe("权威评审");
-    expect(zh.t("archive.aiReview.decision")).toBe("Decision");
-    expect(zh.t("archive.aiReview.sameHash")).toBe("Hash 一致");
+    expect(zh.t("archive.aiReview.decision")).toBe("决策");
+    expect(zh.t("archive.aiReview.sameHash")).toBe("哈希一致");
     expect(zh.t("archive.aiReview.conflict")).toBe("冲突");
     expect(zh.t("aiReviewStage3.draftSelection")).toBe("新评审草稿选择");
     expect(en.t("aiReviewStage3.loadedRecord")).toBe("Loaded authoritative record");
-    expect(zh.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("Provider 尚未配置。");
+    expect(zh.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("外部模型服务尚未配置。");
+    expect(zh.t("aiReviewStage3.external.error.timeout")).toBe("外部模型响应超时，请稍后重新运行评审。");
+    expect(zh.t("aiReviewStage3.external.error.invalid_schema")).toContain("本地确定性评估仍有效");
     expect(en.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("Provider is not configured.");
-    expect(zh.t("aiReviewStage3.error.contextLoadFailed")).toBe("AI 评审 Provider 或历史加载失败。");
+    expect(zh.t("aiReviewStage3.error.serviceLoadFailed")).toBe("AI 评审服务加载失败。");
+    expect(zh.t("aiReviewStage3.error.historyLoadFailed")).toBe("AI 评审历史加载失败。");
     expect(zh.t("aiReviewStage3.error.runRestoreFailed")).toBe("AI 评审研究运行恢复失败，未加载链接中的运行数据。");
     expect(en.t("aiReviewStage3.error.runRestoreFailed")).toBe("AI review research run restore failed; linked run data was not loaded.");
+    expect(zh.t("aiReviewStage3.consistency.insufficient")).toBe("无足够对照");
+    expect(en.t("aiReviewStage3.consistency.insufficient")).toBe("Not enough comparisons");
+    expect(zh.t("strategyExperiment.holdoutConsumed")).toContain("研究工作台重新运行研究");
+    expect(en.t("strategyExperiment.holdoutConsumed")).toContain("Run research again");
     expect(translationKeysForLocale("zh-CN")).toEqual(translationKeysForLocale("en-US"));
   });
 
@@ -52,10 +59,28 @@ describe("i18n", () => {
     expect(zh.moduleLabel("portfolio", "Portfolio Risk")).toBe("组合风险");
     expect(zh.agentLabel("risk", "Risk Manager")).toBe("风险经理");
     expect(zh.decisionAgent("Technical")).toBe("技术分析");
+    expect(zh.decisionAgent("Deterministic")).toBe("确定性评估");
+    expect(
+      zh.decisionMessage("Evidence is incomplete; 3 required item(s) are missing or invalid.")
+    ).toBe("证据不完整：3 项必需证据缺失或无效。");
+    expect(
+      zh.decisionMessage("Evidence is complete and no deterministic caution threshold was crossed.")
+    ).toBe("证据完整，未触发确定性风险阈值。");
+    expect(
+      zh.decisionMessage("Evidence is complete with 3 deterministic caution signal(s).")
+    ).toBe("证据完整，发现 3 项确定性风险信号。");
+    expect(zh.t("aiReviewStage3.provider")).toBe("评审服务");
+    expect(zh.t("aiReviewStage3.baseUrl")).toBe("已脱敏服务地址");
+    expect(zh.t("aiReviewStage3.decision")).toBe("决策追加链");
+    expect(zh.t("aiReviewStage3.appendDecision")).toBe("追加决策");
     expect(zh.metricLabel("Max DD")).toBe("最大回撤");
     expect(zh.statusLabel("Research run complete")).toBe("研究运行完成");
     expect(zh.statusLabel("Strategy edited")).toBe("策略已编辑");
+    expect(zh.statusLabel("AI strategy draft applied")).toBe("AI 策略草稿已应用，等待重新审计");
     expect(zh.statusLabel("Strategy version loaded")).toBe("策略版本已载入");
+    expect(zh.statusLabel("Strategy version deleted")).toBe("策略版本已删除");
+    expect(zh.statusLabel("Strategy version delete failed")).toBe("策略版本删除失败");
+    expect(zh.statusLabel("Strategy governance action failed")).toBe("策略治理操作失败");
     expect(zh.statusLabel("AI action generated")).toBe("AI 操作已生成");
     expect(zh.statusLabel("AI review export ready")).toBe("AI 评审报告导出完成");
     expect(zh.statusLabel("AI review record saved")).toBe("AI 评审运行记录已保存");
@@ -127,8 +152,21 @@ describe("i18n", () => {
     expect(zh.t("strategy.context")).toBe("上下文");
     expect(zh.t("strategy.auditRun")).toBe("审计运行");
     expect(zh.t("strategy.loadedVersion")).toBe("已载入");
+    expect(zh.t("strategy.deleteVersion")).toBe("删除");
+    expect(zh.t("strategy.deleteConfirmTitle")).toBe("确认删除这个保存版本？");
+    expect(zh.t("strategy.deleteVersionLabel", { name: "SMA 趋势", revision: "abc123" })).toBe(
+      "删除策略版本 SMA 趋势，修订版 abc123"
+    );
     expect(zh.t("strategy.diff")).toBe("差异");
     expect(zh.t("strategy.diffChanged", { count: 3 })).toBe("3 项差异");
+    expect(zh.t("strategy.aiAssist")).toBe("AI 帮写");
+    expect(zh.t("strategy.aiReasons")).toBe("为什么这样编写");
+    expect(zh.t("strategy.aiDraftOnly")).toBe("仅生成草稿 · 未保存 · 未运行 · 仅模拟盘");
+    expect(zh.t("strategy.aiProvider")).toBe("AI 提供方");
+    expect(zh.t("strategy.aiChanges")).toBe("需要确认的变更");
+    expect(zh.t("strategy.aiLocalBaseline")).toBe("本地基线 · 仅供对照");
+    expect(zh.t("strategy.aiFallbackBadge")).toBe("安全回退 · 仅供对照");
+    expect(zh.t("strategy.aiNoChanges")).toBe("候选与当前草稿一致，无需应用。");
     expect(zh.t("panel.backtest.title")).toBe("回测回放");
     expect(zh.t("backtest.assumptions")).toBe("回测假设");
     expect(zh.t("backtest.parameterScan")).toBe("参数敏感性");
@@ -156,7 +194,15 @@ describe("i18n", () => {
     expect(en.t("strategy.context")).toBe("Context");
     expect(en.t("strategy.auditRun")).toBe("Audit run");
     expect(en.t("strategy.loadedVersion")).toBe("Loaded");
+    expect(en.t("strategy.deleteVersion")).toBe("Delete");
+    expect(en.t("strategy.deleteConfirmTitle")).toBe("Delete this saved version?");
+    expect(en.t("strategy.deleteVersionLabel", { name: "SMA Trend", revision: "abc123" })).toBe(
+      "Delete strategy version SMA Trend, revision abc123"
+    );
     expect(en.t("strategy.diffChanged", { count: 3 })).toBe("3 changes");
+    expect(en.t("strategy.aiAssist")).toBe("AI assist");
+    expect(en.t("strategy.aiReasons")).toBe("Why it is written this way");
+    expect(en.t("strategy.aiChanges")).toBe("Changes to review");
     expect(en.t("backtest.parameterScan")).toBe("Parameter sensitivity");
     expect(en.t("backtest.stageCandidate")).toBe("Stage");
     expect(en.t("backtest.initialCash")).toBe("Initial cash");
@@ -186,7 +232,9 @@ describe("i18n", () => {
     expect(zh.t("strategyExperiment.export")).toBe("导出 JSON");
     expect(zh.t("strategyExperiment.loadDraft")).toBe("载入草稿");
     expect(zh.t("strategyExperiment.legacyReaudit")).toBe("旧版快照需要重新运行研究流水线后才能实验。");
-    expect(zh.t("strategyExperiment.holdoutConsumed")).toBe("测试留出集已被另一实验定义使用，请生成新的审计快照。");
+    expect(zh.t("strategyExperiment.holdoutConsumed")).toBe(
+      "当前研究快照的测试留出集已被旧实验使用。请先在研究工作台重新运行研究生成新审计快照，再运行 AI 评审。"
+    );
     expect(zh.t("strategyExperiment.persistedEvidenceRequired")).toBe("需要与当前运行和策略版本匹配的持久化实验依据。");
     expect(zh.t("strategyExperiment.train")).toBe("训练集");
     expect(zh.t("strategyExperiment.validation")).toBe("验证集");
@@ -205,7 +253,9 @@ describe("i18n", () => {
     expect(en.t("strategyExperiment.export")).toBe("Export JSON");
     expect(en.t("strategyExperiment.loadDraft")).toBe("Load draft");
     expect(en.t("strategyExperiment.legacyReaudit")).toBe("Legacy snapshots must be re-audited by running the research pipeline again.");
-    expect(en.t("strategyExperiment.holdoutConsumed")).toBe("The test holdout was consumed by another definition; generate a fresh audited snapshot.");
+    expect(en.t("strategyExperiment.holdoutConsumed")).toBe(
+      "This research snapshot's test holdout was consumed by an older experiment. Run research again to create a fresh audited snapshot, then rerun AI review."
+    );
     expect(en.t("strategyExperiment.persistedEvidenceRequired")).toBe("Persisted experiment evidence matching the current run and strategy revision is required.");
     expect(en.t("strategyExperiment.train")).toBe("Train");
     expect(en.t("strategyExperiment.validation")).toBe("Validation");
@@ -240,6 +290,8 @@ describe("i18n", () => {
 
     expect(zh.strategyText("Close > SMA20 and relative strength improving")).toBe("收盘价 > SMA20，且相对强度改善");
     expect(zh.strategyText("Momentum confirmation plus AI committee agreement")).toBe("动量确认 + AI 委员会一致");
+    expect(zh.strategyText("RSI Reversal / Mean Reversion")).toBe("RSI 反转 / 均值回归");
+    expect(zh.strategyText("Volume Breakout / Trend Follow")).toBe("放量突破 / 趋势跟随");
     expect(zh.decisionAgent("AI Debate")).toBe("AI 辩论");
     expect(zh.decisionAgent("Strategy Drafter")).toBe("策略起草员");
     expect(

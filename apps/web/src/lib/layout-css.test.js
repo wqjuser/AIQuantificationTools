@@ -87,6 +87,98 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
+  test("runs the configured strategy experiment from the redesigned backtest action", () => {
+    const terminalActionSource = sourceBetween(
+      "const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {",
+      "const colorSchemeToggleLabel ="
+    );
+    const backtestActionSource = sourceBetweenText(
+      terminalActionSource,
+      'case "backtest":',
+      'case "ai-review":'
+    );
+
+    expect(backtestActionSource).toContain("onClick: () => void runStrategyExperiment()");
+    expect(backtestActionSource).not.toContain("runPipeline()");
+  });
+
+  test("continues the authoritative Stage 4 golden path from the portfolio action", () => {
+    const terminalActionSource = sourceBetween(
+      "const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {",
+      "const colorSchemeToggleLabel ="
+    );
+    const portfolioActionSource = sourceBetweenText(
+      terminalActionSource,
+      'case "portfolio":',
+      'case "execution":'
+    );
+
+    expect(portfolioActionSource).toContain("portfolioStage4GoldenPath.primaryActionId");
+    expect(portfolioActionSource).toContain(
+      "runPortfolioStage4PrimaryAction(portfolioStage4GoldenPath.primaryActionId)"
+    );
+    expect(portfolioActionSource).not.toContain("runActiveWorkflowAction");
+    expect(hasCssDeclaration(".terminal-design-surface.surface-portfolio", "padding-bottom: 10px;")).toBe(true);
+    expect(cssBlock(".design-portfolio-grid")).toContain("align-items: start;");
+    expect(cssBlock(".design-portfolio-side")).toContain("grid-row: 1 / span 3;");
+    expect(hasCssDeclaration(".design-portfolio-summary", "align-self: stretch;")).toBe(true);
+    expect(hasCssDeclaration(".design-portfolio-positions", "align-self: stretch;")).toBe(true);
+    expect(cssBlock(".design-portfolio-positions")).toContain("min-height: 0;");
+    expect(hasCssDeclaration(
+      ".design-portfolio-approval .portfolio-order-approval-row strong",
+      "font-size: 12px;"
+    )).toBe(true);
+    expect(hasCssDeclaration(
+      ".design-portfolio-approval .portfolio-order-approval-actions button",
+      "font-size: 10px;"
+    )).toBe(true);
+    expect(hasCssDeclaration(".design-portfolio-donut-value", "stroke-linecap: round;")).toBe(true);
+  });
+
+  test("keeps execution prerequisites actionable and clears the fixed status bar", () => {
+    const terminalActionSource = sourceBetween(
+      "const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {",
+      "const colorSchemeToggleLabel ="
+    );
+    const executionActionSource = sourceBetweenText(
+      terminalActionSource,
+      'case "execution":',
+      'case "operations":'
+    );
+
+    expect(executionActionSource).toContain('label: "查看执行前置步骤"');
+    expect(executionActionSource).toContain("document.querySelector<HTMLDetailsElement>(");
+    expect(executionActionSource).toContain('".surface-execution .execution-readiness-stack"');
+    expect(executionActionSource).toContain("runStage9ProductionAdmissionCandidateAction");
+    expect(hasCssDeclaration(
+      ".terminal-design-surface.surface-execution",
+      "padding-bottom: 16px;"
+    )).toBe(true);
+    expect(hasCssDeclaration(
+      ".design-execution-readiness",
+      "margin-bottom: 10px;"
+    )).toBe(true);
+  });
+
+  test("does not reuse a completed AI review experiment after the experiment draft changes", () => {
+    const draftSelectionSource = sourceBetween(
+      "const aiReviewStage3DraftExperiment = resolveAiReviewDraftExperiment(",
+      "const aiReviewStage3SelectedExperiment ="
+    );
+    const runReviewSource = sourceBetween(
+      "const runTerminalAiReview = async () => {",
+      "const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {"
+    );
+
+    expect(draftSelectionSource).toContain(
+      "aiReviewStage3PrimaryExperimentId ?? visibleStrategyExperimentActive?.experimentId ?? null"
+    );
+    expect(runReviewSource).toContain(
+      "let primaryExperimentId = aiReviewStage3DraftExperiment?.experimentId ?? null;"
+    );
+    expect(runReviewSource).not.toContain("aiReviewStage3SelectedExperiment?.experimentId");
+  });
+
   test("routes low-frequency operations through the left navigation instead of a modal", () => {
     const operationsWorkspaceSource = sourceBetween(
       'if (activeWorkAreaId === "operations")',
@@ -147,8 +239,14 @@ describe("terminal layout css", () => {
       "function ResearchSurface"
     );
 
-    expect(hasCssDeclaration(".design-watchlist-panel .design-panel-body", "overflow-y: auto;")).toBe(true);
+    expect(hasCssDeclaration(".design-watchlist-panel .design-panel-body", "overflow: hidden;")).toBe(true);
+    expect(hasCssBlockWith(".design-watchlist-table-scroll", [
+      "flex: 1;",
+      "min-height: 0;",
+      "overflow-y: auto;",
+    ])).toBe(true);
     expect(hasCssDeclaration(".design-market-bottom .design-panel-body", "overflow-y: auto;")).toBe(true);
+    expect(marketSurfaceSource).toContain('className="design-watchlist-table-scroll"');
     expect(marketSurfaceSource).not.toContain("sorted.slice(0, 5)");
     expect(marketSurfaceSource).not.toContain("sorted.slice().reverse().slice(0, 5)");
     expect(marketSurfaceSource).not.toContain("workspace.watchlist.slice(0, 5)");
@@ -158,10 +256,16 @@ describe("terminal layout css", () => {
     expect(
       hasCssDeclaration(
         ".design-watchlist-overview",
-        "grid-template-rows: auto auto minmax(min-content, 1fr);",
+        "grid-template-rows: auto auto auto;",
       ),
     ).toBe(true);
+    expect(hasCssDeclaration(".design-watchlist-overview", "flex: 0 0 auto;")).toBe(true);
     expect(hasCssDeclaration(".design-watchlist-overview", "gap: 8px;")).toBe(true);
+    expect(hasCssBlockWith(".design-watchlist-market-breakdown", [
+      "grid-auto-rows: 24px;",
+      "align-content: start;",
+    ])).toBe(true);
+    expect(terminalWorkspaceSurfaceSource).not.toContain("workspace.watchlist.length < 8");
     expect(terminalWorkspaceSurfaceSource).not.toContain("design-watchlist-overview-foot");
     expect(terminalWorkspaceSurfaceSource).not.toContain("<span>当前标的</span>");
     expect(terminalWorkspaceSurfaceSource).not.toContain("<span>最近更新</span>");
@@ -174,24 +278,107 @@ describe("terminal layout css", () => {
     ])).toBe(true);
   });
 
+  test("stretches the desktop market rankings to the status bar", () => {
+    expect(hasCssBlockWith("  .terminal-design-surface.surface-market", [
+      "display: grid;",
+      "grid-template-rows: auto minmax(0, 1fr);",
+      "padding-bottom: 10px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-market .design-market-grid", [
+      "grid-template-rows: 535px minmax(215px, 1fr);",
+    ])).toBe(true);
+  });
+
+  test("aligns market recovery with the ranking row and reuses the market refresh action", () => {
+    const marketSurfaceSource = sourceBetweenText(
+      terminalWorkspaceSurfaceSource,
+      "function MarketSurface",
+      "function ResearchSurface"
+    );
+    const compactMarketSideCss = sourceBetweenText(
+      styles,
+      "@media (min-width: 1101px) {",
+      "@media (min-width: 1301px) {"
+    );
+
+    expect(marketSurfaceSource).toContain('className="design-market-side-top"');
+    expect(marketSurfaceSource).toContain('className="design-market-retry-panel"');
+    expect(marketSurfaceSource).toContain("onClick={action.onClick}");
+    expect(marketSurfaceSource).toContain("disabled={action.disabled}");
+    expect(hasCssBlockWith("  .design-market-side", [
+      "grid-template-rows: 535px minmax(215px, 1fr);",
+      "align-content: stretch;",
+      "gap: 10px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-market-side-top", [
+      "grid-template-rows: repeat(4, minmax(0, 1fr));",
+      "gap: 8px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-market-side", [
+      "grid-template-rows: 535px 215px;",
+      "align-content: stretch;",
+      "gap: 10px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-market-retry-action", [
+      "align-self: flex-end;",
+      "margin-top: 10px;",
+    ])).toBe(true);
+    expect(compactMarketSideCss).toContain(
+      ".design-market-side-top .design-panel-head"
+    );
+    expect(compactMarketSideCss).toContain(
+      ".design-market-side-top > .design-panel"
+    );
+    expect(compactMarketSideCss).toContain("flex-direction: column;");
+    expect(compactMarketSideCss).toContain("justify-content: center;");
+    expect(compactMarketSideCss).toContain("gap: 2px;");
+    expect(compactMarketSideCss).toContain("min-height: 36px;");
+    expect(compactMarketSideCss).toContain(
+      ".design-market-side-top .design-kv-row"
+    );
+    expect(compactMarketSideCss).toContain("min-height: 24px;");
+  });
+
   test("fills the desktop research workspace without orphan grid cells", () => {
+    expect(hasCssDeclaration(".design-research-note-column", "align-content: stretch;")).toBe(true);
+    expect(hasCssBlockWith(".design-research-note-field", [
+      "grid-template-rows: auto minmax(160px, 1fr);",
+      "align-content: start;",
+    ])).toBe(true);
+    expect(
+      hasCssDeclaration(
+        "  .terminal-design-surface.surface-research",
+        "padding-bottom: 10px;",
+      ),
+    ).toBe(true);
     expect(hasCssBlockWith("  .design-research-grid", [
-      "min-height: max(744px, calc(100vh - 180px));",
-      "grid-template-rows: 470px minmax(264px, 1fr);",
+      "min-height: max(838px, calc(100vh - 180px));",
+      "grid-template-rows: 420px 130px minmax(264px, 1fr);",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-chart", [
+      "grid-column: 1;",
+      "grid-row: 1 / 3;",
     ])).toBe(true);
     expect(hasCssBlockWith("  .design-research-timeline", [
       "grid-column: 3 / 5;",
       "grid-row: 1;",
     ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-timeline .design-panel-body", [
+      "align-content: start;",
+      "overflow-y: auto;",
+    ])).toBe(true);
+    expect(cssBlock(".design-research-timeline .design-panel-body")).not.toContain(
+      "grid-auto-rows: minmax(63px, 1fr);",
+    );
     expect(hasCssBlockWith("  .design-research-runs", [
       "grid-column: 1 / 3;",
-      "grid-row: 2;",
+      "grid-row: 3;",
     ])).toBe(true);
     expect(hasCssBlockWith("  .design-research-side", [
       "grid-column: 3 / 5;",
-      "grid-row: 2;",
+      "grid-row: 2 / 4;",
       "grid-template-columns: repeat(2, minmax(0, 1fr));",
-      "grid-template-rows: minmax(132px, 1fr) minmax(110px, 1fr);",
+      "grid-template-rows: repeat(2, minmax(0, 1fr));",
     ])).toBe(true);
     expect(hasCssBlockWith("  .design-research-side .design-panel-head", [
       "min-height: 30px;",
@@ -200,20 +387,126 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .design-research-side .design-kv-row", [
       "min-height: 22px;",
     ])).toBe(true);
+    expect(hasCssBlockWith(".design-factor-score-ring", [
+      "position: relative;",
+      "width: 90px;",
+      "height: 90px;",
+      "border-radius: 999px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-factor-score-ring-visual", [
+      "position: absolute;",
+      "inset: 0;",
+      "width: 100%;",
+      "height: 100%;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-factor-score-ring-value", [
+      "stroke-linecap: round;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-factor-score-ring > span", [
+      "grid-template-rows: min-content min-content;",
+      "align-content: center;",
+      "row-gap: 2px;",
+      "width: 76px;",
+      "height: 76px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-factor-score-ring strong", [
+      "font-size: 22px;",
+      "font-weight: 500;",
+    ])).toBe(true);
     expect(styles).toContain("@media (min-width: 1101px) and (max-width: 1300px) {");
     expect(hasCssBlockWith("  .design-research-grid", [
-      "grid-template-columns: minmax(0, 1fr) 270px;",
-      "grid-template-rows: 470px minmax(225px, auto);",
+      "grid-template-columns: minmax(0, 1fr) minmax(300px, 0.65fr);",
+      "grid-template-rows: 430px auto auto auto;",
     ])).toBe(true);
-    expect(hasCssBlockWith("  .design-factor-panel,\n  .design-research-timeline", [
-      "display: none;",
+    expect(hasCssBlockWith("  .design-factor-panel", [
+      "display: flex;",
+      "grid-column: 2;",
+      "grid-row: 1;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .design-research-timeline", [
+      "display: flex;",
+      "grid-column: 1 / 3;",
+      "grid-row: 2;",
     ])).toBe(true);
     expect(hasCssBlockWith("  .design-research-side", [
-      "grid-column: 2;",
-      "grid-row: 1 / 3;",
-      "grid-template-columns: minmax(0, 1fr);",
-      "grid-template-rows: none;",
+      "grid-column: 1 / 3;",
+      "grid-row: 4;",
+      "grid-template-columns: repeat(2, minmax(0, 1fr));",
+      "grid-template-rows: repeat(2, minmax(130px, auto));",
       "align-content: stretch;",
+    ])).toBe(true);
+    expect(styles).toContain("@media (min-width: 761px) and (max-width: 1100px) {");
+    expect(
+      styles.lastIndexOf("@media (min-width: 761px) and (max-width: 1100px) {"),
+    ).toBeGreaterThan(styles.lastIndexOf("@media (max-width: 1100px) {"));
+    expect(hasCssBlockWith(
+      "  .design-factor-panel,\n  .design-research-timeline,\n  .design-research-runs,\n  .design-research-side,\n  .design-research-preparation",
+      ["grid-column: 1;", "grid-row: auto;"],
+    )).toBe(true);
+  });
+
+  test("keeps the backtest workspace balanced above the status bar", () => {
+    expect(hasCssBlockWith("  .terminal-design-surface.surface-backtest", [
+      "padding-bottom: 10px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-backtest .design-page-header > div:first-child", [
+      "grid-template-columns: auto minmax(0, 1fr);",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-backtest .design-page-header .design-meta-line", [
+      "grid-column: 1 / -1;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-backtest .design-backtest-grid", [
+      "grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 340px);",
+      "align-items: stretch;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-backtest .design-backtest-main", [
+      "grid-template-rows: auto auto minmax(250px, 1fr);",
+      "align-content: stretch;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-backtest .design-backtest-side", [
+      "grid-template-rows: auto auto auto minmax(0, 1fr);",
+      "align-content: stretch;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-backtest .design-backtest-grid", [
+      "grid-template-columns: minmax(0, 1fr);",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-backtest .design-backtest-side", [
+      "grid-template-columns: repeat(2, minmax(0, 1fr));",
+    ])).toBe(true);
+  });
+
+  test("keeps the AI review hierarchy compact, theme-aware, and responsive", () => {
+    expect(hasCssBlockWith("  .terminal-design-surface.surface-ai-review", [
+      "padding-bottom: 10px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-grid", [
+      "grid-template-columns: minmax(0, 1fr) clamp(290px, 22vw, 350px);",
+      "grid-template-rows: auto;",
+      "align-items: start;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-overview", [
+      "grid-column: 1 / -1;",
+      "grid-template-columns: repeat(4, minmax(0, 1fr));",
+      "background: var(--surface);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-verdict", [
+      "min-height: 172px;",
+      "background: var(--surface-raised);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-side", [
+      "grid-template-columns: repeat(2, minmax(0, 1fr));",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-external-approval", [
+      "grid-template-columns: 16px minmax(0, 1fr);",
+      "align-items: start;",
+      "border: 1px solid var(--border);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-external-approval-copy", [
+      "display: grid;",
+      "gap: 2px;",
+    ])).toBe(true);
+    expect(hasCssBlockWith("  .surface-ai-review .design-ai-overview,\n  .surface-ai-review .design-ai-verdicts,\n  .surface-ai-review .design-ai-side", [
+      "grid-template-columns: minmax(0, 1fr);",
     ])).toBe(true);
   });
 
@@ -281,9 +574,9 @@ describe("terminal layout css", () => {
       "const runPortfolioStage4PrimaryAction = useCallback",
       "const exportPortfolioBacktestMarkdown = useCallback"
     );
-    expect(actionSource).toContain('"review-portfolio-risk": ".workflow-portfolio-panel .risk-ledger"');
-    expect(actionSource).toContain('"review-portfolio-orders": ".portfolio-order-approval"');
-    expect(actionSource).toContain('"review-route-risk": ".portfolio-route-risk-template"');
+    expect(actionSource).toContain('"review-portfolio-risk": ".surface-portfolio .design-risk-ledger"');
+    expect(actionSource).toContain('"review-portfolio-orders": ".surface-portfolio .portfolio-order-approval"');
+    expect(actionSource).toContain('"review-route-risk": ".surface-portfolio .design-risk-ledger"');
     const refreshStart = actionSource.indexOf('if (actionId === "refresh-account-replay")');
     const refreshEnd = actionSource.indexOf('if (actionId === "record-stage4-workflow")');
     const refreshSource = actionSource.slice(refreshStart, refreshEnd);
@@ -363,7 +656,12 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("aiReviewRunRestoreAbortControllerRef.current?.abort()");
     expect(stage3ContextSource).toContain("loadAiReviewRunArchiveSnapshot(");
     expect(stage3ContextSource).toContain("resolveAiReviewRestoredSelection(");
+    expect(stage3ContextSource).toContain('if (archiveResult.source === "core" && restoredSelection)');
+    expect(stage3ContextSource).not.toContain('if (archiveResult.source === "core" && restoredSelection && restoredExperiment)');
     expect(stage3ContextSource).toContain("setAiReviewStage3Decisions(restoredSelection.decisions)");
+    expect(stage3ContextSource).toContain(": restoredSelection === null");
+    expect(appSource).toContain("experiments: aiReviewStage3Experiments");
+    expect(appSource).toContain("onComparisonToggle: toggleAiReviewStage3Comparison");
   });
 
   test("splits production vendor dependencies instead of emitting one large entry chunk", () => {
@@ -397,7 +695,8 @@ describe("terminal layout css", () => {
   test("shows selected timeframe cache coverage in market search suggestions", () => {
     const symbolSwitcherSource = sourceBetween('<form className="symbol-switcher"', "</form>");
 
-    expect(appSource).toContain("loadMarketSearch(quantCoreBaseUrl, { market: marketDraft, query, limit: 8, timeframe: workspace.selectedTimeframe })");
+    expect(appSource).toContain("const searchMarket = resolveMarketSearchMarket(marketDraft, query);");
+    expect(appSource).toContain("loadMarketSearch(quantCoreBaseUrl, { market: searchMarket, query, limit: 8, timeframe: workspace.selectedTimeframe })");
     expect(symbolSwitcherSource).toContain("suggestion.cache");
     expect(symbolSwitcherSource).toContain("marketSearchCacheSummary(i18n, suggestion.cache)");
     expect(appSource).toContain('cache.freshness === "stale"');
@@ -406,6 +705,8 @@ describe("terminal layout css", () => {
   });
 
   test("keeps market search results compact, readable, and scrollable", () => {
+    expect(styles).not.toContain(".symbol-switcher button");
+    expect(styles).toContain(".symbol-switcher > button");
     expect(hasCssDeclaration(".symbol-suggestions", "display: grid;")).toBe(true);
     expect(hasCssDeclaration(".symbol-suggestions", "gap: 0;")).toBe(true);
     expect(hasCssDeclaration(".symbol-suggestions", "overflow: auto;")).toBe(true);
@@ -431,13 +732,20 @@ describe("terminal layout css", () => {
     ).toBe(true);
   });
 
-  test("does not restart symbol search when only the chart timeframe changes", () => {
+  test("only searches while the symbol suggestion popover is open", () => {
     const selectTimeframeSource = sourceBetween("const selectTimeframe = useCallback(", "const runAiWorkbenchAction");
+    const symbolSearchEffect = sourceBetween(
+      "useEffect(() => {\n    const query = symbolDraft.trim();",
+      "useEffect(() => {\n    if (!isChartExpanded)"
+    );
 
-    expect(selectTimeframeSource).toContain("if (workspaceRef.current.selectedTimeframe !== timeframe)");
-    expect(selectTimeframeSource).toContain("skipNextSymbolSearchRef.current = true;");
     expect(selectTimeframeSource).toContain("setSearchSuggestions([]);");
     expect(selectTimeframeSource).toContain("setIsSearchOpen(false);");
+    expect(symbolSearchEffect).toContain("if (!isSearchOpen)");
+    expect(symbolSearchEffect).toContain(
+      "}, [isSearchOpen, marketDraft, symbolDraft, workspace.selectedTimeframe]);"
+    );
+    expect(appSource).not.toContain("skipNextSymbolSearchRef");
   });
 
   test("keeps global symbol search selections in the current work area", () => {
@@ -445,12 +753,19 @@ describe("terminal layout css", () => {
     const submitSymbolSource = sourceBetween("const submitSymbol = useCallback(", "const selectSearchSuggestion");
     const selectSuggestionSource = sourceBetween("const selectSearchSuggestion = useCallback(", "const refreshSearchSuggestionCache");
     const refreshSuggestionSource = sourceBetween("const refreshSearchSuggestionCache = useCallback(", "useEffect(() =>");
+    const terminalSurfaceSource = sourceBetween(
+      'activeWorkAreaId === "operations" || !terminalSurfaceAction ? null : (',
+      '{activeWorkAreaId === "operations" ? ('
+    );
 
     expect(selectInstrumentSource).toContain('targetWorkAreaId: ProductWorkAreaId = "research"');
     expect(selectInstrumentSource).toContain("setActiveWorkAreaId(targetWorkAreaId);");
     expect(submitSymbolSource).toContain("selectInstrument(instrument, activeWorkAreaId);");
     expect(selectSuggestionSource).toMatch(/selectInstrument\([\s\S]*?,\s*activeWorkAreaId\s*\);/);
     expect(refreshSuggestionSource).toMatch(/selectInstrument\([\s\S]*?,\s*activeWorkAreaId\s*\);/);
+    expect(terminalSurfaceSource).toContain(
+      'onSelectInstrument={(instrument) => selectInstrument(instrument, "market")}'
+    );
   });
 
   test("lets stale or empty market search suggestions refresh cache without nested buttons", () => {
@@ -539,6 +854,19 @@ describe("terminal layout css", () => {
     expect(hasCssDeclaration(".work-area-copy", "display: block;")).toBe(true);
     expect(cssBlock(".work-area-stage")).toContain("display: flex;");
     expect(hasCssDeclaration(".work-area-copy small", "display: block;")).toBe(true);
+  });
+
+  test("follows streamed research note text to the final line", () => {
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      "const researchNoteInputRef = useRef<HTMLTextAreaElement>(null);"
+    );
+    expect(terminalWorkspaceSurfaceSource).toContain("ref={researchNoteInputRef}");
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      "researchNoteInput.scrollTop = researchNoteInput.scrollHeight;"
+    );
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      "researchPreparation.isGeneratingNote"
+    );
   });
 
   test("keeps the left navigation readable on desktop before collapsing to icon mode", () => {
@@ -3947,7 +4275,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('"strategy-panel workflow-strategy-panel"');
     expect(appSource).toContain('activeLoopStepId === "agent-review"');
     expect(appSource).toContain('runAiWorkbenchAction("debate")');
-    expect(appSource).toContain('setActiveLoopStepId(action === "strategy-draft" ? "strategy" : "agent-review")');
+    expect(appSource).toContain('setActiveLoopStepId("agent-review")');
     expect(appSource).toContain('renderWorkflowNodesPanel("workflow-nodes-panel")');
     expect(appSource).toContain("buildWorkflowStages(workspace, workflowRunState)");
     expect(appSource).toContain('className="workflow-backtest-panel"');
@@ -4061,6 +4389,29 @@ describe("terminal layout css", () => {
     expect(cssBlock(".market-cache-refresh")).toContain("display: inline-flex;");
   });
 
+  test("uses current data readiness when the settings cache summary omits the selected context", () => {
+    const activeCacheContextSource = sourceBetween(
+      "const activeCacheReadiness =",
+      "const activeCacheContextKey ="
+    );
+
+    expect(activeCacheContextSource).toContain("marketDataReadinessState.readiness");
+    expect(activeCacheContextSource).toContain(
+      "activeCacheReadiness?.market === workspace.selectedInstrument.market"
+    );
+    expect(activeCacheContextSource).toContain(
+      "activeCacheReadiness.symbol === workspace.selectedInstrument.symbol"
+    );
+    expect(activeCacheContextSource).toContain(
+      "activeCacheReadiness.timeframe === workspace.selectedTimeframe"
+    );
+    expect(activeCacheContextSource).toContain("rowCount: activeCacheReadiness.barCount");
+    expect(activeCacheContextSource).toContain("freshness: activeCacheReadiness.cacheState");
+    expect(activeCacheContextSource).toContain("startTimestamp: activeCacheReadiness.startBarAt");
+    expect(activeCacheContextSource).toContain("endTimestamp: activeCacheReadiness.latestBarAt");
+    expect(activeCacheContextSource).toContain("ageHours: activeCacheReadiness.ageHours");
+  });
+
   test("lets operations refresh watchlist cache as a batch", () => {
     const operationsWorkspaceSource = sourceBetween('if (activeWorkAreaId === "operations")', 'if (activeWorkAreaId === "strategy")');
     const healthPanelSource = sourceBetween("function MarketDataHealthPanel", "function ResearchNotesPanel");
@@ -4113,6 +4464,54 @@ describe("terminal layout css", () => {
     expect(cssBlock(".market-calendar-grid")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
   });
 
+  test("refreshes time-sensitive data while the page is visible", () => {
+    const calendarRefreshSource = sourceBetween(
+      "const refreshMarketCalendarStatus = useCallback",
+      "useEffect(() => {\n    void refreshMarketCalendarStatus();"
+    );
+    const chartRefreshSource = sourceBetween(
+      "const refreshChart = useCallback",
+      "const refreshVisiblePageData = useCallback"
+    );
+    const visibleRefreshSource = sourceBetween(
+      "const refreshVisiblePageData = useCallback",
+      "useEffect(() => {\n    let refreshInFlight = false;"
+    );
+    const visibleRefreshEffectSource = sourceBetween(
+      "useEffect(() => {\n    let refreshInFlight = false;",
+      "  }, [refreshVisiblePageData]);"
+    );
+
+    expect(appSource).toContain("const VISIBLE_PAGE_REFRESH_INTERVAL_MS = 35_000;");
+    expect(calendarRefreshSource).toContain("async (silent = false)");
+    expect(calendarRefreshSource).toContain("marketCalendarRequestIdRef.current !== requestId");
+    expect(calendarRefreshSource).toContain("workspaceRef.current.selectedInstrument.market !== market");
+    expect(calendarRefreshSource).toContain('silent && result.source !== "core"');
+    expect(chartRefreshSource).toContain("async (silent = false)");
+    expect(chartRefreshSource).toContain("if (!silent) {");
+    expect(chartRefreshSource).toContain('!silent || result.source === "core"');
+    expect(chartRefreshSource).toContain('!silent || readiness.source === "core"');
+    expect(visibleRefreshSource).toContain("loadTerminalWorkspace(quantCoreBaseUrl)");
+    expect(visibleRefreshSource).toContain('result.source !== "core"');
+    expect(visibleRefreshSource).toContain("workspaceWithSavedWatchlist(");
+    expect(visibleRefreshSource).toContain("refreshMarketCalendarStatus(true)");
+    expect(visibleRefreshSource).toContain("!isChartLoading &&");
+    expect(visibleRefreshSource).toContain("refreshChart(true)");
+    expect(visibleRefreshSource).not.toContain("refreshSettingsStatus");
+    expect(visibleRefreshSource).not.toContain("refreshAuditSigningKeys");
+    expect(visibleRefreshEffectSource).toContain('document.visibilityState !== "visible" || refreshInFlight');
+    expect(visibleRefreshEffectSource).toContain("window.setInterval(");
+    expect(visibleRefreshEffectSource).toContain("VISIBLE_PAGE_REFRESH_INTERVAL_MS");
+    expect(visibleRefreshEffectSource).toContain('document.addEventListener("visibilitychange"');
+    expect(visibleRefreshEffectSource).toContain('window.addEventListener("focus"');
+    expect(visibleRefreshEffectSource).toContain("refreshInFlight = false;");
+    expect(visibleRefreshEffectSource).toContain("window.clearInterval(intervalId)");
+    expect(visibleRefreshEffectSource).toContain('document.removeEventListener("visibilitychange"');
+    expect(visibleRefreshEffectSource).toContain('window.removeEventListener("focus"');
+    expect(appSource).toContain("const activeCacheContext =\n    activeReadinessCacheContext ??");
+    expect(appSource).toContain('source === "core" ? "行情自动刷新" : "本地快照"');
+  });
+
   test("renders the strategy lab as a structured rule builder", () => {
     expect(appSource).toContain("buildStrategyRuleDraft(workspace)");
     expect(appSource).toContain("buildStrategyReadinessGates(workspace)");
@@ -4137,18 +4536,28 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('windowField="exitWindow"');
     expect(appSource).toContain("strategy-draft-grid");
     expect(appSource).toContain("strategy-template-grid");
-    expect(appSource).toContain("strategy-condition-select");
+    expect(appSource).toContain("StrategyConditionMenu");
+    expect(appSource).toContain("strategy-condition-menu");
+    expect(appSource).toContain("strategy-condition-options");
     expect(appSource).toContain("strategy-volume-toggle");
     expect(appSource).toContain("strategy-rsi-toggle");
     expect(appSource).toContain("strategy-generated-snapshot");
     expect(appSource).toContain("readinessGates={strategyReadinessGates}");
     expect(appSource).toContain("validationSource={strategyValidationState.source}");
+    expect(appSource).toContain("strategyWorkbench={renderStrategyWorkbench(false)}");
+    expect(appSource).toContain("showSaveAction={showSaveAction}");
+    expect(appSource).toContain("onApplyStrategyTemplate={applyStrategyTemplate}");
+    expect(appSource).toContain("onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}");
+    expect(appSource).toContain("onSaveStrategyVersion={saveCurrentStrategyVersion}");
+    expect(appSource).toContain("onLoadStrategyVersion={loadSavedStrategyVersion}");
+    expect(appSource).toContain("onRunStrategyGovernanceAction={runStrategyGovernanceAction}");
     expect(appSource).toContain('className="strategy-readiness-list"');
     expect(appSource).toContain('className="strategy-validation-source"');
     expect(styles).toContain(".strategy-draft-grid");
     expect(styles).toContain(".strategy-template-grid");
     expect(styles).toContain(".strategy-template-card");
-    expect(styles).toContain(".strategy-condition-select");
+    expect(styles).toContain(".strategy-condition-menu");
+    expect(styles).toContain(".strategy-condition-options");
     expect(styles).toContain(".strategy-threshold-field");
     expect(styles).toContain(".strategy-volume-toggle");
     expect(styles).toContain(".strategy-rsi-toggle");
@@ -4157,23 +4566,173 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".strategy-validation-source");
   });
 
-  test("preflights strategy readiness before launching the research pipeline", () => {
+  test("keeps AI strategy help as a reviewed draft instead of a second strategy algorithm", () => {
+    const generateSource = sourceBetween(
+      "const generateStrategyAiCandidate = async () => {",
+      "const applyStrategyAiCandidate = () => {"
+    );
+    const applySource = sourceBetween(
+      "const applyStrategyAiCandidate = () => {",
+      "const closeStrategyDeleteDialog = () => {"
+    );
+    const aiDialogSource = sourceBetween(
+      "{isStrategyAiDialogOpen ? (",
+      "{strategyToDelete ? ("
+    );
+    const aiStateSource = sourceBetween(
+      "const selectedStrategyAiProvider = providers.find(",
+      "return ("
+    );
+
+    expect(generateSource).toContain("generateStrategyAiDraft(quantCoreBaseUrl");
+    expect(generateSource).toContain("abortController.signal");
+    expect(generateSource).toContain("requestContextIdentity");
+    expect(generateSource).toContain("setStrategyAiExternalDataApproved(false)");
+    expect(generateSource.indexOf("setStrategyAiExternalDataApproved(false)")).toBeLessThan(
+      generateSource.indexOf("generateStrategyAiDraft(quantCoreBaseUrl")
+    );
+    expect(generateSource).not.toContain("onSaveStrategyVersion");
+    expect(generateSource).not.toContain("runPipeline");
+    expect(applySource).toContain("onApplyAiStrategyDraft(");
+    expect(applySource).toContain("strategyAiResultContextIdentity !== strategyAiContextIdentity");
+    expect(applySource).toContain("strategyAiDraftDiffRows(i18n, draft, strategyAiResult.candidate.draft).length === 0");
+    expect(applySource).not.toContain("onSaveStrategyVersion");
+    expect(aiDialogSource).toContain('i18n.t("strategy.aiReasons")');
+    expect(aiDialogSource).toContain('i18n.t("strategy.aiDraftOnly")');
+    expect(aiDialogSource).toContain('className="strategy-ai-diff"');
+    expect(aiDialogSource).toContain('i18n.t("strategy.aiCurrentValue")');
+    expect(aiDialogSource).toContain('i18n.t("strategy.aiCandidateValue")');
+    expect(aiDialogSource).toContain('i18n.t("strategy.aiFallbackBadge")');
+    expect(aiStateSource).toContain("&& strategyAiDraftChanges.length > 0");
+    expect(aiDialogSource).toContain("strategy-ai-external-approval");
+    expect(terminalWorkbenchSource).not.toContain('action === "strategy-draft"');
+    expect(styles).toContain(".strategy-ai-preview-grid");
+    expect(styles).toContain(".strategy-ai-diff-row");
+    expect(styles).toContain(':root[data-theme="light"] .strategy-ai-preview');
+  });
+
+  test("keeps strategy draft fields on stable responsive tracks", () => {
+    const strategySummarySource = sourceBetween(
+      "function StrategySummary",
+      "function StrategyTemplatePicker"
+    );
+    const conditionFieldSource = sourceBetween(
+      "function StrategyConditionField",
+      "export function StrategyConditionMenu"
+    );
+    const conditionMenuSource = sourceBetween(
+      "export function StrategyConditionMenu",
+      "function StrategyVolumeConfirmField"
+    );
+    const desktopGrid = cssBlock(".design-strategy-workbench .strategy-draft-grid");
+    const strategyResponsiveSource = styles.slice(
+      styles.lastIndexOf("@media (min-width: 761px) and (max-width: 1100px)")
+    );
+    const mobileBreakpoint = strategyResponsiveSource.indexOf("@media (max-width: 760px)");
+    const tabletRules = strategyResponsiveSource.slice(0, mobileBreakpoint);
+    const mobileRules = strategyResponsiveSource.slice(mobileBreakpoint);
+
+    expect(strategySummarySource.indexOf('field="entryKind"')).toBeLessThan(
+      strategySummarySource.indexOf('field="exitKind"')
+    );
+    expect(strategySummarySource.indexOf('field="exitKind"')).toBeLessThan(
+      strategySummarySource.indexOf('field="entryRsiConfirm"')
+    );
+    expect(conditionFieldSource).toContain("<StrategyConditionMenu");
+    expect(conditionFieldSource).not.toContain("<select");
+    expect(conditionMenuSource).toContain("summaryRef.current?.focus()");
+    expect(cssBlock(".strategy-draft-field > .strategy-rsi-toggle")).toContain(
+      "grid-template-columns: auto minmax(52px, 0.75fr) minmax(52px, 0.75fr) auto;"
+    );
+    expect(cssBlock(".strategy-draft-field > .strategy-volume-toggle")).toContain(
+      "grid-template-columns: auto minmax(58px, 1fr) auto;"
+    );
+    expect(appSource.match(/className="strategy-inline-number"/g)).toHaveLength(3);
+    expect(cssBlock(".strategy-inline-number")).toContain(
+      "grid-template-columns: auto minmax(0, 1fr);"
+    );
+    expect(desktopGrid).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
+    expect(desktopGrid).not.toContain("auto-fit");
+    expect(tabletRules).toContain(".design-strategy-workbench .strategy-draft-grid");
+    expect(tabletRules).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(mobileRules).toContain(".strategy-draft-grid,");
+    expect(mobileRules).toContain("grid-template-columns: minmax(0, 1fr);");
+    expect(mobileRules).toContain(".design-strategy-workbench .strategy-draft-field");
+    expect(mobileRules).toContain("grid-column: span 1;");
+    expect(cssBlock(".strategy-condition-options")).toContain("position: absolute;");
+  });
+
+  test("preflights strategy readiness without navigating away from the research workspace", () => {
     const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
 
     expect(runPipelineSource).toContain("validateStrategySnapshot(quantCoreBaseUrl");
     expect(runPipelineSource).toContain('preflight.validation?.status === "blocked"');
-    expect(runPipelineSource).toContain('setActiveWorkAreaId("strategy")');
+    expect(runPipelineSource).not.toContain('setActiveWorkAreaId("strategy")');
+    expect(runPipelineSource).not.toContain('setActiveWorkAreaId("backtest")');
+    expect(runPipelineSource).not.toContain('setActiveLoopStepId("strategy")');
+    expect(runPipelineSource).not.toContain('setActiveLoopStepId("backtest")');
     expect(runPipelineSource).toContain("setStrategyValidationState(preflight)");
     expect(runPipelineSource).toContain("Strategy preflight blocked");
   });
 
+  test("shows a dismissible completion notice only after the audited research run is fully refreshed", () => {
+    const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
+    const completionNoticeSource = sourceBetween("{researchCompletionNotice ? (", "{isResearchPipelineConfirmationOpen ? (");
+
+    expect(appSource).toContain("const [researchCompletionNotice, setResearchCompletionNotice]");
+    expect(appSource).toContain("readbackReady: boolean;");
+    expect(runPipelineSource).toContain("setResearchCompletionNotice(null)");
+    expect(runPipelineSource.indexOf("const strategyLibraryReadback = await refreshStrategyLibrary();")).toBeLessThan(
+      runPipelineSource.indexOf("setResearchCompletionNotice({")
+    );
+    expect(runPipelineSource).toMatch(
+      /const strategyLibraryReadback = await refreshStrategyLibrary\(\);\s*if \(workflowRunIdRef\.current !== runId\) \{\s*return;\s*\}\s*setIsRunning\(false\);\s*if \(researchSummary\)/
+    );
+    expect(runPipelineSource).toContain(
+      'runHistoryReadback.source === "core" && strategyLibraryReadback.source === "core"'
+    );
+    expect(completionNoticeSource).toContain('className="research-completion-notice"');
+    expect(completionNoticeSource).toContain('aria-live="polite"');
+    expect(completionNoticeSource).toContain('role="status"');
+    expect(completionNoticeSource).toContain("setResearchCompletionNotice(null)");
+    expect(completionNoticeSource).toContain("审计运行已创建 · 列表回读待恢复");
+    expect(cssBlock(".research-completion-notice")).toContain("position: fixed;");
+    expect(cssBlock(".research-completion-notice")).toContain("z-index:");
+    expect(cssBlock(':root[data-theme="light"] .research-completion-notice')).toContain(
+      "background: var(--surface);"
+    );
+  });
+
+  test("keeps the current AI review mounted while a replacement review is running", () => {
+    const runReviewSource = sourceBetween(
+      "const runAiReviewStage3 = useCallback",
+      "const inspectAiReviewStage3 = useCallback"
+    );
+
+    expect(runReviewSource).not.toContain("setAiReviewStage3CurrentReview(null)");
+    expect(runReviewSource).not.toContain("setAiReviewStage3Decisions([])");
+    expect(runReviewSource).not.toContain("setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]))");
+    expect(runReviewSource.indexOf("setAiReviewStage3CurrentReview(result.review)")).toBeGreaterThan(
+      runReviewSource.indexOf('result.source !== "core" || !result.review')
+    );
+  });
+
   test("uses a themed research preflight dialog instead of browser confirmation", () => {
     const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
+    const blockedPreflightSource = sourceBetween(
+      "if (!researchPipelinePreflight.canRun) {",
+      "if (researchPipelinePreflight.requiresConfirmation"
+    );
+    const openPreflightIssueSource = sourceBetween(
+      "const openResearchPipelinePreflightIssue = useCallback",
+      "const focusExecutionAdapterPaperExecutionAudit"
+    );
     const confirmationDialogSource = sourceBetween("{isResearchPipelineConfirmationOpen ? (", "{isChartExpanded ? (");
 
     expect(appSource).not.toContain("window.confirm");
     expect(runPipelineSource).toContain("setIsResearchPipelineConfirmationOpen(true)");
     expect(runPipelineSource).toContain('confirmation !== "accepted"');
+    expect(blockedPreflightSource).toContain("setIsResearchPipelineConfirmationOpen(true)");
     expect(appSource).toContain("researchPipelineConfirmationDialogRef.current?.showModal()");
     expect(appSource).toContain("researchPipelineConfirmationCancelButtonRef.current?.focus()");
     expect(appSource).toContain("<dialog");
@@ -4187,6 +4746,16 @@ describe("terminal layout css", () => {
     expect(confirmationDialogSource).toContain("researchContextReadinessDetail(i18n, issue)");
     expect(confirmationDialogSource).toContain("openResearchPipelinePreflightIssue(issue)");
     expect(confirmationDialogSource).toContain('className="research-confirmation-issue-action"');
+    expect(confirmationDialogSource).toContain('researchPipelinePreflight.status === "blocked"');
+    expect(confirmationDialogSource).toContain("项阻止运行");
+    expect(confirmationDialogSource).toContain("researchPipelinePreflight.canRun ? (");
+    expect(openPreflightIssueSource).toContain('issue.action === "refresh-cache"');
+    expect(openPreflightIssueSource).toContain("!marketDataRefreshGuard.blocked");
+    expect(openPreflightIssueSource).toContain("runResearchContextReadinessAction(");
+    expect(openPreflightIssueSource).toContain("refreshSelectedMarketCache");
+    expect(openPreflightIssueSource).toContain("refreshWatchlistMarketCache");
+    expect(confirmationDialogSource).toContain("researchContextReadinessActionLabel(");
+    expect(confirmationDialogSource).toContain("isResearchContextActionDisabled(");
     expect(confirmationDialogSource).not.toContain("<strong>{issue.value}</strong>");
     expect(appSource).toContain('void runPipeline("accepted")');
     expect(appSource).toContain('id="terminal-symbol-input"');
@@ -4195,11 +4764,15 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("researchPipelinePreflightIssueTargets");
     expect(cssBlock(".research-confirmation-dialog")).toContain("background: transparent;");
     expect(cssBlock(".research-confirmation-modal")).toContain("width: min(520px, calc(100vw - 32px));");
+    expect(cssBlock(".research-confirmation-issues article.blocked")).toContain("background:");
     expect(cssBlock(".research-confirmation-issue-action:focus-visible")).toContain("outline:");
     expect(cssBlock(':root[data-theme="light"] .research-confirmation-dialog')).toContain("color: var(--text);");
     expect(cssBlock(':root[data-theme="light"] .research-confirmation-modal')).toContain("background: var(--surface);");
     expect(cssBlock(':root[data-theme="light"] .research-confirmation-issues article')).toContain(
       "background: var(--surface-raised);"
+    );
+    expect(cssBlock(':root[data-theme="light"] .research-confirmation-issues article.blocked')).toContain(
+      "background: #fff2f0;"
     );
   });
 
@@ -4215,37 +4788,66 @@ describe("terminal layout css", () => {
 
   test("renders strategy library save and reload controls", () => {
     const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
+    const deleteStrategySource = sourceBetween(
+      "const deleteSavedStrategyVersion = useCallback",
+      "const saveCurrentResearchNote = useCallback"
+    );
 
     expect(appSource).toContain("loadStrategyLibrary");
     expect(appSource).toContain("saveStrategySnapshot");
+    expect(appSource).toContain("deleteStrategyVersion");
     expect(appSource).toContain("buildStrategyVersionDiffRows");
     expect(appSource).toContain("buildStrategyGovernanceQueueRows");
     expect(appSource).toContain("pendingStrategyGovernanceAction");
     expect(appSource).toContain("runStrategyGovernanceAction");
     expect(appSource).toContain("saveCurrentStrategyVersion");
     expect(appSource).toContain("loadSavedStrategyVersion");
+    expect(appSource).toContain("deleteSavedStrategyVersion");
     expect(appSource).toContain("workspaceWithStrategyLibraryItem");
     expect(appSource).toContain('i18n.t("strategy.context")');
     expect(appSource).toContain('i18n.t("strategy.auditRun")');
     expect(appSource).toContain('i18n.t("strategy.diff")');
     expect(appSource).toContain('className="strategy-library-diff"');
     expect(appSource).toContain('i18n.t("strategy.loadedVersion")');
+    expect(appSource).toContain('className="research-confirmation-dialog strategy-delete-dialog"');
+    expect(appSource).toContain('role="alertdialog"');
+    expect(appSource).toContain('className="strategy-library-card-actions"');
+    expect(appSource).toContain('className="strategy-delete-button"');
+    expect(appSource).not.toContain("window.confirm");
     expect(runPipelineSource).toContain("await refreshStrategyLibrary();");
+    expect(deleteStrategySource).toContain("await refreshStrategyLibrary();");
+    expect(deleteStrategySource).not.toContain("strategies.filter");
     expect(appSource).toContain('className="strategy-library-list"');
     expect(appSource).toContain('className="strategy-library-actions"');
     expect(appSource).toContain('className="strategy-governance-queue"');
     expect(appSource).toContain("strategyGovernanceQueue.summary.totalRows");
     expect(appSource).toContain("strategyGovernanceActionLabel");
+    expect(appSource).toContain("strategyGovernanceDetailLabel");
+    expect(appSource).toContain("strategyGovernanceChangedFieldLabel");
+    expect(appSource).toContain("strategyGovernanceContextLabel");
+    expect(appSource).toContain("strategyGovernanceValidationDetailLabel");
     expect(styles).toContain(".strategy-library-list");
     expect(styles).toContain(".strategy-library-card");
     expect(styles).toContain(".strategy-library-card small");
+    expect(styles).toContain(".strategy-library-card-actions");
+    expect(styles).toContain(".strategy-delete-confirm");
+    expect(
+      cssBlock(
+        ".design-strategy-workbench .strategy-library-card .strategy-delete-button,\n" +
+          ".design-strategy-workbench .strategy-delete-confirm"
+      )
+    ).toContain("color: var(--danger);");
     expect(styles).toContain(".strategy-diff-chip.warning");
     expect(styles).toContain(".strategy-governance-queue");
     expect(styles).toContain(".strategy-governance-summary");
     expect(styles).toContain(".strategy-governance-row");
     expect(cssBlock(".strategy-governance-row")).toContain(
-      "grid-template-columns: minmax(130px, 0.85fr) minmax(108px, 0.55fr) minmax(220px, 1fr) auto;"
+      "grid-template-columns: minmax(130px, 0.85fr) minmax(108px, 0.55fr) minmax(220px, 1fr) minmax(96px, 0.3fr);"
     );
+    expect(cssBlock(".strategy-governance-row span")).toContain("text-align: center;");
+    expect(cssBlock(".strategy-governance-row button")).toContain("justify-self: center;");
+    expect(hasCssBlockWith("  .design-strategy-workbench .strategy-governance-row > span", ["text-align: left;"])).toBe(true);
+    expect(hasCssBlockWith("  .design-strategy-workbench .strategy-governance-row button", ["justify-self: start;"])).toBe(true);
   });
 
   test("renders a compact portfolio paper ops queue across portfolio and execution workspaces", () => {
@@ -4272,6 +4874,52 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".workflow-note-panel");
     expect(styles).toContain(".research-note-editor");
     expect(styles).toContain(".research-note-meta");
+  });
+
+  test("consumes each external note authorization and protects drafts changed during generation", () => {
+    const generateNoteSource = sourceBetween(
+      "const generateCurrentResearchNoteDraft = useCallback",
+      "const selectResearchNoteProvider = useCallback"
+    );
+
+    expect(appSource).toContain("const researchNoteDraftVersionRef = useRef(0)");
+    expect(appSource).toContain("const updateResearchNoteDraft = useCallback");
+    expect(appSource).toContain("const applyGeneratedResearchNoteDraft = useCallback");
+    expect(appSource).toContain("const editResearchNoteDraft = useCallback");
+    expect(appSource).toContain("researchNoteDraftGenerationAbortControllerRef.current.abort()");
+    expect(generateNoteSource).toContain("const draftVersionBeforeRequest = researchNoteDraftVersionRef.current");
+    expect(generateNoteSource).toContain('if (researchNoteProviderId !== "local")');
+    expect(generateNoteSource).toContain("setResearchNoteExternalDataApproved(false)");
+    expect(appSource).toContain("isResearchNoteDraftStreamCurrent");
+    expect(generateNoteSource).toContain("const streamIdentity = {");
+    expect(generateNoteSource).toContain(
+      "draftVersion: researchNoteDraftVersionRef.current"
+    );
+    expect(generateNoteSource).toContain(
+      'result.generation.status === "failed" || result.generation.fallbackUsed'
+    );
+    expect(generateNoteSource).toContain(
+      "const draftWasEmptyBeforeRequest = draftBeforeRequest.trim().length === 0"
+    );
+    expect(generateNoteSource).toContain("if (draftWasEmptyBeforeRequest)");
+    expect(generateNoteSource.indexOf("result.generation.status ===")).toBeLessThan(
+      generateNoteSource.indexOf("applyGeneratedResearchNoteDraft(result.draft.body)")
+    );
+    expect(generateNoteSource).toContain("applyGeneratedResearchNoteDraft(body)");
+    expect(generateNoteSource).toContain("onReset: async () =>");
+    expect(generateNoteSource).toContain(
+      "applyGeneratedResearchNoteDraft(draftBeforeRequest)"
+    );
+    expect(generateNoteSource).toContain("applyGeneratedResearchNoteDraft(result.draft.body)");
+    expect(generateNoteSource).toContain("signal: controller.signal");
+    expect(generateNoteSource).toContain("await waitForNextPaint()");
+    expect(appSource).toContain(
+      "window.requestAnimationFrame(() => {\n      window.requestAnimationFrame(finish);"
+    );
+    expect(appSource).toContain("window.setTimeout(finish, 100)");
+    expect(appSource).toContain("onNoteChange: editResearchNoteDraft");
+    expect(appSource).not.toContain("researchNoteGenerationPreview");
+    expect(appSource).not.toContain("AI 已验证章节预览");
   });
 
   test("renders the backtest lab as an auditable evidence report", () => {

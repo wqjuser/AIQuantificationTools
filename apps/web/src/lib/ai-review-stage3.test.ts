@@ -221,11 +221,15 @@ describe("Stage 3 AI review runtime contracts", () => {
 
     expect(resolveAiReviewRestoredSelection([review], decisions, "run-primary")).toEqual({
       review,
-      decisions
+      decisions,
+      primaryExperimentId: "primary",
+      comparisonExperimentIds: []
     });
     expect(resolveAiReviewRestoredSelection([], [], "run-primary")).toEqual({
       review: null,
-      decisions: []
+      decisions: [],
+      primaryExperimentId: null,
+      comparisonExperimentIds: []
     });
   });
 
@@ -363,6 +367,27 @@ describe("Stage 3 AI review runtime contracts", () => {
       Object.entries(review.primaryExperiment).reverse()
     ) as typeof review.primaryExperiment;
     expect(isAuthoritativeAiReviewRun(review)).toBe(true);
+  });
+
+  test("accepts current and legacy AI review prompt templates", () => {
+    const legacy = sampleAuthoritativeReview();
+    const current = {
+      ...legacy,
+      externalAssessment: {
+        ...legacy.externalAssessment,
+        promptTemplateVersion: "aiqt-ai-review-v2"
+      }
+    };
+
+    expect(isAuthoritativeAiReviewRun(legacy)).toBe(true);
+    expect(isAuthoritativeAiReviewRun(current)).toBe(true);
+    expect(isAuthoritativeAiReviewRun({
+      ...current,
+      externalAssessment: {
+        ...current.externalAssessment,
+        promptTemplateVersion: "aiqt-ai-review-v3"
+      }
+    })).toBe(false);
   });
 
   test("accepts only safe provider status projections and rejects key material", () => {

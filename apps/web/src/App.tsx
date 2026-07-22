@@ -4,6 +4,8 @@ import {
   BookmarkPlus,
   BrainCircuit,
   Check,
+  CheckCircle2,
+  ChevronDown,
   Cog,
   Copy,
   Database,
@@ -72,6 +74,9 @@ import {
   loadResearchRunHistory,
   loadResearchRunPromotion,
   loadResearchNote,
+  generateResearchNoteDraft,
+  generateStrategyAiDraft,
+  isResearchNoteDraftStreamCurrent,
   loadHandoffNotes,
   loadDesktopReleaseLatest,
   generateStage1BootstrapPreflight,
@@ -263,7 +268,9 @@ import {
   recordPortfolioPaperOrderApproval,
   recordPortfolioPaperOrderBatchSimulation,
   recordPortfolioPaperOrderSimulation,
+  deleteStrategyVersion,
   saveStrategySnapshot,
+  StrategyAiDraftResult,
   StrategyLibraryItem,
   StrategyLibraryResult,
   StrategyValidationResult,
@@ -355,6 +362,7 @@ import {
 import {
   appendAiReviewDecisionAndReadback,
   buildAiReviewDecisionDraft,
+  aiReviewRequiresExternalApproval,
   canRunAiReviewStage3,
   createAiReviewRequestCoordinator,
   resolveAiReviewPrimaryExperiment,
@@ -376,6 +384,7 @@ import {
   buildAiReviewDossier,
   buildAiReviewStage3CandidateKey,
   buildAiReviewStage3ContextKey,
+  resolveAiReviewDraftExperiment,
   buildAiReviewReportMarkdown,
   buildAiReviewAuditTimelineItems,
   buildAiReviewExportEvidenceIndexRows,
@@ -440,6 +449,7 @@ import {
   buildAuditReplayWorkflowState,
   buildBacktestAssumptionRows,
   buildDefaultStrategyExperimentDimensions,
+  DEFAULT_STRATEGY_EXPERIMENT_WALK_FORWARD,
   buildStrategyExperimentEvidenceSummary,
   buildBacktestEvidenceCards,
   buildBacktestReport,
@@ -604,6 +614,7 @@ import {
   resolveLocalReviewCoverageNextActionDeepLinkState,
   resolveP0CompletionGapDeepLinkState,
   resolveP0CurrentGapActionDeepLinkState,
+  resolveMarketSearchMarket,
   resolveStage1P0DailyUseShareDeepLinkStatus,
   resolveStage1P0DailyUseShareDeepLinkState,
   researchRunEvidenceLogLabel,
@@ -792,6 +803,7 @@ import {
   WorkflowRunState,
   WorkflowStageView,
   buildResearchContextDeepLink,
+  findLatestResearchRunForContext,
   replaceAiReviewRunIdInUrl,
   resolveAiReviewRunIdFromUrl,
   resolveResearchContextUrlState,
@@ -806,6 +818,7 @@ import {
   workspaceWithSavedResearchWorkspaceState,
   workspaceWithSavedWatchlist,
   workspaceWithStrategyExperimentCandidate,
+  workspaceWithAiStrategyDraft,
   goldenPathRunRebindIsCurrent,
   nextAiReviewHistoryRequestId,
   replayRunRequestIsCurrent,
@@ -814,12 +827,14 @@ import {
   workspaceWithStrategyRuleDraftField,
   workspaceWithStrategyTemplate,
   workspaceWithSelectedTimeframe,
+  workspaceWithPortfolioPeerAuditInstrument,
   workspaceWithSelectedInstrument
 } from "./lib/terminal-workbench";
 
 const quantCoreBaseUrl = resolveQuantCoreBaseUrl({
   VITE_QUANT_API_BASE: import.meta.env.VITE_QUANT_API_BASE
 });
+const VISIBLE_PAGE_REFRESH_INTERVAL_MS = 35_000;
 const initialP0CurrentGapActionDeepLinkState =
   typeof window === "undefined" ? null : resolveP0CurrentGapActionDeepLinkState(window.location.search);
 const initialP0CompletionGapDeepLinkState =
@@ -2148,6 +2163,28 @@ function latestRecordedProductionRouteReviewIdForAdapter(
     .sort((left, right) => Date.parse(right.recordedAt) - Date.parse(left.recordedAt))[0]?.productionRouteReviewId;
 }
 
+function waitForNextPaint(): Promise<void> {
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId: number | undefined;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve();
+    };
+    timeoutId = window.setTimeout(finish, 100);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(finish);
+    });
+  });
+}
+
 export function App() {
   const [{ workspace, source, statusLabel, error }, setWorkspaceState] = useState(initialWorkspaceState);
   const [{ runs: runHistory }, setRunHistoryState] = useState(initialRunHistoryState);
@@ -2161,7 +2198,7 @@ export function App() {
     maximumDrawdownPct: 20
   });
   const [strategyExperimentWalkForward, setStrategyExperimentWalkForward] =
-    useState<StrategyExperimentWalkForward | null>(null);
+    useState<StrategyExperimentWalkForward | null>(DEFAULT_STRATEGY_EXPERIMENT_WALK_FORWARD);
   const [isStrategyExperimentRunning, setIsStrategyExperimentRunning] = useState(false);
   const [strategyExperimentError, setStrategyExperimentError] = useState<string | null>(null);
   const [aiReviewStage3Providers, setAiReviewStage3Providers] = useState<AiReviewProviderStatus[]>([]);
@@ -2418,6 +2455,18 @@ export function App() {
   const [stage9ProductionAdmissionError, setStage9ProductionAdmissionError] = useState<string | null>(null);
   const [isRunningStage9ProductionAdmission, setIsRunningStage9ProductionAdmission] = useState(false);
   const [researchNoteDraft, setResearchNoteDraft] = useState("");
+  const [researchNoteProviders, setResearchNoteProviders] = useState<AiReviewProviderStatus[]>([
+    {
+      providerId: "local",
+      configured: true,
+      model: null,
+      sanitizedBaseUrl: null
+    }
+  ]);
+  const [researchNoteProviderId, setResearchNoteProviderId] = useState<AiReviewProviderId>("local");
+  const [researchNoteExternalDataApproved, setResearchNoteExternalDataApproved] = useState(false);
+  const [researchNoteGenerationError, setResearchNoteGenerationError] = useState<string | null>(null);
+  const [researchNoteGenerationStatus, setResearchNoteGenerationStatus] = useState<string | null>(null);
   const [handoffNoteDraft, setHandoffNoteDraft] = useState("");
   const [klinesState, setKlinesState] = useState(initialKlinesState);
   const [marketDataReadinessState, setMarketDataReadinessState] = useState<MarketDataReadinessResult>(
@@ -2454,6 +2503,7 @@ export function App() {
   const [hasUnsavedWatchlistChanges, setHasUnsavedWatchlistChanges] = useState(false);
   const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [isSavingResearchNote, setIsSavingResearchNote] = useState(false);
+  const [isGeneratingResearchNoteDraft, setIsGeneratingResearchNoteDraft] = useState(false);
   const [isSavingHandoffNote, setIsSavingHandoffNote] = useState(false);
   const [isSavingWatchlist, setIsSavingWatchlist] = useState(false);
   const [isSavingResearchWorkspace, setIsSavingResearchWorkspace] = useState(false);
@@ -2513,6 +2563,14 @@ export function App() {
   );
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [isResearchPipelineConfirmationOpen, setIsResearchPipelineConfirmationOpen] = useState(false);
+  const [researchCompletionNotice, setResearchCompletionNotice] = useState<{
+    dataRows: number;
+    instrumentName: string;
+    readbackReady: boolean;
+    runId: string;
+    symbol: string;
+    timeframe: Timeframe;
+  } | null>(null);
   const researchPipelineConfirmationDialogRef = useRef<HTMLDialogElement | null>(null);
   const researchPipelineConfirmationCancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
@@ -2651,8 +2709,35 @@ export function App() {
   const manualSelectionVersionRef = useRef(0);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
+  const researchNoteDraftRef = useRef(researchNoteDraft);
+  researchNoteDraftRef.current = researchNoteDraft;
+  const researchNoteDraftVersionRef = useRef(0);
+  const researchNoteDraftGenerationRequestIdRef = useRef(0);
+  const researchNoteDraftGenerationAbortControllerRef = useRef<AbortController | null>(null);
+  const applyGeneratedResearchNoteDraft = useCallback((body: string) => {
+    researchNoteDraftRef.current = body;
+    setResearchNoteDraft(body);
+  }, []);
+  const updateResearchNoteDraft = useCallback((body: string) => {
+    researchNoteDraftVersionRef.current += 1;
+    researchNoteDraftRef.current = body;
+    setResearchNoteDraft(body);
+  }, []);
+  const editResearchNoteDraft = useCallback((body: string) => {
+    if (researchNoteDraftGenerationAbortControllerRef.current) {
+      researchNoteDraftGenerationAbortControllerRef.current.abort();
+      researchNoteDraftGenerationAbortControllerRef.current = null;
+      researchNoteDraftGenerationRequestIdRef.current += 1;
+      setIsGeneratingResearchNoteDraft(false);
+      setResearchNoteGenerationError(null);
+      setResearchNoteGenerationStatus("检测到手动编辑，已停止 AI 生成并保留当前内容。");
+    }
+    updateResearchNoteDraft(body);
+  }, [updateResearchNoteDraft]);
   const savedResearchWorkspaceSelectionAppliedRef = useRef(hasExplicitWorkAreaUrl());
   const chartRequestIdRef = useRef(0);
+  const marketCalendarRequestIdRef = useRef(0);
+  const workspaceQuoteRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
   const strategyValidationRequestIdRef = useRef(0);
   const strategyExperimentRequestGenerationRef = useRef(0);
@@ -2663,6 +2748,7 @@ export function App() {
   const strategyExperimentWorkspaceRef = useRef(workspace);
   const strategyExperimentActiveRef = useRef(strategyExperimentActive);
   const aiReviewStage3RequestCoordinatorRef = useRef<AiReviewRequestCoordinator | null>(null);
+  const aiReviewStage3ProviderInitializedRef = useRef(false);
   if (aiReviewStage3RequestCoordinatorRef.current === null) {
     aiReviewStage3RequestCoordinatorRef.current = createAiReviewRequestCoordinator();
   }
@@ -2676,6 +2762,8 @@ export function App() {
   const researchRunImportAuditRequestIdRef = useRef(0);
   const exportPackageRequestCoordinatorRef = useRef(createLatestRequestCoordinator());
   const portfolioStage4RequestCoordinatorRef = useRef(createPortfolioStage4RequestCoordinator());
+  const portfolioPeerAuditRequestIdRef = useRef(0);
+  const portfolioPeerAuditActiveRef = useRef(false);
   const stage5ShadowRequestIdRef = useRef(0);
   const importAuditCopyResetTimerRef = useRef<number | null>(null);
   const auditEvidenceSummaryCopyResetTimerRef = useRef<number | null>(null);
@@ -2689,7 +2777,6 @@ export function App() {
   const klinesStateRef = useRef(initialKlinesState);
   const historicalKlineRequestRef = useRef<string | null>(null);
   const symbolSearchRequestIdRef = useRef(0);
-  const skipNextSymbolSearchRef = useRef(false);
   const workspaceScrollPositionsRef = useRef<
     Partial<Record<ProductWorkAreaId, { surfaceTop: number; windowTop: number }>>
   >({});
@@ -2781,6 +2868,9 @@ export function App() {
   }, []);
   useLayoutEffect(() => {
     resetStage4PortfolioBusyState();
+    portfolioPeerAuditRequestIdRef.current += 1;
+    portfolioPeerAuditActiveRef.current = false;
+    setIsPreparingPortfolioPeers(false);
     setIsRunningStage5Shadow(false);
     stage5ShadowRequestIdRef.current += 1;
     portfolioStage4RequestCoordinatorRef.current.invalidate(currentResearchRunIdRef.current);
@@ -2827,6 +2917,19 @@ export function App() {
   });
   const aiReviewStage3CandidateKey = buildAiReviewStage3CandidateKey(
     visibleStrategyExperimentActive?.experimentId ?? null,
+    aiReviewStage3Experiments
+  );
+  const aiReviewStage3DraftExperiment = resolveAiReviewDraftExperiment(
+    aiReviewStage3PrimaryExperimentId ?? visibleStrategyExperimentActive?.experimentId ?? null,
+    aiReviewStage3Experiments,
+    visibleStrategyExperimentDimensions,
+    strategyExperimentGuardrails,
+    strategyExperimentWalkForward
+  );
+  const aiReviewStage3SelectedExperiment = resolveAiReviewPrimaryExperiment(
+    aiReviewStage3Experiments.find(
+      (experiment) => experiment.experimentId === aiReviewStage3PrimaryExperimentId
+    ) ?? null,
     aiReviewStage3Experiments
   );
   const visibleStrategyExperimentUrlId = resolveStrategyExperimentIdForCurrentSource(
@@ -3229,12 +3332,30 @@ export function App() {
     workspace
   );
   const runComparisonRows = buildResearchRunComparisonRows(runHistory);
-  const activeCacheContext = settingsStatus.settings?.cache.contexts.find(
-    (context) =>
-      context.market === workspace.selectedInstrument.market &&
-      context.symbol === workspace.selectedInstrument.symbol &&
-      context.timeframe === workspace.selectedTimeframe
-  );
+  const activeCacheReadiness = marketDataReadinessState.readiness;
+  const activeReadinessCacheContext =
+    activeCacheReadiness?.market === workspace.selectedInstrument.market &&
+      activeCacheReadiness.symbol === workspace.selectedInstrument.symbol &&
+      activeCacheReadiness.timeframe === workspace.selectedTimeframe
+      ? {
+          market: activeCacheReadiness.market,
+          symbol: activeCacheReadiness.symbol,
+          timeframe: activeCacheReadiness.timeframe,
+          rowCount: activeCacheReadiness.barCount,
+          startTimestamp: activeCacheReadiness.startBarAt,
+          endTimestamp: activeCacheReadiness.latestBarAt,
+          freshness: activeCacheReadiness.cacheState,
+          ageHours: activeCacheReadiness.ageHours
+        }
+      : undefined;
+  const activeCacheContext =
+    activeReadinessCacheContext ??
+    settingsStatus.settings?.cache.contexts.find(
+      (context) =>
+        context.market === workspace.selectedInstrument.market &&
+        context.symbol === workspace.selectedInstrument.symbol &&
+        context.timeframe === workspace.selectedTimeframe
+    );
   const activeCacheContextKey = cacheContextKey({
     market: workspace.selectedInstrument.market,
     symbol: workspace.selectedInstrument.symbol,
@@ -4029,7 +4150,9 @@ export function App() {
   ]);
 
   const refreshRunHistory = useCallback(async () => {
-    setRunHistoryState(await loadResearchRunHistory(quantCoreBaseUrl, 5));
+    const result = await loadResearchRunHistory(quantCoreBaseUrl, 50);
+    setRunHistoryState(result);
+    return result;
   }, []);
 
   const refreshDesktopReleaseLatest = useCallback(async () => {
@@ -4210,7 +4333,6 @@ export function App() {
     const request = coordinator.beginContext(aiReviewStage3ContextKey);
     syncAiReviewStage3Busy();
     setAiReviewStage3Providers([]);
-    setAiReviewStage3ProviderId("local");
     setAiReviewStage3ExternalDataApproved(false);
     setAiReviewStage3PrimaryExperimentId(null);
     setAiReviewStage3ComparisonExperimentIds([]);
@@ -4220,10 +4342,41 @@ export function App() {
     setAiReviewStage3Decisions([]);
     setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]));
     setAiReviewStage3Error(null);
+    const applyProviders = (providers: AiReviewProviderStatus[]) => {
+      setAiReviewStage3Providers(providers);
+      setAiReviewStage3ProviderId((current) => {
+        const currentConfigured = providers.some(
+          (provider) => provider.providerId === current && provider.configured
+        );
+        const configuredExternal = providers.find(
+          (provider) => provider.providerId !== "local" && provider.configured
+        );
+        const next = !aiReviewStage3ProviderInitializedRef.current && configuredExternal
+          ? configuredExternal.providerId
+          : currentConfigured ? current : "local";
+        aiReviewStage3ProviderInitializedRef.current = true;
+        return next;
+      });
+    };
 
-    if (activeWorkAreaId !== "ai-review" || !strategyExperimentSourceRunId) {
+    if (activeWorkAreaId !== "ai-review") {
       coordinator.finish(request);
       syncAiReviewStage3Busy();
+      return () => coordinator.dispose();
+    }
+
+    if (!strategyExperimentSourceRunId) {
+      void loadAiReviewProviders(quantCoreBaseUrl, request.signal).then((providerResult) => {
+        if (!coordinator.isCurrent(request)) {
+          return;
+        }
+        applyProviders(providerResult.providers);
+        setAiReviewStage3Error(providerResult.source === "core"
+          ? null
+          : strategyExperimentI18nRef.current.t("aiReviewStage3.error.serviceLoadFailed"));
+        coordinator.finish(request);
+        syncAiReviewStage3Busy();
+      });
       return () => coordinator.dispose();
     }
 
@@ -4234,7 +4387,7 @@ export function App() {
       if (!coordinator.isCurrent(request)) {
         return;
       }
-      setAiReviewStage3Providers(providerResult.providers);
+      applyProviders(providerResult.providers);
       const restoredSelection = archiveResult.source === "core"
         ? resolveAiReviewRestoredSelection(
             archiveResult.authoritativeAiReviewRecords,
@@ -4242,18 +4395,35 @@ export function App() {
             strategyExperimentSourceRunId
           )
         : null;
+      const restoredExperiment = restoredSelection
+        ? resolveAiReviewDraftExperiment(
+            restoredSelection.primaryExperimentId,
+            aiReviewStage3Experiments,
+            visibleStrategyExperimentDimensions,
+            strategyExperimentGuardrails,
+            strategyExperimentWalkForward
+          )
+        : null;
       if (archiveResult.source === "core" && restoredSelection) {
         setAiReviewStage3History(archiveResult.authoritativeAiReviewRecords);
         setAiReviewStage3LegacyHistory(archiveResult.legacyAiReviewRecords);
-        setAiReviewStage3CurrentReview(restoredSelection.review);
-        setAiReviewStage3Decisions(restoredSelection.decisions);
-        setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft(restoredSelection.decisions));
+        if (restoredSelection.review) {
+          setAiReviewStage3CurrentReview(restoredSelection.review);
+          setAiReviewStage3Decisions(restoredSelection.decisions);
+          setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft(restoredSelection.decisions));
+          if (restoredExperiment) {
+            setAiReviewStage3PrimaryExperimentId(restoredSelection.primaryExperimentId);
+            setAiReviewStage3ComparisonExperimentIds(restoredSelection.comparisonExperimentIds);
+          }
+        }
       }
-      setAiReviewStage3Error(providerResult.source !== "core" || archiveResult.source !== "core"
-        ? strategyExperimentI18nRef.current.t("aiReviewStage3.error.contextLoadFailed")
-        : restoredSelection
-          ? null
-          : strategyExperimentI18nRef.current.t("aiReviewStage3.error.readbackInconsistent"));
+      setAiReviewStage3Error(providerResult.source !== "core"
+        ? strategyExperimentI18nRef.current.t("aiReviewStage3.error.serviceLoadFailed")
+        : archiveResult.source !== "core"
+          ? strategyExperimentI18nRef.current.t("aiReviewStage3.error.historyLoadFailed")
+          : restoredSelection === null
+            ? strategyExperimentI18nRef.current.t("aiReviewStage3.error.readbackInconsistent")
+            : null);
       coordinator.finish(request);
       syncAiReviewStage3Busy();
     });
@@ -4365,23 +4535,48 @@ export function App() {
     isRunningAiReviewStage3
   ]);
 
-  const runAiReviewStage3 = useCallback(async () => {
-    const primaryExperimentId = aiReviewStage3PrimaryExperimentId;
-    if (!primaryExperimentId || !canRunAiReviewStage3({
+  const configureStrategyExperimentWalkForward = useCallback((
+    walkForward: StrategyExperimentWalkForward | null
+  ) => {
+    invalidateAiReviewStage3Review();
+    setStrategyExperimentWalkForward(walkForward);
+    setAiReviewStage3PrimaryExperimentId(null);
+    setAiReviewStage3ComparisonExperimentIds([]);
+    setAiReviewStage3ExternalDataApproved(false);
+    setAiReviewStage3Error(null);
+  }, [invalidateAiReviewStage3Review]);
+
+  const runAiReviewStage3 = useCallback(async (primaryExperimentIdOverride?: string) => {
+    const primaryExperimentId = primaryExperimentIdOverride ?? aiReviewStage3PrimaryExperimentId;
+    const busy = isLoadingAiReviewStage3 || isRunningAiReviewStage3 || isAppendingAiReviewStage3Decision;
+    if (busy) {
+      return;
+    }
+    if (!primaryExperimentId) {
+      setAiReviewStage3Error("未找到可评审的主实验，请先完成当前标的的回测实验。");
+      return;
+    }
+    if (!aiReviewStage3Providers.some((provider) => provider.providerId === aiReviewStage3ProviderId)) {
+      setAiReviewStage3Error("评审模型配置尚未加载完成，请稍后重试。");
+      return;
+    }
+    if (aiReviewRequiresExternalApproval(aiReviewStage3ProviderId) && !aiReviewStage3ExternalDataApproved) {
+      setAiReviewStage3Error("请先在评审设置中允许发送本次证据摘要。");
+      return;
+    }
+    if (!canRunAiReviewStage3({
       primaryExperimentId,
       providers: aiReviewStage3Providers,
       providerId: aiReviewStage3ProviderId,
       externalDataApproved: aiReviewStage3ExternalDataApproved,
-      busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3 || isAppendingAiReviewStage3Decision
+      busy
     })) {
+      setAiReviewStage3Error("当前评审服务不可用，请检查模型配置后重试。");
       return;
     }
     const coordinator = aiReviewStage3RequestCoordinatorRef.current!;
     const request = coordinator.beginReview("running");
     syncAiReviewStage3Busy();
-    setAiReviewStage3CurrentReview(null);
-    setAiReviewStage3Decisions([]);
-    setAiReviewStage3DecisionDraft(buildAiReviewDecisionDraft([]));
     setAiReviewStage3Error(null);
     const result = await createAuthoritativeAiReview(quantCoreBaseUrl, {
       primaryExperimentId,
@@ -5099,11 +5294,11 @@ export function App() {
   }, [activeWorkAreaId, refreshAiReviewRunHistory, workspace.researchRun?.runId]);
 
   const refreshStrategyLibrary = useCallback(async () => {
-    setStrategyLibraryState(
-      await loadStrategyLibrary(quantCoreBaseUrl, {
-        limit: 12
-      })
-    );
+    const result = await loadStrategyLibrary(quantCoreBaseUrl, {
+      limit: 12
+    });
+    setStrategyLibraryState(result);
+    return result;
   }, []);
 
   const refreshResearchNote = useCallback(async () => {
@@ -5113,8 +5308,13 @@ export function App() {
       timeframe: workspace.selectedTimeframe
     });
     setResearchNoteState(result);
-    setResearchNoteDraft(result.note?.body ?? "");
-  }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+    updateResearchNoteDraft(result.note?.body ?? "");
+  }, [
+    updateResearchNoteDraft,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
 
   const refreshHandoffNotes = useCallback(async () => {
     const runId = workspace.researchRun?.runId;
@@ -5127,10 +5327,27 @@ export function App() {
     setHandoffNotesState(result);
   }, [workspace.researchRun?.runId]);
 
-  const refreshMarketCalendarStatus = useCallback(async () => {
+  const refreshMarketCalendarStatus = useCallback(async (silent = false) => {
+    const requestId = marketCalendarRequestIdRef.current + 1;
+    marketCalendarRequestIdRef.current = requestId;
     const market = workspace.selectedInstrument.market;
-    setMarketCalendarState(buildFallbackMarketCalendarState(market));
+    if (!silent) {
+      setMarketCalendarState(buildFallbackMarketCalendarState(market));
+    }
     const result = await loadMarketCalendarStatus(quantCoreBaseUrl, market);
+    if (
+      marketCalendarRequestIdRef.current !== requestId ||
+      workspaceRef.current.selectedInstrument.market !== market
+    ) {
+      return;
+    }
+    if (silent && result.source !== "core") {
+      setMarketCalendarState((current) => ({
+        ...current,
+        error: result.error ?? current.error
+      }));
+      return;
+    }
     setMarketCalendarState(result);
   }, [workspace.selectedInstrument.market]);
 
@@ -6659,7 +6876,7 @@ export function App() {
     void refreshAuditSigningKeys();
   }, [activeWorkAreaId, refreshAuditSigningKeys]);
 
-  const refreshChart = useCallback(async () => {
+  const refreshChart = useCallback(async (silent = false) => {
     const requestId = chartRequestIdRef.current + 1;
     chartRequestIdRef.current = requestId;
     const params = {
@@ -6667,16 +6884,22 @@ export function App() {
       symbol: workspace.selectedInstrument.symbol,
       timeframe: workspace.selectedTimeframe
     };
-    setIsChartLoading(true);
-    setKlinesState(buildLoadingMarketKlinesResult(params));
-    setMarketDataReadinessState({ source: "fallback", error: "Market data readiness loading" });
+    if (!silent) {
+      setIsChartLoading(true);
+      setKlinesState(buildLoadingMarketKlinesResult(params));
+      setMarketDataReadinessState({ source: "fallback", error: "Market data readiness loading" });
+    }
     const [result, readiness] = await Promise.all([
       loadMarketKlines(quantCoreBaseUrl, { ...params, limit: chartKlineLimit }),
       loadMarketDataReadiness(quantCoreBaseUrl, params)
     ]);
     if (chartRequestIdRef.current === requestId) {
-      setKlinesState(result);
-      setMarketDataReadinessState(readiness);
+      if (!silent || result.source === "core") {
+        setKlinesState(result);
+      }
+      if (!silent || readiness.source === "core") {
+        setMarketDataReadinessState(readiness);
+      }
       setIsChartLoading(false);
     }
   }, [
@@ -6686,6 +6909,62 @@ export function App() {
     workspace.selectedInstrument.symbol,
     workspace.selectedTimeframe
   ]);
+
+  const refreshVisiblePageData = useCallback(async () => {
+    const workspaceRequestId = workspaceQuoteRequestIdRef.current + 1;
+    workspaceQuoteRequestIdRef.current = workspaceRequestId;
+    const refreshTasks: Array<Promise<void>> = [refreshMarketCalendarStatus(true)];
+    refreshTasks.push(
+      loadTerminalWorkspace(quantCoreBaseUrl).then((result) => {
+        if (result.source !== "core" || workspaceQuoteRequestIdRef.current !== workspaceRequestId) {
+          return;
+        }
+        setWorkspaceState((current) => {
+          const refreshedWatchlist = current.workspace.watchlist.map(
+            (instrument) =>
+              result.workspace.watchlist.find(
+                (candidate) =>
+                  candidate.market === instrument.market && candidate.symbol === instrument.symbol
+              ) ?? instrument
+          );
+          return {
+            ...current,
+            workspace: workspaceWithSavedWatchlist(current.workspace, refreshedWatchlist)
+          };
+        });
+      })
+    );
+    if (
+      !isChartLoading &&
+      (activeWorkAreaId === "market" ||
+        activeWorkAreaId === "research" ||
+        activeWorkAreaId === "operations")
+    ) {
+      refreshTasks.push(refreshChart(true));
+    }
+    await Promise.all(refreshTasks);
+  }, [activeWorkAreaId, isChartLoading, refreshChart, refreshMarketCalendarStatus]);
+
+  useEffect(() => {
+    let refreshInFlight = false;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible" || refreshInFlight) {
+        return;
+      }
+      refreshInFlight = true;
+      void refreshVisiblePageData().finally(() => {
+        refreshInFlight = false;
+      });
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, VISIBLE_PAGE_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+    };
+  }, [refreshVisiblePageData]);
 
   const enableMarketDataRefreshOverride = useCallback(
     async (reason: string) => {
@@ -6960,7 +7239,7 @@ export function App() {
 
   const runPipeline = useCallback(async (confirmation?: "accepted") => {
     if (!researchPipelinePreflight.canRun) {
-      setIsResearchPipelineConfirmationOpen(false);
+      setIsResearchPipelineConfirmationOpen(true);
       setActiveWorkAreaId("research");
       setActiveLoopStepId("research");
       setWorkspaceState((current) => ({
@@ -6975,6 +7254,7 @@ export function App() {
       return;
     }
     setIsResearchPipelineConfirmationOpen(false);
+    setResearchCompletionNotice(null);
 
     const runId = workflowRunIdRef.current + 1;
     workflowRunIdRef.current = runId;
@@ -7000,8 +7280,6 @@ export function App() {
       log = [...log, createWorkflowLogEntry(runId, log.length + 1, stageId, level, message)];
     };
 
-    setActiveWorkAreaId("strategy");
-    setActiveLoopStepId("strategy");
     setIsRunning(true);
     setPaperExecutionRecord(null);
     setPromotionCandidateRecord(null);
@@ -7037,8 +7315,6 @@ export function App() {
         : `Strategy preflight used local fallback: ${preflight.error ?? "core unavailable"}`
     );
 
-    setActiveWorkAreaId("backtest");
-    setActiveLoopStepId("backtest");
     appendLog("data", "info", researchPipelineDataSnapshotLogLabel(selectedContext, researchPipelinePreflight));
     publishStage("data", []);
     await waitForWorkflowStep();
@@ -7094,9 +7370,23 @@ export function App() {
     appendLog("agent", "success", "Agent committee report received");
     appendLog("execution", "warning", "Live execution remains blocked; paper review is ready");
     publishStage("execution", ["data", "factor", "backtest", "agent"]);
-    await refreshRunHistory();
-    await refreshStrategyLibrary();
+    const runHistoryReadback = await refreshRunHistory();
+    const strategyLibraryReadback = await refreshStrategyLibrary();
+    if (workflowRunIdRef.current !== runId) {
+      return;
+    }
     setIsRunning(false);
+    if (researchSummary) {
+      setResearchCompletionNotice({
+        dataRows: researchSummary.dataRows,
+        instrumentName: result.workspace.selectedInstrument.name,
+        readbackReady:
+          runHistoryReadback.source === "core" && strategyLibraryReadback.source === "core",
+        runId: researchSummary.runId,
+        symbol: result.workspace.selectedInstrument.symbol,
+        timeframe: result.workspace.selectedTimeframe
+      });
+    }
   }, [
     chartKlineLimit,
     i18n,
@@ -7109,24 +7399,135 @@ export function App() {
     workspace
   ]);
 
+  const preparePortfolioPeerAudits = useCallback(async () => {
+    const sourceRunId = currentResearchRunIdRef.current;
+    if (!sourceRunId || portfolioPeerAuditActiveRef.current) {
+      return null;
+    }
+    const missingCandidates = portfolioPeerAuditPlan.candidates
+      .filter((candidate) => candidate.status === "missing")
+      .slice(0, 1);
+    if (!missingCandidates.length) {
+      return null;
+    }
+
+    portfolioPeerAuditActiveRef.current = true;
+    const requestId = ++portfolioPeerAuditRequestIdRef.current;
+    const peerKlineLimit = Math.max(
+      1,
+      Math.min(
+        chartKlineLimit,
+        workspace.backtestEquityCurve?.length ?? workspace.researchRun?.dataRows ?? chartKlineLimit
+      )
+    );
+    setIsPreparingPortfolioPeers(true);
+    const failures: string[] = [];
+    let refreshedRuns: Awaited<ReturnType<typeof refreshRunHistory>> | null = null;
+    try {
+      for (const candidate of missingCandidates) {
+        const instrument =
+          workspace.watchlist.find(
+            (item) => item.market === candidate.market && item.symbol === candidate.symbol
+          ) ??
+          buildInstrumentFromSymbol(candidate.market, candidate.symbol) ?? {
+            market: candidate.market,
+            symbol: candidate.symbol,
+            name: candidate.name,
+            changePct: 0,
+            price: null
+          };
+        const peerWorkspace = workspaceWithPortfolioPeerAuditInstrument(workspace, instrument);
+        const result = await runTerminalResearch(
+          quantCoreBaseUrl,
+          {
+            market: candidate.market,
+            symbol: candidate.symbol,
+            timeframe: candidate.timeframe,
+            limit: peerKlineLimit,
+            end: workspace.backtestEquityCurve?.at(-1)?.timestamp
+          },
+          peerWorkspace
+        );
+        if (result.source === "fallback") {
+          failures.push(`${candidate.symbol}: ${result.error ?? result.statusLabel}`);
+        }
+      }
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : "Portfolio peer audit failed");
+    } finally {
+      const requestIsCurrent = () =>
+        portfolioPeerAuditRequestIdRef.current === requestId &&
+        currentResearchRunIdRef.current === sourceRunId;
+      if (requestIsCurrent()) {
+        refreshedRuns = await refreshRunHistory();
+        if (refreshedRuns.source === "fallback") {
+          failures.push(refreshedRuns.error ?? "Portfolio run history readback failed");
+        }
+        await refreshStrategyLibrary();
+      }
+      if (requestIsCurrent()) {
+        setWorkspaceState((current) => ({
+          ...current,
+          statusLabel: failures.length ? "Portfolio peer audit failed" : "Portfolio peer audits prepared",
+          error: failures[0]
+        }));
+        portfolioPeerAuditActiveRef.current = false;
+        setIsPreparingPortfolioPeers(false);
+      }
+    }
+    return {
+      history: refreshedRuns,
+      error: failures[0]
+    };
+  }, [
+    chartKlineLimit,
+    portfolioPeerAuditPlan.candidates,
+    quantCoreBaseUrl,
+    refreshRunHistory,
+    refreshStrategyLibrary,
+    workspace
+  ]);
+
   const runPortfolioBacktestDraft = useCallback(async () => {
     resetStage4PortfolioBusyState();
+    setPortfolioBacktestState(initialPortfolioBacktestState);
     const request = portfolioStage4RequestCoordinatorRef.current.begin(currentResearchRunId);
-    if (!portfolioBacktestDraft.request) {
+    let draft = portfolioBacktestDraft;
+    let peerAuditError: string | undefined;
+    if (
+      !draft.request &&
+      draft.headline === "Portfolio backtest needs peers" &&
+      portfolioPeerAuditPlan.status === "ready"
+    ) {
+      const peerAuditResult = await preparePortfolioPeerAudits();
+      if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
+      peerAuditError = peerAuditResult?.error;
+      if (peerAuditResult?.history?.source === "core") {
+        draft = buildPortfolioBacktestDraft(peerAuditResult.history.runs, currentResearchRunId);
+      }
+    }
+    if (!draft.request) {
       if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
       setPortfolioBacktestState({
         source: "fallback",
-        error: portfolioBacktestDraft.summary
+        error: peerAuditError ?? draft.summary
       });
       return;
     }
 
     setIsRunningPortfolioBacktest(true);
-    const result = await runPortfolioBacktest(quantCoreBaseUrl, portfolioBacktestDraft.request);
+    const result = await runPortfolioBacktest(quantCoreBaseUrl, draft.request);
     if (!portfolioStage4RequestCoordinatorRef.current.isCurrent(request)) return;
     setPortfolioBacktestState(result);
     setIsRunningPortfolioBacktest(false);
-  }, [currentResearchRunId, portfolioBacktestDraft.request, portfolioBacktestDraft.summary, resetStage4PortfolioBusyState]);
+  }, [
+    currentResearchRunId,
+    portfolioBacktestDraft,
+    portfolioPeerAuditPlan.status,
+    preparePortfolioPeerAudits,
+    quantCoreBaseUrl,
+    resetStage4PortfolioBusyState
+  ]);
 
   const recordPortfolioPaperOrders = useCallback(async () => {
     const portfolio = portfolioBacktestState.portfolio;
@@ -7549,12 +7950,19 @@ export function App() {
     }
     if (actionId === "record-stage4-workflow") return void recordPortfolioStage4Workflow();
     const selector = {
-      "review-portfolio-risk": ".workflow-portfolio-panel .risk-ledger",
-      "review-portfolio-orders": ".portfolio-order-approval",
-      "review-route-risk": ".portfolio-route-risk-template"
+      "review-portfolio-risk": ".surface-portfolio .design-risk-ledger",
+      "review-portfolio-orders": ".surface-portfolio .portfolio-order-approval",
+      "review-route-risk": ".surface-portfolio .design-risk-ledger"
     }[actionId];
     if (!selector) return;
-    document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const target = document.querySelector<HTMLElement>(selector);
+    if (!target) {
+      setPortfolioPaperOrderHistoryError("当前步骤的操作区域尚未加载，请刷新页面后重试。");
+      return;
+    }
+    setPortfolioPaperOrderHistoryError(null);
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.focus({ preventScroll: true });
   }, [
     recordPortfolioPaperOrders,
     recordPortfolioStage4Workflow,
@@ -7875,64 +8283,6 @@ export function App() {
       });
     });
   }, [portfolioBacktestDraft, portfolioBacktestState.portfolio, workspace.researchRun?.runId]);
-
-  const preparePortfolioPeerAudits = useCallback(async () => {
-    const missingCandidates = portfolioPeerAuditPlan.candidates
-      .filter((candidate) => candidate.status === "missing")
-      .slice(0, Math.max(1, 2 - portfolioPeerAuditPlan.auditedCount));
-    if (!missingCandidates.length) {
-      return;
-    }
-
-    setIsPreparingPortfolioPeers(true);
-    const failures: string[] = [];
-    try {
-      for (const candidate of missingCandidates) {
-        const instrument =
-          workspace.watchlist.find(
-            (item) => item.market === candidate.market && item.symbol === candidate.symbol
-          ) ??
-          buildInstrumentFromSymbol(candidate.market, candidate.symbol) ?? {
-            market: candidate.market,
-            symbol: candidate.symbol,
-            name: candidate.name,
-            changePct: 0,
-            price: null
-          };
-        const peerWorkspace = workspaceWithSelectedInstrument(workspace, instrument);
-        const result = await runTerminalResearch(
-          quantCoreBaseUrl,
-          {
-            market: candidate.market,
-            symbol: candidate.symbol,
-            timeframe: candidate.timeframe,
-            limit: chartKlineLimit
-          },
-          peerWorkspace
-        );
-        if (result.source === "fallback") {
-          failures.push(`${candidate.symbol}: ${result.error ?? result.statusLabel}`);
-        }
-      }
-    } catch (error) {
-      failures.push(error instanceof Error ? error.message : "Portfolio peer audit failed");
-    } finally {
-      await refreshRunHistory();
-      await refreshStrategyLibrary();
-      setWorkspaceState((current) => ({
-        ...current,
-        statusLabel: failures.length ? "Portfolio peer audit failed" : "Portfolio peer audits prepared",
-        error: failures[0]
-      }));
-      setIsPreparingPortfolioPeers(false);
-    }
-  }, [
-    portfolioPeerAuditPlan.auditedCount,
-    portfolioPeerAuditPlan.candidates,
-    refreshRunHistory,
-    refreshStrategyLibrary,
-    workspace
-  ]);
 
   const loadPaperExecutionDeepLink = useCallback(
     async (deepLink: InitialPaperExecutionDeepLink) => {
@@ -9298,13 +9648,13 @@ export function App() {
           note: result.note,
           source: "core"
         });
-        setResearchNoteDraft(result.note.body);
+        updateResearchNoteDraft(result.note.body);
       } else if (result.run.researchNote?.body) {
         setResearchNoteState({
           note: result.run.researchNote,
           source: "core"
         });
-        setResearchNoteDraft(result.run.researchNote.body);
+        updateResearchNoteDraft(result.run.researchNote.body);
       }
       if (result.strategies?.length) {
         setStrategyLibraryState((current) => ({
@@ -9382,6 +9732,7 @@ export function App() {
     refreshAiReviewRunHistory,
     refreshRunHistory,
     resetAiReviewHistoryState,
+    updateResearchNoteDraft,
     workspace
   ]);
 
@@ -9713,9 +10064,6 @@ export function App() {
 
   const selectTimeframe = useCallback(
     (timeframe: Timeframe, targetWorkAreaId: "market" | "research" = "research") => {
-      if (workspaceRef.current.selectedTimeframe !== timeframe) {
-        skipNextSymbolSearchRef.current = true;
-      }
       setSearchSuggestions([]);
       setIsSearchOpen(false);
       manualSelectionVersionRef.current += 1;
@@ -9746,8 +10094,8 @@ export function App() {
       source: "core",
       statusLabel: "AI action generated"
     });
-    setActiveWorkAreaId(action === "strategy-draft" ? "strategy" : "ai-review");
-    setActiveLoopStepId(action === "strategy-draft" ? "strategy" : "agent-review");
+    setActiveWorkAreaId("ai-review");
+    setActiveLoopStepId("agent-review");
     setActiveWorkflowStageId(nextWorkflowState.activeStageId);
     setWorkflowRunState(nextWorkflowState);
   }, [workspace]);
@@ -9771,6 +10119,19 @@ export function App() {
       source: "core",
       statusLabel: "Strategy template applied"
     }));
+    setActiveWorkAreaId("strategy");
+    setActiveLoopStepId("strategy");
+    setActiveWorkflowStageId("factor");
+  }, []);
+
+  const applyGeneratedStrategyDraft = useCallback((draft: StrategyRuleDraft, reasons: string[]) => {
+    manualSelectionVersionRef.current += 1;
+    setWorkspaceState((current) => ({
+      workspace: workspaceWithAiStrategyDraft(current.workspace, draft, reasons),
+      source: "core",
+      statusLabel: "AI strategy draft applied"
+    }));
+    setStrategyValidationState(initialStrategyValidationState);
     setActiveWorkAreaId("strategy");
     setActiveLoopStepId("strategy");
     setActiveWorkflowStageId("factor");
@@ -9833,6 +10194,26 @@ export function App() {
     setIsSavingStrategy(false);
   }, [workspace.researchRun?.runId, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe, workspace.strategy]);
 
+  const deleteSavedStrategyVersion = useCallback(async (strategy: StrategyLibraryItem) => {
+    const result = await deleteStrategyVersion(quantCoreBaseUrl, strategy.revision);
+    if (!result.deleted) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: "Strategy version delete failed",
+        error: result.error ?? "Strategy version delete failed"
+      }));
+      return false;
+    }
+    await refreshStrategyLibrary();
+    setPendingStrategyGovernanceAction((current) => current?.revision === strategy.revision ? null : current);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "Strategy version deleted",
+      error: undefined
+    }));
+    return true;
+  }, [refreshStrategyLibrary]);
+
   const saveCurrentResearchNote = useCallback(async () => {
     setIsSavingResearchNote(true);
     const result = await saveResearchNote(quantCoreBaseUrl, {
@@ -9843,7 +10224,7 @@ export function App() {
     });
     setResearchNoteState(result);
     if (result.note) {
-      setResearchNoteDraft(result.note.body);
+      updateResearchNoteDraft(result.note.body);
       setWorkspaceState((current) => ({
         ...current,
         statusLabel: "Research note saved",
@@ -9857,7 +10238,198 @@ export function App() {
       }));
     }
     setIsSavingResearchNote(false);
-  }, [researchNoteDraft, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
+  }, [
+    researchNoteDraft,
+    updateResearchNoteDraft,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
+
+  const generateCurrentResearchNoteDraft = useCallback(async () => {
+    const selectedProvider = researchNoteProviders.find(
+      (provider) => provider.providerId === researchNoteProviderId
+    );
+    if (
+      isGeneratingResearchNoteDraft
+      || !selectedProvider?.configured
+      || (researchNoteProviderId !== "local" && !researchNoteExternalDataApproved)
+    ) {
+      return;
+    }
+    const requestId = researchNoteDraftGenerationRequestIdRef.current + 1;
+    researchNoteDraftGenerationRequestIdRef.current = requestId;
+    researchNoteDraftGenerationAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    researchNoteDraftGenerationAbortControllerRef.current = controller;
+    const context = {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe
+    };
+    const draftVersionBeforeRequest = researchNoteDraftVersionRef.current;
+    const streamIdentity = {
+      requestId,
+      draftVersion: draftVersionBeforeRequest,
+      ...context
+    };
+    const draftBeforeRequest = researchNoteDraftRef.current;
+    const draftWasEmptyBeforeRequest = draftBeforeRequest.trim().length === 0;
+    const externalDataApprovedForRequest = researchNoteExternalDataApproved;
+    if (researchNoteProviderId !== "local") {
+      setResearchNoteExternalDataApproved(false);
+    }
+    setIsGeneratingResearchNoteDraft(true);
+    setResearchNoteGenerationError(null);
+    setResearchNoteGenerationStatus("正在连接 AI，内容将直接写入编辑框，完成前不可保存。");
+    const result = await generateResearchNoteDraft(
+      quantCoreBaseUrl,
+      {
+        ...context,
+        providerId: researchNoteProviderId,
+        externalDataApproved: externalDataApprovedForRequest
+      },
+      undefined,
+      {
+        signal: controller.signal,
+        onDraft: async (body, streamedResult) => {
+          const latestWorkspace = workspaceRef.current;
+          if (
+            !isResearchNoteDraftStreamCurrent(
+              streamIdentity,
+              {
+                requestId: researchNoteDraftGenerationRequestIdRef.current,
+                draftVersion: researchNoteDraftVersionRef.current,
+                market: latestWorkspace.selectedInstrument.market,
+                symbol: latestWorkspace.selectedInstrument.symbol,
+                timeframe: latestWorkspace.selectedTimeframe
+              },
+              controller.signal.aborted
+            )
+          ) {
+            controller.abort();
+            return;
+          }
+          if (
+            streamedResult
+            && (
+              streamedResult.generation?.status === "failed"
+              || streamedResult.generation?.fallbackUsed
+            )
+          ) {
+            if (!draftWasEmptyBeforeRequest) {
+              return;
+            }
+          }
+          applyGeneratedResearchNoteDraft(body);
+          setResearchNoteGenerationStatus(
+            streamedResult
+              ? "正在写入本地安全草稿，完成前不可保存。"
+              : "AI 正在写入研究笔记，完成前不可保存。"
+          );
+          await waitForNextPaint();
+        },
+        onReset: async () => {
+          const latestWorkspace = workspaceRef.current;
+          if (
+            !isResearchNoteDraftStreamCurrent(
+              streamIdentity,
+              {
+                requestId: researchNoteDraftGenerationRequestIdRef.current,
+                draftVersion: researchNoteDraftVersionRef.current,
+                market: latestWorkspace.selectedInstrument.market,
+                symbol: latestWorkspace.selectedInstrument.symbol,
+                timeframe: latestWorkspace.selectedTimeframe
+              },
+              controller.signal.aborted
+            )
+          ) {
+            controller.abort();
+            return;
+          }
+          applyGeneratedResearchNoteDraft(draftBeforeRequest);
+          setResearchNoteGenerationStatus("外部草稿未通过完整校验，正在切换安全本地草稿。");
+          await waitForNextPaint();
+        }
+      }
+    );
+    if (researchNoteDraftGenerationRequestIdRef.current !== requestId) {
+      return;
+    }
+    if (researchNoteDraftGenerationAbortControllerRef.current === controller) {
+      researchNoteDraftGenerationAbortControllerRef.current = null;
+    }
+    setIsGeneratingResearchNoteDraft(false);
+    const latestWorkspace = workspaceRef.current;
+    if (
+      !isResearchNoteDraftStreamCurrent(
+        streamIdentity,
+        {
+          requestId: researchNoteDraftGenerationRequestIdRef.current,
+          draftVersion: researchNoteDraftVersionRef.current,
+          market: latestWorkspace.selectedInstrument.market,
+          symbol: latestWorkspace.selectedInstrument.symbol,
+          timeframe: latestWorkspace.selectedTimeframe
+        },
+        controller.signal.aborted
+      )
+    ) {
+      setResearchNoteGenerationStatus("研究上下文或草稿已变化，本次生成结果未覆盖当前内容。");
+      return;
+    }
+    if (result.source !== "core" || !result.draft || !result.generation) {
+      applyGeneratedResearchNoteDraft(draftBeforeRequest);
+      setResearchNoteGenerationError(
+        result.error
+          ? `草稿生成失败：${result.error}。原内容已保留。`
+          : "草稿生成失败，原内容已保留。"
+      );
+      return;
+    }
+    if (result.generation.status === "failed" || result.generation.fallbackUsed) {
+      if (draftWasEmptyBeforeRequest) {
+        applyGeneratedResearchNoteDraft(result.draft.body);
+        setResearchNoteGenerationStatus(
+          result.generation.warning
+            ?? "外部模型生成失败，已使用本地结构化草稿，尚未保存。"
+        );
+        return;
+      }
+      applyGeneratedResearchNoteDraft(draftBeforeRequest);
+      setResearchNoteGenerationError(
+        "外部模型生成失败，本次未替换当前草稿。请重新授权后重试，或切换到本地基线生成。"
+      );
+      return;
+    }
+    applyGeneratedResearchNoteDraft(result.draft.body);
+    setResearchNoteGenerationStatus(
+      result.generation.warning
+        ?? (result.generation.status === "completed"
+          ? "AI 草稿已生成，尚未保存。"
+          : "本地结构化草稿已生成，尚未保存。")
+    );
+  }, [
+    applyGeneratedResearchNoteDraft,
+    isGeneratingResearchNoteDraft,
+    researchNoteExternalDataApproved,
+    researchNoteProviderId,
+    researchNoteProviders,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
+
+  const selectResearchNoteProvider = useCallback((providerId: AiReviewProviderId) => {
+    const provider = researchNoteProviders.find((item) => item.providerId === providerId);
+    if (!provider?.configured || isGeneratingResearchNoteDraft) {
+      return;
+    }
+    researchNoteDraftGenerationRequestIdRef.current += 1;
+    setResearchNoteProviderId(providerId);
+    setResearchNoteExternalDataApproved(false);
+    setResearchNoteGenerationError(null);
+    setResearchNoteGenerationStatus(null);
+  }, [isGeneratingResearchNoteDraft, researchNoteProviders]);
 
   const saveCurrentHandoffNote = useCallback(async () => {
     const runId = workspace.researchRun?.runId;
@@ -10031,14 +10603,16 @@ export function App() {
         setWorkspaceState((current) => ({
           ...current,
           statusLabel: "Strategy governance action failed",
-          error: `Strategy revision ${row.revision} is not available in the local library`
+          error: i18n.locale === "zh-CN"
+            ? `本地策略库中找不到修订版 ${row.revision}`
+            : `Strategy revision ${row.revision} is not available in the local library`
         }));
         return;
       }
       setPendingStrategyGovernanceAction(row.nextActionId === "load-and-rerun" ? row : null);
       loadSavedStrategyVersion(strategy);
     },
-    [loadSavedStrategyVersion, saveCurrentStrategyVersion, visibleStrategyLibrary]
+    [i18n.locale, loadSavedStrategyVersion, saveCurrentStrategyVersion, visibleStrategyLibrary]
   );
 
   const updateBacktestAssumption = useCallback((field: BacktestAssumptionField, value: number) => {
@@ -10061,7 +10635,7 @@ export function App() {
     const sourceKey = strategyExperimentUsableSourceKey;
     if (!sourceKey || !strategyExperimentSourceRunId || !strategyExperimentStrategyRevision || !sourceRun) {
       setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
-      return;
+      return null;
     }
     if (!isStrategyExperimentDraftValid(
       visibleStrategyExperimentDimensions,
@@ -10069,11 +10643,11 @@ export function App() {
       strategyExperimentWalkForward
     )) {
       setStrategyExperimentError(i18n.t("strategyExperiment.invalidDraft"));
-      return;
+      return null;
     }
     const requestGeneration = beginStrategyExperimentRequest(sourceKey);
     if (requestGeneration === null) {
-      return;
+      return null;
     }
     try {
       const result = await createStrategyExperiment(quantCoreBaseUrl, {
@@ -10085,17 +10659,17 @@ export function App() {
         walkForward: strategyExperimentWalkForward
       });
       if (!strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
-        return;
+        return null;
       }
       if (!result.experiment) {
         setStrategyExperimentError(
           strategyExperimentErrorMessage(strategyExperimentI18nRef.current, result.errorCode, result.error)
         );
-        return;
+        return null;
       }
       if (!strategyExperimentMatchesSourceKey(result.experiment, sourceKey)) {
         setStrategyExperimentError(i18n.t("strategyExperiment.persistedEvidenceRequired"));
-        return;
+        return null;
       }
       setStrategyExperimentActive(result.experiment);
       setStrategyExperimentError(null);
@@ -10105,6 +10679,7 @@ export function App() {
         strategyExperimentSourceRunId,
         strategyExperimentStrategyRevision
       );
+      return result.experiment;
     } catch (runError) {
       if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
         setStrategyExperimentError(strategyExperimentErrorMessage(
@@ -10113,6 +10688,7 @@ export function App() {
           runError instanceof Error ? runError.message : undefined
         ));
       }
+      return null;
     } finally {
       if (strategyExperimentRequestIsCurrent(requestGeneration, sourceKey)) {
         setIsStrategyExperimentRunning(false);
@@ -10401,6 +10977,17 @@ export function App() {
 
   const openResearchPipelinePreflightIssue = useCallback(
     (issue: ResearchPipelinePreflight["issues"][number]) => {
+      if (
+        !marketDataRefreshGuard.blocked &&
+        (issue.action === "refresh-cache" || issue.action === "refresh-watchlist-cache")
+      ) {
+        runResearchContextReadinessAction(
+          issue.action,
+          () => void refreshSelectedMarketCache(),
+          () => void refreshWatchlistMarketCache()
+        );
+        return;
+      }
       const target = researchPipelinePreflightIssueTargets[issue.id];
       setIsResearchPipelineConfirmationOpen(false);
       selectProductWorkArea(target.workspaceId);
@@ -10413,7 +11000,12 @@ export function App() {
         element.focus({ preventScroll: true });
       }, 0);
     },
-    [selectProductWorkArea]
+    [
+      marketDataRefreshGuard.blocked,
+      refreshSelectedMarketCache,
+      refreshWatchlistMarketCache,
+      selectProductWorkArea
+    ]
   );
 
   const focusExecutionAdapterPaperExecutionAudit = useCallback(
@@ -12868,9 +13460,10 @@ export function App() {
   const submitSymbol = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const normalizedSymbol = buildInstrumentFromSymbol(marketDraft, symbolDraft)?.symbol;
+      const searchMarket = resolveMarketSearchMarket(marketDraft, symbolDraft);
+      const normalizedSymbol = buildInstrumentFromSymbol(searchMarket, symbolDraft)?.symbol;
       const matchedSuggestion = searchSuggestions.find(
-        (suggestion) => suggestion.market === marketDraft && suggestion.symbol === normalizedSymbol
+        (suggestion) => suggestion.market === searchMarket && suggestion.symbol === normalizedSymbol
       );
       const instrument = matchedSuggestion
         ? {
@@ -12879,7 +13472,7 @@ export function App() {
             market: matchedSuggestion.market,
             changePct: 0
           }
-        : buildInstrumentFromSymbol(marketDraft, symbolDraft);
+        : buildInstrumentFromSymbol(searchMarket, symbolDraft);
       if (!instrument) {
         return;
       }
@@ -12892,7 +13485,6 @@ export function App() {
 
   const selectSearchSuggestion = useCallback(
     (suggestion: MarketSearchSuggestion) => {
-      skipNextSymbolSearchRef.current = true;
       setMarketDraft(suggestion.market);
       setSymbolDraft(suggestion.symbol);
       setSearchSuggestions([]);
@@ -12913,7 +13505,6 @@ export function App() {
   const refreshSearchSuggestionCache = useCallback(
     async (suggestion: MarketSearchSuggestion) => {
       const timeframe = workspace.selectedTimeframe;
-      skipNextSymbolSearchRef.current = true;
       setMarketDraft(suggestion.market);
       setSymbolDraft(suggestion.symbol);
       setSearchSuggestions([]);
@@ -12955,6 +13546,36 @@ export function App() {
   }, [refreshWorkspace]);
 
   useEffect(() => {
+    if (
+      (activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "portfolio")
+      || researchRunContextBinding.canUseRun
+    ) {
+      return;
+    }
+    const latestRun = findLatestResearchRunForContext(runHistory, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe
+    });
+    if (!latestRun) {
+      return;
+    }
+    setWorkspaceState((current) => ({
+      ...current,
+      workspace: workspaceFromResearchRunAudit(current.workspace, latestRun),
+      statusLabel: "已载入当前标的最近的已审计研究运行",
+      error: undefined
+    }));
+  }, [
+    activeWorkAreaId,
+    researchRunContextBinding.canUseRun,
+    runHistory,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
+
+  useEffect(() => {
     if (activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "execution") {
       initialAiReviewRunIdRef.current = null;
       aiReviewRunRestoreAbortControllerRef.current?.abort();
@@ -12972,6 +13593,51 @@ export function App() {
   useEffect(() => {
     void refreshResearchNote();
   }, [refreshResearchNote]);
+
+  useEffect(() => {
+    researchNoteDraftGenerationAbortControllerRef.current?.abort();
+    researchNoteDraftGenerationAbortControllerRef.current = null;
+    researchNoteDraftGenerationRequestIdRef.current += 1;
+    setIsGeneratingResearchNoteDraft(false);
+    setResearchNoteExternalDataApproved(false);
+    setResearchNoteGenerationError(null);
+    setResearchNoteGenerationStatus(null);
+    if (activeWorkAreaId !== "research" && activeWorkAreaId !== "strategy") {
+      return;
+    }
+    const controller = new AbortController();
+    void loadAiReviewProviders(quantCoreBaseUrl, controller.signal).then((result) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      const localProvider: AiReviewProviderStatus = {
+        providerId: "local",
+        configured: true,
+        model: null,
+        sanitizedBaseUrl: null
+      };
+      const providers = result.source === "core" && result.providers.length
+        ? result.providers
+        : [localProvider];
+      setResearchNoteProviders(providers);
+      setResearchNoteProviderId(
+        providers.find((provider) => provider.providerId !== "local" && provider.configured)?.providerId
+          ?? "local"
+      );
+      if (result.source !== "core") {
+        setResearchNoteGenerationStatus("AI Provider 状态暂不可用，可继续生成本地草稿。");
+      }
+    });
+    return () => {
+      controller.abort();
+      researchNoteDraftGenerationAbortControllerRef.current?.abort();
+    };
+  }, [
+    activeWorkAreaId,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
 
   useEffect(() => {
     void refreshHandoffNotes();
@@ -13038,7 +13704,6 @@ export function App() {
   ]);
 
   useEffect(() => {
-    skipNextSymbolSearchRef.current = true;
     setMarketDraft(workspace.selectedInstrument.market);
     setSymbolDraft(workspace.selectedInstrument.symbol);
     setSearchSuggestions([]);
@@ -13050,8 +13715,7 @@ export function App() {
     const requestId = symbolSearchRequestIdRef.current + 1;
     symbolSearchRequestIdRef.current = requestId;
 
-    if (skipNextSymbolSearchRef.current) {
-      skipNextSymbolSearchRef.current = false;
+    if (!isSearchOpen) {
       setIsSymbolSearching(false);
       return;
     }
@@ -13066,7 +13730,8 @@ export function App() {
     setIsSymbolSearching(true);
     setIsSearchOpen(true);
     const timeoutId = window.setTimeout(async () => {
-      const result = await loadMarketSearch(quantCoreBaseUrl, { market: marketDraft, query, limit: 8, timeframe: workspace.selectedTimeframe });
+      const searchMarket = resolveMarketSearchMarket(marketDraft, query);
+      const result = await loadMarketSearch(quantCoreBaseUrl, { market: searchMarket, query, limit: 8, timeframe: workspace.selectedTimeframe });
       if (symbolSearchRequestIdRef.current === requestId) {
         setSearchSuggestions(result.results);
         setIsSearchOpen(true);
@@ -13075,7 +13740,7 @@ export function App() {
     }, 220);
 
     return () => window.clearTimeout(timeoutId);
-  }, [marketDraft, symbolDraft, workspace.selectedTimeframe]);
+  }, [isSearchOpen, marketDraft, symbolDraft, workspace.selectedTimeframe]);
 
   useEffect(() => {
     if (!isChartExpanded) {
@@ -13097,9 +13762,21 @@ export function App() {
     }
   }, [isResearchPipelineConfirmationOpen]);
 
+  useEffect(() => {
+    if (!researchCompletionNotice) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setResearchCompletionNotice((current) =>
+        current?.runId === researchCompletionNotice.runId ? null : current
+      );
+    }, 6000);
+    return () => window.clearTimeout(timeoutId);
+  }, [researchCompletionNotice]);
+
   const runActiveWorkflowAction = useCallback(() => {
     if (activeLoopStepId === "strategy") {
-      runAiWorkbenchAction("strategy-draft");
+      selectProductWorkArea("strategy");
       return;
     }
     if (activeLoopStepId === "agent-review") {
@@ -13111,7 +13788,7 @@ export function App() {
       return;
     }
     void runPipeline();
-  }, [activeLoopStepId, runAiWorkbenchAction, runPipeline, submitPaperExecution]);
+  }, [activeLoopStepId, runAiWorkbenchAction, runPipeline, selectProductWorkArea, submitPaperExecution]);
 
   const runGoldenPathActionById = useCallback(
     (actionId: string | null | undefined, targetWorkspace?: string | null) => {
@@ -13331,25 +14008,33 @@ export function App() {
     </Panel>
   );
 
+  const renderStrategyWorkbench = (showSaveAction = true) => (
+    <StrategySummary
+      draft={strategyRuleDraft}
+      i18n={i18n}
+      isSavingStrategy={isSavingStrategy}
+      library={visibleStrategyLibrary}
+      onApplyAiStrategyDraft={applyGeneratedStrategyDraft}
+      onApplyStrategyTemplate={applyStrategyTemplate}
+      onDeleteStrategyVersion={deleteSavedStrategyVersion}
+      onLoadStrategyVersion={loadSavedStrategyVersion}
+      onRunStrategyGovernanceAction={runStrategyGovernanceAction}
+      onSaveStrategyVersion={saveCurrentStrategyVersion}
+      onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
+      providers={researchNoteProviders}
+      readinessGates={strategyReadinessGates}
+      rows={strategyRuleRows}
+      showSaveAction={showSaveAction}
+      strategyGovernanceQueue={strategyGovernanceQueue}
+      templates={strategyTemplateOptions}
+      validationSource={strategyValidationState.source}
+      workspace={workspace}
+    />
+  );
+
   const renderStrategyPanel = (className = "strategy-panel") => (
     <Panel title={i18n.t("panel.strategy.title")} subtitle={i18n.strategyText(workspace.strategy.name)} className={className}>
-      <StrategySummary
-        draft={strategyRuleDraft}
-        i18n={i18n}
-        isSavingStrategy={isSavingStrategy}
-        library={visibleStrategyLibrary}
-        onApplyStrategyTemplate={applyStrategyTemplate}
-        onLoadStrategyVersion={loadSavedStrategyVersion}
-        onRunStrategyGovernanceAction={runStrategyGovernanceAction}
-        onSaveStrategyVersion={saveCurrentStrategyVersion}
-        onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}
-        readinessGates={strategyReadinessGates}
-        rows={strategyRuleRows}
-        strategyGovernanceQueue={strategyGovernanceQueue}
-        templates={strategyTemplateOptions}
-        validationSource={strategyValidationState.source}
-        workspace={workspace}
-      />
+      {renderStrategyWorkbench()}
     </Panel>
   );
 
@@ -13416,6 +14101,64 @@ export function App() {
         stages={workflowStages}
       />
     </Panel>
+  );
+
+  const executionReadinessStack = (
+    <details className="execution-readiness-stack" tabIndex={-1}>
+      <summary>
+        <span>{i18n.locale === "zh-CN" ? "生产准入与测试网证据" : "Admission & sandbox evidence"}</span>
+        <strong>{i18n.locale === "zh-CN" ? "实盘路由持续阻断" : "Live routing remains blocked"}</strong>
+      </summary>
+      <div className="execution-readiness-stack-body">
+        <ExecutionStage9ProductionAdmissionSection
+          authorization={stage6SandboxAuthorization}
+          batch={stage6SandboxBatch}
+          busy={isRunningStage9ProductionAdmission}
+          candidate={stage9ProductionAdmissionCandidate}
+          continuity={stage8ProductionReadonlyContinuity}
+          error={stage9ProductionAdmissionError}
+          onCreateCandidate={() => void runStage9ProductionAdmissionCandidateAction()}
+          onReview={(reviewer, outcome, reason) => void runStage9ProductionAdmissionReviewAction(
+            reviewer, outcome, reason
+          )}
+          review={stage9ProductionAdmissionReview}
+        />
+        <ExecutionStage7ProductionReadonlySection
+          busy={isRunningStage7ProductionReadonly}
+          continuity={stage8ProductionReadonlyContinuity}
+          continuityBusy={isUpdatingStage8ProductionReadonly}
+          continuityError={stage8ProductionReadonlyError}
+          error={stage7ProductionReadonlyError}
+          onOpenSettings={() => selectProductWorkArea("settings")}
+          onRun={(eligibilityConfirmed) => void runStage7ProductionReadonlyAction(eligibilityConfirmed)}
+          onSetAccess={(action, reason) => void runStage8ProductionReadonlyAccessAction(action, reason)}
+          probe={latestStage7ProductionReadonlyProbe}
+          productionRouteReviewId={latestCcxtProductionRouteReviewId}
+        />
+        <ExecutionStage6SandboxSection
+          action={stage6GoldenPath.action}
+          authorization={stage6SandboxAuthorization}
+          batch={stage6SandboxBatch}
+          busy={isRunningStage6Sandbox}
+          detail={stage6GoldenPath.detail}
+          error={stage6SandboxError}
+          exitAcceptance={stage6ExitAcceptance}
+          killSwitch={stage6KillSwitch}
+          onAction={() => void runStage6SandboxAction()}
+          onKillSwitch={(triggered) => void runStage6KillSwitchAction(triggered)}
+        />
+        <ExecutionStage5ShadowSection
+          busy={isRunningStage5Shadow}
+          error={stage5ShadowError}
+          exitAcceptance={stage5ExitAcceptance}
+          exitAcceptanceError={stage5ExitAcceptanceError}
+          i18n={i18n}
+          onOpenSettings={() => selectProductWorkArea("settings")}
+          onPrimaryAction={(reviewInput) => void runStage5ShadowPrimaryAction(reviewInput)}
+          state={stage5ShadowState}
+        />
+      </div>
+    </details>
   );
 
   const renderActiveProductWorkspace = () => {
@@ -13514,7 +14257,7 @@ export function App() {
                 onLoadCandidate={loadStrategyExperimentCandidate}
                 onReplay={replayStrategyExperiment}
                 onRun={runStrategyExperiment}
-                onWalkForwardChange={setStrategyExperimentWalkForward}
+                onWalkForwardChange={configureStrategyExperimentWalkForward}
                 running={isStrategyExperimentRunning}
                 walkForward={strategyExperimentWalkForward}
               />
@@ -13597,6 +14340,7 @@ export function App() {
         <>
           <PortfolioStage4Section
             busy={
+              isPreparingPortfolioPeers ||
               isRunningPortfolioBacktest ||
               isRecordingPortfolioPaperOrders ||
               isSimulatingPortfolioPaperOrderBatch ||
@@ -13663,61 +14407,7 @@ export function App() {
     if (activeWorkAreaId === "execution") {
       return (
         <>
-          <details className="execution-readiness-stack">
-            <summary>
-              <span>{i18n.locale === "zh-CN" ? "生产准入与测试网证据" : "Admission & sandbox evidence"}</span>
-              <strong>{i18n.locale === "zh-CN" ? "实盘路由持续阻断" : "Live routing remains blocked"}</strong>
-            </summary>
-            <div className="execution-readiness-stack-body">
-          <ExecutionStage9ProductionAdmissionSection
-            authorization={stage6SandboxAuthorization}
-            batch={stage6SandboxBatch}
-            busy={isRunningStage9ProductionAdmission}
-            candidate={stage9ProductionAdmissionCandidate}
-            continuity={stage8ProductionReadonlyContinuity}
-            error={stage9ProductionAdmissionError}
-            onCreateCandidate={() => void runStage9ProductionAdmissionCandidateAction()}
-            onReview={(reviewer, outcome, reason) => void runStage9ProductionAdmissionReviewAction(
-              reviewer, outcome, reason
-            )}
-            review={stage9ProductionAdmissionReview}
-          />
-          <ExecutionStage7ProductionReadonlySection
-            busy={isRunningStage7ProductionReadonly}
-            continuity={stage8ProductionReadonlyContinuity}
-            continuityBusy={isUpdatingStage8ProductionReadonly}
-            continuityError={stage8ProductionReadonlyError}
-            error={stage7ProductionReadonlyError}
-            onOpenSettings={() => selectProductWorkArea("settings")}
-            onRun={(eligibilityConfirmed) => void runStage7ProductionReadonlyAction(eligibilityConfirmed)}
-            onSetAccess={(action, reason) => void runStage8ProductionReadonlyAccessAction(action, reason)}
-            probe={latestStage7ProductionReadonlyProbe}
-            productionRouteReviewId={latestCcxtProductionRouteReviewId}
-          />
-          <ExecutionStage6SandboxSection
-            action={stage6GoldenPath.action}
-            authorization={stage6SandboxAuthorization}
-            batch={stage6SandboxBatch}
-            busy={isRunningStage6Sandbox}
-            detail={stage6GoldenPath.detail}
-            error={stage6SandboxError}
-            exitAcceptance={stage6ExitAcceptance}
-            killSwitch={stage6KillSwitch}
-            onAction={() => void runStage6SandboxAction()}
-            onKillSwitch={(triggered) => void runStage6KillSwitchAction(triggered)}
-          />
-          <ExecutionStage5ShadowSection
-            busy={isRunningStage5Shadow}
-            error={stage5ShadowError}
-            exitAcceptance={stage5ExitAcceptance}
-            exitAcceptanceError={stage5ExitAcceptanceError}
-            i18n={i18n}
-            onOpenSettings={() => selectProductWorkArea("settings")}
-            onPrimaryAction={(reviewInput) => void runStage5ShadowPrimaryAction(reviewInput)}
-            state={stage5ShadowState}
-          />
-            </div>
-          </details>
+          {executionReadinessStack}
           <ExecutionPanel
             className="workflow-execution-panel"
             i18n={i18n}
@@ -14321,7 +15011,7 @@ export function App() {
           i18n={i18n}
           isSaving={isSavingResearchNote}
           note={researchNoteState}
-          onChange={setResearchNoteDraft}
+          onChange={editResearchNoteDraft}
           onSave={saveCurrentResearchNote}
           workspace={workspace}
         />
@@ -14376,6 +15066,53 @@ export function App() {
     );
   };
 
+  const canPrepareTerminalAiReview = Boolean(
+    strategyExperimentUsableSourceKey
+    && strategyExperimentSourceRunId
+    && strategyExperimentStrategyRevision
+    && workspace.researchRun
+    && isStrategyExperimentDraftValid(
+      visibleStrategyExperimentDimensions,
+      strategyExperimentGuardrails,
+      strategyExperimentWalkForward
+    )
+  );
+  const canRunTerminalAiReview = canRunAiReviewStage3({
+    primaryExperimentId: aiReviewStage3SelectedExperiment?.experimentId
+      ?? aiReviewStage3DraftExperiment?.experimentId
+      ?? (canPrepareTerminalAiReview ? "pending" : null),
+    providers: aiReviewStage3Providers,
+    providerId: aiReviewStage3ProviderId,
+    externalDataApproved: aiReviewStage3ExternalDataApproved,
+    busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3 || isAppendingAiReviewStage3Decision
+      || isStrategyExperimentRunning
+  });
+  const aiReviewNeedsExternalApproval = aiReviewRequiresExternalApproval(aiReviewStage3ProviderId)
+    && !aiReviewStage3ExternalDataApproved;
+  const aiReviewActionLabel = isRunningAiReviewStage3 || isStrategyExperimentRunning
+    ? "AI 评审运行中…"
+    : isLoadingAiReviewStage3
+      ? "正在加载评审…"
+      : !strategyExperimentSourceRunId
+        ? "请先完成研究运行"
+        : !aiReviewStage3SelectedExperiment && !aiReviewStage3DraftExperiment && !canPrepareTerminalAiReview
+          ? "请先完善实验参数"
+          : aiReviewNeedsExternalApproval
+            ? "请先授权证据摘要"
+            : canRunTerminalAiReview
+              ? "运行 AI 评审"
+              : "AI 评审暂不可用";
+  const runTerminalAiReview = async () => {
+    let primaryExperimentId = aiReviewStage3DraftExperiment?.experimentId ?? null;
+    if (!primaryExperimentId) {
+      const experiment = await runStrategyExperiment();
+      if (!experiment) return;
+      primaryExperimentId = experiment.experimentId;
+      setAiReviewStage3PrimaryExperimentId(primaryExperimentId);
+      setAiReviewStage3ComparisonExperimentIds([]);
+    }
+    await runAiReviewStage3(primaryExperimentId);
+  };
   const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {
     switch (activeWorkAreaId) {
       case "market":
@@ -14387,18 +15124,74 @@ export function App() {
       case "research":
         return { label: "运行研究", onClick: () => void runPipeline(), disabled: isRunning };
       case "strategy":
-        return { label: "保存版本", onClick: () => void saveCurrentStrategyVersion() };
+        return {
+          label: isSavingStrategy ? "正在保存…" : "保存版本",
+          onClick: () => void saveCurrentStrategyVersion(),
+          disabled: isSavingStrategy
+        };
       case "backtest":
-        return { label: "运行回测", onClick: () => void runPipeline(), disabled: isRunning };
+        return {
+          label: isStrategyExperimentRunning ? "回测运行中…" : "运行回测",
+          onClick: () => void runStrategyExperiment(),
+          disabled: isStrategyExperimentRunning
+        };
       case "ai-review":
-        return { label: "运行 AI 评审", onClick: () => void runAiReviewStage3(), disabled: isRunningAiReviewStage3 };
+        return {
+          label: aiReviewActionLabel,
+          onClick: () => void runTerminalAiReview(),
+          disabled: !canRunTerminalAiReview
+        };
       case "portfolio":
-        return { label: "继续黄金路径", onClick: runActiveWorkflowAction };
+        return {
+          label:
+            isPreparingPortfolioPeers ||
+            isRunningPortfolioBacktest ||
+            isRecordingPortfolioPaperOrders ||
+            isSimulatingPortfolioPaperOrderBatch ||
+            isRecordingPortfolioStage4Workflow
+              ? "黄金路径处理中…"
+              : portfolioStage4GoldenPath.primaryActionId
+                ? portfolioStage4GoldenPath.primaryActionId === "review-portfolio-orders"
+                  ? "查看人工审批"
+                  : portfolioStage4GoldenPath.primaryActionId === "review-portfolio-risk" ||
+                      portfolioStage4GoldenPath.primaryActionId === "review-route-risk"
+                    ? "查看风控问题"
+                    : "继续黄金路径"
+                : "黄金路径已完成",
+          onClick: () => {
+            if (portfolioStage4GoldenPath.primaryActionId) {
+              runPortfolioStage4PrimaryAction(portfolioStage4GoldenPath.primaryActionId);
+            }
+          },
+          disabled:
+            !portfolioStage4GoldenPath.primaryActionId ||
+            portfolioStage4GoldenPath.status === "blocked" ||
+            isPreparingPortfolioPeers ||
+            isRunningPortfolioBacktest ||
+            isRecordingPortfolioPaperOrders ||
+            isSimulatingPortfolioPaperOrderBatch ||
+            isRecordingPortfolioStage4Workflow
+        };
       case "execution":
+        if (!stage6SandboxAuthorization) {
+          return {
+            label: "查看执行前置步骤",
+            onClick: () => {
+              const target = document.querySelector<HTMLDetailsElement>(
+                ".surface-execution .execution-readiness-stack"
+              );
+              if (!target) return;
+              target.open = true;
+              target.scrollIntoView({ behavior: "smooth", block: "start" });
+              target.focus({ preventScroll: true });
+            },
+            tone: "warning"
+          };
+        }
         return {
           label: "创建影子候选",
           onClick: () => void runStage9ProductionAdmissionCandidateAction(),
-          disabled: !stage6SandboxAuthorization || isRunningStage9ProductionAdmission,
+          disabled: isRunningStage9ProductionAdmission,
           tone: "warning"
         };
       case "operations":
@@ -14504,7 +15297,12 @@ export function App() {
                 </em>
               </span>
             ))}
-            <span className="terminal-data-fresh"><Activity size={12} />{source === "core" ? "实时数据已连接" : "本地快照"}</span>
+            <span
+              className="terminal-data-fresh"
+              title={source === "core" ? "前台页面约每 35 秒自动刷新" : "当前使用本地快照"}
+            >
+              <Activity size={12} />{source === "core" ? "行情自动刷新" : "本地快照"}
+            </span>
           </div>
           <div className="terminal-route-heading">
             <p className="section-label">
@@ -14687,6 +15485,23 @@ export function App() {
           action={terminalSurfaceAction}
           activeWorkAreaId={activeWorkAreaId}
           adapterRows={brokerAdapterRows}
+          aiReview={{
+            busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3
+              || isAppendingAiReviewStage3Decision || isStrategyExperimentRunning,
+            comparisonExperimentIds: aiReviewStage3ComparisonExperimentIds,
+            currentReview: aiReviewStage3CurrentReview,
+            decisions: aiReviewStage3Decisions,
+            error: aiReviewStage3Error ?? strategyExperimentError,
+            experiments: aiReviewStage3Experiments,
+            externalDataApproved: aiReviewStage3ExternalDataApproved,
+            history: aiReviewStage3History,
+            onComparisonToggle: toggleAiReviewStage3Comparison,
+            onExternalDataApprovedChange: approveAiReviewStage3ExternalData,
+            onProviderChange: selectAiReviewStage3Provider,
+            primaryExperimentId: aiReviewStage3PrimaryExperimentId,
+            providerId: aiReviewStage3ProviderId,
+            providers: aiReviewStage3Providers
+          }}
           chart={
             <>
               <KlineChartCanvas
@@ -14704,27 +15519,62 @@ export function App() {
           }
           colorScheme={colorScheme}
           executionCandidate={stage9ProductionAdmissionCandidate}
+          executionReadiness={executionReadinessStack}
           isSavingWatchlist={isSavingWatchlist}
           latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
+          marketCalendar={marketCalendarState.calendar}
           marketRefreshIssue={marketRefreshIssue}
+          onApprovePortfolioOrder={approvePortfolioPaperOrder}
           onRemoveWatchlistInstrument={(instrument) => void removeWatchlistInstrument(instrument)}
+          onRejectPortfolioOrder={rejectPortfolioPaperOrder}
           onSaveWatchlist={() => void saveCurrentWatchlist()}
           onScrollPositionChange={rememberActiveWorkspaceScrollPosition}
-          onSelectInstrument={selectInstrument}
+          onSelectInstrument={(instrument) => selectInstrument(instrument, "market")}
           onSelectTimeframe={(timeframe) => selectTimeframe(timeframe, "market")}
+          approvingPortfolioOrderId={approvingPortfolioPaperOrderId}
           portfolio={portfolioBacktestState.portfolio ?? null}
+          portfolioActionError={
+            portfolioBacktestState.error
+              ? portfolioBacktestSummary(i18n, portfolioBacktestState.error)
+              : portfolioPaperOrderHistoryError
+          }
+          portfolioGoldenPath={portfolioStage4GoldenPath}
+          portfolioPaperOrderApprovalRows={portfolioPaperOrderApprovalRows.filter(
+            (row) =>
+              row.baseRunId === currentResearchRunId &&
+              row.batchId === portfolioStage4LatestBatch?.batchId
+          )}
           researchPreparation={{
+            externalDataApproved: researchNoteExternalDataApproved,
+            generationError: researchNoteGenerationError,
+            generationStatus: researchNoteGenerationStatus,
+            isGeneratingNote: isGeneratingResearchNoteDraft,
             isSavingNote: isSavingResearchNote,
             isSavingWorkspace: isSavingResearchWorkspace,
             note: researchNoteState,
             noteDraft: researchNoteDraft,
-            onNoteChange: setResearchNoteDraft,
+            onExternalDataApprovedChange: (approved) => {
+              setResearchNoteExternalDataApproved(approved);
+              setResearchNoteGenerationError(null);
+              setResearchNoteGenerationStatus(null);
+            },
+            onGenerateNote: () => void generateCurrentResearchNoteDraft(),
+            onNoteChange: editResearchNoteDraft,
+            onProviderChange: selectResearchNoteProvider,
             onSaveNote: () => void saveCurrentResearchNote(),
             onSaveWorkspace: () => void saveCurrentResearchWorkspace(),
+            providerId: researchNoteProviderId,
+            providers: researchNoteProviders,
             workspaceSaved: isResearchWorkspaceSaved
           }}
           runs={runHistory}
           source={source}
+          strategyExperiment={{
+            busy: isStrategyExperimentRunning,
+            onWalkForwardChange: configureStrategyExperimentWalkForward,
+            walkForward: strategyExperimentWalkForward
+          }}
+          strategyWorkbench={renderStrategyWorkbench(false)}
           surfaceRef={activeWorkspaceSurfaceRef}
           workspace={workspace}
         />
@@ -16213,6 +17063,36 @@ export function App() {
         </div>
       </footer>
 
+      {researchCompletionNotice ? (
+        <aside aria-live="polite" className="research-completion-notice" role="status">
+          <span className="research-completion-notice-icon" aria-hidden="true">
+            <CheckCircle2 size={19} />
+          </span>
+          <span className="research-completion-notice-copy">
+            <strong>{i18n.statusLabel("Research run complete")}</strong>
+            <small>
+              {researchCompletionNotice.instrumentName} · {researchCompletionNotice.symbol} ·{" "}
+              {researchCompletionNotice.timeframe} · {researchCompletionNotice.dataRows}{" "}
+              {i18n.locale === "zh-CN"
+                ? researchCompletionNotice.readbackReady
+                  ? "根 K 线 · 审计证据已绑定"
+                  : "根 K 线 · 审计运行已创建 · 列表回读待恢复"
+                : researchCompletionNotice.readbackReady
+                  ? "bars · audit evidence bound"
+                  : "bars · audit run created · list readback pending"}
+            </small>
+            <code>{researchCompletionNotice.runId}</code>
+          </span>
+          <button
+            aria-label={i18n.locale === "zh-CN" ? "关闭研究完成提示" : "Dismiss research completion notice"}
+            onClick={() => setResearchCompletionNotice(null)}
+            type="button"
+          >
+            <X size={15} />
+          </button>
+        </aside>
+      ) : null}
+
       {isResearchPipelineConfirmationOpen ? (
         <dialog
           aria-describedby="research-pipeline-confirmation-detail"
@@ -16228,12 +17108,26 @@ export function App() {
               <div>
                 <span className="research-confirmation-kicker">
                   <ShieldCheck size={15} />
-                  {i18n.locale === "zh-CN" ? "研究上下文复核" : "Research context review"}
+                  {researchPipelinePreflight.status === "blocked"
+                    ? i18n.locale === "zh-CN"
+                      ? "研究运行预检"
+                      : "Research run preflight"
+                    : i18n.locale === "zh-CN"
+                      ? "研究上下文复核"
+                      : "Research context review"}
                 </span>
                 <h2 id="research-pipeline-confirmation-title">
-                  {i18n.locale === "zh-CN"
-                    ? `仍有 ${researchPipelinePreflight.issues.length} 项需要确认`
-                    : `${researchPipelinePreflight.issues.length} items still need confirmation`}
+                  {researchPipelinePreflight.status === "blocked"
+                    ? i18n.locale === "zh-CN"
+                      ? `有 ${
+                          researchPipelinePreflight.issues.filter((issue) => issue.status === "blocked").length
+                        } 项阻止运行`
+                      : `${
+                          researchPipelinePreflight.issues.filter((issue) => issue.status === "blocked").length
+                        } items block this run`
+                    : i18n.locale === "zh-CN"
+                      ? `仍有 ${researchPipelinePreflight.issues.length} 项需要确认`
+                      : `${researchPipelinePreflight.issues.length} items still need confirmation`}
                 </h2>
               </div>
               <button
@@ -16246,15 +17140,24 @@ export function App() {
               </button>
             </header>
             <p id="research-pipeline-confirmation-detail">
-              {i18n.locale === "zh-CN"
-                ? "这些项目不会阻止审计运行，但可能影响研究结果的解释。请确认后继续。"
-                : "These items do not block the audited run, but they may affect how its results are interpreted."}
+              {researchPipelinePreflight.status === "blocked"
+                ? i18n.locale === "zh-CN"
+                  ? "当前研究上下文尚未达到运行条件。请先处理阻断项；休市等复核项不会阻止运行。"
+                  : "The current research context is not ready. Resolve the blocked items first; review items such as a closed market do not block the run."
+                : i18n.locale === "zh-CN"
+                  ? "这些项目不会阻止审计运行，但可能影响研究结果的解释。请确认后继续。"
+                  : "These items do not block the audited run, but they may affect how its results are interpreted."}
             </p>
             <div className="research-confirmation-issues">
               {researchPipelinePreflight.issues.map((issue) => {
                 const target = researchPipelinePreflightIssueTargets[issue.id];
+                const directRefreshAction =
+                  !marketDataRefreshGuard.blocked &&
+                  (issue.action === "refresh-cache" || issue.action === "refresh-watchlist-cache")
+                    ? issue.action
+                    : null;
                 return (
-                  <article key={issue.id}>
+                  <article className={issue.status} key={issue.id}>
                     <div className="research-confirmation-issue-copy">
                       <div>
                         <span>{researchPipelinePreflightIssueLabel(i18n, issue)}</span>
@@ -16264,10 +17167,36 @@ export function App() {
                     </div>
                     <button
                       className="research-confirmation-issue-action"
+                      disabled={
+                        directRefreshAction
+                          ? isResearchContextActionDisabled(
+                              directRefreshAction,
+                              refreshingCacheKey === activeCacheContextKey,
+                              isRefreshingWatchlistCache,
+                              marketDataRefreshGuard.blocked,
+                              isSavingResearchNote,
+                              isSavingWatchlist,
+                              isSavingResearchWorkspace
+                            )
+                          : false
+                      }
                       onClick={() => openResearchPipelinePreflightIssue(issue)}
                       type="button"
                     >
-                      {i18n.locale === "zh-CN" ? target.actionLabelZh : target.actionLabelEn}
+                      {directRefreshAction
+                        ? researchContextReadinessActionLabel(
+                            i18n,
+                            directRefreshAction,
+                            refreshingCacheKey === activeCacheContextKey,
+                            isRefreshingWatchlistCache,
+                            marketDataRefreshGuard.blocked,
+                            isSavingResearchNote,
+                            isSavingWatchlist,
+                            isSavingResearchWorkspace
+                          )
+                        : i18n.locale === "zh-CN"
+                          ? target.actionLabelZh
+                          : target.actionLabelEn}
                     </button>
                   </article>
                 );
@@ -16280,12 +17209,20 @@ export function App() {
                 ref={researchPipelineConfirmationCancelButtonRef}
                 type="button"
               >
-                {i18n.locale === "zh-CN" ? "返回检查" : "Review first"}
+                {researchPipelinePreflight.status === "blocked"
+                  ? i18n.locale === "zh-CN"
+                    ? "关闭"
+                    : "Close"
+                  : i18n.locale === "zh-CN"
+                    ? "返回检查"
+                    : "Review first"}
               </button>
-              <button className="run-button" onClick={() => void runPipeline("accepted")} type="button">
-                <Play size={15} />
-                {i18n.locale === "zh-CN" ? "仍然运行" : "Run anyway"}
-              </button>
+              {researchPipelinePreflight.canRun ? (
+                <button className="run-button" onClick={() => void runPipeline("accepted")} type="button">
+                  <Play size={15} />
+                  {i18n.locale === "zh-CN" ? "仍然运行" : "Run anyway"}
+                </button>
+              ) : null}
             </footer>
           </section>
         </dialog>
@@ -19395,18 +20332,191 @@ function ChartDataStrip({
   );
 }
 
+function strategyAiProviderLabel(i18n: AppI18n, providerId: AiReviewProviderId): string {
+  if (providerId === "local") {
+    return i18n.locale === "zh-CN" ? "本地安全基线" : "Local safety baseline";
+  }
+  if (providerId === "openai-compatible") {
+    return "OpenAI Compatible";
+  }
+  if (providerId === "ollama") {
+    return "Ollama";
+  }
+  return "OpenAI";
+}
+
+function strategyAiDraftContextIdentity(
+  workspace: TerminalWorkspace,
+  draft: StrategyRuleDraft
+): string {
+  return JSON.stringify({
+    market: workspace.selectedInstrument.market,
+    symbol: workspace.selectedInstrument.symbol,
+    timeframe: workspace.selectedTimeframe,
+    draft: {
+      name: draft.name,
+      entryKind: draft.entryKind,
+      entryWindow: draft.entryWindow,
+      entryThreshold: draft.entryThreshold,
+      entryRsiConfirm: draft.entryRsiConfirm,
+      entryRsiWindow: draft.entryRsiWindow,
+      entryRsiThreshold: draft.entryRsiThreshold,
+      entryVolumeConfirm: draft.entryVolumeConfirm,
+      entryVolumeWindow: draft.entryVolumeWindow,
+      exitKind: draft.exitKind,
+      exitWindow: draft.exitWindow,
+      exitThreshold: draft.exitThreshold,
+      positionPct: draft.positionPct,
+      stopLossPct: draft.stopLossPct,
+      takeProfitPct: draft.takeProfitPct,
+      maxDrawdownPct: draft.maxDrawdownPct,
+      paperOnly: draft.paperOnly
+    }
+  });
+}
+
+export function strategyAiConditionSummary(
+  i18n: AppI18n,
+  kind: StrategyConditionKind,
+  window: number,
+  threshold: number
+): string {
+  const label = strategyConditionOptionLabel(i18n, kind);
+  return kind === "rsi_below" || kind === "rsi_above"
+    ? `${label} · ${i18n.t("strategy.rsiWindow")} ${window} · ${i18n.t("strategy.rsiThreshold")} ${threshold}`
+    : `${label} · ${i18n.t("strategy.rsiWindow")} ${window} · ${i18n.t("strategy.aiRetainedParameter")} ${i18n.t("strategy.rsiThreshold")} ${threshold}`;
+}
+
+export function strategyAiConfirmationSummary(
+  i18n: AppI18n,
+  enabled: boolean,
+  indicator: "rsi" | "volume",
+  window: number,
+  threshold?: number
+): string {
+  const parameters = indicator === "rsi"
+    ? `${i18n.t("strategy.rsiWindow")} ${window} · ${i18n.t("strategy.rsiThreshold")} ${threshold ?? 0}`
+    : `${i18n.t("strategy.volumeWindow")} ${window}`;
+  return enabled
+    ? `${i18n.t("strategy.aiEnabled")} · ${parameters}`
+    : `${i18n.t("strategy.aiDisabled")} · ${i18n.t("strategy.aiRetainedParameter")} ${parameters}`;
+}
+
+interface StrategyAiDraftDiffRow {
+  id: string;
+  label: string;
+  currentValue: string;
+  candidateValue: string;
+}
+
+export function strategyAiDraftDiffRows(
+  i18n: AppI18n,
+  current: StrategyRuleDraft,
+  candidate: StrategyRuleDraft
+): StrategyAiDraftDiffRow[] {
+  const percent = (value: number) => `${value}%`;
+  return [
+    {
+      id: "name",
+      label: i18n.t("strategy.name"),
+      currentValue: current.name,
+      candidateValue: candidate.name
+    },
+    {
+      id: "entry",
+      label: i18n.t("strategy.entryCondition"),
+      currentValue: strategyAiConditionSummary(i18n, current.entryKind, current.entryWindow, current.entryThreshold),
+      candidateValue: strategyAiConditionSummary(i18n, candidate.entryKind, candidate.entryWindow, candidate.entryThreshold)
+    },
+    {
+      id: "entry-rsi-confirm",
+      label: i18n.t("strategy.rsiConfirm"),
+      currentValue: strategyAiConfirmationSummary(
+        i18n,
+        current.entryRsiConfirm,
+        "rsi",
+        current.entryRsiWindow,
+        current.entryRsiThreshold
+      ),
+      candidateValue: strategyAiConfirmationSummary(
+        i18n,
+        candidate.entryRsiConfirm,
+        "rsi",
+        candidate.entryRsiWindow,
+        candidate.entryRsiThreshold
+      )
+    },
+    {
+      id: "entry-volume-confirm",
+      label: i18n.t("strategy.volumeConfirm"),
+      currentValue: strategyAiConfirmationSummary(
+        i18n,
+        current.entryVolumeConfirm,
+        "volume",
+        current.entryVolumeWindow
+      ),
+      candidateValue: strategyAiConfirmationSummary(
+        i18n,
+        candidate.entryVolumeConfirm,
+        "volume",
+        candidate.entryVolumeWindow
+      )
+    },
+    {
+      id: "exit",
+      label: i18n.t("strategy.exitCondition"),
+      currentValue: strategyAiConditionSummary(i18n, current.exitKind, current.exitWindow, current.exitThreshold),
+      candidateValue: strategyAiConditionSummary(i18n, candidate.exitKind, candidate.exitWindow, candidate.exitThreshold)
+    },
+    {
+      id: "position",
+      label: i18n.t("strategy.positionPct"),
+      currentValue: percent(current.positionPct),
+      candidateValue: percent(candidate.positionPct)
+    },
+    {
+      id: "stop-loss",
+      label: i18n.t("strategy.stopLossPct"),
+      currentValue: percent(current.stopLossPct),
+      candidateValue: percent(candidate.stopLossPct)
+    },
+    {
+      id: "take-profit",
+      label: i18n.t("strategy.takeProfitPct"),
+      currentValue: percent(current.takeProfitPct),
+      candidateValue: percent(candidate.takeProfitPct)
+    },
+    {
+      id: "max-drawdown",
+      label: i18n.t("strategy.maxDrawdownPct"),
+      currentValue: percent(current.maxDrawdownPct),
+      candidateValue: percent(candidate.maxDrawdownPct)
+    },
+    {
+      id: "execution-mode",
+      label: i18n.t("strategy.aiExecutionMode"),
+      currentValue: current.paperOnly ? i18n.t("strategy.aiPaperOnly") : i18n.t("strategy.aiNonPaperBlocked"),
+      candidateValue: candidate.paperOnly ? i18n.t("strategy.aiPaperOnly") : i18n.t("strategy.aiNonPaperBlocked")
+    }
+  ].filter((row) => row.currentValue !== row.candidateValue);
+}
+
 function StrategySummary({
   draft,
   i18n,
   isSavingStrategy,
   library,
+  onApplyAiStrategyDraft,
   onApplyStrategyTemplate,
+  onDeleteStrategyVersion,
   onLoadStrategyVersion,
   onRunStrategyGovernanceAction,
   onSaveStrategyVersion,
   onUpdateStrategyRuleDraftField,
+  providers,
   readinessGates,
   rows,
+  showSaveAction,
   strategyGovernanceQueue,
   templates,
   validationSource,
@@ -19416,23 +20526,285 @@ function StrategySummary({
   i18n: AppI18n;
   isSavingStrategy: boolean;
   library: StrategyLibraryItem[];
+  onApplyAiStrategyDraft: (draft: StrategyRuleDraft, reasons: string[]) => void;
   onApplyStrategyTemplate: (templateId: StrategyTemplateId) => void;
+  onDeleteStrategyVersion: (strategy: StrategyLibraryItem) => Promise<boolean>;
   onLoadStrategyVersion: (strategy: StrategyLibraryItem) => void;
   onRunStrategyGovernanceAction: (row: StrategyGovernanceQueueRow) => void;
   onSaveStrategyVersion: () => void;
   onUpdateStrategyRuleDraftField: (field: StrategyRuleDraftField, value: number | string | boolean) => void;
+  providers: AiReviewProviderStatus[];
   readinessGates: StrategyReadinessGate[];
   rows: StrategyRuleRow[];
+  showSaveAction: boolean;
   strategyGovernanceQueue: StrategyGovernanceQueue;
   templates: StrategyTemplateOption[];
   validationSource: WorkspaceLoadResult["source"];
   workspace: TerminalWorkspace;
 }) {
+  const [strategyToDelete, setStrategyToDelete] = useState<StrategyLibraryItem | null>(null);
+  const [deletingStrategyRevision, setDeletingStrategyRevision] = useState<string | null>(null);
+  const [strategyDeleteFailed, setStrategyDeleteFailed] = useState(false);
+  const strategyDeleteDialogRef = useRef<HTMLDialogElement>(null);
+  const strategyDeleteCancelRef = useRef<HTMLButtonElement>(null);
+  const strategyLibraryRef = useRef<HTMLDivElement>(null);
+  const strategyAiDialogRef = useRef<HTMLDialogElement>(null);
+  const strategyAiGoalRef = useRef<HTMLTextAreaElement>(null);
+  const strategyAiTriggerRef = useRef<HTMLButtonElement>(null);
+  const strategyAiRequestIdRef = useRef(0);
+  const strategyAiAbortControllerRef = useRef<AbortController | null>(null);
+  const strategyAiContextIdentity = strategyAiDraftContextIdentity(workspace, draft);
+  const strategyAiLatestContextIdentityRef = useRef(strategyAiContextIdentity);
+  const strategyAiObservedContextIdentityRef = useRef(strategyAiContextIdentity);
+  strategyAiLatestContextIdentityRef.current = strategyAiContextIdentity;
+  const [isStrategyAiDialogOpen, setIsStrategyAiDialogOpen] = useState(false);
+  const [isGeneratingStrategyAiDraft, setIsGeneratingStrategyAiDraft] = useState(false);
+  const [strategyAiGoal, setStrategyAiGoal] = useState("");
+  const [strategyAiProviderId, setStrategyAiProviderId] = useState<AiReviewProviderId>("local");
+  const [strategyAiExternalDataApproved, setStrategyAiExternalDataApproved] = useState(false);
+  const [strategyAiResult, setStrategyAiResult] = useState<StrategyAiDraftResult | null>(null);
+  const [strategyAiResultContextIdentity, setStrategyAiResultContextIdentity] = useState<string | null>(null);
+  const [strategyAiError, setStrategyAiError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (strategyToDelete && !strategyDeleteDialogRef.current?.open) {
+      strategyDeleteDialogRef.current?.showModal();
+      strategyDeleteCancelRef.current?.focus();
+    }
+  }, [strategyToDelete]);
+
+  useEffect(() => {
+    if (isStrategyAiDialogOpen && !strategyAiDialogRef.current?.open) {
+      strategyAiDialogRef.current?.showModal();
+      strategyAiGoalRef.current?.focus();
+    }
+  }, [isStrategyAiDialogOpen]);
+
+  useEffect(() => {
+    if (strategyAiObservedContextIdentityRef.current === strategyAiContextIdentity) {
+      return;
+    }
+    strategyAiObservedContextIdentityRef.current = strategyAiContextIdentity;
+    strategyAiAbortControllerRef.current?.abort();
+    strategyAiAbortControllerRef.current = null;
+    strategyAiRequestIdRef.current += 1;
+    setIsGeneratingStrategyAiDraft(false);
+    setStrategyAiResult(null);
+    setStrategyAiResultContextIdentity(null);
+    setStrategyAiError(isStrategyAiDialogOpen ? i18n.t("strategy.aiContextChanged") : null);
+  }, [i18n, isStrategyAiDialogOpen, strategyAiContextIdentity]);
+
+  useEffect(() => () => {
+    strategyAiRequestIdRef.current += 1;
+    strategyAiAbortControllerRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const selectedProvider = providers.find((provider) => provider.providerId === strategyAiProviderId);
+    if (!selectedProvider?.configured) {
+      setStrategyAiProviderId(
+        providers.find((provider) => provider.providerId !== "local" && provider.configured)?.providerId
+          ?? "local"
+      );
+    }
+  }, [providers, strategyAiProviderId]);
+
+  const openStrategyAiDialog = () => {
+    const preferredProvider = providers.find(
+      (provider) => provider.providerId !== "local" && provider.configured
+    )?.providerId ?? "local";
+    setStrategyAiProviderId(preferredProvider);
+    setStrategyAiGoal(
+      i18n.locale === "zh-CN"
+        ? `为${workspace.selectedInstrument.name}编写一套中低风险的${workspace.selectedTimeframe}策略，使用可解释信号并控制单笔损失和最大回撤。`
+        : `Create a medium-low risk ${workspace.selectedTimeframe} strategy for ${workspace.selectedInstrument.name} with explainable signals, controlled per-trade loss, and capped drawdown.`
+    );
+    setStrategyAiExternalDataApproved(false);
+    setStrategyAiResult(null);
+    setStrategyAiResultContextIdentity(null);
+    setStrategyAiError(null);
+    setIsStrategyAiDialogOpen(true);
+  };
+
+  const closeStrategyAiDialog = () => {
+    strategyAiAbortControllerRef.current?.abort();
+    strategyAiAbortControllerRef.current = null;
+    strategyAiRequestIdRef.current += 1;
+    strategyAiDialogRef.current?.close();
+    setIsGeneratingStrategyAiDraft(false);
+    setIsStrategyAiDialogOpen(false);
+    setStrategyAiResult(null);
+    setStrategyAiResultContextIdentity(null);
+    setStrategyAiError(null);
+    strategyAiTriggerRef.current?.focus();
+  };
+
+  const generateStrategyAiCandidate = async () => {
+    const selectedProvider = providers.find((provider) => provider.providerId === strategyAiProviderId);
+    if (
+      isGeneratingStrategyAiDraft
+      || strategyAiGoal.trim().length < 4
+      || !selectedProvider?.configured
+      || (strategyAiProviderId !== "local" && !strategyAiExternalDataApproved)
+    ) {
+      return;
+    }
+    const requestId = strategyAiRequestIdRef.current + 1;
+    strategyAiRequestIdRef.current = requestId;
+    const requestContextIdentity = strategyAiContextIdentity;
+    strategyAiAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    strategyAiAbortControllerRef.current = abortController;
+    const externalDataApproved = strategyAiProviderId !== "local" && strategyAiExternalDataApproved;
+    if (externalDataApproved) {
+      setStrategyAiExternalDataApproved(false);
+    }
+    let requestTimedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      requestTimedOut = true;
+      abortController.abort();
+    }, 45_000);
+    setIsGeneratingStrategyAiDraft(true);
+    setStrategyAiResult(null);
+    setStrategyAiResultContextIdentity(null);
+    setStrategyAiError(null);
+    const result = await generateStrategyAiDraft(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe,
+      goal: strategyAiGoal.trim(),
+      currentDraft: draft,
+      providerId: strategyAiProviderId,
+      externalDataApproved
+    }, abortController.signal);
+    window.clearTimeout(timeoutId);
+    if (strategyAiRequestIdRef.current !== requestId) {
+      return;
+    }
+    if (strategyAiAbortControllerRef.current === abortController) {
+      strategyAiAbortControllerRef.current = null;
+    }
+    setIsGeneratingStrategyAiDraft(false);
+    if (requestTimedOut) {
+      setStrategyAiError(i18n.t("strategy.aiTimedOut"));
+      return;
+    }
+    if (
+      abortController.signal.aborted
+      || strategyAiLatestContextIdentityRef.current !== requestContextIdentity
+    ) {
+      setStrategyAiError(i18n.t("strategy.aiContextChanged"));
+      return;
+    }
+    if (result.source !== "core" || !result.candidate || !result.generation) {
+      setStrategyAiError(result.error ?? i18n.t("strategy.aiGenerateFailed"));
+      return;
+    }
+    setStrategyAiResult(result);
+    setStrategyAiResultContextIdentity(requestContextIdentity);
+    if (result.generation.status === "failed" || result.generation.fallbackUsed) {
+      setStrategyAiError(result.generation.warning ?? i18n.t("strategy.aiFallback"));
+    }
+  };
+
+  const applyStrategyAiCandidate = () => {
+    if (
+      !strategyAiResult?.candidate
+      || strategyAiResult.generation?.status !== "completed"
+      || strategyAiResult.generation.fallbackUsed
+      || strategyAiResult.validation?.status === "blocked"
+      || strategyAiResultContextIdentity !== strategyAiContextIdentity
+      || strategyAiResult.candidate.market !== workspace.selectedInstrument.market
+      || strategyAiResult.candidate.symbol !== workspace.selectedInstrument.symbol
+      || strategyAiResult.candidate.timeframe !== workspace.selectedTimeframe
+    ) {
+      setStrategyAiError(i18n.t("strategy.aiContextChanged"));
+      return;
+    }
+    if (strategyAiDraftDiffRows(i18n, draft, strategyAiResult.candidate.draft).length === 0) {
+      setStrategyAiError(i18n.t("strategy.aiNoChanges"));
+      return;
+    }
+    onApplyAiStrategyDraft(
+      strategyAiResult.candidate.draft,
+      strategyAiResult.candidate.reasons
+    );
+    strategyAiDialogRef.current?.close();
+    setIsStrategyAiDialogOpen(false);
+    setStrategyAiResult(null);
+    setStrategyAiResultContextIdentity(null);
+    setStrategyAiError(null);
+    strategyAiTriggerRef.current?.focus();
+  };
+
+  const closeStrategyDeleteDialog = () => {
+    if (deletingStrategyRevision) {
+      return;
+    }
+    strategyDeleteDialogRef.current?.close();
+    setStrategyToDelete(null);
+    setStrategyDeleteFailed(false);
+  };
+
+  const confirmStrategyDelete = async () => {
+    if (!strategyToDelete || deletingStrategyRevision) {
+      return;
+    }
+    setDeletingStrategyRevision(strategyToDelete.revision);
+    setStrategyDeleteFailed(false);
+    const deleted = await onDeleteStrategyVersion(strategyToDelete);
+    setDeletingStrategyRevision(null);
+    if (!deleted) {
+      setStrategyDeleteFailed(true);
+      return;
+    }
+    strategyDeleteDialogRef.current?.close();
+    setStrategyToDelete(null);
+    strategyLibraryRef.current?.focus();
+  };
+
+  const selectedStrategyAiProvider = providers.find(
+    (provider) => provider.providerId === strategyAiProviderId
+  ) ?? providers.find((provider) => provider.providerId === "local");
+  const strategyAiUsesExternalProvider = strategyAiProviderId !== "local";
+  const canGenerateStrategyAiDraft = Boolean(
+    !isGeneratingStrategyAiDraft
+    && strategyAiGoal.trim().length >= 4
+    && selectedStrategyAiProvider?.configured
+    && (!strategyAiUsesExternalProvider || strategyAiExternalDataApproved)
+  );
+  const strategyAiCandidate = strategyAiResult?.candidate ?? null;
+  const strategyAiDraftChanges = strategyAiCandidate
+    ? strategyAiDraftDiffRows(i18n, draft, strategyAiCandidate.draft)
+    : [];
+  const canApplyStrategyAiDraft = Boolean(
+    strategyAiCandidate
+    && strategyAiResult?.generation?.status === "completed"
+    && !strategyAiResult.generation.fallbackUsed
+    && strategyAiResult.validation?.status !== "blocked"
+    && strategyAiResultContextIdentity === strategyAiContextIdentity
+    && strategyAiDraftChanges.length > 0
+    && strategyAiCandidate.market === workspace.selectedInstrument.market
+    && strategyAiCandidate.symbol === workspace.selectedInstrument.symbol
+    && strategyAiCandidate.timeframe === workspace.selectedTimeframe
+  );
+
   return (
     <div className="strategy-workbench">
       <div className="strategy-structured-editor">
         <div className="strategy-builder-title">
-          <span>{i18n.t("strategy.builder")}</span>
+          <div className="strategy-builder-heading">
+            <span>{i18n.t("strategy.builder")}</span>
+            <button
+              className="strategy-ai-open-button"
+              onClick={openStrategyAiDialog}
+              ref={strategyAiTriggerRef}
+              type="button"
+            >
+              <BrainCircuit aria-hidden="true" size={14} />
+              {i18n.t("strategy.aiAssist")}
+            </button>
+          </div>
           <strong>{workspace.researchRun ? workspace.researchRun.strategyRevision : i18n.t("strategy.auditRequired")}</strong>
         </div>
         <StrategyTemplatePicker
@@ -19461,7 +20833,20 @@ function StrategySummary({
             window={draft.entryWindow}
             windowField="entryWindow"
           />
+          <StrategyConditionField
+            field="exitKind"
+            i18n={i18n}
+            kind={draft.exitKind}
+            label={i18n.t("strategy.exitCondition")}
+            onUpdate={onUpdateStrategyRuleDraftField}
+            options={["close_below_sma", "rsi_above"]}
+            threshold={draft.exitThreshold}
+            thresholdField="exitThreshold"
+            window={draft.exitWindow}
+            windowField="exitWindow"
+          />
           <StrategyRsiConfirmField
+            disabled={draft.entryKind === "rsi_below"}
             field="entryRsiConfirm"
             i18n={i18n}
             isEnabled={draft.entryRsiConfirm}
@@ -19480,18 +20865,6 @@ function StrategySummary({
             onUpdate={onUpdateStrategyRuleDraftField}
             value={draft.entryVolumeWindow}
             windowField="entryVolumeWindow"
-          />
-          <StrategyConditionField
-            field="exitKind"
-            i18n={i18n}
-            kind={draft.exitKind}
-            label={i18n.t("strategy.exitCondition")}
-            onUpdate={onUpdateStrategyRuleDraftField}
-            options={["close_below_sma", "rsi_above"]}
-            threshold={draft.exitThreshold}
-            thresholdField="exitThreshold"
-            window={draft.exitWindow}
-            windowField="exitWindow"
           />
           <StrategyNumberField
             field="positionPct"
@@ -19551,12 +20924,14 @@ function StrategySummary({
             </article>
           ))}
         </div>
-        <div className="strategy-library-actions">
-          <button disabled={isSavingStrategy} onClick={onSaveStrategyVersion} type="button">
-            <GitBranch size={15} />
-            <span>{isSavingStrategy ? i18n.t("strategy.saving") : i18n.t("strategy.saveVersion")}</span>
-          </button>
-        </div>
+        {showSaveAction ? (
+          <div className="strategy-library-actions">
+            <button disabled={isSavingStrategy} onClick={onSaveStrategyVersion} type="button">
+              <GitBranch size={15} />
+              <span>{isSavingStrategy ? i18n.t("strategy.saving") : i18n.t("strategy.saveVersion")}</span>
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="strategy-rule-board">
         <div className="strategy-rule-title">
@@ -19613,9 +20988,9 @@ function StrategySummary({
           {strategyGovernanceQueue.rows.map((row) => (
             <article className={`strategy-governance-row ${row.tone}`} key={row.id}>
               <span>
-                <strong>{row.name}</strong>
-                <em>{row.revision}</em>
-                <small>{row.contextLabel}</small>
+                <strong>{i18n.strategyText(row.name)}</strong>
+                <em>{row.revision === "current-draft" && i18n.locale === "zh-CN" ? "当前草稿" : row.revision}</em>
+                <small>{strategyGovernanceContextLabel(i18n, row)}</small>
               </span>
               <span>
                 <strong>{strategyGovernanceStageLabel(i18n, row.stage)}</strong>
@@ -19623,10 +20998,13 @@ function StrategySummary({
               </span>
               <span>
                 <strong>{row.latestAuditRunId ?? row.auditRunId ?? (i18n.locale === "zh-CN" ? "等待审计" : "Audit pending")}</strong>
-                <em>{i18n.strategyText(row.detail)}</em>
+                <em>{strategyGovernanceDetailLabel(i18n, row)}</em>
                 {row.changedFieldCount ? (
                   <small>
-                    {i18n.locale === "zh-CN" ? "差异" : "Diff"}: {row.changedFields.join(", ")}
+                    {i18n.locale === "zh-CN" ? "差异" : "Diff"}:{" "}
+                    {row.changedFields
+                      .map((field) => strategyGovernanceChangedFieldLabel(i18n, field))
+                      .join(i18n.locale === "zh-CN" ? "、" : ", ")}
                   </small>
                 ) : null}
               </span>
@@ -19638,7 +21016,7 @@ function StrategySummary({
           ))}
         </div>
       </div>
-      <div className="strategy-library-list">
+      <div className="strategy-library-list" ref={strategyLibraryRef} tabIndex={-1}>
         <div className="strategy-rule-title">
           <span>{i18n.t("strategy.library")}</span>
           <strong>{library.length}</strong>
@@ -19660,10 +21038,10 @@ function StrategySummary({
             return (
               <article className={`strategy-library-card ${item.status}`} key={item.revision}>
                 <span>
-                  <strong>{item.name}</strong>
+                  <strong>{i18n.strategyText(item.name)}</strong>
                   <em>{item.revision}</em>
                   <small>
-                    {i18n.t("strategy.context")}: {item.market.toUpperCase()} · {item.symbol} · {item.timeframe}
+                    {i18n.t("strategy.context")}: {i18n.marketLabel(item.market)} · {item.symbol} · {item.timeframe}
                   </small>
                   <small>
                     {i18n.t("strategy.auditRun")}: {item.auditRunId ?? i18n.t("strategy.auditRequired")}
@@ -19683,9 +21061,25 @@ function StrategySummary({
                   </div>
                 </span>
                 <span>{strategyLibraryStatusLabel(i18n, item.status)}</span>
-                <button disabled={isCurrentDraft} onClick={() => onLoadStrategyVersion(item)} type="button">
-                  {isCurrentDraft ? i18n.t("strategy.loadedVersion") : i18n.t("strategy.loadVersion")}
-                </button>
+                <div className="strategy-library-card-actions">
+                  <button disabled={isCurrentDraft} onClick={() => onLoadStrategyVersion(item)} type="button">
+                    {isCurrentDraft ? i18n.t("strategy.loadedVersion") : i18n.t("strategy.loadVersion")}
+                  </button>
+                  <button
+                    aria-label={i18n.t("strategy.deleteVersionLabel", {
+                      name: i18n.strategyText(item.name),
+                      revision: item.revision
+                    })}
+                    className="strategy-delete-button"
+                    onClick={() => {
+                      setStrategyDeleteFailed(false);
+                      setStrategyToDelete(item);
+                    }}
+                    type="button"
+                  >
+                    {i18n.t("strategy.deleteVersion")}
+                  </button>
+                </div>
               </article>
             );
           })
@@ -19693,6 +21087,308 @@ function StrategySummary({
           <p className="strategy-library-empty">{i18n.t("strategy.libraryEmpty")}</p>
         )}
       </div>
+      {isStrategyAiDialogOpen ? (
+        <dialog
+          aria-describedby="strategy-ai-subtitle"
+          aria-labelledby="strategy-ai-title"
+          aria-modal="true"
+          className="research-confirmation-dialog strategy-ai-dialog"
+          onCancel={(event) => {
+            event.preventDefault();
+            closeStrategyAiDialog();
+          }}
+          ref={strategyAiDialogRef}
+        >
+          <section className="research-confirmation-modal strategy-ai-modal">
+            <header>
+              <div>
+                <span className="research-confirmation-kicker strategy-ai-kicker">
+                  <BrainCircuit aria-hidden="true" size={14} />
+                  {i18n.t("strategy.aiAssist")}
+                </span>
+                <h2 id="strategy-ai-title">{i18n.t("strategy.aiTitle")}</h2>
+              </div>
+              <button
+                aria-label={i18n.t("strategy.aiClose")}
+                className="panel-icon-button"
+                onClick={closeStrategyAiDialog}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <p id="strategy-ai-subtitle">{i18n.t("strategy.aiSubtitle")}</p>
+            <div className="strategy-ai-context" aria-label={i18n.t("strategy.context")}>
+              <span>{i18n.marketLabel(workspace.selectedInstrument.market)}</span>
+              <strong>{workspace.selectedInstrument.symbol} · {workspace.selectedInstrument.name}</strong>
+              <span>{workspace.selectedTimeframe}</span>
+              <em>{i18n.t("strategy.aiDraftOnly")}</em>
+            </div>
+            <div className="strategy-ai-request-grid">
+              <label className="strategy-ai-goal-field" htmlFor="strategy-ai-goal">
+                <span>{i18n.t("strategy.aiGoal")}</span>
+                <textarea
+                  disabled={isGeneratingStrategyAiDraft}
+                  id="strategy-ai-goal"
+                  maxLength={1000}
+                  onChange={(event) => {
+                    setStrategyAiGoal(event.currentTarget.value);
+                    setStrategyAiResult(null);
+                    setStrategyAiResultContextIdentity(null);
+                    setStrategyAiError(null);
+                  }}
+                  placeholder={i18n.t("strategy.aiGoalPlaceholder")}
+                  ref={strategyAiGoalRef}
+                  rows={4}
+                  value={strategyAiGoal}
+                />
+                <small>{strategyAiGoal.trim().length}/1000</small>
+              </label>
+              <div className="strategy-ai-provider-card">
+                <label htmlFor="strategy-ai-provider">
+                  <span>{i18n.t("strategy.aiProvider")}</span>
+                  <select
+                    disabled={isGeneratingStrategyAiDraft}
+                    id="strategy-ai-provider"
+                    onChange={(event) => {
+                      setStrategyAiProviderId(event.currentTarget.value as AiReviewProviderId);
+                      setStrategyAiExternalDataApproved(false);
+                      setStrategyAiResult(null);
+                      setStrategyAiResultContextIdentity(null);
+                      setStrategyAiError(null);
+                    }}
+                    value={strategyAiProviderId}
+                  >
+                    {providers.map((provider) => (
+                      <option
+                        disabled={!provider.configured}
+                        key={provider.providerId}
+                        value={provider.providerId}
+                      >
+                        {strategyAiProviderLabel(i18n, provider.providerId)}
+                        {provider.configured ? "" : i18n.locale === "zh-CN" ? " · 未配置" : " · not configured"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <small className="strategy-ai-provider-meta">
+                  {strategyAiUsesExternalProvider
+                    ? `${selectedStrategyAiProvider?.model ?? (i18n.locale === "zh-CN" ? "模型未配置" : "Model unavailable")} · ${selectedStrategyAiProvider?.sanitizedBaseUrl ?? (i18n.locale === "zh-CN" ? "地址未配置" : "Endpoint unavailable")}`
+                    : i18n.locale === "zh-CN"
+                      ? "确定性本地基线 · 不发送任何数据"
+                      : "Deterministic local baseline · no data is sent"}
+                </small>
+                {strategyAiUsesExternalProvider ? (
+                  <div className="strategy-ai-external-consent">
+                    <p>{i18n.t("strategy.aiExternalSummary")}</p>
+                    <label htmlFor="strategy-ai-external-approval">
+                      <input
+                        checked={strategyAiExternalDataApproved}
+                        disabled={isGeneratingStrategyAiDraft}
+                        id="strategy-ai-external-approval"
+                        onChange={(event) => {
+                          setStrategyAiExternalDataApproved(event.currentTarget.checked);
+                          setStrategyAiResult(null);
+                          setStrategyAiResultContextIdentity(null);
+                          setStrategyAiError(null);
+                        }}
+                        type="checkbox"
+                      />
+                      <span>{i18n.t("strategy.aiExternalApproval")}</span>
+                    </label>
+                  </div>
+                ) : null}
+                <button
+                  className="strategy-ai-generate-button"
+                  disabled={!canGenerateStrategyAiDraft}
+                  onClick={() => void generateStrategyAiCandidate()}
+                  type="button"
+                >
+                  {isGeneratingStrategyAiDraft
+                    ? <RefreshCw aria-hidden="true" className="spin" size={15} />
+                    : <BrainCircuit aria-hidden="true" size={15} />}
+                  {isGeneratingStrategyAiDraft
+                    ? i18n.t("strategy.aiGenerating")
+                    : i18n.t("strategy.aiGenerate")}
+                </button>
+              </div>
+            </div>
+            {strategyAiError ? (
+              <p className="strategy-ai-message error" role="alert">{strategyAiError}</p>
+            ) : null}
+            {strategyAiCandidate ? (
+              <section
+                aria-labelledby="strategy-ai-preview-title"
+                aria-live="polite"
+                className="strategy-ai-preview"
+              >
+                <div className="strategy-ai-preview-heading">
+                  <div>
+                    <span>{i18n.t("strategy.aiPreview")}</span>
+                    <strong id="strategy-ai-preview-title">{strategyAiCandidate.draft.name}</strong>
+                  </div>
+                  <em className={strategyAiResult?.generation?.status === "skipped" || strategyAiResult?.generation?.fallbackUsed ? "baseline" : strategyAiResult?.validation?.status ?? "review"}>
+                    {strategyAiResult?.generation?.fallbackUsed || strategyAiResult?.generation?.status === "failed"
+                      ? i18n.t("strategy.aiFallbackBadge")
+                      : strategyAiResult?.generation?.status === "skipped"
+                      ? i18n.t("strategy.aiLocalBaseline")
+                      : strategyAiResult?.validation?.status === "blocked"
+                      ? i18n.locale === "zh-CN" ? "未通过校验" : "Blocked"
+                      : i18n.locale === "zh-CN" ? "待人工应用" : "Ready to apply"}
+                  </em>
+                </div>
+                <div className="strategy-ai-preview-grid">
+                  <article>
+                    <span>{i18n.t("strategy.entryCondition")}</span>
+                    <strong>{strategyConditionOptionLabel(i18n, strategyAiCandidate.draft.entryKind)}</strong>
+                    <small>
+                      {strategyAiCandidate.draft.entryKind === "rsi_below"
+                        ? `${i18n.t("strategy.rsiWindow")} ${strategyAiCandidate.draft.entryWindow} · ${i18n.t("strategy.rsiThreshold")} ${strategyAiCandidate.draft.entryThreshold}`
+                        : `SMA ${strategyAiCandidate.draft.entryWindow}`}
+                    </small>
+                  </article>
+                  <article>
+                    <span>{i18n.t("strategy.exitCondition")}</span>
+                    <strong>{strategyConditionOptionLabel(i18n, strategyAiCandidate.draft.exitKind)}</strong>
+                    <small>
+                      {strategyAiCandidate.draft.exitKind === "rsi_above"
+                        ? `${i18n.t("strategy.rsiWindow")} ${strategyAiCandidate.draft.exitWindow} · ${i18n.t("strategy.rsiThreshold")} ${strategyAiCandidate.draft.exitThreshold}`
+                        : `SMA ${strategyAiCandidate.draft.exitWindow}`}
+                    </small>
+                  </article>
+                  <article>
+                    <span>{i18n.t("strategy.positionPct")}</span>
+                    <strong>{strategyAiCandidate.draft.positionPct}%</strong>
+                    <small>
+                      {i18n.t("strategy.stopLossPct")} {strategyAiCandidate.draft.stopLossPct}% · {i18n.t("strategy.takeProfitPct")} {strategyAiCandidate.draft.takeProfitPct}%
+                    </small>
+                  </article>
+                  <article>
+                    <span>{i18n.t("strategy.maxDrawdownPct")}</span>
+                    <strong>{strategyAiCandidate.draft.maxDrawdownPct}%</strong>
+                    <small>
+                      {strategyAiCandidate.draft.entryRsiConfirm ? `RSI ${i18n.locale === "zh-CN" ? "确认" : "confirmation"}` : i18n.locale === "zh-CN" ? "无 RSI 确认" : "No RSI confirmation"}
+                      {" · "}
+                      {strategyAiCandidate.draft.entryVolumeConfirm ? i18n.t("strategy.volumeConfirm") : i18n.locale === "zh-CN" ? "无成交量确认" : "No volume confirmation"}
+                    </small>
+                  </article>
+                </div>
+                <div className="strategy-ai-diff" role="table" aria-label={i18n.t("strategy.aiChanges") }>
+                  <div className="strategy-ai-diff-row heading" role="row">
+                    <strong role="columnheader">{i18n.t("strategy.aiChanges")}</strong>
+                    <span role="columnheader">{i18n.t("strategy.aiCurrentValue")}</span>
+                    <span role="columnheader">{i18n.t("strategy.aiCandidateValue")}</span>
+                  </div>
+                  {strategyAiDraftChanges.length ? strategyAiDraftChanges.map((row) => (
+                    <div className="strategy-ai-diff-row" key={row.id} role="row">
+                      <strong role="rowheader">{row.label}</strong>
+                      <span role="cell">{row.currentValue}</span>
+                      <span role="cell">{row.candidateValue}</span>
+                    </div>
+                  )) : (
+                    <p className="strategy-ai-diff-empty">{i18n.t("strategy.aiNoChanges")}</p>
+                  )}
+                </div>
+                <div className="strategy-ai-reasons">
+                  <h3>{i18n.t("strategy.aiReasons")}</h3>
+                  <ol>
+                    {strategyAiCandidate.reasons.map((reason, index) => (
+                      <li key={`${index}-${reason}`}>{reason}</li>
+                    ))}
+                  </ol>
+                </div>
+                {strategyAiResult?.generation?.warning ? (
+                  <p className="strategy-ai-message">{strategyAiResult.generation.warning}</p>
+                ) : null}
+              </section>
+            ) : null}
+            <footer className="research-confirmation-actions strategy-ai-actions">
+              <button
+                className="design-secondary-action"
+                onClick={closeStrategyAiDialog}
+                type="button"
+              >
+                {isGeneratingStrategyAiDraft
+                  ? i18n.t("strategy.aiCancelGeneration")
+                  : i18n.t("strategy.aiClose")}
+              </button>
+              <button
+                className="strategy-ai-apply-button"
+                disabled={!canApplyStrategyAiDraft}
+                onClick={applyStrategyAiCandidate}
+                type="button"
+              >
+                <Check aria-hidden="true" size={15} />
+                {i18n.t("strategy.aiApply")}
+              </button>
+            </footer>
+          </section>
+        </dialog>
+      ) : null}
+      {strategyToDelete ? (
+        <dialog
+          aria-describedby="strategy-delete-detail"
+          aria-labelledby="strategy-delete-title"
+          aria-modal="true"
+          className="research-confirmation-dialog strategy-delete-dialog"
+          onCancel={(event) => {
+            event.preventDefault();
+            closeStrategyDeleteDialog();
+          }}
+          ref={strategyDeleteDialogRef}
+          role="alertdialog"
+        >
+          <section className="research-confirmation-modal strategy-delete-modal">
+            <header>
+              <div>
+                <span className="research-confirmation-kicker strategy-delete-kicker">
+                  {i18n.t("strategy.deleteVersion")}
+                </span>
+                <h2 id="strategy-delete-title">{i18n.t("strategy.deleteConfirmTitle")}</h2>
+              </div>
+              <button
+                aria-label={i18n.t("strategy.deleteCancel")}
+                className="panel-icon-button"
+                disabled={Boolean(deletingStrategyRevision)}
+                onClick={closeStrategyDeleteDialog}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <p id="strategy-delete-detail">{i18n.t("strategy.deleteConfirmDetail")}</p>
+            <div className="strategy-delete-summary">
+              <strong>{i18n.strategyText(strategyToDelete.name)}</strong>
+              <span>{strategyToDelete.revision}</span>
+              <small>
+                {i18n.marketLabel(strategyToDelete.market)} · {strategyToDelete.symbol} · {strategyToDelete.timeframe}
+              </small>
+            </div>
+            {strategyDeleteFailed ? (
+              <p className="strategy-delete-error" role="alert">{i18n.t("strategy.deleteFailed")}</p>
+            ) : null}
+            <footer className="research-confirmation-actions">
+              <button
+                className="design-secondary-action"
+                disabled={Boolean(deletingStrategyRevision)}
+                onClick={closeStrategyDeleteDialog}
+                ref={strategyDeleteCancelRef}
+                type="button"
+              >
+                {i18n.t("strategy.deleteCancel")}
+              </button>
+              <button
+                className="strategy-delete-confirm"
+                disabled={Boolean(deletingStrategyRevision)}
+                onClick={() => void confirmStrategyDelete()}
+                type="button"
+              >
+                {deletingStrategyRevision ? i18n.t("strategy.deletingVersion") : i18n.t("strategy.deleteConfirm")}
+              </button>
+            </footer>
+          </section>
+        </dialog>
+      ) : null}
     </div>
   );
 }
@@ -19777,20 +21473,19 @@ function StrategyConditionField({
 }) {
   const isRsi = kind === "rsi_below" || kind === "rsi_above";
   return (
-    <label className={`strategy-draft-field strategy-condition-field ${isRsi ? "rsi" : "sma"}`}>
+    <div
+      className={`strategy-draft-field strategy-condition-field ${isRsi ? "rsi" : "sma"}`}
+      data-field={field}
+    >
       <span>{label}</span>
       <div className={`strategy-condition-editor ${isRsi ? "rsi" : "sma"}`}>
-        <select
-          className="strategy-condition-select"
-          onChange={(event) => onUpdate(field, event.currentTarget.value)}
-          value={kind}
-        >
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {strategyConditionOptionLabel(i18n, option)}
-            </option>
-          ))}
-        </select>
+        <StrategyConditionMenu
+          i18n={i18n}
+          kind={kind}
+          label={label}
+          onChange={(option) => onUpdate(field, option)}
+          options={options}
+        />
         <input
           aria-label={`${label} window`}
           max={250}
@@ -19816,7 +21511,65 @@ function StrategyConditionField({
         )}
       </div>
       <small>{strategyDraftHint(i18n, field)}</small>
-    </label>
+    </div>
+  );
+}
+
+export function StrategyConditionMenu({
+  i18n,
+  kind,
+  label,
+  onChange,
+  options
+}: {
+  i18n: AppI18n;
+  kind: StrategyConditionKind;
+  label: string;
+  onChange: (option: StrategyConditionKind) => void;
+  options: StrategyConditionKind[];
+}) {
+  const menuRef = useRef<HTMLDetailsElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
+
+  return (
+    <details
+      className="strategy-condition-menu"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          menuRef.current?.removeAttribute("open");
+        }
+      }}
+      ref={menuRef}
+    >
+      <summary
+        aria-label={`${label}：${strategyConditionOptionLabel(i18n, kind)}`}
+        ref={summaryRef}
+      >
+        <strong>{strategyConditionOptionLabel(i18n, kind)}</strong>
+        <ChevronDown aria-hidden="true" size={15} />
+      </summary>
+      <div className="strategy-condition-options">
+        {options.map((option) => {
+          const isActive = option === kind;
+          return (
+            <button
+              aria-pressed={isActive}
+              className={isActive ? "active" : ""}
+              key={option}
+              onClick={() => {
+                onChange(option);
+                menuRef.current?.removeAttribute("open");
+                summaryRef.current?.focus();
+              }}
+              type="button"
+            >
+              <span aria-hidden="true">{isActive ? <Check size={14} /> : null}</span>
+              <strong>{strategyConditionOptionLabel(i18n, option)}</strong>
+            </button>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
@@ -19847,16 +21600,19 @@ function StrategyVolumeConfirmField({
           onChange={(event) => onUpdate(field, event.currentTarget.checked)}
           type="checkbox"
         />
-        <input
-          aria-label={i18n.t("strategy.volumeWindow")}
-          disabled={!isEnabled}
-          max={250}
-          min={1}
-          onChange={(event) => onUpdate(windowField, Number(event.currentTarget.value))}
-          step={1}
-          type="number"
-          value={value}
-        />
+        <span className="strategy-inline-number">
+          <small>{i18n.t("strategy.volumeWindow")}</small>
+          <input
+            aria-label={`${label} ${i18n.t("strategy.volumeWindow")}`}
+            disabled={!isEnabled}
+            max={250}
+            min={1}
+            onChange={(event) => onUpdate(windowField, Number(event.currentTarget.value))}
+            step={1}
+            type="number"
+            value={value}
+          />
+        </span>
         <em>VOL</em>
       </div>
       <small>{strategyDraftHint(i18n, field)}</small>
@@ -19865,6 +21621,7 @@ function StrategyVolumeConfirmField({
 }
 
 function StrategyRsiConfirmField({
+  disabled,
   field,
   i18n,
   isEnabled,
@@ -19875,6 +21632,7 @@ function StrategyRsiConfirmField({
   window,
   windowField
 }: {
+  disabled: boolean;
   field: StrategyRuleDraftField;
   i18n: AppI18n;
   isEnabled: boolean;
@@ -19886,35 +21644,42 @@ function StrategyRsiConfirmField({
   windowField: StrategyRuleDraftField;
 }) {
   return (
-    <label className={`strategy-draft-field strategy-rsi-field ${isEnabled ? "enabled" : "disabled"}`}>
+    <label className={`strategy-draft-field strategy-rsi-field ${isEnabled && !disabled ? "enabled" : "disabled"}`}>
       <span>{label}</span>
       <div className="strategy-rsi-toggle">
         <input
           aria-label={label}
           checked={isEnabled}
+          disabled={disabled}
           onChange={(event) => onUpdate(field, event.currentTarget.checked)}
           type="checkbox"
         />
-        <input
-          aria-label={i18n.t("strategy.rsiWindow")}
-          disabled={!isEnabled}
-          max={250}
-          min={1}
-          onChange={(event) => onUpdate(windowField, Number(event.currentTarget.value))}
-          step={1}
-          type="number"
-          value={window}
-        />
-        <input
-          aria-label={i18n.t("strategy.rsiThreshold")}
-          disabled={!isEnabled}
-          max={100}
-          min={0}
-          onChange={(event) => onUpdate(thresholdField, Number(event.currentTarget.value))}
-          step={1}
-          type="number"
-          value={threshold}
-        />
+        <span className="strategy-inline-number">
+          <small>{i18n.t("strategy.rsiWindow")}</small>
+          <input
+            aria-label={`${label} ${i18n.t("strategy.rsiWindow")}`}
+            disabled={disabled || !isEnabled}
+            max={250}
+            min={1}
+            onChange={(event) => onUpdate(windowField, Number(event.currentTarget.value))}
+            step={1}
+            type="number"
+            value={window}
+          />
+        </span>
+        <span className="strategy-inline-number">
+          <small>{i18n.t("strategy.rsiThreshold")}</small>
+          <input
+            aria-label={`${label} ${i18n.t("strategy.rsiThreshold")}`}
+            disabled={disabled || !isEnabled}
+            max={100}
+            min={0}
+            onChange={(event) => onUpdate(thresholdField, Number(event.currentTarget.value))}
+            step={1}
+            type="number"
+            value={threshold}
+          />
+        </span>
         <em>RSI</em>
       </div>
       <small>{strategyDraftHint(i18n, field)}</small>
@@ -19938,7 +21703,7 @@ function StrategyNumberField({
   value: number;
 }) {
   return (
-    <label className="strategy-draft-field">
+    <label className="strategy-draft-field" data-field={field}>
       <span>{label}</span>
       <div>
         <input
@@ -31877,7 +33642,7 @@ function PortfolioWorkspace({
             <div className="portfolio-backtest-actions">
               <button
                 className="run-button compact"
-                disabled={!canPreparePortfolioPeers || isPreparingPortfolioPeers}
+                disabled={!canPreparePortfolioPeers || isPreparingPortfolioPeers || isRunningPortfolioBacktest}
                 onClick={onPreparePortfolioPeers}
                 type="button"
               >
@@ -31886,7 +33651,7 @@ function PortfolioWorkspace({
               </button>
               <button
                 className="run-button compact"
-                disabled={!canRunPortfolioBacktest || isRunningPortfolioBacktest}
+                disabled={!canRunPortfolioBacktest || isPreparingPortfolioPeers || isRunningPortfolioBacktest}
                 onClick={onRunPortfolioBacktest}
                 type="button"
               >
@@ -34120,6 +35885,76 @@ function strategyGovernanceActionLabel(
   }[actionId];
 }
 
+function strategyGovernanceChangedFieldLabel(
+  i18n: AppI18n,
+  field: StrategyVersionDiffRow["id"]
+): string {
+  if (i18n.locale === "en-US") {
+    return field;
+  }
+  return {
+    context: "上下文",
+    name: "名称",
+    entry: "入场",
+    exit: "出场",
+    position: "仓位",
+    risk: "风控"
+  }[field];
+}
+
+export function strategyGovernanceContextLabel(i18n: AppI18n, row: StrategyGovernanceQueueRow): string {
+  return `${i18n.marketLabel(row.market)} · ${row.symbol} · ${row.timeframe}`;
+}
+
+function strategyGovernanceValidationDetailLabel(i18n: AppI18n, detail: string): string {
+  if (i18n.locale === "en-US") {
+    return detail;
+  }
+  return detail
+    .split(" · ")
+    .map((part) => {
+      const match = part.match(/^(Strategy schema|Risk controls|Execution mode|Audit evidence): (.+)$/);
+      if (!match) {
+        return i18n.strategyText(part);
+      }
+      return `${strategyReadinessGateLabel(
+        i18n,
+        match[1] as StrategyReadinessGate["label"]
+      )}：${i18n.strategyText(match[2])}`;
+    })
+    .join("；");
+}
+
+export function strategyGovernanceDetailLabel(i18n: AppI18n, row: StrategyGovernanceQueueRow): string {
+  if (i18n.locale === "en-US") {
+    return row.detail;
+  }
+  const changedFields = row.changedFields
+    .map((field) => strategyGovernanceChangedFieldLabel(i18n, field))
+    .join("、");
+  if (row.stage === "current_draft") {
+    if (row.latestAuditRunId) {
+      return `当前草稿已绑定审计运行 ${row.latestAuditRunId}。`;
+    }
+    return row.validationStatus === "ready"
+      ? "策略结构、风控参数和仅模拟盘执行模式已就绪。"
+      : strategyGovernanceValidationDetailLabel(i18n, row.detail);
+  }
+  if (row.stage === "blocked") {
+    return strategyGovernanceValidationDetailLabel(i18n, row.detail);
+  }
+  if (row.stage === "imported") {
+    return `保存于 ${strategyGovernanceContextLabel(i18n, row)}；请先载入为跨上下文草稿，再在当前工作区审计。`;
+  }
+  if (row.stage === "stale") {
+    return `当前上下文的${changedFields}已变更；请载入此版本并重新运行审计。`;
+  }
+  if (row.stage === "audited") {
+    return `该已审计版本由 ${row.latestAuditRunId ?? row.auditRunId ?? "对应审计运行"} 提供证据。`;
+  }
+  return "已保存草稿结构有效，但当前没有审计证据；请载入后重新运行流水线。";
+}
+
 function strategyDiffRowLabel(i18n: AppI18n, row: StrategyVersionDiffRow): string {
   const labels: Record<StrategyVersionDiffRow["id"], string> = {
     context: i18n.t("strategy.context"),
@@ -34589,8 +36424,17 @@ function portfolioBacktestSummary(i18n: AppI18n, summary: string): string {
   if (summary === "Run at least one audited research pipeline first.") {
     return "先至少运行一次审计研究流水线。";
   }
-  if (summary === "Need at least two audited runs from the same market and timeframe with equity curves.") {
-    return "需要至少两个同市场、同周期且带权益曲线的审计运行。";
+  if (summary === "Run at least one audited research pipeline with an equity curve first.") {
+    return "当前审计运行缺少权益曲线，请重新运行当前标的研究。";
+  }
+  if (summary === "Need at least two audited runs from the same market and timeframe with aligned equity curves.") {
+    return "需要至少两个同市场、同周期且权益曲线日期对齐的审计运行。系统会先尝试重新生成对照审计。";
+  }
+  if (summary === "portfolio legs must use aligned equity timestamps") {
+    return "组合腿的权益曲线日期未对齐，请重新生成同一区间的对照审计。";
+  }
+  if (summary === "portfolio legs must share market and timeframe") {
+    return "组合腿必须来自同一市场并使用相同周期。";
   }
   const ready = summary.match(/^(\d+) audited runs from (ashare|us|crypto) (1d|1w|1m|5m|15m|30m|60m); cash buffer (.+)\.$/u);
   if (ready) {

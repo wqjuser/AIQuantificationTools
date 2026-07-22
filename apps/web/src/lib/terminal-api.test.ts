@@ -267,8 +267,12 @@ import {
   verifyAuditReportEvent,
   verifyResearchRunExportReportSignature,
   revokeAuditReportEvent,
+  generateResearchNoteDraft,
+  generateStrategyAiDraft,
+  isResearchNoteDraftStreamCurrent,
   saveResearchNote,
   saveStrategySnapshot,
+  deleteStrategyVersion,
   createStrategyExperiment,
   withResearchRunExportAuditEvidenceArtifacts,
   buildBacktestReportAuditEvent,
@@ -3209,7 +3213,7 @@ describe("terminal workspace API client", () => {
       ...buildTerminalWorkspace(),
       strategy: {
         name: "SMA trend",
-        entry: "Close > SMA20",
+        entry: "Close > SMA20 AND RSI14 > 55 AND Volume > VOL20",
         exit: "Close < SMA20",
         position: "20% cap per instrument",
         risk: "Stop -8%, take profit +18%, drawdown guard 12%, paper only"
@@ -3320,13 +3324,7 @@ describe("terminal workspace API client", () => {
       symbol: "600000",
       timeframe: "1d",
       limit: 240,
-      strategyConfig: {
-        name: "SMA trend",
-        entry: { type: "sma_cross", window: 20 },
-        exit: { type: "sma_break", window: 20 },
-        position: { maxPositionPct: 20 },
-        risk: { stopLossPct: 8, takeProfitPct: 18, maxDrawdownPct: 12 }
-      },
+      strategyConfig: currentWorkspace.strategy,
       assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 }
     });
     expect(calls[1].url).toBe("/api/research/runs/run-p0abc123");
@@ -3336,6 +3334,281 @@ describe("terminal workspace API client", () => {
     expect(result.pipeline?.liveTradingAllowed).toBe(false);
     expect(result.workspace.researchRun?.runId).toBe("run-p0abc123");
     expect(result.workspace.strategy.entry).toBe("Close > SMA20");
+  });
+
+  test("generates a validated AI strategy candidate without applying or saving it", async () => {
+    const currentDraft = {
+      name: "银行趋势草稿",
+      entryKind: "close_above_sma" as const,
+      entryWindow: 20,
+      entryThreshold: 0,
+      entryRsiConfirm: true,
+      entryRsiWindow: 14,
+      entryRsiThreshold: 55,
+      entryVolumeConfirm: true,
+      entryVolumeWindow: 20,
+      exitKind: "close_below_sma" as const,
+      exitWindow: 20,
+      exitThreshold: 0,
+      positionPct: 20,
+      stopLossPct: 8,
+      takeProfitPct: 18,
+      maxDrawdownPct: 12,
+      paperOnly: true
+    };
+    const payload = {
+      candidate: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        goal: "生成中低风险趋势策略",
+        draft: { ...currentDraft, name: "AI 银行趋势候选" },
+        reasons: [
+          "沿用日线趋势信号，避免脱离当前研究周期。",
+          "加入相对强弱与成交量确认，减少单一均线假突破。",
+          "维持较低仓位和明确止损，仅用于模拟盘验证。"
+        ]
+      },
+      validation: {
+        status: "ready",
+        revision: "ai1234567890",
+        gates: [
+          { id: "schema", label: "Strategy schema", value: "valid", detail: "结构完整", status: "passed", tone: "positive" },
+          { id: "risk", label: "Risk controls", value: "bounded", detail: "风险受限", status: "passed", tone: "positive" },
+          { id: "execution", label: "Execution mode", value: "paper", detail: "仅模拟盘", status: "passed", tone: "positive" },
+          { id: "audit", label: "Audit evidence", value: "pending", detail: "待重新审计", status: "review", tone: "warning" }
+        ],
+        strategyConfig: {
+          name: "AI 银行趋势候选",
+          revision: "ai1234567890",
+          market: "ashare",
+          symbols: ["600000"],
+          timeframe: "1d",
+          version: 1,
+          entryConditions: [
+            { kind: "close_above_sma", params: { window: 20 } },
+            { kind: "rsi_above", params: { window: 14, threshold: 55 } },
+            { kind: "volume_above_sma", params: { window: 20 } }
+          ],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+          risk: { positionPct: 0.2, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.12 }
+        }
+      },
+      generation: {
+        requestedProvider: "openai-compatible",
+        usedProvider: "openai-compatible",
+        status: "completed",
+        fallbackUsed: false,
+        model: "strategy-model",
+        sanitizedBaseUrl: "https://example.test/v1",
+        latencyMs: 120,
+        warning: "请人工确认后应用。",
+        errorCode: null,
+        externalDataApproved: true,
+        outboundFields: ["market", "symbol", "timeframe", "goal", "currentDraft"]
+      },
+      boundary: {
+        draftOnly: true,
+        applied: false,
+        saved: false,
+        auditBound: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false,
+        orderSubmissionEnabled: false,
+        routeExecuted: false,
+        liveBlockedBoundary: true
+      }
+    } as const;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const controller = new AbortController();
+
+    const result = await generateStrategyAiDraft(
+      "http://127.0.0.1:8765/",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        goal: "生成中低风险趋势策略",
+        currentDraft,
+        providerId: "openai-compatible",
+        externalDataApproved: true
+      },
+      controller.signal,
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => payload
+        };
+      }
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: "http://127.0.0.1:8765/api/strategies/ai-drafts",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal
+      }
+    });
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      goal: "生成中低风险趋势策略",
+      currentDraft,
+      providerId: "openai-compatible",
+      externalDataApproved: true
+    });
+    expect(result.source).toBe("core");
+    expect(result.candidate?.draft.entryRsiConfirm).toBe(true);
+    expect(result.candidate?.draft.entryVolumeConfirm).toBe(true);
+    expect(result.boundary).toMatchObject({ applied: false, saved: false, paperOnly: true });
+  });
+
+  test("rejects AI strategy draft responses with extra fields, mismatched context, or stale validation", async () => {
+    const basePayload = {
+      candidate: {
+        market: "ashare",
+        symbol: "000001",
+        timeframe: "1d",
+        goal: "生成中低风险趋势策略",
+        draft: {
+          name: "AI 候选",
+          entryKind: "close_above_sma",
+          entryWindow: 20,
+          entryThreshold: 0,
+          entryRsiConfirm: false,
+          entryRsiWindow: 14,
+          entryRsiThreshold: 55,
+          entryVolumeConfirm: false,
+          entryVolumeWindow: 20,
+          exitKind: "close_below_sma",
+          exitWindow: 20,
+          exitThreshold: 0,
+          positionPct: 20,
+          stopLossPct: 8,
+          takeProfitPct: 18,
+          maxDrawdownPct: 12,
+          paperOnly: true
+        },
+        reasons: ["使用当前周期。", "限制模拟仓位。", "应用后重新审计。"]
+      },
+      validation: {
+        status: "review",
+        revision: "ai1234567890",
+        gates: [],
+        strategyConfig: {
+          name: "AI 候选",
+          revision: "ai1234567890",
+          market: "ashare",
+          symbols: ["000001"],
+          timeframe: "1d",
+          version: 1,
+          entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+          exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+          risk: { positionPct: 0.2, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.12 }
+        }
+      },
+      generation: {
+        requestedProvider: "local",
+        usedProvider: "local",
+        status: "skipped",
+        fallbackUsed: false,
+        model: null,
+        sanitizedBaseUrl: null,
+        latencyMs: 0,
+        warning: "使用本地基线。",
+        errorCode: null,
+        externalDataApproved: false,
+        outboundFields: []
+      },
+      boundary: {
+        draftOnly: true,
+        applied: false,
+        saved: false,
+        auditBound: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false,
+        orderSubmissionEnabled: false,
+        routeExecuted: false,
+        liveBlockedBoundary: true
+      },
+      unexpected: true
+    };
+
+    const result = await generateStrategyAiDraft(
+      "/",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        goal: "生成中低风险趋势策略",
+        currentDraft: basePayload.candidate.draft as never,
+        providerId: "local",
+        externalDataApproved: false
+      },
+      async () => ({ ok: true, status: 200, json: async () => basePayload })
+    );
+
+    expect(result).toEqual({
+      source: "fallback",
+      error: "Invalid AI strategy draft contract"
+    });
+
+    const { unexpected: _unexpected, ...exactPayload } = basePayload;
+    void _unexpected;
+    const config = exactPayload.validation.strategyConfig;
+    const staleConfigs = [
+      { ...config, entryConditions: [{ kind: "close_above_sma", params: { window: 50 } }] },
+      {
+        ...config,
+        entryConditions: [
+          ...config.entryConditions,
+          { kind: "rsi_above", params: { window: 14, threshold: 55 } }
+        ]
+      },
+      {
+        ...config,
+        entryConditions: [
+          ...config.entryConditions,
+          { kind: "volume_above_sma", params: { window: 20 } }
+        ]
+      },
+      { ...config, exitConditions: [{ kind: "close_below_sma", params: { window: 50 } }] },
+      { ...config, risk: { ...config.risk, positionPct: 0.3 } }
+    ];
+    for (const strategyConfig of staleConfigs) {
+      const staleResult = await generateStrategyAiDraft(
+        "/",
+        {
+          market: "ashare",
+          symbol: "000001",
+          timeframe: "1d",
+          goal: "生成中低风险趋势策略",
+          currentDraft: exactPayload.candidate.draft as never,
+          providerId: "local",
+          externalDataApproved: false
+        },
+        async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ...exactPayload,
+            validation: { ...exactPayload.validation, strategyConfig }
+          })
+        })
+      );
+
+      expect(staleResult).toEqual({
+        source: "fallback",
+        error: "Invalid AI strategy draft contract"
+      });
+    }
   });
 
   test("builds the research run URL with locked watchlist refresh evidence", () => {
@@ -3828,6 +4101,61 @@ describe("terminal workspace API client", () => {
         { runId: "run-b", targetWeight: 0.3 }
       ]
     });
+  });
+
+  test("surfaces the portfolio backtest rejection detail instead of a bare HTTP status", async () => {
+    const result = await runPortfolioBacktest(
+      "/",
+      {
+        name: "A-share core basket",
+        initialCash: 100000,
+        legs: [
+          { runId: "run-a", targetWeight: 0.6 },
+          { runId: "run-b", targetWeight: 0.3 }
+        ]
+      },
+      async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: "invalid_portfolio_backtest",
+          detail: "portfolio legs must use aligned equity timestamps"
+        })
+      })
+    );
+
+    expect(result).toEqual({
+      source: "core",
+      error: "portfolio legs must use aligned equity timestamps"
+    });
+  });
+
+  test("preserves portfolio HTTP errors when the response is not JSON", async () => {
+    const request = {
+      name: "A-share core basket",
+      initialCash: 100000,
+      legs: [
+        { runId: "run-a", targetWeight: 0.6 },
+        { runId: "run-b", targetWeight: 0.3 }
+      ]
+    };
+    const nonJson = async () => {
+      throw new SyntaxError("Unexpected end of JSON input");
+    };
+
+    const failed = await runPortfolioBacktest("/", request, async () => ({
+      ok: false,
+      status: 503,
+      json: nonJson
+    }));
+    const invalidSuccess = await runPortfolioBacktest("/", request, async () => ({
+      ok: true,
+      status: 200,
+      json: nonJson
+    }));
+
+    expect(failed.error).toBe("HTTP 503");
+    expect(invalidSuccess.error).toBe("Invalid portfolio backtest contract");
   });
 
   test("records and loads portfolio paper order batches from the Python core", async () => {
@@ -13843,7 +14171,13 @@ describe("terminal workspace API client", () => {
     );
     const result = await runTerminalResearch(
       "http://127.0.0.1:8765",
-      { market: "ashare", symbol: "600000", timeframe: "1d", watchlistRefreshRunId: "cache-refresh-f10efd7401b7" },
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        end: "2026-05-29T08:00:00Z",
+        watchlistRefreshRunId: "cache-refresh-f10efd7401b7"
+      },
       workspaceWithBacktestAssumption(currentWorkspace, "slippageBps", 4),
       async (url) => {
         calls.push(url);
@@ -13859,6 +14193,7 @@ describe("terminal workspace API client", () => {
     expect(requestUrl.searchParams.get("symbol")).toBe("600000");
     expect(requestUrl.searchParams.get("timeframe")).toBe("1d");
     expect(requestUrl.searchParams.get("limit")).toBe("500");
+    expect(requestUrl.searchParams.get("end")).toBe("2026-05-29T08:00:00Z");
     expect(requestUrl.searchParams.get("initialCash")).toBe("250000");
     expect(requestUrl.searchParams.get("feeBps")).toBe("8");
     expect(requestUrl.searchParams.get("slippageBps")).toBe("4");
@@ -13988,6 +14323,49 @@ describe("terminal workspace API client", () => {
     expect(result.statusLabel).toBe("Research run failed");
     expect(result.workspace).toBe(currentWorkspace);
     expect(result.error).toBe("core offline");
+  });
+
+  test("surfaces the service detail when a research run is rejected", async () => {
+    const currentWorkspace = buildTerminalWorkspace();
+    const result = await runTerminalResearch(
+      "http://127.0.0.1:8765",
+      { market: "ashare", symbol: "600000", timeframe: "1d" },
+      currentWorkspace,
+      async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: "invalid_research_strategy",
+          detail: "strategy must contain executable audited rules"
+        })
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.workspace).toBe(currentWorkspace);
+    expect(result.error).toBe("strategy must contain executable audited rules");
+  });
+
+  test("preserves research HTTP errors when the response is not JSON", async () => {
+    const currentWorkspace = buildTerminalWorkspace();
+    const params = { market: "ashare" as const, symbol: "600000", timeframe: "1d" as const };
+    const nonJson = async () => {
+      throw new SyntaxError("Unexpected end of JSON input");
+    };
+
+    const failed = await runTerminalResearch("/", params, currentWorkspace, async () => ({
+      ok: false,
+      status: 503,
+      json: nonJson
+    }));
+    const invalidSuccess = await runTerminalResearch("/", params, currentWorkspace, async () => ({
+      ok: true,
+      status: 200,
+      json: nonJson
+    }));
+
+    expect(failed.error).toBe("HTTP 503");
+    expect(invalidSuccess.error).toBe("Invalid terminal research contract");
   });
 
   test("loads recent research run history from the Python core", async () => {
@@ -19285,6 +19663,678 @@ describe("terminal workspace API client", () => {
     });
   });
 
+  test("generates a research note draft without invoking the save endpoint", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765/",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "openai-compatible",
+        externalDataApproved: true
+      },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            draft: {
+              market: "ashare",
+              symbol: "600000",
+              timeframe: "1d",
+              body: "AI 草稿，需人工复核"
+            },
+            generation: {
+              requestedProvider: "openai-compatible",
+              usedProvider: "openai-compatible",
+              status: "completed",
+              fallbackUsed: false,
+              model: "note-model",
+              sanitizedBaseUrl: "https://example.test/v1",
+              latencyMs: 8,
+              warning: null,
+              errorCode: null,
+              externalDataApproved: true,
+              outboundFields: [
+                "market",
+                "symbol",
+                "timeframe",
+                "observationCount"
+              ]
+            },
+            boundary: {
+              draftOnly: true,
+              saved: false,
+              paperOnly: true,
+              liveTradingAllowed: false,
+              orderSubmissionAllowed: false
+            }
+          })
+        };
+      }
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.draft?.body).toBe("AI 草稿，需人工复核");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      url: "http://127.0.0.1:8765/api/research/note-drafts",
+      init: {
+        method: "POST",
+        headers: {
+          Accept: "application/x-ndjson",
+          "Content-Type": "application/json"
+        }
+      }
+    });
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      providerId: "openai-compatible",
+      externalDataApproved: true
+    });
+    expect(calls[0].url).not.toContain("/api/research/notes?");
+  });
+
+  test("streams a validated Chinese research note across arbitrary byte boundaries", async () => {
+    const payload = {
+      draft: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "AI 草稿，需人工复核"
+      },
+      generation: {
+        requestedProvider: "openai-compatible",
+        usedProvider: "openai-compatible",
+        status: "completed",
+        fallbackUsed: false,
+        model: "note-model",
+        sanitizedBaseUrl: "https://example.test/v1",
+        latencyMs: 8,
+        warning: null,
+        errorCode: null,
+        externalDataApproved: true,
+        outboundFields: ["market", "symbol", "timeframe", "observationCount"]
+      },
+      boundary: {
+        draftOnly: true,
+        saved: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false
+      }
+    };
+    const encoded = new TextEncoder().encode(
+      [
+        JSON.stringify({ type: "started" }),
+        JSON.stringify({ type: "draft", body: "AI" }),
+        JSON.stringify({ type: "draft", body: "AI 草" }),
+        JSON.stringify({ type: "draft", body: "AI 草稿" }),
+        JSON.stringify({ type: "draft", body: "AI 草稿，需" }),
+        JSON.stringify({ type: "draft", body: "AI 草稿，需人工复核" }),
+        JSON.stringify({ type: "ready", payload }),
+        JSON.stringify({ type: "complete" }),
+        ""
+      ].join("\n")
+    );
+    const chineseByte = encoded.findIndex((value) => value >= 0xe0);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoded.slice(0, chineseByte + 1));
+        controller.enqueue(encoded.slice(chineseByte + 1, chineseByte + 2));
+        controller.enqueue(encoded.slice(chineseByte + 2));
+        controller.close();
+      }
+    });
+    const streamedBodies: string[] = [];
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "openai-compatible",
+        externalDataApproved: true
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => payload
+      }),
+      {
+        onDraft: (draftBody) => {
+          streamedBodies.push(draftBody);
+        }
+      }
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.draft?.body).toBe("AI 草稿，需人工复核");
+    expect(streamedBodies).toEqual([
+      "AI",
+      "AI 草",
+      "AI 草稿",
+      "AI 草稿，需",
+      "AI 草稿，需人工复核"
+    ]);
+  });
+
+  test("rejects external note drafts that do not grow monotonically", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          JSON.stringify({ type: "started" }),
+          JSON.stringify({ type: "draft", body: "逐步生成" }),
+          JSON.stringify({ type: "draft", body: "越序" }),
+          ""
+        ].join("\n")));
+        controller.close();
+      }
+    });
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "openai-compatible",
+        externalDataApproved: true
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => ({})
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid research note draft stream update");
+  });
+
+  test("awaits reader cancellation before releasing the lock after a protocol error", async () => {
+    const lifecycle: string[] = [];
+    const reader = {
+      cancel: async () => {
+        await Promise.resolve();
+        lifecycle.push("cancelled");
+      },
+      read: async () => ({
+        done: false,
+        value: new TextEncoder().encode([
+          JSON.stringify({ type: "started" }),
+          JSON.stringify({ type: "unexpected" }),
+          ""
+        ].join("\n"))
+      }),
+      releaseLock: () => {
+        lifecycle.push("released");
+      }
+    };
+    const body = {
+      getReader: () => reader
+    } as unknown as ReadableStream<Uint8Array>;
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "openai-compatible",
+        externalDataApproved: true
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => ({})
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Unknown research note draft stream event");
+    expect(lifecycle).toEqual(["cancelled", "released"]);
+  });
+
+  test("resets external preview before streaming the validated local fallback", async () => {
+    const payload = {
+      draft: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "本地安全草稿"
+      },
+      generation: {
+        requestedProvider: "openai-compatible",
+        usedProvider: "local",
+        status: "failed",
+        fallbackUsed: true,
+        model: "note-model",
+        sanitizedBaseUrl: "https://example.test/v1",
+        latencyMs: 8,
+        warning: "外部生成失败，已回退本地草稿。",
+        errorCode: "research_note_provider_failed",
+        externalDataApproved: true,
+        outboundFields: ["market", "symbol", "timeframe", "observationCount"]
+      },
+      boundary: {
+        draftOnly: true,
+        saved: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false
+      }
+    };
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          JSON.stringify({ type: "started" }),
+          JSON.stringify({ type: "draft", body: "外部生成摘要" }),
+          JSON.stringify({ type: "reset" }),
+          JSON.stringify({ type: "ready", payload }),
+          JSON.stringify({ type: "delta", text: "本地安全" }),
+          JSON.stringify({ type: "delta", text: "草稿" }),
+          JSON.stringify({ type: "complete" }),
+          ""
+        ].join("\n")));
+        controller.close();
+      }
+    });
+    const streamEvents: string[] = [];
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "openai-compatible",
+        externalDataApproved: true
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => payload
+      }),
+      {
+        onDraft: (draftBody) => {
+          streamEvents.push(draftBody);
+        },
+        onReset: () => {
+          streamEvents.push("RESET");
+        }
+      }
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.draft?.body).toBe("本地安全草稿");
+    expect(streamEvents).toEqual([
+      "外部生成摘要",
+      "RESET",
+      "本地安全",
+      "本地安全草稿"
+    ]);
+  });
+
+  test("rejects a final external draft that differs from its streamed body", async () => {
+    const payload = {
+      draft: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "只有摘要"
+      },
+      generation: {
+        requestedProvider: "openai-compatible",
+        usedProvider: "openai-compatible",
+        status: "completed",
+        fallbackUsed: false,
+        model: "note-model",
+        sanitizedBaseUrl: "https://example.test/v1",
+        latencyMs: 8,
+        warning: null,
+        errorCode: null,
+        externalDataApproved: true,
+        outboundFields: ["market", "symbol", "timeframe", "observationCount"]
+      },
+      boundary: {
+        draftOnly: true,
+        saved: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false
+      }
+    };
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          JSON.stringify({ type: "started" }),
+          JSON.stringify({ type: "draft", body: "不完整" }),
+          JSON.stringify({ type: "ready", payload }),
+          JSON.stringify({ type: "complete" }),
+          ""
+        ].join("\n")));
+        controller.close();
+      }
+    });
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "openai-compatible",
+        externalDataApproved: true
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => payload
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Research note draft stream update mismatch");
+  });
+
+  test("rejects a research note stream that ends before completion", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "started" })}\n`));
+        controller.close();
+      }
+    });
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "local",
+        externalDataApproved: false
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => ({})
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Research note draft stream ended before completion");
+  });
+
+  test("aborts a research note stream without accepting later text", async () => {
+    const payload = {
+      draft: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: "第一段第二段"
+      },
+      generation: {
+        requestedProvider: "local",
+        usedProvider: "local",
+        status: "skipped",
+        fallbackUsed: false,
+        model: null,
+        sanitizedBaseUrl: null,
+        latencyMs: 0,
+        warning: null,
+        errorCode: null,
+        externalDataApproved: false,
+        outboundFields: []
+      },
+      boundary: {
+        draftOnly: true,
+        saved: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false
+      }
+    };
+    const streamController = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          JSON.stringify({ type: "started" }),
+          JSON.stringify({ type: "ready", payload }),
+          JSON.stringify({ type: "delta", text: "第一段" }),
+          JSON.stringify({ type: "delta", text: "第二段" }),
+          JSON.stringify({ type: "complete" }),
+          ""
+        ].join("\n")));
+        controller.close();
+      }
+    });
+    const streamedBodies: string[] = [];
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "local",
+        externalDataApproved: false
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => payload
+      }),
+      {
+        signal: streamController.signal,
+        onDraft: (draftBody) => {
+          streamedBodies.push(draftBody);
+          streamController.abort();
+        }
+      }
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Research note draft stream aborted");
+    expect(streamedBodies).toEqual(["第一段"]);
+  });
+
+  test("rejects stale research note stream updates after edits, navigation, or cancellation", () => {
+    const expected = {
+      requestId: 7,
+      draftVersion: 3,
+      market: "ashare" as const,
+      symbol: "600000",
+      timeframe: "1d" as const
+    };
+
+    expect(isResearchNoteDraftStreamCurrent(expected, expected)).toBe(true);
+    expect(isResearchNoteDraftStreamCurrent(expected, {
+      ...expected,
+      requestId: 8,
+      draftVersion: 4
+    })).toBe(false);
+    expect(isResearchNoteDraftStreamCurrent(expected, {
+      ...expected,
+      symbol: "000001"
+    })).toBe(false);
+    expect(isResearchNoteDraftStreamCurrent(expected, {
+      ...expected,
+      timeframe: "1w"
+    })).toBe(false);
+    expect(isResearchNoteDraftStreamCurrent(expected, expected, true)).toBe(false);
+  });
+
+  test("rejects a research note stream whose cumulative bytes exceed the protocol limit", async () => {
+    const draftBody = "研究".repeat(90_000);
+    const payload = {
+      draft: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: draftBody
+      },
+      generation: {
+        requestedProvider: "local",
+        usedProvider: "local",
+        status: "skipped",
+        fallbackUsed: false,
+        model: null,
+        sanitizedBaseUrl: null,
+        latencyMs: 0,
+        warning: null,
+        errorCode: null,
+        externalDataApproved: false,
+        outboundFields: []
+      },
+      boundary: {
+        draftOnly: true,
+        saved: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false
+      }
+    };
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "started" })}\n`));
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "ready", payload })}\n`));
+        for (let offset = 0; offset < draftBody.length; offset += 1_500) {
+          controller.enqueue(encoder.encode(`${JSON.stringify({
+            type: "delta",
+            text: draftBody.slice(offset, offset + 1_500)
+          })}\n`));
+        }
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "complete" })}\n`));
+        controller.close();
+      }
+    });
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "local",
+        externalDataApproved: false
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => payload
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Research note draft stream is too large");
+  });
+
+  test("rejects a research note stream whose event count exceeds the protocol limit", async () => {
+    const draftBody = "研".repeat(511);
+    const payload = {
+      draft: {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        body: draftBody
+      },
+      generation: {
+        requestedProvider: "local",
+        usedProvider: "local",
+        status: "skipped",
+        fallbackUsed: false,
+        model: null,
+        sanitizedBaseUrl: null,
+        latencyMs: 0,
+        warning: null,
+        errorCode: null,
+        externalDataApproved: false,
+        outboundFields: []
+      },
+      boundary: {
+        draftOnly: true,
+        saved: false,
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false
+      }
+    };
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode([
+          JSON.stringify({ type: "started" }),
+          JSON.stringify({ type: "ready", payload }),
+          ...Array.from(
+            { length: draftBody.length },
+            () => JSON.stringify({ type: "delta", text: "研" })
+          ),
+          ""
+        ].join("\n")));
+        controller.close();
+      }
+    });
+
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "local",
+        externalDataApproved: false
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        body,
+        json: async () => payload
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Research note draft stream has too many events");
+  });
+
+  test("rejects malformed research note draft responses", async () => {
+    const result = await generateResearchNoteDraft(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        providerId: "local",
+        externalDataApproved: false
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          draft: { body: "missing context identity" },
+          generation: { status: "completed" }
+        })
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.draft).toBeUndefined();
+    expect(result.error).toBe("Invalid research note draft contract");
+  });
+
   test("saves the current strategy snapshot to the strategy library", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const result = await saveStrategySnapshot(
@@ -19356,6 +20406,42 @@ describe("terminal workspace API client", () => {
     expect(result.strategy?.revision).toBe("rev123");
     expect(result.strategy?.status).toBe("audited");
     expect(result.strategy?.strategyConfig.risk.positionPct).toBe(0.4);
+  });
+
+  test("deletes a saved strategy version through its encoded detail URL", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await deleteStrategyVersion(
+      "http://127.0.0.1:8765",
+      "revision with space",
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ deleted: true, revision: "revision with space" })
+        };
+      }
+    );
+
+    expect(calls).toEqual([
+      {
+        url: "http://127.0.0.1:8765/api/strategies/revision%20with%20space",
+        init: { method: "DELETE" }
+      }
+    ]);
+    expect(result).toEqual({ deleted: true, revision: "revision with space", source: "core" });
+  });
+
+  test("rejects malformed strategy delete responses", async () => {
+    const result = await deleteStrategyVersion("http://127.0.0.1:8765", "rev123", async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ deleted: false, revision: "rev123" })
+    }));
+
+    expect(result.deleted).toBe(false);
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid strategy delete contract");
   });
 
   test("loads strategy library versions for the selected instrument", async () => {
@@ -20269,6 +21355,47 @@ describe("terminal workspace API client", () => {
       expect(rejected.source).toBe("fallback");
       expect(rejected.review).toBeUndefined();
     }
+  });
+
+  test("accepts a v2 authoritative response when only the external supplement fails", async () => {
+    const source = sampleAuthoritativeAiReviewPayload();
+    const review = {
+      ...source,
+      externalAssessment: {
+        ...source.externalAssessment,
+        status: "failed",
+        provider: "openai-compatible",
+        model: "gpt-5.5",
+        sanitizedBaseUrl: "https://example.test/v1",
+        endpointHash: stage3Hash("b"),
+        promptTemplateVersion: "aiqt-ai-review-v2",
+        renderedPrompt: "Bounded canonical evidence",
+        requestHash: stage3Hash("c"),
+        latencyMs: 12,
+        error: {
+          code: "invalid_schema",
+          message: "provider_assessment_contains_execution_semantics"
+        }
+      }
+    };
+    const result = await createAuthoritativeAiReview("/", {
+      primaryExperimentId: "primary",
+      comparisonExperimentIds: [],
+      providerId: "openai-compatible",
+      externalDataApproved: true
+    }, async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ review, latestDecision: null })
+    }));
+
+    expect(result).toMatchObject({
+      source: "core",
+      review: {
+        authority: "authoritative",
+        externalAssessment: { status: "failed", error: { code: "invalid_schema" } }
+      }
+    });
   });
 
   test("loads encoded authoritative detail and deeply rejects a legacy review", async () => {

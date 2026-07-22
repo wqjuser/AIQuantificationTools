@@ -133,11 +133,10 @@ export function buildStage4PortfolioGoldenPath(input: Stage4PortfolioGoldenPathI
   const workflow = input.workflow;
 
   if (workflow?.baseRunId === input.baseRunId) return goldenPathResult(4, null, null, false, true);
-  if (!input.portfolio) return goldenPathResult(0, "run-portfolio-backtest", "portfolio-missing");
-
   const batch = [...batches]
     .filter((row) => row.baseRunId === input.baseRunId)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  if (!input.portfolio && !batch) return goldenPathResult(0, "run-portfolio-backtest", "portfolio-missing");
   if ((workflow && workflow.baseRunId !== input.baseRunId) || (!batch && batches.length)) {
     return goldenPathResult(0, "run-portfolio-backtest", "stale-base-run", true);
   }
@@ -167,6 +166,9 @@ export function buildStage4PortfolioGoldenPath(input: Stage4PortfolioGoldenPathI
   if (boundLifecycle.some((row) => row.state === "operator_rejected") ||
       boundApprovals.some((row) => row.state === "operator_rejected")) {
     return goldenPathResult(2, "review-portfolio-orders", "operator-rejected", true);
+  }
+  if (batch.orders.every((order) => order.status === "skipped" || order.side === "hold")) {
+    return goldenPathResult(4, null, null, false, true);
   }
   const approvedOrderIds = new Set(boundApprovals
     .filter((row) => row.state === "ready_for_simulation" || row.approvedBy !== null)

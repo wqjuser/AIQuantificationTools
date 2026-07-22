@@ -115,7 +115,10 @@ _METRIC_FIELDS = {
     "profitFactor",
     "tradeCount",
 }
-_V2_PROMPT_TEMPLATE_VERSION = "aiqt-ai-review-v1"
+_SUPPORTED_PROMPT_TEMPLATE_VERSIONS = {
+    "aiqt-ai-review-v1",
+    "aiqt-ai-review-v2",
+}
 _V2_OUTPUT_SCHEMA_VERSION = "aiqt-ai-review-assessment-v1"
 _V2_OPENAI_BASE_URL = "https://api.openai.com/v1"
 _V2_OPENAI_ENDPOINT = "https://api.openai.com/v1/responses"
@@ -1176,7 +1179,8 @@ def _validate_external_assessment(
         or provider not in _V2_PROVIDER_IDS
     ):
         raise ValueError("ai_review_external_assessment_invalid")
-    if value.get("promptTemplateVersion") != _V2_PROMPT_TEMPLATE_VERSION:
+    prompt_template_version = value.get("promptTemplateVersion")
+    if prompt_template_version not in _SUPPORTED_PROMPT_TEMPLATE_VERSIONS:
         raise ValueError("ai_review_external_assessment_invalid")
     if value.get("outputSchemaVersion") != _V2_OUTPUT_SCHEMA_VERSION:
         raise ValueError("ai_review_external_assessment_invalid")
@@ -1218,13 +1222,37 @@ def _validate_external_assessment(
 
     if provider == "local":
         raise ValueError("ai_review_external_assessment_invalid")
-    from quant_core.ai_review_stage3 import render_external_prompt
+    from quant_core.ai_review_stage3 import (
+        LEGACY_PROMPT_TEMPLATE_VERSION,
+        PROMPT_TEMPLATE_VERSION,
+        render_external_prompt,
+    )
 
     try:
-        expected_prompt, rendered_evidence_ids = render_external_prompt(evidence_bundle)
+        expected_prompt, rendered_evidence_ids = render_external_prompt(
+            evidence_bundle,
+            prompt_template_version=prompt_template_version,
+        )
+        if (
+            prompt_template_version == LEGACY_PROMPT_TEMPLATE_VERSION
+            and rendered_prompt != expected_prompt
+        ):
+            transitional_prompt, rendered_evidence_ids = render_external_prompt(
+                evidence_bundle,
+                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+            )
+            transitional_payload = json.loads(transitional_prompt)
+            transitional_payload["promptTemplateVersion"] = (
+                LEGACY_PROMPT_TEMPLATE_VERSION
+            )
+            expected_prompt = canonical_json(transitional_payload)
     except ValueError as prompt_error:
         raise ValueError("ai_review_external_assessment_invalid") from prompt_error
-    if rendered_prompt != expected_prompt or rendered_evidence_ids != known_evidence_ids:
+    if (
+        rendered_prompt != expected_prompt
+        or not rendered_evidence_ids
+        or not rendered_evidence_ids.issubset(known_evidence_ids)
+    ):
         raise ValueError("ai_review_external_assessment_invalid")
     error = value.get("error")
     if status == "failed" and _is_unconfigured_error(error):
@@ -1281,7 +1309,7 @@ def _validate_external_assessment(
     from quant_core.ai_review_stage3 import validate_assessment
 
     try:
-        assessment = validate_assessment(value.get("assessment"), known_evidence_ids)
+        assessment = validate_assessment(value.get("assessment"), rendered_evidence_ids)
     except (TypeError, ValueError) as validation_error:
         raise ValueError("ai_review_external_assessment_invalid") from validation_error
     usage = _validate_usage(value.get("usage"))

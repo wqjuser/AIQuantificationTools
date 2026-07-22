@@ -100,13 +100,31 @@ class QuantDingerKlineAdapter:
                 bars, quality = self._fallback(request, bounded_limit, "unsupported market")
         except Exception as exc:
             bars, quality = self._fallback(request, bounded_limit, str(exc))
+        bars = [
+            bar
+            for bar in bars
+            if (request.start is None or bar.timestamp >= request.start)
+            and (request.end is None or bar.timestamp <= request.end)
+        ][-bounded_limit:]
+        quality = DataQuality(
+            source=quality.source,
+            is_complete=quality.is_complete,
+            warnings=quality.warnings,
+            rows=len(bars),
+        )
         return self.cache.set(key, bars, quality)
 
     def _fetch_ashare_bars(self, request: MarketDataRequest, limit: int) -> tuple[list[OHLCVBar], DataQuality]:
         if request.timeframe not in {"1d", "1w"}:
             bars = self._fetch_eastmoney_ashare_minute_bars(request, limit)
+            bars = [
+                bar
+                for bar in bars
+                if (request.start is None or bar.timestamp >= request.start)
+                and (request.end is None or bar.timestamp <= request.end)
+            ][-limit:]
             if bars:
-                return bars[-limit:], DataQuality(source="eastmoney", is_complete=True, warnings=[], rows=len(bars[-limit:]))
+                return bars, DataQuality(source="eastmoney", is_complete=True, warnings=[], rows=len(bars))
             try:
                 bars, quality = self.akshare_adapter.fetch_ohlcv(request, limit=limit)
                 if bars:
@@ -123,6 +141,24 @@ class QuantDingerKlineAdapter:
             except Exception as exc:
                 warning = str(exc)
             return self._fallback(request, limit, f"Eastmoney unavailable; {warning}")
+
+        if request.end and request.end < datetime.now(timezone.utc) - timedelta(days=1):
+            try:
+                bars, quality = self.akshare_adapter.fetch_ohlcv(request, limit=limit)
+                if bars:
+                    limited = bars[-limit:]
+                    return limited, DataQuality(
+                        source=quality.source,
+                        is_complete=quality.is_complete,
+                        warnings=quality.warnings,
+                        rows=len(limited),
+                    )
+                warning = "AkShare historical K-lines returned no chart bars"
+                if quality.warnings:
+                    warning = f"{warning}; {'; '.join(quality.warnings)}"
+            except Exception as exc:
+                warning = str(exc)
+            return self._fallback(request, limit, f"Historical A-share range unavailable; {warning}")
 
         code = normalize_ashare_tencent_code(request.symbol).lower()
         period = "week" if request.timeframe == "1w" else "day"
@@ -247,7 +283,26 @@ class QuantDingerKlineAdapter:
 
     def _fetch_yahoo_us_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
         interval, range_label = yahoo_chart_range_interval(request.timeframe)
-        params = urlencode({"range": range_label, "interval": interval})
+        if request.end:
+            step_seconds = {
+                "1m": 60,
+                "5m": 300,
+                "15m": 900,
+                "30m": 1800,
+                "60m": 3600,
+                "1d": 86400,
+                "1w": 604800,
+            }[request.timeframe]
+            multiplier = 2 if request.timeframe in {"1d", "1w"} else 4
+            params = urlencode(
+                {
+                    "period1": int(request.end.timestamp()) - step_seconds * limit * multiplier,
+                    "period2": int(request.end.timestamp()) + 1,
+                    "interval": interval,
+                }
+            )
+        else:
+            params = urlencode({"range": range_label, "interval": interval})
         text = self.fetch_text(
             f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(request.symbol.upper())}?{params}",
             "utf-8",
@@ -296,23 +351,67 @@ class QuantDingerKlineAdapter:
         return self._fallback(request, limit, warning)
 
     def _fetch_binance_crypto_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
-        params = urlencode(
-            {
-                "symbol": binance_symbol(request.symbol),
-                "interval": ccxt_timeframe(request.timeframe),
-                "limit": max(1, min(limit, 500)),
-            }
-        )
+        query: dict[str, object] = {
+            "symbol": binance_symbol(request.symbol),
+            "interval": ccxt_timeframe(request.timeframe),
+            "limit": max(1, min(limit, 500)),
+        }
+        if request.end:
+            query["endTime"] = int(request.end.timestamp() * 1000)
+        params = urlencode(query)
         payload = json.loads(self.fetch_text(f"https://api.binance.com/api/v3/klines?{params}", "utf-8"))
         return binance_klines_to_bars(payload, symbol=request.symbol, timeframe=request.timeframe)
 
     def _fetch_coinbase_crypto_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
-        params = urlencode({"granularity": coinbase_granularity(request.timeframe)})
-        text = self.fetch_text(
-            f"https://api.exchange.coinbase.com/products/{coinbase_product(request.symbol)}/candles?{params}",
-            "utf-8",
-        )
-        return coinbase_candles_to_bars(json.loads(text), symbol=request.symbol, timeframe=request.timeframe)[-limit:]
+        granularity = coinbase_granularity(request.timeframe)
+        if not request.end:
+            params = urlencode({"granularity": granularity})
+            text = self.fetch_text(
+                f"https://api.exchange.coinbase.com/products/{coinbase_product(request.symbol)}/candles?{params}",
+                "utf-8",
+            )
+            return coinbase_candles_to_bars(json.loads(text), symbol=request.symbol, timeframe=request.timeframe)[-limit:]
+
+        bars_by_timestamp: dict[datetime, OHLCVBar] = {}
+        cursor_end = request.end
+        max_pages = max(1, (limit + 298) // 299 + 2)
+        for _ in range(max_pages):
+            remaining = limit - len(bars_by_timestamp)
+            if remaining <= 0:
+                break
+            interval_count = min(299, remaining + (1 if bars_by_timestamp else 0))
+            page_start = cursor_end - timedelta(seconds=granularity * interval_count)
+            if request.start and page_start < request.start:
+                page_start = request.start
+            if page_start >= cursor_end:
+                break
+            params = urlencode(
+                {
+                    "granularity": granularity,
+                    "start": page_start.isoformat(),
+                    "end": cursor_end.isoformat(),
+                }
+            )
+            text = self.fetch_text(
+                f"https://api.exchange.coinbase.com/products/{coinbase_product(request.symbol)}/candles?{params}",
+                "utf-8",
+            )
+            page = coinbase_candles_to_bars(json.loads(text), symbol=request.symbol, timeframe=request.timeframe)
+            page = [
+                bar
+                for bar in page
+                if (request.start is None or bar.timestamp >= request.start) and bar.timestamp <= request.end
+            ]
+            if not page:
+                break
+            previous_count = len(bars_by_timestamp)
+            bars_by_timestamp.update({bar.timestamp: bar for bar in page})
+            earliest = min(bar.timestamp for bar in page)
+            if len(bars_by_timestamp) == previous_count or earliest >= cursor_end:
+                break
+            cursor_end = earliest
+
+        return sorted(bars_by_timestamp.values(), key=lambda bar: bar.timestamp)[-limit:]
 
     def _fallback(self, request: MarketDataRequest, limit: int, reason: str) -> tuple[list[OHLCVBar], DataQuality]:
         bars, quality = self.fallback_adapter.fetch_ohlcv(request)

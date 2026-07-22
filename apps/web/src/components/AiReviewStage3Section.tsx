@@ -438,6 +438,10 @@ function externalFailureText(
 ): string {
   const detail = code === "ai_review_provider_not_configured"
     ? i18n.t("aiReviewStage3.external.error.ai_review_provider_not_configured")
+    : code === "timeout"
+      ? i18n.t("aiReviewStage3.external.error.timeout")
+      : code === "invalid_schema"
+        ? i18n.t("aiReviewStage3.external.error.invalid_schema")
     : i18n.t("aiReviewStage3.external.error.generic");
   return `${i18n.t("aiReviewStage3.external.failed")} ${detail} · ${code}`;
 }

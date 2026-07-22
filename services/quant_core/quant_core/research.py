@@ -58,6 +58,7 @@ def run_terminal_research(
     cache: MarketDataCache | None = None,
     run_store: ResearchRunStore | None = None,
     data_limit: int = 500,
+    data_end: datetime | None = None,
     strategy_snapshot: StrategySnapshot | None = None,
     research_note: dict[str, Any] | None = None,
     data_preparation_evidence: dict[str, Any] | None = None,
@@ -69,7 +70,7 @@ def run_terminal_research(
     audit_store = run_store or ResearchRunStore(Path("data/research_runs.sqlite"))
     created_at = datetime.now(timezone.utc)
 
-    request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=created_at)
+    request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=data_end or created_at)
     bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit, cache=market_cache)
     if _should_cache_research_bars(quality):
         market_cache.upsert_bars(bars)
@@ -482,13 +483,28 @@ def _fetch_research_bars(
             return cached, _local_cache_research_quality(cached, warnings=[f"research upstream unavailable: {exc}"])
         raise
 
-    if quality.is_complete:
+    bars = [
+        bar
+        for bar in bars
+        if (request.start is None or bar.timestamp >= request.start)
+        and (request.end is None or bar.timestamp <= request.end)
+    ][-bounded_limit:]
+    quality = replace(quality, rows=len(bars))
+
+    if quality.is_complete and bars:
         return bars, quality
 
     cached = _cached_research_bars(cache, request, limit=bounded_limit)
     if cached:
-        warnings = [*quality.warnings, f"research upstream incomplete from {quality.source}; using local cache"]
+        cache_reason = (
+            f"research upstream returned no bars from {quality.source}; using local cache"
+            if not bars
+            else f"research upstream incomplete from {quality.source}; using local cache"
+        )
+        warnings = [*quality.warnings, cache_reason]
         return cached, _local_cache_research_quality(cached, warnings=warnings)
+    if quality.is_complete:
+        raise ValueError("research data window returned no OHLCV bars")
     return bars, quality
 
 

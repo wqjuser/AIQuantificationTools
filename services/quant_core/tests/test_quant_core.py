@@ -353,7 +353,9 @@ class QuantCoreContractTest(unittest.TestCase):
             "model": None if provider == "local" else "review-model",
             "sanitizedBaseUrl": None if provider == "local" else "https://example.test/v1",
             "endpointHash": None,
-            "promptTemplateVersion": "aiqt-ai-review-v1",
+            "promptTemplateVersion": docker_smoke._quant_core_validator(
+                "ai_review_stage3", "PROMPT_TEMPLATE_VERSION"
+            ),
             "outputSchemaVersion": "aiqt-ai-review-assessment-v1",
             "renderedPrompt": "",
             "renderedPromptHash": canonical_sha256(""),
@@ -7103,6 +7105,18 @@ class QuantCoreContractTest(unittest.TestCase):
                 connection.request("GET", f"/api/strategies/{revision}")
                 detail_response = connection.getresponse()
                 detail_payload = json.loads(detail_response.read().decode("utf-8"))
+                connection.request("DELETE", f"/api/strategies/{revision}")
+                delete_response = connection.getresponse()
+                delete_payload = json.loads(delete_response.read().decode("utf-8"))
+                connection.request("GET", f"/api/strategies/{revision}")
+                deleted_detail_response = connection.getresponse()
+                deleted_detail_payload = json.loads(deleted_detail_response.read().decode("utf-8"))
+                connection.request("DELETE", f"/api/strategies/{revision}")
+                repeated_delete_response = connection.getresponse()
+                repeated_delete_payload = json.loads(repeated_delete_response.read().decode("utf-8"))
+                connection.request("OPTIONS", "/api/strategies")
+                options_response = connection.getresponse()
+                options_response.read()
             finally:
                 connection.close()
                 server.shutdown()
@@ -7117,6 +7131,13 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual([item["revision"] for item in list_payload["strategies"]], [revision])
         self.assertEqual(detail_response.status, 200)
         self.assertEqual(detail_payload["strategy"]["strategyConfig"]["risk"]["positionPct"], 0.4)
+        self.assertEqual(delete_response.status, 200)
+        self.assertEqual(delete_payload, {"deleted": True, "revision": revision})
+        self.assertEqual(deleted_detail_response.status, 404)
+        self.assertEqual(deleted_detail_payload["error"], "strategy_not_found")
+        self.assertEqual(repeated_delete_response.status, 404)
+        self.assertEqual(repeated_delete_payload["error"], "strategy_not_found")
+        self.assertIn("DELETE", options_response.getheader("Access-Control-Allow-Methods") or "")
 
     def test_strategy_validation_summarizes_ready_and_blocked_gates(self):
         from quant_core.strategy_validation import strategy_validation_to_payload, validate_strategy_snapshot
@@ -25805,6 +25826,20 @@ class QuantCoreContractTest(unittest.TestCase):
                     ],
                 }
             ],
+            market_calendar={
+                "market": "ashare",
+                "timezone": "Asia/Shanghai",
+                "status": "open",
+                "isOpen": True,
+                "session": "morning",
+                "asOf": "2026-07-21T10:00:00+08:00",
+                "tradingDay": "2026-07-21",
+                "nextOpen": None,
+                "nextClose": "2026-07-21T11:30:00+08:00",
+                "detail": "A-share market is open in the morning session.",
+                "warnings": ["Static session template only; exchange holiday calendar is not configured."],
+                "source": "static-session-template",
+            },
         )
 
         self.assertEqual(status["status"], "blocked")
@@ -26218,9 +26253,18 @@ class QuantCoreContractTest(unittest.TestCase):
             thread.start()
             connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
             try:
-                connection.request("GET", "/api/golden-path/status?market=ashare&symbol=600000&timeframe=1d")
-                response = connection.getresponse()
-                payload = json.loads(response.read().decode("utf-8"))
+                from quant_core.market_calendar import build_market_calendar_status
+
+                with patch(
+                    "quant_core.api.build_market_calendar_status",
+                    side_effect=lambda market: build_market_calendar_status(
+                        market,
+                        at="2026-07-21T12:00:00+08:00",
+                    ),
+                ):
+                    connection.request("GET", "/api/golden-path/status?market=ashare&symbol=600000&timeframe=1d")
+                    response = connection.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
             finally:
                 connection.close()
                 server.shutdown()
@@ -26561,7 +26605,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 self.delegate = DemoMarketDataAdapter()
 
             def fetch_ohlcv(self, request, limit=160):
-                self.calls.append((request.market, request.symbol, request.timeframe, limit))
+                self.calls.append((request.market, request.symbol, request.timeframe, request.end, limit))
                 return self.delegate.fetch_ohlcv(request)
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -26581,7 +26625,11 @@ class QuantCoreContractTest(unittest.TestCase):
             thread.start()
             connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
             try:
-                connection.request("GET", "/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=240")
+                connection.request(
+                    "GET",
+                    "/api/research/run?market=ashare&symbol=600000&timeframe=1d&limit=240"
+                    "&end=2026-05-29T08%3A00%3A00Z",
+                )
                 response = connection.getresponse()
                 payload = json.loads(response.read().decode("utf-8"))
             finally:
@@ -26592,7 +26640,10 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["selectedInstrument"]["symbol"], "600000")
-        self.assertEqual(recording_adapter.calls, [("ashare", "600000", "1d", 240)])
+        self.assertEqual(
+            recording_adapter.calls,
+            [("ashare", "600000", "1d", datetime(2026, 5, 29, 8, 0, tzinfo=timezone.utc), 240)],
+        )
 
     def test_research_api_locks_matching_watchlist_refresh_evidence_into_data_snapshot(self):
         import json
@@ -26898,6 +26949,284 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertIsNotNone(save_payload["note"]["updatedAt"])
         self.assertEqual(read_response.status, 200)
         self.assertEqual(read_payload["note"], save_payload["note"])
+
+    def test_research_note_draft_api_generates_without_persisting(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Event, Thread
+
+        from quant_core.ai_review_providers import (
+            AiReviewProviderRegistry,
+            ProviderStatus,
+        )
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import OHLCVBar
+        from quant_core.research_notes import ResearchNoteStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = MarketDataCache(f"{tmp}/market.sqlite")
+            started_at = datetime(2026, 5, 1, tzinfo=timezone.utc)
+            cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        symbol="600000",
+                        market="ashare",
+                        timeframe="1d",
+                        timestamp=started_at + timedelta(days=index),
+                        open=10 + index * 0.1,
+                        high=10.3 + index * 0.1,
+                        low=9.8 + index * 0.1,
+                        close=10.1 + index * 0.1,
+                        volume=1_000 + index * 25,
+                    )
+                    for index in range(30)
+                ]
+            )
+
+            class TestHandler(QuantApiHandler):
+                note_store = ResearchNoteStore(f"{tmp}/notes.sqlite")
+                ai_review_provider_registry = AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                )
+
+            TestHandler.cache = cache
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(
+                server.server_address[0],
+                server.server_address[1],
+                timeout=5,
+            )
+            generation_started = Event()
+            release_generation = Event()
+            try:
+                connection.request(
+                    "POST",
+                    "/api/research/note-drafts",
+                    body=json.dumps(
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "providerId": "local",
+                            "externalDataApproved": False,
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                draft_response = connection.getresponse()
+                draft_payload = json.loads(draft_response.read().decode("utf-8"))
+
+                def delayed_generation(**_kwargs):
+                    generation_started.set()
+                    body = draft_payload["draft"]["body"]
+                    section_fields = (
+                        "summary",
+                        "watchItems",
+                        "invalidationConditions",
+                        "risks",
+                        "evidenceGaps",
+                    )
+                    section_ends = [
+                        max(1, len(body) * (index + 1) // len(section_fields))
+                        for index in range(len(section_fields))
+                    ]
+                    yield {
+                        "type": "section",
+                        "index": 0,
+                        "section": section_fields[0],
+                        "body": body[: section_ends[0]],
+                    }
+                    if not release_generation.wait(timeout=5):
+                        raise AssertionError("research note draft generation was not released")
+                    for index, field in enumerate(section_fields[1:], start=1):
+                        yield {
+                            "type": "section",
+                            "index": index,
+                            "section": field,
+                            "body": body[: section_ends[index]],
+                        }
+                    yield {"type": "ready", "payload": draft_payload}
+                    yield {"type": "complete"}
+
+                with patch(
+                    "quant_core.api.iter_generate_research_note_draft_stream_events",
+                    side_effect=delayed_generation,
+                ):
+                    connection.request(
+                        "POST",
+                        "/api/research/note-drafts",
+                        body=json.dumps(
+                            {
+                                "market": "ashare",
+                                "symbol": "600000",
+                                "timeframe": "1d",
+                                "providerId": "local",
+                                "externalDataApproved": False,
+                            }
+                        ).encode("utf-8"),
+                        headers={
+                            "Accept": "application/x-ndjson",
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    stream_response = connection.getresponse()
+                    first_stream_event = json.loads(
+                        stream_response.readline().decode("utf-8")
+                    )
+                    self.assertEqual(first_stream_event, {"type": "started"})
+                    self.assertTrue(generation_started.wait(timeout=1))
+                    first_section_event = json.loads(
+                        stream_response.readline().decode("utf-8")
+                    )
+                    self.assertEqual(first_section_event["type"], "section")
+                    self.assertEqual(first_section_event["section"], "summary")
+                    self.assertFalse(release_generation.is_set())
+                    release_generation.set()
+                    stream_events = [
+                        first_stream_event,
+                        first_section_event,
+                        *[
+                            json.loads(line)
+                            for line in stream_response.read().decode("utf-8").splitlines()
+                            if line
+                        ],
+                    ]
+                connection.close()
+                connection = HTTPConnection(
+                    server.server_address[0],
+                    server.server_address[1],
+                    timeout=5,
+                )
+                connection.request(
+                    "GET",
+                    "/api/research/notes?market=ashare&symbol=600000&timeframe=1d",
+                )
+                note_response = connection.getresponse()
+                note_payload = json.loads(note_response.read().decode("utf-8"))
+            finally:
+                release_generation.set()
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(draft_response.status, 200)
+        self.assertIn("AI 草稿，需人工复核", draft_payload["draft"]["body"])
+        self.assertFalse(draft_payload["boundary"]["saved"])
+        self.assertEqual(stream_response.status, 200)
+        self.assertEqual(
+            stream_response.getheader("Content-Type"),
+            "application/x-ndjson; charset=utf-8",
+        )
+        self.assertEqual(stream_events[0], {"type": "started"})
+        self.assertEqual(
+            [event["section"] for event in stream_events if event["type"] == "section"],
+            [
+                "summary",
+                "watchItems",
+                "invalidationConditions",
+                "risks",
+                "evidenceGaps",
+            ],
+        )
+        self.assertEqual(
+            next(event for event in stream_events if event["type"] == "ready"),
+            {"type": "ready", "payload": draft_payload},
+        )
+        self.assertEqual(stream_events[-1], {"type": "complete"})
+        self.assertEqual(
+            [event for event in stream_events if event["type"] == "section"][-1]["body"],
+            draft_payload["draft"]["body"],
+        )
+        self.assertEqual(note_response.status, 200)
+        self.assertEqual(note_payload["note"]["body"], "")
+        self.assertIsNone(note_payload["note"]["updatedAt"])
+
+    def test_research_note_draft_stream_cancels_generation_after_client_abort(self):
+        import json
+        import socket
+        from http.server import HTTPServer
+        from threading import Event, Thread
+
+        from quant_core.ai_review_providers import (
+            AiReviewProviderRegistry,
+            ProviderStatus,
+        )
+        from quant_core.api import QuantApiHandler
+
+        generation_started = Event()
+        cancellation_observed = Event()
+
+        def cancellation_aware_generation(*, cancelled, **_kwargs):
+            generation_started.set()
+            if cancelled.wait(timeout=2):
+                cancellation_observed.set()
+            if False:
+                yield {}
+
+        class TestHandler(QuantApiHandler):
+            ai_review_provider_registry = AiReviewProviderRegistry(
+                (ProviderStatus("local", True, None, None),),
+                {},
+            )
+
+        server = HTTPServer(("127.0.0.1", 0), TestHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        body = json.dumps(
+            {
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "providerId": "local",
+                "externalDataApproved": False,
+            }
+        ).encode("utf-8")
+        connection = socket.create_connection(server.server_address, timeout=2)
+        response = connection.makefile("rb")
+        try:
+            with patch(
+                "quant_core.api.iter_generate_research_note_draft_stream_events",
+                side_effect=cancellation_aware_generation,
+            ):
+                connection.sendall(
+                    (
+                        "POST /api/research/note-drafts HTTP/1.1\r\n"
+                        f"Host: {server.server_address[0]}\r\n"
+                        "Accept: application/x-ndjson\r\n"
+                        "Content-Type: application/json\r\n"
+                        f"Content-Length: {len(body)}\r\n"
+                        "Connection: close\r\n"
+                        "\r\n"
+                    ).encode("ascii")
+                    + body
+                )
+                self.assertIn(b"200", response.readline())
+                while response.readline() not in {b"\r\n", b"\n", b""}:
+                    pass
+                self.assertEqual(
+                    json.loads(response.readline().decode("utf-8")),
+                    {"type": "started"},
+                )
+                self.assertTrue(generation_started.wait(timeout=1))
+                connection.shutdown(socket.SHUT_RDWR)
+                response.close()
+                connection.close()
+                self.assertTrue(cancellation_observed.wait(timeout=1))
+        finally:
+            try:
+                response.close()
+            except OSError:
+                pass
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
 
     def test_handoff_notes_api_persists_subject_notes_and_records_audit_event(self):
         import json
@@ -27237,6 +27566,29 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertTrue(any("demo-fallback" in warning for warning in audit.data_quality["warnings"]))
         self.assertEqual(audit.data_snapshot["bars"][-1]["close"], cached_bars[-1].close)
         self.assertEqual(cache_stats["row_count"], len(cached_bars))
+
+    def test_terminal_research_rejects_complete_quality_with_an_empty_bounded_window(self):
+        from quant_core.cache import MarketDataCache
+        from quant_core.domain import DataQuality
+        from quant_core.research import run_terminal_research
+        from quant_core.runs import ResearchRunStore
+
+        class CompleteEmptyAdapter:
+            def fetch_ohlcv(self, request, limit=160):
+                return [], DataQuality(source="upstream:test", is_complete=True, warnings=[], rows=0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "research data window returned no OHLCV bars"):
+                run_terminal_research(
+                    market="ashare",
+                    symbol="600000",
+                    timeframe="1d",
+                    adapter=CompleteEmptyAdapter(),
+                    cache=MarketDataCache(f"{tmp}/market.sqlite"),
+                    run_store=ResearchRunStore(f"{tmp}/runs.sqlite"),
+                    data_limit=24,
+                    data_end=datetime(2026, 5, 21, tzinfo=timezone.utc),
+                )
 
     def test_terminal_research_run_builds_strategy_from_submitted_snapshot(self):
         from quant_core.backtest import BacktestEngine
@@ -30765,7 +31117,56 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(parsed.isoformat(), "2026-05-26T09:45:00+00:00")
         self.assertEqual(_parse_kline_end("1779788700000").tzinfo, timezone.utc)
         self.assertIsNone(_parse_kline_end(""))
-        self.assertIsNone(_parse_kline_end("not-a-date"))
+        for invalid in ("not-a-date", "1e309"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "invalid_kline_end"):
+                    _parse_kline_end(invalid)
+
+    def test_market_kline_and_research_apis_reject_nonempty_invalid_end_boundaries(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapters import DemoMarketDataAdapter
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.cache_refresh_runs import WatchlistCacheRefreshRunStore
+        from quant_core.research_notes import ResearchNoteStore
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                cache = MarketDataCache(f"{tmp}/market.sqlite")
+                kline_adapter = DemoMarketDataAdapter()
+                run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+                strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+                note_store = ResearchNoteStore(f"{tmp}/notes.sqlite")
+                watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/refreshes.sqlite")
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            responses = []
+            try:
+                for invalid in ("not-a-date", "1e309"):
+                    for route in ("market/klines", "research/run"):
+                        path = f"/api/{route}?market=ashare&symbol=600000&timeframe=1d&end={invalid}"
+                        connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+                        try:
+                            connection.request("GET", path)
+                            response = connection.getresponse()
+                            responses.append((response.status, json.loads(response.read().decode("utf-8"))))
+                        finally:
+                            connection.close()
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual([status for status, _ in responses], [400, 400, 400, 400])
+        self.assertTrue(all(payload["error"] == "invalid_kline_end" for _, payload in responses))
 
     def test_quantdinger_style_kline_adapter_maps_akshare_minute_rows(self):
         from quant_core.market_klines import akshare_minute_frame_to_bars
@@ -30977,6 +31378,99 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(akshare_adapter.calls[0]["request"].symbol, "600000")
         self.assertEqual(akshare_adapter.calls[0]["limit"], 1)
 
+    def test_ashare_kline_adapter_uses_akshare_for_historical_end_boundary(self):
+        from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        class FakeAkShareAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request: MarketDataRequest, limit: int = 160):
+                self.calls.append({"request": request, "limit": limit})
+                return [
+                    OHLCVBar(
+                        symbol=request.symbol,
+                        market=request.market,
+                        timeframe=request.timeframe,
+                        timestamp=request.end,
+                        open=9.1,
+                        high=9.4,
+                        low=9.0,
+                        close=9.31,
+                        volume=234567.0,
+                    )
+                ], DataQuality(source="akshare:test", is_complete=True, warnings=[], rows=1)
+
+        def fail_tencent(*_args, **_kwargs):
+            raise AssertionError("historical A-share requests should use the range-aware adapter")
+
+        end = datetime(2026, 5, 21, tzinfo=timezone.utc)
+        akshare_adapter = FakeAkShareAdapter()
+        bars, quality = QuantDingerKlineAdapter(
+            fetch_text=fail_tencent,
+            akshare_adapter=akshare_adapter,
+        ).fetch_ohlcv(
+            MarketDataRequest(market="ashare", symbol="600000", timeframe="1d", end=end),
+            limit=1,
+        )
+
+        self.assertEqual(quality.source, "akshare:test")
+        self.assertEqual(bars[-1].timestamp, end)
+        self.assertEqual(len(akshare_adapter.calls), 1)
+        self.assertEqual(akshare_adapter.calls[0]["limit"], 1)
+        self.assertEqual(akshare_adapter.calls[0]["request"].end, end)
+
+    def test_ashare_minute_kline_adapter_falls_through_to_akshare_when_eastmoney_is_after_historical_end(self):
+        from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        class FakeAkShareAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request: MarketDataRequest, limit: int = 160):
+                self.calls.append({"request": request, "limit": limit})
+                return [
+                    OHLCVBar(
+                        symbol=request.symbol,
+                        market=request.market,
+                        timeframe=request.timeframe,
+                        timestamp=request.end,
+                        open=9.1,
+                        high=9.4,
+                        low=9.0,
+                        close=9.31,
+                        volume=234567.0,
+                    )
+                ], DataQuality(source="akshare:test", is_complete=True, warnings=[], rows=1)
+
+        end = datetime(2026, 5, 21, 9, 35, tzinfo=timezone.utc)
+        current_bar = OHLCVBar(
+            symbol="600000",
+            market="ashare",
+            timeframe="5m",
+            timestamp=datetime(2026, 7, 22, 9, 35, tzinfo=timezone.utc),
+            open=10.1,
+            high=10.4,
+            low=10.0,
+            close=10.31,
+            volume=123456.0,
+        )
+        akshare_adapter = FakeAkShareAdapter()
+        adapter = QuantDingerKlineAdapter(akshare_adapter=akshare_adapter)
+        adapter._fetch_eastmoney_ashare_minute_bars = lambda request, limit: [current_bar]
+
+        bars, quality = adapter.fetch_ohlcv(
+            MarketDataRequest(market="ashare", symbol="600000", timeframe="5m", end=end),
+            limit=1,
+        )
+
+        self.assertEqual(quality.source, "akshare:test")
+        self.assertEqual([bar.timestamp for bar in bars], [end])
+        self.assertEqual(len(akshare_adapter.calls), 1)
+        self.assertEqual(akshare_adapter.calls[0]["request"].end, end)
+
     def test_yfinance_market_data_adapter_normalizes_history_rows(self):
         import sys
 
@@ -31120,6 +31614,34 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].close, 194.8)
         self.assertEqual(bars[-1].volume, 55200000.0)
 
+    def test_us_kline_adapter_bounds_yahoo_chart_at_requested_end(self):
+        from urllib.parse import parse_qs, urlparse
+
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            query = parse_qs(urlparse(url).query)
+            self.assertEqual(query["interval"], ["1d"])
+            self.assertIn("period1", query)
+            self.assertEqual(query["period2"], [str(int(end.timestamp()) + 1)])
+            return (
+                '{"chart":{"result":[{"timestamp":[1779408000,1779494400],'
+                '"indicators":{"quote":[{'
+                '"open":[190.00,192.40],"high":[193.20,195.00],"low":[188.90,191.50],'
+                '"close":[192.10,194.80],"volume":[50100000,55200000]'
+                "}]}}],\"error\":null}}"
+            )
+
+        end = datetime(2026, 5, 22, tzinfo=timezone.utc)
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="us", symbol="AAPL", timeframe="1d", end=end),
+            limit=2,
+        )
+
+        self.assertEqual([bar.timestamp for bar in bars], [end])
+        self.assertEqual(quality.rows, 1)
+
     def test_market_kline_default_fetch_caps_interactive_provider_timeout(self):
         from unittest.mock import patch
 
@@ -31180,6 +31702,40 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[0].open, 99.0)
         self.assertEqual(bars[-1].close, 100.4445)
         self.assertEqual(bars[-1].volume, 12.35)
+
+    def test_ccxt_market_data_adapter_fetches_the_candle_at_an_aligned_end_boundary(self):
+        from quant_core.adapters import CcxtMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        step_ms = 86_400_000
+
+        class FakeExchange:
+            instances = []
+
+            def __init__(self, config):
+                self.calls = []
+                FakeExchange.instances.append(self)
+
+            def fetch_ohlcv(self, symbol: str, *, timeframe: str, limit: int, since: int):
+                self.calls.append({"symbol": symbol, "timeframe": timeframe, "limit": limit, "since": since})
+                return [[since + step_ms * index, 100.0, 101.0, 99.0, 100.5, 12.0] for index in range(limit)]
+
+        class FakeCcxt:
+            binance = FakeExchange
+
+        end = datetime(2026, 5, 22, tzinfo=timezone.utc)
+        bars, quality = CcxtMarketDataAdapter(exchange_id="binance", ccxt_module=FakeCcxt).fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTC/USDT", timeframe="1d", end=end),
+            limit=2,
+        )
+
+        self.assertEqual([bar.timestamp for bar in bars], [end - timedelta(days=1), end])
+        self.assertEqual(quality.rows, 2)
+        self.assertEqual(len(FakeExchange.instances[0].calls), 1)
+        self.assertEqual(
+            FakeExchange.instances[0].calls[0]["since"],
+            int((end - timedelta(days=1)).timestamp() * 1000),
+        )
 
     def test_ccxt_market_data_adapter_rejects_non_crypto_requests(self):
         from quant_core.adapters import CcxtMarketDataAdapter
@@ -31305,6 +31861,31 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[-1].close, 114.2)
         self.assertEqual(bars[-1].volume, 1567.89)
 
+    def test_crypto_kline_adapter_bounds_binance_at_requested_end(self):
+        from urllib.parse import parse_qs, urlparse
+
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            query = parse_qs(urlparse(url).query)
+            self.assertEqual(query["endTime"], [str(int(end.timestamp() * 1000))])
+            return (
+                "["
+                "[1779408000000,\"100.0\",\"110.0\",\"95.0\",\"108.5\",\"1234.56\"],"
+                "[1779494400000,\"108.5\",\"116.0\",\"107.0\",\"114.2\",\"1567.89\"]"
+                "]"
+            )
+
+        end = datetime(2026, 5, 22, tzinfo=timezone.utc)
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTC/USDT", timeframe="1d", end=end),
+            limit=2,
+        )
+
+        self.assertEqual([bar.timestamp for bar in bars], [end])
+        self.assertEqual(quality.rows, 1)
+
     def test_crypto_kline_adapter_falls_back_to_coinbase_when_binance_is_blocked(self):
         from quant_core.domain import MarketDataRequest
         from quant_core.market_klines import QuantDingerKlineAdapter
@@ -31331,6 +31912,44 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(quality.rows, 2)
         self.assertEqual(bars[-1].close, 114.2)
         self.assertEqual(bars[-1].volume, 1567.89)
+
+    def test_crypto_kline_adapter_paginates_bounded_coinbase_ranges_to_satisfy_large_limit(self):
+        import json
+        from urllib.parse import parse_qs, urlparse
+
+        from quant_core.domain import MarketDataRequest
+        from quant_core.market_klines import QuantDingerKlineAdapter
+
+        coinbase_ranges = []
+        step_seconds = 86_400
+
+        def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
+            if "api.binance.com" in url:
+                return '{"code":451,"msg":"restricted"}'
+            self.assertIn("api.exchange.coinbase.com", url)
+            query = parse_qs(urlparse(url).query)
+            start = datetime.fromisoformat(query["start"][0])
+            end = datetime.fromisoformat(query["end"][0])
+            interval_count = int((end - start).total_seconds() / step_seconds)
+            self.assertLessEqual(interval_count, 300)
+            coinbase_ranges.append((start, end))
+            rows = []
+            cursor = start
+            while cursor < end:
+                cursor += timedelta(seconds=step_seconds)
+                rows.append([int(cursor.timestamp()), 95.0, 110.0, 100.0, 108.5, 1234.56])
+            return json.dumps(rows)
+
+        end = datetime(2026, 5, 22, tzinfo=timezone.utc)
+        bars, quality = QuantDingerKlineAdapter(fetch_text=fake_fetch_text).fetch_ohlcv(
+            MarketDataRequest(market="crypto", symbol="BTC/USDT", timeframe="1d", end=end),
+            limit=500,
+        )
+
+        self.assertEqual(quality.source, "coinbase")
+        self.assertEqual(len(bars), 500)
+        self.assertEqual(bars[-1].timestamp, end)
+        self.assertGreaterEqual(len(coinbase_ranges), 2)
 
 
 if __name__ == "__main__":
