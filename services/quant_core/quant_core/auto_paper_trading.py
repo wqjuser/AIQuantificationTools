@@ -390,18 +390,6 @@ class AutoPaperTradingService:
 
             proposal_action = action
             proposal_reason = reason
-            if action == "buy" and position > 0:
-                action, reason = "hold", "已有持仓，本轮不重复加仓。"
-            elif action == "sell" and position <= 0:
-                action, reason = "hold", "当前没有可卖出的持仓。"
-
-            state["lastDecision"] = {
-                "action": action,
-                "confidence": round(confidence, 4),
-                "reason": reason,
-                "providerId": provider_id,
-                "evaluatedAt": now.isoformat(),
-            }
             decision_contract = build_decision_contract(
                 bars=ordered[-6:],
                 market=str(state["market"]),
@@ -413,9 +401,6 @@ class AutoPaperTradingService:
                 proposal_confidence=confidence,
                 proposal_reason=proposal_reason,
                 provider_id=provider_id,
-                signal_action=action,
-                signal_confidence=confidence,
-                signal_reason=reason,
                 current_quantity=position,
                 reference_price=price,
                 available_cash=cash,
@@ -427,6 +412,17 @@ class AutoPaperTradingService:
                 max_trades_per_hour=int(state["maxTradesPerHour"]),
                 generated_at=now,
             )
+            signal = decision_contract["signal"]
+            action = str(signal["action"])
+            confidence = float(signal["confidence"])
+            reason = str(signal["reason"])
+            state["lastDecision"] = {
+                "action": action,
+                "confidence": confidence,
+                "reason": reason,
+                "providerId": provider_id,
+                "evaluatedAt": now.isoformat(),
+            }
             state["lastDecisionContract"] = decision_contract
             portfolio_target = decision_contract["portfolioTarget"]
             increases_risk = float(portfolio_target["targetQuantity"]) > position + 1e-12

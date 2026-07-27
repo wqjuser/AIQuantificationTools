@@ -6517,6 +6517,52 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(result.trades[0].timestamp, bars[3].timestamp)
         self.assertEqual(result.trades[0].reason, "entry_conditions")
 
+    def test_standard_signal_position_boundary_is_shared_with_backtest(self):
+        from quant_core.backtest import BacktestEngine
+        from quant_core.decision_contract import standardize_signal_action
+        from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig
+
+        self.assertEqual(
+            standardize_signal_action(
+                proposal_action="buy",
+                proposal_reason="entry_conditions",
+                current_quantity=1,
+            ),
+            ("hold", "已有持仓，本轮不重复加仓。"),
+        )
+        self.assertEqual(
+            standardize_signal_action(
+                proposal_action="sell",
+                proposal_reason="exit_conditions",
+                current_quantity=0,
+            ),
+            ("hold", "当前没有可卖出的持仓。"),
+        )
+
+        strategy = StrategyConfig(
+            name="Shared signal boundary",
+            market="ashare",
+            symbols=["600000"],
+            timeframe="1d",
+            version=1,
+            entry_conditions=[Condition(kind="close_above_sma", params={"window": 2})],
+            exit_conditions=[],
+            risk=RiskRules(position_pct=0.5),
+        )
+        start = datetime(2026, 5, 26, 8, 0, tzinfo=timezone.utc)
+        test_bars = [
+            OHLCVBar("600000", "ashare", "1d", start + timedelta(days=index), close, close, close, close, 100)
+            for index, close in enumerate([10, 11, 12, 13])
+        ]
+        result = BacktestEngine(fee_rate=0, slippage_rate=0).run(
+            strategy,
+            test_bars,
+        )
+
+        self.assertEqual([trade.side for trade in result.trades], ["buy", "sell"])
+        self.assertEqual(result.trades[0].reason, "entry_conditions")
+        self.assertEqual(result.trades[1].reason, "end_of_backtest")
+
     def test_backtest_waits_for_rsi_threshold_before_entry(self):
         from quant_core.backtest import BacktestEngine
         from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig
