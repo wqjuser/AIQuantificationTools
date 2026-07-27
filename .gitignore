@@ -20,3 +20,14 @@ artifacts/
 apps/web/src-tauri/gen/
 .playwright-mcp/
 /design*.png
+/design*.jpg
+/design*.jpeg
+/design*.webp
+/design*.gif
+/design*.svg
+/docs/assets/ui-redesign/**/*.png
+/docs/assets/ui-redesign/**/*.jpg
+/docs/assets/ui-redesign/**/*.jpeg
+/docs/assets/ui-redesign/**/*.webp
+/docs/assets/ui-redesign/**/*.gif
+/docs/assets/ui-redesign/**/*.svg
