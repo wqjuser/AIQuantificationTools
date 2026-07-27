@@ -20929,6 +20929,9 @@ function isBacktestTradeRow(value: unknown): boolean {
     typeof row.exposure === "string" &&
     typeof row.pnl === "string" &&
     typeof row.reason === "string" &&
+    (row.proposalId === undefined || row.proposalId === null || typeof row.proposalId === "string") &&
+    (row.signalId === undefined || row.signalId === null || typeof row.signalId === "string") &&
+    (row.snapshotHash === undefined || row.snapshotHash === null || typeof row.snapshotHash === "string") &&
     (row.tone === "positive" || row.tone === "warning" || row.tone === "neutral" || row.tone === "risk")
   );
 }

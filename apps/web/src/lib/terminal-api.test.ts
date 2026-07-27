@@ -14419,7 +14419,10 @@ describe("terminal workspace API client", () => {
                   exposure: "19.32%",
                   pnl: "-",
                   reason: "entry_conditions",
-                  tone: "neutral"
+                  tone: "neutral",
+                  proposalId: "proposal-1",
+                  signalId: "signal-1",
+                  snapshotHash: "snapshot-1"
                 }
               ],
               backtestEquityCurve: [
@@ -14453,7 +14456,13 @@ describe("terminal workspace API client", () => {
     expect(result.runs[0].strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
     expect(result.runs[0].strategyConfig?.risk.positionPct).toBe(0.8);
     expect(result.runs[0].backtestAssumptions).toEqual({ initialCash: 250000, feeBps: 8, slippageBps: 4 });
-    expect(result.runs[0].backtestTrades?.[0]).toMatchObject({ id: "trade-1", side: "BUY" });
+    expect(result.runs[0].backtestTrades?.[0]).toMatchObject({
+      id: "trade-1",
+      side: "BUY",
+      proposalId: "proposal-1",
+      signalId: "signal-1",
+      snapshotHash: "snapshot-1"
+    });
     expect(result.runs[0].backtestEquityCurve?.at(-1)?.equity).toBe(253400);
     expect(result.runs[0].backtestDiagnostics?.[0]).toMatchObject({ id: "return-profile", tone: "positive" });
   });

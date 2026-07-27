@@ -171,7 +171,11 @@ describe("ExecutionAutoPaperTradingSection", () => {
               signalId: "signal-1",
               proposalId: "proposal-1",
               snapshotHash: "snapshot-hash-1",
+              strategyId: "auto-pct-v1",
               strategyRevision: "strategy-revision-1",
+              horizon: "1m",
+              evaluatedBarAt: "2026-07-27T08:00:00Z",
+              expiresAt: "2026-07-27T08:01:00Z",
               action: "buy",
               confidence: 0.82,
               reason: "五根涨幅超过阈值",
@@ -205,12 +209,26 @@ describe("ExecutionAutoPaperTradingSection", () => {
               signalId: "signal-1",
               portfolioTargetId: "target-1",
               riskAdjustedTargetId: "risk-target-1",
+              accountCheckId: "account-check-1",
               symbol: "BTC/USDT",
               side: "buy",
               type: "market",
               quantity: 0.00015,
               referencePrice: 65199.23,
-              notionalValue: 9.7798845
+              notionalValue: 9.7798845,
+              marketRules: {
+                source: "ccxt",
+                quantityPrecision: 0.000001,
+                pricePrecision: 0.01,
+                minimumQuantity: 0.00001,
+                minimumNotional: 1
+              },
+              executionAssumptions: {
+                feeRate: 0.001,
+                feeEstimated: true,
+                slippageBps: null,
+                slippageModel: "venue_market_fill"
+              }
             }
           },
           lastOrderResult: {
@@ -224,6 +242,8 @@ describe("ExecutionAutoPaperTradingSection", () => {
             remainingQuantity: 0,
             averagePrice: 65199.23,
             filledNotional: 9.7798845,
+            fees: [{ currency: "USDT", cost: 0.00977988 }],
+            feeEstimated: false,
             error: ""
           },
           lastLiveOrder: null,
@@ -258,6 +278,8 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("订单意图");
     expect(html).toContain("买入 0.00015 BTC");
     expect(html).toContain("市价委托 · 9.78 USDT");
+    expect(html).toContain("数量精度 0.000001 · 最小量 0.00001 · 最小金额 1.00");
+    expect(html).toContain("费率 0.100% · 滑点按成交回执");
     expect(html).toContain("订单结果");
     expect(html).toContain("成交 0.00015 BTC · 9.78 USDT");
   });

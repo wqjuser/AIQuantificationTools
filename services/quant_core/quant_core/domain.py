@@ -153,6 +153,9 @@ class Trade:
     quantity: float
     fee: float
     reason: str
+    proposal_id: str | None = None
+    signal_id: str | None = None
+    snapshot_hash: str | None = None
 
 
 @dataclass(frozen=True)

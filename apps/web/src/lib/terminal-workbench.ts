@@ -1453,6 +1453,9 @@ export interface BacktestTradeRow {
   pnl: string;
   reason: string;
   tone: "positive" | "warning" | "neutral" | "risk";
+  proposalId?: string | null;
+  signalId?: string | null;
+  snapshotHash?: string | null;
 }
 
 export interface BacktestEquityPoint {
