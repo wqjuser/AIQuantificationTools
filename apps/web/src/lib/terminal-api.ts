@@ -20779,6 +20779,7 @@ function isResearchRunDataSnapshot(value: unknown): boolean {
     (snapshot.start === null || typeof snapshot.start === "string") &&
     (snapshot.end === null || typeof snapshot.end === "string") &&
     typeof snapshot.hash === "string" &&
+    (snapshot.snapshotHash === undefined || typeof snapshot.snapshotHash === "string") &&
     Array.isArray(snapshot.bars) &&
     snapshot.bars.every(isMarketKlineBar) &&
     (snapshot.preparationEvidence === undefined ||

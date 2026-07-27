@@ -28188,8 +28188,9 @@ class QuantCoreContractTest(unittest.TestCase):
 
     def test_terminal_research_run_persists_audit_summary(self):
         from quant_core.backtest import BacktestEngine
+        from quant_core.canonical import canonical_snapshot_id
         from quant_core.research import run_terminal_research
-        from quant_core.runs import ResearchRunStore
+        from quant_core.runs import ResearchRunStore, research_run_audit_to_payload
         from quant_core.terminal import terminal_workspace_to_payload
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -28204,6 +28205,16 @@ class QuantCoreContractTest(unittest.TestCase):
             latest = store.list_recent(limit=1)
 
         payload = terminal_workspace_to_payload(workspace)
+        snapshot_hash = canonical_snapshot_id(
+            market=latest[0].market,
+            symbol=latest[0].symbol,
+            timeframe=latest[0].timeframe,
+            canonical_data_hash=latest[0].data_snapshot["hash"],
+        )
+        persisted_payload = research_run_audit_to_payload(
+            latest[0],
+            include_data_snapshot=True,
+        )
 
         self.assertEqual(len(latest), 1)
         self.assertEqual(payload["researchRun"]["runId"], latest[0].run_id)
@@ -28227,11 +28238,35 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].data_snapshot["rows"], latest[0].data_rows)
         self.assertEqual(len(latest[0].data_snapshot["bars"]), latest[0].data_rows)
         self.assertTrue(latest[0].data_snapshot["hash"])
+        self.assertEqual(latest[0].data_snapshot["snapshotHash"], snapshot_hash)
+        self.assertEqual(
+            payload["researchRun"]["dataSnapshot"]["snapshotHash"],
+            snapshot_hash,
+        )
+        self.assertEqual(
+            persisted_payload["dataSnapshot"]["snapshotHash"],
+            snapshot_hash,
+        )
         self.assertEqual(latest[0].data_snapshot["bars"][-1]["timestamp"], latest[0].backtest_equity_curve[-1]["timestamp"])
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades, payload["backtestTrades"])
         self.assertEqual(latest[0].backtest_equity_curve, payload["backtestEquityCurve"])
         self.assertEqual(latest[0].backtest_diagnostics, payload["backtestDiagnostics"])
+
+    def test_research_run_snapshot_identity_rejects_mismatch(self):
+        from quant_core.runs import _normalize_data_snapshot
+
+        with self.assertRaisesRegex(ValueError, "data_snapshot_identity_mismatch"):
+            _normalize_data_snapshot(
+                {
+                    "hash": "data-hash",
+                    "snapshotHash": "wrong-snapshot-hash",
+                    "bars": [],
+                },
+                market="ashare",
+                symbol="600000",
+                timeframe="1d",
+            )
 
     def test_research_run_detail_api_returns_audited_run_by_id(self):
         import json

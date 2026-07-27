@@ -40,6 +40,19 @@ interface AutoTradingState {
   windowChangePct: number | null;
   lastTestnetOrder: { state: string } | null;
   lastLiveOrder: { state: string } | null;
+  lastOrderResult?: {
+    orderResultId: string;
+    orderIntentId: string;
+    executionMode: "paper" | "testnet" | "live";
+    state: string;
+    clientOrderId: string;
+    externalOrderId: string;
+    filledQuantity: number;
+    remainingQuantity: number;
+    averagePrice: number;
+    filledNotional: number;
+    error: string;
+  } | null;
   lastAccountCheck: {
     accountCovered?: boolean;
     checkedAt?: string;
@@ -53,6 +66,82 @@ interface AutoTradingState {
     reason: string;
     providerId: string;
     evaluatedAt?: string;
+  } | null;
+  lastDecisionContract?: {
+    contractVersion: "aiqt-decision-v1";
+    strategyRevision: string;
+    marketSnapshot: {
+      snapshotHash: string;
+      dataHash: string;
+      market: string;
+      symbol: string;
+      timeframe: string;
+      dataSource: string;
+      barCount: number;
+      latestBarAt: string;
+    };
+    decisionProposal: {
+      proposalId: string;
+      snapshotHash: string;
+      strategyRevision: string;
+      source: "rules" | "risk" | "ai";
+      providerId: string;
+      action: "buy" | "sell" | "hold";
+      confidence: number;
+      reason: string;
+      proposedAt: string;
+    };
+    signal: {
+      signalId: string;
+      proposalId: string;
+      snapshotHash: string;
+      strategyRevision: string;
+      action: "buy" | "sell" | "hold";
+      confidence: number;
+      reason: string;
+      generatedAt: string;
+    };
+    portfolioTarget: {
+      portfolioTargetId: string;
+      signalId: string;
+      symbol: string;
+      currentQuantity: number;
+      targetQuantity: number;
+      deltaQuantity: number;
+      referencePrice: number;
+      targetNotional: number;
+    };
+    riskAdjustedTarget: {
+      riskAdjustedTargetId: string;
+      portfolioTargetId: string;
+      decision: "preserve" | "reduce" | "zero" | "reject";
+      requestedTargetQuantity: number;
+      approvedTargetQuantity: number;
+      approvedDeltaQuantity: number;
+      approvedNotional: number;
+      reason: string;
+      evidence?: {
+        dailyDrawdownPct: number;
+        dailyLossLimitPct: number;
+        recentTradeCount: number;
+        maxTradesPerHour: number;
+      };
+    };
+    orderIntent?: {
+      orderIntentId: string;
+      marketSnapshotHash: string;
+      strategyRevision: string;
+      proposalId: string;
+      signalId: string;
+      portfolioTargetId: string;
+      riskAdjustedTargetId: string;
+      symbol: string;
+      side: "buy" | "sell";
+      type: "market";
+      quantity: number;
+      referencePrice: number;
+      notionalValue: number;
+    } | null;
   } | null;
 }
 
@@ -227,10 +316,13 @@ export function AutoTradingLedger({
   history: AutoTradingHistoryEvent[];
   state: Pick<
     AutoTradingState,
-    "executionMode" | "lastDecision" | "lastLiveOrder" | "lastTestnetOrder" | "position" | "realizedPnl"
+    "executionMode" | "lastDecision" | "lastDecisionContract" | "lastLiveOrder" | "lastTestnetOrder"
+    | "lastOrderResult" | "position" | "realizedPnl"
   > | undefined;
 }) {
   const decision = state?.lastDecision;
+  const contract = state?.lastDecisionContract;
+  const orderResult = state?.lastOrderResult;
   const order = state?.executionMode === "live"
     ? state.lastLiveOrder
     : state?.executionMode === "testnet" ? state.lastTestnetOrder : null;
@@ -265,7 +357,7 @@ export function AutoTradingLedger({
           </div>
           <div>
             <dt>委托状态</dt>
-            <dd>{state?.executionMode === "paper" ? "纸面直接入账" : orderStateLabel(order?.state)}</dd>
+            <dd>{orderStateLabel(orderResult?.state ?? order?.state)}</dd>
             <small>{executionModeLabel(state?.executionMode)}</small>
           </div>
         </dl>
@@ -275,6 +367,70 @@ export function AutoTradingLedger({
             <time dateTime={decision.evaluatedAt}>{formatTime(decision.evaluatedAt)}</time>
             <span>{decision.reason}</span>
           </p>
+        ) : null}
+
+        {contract ? (
+          <section className="execution-auto-paper-contract">
+            <strong>决策证据链</strong>
+            <dl className="execution-auto-paper-ledger-summary">
+              <div>
+                <dt>市场快照</dt>
+                <dd title={contract.marketSnapshot.snapshotHash}>
+                  {contract.marketSnapshot.snapshotHash.slice(0, 16)}
+                </dd>
+                <small>{contract.marketSnapshot.barCount} 根完整 K 线</small>
+              </div>
+              <div>
+                <dt>{contract.decisionProposal.source === "ai" ? "AI 提案" : "规则提案"}</dt>
+                <dd>{decisionLabel(contract.decisionProposal.action)}</dd>
+                <small>{providerLabel(contract.decisionProposal.providerId)}</small>
+              </div>
+              <div>
+                <dt>标准信号</dt>
+                <dd>{decisionLabel(contract.signal.action)}</dd>
+                <small>{Math.round(contract.signal.confidence * 100)}% 置信度</small>
+              </div>
+            </dl>
+            <dl className="execution-auto-paper-ledger-summary execution-auto-paper-targets">
+              <div>
+                <dt>组合目标</dt>
+                <dd>{formatNumber(contract.portfolioTarget.targetQuantity)} BTC</dd>
+                <small>
+                  目标变动 {contract.portfolioTarget.deltaQuantity >= 0 ? "+" : ""}
+                  {formatNumber(contract.portfolioTarget.deltaQuantity)} BTC
+                </small>
+              </div>
+              <div>
+                <dt>风险调整</dt>
+                <dd className={contract.riskAdjustedTarget.decision === "reject" ? "negative" : "positive"}>
+                  {riskDecisionLabel(contract.riskAdjustedTarget.decision)}
+                </dd>
+                <small>
+                  批准 {formatNumber(contract.riskAdjustedTarget.approvedTargetQuantity)} BTC
+                  {" · "}{contract.riskAdjustedTarget.reason}
+                </small>
+              </div>
+              {contract.orderIntent ? (
+                <div>
+                  <dt>订单意图</dt>
+                  <dd>
+                    {decisionLabel(contract.orderIntent.side)} {formatNumber(contract.orderIntent.quantity)} BTC
+                  </dd>
+                  <small>市价委托 · {money(contract.orderIntent.notionalValue)} USDT</small>
+                </div>
+              ) : null}
+              {contract.orderIntent && orderResult?.orderIntentId === contract.orderIntent.orderIntentId ? (
+                <div>
+                  <dt>订单结果</dt>
+                  <dd>{orderStateLabel(orderResult.state)}</dd>
+                  <small>
+                    成交 {formatNumber(orderResult.filledQuantity)} BTC
+                    {orderResult.filledNotional > 0 ? ` · ${money(orderResult.filledNotional)} USDT` : ""}
+                  </small>
+                </div>
+              ) : null}
+            </dl>
+          </section>
         ) : null}
 
         {history.length ? (
@@ -800,6 +956,15 @@ function providerLabel(providerId: string) {
         : providerId === "rules" ? "规则引擎"
           : providerId === "risk" ? "风险保护"
             : providerId === "exchange" ? "交易所对账" : providerId;
+}
+
+function riskDecisionLabel(decision: "preserve" | "reduce" | "zero" | "reject") {
+  return {
+    preserve: "保持目标",
+    reduce: "缩减目标",
+    zero: "清零目标",
+    reject: "拒绝目标"
+  }[decision];
 }
 
 function percent(value?: number | null) {

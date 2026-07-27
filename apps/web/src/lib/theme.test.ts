@@ -1,12 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveInitialColorScheme } from "./theme";
+import {
+  resolveStoredColorSchemePreference,
+  resolveSystemColorScheme,
+} from "./theme";
 
 describe("terminal color scheme", () => {
-  test("defaults to dark and restores only the supported light preference", () => {
-    expect(resolveInitialColorScheme()).toBe("dark");
-    expect(resolveInitialColorScheme("dark")).toBe("dark");
-    expect(resolveInitialColorScheme("light")).toBe("light");
-    expect(resolveInitialColorScheme("system")).toBe("dark");
+  test("follows the system until a manual preference is recorded", () => {
+    expect(resolveSystemColorScheme(true)).toBe("dark");
+    expect(resolveSystemColorScheme(false)).toBe("light");
+    expect(resolveStoredColorSchemePreference()).toBeNull();
+    expect(resolveStoredColorSchemePreference("dark")).toBeNull();
+    expect(resolveStoredColorSchemePreference("light")).toBeNull();
+    expect(resolveStoredColorSchemePreference("manual:dark")).toBe("dark");
+    expect(resolveStoredColorSchemePreference("manual:light")).toBe("light");
   });
 });

@@ -143,6 +143,89 @@ describe("ExecutionAutoPaperTradingSection", () => {
             providerId: "openai-compatible",
             evaluatedAt: "2026-07-27T08:00:00Z"
           },
+          lastDecisionContract: {
+            contractVersion: "aiqt-decision-v1",
+            strategyRevision: "strategy-revision-1",
+            marketSnapshot: {
+              snapshotHash: "snapshot-hash-1",
+              dataHash: "data-hash-1",
+              market: "crypto",
+              symbol: "BTC/USDT",
+              timeframe: "1m",
+              dataSource: "ccxt",
+              barCount: 6,
+              latestBarAt: "2026-07-27T08:00:00Z"
+            },
+            decisionProposal: {
+              proposalId: "proposal-1",
+              snapshotHash: "snapshot-hash-1",
+              strategyRevision: "strategy-revision-1",
+              source: "ai",
+              providerId: "openai-compatible",
+              action: "buy",
+              confidence: 0.82,
+              reason: "五根涨幅超过阈值",
+              proposedAt: "2026-07-27T08:00:00Z"
+            },
+            signal: {
+              signalId: "signal-1",
+              proposalId: "proposal-1",
+              snapshotHash: "snapshot-hash-1",
+              strategyRevision: "strategy-revision-1",
+              action: "buy",
+              confidence: 0.82,
+              reason: "五根涨幅超过阈值",
+              generatedAt: "2026-07-27T08:00:00Z"
+            },
+            portfolioTarget: {
+              portfolioTargetId: "target-1",
+              signalId: "signal-1",
+              symbol: "BTC/USDT",
+              currentQuantity: 0,
+              targetQuantity: 0.00015,
+              deltaQuantity: 0.00015,
+              referencePrice: 65199.23,
+              targetNotional: 9.7798845
+            },
+            riskAdjustedTarget: {
+              riskAdjustedTargetId: "risk-target-1",
+              portfolioTargetId: "target-1",
+              decision: "preserve",
+              requestedTargetQuantity: 0.00015,
+              approvedTargetQuantity: 0.00015,
+              approvedDeltaQuantity: 0.00015,
+              approvedNotional: 9.7798845,
+              reason: "当前风险边界允许保持组合目标。"
+            },
+            orderIntent: {
+              orderIntentId: "order-intent-1",
+              marketSnapshotHash: "snapshot-hash-1",
+              strategyRevision: "strategy-revision-1",
+              proposalId: "proposal-1",
+              signalId: "signal-1",
+              portfolioTargetId: "target-1",
+              riskAdjustedTargetId: "risk-target-1",
+              symbol: "BTC/USDT",
+              side: "buy",
+              type: "market",
+              quantity: 0.00015,
+              referencePrice: 65199.23,
+              notionalValue: 9.7798845
+            }
+          },
+          lastOrderResult: {
+            orderResultId: "order-result-1",
+            orderIntentId: "order-intent-1",
+            executionMode: "testnet",
+            state: "filled",
+            clientOrderId: "aiqt-auto-t-1",
+            externalOrderId: "testnet-order-1",
+            filledQuantity: 0.00015,
+            remainingQuantity: 0,
+            averagePrice: 65199.23,
+            filledNotional: 9.7798845,
+            error: ""
+          },
           lastLiveOrder: null,
           lastTestnetOrder: { state: "filled" },
           position: 0.00015,
@@ -163,6 +246,20 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("0.0097 USDT · 交易所实报");
     expect(html).toContain("OpenAI 兼容服务");
     expect(html).toContain("五根涨幅超过阈值");
+    expect(html).toContain("决策证据链");
+    expect(html).toContain("snapshot-hash");
+    expect(html).toContain("AI 提案");
+    expect(html).toContain("标准信号");
+    expect(html).toContain("组合目标");
+    expect(html).toContain("0.00015 BTC");
+    expect(html).toContain("风险调整");
+    expect(html).toContain("保持目标");
+    expect(html).toContain("当前风险边界允许保持组合目标");
+    expect(html).toContain("订单意图");
+    expect(html).toContain("买入 0.00015 BTC");
+    expect(html).toContain("市价委托 · 9.78 USDT");
+    expect(html).toContain("订单结果");
+    expect(html).toContain("成交 0.00015 BTC · 9.78 USDT");
   });
 
   it("shows the exchange-reported fee currency when valuation is estimated", () => {

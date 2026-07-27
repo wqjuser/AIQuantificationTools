@@ -14491,6 +14491,7 @@ describe("terminal workspace API client", () => {
               start: "2026-05-26T08:00:00+00:00",
               end: "2026-05-27T08:00:00+00:00",
               hash: "snapshot-detail",
+              snapshotHash: "decision-snapshot-detail",
               bars: [
                 {
                   timestamp: "2026-05-26T08:00:00+00:00",
@@ -14538,6 +14539,7 @@ describe("terminal workspace API client", () => {
     expect(result.run?.aiReport?.improvements[0]).toBe("Review slippage");
     expect(result.run?.aiReport?.disclaimer).toBe("No investment advice");
     expect(result.run?.dataSnapshot?.hash).toBe("snapshot-detail");
+    expect(result.run?.dataSnapshot?.snapshotHash).toBe("decision-snapshot-detail");
     expect(result.run?.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
     expect(result.run?.dataQuality).toEqual({ source: "tencent", isComplete: true, warnings: [], rows: 120 });
     expect(result.run?.strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });

@@ -10005,6 +10005,30 @@ em {
   font: 10px var(--mono);
 }
 
+.execution-auto-paper-contract {
+  display: grid;
+  gap: 6px;
+}
+
+.execution-auto-paper-contract > strong {
+  font-size: 11px;
+}
+
+.execution-auto-paper-contract .execution-auto-paper-ledger-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.execution-auto-paper-contract .execution-auto-paper-targets {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.execution-auto-paper-contract dd {
+  overflow: hidden;
+  font-family: var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .execution-auto-paper-trades {
   display: grid;
   gap: 6px;

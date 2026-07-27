@@ -26,6 +26,7 @@ from quant_core.api import (
     build_auto_paper_trading_runner,
     evaluate_auto_paper_trading_once,
 )
+from quant_core.decision_contract import build_order_result, build_risk_adjusted_target
 from quant_core.binance_spot_orders import (
     check_spot_account_coverage,
     create_spot_market_order,
@@ -921,6 +922,12 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(len(production.orders), 1)
             self.assertEqual(production.orders[0]["operator"], "wenqingjie")
             self.assertEqual(result["state"]["lastTrade"]["executionMode"], "live")
+            self.assertEqual(result["state"]["lastOrderResult"]["executionMode"], "live")
+            self.assertEqual(result["state"]["lastOrderResult"]["state"], "filled")
+            self.assertEqual(
+                result["state"]["lastOrderResult"]["orderIntentId"],
+                result["state"]["lastDecisionContract"]["orderIntent"]["orderIntentId"],
+            )
             self.assertEqual(store.count(event_type="auto_live_trade"), 1)
             self.assertTrue(result["routeExecuted"])
 
@@ -1102,6 +1109,9 @@ class AutoPaperTradingTests(unittest.TestCase):
             pending = service.evaluate(rising, data_source="test")
             self.assertEqual(pending["state"]["status"], "order_pending")
             self.assertEqual(pending["state"]["tradeCount"], 0)
+            pending_result = pending["state"]["lastOrderResult"]
+            self.assertEqual(pending_result["executionMode"], "live")
+            self.assertEqual(pending_result["state"], "open")
 
             filled = service.evaluate(rising, data_source="test")
             duplicate = service.evaluate(rising, data_source="test")
@@ -1109,6 +1119,11 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(production.reconciliation_calls, 1)
             self.assertEqual(len(production.orders), 1)
             self.assertEqual(filled["state"]["lastLiveOrder"]["state"], "filled")
+            self.assertEqual(filled["state"]["lastOrderResult"]["state"], "filled")
+            self.assertEqual(
+                filled["state"]["lastOrderResult"]["orderIntentId"],
+                pending_result["orderIntentId"],
+            )
             self.assertEqual(filled["state"]["tradeCount"], 1)
             self.assertGreater(filled["state"]["position"], 0)
             self.assertEqual(duplicate["state"]["tradeCount"], 1)
@@ -1365,9 +1380,24 @@ class AutoPaperTradingTests(unittest.TestCase):
             duplicate = service.evaluate(rising, data_source="test")
             self.assertEqual(duplicate["state"]["tradeCount"], 1)
 
+            next_rising = bars(
+                [101, 101, 101, 101, 101, 102],
+                start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+            )
+            held = service.evaluate(next_rising, data_source="test")
+            self.assertEqual(
+                held["state"]["lastDecisionContract"]["decisionProposal"]["action"],
+                "buy",
+            )
+            self.assertEqual(
+                held["state"]["lastDecisionContract"]["signal"]["action"],
+                "hold",
+            )
+            self.assertEqual(held["state"]["tradeCount"], 1)
+
             falling = bars(
                 [101, 101, 101, 101, 101, 98],
-                start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+                start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
             )
             sold = service.evaluate(falling, data_source="test")
             self.assertEqual(sold["state"]["lastDecision"]["action"], "sell")
@@ -1375,6 +1405,233 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(sold["state"]["position"], 0)
             self.assertEqual(sold["state"]["tradeCount"], 2)
             self.assertEqual(store.count(event_type="auto_paper_trade"), 2)
+
+    def test_evaluation_exposes_stable_snapshot_proposal_and_signal_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry((), {}),
+            )
+            service.configure({"enabled": True, "triggerPct": 5})
+            complete_bars = bars([100, 100, 100, 100, 100, 101])
+
+            evaluated = service.evaluate(complete_bars, data_source="test")
+            duplicate = service.evaluate(complete_bars, data_source="test")
+
+            contract = evaluated["state"]["lastDecisionContract"]
+            self.assertEqual(contract["contractVersion"], "aiqt-decision-v1")
+            self.assertEqual(contract["marketSnapshot"]["market"], "crypto")
+            self.assertEqual(contract["marketSnapshot"]["symbol"], "BTC/USDT")
+            self.assertEqual(contract["marketSnapshot"]["timeframe"], "1m")
+            self.assertEqual(contract["marketSnapshot"]["barCount"], 6)
+            self.assertEqual(len(contract["marketSnapshot"]["snapshotHash"]), 64)
+            self.assertEqual(len(contract["strategyRevision"]), 64)
+            self.assertEqual(contract["decisionProposal"]["providerId"], "rules")
+            self.assertEqual(contract["decisionProposal"]["action"], "hold")
+            self.assertEqual(contract["signal"]["action"], "hold")
+            self.assertEqual(
+                contract["signal"]["proposalId"],
+                contract["decisionProposal"]["proposalId"],
+            )
+            self.assertEqual(contract["portfolioTarget"]["currentQuantity"], 0)
+            self.assertEqual(contract["portfolioTarget"]["targetQuantity"], 0)
+            self.assertEqual(
+                contract["portfolioTarget"]["signalId"],
+                contract["signal"]["signalId"],
+            )
+            self.assertEqual(contract["riskAdjustedTarget"]["decision"], "preserve")
+            self.assertEqual(contract["riskAdjustedTarget"]["approvedTargetQuantity"], 0)
+            self.assertEqual(
+                contract["riskAdjustedTarget"]["evidence"],
+                {
+                    "dailyDrawdownPct": 0,
+                    "dailyLossLimitPct": 2,
+                    "recentTradeCount": 0,
+                    "maxTradesPerHour": 3,
+                },
+            )
+            self.assertEqual(
+                contract["riskAdjustedTarget"]["portfolioTargetId"],
+                contract["portfolioTarget"]["portfolioTargetId"],
+            )
+            self.assertIsNone(contract["orderIntent"])
+            self.assertIsNone(evaluated["state"]["lastOrderResult"])
+            self.assertEqual(duplicate["state"]["lastDecisionContract"], contract)
+            restarted = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry((), {}),
+            ).snapshot()
+            self.assertEqual(restarted["state"]["lastDecisionContract"], contract)
+
+    def test_approved_target_generates_a_stable_evidence_bound_order_intent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            registry = AiReviewProviderRegistry(
+                (
+                    ProviderStatus("local", True, None, None),
+                    ProviderStatus(
+                        "openai-compatible",
+                        True,
+                        "fake",
+                        "https://example.invalid",
+                    ),
+                ),
+                {"openai-compatible": FakeProvider()},
+            )
+            service = AutoPaperTradingService(store, registry)
+            service.configure({"enabled": True, "triggerPct": 0.3})
+            rising = bars([100, 100, 100, 100, 100, 101])
+
+            evaluated = service.evaluate(rising, data_source="test")
+            duplicate = service.evaluate(rising, data_source="test")
+
+            contract = evaluated["state"]["lastDecisionContract"]
+            intent = contract["orderIntent"]
+            self.assertEqual(len(intent["orderIntentId"]), 64)
+            self.assertEqual(intent["side"], "buy")
+            self.assertEqual(intent["type"], "market")
+            self.assertEqual(intent["symbol"], "BTC/USDT")
+            self.assertEqual(
+                intent["quantity"],
+                contract["riskAdjustedTarget"]["approvedDeltaQuantity"],
+            )
+            self.assertEqual(
+                intent["marketSnapshotHash"],
+                contract["marketSnapshot"]["snapshotHash"],
+            )
+            self.assertEqual(
+                intent["proposalId"],
+                contract["decisionProposal"]["proposalId"],
+            )
+            self.assertEqual(intent["signalId"], contract["signal"]["signalId"])
+            self.assertEqual(
+                intent["portfolioTargetId"],
+                contract["portfolioTarget"]["portfolioTargetId"],
+            )
+            self.assertEqual(
+                intent["riskAdjustedTargetId"],
+                contract["riskAdjustedTarget"]["riskAdjustedTargetId"],
+            )
+            result = evaluated["state"]["lastOrderResult"]
+            self.assertEqual(result["executionMode"], "paper")
+            self.assertEqual(result["state"], "filled")
+            self.assertEqual(result["orderIntentId"], intent["orderIntentId"])
+            self.assertEqual(result["filledQuantity"], intent["quantity"])
+            self.assertEqual(result["clientOrderId"], "")
+            self.assertEqual(duplicate["state"]["lastDecisionContract"], contract)
+            self.assertEqual(duplicate["state"]["lastOrderResult"], result)
+
+    def test_frequency_limit_does_not_block_a_risk_reducing_exit_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = AiReviewProviderRegistry(
+                (
+                    ProviderStatus("local", True, None, None),
+                    ProviderStatus(
+                        "openai-compatible",
+                        True,
+                        "fake",
+                        "https://example.invalid",
+                    ),
+                ),
+                {"openai-compatible": FakeProvider()},
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                registry,
+            )
+            service.configure({
+                "enabled": True,
+                "triggerPct": 0.3,
+                "maxTradesPerHour": 1,
+            })
+            bought = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            self.assertGreater(bought["state"]["position"], 0)
+
+            exited = service.evaluate(
+                bars(
+                    [101, 101, 101, 101, 101, 98],
+                    start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(exited["state"]["status"], "traded")
+            self.assertEqual(exited["state"]["position"], 0)
+            self.assertEqual(exited["state"]["tradeCount"], 2)
+            self.assertEqual(
+                exited["state"]["lastDecisionContract"]["portfolioTarget"]["targetQuantity"],
+                0,
+            )
+            self.assertEqual(
+                exited["state"]["lastDecisionContract"]["riskAdjustedTarget"]["decision"],
+                "preserve",
+            )
+
+            blocked = service.evaluate(
+                bars(
+                    [98, 98, 98, 98, 98, 99],
+                    start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            blocked_contract = blocked["state"]["lastDecisionContract"]
+            self.assertEqual(blocked["state"]["status"], "risk_paused")
+            self.assertEqual(blocked["state"]["position"], 0)
+            self.assertEqual(blocked["state"]["tradeCount"], 2)
+            self.assertEqual(blocked_contract["signal"]["action"], "buy")
+            self.assertGreater(blocked_contract["portfolioTarget"]["targetQuantity"], 0)
+            self.assertEqual(blocked_contract["riskAdjustedTarget"]["decision"], "reject")
+            self.assertEqual(
+                blocked_contract["riskAdjustedTarget"]["approvedTargetQuantity"],
+                0,
+            )
+            self.assertIsNone(blocked_contract["orderIntent"])
+
+    def test_risk_adjustment_can_reduce_or_zero_but_never_amplify_a_target(self):
+        target = {
+            "portfolioTargetId": "target-1",
+            "currentQuantity": 0,
+            "targetQuantity": 1,
+            "referencePrice": 100,
+        }
+
+        reduced = build_risk_adjusted_target(
+            target,
+            decision="reduce",
+            approved_target_quantity=0.5,
+            reason="风险预算只允许一半目标。",
+        )
+        zeroed = build_risk_adjusted_target(
+            target,
+            decision="zero",
+            reason="风险预算要求清零。",
+        )
+
+        self.assertEqual(reduced["approvedTargetQuantity"], 0.5)
+        self.assertEqual(zeroed["approvedTargetQuantity"], 0)
+        with self.assertRaisesRegex(ValueError, "risk_adjustment_amplifies_target"):
+            build_risk_adjusted_target(
+                target,
+                decision="reduce",
+                approved_target_quantity=1.1,
+                reason="无效放大。",
+            )
+
+    def test_order_result_cannot_exceed_its_order_intent(self):
+        with self.assertRaisesRegex(ValueError, "order_result_exceeds_intent"):
+            build_order_result(
+                {"orderIntentId": "intent-1", "quantity": 1},
+                execution_mode="testnet",
+                evidence={
+                    "state": "filled",
+                    "filledQuantity": 2,
+                    "averagePrice": 100,
+                },
+            )
 
     def test_explicit_testnet_mode_routes_ai_trade_without_enabling_live_trading(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1407,6 +1664,21 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertTrue(result["state"]["lastTrade"]["feeEstimated"])
             self.assertEqual(store.count(event_type="auto_testnet_order_intent"), 1)
             self.assertEqual(store.count(event_type="auto_testnet_trade"), 1)
+            self.assertEqual(
+                result["state"]["lastTestnetOrder"]["orderIntent"]["orderIntentId"],
+                result["state"]["lastDecisionContract"]["orderIntent"]["orderIntentId"],
+            )
+            order_result = result["state"]["lastOrderResult"]
+            self.assertEqual(order_result["executionMode"], "testnet")
+            self.assertEqual(order_result["state"], "filled")
+            self.assertEqual(
+                order_result["orderIntentId"],
+                result["state"]["lastDecisionContract"]["orderIntent"]["orderIntentId"],
+            )
+            self.assertEqual(
+                order_result["clientOrderId"],
+                result["state"]["lastTestnetOrder"]["request"]["clientOrderId"],
+            )
             self.assertFalse(result["liveTradingAllowed"])
             self.assertFalse(result["routeExecuted"])
 
@@ -1441,7 +1713,10 @@ class AutoPaperTradingTests(unittest.TestCase):
                 "triggerPct": 0.3,
             })
             rising = bars([100, 100, 100, 100, 100, 101])
-            service.evaluate(rising, data_source="test")
+            pending = service.evaluate(rising, data_source="test")
+            pending_result = pending["state"]["lastOrderResult"]
+            self.assertEqual(pending_result["state"], "open")
+            self.assertEqual(pending_result["filledQuantity"], 0)
 
             with self.assertRaisesRegex(
                 ValueError,
@@ -1456,6 +1731,11 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(len(sandbox.orders), 1)
             self.assertEqual(filled["state"]["tradeCount"], 1)
             self.assertEqual(duplicate["state"]["tradeCount"], 1)
+            self.assertEqual(filled["state"]["lastOrderResult"]["state"], "filled")
+            self.assertEqual(
+                filled["state"]["lastOrderResult"]["orderIntentId"],
+                pending_result["orderIntentId"],
+            )
 
     def test_partial_testnet_fill_settles_actual_quantity_and_fee_once(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1487,6 +1767,8 @@ class AutoPaperTradingTests(unittest.TestCase):
 
             self.assertEqual(pending["state"]["status"], "order_pending")
             self.assertEqual(settled["state"]["lastTestnetOrder"]["state"], "canceled")
+            self.assertEqual(settled["state"]["lastOrderResult"]["state"], "canceled")
+            self.assertGreater(settled["state"]["lastOrderResult"]["filledQuantity"], 0)
             self.assertAlmostEqual(
                 settled["state"]["lastTrade"]["quantity"],
                 sandbox.orders[0]["quantity"] / 2,

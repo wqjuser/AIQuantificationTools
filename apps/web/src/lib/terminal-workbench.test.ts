@@ -31918,6 +31918,7 @@ describe("terminal workbench model", () => {
         start: "2026-05-28T08:00:00+00:00",
         end: "2026-05-29T08:00:00+00:00",
         hash: "snapshot-report",
+        snapshotHash: "decision-snapshot-report",
         bars: [
           {
             timestamp: "2026-05-28T08:00:00+00:00",
@@ -31956,7 +31957,7 @@ describe("terminal workbench model", () => {
         id: "run",
         label: "Run package",
         value: "run-backtest-package",
-        detail: "240 1d bars · paper_only",
+        detail: "240 1d bars · paper_only · snapshot decision-snapsho",
         tone: "positive"
       },
       {
@@ -32112,6 +32113,7 @@ describe("terminal workbench model", () => {
         start: "2026-05-28T08:00:00+00:00",
         end: "2026-05-29T08:00:00+00:00",
         hash: "snapshot-report-md",
+        snapshotHash: "decision-snapshot-report-md",
         bars: [
           {
             timestamp: "2026-05-28T08:00:00+00:00",
@@ -32185,6 +32187,7 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("| Benchmark buy and hold | +5.00% |");
     expect(markdown).toContain("| Alpha | +3.20pp |");
     expect(markdown).toContain("snapshot-report-md");
+    expect(markdown).toContain("| Snapshot identity | decision-snapshot-report-md |");
     expect(markdown).toContain(
       "| Preparation evidence | cache-refresh-report-md · watchlist_cache_refresh · 600000 1d · tencent complete · 240 rows cached |"
     );

@@ -301,7 +301,11 @@ import {
 import { ExecutionStage10ProductionExecutionSection } from "./components/ExecutionStage10ProductionExecutionSection";
 import { ExecutionAutoPaperTradingSection } from "./components/ExecutionAutoPaperTradingSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
-import { resolveInitialColorScheme, type ColorScheme } from "./lib/theme";
+import {
+  resolveStoredColorSchemePreference,
+  resolveSystemColorScheme,
+  type ColorScheme,
+} from "./lib/theme";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
 import {
   buildStage4PortfolioGoldenPath,
@@ -2480,9 +2484,19 @@ export function App() {
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
-  const [colorScheme, setColorScheme] = useState<ColorScheme>(() =>
-    resolveInitialColorScheme(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.theme"))
+  const [colorSchemePreference, setColorSchemePreference] = useState<ColorScheme | null>(() =>
+    resolveStoredColorSchemePreference(
+      typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.theme"),
+    )
   );
+  const [systemColorScheme, setSystemColorScheme] = useState<ColorScheme>(() =>
+    resolveSystemColorScheme(
+      typeof window === "undefined"
+        ? true
+        : window.matchMedia("(prefers-color-scheme: dark)").matches,
+    )
+  );
+  const colorScheme = colorSchemePreference ?? systemColorScheme;
   const initialWorkAreaSelection = resolveInitialWorkAreaSelection(workspace);
   const [activeWorkAreaId, setActiveWorkAreaId] = useState<ProductWorkAreaId>(() => initialWorkAreaSelection.areaId);
   const [activeLoopStepId, setActiveLoopStepId] = useState(() => initialWorkAreaSelection.quantLoopStepId);
@@ -13548,6 +13562,70 @@ export function App() {
   }, [refreshWorkspace]);
 
   useEffect(() => {
+    if (activeWorkAreaId !== "research" && activeWorkAreaId !== "backtest" && activeWorkAreaId !== "ai-review") {
+      return;
+    }
+    const latestRun = findLatestResearchRunForContext(runHistory, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe
+    });
+    if (!latestRun) {
+      return;
+    }
+    const workspaceNeedsDetailBinding =
+      activeWorkAreaId !== "research"
+      && (
+        workspace.researchRun?.runId !== latestRun.runId
+        || !workspace.researchRun.dataSnapshot?.snapshotHash
+      );
+    if (latestRun.dataSnapshot?.snapshotHash) {
+      if (workspaceNeedsDetailBinding) {
+        setWorkspaceState((current) => ({
+          ...current,
+          workspace: workspaceFromResearchRunAudit(current.workspace, latestRun),
+          statusLabel: activeWorkAreaId === "backtest"
+            ? "已载入当前标的最近的已审计回测运行"
+            : "已载入当前标的最近的已审计研究运行",
+          error: undefined
+        }));
+      }
+      return;
+    }
+    let cancelled = false;
+    void loadResearchRunDetail(quantCoreBaseUrl, latestRun.runId).then((detail) => {
+      if (cancelled || detail.source !== "core" || detail.run?.runId !== latestRun.runId) {
+        return;
+      }
+      setRunHistoryState((current) => ({
+        ...current,
+        runs: current.runs.map((run) => run.runId === detail.run!.runId ? detail.run! : run)
+      }));
+      if (activeWorkAreaId !== "research") {
+        setWorkspaceState((current) => ({
+          ...current,
+          workspace: workspaceFromResearchRunAudit(current.workspace, detail.run!),
+          statusLabel: activeWorkAreaId === "backtest"
+            ? "已载入当前标的最近的已审计回测运行"
+            : "已载入当前标的最近的已审计研究运行",
+          error: undefined
+        }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeWorkAreaId,
+    runHistory,
+    workspace.researchRun?.dataSnapshot?.snapshotHash,
+    workspace.researchRun?.runId,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
+
+  useEffect(() => {
     if (
       (activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "portfolio")
       || researchRunContextBinding.canUseRun
@@ -13659,8 +13737,22 @@ export function App() {
   }, [locale]);
 
   useEffect(() => {
-    window.localStorage.setItem("aiqt.theme", colorScheme);
-  }, [colorScheme]);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncSystemColorScheme = () => {
+      setSystemColorScheme(resolveSystemColorScheme(media.matches));
+    };
+    syncSystemColorScheme();
+    media.addEventListener("change", syncSystemColorScheme);
+    return () => media.removeEventListener("change", syncSystemColorScheme);
+  }, []);
+
+  useEffect(() => {
+    if (colorSchemePreference) {
+      window.localStorage.setItem("aiqt.theme", `manual:${colorSchemePreference}`);
+    } else {
+      window.localStorage.removeItem("aiqt.theme");
+    }
+  }, [colorSchemePreference]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = colorScheme;
@@ -15479,7 +15571,7 @@ export function App() {
             <button
               aria-label={colorSchemeToggleLabel}
               className="panel-icon-button theme-toggle-button"
-              onClick={() => setColorScheme((current) => (current === "dark" ? "light" : "dark"))}
+              onClick={() => setColorSchemePreference(colorScheme === "dark" ? "light" : "dark")}
               title={colorSchemeToggleLabel}
               type="button"
             >
@@ -36234,7 +36326,8 @@ function backtestEvidenceDetail(i18n: AppI18n, card: BacktestEvidenceCard): stri
     .replace("bars", "根K线")
     .replace("paper_only", "仅模拟盘")
     .replace("certified_live", "认证实盘")
-    .replace("blocked_live", "实盘阻断");
+    .replace("blocked_live", "实盘阻断")
+    .replace("snapshot", "快照");
 }
 
 function backtestGateLabel(i18n: AppI18n, gate: BacktestReadinessGate): string {

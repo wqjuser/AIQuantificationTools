@@ -15,6 +15,7 @@ from quant_core.cache import MarketDataCache
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
     canonical_data_hash,
+    canonical_snapshot_id,
     normalize_snapshot_bars,
     strategy_config_to_payload,
 )
@@ -231,6 +232,10 @@ def _data_snapshot_payload(
     market_calendar: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     normalized_bars = normalize_snapshot_bars(bars)
+    contexts = {(bar.market, bar.symbol, bar.timeframe) for bar in bars}
+    if len(contexts) > 1:
+        raise ValueError("data_snapshot_context_mismatch")
+    data_hash = canonical_data_hash(normalized_bars)
     snapshot: dict[str, object] = {
         "source": quality.source,
         "isComplete": quality.is_complete,
@@ -239,9 +244,17 @@ def _data_snapshot_payload(
         "start": normalized_bars[0]["timestamp"] if normalized_bars else None,
         "end": normalized_bars[-1]["timestamp"] if normalized_bars else None,
         "hashVersion": DATA_SNAPSHOT_HASH_VERSION,
-        "hash": canonical_data_hash(normalized_bars),
+        "hash": data_hash,
         "bars": normalized_bars,
     }
+    if contexts:
+        market, symbol, timeframe = next(iter(contexts))
+        snapshot["snapshotHash"] = canonical_snapshot_id(
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            canonical_data_hash=data_hash,
+        )
     if preparation_evidence:
         snapshot["preparationEvidence"] = dict(preparation_evidence)
     if market_calendar:

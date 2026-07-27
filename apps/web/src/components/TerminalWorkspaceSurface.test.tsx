@@ -445,6 +445,8 @@ describe("TerminalWorkspaceSurface", () => {
     expect(review).toContain("OpenAI 兼容服务");
     expect(review).toContain("确定性评估");
     expect(review).toContain("deterministic-local-v1");
+    expect(review).toContain("快照身份");
+    expect(review).toContain("snapshot-1");
     expect(review).toContain("ai-review…tive-1");
     expect(review).toContain("一致性：一致");
     expect(review).not.toContain("未通过");
@@ -660,6 +662,7 @@ describe("TerminalWorkspaceSurface", () => {
           start: "2024-05-31T00:00:00+08:00",
           end: "2026-07-20T00:00:00+08:00",
           hash: "snapshot-hash-reference",
+          snapshotHash: "decision-snapshot-hash-reference",
           bars: [],
         },
       },
@@ -694,6 +697,20 @@ describe("TerminalWorkspaceSurface", () => {
         />,
       );
     const research = renderCompletedResearch(51);
+    const backtest = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="backtest"
+        workspace={completedWorkspace}
+      />,
+    );
+    const aiReview = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="ai-review"
+        workspace={completedWorkspace}
+      />,
+    );
 
     expect(research).toContain("运行指标（审计证据）");
     expect(research).toContain("研究摘要（历史回测）");
@@ -704,7 +721,11 @@ describe("TerminalWorkspaceSurface", () => {
     expect(research).toContain("数据源血缘");
     expect(research).toContain("审计回放");
     expect(research).toContain("恢复与复现");
-    expect(research).toContain("snapshot-hash-reference");
+    expect(research).toContain("decision-snapshot-hash-reference");
+    expect(backtest).toContain("快照身份");
+    expect(backtest).toContain("decision-snapshot-hash-reference");
+    expect(aiReview).toContain("快照身份");
+    expect(aiReview).toContain("decision-snapshot-hash-reference");
     expect(research).toContain("12.40%");
     expect(research).toContain('aria-valuenow="51"');
     expect(research).toContain('pathLength="100"');

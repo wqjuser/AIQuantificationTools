@@ -11,7 +11,12 @@ from typing import Any
 
 from quant_core.ai_review_runs import validate_ai_review_run_record
 
-from quant_core.canonical import DATA_SNAPSHOT_HASH_VERSION, canonical_data_hash, normalize_snapshot_bars
+from quant_core.canonical import (
+    DATA_SNAPSHOT_HASH_VERSION,
+    canonical_data_hash,
+    canonical_snapshot_id,
+    normalize_snapshot_bars,
+)
 from quant_core.handoff_notes import normalize_handoff_note_payloads
 from quant_core.execution import (
     execution_adapter_sandbox_probe_execution_payload_from_audit_event,
@@ -291,7 +296,16 @@ class ResearchRunStore:
                     audit.execution_mode,
                     json.dumps(_normalize_ai_report(audit.ai_report), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_data_quality(audit.data_quality, data_rows=audit.data_rows), ensure_ascii=False, sort_keys=True),
-                    json.dumps(_normalize_data_snapshot(audit.data_snapshot), ensure_ascii=False, sort_keys=True),
+                    json.dumps(
+                        _normalize_data_snapshot(
+                            audit.data_snapshot,
+                            market=audit.market,
+                            symbol=audit.symbol,
+                            timeframe=audit.timeframe,
+                        ),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
                     json.dumps(_normalize_strategy_config(audit.strategy_config, audit=audit), ensure_ascii=False, sort_keys=True),
                     json.dumps(_normalize_backtest_assumptions(audit.backtest_assumptions), ensure_ascii=False, sort_keys=True),
                     json.dumps(audit.backtest_trades, ensure_ascii=False, sort_keys=True),
@@ -410,7 +424,12 @@ def research_run_audit_to_payload(audit: ResearchRunAudit, *, include_data_snaps
         "researchNote": _normalize_research_note(audit.research_note, audit=audit),
     }
     if include_data_snapshot:
-        payload["dataSnapshot"] = _normalize_data_snapshot(audit.data_snapshot)
+        payload["dataSnapshot"] = _normalize_data_snapshot(
+            audit.data_snapshot,
+            market=audit.market,
+            symbol=audit.symbol,
+            timeframe=audit.timeframe,
+        )
     return payload
 
 
@@ -1131,7 +1150,12 @@ def _row_to_research_run_audit(row: sqlite3.Row | tuple[Any, ...]) -> ResearchRu
         execution_mode=row[10],
         ai_report=_normalize_ai_report(json.loads(row[11])),
         data_quality=_normalize_data_quality(json.loads(row[12]), data_rows=row[7]),
-        data_snapshot=_normalize_data_snapshot(json.loads(row[13])),
+        data_snapshot=_normalize_data_snapshot(
+            json.loads(row[13]),
+            market=row[2],
+            symbol=row[3],
+            timeframe=row[4],
+        ),
         strategy_config=_normalize_strategy_config(
             json.loads(row[14]),
             audit_fields={
@@ -2389,7 +2413,13 @@ def _normalize_ai_report(value: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
+def _normalize_data_snapshot(
+    value: dict[str, Any] | None,
+    *,
+    market: str = "",
+    symbol: str = "",
+    timeframe: str = "",
+) -> dict[str, Any]:
     snapshot = value or {}
     bars = snapshot.get("bars")
     if not isinstance(bars, list):
@@ -2408,6 +2438,19 @@ def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
     digest = str(snapshot.get("hash") or "").strip() or _snapshot_hash(normalized_bars)
     if hash_version == DATA_SNAPSHOT_HASH_VERSION and digest != canonical_data_hash(normalized_bars):
         raise ValueError("data_snapshot_hash_mismatch")
+    supplied_snapshot_hash = str(snapshot.get("snapshotHash") or "").strip()
+    expected_snapshot_hash = (
+        canonical_snapshot_id(
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            canonical_data_hash=digest,
+        )
+        if market and symbol and timeframe and digest
+        else ""
+    )
+    if supplied_snapshot_hash and expected_snapshot_hash and supplied_snapshot_hash != expected_snapshot_hash:
+        raise ValueError("data_snapshot_identity_mismatch")
     normalized = {
         "source": source,
         "isComplete": bool(snapshot.get("isComplete", snapshot.get("is_complete", DEFAULT_DATA_SNAPSHOT["isComplete"]))),
@@ -2418,6 +2461,8 @@ def _normalize_data_snapshot(value: dict[str, Any] | None) -> dict[str, Any]:
         "hash": digest,
         "bars": normalized_bars,
     }
+    if supplied_snapshot_hash or expected_snapshot_hash:
+        normalized["snapshotHash"] = expected_snapshot_hash or supplied_snapshot_hash
     if hash_version:
         normalized["hashVersion"] = hash_version
     preparation_evidence = _normalize_data_preparation_evidence(snapshot.get("preparationEvidence"))

@@ -9,6 +9,12 @@ from uuid import uuid4
 
 from quant_core.ai_review_providers import AiReviewProviderRegistry
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
+from quant_core.canonical import canonical_sha256
+from quant_core.decision_contract import (
+    build_decision_contract,
+    build_order_result,
+    build_risk_adjusted_target,
+)
 from quant_core.domain import OHLCVBar
 from quant_core.stage6_sandbox import Stage6SandboxExecutionService
 from quant_core.stage10_production_execution import Stage10ProductionExecutionService
@@ -359,10 +365,6 @@ class AutoPaperTradingService:
             state["tradeTimestamps"] = recent_trades
             daily_start = max(float(state["dailyStartEquity"]), 0.00000001)
             drawdown_pct = (daily_start - equity) / daily_start * 100
-            if drawdown_pct >= float(state["dailyLossLimitPct"]):
-                return self._finish(state, status="risk_paused", detail="已达到当日策略亏损上限。")
-            if len(recent_trades) >= int(state["maxTradesPerHour"]):
-                return self._finish(state, status="risk_paused", detail="已达到每小时成交次数上限。")
 
             action = "hold"
             confidence = 1.0
@@ -386,24 +388,84 @@ class AutoPaperTradingService:
             except ValueError as error:
                 return self._finish(state, status="ai_error", detail=str(error))
 
+            proposal_action = action
+            proposal_reason = reason
             if action == "buy" and position > 0:
                 action, reason = "hold", "已有持仓，本轮不重复加仓。"
             elif action == "sell" and position <= 0:
                 action, reason = "hold", "当前没有可卖出的持仓。"
 
+            state["lastDecision"] = {
+                "action": action,
+                "confidence": round(confidence, 4),
+                "reason": reason,
+                "providerId": provider_id,
+                "evaluatedAt": now.isoformat(),
+            }
+            decision_contract = build_decision_contract(
+                bars=ordered[-6:],
+                market=str(state["market"]),
+                symbol=str(state["symbol"]),
+                timeframe=str(state["timeframe"]),
+                data_source=data_source,
+                strategy_revision=_strategy_revision(state),
+                proposal_action=proposal_action,
+                proposal_confidence=confidence,
+                proposal_reason=proposal_reason,
+                provider_id=provider_id,
+                signal_action=action,
+                signal_confidence=confidence,
+                signal_reason=reason,
+                current_quantity=position,
+                reference_price=price,
+                available_cash=cash,
+                order_notional=float(state["orderNotional"]),
+                fee_rate=FEE_RATE,
+                daily_drawdown_pct=drawdown_pct,
+                daily_loss_limit_pct=float(state["dailyLossLimitPct"]),
+                recent_trade_count=len(recent_trades),
+                max_trades_per_hour=int(state["maxTradesPerHour"]),
+                generated_at=now,
+            )
+            state["lastDecisionContract"] = decision_contract
+            portfolio_target = decision_contract["portfolioTarget"]
+            increases_risk = float(portfolio_target["targetQuantity"]) > position + 1e-12
+            risk_reason = (
+                "已达到当日策略亏损上限。"
+                if increases_risk and drawdown_pct >= float(state["dailyLossLimitPct"])
+                else "已达到每小时成交次数上限。"
+                if increases_risk and len(recent_trades) >= int(state["maxTradesPerHour"])
+                else None
+            )
+            if risk_reason is not None:
+                decision_contract["riskAdjustedTarget"] = build_risk_adjusted_target(
+                    portfolio_target,
+                    decision="reject",
+                    reason=risk_reason,
+                    evidence=decision_contract["riskAdjustedTarget"]["evidence"],
+                )
+                decision_contract["orderIntent"] = None
+                state["lastDecision"] = {
+                    "action": "hold",
+                    "confidence": round(confidence, 4),
+                    "reason": risk_reason,
+                    "providerId": "risk",
+                    "evaluatedAt": now.isoformat(),
+                }
+                return self._finish(state, status="risk_paused", detail=risk_reason)
+
+            adjusted_target = decision_contract["riskAdjustedTarget"]
+            order_intent = decision_contract["orderIntent"]
             trade = None
             if action == "buy":
-                spend = min(float(state["orderNotional"]), cash)
+                quantity = float(adjusted_target["approvedTargetQuantity"]) - position
+                notional = quantity * price
+                spend = notional * (1 + FEE_RATE)
                 if spend < 1:
                     return self._finish(state, status="risk_paused", detail="账户可用资金不足。")
-                notional = spend / (1 + FEE_RATE)
-                quantity = notional / price
                 routed = self._route_order(
                     state,
-                    action,
-                    quantity,
-                    price,
-                    notional,
+                    order_intent,
                     {
                         "reason": reason,
                         "providerId": provider_id,
@@ -448,14 +510,11 @@ class AutoPaperTradingService:
                     live_order=routed if state["executionMode"] == "live" else None,
                 )
             elif action == "sell":
-                quantity = position
+                quantity = position - float(adjusted_target["approvedTargetQuantity"])
                 notional = quantity * price
                 routed = self._route_order(
                     state,
-                    action,
-                    quantity,
-                    price,
-                    notional,
+                    order_intent,
                     {
                         "reason": reason,
                         "providerId": provider_id,
@@ -503,14 +562,19 @@ class AutoPaperTradingService:
                     live_order=routed if state["executionMode"] == "live" else None,
                 )
 
-            state["lastDecision"] = {
-                "action": action,
-                "confidence": round(confidence, 4),
-                "reason": reason,
-                "providerId": provider_id,
-                "evaluatedAt": now.isoformat(),
-            }
             if trade:
+                if state["executionMode"] == "paper" and isinstance(order_intent, dict):
+                    state["lastOrderResult"] = build_order_result(
+                        order_intent,
+                        execution_mode="paper",
+                        evidence={
+                            "state": "filled",
+                            "filledQuantity": trade["quantity"],
+                            "remainingQuantity": 0,
+                            "averagePrice": trade["price"],
+                            "filledNotional": trade["notional"],
+                        },
+                    )
                 self._record_trade(state, trade, recent_trades, now)
             return self._finish(
                 state,
@@ -728,24 +792,22 @@ class AutoPaperTradingService:
     def _route_order(
         self,
         state: dict[str, Any],
-        side: str,
-        quantity: float,
-        price: float,
-        notional: float,
+        order_intent: dict[str, Any],
         trade_intent: dict[str, Any],
     ) -> dict[str, Any] | None:
         mode = str(state["executionMode"])
         if mode == "paper":
             return None
+        side = str(order_intent["side"])
+        quantity = float(order_intent["quantity"])
+        price = float(order_intent["referencePrice"])
+        notional = float(order_intent["notionalValue"])
         identity = hashlib.sha256(
-            (
-                f"{mode}:{state['symbol']}:{side}:"
-                f"{state.get('lastBarTimestamp') or ''}"
-            ).encode()
+            f"{mode}:{order_intent['orderIntentId']}".encode()
         ).hexdigest()[:20]
         order = {
             "clientOrderId": f"aiqt-auto-{mode[0]}-{identity}",
-            "symbol": state["symbol"],
+            "symbol": order_intent["symbol"],
             "side": side,
             "quantity": quantity,
             "referencePrice": price,
@@ -767,6 +829,7 @@ class AutoPaperTradingService:
             metadata={
                 "executionMode": mode,
                 "order": order,
+                "orderIntent": order_intent,
                 "tradeIntent": trade_intent,
                 "paperOnly": False,
                 "sandboxOnly": mode == "testnet",
@@ -777,9 +840,12 @@ class AutoPaperTradingService:
             },
         ))
         stored_order = intent.metadata.get("order")
+        stored_order_intent = intent.metadata.get("orderIntent")
         stored_trade_intent = intent.metadata.get("tradeIntent")
         if isinstance(stored_order, dict):
             order = stored_order
+        if isinstance(stored_order_intent, dict):
+            order_intent = stored_order_intent
         if isinstance(stored_trade_intent, dict):
             trade_intent = stored_trade_intent
         state[
@@ -805,6 +871,7 @@ class AutoPaperTradingService:
             return {
                 **evidence,
                 "request": order,
+                "orderIntent": order_intent,
                 "tradeIntent": trade_intent,
             }
         except (LookupError, RuntimeError, ValueError) as error:
@@ -814,6 +881,7 @@ class AutoPaperTradingService:
                 "averagePrice": 0.0,
                 "error": str(error)[:240],
                 "request": order,
+                "orderIntent": order_intent,
                 "tradeIntent": trade_intent,
             }
 
@@ -874,10 +942,18 @@ class AutoPaperTradingService:
         state: dict[str, Any],
         routed: dict[str, Any],
     ) -> None:
-        if state["executionMode"] == "live":
+        mode = str(state["executionMode"])
+        if mode == "live":
             state["lastLiveOrder"] = routed
-        elif state["executionMode"] == "testnet":
+        elif mode == "testnet":
             state["lastTestnetOrder"] = routed
+        order_intent = routed.get("orderIntent")
+        if mode in {"testnet", "live"} and isinstance(order_intent, dict):
+            state["lastOrderResult"] = build_order_result(
+                order_intent,
+                execution_mode=mode,
+                evidence=routed,
+            )
 
     def _ai_decision(
         self,
@@ -949,11 +1025,7 @@ class AutoPaperTradingService:
                 and isinstance(order, dict)
             ):
                 state[watermark_key] = intent.event_id
-                state[
-                    "lastLiveOrder"
-                    if mode == "live"
-                    else "lastTestnetOrder"
-                ] = {
+                recovered_order = {
                     "state": "submission_pending",
                     "exchangeOrderId": "",
                     "filledQuantity": 0.0,
@@ -962,8 +1034,10 @@ class AutoPaperTradingService:
                     "operation": "recover",
                     "error": "",
                     "request": order,
+                    "orderIntent": metadata.get("orderIntent"),
                     "tradeIntent": metadata.get("tradeIntent"),
                 }
+                self._remember_routed_order(state, recovered_order)
                 state["status"] = "order_pending"
                 state["detail"] = "检测到尚未写回策略状态的委托，等待只读对账。"
         return state
@@ -1122,6 +1196,8 @@ def _reset_strategy_ledger(state: dict[str, Any]) -> None:
             "lastTestnetOrder": None,
             "lastLiveOrder": None,
             "lastAccountCheck": None,
+            "lastDecisionContract": None,
+            "lastOrderResult": None,
         }
     )
 
@@ -1172,6 +1248,8 @@ def _default_state() -> dict[str, Any]:
         "windowChangePct": None,
         "dataSource": None,
         "lastDecision": None,
+        "lastDecisionContract": None,
+        "lastOrderResult": None,
         "lastTrade": None,
         "lastTestnetOrder": None,
         "lastLiveOrder": None,
@@ -1193,6 +1271,19 @@ def _validate_decision(value: Mapping[str, Any], _known_ids: frozenset[str]) -> 
     if not isinstance(reason, str) or not reason.strip() or len(reason.strip()) > 240:
         raise ValueError("ai_trading_reason_invalid")
     return {"action": action, "confidence": float(confidence), "reason": reason.strip()}
+
+
+def _strategy_revision(state: Mapping[str, Any]) -> str:
+    return canonical_sha256({
+        "kind": "auto-pct-v1",
+        "market": state["market"],
+        "symbol": state["symbol"],
+        "timeframe": state["timeframe"],
+        "triggerPct": state["triggerPct"],
+        "stopLossPct": state["stopLossPct"],
+        "takeProfitPct": state["takeProfitPct"],
+        "providerId": state["providerId"],
+    })
 
 
 def _trade(

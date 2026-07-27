@@ -8613,6 +8613,7 @@ export interface ResearchRunDataSnapshot {
   start: string | null;
   end: string | null;
   hash: string;
+  snapshotHash?: string;
   bars: ResearchRunDataSnapshotBar[];
   preparationEvidence?: ResearchRunDataPreparationEvidence;
   marketCalendar?: ResearchContextMarketCalendar;
@@ -32384,6 +32385,7 @@ export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): Backte
   const firstDiagnostic = diagnostics[0];
   const run = workspace.researchRun;
   const contextBinding = buildResearchRunContextBinding(workspace);
+  const snapshotIdentity = run?.dataSnapshot?.snapshotHash ?? run?.dataSnapshot?.hash;
 
   return [
     run && contextBinding.canUseRun
@@ -32391,7 +32393,7 @@ export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): Backte
           id: "run",
           label: "Run package",
           value: run.runId,
-          detail: `${run.dataRows} ${run.timeframe} bars · ${run.executionMode}`,
+          detail: `${run.dataRows} ${run.timeframe} bars · ${run.executionMode}${snapshotIdentity ? ` · snapshot ${snapshotIdentity.slice(0, 16)}` : ""}`,
           tone: "positive"
         }
       : run
@@ -32692,7 +32694,8 @@ export function buildBacktestReportMarkdown(
       [
         ["Source", snapshot?.source ?? "missing"],
         ["Rows", String(snapshot?.rows ?? run.dataRows)],
-        ["Hash", snapshot?.hash ?? ""],
+        ["Content hash", snapshot?.hash ?? ""],
+        ["Snapshot identity", snapshot?.snapshotHash ?? snapshot?.hash ?? ""],
         ["Window", `${snapshot?.start ?? "unknown"} -> ${snapshot?.end ?? "unknown"}`],
         ["Quality", run.dataQuality ? `${run.dataQuality.source} · ${run.dataQuality.isComplete ? "complete" : "incomplete"}` : "not attached"],
         ["Market calendar", marketCalendar ? formatMarketCalendarEvidenceDetail(marketCalendar) : "not locked"],

@@ -886,7 +886,7 @@ function ResearchSurface({
     ?? evidenceRun?.dataRows
     ?? activeRun?.dataRows
     ?? 0;
-  const snapshotHash = evidenceSnapshot?.hash ?? "—";
+  const snapshotHash = evidenceSnapshot?.snapshotHash ?? evidenceSnapshot?.hash ?? "—";
   const runId = evidenceRun?.runId ?? activeRun?.runId ?? null;
   const strategyRevision = evidenceRun?.strategyRevision
     ?? activeRun?.strategyRevision
@@ -1658,6 +1658,12 @@ function BacktestSurface({
               <strong>{compactRunId(workspace.researchRun?.runId)}</strong>
             </div>
             <div className="design-kv-row">
+              <span>快照身份</span>
+              <strong title={workspace.researchRun?.dataSnapshot?.snapshotHash ?? workspace.researchRun?.dataSnapshot?.hash ?? "—"}>
+                {compactRunId(workspace.researchRun?.dataSnapshot?.snapshotHash ?? workspace.researchRun?.dataSnapshot?.hash)}
+              </strong>
+            </div>
+            <div className="design-kv-row">
               <span>策略 Hash</span>
               <strong>
                 {compactRunId(workspace.researchRun?.strategyRevision)}
@@ -1848,6 +1854,12 @@ function AiReviewSurface({
   const primarySelection = aiReview.experiments.find(
     (experiment) => experiment.experimentId === aiReview.primaryExperimentId,
   ) ?? null;
+  const snapshotIdentity =
+    currentReview?.primaryExperiment.snapshotId
+    ?? primarySelection?.snapshotId
+    ?? workspace.researchRun?.dataSnapshot?.snapshotHash
+    ?? workspace.researchRun?.dataSnapshot?.hash
+    ?? null;
   const comparisonOptions = primarySelection
     ? aiReview.experiments
         .filter((experiment) => experiment.experimentId !== primarySelection.experimentId)
@@ -2254,9 +2266,12 @@ function AiReviewSurface({
               ))}
             </div>
             <div className="design-ai-audit-grid">
+              <div>
+                <span>快照身份</span>
+                <strong title={snapshotIdentity ?? "—"}>{compactRunId(snapshotIdentity)}</strong>
+              </div>
               <div><span>证据包 Hash</span><strong>{evidenceHash}</strong></div>
               <div><span>评审记录 Hash</span><strong>{recordHash}</strong></div>
-              <div><span>决策链</span><strong>只追加</strong></div>
             </div>
           </SurfacePanel>
 

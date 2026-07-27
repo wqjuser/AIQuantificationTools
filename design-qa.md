@@ -579,3 +579,91 @@ final result: passed
 - M0 技术退出条件已经具备；按照 GitHub #28 的人工验收边界，最终关闭仍等待用户确认执行中心视觉、中文文案和受控交易安全边界。
 
 final result: ready_for_human_confirmation
+
+## 2026-07-27 M1 统一决策契约首条闭环复验
+
+- 首个 M1 切片复用现有自动交易评估链，把最近 6 根完整 K 线固定为市场快照，并记录规则、风险或 AI 决策提案及经过持仓边界后的标准信号；没有新增策略引擎或下单入口。
+- 相同 K 线重复读取回读同一契约；服务重启后仍能读取相同快照哈希、策略修订、提案 ID 和信号 ID。回归同时证明 AI 提议买入但已有持仓时，原提案保持买入，最终标准信号为持有。
+- `api + web` 按当前代码重建后均为 healthy。真实 API 自然完成下一根 K 线评估并返回 `contractVersion=aiqt-decision-v1`、完整快照哈希、`proposal=hold`、`signal=hold`、`tradeCount=0`；当前仍为 Testnet 后台监控，`liveTradingAllowed=false`、`routeExecuted=false`。
+- 真实 Docker 执行中心使用 A 股 `600519 · 1d` 与 `1365 × 768` 视口复验。自动交易台账展开后新增“决策证据链”，按市场快照、规则/AI 提案、标准信号三列展示；深色和浅色主题均无页面、执行区或证据卡片横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 自动交易聚焦 `33` 项、执行区与布局聚焦 `192` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。本次只展开前置区、台账并切换主题，没有点击评估、保存、暂停、急停、凭据检查或模式切换，也没有提交订单。
+
+final result: passed
+
+## 2026-07-27 M1 组合目标与风险调整复验
+
+- 标准信号现在继续生成稳定的组合目标与风险调整目标，契约保留目标数量、目标变动、目标 ID、批准数量、风险决定和当前风控证据；没有新增第二套仓位算法或下单入口。
+- 风险层只允许保持、缩减、清零或拒绝目标，不得放大请求仓位。日亏损或小时频率达到上限时只拒绝新增风险，止损、止盈与其他降低风险的退出仍可执行；共享路由直接消费批准目标与当前持仓的差值。
+- 自动交易聚焦 `35` 项、执行区与布局聚焦 `192` 项、Python 全量 `754` 项、Web 全量 `1070` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按当前代码重建后均为 healthy。真实 API 返回 `targetQuantity=0`、`decision=preserve`、`approvedTargetQuantity=0`，并带有日回撤、日亏损上限、最近成交数与小时成交上限证据；当前仍为 Testnet 后台监控，`tradeCount=0`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`。
+- 真实 Docker 执行中心使用 A 股 `600519 · 1d` 与 `1365 × 768` 视口复验。深色和浅色主题均能清楚显示“组合目标”和“风险调整”，页面、执行区、证据链与目标卡片横向溢出均为 `0px`，浏览器控制台 `0 error / 0 warning`。
+- 本次只展开和恢复前置区、自动交易台账并切换主题，没有点击评估、保存、暂停、急停、凭据检查或模式切换，也没有提交订单。
+
+final result: passed
+
+## 2026-07-27 M1 证据绑定订单意图复验
+
+- 风险调整目标只有存在非零批准差额时才生成稳定订单意图；订单意图绑定市场快照、策略修订、提案、信号、组合目标和风险调整目标，并记录方向、数量、参考价与名义金额。持有或风险拒绝时保持 `orderIntent=null`。
+- 测试网与生产继续使用既有自动交易路由和 `clientOrderId` 格式，ID 从执行模式与订单意图 ID 派生。首次 Docker 联调发现严格的 Testnet 六字段 schema 会拒绝附加证据字段；最终修复把证据保留在审计与状态层，适配器请求仍为原六字段，避免改变交易所边界。
+- 自动交易聚焦 `36` 项、执行区与布局聚焦 `192` 项、Python 全量 `755` 项、Web 全量 `1070` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按最终代码重建后均为 healthy。后台按既有 Testnet 监控配置自然生成过一条卖出订单意图，状态层与路由证据的订单意图 ID 完全一致；因 `0.65 USDT` 低于 Testnet 最小成本在创建前被拒绝，`filledQuantity=0`、累计成交仍为 `2`。本次没有点击“立即评估”、保存、暂停、急停、凭据检查或模式切换。
+- 真实 Docker 执行中心使用 A 股 `600519 · 1d` 与 `1280 × 720` 视口复验。存在订单意图时，组合目标、风险调整、订单意图三卡等宽展示“卖出 0.00001 BTC · 市价委托 · 0.65 USDT”；深色与浅色主题下页面、证据区和目标区横向溢出均为 `0px`，控制台 `0 error / 0 warning`。页面已恢复深色和折叠状态，浏览器证据只作临时查看，没有新增 PNG 文件。
+- 按用户要求删除仓库根目录全部 `47` 张已跟踪 `design-qa*.png`，并加入 `.gitignore`；文件仍可从 Git 历史恢复，`design-qa.md` 文字验收记录保留。
+- 最终只读边界为 `executionMode=testnet`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`，没有生产路由或生产订单。
+
+final result: passed
+
+## 2026-07-27 系统主题识别与浏览器标签图标复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-890c4e27-b1a0-43ba-a697-667b3d7e6d27.png`，`534 × 231`，内容为浏览器标签栏与页面顶部的局部截图；源图明确显示标签使用通用图标。
+- 修复后实现截图：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-theme-dark-after.png` 与 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-theme-light-after.png`，均为真实 Docker 页面 `1280 × 720` 浏览器内容截图，CSS 视口 `1280 × 720`、`devicePixelRatio=1.5`。源图包含浏览器外壳且裁切范围不同，因此没有进行像素缩放或伪造浏览器标签栏；favicon 使用 DOM 声明与真实资源响应作聚焦证据。
+- 首轮复现发现两个 P1：系统颜色偏好模拟为浅色后，页面仍保持 `data-theme=dark`；页面 `<head>` 没有 `link[rel~="icon"]`。根因分别是初始化只接受本地 `light`、其余一律深色并在每次渲染后回写，以及 `index.html` 未声明现有品牌图标。
+- 修复只复用现有主题模块与 `/aiqt-logo.png`：默认偏好改为 `system`，监听 `prefers-color-scheme` 变化；用户点击主题按钮后才保存 `manual:dark/light`。旧版自动写入的裸 `dark/light` 不再被当作手动选择。标签图标直接引用现有品牌 PNG，没有新增图片文件。
+- 修复后同一真实页面在系统浅色下首次加载为 `light`，系统切换深色后无需刷新即变为 `dark`，再切回浅色同样立即生效；按钮辅助文案同步变化。favicon DOM 为 `rel=icon`、`type=image/png`、`href=/aiqt-logo.png`，Docker 资源响应为 `200 image/png`。
+- 全视图比较确认深浅两套现有布局、字号、间距、颜色令牌、品牌图片与中文内容没有附带改动，页面横向溢出为 `0px`。聚焦检查针对源图中的标签图标完成；浏览器内容截图不包含外壳，未对不可见的浏览器 UI 做虚假像素结论。
+- 主题聚焦 `1` 项、布局聚焦 `178` 项、Web 全量 `1070` 项和生产构建通过；仅保留既知 chunk-size 提示。真实 Docker `api + web` healthy，系统深浅切换后的浏览器控制台均为 `0 error / 0 warning`。
+- 本次只模拟系统颜色偏好并刷新页面，没有点击评估、保存、暂停、急停、凭据检查、模式切换或任何交易动作；实现截图保存在系统临时目录，没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-27 M1 三模式统一订单结果复验
+
+- 第四个 M1 切片复用既有自动交易路由和订单对账状态机，新增统一 `OrderResult`：纸面、Testnet 与生产实盘都记录订单意图 ID、执行模式、订单状态、成交数量、剩余数量、成交均价和成交金额；没有新增适配器、订单状态机或下单入口。
+- 纸面成交直接生成本地 `filled` 结果且不伪造外部订单号；Testnet 与生产结果由原路由回执推进，挂单、部分成交、撤销、拒绝、只读对账和崩溃恢复继续使用原路径。边界校验阻止结果成交数量超过订单意图。
+- Python 聚焦 `9` 项、Python 全量 `756` 项、Web 组件聚焦 `14` 项、Web 全量 `1070` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按当前代码重建后均为 healthy。原 Testnet 后台监控自然生成一条 `stage6_sandbox_cost_below_minimum` 拒绝结果，交易所创建前即被既有最小成本校验阻止；结果模式为 `testnet`、状态为 `rejected`，订单结果与最近订单意图 ID 完全一致，累计成交保持 `2`。
+- 真实 Docker 执行中心使用 A 股 `600519 · 1d` 与 `2560 × 1296` 视口复验。决策证据链按组合目标、风险调整、订单意图、订单结果四卡等宽展示，单卡约 `561 × 69px`；深色和浅色主题横向溢出均为 `0px`，控制台 `0 error / 0 warning`，最终恢复深色主题。
+- 最终只读边界为 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有点击立即评估、保存、暂停、急停、凭据检查或模式切换，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-27 M1 研究与回测共享市场快照身份复验
+
+- 第五个 M1 切片复用既有 K 线内容哈希和 `canonical_snapshot_id`，让研究运行及其内置回测保存同一 `snapshotHash`；身份绑定市场、标的、周期和规范化数据内容，没有新增回测算法、状态机或数据表。
+- 历史研究运行在读取时按相同规则补出快照身份，不修改原数据库记录；写入或回读时若外部提供的身份与上下文推导结果不一致，使用 `data_snapshot_identity_mismatch` 阻断。
+- 首次真实页面复验发现研究历史 API 只返回摘要，导致刷新后的审计回放仍显示“快照 Hash —”。最终复用现有运行详情 API，只为研究页当前上下文最新一条运行补全详情，不批量加载历史 K 线，也不新建前端状态容器。
+- Python 全量 `757` 项、Web 全量 `1071` 项通过；页面详情接线后聚焦 `495` 项和生产构建通过，仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按最终代码重建后均为 healthy。现有历史运行 `run-1d4fdb6e2e94` 无迁移即可回读 `snapshotHash=b3b163f63e9d1b5680f91001178491adcc63ac485b78e3d2d32326c43f097805`，长度为 `64`，并与原 K 线内容哈希保持独立。
+- 真实 Docker 研究工作台使用 A 股 `600000 · 1d` 与 `1165 × 1318` 视口复验；审计回放和“证据链”均显示相同快照身份，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。本次没有点击运行研究、评估、保存、暂停、急停、模式切换或提交订单，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 M1 回测工作区共享快照身份复验
+
+- 第六个 M1 切片复用现有研究运行详情 API，让直接打开回测工作区时自动绑定当前市场、标的与周期的最新已审计运行；没有修改回测算法、策略状态或交易流程。
+- 首次真实 Docker 复验确认数据已绑定，但当前实际使用的“可复现性与证据链”侧栏没有渲染快照身份。最终在现有侧栏增加一行“快照身份”，同时让既有证据卡显示缩写、Markdown 报告分别保留内容哈希和完整快照身份，没有新增面板。
+- 组件与工作台聚焦 `654` 项、Web 全量 `1071` 项和生产构建通过；仅保留既知 chunk-size 提示。
+- `api + web` 按最终代码重建后均为 healthy。真实 Docker 回测实验室使用 A 股 `600000 · 1d` 与 `1280 × 720` 视口直接进入，自动显示运行 `run-1d4fdb6e2e94`；“快照身份”显示缩写 `b3b163f63…097805`，标题保留完整 `64` 位哈希。
+- 回测页面横向溢出为 `0px`，浏览器控制台为空。本次没有点击运行研究、运行回测、评估、保存、暂停、急停、模式切换或提交订单，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 M1 AI 评审共享快照身份复验
+
+- 第七个 M1 切片复用现有研究运行详情 API 和规范快照身份，让直接打开 AI 评审工作区时自动绑定当前市场、标的与周期的最新已审计运行；没有修改评审算法、外部出站内容、状态机或数据表。
+- 修复前真实 Docker 页面已有“证据与审计”区，但未显示所引用的市场快照身份。现用“快照身份”替换重复的“决策链 · 只追加”摘要项，优先读取权威评审或策略实验的 `snapshotId`，尚未生成评审时回退到研究运行的 `snapshotHash`；缩写保留完整哈希为标题。
+- 聚焦回归 `210` 项、Web 全量 `1071` 项和生产构建通过；仅保留既知 chunk-size 提示。
+- `api + web` 按最终代码重建后均为 healthy。真实 Docker AI 评审使用 A 股 `600000 · 1d` 与 `1280 × 720` 视口直接进入；“快照身份”显示 `b3b163f63…097805`，标题保留完整 `b3b163f63e9d1b5680f91001178491adcc63ac485b78e3d2d32326c43f097805`。
+- 页面横向溢出为 `0px`，浏览器控制台 `0 error / 0 warning`。本次没有点击运行研究、运行回测、AI 评审、评估、保存、暂停、急停、模式切换或提交订单，也没有新增仓库 PNG。
+
+final result: passed

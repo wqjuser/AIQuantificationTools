@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const indexHtmlSource = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 const terminalWorkspaceSurfaceSource = readFileSync(
   new URL("../components/TerminalWorkspaceSurface.tsx", import.meta.url),
   "utf8"
@@ -941,7 +942,7 @@ describe("terminal layout css", () => {
     expect(cssBlock("h1")).toContain("white-space: nowrap;");
   });
 
-  test("uses one persisted topbar color-scheme icon across every work area", () => {
+  test("follows the system theme until the topbar records a manual preference", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
     const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
     const chartSource = sourceBetween("function KlineChartCanvas", "function toKlineChartData");
@@ -949,13 +950,16 @@ describe("terminal layout css", () => {
     expect(appSource).not.toContain('activeWorkAreaId === "market" ? colorScheme : "dark"');
     expect(appSource).not.toContain("appliedColorScheme");
     expect(appSource).toContain('data-theme={colorScheme}');
-    expect(appSource).toContain('window.localStorage.setItem("aiqt.theme", colorScheme)');
+    expect(appSource).toContain('window.matchMedia("(prefers-color-scheme: dark)")');
+    expect(appSource).toContain('media.addEventListener("change", syncSystemColorScheme)');
+    expect(appSource).toContain('window.localStorage.setItem("aiqt.theme", `manual:${colorSchemePreference}`)');
+    expect(appSource).toContain('window.localStorage.removeItem("aiqt.theme")');
     expect(leftRailSource).not.toContain('role="switch"');
     expect(leftRailSource).not.toContain("rail-profile-controls");
     expect(leftRailSource).not.toContain("data-theme-available");
     expect(topbarSource).toContain('className="panel-icon-button theme-toggle-button"');
     expect(topbarSource).toContain("aria-label={colorSchemeToggleLabel}");
-    expect(topbarSource).toContain('setColorScheme((current) => (current === "dark" ? "light" : "dark"))');
+    expect(topbarSource).toContain('setColorSchemePreference(colorScheme === "dark" ? "light" : "dark")');
     expect(topbarSource).toContain('colorScheme === "dark" ? <Sun size={16} /> : <Moon size={16} />');
     expect(topbarSource).not.toContain('className="terminal-notification"');
     expect(topbarSource).not.toContain('className="terminal-top-avatar"');
@@ -967,6 +971,7 @@ describe("terminal layout css", () => {
     expect(styles).not.toContain("rail-profile-controls");
     expect(cssBlock(".theme-toggle-button")).toContain("color: #e8be62;");
     expect(styles).toContain('.terminal-shell[data-theme="light"] .theme-toggle-button');
+    expect(indexHtmlSource).toContain('<link rel="icon" type="image/png" href="/aiqt-logo.png" />');
   });
 
   test("keeps strategy workshop controls readable in the light theme", () => {
@@ -4896,6 +4901,18 @@ describe("terminal layout css", () => {
     expect(styles).toContain(".workflow-note-panel");
     expect(styles).toContain(".research-note-editor");
     expect(styles).toContain(".research-note-meta");
+  });
+
+  test("hydrates the selected research evidence from its audited run detail", () => {
+    expect(appSource).toContain(
+      'if (activeWorkAreaId !== "research" && activeWorkAreaId !== "backtest" && activeWorkAreaId !== "ai-review")'
+    );
+    expect(appSource).toContain("latestRun.dataSnapshot?.snapshotHash");
+    expect(appSource).toContain("loadResearchRunDetail(quantCoreBaseUrl, latestRun.runId)");
+    expect(appSource).toContain(
+      "runs: current.runs.map((run) => run.runId === detail.run!.runId ? detail.run! : run)"
+    );
+    expect(appSource).toContain("workspaceFromResearchRunAudit(current.workspace, detail.run!)");
   });
 
   test("consumes each external note authorization and protects drafts changed during generation", () => {
