@@ -165,7 +165,7 @@ class _FakeProviderServer:
                     self.wfile.flush()
                     if fixture.keep_open_seconds:
                         time.sleep(fixture.keep_open_seconds)
-                except (BrokenPipeError, ConnectionResetError):
+                except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
                     pass
 
             def log_message(self, format: str, *args: Any) -> None:

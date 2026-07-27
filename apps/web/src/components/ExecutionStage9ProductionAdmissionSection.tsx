@@ -8,6 +8,7 @@ import {
   type Stage9ProductionAdmissionReview
 } from "../lib/stage9-production-admission";
 import type { AuditEventRecord } from "../lib/terminal-api";
+import { executionEvidenceLabel } from "./execution-readiness-display";
 
 export function ExecutionStage9ProductionAdmissionSection({
   authorization = null, batch = null, busy = false, candidate = null, continuity = null,
@@ -26,9 +27,9 @@ export function ExecutionStage9ProductionAdmissionSection({
   const [reviewer, setReviewer] = useState("");
   const [reason, setReason] = useState("");
   const ready = !!authorization && batch?.status === "reconciled" && continuity?.status === "current";
-  const detail = error || (!authorization ? "尚无 Stage 6 批次授权。"
-    : batch?.status !== "reconciled" ? "Stage 6 批次必须先完成终态对账。"
-      : continuity?.status !== "current" ? "Stage 8 生产只读连续性必须保持 current。"
+  const detail = error || (!authorization ? "尚无阶段 6 批次授权。"
+    : batch?.status !== "reconciled" ? "阶段 6 批次必须先完成终态对账。"
+      : continuity?.status !== "current" ? "阶段 8 生产只读连续性必须保持有效。"
         : candidate ? "候选已绑定只读生产检查；复核不会产生下单权限。"
           : "已具备生成一次性生产委托准入候选的前提。");
   return (
@@ -36,11 +37,11 @@ export function ExecutionStage9ProductionAdmissionSection({
       aria-labelledby="execution-stage9-title">
       <header>
         <div>
-          <span>Stage 9 · Production Order Admission</span>
+          <span>阶段 9 · 生产委托准入</span>
           <h2 id="execution-stage9-title">生产委托准入准备</h2>
           <p>只读检查，不提交生产委托；候选与人工复核都不授予执行权限</p>
         </div>
-        <strong>Production read-only · Orders blocked</strong>
+        <strong>仅生产只读 · 委托持续阻断</strong>
       </header>
       <p role="status" className={error || !ready ? "execution-stage5-shadow-error" : undefined}>{detail}</p>
       {!candidate ? (
@@ -48,24 +49,27 @@ export function ExecutionStage9ProductionAdmissionSection({
           {busy ? "检查中…" : "生成生产委托准入候选"}
         </button>
       ) : null}
-      <dl>
-        <div><dt>Sandbox 批次</dt><dd>{batch?.status ?? "missing"}</dd></div>
-        <div><dt>只读连续性</dt><dd>{continuity?.status ?? "missing"}</dd></div>
-        <div><dt>候选</dt><dd>{candidate?.status ?? "missing"}</dd></div>
-        <div><dt>执行授权</dt><dd>authorizationEffective=false</dd></div>
-      </dl>
+      <details className="execution-stage-technical">
+        <summary>查看技术证据</summary>
+        <dl>
+          <div><dt>测试网批次</dt><dd>{executionEvidenceLabel(batch?.status ?? "missing")}</dd></div>
+          <div><dt>只读连续性</dt><dd>{executionEvidenceLabel(continuity?.status ?? "missing")}</dd></div>
+          <div><dt>候选</dt><dd>{executionEvidenceLabel(candidate?.status ?? "missing")}</dd></div>
+          <div><dt>执行授权</dt><dd>授权不会生效</dd></div>
+        </dl>
+      </details>
       {candidate ? (
         <>
           <details open>
             <summary>准入包络与只读检查</summary>
             <ul>{candidate.orders.map((order) => (
               <li key={order.orderId}>
-                <strong>{order.symbol} · {order.side}</strong>
+                <strong>{order.symbol} · {order.side === "buy" ? "买入" : "卖出"}</strong>
                 <span>{order.quantity} @ {order.price} · {order.notionalValue} USDT · GTC</span>
                 <small>{order.orderId}</small>
               </li>
             ))}</ul>
-            <span>市场 {String(candidate.observation.marketChecks.every((row) => row.passed))} · 价格 {String(candidate.observation.priceChecks.every((row) => row.passed))} · 资金 {String(candidate.observation.fundingChecks.every((row) => row.passed))}</span>
+            <span>市场 {executionEvidenceLabel(candidate.observation.marketChecks.every((row) => row.passed))} · 价格 {executionEvidenceLabel(candidate.observation.priceChecks.every((row) => row.passed))} · 资金 {executionEvidenceLabel(candidate.observation.fundingChecks.every((row) => row.passed))}</span>
             <p>候选到期：{candidate.expiresAt}</p>
             <span className="execution-stage5-shadow-hash">{candidate.candidateHash}</span>
           </details>
@@ -85,15 +89,15 @@ export function ExecutionStage9ProductionAdmissionSection({
           ) : (
             <details open>
               <summary>不可改写人工复核</summary>
-              <p>{review.reviewer} · {review.outcome} · {review.reviewedAt}</p>
+              <p>{review.reviewer} · {executionEvidenceLabel(review.outcome)} · {review.reviewedAt}</p>
               <p>{review.reason}</p>
-              <strong>authorizationEffective=false</strong>
+              <strong>授权不会生效</strong>
               <span className="execution-stage5-shadow-hash">{review.reviewHash}</span>
             </details>
           )}
         </>
       ) : null}
-      <p>准入急停复用 Stage 8 撤销；系统不存在第二套 Kill Switch，也没有生产订单 API。</p>
+      <p>准入急停复用阶段 8 撤销；系统没有第二套急停开关，也不提供生产订单接口。</p>
     </section>
   );
 }

@@ -297,6 +297,9 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("CCXT_SANDBOX_SECRET: ${CCXT_SANDBOX_SECRET:-}");
     expect(compose).toContain("CCXT_PRODUCTION_READONLY_API_KEY: ${CCXT_PRODUCTION_READONLY_API_KEY:-}");
     expect(compose).toContain("CCXT_PRODUCTION_READONLY_SECRET: ${CCXT_PRODUCTION_READONLY_SECRET:-}");
+    expect(compose).toContain("CCXT_PRODUCTION_TRADING_API_KEY: ${CCXT_PRODUCTION_TRADING_API_KEY:-}");
+    expect(compose).toContain("CCXT_PRODUCTION_TRADING_SECRET: ${CCXT_PRODUCTION_TRADING_SECRET:-}");
+    expect(compose).toContain("AIQT_ENABLE_PRODUCTION_TRADING: ${AIQT_ENABLE_PRODUCTION_TRADING:-false}");
     expect(compose).toContain("HTTPS_PROXY: ${HTTPS_PROXY:-}");
     expect(compose).toContain("quant-data:/app/data");
     expect(compose).toContain("${AIQT_WEB_PORT:-5173}:80");
@@ -371,6 +374,7 @@ describe("docker deployment contract", () => {
     const apiDockerfile = readRepoFile("Dockerfile.api");
     expect(apiDockerfile).toContain("FROM python:3.12-slim");
     expect(apiDockerfile).toContain("ENV PYTHONPATH=/app/services/quant_core");
+    expect(apiDockerfile).toContain("RUN pip install --no-cache-dir ccxt");
     expect(apiDockerfile).toContain("COPY package.json package.json");
     expect(apiDockerfile).toContain("EXPOSE 8765");
     expect(apiDockerfile).toContain('CMD ["python", "tools/run_quant_api.py"]');

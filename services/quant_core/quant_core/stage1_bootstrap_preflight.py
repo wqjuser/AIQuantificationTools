@@ -122,11 +122,11 @@ def build_stage1_bootstrap_preflight(*, project_root: Path, generated_at: str | 
         "liveTradingAllowed": False,
         "liveBlockedBoundary": True,
         "sourcePaths": {
-            "p0Acceptance": str(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
-            "p1Acceptance": str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
-            "p2ManifestChainPreflight": str(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
-            "desktopRelease": str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
-            "stage1DailyUse": str(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
+            "p0Acceptance": _display_path_for_status(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
+            "p1Acceptance": _display_path_for_status(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+            "p2ManifestChainPreflight": _display_path_for_status(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
+            "desktopRelease": _display_path_for_status(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
+            "stage1DailyUse": _display_path_for_status(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
         },
         "checks": checks,
     }
@@ -318,10 +318,10 @@ def _stage1_bootstrap_preflight_stale_source_paths(report: dict[str, Any], repor
         try:
             source_mtime_ns = source_path.stat().st_mtime_ns
         except OSError:
-            stale_paths.append(_display_path_for_status(source_path) if Path(source_label).is_absolute() else source_label)
+            stale_paths.append(_display_path_for_status(Path(source_label)))
             continue
         if source_mtime_ns > report_mtime_ns:
-            stale_paths.append(_display_path_for_status(source_path) if Path(source_label).is_absolute() else source_label)
+            stale_paths.append(_display_path_for_status(Path(source_label)))
     return stale_paths
 
 
@@ -329,13 +329,23 @@ def _stage1_bootstrap_preflight_stale_check_ids(report: dict[str, Any], stale_so
     source_paths = report.get("sourcePaths") if isinstance(report.get("sourcePaths"), dict) else {}
     source_to_checks = {
         "package.json": {"package-scripts"},
-        str(source_paths.get("p0Acceptance") or DEFAULT_P0_ACCEPTANCE_REPORT_PATH): {"p0-acceptance"},
-        str(source_paths.get("p1Acceptance") or DEFAULT_P1_ACCEPTANCE_REPORT_PATH): {"p1-acceptance"},
-        str(source_paths.get("p2ManifestChainPreflight") or DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH): {
+        _display_path_for_status(Path(source_paths.get("p0Acceptance") or DEFAULT_P0_ACCEPTANCE_REPORT_PATH)): {
+            "p0-acceptance"
+        },
+        _display_path_for_status(Path(source_paths.get("p1Acceptance") or DEFAULT_P1_ACCEPTANCE_REPORT_PATH)): {
+            "p1-acceptance"
+        },
+        _display_path_for_status(
+            Path(source_paths.get("p2ManifestChainPreflight") or DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH)
+        ): {
             "p2-manifest-chain"
         },
-        str(source_paths.get("desktopRelease") or DEFAULT_DESKTOP_RELEASE_REPORT_PATH): {"desktop-release"},
-        str(source_paths.get("stage1DailyUse") or DEFAULT_STAGE1_DAILY_USE_REPORT_PATH): {"stage1-daily-use"},
+        _display_path_for_status(Path(source_paths.get("desktopRelease") or DEFAULT_DESKTOP_RELEASE_REPORT_PATH)): {
+            "desktop-release"
+        },
+        _display_path_for_status(Path(source_paths.get("stage1DailyUse") or DEFAULT_STAGE1_DAILY_USE_REPORT_PATH)): {
+            "stage1-daily-use"
+        },
     }
     check_ids: set[str] = set()
     for source in stale_sources:
@@ -389,11 +399,11 @@ def _stage1_bootstrap_preflight_status(
         "liveBlockedBoundary": True,
         "sourcePath": _display_path_for_status(source_path),
         "sourcePaths": {
-            "p0Acceptance": str(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
-            "p1Acceptance": str(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
-            "p2ManifestChainPreflight": str(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
-            "desktopRelease": str(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
-            "stage1DailyUse": str(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
+            "p0Acceptance": _display_path_for_status(DEFAULT_P0_ACCEPTANCE_REPORT_PATH),
+            "p1Acceptance": _display_path_for_status(DEFAULT_P1_ACCEPTANCE_REPORT_PATH),
+            "p2ManifestChainPreflight": _display_path_for_status(DEFAULT_P2_MANIFEST_CHAIN_PREFLIGHT_REPORT_PATH),
+            "desktopRelease": _display_path_for_status(DEFAULT_DESKTOP_RELEASE_REPORT_PATH),
+            "stage1DailyUse": _display_path_for_status(DEFAULT_STAGE1_DAILY_USE_REPORT_PATH),
         },
         "checks": checks,
     }
@@ -564,7 +574,7 @@ def _check(
         "status": status,
         "summary": summary,
         "recommendedCommand": recommended_command,
-        "sourcePath": source_path,
+        "sourcePath": _display_path_for_status(Path(source_path)),
         "paperOnly": True,
         "liveTradingAllowed": False,
         "liveBlockedBoundary": True,
@@ -602,11 +612,11 @@ def _resolve_under_root(project_root: Path, path: Path) -> Path:
 
 def _display_path_for_status(path: Path) -> str:
     if not path.is_absolute():
-        return str(path)
+        return path.as_posix()
     resolved = path.resolve()
     if resolved.parent.name == "data":
-        return str(Path("data") / resolved.name)
-    return str(path)
+        return (Path("data") / resolved.name).as_posix()
+    return path.as_posix()
 
 
 def _default_check_label(check_id: str) -> str:

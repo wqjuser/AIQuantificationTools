@@ -14642,6 +14642,8 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(probe.status, "ready")
         self.assertNotIn("apiKey", created["config"])
         self.assertNotIn("secret", created["config"])
+        self.assertEqual(created["config"]["options"]["fetchMarkets"], {"types": ["spot"]})
+        self.assertFalse(created["config"]["options"]["fetchMargins"])
         self.assertEqual(created["exchange"].apiKey, "read-key")
         self.assertEqual(created["exchange"].secret, "read-secret")
         self.assertEqual(created["config"]["httpsProxy"], "http://proxy.internal:7890")

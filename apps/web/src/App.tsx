@@ -298,6 +298,8 @@ import {
   ExecutionStage9ProductionAdmissionSection,
   Stage9ProductionAdmissionAuditLedgerPanel
 } from "./components/ExecutionStage9ProductionAdmissionSection";
+import { ExecutionStage10ProductionExecutionSection } from "./components/ExecutionStage10ProductionExecutionSection";
+import { ExecutionAutoPaperTradingSection } from "./components/ExecutionAutoPaperTradingSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import { resolveInitialColorScheme, type ColorScheme } from "./lib/theme";
 import { createLatestRequestCoordinator } from "./lib/latest-request";
@@ -14110,6 +14112,12 @@ export function App() {
         <strong>{i18n.locale === "zh-CN" ? "实盘路由持续阻断" : "Live routing remains blocked"}</strong>
       </summary>
       <div className="execution-readiness-stack-body">
+        <ExecutionAutoPaperTradingSection baseUrl={quantCoreBaseUrl} />
+        <ExecutionStage10ProductionExecutionSection
+          baseUrl={quantCoreBaseUrl}
+          candidate={stage9ProductionAdmissionCandidate}
+          review={stage9ProductionAdmissionReview}
+        />
         <ExecutionStage9ProductionAdmissionSection
           authorization={stage6SandboxAuthorization}
           batch={stage6SandboxBatch}
@@ -15408,8 +15416,8 @@ export function App() {
                 {i18n.t("action.switchSymbol")}
               </button>
             </form>
-            <span className="terminal-paper-badge">纸面环境</span>
-            <span className="terminal-live-badge">实盘阻断</span>
+            <span className="terminal-paper-badge">纸面 / 测试网</span>
+            <span className="terminal-live-badge">实盘需授权</span>
             <button
               className="context-link-button"
               onClick={() => void copyResearchContextLink()}
@@ -15570,7 +15578,10 @@ export function App() {
           runs={runHistory}
           source={source}
           strategyExperiment={{
+            active: visibleStrategyExperimentActive,
             busy: isStrategyExperimentRunning,
+            error: strategyExperimentError,
+            history: visibleStrategyExperimentHistory,
             onWalkForwardChange: configureStrategyExperimentWalkForward,
             walkForward: strategyExperimentWalkForward
           }}
@@ -15613,9 +15624,6 @@ export function App() {
                   ? i18n.productWorkAreaDescription(activeWorkArea)
                   : i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}
               </p>
-              <details className="workspace-command-center">
-                <summary>{i18n.locale === "zh-CN" ? "工作区上下文" : "Workspace context"}</summary>
-                <div className="workspace-command-center-body">
               {goldenPath ? (
                 <div className={`golden-path-status ${goldenPath.status}`}>
                   <span>{goldenPathProgressLabel(i18n, goldenPath)}</span>
@@ -15627,6 +15635,19 @@ export function App() {
                   <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason)}</small>
                 </div>
               ) : null}
+              <details className="workspace-command-center" hidden>
+                <summary>{i18n.locale === "zh-CN" ? "工作区上下文" : "Workspace context"}</summary>
+                <div className="workspace-command-center-body">
+              <details className="p0-evidence-drawer operations-context-advanced">
+                <summary className="p0-evidence-drawer-summary">
+                  <span>{i18n.locale === "zh-CN" ? "低频工具" : "Low-frequency tools"}</span>
+                  <strong>
+                    {i18n.locale === "zh-CN"
+                      ? "验收、归档与发布证据"
+                      : "Acceptance, archive, and release evidence"}
+                  </strong>
+                </summary>
+                <div className="operations-context-advanced-body">
               <P0GoldenPathJourneyPanel
                 i18n={i18n}
                 isActionDisabled={isGoldenPathActionDisabledById}
@@ -16881,6 +16902,8 @@ export function App() {
                 ) : null}
                 </details>
               </div>
+                </div>
+              </details>
               {activeWorkspaceContext ? (
                 <div className={`workspace-gate-summary ${activeWorkspaceContext.status}`}>
                   <span>{goldenPathWorkspaceContextLabel(i18n, activeWorkspaceContext)}</span>
@@ -16930,6 +16953,14 @@ export function App() {
               </details>
             </div>
             <div className="module-focus-actions">
+              <button
+                className="compact-action operations-audit-link"
+                onClick={() => selectProductWorkArea("audit")}
+                type="button"
+              >
+                <ShieldCheck size={15} />
+                <span>{i18n.locale === "zh-CN" ? "查看完整审计证据" : "View full audit evidence"}</span>
+              </button>
               {canSaveResearchWorkspace ? (
                 <button
                   className={`compact-action research-workspace-save-action ${
@@ -17058,8 +17089,8 @@ export function App() {
         </div>
         <div className="terminal-live-block">
           <span>{i18n.locale === "zh-CN" ? "实盘交易" : "Live trading"}</span>
-          <strong>{i18n.locale === "zh-CN" ? "已阻断" : "Blocked"}</strong>
-          <small>{i18n.locale === "zh-CN" ? "不发送真实指令" : "No live order submission"}</small>
+          <strong>{i18n.locale === "zh-CN" ? "受控" : "Controlled"}</strong>
+          <small>{i18n.locale === "zh-CN" ? "需 Stage 10 与二次确认" : "Requires Stage 10 and confirmation"}</small>
         </div>
       </footer>
 

@@ -45,6 +45,7 @@ import type {
   PortfolioPaperOrderApprovalRow,
   ProductWorkAreaId,
   ResearchRunAudit,
+  StrategyExperimentDetail,
   StrategyExperimentListItem,
   StrategyExperimentWalkForward,
   TerminalWorkspace,
@@ -121,7 +122,10 @@ interface TerminalWorkspaceSurfaceProps {
   runs: ResearchRunAudit[];
   source: "core" | "fallback";
   strategyExperiment: {
+    active: StrategyExperimentDetail | null;
     busy: boolean;
+    error: string | null;
+    history: StrategyExperimentListItem[];
     onWalkForwardChange: (walkForward: StrategyExperimentWalkForward | null) => void;
     walkForward: StrategyExperimentWalkForward | null;
   };
@@ -1452,12 +1456,11 @@ function StrategySurface({
 function BacktestSurface({
   action,
   colorScheme,
-  runs,
   strategyExperiment,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "colorScheme" | "runs" | "strategyExperiment" | "workspace"
+  "action" | "colorScheme" | "strategyExperiment" | "workspace"
 >) {
   const curve =
     workspace.backtestEquityCurve?.map((point) => point.equity) ?? [];
@@ -1484,6 +1487,19 @@ function BacktestSurface({
     },
   ].slice(0, 6);
   const walkForward = strategyExperiment.walkForward;
+  const experimentHistory = strategyExperiment.active
+    && !strategyExperiment.history.some(
+      (experiment) => experiment.experimentId === strategyExperiment.active?.experimentId,
+    )
+      ? [strategyExperiment.active, ...strategyExperiment.history]
+      : strategyExperiment.history;
+  const experimentStatus = strategyExperiment.busy
+    ? { label: "运行中", tone: "warning" as const }
+    : strategyExperiment.active?.status === "completed"
+      ? { label: "已完成", tone: "positive" as const }
+      : strategyExperiment.active?.status === "failed"
+        ? { label: "失败", tone: "risk" as const }
+        : { label: "待运行", tone: "neutral" as const };
   const updateWalkForward = (
     field: keyof StrategyExperimentWalkForward,
     value: number,
@@ -1509,6 +1525,11 @@ function BacktestSurface({
           <span>手续费 {workspace.backtestAssumptions?.feeBps ?? 3} bps</span>
         </div>
       </PageHeader>
+      {strategyExperiment.error ? (
+        <p className="strategy-experiment-error design-backtest-run-error" role="alert">
+          {strategyExperiment.error}
+        </p>
+      ) : null}
       <div className="design-backtest-grid">
         <div className="design-backtest-main">
           <SurfacePanel
@@ -1610,8 +1631,30 @@ function BacktestSurface({
         </div>
         <div className="design-backtest-side">
           <SurfacePanel title="可复现性与证据链">
+            <div className="design-kv-row" role="status">
+              <span>实验状态</span>
+              <Status tone={experimentStatus.tone}>{experimentStatus.label}</Status>
+            </div>
             <div className="design-kv-row">
-              <span>回测 ID</span>
+              <span>实验 ID</span>
+              <strong title={strategyExperiment.active?.experimentId ?? "—"}>
+                {compactRunId(strategyExperiment.active?.experimentId)}
+              </strong>
+            </div>
+            <div className="design-kv-row">
+              <span>选择候选</span>
+              <strong title={strategyExperiment.active?.selectedCandidateId ?? "—"}>
+                {compactRunId(strategyExperiment.active?.selectedCandidateId)}
+              </strong>
+            </div>
+            <div className="design-kv-row">
+              <span>结果 Hash</span>
+              <strong title={strategyExperiment.active?.resultHash ?? "—"}>
+                {compactRunId(strategyExperiment.active?.resultHash)}
+              </strong>
+            </div>
+            <div className="design-kv-row">
+              <span>研究运行 ID</span>
               <strong>{compactRunId(workspace.researchRun?.runId)}</strong>
             </div>
             <div className="design-kv-row">
@@ -1731,11 +1774,15 @@ function BacktestSurface({
             ))}
           </SurfacePanel>
           <SurfacePanel title="最近回测运行">
-            {runs.slice(0, 5).map((run) => (
-              <div className="design-history-row" key={run.runId}>
-                <i />
-                <span>{new Date(run.createdAt).toLocaleString("zh-CN")}</span>
-                <Status>通过</Status>
+            {experimentHistory.slice(0, 5).map((experiment) => (
+              <div className="design-history-row" key={experiment.experimentId}>
+                <i className={experiment.status === "completed" ? "done" : ""} />
+                <span title={experiment.experimentId}>
+                  {compactRunId(experiment.experimentId)}
+                </span>
+                <Status tone={experiment.status === "completed" ? "positive" : "risk"}>
+                  {experiment.status === "completed" ? "已完成" : "失败"}
+                </Status>
               </div>
             ))}
           </SurfacePanel>
@@ -2702,7 +2749,7 @@ function ExecutionSurface({
       </div>
       <div className="design-live-warning">
         <AlertTriangle size={18} />
-        仅允许影子执行；liveTradingAllowed=false；orderSubmissionEnabled=false
+        默认仅影子与测试网；生产实盘需 Stage 10 权限核验、急停恢复和自动交易区二次确认
       </div>
       {executionReadiness ? (
         <div className="design-execution-readiness">{executionReadiness}</div>
@@ -2852,11 +2899,75 @@ function ExecutionSurface({
   );
 }
 
+type AuditEventType = "all" | "data-ingest" | "data-processing" | "backtest" | "ai-review";
+
+interface AuditLedgerFilters {
+  runId: string;
+  symbol: string;
+  eventType: AuditEventType;
+}
+
+const AUDIT_LEDGER_EVENTS = [
+  ["data-ingest", "数据接入", "行情与因子数据接入"],
+  ["data-processing", "数据处理", "因子计算与标准化"],
+  ["backtest", "策略", "回测运行"],
+  ["ai-review", "AI", "评审运行"],
+] as const;
+
+export function buildAuditLedgerRows(
+  runs: ResearchRunAudit[],
+  filters: AuditLedgerFilters,
+) {
+  const runIdQuery = filters.runId.trim().toLowerCase();
+  const symbolQuery = filters.symbol.trim().toLowerCase();
+
+  return runs
+    .map((run, runIndex) => ({ run, runIndex }))
+    .filter(({ run }) =>
+      (!runIdQuery || run.runId.toLowerCase().includes(runIdQuery)) &&
+      (!symbolQuery || run.symbol.toLowerCase().includes(symbolQuery))
+    )
+    .flatMap(({ run, runIndex }) =>
+      AUDIT_LEDGER_EVENTS
+        .filter(([eventType]) => filters.eventType === "all" || filters.eventType === eventType)
+        .map(([eventType, stage, event]) => ({
+          eventType,
+          event,
+          operator: eventType === "data-ingest" ? "system" : "quant.user",
+          run,
+          stage,
+          status: eventType === "ai-review" ? (runIndex ? "通过" : "待执行") : "成功",
+        })),
+    )
+    .slice(0, 12);
+}
+
 function AuditSurface({
   action,
   runs,
   workspace,
 }: Pick<TerminalWorkspaceSurfaceProps, "action" | "runs" | "workspace">) {
+  const contextRunId = workspace.researchRun?.runId ?? "";
+  const contextSymbol = workspace.selectedInstrument.symbol;
+  const [draftFilters, setDraftFilters] = useState<AuditLedgerFilters>({
+    runId: contextRunId,
+    symbol: contextSymbol,
+    eventType: "all",
+  });
+  const [filters, setFilters] = useState<AuditLedgerFilters>(draftFilters);
+
+  useEffect(() => {
+    const nextFilters: AuditLedgerFilters = {
+      runId: contextRunId,
+      symbol: contextSymbol,
+      eventType: "all",
+    };
+    setDraftFilters(nextFilters);
+    setFilters(nextFilters);
+  }, [contextRunId, contextSymbol]);
+
+  const ledgerRows = buildAuditLedgerRows(runs, filters);
+
   return (
     <>
       <PageHeader
@@ -2875,26 +2986,60 @@ function AuditSurface({
           </button>
         </div>
       </PageHeader>
-      <div className="design-audit-filters">
+      <form
+        aria-label="审计事件筛选"
+        className="design-audit-filters"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setFilters(draftFilters);
+        }}
+      >
         <label>
           Run ID
-          <input value={workspace.researchRun?.runId ?? ""} readOnly />
+          <input
+            autoComplete="off"
+            name="runId"
+            onChange={(event) => setDraftFilters((current) => ({
+              ...current,
+              runId: event.target.value,
+            }))}
+            value={draftFilters.runId}
+          />
         </label>
         <label>
           标的/代码
-          <input value={workspace.selectedInstrument.symbol} readOnly />
+          <input
+            autoComplete="off"
+            name="symbol"
+            onChange={(event) => setDraftFilters((current) => ({
+              ...current,
+              symbol: event.target.value,
+            }))}
+            value={draftFilters.symbol}
+          />
         </label>
         <label>
           事件类型
-          <select defaultValue="all">
+          <select
+            name="eventType"
+            onChange={(event) => setDraftFilters((current) => ({
+              ...current,
+              eventType: event.target.value as AuditEventType,
+            }))}
+            value={draftFilters.eventType}
+          >
             <option value="all">全部</option>
+            <option value="data-ingest">数据接入</option>
+            <option value="data-processing">数据处理</option>
+            <option value="backtest">回测运行</option>
+            <option value="ai-review">AI 评审</option>
           </select>
         </label>
-        <button type="button">
+        <button type="submit">
           <Search size={13} />
           查询
         </button>
-      </div>
+      </form>
       <div className="design-audit-grid">
         <SurfacePanel
           className="design-audit-ledger"
@@ -2914,36 +3059,36 @@ function AuditSurface({
               </tr>
             </thead>
             <tbody>
-              {runs
-                .slice(0, 12)
-                .flatMap((run, index) =>
-                  [
-                    ["数据接入", "行情与因子数据接入", "成功"],
-                    ["数据处理", "因子计算与标准化", "成功"],
-                    ["策略", "回测运行", "成功"],
-                    ["AI", "评审运行", index ? "通过" : "待执行"],
-                  ].map(([stage, event, status], rowIndex) => (
-                    <tr key={`${run.runId}-${rowIndex}`}>
-                      <td>
-                        {new Date(run.createdAt).toLocaleTimeString("zh-CN")}
-                      </td>
-                      <td>{stage}</td>
-                      <td>{event}</td>
-                      <td>{run.strategyName}</td>
-                      <td>{compactRunId(run.runId)}</td>
-                      <td>
-                        <Status
-                          tone={status === "待执行" ? "warning" : "positive"}
-                        >
-                          {status}
-                        </Status>
-                      </td>
-                      <td>{compactRunId(run.strategyRevision)}</td>
-                      <td>{rowIndex ? "quant.user" : "system"}</td>
-                    </tr>
-                  )),
-                )
-                .slice(0, 12)}
+              {ledgerRows.map((row) => (
+                <tr key={`${row.run.runId}-${row.eventType}`}>
+                  <td>
+                    {new Date(row.run.createdAt).toLocaleTimeString("zh-CN")}
+                  </td>
+                  <td>{row.stage}</td>
+                  <td>{row.event}</td>
+                  <td>{row.run.strategyName}</td>
+                  <td>{compactRunId(row.run.runId)}</td>
+                  <td>
+                    <Status
+                      tone={row.status === "待执行" ? "warning" : "positive"}
+                    >
+                      {row.status}
+                    </Status>
+                  </td>
+                  <td>{compactRunId(row.run.strategyRevision)}</td>
+                  <td>{row.operator}</td>
+                </tr>
+              ))}
+              {!ledgerRows.length ? (
+                <tr>
+                  <td className="design-empty" colSpan={8}>
+                    <EmptyState
+                      detail="请修改 Run ID、标的代码或事件类型后重新查询。"
+                      title="未找到匹配的审计事件"
+                    />
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </SurfacePanel>

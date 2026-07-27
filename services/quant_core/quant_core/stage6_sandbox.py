@@ -9,6 +9,18 @@ from threading import Lock
 from typing import Any
 
 from quant_core.audit_events import AuditEventStore
+from quant_core.binance_spot_orders import (
+    available as _available,
+    check_spot_account_coverage,
+    create_spot_market_order,
+    fetch_spot_order,
+    market_currencies as _market_currencies,
+    normalize_exchange_order,
+    order_not_found as _order_not_found,
+    positive_int as _positive_int,
+    positive_number as _positive_number,
+    validate_limits as _validate_limits,
+)
 from quant_core.stage4_portfolio import validate_stage4_portfolio_workflow_snapshot
 from quant_core.stage5_shadow import (
     validate_stage5_sandbox_authorization_preflight,
@@ -120,13 +132,31 @@ class BinanceSpotTestnetRoute:
         )
         return normalize_exchange_order(response, expected_client_order_id=order["clientOrderId"])
 
-    def fetch_order(self, order: dict[str, Any], exchange_order_id: str | None = None) -> dict[str, Any]:
-        response = self.exchange().fetch_order(
-            exchange_order_id,
-            order["symbol"],
-            {"origClientOrderId": order["clientOrderId"]},
+    def create_market_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        required = {"clientOrderId", "symbol", "side", "quantity", "referencePrice", "notionalValue"}
+        if not isinstance(order, dict) or set(order) != required or order["side"] not in {"buy", "sell"}:
+            raise ValueError("stage6_auto_sandbox_order_invalid")
+        return create_spot_market_order(
+            self.exchange(),
+            order,
+            market_or_balance_error="stage6_auto_sandbox_market_or_balance_unavailable",
+            balance_error="stage6_sandbox_balance_insufficient",
         )
-        return normalize_exchange_order(response, expected_client_order_id=order["clientOrderId"])
+
+    def account_coverage(
+        self,
+        expected_position: float,
+        required_quote: float,
+    ) -> dict[str, Any]:
+        return check_spot_account_coverage(
+            self.exchange(),
+            symbol="BTC/USDT",
+            expected_base=expected_position,
+            required_quote=required_quote,
+        )
+
+    def fetch_order(self, order: dict[str, Any], exchange_order_id: str | None = None) -> dict[str, Any]:
+        return fetch_spot_order(self.exchange(), order, exchange_order_id)
 
     def cancel_order(self, order: dict[str, Any], exchange_order_id: str | None = None) -> dict[str, Any]:
         response = self.exchange().cancel_order(
@@ -296,37 +326,6 @@ def validate_stage6_order_transition(value: Any) -> dict[str, Any]:
     return json.loads(json.dumps(value))
 
 
-def normalize_exchange_order(value: Any, *, expected_client_order_id: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise ValueError("stage6_sandbox_exchange_order_invalid")
-    client_id = str(value.get("clientOrderId") or value.get("info", {}).get("clientOrderId") or "")
-    if client_id != expected_client_order_id:
-        raise ValueError("stage6_sandbox_exchange_client_order_id_mismatch")
-    status = str(value.get("status") or "").lower()
-    filled = _nonnegative_number(value.get("filled", 0), "filled")
-    amount = _positive_number(value.get("amount"), "amount")
-    state = {
-        "open": "partially_filled" if filled > 0 else "open",
-        "closed": "filled",
-        "canceled": "canceled",
-        "cancelled": "canceled",
-        "expired": "expired",
-        "rejected": "rejected",
-    }.get(status)
-    if state is None:
-        raise ValueError("stage6_sandbox_exchange_order_status_unknown")
-    return {
-        "exchangeOrderId": str(value.get("id") or ""),
-        "clientOrderId": client_id,
-        "state": state,
-        "filledQuantity": filled,
-        "remainingQuantity": _nonnegative_number(value.get("remaining", max(0.0, amount - filled)), "remaining"),
-        "averagePrice": _nonnegative_number(value.get("average", 0) or 0, "average"),
-        "exchangeStatus": status,
-        "timestamp": value.get("timestamp"),
-    }
-
-
 def is_active_batch(orders: list[dict[str, Any]]) -> bool:
     return any(isinstance(order, dict) and order.get("state") in _NONTERMINAL for order in orders)
 
@@ -430,6 +429,48 @@ class Stage6SandboxExecutionService:
                     self._cancel_open_orders(authorization)
                     break
             return self.batch(authorization_id)
+
+    def submit_auto_market_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            if self.kill_switch()["triggered"]:
+                raise ValueError("stage6_sandbox_kill_switch_triggered")
+            for event in self._events("stage6_sandbox_batch_authorization"):
+                if event.metadata.get("detached") is True:
+                    continue
+                authorization_id = str(event.metadata.get("snapshot", {}).get("authorizationId") or "")
+                if authorization_id and is_active_batch(self.batch(authorization_id)["orders"]):
+                    raise ValueError("stage6_sandbox_active_batch_exists")
+            evidence = self.route.create_market_order(order)
+            if evidence["state"] in {"open", "partially_filled"}:
+                evidence = self.route.fetch_order(order, evidence.get("exchangeOrderId"))
+            return evidence
+
+    def verify_auto_account_coverage(
+        self,
+        expected_position: float,
+        required_quote: float,
+    ) -> dict[str, Any]:
+        with self._lock:
+            if self.kill_switch()["triggered"]:
+                raise ValueError("stage6_sandbox_kill_switch_triggered")
+            return self.route.account_coverage(expected_position, required_quote)
+
+    def reconcile_auto_market_order(
+        self,
+        order: dict[str, Any],
+        evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        with self._lock:
+            try:
+                return {
+                    **self.route.fetch_order(
+                        order,
+                        evidence.get("exchangeOrderId"),
+                    ),
+                    "operation": "query",
+                }
+            except Exception as error:
+                return _unknown_evidence(error, "query")
 
     def reconcile(self, authorization_id: str) -> dict[str, Any]:
         with self._lock:
@@ -674,54 +715,8 @@ def _validate_normalized_order(order: Any, workflow_hash: str) -> None:
         raise ValueError("stage6 sandbox normalized order notional does not match")
 
 
-def _validate_limits(market: dict[str, Any], amount: float, price: float, cost: float) -> None:
-    limits = market.get("limits") if isinstance(market.get("limits"), dict) else {}
-    for kind, value in (("amount", amount), ("price", price), ("cost", cost)):
-        bounds = limits.get(kind) if isinstance(limits.get(kind), dict) else {}
-        minimum, maximum = bounds.get("min"), bounds.get("max")
-        if minimum is not None and value < float(minimum):
-            raise ValueError(f"stage6_sandbox_{kind}_below_minimum")
-        if maximum is not None and value > float(maximum):
-            raise ValueError(f"stage6_sandbox_{kind}_above_maximum")
-
-
-def _market_currencies(market: dict[str, Any], symbol: str) -> tuple[str, str]:
-    base, quote = str(market.get("base") or ""), str(market.get("quote") or "")
-    if not base or not quote:
-        parts = symbol.split("/")
-        if len(parts) != 2:
-            raise ValueError("stage6_sandbox_symbol_invalid")
-        base, quote = parts
-    return base, quote
-
-
-def _available(free: dict[str, Any], currency: str) -> float:
-    value = free.get(currency, 0)
-    return 0.0 if isinstance(value, bool) or not isinstance(value, (int, float)) else float(value)
-
-
 def _client_order_id(workflow_hash: str, order_id: str) -> str:
     return "shadow-" + hashlib.sha256(f"{workflow_hash}:{order_id}".encode()).hexdigest()[:24]
-
-
-def _positive_number(value: Any, label: str) -> float:
-    number = _nonnegative_number(value, label)
-    if number <= 0:
-        raise ValueError(f"stage6 sandbox {label} must be positive")
-    return number
-
-
-def _nonnegative_number(value: Any, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)) or float(value) < 0:
-        raise ValueError(f"stage6 sandbox {label} must be a finite non-negative number")
-    return float(value)
-
-
-def _positive_int(value: str | None, default: int) -> int:
-    try:
-        return max(1, int(value or default))
-    except ValueError:
-        return default
 
 
 def _utc(value: str) -> datetime:
@@ -749,10 +744,6 @@ def _batch_status(orders: list[dict[str, Any]]) -> str:
     if "rejected" in states:
         return "blocked"
     return "reconciled"
-
-
-def _order_not_found(error: Exception) -> bool:
-    return error.__class__.__name__ == "OrderNotFound"
 
 
 def _definitive_submission_rejection(error: Exception) -> bool:

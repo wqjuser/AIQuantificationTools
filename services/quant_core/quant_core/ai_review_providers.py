@@ -958,15 +958,14 @@ def _iter_post_json_data(
         with response_lock:
             response = active_response[0] if active_response else None
         if response is not None:
-            _shutdown_response_socket(response)
-        worker.join(timeout=0.25)
-        if response is not None:
-            try:
-                response.close()
-            except (HTTPException, OSError):
-                pass
-        if worker.is_alive():
-            worker.join(timeout=0.25)
+            if _response_socket(response) is not None:
+                _shutdown_response_socket(response)
+            else:
+                try:
+                    response.close()
+                except (HTTPException, OSError):
+                    pass
+        worker.join(timeout=0.1)
 
 
 def _post_json_before_deadline(

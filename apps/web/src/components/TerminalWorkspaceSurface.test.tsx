@@ -6,10 +6,15 @@ import {
   buildTerminalWorkspace,
   type PortfolioPaperOrderApprovalRow,
   type ProductWorkAreaId,
+  type ResearchRunAudit,
+  type StrategyExperimentDetail,
   type StrategyExperimentListItem,
 } from "../lib/terminal-workbench";
 import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
-import { TerminalWorkspaceSurface } from "./TerminalWorkspaceSurface";
+import {
+  buildAuditLedgerRows,
+  TerminalWorkspaceSurface,
+} from "./TerminalWorkspaceSurface";
 
 describe("TerminalWorkspaceSurface", () => {
   const workAreaIds: ProductWorkAreaId[] = [
@@ -91,7 +96,10 @@ describe("TerminalWorkspaceSurface", () => {
     runs: [],
     source: "fallback" as const,
     strategyExperiment: {
+      active: null,
       busy: false,
+      error: null,
+      history: [],
       onWalkForwardChange: () => undefined,
       walkForward: null,
     },
@@ -111,6 +119,48 @@ describe("TerminalWorkspaceSurface", () => {
       expect(markup).toContain(`surface-${activeWorkAreaId}`);
       expect(markup).toContain("design-page-header");
     }
+  });
+
+  it("provides working audit filters for run, symbol, and event type", () => {
+    const run = (
+      runId: string,
+      symbol: string,
+    ): ResearchRunAudit => ({
+      runId,
+      createdAt: "2026-07-23T08:00:00.000Z",
+      market: "ashare",
+      symbol,
+      timeframe: "1d",
+      strategyName: "SMA Trend",
+      strategyRevision: "revision-1",
+      dataRows: 500,
+      metrics: {},
+      decisions: [],
+      executionMode: "paper",
+    });
+    const runs = [
+      run("run-600519-primary", "600519"),
+      run("run-600000-secondary", "600000"),
+    ];
+
+    expect(buildAuditLedgerRows(runs, {
+      runId: "PRIMARY",
+      symbol: "600519",
+      eventType: "backtest",
+    }).map((row) => row.event)).toEqual(["回测运行"]);
+    expect(buildAuditLedgerRows(runs, {
+      runId: "",
+      symbol: "600000",
+      eventType: "all",
+    })).toHaveLength(4);
+
+    const audit = renderToStaticMarkup(
+      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="audit" />,
+    );
+    expect(audit).toContain('aria-label="审计事件筛选"');
+    expect(audit).toContain('name="runId"');
+    expect(audit).toContain('name="symbol"');
+    expect(audit).not.toContain("readonly");
   });
 
   it("presents AI review as a compact evidence-first Chinese hierarchy", () => {
@@ -232,6 +282,47 @@ describe("TerminalWorkspaceSurface", () => {
     expect(backtest).toContain("训练 K 线数");
     expect(backtest).toContain("验证 K 线数");
     expect(backtest).toContain("步进 K 线数");
+  });
+
+  it("shows completed backtest experiments and failures instead of returning silently to idle", () => {
+    const experiment = {
+      createdAt: "2026-07-23T13:39:09+08:00",
+      experimentId: "experiment-visible",
+      resultHash: "result-hash-123",
+      selectedCandidateId: "candidate-3",
+      sourceRunId: "run-research",
+      status: "completed",
+      strategyRevision: "revision-1",
+    } as StrategyExperimentDetail;
+    const completed = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="backtest"
+        strategyExperiment={{
+          ...baseProps.strategyExperiment,
+          active: experiment,
+          history: [experiment],
+        }}
+      />,
+    );
+    const failed = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="backtest"
+        strategyExperiment={{
+          ...baseProps.strategyExperiment,
+          error: "策略实验创建失败，请检查证据后重试。",
+        }}
+      />,
+    );
+
+    expect(completed).toContain('role="status"');
+    expect(completed).toContain("experiment-visible");
+    expect(completed).toContain("已完成");
+    expect(completed).toContain("candidate-3");
+    expect(completed).toContain("result-hash-123");
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain("策略实验创建失败，请检查证据后重试。");
   });
 
   it("renders authoritative AI review status instead of hard-coded verdicts", () => {
@@ -477,15 +568,15 @@ describe("TerminalWorkspaceSurface", () => {
     expect(failed).not.toContain("权威 AI 评审失败");
   });
 
-  it("keeps live trading and order submission visibly blocked", () => {
+  it("shows the controlled live-trading authorization boundary", () => {
     const execution = renderToStaticMarkup(
       <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="execution" />,
     );
     const settings = renderToStaticMarkup(
       <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="settings" />,
     );
-    expect(execution).toContain("liveTradingAllowed=false");
-    expect(execution).toContain("orderSubmissionEnabled=false");
+    expect(execution).toContain("生产实盘需 Stage 10 权限核验");
+    expect(execution).toContain("自动交易区二次确认");
     expect(settings).toContain("实盘阻断边界");
   });
 

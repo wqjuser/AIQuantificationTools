@@ -158,6 +158,10 @@ describe("terminal layout css", () => {
       ".design-execution-readiness",
       "margin-bottom: 10px;"
     )).toBe(true);
+    expect(hasCssDeclaration(
+      ".execution-stage5-shadow > button + button",
+      "margin-left: 8px;"
+    )).toBe(true);
   });
 
   test("does not reuse a completed AI review experiment after the experiment draft changes", () => {
@@ -199,6 +203,7 @@ describe("terminal layout css", () => {
     expect(cssBlock(".center-grid.operations-layout")).toContain("grid-template-areas: none;");
     expect(cssBlock(".operations-column")).toContain("display: flex;");
     expect(cssBlock(".operations-column")).toContain("flex-direction: column;");
+    expect(hasCssDeclaration(".operations-primary-column .workflow-nodes-panel", "align-self: stretch;")).toBe(true);
     expect(hasCssDeclaration(".operations-layout > .operations-column", "display: contents;")).toBe(true);
     expect(
       hasCssBlockWith(".center-grid.operations-layout", [
@@ -903,12 +908,29 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("productWorkAreaGroups.map");
     expect(leftRailSource).toContain('className="work-area-group-label"');
     expect(leftRailSource).toContain('className="rail-profile"');
-    expect(appSource).toContain('className="workspace-command-center"');
+    expect(appSource).toContain('className="workspace-command-center" hidden');
+    expect(appSource).toContain('className="compact-action operations-audit-link"');
+    expect(appSource).toContain('onClick={() => selectProductWorkArea("audit")}');
+    expect(cssBlock(".workspace-command-center[hidden]")).toContain("display: none;");
+    expect(appSource).toContain('className="p0-evidence-drawer operations-context-advanced"');
+    expect(appSource).toContain('className="operations-context-advanced-body"');
+    expect(cssBlock(".workspace-command-center-body")).toContain("display: grid;");
+    expect(cssBlock(".operations-context-advanced")).toContain("order: 3;");
     expect(appSource).toContain('className="execution-readiness-stack"');
     expect(cssBlock(".execution-readiness-stack")).toContain("grid-area: stage5;");
     expect(cssBlock(".execution-readiness-stack-body .execution-stage5-shadow")).toContain("grid-area: auto;");
+    expect(hasCssDeclaration(".execution-stage5-shadow", "border: 1px solid var(--border-strong);")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow", "background: var(--surface);")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow", "font-size: 10.5px;")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow header h2", "color: var(--text);")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow header h2", "font-size: 13.5px;")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow header span", "color: var(--muted);")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow header p", "font-size: 10.5px;")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow > button", "font-size: 11.5px;")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow details", "font-size: 10px;")).toBe(true);
     expect(footerSource).toContain('className="terminal-live-block"');
-    expect(footerSource).toContain('i18n.locale === "zh-CN" ? "已阻断" : "Blocked"');
+    expect(footerSource).toContain('i18n.locale === "zh-CN" ? "受控" : "Controlled"');
+    expect(footerSource).toContain('i18n.locale === "zh-CN" ? "需 Stage 10 与二次确认"');
     expect(cssBlock(".terminal-status-bar")).toContain("position: fixed;");
     expect(hasCssDeclaration(".terminal-live-block", "border: 1px solid #8b2d2d;")).toBe(true);
     expect(cssBlock(".terminal-live-block > strong")).toContain("grid-area: status;");

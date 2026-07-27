@@ -428,6 +428,7 @@ def probe_ccxt_production_readonly(
         "accountType": None,
         "observedAt": None,
         "apiPermissions": _empty_production_permissions(),
+        "permissionsAuthoritative": False,
     }
 
     if clean_exchange_id != "binance":
@@ -486,6 +487,8 @@ def probe_ccxt_production_readonly(
     try:
         config = _build_ccxt_config(credentials, env)
         config["options"]["defaultType"] = "spot"
+        config["options"]["fetchMarkets"] = {"types": ["spot"]}
+        config["options"]["fetchMargins"] = False
         api_key = config.pop("apiKey")
         secret = config.pop("secret")
         exchange = exchange_factory(clean_exchange_id, config)
@@ -567,6 +570,7 @@ def probe_ccxt_production_readonly(
             raw_permissions, latency_ms = _timed(permission_reader)
             permissions, permissions_authoritative = _production_permissions(raw_permissions)
             metadata["apiPermissions"] = permissions
+            metadata["permissionsAuthoritative"] = permissions_authoritative
             capabilities["apiRestrictions"] = True
             permissions_safe = permissions_authoritative and permissions["readingEnabled"] and not any(
                 permissions[field]

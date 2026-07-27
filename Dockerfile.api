@@ -11,8 +11,9 @@ ARG INSTALL_DATA_DEPS=false
 WORKDIR /app
 
 COPY services/quant_core/pyproject.toml services/quant_core/pyproject.toml
+RUN pip install --no-cache-dir ccxt
 RUN if [ "$INSTALL_DATA_DEPS" = "true" ]; then \
-      pip install --no-cache-dir akshare yfinance ccxt; \
+      pip install --no-cache-dir akshare yfinance; \
     fi
 
 COPY package.json package.json

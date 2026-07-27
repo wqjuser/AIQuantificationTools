@@ -19,6 +19,10 @@ describe("ExecutionStage9ProductionAdmissionSection", () => {
     />);
     expect(html).toContain("生成生产委托准入候选");
     expect(html).toContain("只读检查，不提交生产委托");
+    expect(html).toContain("阶段 9 · 生产委托准入");
+    expect(html).toContain("仅生产只读 · 委托持续阻断");
+    expect(html).toContain("查看技术证据");
+    expect(html).not.toContain("Production Order Admission");
     expect(html).not.toContain("连接生产下单");
   });
 
@@ -39,8 +43,8 @@ describe("ExecutionStage9ProductionAdmissionSection", () => {
       onReview={() => undefined}
     />);
     expect(html).toContain("李复核");
-    expect(html).toContain("approved");
-    expect(html).toContain("authorizationEffective=false");
+    expect(html).toContain("已批准");
+    expect(html).toContain("授权不会生效");
     expect(html).toContain("BTC/USDT");
     expect(html).not.toContain("批准准入复核</button>");
   });

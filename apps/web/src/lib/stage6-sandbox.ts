@@ -63,10 +63,10 @@ export function buildStage6GoldenPath(
   batch: Stage6SandboxBatch | null | undefined
 ): { action: Stage6GoldenPathAction; status: "blocked" | "review" | "active" | "reconciled"; detail: string } {
   if (!workflow || !shadow || !readiness || !preflight || !review || review.outcome !== "approved") {
-    return { action: null, status: "blocked", detail: "Stage 4/5 权威证据链尚未批准。" };
+    return { action: null, status: "blocked", detail: "阶段 4/5 权威证据链尚未批准。" };
   }
   if (!authorization) return { action: "authorize", status: "review", detail: "检查规范化订单并记录一次性批次授权。" };
-  if (!batch || batch.status === "authorized") return { action: "submit", status: "review", detail: "授权批次尚未提交到 Binance Spot Testnet。" };
+  if (!batch || batch.status === "authorized") return { action: "submit", status: "review", detail: "授权批次尚未提交到 Binance Spot 测试网。" };
   if (batch.status === "reconciliation_required") return { action: "reconcile", status: "blocked", detail: "订单状态未知，必须先对账。" };
   if (batch.status === "active") return { action: "cancel", status: "active", detail: "批次存在未终态测试网订单。" };
   return { action: null, status: "reconciled", detail: "批次已按交易所事实完成对账。" };

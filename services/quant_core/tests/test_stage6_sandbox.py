@@ -195,6 +195,33 @@ class Stage6SandboxTest(unittest.TestCase):
         self.assertEqual(created["state"], "open")
         self.assertEqual(self.route.cancel_order(orders[0], created["exchangeOrderId"])["state"], "canceled")
 
+    def test_auto_order_reconciliation_only_queries_after_kill_switch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            service = Stage6SandboxExecutionService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                self.route,
+            )
+            order = {
+                "clientOrderId": "aiqt-auto-t-existing",
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "quantity": 0.0001,
+                "referencePrice": 60_000,
+                "notionalValue": 6,
+            }
+            exchange = self.route.exchange()
+            exchange.statuses[order["clientOrderId"]] = "open"
+            exchange.calls.clear()
+            service.set_kill_switch(triggered=True, operator="wenqingjie")
+
+            evidence = service.reconcile_auto_market_order(
+                order,
+                {"exchangeOrderId": "exchange-1", "state": "open"},
+            )
+
+            self.assertEqual(evidence["state"], "open")
+            self.assertEqual(exchange.calls, ["fetch"])
+
     def test_write_route_never_falls_back_to_generic_credentials(self) -> None:
         route = BinanceSpotTestnetRoute(
             env={"CCXT_API_KEY": "production-shaped-key", "CCXT_SECRET": "secret"},

@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 
 const args = process.argv.slice(2);
 const candidates = [
+  { command: "py", prefixArgs: ["-3"] },
   { command: "python3", prefixArgs: [] },
   { command: "python", prefixArgs: [] },
-  { command: "py", prefixArgs: ["-3"] },
 ];
 
 for (const candidate of candidates) {

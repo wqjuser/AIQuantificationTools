@@ -13,7 +13,10 @@ describe("ExecutionStage5ShadowSection", () => {
       onPrimaryAction={() => undefined}
       state={{ status: "review", actionId: "start-stage5-shadow", blocker: null, session: null }}
     />);
-    expect(html).toContain("启动 Shadow 验证");
+    expect(html).toContain("阶段 5 · 影子执行");
+    expect(html).toContain("启动影子验证");
+    expect(html).toContain("查看技术证据");
+    expect(html).not.toContain("Stage 5 · Shadow");
     expect(html).not.toContain(">连接券商</button>");
     expect(html).not.toContain(">提交订单</button>");
   });
@@ -33,13 +36,13 @@ describe("ExecutionStage5ShadowSection", () => {
       state={{ status: "review", actionId: "review-stage5-sandbox-readiness", blocker: null, session, readinessDecision: null }}
     />);
     expect(html).toContain("shadow-abc");
-    expect(html).toContain("projected → reconciled");
-    expect(html).toContain("timeout_once");
+    expect(html).toContain("已投影 → 已对账");
+    expect(html).toContain("单次超时演练");
     expect(html).toContain("2 / 90000");
-    expect(html).toContain("3s / 2");
-    expect(html).toContain("true / false");
-    expect(html).toContain("shadow_projection_matches_stage4");
-    expect(html).toContain("生成 Sandbox 准入决策");
+    expect(html).toContain("3 秒 / 2");
+    expect(html).toContain("是 / 否");
+    expect(html).toContain("影子结果与阶段 4 一致");
+    expect(html).toContain("生成测试网准入决策");
   });
 
   test("renders the persisted readiness decision without an order action", () => {
@@ -61,7 +64,7 @@ describe("ExecutionStage5ShadowSection", () => {
     />);
     expect(html).toContain("ashare-live");
     expect(html).toContain("execution-1");
-    expect(html).toContain("仍禁止 Sandbox 下单");
+    expect(html).toContain("仍禁止测试网下单");
     expect(html).not.toContain("<button");
   });
 
@@ -79,9 +82,9 @@ describe("ExecutionStage5ShadowSection", () => {
       onPrimaryAction={() => undefined}
       state={{ status: "blocked", actionId: null, blocker: "shadow-session-blocked", session }}
     />);
-    expect(html).toContain("kill_switch");
-    expect(html).toContain("true / true");
-    expect(html).toContain("shadow_orders_blocked");
+    expect(html).toContain("急停开关已触发");
+    expect(html).toContain("是 / 是");
+    expect(html).toContain("影子委托已阻断");
     expect(html).not.toContain("<button");
   });
 });

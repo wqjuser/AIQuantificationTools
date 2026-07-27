@@ -24,6 +24,14 @@ PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPES = frozenset({
     "stage8_production_readonly_access_control",
     "stage9_production_order_admission_candidate",
     "stage9_production_order_admission_review",
+    "stage10_production_trading_credential_preflight",
+    "stage10_production_trading_permission_verification",
+    "stage10_production_execution_control",
+    "stage10_production_execution_authorization",
+    "stage10_production_execution_attempt",
+    "stage10_auto_live_order_transition",
+    "auto_live_order_intent",
+    "auto_live_trade",
 })
 
 PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES = (
@@ -41,6 +49,7 @@ PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES = (
     "stage7-production-readonly-",
     "stage8-production-readonly-",
     "stage9-production-admission-",
+    "stage10-production-execution-",
 )
 
 

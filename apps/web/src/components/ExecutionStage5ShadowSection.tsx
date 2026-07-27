@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { createI18n } from "../lib/i18n";
 import type { Stage5ExitAcceptanceStatus, Stage5ShadowState } from "../lib/stage5-shadow";
+import { executionEvidenceLabel, executionEvidenceMessage } from "./execution-readiness-display";
 
 type AppI18n = ReturnType<typeof createI18n>;
 
@@ -48,10 +49,13 @@ export function ExecutionStage5ShadowSection({
       </header>
       <div className={`execution-stage5-readiness ${exitAcceptance?.status ?? "missing"}`} role="status">
         <strong>{i18n.t("execution.stage5.exitTitle")}</strong>
-        <span>{exitAcceptance?.status ?? "missing"} · {exitAcceptance?.artifactCount ?? 0}/7</span>
+        <span>{executionEvidenceLabel(exitAcceptance?.status ?? "missing")} · {exitAcceptance?.artifactCount ?? 0}/7</span>
         <span>{exitAcceptance?.stage5BaseRunId ?? i18n.t("execution.stage5.exitUnavailable")}</span>
         <small className="execution-stage5-shadow-hash">{exitAcceptance?.exitHash ?? "-"}</small>
-        <p>{exitAcceptanceError || exitAcceptance?.reason || i18n.t("execution.stage5.exitBoundary")}</p>
+        <p>{executionEvidenceMessage(
+          exitAcceptanceError || exitAcceptance?.reason,
+          i18n.t("execution.stage5.exitBoundary"),
+        )}</p>
       </div>
       {state.blocker || error ? (
         <p className="execution-stage5-shadow-error" role="status">
@@ -93,21 +97,24 @@ export function ExecutionStage5ShadowSection({
           {i18n.t("execution.stage5.openProbeSettings")}
         </button>
       ) : null}
-      <dl>
-        <div><dt>{i18n.t("execution.stage5.status")}</dt><dd>{session?.status ?? state.status}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.attempt")}</dt><dd>{session?.attempt ?? "-"}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.adapter")}</dt><dd>{session?.adapter.id ?? "local-fake-shadow"}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.failureMode")}</dt><dd>{session?.failureMode ?? "-"}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.limits")}</dt><dd>{session ? `${session.limits.maxOrders} / ${session.limits.maxGrossNotional}` : "-"}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.timeout")}</dt><dd>{session ? `${session.limits.timeoutSeconds}s / ${session.limits.maxAttempts}` : "-"}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.killSwitch")}</dt><dd>{session ? `${session.killSwitch.enabled} / ${session.killSwitch.triggered}` : "-"}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.reconciliation")}</dt><dd>{session?.reconciliation.reason ?? "-"}</dd></div>
-        <div><dt>{i18n.t("execution.stage5.sessionHash")}</dt><dd className="execution-stage5-shadow-hash">{session?.sessionHash ?? "-"}</dd></div>
-      </dl>
+      <details className="execution-stage-technical">
+        <summary>查看技术证据</summary>
+        <dl>
+          <div><dt>{i18n.t("execution.stage5.status")}</dt><dd>{executionEvidenceLabel(session?.status ?? state.status)}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.attempt")}</dt><dd>{session?.attempt ?? "暂无"}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.adapter")}</dt><dd>{session?.adapter.id ?? "本地影子适配器"}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.failureMode")}</dt><dd>{executionEvidenceLabel(session?.failureMode)}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.limits")}</dt><dd>{session ? `${session.limits.maxOrders} / ${session.limits.maxGrossNotional}` : "暂无"}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.timeout")}</dt><dd>{session ? `${session.limits.timeoutSeconds} 秒 / ${session.limits.maxAttempts}` : "暂无"}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.killSwitch")}</dt><dd>{session ? `${executionEvidenceLabel(session.killSwitch.enabled)} / ${executionEvidenceLabel(session.killSwitch.triggered)}` : "暂无"}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.reconciliation")}</dt><dd>{executionEvidenceLabel(session?.reconciliation.reason)}</dd></div>
+          <div><dt>{i18n.t("execution.stage5.sessionHash")}</dt><dd className="execution-stage5-shadow-hash">{session?.sessionHash ?? "暂无"}</dd></div>
+        </dl>
+      </details>
       {readinessDecision ? (
         <div className="execution-stage5-readiness" role="status">
           <strong>{i18n.t("execution.stage5.readinessTitle")}</strong>
-          <span>{readinessDecision.status}</span>
+          <span>{executionEvidenceLabel(readinessDecision.status)}</span>
           <span>{readinessDecision.adapterId} · {readinessDecision.adapterPaperExecutionIds.join(", ")}</span>
           <small className="execution-stage5-shadow-hash">{readinessDecision.decisionHash}</small>
           <p>{i18n.t("execution.stage5.readinessBoundary")}</p>
@@ -116,7 +123,7 @@ export function ExecutionStage5ShadowSection({
       {state.authorizationPreflight ? (
         <div className="execution-stage5-readiness" role="status">
           <strong>{i18n.t("execution.stage5.authorizationPreflightTitle")}</strong>
-          <span>{state.authorizationPreflight.status}</span>
+          <span>{executionEvidenceLabel(state.authorizationPreflight.status)}</span>
           <span>{state.authorizationPreflight.adapterId} · {state.authorizationPreflight.market}</span>
           <small className="execution-stage5-shadow-hash">{state.authorizationPreflight.preflightHash}</small>
           <p>{i18n.t("execution.stage5.authorizationPreflightBoundary")}</p>
@@ -125,8 +132,8 @@ export function ExecutionStage5ShadowSection({
       {state.authorizationReview ? (
         <div className="execution-stage5-readiness" role="status">
           <strong>{i18n.t("execution.stage5.authorizationReviewTitle")}</strong>
-          <span>{state.authorizationReview.outcome}</span>
-          <span>{state.authorizationReview.reviewer} · authorizationEffective=false</span>
+          <span>{executionEvidenceLabel(state.authorizationReview.outcome)}</span>
+          <span>{state.authorizationReview.reviewer} · 授权不会生效</span>
           <small className="execution-stage5-shadow-hash">{state.authorizationReview.reviewHash}</small>
           <p>{i18n.t("execution.stage5.authorizationReviewBoundary")}</p>
         </div>
@@ -137,13 +144,13 @@ export function ExecutionStage5ShadowSection({
           <ul>
             {session.orders.map((order) => (
               <li key={order.orderId}>
-                <strong>{order.symbol} · {order.state}</strong>
+                <strong>{order.symbol} · {executionEvidenceLabel(order.state)}</strong>
                 <span>{order.clientOrderId}</span>
-                <small>{order.transitions.map((row) => row.state).join(" → ")}</small>
+                <small>{order.transitions.map((row) => executionEvidenceLabel(row.state)).join(" → ")}</small>
               </li>
             ))}
           </ul>
-          <p>{i18n.t("execution.stage5.reconciliation")}: {session.reconciliation.reconciled ? "true" : "false"} · {session.reconciliation.reason}</p>
+          <p>{i18n.t("execution.stage5.reconciliation")}: {executionEvidenceLabel(session.reconciliation.reconciled)} · {executionEvidenceLabel(session.reconciliation.reason)}</p>
           <p>{i18n.t("execution.stage5.safety")}</p>
         </details>
       ) : null}

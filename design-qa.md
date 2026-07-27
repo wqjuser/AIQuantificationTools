@@ -245,3 +245,337 @@ final result: passed
 - 本次没有改动候选创建、前置操作、路由预检或执行状态机；`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 与 `liveBlockedBoundary=true` 均保持不变。
 
 final result: passed
+
+## 2026-07-23 回测实验完成反馈复验
+
+- 完整复现链路为同一浏览器会话先运行研究，再进入回测实验室点击“运行回测”。修改前策略实验会在服务端成功完成，但新版回测页面只接收 `busy` 和滚动前推参数，没有接收既有 `active / error / history` 状态；按钮恢复后实验结果和失败原因均不可见，“最近回测运行”还错误展示研究运行历史，因此表现为点击无反应。
+- 终态直接复用现有策略实验 Store、API 和结果模型，把活动实验、错误和实验历史接入新版回测页面。可复现性区域现在以 `role=status` 显示运行中、已完成、失败或待运行，并展示实验 ID、选择候选、结果 Hash 和源研究运行；失败信息以 `role=alert` 展示。“最近回测运行”改为真实策略实验记录。
+- Docker 真实复验先生成研究运行 `run-94302623d058`，再创建并完成纸面回测实验 `experiment-daf200abee5e47369d9ace3cb30e3537`；页面显示“已完成”、候选 `eb2c6464fb77`、结果 Hash 和最新实验记录，按钮恢复可再次运行，控制台 `0 error / 0 warning`。
+- 自动化与运行验收：回测布局与页面聚焦回归 `208` 项、Web 全量 `1052` 项、生产构建通过；仅保留既知 chunk-size 提示。Docker `api + web` 均为 healthy，Web 使用本机可用端口 `4173`；`git diff --check` 通过。
+- 本次没有改动研究或回测算法、策略实验 API、订单逻辑和执行边界；所有运行均为本地纸面证据，实盘继续阻断。
+
+final result: passed
+
+## 2026-07-23 执行中心生产准入证据日间主题与中文化复验
+
+- Docker 修改前证据：`F:\MyProjects\AIQuantificationTools\design-qa-execution-readiness-light-before.png`；修改后日间证据：`F:\MyProjects\AIQuantificationTools\design-qa-execution-readiness-light-after.png`；深色回归证据：`F:\MyProjects\AIQuantificationTools\design-qa-execution-readiness-dark-after.png`。修改前后均在 A 股 `600519 · 1d`、前置证据展开状态下复现，并使用 `1920 × 1080` 对照视口。
+- 修改前 P1：浅色页面内的阶段 5/6/7/9 卡片仍使用硬编码深色背景、边框和文字，形成整块深色孤岛；根因是执行证据组件没有复用现有主题变量。终态把证据容器、卡片、状态、按钮和技术证据统一改为 `--surface / --text / --muted / --border-*` 及既有语义色。日间实测证据区文字为 `rgb(36, 54, 72)`，阶段 5 卡片为白色背景；深色实测文字为 `rgb(203, 214, 223)`、阶段 5 卡片为 `rgb(16, 25, 35)`，两种主题均保持既有视觉层级。
+- 修改前 P2：主阅读路径直接平铺 `missing / blocked / authorizationEffective=false`、原始错误码、文件错误和大量 Stage/Production/Sandbox/Kill Switch 混排文本。终态将阶段名称、边界、状态、布尔值、买卖方向和已知错误统一投影为中文；必要的底层字段仍保留在原组件中，但默认折叠到“查看技术证据”，没有删除权威证据或改变数据模型。`Binance Spot` 作为产品专名保留。
+- Docker 交互复验确认 5 组技术证据默认全部收起；展开阶段 9 技术证据后显示“暂无证据 / 授权不会生效”等中文值，再次点击可正常收起。阶段 6 当前状态显示“阶段 4/5 权威证据链尚未批准”，阶段 7 原始错误码改为“尚未生成生产只读准入证据”，阶段 5 文件错误改为用户可读中文。
+- `1920 × 1080` 日间与深色页面均为 `scrollWidth=clientWidth=1920`，无横向溢出；浏览器控制台 `0 error / 0 warning`。执行证据聚焦回归 `186` 项、Web 全量 `1054` 项、最终文案聚焦回归 `5` 项、生产构建和 Docker Web 重建通过；Docker `api + web` 均为 healthy。
+- 本次只调整展示映射和主题样式，没有触发测试网急停、测试网投单或生产网络访问，也没有改动执行状态机；`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 与 `liveBlockedBoundary=true` 均保持不变。
+
+final result: passed
+
+## 2026-07-23 执行中心生产准入证据字号复验
+
+- Docker 修改前证据：`F:\MyProjects\AIQuantificationTools\design-qa-execution-typography-before.png`；修改后日间证据：`F:\MyProjects\AIQuantificationTools\design-qa-execution-typography-after.png`；深色回归证据：`F:\MyProjects\AIQuantificationTools\design-qa-execution-typography-dark.png`。复验状态均为 `1280 × 720`、A 股 `600519 · 1d`、前置证据展开。
+- 根因是阶段 5/6/7/9 共用的 `.execution-stage5-shadow` 仍保留旧工作区独立字阶：主标题为 `17px`、副标题为 `15px`、说明为 `12px`，直属状态和说明还会继承页面默认字号；当前执行中心面板标题实际使用 `13.5px`，正文集中在 `10–10.5px`，因此证据区视觉比例明显偏大。
+- 终态只修改这一个共享 CSS 组件：正文统一为 `10.5px / 1.45`，主标题 `13.5px`、次级标题 `12.5px`、阶段眉题及技术证据 `10px`、边界徽标和字段名 `9.5px`、操作按钮 `11.5px`。组件结构、中文映射、折叠状态和执行处理器均未改动。
+- 同视口对照确认字号已与候选队列和右侧面板保持同一层级；阶段 9“查看技术证据”可正常展开和收起，日间与深色主题均通过，浏览器控制台 `0 error / 0 warning`。
+- 自动化与运行验收：修改前布局回归按预期失败，修复后聚焦 `187` 项、Web 全量 `1054` 项通过；生产构建和 Docker Web 重建通过，`api + web` 均为 healthy，`git diff --check` 通过。未触发急停、测试网投单或生产网络访问，实盘阻断边界保持不变。
+
+final result: passed
+
+## 2026-07-23 运行管理底部节点工作流布局复验
+
+- 用户源图：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-df997d15-3016-41c2-b5a7-910031810124.png`；Docker 修改前证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-bottom-before.png`；修改后证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-bottom-after.png`；完整并排对照：`F:\MyProjects\AIQuantificationTools\design-qa-operations-bottom-comparison.png`；底部聚焦对照：`F:\MyProjects\AIQuantificationTools\design-qa-operations-bottom-focused-comparison.png`。
+- 源图与实现均按 `2808 × 687`、CSS 像素密度 `1`、日间主题、A 股 `600519 · 1d` 的底部滚动状态复验。源图裁掉了应用顶部框架，完整对照保留真实页面框架；复验跨过 15:00 后交易日历由“开市 / 下午盘”自然切换为“休市 / 盘后”，与本次布局修改无关。
+- 修改前 P1：`.workflow-nodes-panel` 在纵向 flex 主列内使用通用 `align-self: start`，因此按内容收缩为 `713.95px`；其父级主列宽为 `2116.67px`，右侧留下约 `1402.72px` 的无效空白，交易日历仍固定在最右侧，造成底部布局断裂。
+- 终态只增加一条运行管理作用域规则，让节点工作流在主列内 `align-self: stretch`。同视口实测节点面板宽度恢复为 `2116.67px`，与右侧 `420px` 交易日历保持 `10px` 间距；网格列宽、卡片内容、字号、颜色和交互均未改变。
+- 响应式复验：`1024 × 900` 下节点面板宽 `348px`、右栏宽 `420px`；`800 × 900` 下两栏按既有断点变为单列且宽度均为 `732.67px`。两种视口均满足 `scrollWidth=clientWidth`，没有横向溢出。
+- 自动化与运行验收：修改前布局断言按预期失败；修复后布局与工作区聚焦回归 `208` 项、Web 全量 `1054` 项通过；生产构建及 Docker Web 重建通过，浏览器控制台 `0 error / 0 warning`。本次只改底部布局，没有触发运行操作或改变任何交易安全边界。
+
+final result: passed
+
+## 2026-07-23 运行管理工作区上下文信息降噪复验
+
+- 用户源图：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-6f8a5081-67ea-4803-bf2d-e1e9b335b0de.png`；Docker 修改前证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-context-before.png`；修改后证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-context-after.png`；源图与终态并排证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-context-comparison.png`。
+- 源图和 Docker 终态均以 `1347 × 1637`、日间主题、A 股 `600519 · 1d`、打开“工作区上下文”的同类状态复验。用户源图裁掉了应用侧栏与顶部框架，并排证据右侧保留了真实 Docker 页面框架。
+- 修改前 P1：工作区上下文首层直接平铺 P0 黄金路径、Stage 1 日常收口、验收清单、归档复制/下载、启动复核和发布证据等低频治理工具；弹层打开后立即达到可滚动高度，当前运行节点和下一步入口被开发验收信息淹没。
+- 终态没有删除任何能力，也没有新增状态或接口。既有验收、归档和发布证据整体复用原生 `details` 与现有 `.p0-evidence-drawer` 主题样式，收进默认折叠的“低频工具 / 验收、归档与发布证据”；当前运行步骤与简明运行手册按既有数据优先展示。
+- 浏览器交互复验确认：打开“工作区上下文”时低频工具保持收起；点击后可看到既有 P0 黄金路径和“复制归档摘要”等操作，再次点击能正常收回。没有触发模拟委托、缓存刷新、验收写入或任何执行动作。
+- 自动化与运行验收：布局与工作区聚焦回归 `208` 项、Web 全量 `1054` 项通过；生产构建和 Docker Web 重建通过，仅保留既知 chunk-size 提示；Docker `api + web` 均为 healthy，`git diff --check` 通过；浏览器控制台 `0 error / 0 warning`。本次仅调整信息层级，没有改变纸面运行和实盘阻断边界。
+
+final result: passed
+
+## 2026-07-23 运行管理工作区上下文移除与审计分流复验
+
+- 用户确认的信息架构方案：运行管理只保留“当前状态、下一步、阻断原因”，完整证据统一进入既有“审计回放”；流程图：`https://www.figma.com/board/oKVWagFWVL3pUXTcJRxY65`。Docker 修改前证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-context-before.png`；修改后证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-context-removed.png`；审计落点证据：`F:\MyProjects\AIQuantificationTools\design-qa-operations-audit-destination.png`；并排对照：`F:\MyProjects\AIQuantificationTools\design-qa-operations-context-removed-comparison.png`。
+- 终态以 `1347 × 1637`、日间主题、A 股 `600519 · 1d` 复验。运行管理主任务卡不再显示“工作区上下文”，直接展示当前步骤“模拟执行”、状态“待复核 · 4/6步”和下一步说明；低频验收、归档与发布证据不再进入该页面的可见或可访问路径。
+- 新增的“查看完整审计证据”直接切换到现有“审计回放”，没有复制第二套证据组件。真实 Docker 交互确认 URL 切换为 `workspace=audit`，并可见“统一审计账本（时间升序）”“包完整性”“签名验证”“制品覆盖”和“事件详情 · 证据制品 · Hash 链 · 回放”。
+- 本次只复用既有工作区切换和审计页面，没有触发模拟委托、导入、导出、缓存刷新或任何执行动作。浏览器控制台 `0 error / 0 warning`；布局与工作区聚焦回归 `208` 项、Web 全量 `1054` 项、生产构建、Docker Web 重建和 `git diff --check` 均通过，Docker `api + web` 均为 healthy。
+- 纸面与实盘安全边界未改变：`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+
+final result: passed
+
+## 2026-07-23 审计回放筛选交互复验
+
+- 修改前 Run ID 与标的代码输入框固定为 `readOnly`，事件类型只有“全部”，“查询”按钮没有处理器，因此筛选栏只能展示当前上下文，无法手动检索。
+- 终态直接过滤现有 `ResearchRunAudit[]`，没有新增接口或第二套审计数据：Run ID 与标的代码支持大小写不敏感的部分匹配，事件类型支持数据接入、数据处理、回测运行和 AI 评审；点击“查询”后组合应用条件，无匹配时显示明确空状态。
+- Docker 实现证据：`F:\MyProjects\AIQuantificationTools\design-qa-audit-filters.png`。真实页面依次验证了 Run ID `f77c25` + 标的 `600519` + “回测运行”只返回 `run-f77c25e381f4` 的单条回测事件，清空 Run ID 并切换标的 `600000` 可返回对应运行，未知标的显示“未找到匹配的审计事件”。
+- 自动化与运行验收：新增最小筛选回归，聚焦 `209` 项、Web 全量 `1055` 项通过；生产构建和 Docker Web 重建通过，仅保留既知 chunk-size 提示；Docker `api + web` 均为 healthy，浏览器控制台 `0 error / 0 warning`，`git diff --check` 通过。
+- 本次没有触发复现包导入、审计包导出或任何交易动作，纸面与实盘安全边界未改变。
+
+final result: passed
+
+## 2026-07-26 Stage 10 生产交易控制链复验
+
+- Docker 实现证据：`F:\MyProjects\AIQuantificationTools\design-qa-stage10-production-flow-full.png`；复验状态为日间主题、A 股 `600519 · 1d`、前置证据展开，Stage 10 位于既有“生产准入与测试网证据”首位。
+- 后端继续复用现有 Stage 9 候选与复核、`AuditEventStore`、Stage 7 Binance 权限读取、Stage 10 持久急停和单账户租约。新增前端只编排既有凭据预检、只读权限核验、确定性门禁、五项人工确认、单笔授权与提交前阻断演练，没有新增订单算法或第二套控制。
+- 真实 Docker 交互确认：输入操作人后，离线凭据检查成功进入“只读核验交易权限”；权限核验显示读取与现货交易开启、Margin/Futures/Options/提现/内部划转/万能划转均关闭，随后仅显示禁用的“启用确定性执行门禁”，没有自动恢复急停。
+- 同页实测 `pageWidth=viewportWidth=1280px`，无横向溢出；Stage 10 区域唯一，页面不存在“提交真实订单”按钮，浏览器控制台 `0 error / 0 warning`。真实控制仍为 `status=revoked / triggered=true / productionAuthorizationEffective=false / liveTradingAllowed=false / liveBlockedBoundary=true`。
+- 同时修复 CCXT 生产现货探针默认加载 Spot、Linear 与 Inverse 市场导致 Binance `-1003` IP 限流的问题：共享配置现在固定 `fetchMarkets.types=["spot"]` 且 `fetchMargins=false`。聚焦 Python `6` 项、Python 全量 `713` 项、Web 聚焦 `35` 项、Web 全量 `1056` 项和生产构建通过；Docker `api + web` 均为 healthy，`git diff --check` 通过。
+- 本次只访问离线凭据检查和 Binance API restrictions 只读端点；没有恢复 Stage 10 急停、没有读取余额、没有查单/撤单/划转/提现，也没有提交真实订单。
+
+final result: passed
+
+## 2026-07-26 AI 涨跌幅纸面自动交易复验
+
+- Docker 深色证据：`F:\MyProjects\AIQuantificationTools\design-qa-auto-paper-trading.png`；日间证据：`F:\MyProjects\AIQuantificationTools\design-qa-auto-paper-trading-light.png`。复验使用 `1280 × 720`、加密货币 `BTC/USDT · 1m`、执行中心前置证据展开状态。
+- 终态直接复用既有 `QuantDingerKlineAdapter`、行情缓存、AI Provider Registry 与 `AuditEventStore`：页面打开时每 `35s` 读取 6 根 K 线，五根涨跌幅达到 `0.3%` 才调用已配置 AI 服务；AI 只返回买入、卖出或观望，模拟仓位由固定单笔上限、库存、止损、止盈、当日亏损和成交频率共同计算。
+- “少亏/不亏”没有实现为拒绝交易条件，也没有设置最低 AI 置信度门槛；最小回归以 `0.01` 置信度买入并成交，随后价格跌破止损时由风险规则卖出。相同 K 线不会重复成交，模拟账户现金、持仓、权益、已实现盈亏和最近成交均持久留痕。
+- 真实页面确认 OpenAI 兼容服务已配置，默认状态为“已暂停 · 仅纸面”，“立即评估”在暂停状态禁用；未替用户点击“保存并开启”，因此没有产生 AI 请求或自动成交。深色与日间主题信息层级一致，卡片字号 `12px / 17.4px`，页面 `scrollWidth=clientWidth`，无横向溢出。
+- 自动化与运行验收：Python 全量 `714` 项、Web 全量 `1056` 项、生产构建和 Docker `api + web` 重建通过；仅保留既知 chunk-size 提示，浏览器控制台 `0 error / 0 warning`，`git diff --check` 通过。
+- 不可变边界保持为 `paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`；当前实现不创建、不签名、不发送任何真实订单。
+
+final result: passed
+
+## 2026-07-26 AI 测试网自动委托复验
+
+- Docker 深色证据：`F:\MyProjects\AIQuantificationTools\design-qa-auto-testnet-trading.png`；日间证据：`F:\MyProjects\AIQuantificationTools\design-qa-auto-testnet-trading-light.png`。复验使用 `1280 × 720`、加密货币 `BTC/USDT · 1m`、执行中心前置证据展开状态。
+- 自动交易新增“纸面模拟 / Binance Spot Testnet”执行模式；Testnet 模式复用既有 Stage 6 CCXT 沙盒路由、账户余额与市场精度检查、单账户锁和急停，不新增第二套交易通道。AI 仍只决定买入、卖出或观望，数量继续由单笔上限、库存、止损、止盈、当日亏损和成交频率控制。
+- Testnet 模式必须显式勾选“提交真实测试网委托”确认框后才能开启。真实 Docker 页面切换模式后标题同步为“已暂停 · 测试网委托”，未勾选时“保存并开启测试网委托”与“立即评估”均禁用；页面恢复默认状态前没有启动监控、调用 AI 或提交测试网订单。
+- 最小路由回归确认 CCXT 先执行 `set_sandbox_mode(true)`，随后提交带唯一 `newClientOrderId` 的 Binance Spot Testnet 市价单；成交证据写入 `auto_testnet_trade`，Stage 6 急停触发后阻断后续委托。未显式确认 Testnet 时服务端直接拒绝配置。
+- 深色与日间主题信息层级一致，页面 `scrollWidth=clientWidth=1280`，无横向溢出；浏览器控制台 `0 error / 0 warning`。Python 全量 `717` 项、Web 全量 `1057` 项、生产构建和 Docker `api + web` 重建通过，仅保留既知 chunk-size 提示。
+- Testnet 分支为 `paperOnly=false`、`sandboxOnly=true`，但生产边界仍为 `liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`；本次 QA 没有提交测试网委托，也没有访问生产下单路由或真实资金。
+
+final result: passed
+
+## 2026-07-27 受控生产实盘自动交易复验
+
+- Docker 深色证据：`F:\MyProjects\AIQuantificationTools\design-qa-auto-live-trading.png`；日间证据：`F:\MyProjects\AIQuantificationTools\design-qa-auto-live-trading-light.png`。复验使用 `1280 × 720`、加密货币 `BTC/USDT · 1m`、执行中心前置证据展开状态。
+- 自动交易新增“Binance Spot 生产实盘”模式，复用 Stage 10 专用凭据、生产权限核验、持久急停和单账户租约。开启前必须同时满足本地功能开关、专用密钥、IP 白名单、危险权限关闭、最新 Stage 10 核验、恢复执行控制、实名操作人和真实资金二次确认；授权会话最长 `8h`。
+- 生产市价委托使用稳定 `clientOrderId` 并先查单再创建；未知结果进入 `reconciliation_required` 并停止后续委托。单笔新增风险不超过 `10 USDT`，卖出允许按原始成本退出既有策略持仓；纸面、测试网和生产持仓账本互相隔离。
+- 真实页面确认生产模式、实名操作人与真实资金确认框均可见；未填写和未勾选时“保存并开启生产实盘”与“立即评估”均禁用。深色与日间主题均满足 `scrollWidth=clientWidth=1280`，浏览器控制台 `0 error / 0 warning`。
+- 自动化与运行验收：Python 全量 `719` 项、Web 全量 `1057` 项、生产构建和 Docker `api + web` 重建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。当前只读状态为功能开关和凭据已识别，但 Stage 10 控制未恢复且急停已触发，因此 `liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 本次 QA 没有刷新生产权限、恢复急停、读取余额、调用 AI、查单或提交真实订单；页面已恢复深色主题和纸面模式。受控自动实盘的例外边界记录在 ADR 0021，原 Stage 9 单候选人工流程继续保持 fail-closed。
+
+final result: passed
+
+## 2026-07-27 自动交易后端运行器复验
+
+- 根因是自动交易此前由 `ExecutionAutoPaperTradingSection` 内的 `35s` 浏览器计时器主动提交评估；页面关闭、刷新或被浏览器节流后，自动监控随即停止。终态复用既有 `AutoPaperTradingService.evaluate`、`QuantDingerKlineAdapter`、行情缓存、Provider Registry、Stage 6/10 路由和 `AuditEventStore`，仅把调度生命周期移到 API 进程。
+- 后端运行器随 API 启动并记录 `runnerState / runnerIntervalSeconds`，每次串行读取持久控制状态；只有 `enabled=true` 才取 6 根 K 线并调用既有评估。API 关闭时显式停止；后台与人工“立即评估”共用原全局锁和 K 线时间戳去重，同一根 K 线并发撞车只产生一笔交易。
+- 前端不再自动调用 `POST /api/execution/auto-paper-trading/evaluations`，只每 `5s` 使用 GET 刷新状态；“立即评估”继续保留为人工单次检查。真实 Docker 页面连续观察 `37s`，自动交易相关请求共 `7` 次且全部为 GET，没有评估 POST；页面显示“由后端每 35 秒”和“关闭页面后仍会继续”。
+- Docker 只读状态为 `enabled=false`、`executionMode=paper`、`runnerState=running`、`runnerIntervalSeconds=35`、`tradeCount=0`、`liveTradingAllowed=false`、`liveBlockedBoundary=true`。本次没有开启策略、调用 AI、访问生产交易接口或提交任何订单。
+- 自动化与运行验收：后端自动交易与 Stage 10 聚焦 `15` 项、执行区前端聚焦 `32` 项、Python 全量 `723` 项、Web 全量 `1057` 项、生产构建和 Docker `api + web` 重建通过；仅保留既知 chunk-size 提示。Docker 两个服务均为 healthy，浏览器控制台 `0 error / 0 warning`，API 日志无 Traceback/Error/Exception，`git diff --check` 通过。
+
+final result: passed
+
+## 2026-07-27 Binance Spot 共享委托运行时复验
+
+- 根因是 Stage 6 测试网与 Stage 10 生产路由分别维护市场加载、余额读取、精度归一、限额校验、下单和订单证据标准化，生产路由还反向导入 Stage 6 私有函数。终态将这些纯机械步骤收口到共享 `binance_spot_orders.py`，没有新增交易算法或第二套路由。
+- Stage 6 继续独立负责测试网凭据、代理与 `set_sandbox_mode(true)`；Stage 10 继续独立负责生产专用凭据、IP/权限核验、授权会话、持久急停、单账户租约和幂等查单。共享层只接收已经通过各自边界校验的订单。
+- 新增最小回归覆盖买入金额在精度归一后仍必须重新校验 `10 USDT` 上限，超限时不会调用交易所 `create_order`。Stage 6/10/自动交易聚焦 `28` 项、Python 全量 `724` 项、Web 全量 `1057` 项和生产构建通过；仅保留既知 chunk-size 提示。
+- API 镜像按当前代码重建后 `api + web` 均为 healthy，API 日志无 Traceback/Error/Exception；真实 Docker 执行中心正常加载，浏览器控制台 `0 error / 0 warning`。
+- 重建前后只读状态均为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有调用 AI、访问交易所下单接口或提交任何测试网/生产订单。
+
+final result: passed
+
+## 2026-07-27 自动委托后台终态对账复验
+
+- 根因是测试网与生产自动委托返回 `submission_pending / open / partially_filled / reconciliation_required` 后只会阻断后续交易，没有后端路径继续查询终态；生产代码已留下“增加后台对账”的明确缺口，测试网还可能在后续 K 线重新进入下单路径。
+- 终态复用现有 `AutoPaperTradingRunner`、Stage 6/10 路由、稳定 `clientOrderId`、账户锁和审计账本。每个周期先收口未决订单；该路径完全跳过 K 线读取与 AI，只调用 `fetch_order`，不调用 `create_order`，不会补单、改 ID 或自动恢复执行权限。只有没有未决订单且监控开启时才进入行情评估。
+- 暂停监控、生产会话过期、Stage 6/10 急停均继续阻止新委托，但不会阻止查询已经存在的订单。成交终态按交易所累计成交数量只计入策略现金、持仓、盈亏和审计一次；未完成对账时，测试网与生产模式均不能切换执行模式。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `33` 项、Python 全量 `729` 项、Web 全量 `1057` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按当前代码重建后均为 healthy，日志无 Traceback/Error/Exception。真实 Docker 执行中心显示“已暂停 · 纸面模拟”、策略权益 `100 USDT`、累计成交 `0`，并明确后端每 `35s` 运行；浏览器控制台 `0 error / 0 warning`。
+- 重建前后均为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、无测试网/生产未决订单、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次只使用测试替身验证查询与入账，没有调用 AI、查询真实交易所或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 自动委托资金上限与手续费复验
+
+- 根因一是自动市价买入此前按参考价换算基础币数量后调用普通 `create_order`，价格跳动时请求本身没有报价币硬上限；终态改用当前容器 CCXT `4.5.68` 已支持的 `create_market_buy_order_with_cost`，按精度归一后的报价金额提交。卖出仍按策略实际持仓数量提交。
+- 根因二是策略现金、持仓与盈亏统一按固定 `0.1%` 估算手续费，忽略 CCXT 订单证据里的 `cost / fee / fees`。共享订单标准化现在保留实际成交金额与手续费币种/金额；`cost=null` 时使用 `filled × average`，不会误记为 0。
+- 报价币手续费直接扣减策略现金；基础币手续费从买入净持仓扣除，并按成交价计入费用。订单响应缺失费用或费用使用当前无法估值的第三方币种时继续使用原费率估算，但交易证据明确保存 `feeEstimated=true`，不再把估算值伪装成实际费用。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `36` 项、Python 全量 `732` 项、Web 全量 `1057` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API 按当前代码重建后 `api + web` 均为 healthy，API 日志无 Traceback/Error/Exception。真实 Docker 执行中心显示“已暂停 · 纸面模拟”、策略权益 `100 USDT`、累计成交 `0`，浏览器控制台 `0 error / 0 warning`。
+- 重建前后均为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、无未决订单、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次只使用测试替身验证请求形态与账本计算，没有调用 AI、访问真实交易所或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 自动交易策略资金覆盖复验
+
+- 根因是非纸面自动交易只在提交单笔委托时检查余额，进入行情与 AI 决策前没有核对交易所账户能否覆盖本地策略账本，也无法发现本地没有记录的 `aiqt-auto-` 自动挂单。
+- 终态复用共享 Binance Spot 运行时与 Stage 6/10 现有路由：每次测试网或生产评估前只读调用 CCXT `fetch_balance` 与 `fetch_open_orders(BTC/USDT)`；可用基础币必须覆盖本地策略持仓，可用报价币必须覆盖下一笔预算，且不得存在孤儿自动挂单。任一不满足或查询异常均进入 `account_mismatch`，不会继续读取行情、调用 AI 或提交委托。
+- 持久状态只记录 `accountCovered / positionCovered / quoteCovered`、孤儿自动挂单数量、检查时间与异常类型，不记录真实余额、交易所订单号或原始响应。首版只验证“交易所资金覆盖策略账本”，不要求账户总资产与本地账本完全相等，因此不会接管账户中的其它人工资产。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `39` 项、Python 全量 `735` 项、Web 全量 `1057` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API 按当前代码重建后 `api + web` 均为 healthy，日志无 Traceback/Error/Exception。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，前置证据可正常展开并收起，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、无未决订单、`lastAccountCheck=null`、`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有调用 AI、访问真实交易所、读取真实余额或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 自动交易 K 线闭合与时效复验
+
+- 根因是自动交易统一入口只检查适配器 `DataQuality.is_complete`，随后直接把最近 6 根 K 线交给策略；CCXT 可能返回仍在形成中的最后一根 K 线，本地缓存即使已经过期也会被投影为结构完整，因此旧行情或盘中波动仍可能调用 AI 并触发交易。
+- 终态继续复用现有 K 线适配器、缓存和自动评估服务，不新增行情模型：后端每轮请求 7 根 `BTC/USDT · 1m` K 线，按 UTC 开始时间剔除未收盘的当前分钟，只把最近 6 根完整 K 线交给原策略。最新完整 K 线收盘超过两个周期或完整数量不足时记录 `data_blocked`，并在账户查询、AI 和委托之前结束本轮。
+- 回归先证明约 20 分钟前的完整结构行情会实际调用 AI 并成交，再验证修复后 Provider 调用数和成交数均为 `0`；补充当前分钟价格 `999` 的测试，确认策略实际读取的是前一根已收盘价格 `101`，未闭合价格不会进入决策。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `41` 项、Python 全量 `737` 项、Web 全量 `1057` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API 按当前代码重建后 `api + web` 均为 healthy，日志无 Traceback/Error/Exception。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，前置证据可正常展开并收起，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、`lastBarTimestamp=null`、无未决订单、`lastAccountCheck=null`、`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有调用 AI、访问真实交易所、读取真实余额或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 生产自动委托权限漂移复验
+
+- 根因是生产自动交易只在八小时会话开启时调用 Binance API restrictions；会话存续期间如果 IP 白名单被移除，或 Margin/Futures/Options/提现/划转等危险权限被打开，`submit_auto_market_order` 仍会凭原控制 ID 进入查单与创建流程。
+- 终态没有新增权限模型或轮询器，直接复用 Stage 10 现有 `verify_current_restrictions()`：每笔稳定 `clientOrderId` 先查询既有订单，只有确认不存在、即将创建新委托时才重新读取当前 restrictions。IP、读取/现货权限或危险权限任一漂移都会在 `submission_pending` 和创建之前失败。
+- 回归先证明会话授权后把 `ipRestrict` 改为 false 仍会创建委托，再验证修复后创建次数保持 `0`；同一订单已经存在时即使权限随后漂移，仍允许 query-first 回读成交。后台对账路径保持只读，不因权限漂移、会话过期或急停而掩盖既有成交事实。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `41` 项、Python 全量 `737` 项、Web 全量 `1057` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API 按当前代码重建后 `api + web` 均为 healthy，日志无 Traceback/Error/Exception。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，前置证据可正常展开并收起，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、`lastBarTimestamp=null`、无未决订单、`lastAccountCheck=null`、`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有刷新生产权限、调用 AI、访问真实交易所、读取真实余额或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 自动成交崩溃恢复幂等复验
+
+- 根因是测试网与生产成交审计使用随机交易 ID，并且成交审计先提交、策略状态随后保存；若进程恰好在两次提交之间退出，重启后会再次对账同一订单并生成第二条成交审计。
+- 终态没有新增事务表或恢复队列：非纸面成交直接使用原 `clientOrderId` 派生稳定交易 ID，并复用 `AuditEventStore.record_if_absent()`。重复对账读取已经存在的成交审计及原成交时间，再完成策略状态保存。
+- 回归通过可控审计存储模拟“成交审计已写入、状态保存前崩溃”，先证明旧实现重启后产生 `2` 条 `auto_live_trade`，再验证修复后审计保持 `1` 条、策略账本恢复为 `tradeCount=1`。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `42` 项、Python 全量 `738` 项、Web 全量 `1057` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API 镜像按当前代码重建后 `api + web` 均为 healthy，API 日志无 Traceback/Error/Exception。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，前置步骤可点击展开并返回，页面宽度与视口同为 `1280px`，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、`lastBarTimestamp=null`、无未决订单、`lastAccountCheck=null`、`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有调用 AI、访问真实交易所、读取真实余额或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 未决自动委托人工对账复验
+
+- 根因一是执行中心把“立即评估”固定为监控暂停时禁用，因此后台虽会每 `35s` 收口未决订单，操作者无法人工立即查询。根因二是直接复用评估请求存在竞态：若后台恰好先完成对账，随后到达的人工请求可能继续读取行情并创建下一笔委托。
+- 终态继续复用 `AutoPaperTradingService.reconcile_pending_order()` 和原 `clientOrderId` 查单逻辑，只增加独立 POST 路径。前端仅在 `submission_pending / open / partially_filled / reconciliation_required` 时显示可用的“立即对账”；该路径没有行情适配器、AI 或创建订单调用，即使未决订单已被后台收口也只返回当前快照。
+- 回归先证明暂停状态的公开对账方法只返回布尔值、前端也无法识别未决状态，再验证人工对账返回完整更新状态、成交只入账一次且没有新增订单；前端同时固定生产未决为可对账、终态与纸面模式为不可对账。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `43` 项、执行区前端聚焦 `33` 项、Python 全量 `739` 项、Web 全量 `1058` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按当前代码重建后均为 healthy，容器日志无 Traceback/Error/Exception。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，前置步骤可正常展开和收起，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。默认无未决订单时仍显示禁用的“立即评估”。
+- 重建后只读状态为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、`lastBarTimestamp=null`、`lastAccountCheck=null`、`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有点击人工对账、调用 AI、访问真实交易所、读取真实余额或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 自动委托提交后崩溃恢复复验
+
+- 根因是自动策略只在 Stage 6/10 外部路由返回后才把订单写入当前策略状态。若交易所已经接受委托、进程却在状态保存前退出，重启后的本地账本看不到该订单；跨过下一根 K 线后客户端订单 ID 会变化，已经成交的旧单也不会出现在挂单检查中，存在再次下单风险。
+- 终态没有新增恢复任务或第二套订单表：测试网与生产模式在外部调用前按稳定 `clientOrderId` 幂等记录脱敏提交意图，并在当前策略状态中分别保存已确认意图水位。重启发现未确认意图时恢复为 `submission_pending`，优先使用原订单和原 AI 决策执行只读对账，未收口前不会读取新行情或创建新委托。
+- 回归通过可控审计存储模拟“外部路由返回 open、策略状态保存前崩溃”，并把恢复行情推进到下一根 K 线。旧实现没有提交意图且不会触发恢复；修复后外部创建次数保持 `1`、只读对账 `1` 次、最终策略成交 `1` 笔，客户端订单 ID 与原请求一致。既有 Testnet 路由同时验证会写入 `auto_testnet_order_intent`。
+- 自动交易、Stage 6 与 Stage 10 聚焦 `44` 项、Python 全量 `740` 项、Web 全量 `1058` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API 镜像按当前代码重建后 `api + web` 均为 healthy，容器日志无 Traceback/Error/Exception。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，前置步骤可正常展开和收起，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `enabled=false`、`executionMode=paper`、`status=paused`、`runnerState=running`、`tradeCount=0`、无测试网或生产订单、`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有生成提交意图、调用 AI、访问真实交易所、读取真实余额或提交任何订单。
+
+final result: passed
+
+## 2026-07-27 自动交易运行告警复验
+
+- 根因是自动交易区只显示后端技术状态明细；账户资金覆盖失败、风险保护暂停、AI/数据评估失败、委托拒绝和未决委托待对账都混在同一行，普通操作者难以判断是否需要人工处理。
+- 终态只复用现有 `status`、账户覆盖和订单状态字段，在指标区下方显示简短中文告警；未决委托优先提示“立即对账”，正常监控不显示告警。没有新增状态、接口、交易算法或自动操作。
+- 回归先证明账户覆盖、风险暂停和委托待对账没有可复用的中文映射，再验证三个分支及危险/警告色调。执行区聚焦 `212` 项、Web 全量 `1059` 项、Python 全量 `740` 项和生产构建通过；仅保留既知 chunk-size 提示。
+- Web 镜像按当前代码重建后 `api + web` 均为 healthy。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，自动交易区正常显示 Testnet 监控状态，页面宽度与视口同为 `1280px`，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `enabled=true`、`executionMode=testnet`、`status=monitoring`、`runnerState=running`、`tradeCount=0`、账户与报价资产覆盖通过、无孤儿自动挂单、无测试网/生产订单；`sandboxOnly=true`、`sandboxRouteExecuted=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有点击评估、对账或模式切换，也没有提交任何订单。
+
+final result: passed
+
+## 2026-07-27 自动交易运行台账复验
+
+- 根因是自动交易 API 已返回最近五笔 `auto_paper_trade / auto_testnet_trade / auto_live_trade` 审计事件，当前状态也已有最近判断、已实现盈亏、策略持仓和最新委托，但执行中心只展示四个摘要指标，成交价格、手续费来源、判断依据和对账状态没有用户入口。
+- 终态没有新增 API、存储或交易计算：自动交易区复用现有 `history` 与状态字段增加可折叠“自动交易运行台账”。折叠摘要显示最近判断和成交数量；展开后显示判断来源与依据、累计已实现盈亏、策略持仓、当前委托状态，以及最近五笔成交的模式、方向、价格、金额、手续费和是否估算。
+- 内部判断来源 `rules / risk / exchange` 统一显示为“规则引擎 / 风险保护 / 交易所对账”，避免运行页面重新混入内部英文值。无成交时使用明确空状态，不伪造历史记录。
+- TDD 先固定完整成交台账的可读输出，再由真实页面发现并补充内部 Provider 中文映射。执行区聚焦 `214` 项、Web 全量 `1061` 项和生产构建通过；本轮未改 Python，复用同一连续开发中刚通过的 Python 全量 `740` 项，仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- Web 镜像按当前代码重建后 `api + web` 均为 healthy。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 验证折叠和展开交互；深色与浅色主题均使用现有主题变量，页面宽度与视口同为 `1280px`，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `executionMode=testnet`、`status=monitoring`、`tradeCount=0`、`historyCount=0`、最近判断为观望、账户覆盖正常、无测试网未决委托、`liveBlockedBoundary=true`。本次只展开台账和切换主题，没有点击评估、对账、模式切换或提交订单。
+
+final result: passed
+
+## 2026-07-27 自动交易风险概览复验
+
+- 根因是后端每轮已经执行当日亏损、小时成交次数、止损/止盈、账户资金覆盖和生产授权检查，但执行中心只在触发阻断后显示告警；正常运行时看不到当前距离边界还有多少空间。
+- 终态只复用现有策略状态增加紧凑“风险边界”概览：当日回撤与上限、小时已用与剩余成交次数、按策略平均成本计算的止损/止盈价格、账户覆盖及最近检查时间；生产模式额外显示本次授权有效期。页面不执行风控、不修改阈值，也不会触发暂停或委托。
+- TDD 先固定亏损、频率、退出价格、账户和授权五类可读输出，再实现单一前端投影。执行区聚焦 `215` 项、Web 全量 `1062` 项和生产构建通过；本轮未改 Python，复用同一连续开发中刚通过的 Python 全量 `740` 项，仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- Web 镜像按当前代码重建后 `api + web` 均为 healthy。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，深色与浅色主题均使用现有主题变量，风险卡宽度约 `991px`，页面宽度与视口同为 `1280px`，浏览器控制台 `0 error / 0 warning`。
+- 重建后只读状态为 `executionMode=testnet`、`status=monitoring`、`tradeCount=0`、当日回撤 `0.00% / 2.00%`、小时剩余 `3` 次、当前无持仓、账户覆盖正常、无测试网未决委托、`liveBlockedBoundary=true`。本次没有点击评估、对账、模式切换或提交订单。
+
+final result: passed
+
+## 2026-07-27 自动交易后台运行心跳复验
+
+- 根因是自动交易后端只持久化 `runnerState=running / stopped`；线程虽然标记运行，但每轮行情与对账循环是否继续执行、连续失败多少次、何时恢复都没有可见证据，页面无法区分“正常等待行情”和“后台已经卡住”。
+- 终态复用现有 `AutoPaperTradingRunner` 与状态事件：每轮持久化累计轮次、最近心跳、最近成功、最近异常和连续失败次数。异常继续使用原 `evaluation_error` 路径；下一轮成功会清零连续失败，并且只在当前仍为 `evaluation_error` 时恢复监控，不覆盖账户、风险、数据或订单阻断。
+- 执行中心增加紧凑运行健康条，显示正常、连续失败、已停止、首次心跳等待和上次异常已恢复；超过三个配置周期且至少 `90` 秒没有新心跳时提示“后台心跳已中断”。该判断只影响显示，不自动重启、不恢复授权，也不触发 AI 或委托。
+- TDD 后端先模拟首轮失败、次轮成功，固定心跳累加、异常时间、成功时间和连续失败清零；前端分别固定健康恢复与心跳超时提示。自动交易聚焦 `24` 项、执行区聚焦 `217` 项、Python 全量 `741` 项、Web 全量 `1064` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按当前代码重建后均为 healthy。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，健康条先显示完成 `2` 轮，等待一个后台周期后自动增长为 `4` 轮且心跳年龄回落到 `9` 秒；深浅主题均正常，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 最终只读状态为 `executionMode=testnet`、`status=monitoring`、`runnerState=running`、`runnerCycleCount=7`、`consecutiveRunnerFailures=0`、最近成功与最近心跳一致、无历史运行异常、`tradeCount=0`、无测试网未决委托、`liveBlockedBoundary=true`。本次没有点击评估、对账、模式切换或提交订单。
+
+final result: passed
+
+## 2026-07-27 自动交易运维提醒复验
+
+- 终态复用现有中文运行告警与后台心跳判定，只增加浏览器原生系统通知入口；未决委托、账户/风控异常、后台停止、连续失败和心跳中断使用稳定状态键去重，正常恢复后才允许同类异常再次提醒。
+- 通知权限只在操作者点击“开启系统提醒”时申请，不自动弹窗。真实复验浏览器当前不提供可授权通知，页面显示禁用的“系统提醒已关闭”；本次没有点击按钮或改变浏览器权限。页面关闭后不承诺通知，也没有新增第三方推送、后台服务或交易动作。
+- TDD 先固定未决委托提醒的稳定键，再固定心跳超时提醒和原生通知不可用的页面状态。执行区聚焦 `219` 项、Web 全量 `1066` 项和生产构建通过；仅保留既知 chunk-size 提示。
+- Web 镜像按当前代码重建后 `api + web` 均为 healthy。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，提醒按钮与健康条同行显示，深浅主题沿用现有变量，页面无横向溢出，浏览器日志为空。
+- 最终只读状态为 `enabled=true`、`executionMode=testnet`、`status=monitoring`、`runnerState=running`、`runnerCycleCount=29`、`consecutiveRunnerFailures=0`、`tradeCount=0`、无测试网或生产未决委托；`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有点击评估、对账、模式切换或提交订单。
+
+final result: passed
+
+## 2026-07-27 自动交易状态连接提醒复验
+
+- 根因是系统通知只读取最后一次成功快照；自动交易状态 API 初次加载或轮询失败时，页面虽会显示请求错误，但通知判定仍可能把旧快照解释为健康，操作者看不到连接已经中断。
+- 终态复用现有 GET 轮询和原生通知，只把初次加载/状态刷新失败写入独立 `statusReadError`。它使用稳定 `connection:api` 键提醒一次，下一次成功读取或成功操作会清除；保存参数、人工评估等业务错误不会被误报为后台断线。
+- 浏览器常见 `Failed to fetch / fetch failed / NetworkError` 统一翻译为“无法连接自动交易服务，请检查本地 API 是否运行。”，避免运维提醒重新混入英文底层错误。
+- TDD 先固定无快照时的连接提醒，再固定浏览器网络错误中文映射。执行区聚焦 `221` 项、Web 全量 `1068` 项和生产构建通过；仅保留既知 chunk-size 提示。
+- Web 镜像按当前代码重建后 `api + web` 均为 healthy。真实 Docker 执行中心使用 `1280 × 720`、A 股 `600519 · 1d` 复验，健康条显示“后台运行正常”，提醒入口正常，无横向溢出，浏览器日志为空。断线分支使用确定性测试验证，本次没有为复验停止 API。
+- 最终只读状态为 `enabled=true`、`executionMode=testnet`、`status=monitoring`、`runnerState=running`、`runnerCycleCount=47`、`consecutiveRunnerFailures=0`、`tradeCount=0`、无测试网或生产未决委托；`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有点击评估、对账、模式切换或提交订单。
+
+final result: passed
+
+## 2026-07-27 自动成交真实费用与部分成交复验
+
+- 现有 Binance Spot 共享路由已经使用 `create_market_buy_order_with_cost()` 按 USDT 金额买入，并返回实际成交数量、成交金额与交易所手续费；本轮没有新增订单算法或第二套账本。
+- 补齐的唯一运行缺口是手续费证据展示：成交记录现在保留交易所原始 `feeBreakdown`。USDT 与 BTC 手续费继续按现有账本计算；BNB 等第三币种没有可靠汇率时仍按 USDT 估算盈亏，同时在审计和页面明确显示实际扣费数量与币种，不伪装成已完成折算。
+- 新增确定性回归覆盖“部分成交后撤销”的最终对账：首次回报保持未决，查询收口后只按实际成交数量与手续费入账一次；重复评估不产生第二笔成交审计。既有回归继续覆盖手续费缺失时的估算与稳定 `clientOrderId` 幂等恢复。
+- 执行区前端聚焦 `14` 项、自动交易关键分支聚焦 `4` 项、Web 全量 `1070` 项、Python 全量 `750` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- `api + web` 按当前代码重建后均为 healthy。真实 Docker 执行中心使用 `1679 × 919`、A 股 `600519 · 1d` 复验，自动交易台账可正常展开并显示明确空状态，页面宽度与视口同为 `1679px`，浏览器控制台为空。
+- 最终只读状态为 `executionMode=testnet`、`enabled=true`、`status=monitoring`、`runnerState=running`、`tradeCount=0`、`sandboxOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有点击评估、保存、暂停、急停或模式切换，也没有提交任何订单。
+
+final result: passed
+
+## 2026-07-27 执行中心 Docker 人工验收准备
+
+- 当前 `api + web` 容器均为 healthy；自动交易 API 显示 Testnet 后台监控与运行心跳正常，累计成交为 `0`，生产下单、生产路由和真实资金边界仍全部阻断。
+- 使用真实 Docker 页面、A 股 `600519 · 1d` 和 `1679 × 919` 视口完成深色、浅色两套视觉检查。自动监控、运行健康、风险边界、自动交易台账、参数区与 Stage 10 生产控制链层级清楚；两种主题均无横向溢出。
+- 自动交易台账可展开并显示“尚无自动成交”；当前执行模式为 `testnet`、AI 服务为 `auto`。保存参数、立即评估与暂停监控按钮可见，但验收没有点击；生产凭据检查和生产急停保持禁用，测试网急停仅确认存在且没有触发。
+- 浏览器控制台在深色、浅色、台账展开及恢复默认折叠状态后均为空；Docker 最近日志未发现 `Traceback / ERROR / Exception / 500`。
+- 页面已恢复深色主题与前置证据折叠状态。自动测试、构建、Docker 状态和只读浏览器证据均已满足技术验收前置；是否接受当前执行中心仍由用户人工确认。
+
+final result: ready_for_human_confirmation
+
+## 2026-07-27 生产交易控制按钮间距复验
+
+- 用户源图为 `C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-26fc1ab1-b25f-4fd6-ae8e-4949780e1842.png`，尺寸 `1137 × 566`；真实 Docker 页面使用深色主题、A 股 `600519 · 1d`、前置步骤展开状态与 `1365 × 768` 视口复现。
+- 根因是两个操作按钮均为 `.execution-stage5-shadow` 的相邻直接子元素，共享样式只有上间距，没有相邻按钮的水平间距。修复仅增加 `.execution-stage5-shadow > button + button { margin-left: 8px; }`，并在既有 `560px` 窄屏规则中归零左间距，继续使用原有纵向排列。
+- 桌面实测按钮间距由 `0px` 变为 `8px`，页面横向溢出为 `0px`；`480 × 900` 窄屏下按钮保持满宽纵向排列，纵向间距 `12px`，横向溢出同为 `0px`。未修改按钮文案、颜色、字号、权限或执行逻辑。
+- 修复后页面证据为 `design-qa-execution-stage10-buttons-after-full.png`，聚焦图为 `design-qa-execution-stage10-buttons-after.png`，用户源图与修复后页面并排对照为 `design-qa-execution-stage10-buttons-comparison.png`。
+- 布局聚焦 `179` 项、Web 全量 `1070` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。Web 镜像按当前代码重建后 `api + web` 均为 healthy，浏览器控制台与 Web 最近日志均为空。
+- 本次只点击“查看执行前置步骤”完成安全交互复验，没有点击专用交易凭据检查、生产急停、评估、保存、暂停或模式切换，也没有访问生产网络或提交订单。
+
+final result: passed
+
+## 2026-07-27 M0 三模式 Docker 退出验收
+
+- 新增 `tools/m0_execution_acceptance.py` 与 `npm run docker:smoke:m0`，复用现有 Docker、自动交易 API、状态存储和确定性自动交易测试；没有增加第二套交易状态机、适配器或下单入口。
+- 验收在独立 Compose 项目、独立数据卷和 `5174` 端口运行，强制清空 Testnet、生产只读与生产交易凭据并固定 `AIQT_ENABLE_PRODUCTION_TRADING=false`。验收结束后只删除该临时项目与数据卷，不修改当前 `5173` 容器及其持久状态。
+- Paper、Testnet、Production 三种停用状态分别完成一次 API 重启，模式、暂停状态、策略持仓、累计成交、最近成交、未决委托和全部交易边界均精确回读；Web 另外完成一次重启。容器内确定性自动交易套件通过，没有访问 Testnet 或 Production 写接口。
+- 验收报告为 `data/m0-execution-acceptance.json`，独立校验结果为 `m0 execution acceptance=accepted`。报告固定 `noExternalWrites=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 新增 M0 聚焦测试 `1` 项、Python 全量 `751` 项、Web 全量 `1070` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- 当前真实 Docker `api + web` 仍为 healthy，原 Testnet 监控状态保持 `enabled=true`、`executionMode=testnet`、`status=monitoring`、`tradeCount=0`，生产下单、生产路由与真实资金边界仍全部阻断。
+- 使用真实 `5173` 页面、A 股 `600519 · 1d` 和 `1365 × 768` 视口复验深色与浅色主题、前置步骤展开和恢复交互；两种主题均无横向溢出，Stage 10 专用凭据检查和生产急停保持禁用。证据为 `design-qa-m0-execution-dark.png` 与 `design-qa-m0-execution-light.png`。
+- 浏览器控制台为空，Docker 最近日志未发现 `Traceback / ERROR / Exception / 500`。本次没有点击评估、保存、暂停、急停、凭据检查或模式切换，也没有提交任何订单。
+- M0 技术退出条件已经具备；按照 GitHub #28 的人工验收边界，最终关闭仍等待用户确认执行中心视觉、中文文案和受控交易安全边界。
+
+final result: ready_for_human_confirmation

@@ -65,6 +65,7 @@ from quant_core.ai_review_stage3 import (
     DeterministicAiReviewEngine,
 )
 from quant_core.ai import LocalResearchAssistant
+from quant_core.auto_paper_trading import AutoPaperTradingRunner, AutoPaperTradingService
 from quant_core.backtest import BacktestEngine
 from quant_core.cache import MarketDataCache
 from quant_core.cache_refresh_runs import (
@@ -273,6 +274,17 @@ from quant_core.stage9_production_admission import (
     production_order_admission_review_from_audit_event,
     production_order_admission_review_to_audit_event,
     validate_production_order_admission_preconditions,
+)
+from quant_core.stage10_production_execution import (
+    BinanceSpotProductionTradingRoute,
+    PRODUCTION_EXECUTION_CONFIRMATION_IDS,
+    Stage10ProductionExecutionService,
+    build_production_execution_attempt,
+    build_production_execution_authorization,
+    build_production_trading_credential_preflight,
+    build_production_trading_permission_verification,
+    production_execution_attempt_from_audit_event,
+    production_execution_authorization_from_audit_event,
 )
 from quant_core.stage6_sandbox import (
     BinanceSpotTestnetRoute,
@@ -515,6 +527,61 @@ def _cache_fallback_warnings(quality: DataQuality | None, upstream_error: str | 
         return ["served local cache because upstream quality was unavailable"]
     reason = f"served local cache instead of incomplete {quality.source}"
     return [reason, *quality.warnings]
+
+
+def evaluate_auto_paper_trading_once(
+    service: AutoPaperTradingService,
+    *,
+    cache: MarketDataCache,
+    adapter: object,
+) -> tuple[dict[str, object], DataQuality]:
+    state = service.snapshot()["state"]
+    request = MarketDataRequest(
+        market=state["market"],
+        symbol=state["symbol"],
+        timeframe=state["timeframe"],
+    )
+    bars, quality = _fetch_market_klines_with_cache(
+        cache=cache,
+        adapter=adapter,
+        request=request,
+        limit=7,
+    )
+    if not quality.is_complete:
+        return (
+            service.record_data_blocked("行情数据不完整，已跳过本轮决策。"),
+            quality,
+        )
+    now = datetime.now(timezone.utc)
+    interval = timedelta(minutes=1)
+    closed = sorted(
+        (
+            bar
+            for bar in bars
+            if bar.timestamp + interval <= now
+        ),
+        key=lambda bar: bar.timestamp,
+    )
+    if len(closed) < 6:
+        return (
+            service.record_data_blocked("完整 K 线不足 6 根，已跳过本轮决策。"),
+            quality,
+        )
+    if closed[-1].timestamp + interval < now - interval * 2:
+        return (
+            service.record_data_blocked("最新完整 K 线已过期，已跳过本轮决策。"),
+            quality,
+        )
+    window = closed[-6:]
+    if any(
+        current.timestamp - previous.timestamp != interval
+        for previous, current in zip(window, window[1:])
+    ):
+        return (
+            service.record_data_blocked("完整 K 线时间不连续，已跳过本轮决策。"),
+            quality,
+        )
+    return service.evaluate(window, data_source=quality.source), quality
 
 
 def _stage1_daily_use_project_root(report_path: Path) -> Path:
@@ -2813,6 +2880,292 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 status=201 if created else 200,
             )
             return
+        if parsed.path == "/api/execution/auto-paper-trading":
+            try:
+                payload = self._read_json_body()
+                result = self._auto_paper_trading_service().configure(payload)
+            except ValueError as error:
+                self._send_json({"error": "invalid_auto_paper_trading_control", "detail": str(error)}, status=400)
+                return
+            self._send_json(result)
+            return
+        if parsed.path == "/api/execution/auto-paper-trading/reconciliations":
+            service = self._auto_paper_trading_service()
+            self._send_json(
+                service.reconcile_pending_order() or service.snapshot()
+            )
+            return
+        if parsed.path == "/api/execution/auto-paper-trading/evaluations":
+            service = self._auto_paper_trading_service()
+            state = service.snapshot()["state"]
+            request = MarketDataRequest(
+                market=state["market"],
+                symbol=state["symbol"],
+                timeframe=state["timeframe"],
+            )
+            try:
+                result, quality = evaluate_auto_paper_trading_once(
+                    service,
+                    cache=self.cache,
+                    adapter=self.kline_adapter,
+                )
+            except ValueError as error:
+                self._record_adapter_error_if_needed(
+                    request,
+                    quality=None,
+                    context="auto-paper-trading",
+                    error=str(error),
+                )
+                self._send_json({"error": "auto_paper_trading_evaluation_blocked", "detail": str(error)}, status=409)
+                return
+            self._record_adapter_error_if_needed(request, quality=quality, context="auto-paper-trading")
+            self._send_json(result)
+            return
+        if parsed.path == "/api/execution/stage10/production-trading-credential-preflights":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {"operator"}:
+                    raise ValueError("stage10 production trading credential preflight request is invalid")
+                preflight = build_production_trading_credential_preflight(
+                    environ=type(self).execution_adapter_health_environ,
+                    operator=_required_stage4_string(payload["operator"]),
+                )
+                preflight = self._stage10_production_execution_service().record_credential_preflight(
+                    preflight
+                )
+                event = self.audit_event_store.get(preflight["preflightId"])
+            except (ValueError, RuntimeError) as error:
+                self._send_json(
+                    {
+                        "error": "stage10_production_trading_credential_preflight_blocked",
+                        "blockers": [str(error)],
+                    },
+                    status=409,
+                )
+                return
+            self._send_json(
+                {
+                    "productionTradingCredentialPreflight": preflight,
+                    "auditEvent": audit_event_record_to_payload(event),
+                },
+                status=201,
+            )
+            return
+        if parsed.path == "/api/execution/stage10/production-trading-permission-verifications":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {"preflightId", "operator"}:
+                    raise ValueError(
+                        "stage10 production trading permission verification request is invalid"
+                    )
+                service = self._stage10_production_execution_service()
+                preflight = service.get_credential_preflight(
+                    _required_stage4_string(payload["preflightId"])
+                )
+                verification = build_production_trading_permission_verification(
+                    preflight,
+                    environ=type(self).execution_adapter_health_environ,
+                    operator=_required_stage4_string(payload["operator"]),
+                    exchange_factory=type(self).execution_adapter_health_exchange_factory,
+                )
+                verification = service.record_permission_verification(verification)
+                event = self.audit_event_store.get(verification["verificationId"])
+            except (LookupError, ValueError, RuntimeError) as error:
+                self._send_json(
+                    {
+                        "error": "stage10_production_trading_permission_verification_blocked",
+                        "blockers": [str(error)],
+                    },
+                    status=409,
+                )
+                return
+            self._send_json(
+                {
+                    "productionTradingPermissionVerification": verification,
+                    "auditEvent": audit_event_record_to_payload(event),
+                },
+                status=201 if verification["status"] == "verified" else 409,
+            )
+            return
+        if parsed.path == "/api/execution/stage10/production-execution-controls":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "action",
+                    "operator",
+                    "reason",
+                    "credentialPreflightId",
+                    "permissionVerificationId",
+                }:
+                    raise ValueError("stage10 production execution control request is invalid")
+                credential_preflight_id = payload["credentialPreflightId"]
+                if credential_preflight_id is not None:
+                    credential_preflight_id = _required_stage4_string(credential_preflight_id)
+                permission_verification_id = payload["permissionVerificationId"]
+                if permission_verification_id is not None:
+                    permission_verification_id = _required_stage4_string(
+                        permission_verification_id
+                    )
+                with type(self).production_readonly_authority_lock:
+                    control = self._stage10_production_execution_service().set_control(
+                        action=_required_stage4_string(payload["action"]),
+                        operator=_required_stage4_string(payload["operator"]),
+                        reason=_required_stage4_string(payload["reason"]),
+                        credential_preflight_id=credential_preflight_id,
+                        permission_verification_id=permission_verification_id,
+                    )
+                    event = self.audit_event_store.get(control["controlId"])
+            except (LookupError, ValueError, RuntimeError) as error:
+                self._send_json(
+                    {
+                        "error": "stage10_production_execution_control_blocked",
+                        "blockers": [str(error)],
+                    },
+                    status=409,
+                )
+                return
+            self._send_json(
+                {
+                    "productionExecutionControl": control,
+                    "auditEvent": audit_event_record_to_payload(event),
+                },
+                status=201,
+            )
+            return
+        if parsed.path == "/api/execution/stage10/production-execution-authorizations":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {
+                    "candidateId", "operator", "reason", "confirmations"
+                }:
+                    raise ValueError("stage10 production execution authorization request fields are invalid")
+                candidate_id = _required_stage4_string(payload["candidateId"])
+                operator = _required_stage4_string(payload["operator"])
+                reason = _required_stage4_string(payload["reason"])
+                confirmations = payload["confirmations"]
+                if (
+                    not isinstance(confirmations, dict)
+                    or set(confirmations) != set(PRODUCTION_EXECUTION_CONFIRMATION_IDS)
+                ):
+                    raise ValueError("stage10 production execution confirmations are invalid")
+                with type(self).production_readonly_authority_lock:
+                    candidate = _stage9_production_admission_candidate(
+                        self.audit_event_store, candidate_id
+                    )
+                    review = next(
+                        (
+                            item
+                            for item in _stage9_production_admission_reviews(
+                                self.audit_event_store, candidate["baseRunId"], limit=None
+                            )
+                            if item["candidateId"] == candidate_id and item["outcome"] == "approved"
+                        ),
+                        None,
+                    )
+                    if review is None:
+                        raise ValueError("stage10 approved Stage 9 review was not found")
+                    existing = next(
+                        (
+                            item
+                            for item in _stage10_production_execution_authorizations(
+                                self.audit_event_store, candidate["baseRunId"], limit=None
+                            )
+                            if item["candidateId"] == candidate_id
+                            and item["admissionReviewId"] == review["reviewId"]
+                        ),
+                        None,
+                    )
+                    if existing is not None:
+                        if (
+                            existing["operator"] != operator
+                            or existing["reason"] != reason
+                            or existing["confirmedScopeIds"]
+                            != list(PRODUCTION_EXECUTION_CONFIRMATION_IDS)
+                            or any(confirmations[item] is not True for item in confirmations)
+                        ):
+                            raise ValueError(
+                                "stage10 production execution authorization conflicts with immutable evidence"
+                            )
+                        event = self.audit_event_store.get(existing["authorizationId"])
+                        self._send_json(
+                            {
+                                "productionExecutionAuthorization": existing,
+                                "auditEvent": audit_event_record_to_payload(event),
+                            }
+                        )
+                        return
+                    authorization = build_production_execution_authorization(
+                        candidate,
+                        review,
+                        operator=operator,
+                        reason=reason,
+                        confirmations=confirmations,
+                    )
+                    event_existed = self.audit_event_store.get(authorization["authorizationId"]) is not None
+                    authorization = self._stage10_production_execution_service().record_authorization(
+                        authorization
+                    )
+                    event = self.audit_event_store.get(authorization["authorizationId"])
+            except (LookupError, ValueError, RuntimeError) as error:
+                self._send_json(
+                    {
+                        "error": "stage10_production_execution_authorization_blocked",
+                        "blockers": [str(error)],
+                    },
+                    status=409,
+                )
+                return
+            self._send_json(
+                {
+                    "productionExecutionAuthorization": authorization,
+                    "auditEvent": audit_event_record_to_payload(event),
+                },
+                status=200 if event_existed else 201,
+            )
+            return
+        if parsed.path == "/api/execution/stage10/production-execution-attempts":
+            try:
+                payload = self._read_json_body()
+                if not isinstance(payload, dict) or set(payload) != {"authorizationId", "operator"}:
+                    raise ValueError("stage10 production execution attempt request fields are invalid")
+                authorization_id = _required_stage4_string(payload["authorizationId"])
+                operator = _required_stage4_string(payload["operator"])
+                with type(self).production_readonly_authority_lock:
+                    authorization = _stage10_production_execution_authorization(
+                        self.audit_event_store, authorization_id
+                    )
+                    existing = next(
+                        (
+                            item
+                            for item in _stage10_production_execution_attempts(
+                                self.audit_event_store, authorization["baseRunId"], limit=None
+                            )
+                            if item["authorizationId"] == authorization_id
+                        ),
+                        None,
+                    )
+                    attempt = self._stage10_production_execution_service().attempt(
+                        authorization_id,
+                        operator=operator,
+                    )
+                    event = self.audit_event_store.get(attempt["attemptId"])
+            except (LookupError, ValueError, RuntimeError) as error:
+                self._send_json(
+                    {
+                        "error": "stage10_production_execution_attempt_blocked",
+                        "blockers": [str(error)],
+                    },
+                    status=409,
+                )
+                return
+            self._send_json(
+                {
+                    "productionExecutionAttempt": attempt,
+                    "auditEvent": audit_event_record_to_payload(event),
+                },
+                status=200 if existing is not None else 201,
+            )
+            return
         if parsed.path == "/api/execution/stage6/sandbox-authorizations":
             try:
                 payload = self._read_json_body()
@@ -4978,6 +5331,91 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 return
             self._send_json({"productionOrderAdmissionReviews": reviews})
             return
+        if parsed.path == "/api/execution/auto-paper-trading":
+            self._send_json(self._auto_paper_trading_service().snapshot())
+            return
+        if parsed.path == "/api/execution/stage10/production-trading-credential-preflights":
+            try:
+                preflight = self._stage10_production_execution_service().latest_credential_preflight()
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_stage10_production_trading_credential_preflight_store",
+                        "detail": str(error),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json({"productionTradingCredentialPreflight": preflight})
+            return
+        if parsed.path == "/api/execution/stage10/production-trading-permission-verifications":
+            try:
+                verification = (
+                    self._stage10_production_execution_service().latest_permission_verification()
+                )
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_stage10_production_trading_permission_verification_store",
+                        "detail": str(error),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json({"productionTradingPermissionVerification": verification})
+            return
+        if parsed.path == "/api/execution/stage10/production-execution-controls":
+            try:
+                control = self._stage10_production_execution_service().control()
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_stage10_production_execution_control_store",
+                        "detail": str(error),
+                    },
+                    status=500,
+                )
+                return
+            self._send_json({"productionExecutionControl": control})
+            return
+        if parsed.path == "/api/execution/stage10/production-execution-authorizations":
+            try:
+                base_run_id, limit = _stage10_execution_query(parsed.query)
+                authorizations = _stage10_production_execution_authorizations(
+                    self.audit_event_store, base_run_id, limit=limit
+                )
+            except (LookupError, ValueError) as error:
+                code = (
+                    "invalid_stage10_production_execution_authorization_query"
+                    if str(error) == "invalid_stage10_production_execution_query"
+                    else "invalid_stage10_production_execution_authorization_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"productionExecutionAuthorizations": authorizations})
+            return
+        if parsed.path == "/api/execution/stage10/production-execution-attempts":
+            try:
+                base_run_id, limit = _stage10_execution_query(parsed.query)
+                attempts = _stage10_production_execution_attempts(
+                    self.audit_event_store, base_run_id, limit=limit
+                )
+            except (LookupError, ValueError) as error:
+                code = (
+                    "invalid_stage10_production_execution_attempt_query"
+                    if str(error) == "invalid_stage10_production_execution_query"
+                    else "invalid_stage10_production_execution_attempt_store"
+                )
+                self._send_json(
+                    {"error": code, "detail": str(error)},
+                    status=400 if code.endswith("query") else 500,
+                )
+                return
+            self._send_json({"productionExecutionAttempts": attempts})
+            return
         if parsed.path == "/api/execution/stage6/sandbox-authorizations":
             try:
                 query = parse_qs(parsed.query)
@@ -5818,6 +6256,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             exchange_factory=type(self).execution_adapter_health_exchange_factory,
         )
 
+    def _stage10_production_execution_service(self) -> Stage10ProductionExecutionService:
+        route = BinanceSpotProductionTradingRoute(
+            env=type(self).execution_adapter_health_environ,
+            exchange_factory=type(self).execution_adapter_health_exchange_factory,
+        )
+        return Stage10ProductionExecutionService(
+            self.audit_event_store,
+            auto_route=route,
+        )
+
+    def _auto_paper_trading_service(self) -> AutoPaperTradingService:
+        return _build_auto_paper_trading_service(type(self))
+
     def _settings_status_payload(self) -> dict[str, object]:
         return build_settings_status(
             cache_path=self.cache.path,
@@ -6112,6 +6563,148 @@ def _stage9_production_admission_reviews(
     return reviews
 
 
+def _stage10_execution_query(query_string: str) -> tuple[str, int]:
+    query = parse_qs(query_string, keep_blank_values=True)
+    if set(query) - {"baseRunId", "limit"} or len(query.get("baseRunId", [])) != 1:
+        raise ValueError("invalid_stage10_production_execution_query")
+    base_run_id = query["baseRunId"][0].strip()
+    raw_limit = query.get("limit", ["20"])
+    if not base_run_id or len(raw_limit) != 1 or not raw_limit[0].isdigit():
+        raise ValueError("invalid_stage10_production_execution_query")
+    limit = int(raw_limit[0])
+    if not 1 <= limit <= 50:
+        raise ValueError("invalid_stage10_production_execution_query")
+    return base_run_id, limit
+
+
+def _stage10_production_execution_authorizations(
+    audit_event_store: AuditEventStore,
+    base_run_id: str,
+    *,
+    limit: int | None,
+) -> list[dict[str, object]]:
+    events = (
+        audit_event_store.list_recent(
+            run_id=base_run_id,
+            event_type="stage10_production_execution_authorization",
+            limit=limit,
+        )
+        if limit is not None
+        else [
+            event
+            for event in audit_event_store.list_all_by_run(base_run_id)
+            if event.event_type == "stage10_production_execution_authorization"
+        ]
+    )
+    return [
+        _stage10_production_execution_authorization(
+            audit_event_store, event.event_id, expected_run_id=base_run_id
+        )
+        for event in events
+        if event.metadata.get("detached") is not True
+    ]
+
+
+def _stage10_production_execution_authorization(
+    audit_event_store: AuditEventStore,
+    authorization_id: str,
+    *,
+    expected_run_id: str | None = None,
+) -> dict[str, object]:
+    event = audit_event_store.get(authorization_id)
+    authorization = (
+        production_execution_authorization_from_audit_event(event) if event else None
+    )
+    if event is None or authorization is None or event.metadata.get("detached") is True:
+        raise LookupError("stage10 production execution authorization was not found")
+    if (
+        authorization["authorizationId"] != event.event_id
+        or authorization["baseRunId"] != event.run_id
+        or (expected_run_id is not None and authorization["baseRunId"] != expected_run_id)
+        or datetime.fromisoformat(authorization["authorizedAt"]) != event.created_at
+        or event.stage != "stage10-production-execution-authorization"
+        or event.source != authorization["operator"]
+    ):
+        raise ValueError("stage10_production_execution_authorization_audit_binding_invalid")
+    candidate = _stage9_production_admission_candidate(
+        audit_event_store, str(authorization["candidateId"])
+    )
+    review = next(
+        (
+            item
+            for item in _stage9_production_admission_reviews(
+                audit_event_store, str(authorization["baseRunId"]), limit=None
+            )
+            if item["reviewId"] == authorization["admissionReviewId"]
+            and item["candidateId"] == authorization["candidateId"]
+        ),
+        None,
+    )
+    if review is None:
+        raise ValueError("stage10_production_execution_admission_review_missing")
+    rebuilt = build_production_execution_authorization(
+        candidate,
+        review,
+        operator=str(authorization["operator"]),
+        reason=str(authorization["reason"]),
+        confirmations={item: True for item in PRODUCTION_EXECUTION_CONFIRMATION_IDS},
+        authorized_at=str(authorization["authorizedAt"]),
+    )
+    if rebuilt != authorization:
+        raise ValueError("stage10_production_execution_authority_invalid")
+    return authorization
+
+
+def _stage10_production_execution_attempts(
+    audit_event_store: AuditEventStore,
+    base_run_id: str,
+    *,
+    limit: int | None,
+) -> list[dict[str, object]]:
+    events = (
+        audit_event_store.list_recent(
+            run_id=base_run_id,
+            event_type="stage10_production_execution_attempt",
+            limit=limit,
+        )
+        if limit is not None
+        else [
+            event
+            for event in audit_event_store.list_all_by_run(base_run_id)
+            if event.event_type == "stage10_production_execution_attempt"
+        ]
+    )
+    attempts = []
+    for event in events:
+        if event.metadata.get("detached") is True:
+            continue
+        attempt = production_execution_attempt_from_audit_event(event)
+        if (
+            attempt is None
+            or attempt["attemptId"] != event.event_id
+            or attempt["baseRunId"] != event.run_id
+            or attempt["baseRunId"] != base_run_id
+            or datetime.fromisoformat(attempt["attemptedAt"]) != event.created_at
+            or event.stage != "stage10-production-execution-attempt"
+            or event.source != attempt["operator"]
+        ):
+            raise ValueError("stage10_production_execution_attempt_audit_binding_invalid")
+        authorization = _stage10_production_execution_authorization(
+            audit_event_store,
+            str(attempt["authorizationId"]),
+            expected_run_id=base_run_id,
+        )
+        rebuilt = build_production_execution_attempt(
+            authorization,
+            operator=str(attempt["operator"]),
+            attempted_at=str(attempt["attemptedAt"]),
+        )
+        if rebuilt != attempt:
+            raise ValueError("stage10_production_execution_attempt_authority_invalid")
+        attempts.append(attempt)
+    return attempts
+
+
 def _adapter_error_message(*, quality: DataQuality | None, error: str | None) -> str | None:
     if error:
         return str(error)
@@ -6262,14 +6855,70 @@ def resolve_api_bind(
     return bind_host, bind_port
 
 
+def _build_auto_paper_trading_service(
+    handler_type: type[QuantApiHandler],
+) -> AutoPaperTradingService:
+    factory = handler_type.stage6_sandbox_route_factory
+    sandbox_route = factory() if callable(factory) else BinanceSpotTestnetRoute()
+    sandbox = Stage6SandboxExecutionService(
+        handler_type.audit_event_store,
+        sandbox_route,
+    )
+    production_route = BinanceSpotProductionTradingRoute(
+        env=handler_type.execution_adapter_health_environ,
+        exchange_factory=handler_type.execution_adapter_health_exchange_factory,
+    )
+    production = Stage10ProductionExecutionService(
+        handler_type.audit_event_store,
+        auto_route=production_route,
+    )
+    providers = (
+        handler_type.ai_review_provider_registry
+        or AiReviewProviderRegistry.from_environment()
+    )
+    return AutoPaperTradingService(
+        handler_type.audit_event_store,
+        providers,
+        sandbox,
+        production,
+    )
+
+
+def build_auto_paper_trading_runner(
+    handler_type: type[QuantApiHandler] = QuantApiHandler,
+    *,
+    interval_seconds: float = 35,
+) -> AutoPaperTradingRunner:
+    service = _build_auto_paper_trading_service(handler_type)
+
+    def evaluate_once() -> None:
+        evaluate_auto_paper_trading_once(
+            service,
+            cache=handler_type.cache,
+            adapter=handler_type.kline_adapter,
+        )
+
+    return AutoPaperTradingRunner(
+        service,
+        evaluate_once,
+        interval_seconds=interval_seconds,
+    )
+
+
 def run(host: str | None = None, port: int | str | None = None) -> None:
     bind_host, bind_port = resolve_api_bind(host=host, port=port)
     factory = QuantApiHandler.stage6_sandbox_route_factory
     route = factory() if callable(factory) else BinanceSpotTestnetRoute()
     Stage6SandboxExecutionService(QuantApiHandler.audit_event_store, route).recover_active_batches()
     server = ThreadingHTTPServer((bind_host, bind_port), QuantApiHandler)
-    print(f"quant-core API listening on http://{bind_host}:{bind_port}")
-    server.serve_forever()
+    auto_trading_runner = build_auto_paper_trading_runner()
+    try:
+        auto_trading_runner.start()
+        print(f"quant-core API listening on http://{bind_host}:{bind_port}")
+        server.serve_forever()
+    finally:
+        auto_trading_runner.stop()
+        server.server_close()
 
 
 def _parse_limit(raw: str) -> int:
