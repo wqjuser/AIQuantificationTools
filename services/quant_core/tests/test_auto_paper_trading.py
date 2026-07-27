@@ -1393,6 +1393,11 @@ class AutoPaperTradingTests(unittest.TestCase):
                 held["state"]["lastDecisionContract"]["signal"]["action"],
                 "hold",
             )
+            self.assertEqual(held["state"]["lastDecision"]["action"], "hold")
+            self.assertEqual(
+                held["state"]["lastDecision"]["reason"],
+                held["state"]["lastDecisionContract"]["signal"]["reason"],
+            )
             self.assertEqual(held["state"]["tradeCount"], 1)
 
             falling = bars(

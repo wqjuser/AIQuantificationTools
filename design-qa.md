@@ -654,3 +654,13 @@ final result: passed
 - 页面横向溢出为 `0px`，浏览器控制台 `0 error / 0 warning`。本次没有点击运行研究、运行回测、AI 评审、评估、保存、暂停、急停、模式切换或提交订单，也没有新增仓库 PNG。
 
 final result: passed
+
+## 2026-07-28 M1 自动交易与回测共享标准信号边界复验
+
+- 第八个 M1 切片把“已有持仓不重复买入、空仓不可卖出”的确定性持仓边界收口到统一决策契约；自动交易直接消费契约生成的标准信号，回测规则提案也在成交模拟前经过同一规则。没有新增策略引擎、数据表、状态机或页面，回测结束强制平仓仍只属于模拟结算。
+- 自动交易聚焦 `37` 项、回测相关聚焦 `18` 项、Python 全量 `758` 项、Web 全量 `1071` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API Docker 镜像按当前代码构建通过。为保持现有 Testnet 后台监控连续运行，本次没有替换或重启 API 容器；当前 `api + web` 仍为 healthy，只读状态保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 真实 Docker 回测实验室使用 A 股 `600000 · 1d` 与 `1280 × 720` 视口复验；页面继续显示运行 `run-1d4fdb6e2e94` 和快照身份 `b3b163f63…097805`，标题保留完整 64 位哈希，横向溢出为 `0px`，浏览器控制台 `0 error / 0 warning`。
+- 本次没有点击运行研究、运行回测、AI 评审、立即评估、保存、暂停、急停、模式切换或任何订单操作，也没有新增仓库 PNG。
+
+final result: passed

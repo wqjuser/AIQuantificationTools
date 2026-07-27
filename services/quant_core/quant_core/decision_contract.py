@@ -18,6 +18,21 @@ DecisionAction = Literal["buy", "sell", "hold"]
 RiskAdjustmentDecision = Literal["preserve", "reduce", "zero", "reject"]
 
 
+def standardize_signal_action(
+    *,
+    proposal_action: DecisionAction,
+    proposal_reason: str,
+    current_quantity: float,
+) -> tuple[DecisionAction, str]:
+    if not math.isfinite(current_quantity) or current_quantity < 0:
+        raise ValueError("standard_signal_current_quantity_invalid")
+    if proposal_action == "buy" and current_quantity > 0:
+        return "hold", "已有持仓，本轮不重复加仓。"
+    if proposal_action == "sell" and current_quantity <= 0:
+        return "hold", "当前没有可卖出的持仓。"
+    return proposal_action, proposal_reason
+
+
 def build_decision_contract(
     *,
     bars: list[OHLCVBar],
@@ -30,9 +45,6 @@ def build_decision_contract(
     proposal_confidence: float,
     proposal_reason: str,
     provider_id: str,
-    signal_action: DecisionAction,
-    signal_confidence: float,
-    signal_reason: str,
     current_quantity: float,
     reference_price: float,
     available_cash: float,
@@ -62,12 +74,17 @@ def build_decision_contract(
         "reason": proposal_reason,
     }
     proposal_id = canonical_sha256(proposal)
+    signal_action, signal_reason = standardize_signal_action(
+        proposal_action=proposal_action,
+        proposal_reason=proposal_reason,
+        current_quantity=current_quantity,
+    )
     signal = {
         "proposalId": proposal_id,
         "snapshotHash": snapshot_hash,
         "strategyRevision": strategy_revision,
         "action": signal_action,
-        "confidence": round(signal_confidence, 4),
+        "confidence": round(proposal_confidence, 4),
         "reason": signal_reason,
     }
     signal_id = canonical_sha256(signal)

@@ -19,6 +19,7 @@ artifacts/
 *.tsbuildinfo
 apps/web/src-tauri/gen/
 .playwright-mcp/
+/docs/superpowers/
 /design*.png
 /design*.jpg
 /design*.jpeg

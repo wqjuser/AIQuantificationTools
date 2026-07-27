@@ -12,6 +12,7 @@ from quant_core.domain import (
     StrategyConfig,
     Trade,
 )
+from quant_core.decision_contract import standardize_signal_action
 from quant_core.indicators import max_drawdown_pct, rsi, sma
 
 
@@ -52,7 +53,23 @@ class BacktestEngine:
             if index < evaluation_start_index:
                 continue
 
+            proposal_action = "hold"
+            proposal_reason = "conditions_not_met"
             if position.quantity <= 0 and self._all_conditions(strategy.entry_conditions, closes, volumes, index):
+                proposal_action = "buy"
+                proposal_reason = "entry_conditions"
+            elif position.quantity > 0:
+                exit_reason = self._exit_reason(strategy, position.entry_price, bar.close, closes, volumes, index)
+                if exit_reason is not None:
+                    proposal_action = "sell"
+                    proposal_reason = exit_reason
+            signal_action, signal_reason = standardize_signal_action(
+                proposal_action=proposal_action,
+                proposal_reason=proposal_reason,
+                current_quantity=position.quantity,
+            )
+
+            if signal_action == "buy":
                 budget = cash * max(0.0, min(strategy.risk.position_pct, 1.0))
                 execution_price = bar.close * (1 + self.slippage_rate)
                 quantity = budget / execution_price if execution_price else 0.0
@@ -68,29 +85,27 @@ class BacktestEngine:
                             price=execution_price,
                             quantity=quantity,
                             fee=fee,
-                            reason="entry_conditions",
+                            reason=signal_reason,
                         )
                     )
 
-            elif position.quantity > 0:
-                exit_reason = self._exit_reason(strategy, position.entry_price, bar.close, closes, volumes, index)
-                if exit_reason is not None:
-                    execution_price = bar.close * (1 - self.slippage_rate)
-                    gross = position.quantity * execution_price
-                    fee = gross * self.fee_rate
-                    cash += gross - fee
-                    trades.append(
-                        Trade(
-                            symbol=symbol,
-                            side="sell",
-                            timestamp=bar.timestamp,
-                            price=execution_price,
-                            quantity=position.quantity,
-                            fee=fee,
-                            reason=exit_reason,
-                        )
+            elif signal_action == "sell":
+                execution_price = bar.close * (1 - self.slippage_rate)
+                gross = position.quantity * execution_price
+                fee = gross * self.fee_rate
+                cash += gross - fee
+                trades.append(
+                    Trade(
+                        symbol=symbol,
+                        side="sell",
+                        timestamp=bar.timestamp,
+                        price=execution_price,
+                        quantity=position.quantity,
+                        fee=fee,
+                        reason=signal_reason,
                     )
-                    position = _Position()
+                )
+                position = _Position()
 
             equity_curve.append(EquityPoint(timestamp=bar.timestamp, equity=cash + position.quantity * bar.close))
 

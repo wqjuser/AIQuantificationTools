@@ -212,7 +212,7 @@ smoke 要求正好两个不同的 run/标的、完整风险检查、按批次顺
 
 真实浏览器验收已覆盖双标的 Portfolio 主路径、明确拒绝证据、审批/模拟/replay、刷新恢复、Audit 18/18 artifact 与 SHA-256 回读，以及 Portfolio/Audit 在 375px 下无横向溢出。全链始终固定五项安全边界：`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`；没有真实券商连接、真实订单、订单提交或 live route 动作。
 
-P2 阶段已经开始推进实盘前准入控制面，计划见 `docs/superpowers/plans/2026-06-24-aiquant-p2-prelive-readiness.md`。Execution 的晋级队列会显示“实盘前清单”，把审计运行、风控审批、模拟执行、适配器认证和人工确认压成一个可读的准入摘要；它只用于人工复核准备，仍固定 `orderSubmissionEnabled=false` 和 `liveTradingAllowed=false`，不会连接券商或提交真实订单。
+P2 阶段已经开始推进实盘前准入控制面，当前边界见 [产品规划](docs/product-plan.md) 的 P2 说明。Execution 的晋级队列会显示“实盘前清单”，把审计运行、风控审批、模拟执行、适配器认证和人工确认压成一个可读的准入摘要；它只用于人工复核准备，仍固定 `orderSubmissionEnabled=false` 和 `liveTradingAllowed=false`，不会连接券商或提交真实订单。
 
 运行中的核心服务也会通过 `GET /api/p2/pre-live/acceptance/latest` 回读本地 `data/p2-pre-live-acceptance.json`。Execution 与 Audit 会把这份 P2 manifest 显示为通过、缺失或无效三态；如果 manifest 声称允许下单、允许实盘、提交过实盘订单、执行过真实路由或缺少 live-blocked 边界，平台会标记为无效并继续保持 `orderSubmissionEnabled=false`、`liveTradingAllowed=false`。
 
