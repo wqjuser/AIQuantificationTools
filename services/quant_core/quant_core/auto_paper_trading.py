@@ -12,6 +12,7 @@ from quant_core.audit_events import AuditEventStore, audit_event_record_to_paylo
 from quant_core.canonical import canonical_sha256
 from quant_core.decision_contract import (
     build_decision_contract,
+    build_order_intent,
     build_order_result,
     build_risk_adjusted_target,
 )
@@ -30,6 +31,9 @@ _UNRESOLVED_ORDER_STATES = {
     "reconciliation_required",
 }
 _LOCK = Lock()
+AUTO_STRATEGY_ID = "auto-pct-v1"
+AUTO_DECISION_PROMPT_TEMPLATE_VERSION = "aiqt-auto-decision-v1"
+AUTO_DECISION_OUTPUT_SCHEMA_VERSION = "aiqt-auto-decision-output-v1"
 _OUTPUT_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -370,6 +374,7 @@ class AutoPaperTradingService:
             confidence = 1.0
             reason = "涨跌幅尚未达到 AI 评估触发线。"
             provider_id = "rules"
+            proposal_metadata: Mapping[str, Any] | None = None
             try:
                 if position > 0 and avg_cost > 0:
                     position_return = _pct_change(avg_cost, price)
@@ -378,13 +383,21 @@ class AutoPaperTradingService:
                     elif position_return >= float(state["takeProfitPct"]):
                         action, reason, provider_id = "sell", "触发止盈。", "risk"
                     elif abs(window_change) >= float(state["triggerPct"]):
-                        action, confidence, reason, provider_id = self._ai_decision(
-                            state, one_bar_change, window_change
-                        )
+                        (
+                            action,
+                            confidence,
+                            reason,
+                            provider_id,
+                            proposal_metadata,
+                        ) = self._ai_decision(state, one_bar_change, window_change)
                 elif abs(window_change) >= float(state["triggerPct"]):
-                    action, confidence, reason, provider_id = self._ai_decision(
-                        state, one_bar_change, window_change
-                    )
+                    (
+                        action,
+                        confidence,
+                        reason,
+                        provider_id,
+                        proposal_metadata,
+                    ) = self._ai_decision(state, one_bar_change, window_change)
             except ValueError as error:
                 return self._finish(state, status="ai_error", detail=str(error))
 
@@ -396,6 +409,7 @@ class AutoPaperTradingService:
                 symbol=str(state["symbol"]),
                 timeframe=str(state["timeframe"]),
                 data_source=data_source,
+                strategy_id=AUTO_STRATEGY_ID,
                 strategy_revision=_strategy_revision(state),
                 proposal_action=proposal_action,
                 proposal_confidence=confidence,
@@ -411,6 +425,12 @@ class AutoPaperTradingService:
                 recent_trade_count=len(recent_trades),
                 max_trades_per_hour=int(state["maxTradesPerHour"]),
                 generated_at=now,
+                account_check=(
+                    state.get("lastAccountCheck")
+                    if state["executionMode"] in {"testnet", "live"}
+                    else None
+                ),
+                proposal_metadata=proposal_metadata,
             )
             signal = decision_contract["signal"]
             action = str(signal["action"])
@@ -452,6 +472,34 @@ class AutoPaperTradingService:
 
             adjusted_target = decision_contract["riskAdjustedTarget"]
             order_intent = decision_contract["orderIntent"]
+            if (
+                state["executionMode"] in {"testnet", "live"}
+                and isinstance(order_intent, dict)
+            ):
+                try:
+                    execution_preparation = self._prepare_order_intent(
+                        state,
+                        order_intent,
+                    )
+                    order_intent = build_order_intent(
+                        market_snapshot_hash=decision_contract["marketSnapshot"]["snapshotHash"],
+                        strategy_revision=decision_contract["strategyRevision"],
+                        proposal_id=decision_contract["decisionProposal"]["proposalId"],
+                        signal_id=decision_contract["signal"]["signalId"],
+                        portfolio_target=decision_contract["portfolioTarget"],
+                        risk_adjusted_target=adjusted_target,
+                        account_check=decision_contract["accountCheck"],
+                        fee_rate=FEE_RATE,
+                        execution_preparation=execution_preparation,
+                    )
+                    decision_contract["orderIntent"] = order_intent
+                except (LookupError, RuntimeError, ValueError) as error:
+                    decision_contract["orderIntent"] = None
+                    return self._finish(
+                        state,
+                        status="order_rejected",
+                        detail=str(error)[:240],
+                    )
             trade = None
             if action == "buy":
                 quantity = float(adjusted_target["approvedTargetQuantity"]) - position
@@ -569,6 +617,12 @@ class AutoPaperTradingService:
                             "remainingQuantity": 0,
                             "averagePrice": trade["price"],
                             "filledNotional": trade["notional"],
+                            **_order_result_fee_evidence(
+                                None,
+                                symbol=str(state["symbol"]),
+                                price=float(trade["price"]),
+                                notional=float(trade["notional"]),
+                            ),
                         },
                     )
                 self._record_trade(state, trade, recent_trades, now)
@@ -881,6 +935,38 @@ class AutoPaperTradingService:
                 "tradeIntent": trade_intent,
             }
 
+    def _prepare_order_intent(
+        self,
+        state: dict[str, Any],
+        order_intent: dict[str, Any],
+    ) -> dict[str, Any]:
+        mode = str(state["executionMode"])
+        order = {
+            "symbol": order_intent["symbol"],
+            "side": order_intent["side"],
+            "quantity": order_intent["quantity"],
+            "referencePrice": order_intent["referencePrice"],
+            "notionalValue": order_intent["notionalValue"],
+        }
+        if mode == "testnet":
+            if self.sandbox is None or state.get("testnetConfirmed") is not True:
+                raise ValueError("testnet_route_not_authorized")
+            return self.sandbox.prepare_auto_market_order(order)
+        if mode == "live":
+            if self.production is None or state.get("liveConfirmed") is not True:
+                raise ValueError("live_route_not_authorized")
+            order["riskBudgetNotional"] = (
+                float(order["notionalValue"])
+                if order["side"] == "buy"
+                else float(order["quantity"]) * float(state.get("avgCost") or 0)
+            )
+            return self.production.prepare_auto_market_order(
+                order,
+                control_id=str(state.get("liveControlId") or ""),
+                operator=str(state.get("liveOperator") or ""),
+            )
+        raise ValueError("execution_mode_invalid")
+
     def _verify_account_coverage(
         self,
         state: dict[str, Any],
@@ -945,10 +1031,26 @@ class AutoPaperTradingService:
             state["lastTestnetOrder"] = routed
         order_intent = routed.get("orderIntent")
         if mode in {"testnet", "live"} and isinstance(order_intent, dict):
+            price = float(
+                routed.get("averagePrice")
+                or order_intent["referencePrice"]
+            )
+            notional = float(
+                routed.get("filledNotional")
+                or float(routed.get("filledQuantity") or 0) * price
+            )
             state["lastOrderResult"] = build_order_result(
                 order_intent,
                 execution_mode=mode,
-                evidence=routed,
+                evidence={
+                    **routed,
+                    **_order_result_fee_evidence(
+                        routed,
+                        symbol=str(order_intent["symbol"]),
+                        price=price,
+                        notional=notional,
+                    ),
+                },
             )
 
     def _ai_decision(
@@ -956,7 +1058,7 @@ class AutoPaperTradingService:
         state: dict[str, Any],
         one_bar_change: float,
         window_change: float,
-    ) -> tuple[str, float, str, str]:
+    ) -> tuple[str, float, str, str, dict[str, Any]]:
         provider_id, provider = self._provider(str(state["providerId"]))
         if provider is None:
             raise ValueError("ai_trading_provider_not_configured")
@@ -974,12 +1076,37 @@ class AutoPaperTradingService:
             known_evidence_ids=frozenset(),
             response_validator=_validate_decision,
         )
+        if (
+            attempt.provider_id != provider_id
+            or not isinstance(attempt.model, str)
+            or not attempt.model.strip()
+        ):
+            raise ValueError("ai_trading_provider_identity_invalid")
+        if (
+            not isinstance(attempt.usage, Mapping)
+            or any(
+                key not in {"inputTokens", "outputTokens", "totalTokens"}
+                or type(value) is not int
+                or value < 0
+                for key, value in attempt.usage.items()
+            )
+            or type(attempt.latency_ms) is not int
+            or attempt.latency_ms < 0
+        ):
+            raise ValueError("ai_trading_provider_metadata_invalid")
         assessment = attempt.assessment
         return (
             str(assessment["action"]),
             float(assessment["confidence"]),
             str(assessment["reason"]),
             provider_id,
+            {
+                "model": attempt.model,
+                "promptTemplateVersion": AUTO_DECISION_PROMPT_TEMPLATE_VERSION,
+                "outputSchemaVersion": AUTO_DECISION_OUTPUT_SCHEMA_VERSION,
+                "usage": dict(attempt.usage),
+                "latencyMs": attempt.latency_ms,
+            },
         )
 
     def _provider(self, requested: str):
@@ -1271,7 +1398,7 @@ def _validate_decision(value: Mapping[str, Any], _known_ids: frozenset[str]) -> 
 
 def _strategy_revision(state: Mapping[str, Any]) -> str:
     return canonical_sha256({
-        "kind": "auto-pct-v1",
+        "kind": AUTO_STRATEGY_ID,
         "market": state["market"],
         "symbol": state["symbol"],
         "timeframe": state["timeframe"],
@@ -1365,6 +1492,25 @@ def _fee_accounting(
     # reconciliation adds fee-asset valuation.
     estimated = notional * FEE_RATE
     return estimated, True, estimated, 0.0
+
+
+def _order_result_fee_evidence(
+    routed: dict[str, Any] | None,
+    *,
+    symbol: str,
+    price: float,
+    notional: float,
+) -> dict[str, Any]:
+    fee, estimated, _, _ = _fee_accounting(routed, symbol, price, notional)
+    raw_fees = routed.get("fees") if isinstance(routed, dict) else None
+    fees = (
+        raw_fees
+        if isinstance(raw_fees, list) and raw_fees
+        else [{"currency": symbol.rpartition("/")[2], "cost": round(fee, 8)}]
+        if notional > 0
+        else []
+    )
+    return {"fees": fees, "feeEstimated": estimated if fees else False}
 
 
 def _event(

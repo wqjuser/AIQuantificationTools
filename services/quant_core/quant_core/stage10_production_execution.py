@@ -13,6 +13,7 @@ from quant_core.binance_spot_orders import (
     create_spot_market_order,
     fetch_spot_order,
     order_not_found as _order_not_found,
+    prepare_spot_market_order,
     positive_int as _positive_int,
     positive_number as _positive_number,
 )
@@ -1083,11 +1084,7 @@ class BinanceSpotProductionTradingRoute:
         return exchange
 
     def create_market_order(self, order: dict[str, Any]) -> dict[str, Any]:
-        requested_notional, risk_budget_notional = self._validate_order(order)
-        if risk_budget_notional > 10 or (
-            order["side"] == "buy" and requested_notional > 10
-        ):
-            raise ValueError("stage10_auto_live_order_notional_exceeded")
+        self._validate_new_order(order)
         return create_spot_market_order(
             self.exchange(),
             order,
@@ -1096,6 +1093,26 @@ class BinanceSpotProductionTradingRoute:
             max_buy_notional=10,
             notional_error="stage10_auto_live_order_notional_exceeded",
         )
+
+    def prepare_market_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        self._validate_new_order(
+            {"clientOrderId": "aiqt-auto-preflight", **order}
+        )
+        return prepare_spot_market_order(
+            self.exchange(),
+            order,
+            market_or_balance_error="stage10_auto_live_market_or_balance_unavailable",
+            balance_error="stage10_production_balance_insufficient",
+            max_buy_notional=10,
+            notional_error="stage10_auto_live_order_notional_exceeded",
+        )
+
+    def _validate_new_order(self, order: dict[str, Any]) -> None:
+        requested_notional, risk_budget_notional = self._validate_order(order)
+        if risk_budget_notional > 10 or (
+            order["side"] == "buy" and requested_notional > 10
+        ):
+            raise ValueError("stage10_auto_live_order_notional_exceeded")
 
     def account_coverage(
         self,
@@ -1465,6 +1482,25 @@ class Stage10ProductionExecutionService:
                 expected_position,
                 required_quote,
             )
+        finally:
+            self._release_account_lease(holder)
+
+    def prepare_auto_market_order(
+        self,
+        order: dict[str, Any],
+        *,
+        control_id: str,
+        operator: str,
+    ) -> dict[str, Any]:
+        if not isinstance(operator, str) or not operator.strip():
+            raise ValueError("stage10_auto_live_operator_required")
+        self.require_auto_session(control_id)
+        assert self.auto_route is not None
+        holder = "aiqt-auto-order-preparation"
+        self._acquire_account_lease(holder)
+        try:
+            self.auto_route.verify_current_restrictions()
+            return self.auto_route.prepare_market_order(order)
         finally:
             self._release_account_lease(holder)
 

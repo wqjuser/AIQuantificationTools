@@ -107,6 +107,9 @@ class BacktestTradeReplay:
     pnl: str
     reason: str
     tone: Literal["positive", "warning", "neutral", "risk"]
+    proposal_id: str | None = None
+    signal_id: str | None = None
+    snapshot_hash: str | None = None
 
 
 @dataclass(frozen=True)

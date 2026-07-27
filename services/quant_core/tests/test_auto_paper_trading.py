@@ -26,10 +26,16 @@ from quant_core.api import (
     build_auto_paper_trading_runner,
     evaluate_auto_paper_trading_once,
 )
-from quant_core.decision_contract import build_order_result, build_risk_adjusted_target
+from quant_core.decision_contract import (
+    build_order_intent,
+    build_order_result,
+    build_risk_adjusted_target,
+    replay_decision_proposal,
+)
 from quant_core.binance_spot_orders import (
     check_spot_account_coverage,
     create_spot_market_order,
+    prepare_spot_market_order,
 )
 from quant_core.cache import MarketDataCache
 from quant_core.domain import DataQuality, OHLCVBar
@@ -54,6 +60,7 @@ class FakeSandboxService:
     def __init__(self, *, triggered: bool = False) -> None:
         self.triggered = triggered
         self.orders = []
+        self.preparations = []
         self.account_covered = True
 
     def kill_switch(self):
@@ -78,6 +85,25 @@ class FakeSandboxService:
             "averagePrice": order["referencePrice"],
             "exchangeStatus": "closed",
             "timestamp": 1,
+        }
+
+    def prepare_auto_market_order(self, order):
+        self.preparations.append(order)
+        return {
+            **order,
+            "marketRules": {
+                "source": "ccxt",
+                "quantityPrecision": 0.000001,
+                "pricePrecision": 0.01,
+                "minimumQuantity": 0.00001,
+                "minimumNotional": 1,
+            },
+            "executionAssumptions": {
+                "feeRate": 0.001,
+                "feeEstimated": True,
+                "slippageBps": None,
+                "slippageModel": "venue_market_fill",
+            },
         }
 
 
@@ -112,6 +138,12 @@ class FakePendingSandboxService(FakeSandboxService):
             "timestamp": 2,
             "operation": "query",
         }
+
+
+class FakeRejectedPreparationSandboxService(FakeSandboxService):
+    def prepare_auto_market_order(self, order):
+        self.preparations.append(order)
+        raise ValueError("stage6_sandbox_cost_below_minimum")
 
 
 class FakePartialFillSandboxService(FakePendingSandboxService):
@@ -180,6 +212,7 @@ class FakeProductionService:
     def __init__(self) -> None:
         self.triggered = False
         self.orders = []
+        self.preparations = []
         self.account_covered = True
         self.account_checks = 0
         self.control_id = "stage10-control-live"
@@ -237,6 +270,30 @@ class FakeProductionService:
             "operation": "create",
         }
 
+    def prepare_auto_market_order(self, order, *, control_id, operator):
+        self.require_auto_session(control_id)
+        self.preparations.append({**order, "operator": operator})
+        return {
+            "symbol": order["symbol"],
+            "side": order["side"],
+            "quantity": order["quantity"],
+            "referencePrice": order["referencePrice"],
+            "notionalValue": order["notionalValue"],
+            "marketRules": {
+                "source": "ccxt",
+                "quantityPrecision": 0.000001,
+                "pricePrecision": 0.01,
+                "minimumQuantity": 0.00001,
+                "minimumNotional": 1,
+            },
+            "executionAssumptions": {
+                "feeRate": 0.001,
+                "feeEstimated": True,
+                "slippageBps": None,
+                "slippageModel": "venue_market_fill",
+            },
+        }
+
 
 class FakePendingProductionService(FakeProductionService):
     def __init__(self) -> None:
@@ -290,7 +347,9 @@ class FakeBinanceTestnet:
                 "active": True,
                 "base": "BTC",
                 "quote": "USDT",
+                "precision": {"amount": 0.000001, "price": 0.01},
                 "limits": {"amount": {"min": 0.00001}, "price": {}, "cost": {"min": 1}},
+                "taker": 0.001,
             }
         }
 
@@ -1434,7 +1493,21 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(len(contract["strategyRevision"]), 64)
             self.assertEqual(contract["decisionProposal"]["providerId"], "rules")
             self.assertEqual(contract["decisionProposal"]["action"], "hold")
+            self.assertIsNone(contract["decisionProposal"]["model"])
+            self.assertIsNone(contract["decisionProposal"]["usage"])
+            self.assertEqual(contract["decisionProposal"]["latencyMs"], 0)
             self.assertEqual(contract["signal"]["action"], "hold")
+            self.assertEqual(contract["signal"]["strategyId"], "auto-pct-v1")
+            self.assertEqual(contract["signal"]["horizon"], "1m")
+            self.assertEqual(
+                contract["signal"]["evaluatedBarAt"],
+                complete_bars[-1].timestamp.isoformat(),
+            )
+            self.assertEqual(
+                datetime.fromisoformat(contract["signal"]["expiresAt"]),
+                datetime.fromisoformat(contract["signal"]["generatedAt"])
+                + timedelta(minutes=1),
+            )
             self.assertEqual(
                 contract["signal"]["proposalId"],
                 contract["decisionProposal"]["proposalId"],
@@ -1470,8 +1543,17 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(restarted["state"]["lastDecisionContract"], contract)
 
     def test_approved_target_generates_a_stable_evidence_bound_order_intent(self):
+        class CountingProvider(FakeProvider):
+            def __init__(self):
+                self.calls = 0
+
+            def assess(self, **kwargs):
+                self.calls += 1
+                return super().assess(**kwargs)
+
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")
+            provider = CountingProvider()
             registry = AiReviewProviderRegistry(
                 (
                     ProviderStatus("local", True, None, None),
@@ -1482,7 +1564,7 @@ class AutoPaperTradingTests(unittest.TestCase):
                         "https://example.invalid",
                     ),
                 ),
-                {"openai-compatible": FakeProvider()},
+                {"openai-compatible": provider},
             )
             service = AutoPaperTradingService(store, registry)
             service.configure({"enabled": True, "triggerPct": 0.3})
@@ -1493,6 +1575,32 @@ class AutoPaperTradingTests(unittest.TestCase):
 
             contract = evaluated["state"]["lastDecisionContract"]
             intent = contract["orderIntent"]
+            proposal = contract["decisionProposal"]
+            self.assertEqual(proposal["model"], "fake")
+            self.assertEqual(
+                proposal["promptTemplateVersion"],
+                "aiqt-auto-decision-v1",
+            )
+            self.assertEqual(
+                proposal["outputSchemaVersion"],
+                "aiqt-auto-decision-output-v1",
+            )
+            self.assertEqual(
+                proposal["usage"],
+                {"inputTokens": 1, "outputTokens": 1, "totalTokens": 2},
+            )
+            self.assertEqual(proposal["latencyMs"], 1)
+            self.assertEqual(
+                proposal["evidenceReferences"],
+                [contract["marketSnapshot"]["snapshotHash"]],
+            )
+            account_check = contract["accountCheck"]
+            self.assertEqual(account_check["source"], "strategy_ledger")
+            self.assertTrue(account_check["accountCovered"])
+            self.assertEqual(
+                intent["accountCheckId"],
+                account_check["accountCheckId"],
+            )
             self.assertEqual(len(intent["orderIntentId"]), 64)
             self.assertEqual(intent["side"], "buy")
             self.assertEqual(intent["type"], "market")
@@ -1523,9 +1631,38 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(result["state"], "filled")
             self.assertEqual(result["orderIntentId"], intent["orderIntentId"])
             self.assertEqual(result["filledQuantity"], intent["quantity"])
+            self.assertEqual(
+                result["fees"],
+                [{
+                    "currency": "USDT",
+                    "cost": round(result["filledNotional"] * 0.001, 8),
+                }],
+            )
+            self.assertTrue(result["feeEstimated"])
             self.assertEqual(result["clientOrderId"], "")
             self.assertEqual(duplicate["state"]["lastDecisionContract"], contract)
             self.assertEqual(duplicate["state"]["lastOrderResult"], result)
+            replayed = replay_decision_proposal(
+                proposal,
+                bars=rising,
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                data_source="test",
+                strategy_id="auto-pct-v1",
+                current_quantity=0,
+                reference_price=101,
+                available_cash=100,
+                order_notional=10,
+                fee_rate=0.001,
+                daily_drawdown_pct=0,
+                daily_loss_limit_pct=2,
+                recent_trade_count=0,
+                max_trades_per_hour=3,
+                generated_at=datetime.fromisoformat(proposal["proposedAt"]),
+            )
+            self.assertEqual(provider.calls, 1)
+            self.assertEqual(replayed, contract)
 
     def test_frequency_limit_does_not_block_a_risk_reducing_exit_target(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1638,6 +1775,29 @@ class AutoPaperTradingTests(unittest.TestCase):
                 },
             )
 
+    def test_order_intent_requires_covered_account_evidence(self):
+        with self.assertRaisesRegex(ValueError, "order_intent_account_not_covered"):
+            build_order_intent(
+                market_snapshot_hash="snapshot-1",
+                strategy_revision="revision-1",
+                proposal_id="proposal-1",
+                signal_id="signal-1",
+                portfolio_target={
+                    "portfolioTargetId": "target-1",
+                    "referencePrice": 100,
+                    "symbol": "BTC/USDT",
+                },
+                risk_adjusted_target={
+                    "riskAdjustedTargetId": "risk-target-1",
+                    "approvedDeltaQuantity": 1,
+                },
+                account_check={
+                    "accountCheckId": "account-check-1",
+                    "accountCovered": False,
+                },
+                fee_rate=0.001,
+            )
+
     def test_explicit_testnet_mode_routes_ai_trade_without_enabling_live_trading(self):
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")
@@ -1673,6 +1833,71 @@ class AutoPaperTradingTests(unittest.TestCase):
                 result["state"]["lastTestnetOrder"]["orderIntent"]["orderIntentId"],
                 result["state"]["lastDecisionContract"]["orderIntent"]["orderIntentId"],
             )
+            contract = result["state"]["lastDecisionContract"]
+            self.assertEqual(len(sandbox.preparations), 1)
+            self.assertEqual(contract["accountCheck"]["source"], "venue_account")
+            self.assertEqual(
+                contract["accountCheck"]["checkedAt"],
+                result["state"]["lastAccountCheck"]["checkedAt"],
+            )
+            self.assertEqual(
+                contract["orderIntent"]["accountCheckId"],
+                contract["accountCheck"]["accountCheckId"],
+            )
+            self.assertEqual(
+                contract["orderIntent"]["marketRules"],
+                {
+                    "source": "ccxt",
+                    "quantityPrecision": 0.000001,
+                    "pricePrecision": 0.01,
+                    "minimumQuantity": 0.00001,
+                    "minimumNotional": 1.0,
+                },
+            )
+            self.assertEqual(
+                contract["orderIntent"]["executionAssumptions"]["slippageModel"],
+                "venue_market_fill",
+            )
+            self.assertEqual(
+                sandbox.orders[0]["quantity"],
+                contract["orderIntent"]["quantity"],
+            )
+            intent = contract["orderIntent"]
+            replayed = replay_decision_proposal(
+                contract["decisionProposal"],
+                bars=bars([100, 100, 100, 100, 100, 101]),
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                data_source="test",
+                strategy_id="auto-pct-v1",
+                current_quantity=0,
+                reference_price=101,
+                available_cash=100,
+                order_notional=10,
+                fee_rate=0.001,
+                daily_drawdown_pct=0,
+                daily_loss_limit_pct=2,
+                recent_trade_count=0,
+                max_trades_per_hour=3,
+                generated_at=datetime.fromisoformat(
+                    contract["decisionProposal"]["proposedAt"]
+                ),
+                account_check=result["state"]["lastAccountCheck"],
+                execution_preparation={
+                    key: intent[key]
+                    for key in (
+                        "symbol",
+                        "side",
+                        "quantity",
+                        "referencePrice",
+                        "notionalValue",
+                        "marketRules",
+                        "executionAssumptions",
+                    )
+                },
+            )
+            self.assertEqual(replayed, contract)
             order_result = result["state"]["lastOrderResult"]
             self.assertEqual(order_result["executionMode"], "testnet")
             self.assertEqual(order_result["state"], "filled")
@@ -1741,6 +1966,37 @@ class AutoPaperTradingTests(unittest.TestCase):
                 filled["state"]["lastOrderResult"]["orderIntentId"],
                 pending_result["orderIntentId"],
             )
+
+    def test_market_rules_reject_before_final_order_intent_and_submission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            registry = AiReviewProviderRegistry(
+                (
+                    ProviderStatus("local", True, None, None),
+                    ProviderStatus("openai-compatible", True, "fake", "https://example.invalid"),
+                ),
+                {"openai-compatible": FakeProvider()},
+            )
+            sandbox = FakeRejectedPreparationSandboxService()
+            service = AutoPaperTradingService(store, registry, sandbox)  # type: ignore[arg-type]
+            service.configure({
+                "enabled": True,
+                "executionMode": "testnet",
+                "testnetConfirmed": True,
+                "triggerPct": 0.3,
+            })
+
+            result = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+
+            self.assertEqual(result["state"]["status"], "order_rejected")
+            self.assertEqual(result["state"]["detail"], "stage6_sandbox_cost_below_minimum")
+            self.assertIsNone(result["state"]["lastDecisionContract"]["orderIntent"])
+            self.assertEqual(len(sandbox.preparations), 1)
+            self.assertEqual(sandbox.orders, [])
+            self.assertEqual(store.count(event_type="auto_testnet_order_intent"), 0)
 
     def test_partial_testnet_fill_settles_actual_quantity_and_fee_once(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1813,6 +2069,11 @@ class AutoPaperTradingTests(unittest.TestCase):
             order = sandbox.orders[0]
             self.assertEqual(result["state"]["lastTrade"]["fee"], 0.002)
             self.assertFalse(result["state"]["lastTrade"]["feeEstimated"])
+            self.assertEqual(
+                result["state"]["lastOrderResult"]["fees"],
+                [{"currency": "USDT", "cost": 0.002}],
+            )
+            self.assertFalse(result["state"]["lastOrderResult"]["feeEstimated"])
             self.assertAlmostEqual(
                 result["state"]["cash"],
                 100 - order["notionalValue"] - 0.002,
@@ -1895,6 +2156,11 @@ class AutoPaperTradingTests(unittest.TestCase):
                 [{"currency": "BNB", "cost": 0.00001}],
             )
             self.assertEqual(
+                result["state"]["lastOrderResult"]["fees"],
+                trade["feeBreakdown"],
+            )
+            self.assertTrue(result["state"]["lastOrderResult"]["feeEstimated"])
+            self.assertEqual(
                 store.get(trade["tradeId"]).metadata["feeBreakdown"],
                 trade["feeBreakdown"],
             )
@@ -1955,6 +2221,45 @@ class AutoPaperTradingTests(unittest.TestCase):
             )
 
         self.assertFalse(any(call[0] == "create" for call in exchange.calls))
+
+    def test_shared_spot_preparation_exposes_normalized_rules_and_assumptions(self):
+        exchange = FakeBinanceTestnet({})
+
+        prepared = prepare_spot_market_order(
+            exchange,
+            {
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "quantity": 0.0001004,
+                "referencePrice": 60_000.004,
+                "notionalValue": 6.024,
+            },
+            market_or_balance_error="stage6_auto_sandbox_market_or_balance_unavailable",
+            balance_error="stage6_sandbox_balance_insufficient",
+        )
+
+        self.assertEqual(prepared["quantity"], 0.0001)
+        self.assertEqual(prepared["referencePrice"], 60_000)
+        self.assertEqual(prepared["notionalValue"], 6)
+        self.assertEqual(
+            prepared["marketRules"],
+            {
+                "source": "ccxt",
+                "quantityPrecision": 0.000001,
+                "pricePrecision": 0.01,
+                "minimumQuantity": 0.00001,
+                "minimumNotional": 1.0,
+            },
+        )
+        self.assertEqual(
+            prepared["executionAssumptions"],
+            {
+                "feeRate": 0.001,
+                "feeEstimated": True,
+                "slippageBps": None,
+                "slippageModel": "venue_market_fill",
+            },
+        )
 
     def test_shared_spot_runtime_derives_missing_filled_notional(self):
         exchange = FakeBinanceTestnet({})

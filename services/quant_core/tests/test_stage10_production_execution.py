@@ -306,6 +306,49 @@ class Stage10ProductionExecutionTest(unittest.TestCase):
             self.assertEqual(coverage["unexpectedOpenAutoOrderCount"], 1)
             self.assertEqual(exchange.create_calls, 0)
 
+    def test_auto_live_order_preparation_rechecks_permissions_before_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            exchange = ProductionOrderExchange({})
+            route = BinanceSpotProductionTradingRoute(
+                env={**_trading_env(), "AIQT_ENABLE_PRODUCTION_TRADING": "true"},
+                exchange_factory=lambda _exchange_id, _config: exchange,
+            )
+            service = Stage10ProductionExecutionService(store, auto_route=route)
+            _activate_gate(service, datetime.now(timezone.utc))
+            control = service.authorize_auto_session()
+            order = {
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "quantity": 0.0001,
+                "referencePrice": 60_000,
+                "notionalValue": 6,
+                "riskBudgetNotional": 6,
+            }
+
+            exchange.ip_restricted = False
+            with self.assertRaisesRegex(ValueError, "permissions_or_ip_invalid"):
+                service.prepare_auto_market_order(
+                    order,
+                    control_id=control["controlId"],
+                    operator="wenqingjie",
+                )
+            exchange.ip_restricted = True
+
+            prepared = service.prepare_auto_market_order(
+                order,
+                control_id=control["controlId"],
+                operator="wenqingjie",
+            )
+
+            self.assertEqual(prepared["quantity"], order["quantity"])
+            self.assertEqual(prepared["marketRules"]["minimumQuantity"], 0.00001)
+            self.assertEqual(
+                prepared["executionAssumptions"]["slippageModel"],
+                "venue_market_fill",
+            )
+            self.assertEqual(exchange.create_calls, 0)
+
     def test_auto_live_order_is_gated_query_first_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")

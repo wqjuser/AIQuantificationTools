@@ -12,7 +12,15 @@ from quant_core.domain import (
     StrategyConfig,
     Trade,
 )
-from quant_core.decision_contract import standardize_signal_action
+from quant_core.canonical import (
+    canonical_data_hash,
+    canonical_snapshot_id,
+    normalize_snapshot_bars,
+)
+from quant_core.decision_contract import (
+    build_decision_proposal,
+    build_standard_signal,
+)
 from quant_core.indicators import max_drawdown_pct, rsi, sma
 
 
@@ -44,6 +52,8 @@ class BacktestEngine:
         closes = [bar.close for bar in ordered_bars]
         volumes = [bar.volume for bar in ordered_bars]
         symbol = strategy.symbols[0]
+        normalized_bars = normalize_snapshot_bars(ordered_bars)
+        strategy_id = f"strategy-{strategy.revision}"
         cash = self.initial_cash
         position = _Position()
         trades: list[Trade] = []
@@ -53,6 +63,14 @@ class BacktestEngine:
             if index < evaluation_start_index:
                 continue
 
+            snapshot_hash = canonical_snapshot_id(
+                market=strategy.market,
+                symbol=symbol,
+                timeframe=strategy.timeframe,
+                canonical_data_hash=canonical_data_hash(
+                    normalized_bars[: index + 1]
+                ),
+            )
             proposal_action = "hold"
             proposal_reason = "conditions_not_met"
             if position.quantity <= 0 and self._all_conditions(strategy.entry_conditions, closes, volumes, index):
@@ -63,11 +81,25 @@ class BacktestEngine:
                 if exit_reason is not None:
                     proposal_action = "sell"
                     proposal_reason = exit_reason
-            signal_action, signal_reason = standardize_signal_action(
+            proposal = build_decision_proposal(
+                snapshot_hash=snapshot_hash,
+                strategy_revision=strategy.revision,
                 proposal_action=proposal_action,
+                proposal_confidence=1,
                 proposal_reason=proposal_reason,
+                provider_id="rules",
+                proposed_at=bar.timestamp,
+            )
+            signal = build_standard_signal(
+                proposal,
+                strategy_id=strategy_id,
+                timeframe=strategy.timeframe,
+                evaluated_bar_at=bar.timestamp.isoformat(),
+                generated_at=bar.timestamp,
                 current_quantity=position.quantity,
             )
+            signal_action = signal["action"]
+            signal_reason = signal["reason"]
 
             if signal_action == "buy":
                 budget = cash * max(0.0, min(strategy.risk.position_pct, 1.0))
@@ -86,6 +118,9 @@ class BacktestEngine:
                             quantity=quantity,
                             fee=fee,
                             reason=signal_reason,
+                            proposal_id=signal["proposalId"],
+                            signal_id=signal["signalId"],
+                            snapshot_hash=signal["snapshotHash"],
                         )
                     )
 
@@ -103,6 +138,9 @@ class BacktestEngine:
                         quantity=position.quantity,
                         fee=fee,
                         reason=signal_reason,
+                        proposal_id=signal["proposalId"],
+                        signal_id=signal["signalId"],
+                        snapshot_hash=signal["snapshotHash"],
                     )
                 )
                 position = _Position()

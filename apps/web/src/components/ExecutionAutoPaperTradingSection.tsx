@@ -51,6 +51,8 @@ interface AutoTradingState {
     remainingQuantity: number;
     averagePrice: number;
     filledNotional: number;
+    fees: Array<{ currency: string; cost: number }>;
+    feeEstimated: boolean;
     error: string;
   } | null;
   lastAccountCheck: {
@@ -95,7 +97,11 @@ interface AutoTradingState {
       signalId: string;
       proposalId: string;
       snapshotHash: string;
+      strategyId: string;
       strategyRevision: string;
+      horizon: string;
+      evaluatedBarAt: string;
+      expiresAt: string;
       action: "buy" | "sell" | "hold";
       confidence: number;
       reason: string;
@@ -135,12 +141,26 @@ interface AutoTradingState {
       signalId: string;
       portfolioTargetId: string;
       riskAdjustedTargetId: string;
+      accountCheckId: string;
       symbol: string;
       side: "buy" | "sell";
       type: "market";
       quantity: number;
       referencePrice: number;
       notionalValue: number;
+      marketRules?: {
+        source: string;
+        quantityPrecision: number | null;
+        pricePrecision: number | null;
+        minimumQuantity: number | null;
+        minimumNotional: number | null;
+      };
+      executionAssumptions?: {
+        feeRate: number;
+        feeEstimated: boolean;
+        slippageBps: number | null;
+        slippageModel: string;
+      };
     } | null;
   } | null;
 }
@@ -417,6 +437,21 @@ export function AutoTradingLedger({
                     {decisionLabel(contract.orderIntent.side)} {formatNumber(contract.orderIntent.quantity)} BTC
                   </dd>
                   <small>市价委托 · {money(contract.orderIntent.notionalValue)} USDT</small>
+                  {contract.orderIntent.marketRules ? (
+                    <small>
+                      数量精度 {formatNumber(contract.orderIntent.marketRules.quantityPrecision)}
+                      {" · "}最小量 {formatNumber(contract.orderIntent.marketRules.minimumQuantity)}
+                      {" · "}最小金额 {money(contract.orderIntent.marketRules.minimumNotional ?? undefined)}
+                    </small>
+                  ) : null}
+                  {contract.orderIntent.executionAssumptions ? (
+                    <small>
+                      费率 {percentRate(contract.orderIntent.executionAssumptions.feeRate)}
+                      {" · "}{contract.orderIntent.executionAssumptions.slippageModel === "venue_market_fill"
+                        ? "滑点按成交回执"
+                        : `滑点 ${formatNumber(contract.orderIntent.executionAssumptions.slippageBps)} bps`}
+                    </small>
+                  ) : null}
                 </div>
               ) : null}
               {contract.orderIntent && orderResult?.orderIntentId === contract.orderIntent.orderIntentId ? (
@@ -977,6 +1012,10 @@ function money(value?: number) {
 
 function signedMoney(value?: number) {
   return typeof value === "number" ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}` : "—";
+}
+
+function percentRate(value: number) {
+  return `${(value * 100).toFixed(3)}%`;
 }
 
 function formatNumber(value?: number | null) {

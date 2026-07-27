@@ -664,3 +664,80 @@ final result: passed
 - 本次没有点击运行研究、运行回测、AI 评审、立即评估、保存、暂停、急停、模式切换或任何订单操作，也没有新增仓库 PNG。
 
 final result: passed
+
+## 2026-07-28 M1 账户覆盖检查绑定订单意图复验
+
+- 第九个 M1 切片复用自动交易现有账户覆盖检查：Paper 以本地策略账本形成规范检查，Testnet 与 Production 直接消费既有交易场所只读覆盖结果；检查内容生成稳定 `accountCheckId` 并进入订单意图身份，未通过检查时不能生成非零订单意图。没有新增表、状态机、适配器或页面。
+- 自动交易聚焦 `38` 项、Python 全量 `759` 项、Web 全量 `1071` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API Docker 镜像按当前代码构建通过。为保持现有 Testnet 后台监控连续运行，本次没有替换或重启 API 容器；当前 `api + web` 仍为 healthy，只读状态保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 本切片没有 UI 改动，因此没有新增截图或重复像素级页面验收；验证过程没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 M1 决策提案保留 AI 调用元数据复验
+
+- 第十个 M1 切片复用现有 `ProviderAttempt`，让 AI 决策提案保留 Provider、模型、提示模板版本、输出协议版本、token 用量、延迟和市场快照证据引用；规则与风险提案维持同一结构，但不伪造模型、提示或用量。没有新增 Provider、提示词、外部请求、表、状态机或页面。
+- 自动交易聚焦 `38` 项、Python 全量 `759` 项、Web 全量 `1071` 项和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- API Docker 镜像按当前代码构建通过。为保持现有 Testnet 后台监控连续运行，本次没有替换或重启 API 容器；当前 `api + web` 仍为 healthy，只读状态保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 本切片没有 UI 改动，因此没有新增截图或重复像素级页面验收；验证过程没有发起新的 AI 调用，也没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作。
+
+final result: passed
+
+## 2026-07-28 M1 已记录决策提案确定性重放复验
+
+- 第十一个 M1 切片复用现有统一决策契约构建器：重放入口只把通过 `proposalId` 内容哈希校验的已记录提案重新交给标准信号、组合目标、风险调整和订单意图阶段，没有新增策略引擎、Provider 路径、API、表、状态机或页面。
+- 自动交易服务聚焦测试在同一冻结行情与组合输入下先记录一次 AI 提案，再执行重放；完整契约与原记录一致，Provider 调用次数保持 `1`，证明重放没有二次外部 AI 请求。
+- 自动交易聚焦 `38` 项、Python 全量 `759` 项、Web 全量 `1071` 项和生产构建通过；仅保留既知 chunk-size 提示，API Docker 镜像按当前代码构建通过，`git diff --check` 通过。
+- 为保持现有 Testnet 后台监控连续运行，本次没有替换或重启 API 容器；当前 `api + web` healthy，只读状态保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`status=monitoring`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 本切片没有 UI 改动，因此没有新增截图或重复页面验收；验证过程没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 M1 标准信号策略身份与有效期复验
+
+- 第十二个 M1 切片复用自动交易修订中已有的 `auto-pct-v1` 策略种类，为统一标准信号补充 `strategyId`、`horizon`、`evaluatedBarAt` 和 `expiresAt`；到期时间由评估时间增加一个既有 timeframe 周期得到，四项内容都进入稳定信号 ID。没有新增策略、周期框架、API、表、状态机或页面展示。
+- 自动交易聚焦测试确认信号绑定最后一根完整 K 线，且 `1m` 信号在生成时间后一分钟到期；既有已记录 AI 提案重放仍生成完全相同的契约，Provider 不会再次调用。
+- 生产类型检查首轮发现执行组件测试夹具缺少新增 Signal 字段；只同步该夹具后，组件聚焦 `14` 项和生产构建通过。自动交易聚焦 `38` 项、Python 全量 `759` 项、Web 全量 `1071` 项通过；构建仅保留既知 chunk-size 提示，API Docker 镜像按当前代码构建通过，`git diff --check` 通过。
+- 为保持现有 Testnet 后台监控连续运行，本次没有替换或重启 API 容器；当前 `api + web` healthy，只读状态保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`status=monitoring`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 本切片只有前端契约类型和测试夹具同步，没有改变页面渲染，因此没有新增截图或重复页面验收；验证过程没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 M1 统一订单结果费用证据复验
+
+- 第十三个 M1 切片复用现有 `_fee_accounting` 和交易所回执，把 `fees[]` 与 `feeEstimated` 纳入统一 `OrderResult`。Paper 记录既有固定费率生成的 USDT 估算费用；Testnet/Production 保留交易所返回的原始费用币种与金额，第三币种费用保持原始证据并标记仍需估值。没有新增费用算法、适配器、API、表、状态机或页面展示。
+- 自动交易聚焦测试覆盖 Paper 估算费用、Testnet 报价币实报费用和第三币种费用：报价币实报标记为非估算，第三币种原始 `BNB` 费用保持不变且标记为估算；无成交结果不会补造费用。
+- 自动交易聚焦 `38` 项、Python 全量 `759` 项、Web 全量 `1071` 项和生产构建通过；构建仅保留既知 chunk-size 提示，API Docker 镜像按当前代码构建通过，`git diff --check` 通过。
+- 为保持现有 Testnet 后台监控连续运行，本次没有替换或重启 API 容器；当前 `api + web` healthy，只读状态保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`status=monitoring`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 本切片只有前端契约类型和测试夹具同步，没有改变页面渲染，因此没有新增截图或重复页面验收；验证过程没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 M1 回测复用完整提案与标准信号构造复验
+
+- 第十四个 M1 切片复用统一决策契约中的提案和标准信号构造器，让回测规则也生成完整 `DecisionProposal` 与 `Signal`；没有新增策略引擎、表、状态机、适配器或页面。
+- 回测成交记录和研究审计现在保存同一条 `proposalId`、`signalId`、`snapshotHash` 证据链；每笔信号的快照只包含截至所评估 K 线的不可变数据前缀，不引用未来 K 线，研究运行仍单独保存整段回测输入快照。冻结行情测试按同一构造器重新计算并精确匹配三个身份。回测结束强制平仓仍只属于模拟结算，三项身份保持为空。
+- 自动交易聚焦 `38` 项、Python 聚焦 `2` 项、Python 全量 `759` 项、Web API 聚焦 `285` 项、Web 全量 `1071` 项和生产构建通过；构建仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- 为保持现有 Testnet 后台监控连续运行，本切片不替换或重启 API 容器；验证过程没有发起 AI 调用，也没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作。本切片没有页面渲染变更，因此没有新增截图或重复页面验收。
+
+final result: passed
+
+## 2026-07-28 M1 订单意图前置交易场所规则复验
+
+- 第十五个 M1 切片复用现有 Binance Spot 市价委托校验，把 CCXT 数量/价格精度、最小数量、最小名义金额和余额检查提取为共享准备步骤；没有新增适配器、订单状态机、表或路由。
+- Testnet 与 Production 只有在共享准备通过后才生成最终 `OrderIntent`，意图记录规范数量、`marketRules` 和费率/滑点假设并纳入稳定 ID；路由消费同一数量，提交前再次执行相同交易场所检查。Production 准备同时复查当前权限，Testnet 准备继续受急停和活动批次阻断。
+- 聚焦回归证明市场规则失败时 `orderIntent=null`、不写委托意图审计且不调用提交；Production 权限漂移同样在意图前阻断。已记录 Testnet 提案携带原准备证据重放时完整契约精确一致，不访问 Provider 或交易场所。Paper 使用同一字段结构，明确记录既有 `0.1%` 估算费率和零滑点。
+- 自动交易聚焦 `40` 项、Production 聚焦 `10` 项、执行组件与布局聚焦 `193` 项、Python 全量 `762` 项、Web 全量 `1071` 项和生产构建通过；构建仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- 执行台账现有订单意图卡在新证据可用时显示数量精度、最小量、最小金额、费率和滑点模型，并兼容升级前已持久化的旧意图。本次没有替换或重启 API 容器，没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 M1 全量退出复验
+
+- 按 GitHub Issue #22、ADR 0022、当前代码和未提交 diff 重新核对 M1 矩阵；十五个切片已覆盖完整单向决策契约、研究/回测快照身份、共享提案与信号构造、账户与交易场所前置检查、已记录 AI 提案重放、三模式订单结果、费用及精度/最小量/最小金额/滑点证据。未把 M2 至 M6 功能提前混入。
+- 最终审计修正回测早期信号的证据身份：每根信号只哈希截至当时已评估 K 线的数据前缀，研究运行另保留整段输入快照，避免审计记录引用未来 K 线。最终提交路径还会拒绝与已记录订单意图不一致的重新规范化结果，不会静默改量或改价。
+- 最终全量为 Python `762 / 762`、Web `1071 / 1071`，生产构建通过；自动交易聚焦 `40 / 40`、Production 聚焦 `10 / 10`、执行组件与布局聚焦 `193 / 193`。API 与 Web Docker 镜像均按最终代码构建通过，`git diff --check` 通过，仅保留既知前端 chunk-size 提示。
+- 为保持真实 Testnet 后台监控连续运行，没有替换或重启现有容器。最终只读状态为 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`status=monitoring`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+- 验证过程没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作，没有调用外部 AI，没有提交 Testnet 或 Production 委托，也没有新增仓库 PNG。Issue #22 继续保留给 M2 至 M6，M1 本身退出。
+
+final result: passed

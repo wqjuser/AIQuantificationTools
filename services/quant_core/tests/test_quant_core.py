@@ -6519,7 +6519,12 @@ class QuantCoreContractTest(unittest.TestCase):
 
     def test_standard_signal_position_boundary_is_shared_with_backtest(self):
         from quant_core.backtest import BacktestEngine
-        from quant_core.decision_contract import standardize_signal_action
+        from quant_core.canonical import canonical_data_hash, canonical_snapshot_id, normalize_snapshot_bars
+        from quant_core.decision_contract import (
+            build_decision_proposal,
+            build_standard_signal,
+            standardize_signal_action,
+        )
         from quant_core.domain import Condition, OHLCVBar, RiskRules, StrategyConfig
 
         self.assertEqual(
@@ -6558,10 +6563,41 @@ class QuantCoreContractTest(unittest.TestCase):
             strategy,
             test_bars,
         )
+        snapshot_hash = canonical_snapshot_id(
+            market=strategy.market,
+            symbol=strategy.symbols[0],
+            timeframe=strategy.timeframe,
+            canonical_data_hash=canonical_data_hash(
+                normalize_snapshot_bars(test_bars[:2])
+            ),
+        )
+        proposal = build_decision_proposal(
+            snapshot_hash=snapshot_hash,
+            strategy_revision=strategy.revision,
+            proposal_action="buy",
+            proposal_confidence=1,
+            proposal_reason="entry_conditions",
+            provider_id="rules",
+            proposed_at=test_bars[1].timestamp,
+        )
+        signal = build_standard_signal(
+            proposal,
+            strategy_id=f"strategy-{strategy.revision}",
+            timeframe=strategy.timeframe,
+            evaluated_bar_at=test_bars[1].timestamp.isoformat(),
+            generated_at=test_bars[1].timestamp,
+            current_quantity=0,
+        )
 
         self.assertEqual([trade.side for trade in result.trades], ["buy", "sell"])
         self.assertEqual(result.trades[0].reason, "entry_conditions")
+        self.assertEqual(result.trades[0].proposal_id, proposal["proposalId"])
+        self.assertEqual(result.trades[0].signal_id, signal["signalId"])
+        self.assertEqual(result.trades[0].snapshot_hash, snapshot_hash)
         self.assertEqual(result.trades[1].reason, "end_of_backtest")
+        self.assertIsNone(result.trades[1].proposal_id)
+        self.assertIsNone(result.trades[1].signal_id)
+        self.assertIsNone(result.trades[1].snapshot_hash)
 
     def test_backtest_waits_for_rsi_threshold_before_entry(self):
         from quant_core.backtest import BacktestEngine
@@ -28234,7 +28270,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
     def test_terminal_research_run_persists_audit_summary(self):
         from quant_core.backtest import BacktestEngine
-        from quant_core.canonical import canonical_snapshot_id
+        from quant_core.canonical import canonical_data_hash, canonical_snapshot_id
         from quant_core.research import run_terminal_research
         from quant_core.runs import ResearchRunStore, research_run_audit_to_payload
         from quant_core.terminal import terminal_workspace_to_payload
@@ -28296,6 +28332,25 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].data_snapshot["bars"][-1]["timestamp"], latest[0].backtest_equity_curve[-1]["timestamp"])
         self.assertEqual(latest[0].backtest_assumptions, {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
         self.assertEqual(latest[0].backtest_trades, payload["backtestTrades"])
+        self.assertEqual(latest[0].backtest_trades[0]["proposalId"], payload["backtestTrades"][0]["proposalId"])
+        self.assertEqual(latest[0].backtest_trades[0]["signalId"], payload["backtestTrades"][0]["signalId"])
+        trade_timestamp = latest[0].backtest_trades[0]["timestamp"]
+        trade_snapshot_hash = canonical_snapshot_id(
+            market=latest[0].market,
+            symbol=latest[0].symbol,
+            timeframe=latest[0].timeframe,
+            canonical_data_hash=canonical_data_hash(
+                [
+                    bar
+                    for bar in latest[0].data_snapshot["bars"]
+                    if bar["timestamp"] <= trade_timestamp
+                ]
+            ),
+        )
+        self.assertEqual(
+            latest[0].backtest_trades[0]["snapshotHash"],
+            trade_snapshot_hash,
+        )
         self.assertEqual(latest[0].backtest_equity_curve, payload["backtestEquityCurve"])
         self.assertEqual(latest[0].backtest_diagnostics, payload["backtestDiagnostics"])
 

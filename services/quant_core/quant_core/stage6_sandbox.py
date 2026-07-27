@@ -17,6 +17,7 @@ from quant_core.binance_spot_orders import (
     market_currencies as _market_currencies,
     normalize_exchange_order,
     order_not_found as _order_not_found,
+    prepare_spot_market_order,
     positive_int as _positive_int,
     positive_number as _positive_number,
     validate_limits as _validate_limits,
@@ -137,6 +138,17 @@ class BinanceSpotTestnetRoute:
         if not isinstance(order, dict) or set(order) != required or order["side"] not in {"buy", "sell"}:
             raise ValueError("stage6_auto_sandbox_order_invalid")
         return create_spot_market_order(
+            self.exchange(),
+            order,
+            market_or_balance_error="stage6_auto_sandbox_market_or_balance_unavailable",
+            balance_error="stage6_sandbox_balance_insufficient",
+        )
+
+    def prepare_market_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        required = {"symbol", "side", "quantity", "referencePrice", "notionalValue"}
+        if not isinstance(order, dict) or set(order) != required or order["side"] not in {"buy", "sell"}:
+            raise ValueError("stage6_auto_sandbox_order_invalid")
+        return prepare_spot_market_order(
             self.exchange(),
             order,
             market_or_balance_error="stage6_auto_sandbox_market_or_balance_unavailable",
@@ -432,18 +444,16 @@ class Stage6SandboxExecutionService:
 
     def submit_auto_market_order(self, order: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            if self.kill_switch()["triggered"]:
-                raise ValueError("stage6_sandbox_kill_switch_triggered")
-            for event in self._events("stage6_sandbox_batch_authorization"):
-                if event.metadata.get("detached") is True:
-                    continue
-                authorization_id = str(event.metadata.get("snapshot", {}).get("authorizationId") or "")
-                if authorization_id and is_active_batch(self.batch(authorization_id)["orders"]):
-                    raise ValueError("stage6_sandbox_active_batch_exists")
+            self._require_auto_order_available()
             evidence = self.route.create_market_order(order)
             if evidence["state"] in {"open", "partially_filled"}:
                 evidence = self.route.fetch_order(order, evidence.get("exchangeOrderId"))
             return evidence
+
+    def prepare_auto_market_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            self._require_auto_order_available()
+            return self.route.prepare_market_order(order)
 
     def verify_auto_account_coverage(
         self,
@@ -454,6 +464,16 @@ class Stage6SandboxExecutionService:
             if self.kill_switch()["triggered"]:
                 raise ValueError("stage6_sandbox_kill_switch_triggered")
             return self.route.account_coverage(expected_position, required_quote)
+
+    def _require_auto_order_available(self) -> None:
+        if self.kill_switch()["triggered"]:
+            raise ValueError("stage6_sandbox_kill_switch_triggered")
+        for event in self._events("stage6_sandbox_batch_authorization"):
+            if event.metadata.get("detached") is True:
+                continue
+            authorization_id = str(event.metadata.get("snapshot", {}).get("authorizationId") or "")
+            if authorization_id and is_active_batch(self.batch(authorization_id)["orders"]):
+                raise ValueError("stage6_sandbox_active_batch_exists")
 
     def reconcile_auto_market_order(
         self,

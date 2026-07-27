@@ -130,7 +130,7 @@ def run_terminal_research(
             "feeBps": round(backtest_engine.fee_rate * 10_000, 4),
             "slippageBps": round(backtest_engine.slippage_rate * 10_000, 4),
         },
-        backtest_trades=[asdict(row) for row in backtest_trade_rows],
+        backtest_trades=[_backtest_trade_replay_payload(row) for row in backtest_trade_rows],
         backtest_equity_curve=[asdict(row) for row in backtest_equity_curve],
         backtest_diagnostics=[asdict(row) for row in backtest_diagnostics],
         research_note=research_note or {},
@@ -210,9 +210,20 @@ def _backtest_trade_replay_rows(backtest: BacktestRun, *, initial_cash: float) -
                 pnl=pnl,
                 reason=trade.reason,
                 tone=tone,
+                proposal_id=trade.proposal_id,
+                signal_id=trade.signal_id,
+                snapshot_hash=trade.snapshot_hash,
             )
         )
     return rows
+
+
+def _backtest_trade_replay_payload(row: BacktestTradeReplay) -> dict[str, Any]:
+    payload = asdict(row)
+    payload["proposalId"] = payload.pop("proposal_id")
+    payload["signalId"] = payload.pop("signal_id")
+    payload["snapshotHash"] = payload.pop("snapshot_hash")
+    return payload
 
 
 def _data_quality_payload(quality: DataQuality) -> dict[str, object]:

@@ -65,6 +65,74 @@ def create_spot_market_order(
     max_buy_notional: float | None = None,
     notional_error: str = "stage6_sandbox_cost_above_maximum",
 ) -> dict[str, Any]:
+    prepared = prepare_spot_market_order(
+        exchange,
+        order,
+        market_or_balance_error=market_or_balance_error,
+        balance_error=balance_error,
+        max_buy_notional=max_buy_notional,
+        notional_error=notional_error,
+    )
+    amount = prepared["quantity"]
+    price = prepared["referencePrice"]
+    notional = prepared["notionalValue"]
+    if (
+        not math.isclose(amount, float(order["quantity"]), rel_tol=0, abs_tol=1e-12)
+        or not math.isclose(
+            price,
+            float(order["referencePrice"]),
+            rel_tol=0,
+            abs_tol=1e-8,
+        )
+        or not math.isclose(
+            notional,
+            float(order["notionalValue"]),
+            rel_tol=0,
+            abs_tol=1e-8,
+        )
+    ):
+        raise ValueError("binance_spot_market_order_preparation_changed")
+    params = {"newClientOrderId": order["clientOrderId"]}
+    if order["side"] == "buy":
+        create_with_cost = getattr(
+            exchange,
+            "create_market_buy_order_with_cost",
+            None,
+        )
+        if not callable(create_with_cost):
+            raise ValueError("binance_spot_market_buy_with_cost_unsupported")
+        response = create_with_cost(order["symbol"], notional, params)
+    else:
+        response = exchange.create_order(
+            order["symbol"],
+            "market",
+            order["side"],
+            amount,
+            price,
+            params,
+        )
+    return normalize_exchange_order(
+        response,
+        expected_client_order_id=order["clientOrderId"],
+    )
+
+
+def prepare_spot_market_order(
+    exchange: Any,
+    order: dict[str, Any],
+    *,
+    market_or_balance_error: str,
+    balance_error: str,
+    max_buy_notional: float | None = None,
+    notional_error: str = "stage6_sandbox_cost_above_maximum",
+) -> dict[str, Any]:
+    if (
+        not isinstance(order, dict)
+        or not isinstance(order.get("symbol"), str)
+        or not order["symbol"].strip()
+        or order.get("side") not in {"buy", "sell"}
+    ):
+        raise ValueError("binance_spot_market_order_invalid")
     markets = exchange.load_markets()
     balance = exchange.fetch_balance()
     free = balance.get("free") if isinstance(balance, dict) else None
@@ -97,29 +165,43 @@ def create_spot_market_order(
     )
     if available(free, currency) + 1e-12 < needed:
         raise ValueError(balance_error)
-    params = {"newClientOrderId": order["clientOrderId"]}
-    if order["side"] == "buy":
-        create_with_cost = getattr(
-            exchange,
-            "create_market_buy_order_with_cost",
-            None,
-        )
-        if not callable(create_with_cost):
-            raise ValueError("binance_spot_market_buy_with_cost_unsupported")
-        response = create_with_cost(order["symbol"], notional, params)
-    else:
-        response = exchange.create_order(
-            order["symbol"],
-            "market",
-            order["side"],
-            amount,
-            price,
-            params,
-        )
-    return normalize_exchange_order(
-        response,
-        expected_client_order_id=order["clientOrderId"],
-    )
+    precision = market.get("precision") if isinstance(market.get("precision"), dict) else {}
+    limits = market.get("limits") if isinstance(market.get("limits"), dict) else {}
+    amount_limits = limits.get("amount") if isinstance(limits.get("amount"), dict) else {}
+    cost_limits = limits.get("cost") if isinstance(limits.get("cost"), dict) else {}
+    taker_fee = market.get("taker")
+    return {
+        "symbol": order["symbol"],
+        "side": order["side"],
+        "quantity": amount,
+        "referencePrice": price,
+        "notionalValue": notional,
+        "marketRules": {
+            "source": "ccxt",
+            "quantityPrecision": _optional_market_number(
+                precision.get("amount"),
+                "amount precision",
+            ),
+            "pricePrecision": _optional_market_number(
+                precision.get("price"),
+                "price precision",
+            ),
+            "minimumQuantity": _optional_market_number(
+                amount_limits.get("min"),
+                "minimum amount",
+            ),
+            "minimumNotional": _optional_market_number(
+                cost_limits.get("min"),
+                "minimum cost",
+            ),
+        },
+        "executionAssumptions": {
+            "feeRate": _optional_market_number(taker_fee, "taker fee"),
+            "feeEstimated": True,
+            "slippageBps": None,
+            "slippageModel": "venue_market_fill",
+        },
+    }
 
 
 def fetch_spot_order(
@@ -242,6 +324,10 @@ def available(free: dict[str, Any], currency: str) -> float:
         if isinstance(value, bool) or not isinstance(value, (int, float))
         else float(value)
     )
+
+
+def _optional_market_number(value: Any, label: str) -> float | None:
+    return None if value is None else nonnegative_number(value, label)
 
 
 def positive_number(value: Any, label: str) -> float:
