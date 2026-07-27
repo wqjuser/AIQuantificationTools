@@ -19,3 +19,4 @@ artifacts/
 *.tsbuildinfo
 apps/web/src-tauri/gen/
 .playwright-mcp/
+design-qa*.png
