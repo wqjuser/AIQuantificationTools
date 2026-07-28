@@ -4394,6 +4394,19 @@ export function App() {
       });
     };
 
+    const loadsProviderRegistryOnly = activeWorkAreaId === "settings";
+    if (loadsProviderRegistryOnly) {
+      void loadAiReviewProviders(quantCoreBaseUrl, request.signal).then((providerResult) => {
+        if (!coordinator.isCurrent(request)) {
+          return;
+        }
+        applyProviders(providerResult.providers);
+        coordinator.finish(request);
+        syncAiReviewStage3Busy();
+      });
+      return () => coordinator.dispose();
+    }
+
     if (activeWorkAreaId !== "ai-review") {
       coordinator.finish(request);
       syncAiReviewStage3Busy();
@@ -15357,7 +15370,11 @@ export function App() {
           disabled: !runHistory.length
         };
       case "settings":
-        return { label: "运行健康检查", onClick: () => void refreshExecutionAdapterHealthProbe() };
+        return {
+          label: isRefreshingAdapterHealthProbe ? "检查中…" : "检查执行适配器",
+          onClick: () => void refreshExecutionAdapterHealthProbe(),
+          disabled: isRefreshingAdapterHealthProbe
+        };
     }
   })();
   const colorSchemeToggleLabel = i18n.locale === "zh-CN"
@@ -15638,8 +15655,11 @@ export function App() {
         <TerminalWorkspaceSurface
           action={terminalSurfaceAction}
           activeWorkAreaId={activeWorkAreaId}
+          adapterChainHealthRollups={executionAdapterChainHealthRollups}
+          adapterHealthProbeRows={executionAdapterHealthProbeRows}
+          adapterLedgerRows={executionAdapterLedgerRows}
           adapterRows={brokerAdapterRows}
-          dataAdapters={settingsStatus.settings?.marketDataAdapters}
+          settings={settingsStatus.settings}
           aiReview={{
             busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3
               || isAppendingAiReviewStage3Decision || isStrategyExperimentRunning,

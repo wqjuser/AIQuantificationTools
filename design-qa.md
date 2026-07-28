@@ -789,3 +789,14 @@ final result: passed
 - 页面复验没有点击黄金路径、运行组合风险评估、人工审批、模拟成交、对账、模式切换、急停或任何订单动作。原 5173 Testnet 容器未替换、未重启，继续保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 和 `liveBlockedBoundary=true`。
 
 final result: passed
+
+## 2026-07-28 M6 连接器与终端体验退出复验
+
+- 按 GitHub Issue #22、ADR 0027、当前代码和 diff 核对 M6：九个新版工作区通过同一页头先显示当前状态、阻断原因和下一步；设置页总览按数据源、AI Provider、执行适配器显示状态、影响和修复动作，原始能力、权限、冷却、最近成功或状态证据、未决状态与诊断默认折叠。
+- 数据源直接消费既有 `marketDataAdapters`、`providerHealth`、冷却秒数和缓存证据；AI Provider 直达设置页时复用现有注册表加载，配置不再冒充健康；执行适配器直接消费设置状态、状态台账、CCXT 只读健康探测和证据链。静态 Provider、假模型、本地路径和写死安全状态已经删除，没有新增连接器服务、API、表、Store 或依赖。
+- 组件与布局聚焦 `216 / 216`、Web 全量 `1090 / 1090`、Python 全量 `798 / 798` 和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- 隔离 Compose 项目 `aiqt-m6-acceptance` 使用独立数据卷和 5176 端口，并显式清空交易、生产、AI、Webhook、free-stockdb 与代理配置。API/Web 均 healthy；真实设置页回读数据源 `1/4` 健康、AI Provider `1/4` 已配置、一个纸面适配器就绪、CCXT Sandbox 凭据未配置和实盘阻断。
+- `http://127.0.0.1:5176/?workspace=settings&market=ashare&symbol=600000&timeframe=1d` 在 `1280 × 720` 深浅主题下页面、body 与工作区均无横向溢出；三类详情全部展开时宽表只在自身容器滚动，浏览器控制台 `0 error / 0 warning`。
+- 页面复验只展开三类连接器详情并切换界面主题，没有点击健康检查、运行研究、AI 评审、保存、执行模式、急停、对账或任何订单动作。原 5173 Testnet 容器未替换、未重启，继续保持 `api + web` healthy。
+
+final result: passed

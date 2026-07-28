@@ -49,6 +49,9 @@ import type { ColorScheme } from "../lib/theme";
 import { createI18n, type TranslationKey } from "../lib/i18n";
 import type {
   BrokerAdapterRow,
+  ExecutionAdapterChainHealthRollup,
+  ExecutionAdapterHealthProbeRow,
+  ExecutionAdapterLedgerRow,
   Instrument,
   PortfolioPaperOrderApprovalRow,
   ProductWorkAreaId,
@@ -73,23 +76,10 @@ interface TerminalWorkspaceSurfaceProps {
   action: TerminalWorkspaceSurfaceAction;
   activeWorkAreaId: ProductWorkAreaId;
   adapterRows: BrokerAdapterRow[];
-  dataAdapters?: Array<
-    Pick<
-      PlatformSettingsStatus["marketDataAdapters"][number],
-      | "id"
-      | "market"
-      | "provider"
-      | "status"
-      | "capabilities"
-      | "timeframes"
-      | "historyDepth"
-      | "adjustmentModes"
-      | "freshnessSemantics"
-      | "credentialRequirements"
-      | "readOnly"
-      | "cacheScope"
-    >
-  >;
+  adapterChainHealthRollups?: ExecutionAdapterChainHealthRollup[];
+  adapterHealthProbeRows?: ExecutionAdapterHealthProbeRow[];
+  adapterLedgerRows?: ExecutionAdapterLedgerRow[];
+  settings?: PlatformSettingsStatus;
   aiReview: {
     busy: boolean;
     comparisonExperimentIds: string[];
@@ -252,12 +242,30 @@ function PageHeader({
   subtitle?: string;
   title: string;
 }) {
+  const completed = action.label.includes("已完成");
+  const blocked = Boolean(action.disabled) && !completed;
   return (
     <header className="design-page-header">
       <div>
         <h2>{title}</h2>
         {subtitle ? <span>{subtitle}</span> : null}
         {children}
+        <div className="design-page-state" aria-label="当前工作区状态">
+          <span>
+            <small>当前状态</small>
+            <Status tone={completed ? "positive" : blocked ? "warning" : "positive"}>
+              {completed ? "已完成" : blocked ? "待处理" : "可继续"}
+            </Status>
+          </span>
+          <span>
+            <small>阻断原因</small>
+            <strong>{completed ? "无待办阻断" : blocked ? action.label : "无主动作阻断"}</strong>
+          </span>
+          <span>
+            <small>下一步</small>
+            <strong>{completed ? "查看结果与审计证据" : action.label}</strong>
+          </span>
+        </div>
       </div>
       <button
         className={`design-primary-action ${action.tone ?? "primary"}`}
@@ -3228,277 +3236,503 @@ function AuditSurface({
   );
 }
 
+type ConnectorTone = "positive" | "warning" | "risk" | "neutral";
+
+function connectorTimestamp(value: string | null | undefined): string {
+  if (!value) return "暂无成功证据";
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? value : timestamp.toLocaleString("zh-CN");
+}
+
+function providerHealthLabel(
+  status: PlatformSettingsStatus["marketDataAdapters"][number]["externalTelemetry"]["providerHealth"]["status"],
+): string {
+  return {
+    blocked: "阻断",
+    cooldown: "冷却中",
+    ok: "健康",
+    watch: "待观察",
+  }[status];
+}
+
+function providerHealthReason(reason: string): string {
+  return {
+    configured_not_probed: "端点已配置但尚未探测",
+    dependency_missing: "可选依赖未安装",
+    endpoint_invalid: "端点配置无效",
+    endpoint_not_configured: "端点尚未配置",
+    no_recent_provider_errors: "最近 24 小时无 Provider 错误",
+    provider_cooldown: "近期错误达到冷却阈值",
+    recent_provider_errors: "近期存在 Provider 错误",
+  }[reason] ?? reason;
+}
+
+function dataAdapterNextAction(
+  adapter: PlatformSettingsStatus["marketDataAdapters"][number],
+): string {
+  const health = adapter.externalTelemetry.providerHealth;
+  if (!adapter.externalTelemetry.dependencyAvailable) {
+    return adapter.externalTelemetry.dependency.includes("local-service")
+      ? "配置可选本地只读端点；不调用同步或写入"
+      : `安装可选依赖 ${adapter.externalTelemetry.dependency}；不会启用交易权限`;
+  }
+  if (health.status === "cooldown") {
+    return `等待 ${health.retryAfterSeconds} 秒后再试，期间继续使用缓存`;
+  }
+  if (health.status === "watch") {
+    return `检查最近 Provider 错误；${health.retryAfterSeconds} 秒后可重试`;
+  }
+  if (adapter.status !== "ready") {
+    return adapter.note;
+  }
+  return "保持只读访问；需要新数据时再刷新";
+}
+
+function executionProbePending(probe: ExecutionAdapterHealthProbeRow): string {
+  if (probe.status === "ready") return "无";
+  if (probe.blockerSummary && probe.blockerSummary !== "No blockers") {
+    return probe.blockerSummary;
+  }
+  if (probe.credentialSummary.toLowerCase().includes("missing")) {
+    return "Sandbox 凭据未配置";
+  }
+  return "只读健康探测需要复核";
+}
+
 function SettingsSurface({
   action,
-  adapterRows,
-  dataAdapters,
-  source,
-  workspace,
+  adapterChainHealthRollups = [],
+  adapterHealthProbeRows = [],
+  adapterLedgerRows = [],
+  aiReview,
+  settings,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "adapterRows" | "dataAdapters" | "source" | "workspace"
+  | "action"
+  | "adapterChainHealthRollups"
+  | "adapterHealthProbeRows"
+  | "adapterLedgerRows"
+  | "aiReview"
+  | "settings"
 >) {
-  const readyDataAdapterCount = dataAdapters?.filter((adapter) => adapter.status === "ready").length ?? 0;
-  const dataAdapterHealthTone = !dataAdapters?.length
+  const dataAdapters = settings?.marketDataAdapters ?? [];
+  const executionAdapters = settings?.executionAdapters ?? [];
+  const dataBlocker = dataAdapters.find(
+    (adapter) =>
+      adapter.status !== "ready" ||
+      adapter.externalTelemetry.providerHealth.status !== "ok",
+  );
+  const readyDataAdapterCount = dataAdapters.filter(
+    (adapter) =>
+      adapter.status === "ready" &&
+      adapter.externalTelemetry.providerHealth.status === "ok",
+  ).length;
+  const dataAdapterHealthTone: ConnectorTone = !settings || !dataAdapters.length
     ? "neutral"
     : readyDataAdapterCount === dataAdapters.length
       ? "positive"
       : readyDataAdapterCount
         ? "warning"
         : "risk";
+  const configuredAiProviders = aiReview.providers.filter((provider) => provider.configured);
+  const configuredExternalAiProviders = configuredAiProviders.filter(
+    (provider) => provider.providerId !== "local",
+  );
+  const localAiProvider = aiReview.providers.find((provider) => provider.providerId === "local");
+  const aiProviderTone: ConnectorTone = !aiReview.providers.length
+    ? "neutral"
+    : !localAiProvider?.configured
+      ? "risk"
+      : configuredExternalAiProviders.length
+        ? "warning"
+        : "positive";
+  const liveTradingAllowed = settings?.safety.liveTradingAllowed ?? false;
+  const blockingChain = adapterChainHealthRollups.find(
+    (rollup) => rollup.status === "blocked" || rollup.status === "in_progress",
+  );
+  const latestLedgerRow =
+    adapterLedgerRows.find((row) => row.adapterId === blockingChain?.adapterId) ??
+    adapterLedgerRows.find((row) => row.route === "live" && !row.liveTradingAllowed) ??
+    adapterLedgerRows[0];
+  const latestHealthProbe = adapterHealthProbeRows[0];
+  const latestHealthProbePending = latestHealthProbe
+    ? executionProbePending(latestHealthProbe)
+    : null;
+  const paperReadyAdapterCount = executionAdapters.filter(
+    (adapter) => adapter.route === "paper" && adapter.status === "paper_ready",
+  ).length;
+  const executionTone: ConnectorTone = !settings
+    ? "neutral"
+    : latestHealthProbe?.tone === "risk"
+      ? "risk"
+    : liveTradingAllowed
+      ? "positive"
+      : blockingChain?.status === "blocked"
+        ? "risk"
+        : "warning";
+  const executionNextAction =
+    (latestHealthProbe && latestHealthProbe.status !== "ready"
+      ? `处理“${latestHealthProbePending}”后重新运行只读健康检查`
+      : null) ??
+    (blockingChain?.blockerLabel
+      ? `补齐 ${blockingChain.blockerLabel} 证据`
+      : latestLedgerRow
+        ? "保持纸面执行，按现有门禁顺序补齐认证证据"
+        : "保持纸面执行，按门禁顺序补齐认证证据");
+
   return (
     <>
-      <PageHeader action={action} title="设置" />
+      <PageHeader
+        action={action}
+        subtitle="/ 连接器能力、健康与权限"
+        title="设置"
+      />
       <div className="design-settings-grid">
-        <nav className="design-settings-nav">
-          {[
-            "常规",
-            "数据源与 Provider",
-            "AI Provider",
-            "执行适配器",
-            "安全边界",
-            "审计与签名",
-            "桌面应用",
-          ].map((label, index) => (
-            <button
-              className={index === 1 ? "selected" : ""}
-              key={label}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
+        <nav aria-label="设置分区" className="design-settings-nav">
+          <a className="selected" href="#settings-connectors">连接器总览</a>
+          <a href="#settings-data-connectors">数据源</a>
+          <a href="#settings-ai-connectors">AI Provider</a>
+          <a href="#settings-execution-connectors">执行适配器</a>
+          <a href="#settings-safety">安全边界</a>
         </nav>
         <div className="design-settings-main">
-          <SurfacePanel title="数据源与 Provider">
-            <table className="design-table compact design-data-provider-table">
-              <thead>
-                <tr>
-                  <th>市场</th>
-                  <th>适配器</th>
-                  <th>能力</th>
-                  <th>周期 / 深度</th>
-                  <th>复权 / 时效</th>
-                  <th>凭据要求</th>
-                  <th>状态 / 边界</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dataAdapters?.map((adapter) => (
-                  <tr key={adapter.id}>
-                    <td>
-                      {adapter.market === "ashare"
-                        ? "A 股"
-                        : adapter.market === "us"
-                          ? "美股"
-                          : "加密货币"}
-                    </td>
-                    <td>{adapter.provider}</td>
-                    <td>{adapter.capabilities.join(" / ")}</td>
-                    <td>
-                      {adapter.timeframes.join(" / ")} · {adapter.historyDepth ?? "未声明"}
-                    </td>
-                    <td>
-                      {adapter.adjustmentModes?.join(" / ") || "未声明"} ·{" "}
-                      {adapter.freshnessSemantics ?? "未声明"}
-                    </td>
-                    <td>{adapter.credentialRequirements?.join(" / ") || "无需凭据"}</td>
-                    <td>
-                      <Status
-                        tone={
-                          adapter.status === "ready"
-                            ? "positive"
-                            : adapter.status === "blocked" || adapter.status === "config_required"
-                              ? "risk"
-                              : "warning"
-                        }
-                      >
-                        {adapter.status === "ready"
-                          ? "可用"
-                          : adapter.status === "blocked" || adapter.status === "config_required"
-                            ? "阻断"
-                            : "待观察"}
-                      </Status>
-                      {" · "}
-                      {adapter.readOnly ? "只读" : "可写"} · {adapter.cacheScope}
-                    </td>
-                  </tr>
-                ))}
-                {!dataAdapters?.length ? (
+          <SurfacePanel
+            className="design-connector-overview"
+            title="连接器状态与下一步"
+          >
+            <div className="design-connector-summary" id="settings-connectors">
+              <article>
+                <header>
+                  <strong>数据源</strong>
+                  <Status tone={dataAdapterHealthTone}>
+                    {!settings || !dataAdapters.length
+                      ? "未加载"
+                      : readyDataAdapterCount === dataAdapters.length
+                        ? "健康"
+                        : "部分受限"}
+                  </Status>
+                </header>
+                <dl>
+                  <div><dt>阻断原因</dt><dd>{dataBlocker
+                    ? providerHealthReason(dataBlocker.externalTelemetry.providerHealth.reason)
+                    : settings && dataAdapters.length ? "无" : "核心服务状态未加载"}</dd></div>
+                  <div><dt>影响</dt><dd>{settings && dataAdapters.length
+                    ? `${readyDataAdapterCount}/${dataAdapters.length} 个适配器可直接使用`
+                    : "不把静态配置当作健康状态"}</dd></div>
+                  <div><dt>下一步</dt><dd>{dataBlocker
+                    ? dataAdapterNextAction(dataBlocker)
+                    : settings && dataAdapters.length ? "按需刷新只读行情" : "重新加载核心服务状态"}</dd></div>
+                </dl>
+              </article>
+              <article>
+                <header>
+                  <strong>AI Provider</strong>
+                  <Status tone={aiProviderTone}>
+                    {!aiReview.providers.length
+                      ? "未加载"
+                      : `${configuredAiProviders.length}/${aiReview.providers.length} 已配置`}
+                  </Status>
+                </header>
+                <dl>
+                  <div><dt>阻断原因</dt><dd>{
+                    !aiReview.providers.length
+                      ? "Provider 注册表未加载"
+                      : !localAiProvider?.configured
+                        ? "本地确定性基线不可用"
+                        : configuredExternalAiProviders.length
+                          ? "外部端点尚无健康探测证据"
+                          : "外部服务未配置"
+                  }</dd></div>
+                  <div><dt>影响</dt><dd>配置只代表可选择；外部调用仍需逐次授权证据摘要</dd></div>
+                  <div><dt>下一步</dt><dd>{
+                    localAiProvider?.configured
+                      ? "继续保留本地基线；外部调用前核对出站字段"
+                      : "先恢复本地确定性基线"
+                  }</dd></div>
+                </dl>
+              </article>
+              <article>
+                <header>
+                  <strong>执行适配器</strong>
+                  <Status tone={executionTone}>
+                    {!settings
+                      ? "未加载"
+                      : liveTradingAllowed ? "实盘已授权" : "实盘阻断"}
+                  </Status>
+                </header>
+                <dl>
+                  <div><dt>阻断原因</dt><dd>{
+                    (latestHealthProbe && latestHealthProbe.status !== "ready"
+                      ? latestHealthProbePending
+                      : null) ??
+                    blockingChain?.blockerLabel ??
+                    latestLedgerRow?.reason ??
+                    (settings ? "生产门禁尚未全部通过" : "核心服务状态未加载")
+                  }</dd></div>
+                  <div><dt>影响</dt><dd>{settings
+                    ? `${paperReadyAdapterCount} 个纸面适配器就绪；实盘权限 ${String(liveTradingAllowed)}`
+                    : "不推断订单提交或路由权限"}</dd></div>
+                  <div><dt>下一步</dt><dd>{executionNextAction}</dd></div>
+                </dl>
+              </article>
+            </div>
+          </SurfacePanel>
+          <SurfacePanel title="连接器详情（渐进披露）">
+            <details className="design-settings-disclosure" id="settings-data-connectors">
+              <summary>
+                <span>数据源能力、冷却与最近成功证据</span>
+                <Status tone={dataAdapterHealthTone}>
+                  {settings && dataAdapters.length
+                    ? `${readyDataAdapterCount}/${dataAdapters.length} 健康`
+                    : "未加载"}
+                </Status>
+              </summary>
+              <table className="design-table compact design-data-provider-table">
+                <thead>
                   <tr>
-                    <td colSpan={7}>
-                      能力矩阵尚未从核心服务加载；不会用静态配置冒充健康状态。
-                    </td>
+                    <th>适配器 / 能力</th>
+                    <th>健康</th>
+                    <th>权限</th>
+                    <th>冷却</th>
+                    <th>最近成功证据</th>
+                    <th>未决状态</th>
+                    <th>下一步</th>
                   </tr>
-                ) : null}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {dataAdapters.map((adapter) => {
+                    const health = adapter.externalTelemetry.providerHealth;
+                    const tone: ConnectorTone =
+                      health.status === "ok"
+                        ? adapter.status === "ready" ? "positive" : "warning"
+                        : health.status === "blocked" ? "risk" : "warning";
+                    return (
+                      <tr key={adapter.id}>
+                        <td>
+                          <strong>{adapter.provider}</strong><br />
+                          {adapter.capabilities.join(" / ")} · {adapter.timeframes.join(" / ")}
+                          {" · "}{adapter.historyDepth ?? "深度未声明"}
+                          <br />
+                          {adapter.adjustmentModes?.join(" / ") || "复权未声明"}
+                          {" · "}{adapter.freshnessSemantics ?? "时效未声明"}
+                        </td>
+                        <td>
+                          <Status tone={tone}>{providerHealthLabel(health.status)}</Status>
+                          <br />{providerHealthReason(health.reason)}
+                        </td>
+                        <td>
+                          {adapter.credentialRequirements?.join(" / ") || "无需凭据"}
+                          <br />{adapter.readOnly ? "只读" : "可写"} · {adapter.cacheScope}
+                        </td>
+                        <td>{health.retryAfterSeconds ? `${health.retryAfterSeconds} 秒` : "无"}</td>
+                        <td>{connectorTimestamp(adapter.cacheDiagnostics.latestTimestamp)}</td>
+                        <td>
+                          {adapter.externalTelemetry.retryState}
+                          {adapter.externalTelemetry.lastProviderError
+                            ? ` · ${adapter.externalTelemetry.lastProviderError.category}`
+                            : ""}
+                        </td>
+                        <td>{dataAdapterNextAction(adapter)}</td>
+                      </tr>
+                    );
+                  })}
+                  {!dataAdapters.length ? (
+                    <tr><td colSpan={7}>核心服务能力矩阵未加载；不会用静态配置冒充健康状态。</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </details>
+            <details className="design-settings-disclosure" id="settings-ai-connectors">
+              <summary>
+                <span>AI Provider 配置、权限与健康证据</span>
+                <Status tone={aiProviderTone}>
+                  {aiReview.providers.length
+                    ? `${configuredAiProviders.length}/${aiReview.providers.length} 已配置`
+                    : "未加载"}
+                </Status>
+              </summary>
+              <table className="design-table compact">
+                <thead>
+                  <tr>
+                    <th>Provider / 能力</th>
+                    <th>配置状态</th>
+                    <th>健康</th>
+                    <th>权限</th>
+                    <th>冷却 / 最近成功</th>
+                    <th>未决状态</th>
+                    <th>下一步</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiReview.providers.map((provider) => {
+                    const local = provider.providerId === "local";
+                    return (
+                      <tr key={provider.providerId}>
+                        <td>
+                          <strong>{aiProviderLabels[provider.providerId]}</strong><br />
+                          {provider.model ?? (local ? "deterministic" : "模型未配置")}
+                          {" · "}{provider.sanitizedBaseUrl ?? (local ? "无外部端点" : "地址未配置")}
+                        </td>
+                        <td>{provider.configured ? "已配置" : "未配置"}</td>
+                        <td>
+                          <Status tone={local && provider.configured ? "positive" : provider.configured ? "warning" : "risk"}>
+                            {local && provider.configured ? "本地基线可用" : provider.configured ? "健康未探测" : "不可用"}
+                          </Status>
+                        </td>
+                        <td>{local ? "无出站" : "需逐次授权证据摘要"}</td>
+                        <td>{local ? "不适用" : "未提供 · 暂无端点探测证据"}</td>
+                        <td>{local ? "无" : provider.configured ? "端点健康待验证" : "配置缺失"}</td>
+                        <td>{local
+                          ? "保持确定性基线"
+                          : provider.configured
+                            ? "调用前核对出站字段并授权"
+                            : "先完成服务配置"}</td>
+                      </tr>
+                    );
+                  })}
+                  {!aiReview.providers.length ? (
+                    <tr><td colSpan={7}>Provider 注册表尚未加载。</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </details>
+            <details className="design-settings-disclosure" id="settings-execution-connectors">
+              <summary>
+                <span>执行适配器权限、健康与链路证据</span>
+                <Status tone={executionTone}>
+                  {settings ? (liveTradingAllowed ? "实盘已授权" : "实盘阻断") : "未加载"}
+                </Status>
+              </summary>
+              <table className="design-table compact design-adapter-table">
+                <thead>
+                  <tr>
+                    <th>适配器</th>
+                    <th>状态</th>
+                    <th>权限 / 凭据</th>
+                    <th>冷却</th>
+                    <th>最近状态证据</th>
+                    <th>未决状态</th>
+                    <th>下一步</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {executionAdapters.map((adapter) => {
+                    const ledger = adapterLedgerRows.find((row) => row.adapterId === adapter.id);
+                    const probe = adapterHealthProbeRows.find((row) => row.adapterId === adapter.id);
+                    const chain = adapterChainHealthRollups.find((row) => row.adapterId === adapter.id);
+                    const tone: ConnectorTone = chain
+                      ? chain.tone
+                      : ledger?.tone ?? (adapter.status === "paper_ready" ? "positive" : "warning");
+                    return (
+                      <tr key={adapter.id}>
+                        <td>
+                          <strong>{adapter.adapter}</strong><br />
+                          {adapter.market} · {adapter.route === "paper" ? "纸面" : "实盘"}
+                        </td>
+                        <td>
+                          <Status tone={tone}>
+                            {chain?.headline ?? ledger?.label ?? adapter.status}
+                          </Status>
+                        </td>
+                        <td>
+                          {probe?.credentialSummary ?? adapter.certification}
+                          <br />实盘权限 {String(adapter.liveTradingAllowed)}
+                        </td>
+                        <td>未声明</td>
+                        <td>{connectorTimestamp(
+                          chain?.latestEvidenceTimestamp ?? probe?.timestamp ?? ledger?.timestamp,
+                        )}</td>
+                        <td>{chain?.blockerLabel ?? probe?.blockerSummary ?? ledger?.reason ?? adapter.note}</td>
+                        <td>{ledger?.nextStep ?? (chain?.blockerLabel
+                          ? `补齐 ${chain.blockerLabel} 证据`
+                          : adapter.note)}</td>
+                      </tr>
+                    );
+                  })}
+                  {adapterHealthProbeRows
+                    .filter((probe) => !executionAdapters.some((adapter) => adapter.id === probe.adapterId))
+                    .map((probe) => {
+                      const chain = adapterChainHealthRollups.find((row) => row.adapterId === probe.adapterId);
+                      return (
+                        <tr key={`probe:${probe.id}`}>
+                          <td>
+                            <strong>{probe.provider}:{probe.exchangeId}</strong><br />
+                            {probe.adapterId} · {probe.mode}
+                          </td>
+                          <td><Status tone={probe.tone}>{probe.statusLabel}</Status></td>
+                          <td>{probe.credentialSummary}<br />{probe.boundary}</td>
+                          <td>未声明</td>
+                          <td>{connectorTimestamp(probe.timestamp)}</td>
+                          <td>{chain?.blockerLabel ?? executionProbePending(probe)}</td>
+                          <td>{probe.status === "ready"
+                            ? "保持只读探测；生产权限仍需独立门禁"
+                            : `处理 ${executionProbePending(probe)} 后重新检查`}</td>
+                        </tr>
+                      );
+                    })}
+                  {!executionAdapters.length ? (
+                    <tr><td colSpan={7}>执行适配器状态未从核心服务加载。</td></tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </details>
             <div className="design-live-warning small">
               <AlertTriangle size={14} />
-              已配置不等于健康；状态、复权、时效和只读边界均来自核心服务契约。
+              已配置不等于健康或已授权；原始能力、权限、冷却与证据仅在需要时展开。
             </div>
           </SurfacePanel>
-          <SurfacePanel title="AI Provider 设置">
-            <table className="design-table compact">
-              <thead>
-                <tr>
-                  <th>提供商</th>
-                  <th>状态</th>
-                  <th>Base URL</th>
-                  <th>模型</th>
-                  <th>备注</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  [
-                    "本地（Local）",
-                    "可用",
-                    "—",
-                    "deterministic",
-                    "确定性本地基线",
-                  ],
-                  [
-                    "OpenAI",
-                    "未配置",
-                    "https://api.openai.com/v1",
-                    "—",
-                    "官方 OpenAI 服务",
-                  ],
-                  [
-                    "OpenAI 兼容（当前）",
-                    "已配置",
-                    "https://****.com/v1",
-                    "*****",
-                    "兼容 OpenAI 接口的第三方服务",
-                  ],
-                  [
-                    "Ollama",
-                    "未配置",
-                    "http://localhost:11434/v1",
-                    "—",
-                    "本地 Ollama 服务",
-                  ],
-                ].map((row, index) => (
-                  <tr className={index === 2 ? "selected" : ""} key={row[0]}>
-                    {row.map((cell) => (
-                      <td key={cell}>{cell}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="design-live-warning small">
-              <AlertTriangle size={14} />
-              外部 AI 服务失败或不可用时，不得替代确定性基线。
-            </div>
-          </SurfacePanel>
-          <SurfacePanel title="执行适配器（只读）">
-            <table className="design-table compact design-adapter-table">
-              <thead>
-                <tr>
-                  <th>适配器</th>
-                  <th>类型</th>
-                  <th>用途</th>
-                  <th>凭据是否已配置</th>
-                  <th>健康状态</th>
-                  <th>备注</th>
-                </tr>
-              </thead>
-              <tbody>
-                {adapterRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.adapter}</td>
-                    <td>
-                      {row.route === "paper" ? "仿真（沙盒）" : "只读（生产）"}
-                    </td>
-                    <td>{row.nextStep}</td>
-                    <td>{row.certification}</td>
-                    <td>
-                      <Status
-                        tone={
-                          row.tone === "risk"
-                            ? "risk"
-                            : row.tone === "warning"
-                              ? "warning"
-                              : "positive"
-                        }
-                      >
-                        {row.status}
-                      </Status>
-                    </td>
-                    <td>{row.market}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </SurfacePanel>
-          <div className="design-settings-bottom">
-            <SurfacePanel title="界面与体验">
-              <div className="design-form-row">
-                <label>
-                  主题
-                  <select defaultValue="dark">
-                    <option value="dark">深色</option>
-                  </select>
-                </label>
-                <label>
-                  语言
-                  <select defaultValue="zh">
-                    <option value="zh">中文（简体）</option>
-                  </select>
-                </label>
-              </div>
-            </SurfacePanel>
-            <SurfacePanel title="本地路径">
-              <div className="design-form-row">
-                <input value="~/AIQuantTools/data" readOnly />
-                <button type="button">更改路径</button>
-              </div>
-            </SurfacePanel>
-            <SurfacePanel title="操作">
-              <button
-                className="design-secondary-action"
-                onClick={action.onClick}
-                type="button"
-              >
-                <RefreshCw size={13} />
-                运行只读健康检查
-              </button>
-            </SurfacePanel>
-          </div>
         </div>
-        <div className="design-settings-side">
-          <SurfacePanel title="安全边界（不可更改）">
-            {[
-              ["纸面模式", true],
-              ["允许实盘交易", false],
-              ["允许下单提交", false],
-              ["订单路由执行", false],
-              ["实盘阻断边界", true],
-            ].map(([label, value]) => (
-              <div className="design-check-row" key={String(label)}>
-                <LockKeyhole size={13} />
-                <span>{String(label)}</span>
-                <strong className={value ? "up" : "down"}>
-                  {String(value)}
-                </strong>
-              </div>
-            ))}
-            <p className="down">当前平台运行于纸面环境，所有实盘能力已阻断。</p>
+        <div className="design-settings-side" id="settings-safety">
+          <SurfacePanel title="安全边界（核心服务）">
+            <div className="design-check-row">
+              <LockKeyhole size={13} />
+              <span>纸面适配器就绪</span>
+              <strong>{settings ? paperReadyAdapterCount : "未加载"}</strong>
+            </div>
+            <div className="design-check-row">
+              <LockKeyhole size={13} />
+              <span>允许实盘交易</span>
+              <strong className={liveTradingAllowed ? "up" : "down"}>
+                {settings ? String(liveTradingAllowed) : "未加载"}
+              </strong>
+            </div>
+            <div className="design-check-row">
+              <LockKeyhole size={13} />
+              <span>实盘阻断边界</span>
+              <strong className={!liveTradingAllowed ? "up" : "down"}>
+                {settings ? String(!liveTradingAllowed) : "未加载"}
+              </strong>
+            </div>
+            <div className="design-kv-row">
+              <span>必需门禁</span>
+              <strong>{settings ? settings.safety.requiredGates.length : "未加载"}</strong>
+            </div>
+            <p className={settings && !liveTradingAllowed ? "down" : ""}>
+              {settings
+                ? liveTradingAllowed
+                  ? "核心服务报告实盘已授权，仍需执行工作区二次确认。"
+                  : "核心服务报告实盘未授权；设置页不会推断下单或路由权限。"
+                : "安全契约尚未加载。"}
+            </p>
           </SurfacePanel>
-          <SurfacePanel title="环境隔离">
+          <SurfacePanel title="最近状态证据">
             <div className="design-kv-row">
-              <span>环境模式</span>
-              <strong>桌面隔离</strong>
+              <span>设置快照</span>
+              <strong>{connectorTimestamp(settings?.generatedAt)}</strong>
             </div>
             <div className="design-kv-row">
-              <span>配置来源</span>
-              <strong>本地配置文件</strong>
+              <span>执行健康探测</span>
+              <strong>{connectorTimestamp(adapterHealthProbeRows[0]?.timestamp)}</strong>
             </div>
             <div className="design-kv-row">
-              <span>写入范围</span>
-              <strong>本地用户目录内</strong>
+              <span>执行链路证据</span>
+              <strong>{connectorTimestamp(
+                adapterChainHealthRollups
+                  .map((row) => row.latestEvidenceTimestamp)
+                  .filter((value): value is string => Boolean(value))
+                  .sort()
+                  .at(-1),
+              )}</strong>
             </div>
           </SurfacePanel>
           <SurfacePanel title="密钥处理规则">
@@ -3514,33 +3748,16 @@ function SettingsSurface({
               </div>
             ))}
           </SurfacePanel>
-          <SurfacePanel title="最近健康检查（只读）">
-            <div className="design-kv-row">
-              <span>数据源适配器</span>
-              <Status tone={dataAdapterHealthTone}>
-                {dataAdapters?.length
-                  ? `${readyDataAdapterCount}/${dataAdapters.length} 可用`
-                  : "未加载"}
-              </Status>
-            </div>
-            {["AI Provider", "执行适配器"].map((label) => (
-              <div className="design-kv-row" key={label}>
-                <span>{label}</span>
-                <Status tone={source === "core" ? "positive" : "warning"}>
-                  {source === "core" ? "状态已加载" : "快照"}
-                </Status>
-              </div>
-            ))}
-            <div className="design-kv-row">
-              <span>总体状态</span>
-              <Status tone={dataAdapterHealthTone}>
-                {!dataAdapters?.length
-                  ? "未加载"
-                  : readyDataAdapterCount === dataAdapters.length
-                    ? "正常"
-                    : "部分受限"}
-              </Status>
-            </div>
+          <SurfacePanel title="只读操作">
+            <button
+              className="design-secondary-action"
+              disabled={action.disabled}
+              onClick={action.onClick}
+              type="button"
+            >
+              <RefreshCw className={action.disabled ? "spin" : undefined} size={13} />
+              {action.label}
+            </button>
           </SurfacePanel>
         </div>
       </div>
