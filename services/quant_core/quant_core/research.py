@@ -19,6 +19,13 @@ from quant_core.canonical import (
     normalize_snapshot_bars,
     strategy_config_to_payload,
 )
+from quant_core.data_foundation import (
+    assess_market_data_quality,
+    build_cross_source_difference_report,
+    data_quality_to_payload,
+    offline_replay_evidence,
+    unavailable_cross_source_report,
+)
 from quant_core.domain import (
     AiResearchRequest,
     BacktestRun,
@@ -63,6 +70,7 @@ def run_terminal_research(
     strategy_snapshot: StrategySnapshot | None = None,
     research_note: dict[str, Any] | None = None,
     data_preparation_evidence: dict[str, Any] | None = None,
+    comparison_adapter: MarketDataAdapter | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -73,6 +81,24 @@ def run_terminal_research(
 
     request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=data_end or created_at)
     bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit, cache=market_cache)
+    quality = assess_market_data_quality(request, bars, quality, observed_at=created_at)
+    if not quality.is_complete:
+        codes = ",".join(str(issue.get("code") or "unknown") for issue in quality.issues)
+        raise ValueError(f"research_data_quality_blocked:{codes}")
+    source_comparison = _research_source_comparison(
+        comparison_adapter,
+        request,
+        bars,
+        quality,
+        data_limit=data_limit,
+    )
+    if source_comparison["status"] == "blocked":
+        raise ValueError("research_cross_source_difference_blocked")
+    if source_comparison["status"] == "warning":
+        quality = replace(
+            quality,
+            warnings=[*quality.warnings, "Cross-source differences require review."],
+        )
     if _should_cache_research_bars(quality):
         market_cache.upsert_bars(bars)
 
@@ -108,6 +134,7 @@ def run_terminal_research(
         quality,
         preparation_evidence=data_preparation_evidence,
         market_calendar=market_calendar,
+        source_comparison=source_comparison,
     )
     audit = ResearchRunAudit(
         run_id=run_id,
@@ -227,12 +254,7 @@ def _backtest_trade_replay_payload(row: BacktestTradeReplay) -> dict[str, Any]:
 
 
 def _data_quality_payload(quality: DataQuality) -> dict[str, object]:
-    return {
-        "source": quality.source,
-        "isComplete": quality.is_complete,
-        "warnings": list(quality.warnings),
-        "rows": quality.rows,
-    }
+    return data_quality_to_payload(quality)
 
 
 def _data_snapshot_payload(
@@ -241,6 +263,7 @@ def _data_snapshot_payload(
     *,
     preparation_evidence: dict[str, Any] | None = None,
     market_calendar: dict[str, Any] | None = None,
+    source_comparison: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     normalized_bars = normalize_snapshot_bars(bars)
     contexts = {(bar.market, bar.symbol, bar.timeframe) for bar in bars}
@@ -257,6 +280,14 @@ def _data_snapshot_payload(
         "hashVersion": DATA_SNAPSHOT_HASH_VERSION,
         "hash": data_hash,
         "bars": normalized_bars,
+        "observedAt": quality.observed_at.isoformat() if quality.observed_at else None,
+        "marketTime": quality.market_time.isoformat() if quality.market_time else None,
+        "calendarId": quality.calendar_id,
+        "adjustmentMode": quality.adjustment_mode,
+        "freshness": quality.freshness,
+        "coverage": dict(quality.coverage),
+        "qualityIssues": [dict(issue) for issue in quality.issues],
+        "offlineReplay": offline_replay_evidence(normalized_bars, data_hash),
     }
     if contexts:
         market, symbol, timeframe = next(iter(contexts))
@@ -270,6 +301,8 @@ def _data_snapshot_payload(
         snapshot["preparationEvidence"] = dict(preparation_evidence)
     if market_calendar:
         snapshot["marketCalendar"] = dict(market_calendar)
+    if source_comparison:
+        snapshot["sourceComparison"] = dict(source_comparison)
     return snapshot
 
 
@@ -578,6 +611,59 @@ def _local_cache_research_quality(bars: list[OHLCVBar], *, warnings: list[str]) 
 
 def _should_cache_research_bars(quality: DataQuality) -> bool:
     return quality.is_complete and quality.source not in {"local-cache", "demo", "demo-fallback"}
+
+
+def _research_source_comparison(
+    adapter: MarketDataAdapter | None,
+    request: MarketDataRequest,
+    primary_bars: list[OHLCVBar],
+    primary_quality: DataQuality,
+    *,
+    data_limit: int,
+) -> dict[str, Any]:
+    secondary_source = getattr(adapter, "source", "free-stockdb")
+    if request.market != "ashare" or request.timeframe != "1d":
+        return unavailable_cross_source_report(
+            primary_quality.source,
+            secondary_source,
+            "comparison_not_required_for_context",
+        )
+    if adapter is None:
+        return unavailable_cross_source_report(
+            primary_quality.source,
+            secondary_source,
+            "secondary_source_not_configured",
+        )
+    try:
+        secondary_bars, secondary_quality = _fetch_adapter_research_bars(
+            adapter,
+            request,
+            limit=_bounded_research_limit(data_limit),
+        )
+        secondary_quality = assess_market_data_quality(
+            request,
+            secondary_bars,
+            secondary_quality,
+            observed_at=primary_quality.observed_at,
+        )
+    except Exception as error:
+        return unavailable_cross_source_report(
+            primary_quality.source,
+            secondary_source,
+            f"secondary_source_failed:{type(error).__name__}",
+        )
+    if not secondary_quality.is_complete:
+        return unavailable_cross_source_report(
+            primary_quality.source,
+            secondary_quality.source,
+            "secondary_source_quality_blocked",
+        )
+    return build_cross_source_difference_report(
+        primary_quality.source,
+        primary_bars,
+        secondary_quality.source,
+        secondary_bars,
+    )
 
 
 def _instrument_for_symbol(workspace: TerminalWorkspace, market: Market, symbol: str) -> Instrument:

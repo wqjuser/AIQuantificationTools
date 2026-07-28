@@ -768,6 +768,7 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertIsNotNone(state["lastRunnerCycleAt"])
             self.assertIsNotNone(state["lastRunnerSuccessAt"])
             self.assertIsNotNone(state["lastRunnerErrorAt"])
+            self.assertEqual(state["lastRunnerError"], "temporary_market_failure")
             self.assertEqual(state["status"], "monitoring")
 
     def test_snapshot_classifies_runner_health_delay_offline_and_recovery(self):

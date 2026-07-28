@@ -14,7 +14,7 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from urllib.parse import parse_qs, unquote, urlparse
 
-from quant_core.adapters import DemoMarketDataAdapter
+from quant_core.adapters import DemoMarketDataAdapter, build_free_stockdb_adapter
 from quant_core.audit_events import (
     AuditEventStore,
     audit_event_payload_matches_record,
@@ -91,6 +91,11 @@ from quant_core.domain import (
     OHLCVBar,
     RiskRules,
     StrategyConfig,
+)
+from quant_core.data_foundation import (
+    assess_market_data_quality,
+    data_quality_from_payload,
+    data_quality_to_payload,
 )
 from quant_core.execution import (
     ExecutionAdapterCertificationStore,
@@ -235,6 +240,11 @@ from quant_core.market_klines import (
     market_klines_to_payload,
 )
 from quant_core.market_search import MarketSymbolSearchAdapter, market_search_to_payload
+from quant_core.monitoring import (
+    MonitoringRunner,
+    MonitoringService,
+    build_webhook_notifier,
+)
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
 from quant_core.stage4_portfolio import (
     build_stage4_portfolio_workflow_snapshot,
@@ -490,6 +500,7 @@ def _fetch_market_klines_with_cache(
     upstream_error: str | None = None
     try:
         bars, quality = adapter.fetch_ohlcv(request, limit=bounded_limit)  # type: ignore[attr-defined]
+        quality = assess_market_data_quality(request, bars, quality)
     except Exception as error:
         bars = []
         quality = None
@@ -507,11 +518,15 @@ def _fetch_market_klines_with_cache(
     )[-bounded_limit:]
     if cached_bars:
         warnings = _cache_fallback_warnings(quality, upstream_error)
-        return cached_bars, DataQuality(
-            source="local-cache",
-            is_complete=True,
-            warnings=warnings,
-            rows=len(cached_bars),
+        return cached_bars, assess_market_data_quality(
+            request,
+            cached_bars,
+            DataQuality(
+                source="local-cache",
+                is_complete=True,
+                warnings=warnings,
+                rows=len(cached_bars),
+            ),
         )
 
     if quality is not None:
@@ -628,6 +643,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     audit_signing_keys_json = os.environ.get("AIQT_AUDIT_SIGNING_KEYS_JSON", "")
     execution_adapter_health_exchange_factory = None
     execution_adapter_health_environ = None
+    monitoring_environ = None
+    data_foundation_environ = None
     stage6_sandbox_route_factory = None
     stage9_production_admission_route_factory = None
     p0_acceptance_report_path = DEFAULT_P0_ACCEPTANCE_REPORT_PATH
@@ -961,6 +978,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     data_limit=_p0_data_limit_from_payload(payload),
                     strategy_snapshot=strategy_snapshot,
                     data_preparation_evidence=data_preparation_evidence,
+                    comparison_adapter=self._comparison_market_data_adapter(market, timeframe),
                 )
                 if not workspace.research_run:
                     raise ValueError("p0_pipeline_run_missing")
@@ -1182,6 +1200,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 override_audit_event_id = _optional_audit_event_id(payload.get("overrideAuditEventId"))
                 request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe)
                 bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
+                quality = assess_market_data_quality(request, bars, quality)
                 self._record_adapter_error_if_needed(request, quality=quality, context="cache-refresh")
                 upserted_rows = self.cache.upsert_bars(bars) if quality.is_complete else 0
                 refresh_run = self.watchlist_cache_refresh_store.record(
@@ -1208,8 +1227,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send_json({"error": "invalid_cache_refresh", "detail": str(error)}, status=400)
                 return
-            quality_payload = asdict(quality)
-            quality_payload["isComplete"] = quality_payload.pop("is_complete")
+            quality_payload = data_quality_to_payload(quality)
             self._send_json(
                 {
                     "refresh": {
@@ -1243,6 +1261,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     try:
                         with kline_http_timeout(3):
                             bars, quality = self.kline_adapter.fetch_ohlcv(request, limit=limit)
+                            quality = assess_market_data_quality(request, bars, quality)
                         return request, bars, quality, None
                     except Exception as error:
                         return request, [], None, str(error)
@@ -5334,6 +5353,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/execution/auto-paper-trading":
             self._send_json(self._auto_paper_trading_service().snapshot())
             return
+        if parsed.path == "/api/operations/monitoring":
+            self._send_json(self._monitoring_service().snapshot())
+            return
         if parsed.path == "/api/execution/stage10/production-trading-credential-preflights":
             try:
                 preflight = self._stage10_production_execution_service().latest_credential_preflight()
@@ -5910,21 +5932,28 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 symbol=symbol,
                 timeframe=timeframe,
             )
-            workspace = run_terminal_research(
-                market=market,
-                symbol=symbol,
-                timeframe=timeframe,
-                adapter=self.kline_adapter,
-                assistant=self.assistant,
-                engine=_backtest_engine_from_query(query),
-                cache=self.cache,
-                run_store=self.run_store,
-                data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
-                data_end=data_end,
-                strategy_snapshot=strategy_snapshot,
-                research_note=research_note,
-                data_preparation_evidence=data_preparation_evidence,
-            )
+            try:
+                workspace = run_terminal_research(
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    adapter=self.kline_adapter,
+                    assistant=self.assistant,
+                    engine=_backtest_engine_from_query(query),
+                    cache=self.cache,
+                    run_store=self.run_store,
+                    data_limit=_parse_research_data_limit(query.get("limit", ["500"])[0]),
+                    data_end=data_end,
+                    strategy_snapshot=strategy_snapshot,
+                    research_note=research_note,
+                    data_preparation_evidence=data_preparation_evidence,
+                    comparison_adapter=self._comparison_market_data_adapter(market, timeframe),
+                )
+            except ValueError as error:
+                detail = str(error)
+                status = 409 if detail.startswith(("research_data_quality_blocked", "research_cross_source")) else 400
+                self._send_json({"error": "research_run_blocked", "detail": detail}, status=status)
+                return
             if workspace.research_run:
                 strategy = strategy_config_from_snapshot(
                     workspace.strategy,
@@ -6269,7 +6298,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     def _auto_paper_trading_service(self) -> AutoPaperTradingService:
         return _build_auto_paper_trading_service(type(self))
 
+    def _monitoring_service(self) -> MonitoringService:
+        return _build_monitoring_service(type(self))
+
     def _settings_status_payload(self) -> dict[str, object]:
+        environment = self._data_foundation_environment()
         return build_settings_status(
             cache_path=self.cache.path,
             cache_contexts=self.cache.contexts(limit=8),
@@ -6279,7 +6312,20 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 market_data_adapter_error_event_to_payload(event)
                 for event in self.adapter_error_store.list_recent(limit=50)
             ],
+            free_stockdb_url=str(environment.get("AIQT_FREE_STOCKDB_URL") or ""),
         )
+
+    def _data_foundation_environment(self) -> dict[str, str]:
+        configured = self.data_foundation_environ
+        return configured if isinstance(configured, dict) else os.environ
+
+    def _comparison_market_data_adapter(self, market: str, timeframe: str):
+        if market != "ashare" or timeframe != "1d":
+            return None
+        try:
+            return build_free_stockdb_adapter(self._data_foundation_environment())
+        except ValueError:
+            return None
 
     def _record_adapter_error_if_needed(
         self,
@@ -6905,6 +6951,34 @@ def build_auto_paper_trading_runner(
     )
 
 
+def _build_monitoring_service(
+    handler_type: type[QuantApiHandler],
+) -> MonitoringService:
+    notifier, channel = build_webhook_notifier(handler_type.monitoring_environ)
+    return MonitoringService(
+        handler_type.audit_event_store,
+        notifier=notifier,
+        channel=channel,
+    )
+
+
+def build_monitoring_runner(
+    handler_type: type[QuantApiHandler] = QuantApiHandler,
+    *,
+    auto_trading_service: AutoPaperTradingService | None = None,
+    interval_seconds: float = 35,
+) -> MonitoringRunner:
+    observed_service = (
+        auto_trading_service
+        or _build_auto_paper_trading_service(handler_type)
+    )
+    return MonitoringRunner(
+        _build_monitoring_service(handler_type),
+        observed_service.snapshot,
+        interval_seconds=interval_seconds,
+    )
+
+
 def run(host: str | None = None, port: int | str | None = None) -> None:
     bind_host, bind_port = resolve_api_bind(host=host, port=port)
     factory = QuantApiHandler.stage6_sandbox_route_factory
@@ -6912,11 +6986,16 @@ def run(host: str | None = None, port: int | str | None = None) -> None:
     Stage6SandboxExecutionService(QuantApiHandler.audit_event_store, route).recover_active_batches()
     server = ThreadingHTTPServer((bind_host, bind_port), QuantApiHandler)
     auto_trading_runner = build_auto_paper_trading_runner()
+    monitoring_runner = build_monitoring_runner(
+        auto_trading_service=auto_trading_runner.service,
+    )
     try:
         auto_trading_runner.start()
+        monitoring_runner.start()
         print(f"quant-core API listening on http://{bind_host}:{bind_port}")
         server.serve_forever()
     finally:
+        monitoring_runner.stop()
         auto_trading_runner.stop()
         server.server_close()
 
@@ -7574,14 +7653,10 @@ def _equity_curve_from_audit(audit: ResearchRunAudit) -> list[EquityPoint]:
 
 def _data_quality_from_audit(audit: ResearchRunAudit) -> DataQuality:
     quality = audit.data_quality if isinstance(audit.data_quality, dict) else {}
-    raw_warnings = quality.get("warnings", [])
-    warnings = [str(warning) for warning in raw_warnings] if isinstance(raw_warnings, list) else []
-    return DataQuality(
-        source=str(quality.get("source") or "unknown"),
-        is_complete=bool(quality.get("isComplete", quality.get("is_complete", False))),
-        warnings=warnings,
-        rows=int(_number_or_default(quality.get("rows"), audit.data_rows)),
-    )
+    return data_quality_from_payload({
+        **quality,
+        "rows": int(_number_or_default(quality.get("rows"), audit.data_rows)),
+    })
 
 
 def _strategy_snapshot_from_query(query: dict[str, list[str]]) -> StrategySnapshot | None:

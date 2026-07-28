@@ -5,6 +5,7 @@ from importlib.util import find_spec
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 _PROVIDER_ERROR_CATEGORIES = ("rate_limit", "dependency", "network", "upstream", "incomplete_data", "unknown")
 _PROVIDER_ERROR_CATEGORY_PRIORITY = {category: index for index, category in enumerate(_PROVIDER_ERROR_CATEGORIES)}
@@ -24,6 +25,7 @@ def build_settings_status(
     ccxt_exchange: str | None = None,
     adapter_dependency_statuses: dict[str, bool] | None = None,
     adapter_error_events: list[dict[str, Any]] | None = None,
+    free_stockdb_url: str | None = None,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a read-only platform settings status payload without returning secrets."""
@@ -81,6 +83,7 @@ def build_settings_status(
             cache_context_payloads,
             adapter_dependency_statuses=adapter_dependency_statuses,
             adapter_error_events=adapter_error_events,
+            free_stockdb_url=free_stockdb_url,
             generated_at=generated_timestamp,
         ),
         "cache": {
@@ -149,6 +152,7 @@ def _market_data_adapter_statuses(
     *,
     adapter_dependency_statuses: dict[str, bool] | None,
     adapter_error_events: list[dict[str, Any]] | None,
+    free_stockdb_url: str | None,
     generated_at: datetime,
 ) -> list[dict[str, Any]]:
     akshare_telemetry = _market_data_adapter_external_telemetry(
@@ -172,6 +176,10 @@ def _market_data_adapter_statuses(
         adapter_error_events=adapter_error_events,
         generated_at=generated_at,
     )
+    free_stockdb_telemetry = _free_stockdb_external_telemetry(
+        free_stockdb_url,
+        generated_at=generated_at,
+    )
     return [
         {
             "id": "akshare-ohlcv",
@@ -182,6 +190,11 @@ def _market_data_adapter_statuses(
             "route": "public_ohlcv",
             "capabilities": ["stock_zh_a_hist", "stock_zh_a_hist_min_em"],
             "timeframes": ["1d", "1w", "1m", "5m", "15m", "30m", "60m"],
+            "historyDepth": "up-to-500-bars-per-request",
+            "adjustmentModes": ["qfq", "none"],
+            "freshnessSemantics": "market-calendar-aware",
+            "credentialRequirements": [],
+            "readOnly": True,
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
@@ -198,6 +211,11 @@ def _market_data_adapter_statuses(
             "route": "public_ohlcv",
             "capabilities": ["Ticker.history"],
             "timeframes": ["1d", "1w", "1m", "5m", "15m", "30m", "60m"],
+            "historyDepth": "up-to-500-bars-per-request",
+            "adjustmentModes": ["none"],
+            "freshnessSemantics": "market-calendar-aware",
+            "credentialRequirements": [],
+            "readOnly": True,
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
@@ -214,6 +232,11 @@ def _market_data_adapter_statuses(
             "route": "public_ohlcv",
             "capabilities": ["fetch_ohlcv"],
             "timeframes": ["1d", "1w", "1m", "5m", "15m", "30m", "60m"],
+            "historyDepth": "up-to-500-bars-per-request",
+            "adjustmentModes": ["none"],
+            "freshnessSemantics": "continuous-market",
+            "credentialRequirements": [],
+            "readOnly": True,
             "requiresApiKey": False,
             "requiresTradingKey": False,
             "cacheScope": "ohlcv",
@@ -221,7 +244,80 @@ def _market_data_adapter_statuses(
             "externalTelemetry": ccxt_telemetry,
             "note": "Normalizes public crypto exchange OHLCV; exchange trading keys stay outside this route.",
         },
+        {
+            "id": "free-stockdb-ohlcv",
+            "market": "ashare",
+            "adapter": "FreeStockDbMarketDataAdapter",
+            "provider": "free-stockdb",
+            "status": _market_data_adapter_status_from_telemetry(free_stockdb_telemetry),
+            "route": "local_readonly_ohlcv",
+            "capabilities": ["daily_ohlcv_comparison"],
+            "timeframes": ["1d"],
+            "historyDepth": "up-to-500-bars-per-request",
+            "adjustmentModes": ["none"],
+            "freshnessSemantics": "local-snapshot",
+            "credentialRequirements": [],
+            "readOnly": True,
+            "requiresApiKey": False,
+            "requiresTradingKey": False,
+            "cacheScope": "comparison-only",
+            "cacheDiagnostics": _market_data_adapter_cache_diagnostics("ashare", cache_contexts),
+            "externalTelemetry": free_stockdb_telemetry,
+            "note": (
+                "Optional local A-share daily comparison source; it never replaces the primary source "
+                "and this integration never calls sync or write commands."
+            ),
+        },
     ]
+
+
+def _free_stockdb_external_telemetry(
+    value: str | None,
+    *,
+    generated_at: datetime,
+) -> dict[str, Any]:
+    raw_url = str(value or "").strip()
+    parsed = urlparse(raw_url) if raw_url else None
+    valid = bool(parsed and parsed.scheme in {"http", "https"} and parsed.netloc)
+    configured = bool(raw_url)
+    status = "degraded" if valid else "blocked"
+    reason = "configured_not_probed" if valid else "endpoint_invalid" if configured else "endpoint_not_configured"
+    return {
+        "status": status,
+        "dependency": "free-stockdb-local-service",
+        "dependencyAvailable": valid,
+        "lastError": None if valid else reason,
+        "retryState": "idle" if valid else "dependency_missing",
+        "checkedAt": generated_at.isoformat(),
+        "installGuidance": {
+            "packageName": "free-stockdb",
+            "dockerBuildArg": "",
+            "packageInstallCommand": "",
+            "projectExtraInstallCommand": "",
+            "note": "Configure the optional local read-only endpoint with AIQT_FREE_STOCKDB_URL.",
+        },
+        "lastProviderError": None,
+        "providerHealth": {
+            "status": "watch" if valid else "blocked",
+            "recentErrorCount": 0,
+            "lastErrorAt": None,
+            "affectedSymbols": [],
+            "affectedContexts": [],
+            "categorySummary": {category: 0 for category in _PROVIDER_ERROR_CATEGORIES},
+            "dominantCategory": None,
+            "windowSummary": {
+                window: {
+                    "errorCount": 0,
+                    "latestErrorAt": None,
+                    "categorySummary": {category: 0 for category in _PROVIDER_ERROR_CATEGORIES},
+                    "dominantCategory": None,
+                }
+                for window in _PROVIDER_ERROR_WINDOWS
+            },
+            "retryAfterSeconds": 0,
+            "reason": reason,
+        },
+    }
 
 
 def _market_data_adapter_external_telemetry(

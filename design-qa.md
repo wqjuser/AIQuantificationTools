@@ -741,3 +741,28 @@ final result: passed
 - 验证过程没有点击立即评估、对账、暂停、急停、模式切换或任何订单操作，没有调用外部 AI，没有提交 Testnet 或 Production 委托，也没有新增仓库 PNG。Issue #22 继续保留给 M2 至 M6，M1 本身退出。
 
 final result: passed
+
+## 2026-07-28 M2 服务端监控告警退出复验
+
+- 按 GitHub Issue #22、ADR 0023、当前代码和未提交 diff 核对 M2：API 内独立只读观察者持久化任务 ID、最近轮次、最近成功、最近错误、连续失败和下次可运行时间；自动交易状态被投影为受观察任务，没有复制评估或订单逻辑。
+- 稳定事件覆盖未决委托、账户不一致、风险或权限暂停、行情/AI/评估错误、委托拒绝、连续失败、心跳中断和运行器停止。同一发生周期只写一次开启投递和一次恢复投递，恢复后再次出现增加发生次数；服务对象重建不会重复投递活动事件。
+- 首个外部渠道为可选 Webhook。URL 只来自 API 环境变量且不会进入 API、审计或页面；投递失败记录在监控任务和投递证据中，不改变自动交易快照、事件生命周期、风险、授权、对账或委托状态。未配置和配置无效均 fail closed。
+- Python 全量 `774 / 774`、Web 全量 `1075 / 1075`、生产构建、API/Web Docker 镜像构建和 `git diff --check` 通过；构建仅保留既知 chunk-size 提示。
+- 使用独立 Compose 项目 `aiqt-m2-acceptance`、独立数据卷、`5174` 端口并显式清空 Sandbox、生产只读、生产交易、AI 和 Webhook 凭据完成 Docker smoke。基础状态为 `Paper / disabled`，`tradingActionsAvailable=false`；API 重启后监控轮次从 `2` 增至 `3`，受观察任务仍为 `1`，实盘交易、订单提交与路由执行均为关闭。验收结束后只删除该临时项目及临时数据卷。
+- 真实页面 `http://127.0.0.1:5174/?workspace=execution&market=crypto&symbol=BTC%2FUSDT&timeframe=1m` 在 `1280 × 720` 深色主题下显示“服务端监控正常”、`0` 个待恢复事件、连续调度下次时间、Webhook 未配置和折叠运行证据；页面宽度与视口均为 `1280`，无横向溢出，控制台 `0 error / 0 warning`。
+- 页面验收只展开“查看执行前置步骤”和“运行与投递证据”，没有点击保存、立即评估、对账、模式切换、急停、生产准入、测试网投单或任何订单操作，也没有调用外部 AI、Webhook、Testnet 或 Production。原 `5173` Testnet 容器未替换、未重启，`api + web` 继续 healthy。
+
+final result: passed
+
+## 2026-07-28 M3 数据基础与快照质量退出复验
+
+- 按 GitHub Issue #22、ADR 0024、当前代码和未提交 diff 核对 M3：设置状态与页面展示市场、周期、历史深度、复权、时效、凭据和只读边界；统一质量检查覆盖重复、乱序、非法 OHLC、非有限值、缺口、形成状态、时效、日历与规范哈希。
+- A 股日线跨源报告明确区分一致、警告、阻断和不可用，固定 `valuesMerged=false`；结构错误或材料差异会在回测和 AI 前阻断。free-stockdb 仅使用可选本地只读 GET 协议，不调用同步或写命令，不替换主来源，端点也不进入响应。
+- 冻结数据聚焦 `10 / 10`、Python 全量 `785 / 785`（另含 `752` 个子测试）、设置组件与布局聚焦 `212 / 212`、Web 全量 `1077 / 1077` 和生产构建通过；仅保留既知 chunk-size 提示。
+- 使用独立 Compose 项目 `aiqt-m3-acceptance`、独立数据卷和 `5174` 端口，显式清空交易、AI、Webhook 与 free-stockdb 配置。API 与 Web 均 healthy，能力矩阵返回 `4` 个条目；free-stockdb 保持 `blocked`、只读、无需凭据和 `comparison-only`。
+- 隔离环境只通过 API 运行一次 A 股 `600000 · 1d` 研究。运行 `run-9134f1622061` 保存 `120` 行腾讯前复权日线，规范内容哈希为 `d6226c9a4ee0d885ab5f85bc1800ec7bf50012f8d1b752e9d40c9f0fc6c0527a`，快照身份为 `673f9d4dc3399c420ac840b993db8101f0bf629770c5276b66624b8394092717`；隔离 API 重启后仍可回读，离线回放为哈希已验证且无需网络。
+- 真实设置页 `http://127.0.0.1:5174/?workspace=settings&market=ashare&symbol=600000&timeframe=1d` 在 `1280 × 720` 下展示核心服务返回的 `4` 行、`7` 列能力矩阵，不再把静态 Tencent、Eastmoney 或 Finnhub 表冒充健康状态。真实研究页展示 `qfq · fresh`、覆盖率、未配置第二来源、完整快照身份、市场日历和“哈希已验证 · 无需网络”。
+- 两页页面与工作区横向溢出均为 `0px`，浏览器控制台 `0 error / 0 warning`。页面复验没有点击运行研究、保存、AI 评审、模式切换、急停或任何订单操作，没有新增仓库 PNG。
+- 原 `5173` Testnet 容器未替换、未重启，继续保持 `enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 和 `liveBlockedBoundary=true`。验收结束后只删除隔离项目及其临时数据卷。
+
+final result: passed

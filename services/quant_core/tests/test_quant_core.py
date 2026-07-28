@@ -1170,6 +1170,72 @@ class QuantCoreContractTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Invalid /api/workspace response"):
             docker_smoke.validate_workspace_payload({"schemaVersion": 1, "watchlist": []})
 
+    def test_docker_smoke_validates_read_only_m2_monitoring_payload(self):
+        docker_smoke = self._load_docker_smoke_module()
+
+        summary = docker_smoke.validate_monitoring_payload({
+            "schemaVersion": 1,
+            "status": "healthy",
+            "job": {"jobId": "server-monitoring"},
+            "observedJobs": [{"jobId": "auto-trading:crypto:BTC-USDT:1m"}],
+            "activeIncidents": [],
+            "channel": {"status": "unconfigured"},
+            "tradingActionsAvailable": False,
+        })
+
+        self.assertEqual(
+            summary,
+            "monitoring status=healthy job=server-monitoring incidents=0 channel=unconfigured",
+        )
+        with self.assertRaisesRegex(RuntimeError, "persisted read-only state is missing"):
+            docker_smoke.validate_monitoring_payload({
+                "schemaVersion": 1,
+                "job": {"jobId": "server-monitoring"},
+                "observedJobs": [],
+                "channel": {"status": "ready"},
+                "tradingActionsAvailable": True,
+            })
+
+    def test_docker_smoke_validates_m3_data_foundation_capability_matrix(self):
+        docker_smoke = self._load_docker_smoke_module()
+        common = {
+            "market": "ashare",
+            "timeframes": ["1d"],
+            "historyDepth": "up-to-500-bars-per-request",
+            "adjustmentModes": ["none"],
+            "freshnessSemantics": "market-calendar-aware",
+            "credentialRequirements": [],
+            "readOnly": True,
+        }
+        summary = docker_smoke.validate_data_foundation_payload({
+            "settings": {
+                "marketDataAdapters": [
+                    {"id": "akshare-ohlcv", "status": "ready", "requiresTradingKey": False, **common},
+                    {
+                        "id": "free-stockdb-ohlcv",
+                        "status": "blocked",
+                        "requiresTradingKey": False,
+                        **common,
+                    },
+                ],
+            },
+        })
+
+        self.assertEqual(summary, "data-foundation adapters=2 free-stockdb=blocked read-only=True")
+        with self.assertRaisesRegex(RuntimeError, "free-stockdb is not isolated as read-only"):
+            docker_smoke.validate_data_foundation_payload({
+                "settings": {
+                    "marketDataAdapters": [
+                        {
+                            "id": "free-stockdb-ohlcv",
+                            "status": "ready",
+                            "requiresTradingKey": True,
+                            **{**common, "readOnly": False},
+                        },
+                    ],
+                },
+            })
+
     def test_docker_smoke_compose_up_args_support_optional_build(self):
         docker_smoke = self._load_docker_smoke_module()
 
@@ -7418,7 +7484,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(cache_contexts[1]["rowCount"], 1)
         self.assertIn(cache_contexts[1]["freshness"], ["fresh", "stale"])
         self.assertIsInstance(cache_contexts[1]["ageHours"], int)
-        self.assertEqual(len(market_data_adapters), 3)
+        self.assertEqual(len(market_data_adapters), 4)
         self.assertEqual(akshare_adapter["market"], "ashare")
         self.assertEqual(akshare_adapter["adapter"], "AkShareMarketDataAdapter")
         self.assertIn(akshare_adapter["status"], ["ready", "blocked"])
@@ -31194,6 +31260,7 @@ class QuantCoreContractTest(unittest.TestCase):
         payload = market_klines_to_payload("ashare", "600000", "1d", bars, quality)
 
         self.assertEqual(quality.source, "tencent")
+        self.assertEqual(quality.adjustment_mode, "qfq")
         self.assertEqual(quality.rows, 2)
         self.assertEqual(bars[-1].close, 9.27)
         self.assertEqual(payload["bars"][-1]["timestampMs"], int(bars[-1].timestamp.timestamp() * 1000))

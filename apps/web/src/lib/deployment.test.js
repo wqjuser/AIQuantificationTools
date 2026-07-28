@@ -300,6 +300,10 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("CCXT_PRODUCTION_TRADING_API_KEY: ${CCXT_PRODUCTION_TRADING_API_KEY:-}");
     expect(compose).toContain("CCXT_PRODUCTION_TRADING_SECRET: ${CCXT_PRODUCTION_TRADING_SECRET:-}");
     expect(compose).toContain("AIQT_ENABLE_PRODUCTION_TRADING: ${AIQT_ENABLE_PRODUCTION_TRADING:-false}");
+    expect(compose).toContain("AIQT_MONITORING_WEBHOOK_URL: ${AIQT_MONITORING_WEBHOOK_URL:-}");
+    expect(compose).toContain("AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS: ${AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS:-5}");
+    expect(compose).toContain("AIQT_FREE_STOCKDB_URL: ${AIQT_FREE_STOCKDB_URL:-}");
+    expect(compose).toContain("AIQT_FREE_STOCKDB_TIMEOUT_SECONDS: ${AIQT_FREE_STOCKDB_TIMEOUT_SECONDS:-3}");
     expect(compose).toContain("HTTPS_PROXY: ${HTTPS_PROXY:-}");
     expect(compose).toContain("quant-data:/app/data");
     expect(compose).toContain("${AIQT_WEB_PORT:-5173}:80");
@@ -344,6 +348,36 @@ describe("docker deployment contract", () => {
     expect(webService).not.toContain("HTTPS_PROXY");
     expect(example).toContain("HTTPS_PROXY=\n");
     expect(example).toContain("http://host.docker.internal:7890");
+  });
+
+  test("passes the optional M2 monitoring webhook to the API service only", () => {
+    const compose = readRepoFile("compose.yaml");
+    const apiService = composeService(compose, "api");
+    const webService = composeService(compose, "web");
+    const example = readRepoFile(".env.example");
+
+    expect(apiService).toContain("AIQT_MONITORING_WEBHOOK_URL: ${AIQT_MONITORING_WEBHOOK_URL:-}");
+    expect(apiService).toContain(
+      "AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS: ${AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS:-5}",
+    );
+    expect(webService).not.toContain("AIQT_MONITORING_WEBHOOK_URL");
+    expect(example).toContain("AIQT_MONITORING_WEBHOOK_URL=\n");
+    expect(example).not.toContain("https://hooks.example");
+  });
+
+  test("passes the optional M3 free-stockdb read-only endpoint to the API service only", () => {
+    const compose = readRepoFile("compose.yaml");
+    const apiService = composeService(compose, "api");
+    const webService = composeService(compose, "web");
+    const example = readRepoFile(".env.example");
+
+    expect(apiService).toContain("AIQT_FREE_STOCKDB_URL: ${AIQT_FREE_STOCKDB_URL:-}");
+    expect(apiService).toContain(
+      "AIQT_FREE_STOCKDB_TIMEOUT_SECONDS: ${AIQT_FREE_STOCKDB_TIMEOUT_SECONDS:-3}",
+    );
+    expect(webService).not.toContain("AIQT_FREE_STOCKDB_URL");
+    expect(example).toContain("AIQT_FREE_STOCKDB_URL=\n");
+    expect(example).toContain("不调用同步、写入或计算命令");
   });
 
   test("documents safe Stage 3 provider defaults in Chinese", () => {

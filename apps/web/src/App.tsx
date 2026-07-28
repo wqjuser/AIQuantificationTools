@@ -15585,6 +15585,7 @@ export function App() {
           action={terminalSurfaceAction}
           activeWorkAreaId={activeWorkAreaId}
           adapterRows={brokerAdapterRows}
+          dataAdapters={settingsStatus.settings?.marketDataAdapters}
           aiReview={{
             busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3
               || isAppendingAiReviewStage3Decision || isStrategyExperimentRunning,
@@ -24060,6 +24061,20 @@ function PlatformSettingsPanel({
                 {marketDataAdapterCacheDiagnosticsLabel(i18n, row.cacheDiagnostics)} · {row.capabilities.join(" / ")} ·{" "}
                 {row.timeframes.join(" / ")}
               </small>
+              {row.historyDepth ? (
+                <small>
+                  {i18n.locale === "zh-CN" ? "历史深度" : "History"} {row.historyDepth} ·{" "}
+                  {i18n.locale === "zh-CN" ? "复权" : "Adjustment"} {(row.adjustmentModes ?? ["none"]).join(" / ")} ·{" "}
+                  {i18n.locale === "zh-CN" ? "时效" : "Freshness"} {row.freshnessSemantics ?? "unknown"} ·{" "}
+                  {row.readOnly
+                    ? i18n.locale === "zh-CN"
+                      ? "只读"
+                      : "Read only"
+                    : i18n.locale === "zh-CN"
+                      ? "可写"
+                      : "Writable"}
+                </small>
+              ) : null}
               <MarketDataProviderHealthTrendStrip i18n={i18n} health={row.externalTelemetry.providerHealth} />
               {row.externalTelemetry.lastProviderError ? (
                 <small>{marketDataAdapterProviderErrorLabel(i18n, row.externalTelemetry.lastProviderError)}</small>

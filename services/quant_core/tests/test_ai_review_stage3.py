@@ -3048,6 +3048,7 @@ class _AiReviewStage3Fixture:
         strategy: dict[str, Any] | None = None,
         status: str = "completed",
         parameter_value: int = 20,
+        data_quality: dict[str, Any] | None = None,
     ) -> None:
         strategy = strategy or _strategy()
         market = str(strategy["market"])
@@ -3129,7 +3130,9 @@ class _AiReviewStage3Fixture:
                 metrics={"totalReturnPct": 1.0},
                 decisions=[],
                 execution_mode="paper_only",
-                data_quality={"source": "fixture", "isComplete": True, "warnings": [], "rows": len(bars)},
+                data_quality=data_quality
+                if data_quality is not None
+                else {"source": "fixture", "isComplete": True, "warnings": [], "rows": len(bars)},
                 data_snapshot={
                     "source": "fixture",
                     "isComplete": True,
@@ -3450,6 +3453,35 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
         self.assertEqual(
             bundle["evidenceHash"],
             canonical_sha256({key: value for key, value in bundle.items() if key != "evidenceHash"}),
+        )
+
+    def test_projects_m3_data_quality_into_existing_ai_evidence_contract(self) -> None:
+        self._record_experiment(
+            "m3-quality",
+            seed=71,
+            data_quality={
+                "source": "fixture",
+                "originSource": "fixture",
+                "isComplete": True,
+                "warnings": [],
+                "rows": len(_bars(71)),
+                "observedAt": "2026-07-10T00:00:00+00:00",
+                "marketTime": "2026-07-10T00:00:00+00:00",
+                "calendarId": "ashare",
+                "adjustmentMode": "qfq",
+                "freshness": "fresh",
+                "coverage": {"actualRows": len(_bars(71))},
+                "canonicalHash": "a" * 64,
+                "issues": [],
+            },
+        )
+
+        bundle = self.assembler.assemble("m3-quality", [])
+        value = next(item["value"] for item in bundle["evidenceItems"] if item["kind"] == "data_quality")
+
+        self.assertEqual(
+            set(value),
+            {"source", "isComplete", "warnings", "rows", "canonicalDataHash", "startAt", "endAt"},
         )
 
     def test_assembles_four_comparisons_in_user_order_with_stable_hash(self) -> None:

@@ -192,6 +192,75 @@ interface AutoTradingSnapshot {
   liveBlockedBoundary: boolean;
 }
 
+interface MonitoringIncident {
+  incidentId: string;
+  incidentKey: string;
+  status: "active" | "resolved";
+  severity: "warning" | "critical";
+  title: string;
+  detail: string;
+  nextAction: string;
+  openedAt: string;
+  resolvedAt: string | null;
+  occurrenceCount: number;
+}
+
+interface MonitoringJob {
+  jobId: string;
+  runnerState: "running" | "stopping" | "stopped";
+  cycleCount: number;
+  consecutiveFailures: number;
+  lastCycleAt: string | null;
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  nextEligibleRunAt: string | null;
+  deliveryFailureCount: number;
+  lastDeliveryErrorAt: string | null;
+  lastDeliveryError: string | null;
+  health: { status: string; detail: string };
+}
+
+interface MonitoringObservedJob {
+  jobId: string;
+  status: string;
+  runnerState: string;
+  scheduleKind: "continuous" | "market_calendar";
+  calendarStatus: string;
+  lastCycleAt: string | null;
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  nextEligibleRunAt: string | null;
+}
+
+interface MonitoringSnapshot {
+  schemaVersion: 1;
+  status: "healthy" | "attention" | "degraded" | "waiting";
+  reason: string;
+  nextAction: string;
+  job: MonitoringJob;
+  observedJobs: MonitoringObservedJob[];
+  activeIncidents: MonitoringIncident[];
+  incidents: MonitoringIncident[];
+  notifications: Array<{
+    eventId: string;
+    createdAt: string;
+    metadata: {
+      lifecycle?: "active" | "recovered";
+      deliveryStatus?: string;
+    };
+  }>;
+  channel: {
+    type: "webhook";
+    configured: boolean;
+    status: "ready" | "unconfigured" | "invalid";
+    configurationError: string | null;
+  };
+  tradingActionsAvailable: false;
+}
+
 type Draft = Pick<
   AutoTradingState,
   "triggerPct" | "orderNotional" | "stopLossPct" | "takeProfitPct" | "dailyLossLimitPct"
@@ -657,6 +726,84 @@ export function AutoTradingRuntimeHealth({
   );
 }
 
+export function AutoTradingServerMonitoring({
+  error,
+  snapshot
+}: {
+  error?: string | null;
+  snapshot?: MonitoringSnapshot | null;
+}) {
+  const tone = error || snapshot?.status === "degraded"
+    ? "danger"
+    : snapshot?.status === "attention" ? "warning"
+      : snapshot?.status === "healthy" ? "healthy" : "waiting";
+  const active = snapshot?.activeIncidents[0];
+  const observed = snapshot?.observedJobs.find((job) => job.jobId.startsWith("auto-trading:"));
+  const recoveredCount = snapshot?.notifications.filter(
+    (item) => item.metadata.lifecycle === "recovered"
+  ).length ?? 0;
+  const channelLabel = snapshot?.channel.status === "ready"
+    ? "Webhook 已就绪"
+    : snapshot?.channel.status === "invalid"
+      ? "Webhook 配置无效" : "Webhook 未配置";
+
+  return (
+    <section className={`execution-auto-server-monitoring ${tone}`}
+      aria-label="服务端监控告警">
+      <header>
+        <div>
+          <span>M2 · 服务端告警</span>
+          <strong>{error ? "监控状态读取失败" : snapshot?.reason ?? "等待服务端监控状态"}</strong>
+        </div>
+        <em>{snapshot?.activeIncidents.length ?? 0} 个待恢复事件</em>
+      </header>
+      <p>{error ?? snapshot?.nextAction ?? "本区域只读取运行状态，不执行评估、对账或委托。"}</p>
+      <dl>
+        <div>
+          <dt>监控任务</dt>
+          <dd title={snapshot?.job.health.detail ?? "等待首次运行"}>
+            {snapshot?.job.health.detail ?? "等待首次运行"}
+          </dd>
+        </div>
+        <div>
+          <dt>下次可运行</dt>
+          <dd title={formatTime(observed?.nextEligibleRunAt ?? snapshot?.job.nextEligibleRunAt)}>
+            {formatTime(observed?.nextEligibleRunAt ?? snapshot?.job.nextEligibleRunAt)}
+          </dd>
+        </div>
+        <div>
+          <dt>外部渠道</dt>
+          <dd title={channelLabel}>{channelLabel}</dd>
+        </div>
+        <div>
+          <dt>已恢复提醒</dt>
+          <dd title={`${recoveredCount} 条`}>{recoveredCount} 条</dd>
+        </div>
+      </dl>
+      {active ? (
+        <div className="execution-auto-server-incident" role="alert">
+          <strong>{active.title}</strong>
+          <span>{active.detail}</span>
+          <small>下一步：{active.nextAction}</small>
+        </div>
+      ) : null}
+      <details>
+        <summary>运行与投递证据</summary>
+        <div>
+          <span>任务 ID：{snapshot?.job.jobId ?? "server-monitoring"}</span>
+          <span>累计轮次：{snapshot?.job.cycleCount ?? 0}</span>
+          <span>最近成功：{formatTime(snapshot?.job.lastSuccessAt)}</span>
+          <span>连续失败：{snapshot?.job.consecutiveFailures ?? 0}</span>
+          <span>投递失败：{snapshot?.job.deliveryFailureCount ?? 0}</span>
+          {snapshot?.job.lastError ? <span>最近错误：{snapshot.job.lastError}</span> : null}
+          {snapshot?.job.lastDeliveryError
+            ? <span>最近投递错误：{snapshot.job.lastDeliveryError}</span> : null}
+        </div>
+      </details>
+    </section>
+  );
+}
+
 export function ExecutionAutoPaperTradingSection({
   baseUrl,
   fetcher = defaultFetcher
@@ -665,10 +812,12 @@ export function ExecutionAutoPaperTradingSection({
   fetcher?: WorkspaceFetcher;
 }) {
   const [snapshot, setSnapshot] = useState<AutoTradingSnapshot | null>(null);
+  const [monitoring, setMonitoring] = useState<MonitoringSnapshot | null>(null);
   const [draft, setDraft] = useState<Draft>(defaultDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusReadError, setStatusReadError] = useState<string | null>(null);
+  const [monitoringReadError, setMonitoringReadError] = useState<string | null>(null);
   const [testnetConfirmed, setTestnetConfirmed] = useState(false);
   const [liveConfirmed, setLiveConfirmed] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<SystemNotificationPermission>(
@@ -677,7 +826,7 @@ export function ExecutionAutoPaperTradingSection({
   const requestInFlight = useRef(false);
   const lastNotificationKey = useRef<string | null>(null);
 
-  const request = useCallback(async (path: string, init?: RequestInit) => {
+  const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const response = await fetcher(buildApiUrl(baseUrl, path), init);
     const payload = await response.json();
     if (!response.ok) {
@@ -687,12 +836,12 @@ export function ExecutionAutoPaperTradingSection({
           : `HTTP ${response.status}`
       );
     }
-    return payload as AutoTradingSnapshot;
+    return payload as T;
   }, [baseUrl, fetcher]);
 
   const load = useCallback(async () => {
     try {
-      const next = await request("api/execution/auto-paper-trading");
+      const next = await request<AutoTradingSnapshot>("api/execution/auto-paper-trading");
       setSnapshot(next);
       setDraft({
         triggerPct: next.state.triggerPct,
@@ -716,13 +865,25 @@ export function ExecutionAutoPaperTradingSection({
     }
   }, [request]);
 
+  const refreshMonitoring = useCallback(async () => {
+    try {
+      setMonitoring(await request<MonitoringSnapshot>("api/operations/monitoring"));
+      setMonitoringReadError(null);
+    } catch (monitoringError) {
+      setMonitoringReadError(autoTradingErrorMessage(monitoringError));
+    }
+  }, [request]);
+
   const evaluate = useCallback(async () => {
     if (requestInFlight.current) {
       return;
     }
     requestInFlight.current = true;
     try {
-      setSnapshot(await request(autoTradingActionPath(snapshot?.state), { method: "POST" }));
+      setSnapshot(await request<AutoTradingSnapshot>(
+        autoTradingActionPath(snapshot?.state),
+        { method: "POST" }
+      ));
       setError(null);
       setStatusReadError(null);
     } catch (evaluationError) {
@@ -734,7 +895,7 @@ export function ExecutionAutoPaperTradingSection({
 
   const refresh = useCallback(async () => {
     try {
-      setSnapshot(await request("api/execution/auto-paper-trading"));
+      setSnapshot(await request<AutoTradingSnapshot>("api/execution/auto-paper-trading"));
       setError(null);
       setStatusReadError(null);
     } catch (refreshError) {
@@ -747,7 +908,7 @@ export function ExecutionAutoPaperTradingSection({
   const save = useCallback(async (enabled: boolean) => {
     setBusy(true);
     try {
-      const next = await request("api/execution/auto-paper-trading", {
+      const next = await request<AutoTradingSnapshot>("api/execution/auto-paper-trading", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...draft, enabled, testnetConfirmed, liveConfirmed })
@@ -764,11 +925,17 @@ export function ExecutionAutoPaperTradingSection({
     }
   }, [draft, liveConfirmed, request, testnetConfirmed]);
 
-  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const intervalId = window.setInterval(() => void refresh(), statusRefreshIntervalMs);
+    void load();
+    void refreshMonitoring();
+  }, [load, refreshMonitoring]);
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void refresh();
+      void refreshMonitoring();
+    }, statusRefreshIntervalMs);
     return () => window.clearInterval(intervalId);
-  }, [refresh]);
+  }, [refresh, refreshMonitoring]);
 
   const state = snapshot?.state;
   const notification = autoTradingNotification(state, Date.now(), statusReadError);
@@ -840,6 +1007,10 @@ export function ExecutionAutoPaperTradingSection({
               : notificationPermission === "denied" ? "系统提醒已关闭" : "系统通知不可用"}
         </button>
       </div>
+      <AutoTradingServerMonitoring
+        error={monitoringReadError}
+        snapshot={monitoring}
+      />
 
       <div className="execution-auto-paper-metrics">
         <article><span>五根涨跌幅</span><strong>{percent(state?.windowChangePct)}</strong></article>
@@ -1024,7 +1195,7 @@ function formatNumber(value?: number | null) {
     : "—";
 }
 
-function formatTime(value?: string) {
+function formatTime(value?: string | null) {
   if (!value) return "尚无时间";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime())

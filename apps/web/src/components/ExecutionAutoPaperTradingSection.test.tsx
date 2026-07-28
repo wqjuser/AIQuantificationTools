@@ -4,6 +4,7 @@ import {
   AutoTradingLedger,
   AutoTradingRiskOverview,
   AutoTradingRuntimeHealth,
+  AutoTradingServerMonitoring,
   autoTradingActionPath,
   autoTradingAttention,
   autoTradingErrorMessage,
@@ -26,6 +27,7 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("由后端每 35 秒");
     expect(html).toContain("关闭页面后仍会继续");
     expect(html).toContain("系统通知不可用");
+    expect(html).toContain("M2 · 服务端告警");
   });
 
   it("recognizes only unresolved testnet and production orders for manual reconciliation", () => {
@@ -422,6 +424,86 @@ describe("ExecutionAutoPaperTradingSection", () => {
 
     expect(html).toContain("后台心跳已中断");
     expect(html).not.toContain("后台运行正常");
+  });
+
+  it("leads with the persisted server incident and keeps technical evidence disclosed", () => {
+    const html = renderToStaticMarkup(
+      <AutoTradingServerMonitoring
+        snapshot={{
+          schemaVersion: 1,
+          status: "attention",
+          reason: "1 个服务端事件待恢复",
+          nextAction: "在执行中心使用“立即对账”核对原订单。",
+          job: {
+            jobId: "server-monitoring",
+            runnerState: "running",
+            cycleCount: 42,
+            consecutiveFailures: 0,
+            lastCycleAt: "2026-07-28T08:00:00Z",
+            lastSuccessAt: "2026-07-28T08:00:00Z",
+            lastErrorAt: null,
+            lastError: null,
+            nextEligibleRunAt: "2026-07-28T08:00:35Z",
+            deliveryFailureCount: 0,
+            lastDeliveryErrorAt: null,
+            lastDeliveryError: null,
+            health: { status: "running", detail: "服务端监控正常。" }
+          },
+          observedJobs: [{
+            jobId: "auto-trading:crypto:BTC-USDT:1m",
+            status: "order_pending",
+            runnerState: "running",
+            scheduleKind: "continuous",
+            calendarStatus: "always_open",
+            lastCycleAt: "2026-07-28T08:00:00Z",
+            lastSuccessAt: "2026-07-28T08:00:00Z",
+            lastErrorAt: null,
+            lastError: null,
+            consecutiveFailures: 0,
+            nextEligibleRunAt: "2026-07-28T08:00:35Z"
+          }],
+          activeIncidents: [{
+            incidentId: "incident-1",
+            incidentKey: "auto-trading:pending-order",
+            status: "active",
+            severity: "warning",
+            title: "自动委托等待对账",
+            detail: "系统将继续只读查询原订单，新委托保持阻断。",
+            nextAction: "在执行中心使用“立即对账”核对原订单。",
+            openedAt: "2026-07-28T08:00:00Z",
+            resolvedAt: null,
+            occurrenceCount: 1
+          }],
+          incidents: [],
+          notifications: [],
+          channel: {
+            type: "webhook",
+            configured: true,
+            status: "ready",
+            configurationError: null
+          },
+          tradingActionsAvailable: false
+        }}
+      />
+    );
+
+    expect(html).toContain("自动委托等待对账");
+    expect(html).toContain("下一步：在执行中心使用“立即对账”核对原订单。");
+    expect(html).toContain("Webhook 已就绪");
+    expect(html).toContain('title="服务端监控正常。"');
+    expect(html).toContain("<details>");
+    expect(html).toContain("任务 ID：server-monitoring");
+    expect(html).not.toContain("<button");
+  });
+
+  it("shows notification-channel failures without adding a trading action", () => {
+    const html = renderToStaticMarkup(
+      <AutoTradingServerMonitoring error="服务端告警状态读取失败。" />
+    );
+
+    expect(html).toContain("监控状态读取失败");
+    expect(html).toContain("服务端告警状态读取失败。");
+    expect(html).not.toContain("<button");
   });
 
   it("builds one stable notification for an unresolved order", () => {

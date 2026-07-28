@@ -5,7 +5,7 @@ import os
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import asdict
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
@@ -19,6 +19,7 @@ from quant_core.adapters import (
     YFinanceMarketDataAdapter,
 )
 from quant_core.domain import DataQuality, Market, MarketDataRequest, OHLCVBar, Timeframe
+from quant_core.data_foundation import data_quality_to_payload
 from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_crypto_symbol
 
 FetchText = Callable[[str, str], str]
@@ -106,12 +107,7 @@ class QuantDingerKlineAdapter:
             if (request.start is None or bar.timestamp >= request.start)
             and (request.end is None or bar.timestamp <= request.end)
         ][-bounded_limit:]
-        quality = DataQuality(
-            source=quality.source,
-            is_complete=quality.is_complete,
-            warnings=quality.warnings,
-            rows=len(bars),
-        )
+        quality = replace(quality, rows=len(bars))
         return self.cache.set(key, bars, quality)
 
     def _fetch_ashare_bars(self, request: MarketDataRequest, limit: int) -> tuple[list[OHLCVBar], DataQuality]:
@@ -124,17 +120,18 @@ class QuantDingerKlineAdapter:
                 and (request.end is None or bar.timestamp <= request.end)
             ][-limit:]
             if bars:
-                return bars, DataQuality(source="eastmoney", is_complete=True, warnings=[], rows=len(bars))
+                return bars, DataQuality(
+                    source="eastmoney",
+                    is_complete=True,
+                    warnings=[],
+                    rows=len(bars),
+                    adjustment_mode="none" if request.timeframe == "1m" else "qfq",
+                )
             try:
                 bars, quality = self.akshare_adapter.fetch_ohlcv(request, limit=limit)
                 if bars:
                     limited = bars[-limit:]
-                    return limited, DataQuality(
-                        source=quality.source,
-                        is_complete=quality.is_complete,
-                        warnings=quality.warnings,
-                        rows=len(limited),
-                    )
+                    return limited, replace(quality, rows=len(limited))
                 warning = "AkShare minute K-lines returned no chart bars"
                 if quality.warnings:
                     warning = f"{warning}; {'; '.join(quality.warnings)}"
@@ -147,12 +144,7 @@ class QuantDingerKlineAdapter:
                 bars, quality = self.akshare_adapter.fetch_ohlcv(request, limit=limit)
                 if bars:
                     limited = bars[-limit:]
-                    return limited, DataQuality(
-                        source=quality.source,
-                        is_complete=quality.is_complete,
-                        warnings=quality.warnings,
-                        rows=len(limited),
-                    )
+                    return limited, replace(quality, rows=len(limited))
                 warning = "AkShare historical K-lines returned no chart bars"
                 if quality.warnings:
                     warning = f"{warning}; {'; '.join(quality.warnings)}"
@@ -176,19 +168,20 @@ class QuantDingerKlineAdapter:
                 bars, quality = self.akshare_adapter.fetch_ohlcv(request, limit=limit)
                 if bars:
                     limited = bars[-limit:]
-                    return limited, DataQuality(
-                        source=quality.source,
-                        is_complete=quality.is_complete,
-                        warnings=quality.warnings,
-                        rows=len(limited),
-                    )
+                    return limited, replace(quality, rows=len(limited))
                 warning = "AkShare daily K-lines returned no chart bars"
                 if quality.warnings:
                     warning = f"{warning}; {'; '.join(quality.warnings)}"
             except Exception as exc:
                 warning = str(exc)
             return self._fallback(request, limit, f"Tencent fqkline returned no chart bars; {warning}")
-        return bars[-limit:], DataQuality(source="tencent", is_complete=True, warnings=[], rows=len(bars[-limit:]))
+        return bars[-limit:], DataQuality(
+            source="tencent",
+            is_complete=True,
+            warnings=[],
+            rows=len(bars[-limit:]),
+            adjustment_mode="qfq",
+        )
 
     def _fetch_eastmoney_ashare_minute_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:
         period = akshare_minute_period(request.timeframe)
@@ -263,12 +256,7 @@ class QuantDingerKlineAdapter:
             bars, quality = self.yfinance_adapter.fetch_ohlcv(request, limit=limit)
             if bars:
                 limited = bars[-limit:]
-                return limited, DataQuality(
-                    source=quality.source,
-                    is_complete=quality.is_complete,
-                    warnings=quality.warnings,
-                    rows=len(limited),
-                )
+                return limited, replace(quality, rows=len(limited))
             warning = "yfinance returned no chart bars"
             if quality.warnings:
                 warning = f"{warning}; {'; '.join(quality.warnings)}"
@@ -333,12 +321,7 @@ class QuantDingerKlineAdapter:
             bars, quality = self.ccxt_adapter.fetch_ohlcv(request, limit=limit)
             if bars:
                 limited = bars[-limit:]
-                return limited, DataQuality(
-                    source=quality.source,
-                    is_complete=quality.is_complete,
-                    warnings=quality.warnings,
-                    rows=len(limited),
-                )
+                return limited, replace(quality, rows=len(limited))
             warning = "ccxt returned no chart bars"
             if quality.warnings:
                 warning = f"{warning}; {'; '.join(quality.warnings)}"
@@ -706,13 +689,11 @@ def market_klines_to_payload(
     bars: list[OHLCVBar],
     quality: DataQuality,
 ) -> dict[str, object]:
-    quality_payload = asdict(quality)
-    quality_payload["isComplete"] = quality_payload.pop("is_complete")
     return {
         "market": market,
         "symbol": symbol,
         "timeframe": timeframe,
-        "quality": quality_payload,
+        "quality": data_quality_to_payload(quality),
         "bars": [bar_to_payload(bar) for bar in bars],
     }
 
