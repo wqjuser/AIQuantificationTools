@@ -787,6 +787,41 @@ describe("TerminalWorkspaceSurface", () => {
         workspace={completedWorkspace}
       />,
     );
+    const missingComparison = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="research"
+        workspace={{
+          ...completedWorkspace,
+          researchRun: {
+            ...completedWorkspace.researchRun,
+            dataSnapshot: {
+              ...completedWorkspace.researchRun.dataSnapshot,
+              sourceComparison: undefined,
+            },
+          },
+        }}
+      />,
+    );
+    const blockedComparison = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="research"
+        workspace={{
+          ...completedWorkspace,
+          researchRun: {
+            ...completedWorkspace.researchRun,
+            dataSnapshot: {
+              ...completedWorkspace.researchRun.dataSnapshot,
+              sourceComparison: {
+                ...completedWorkspace.researchRun.dataSnapshot.sourceComparison,
+                status: "blocked",
+              },
+            },
+          },
+        }}
+      />,
+    );
 
     expect(research).toContain("运行指标（审计证据）");
     expect(research).toContain("研究摘要（历史回测）");
@@ -805,6 +840,9 @@ describe("TerminalWorkspaceSurface", () => {
     expect(research).toContain("500 行重叠 · compariso…");
     expect(research).toContain("下一步");
     expect(research).toContain("无需处理");
+    expect(missingComparison).toContain('<span class="design-status positive">暂无对照数据</span>');
+    expect(missingComparison).toContain("无需处理");
+    expect(blockedComparison).toContain('<span class="design-status risk">差异阻断</span>');
     expect(research).toContain("哈希已验证 · 无需网络");
     expect(research).toContain("ashare:Asia/Shanghai:static-session-template");
     expect(research).toContain("decision-snapshot-hash-reference");

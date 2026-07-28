@@ -16,7 +16,7 @@ from quant_core.adapters import FreeStockDbMarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
 from quant_core.api import QuantApiHandler
 from quant_core.cache import MarketDataCache
-from quant_core.canonical import canonical_data_hash, normalize_snapshot_bars
+from quant_core.canonical import canonical_data_hash, canonical_sha256, normalize_snapshot_bars
 from quant_core.data_foundation import (
     assess_market_data_quality,
     build_cross_source_difference_report,
@@ -230,6 +230,23 @@ class M3DataFoundationTests(unittest.TestCase):
         tampered = {**blocked, "status": "agreement"}
         with self.assertRaisesRegex(ValueError, "source_comparison_hash_mismatch"):
             normalize_cross_source_difference_report(tampered)
+        for field, invalid_value in {
+            "primarySource": None,
+            "primaryRows": "3",
+            "overlapRatio": "1",
+            "fields": [],
+            "differences": {},
+            "reason": 0,
+        }.items():
+            with self.subTest(field=field):
+                malformed = {**blocked, field: invalid_value}
+                malformed["reportHash"] = canonical_sha256({
+                    key: value for key, value in malformed.items() if key != "reportHash"
+                })
+                with self.assertRaisesRegex(ValueError, "source_comparison_schema_invalid"):
+                    normalize_cross_source_difference_report(malformed)
+        with self.assertRaisesRegex(ValueError, "source_comparison_schema_invalid"):
+            normalize_cross_source_difference_report({**blocked, "reportHash": 1})
 
     def test_free_stockdb_adapter_only_uses_read_only_daily_get_protocol(self):
         calls = []

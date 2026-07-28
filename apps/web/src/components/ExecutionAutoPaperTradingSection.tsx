@@ -761,19 +761,23 @@ export function AutoTradingServerMonitoring({
       <dl>
         <div>
           <dt>监控任务</dt>
-          <dd>{snapshot?.job.health.detail ?? "等待首次运行"}</dd>
+          <dd title={snapshot?.job.health.detail ?? "等待首次运行"}>
+            {snapshot?.job.health.detail ?? "等待首次运行"}
+          </dd>
         </div>
         <div>
           <dt>下次可运行</dt>
-          <dd>{formatTime(observed?.nextEligibleRunAt ?? snapshot?.job.nextEligibleRunAt)}</dd>
+          <dd title={formatTime(observed?.nextEligibleRunAt ?? snapshot?.job.nextEligibleRunAt)}>
+            {formatTime(observed?.nextEligibleRunAt ?? snapshot?.job.nextEligibleRunAt)}
+          </dd>
         </div>
         <div>
           <dt>外部渠道</dt>
-          <dd>{channelLabel}</dd>
+          <dd title={channelLabel}>{channelLabel}</dd>
         </div>
         <div>
           <dt>已恢复提醒</dt>
-          <dd>{recoveredCount} 条</dd>
+          <dd title={`${recoveredCount} 条`}>{recoveredCount} 条</dd>
         </div>
       </dl>
       {active ? (

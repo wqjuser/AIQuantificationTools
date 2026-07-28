@@ -903,17 +903,24 @@ function ResearchSurface({
   const freshness = evidenceSnapshot?.freshness ?? evidenceQuality?.freshness ?? "unknown";
   const coverage = evidenceSnapshot?.coverage ?? evidenceQuality?.coverage;
   const sourceComparison = evidenceSnapshot?.sourceComparison;
-  const sourceComparisonLabel = sourceComparison?.status === "unavailable"
-    ? sourceComparison.reason === "comparison_not_required_for_context"
-      ? "当前场景无需对照"
-      : sourceComparison.reason?.startsWith("secondary_source_failed")
-        ? "第二来源不可用"
-        : "未配置第二来源"
-    : {
-      agreement: "来源一致",
-      warning: "差异待复核",
-      blocked: "差异阻断",
-    }[sourceComparison?.status ?? "warning"];
+  const sourceComparisonLabel = !sourceComparison
+    ? "暂无对照数据"
+    : sourceComparison.status === "unavailable"
+      ? sourceComparison.reason === "comparison_not_required_for_context"
+        ? "当前场景无需对照"
+        : sourceComparison.reason?.startsWith("secondary_source_failed")
+          ? "第二来源不可用"
+          : "未配置第二来源"
+      : {
+        agreement: "来源一致",
+        warning: "差异待复核",
+        blocked: "差异阻断",
+      }[sourceComparison.status];
+  const sourceComparisonTone = !sourceComparison || sourceComparison.status === "agreement"
+    ? "positive"
+    : sourceComparison.status === "blocked"
+      ? "risk"
+      : "warning";
   const sourceComparisonNextAction = sourceComparison?.status === "warning"
     || sourceComparison?.status === "blocked"
     ? `复核 ${sourceComparison.differences.length} 项差异`
@@ -1237,7 +1244,7 @@ function ResearchSurface({
             <div className="design-kv-row"><span>完整性</span><Status tone={evidenceQuality?.isComplete ? "positive" : "warning"}>{evidenceQuality?.isComplete ? "完整" : "待复核"}</Status></div>
             <div className="design-kv-row"><span>复权 / 时效</span><strong>{adjustmentMode} · {freshness}</strong></div>
             <div className="design-kv-row"><span>覆盖率</span><strong>{coverage ? `${(coverage.ratio * 100).toFixed(1)}% · 缺口 ${coverage.gapCount}` : "—"}</strong></div>
-            <div className="design-kv-row"><span>跨源差异</span><Status tone={sourceComparison?.status === "agreement" ? "positive" : "warning"}>{sourceComparisonLabel}</Status></div>
+            <div className="design-kv-row"><span>跨源差异</span><Status tone={sourceComparisonTone}>{sourceComparisonLabel}</Status></div>
             <div className="design-kv-row"><span>差异报告</span><strong title={sourceComparison?.reportHash ?? "—"}>{sourceComparison ? `${sourceComparison.overlapRows} 行重叠 · ${sourceComparison.reportHash.slice(0, 9)}…` : "—"}</strong></div>
             <div className="design-kv-row"><span>下一步</span><strong>{sourceComparisonNextAction}</strong></div>
           </SurfacePanel>

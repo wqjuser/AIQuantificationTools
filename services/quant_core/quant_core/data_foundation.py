@@ -227,11 +227,37 @@ def normalize_cross_source_difference_report(value: object) -> dict[str, Any] | 
     if not isinstance(value, dict):
         return None
     report = dict(value)
-    supplied_hash = str(report.pop("reportHash", "") or "")
+    supplied_hash = report.pop("reportHash", None)
     if report.get("schemaVersion") != 1:
         raise ValueError("source_comparison_schema_invalid")
     if report.get("status") not in {"agreement", "warning", "blocked", "unavailable"}:
         raise ValueError("source_comparison_status_invalid")
+    required_fields = {
+        "primarySource",
+        "secondarySource",
+        "primaryRows",
+        "secondaryRows",
+        "overlapRows",
+        "overlapRatio",
+        "fields",
+        "differences",
+        "reason",
+    }
+    numeric_fields = ("primaryRows", "secondaryRows", "overlapRows", "overlapRatio")
+    if (
+        not isinstance(supplied_hash, str)
+        or not required_fields.issubset(report)
+        or not isinstance(report["primarySource"], str)
+        or not isinstance(report["secondarySource"], str)
+        or any(
+            isinstance(report[field], bool) or not isinstance(report[field], (int, float))
+            for field in numeric_fields
+        )
+        or not isinstance(report["fields"], dict)
+        or not isinstance(report["differences"], list)
+        or (report["reason"] is not None and not isinstance(report["reason"], str))
+    ):
+        raise ValueError("source_comparison_schema_invalid")
     if report.get("valuesMerged") is not False:
         raise ValueError("source_comparison_values_must_not_be_merged")
     if supplied_hash != canonical_sha256(report):

@@ -490,6 +490,7 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("自动委托等待对账");
     expect(html).toContain("下一步：在执行中心使用“立即对账”核对原订单。");
     expect(html).toContain("Webhook 已就绪");
+    expect(html).toContain('title="服务端监控正常。"');
     expect(html).toContain("<details>");
     expect(html).toContain("任务 ID：server-monitoring");
     expect(html).not.toContain("<button");
