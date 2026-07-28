@@ -748,7 +748,10 @@ class AiReviewEvidenceAssembler:
                     "id": f"{prefix}:data-quality",
                     "kind": "data_quality",
                     "value": {
-                        **source_run.data_quality,
+                        **_selected_fields(
+                            source_run.data_quality,
+                            ("source", "isComplete", "warnings", "rows", "tradeCount"),
+                        ),
                         "canonicalDataHash": snapshot.canonical_data_hash,
                         "startAt": snapshot.start_at,
                         "endAt": snapshot.end_at,
