@@ -282,6 +282,7 @@ import { PortfolioPaperOrderAuditLedgerPanel } from "./components/PortfolioPaper
 import { ExecutionAdapterPaperExecutionAuditLedgerPanel } from "./components/ExecutionAdapterPaperExecutionAuditLedgerPanel";
 import { StrategyExperimentSection, isStrategyExperimentDraftValid } from "./components/StrategyExperimentSection";
 import { AiReviewStage3Section } from "./components/AiReviewStage3Section";
+import { AiResearchM4Section } from "./components/AiResearchM4Section";
 import {
   createPortfolioStage4RequestCoordinator,
   PortfolioStage4Section,
@@ -313,6 +314,12 @@ import {
   recordStage4PortfolioWorkflow,
   type Stage4PortfolioWorkflow
 } from "./lib/portfolio-stage4";
+import {
+  createPortfolioRiskAssessment,
+  loadPortfolioRiskAssessments,
+  type PortfolioRiskAssessment,
+  type PortfolioRiskAssessmentRequest
+} from "./lib/portfolio-m5";
 import {
   buildStage5ShadowState,
   loadStage5SandboxAuthorizationPreflights,
@@ -2428,6 +2435,9 @@ export function App() {
   >([]);
   const [portfolioPaperOrderHistoryError, setPortfolioPaperOrderHistoryError] = useState<string | null>(null);
   const [portfolioStage4Workflows, setPortfolioStage4Workflows] = useState<Stage4PortfolioWorkflow[]>([]);
+  const [portfolioRiskAssessments, setPortfolioRiskAssessments] = useState<PortfolioRiskAssessment[]>([]);
+  const [portfolioRiskAssessmentError, setPortfolioRiskAssessmentError] = useState<string | null>(null);
+  const [isRunningPortfolioRiskAssessment, setIsRunningPortfolioRiskAssessment] = useState(false);
   const [portfolioStage4RefreshGeneration, setPortfolioStage4RefreshGeneration] = useState(0);
   const [stage5ShadowSessions, setStage5ShadowSessions] = useState<Stage5ShadowSession[]>([]);
   const [stage5SandboxReadinessDecisions, setStage5SandboxReadinessDecisions] =
@@ -3118,6 +3128,9 @@ export function App() {
     currentResearchRunId,
     portfolioStage4LatestBatch?.batchId
   );
+  const portfolioRiskAssessment = portfolioRiskAssessments.find(
+    (assessment) => assessment.workflowId === portfolioStage4Workflow?.workflowId
+  ) ?? null;
   const portfolioStage4GoldenPath = buildStage4PortfolioGoldenPath({
     baseRunId: currentResearchRunId ?? "",
     portfolio: portfolioBacktestState.portfolio,
@@ -4013,20 +4026,25 @@ export function App() {
       setPortfolioPaperOrderReplay(null);
       setPortfolioPaperOrderStateHistories([]);
       setPortfolioStage4Workflows([]);
+      setPortfolioRiskAssessments([]);
+      setPortfolioRiskAssessmentError(null);
       setPortfolioPaperOrderHistoryError(null);
       return;
     }
     setPortfolioPaperOrderHistoryError(null);
     void (async () => {
-      const [batchResult, replayResult, workflowResult] = await Promise.all([
+      const [batchResult, replayResult, workflowResult, riskAssessmentResult] = await Promise.all([
         loadPortfolioPaperOrderBatches(quantCoreBaseUrl, baseRunId),
         loadPortfolioPaperOrderReplay(quantCoreBaseUrl, baseRunId),
-        loadStage4PortfolioWorkflows(quantCoreBaseUrl, baseRunId)
+        loadStage4PortfolioWorkflows(quantCoreBaseUrl, baseRunId),
+        loadPortfolioRiskAssessments(quantCoreBaseUrl, baseRunId)
       ]);
       if (!requestIsCurrent()) return;
       setPortfolioPaperOrderBatches(batchResult.batches);
       setPortfolioPaperOrderReplay(replayResult.replay ?? null);
       setPortfolioStage4Workflows(workflowResult.workflows);
+      setPortfolioRiskAssessments(riskAssessmentResult.assessments);
+      setPortfolioRiskAssessmentError(riskAssessmentResult.error ?? null);
       const latestBatch = [...batchResult.batches].sort(
         (left, right) => right.createdAt.localeCompare(left.createdAt)
       )[0];
@@ -4041,7 +4059,7 @@ export function App() {
         setPortfolioPaperOrderSimulations([]);
         setPortfolioPaperOrderStateHistories([]);
         setPortfolioPaperOrderHistoryError(
-          batchResult.error ?? replayResult.error ?? workflowResult.error ?? null
+          batchResult.error ?? replayResult.error ?? workflowResult.error ?? riskAssessmentResult.error ?? null
         );
         return;
       }
@@ -4062,7 +4080,8 @@ export function App() {
       setPortfolioPaperOrderStateHistories(stateHistoryResults.flatMap((result) =>
         result.stateHistory ? [result.stateHistory] : []));
       setPortfolioPaperOrderHistoryError([
-        batchResult, replayResult, workflowResult, ...approvalResults, ...simulationResults, ...stateHistoryResults
+        batchResult, replayResult, workflowResult, riskAssessmentResult,
+        ...approvalResults, ...simulationResults, ...stateHistoryResults
       ].find((result) => result.error)?.error ?? null);
     })();
   }, [currentResearchRunId, portfolioStage4RefreshGeneration]);
@@ -7953,6 +7972,35 @@ export function App() {
     quantCoreBaseUrl,
     resetStage4PortfolioBusyState
   ]);
+
+  const runPortfolioRiskAssessment = useCallback(async (
+    assessmentRequest: PortfolioRiskAssessmentRequest
+  ) => {
+    if (isRunningPortfolioRiskAssessment) return;
+    setIsRunningPortfolioRiskAssessment(true);
+    setPortfolioRiskAssessmentError(null);
+    const result = await createPortfolioRiskAssessment(quantCoreBaseUrl, assessmentRequest);
+    setIsRunningPortfolioRiskAssessment(false);
+    if (result.assessment) {
+      setPortfolioRiskAssessments((current) => [
+        result.assessment!,
+        ...current.filter((assessment) => assessment.assessmentId !== result.assessment!.assessmentId)
+      ]);
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: `M5 组合风险评估已记录 · ${result.assessment!.assessmentId}`,
+        error: undefined
+      }));
+      return;
+    }
+    const message = result.error ?? "M5 组合风险评估失败";
+    setPortfolioRiskAssessmentError(message);
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: "M5 组合风险评估失败",
+      error: message
+    }));
+  }, [isRunningPortfolioRiskAssessment, quantCoreBaseUrl]);
 
   const runPortfolioStage4PrimaryAction = useCallback((actionId: string) => {
     if (actionId === "run-portfolio-backtest") return void runPortfolioBacktestDraft();
@@ -14417,6 +14465,12 @@ export function App() {
             providers={aiReviewStage3Providers}
             running={isRunningAiReviewStage3}
           />
+          <AiResearchM4Section
+            baseUrl={quantCoreBaseUrl}
+            currentReview={aiReviewStage3CurrentReview}
+            i18n={i18n}
+            runHistory={runHistory}
+          />
           {renderAgentPanel("workflow-agent-panel")}
           {renderWorkflowNodesPanel("workflow-nodes-panel")}
           <DecisionLogPanel className="workflow-decision-panel" entries={workspace.decisionLog} i18n={i18n} />
@@ -15601,7 +15655,15 @@ export function App() {
             onProviderChange: selectAiReviewStage3Provider,
             primaryExperimentId: aiReviewStage3PrimaryExperimentId,
             providerId: aiReviewStage3ProviderId,
-            providers: aiReviewStage3Providers
+            providers: aiReviewStage3Providers,
+            researchLoop: (
+              <AiResearchM4Section
+                baseUrl={quantCoreBaseUrl}
+                currentReview={aiReviewStage3CurrentReview}
+                i18n={i18n}
+                runHistory={runHistory}
+              />
+            )
           }}
           chart={
             <>
@@ -15637,7 +15699,7 @@ export function App() {
           portfolioActionError={
             portfolioBacktestState.error
               ? portfolioBacktestSummary(i18n, portfolioBacktestState.error)
-              : portfolioPaperOrderHistoryError
+              : portfolioRiskAssessmentError ?? portfolioPaperOrderHistoryError
           }
           portfolioGoldenPath={portfolioStage4GoldenPath}
           portfolioPaperOrderApprovalRows={portfolioPaperOrderApprovalRows.filter(
@@ -15645,6 +15707,10 @@ export function App() {
               row.baseRunId === currentResearchRunId &&
               row.batchId === portfolioStage4LatestBatch?.batchId
           )}
+          portfolioRiskAssessment={portfolioRiskAssessment}
+          portfolioStage4Workflow={portfolioStage4Workflow}
+          isRunningPortfolioRiskAssessment={isRunningPortfolioRiskAssessment}
+          onRunPortfolioRiskAssessment={(request) => void runPortfolioRiskAssessment(request)}
           researchPreparation={{
             externalDataApproved: researchNoteExternalDataApproved,
             generationError: researchNoteGenerationError,

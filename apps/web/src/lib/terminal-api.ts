@@ -73,6 +73,14 @@ import {
   type CreateAuthoritativeAiReviewRequest,
   type LegacyAiReviewHistoryRecord
 } from "./ai-review-stage3";
+import {
+  isAiResearchEvidence,
+  isAiResearchOutcome,
+  type AiResearchEvidence,
+  type AiResearchOutcome,
+  type CreateAiResearchEvidenceRequest,
+  type EvaluateAiResearchOutcomeRequest
+} from "./ai-research-m4";
 
 export const defaultQuantCoreBaseUrl = "/";
 export type ResearchTimeframe = Timeframe;
@@ -187,6 +195,23 @@ export interface AiReviewDecisionMutationResult {
 }
 
 export type { AppendAiReviewDecisionRequest, CreateAuthoritativeAiReviewRequest };
+
+export interface AiResearchEvidenceResult {
+  researchEvidence?: AiResearchEvidence | null;
+  outcomes: AiResearchOutcome[];
+  source: WorkspaceSource;
+  error?: string;
+  httpStatus?: number;
+}
+
+export interface AiResearchOutcomeResult {
+  outcome?: AiResearchOutcome;
+  source: WorkspaceSource;
+  error?: string;
+  httpStatus?: number;
+}
+
+export type { CreateAiResearchEvidenceRequest, EvaluateAiResearchOutcomeRequest };
 
 export interface ResearchNote {
   market: Market;
@@ -5277,6 +5302,17 @@ export function buildAuthoritativeAiReviewUrl(baseUrl: string, aiReviewId: strin
 
 export function buildAiReviewDecisionsUrl(baseUrl: string, aiReviewId: string): string {
   return buildApiUrl(baseUrl, `api/ai-reviews/${encodeURIComponent(requireTrimmedAiReviewId(aiReviewId))}/decisions`);
+}
+
+export function buildAiResearchEvidenceUrl(baseUrl: string, aiReviewId: string): string {
+  return buildApiUrl(
+    baseUrl,
+    `api/ai-reviews/${encodeURIComponent(requireTrimmedAiReviewId(aiReviewId))}/research-evidence`
+  );
+}
+
+export function buildAiResearchOutcomesUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/ai-research/outcomes");
 }
 
 export function buildMarketKlinesUrl(
@@ -12677,6 +12713,26 @@ function isAiReviewDecisionPayload(
     && value.decision.supersedesDecisionId === request.supersedesDecisionId;
 }
 
+function isAiResearchEvidencePayload(
+  value: unknown
+): value is { researchEvidence: AiResearchEvidence | null; outcomes: AiResearchOutcome[] } {
+  return hasExactAiReviewEnvelopeKeys(value, ["researchEvidence", "outcomes"])
+    && (value.researchEvidence === null || isAiResearchEvidence(value.researchEvidence))
+    && Array.isArray(value.outcomes)
+    && value.outcomes.every(isAiResearchOutcome);
+}
+
+function isAiResearchEvidenceCreatePayload(
+  value: unknown
+): value is { researchEvidence: AiResearchEvidence } {
+  return hasExactAiReviewEnvelopeKeys(value, ["researchEvidence"])
+    && isAiResearchEvidence(value.researchEvidence);
+}
+
+function isAiResearchOutcomePayload(value: unknown): value is { outcome: AiResearchOutcome } {
+  return hasExactAiReviewEnvelopeKeys(value, ["outcome"]) && isAiResearchOutcome(value.outcome);
+}
+
 export async function loadAiReviewProviders(
   baseUrl: string,
   signalOrFetcher?: AbortSignal | WorkspaceFetcher,
@@ -12763,6 +12819,110 @@ export function loadAuthoritativeAiReview(
   }).catch((error: unknown) => ({
     source: "fallback",
     error: error instanceof Error ? error.message : "Unknown authoritative AI review detail error",
+    ...(error instanceof WorkspaceHttpError ? { httpStatus: error.status } : {})
+  }));
+}
+
+export function createAiResearchEvidence(
+  baseUrl: string,
+  aiReviewId: string,
+  request: CreateAiResearchEvidenceRequest,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiResearchEvidenceResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  const requestSnapshot: CreateAiResearchEvidenceRequest = {
+    recommendation: { ...request.recommendation },
+    multiViewEnabled: request.multiViewEnabled,
+    financialFacts: request.financialFacts.map((fact) => ({
+      ...fact,
+      primary: { ...fact.primary },
+      comparison: { ...fact.comparison }
+    }))
+  };
+  return Promise.resolve().then(() => requestJson(
+    buildAiResearchEvidenceUrl(baseUrl, aiReviewId),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestSnapshot),
+      ...(signal ? { signal } : {})
+    },
+    fetcher
+  )).then((payload) => {
+    if (!isAiResearchEvidenceCreatePayload(payload)) {
+      throw new Error("Invalid M4 AI research evidence create contract");
+    }
+    return {
+      researchEvidence: payload.researchEvidence,
+      outcomes: [],
+      source: "core" as const
+    };
+  }).catch((error: unknown) => ({
+    outcomes: [],
+    source: "fallback" as const,
+    error: error instanceof Error ? error.message : "Unknown M4 AI research evidence error",
+    ...(error instanceof WorkspaceHttpError ? { httpStatus: error.status } : {})
+  }));
+}
+
+export function loadAiResearchEvidence(
+  baseUrl: string,
+  aiReviewId: string,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiResearchEvidenceResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  return Promise.resolve().then(() => requestJson(
+    buildAiResearchEvidenceUrl(baseUrl, aiReviewId),
+    signal ? { signal } : undefined,
+    fetcher
+  )).then((payload) => {
+    if (!isAiResearchEvidencePayload(payload)) {
+      throw new Error("Invalid M4 AI research evidence contract");
+    }
+    return {
+      researchEvidence: payload.researchEvidence,
+      outcomes: payload.outcomes,
+      source: "core" as const
+    };
+  }).catch((error: unknown) => ({
+    outcomes: [],
+    source: "fallback" as const,
+    error: error instanceof Error ? error.message : "Unknown M4 AI research evidence error",
+    ...(error instanceof WorkspaceHttpError ? { httpStatus: error.status } : {})
+  }));
+}
+
+export function evaluateAiResearchOutcome(
+  baseUrl: string,
+  request: EvaluateAiResearchOutcomeRequest,
+  signalOrFetcher?: AbortSignal | WorkspaceFetcher,
+  maybeFetcher: WorkspaceFetcher = defaultFetcher
+): Promise<AiResearchOutcomeResult> {
+  const { signal, fetcher } = resolveAiReviewRequestOptions(signalOrFetcher, maybeFetcher);
+  const requestSnapshot = {
+    researchEvidenceId: requireTrimmedAiReviewId(request.researchEvidenceId),
+    outcomeRunId: requireTrimmedAiReviewId(request.outcomeRunId),
+    benchmarkRunId: requireTrimmedAiReviewId(request.benchmarkRunId)
+  };
+  return Promise.resolve().then(() => requestJson(
+    buildAiResearchOutcomesUrl(baseUrl),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestSnapshot),
+      ...(signal ? { signal } : {})
+    },
+    fetcher
+  )).then((payload) => {
+    if (!isAiResearchOutcomePayload(payload)) {
+      throw new Error("Invalid M4 AI research outcome contract");
+    }
+    return { outcome: payload.outcome, source: "core" as const };
+  }).catch((error: unknown) => ({
+    source: "fallback" as const,
+    error: error instanceof Error ? error.message : "Unknown M4 AI research outcome error",
     ...(error instanceof WorkspaceHttpError ? { httpStatus: error.status } : {})
   }));
 }

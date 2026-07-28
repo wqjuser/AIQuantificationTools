@@ -20,7 +20,14 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Stage9ProductionAdmissionCandidate } from "../lib/stage9-production-admission";
-import type { Stage4PortfolioGoldenPath } from "../lib/portfolio-stage4";
+import type {
+  Stage4PortfolioGoldenPath,
+  Stage4PortfolioWorkflow,
+} from "../lib/portfolio-stage4";
+import type {
+  PortfolioRiskAssessment,
+  PortfolioRiskAssessmentRequest,
+} from "../lib/portfolio-m5";
 import {
   aiReviewRequiresExternalApproval,
   buildComparisonEligibility,
@@ -53,6 +60,7 @@ import type {
   Timeframe,
 } from "../lib/terminal-workbench";
 import { DEFAULT_STRATEGY_EXPERIMENT_WALK_FORWARD } from "../lib/terminal-workbench";
+import { PortfolioM5Section } from "./PortfolioM5Section";
 
 export interface TerminalWorkspaceSurfaceAction {
   label: string;
@@ -97,6 +105,7 @@ interface TerminalWorkspaceSurfaceProps {
     primaryExperimentId: string | null;
     providerId: AiReviewProviderId;
     providers: AiReviewProviderStatus[];
+    researchLoop?: ReactNode;
   };
   chart: ReactNode;
   colorScheme: ColorScheme;
@@ -118,6 +127,10 @@ interface TerminalWorkspaceSurfaceProps {
   portfolioActionError?: string | null;
   portfolioGoldenPath?: Stage4PortfolioGoldenPath;
   portfolioPaperOrderApprovalRows?: PortfolioPaperOrderApprovalRow[];
+  portfolioRiskAssessment?: PortfolioRiskAssessment | null;
+  portfolioStage4Workflow?: Stage4PortfolioWorkflow | null;
+  isRunningPortfolioRiskAssessment?: boolean;
+  onRunPortfolioRiskAssessment?: (request: PortfolioRiskAssessmentRequest) => void;
   researchPreparation: {
     externalDataApproved: boolean;
     generationError: string | null;
@@ -2200,6 +2213,7 @@ function AiReviewSurface({
               <p className="design-ai-empty">暂无当前权威评审记录，请先运行评审或载入最近评审。</p>
             ) : null}
           </SurfacePanel>
+          {aiReview.researchLoop}
         </main>
 
         <aside className="design-ai-side">
@@ -2386,6 +2400,10 @@ function PortfolioSurface({
   portfolioActionError,
   portfolioGoldenPath,
   portfolioPaperOrderApprovalRows,
+  portfolioRiskAssessment,
+  portfolioStage4Workflow,
+  isRunningPortfolioRiskAssessment,
+  onRunPortfolioRiskAssessment,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
@@ -2397,10 +2415,17 @@ function PortfolioSurface({
   | "portfolioActionError"
   | "portfolioGoldenPath"
   | "portfolioPaperOrderApprovalRows"
+  | "portfolioRiskAssessment"
+  | "portfolioStage4Workflow"
+  | "isRunningPortfolioRiskAssessment"
+  | "onRunPortfolioRiskAssessment"
   | "workspace"
 >) {
   const cashWeight = portfolio?.cashWeight ?? 1;
   const legs = portfolio?.legs ?? [];
+  const riskAllocations = new Map(
+    (portfolioRiskAssessment?.allocations ?? []).map((row) => [row.symbol, row]),
+  );
   const approvalRows = portfolioPaperOrderApprovalRows ?? [];
   const pendingApprovalCount = approvalRows.filter(
     (row) => row.state === "awaiting_operator_review" || row.state === "risk_review",
@@ -2500,12 +2525,14 @@ function PortfolioSurface({
               </tr>
             </thead>
             <tbody>
-              {legs.map((leg) => (
+              {legs.map((leg) => {
+                const allocation = riskAllocations.get(leg.symbol);
+                return (
                 <tr key={leg.symbol}>
                   <td>{leg.symbol}</td>
-                  <td>{compactRunId(workspace.researchRun?.runId)}</td>
+                  <td>{compactRunId(allocation?.sourceRunId ?? workspace.researchRun?.runId)}</td>
                   <td>{(leg.targetWeight * 100).toFixed(2)}%</td>
-                  <td>{(leg.targetWeight * 100).toFixed(2)}%</td>
+                  <td>{allocation ? `${(allocation.currentWeight * 100).toFixed(2)}%` : "待评估"}</td>
                   <td
                     className={leg.contributionReturnPct >= 0 ? "up" : "down"}
                   >
@@ -2513,10 +2540,13 @@ function PortfolioSurface({
                   </td>
                   <td>{leg.dataQuality.rows}</td>
                   <td>
-                    <Status>通过</Status>
+                    <Status tone={allocation?.status === "blocked" ? "risk" : allocation ? "positive" : "warning"}>
+                      {allocation?.status === "blocked" ? "阻断" : allocation ? "已核对" : "待评估"}
+                    </Status>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {!legs.length ? (
                 <tr>
                   <td colSpan={7} className="design-empty">
@@ -2712,72 +2742,13 @@ function PortfolioSurface({
             </div>
           </SurfacePanel>
         ) : null}
-        <SurfacePanel
-          className="design-risk-ledger"
-          title="风控指标台账（确定性校验）"
-        >
-          <table className="design-table">
-            <thead>
-              <tr>
-                <th>风控指标</th>
-                <th>数值</th>
-                <th>阈值</th>
-                <th>状态</th>
-                <th>原因 / 说明</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                [
-                  "集中度（前 5 大权重）",
-                  legs.length
-                    ? `${Math.min(
-                        100,
-                        legs.reduce(
-                          (sum, leg) => sum + leg.targetWeight * 100,
-                          0,
-                        ),
-                      ).toFixed(2)}%`
-                    : "—",
-                  "≤ 80.00%",
-                ],
-                ["现金缓冲", `${(cashWeight * 100).toFixed(2)}%`, "≥ 5.00%"],
-                [
-                  "暴露利用率（权益）",
-                  `${((1 - cashWeight) * 100).toFixed(2)}%`,
-                  "≤ 95.00%",
-                ],
-                [
-                  "协方差 / 相关性",
-                  portfolio?.covarianceRisk
-                    ? `${portfolio.covarianceRisk.annualizedVolatilityPct.toFixed(2)}%`
-                    : "—",
-                  "≤ 30.00%",
-                ],
-                [
-                  "组合年化波动率",
-                  portfolio?.covarianceRisk
-                    ? `${portfolio.covarianceRisk.annualizedVolatilityPct.toFixed(2)}%`
-                    : "—",
-                  "≤ 25.00%",
-                ],
-                ["组合腿数量", String(legs.length), "≥ 2"],
-              ].map(([label, value, limit]) => (
-                <tr key={label}>
-                  <td>{label}</td>
-                  <td>{value}</td>
-                  <td>{limit}</td>
-                  <td>
-                    <Status tone={portfolio ? "positive" : "warning"}>
-                      {portfolio ? "通过" : "待运行"}
-                    </Status>
-                  </td>
-                  <td>{portfolio ? "权威组合回测结果" : "等待组合构建"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </SurfacePanel>
+        <PortfolioM5Section
+          assessment={portfolioRiskAssessment ?? null}
+          busy={isRunningPortfolioRiskAssessment ?? false}
+          error={portfolioActionError}
+          onAssess={onRunPortfolioRiskAssessment}
+          workflow={portfolioStage4Workflow ?? null}
+        />
       </div>
     </>
   );

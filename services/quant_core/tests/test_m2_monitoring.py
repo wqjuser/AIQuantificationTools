@@ -48,6 +48,14 @@ def auto_state(**overrides):
 
 
 class M2MonitoringTests(unittest.TestCase):
+    def setUp(self):
+        clock = patch(
+            "quant_core.monitoring._now",
+            return_value=datetime(2026, 7, 28, 8, tzinfo=timezone.utc),
+        )
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_incident_notification_is_deduplicated_and_recovery_is_sent_once(self):
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")

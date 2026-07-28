@@ -766,3 +766,26 @@ final result: passed
 - 原 `5173` Testnet 容器未替换、未重启，继续保持 `enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 和 `liveBlockedBoundary=true`。验收结束后只删除隔离项目及其临时数据卷。
 
 final result: passed
+
+## 2026-07-28 M4 AI 研究证据与到期复盘退出复验
+
+- 按 GitHub Issue #22、ADR 0025、当前代码和未提交 diff 核对 M4：权威 AI 评审后新增只追加研究证据，事实、计算、假设、模型推断分别展示；信息丰富度与投资确定性独立；A 股六类重要财务事实保留两个独立来源原值并分类差异，固定 `valuesMerged=false`。
+- 可选多视角只生成看多、看空、中性三个研究投影，只允许 `1d / 1w`；分钟级服务端阻断。到期复盘只消费声明周期后的同标的审计运行和不同标的基准运行，记录原始/观点调整收益、最大不利波动、基准收益与 alpha，并绑定原建议、评审、运行和快照。历史结果只进入未来研究上下文。
+- M4 Python 聚焦 `6 / 6`、M4/布局/评审工作区聚焦 `218 / 218`、M2 定时回归 `11 / 11`、Python 全量 `792 / 792`、Web 全量 `1083 / 1083` 和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- 隔离 Compose 项目 `aiqt-m4-acceptance` 使用独立数据卷与 5174 端口，并显式清空交易、生产、AI、Webhook、free-stockdb 和代理配置。API/Web 均 healthy；研究证据 `ai-research-evidence-04960b934e942faec5a315dc917fbdc2` 创建与回读哈希一致，信息丰富度 `70 · medium`、投资确定性 `low`、财务差异 `warning / valuesMerged=false`，三视角齐全，五项研究边界均为只读。
+- 真实页面 `http://127.0.0.1:5174/?workspace=ai-review&market=ashare&symbol=600000&timeframe=1d` 在 `1280 × 720` 下显示完整 M4 功能区；首次复验发现 M4 默认只占评审主网格第一列，补充共享网格跨度后主栏宽度由约 433px 恢复为 734px。页面宽度与视口均为 1280px，无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 页面复验只展开“财务事实差异明细”和“可选三视角评审”，没有点击运行研究、运行回测、AI 评审、生成 M4 证据、到期复盘、立即评估、对账、保存、暂停、急停、模式切换或任何订单动作，没有调用外部 AI，也没有新增仓库 PNG。
+- 首次隔离 smoke 误用默认构建行为，工具重建并重启了主 5173 `api/web`；发现后不再运行该路径。主服务恢复 healthy 后只读状态仍为 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本轮没有提交 Testnet 或 Production 委托。
+
+final result: passed
+
+## 2026-07-28 M5 组合目标、暴露与批次风险退出复验
+
+- 按 GitHub Issue #22、ADR 0026、当前代码和未提交 diff 核对 M5：组合工作区从同一 Stage 4 审计工作流回读当前权重、原目标、风险调整目标、漂移、现金和候选调仓；行业、市场、币种暴露与相关性、协方差风险贡献均使用既有组合回测和账户回放。
+- 账户未匹配持仓、最大回撤、当日损失、交易频率、相关性和风险贡献可阻断整个候选批次；总暴露和集中度可确定性缩减目标。后端与前端契约都校验调整目标不得超过原目标，缩减部分回到现金，阻断批次没有可执行订单。
+- M5 Python 聚焦 `6 / 6`、M5/布局/组合工作区聚焦 `219 / 219`、Python 全量 `798 / 798`、Web 全量 `1089 / 1089` 和生产构建通过；仅保留既知 chunk-size 提示，`git diff --check` 通过。
+- 隔离 Compose 项目 `aiqt-m5-acceptance` 使用独立数据卷与 5175 端口，并显式清空交易、生产、AI、Webhook、free-stockdb 和代理配置。API/Web 均 healthy；真实 API 生成 Stage 4 工作流后创建并回读 M5 评估，记录哈希一致，账户权重为 `600000=10%`、`000300=20%`、现金 `70%`，原目标为 `55% / 35%`，风险调整目标没有增加暴露。
+- 真实页面 `http://127.0.0.1:5175/?workspace=portfolio&market=ashare&symbol=600000&timeframe=1d` 在 `1280 × 720` 下展示当前/目标/调整目标、现金、三类聚合暴露、组合级检查、相关性和风险贡献。页面与 body 均为 1280px，无横向溢出；两张较宽表只在各自容器内滚动，浏览器控制台 `0 error / 0 warning`。
+- 页面复验没有点击黄金路径、运行组合风险评估、人工审批、模拟成交、对账、模式切换、急停或任何订单动作。原 5173 Testnet 容器未替换、未重启，继续保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 和 `liveBlockedBoundary=true`。
+
+final result: passed

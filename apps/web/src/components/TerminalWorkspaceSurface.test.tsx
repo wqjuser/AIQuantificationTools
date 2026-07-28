@@ -11,6 +11,8 @@ import {
   type StrategyExperimentListItem,
 } from "../lib/terminal-workbench";
 import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
+import type { PortfolioRiskAssessment } from "../lib/portfolio-m5";
+import type { PortfolioBacktestRun } from "../lib/terminal-api";
 import {
   buildAuditLedgerRows,
   TerminalWorkspaceSurface,
@@ -1018,6 +1020,187 @@ describe("TerminalWorkspaceSurface", () => {
     expect(portfolio).toContain('aria-valuemax="100"');
     expect(portfolio).toContain('aria-valuenow="0"');
     expect(portfolio).not.toContain("design-portfolio-donut-value");
+  });
+
+  it("shows audited M5 current weights and authoritative portfolio checks instead of synthetic passes", () => {
+    const portfolioRun = {
+      name: "M5 组合",
+      market: "ashare",
+      timeframe: "1d",
+      initialCash: 100_000,
+      cashWeight: 0.1,
+      metrics: {
+        totalReturnPct: 1,
+        annualReturnPct: 1,
+        maxDrawdownPct: -8,
+        winRatePct: 50,
+        profitFactor: 1,
+        tradeCount: 2,
+      },
+      equityCurve: [],
+      legs: [
+        {
+          symbol: "600000",
+          targetWeight: 0.55,
+          startingValue: 55_000,
+          endingValue: 56_000,
+          contributionValue: 1_000,
+          contributionReturnPct: 1.8,
+          maxDrawdownPct: -4,
+          tradeCount: 1,
+          dataQuality: { source: "fixture", isComplete: true, warnings: [], rows: 30 },
+        },
+        {
+          symbol: "000300",
+          targetWeight: 0.35,
+          startingValue: 35_000,
+          endingValue: 36_000,
+          contributionValue: 1_000,
+          contributionReturnPct: 2.8,
+          maxDrawdownPct: -3,
+          tradeCount: 1,
+          dataQuality: { source: "fixture", isComplete: true, warnings: [], rows: 30 },
+        },
+      ],
+      dataQuality: { source: "fixture", isComplete: true, warnings: [], rows: 30 },
+    } satisfies PortfolioBacktestRun;
+    const risk = {
+      kind: "aiqt.portfolioRiskAssessment",
+      schemaVersion: 1,
+      assessmentId: "portfolio-risk-1",
+      createdAt: "2026-07-20T10:00:00+00:00",
+      baseRunId: "run-a",
+      workflowId: "workflow-1",
+      workflowHash: "a".repeat(64),
+      operator: "local-operator",
+      classifications: [],
+      observations: { dailyLossPct: 1, tradesToday: 2 },
+      limits: {
+        maxDrawdownPct: 20,
+        maxDailyLossPct: 3,
+        maxTradesPerDay: 20,
+        maxTotalExposureWeight: 0.95,
+        maxSymbolWeight: 0.4,
+        maxIndustryWeight: 0.6,
+        maxMarketWeight: 0.95,
+        maxCurrencyWeight: 0.95,
+        maxCorrelation: 0.8,
+        maxRiskContributionPct: 60,
+      },
+      account: {
+        source: "stage4_paper_replay",
+        observedAt: "2026-07-20T09:00:00+00:00",
+        equity: 100_000,
+        cash: 70_000,
+        unmatchedSymbols: [],
+      },
+      allocations: [
+        {
+          symbol: "600000",
+          sourceRunId: "run-a",
+          market: "ashare",
+          industry: "银行",
+          currency: "CNY",
+          currentQuantity: 100,
+          currentValue: 10_000,
+          currentWeight: 0.1,
+          targetWeight: 0.55,
+          adjustedTargetWeight: 0.4,
+          driftPct: -45,
+          proposedDeltaValue: 30_000,
+          side: "buy",
+          status: "candidate",
+          reason: "风险目标已下调",
+        },
+        {
+          symbol: "000300",
+          sourceRunId: "run-b",
+          market: "ashare",
+          industry: "宽基指数",
+          currency: "CNY",
+          currentQuantity: 50,
+          currentValue: 20_000,
+          currentWeight: 0.2,
+          targetWeight: 0.35,
+          adjustedTargetWeight: 0.35,
+          driftPct: -15,
+          proposedDeltaValue: 15_000,
+          side: "buy",
+          status: "candidate",
+          reason: "纸面候选",
+        },
+      ],
+      cash: {
+        currentValue: 70_000,
+        currentWeight: 0.7,
+        targetWeight: 0.1,
+        adjustedTargetWeight: 0.25,
+        proposedDeltaValue: -45_000,
+      },
+      exposures: [
+        {
+          dimension: "industry",
+          group: "银行",
+          currentWeight: 0.1,
+          targetWeight: 0.55,
+          adjustedTargetWeight: 0.4,
+          limit: 0.6,
+          status: "reduced",
+        },
+      ],
+      correlations: [],
+      riskContributions: [],
+      checks: [
+        {
+          checkId: "account_reconciliation",
+          scope: "account",
+          status: "passed",
+          value: 0,
+          limit: 0,
+          unit: "count",
+          reason: "账户持仓与本地目标组合已逐项匹配。",
+        },
+      ],
+      batch: {
+        status: "reduced",
+        orders: [],
+        blockedReasons: [],
+      },
+      summary: {
+        currentExposureWeight: 0.3,
+        targetExposureWeight: 0.9,
+        adjustedTargetExposureWeight: 0.75,
+        currentWeightSum: 1,
+        targetWeightSum: 1,
+        adjustedTargetWeightSum: 1,
+        proposedTradeCount: 2,
+        reducedTargetCount: 1,
+        unmatchedHoldingCount: 0,
+        blockedCheckCount: 0,
+      },
+      paperOnly: true,
+      liveTradingAllowed: false,
+      orderSubmissionEnabled: false,
+      routeExecuted: false,
+      liveBlockedBoundary: true,
+      recordHash: "b".repeat(64),
+    } as PortfolioRiskAssessment;
+
+    const portfolio = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="portfolio"
+        portfolio={portfolioRun}
+        portfolioRiskAssessment={risk}
+      />,
+    );
+
+    expect(portfolio).toContain("<td>55.00%</td><td>10.00%</td>");
+    expect(portfolio).toContain("账户、目标与批次风险");
+    expect(portfolio).toContain("账户 / 本地组合匹配");
+    expect(portfolio).toContain("行业 / 市场 / 币种暴露");
+    expect(portfolio).not.toContain("组合年化波动率");
+    expect(portfolio).not.toContain("权威组合回测结果");
   });
 
   it("keeps the redesigned operator approval step actionable", () => {
