@@ -56,6 +56,15 @@ class DataQuality:
     is_complete: bool
     warnings: list[str] = field(default_factory=list)
     rows: int = 0
+    observed_at: datetime | None = None
+    market_time: datetime | None = None
+    calendar_id: str | None = None
+    adjustment_mode: str = "none"
+    freshness: str = "unknown"
+    coverage: dict[str, Any] = field(default_factory=dict)
+    canonical_hash: str = ""
+    issues: list[dict[str, Any]] = field(default_factory=list)
+    origin_source: str | None = None
 
 
 @dataclass(frozen=True)

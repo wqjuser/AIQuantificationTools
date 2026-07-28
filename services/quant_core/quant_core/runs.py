@@ -17,6 +17,12 @@ from quant_core.canonical import (
     canonical_snapshot_id,
     normalize_snapshot_bars,
 )
+from quant_core.data_foundation import (
+    data_quality_from_payload,
+    data_quality_to_payload,
+    normalize_cross_source_difference_report,
+    offline_replay_evidence,
+)
 from quant_core.handoff_notes import normalize_handoff_note_payloads
 from quant_core.execution import (
     execution_adapter_sandbox_probe_execution_payload_from_audit_event,
@@ -2460,7 +2466,23 @@ def _normalize_data_snapshot(
         "end": _nullable_string(snapshot.get("end")),
         "hash": digest,
         "bars": normalized_bars,
+        "observedAt": _nullable_string(snapshot.get("observedAt")),
+        "marketTime": _nullable_string(snapshot.get("marketTime")),
+        "calendarId": _nullable_string(snapshot.get("calendarId")),
+        "adjustmentMode": str(snapshot.get("adjustmentMode") or "none"),
+        "freshness": str(snapshot.get("freshness") or "unknown"),
+        "coverage": dict(snapshot.get("coverage")) if isinstance(snapshot.get("coverage"), dict) else {},
+        "qualityIssues": [
+            dict(issue)
+            for issue in snapshot.get("qualityIssues", [])
+            if isinstance(issue, dict)
+        ] if isinstance(snapshot.get("qualityIssues"), list) else [],
     }
+    if hash_version == DATA_SNAPSHOT_HASH_VERSION and digest:
+        normalized["offlineReplay"] = offline_replay_evidence(normalized_bars, digest)
+    source_comparison = normalize_cross_source_difference_report(snapshot.get("sourceComparison"))
+    if source_comparison:
+        normalized["sourceComparison"] = source_comparison
     if supplied_snapshot_hash or expected_snapshot_hash:
         normalized["snapshotHash"] = expected_snapshot_hash or supplied_snapshot_hash
     if hash_version:
@@ -2567,16 +2589,33 @@ def _snapshot_hash(bars: list[dict[str, Any]]) -> str:
 
 def _normalize_data_quality(value: dict[str, Any] | None, *, data_rows: int) -> dict[str, Any]:
     quality = value or {}
-    source = str(quality.get("source") or DEFAULT_DATA_QUALITY["source"]).strip() or DEFAULT_DATA_QUALITY["source"]
-    warnings = quality.get("warnings")
-    if not isinstance(warnings, list):
-        warnings = []
-    return {
-        "source": source,
-        "isComplete": bool(quality.get("isComplete", quality.get("is_complete", DEFAULT_DATA_QUALITY["isComplete"]))),
-        "warnings": [str(warning) for warning in warnings],
+    normalized = data_quality_to_payload(data_quality_from_payload({
+        **quality,
+        "source": str(quality.get("source") or DEFAULT_DATA_QUALITY["source"]).strip()
+        or DEFAULT_DATA_QUALITY["source"],
         "rows": max(0, int(_number_or_default(quality.get("rows"), data_rows))),
-    }
+    }))
+    if not any(
+        key in quality
+        for key in (
+            "originSource",
+            "observedAt",
+            "marketTime",
+            "calendarId",
+            "adjustmentMode",
+            "freshness",
+            "coverage",
+            "canonicalHash",
+            "issues",
+        )
+    ):
+        return {
+            "source": normalized["source"],
+            "isComplete": normalized["isComplete"],
+            "warnings": normalized["warnings"],
+            "rows": normalized["rows"],
+        }
+    return normalized
 
 
 def _normalize_strategy_config(

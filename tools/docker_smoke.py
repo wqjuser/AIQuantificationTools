@@ -49,6 +49,60 @@ def validate_health_payload(payload: Any) -> str:
     return f"health status={payload['status']} service={payload['service']}"
 
 
+def validate_monitoring_payload(payload: Any) -> str:
+    if not isinstance(payload, dict) or payload.get("schemaVersion") != 1:
+        raise RuntimeError("Invalid monitoring response: schema is missing")
+    job = payload.get("job")
+    observed_jobs = payload.get("observedJobs")
+    channel = payload.get("channel")
+    if (
+        not isinstance(job, dict)
+        or job.get("jobId") != "server-monitoring"
+        or not isinstance(observed_jobs, list)
+        or not observed_jobs
+        or not isinstance(channel, dict)
+        or payload.get("tradingActionsAvailable") is not False
+    ):
+        raise RuntimeError("Invalid monitoring response: persisted read-only state is missing")
+    return (
+        f"monitoring status={payload.get('status')} "
+        f"job={job['jobId']} incidents={len(payload.get('activeIncidents') or [])} "
+        f"channel={channel.get('status')}"
+    )
+
+
+def validate_data_foundation_payload(payload: Any) -> str:
+    settings = payload.get("settings") if isinstance(payload, dict) else None
+    adapters = settings.get("marketDataAdapters") if isinstance(settings, dict) else None
+    if not isinstance(adapters, list) or not adapters:
+        raise RuntimeError("Invalid data foundation response: capability matrix is missing")
+    required = {
+        "market",
+        "timeframes",
+        "historyDepth",
+        "adjustmentModes",
+        "freshnessSemantics",
+        "credentialRequirements",
+        "readOnly",
+    }
+    if any(not isinstance(adapter, dict) or not required <= adapter.keys() for adapter in adapters):
+        raise RuntimeError("Invalid data foundation response: adapter capability fields are incomplete")
+    free_stockdb = next(
+        (adapter for adapter in adapters if adapter.get("id") == "free-stockdb-ohlcv"),
+        None,
+    )
+    if (
+        not isinstance(free_stockdb, dict)
+        or free_stockdb.get("readOnly") is not True
+        or free_stockdb.get("requiresTradingKey") is not False
+    ):
+        raise RuntimeError("Invalid data foundation response: free-stockdb is not isolated as read-only")
+    return (
+        f"data-foundation adapters={len(adapters)} "
+        f"free-stockdb={free_stockdb.get('status')} read-only=True"
+    )
+
+
 def build_p0_pipeline_payload(
     market: str,
     symbol: str,
@@ -2494,6 +2548,22 @@ def wait_for_json(url: str, timeout_seconds: int) -> Any:
     raise RuntimeError(f"Timed out waiting for JSON from {url}: {last_error}")
 
 
+def wait_for_monitoring(url: str, timeout_seconds: int) -> Any:
+    deadline = time.time() + timeout_seconds
+    last_error: Exception | None = None
+    while time.time() < deadline:
+        try:
+            payload = request_json(url, timeout_seconds=5)
+            validate_monitoring_payload(payload)
+            return payload
+        except (OSError, URLError, json.JSONDecodeError, RuntimeError) as error:
+            last_error = error
+            time.sleep(1)
+    raise RuntimeError(
+        f"Timed out waiting for monitoring state from {url}: {last_error}"
+    )
+
+
 def wait_for_text(url: str, timeout_seconds: int) -> str:
     deadline = time.time() + timeout_seconds
     last_error: Exception | None = None
@@ -4773,6 +4843,18 @@ def run_smoke(
 
         health_payload = wait_for_json(join_url(base_url, "/health"), timeout_seconds)
         print(validate_health_payload(health_payload))
+
+        monitoring_payload = wait_for_monitoring(
+            join_url(base_url, "/api/operations/monitoring"),
+            timeout_seconds,
+        )
+        print(validate_monitoring_payload(monitoring_payload))
+
+        settings_payload = wait_for_json(
+            join_url(base_url, "/api/settings/status"),
+            timeout_seconds,
+        )
+        print(validate_data_foundation_payload(settings_payload))
 
         index_html = wait_for_text(base_url, timeout_seconds)
         if "AI Quantification Tools" not in index_html:

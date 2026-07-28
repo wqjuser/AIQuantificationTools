@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from quant_core.domain import DataQuality
+from quant_core.data_foundation import data_quality_from_payload, data_quality_to_payload
 from quant_core.terminal import Instrument
 
 
@@ -241,12 +242,7 @@ def _watchlist_cache_refresh_item_from_payload(payload: object) -> WatchlistCach
     raw_quality = payload.get("quality")
     if not isinstance(raw_quality, dict):
         raise ValueError("watchlist_cache_refresh_quality_must_be_object")
-    quality = DataQuality(
-        source=str(raw_quality.get("source") or "unknown"),
-        is_complete=bool(raw_quality.get("isComplete")),
-        warnings=[str(warning) for warning in raw_quality.get("warnings", []) if isinstance(warning, str)],
-        rows=int(raw_quality.get("rows") or 0),
-    )
+    quality = data_quality_from_payload(raw_quality)
     return WatchlistCacheRefreshItem(
         market=str(payload.get("market") or ""),
         symbol=str(payload.get("symbol") or ""),
@@ -261,9 +257,4 @@ def _watchlist_cache_refresh_item_from_payload(payload: object) -> WatchlistCach
 
 
 def _data_quality_to_payload(quality: DataQuality) -> dict[str, object]:
-    return {
-        "source": quality.source,
-        "isComplete": quality.is_complete,
-        "warnings": list(quality.warnings),
-        "rows": quality.rows,
-    }
+    return data_quality_to_payload(quality)

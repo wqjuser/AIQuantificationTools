@@ -1934,9 +1934,28 @@ export interface MarketKlineBar {
 
 export interface MarketKlineQuality {
   source: string;
+  originSource?: string | null;
   isComplete: boolean;
   warnings: string[];
   rows: number;
+  observedAt?: string | null;
+  marketTime?: string | null;
+  calendarId?: string | null;
+  adjustmentMode?: string;
+  freshness?: "fresh" | "stale" | "historical" | "unknown" | string;
+  coverage?: {
+    actualRows: number;
+    expectedRows: number;
+    gapCount: number;
+    ratio: number;
+  };
+  canonicalHash?: string;
+  issues?: Array<{
+    code: string;
+    severity: "warning" | "blocked" | string;
+    count: number;
+    message: string;
+  }>;
 }
 
 export interface MarketKlinesResult {
@@ -2092,6 +2111,11 @@ export interface PlatformSettingsMarketDataAdapter {
   route: "public_ohlcv" | string;
   capabilities: string[];
   timeframes: ResearchTimeframe[];
+  historyDepth?: string;
+  adjustmentModes?: string[];
+  freshnessSemantics?: string;
+  credentialRequirements?: string[];
+  readOnly?: boolean;
   requiresApiKey: boolean;
   requiresTradingKey: boolean;
   cacheScope: string;
@@ -16272,6 +16296,14 @@ function isPlatformSettingsMarketDataAdapter(value: unknown): value is PlatformS
     adapter.capabilities.every((capability) => typeof capability === "string") &&
     Array.isArray(adapter.timeframes) &&
     adapter.timeframes.every(isTimeframe) &&
+    (adapter.historyDepth === undefined || typeof adapter.historyDepth === "string") &&
+    (adapter.adjustmentModes === undefined ||
+      (Array.isArray(adapter.adjustmentModes) && adapter.adjustmentModes.every((mode) => typeof mode === "string"))) &&
+    (adapter.freshnessSemantics === undefined || typeof adapter.freshnessSemantics === "string") &&
+    (adapter.credentialRequirements === undefined ||
+      (Array.isArray(adapter.credentialRequirements) &&
+        adapter.credentialRequirements.every((requirement) => typeof requirement === "string"))) &&
+    (adapter.readOnly === undefined || typeof adapter.readOnly === "boolean") &&
     typeof adapter.requiresApiKey === "boolean" &&
     typeof adapter.requiresTradingKey === "boolean" &&
     typeof adapter.cacheScope === "string" &&
@@ -19762,7 +19794,8 @@ function isMarketKlineQuality(value: unknown): value is MarketKlineQuality {
     typeof quality.isComplete === "boolean" &&
     Array.isArray(quality.warnings) &&
     quality.warnings.every((warning) => typeof warning === "string") &&
-    typeof quality.rows === "number"
+    typeof quality.rows === "number" &&
+    isOptionalDataQualityContract(quality)
   );
 }
 
@@ -20782,6 +20815,9 @@ function isResearchRunDataSnapshot(value: unknown): boolean {
     (snapshot.snapshotHash === undefined || typeof snapshot.snapshotHash === "string") &&
     Array.isArray(snapshot.bars) &&
     snapshot.bars.every(isMarketKlineBar) &&
+    isOptionalDataQualityContract(snapshot) &&
+    (snapshot.offlineReplay === undefined || isOfflineReplayEvidence(snapshot.offlineReplay)) &&
+    (snapshot.sourceComparison === undefined || isSourceComparisonReport(snapshot.sourceComparison)) &&
     (snapshot.preparationEvidence === undefined ||
       isResearchRunDataPreparationEvidence(snapshot.preparationEvidence))
   );
@@ -20884,7 +20920,71 @@ function isResearchRunDataQuality(value: unknown): boolean {
     typeof quality.isComplete === "boolean" &&
     Array.isArray(quality.warnings) &&
     quality.warnings.every((warning) => typeof warning === "string") &&
-    typeof quality.rows === "number"
+    typeof quality.rows === "number" &&
+    isOptionalDataQualityContract(quality)
+  );
+}
+
+function isOptionalDataQualityContract(value: Record<string, unknown>): boolean {
+  const coverage = value.coverage;
+  const issues = value.issues ?? value.qualityIssues;
+  return (
+    (value.originSource === undefined || value.originSource === null || typeof value.originSource === "string") &&
+    (value.observedAt === undefined || value.observedAt === null || typeof value.observedAt === "string") &&
+    (value.marketTime === undefined || value.marketTime === null || typeof value.marketTime === "string") &&
+    (value.calendarId === undefined || value.calendarId === null || typeof value.calendarId === "string") &&
+    (value.adjustmentMode === undefined || typeof value.adjustmentMode === "string") &&
+    (value.freshness === undefined || typeof value.freshness === "string") &&
+    (value.canonicalHash === undefined || typeof value.canonicalHash === "string") &&
+    (coverage === undefined ||
+      (isPlainRecord(coverage) &&
+        typeof coverage.actualRows === "number" &&
+        typeof coverage.expectedRows === "number" &&
+        typeof coverage.gapCount === "number" &&
+        typeof coverage.ratio === "number")) &&
+    (issues === undefined ||
+      (Array.isArray(issues) &&
+        issues.every(
+          (issue) =>
+            isPlainRecord(issue) &&
+            typeof issue.code === "string" &&
+            typeof issue.severity === "string" &&
+            typeof issue.count === "number" &&
+            typeof issue.message === "string"
+        )))
+  );
+}
+
+function isOfflineReplayEvidence(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    value.status === "verified" &&
+    value.mode === "embedded_snapshot" &&
+    typeof value.rows === "number" &&
+    typeof value.canonicalHash === "string" &&
+    value.networkRequired === false
+  );
+}
+
+function isSourceComparisonReport(value: unknown): boolean {
+  return (
+    isPlainRecord(value) &&
+    value.schemaVersion === 1 &&
+    (value.status === "agreement" ||
+      value.status === "warning" ||
+      value.status === "blocked" ||
+      value.status === "unavailable") &&
+    typeof value.primarySource === "string" &&
+    typeof value.secondarySource === "string" &&
+    typeof value.primaryRows === "number" &&
+    typeof value.secondaryRows === "number" &&
+    typeof value.overlapRows === "number" &&
+    typeof value.overlapRatio === "number" &&
+    isPlainRecord(value.fields) &&
+    Array.isArray(value.differences) &&
+    value.valuesMerged === false &&
+    (value.reason === null || typeof value.reason === "string") &&
+    typeof value.reportHash === "string"
   );
 }
 

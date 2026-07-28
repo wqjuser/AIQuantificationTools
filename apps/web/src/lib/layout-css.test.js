@@ -20,6 +20,10 @@ const portfolioStage4SectionSource = readFileSync(
   new URL("../components/PortfolioStage4Section.tsx", import.meta.url),
   "utf8"
 );
+const executionAutoPaperTradingSource = readFileSync(
+  new URL("../components/ExecutionAutoPaperTradingSection.tsx", import.meta.url),
+  "utf8"
+);
 const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
 const readmeSource = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
 const productPlanSource = readFileSync(new URL("../../../../docs/product-plan.md", import.meta.url), "utf8");
@@ -1066,6 +1070,13 @@ describe("terminal layout css", () => {
       "border-color: #c9a34c;",
       "background: #fff6da;",
       "color: var(--amber);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-data-provider-table", [
+      "table-layout: fixed;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-data-provider-table th,\n.design-data-provider-table td", [
+      "overflow-wrap: anywhere;",
+      "white-space: normal;",
     ])).toBe(true);
     expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .terminal-operations-workspace .terminal-panel', [
       "border-color: var(--border);",
@@ -6555,5 +6566,17 @@ describe("terminal layout css", () => {
     expect(cssBlock(".history-panel-actions")).toContain("display: flex;");
     expect(cssBlock(".history-import-button")).toContain("min-height: 30px;");
     expect(cssBlock(".history-import-input")).toContain("display: none;");
+  });
+
+  test("keeps M2 server monitoring read-only and responsive", () => {
+    expect(executionAutoPaperTradingSource).toContain("api/operations/monitoring");
+    expect(executionAutoPaperTradingSource).toContain("M2 · 服务端告警");
+    expect(executionAutoPaperTradingSource).toContain("本区域只读取运行状态");
+    expect(executionAutoPaperTradingSource).toContain("<details>");
+    expect(executionAutoPaperTradingSource).not.toContain("monitoring/restart");
+    expect(cssBlock(".execution-auto-server-monitoring")).toContain("min-width");
+    expect(styles).toContain(
+      ".execution-auto-server-monitoring > dl {\n    grid-template-columns: repeat(2, minmax(0, 1fr));",
+    );
   });
 });

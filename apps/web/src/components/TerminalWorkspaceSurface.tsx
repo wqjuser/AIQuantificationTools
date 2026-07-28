@@ -34,6 +34,7 @@ import {
 import type {
   CacheWatchlistRefreshRun,
   MarketCalendarStatus,
+  PlatformSettingsStatus,
   PortfolioBacktestRun,
   ResearchNoteResult,
 } from "../lib/terminal-api";
@@ -64,6 +65,23 @@ interface TerminalWorkspaceSurfaceProps {
   action: TerminalWorkspaceSurfaceAction;
   activeWorkAreaId: ProductWorkAreaId;
   adapterRows: BrokerAdapterRow[];
+  dataAdapters?: Array<
+    Pick<
+      PlatformSettingsStatus["marketDataAdapters"][number],
+      | "id"
+      | "market"
+      | "provider"
+      | "status"
+      | "capabilities"
+      | "timeframes"
+      | "historyDepth"
+      | "adjustmentModes"
+      | "freshnessSemantics"
+      | "credentialRequirements"
+      | "readOnly"
+      | "cacheScope"
+    >
+  >;
   aiReview: {
     busy: boolean;
     comparisonExperimentIds: string[];
@@ -881,6 +899,28 @@ function ResearchSurface({
     })
     : "—";
   const dataSource = evidenceSnapshot?.source ?? evidenceQuality?.source ?? "—";
+  const adjustmentMode = evidenceSnapshot?.adjustmentMode ?? evidenceQuality?.adjustmentMode ?? "none";
+  const freshness = evidenceSnapshot?.freshness ?? evidenceQuality?.freshness ?? "unknown";
+  const coverage = evidenceSnapshot?.coverage ?? evidenceQuality?.coverage;
+  const sourceComparison = evidenceSnapshot?.sourceComparison;
+  const sourceComparisonLabel = sourceComparison?.status === "unavailable"
+    ? sourceComparison.reason === "comparison_not_required_for_context"
+      ? "当前场景无需对照"
+      : sourceComparison.reason?.startsWith("secondary_source_failed")
+        ? "第二来源不可用"
+        : "未配置第二来源"
+    : {
+      agreement: "来源一致",
+      warning: "差异待复核",
+      blocked: "差异阻断",
+    }[sourceComparison?.status ?? "warning"];
+  const sourceComparisonNextAction = sourceComparison?.status === "warning"
+    || sourceComparison?.status === "blocked"
+    ? `复核 ${sourceComparison.differences.length} 项差异`
+    : sourceComparison?.status === "unavailable"
+      && sourceComparison.reason !== "comparison_not_required_for_context"
+      ? "按需配置只读对照源"
+      : "无需处理";
   const dataRows = evidenceSnapshot?.rows
     ?? evidenceQuality?.rows
     ?? evidenceRun?.dataRows
@@ -1195,6 +1235,11 @@ function ResearchSurface({
             <div className="design-kv-row"><span>数据行数</span><strong>{dataRows.toLocaleString()}</strong></div>
             <div className="design-kv-row"><span>快照范围</span><strong>{evidenceSnapshot?.end ? new Date(evidenceSnapshot.end).toLocaleDateString("zh-CN") : "—"}</strong></div>
             <div className="design-kv-row"><span>完整性</span><Status tone={evidenceQuality?.isComplete ? "positive" : "warning"}>{evidenceQuality?.isComplete ? "完整" : "待复核"}</Status></div>
+            <div className="design-kv-row"><span>复权 / 时效</span><strong>{adjustmentMode} · {freshness}</strong></div>
+            <div className="design-kv-row"><span>覆盖率</span><strong>{coverage ? `${(coverage.ratio * 100).toFixed(1)}% · 缺口 ${coverage.gapCount}` : "—"}</strong></div>
+            <div className="design-kv-row"><span>跨源差异</span><Status tone={sourceComparison?.status === "agreement" ? "positive" : "warning"}>{sourceComparisonLabel}</Status></div>
+            <div className="design-kv-row"><span>差异报告</span><strong title={sourceComparison?.reportHash ?? "—"}>{sourceComparison ? `${sourceComparison.overlapRows} 行重叠 · ${sourceComparison.reportHash.slice(0, 9)}…` : "—"}</strong></div>
+            <div className="design-kv-row"><span>下一步</span><strong>{sourceComparisonNextAction}</strong></div>
           </SurfacePanel>
           <SurfacePanel className="design-research-evidence-card" title="审计回放">
             <div className="design-kv-row"><span>Run ID</span><strong title={runId ?? "—"}>{compactRunId(runId)}</strong></div>
@@ -1205,7 +1250,8 @@ function ResearchSurface({
           <SurfacePanel className="design-research-evidence-card" title="恢复与复现">
             <div className="design-kv-row"><span>持久化运行</span><Status>{runId ? "已归档" : "待运行"}</Status></div>
             <div className="design-kv-row"><span>自动重试</span><strong>未声明</strong></div>
-            <div className="design-kv-row"><span>回放状态</span><strong>{runId ? "可复现" : "待运行"}</strong></div>
+            <div className="design-kv-row"><span>离线回放</span><strong>{evidenceSnapshot?.offlineReplay?.status === "verified" ? "哈希已验证 · 无需网络" : runId ? "历史快照" : "待运行"}</strong></div>
+            <div className="design-kv-row"><span>市场日历</span><strong title={evidenceSnapshot?.calendarId ?? "—"}>{evidenceSnapshot?.calendarId ?? "—"}</strong></div>
           </SurfacePanel>
         </div>
         <SurfacePanel className="design-research-runs" title="最近研究运行">
@@ -3207,12 +3253,21 @@ function AuditSurface({
 function SettingsSurface({
   action,
   adapterRows,
+  dataAdapters,
   source,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "adapterRows" | "source" | "workspace"
+  "action" | "adapterRows" | "dataAdapters" | "source" | "workspace"
 >) {
+  const readyDataAdapterCount = dataAdapters?.filter((adapter) => adapter.status === "ready").length ?? 0;
+  const dataAdapterHealthTone = !dataAdapters?.length
+    ? "neutral"
+    : readyDataAdapterCount === dataAdapters.length
+      ? "positive"
+      : readyDataAdapterCount
+        ? "warning"
+        : "risk";
   return (
     <>
       <PageHeader action={action} title="设置" />
@@ -3238,43 +3293,72 @@ function SettingsSurface({
         </nav>
         <div className="design-settings-main">
           <SurfacePanel title="数据源与 Provider">
-            <table className="design-table compact">
+            <table className="design-table compact design-data-provider-table">
               <thead>
                 <tr>
-                  <th>类别</th>
+                  <th>市场</th>
                   <th>适配器</th>
                   <th>能力</th>
-                  <th>时间周期覆盖</th>
-                  <th>Key 要求</th>
-                  <th>健康状态</th>
-                  <th>缓存范围</th>
+                  <th>周期 / 深度</th>
+                  <th>复权 / 时效</th>
+                  <th>凭据要求</th>
+                  <th>状态 / 边界</th>
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ["A 股", "AkShare", "行情/财务/基本面"],
-                  ["A 股", "Tencent", "行情"],
-                  ["A 股", "Eastmoney", "行情/资讯"],
-                  ["美股", "yfinance", "行情/财务"],
-                  ["美股", "Finnhub", "行情/财务/新闻"],
-                  ["加密货币", "CCXT", "行情/交易"],
-                ].map(([market, adapter, capability], index) => (
-                  <tr key={adapter}>
-                    <td>{market}</td>
-                    <td>{adapter}</td>
-                    <td>{capability}</td>
-                    <td>1m/5m/15m/1h/1d</td>
-                    <td>{index % 2 ? "是" : "否"}</td>
+                {dataAdapters?.map((adapter) => (
+                  <tr key={adapter.id}>
                     <td>
-                      <Status tone={source === "core" ? "positive" : "warning"}>
-                        {source === "core" ? "正常" : "快照"}
-                      </Status>
+                      {adapter.market === "ashare"
+                        ? "A 股"
+                        : adapter.market === "us"
+                          ? "美股"
+                          : "加密货币"}
                     </td>
-                    <td>T+0 本地缓存</td>
+                    <td>{adapter.provider}</td>
+                    <td>{adapter.capabilities.join(" / ")}</td>
+                    <td>
+                      {adapter.timeframes.join(" / ")} · {adapter.historyDepth ?? "未声明"}
+                    </td>
+                    <td>
+                      {adapter.adjustmentModes?.join(" / ") || "未声明"} ·{" "}
+                      {adapter.freshnessSemantics ?? "未声明"}
+                    </td>
+                    <td>{adapter.credentialRequirements?.join(" / ") || "无需凭据"}</td>
+                    <td>
+                      <Status
+                        tone={
+                          adapter.status === "ready"
+                            ? "positive"
+                            : adapter.status === "blocked" || adapter.status === "config_required"
+                              ? "risk"
+                              : "warning"
+                        }
+                      >
+                        {adapter.status === "ready"
+                          ? "可用"
+                          : adapter.status === "blocked" || adapter.status === "config_required"
+                            ? "阻断"
+                            : "待观察"}
+                      </Status>
+                      {" · "}
+                      {adapter.readOnly ? "只读" : "可写"} · {adapter.cacheScope}
+                    </td>
                   </tr>
                 ))}
+                {!dataAdapters?.length ? (
+                  <tr>
+                    <td colSpan={7}>
+                      能力矩阵尚未从核心服务加载；不会用静态配置冒充健康状态。
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
+            <div className="design-live-warning small">
+              <AlertTriangle size={14} />
+              已配置不等于健康；状态、复权、时效和只读边界均来自核心服务契约。
+            </div>
           </SurfacePanel>
           <SurfacePanel title="AI Provider 设置">
             <table className="design-table compact">
@@ -3453,14 +3537,32 @@ function SettingsSurface({
             ))}
           </SurfacePanel>
           <SurfacePanel title="最近健康检查（只读）">
-            {["数据源适配器", "AI Provider", "执行适配器", "总体状态"].map(
-              (label) => (
-                <div className="design-kv-row" key={label}>
-                  <span>{label}</span>
-                  <Status>{source === "core" ? "正常" : "快照"}</Status>
-                </div>
-              ),
-            )}
+            <div className="design-kv-row">
+              <span>数据源适配器</span>
+              <Status tone={dataAdapterHealthTone}>
+                {dataAdapters?.length
+                  ? `${readyDataAdapterCount}/${dataAdapters.length} 可用`
+                  : "未加载"}
+              </Status>
+            </div>
+            {["AI Provider", "执行适配器"].map((label) => (
+              <div className="design-kv-row" key={label}>
+                <span>{label}</span>
+                <Status tone={source === "core" ? "positive" : "warning"}>
+                  {source === "core" ? "状态已加载" : "快照"}
+                </Status>
+              </div>
+            ))}
+            <div className="design-kv-row">
+              <span>总体状态</span>
+              <Status tone={dataAdapterHealthTone}>
+                {!dataAdapters?.length
+                  ? "未加载"
+                  : readyDataAdapterCount === dataAdapters.length
+                    ? "正常"
+                    : "部分受限"}
+              </Status>
+            </div>
           </SurfacePanel>
         </div>
       </div>

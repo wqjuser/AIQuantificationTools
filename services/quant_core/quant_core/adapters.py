@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
+from urllib.parse import urlencode, urlparse
+from urllib.request import Request, urlopen
 
 from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
 from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_crypto_symbol
@@ -123,6 +126,7 @@ class AkShareMarketDataAdapter(OptionalDependencyAdapter):
             is_complete=True,
             warnings=[],
             rows=len(bars[-bounded_limit:]),
+            adjustment_mode="qfq" if request.timeframe != "1m" else "none",
         )
 
     def _load_akshare_module(self) -> Any:
@@ -289,6 +293,120 @@ class CcxtMarketDataAdapter(OptionalDependencyAdapter):
             return max(1, int(raw_timeout))
         except ValueError:
             return 10000
+
+
+class FreeStockDbMarketDataAdapter(MarketDataAdapter):
+    source = "free-stockdb"
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        timeout_seconds: int = 3,
+        fetch_json: Callable[[str, int], Any] | None = None,
+    ) -> None:
+        parsed = urlparse(base_url.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("free_stockdb_url_invalid")
+        self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = max(1, min(int(timeout_seconds), 30))
+        self.fetch_json = fetch_json or _fetch_free_stockdb_json
+
+    def fetch_ohlcv(
+        self,
+        request: MarketDataRequest,
+        limit: int | None = None,
+    ) -> tuple[list[OHLCVBar], DataQuality]:
+        if request.market != "ashare" or request.timeframe != "1d":
+            return [], DataQuality(
+                source=self.source,
+                is_complete=False,
+                warnings=["free-stockdb comparison adapter only supports A-share daily bars"],
+                rows=0,
+            )
+        bounded_limit = max(1, min(int(limit or 160), 500))
+        expression = f"日k:{ashare_digits(request.symbol)}:*"
+        url = f"{self.base_url}/?{urlencode({'cmd': 'get', 't': expression})}"
+        try:
+            payload = self.fetch_json(url, self.timeout_seconds)
+        except Exception as error:
+            raise RuntimeError(f"free_stockdb_request_failed:{type(error).__name__}") from error
+        bars = free_stockdb_payload_to_bars(payload, request=request)
+        bars = [
+            bar
+            for bar in bars
+            if (request.start is None or bar.timestamp >= request.start)
+            and (request.end is None or bar.timestamp <= request.end)
+        ][-bounded_limit:]
+        return bars, DataQuality(
+            source=self.source,
+            is_complete=bool(bars),
+            warnings=[] if bars else ["free-stockdb returned no A-share daily bars"],
+            rows=len(bars),
+            adjustment_mode="none",
+        )
+
+
+def build_free_stockdb_adapter(
+    environ: dict[str, str] | None = None,
+) -> FreeStockDbMarketDataAdapter | None:
+    environment = environ if environ is not None else os.environ
+    base_url = str(environment.get("AIQT_FREE_STOCKDB_URL") or "").strip()
+    if not base_url:
+        return None
+    try:
+        timeout = int(environment.get("AIQT_FREE_STOCKDB_TIMEOUT_SECONDS") or "3")
+    except ValueError:
+        timeout = 3
+    return FreeStockDbMarketDataAdapter(
+        base_url=base_url,
+        timeout_seconds=timeout,
+    )
+
+
+def free_stockdb_payload_to_bars(
+    payload: Any,
+    *,
+    request: MarketDataRequest,
+) -> list[OHLCVBar]:
+    if isinstance(payload, dict):
+        if payload.get("status") == "not_found":
+            return []
+        rows: list[Any] = [payload]
+    elif isinstance(payload, list):
+        rows = [
+            item[1] if isinstance(item, (list, tuple)) and len(item) > 1 else item
+            for item in payload
+        ]
+    else:
+        return []
+    bars: list[OHLCVBar] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            timestamp = datetime.strptime(str(row["date"]), "%Y%m%d").replace(tzinfo=timezone.utc)
+            bars.append(OHLCVBar(
+                symbol=request.symbol,
+                market="ashare",
+                timeframe="1d",
+                timestamp=timestamp,
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=float(row.get("volume") or 0),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    bars.sort(key=lambda bar: bar.timestamp)
+    return bars
+
+
+def _fetch_free_stockdb_json(url: str, timeout_seconds: int) -> Any:
+    request = Request(url, headers={"Accept": "application/json"}, method="GET")
+    with urlopen(request, timeout=timeout_seconds) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def ccxt_timeframe(timeframe: str) -> str:

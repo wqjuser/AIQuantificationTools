@@ -6849,9 +6849,32 @@ export interface ResearchRunNote {
 
 export interface ResearchRunDataQuality {
   source: string;
+  originSource?: string | null;
   isComplete: boolean;
   warnings: string[];
   rows: number;
+  observedAt?: string | null;
+  marketTime?: string | null;
+  calendarId?: string | null;
+  adjustmentMode?: string;
+  freshness?: string;
+  coverage?: ResearchRunDataCoverage;
+  canonicalHash?: string;
+  issues?: ResearchRunDataQualityIssue[];
+}
+
+export interface ResearchRunDataCoverage {
+  actualRows: number;
+  expectedRows: number;
+  gapCount: number;
+  ratio: number;
+}
+
+export interface ResearchRunDataQualityIssue {
+  code: string;
+  severity: "warning" | "blocked" | string;
+  count: number;
+  message: string;
 }
 
 export type ResearchContextMarketCalendarStatus = "open" | "closed" | "break" | "always_open" | "unknown";
@@ -8618,8 +8641,52 @@ export interface ResearchRunDataSnapshot {
   hash: string;
   snapshotHash?: string;
   bars: ResearchRunDataSnapshotBar[];
+  observedAt?: string | null;
+  marketTime?: string | null;
+  calendarId?: string | null;
+  adjustmentMode?: string;
+  freshness?: string;
+  coverage?: ResearchRunDataCoverage;
+  qualityIssues?: ResearchRunDataQualityIssue[];
+  offlineReplay?: {
+    status: "verified";
+    mode: "embedded_snapshot";
+    rows: number;
+    canonicalHash: string;
+    networkRequired: false;
+  };
+  sourceComparison?: ResearchRunSourceComparison;
   preparationEvidence?: ResearchRunDataPreparationEvidence;
   marketCalendar?: ResearchContextMarketCalendar;
+}
+
+export interface ResearchRunSourceComparison {
+  schemaVersion: 1;
+  status: "agreement" | "warning" | "blocked" | "unavailable";
+  primarySource: string;
+  secondarySource: string;
+  primaryRows: number;
+  secondaryRows: number;
+  overlapRows: number;
+  overlapRatio: number;
+  fields: Record<
+    string,
+    {
+      classification: "agreement" | "warning" | "blocked";
+      maxRelativeDifference: number;
+      warningThreshold: number;
+      blockedThreshold: number;
+    }
+  >;
+  differences: Array<{
+    timestamp: string;
+    field: string;
+    relativeDifference: number;
+    classification: "warning" | "blocked";
+  }>;
+  valuesMerged: false;
+  reason: string | null;
+  reportHash: string;
 }
 
 export interface ResearchRunStrategyCondition {
@@ -32615,6 +32682,7 @@ export function buildBacktestReportMarkdown(
   const report = buildBacktestReport(workspace);
   const aiDossier = buildAiReviewDossier(workspace, experiment);
   const snapshot = run.dataSnapshot;
+  const sourceComparison = snapshot?.sourceComparison;
   const preparationEvidence = snapshot?.preparationEvidence ?? null;
   const marketCalendar = snapshot?.marketCalendar ?? null;
   const researchNote = normalizedResearchNote(run.researchNote);
@@ -32700,6 +32768,27 @@ export function buildBacktestReportMarkdown(
         ["Content hash", snapshot?.hash ?? ""],
         ["Snapshot identity", snapshot?.snapshotHash ?? snapshot?.hash ?? ""],
         ["Window", `${snapshot?.start ?? "unknown"} -> ${snapshot?.end ?? "unknown"}`],
+        ["Observed / market time", `${snapshot?.observedAt ?? "unknown"} / ${snapshot?.marketTime ?? "unknown"}`],
+        ["Calendar identity", snapshot?.calendarId ?? "not attached"],
+        ["Adjustment / freshness", `${snapshot?.adjustmentMode ?? "none"} / ${snapshot?.freshness ?? "unknown"}`],
+        [
+          "Coverage",
+          snapshot?.coverage
+            ? `${(snapshot.coverage.ratio * 100).toFixed(1)}% · ${snapshot.coverage.gapCount} gaps`
+            : "not attached"
+        ],
+        [
+          "Offline replay",
+          snapshot?.offlineReplay?.status === "verified" && snapshot.offlineReplay.networkRequired === false
+            ? "verified · network not required"
+            : "not verified"
+        ],
+        [
+          "Source comparison",
+          sourceComparison
+            ? `${sourceComparison.status} · ${sourceComparison.overlapRows} overlapping rows · ${sourceComparison.reportHash}`
+            : "not attached"
+        ],
         ["Quality", run.dataQuality ? `${run.dataQuality.source} · ${run.dataQuality.isComplete ? "complete" : "incomplete"}` : "not attached"],
         ["Market calendar", marketCalendar ? formatMarketCalendarEvidenceDetail(marketCalendar) : "not locked"],
         ["Preparation evidence", preparationEvidence ? formatPreparationEvidenceDetail(preparationEvidence) : "not locked"]

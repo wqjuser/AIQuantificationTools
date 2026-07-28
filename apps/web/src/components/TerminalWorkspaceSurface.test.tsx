@@ -582,6 +582,43 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain("实盘阻断边界");
   });
 
+  it("renders the live data adapter capability matrix without treating configuration as health", () => {
+    const settings = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="settings"
+        dataAdapters={[
+          {
+            id: "free-stockdb-ohlcv",
+            market: "ashare",
+            provider: "free-stockdb",
+            status: "degraded",
+            capabilities: ["daily_ohlcv_comparison"],
+            timeframes: ["1d"],
+            historyDepth: "up-to-500-bars-per-request",
+            adjustmentModes: ["none"],
+            freshnessSemantics: "local-snapshot",
+            credentialRequirements: [],
+            readOnly: true,
+            cacheScope: "comparison-only",
+          },
+        ]}
+      />,
+    );
+
+    expect(settings).toContain("free-stockdb");
+    expect(settings).toContain("daily_ohlcv_comparison");
+    expect(settings).toContain("up-to-500-bars-per-request");
+    expect(settings).toContain("none · local-snapshot");
+    expect(settings).toContain("无需凭据");
+    expect(settings).toContain("待观察");
+    expect(settings).toContain("只读 · comparison-only");
+    expect(settings).toContain("已配置不等于健康");
+    expect(settings).toContain("0/1 可用");
+    expect(settings).toContain("部分受限");
+    expect(settings).not.toContain("Tencent");
+  });
+
   it("keeps the existing execution prerequisite controls reachable in the redesigned surface", () => {
     const execution = renderToStaticMarkup(
       <TerminalWorkspaceSurface
@@ -653,6 +690,14 @@ describe("TerminalWorkspaceSurface", () => {
           isComplete: true,
           warnings: [],
           rows: 500,
+          adjustmentMode: "qfq",
+          freshness: "fresh",
+          coverage: {
+            actualRows: 500,
+            expectedRows: 500,
+            gapCount: 0,
+            ratio: 1,
+          },
         },
         dataSnapshot: {
           source: "tencent",
@@ -664,6 +709,37 @@ describe("TerminalWorkspaceSurface", () => {
           hash: "snapshot-hash-reference",
           snapshotHash: "decision-snapshot-hash-reference",
           bars: [],
+          adjustmentMode: "qfq",
+          freshness: "fresh",
+          calendarId: "ashare:Asia/Shanghai:static-session-template",
+          coverage: {
+            actualRows: 500,
+            expectedRows: 500,
+            gapCount: 0,
+            ratio: 1,
+          },
+          offlineReplay: {
+            status: "verified" as const,
+            mode: "embedded_snapshot" as const,
+            rows: 500,
+            canonicalHash: "snapshot-hash-reference",
+            networkRequired: false as const,
+          },
+          sourceComparison: {
+            schemaVersion: 1 as const,
+            status: "agreement" as const,
+            primarySource: "tencent",
+            secondarySource: "free-stockdb",
+            primaryRows: 500,
+            secondaryRows: 500,
+            overlapRows: 500,
+            overlapRatio: 1,
+            fields: {},
+            differences: [],
+            valuesMerged: false as const,
+            reason: null,
+            reportHash: "comparison-hash-reference",
+          },
         },
       },
     };
@@ -721,6 +797,16 @@ describe("TerminalWorkspaceSurface", () => {
     expect(research).toContain("数据源血缘");
     expect(research).toContain("审计回放");
     expect(research).toContain("恢复与复现");
+    expect(research).toContain("复权 / 时效");
+    expect(research).toContain("qfq · fresh");
+    expect(research).toContain("覆盖率");
+    expect(research).toContain("100.0% · 缺口 0");
+    expect(research).toContain("来源一致");
+    expect(research).toContain("500 行重叠 · compariso…");
+    expect(research).toContain("下一步");
+    expect(research).toContain("无需处理");
+    expect(research).toContain("哈希已验证 · 无需网络");
+    expect(research).toContain("ashare:Asia/Shanghai:static-session-template");
     expect(research).toContain("decision-snapshot-hash-reference");
     expect(backtest).toContain("快照身份");
     expect(backtest).toContain("decision-snapshot-hash-reference");

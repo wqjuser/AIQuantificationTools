@@ -9790,6 +9790,115 @@ em {
   cursor: default;
 }
 
+.execution-auto-server-monitoring {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  padding: 10px;
+}
+
+.execution-auto-server-monitoring > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.execution-auto-server-monitoring > header div,
+.execution-auto-server-monitoring > details div {
+  display: grid;
+  gap: 3px;
+}
+
+.execution-auto-server-monitoring > header span,
+.execution-auto-server-monitoring dt,
+.execution-auto-server-monitoring > details {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.execution-auto-server-monitoring > header strong {
+  font-size: 12px;
+}
+
+.execution-auto-server-monitoring > header em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.execution-auto-server-monitoring > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.execution-auto-server-monitoring > dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.execution-auto-server-monitoring > dl div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 7px;
+}
+
+.execution-auto-server-monitoring dt,
+.execution-auto-server-monitoring dd {
+  overflow: hidden;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-auto-server-monitoring dd {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 10px;
+}
+
+.execution-auto-server-monitoring.healthy {
+  border-color: color-mix(in srgb, var(--teal) 45%, var(--border));
+}
+
+.execution-auto-server-monitoring.warning {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+
+.execution-auto-server-monitoring.danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+
+.execution-auto-server-incident {
+  display: grid;
+  gap: 2px;
+  border-left: 2px solid var(--warning);
+  padding-left: 8px;
+}
+
+.execution-auto-server-incident span,
+.execution-auto-server-incident small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.execution-auto-server-monitoring > details summary {
+  cursor: pointer;
+}
+
+.execution-auto-server-monitoring > details div {
+  margin-top: 6px;
+}
+
 .execution-auto-paper-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -10202,7 +10311,8 @@ em {
 @media (max-width: 900px) {
   .execution-auto-paper-form,
   .execution-auto-paper-metrics,
-  .execution-auto-paper-ledger-summary {
+  .execution-auto-paper-ledger-summary,
+  .execution-auto-server-monitoring > dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -23156,6 +23266,17 @@ button.ai-review-record {
 .design-adapter-table td {
   height: 40px;
   overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.design-data-provider-table {
+  table-layout: fixed;
+}
+
+.design-data-provider-table th,
+.design-data-provider-table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
   white-space: normal;
 }
 

@@ -185,6 +185,7 @@ class AutoPaperTradingService:
                     int(state["consecutiveRunnerFailures"]) + 1
                 )
                 state["lastRunnerErrorAt"] = now
+                state["lastRunnerError"] = (str(error).strip() or "runner_failed")[:240]
             state["updatedAt"] = now
             self._save(state)
             return self._payload(state)
@@ -1345,6 +1346,7 @@ def _default_state() -> dict[str, Any]:
         "lastRunnerCycleAt": None,
         "lastRunnerSuccessAt": None,
         "lastRunnerErrorAt": None,
+        "lastRunnerError": None,
         "market": "crypto",
         "symbol": "BTC/USDT",
         "timeframe": "1m",
