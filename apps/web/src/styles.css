@@ -18647,6 +18647,35 @@ em {
   font-size: 11px;
 }
 
+.design-page-state {
+  display: grid;
+  flex: 1 0 100%;
+  grid-template-columns: 0.8fr 1.2fr 1.2fr;
+  gap: 6px;
+}
+
+.design-page-state > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.design-page-state small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.design-page-state strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .design-primary-action,
 .design-secondary-action,
 .design-link-button,
@@ -20910,7 +20939,9 @@ em {
   background: #0a1926;
 }
 
-.design-settings-nav button {
+.design-settings-nav a {
+  display: flex;
+  align-items: center;
   min-height: 41px;
   border: 0;
   background: transparent;
@@ -20918,9 +20949,10 @@ em {
   text-align: left;
   padding: 0 12px;
   font-size: 10px;
+  text-decoration: none;
 }
 
-.design-settings-nav button.selected {
+.design-settings-nav a.selected {
   border-left: 3px solid #58d6b9;
   background: #123b3b;
   color: #58d6b9;
@@ -20947,6 +20979,98 @@ em {
 .design-settings-bottom button {
   min-height: 30px;
   padding: 0 10px;
+}
+
+.design-connector-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.design-connector-summary article {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 9px;
+  background: var(--surface-raised);
+}
+
+.design-connector-summary header,
+.design-settings-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.design-connector-summary dl,
+.design-connector-summary dl div {
+  display: grid;
+  gap: 3px;
+}
+
+.design-connector-summary dl {
+  margin: 8px 0 0;
+}
+
+.design-connector-summary dl div {
+  grid-template-columns: 54px minmax(0, 1fr);
+}
+
+.design-connector-summary dt,
+.design-connector-summary dd {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.design-connector-summary dt {
+  color: var(--muted);
+}
+
+.design-connector-summary dd {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.design-settings-disclosure {
+  border-bottom: 1px solid var(--border);
+}
+
+.design-settings-disclosure > summary {
+  min-height: 38px;
+  padding: 0 2px;
+  color: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.design-settings-disclosure > summary::marker {
+  color: var(--teal);
+}
+
+.design-settings-disclosure .design-table {
+  margin-bottom: 8px;
+  min-width: 980px;
+}
+
+.design-settings-disclosure td {
+  vertical-align: top;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .design-connector-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-page-state {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-page-state strong {
+    white-space: normal;
+  }
 }
 
 .terminal-operations-workspace {
@@ -24776,11 +24900,11 @@ button.ai-review-record {
   background: var(--surface-raised);
 }
 
-.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav button {
+.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav a {
   color: var(--muted);
 }
 
-.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav button.selected {
+.terminal-shell[data-theme="light"] .surface-settings .design-settings-nav a.selected {
   border-left-color: var(--teal);
   background: var(--teal-dim);
   color: var(--teal);

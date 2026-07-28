@@ -12,7 +12,7 @@ import {
 } from "../lib/terminal-workbench";
 import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
 import type { PortfolioRiskAssessment } from "../lib/portfolio-m5";
-import type { PortfolioBacktestRun } from "../lib/terminal-api";
+import type { PlatformSettingsStatus, PortfolioBacktestRun } from "../lib/terminal-api";
 import {
   buildAuditLedgerRows,
   TerminalWorkspaceSurface,
@@ -120,6 +120,10 @@ describe("TerminalWorkspaceSurface", () => {
       );
       expect(markup).toContain(`surface-${activeWorkAreaId}`);
       expect(markup).toContain("design-page-header");
+      expect(markup).toContain("当前工作区状态");
+      expect(markup).toContain("当前状态");
+      expect(markup).toContain("阻断原因");
+      expect(markup).toContain("下一步");
     }
   });
 
@@ -589,12 +593,17 @@ describe("TerminalWorkspaceSurface", () => {
       <TerminalWorkspaceSurface
         {...baseProps}
         activeWorkAreaId="settings"
-        dataAdapters={[
-          {
+        settings={{
+          schemaVersion: 1,
+          generatedAt: "2026-07-28T08:00:00Z",
+          dataSources: [],
+          marketDataAdapters: [{
             id: "free-stockdb-ohlcv",
             market: "ashare",
+            adapter: "free-stockdb",
             provider: "free-stockdb",
             status: "degraded",
+            route: "public_ohlcv",
             capabilities: ["daily_ohlcv_comparison"],
             timeframes: ["1d"],
             historyDepth: "up-to-500-bars-per-request",
@@ -602,9 +611,57 @@ describe("TerminalWorkspaceSurface", () => {
             freshnessSemantics: "local-snapshot",
             credentialRequirements: [],
             readOnly: true,
+            requiresApiKey: false,
+            requiresTradingKey: false,
             cacheScope: "comparison-only",
-          },
-        ]}
+            cacheDiagnostics: {
+              freshness: "fresh",
+              contextCount: 1,
+              rowCount: 500,
+              latestTimestamp: "2026-07-28T07:30:00Z",
+              freshnessSummary: { fresh: 1, stale: 0, empty: 0 },
+            },
+            externalTelemetry: {
+              status: "degraded",
+              dependency: "free-stockdb-local-service",
+              dependencyAvailable: true,
+              lastError: "provider rate limit",
+              retryState: "provider_error",
+              checkedAt: "2026-07-28T08:00:00Z",
+              installGuidance: {
+                packageName: "free-stockdb",
+                dockerBuildArg: "",
+                packageInstallCommand: "",
+                projectExtraInstallCommand: "",
+                note: "配置只读本地服务。",
+              },
+              lastProviderError: null,
+              providerHealth: {
+                status: "cooldown",
+                recentErrorCount: 3,
+                lastErrorAt: "2026-07-28T07:59:00Z",
+                affectedSymbols: ["600000"],
+                affectedContexts: ["settings"],
+                categorySummary: {
+                  rate_limit: 3,
+                  dependency: 0,
+                  network: 0,
+                  upstream: 0,
+                  incomplete_data: 0,
+                  unknown: 0,
+                },
+                dominantCategory: "rate_limit",
+                windowSummary: {} as never,
+                retryAfterSeconds: 900,
+                reason: "provider_cooldown",
+              },
+            },
+            note: "只读对照源。",
+          }],
+          cache: {} as PlatformSettingsStatus["cache"],
+          executionAdapters: [],
+          safety: { liveTradingAllowed: false, requiredGates: ["adapter-certified"] },
+        } satisfies PlatformSettingsStatus}
       />,
     );
 
@@ -613,12 +670,110 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain("up-to-500-bars-per-request");
     expect(settings).toContain("none · local-snapshot");
     expect(settings).toContain("无需凭据");
-    expect(settings).toContain("待观察");
+    expect(settings).toContain("冷却中");
+    expect(settings).toContain("900 秒");
     expect(settings).toContain("只读 · comparison-only");
-    expect(settings).toContain("已配置不等于健康");
-    expect(settings).toContain("0/1 可用");
+    expect(settings).toContain("已配置不等于健康或已授权");
+    expect(settings).toContain("0/1 健康");
     expect(settings).toContain("部分受限");
     expect(settings).not.toContain("Tencent");
+  });
+
+  it("projects actual M6 connector health, permissions, evidence, and next actions", () => {
+    const settings = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="settings"
+        adapterChainHealthRollups={[{
+          adapterId: "ccxt-live",
+          status: "in_progress",
+          tone: "warning",
+          blockerLabel: "Sandbox probe",
+          latestEvidenceTimestamp: "2026-07-28T08:10:00Z",
+          headline: "Evidence chain in progress",
+        } as never]}
+        adapterHealthProbeRows={[{
+          id: "probe-1",
+          adapterId: "ccxt-live",
+          provider: "ccxt",
+          exchangeId: "binance",
+          mode: "sandbox",
+          timestamp: "2026-07-28T08:12:00Z",
+          status: "blocked",
+          statusLabel: "阻断",
+          tone: "risk",
+          credentialSummary: "API key configured · secret configured",
+          blockerSummary: "account sync pending",
+          boundary: "Paper only · order routing disabled",
+        } as never]}
+        adapterLedgerRows={[{
+          id: "ledger-1",
+          adapterId: "ccxt-live",
+          adapter: "ccxt",
+          market: "crypto",
+          route: "live",
+          timestamp: "2026-07-28T08:11:00Z",
+          state: "live_blocked",
+          label: "Live blocked",
+          actor: "execution-safety",
+          source: "settings-status",
+          reason: "sandbox evidence incomplete",
+          nextStep: "完成沙盒探测并复核只读账户同步",
+          gateSummary: "2/4 gates",
+          liveTradingAllowed: false,
+          tone: "warning",
+        }]}
+        aiReview={{
+          ...baseProps.aiReview,
+          providerId: "openai-compatible",
+          providers: [
+            ...baseProps.aiReview.providers,
+            {
+              configured: true,
+              model: "review-model",
+              providerId: "openai-compatible",
+              sanitizedBaseUrl: "https://models.example/v1",
+            },
+          ],
+        }}
+        settings={{
+          schemaVersion: 1,
+          generatedAt: "2026-07-28T08:00:00Z",
+          dataSources: [],
+          marketDataAdapters: [],
+          cache: {} as PlatformSettingsStatus["cache"],
+          executionAdapters: [{
+            id: "ccxt-live",
+            market: "crypto",
+            adapter: "CCXT Binance",
+            route: "live",
+            status: "config_required",
+            certification: "sandbox only",
+            liveTradingAllowed: false,
+            note: "保持生产路由关闭。",
+          }],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified", "human-confirmed"],
+          },
+        }}
+      />,
+    );
+
+    expect(settings).toContain("连接器状态与下一步");
+    expect(settings).toContain("阻断原因");
+    expect(settings).toContain("影响");
+    expect(settings).toContain("下一步");
+    expect(settings).toContain("外部端点尚无健康探测证据");
+    expect(settings).toContain("https://models.example/v1");
+    expect(settings).toContain("需逐次授权证据摘要");
+    expect(settings).toContain("端点健康待验证");
+    expect(settings).toContain("Sandbox probe");
+    expect(settings).toContain("API key configured · secret configured");
+    expect(settings).toContain("处理“account sync pending”后重新运行只读健康检查");
+    expect(settings).toContain("<details");
+    expect(settings).not.toContain("https://api.openai.com/v1");
+    expect(settings).not.toContain("~/AIQuantTools/data");
   });
 
   it("keeps the existing execution prerequisite controls reachable in the redesigned surface", () => {
