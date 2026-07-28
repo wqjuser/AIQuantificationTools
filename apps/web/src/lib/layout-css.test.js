@@ -16,8 +16,16 @@ const aiReviewStage3SectionSource = readFileSync(
   new URL("../components/AiReviewStage3Section.tsx", import.meta.url),
   "utf8"
 );
+const aiResearchM4SectionSource = readFileSync(
+  new URL("../components/AiResearchM4Section.tsx", import.meta.url),
+  "utf8"
+);
 const portfolioStage4SectionSource = readFileSync(
   new URL("../components/PortfolioStage4Section.tsx", import.meta.url),
+  "utf8"
+);
+const portfolioM5SectionSource = readFileSync(
+  new URL("../components/PortfolioM5Section.tsx", import.meta.url),
   "utf8"
 );
 const executionAutoPaperTradingSource = readFileSync(
@@ -609,6 +617,21 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith('  .promotion-queue [class*="-evidence-row"]', ["grid-template-columns: 1fr;"])).toBe(true);
   });
 
+  test("keeps M5 account risk tables inside the existing portfolio surface without synthetic pass rows", () => {
+    expect(terminalWorkspaceSurfaceSource).toContain("<PortfolioM5Section");
+    expect(terminalWorkspaceSurfaceSource).toContain("allocation.currentWeight");
+    expect(terminalWorkspaceSurfaceSource).not.toContain("组合年化波动率");
+    expect(portfolioM5SectionSource).toContain("只读取 Stage 4 纸面账户回放");
+    expect(portfolioM5SectionSource).toContain('className="portfolio-m5-table-scroll"');
+    expect(cssBlock(".portfolio-m5-section")).toContain("min-width: 0;");
+    expect(cssBlock(".portfolio-m5-table-scroll")).toContain("overflow-x: auto;");
+    expect(cssBlock(".portfolio-m5-two-column")).toContain(
+      "grid-template-columns: minmax(420px, 0.85fr) minmax(560px, 1.15fr);"
+    );
+    expect(hasCssBlockWith("  .portfolio-m5-two-column", ["grid-template-columns: minmax(0, 1fr);"])).toBe(true);
+    expect(hasCssBlockWith("  .portfolio-m5-section", ["grid-column: 1;"])).toBe(true);
+  });
+
   test("keeps the authoritative AI review section presentational and responsive", () => {
     expect(appSource).toContain('import { AiReviewStage3Section } from "./components/AiReviewStage3Section";');
     expect(appSource).toContain("<AiReviewStage3Section");
@@ -621,6 +644,24 @@ describe("terminal layout css", () => {
     expect(cssBlock(".ai-review-stage3-hash")).toContain("overflow-wrap: anywhere;");
     expect(hasCssBlockWith("  .ai-review-stage3-assessments", ["grid-template-columns: 1fr;"])).toBe(true);
     expect(hasCssBlockWith("  .ai-review-stage3-actions button", ["width: 100%;"])).toBe(true);
+  });
+
+  test("keeps the M4 research loop inside the real AI review surface without horizontal overflow", () => {
+    expect(appSource).toContain('import { AiResearchM4Section } from "./components/AiResearchM4Section";');
+    expect(appSource).toContain("researchLoop: (");
+    expect(terminalWorkspaceSurfaceSource).toContain("researchLoop?: ReactNode;");
+    expect(terminalWorkspaceSurfaceSource).toContain("{aiReview.researchLoop}");
+    expect(aiResearchM4SectionSource).toContain("researchContextOnly=true");
+    expect(aiResearchM4SectionSource).toContain("affectsOrderRouting=false");
+    expect(cssBlock("  .surface-ai-review .design-ai-main > .ai-research-m4-section")).toContain(
+      "grid-column: 1 / 3;"
+    );
+    expect(cssBlock(".ai-research-m4-section,\n.ai-research-m4-result")).toContain("min-width: 0;");
+    expect(cssBlock(".ai-research-m4-table-wrap")).toContain("overflow-x: auto;");
+    expect(cssBlock(".ai-research-m4-claims")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(cssBlock(
+      "  .ai-research-m4-financial-grid,\n  .ai-research-m4-score-grid,\n  .ai-research-m4-claims,\n  .ai-research-m4-views,\n  .ai-research-m4-outcomes dl"
+    )).toContain("grid-template-columns: 1fr;");
   });
 
   test("owns Stage 3 authority state in App and re-reads the Decision chain after append", () => {

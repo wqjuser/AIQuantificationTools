@@ -64,6 +64,7 @@ from quant_core.ai_review_stage3 import (
     AiReviewStage3Service,
     DeterministicAiReviewEngine,
 )
+from quant_core.ai_research_m4 import AiResearchM4Service
 from quant_core.ai import LocalResearchAssistant
 from quant_core.auto_paper_trading import AutoPaperTradingRunner, AutoPaperTradingService
 from quant_core.backtest import BacktestEngine
@@ -246,6 +247,7 @@ from quant_core.monitoring import (
     build_webhook_notifier,
 )
 from quant_core.portfolio_backtest import PortfolioBacktestEngine, PortfolioLeg, portfolio_backtest_run_to_payload
+from quant_core.portfolio_m5 import PortfolioM5Service
 from quant_core.stage4_portfolio import (
     build_stage4_portfolio_workflow_snapshot,
     validate_stage4_portfolio_workflow_snapshot,
@@ -706,6 +708,31 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        ai_research_review_id = _ai_research_evidence_route_id(parsed.path)
+        if ai_research_review_id is not None:
+            if not ai_research_review_id:
+                self._send_ai_research_m4_error(ValueError("ai_research_review_not_found"))
+                return
+            try:
+                artifact = self._ai_research_m4_service().create_evidence(
+                    ai_research_review_id,
+                    self._read_json_body(),
+                )
+            except ValueError as error:
+                self._send_ai_research_m4_error(error)
+                return
+            self._send_json({"researchEvidence": artifact}, status=201)
+            return
+        if parsed.path == "/api/ai-research/outcomes":
+            try:
+                outcome = self._ai_research_m4_service().evaluate_outcome(
+                    self._read_json_body()
+                )
+            except ValueError as error:
+                self._send_ai_research_m4_error(error)
+                return
+            self._send_json({"outcome": outcome}, status=201)
+            return
         decision_review_id = _ai_review_decision_route_id(parsed.path)
         if decision_review_id is not None:
             if not decision_review_id:
@@ -2359,6 +2386,20 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {"workflow": snapshot, "auditEvent": audit_event_record_to_payload(audit_event)},
                 status=201,
             )
+            return
+        if parsed.path == "/api/portfolio/risk-assessments":
+            try:
+                assessment = self._portfolio_m5_service().create(self._read_json_body())
+            except LookupError as error:
+                self._send_json({"error": str(error), "detail": str(error)}, status=404)
+                return
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_portfolio_risk_assessment", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json({"assessment": assessment}, status=201)
             return
         if parsed.path == "/api/execution/shadow-sessions":
             try:
@@ -4369,6 +4410,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             self._send_json({"status": "ok", "service": "quant-core"})
             return
+        ai_research_review_id = _ai_research_evidence_route_id(parsed.path)
+        if ai_research_review_id is not None:
+            if not ai_research_review_id:
+                self._send_ai_research_m4_error(ValueError("ai_research_review_not_found"))
+                return
+            try:
+                artifact = self._ai_research_m4_service().get_latest(ai_research_review_id)
+                outcomes = self._ai_research_m4_service().list_outcomes(ai_research_review_id)
+            except ValueError as error:
+                self._send_ai_research_m4_error(error)
+                return
+            self._send_json({"researchEvidence": artifact, "outcomes": outcomes})
+            return
         if parsed.path == "/api/ai-review/providers":
             self._send_json(
                 {
@@ -5179,6 +5233,25 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     },
                 }
             )
+            return
+        if parsed.path == "/api/portfolio/risk-assessments":
+            try:
+                base_run_id, limit = _portfolio_m5_query(parsed.query)
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_portfolio_risk_assessment_query", "detail": str(error)},
+                    status=400,
+                )
+                return
+            try:
+                assessments = self._portfolio_m5_service().list_recent(base_run_id, limit)
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_portfolio_risk_assessment_store", "detail": str(error)},
+                    status=500,
+                )
+                return
+            self._send_json({"assessments": assessments})
             return
         if parsed.path == "/api/execution/shadow-sessions":
             try:
@@ -6244,6 +6317,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             review_store=self.ai_review_store,
         )
 
+    def _ai_research_m4_service(self) -> AiResearchM4Service:
+        return AiResearchM4Service(
+            review_store=self.ai_review_store,
+            run_store=self.run_store,
+            audit_store=self.audit_event_store,
+        )
+
+    def _portfolio_m5_service(self) -> PortfolioM5Service:
+        return PortfolioM5Service(audit_store=self.audit_event_store)
+
     def _current_ai_review_provider_registry(self) -> AiReviewProviderRegistry:
         return self.ai_review_provider_registry or AiReviewProviderRegistry.from_environment()
 
@@ -6270,6 +6353,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         else:
             status = 409
         self._send_json({"error": code, "detail": _ai_review_error_detail(code)}, status=status)
+
+    def _send_ai_research_m4_error(self, error: ValueError) -> None:
+        code = str(error) or "invalid_ai_research_request"
+        self._send_json(
+            {"error": code, "detail": _ai_research_m4_error_detail(code)},
+            status=_ai_research_m4_error_status(code),
+        )
 
     def _stage6_sandbox_service(self) -> Stage6SandboxExecutionService:
         factory = self.stage6_sandbox_route_factory
@@ -6847,6 +6937,15 @@ def _ai_review_decision_route_id(path: str) -> str | None:
     return ai_review_id if ai_review_id and "/" not in ai_review_id else ""
 
 
+def _ai_research_evidence_route_id(path: str) -> str | None:
+    prefix = "/api/ai-reviews/"
+    suffix = "/research-evidence"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return None
+    ai_review_id = unquote(path[len(prefix) : -len(suffix)]).strip()
+    return ai_review_id if ai_review_id and "/" not in ai_review_id else ""
+
+
 def _ai_review_http_projection(
     record: AiReviewRunRecord | AuthoritativeAiReviewRunRecord,
 ) -> dict[str, object]:
@@ -6870,6 +6969,40 @@ def _ai_review_error_detail(code: str) -> str:
         "decision_conflict": "The decision does not supersede the current latest decision.",
     }
     return details.get(code, "Stored AI review evidence conflicts with the requested operation.")
+
+
+def _ai_research_m4_error_status(code: str) -> int:
+    if code.endswith("_not_found"):
+        return 404
+    if any(
+        token in code
+        for token in (
+            "horizon_not_reached",
+            "context_mismatch",
+            "coverage_missing",
+            "binding_invalid",
+            "hash_mismatch",
+            "multi_view_not_allowed",
+        )
+    ):
+        return 409
+    return 400
+
+
+def _ai_research_m4_error_detail(code: str) -> str:
+    details = {
+        "ai_research_review_not_found": "The authoritative AI review was not found.",
+        "ai_research_source_run_not_found": "The source research run was not found.",
+        "ai_research_evidence_not_found": "The M4 research evidence was not found.",
+        "ai_research_outcome_run_not_found": "The audited outcome run was not found.",
+        "ai_research_benchmark_run_not_found": "The audited benchmark run was not found.",
+        "ai_research_horizon_not_reached": "The declared recommendation horizon has not been reached.",
+        "ai_research_outcome_context_mismatch": "The outcome run does not match the original research context.",
+        "ai_research_benchmark_context_mismatch": "The benchmark run does not match the original market and timeframe.",
+        "ai_research_benchmark_coverage_missing": "The benchmark run does not cover the recommendation horizon.",
+        "multi_view_not_allowed_for_timeframe": "Multi-view research is limited to daily or weekly research.",
+    }
+    return details.get(code, "The M4 AI research request or stored evidence is invalid.")
 
 
 def _ai_review_read_error_code(error: ValueError) -> str:
@@ -7195,6 +7328,22 @@ def _stage4_portfolio_workflow_query(raw_query: str) -> tuple[str, int]:
     if not 1 <= limit <= 50:
         raise ValueError("invalid_stage4_portfolio_workflow_query")
     return base_run_id, limit
+
+
+def _portfolio_m5_query(raw_query: str) -> tuple[str, int]:
+    query = parse_qs(raw_query, keep_blank_values=True)
+    if set(query) - {"baseRunId", "limit"} or len(query.get("baseRunId", [])) != 1:
+        raise ValueError("portfolio_m5_query_invalid")
+    base_run_id = query["baseRunId"][0].strip()
+    raw_limit = query.get("limit", ["20"])
+    if (
+        not base_run_id
+        or len(raw_limit) != 1
+        or not raw_limit[0].isdigit()
+        or not 1 <= int(raw_limit[0]) <= 100
+    ):
+        raise ValueError("portfolio_m5_query_invalid")
+    return base_run_id, int(raw_limit[0])
 
 
 def _stage5_shadow_source_workflow(
