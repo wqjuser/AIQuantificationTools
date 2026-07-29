@@ -12,6 +12,7 @@ WORKDIR /app
 
 COPY services/quant_core/pyproject.toml services/quant_core/pyproject.toml
 RUN pip install --no-cache-dir ccxt
+RUN pip install --no-cache-dir "cryptography>=42"
 RUN if [ "$INSTALL_DATA_DEPS" = "true" ]; then \
       pip install --no-cache-dir akshare yfinance; \
     fi

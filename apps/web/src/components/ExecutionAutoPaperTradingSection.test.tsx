@@ -1,14 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { WorkspaceFetcher } from "../lib/terminal-api";
 import {
   AutoTradingLedger,
   AutoTradingRiskOverview,
   AutoTradingRuntimeHealth,
   AutoTradingServerMonitoring,
+  authorizeAutoLiveSession,
   autoTradingActionPath,
   autoTradingAttention,
+  autoTradingDailyDrawdown,
   autoTradingErrorMessage,
   autoTradingNotification,
+  autoTradingProfitDrawdown,
   ExecutionAutoPaperTradingSection,
   hasUnresolvedAutoOrder
 } from "./ExecutionAutoPaperTradingSection";
@@ -23,11 +27,71 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("Binance Spot Testnet");
     expect(html).toContain("Binance Spot 生产实盘");
     expect(html).toContain("保存并开启");
+    expect(html).toContain("触发涨跌幅 %（0.05–20）");
     expect(html).toContain("生产实盘会使用真实资金");
     expect(html).toContain("由后端每 35 秒");
     expect(html).toContain("关闭页面后仍会继续");
     expect(html).toContain("系统通知不可用");
     expect(html).toContain("M2 · 服务端告警");
+  });
+
+  it("renders the separate dynamic-trading workspace from the same auto-trading controls", () => {
+    const html = renderToStaticMarkup(
+      <ExecutionAutoPaperTradingSection
+        baseUrl="http://127.0.0.1:8765"
+        chart={<div>真实行情图</div>}
+        instruments={[
+          { symbol: "BTC/USDT", name: "Bitcoin", market: "crypto", changePct: 1.2, price: 64000 },
+          { symbol: "600000", name: "浦发银行", market: "ashare", changePct: -0.4, price: 9.12 }
+        ]}
+        selectedSymbol="600000"
+        variant="workspace"
+        workflowGuide={<div>自动交易流程</div>}
+      />
+    );
+
+    expect(html).toContain("动态交易");
+    expect(html).toContain("完整进程");
+    expect(html).toContain("真实行情图");
+    expect(html).toContain("BTC/USDT");
+    expect(html).toContain("600000 · 行情观察");
+    expect(html).toContain("自动交易目标仍为 BTC/USDT");
+    expect(html).toContain("自动交易控制");
+    expect(html).toContain("运行状态");
+    expect(html).toContain("风险参数");
+    expect(html).toContain("授权证据");
+    expect(html).toContain("亏损回撤");
+    expect(html).toContain("盈利回撤");
+    expect(html).toContain("小时额度");
+    expect(html).toContain("连续失败");
+    expect(html).toContain("保存并开启");
+    expect(html).toContain("当前持仓");
+    expect(html).toContain("委托意图");
+    expect(html).toContain("最近成交");
+    expect(html).toContain("执行链");
+    expect(html).toContain("账户与风险");
+    expect(html).toContain("不使用杠杆");
+  });
+
+  it("reauthorizes the current live session without switching mode or enabling monitoring", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    const fetcher: WorkspaceFetcher = async (url, init) => {
+      calls.push([String(url), init]);
+      return {
+        json: async () => ({ liveTradingAllowed: true }),
+        ok: true
+      } as Response;
+    };
+
+    await authorizeAutoLiveSession("http://127.0.0.1:8765", " wenqingjie ", fetcher);
+
+    expect(calls).toHaveLength(1);
+    const [url, init] = calls[0];
+    expect(url).toBe("http://127.0.0.1:8765/api/execution/auto-paper-trading");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      liveConfirmed: true,
+      liveOperator: "wenqingjie"
+    });
   });
 
   it("recognizes only unresolved testnet and production orders for manual reconciliation", () => {
@@ -286,6 +350,39 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("成交 0.00015 BTC · 9.78 USDT");
   });
 
+  it("shows when an untradeable remainder was released from the strategy ledger", () => {
+    const html = renderToStaticMarkup(
+      <AutoTradingLedger
+        history={[]}
+        state={{
+          executionMode: "testnet",
+          lastDecision: null,
+          lastDecisionContract: null,
+          lastLiveOrder: null,
+          lastTestnetOrder: null,
+          lastOrderResult: null,
+          lastDustDisposition: {
+            executionMode: "testnet",
+            symbol: "BTC/USDT",
+            quantity: 0.00001,
+            referencePrice: 63_500,
+            estimatedNotional: 0.635,
+            reason: "stage6_sandbox_cost_below_minimum",
+            releasedAt: "2026-07-29T00:00:00+08:00",
+            orderSubmitted: false
+          },
+          position: 0,
+          realizedPnl: 0
+        }}
+      />
+    );
+
+    expect(html).toContain("尘埃仓位已释放");
+    expect(html).toContain("0.00001 BTC");
+    expect(html).toContain("0.64 USDT");
+    expect(html).toContain("未提交交易所委托");
+  });
+
   it("shows the exchange-reported fee currency when valuation is estimated", () => {
     const html = renderToStaticMarkup(
       <AutoTradingLedger
@@ -352,7 +449,12 @@ describe("ExecutionAutoPaperTradingSection", () => {
         executionMode: "live",
         equity: 98.5,
         dailyStartEquity: 100,
+        dailyPeakEquity: 102,
+        dailyLossDrawdownPct: 1.5,
+        dailyProfitDrawdownPct: 3.4314,
         dailyLossLimitPct: 2,
+        dailyProfitDrawdownLimitPct: 4,
+        dailyRiskHaltReason: null,
         maxTradesPerHour: 3,
         tradeTimestamps: [
           "2026-07-27T07:40:00Z",
@@ -369,13 +471,17 @@ describe("ExecutionAutoPaperTradingSection", () => {
           quoteCovered: true,
           unexpectedOpenAutoOrderCount: 0
         },
+        liveConfirmed: true,
+        liveSessionTtlHours: 8,
         liveAuthorizedUntil: "2026-07-27T12:00:00Z"
       }} />
     );
 
     expect(html).toContain("风险边界");
-    expect(html).toContain("当日回撤");
+    expect(html).toContain("亏损回撤");
     expect(html).toContain("1.50% / 2.00%");
+    expect(html).toContain("盈利回撤");
+    expect(html).toContain("3.43% / 4.00%");
     expect(html).toContain("剩余 1 次");
     expect(html).toContain("止损 64,350");
     expect(html).toContain("止盈 66,300");
@@ -383,6 +489,57 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("已通过");
     expect(html).toContain("生产授权");
     expect(html).toContain("有效至");
+    expect(html).toContain("达到上限后仅暂停买入与加仓");
+  });
+
+  it("shows permanent production authorization when the configured duration is zero", () => {
+    const html = renderToStaticMarkup(
+      <AutoTradingRiskOverview state={{
+        executionMode: "live",
+        equity: 100,
+        dailyStartEquity: 100,
+        dailyPeakEquity: 100,
+        dailyLossDrawdownPct: 0,
+        dailyProfitDrawdownPct: 0,
+        dailyLossLimitPct: 2,
+        dailyProfitDrawdownLimitPct: 2,
+        dailyRiskHaltReason: null,
+        maxTradesPerHour: 3,
+        tradeTimestamps: [],
+        position: 0,
+        avgCost: 0,
+        stopLossPct: 1,
+        takeProfitPct: 2,
+        lastAccountCheck: null,
+        liveConfirmed: true,
+        liveSessionTtlHours: 0,
+        liveAuthorizedUntil: null,
+      }} />
+    );
+
+    expect(html).toContain("永久有效");
+    expect(html).toContain("手动暂停或急停前持续有效");
+  });
+
+  it("excludes released exchange dust from the strategy loss boundary", () => {
+    expect(autoTradingDailyDrawdown({
+      dailyStartEquity: 94.8945792,
+      dailyReleasedDustNotional: 1.908372,
+      equity: 92.9780776
+    })).toBeCloseTo(0.0087, 4);
+  });
+
+  it("calculates profit drawdown only after equity formed a profit peak", () => {
+    expect(autoTradingProfitDrawdown({
+      dailyStartEquity: 100,
+      dailyPeakEquity: 105,
+      equity: 102
+    })).toBeCloseTo(2.8571, 4);
+    expect(autoTradingProfitDrawdown({
+      dailyStartEquity: 100,
+      dailyPeakEquity: 100,
+      equity: 98
+    })).toBe(0);
   });
 
   it("shows a healthy backend heartbeat and recovered failure history", () => {
@@ -565,5 +722,7 @@ describe("ExecutionAutoPaperTradingSection", () => {
   it("translates browser connection failures into actionable Chinese", () => {
     expect(autoTradingErrorMessage(new TypeError("Failed to fetch")))
       .toBe("无法连接自动交易服务，请检查本地 API 是否运行。");
+    expect(autoTradingErrorMessage(new Error("triggerPct_out_of_range")))
+      .toBe("触发涨跌幅必须在 0.05% 到 20% 之间");
   });
 });

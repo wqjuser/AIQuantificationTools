@@ -41,6 +41,7 @@ export type ProductWorkAreaId =
   | "ai-review"
   | "portfolio"
   | "execution"
+  | "dynamic-trading"
   | "operations"
   | "audit"
   | "settings";
@@ -9349,6 +9350,15 @@ const productWorkAreaDefinitions = [
     deliveryStageId: "production-order-admission"
   },
   {
+    id: "dynamic-trading",
+    label: "Dynamic Trading",
+    description: "Live strategy status, decisions, orders, and risk",
+    accent: "execution",
+    quantLoopStepId: "paper",
+    workflowStageId: "execution",
+    deliveryStageId: "production-order-admission"
+  },
+  {
     id: "operations",
     label: "Operations",
     description: "Data maintenance, research queue, scanners, evidence",
@@ -13729,7 +13739,7 @@ function productWorkAreaStatus(
   hasAuditedRun: boolean,
   workspace: TerminalWorkspace
 ): ProductWorkAreaStatus {
-  if (areaId === "execution") {
+  if (areaId === "execution" || areaId === "dynamic-trading") {
     return hasAuditedRun ? "ready" : "blocked";
   }
   if (areaId === "portfolio" || areaId === "ai-review" || areaId === "audit") {
@@ -35620,13 +35630,7 @@ function freshResearchContext(
     selectedInstrument: instrument,
     selectedTimeframe: timeframe,
     quantLoop: buildPrimaryQuantLoopSteps("research", false),
-    strategy: {
-      name: `${instrument.symbol} ${timeframe} research context`,
-      entry: "Run Pipeline to generate entry rules from the selected context",
-      exit: "Pending audited backtest",
-      position: "Pending risk sizing",
-      risk: "Paper only until a new audited run is available"
-    },
+    strategy: { ...currentWorkspace.strategy },
     metrics: [
       { label: "Return", value: "N/A", tone: "neutral" },
       { label: "Max DD", value: "N/A", tone: "warning" },

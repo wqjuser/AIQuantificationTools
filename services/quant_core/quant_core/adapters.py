@@ -97,7 +97,7 @@ class AkShareMarketDataAdapter(OptionalDependencyAdapter):
                 symbol=symbol,
                 period="weekly" if request.timeframe == "1w" else "daily",
                 start_date=akshare_daily_date(start, fallback_days=fallback_days),
-                end_date=akshare_daily_date(request.end),
+                end_date=akshare_daily_date(request.end or datetime.now(timezone.utc)),
                 adjust="qfq",
             )
             bars = akshare_frame_to_bars(frame, request=request, time_column="日期", limit=bounded_limit)

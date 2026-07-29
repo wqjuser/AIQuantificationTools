@@ -17876,6 +17876,14 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(accepted.status, "filled")
         self.assertEqual(paper.account().positions["600000"], 100)
 
+    def test_crypto_paper_quantity_stays_within_target_notional(self):
+        from quant_core.execution import _paper_quantity
+
+        quantity = _paper_quantity("crypto", 64_428, 20_000)
+
+        self.assertGreater(quantity, 0)
+        self.assertLessEqual(quantity * 64_428, 20_000)
+
     def test_paper_execution_store_persists_orders_bound_to_research_run(self):
         from quant_core.execution import (
             PortfolioPaperOrderStore,
@@ -25787,6 +25795,43 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspaces["execution"]["status"], "blocked")
         self.assertEqual(workspaces["research"]["actionId"], "run-pipeline")
 
+    def test_golden_path_status_projects_automatic_trading_runner_blocker(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            settings={"cache": {"contexts": []}, "safety": {"liveTradingAllowed": True}},
+            runs=[],
+            paper_executions=[],
+            auto_trading={
+                "state": {
+                    "enabled": True,
+                    "executionMode": "live",
+                    "status": "evaluation_error",
+                    "consecutiveRunnerFailures": 12,
+                    "lastRunnerError": (
+                        "binance amount of BTC/USDT must be greater than minimum amount precision of 0.00001"
+                    ),
+                    "runnerHealth": {
+                        "status": "blocked",
+                        "reason": "runner_failures",
+                    },
+                },
+            },
+        )
+
+        workspace = next(item for item in status["workspaces"] if item["id"] == "dynamic-trading")
+        self.assertEqual(workspace["status"], "blocked")
+        self.assertEqual(
+            workspace["reason"],
+            (
+                "Automatic trading runner failed 12 consecutive cycles: "
+                "binance amount of BTC/USDT must be greater than minimum amount precision of 0.00001"
+            ),
+        )
+
     def test_golden_path_status_points_stale_cache_to_market_refresh_before_research(self):
         from quant_core.golden_path import build_golden_path_status
 
@@ -26006,6 +26051,64 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspaces["market"]["status"], "ready")
         self.assertEqual(workspaces["research"]["actionId"], "run-pipeline")
 
+    def test_golden_path_status_allows_research_after_nonblocking_complete_quality_warning(self):
+        from quant_core.golden_path import build_golden_path_status
+
+        status = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 500,
+                            "freshness": "fresh",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[],
+            paper_executions=[],
+            watchlist_refreshes=[
+                {
+                    "runId": "cache-refresh-forming",
+                    "createdAt": "2026-07-29T06:00:00+00:00",
+                    "items": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "name": "浦发银行",
+                            "timeframe": "1d",
+                            "status": "refreshed",
+                            "upsertedRows": 500,
+                            "quality": {
+                                "source": "tencent",
+                                "isComplete": True,
+                                "warnings": ["Expected bar intervals are missing."],
+                                "rows": 500,
+                            },
+                            "error": None,
+                        }
+                    ],
+                }
+            ],
+        )
+
+        self.assertEqual(status["currentStepId"], "research-run")
+        self.assertEqual(status["nextAction"]["id"], "run-pipeline")
+        self.assertTrue(status["steps"][0]["passed"])
+        self.assertEqual(status["steps"][0]["status"], "review")
+        runbook_by_step = {item["stepId"]: item for item in status["runbook"]}
+        self.assertIsNone(runbook_by_step["market-data"]["blocker"])
+        workspaces = {workspace["id"]: workspace for workspace in status["workspaces"]}
+        self.assertEqual(workspaces["market"]["status"], "ready")
+        self.assertEqual(workspaces["research"]["status"], "needs_run")
+
     def test_golden_path_status_marks_market_calendar_review_after_fresh_data(self):
         from quant_core.golden_path import build_golden_path_status
 
@@ -26086,7 +26189,7 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(workspaces["market"]["actionId"], "run-pipeline")
         self.assertEqual(workspaces["market"]["reason"], expected_detail)
 
-    def test_golden_path_status_advances_to_paper_execution_after_audited_ai_run(self):
+    def test_golden_path_status_requires_ready_p0_ai_review_before_paper_execution(self):
         from quant_core.golden_path import build_golden_path_status
         from quant_core.runs import ResearchRunAudit
 
@@ -26143,6 +26246,31 @@ class QuantCoreContractTest(unittest.TestCase):
             backtest_equity_curve=[{"timestamp": "2026-05-26T08:00:00+00:00", "equity": 100000}],
         )
 
+        status_without_review = build_golden_path_status(
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            settings={
+                "cache": {
+                    "contexts": [
+                        {
+                            "market": "ashare",
+                            "symbol": "600000",
+                            "timeframe": "1d",
+                            "rowCount": 500,
+                            "freshness": "fresh",
+                        }
+                    ]
+                },
+                "safety": {"liveTradingAllowed": False},
+            },
+            runs=[audit],
+            paper_executions=[],
+        )
+
+        self.assertEqual(status_without_review["currentStepId"], "ai-review")
+        self.assertEqual(status_without_review["nextAction"]["id"], "run-ai-review")
+
         status = build_golden_path_status(
             market="ashare",
             symbol="600000",
@@ -26163,6 +26291,17 @@ class QuantCoreContractTest(unittest.TestCase):
             },
             runs=[audit],
             paper_executions=[],
+            ai_reviews=[
+                {
+                    "status": "ready",
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "timeframe": "1d",
+                    "strategyRevision": "rev-golden",
+                    "citations": [{"id": "run"}],
+                    "boundary": "Paper review only.",
+                }
+            ],
         )
 
         steps = {step["id"]: step for step in status["steps"]}
@@ -26198,7 +26337,8 @@ class QuantCoreContractTest(unittest.TestCase):
         from http.server import HTTPServer
         from threading import Thread
 
-        from quant_core.api import QuantApiHandler
+        from quant_core.api import QuantApiHandler, _build_p0_ai_review_record
+        from quant_core.ai_review_runs import AiReviewRunStore
         from quant_core.cache import MarketDataCache
         from quant_core.cache_refresh_runs import (
             WatchlistCacheRefreshItem,
@@ -26274,8 +26414,25 @@ class QuantCoreContractTest(unittest.TestCase):
                     )
                 ]
             )
+            cache.upsert_bars(
+                [
+                    OHLCVBar(
+                        market="us",
+                        symbol=f"NEWER{index}",
+                        timeframe="1d",
+                        timestamp=datetime.now(timezone.utc) + timedelta(minutes=index + 1),
+                        open=100.0,
+                        high=101.0,
+                        low=99.0,
+                        close=100.5,
+                        volume=1000,
+                    )
+                    for index in range(9)
+                ]
+            )
             research_store = ResearchRunStore(f"{tmp}/runs.sqlite")
             paper_store = PaperExecutionStore(f"{tmp}/paper.sqlite")
+            ai_review_store = AiReviewRunStore(f"{tmp}/ai_reviews.sqlite")
             refresh_store = WatchlistCacheRefreshRunStore(f"{tmp}/watchlist_cache_refreshes.sqlite")
             refresh_store.record(
                 create_watchlist_cache_refresh_run(
@@ -26298,6 +26455,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 )
             )
             research_store.record(audit)
+            ai_review_store.record(_build_p0_ai_review_record(audit))
 
             class TestHandler(QuantApiHandler):
                 pass
@@ -26305,6 +26463,7 @@ class QuantCoreContractTest(unittest.TestCase):
             TestHandler.cache = cache
             TestHandler.run_store = research_store
             TestHandler.paper_execution_store = paper_store
+            TestHandler.ai_review_store = ai_review_store
             TestHandler.watchlist_cache_refresh_store = refresh_store
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
@@ -31474,6 +31633,28 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(bars[0].open, 9.1112)
         self.assertEqual(bars[0].volume, 123456.0)
         self.assertEqual(bars[-1].close, 9.31)
+
+    def test_akshare_market_data_adapter_uses_current_date_when_daily_end_is_omitted(self):
+        from quant_core.adapters import AkShareMarketDataAdapter
+        from quant_core.domain import MarketDataRequest
+
+        class EmptyFrame:
+            empty = True
+
+        class FakeAkShare:
+            call = None
+
+            @staticmethod
+            def stock_zh_a_hist(*, symbol: str, period: str, start_date: str, end_date: str, adjust: str):
+                FakeAkShare.call = {"start_date": start_date, "end_date": end_date}
+                return EmptyFrame()
+
+        AkShareMarketDataAdapter(akshare_module=FakeAkShare).fetch_ohlcv(
+            MarketDataRequest(market="ashare", symbol="600000", timeframe="1d"),
+            limit=20,
+        )
+
+        self.assertLessEqual(FakeAkShare.call["start_date"], FakeAkShare.call["end_date"])
 
     def test_akshare_market_data_adapter_normalizes_minute_rows(self):
         from quant_core.adapters import AkShareMarketDataAdapter

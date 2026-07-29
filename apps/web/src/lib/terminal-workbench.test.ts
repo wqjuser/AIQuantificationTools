@@ -3579,6 +3579,7 @@ describe("terminal workbench model", () => {
       "ai-review",
       "portfolio",
       "execution",
+      "dynamic-trading",
       "operations",
       "audit",
       "settings"
@@ -3589,6 +3590,12 @@ describe("terminal workbench model", () => {
       status: "blocked",
       deliveryStageId: "production-order-admission",
       deliveryStageStatus: "maintenance"
+    });
+    expect(areas.find((area) => area.id === "dynamic-trading")).toMatchObject({
+      quantLoopStepId: "paper",
+      workflowStageId: "execution",
+      status: "blocked",
+      deliveryStageId: "production-order-admission"
     });
     expect(areas.find((area) => area.id === "market")).toMatchObject({
       deliveryStageId: "market-research",
@@ -3631,6 +3638,7 @@ describe("terminal workbench model", () => {
     expect(statuses["ai-review"]).toBe("ready");
     expect(statuses.portfolio).toBe("ready");
     expect(statuses.execution).toBe("ready");
+    expect(statuses["dynamic-trading"]).toBe("ready");
     expect(statuses.audit).toBe("ready");
   });
 
@@ -9150,14 +9158,24 @@ describe("terminal workbench model", () => {
     });
   });
 
-  test("blocks Strategy Lab readiness when the selected context has pending rules", () => {
-    const workspace = workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
+  test("blocks Strategy Lab readiness when the draft has pending rules", () => {
+    const selectedWorkspace = workspaceWithSelectedInstrument(buildTerminalWorkspace(), {
       symbol: "300750",
       name: "宁德时代",
       market: "ashare",
       changePct: 0,
       price: 189.5
     });
+    const workspace = {
+      ...selectedWorkspace,
+      strategy: {
+        name: "300750 1d research context",
+        entry: "Run Pipeline to generate entry rules from the selected context",
+        exit: "Pending audited backtest",
+        position: "Pending risk sizing",
+        risk: "Paper only until a new audited run is available"
+      }
+    };
 
     expect(buildStrategyReadinessGates(workspace)).toEqual([
       {
@@ -34048,7 +34066,8 @@ describe("terminal workbench model", () => {
       executionMode: "paper_only"
     });
 
-    const workspace = workspaceWithSelectedInstrument(auditedWorkspace, {
+    const strategy = buildTerminalWorkspace().strategy;
+    const workspace = workspaceWithSelectedInstrument({ ...auditedWorkspace, strategy }, {
       symbol: "AAPL",
       name: "Apple",
       market: "us",
@@ -34057,6 +34076,7 @@ describe("terminal workbench model", () => {
 
     expect(workspace.selectedInstrument.symbol).toBe("AAPL");
     expect(workspace.researchRun).toBeNull();
+    expect(workspace.strategy).toEqual(strategy);
     expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
     expect(workspace.decisionLog[0]).toEqual({
       agent: "Research Context",
@@ -34449,11 +34469,13 @@ describe("terminal workbench model", () => {
       executionMode: "paper_only"
     });
 
-    const workspace = workspaceWithSelectedTimeframe(auditedWorkspace, "15m");
+    const strategy = buildTerminalWorkspace().strategy;
+    const workspace = workspaceWithSelectedTimeframe({ ...auditedWorkspace, strategy }, "15m");
 
     expect(workspace.selectedInstrument.symbol).toBe("600000");
     expect(workspace.selectedTimeframe).toBe("15m");
     expect(workspace.researchRun).toBeNull();
+    expect(workspace.strategy).toEqual(strategy);
     expect(workspace.metrics.map((metric) => metric.value)).toEqual(["N/A", "N/A", "N/A", "0"]);
     expect(workspace.decisionLog[0]).toEqual({
       agent: "Research Context",

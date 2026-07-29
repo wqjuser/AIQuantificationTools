@@ -109,6 +109,50 @@ class MonitoringService:
             **dict(channel or {}),
         }
 
+    def configure_notifier(
+        self,
+        notifier: Callable[[dict[str, Any]], None] | None,
+        channel: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        with _LOCK:
+            self.notifier = notifier
+            self.channel = dict(channel)
+            return dict(self.channel)
+
+    def test_notification(self) -> dict[str, Any]:
+        with _LOCK:
+            if self.channel.get("status") == "invalid":
+                raise ValueError("monitoring_webhook_configuration_invalid")
+            if self.notifier is None or not self.channel.get("configured"):
+                raise ValueError("monitoring_webhook_unconfigured")
+            now = _now()
+            result = self._deliver(
+                {
+                    "incidentId": (
+                        "monitoring-webhook-test-"
+                        f"{canonical_sha256(now.isoformat())[:16]}"
+                    ),
+                    "incidentKey": "monitoring:webhook_test",
+                    "occurrenceCount": 1,
+                    "severity": "info",
+                    "title": "AIQuant 监控测试",
+                    "detail": "Webhook 测试投递；不代表真实交易事件。",
+                },
+                "test",
+                now,
+            )
+            if result.get("deliveryStatus") != "sent":
+                raise RuntimeError(
+                    str(result.get("deliveryError") or "monitoring_webhook_test_failed")
+                )
+            return {
+                "schemaVersion": 1,
+                "deliveryStatus": "sent",
+                "observedAt": now.isoformat(),
+                "channelType": "webhook",
+                "tradingActionsAvailable": False,
+            }
+
     def evaluate(self, auto_trading_snapshot: Mapping[str, Any]) -> dict[str, Any]:
         state = auto_trading_snapshot.get("state")
         if not isinstance(state, Mapping):
@@ -328,7 +372,7 @@ class MonitoringService:
         incident: Mapping[str, Any],
         lifecycle: str,
         now: datetime,
-    ) -> None:
+    ) -> dict[str, Any]:
         occurrence = int(incident["occurrenceCount"])
         dedupe_key = (
             f"{incident['incidentId']}:{occurrence}:{lifecycle}"
@@ -339,7 +383,7 @@ class MonitoringService:
         )
         title = (
             str(incident["title"])
-            if lifecycle == "active"
+            if lifecycle in {"active", "test"}
             else f"已恢复：{incident['title']}"
         )
         payload = {
@@ -366,9 +410,9 @@ class MonitoringService:
                 "deliveryError": None,
             },
         )
-        _, created = self.store.record_if_absent(claimed)
+        existing, created = self.store.record_if_absent(claimed)
         if not created:
-            return
+            return dict(existing.metadata)
 
         delivery_status = "skipped_unconfigured"
         delivery_error: str | None = None
@@ -383,14 +427,16 @@ class MonitoringService:
                 )[:240]
 
         self._record_delivery_result(delivery_status, delivery_error, now)
-        self.store.record({
+        delivered = {
             **claimed,
             "metadata": {
                 **claimed["metadata"],
                 "deliveryStatus": delivery_status,
                 "deliveryError": delivery_error,
             },
-        })
+        }
+        self.store.record(delivered)
+        return dict(delivered["metadata"])
 
     def _record_delivery_result(
         self,

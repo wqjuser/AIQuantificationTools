@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Sun,
   Timer,
+  Type,
   Upload,
   WalletCards,
   X
@@ -91,7 +92,10 @@ import {
   generateP2ReadinessAcceptance,
   loadP2ManifestChainPreflightLatest,
   generateP2ManifestChainPreflight,
+  loadOpenAiCompatibleModels,
   loadPlatformSettings,
+  savePlatformSettings,
+  testMonitoringWebhook,
   loadWatchlistCacheRefreshRuns,
   loadExecutionAdapterLedger,
   loadExecutionAdapterCertificationApplies,
@@ -242,6 +246,7 @@ import {
   ExecutionAdapterCertificationRun,
   PlatformSettingsResult,
   PlatformSettingsStatus,
+  PlatformSettingsUpdateRequest,
   PortfolioBacktestResult,
   PortfolioPaperOrderBatch,
   PortfolioPaperOrderLifecycleEvent,
@@ -250,6 +255,7 @@ import {
   PortfolioPaperOrderSimulation,
   resolveQuantCoreBaseUrl,
   saveAiReviewRunRecord,
+  runP0AiReview,
   runP0PaperSimulation,
   runP0Pipeline,
   runTerminalResearch,
@@ -303,7 +309,11 @@ import { ExecutionStage10ProductionExecutionSection } from "./components/Executi
 import { ExecutionAutoPaperTradingSection } from "./components/ExecutionAutoPaperTradingSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
+  DEFAULT_TEXT_SCALE,
+  MAX_TEXT_SCALE,
+  MIN_TEXT_SCALE,
   resolveStoredColorSchemePreference,
+  resolveStoredTextScale,
   resolveSystemColorScheme,
   type ColorScheme,
 } from "./lib/theme";
@@ -1699,6 +1709,7 @@ const workAreaIcons: Record<ProductWorkAreaId, typeof BarChart3> = {
   "ai-review": BrainCircuit,
   portfolio: ShieldCheck,
   execution: WalletCards,
+  "dynamic-trading": Activity,
   operations: Activity,
   audit: Download,
   settings: Cog
@@ -1720,9 +1731,23 @@ const productWorkAreaIds: ProductWorkAreaId[] = [
   "ai-review",
   "portfolio",
   "execution",
+  "dynamic-trading",
   "operations",
   "audit",
   "settings"
+];
+const automatedTradingWorkAreaIds: ProductWorkAreaId[] = [
+  "settings",
+  "market",
+  "research",
+  "strategy",
+  "backtest",
+  "ai-review",
+  "portfolio",
+  "execution",
+  "dynamic-trading",
+  "operations",
+  "audit"
 ];
 
 const researchPipelinePreflightIssueTargets: Record<
@@ -1806,7 +1831,7 @@ const productWorkAreaGroups: Array<{
     id: "portfolio-execution",
     labelEn: "Portfolio & Execution",
     labelZh: "组合与执行",
-    workAreaIds: ["portfolio", "execution"]
+    workAreaIds: ["portfolio", "execution", "dynamic-trading"]
   },
   {
     id: "governance-system",
@@ -2058,7 +2083,7 @@ function replaceP0CurrentGapActionUrlSearch(search: string): void {
 function resolveInitialWorkAreaSelection(workspace: TerminalWorkspace) {
   return resolveProductWorkAreaSelection(
     workspace,
-    resolveInitialWorkAreaId(resolveSavedResearchWorkspaceId(workspace, "research"))
+    resolveInitialWorkAreaId(resolveSavedResearchWorkspaceId(workspace, "market"))
   );
 }
 
@@ -2235,6 +2260,10 @@ export function App() {
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
   const [handoffNotesState, setHandoffNotesState] = useState<HandoffNotesResult>(initialHandoffNotesState);
   const [settingsStatus, setSettingsStatus] = useState<PlatformSettingsResult>(initialSettingsStatusState);
+  const [hasLoadedSettingsStatus, setHasLoadedSettingsStatus] = useState(false);
+  const [isSavingSettingsConfiguration, setIsSavingSettingsConfiguration] = useState(false);
+  const [isTestingMonitoringWebhook, setIsTestingMonitoringWebhook] = useState(false);
+  const [settingsConfigurationMessage, setSettingsConfigurationMessage] = useState<string | null>(null);
   const [executionAdapterLedger, setExecutionAdapterLedger] = useState<ExecutionAdapterLedgerResult>(
     initialExecutionAdapterLedgerState
   );
@@ -2385,6 +2414,8 @@ export function App() {
   const [auditSigningKeyRotationLedgerStatus, setAuditSigningKeyRotationLedgerStatus] =
     useState<AuditSigningKeyRotationLedgerStatus>(initialAuditSigningKeyRotationLedgerStatus);
   const [goldenPathState, setGoldenPathState] = useState<GoldenPathStatusResult>(initialGoldenPathStatusState);
+  const [isAutomatedTradingWorkflowRunning, setIsAutomatedTradingWorkflowRunning] = useState(false);
+  const [automatedTradingWorkflowStatus, setAutomatedTradingWorkflowStatus] = useState<string | null>(null);
   const [desktopReleaseLatestState, setDesktopReleaseLatestState] = useState<DesktopReleaseLatestResult>(
     initialDesktopReleaseLatestState
   );
@@ -2499,6 +2530,11 @@ export function App() {
       typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.theme"),
     )
   );
+  const [textScale, setTextScale] = useState(() =>
+    resolveStoredTextScale(
+      typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.text-scale"),
+    )
+  );
   const [systemColorScheme, setSystemColorScheme] = useState<ColorScheme>(() =>
     resolveSystemColorScheme(
       typeof window === "undefined"
@@ -2533,6 +2569,7 @@ export function App() {
   const [isSavingHandoffNote, setIsSavingHandoffNote] = useState(false);
   const [isSavingWatchlist, setIsSavingWatchlist] = useState(false);
   const [isSavingResearchWorkspace, setIsSavingResearchWorkspace] = useState(false);
+  const [isRunningP0AiReview, setIsRunningP0AiReview] = useState(false);
   const [isSubmittingPaperExecution, setIsSubmittingPaperExecution] = useState(false);
   const [isRunningPortfolioBacktest, setIsRunningPortfolioBacktest] = useState(false);
   const [isRecordingPortfolioPaperOrders, setIsRecordingPortfolioPaperOrders] = useState(false);
@@ -2589,6 +2626,7 @@ export function App() {
   );
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [isResearchPipelineConfirmationOpen, setIsResearchPipelineConfirmationOpen] = useState(false);
+  const [isLiveTradingGateDialogOpen, setIsLiveTradingGateDialogOpen] = useState(false);
   const [researchCompletionNotice, setResearchCompletionNotice] = useState<{
     dataRows: number;
     instrumentName: string;
@@ -2599,6 +2637,7 @@ export function App() {
   } | null>(null);
   const researchPipelineConfirmationDialogRef = useRef<HTMLDialogElement | null>(null);
   const researchPipelineConfirmationCancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const liveTradingGateDialogRef = useRef<HTMLDialogElement | null>(null);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [p0PaperSimulationRecord, setP0PaperSimulationRecord] = useState<P0PaperSimulationResponse | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -2765,6 +2804,11 @@ export function App() {
   const marketCalendarRequestIdRef = useRef(0);
   const workspaceQuoteRequestIdRef = useRef(0);
   const workflowRunIdRef = useRef(0);
+  const automatedTradingWorkflowRunIdRef = useRef(0);
+  const automatedTradingWorkflowContextRef = useRef<string | null>(null);
+  const automatedTradingWorkflowActionKeyRef = useRef<string | null>(null);
+  const automatedTradingWorkflowActionInFlightRef = useRef(false);
+  const automatedTradingWorkflowActionErrorRef = useRef<string | null>(null);
   const strategyValidationRequestIdRef = useRef(0);
   const strategyExperimentRequestGenerationRef = useRef(0);
   const initialStrategyExperimentIdRef = useRef(initialStrategyExperimentId);
@@ -2857,6 +2901,10 @@ export function App() {
   strategyExperimentI18nRef.current = i18n;
   const goldenPath = goldenPathState.goldenPath;
   const productWorkAreas = productWorkAreasWithGoldenPath(buildProductWorkAreas(workspace), goldenPath);
+  const automatedTradingWorkAreas = automatedTradingWorkAreaIds.flatMap((workAreaId) => {
+    const workArea = productWorkAreas.find((candidate) => candidate.id === workAreaId);
+    return workArea ? [workArea] : [];
+  });
   const activeWorkArea =
     productWorkAreas.find((area) => area.id === activeWorkAreaId) ?? productWorkAreas.find((area) => area.id === "research");
   const activeLoopStep = workspace.quantLoop.find((step) => step.id === activeLoopStepId) ?? workspace.quantLoop[0];
@@ -3077,6 +3125,35 @@ export function App() {
     secretMaterializationRows: executionAdapterSecretMaterializationRows,
     secretReferenceRows: executionAdapterSecretReferenceRows
   });
+  const terminalBrokerAdapterRows = brokerAdapterRows.map((row) => ({
+    ...row,
+    adapter: brokerAdapterName(i18n, row),
+    certification: brokerCertificationLabel(i18n, row.certification),
+    nextStep: brokerNextStepLabel(i18n, row.nextStep)
+  }));
+  const terminalExecutionAdapterLedgerRows = executionAdapterLedgerRows.map((row) => ({
+    ...row,
+    adapter: adapterLedgerAdapterName(i18n, row),
+    label: adapterLedgerLabel(i18n, row),
+    nextStep: adapterLedgerNextStep(i18n, row),
+    reason: adapterLedgerReason(i18n, row)
+  }));
+  const terminalExecutionAdapterHealthProbeRows = executionAdapterHealthProbeRows.map((row) => ({
+    ...row,
+    blockerSummary: adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary),
+    boundary: adapterHealthProbeBoundaryLabel(i18n, row.boundary),
+    credentialSummary: adapterHealthProbeCredentialSummaryLabel(i18n, row.credentialSummary),
+    statusLabel: adapterHealthProbeStatusLabel(i18n, row.statusLabel)
+  }));
+  const terminalExecutionAdapterChainHealthRollups = executionAdapterChainHealthRollups.map((row) => ({
+    ...row,
+    adapterName: adapterCertificationAdapterName(i18n, row.adapterId),
+    blockerLabel: row.blockerStageId
+      ? adapterChainHealthStageLabel(i18n, row.blockerStageId, row.blockerLabel)
+      : row.blockerLabel,
+    detail: adapterChainHealthDetailLabel(i18n, row),
+    headline: adapterChainHealthStatusLabel(i18n, row.status)
+  }));
   const portfolioPaperOrderLifecycleRows = buildPortfolioPaperOrderLifecycleRows(
     portfolioPaperOrderBatches,
     portfolioPaperOrderLifecycleEvents
@@ -5423,8 +5500,21 @@ export function App() {
   }, [executionAdapterProductionRouteReviews]);
 
   const refreshSettingsStatus = useCallback(async () => {
+    const settingsRequest = loadPlatformSettings(quantCoreBaseUrl).then((result) => {
+      setSettingsStatus(result);
+      setHasLoadedSettingsStatus(true);
+      const freeStockdbConfigured = result.settings?.marketDataAdapters.some(
+        (adapter) => adapter.id === "free-stockdb-ohlcv" && adapter.externalTelemetry.dependencyAvailable
+      );
+      if (freeStockdbConfigured) {
+        void loadPlatformSettings(quantCoreBaseUrl, undefined, true).then((probedResult) => {
+          if (probedResult.source === "core") setSettingsStatus(probedResult);
+        });
+      }
+      return result;
+    });
     const [settingsResult, adapterLedgerResult, adapterHealthProbeResult, watchlistRefreshHistory] = await Promise.all([
-      loadPlatformSettings(quantCoreBaseUrl),
+      settingsRequest,
       loadExecutionAdapterLedger(quantCoreBaseUrl),
       loadExecutionAdapterHealthProbe(quantCoreBaseUrl, { adapterId: "ccxt-live", exchange: "binance" }),
       loadWatchlistCacheRefreshRuns(quantCoreBaseUrl, { limit: 4 })
@@ -5491,7 +5581,6 @@ export function App() {
           productionRouteReviewId: latestCcxtProductionRouteReviewId
         })
       : adapterHealthProbeResult;
-    setSettingsStatus(settingsResult);
     setWatchlistCacheRefreshHistory(watchlistRefreshHistory.watchlistRefreshes);
     setExecutionAdapterLedger(adapterLedgerResult);
     setExecutionAdapterHealthProbe(resolvedAdapterHealthProbeResult);
@@ -6558,6 +6647,52 @@ export function App() {
     quantCoreBaseUrl
   ]);
 
+  const saveSettingsConfiguration = useCallback(async (request: PlatformSettingsUpdateRequest) => {
+    setIsSavingSettingsConfiguration(true);
+    setSettingsConfigurationMessage(null);
+    try {
+      const result = await savePlatformSettings(quantCoreBaseUrl, request);
+      if (result.source !== "core" || !result.settings) {
+        setSettingsConfigurationMessage(`保存失败：${result.error ?? "核心服务未返回配置"}`);
+        return;
+      }
+      setSettingsStatus(result);
+      if (result.settings.marketDataAdapters.some(
+        (adapter) => adapter.id === "free-stockdb-ohlcv" && adapter.externalTelemetry.dependencyAvailable
+      )) {
+        const probedResult = await loadPlatformSettings(quantCoreBaseUrl, undefined, true);
+        if (probedResult.source === "core") setSettingsStatus(probedResult);
+      }
+      const providers = await loadAiReviewProviders(quantCoreBaseUrl);
+      if (providers.source === "core") {
+        setAiReviewStage3Providers(providers.providers);
+      }
+      setSettingsConfigurationMessage("配置已加密保存并实时生效。");
+    } finally {
+      setIsSavingSettingsConfiguration(false);
+    }
+  }, []);
+
+  const loadSettingsOpenAiCompatibleModels = useCallback(
+    (baseUrl: string) => loadOpenAiCompatibleModels(quantCoreBaseUrl, baseUrl),
+    [],
+  );
+
+  const testSettingsMonitoringWebhook = useCallback(async () => {
+    setIsTestingMonitoringWebhook(true);
+    setSettingsConfigurationMessage(null);
+    try {
+      const result = await testMonitoringWebhook(quantCoreBaseUrl);
+      setSettingsConfigurationMessage(
+        result.source === "core"
+          ? "Webhook 测试投递成功；未触发任何交易动作。"
+          : `Webhook 测试失败：${result.error ?? "核心服务未返回投递结果"}`
+      );
+    } finally {
+      setIsTestingMonitoringWebhook(false);
+    }
+  }, [quantCoreBaseUrl]);
+
   const recordAuditSigningKeyEnvironmentBindingForAudit = useCallback(async () => {
     const materialization = auditSigningKeySecretMaterialization.secretMaterialization;
     if (!materialization?.materializationId) {
@@ -6767,13 +6902,13 @@ export function App() {
   }, [auditSigningKeyRestartEvidenceConfirmations, auditSigningKeyRotationApplyEventId, quantCoreBaseUrl]);
 
   const refreshGoldenPathStatus = useCallback(async () => {
-    setGoldenPathState(
-      await loadGoldenPathStatus(quantCoreBaseUrl, {
-        market: workspace.selectedInstrument.market,
-        symbol: workspace.selectedInstrument.symbol,
-        timeframe: workspace.selectedTimeframe
-      })
-    );
+    const result = await loadGoldenPathStatus(quantCoreBaseUrl, {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      timeframe: workspace.selectedTimeframe
+    });
+    setGoldenPathState(result);
+    return result;
   }, [workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe]);
 
   const refreshWorkspace = useCallback(async () => {
@@ -7086,12 +7221,14 @@ export function App() {
         marketDataRefreshOverride?.market === context.market ? marketDataRefreshOverride : null
       );
       if (refreshGuard.blocked) {
+        const blockedReason = marketDataRefreshGuardLabel(i18n, refreshGuard);
+        automatedTradingWorkflowActionErrorRef.current = blockedReason;
         setSettingsStatus((current) => ({
           settings: current.settings,
           source: current.source,
-          error: marketDataRefreshGuardLabel(i18n, refreshGuard)
+          error: blockedReason
         }));
-        return;
+        return false;
       }
       const key = cacheContextKey(context);
       setRefreshingCacheKey(key);
@@ -7104,10 +7241,21 @@ export function App() {
           limit: chartKlineLimit,
           overrideAuditEventId
         });
+        const refreshedItem = result.watchlistRefresh?.items.find(
+          (item) =>
+            item.market === context.market &&
+            item.symbol === context.symbol &&
+            item.timeframe === context.timeframe
+        );
+        const contextRefreshed = refreshedItem?.status === "refreshed";
+        const refreshError =
+          result.error ??
+          (contextRefreshed ? undefined : refreshedItem?.error ?? "选中标的行情刷新未完成，请检查数据源状态。");
+        automatedTradingWorkflowActionErrorRef.current = refreshError ?? null;
         setSettingsStatus({
           settings: result.settings,
           source: result.source,
-          error: result.error
+          error: refreshError
         });
         if (result.watchlistRefresh) {
           setWatchlistCacheRefreshHistory((current) =>
@@ -7127,6 +7275,7 @@ export function App() {
           await refreshChart();
         }
         await refreshGoldenPathStatus();
+        return contextRefreshed;
       } finally {
         if (refreshGuard.overrideApplied) {
           setMarketDataRefreshOverride(null);
@@ -7149,7 +7298,7 @@ export function App() {
   );
 
   const refreshSelectedMarketCache = useCallback(async () => {
-    await refreshCacheContext({
+    return refreshCacheContext({
       market: workspace.selectedInstrument.market,
       symbol: workspace.selectedInstrument.symbol,
       timeframe: workspace.selectedTimeframe,
@@ -7169,8 +7318,10 @@ export function App() {
 
   const refreshWatchlistMarketCache = useCallback(async () => {
     if (!workspace.watchlist.length) {
-      setMarketRefreshIssue("自选列表为空，无法刷新行情。");
-      return;
+      const message = "自选列表为空，无法刷新行情。";
+      automatedTradingWorkflowActionErrorRef.current = message;
+      setMarketRefreshIssue(message);
+      return false;
     }
     const refreshGuard = buildMarketDataRefreshGuard(
       workspace.selectedInstrument.market,
@@ -7179,13 +7330,14 @@ export function App() {
     );
     if (refreshGuard.blocked) {
       const blockedReason = marketDataRefreshGuardLabel(i18n, refreshGuard);
+      automatedTradingWorkflowActionErrorRef.current = blockedReason;
       setMarketRefreshIssue(blockedReason);
       setSettingsStatus((current) => ({
         settings: current.settings,
         source: current.source,
         error: blockedReason
       }));
-      return;
+      return false;
     }
     setMarketRefreshIssue(null);
     setIsRefreshingWatchlistCache(true);
@@ -7202,29 +7354,35 @@ export function App() {
         source: result.source,
         error: result.error
       }));
+      const selectedItem = result.watchlistRefresh?.items.find(
+        (item) =>
+          item.market === workspace.selectedInstrument.market &&
+          item.symbol === workspace.selectedInstrument.symbol &&
+          item.timeframe === workspace.selectedTimeframe
+      );
+      const selectedContextRefreshed = selectedItem?.status === "refreshed";
       if (result.watchlistRefresh) {
         setWatchlistCacheRefreshHistory((current) => [
           result.watchlistRefresh!,
           ...current.filter((run) => run.runId !== result.watchlistRefresh!.runId)
         ].slice(0, 4));
         setWatchlistCacheRefreshRunSelection(result.watchlistRefresh.runId);
-      } else {
-        setMarketRefreshIssue(result.error ?? "行情刷新未生成可追踪运行记录。");
       }
-      if (
-        result.watchlistRefresh?.items.some(
-          (item) =>
-            item.market === workspace.selectedInstrument.market &&
-            item.symbol === workspace.selectedInstrument.symbol &&
-            item.timeframe === workspace.selectedTimeframe &&
-            item.status === "refreshed"
-        )
-      ) {
+      if (!selectedContextRefreshed) {
+        const message = selectedItem?.error ?? result.error ?? "选中标的行情刷新未完成，请检查数据源状态。";
+        automatedTradingWorkflowActionErrorRef.current = message;
+        setMarketRefreshIssue(message);
+      }
+      if (selectedContextRefreshed) {
         await refreshChart();
       }
       await refreshGoldenPathStatus();
+      return selectedContextRefreshed;
     } catch (error) {
-      setMarketRefreshIssue(error instanceof Error ? error.message : "行情刷新失败。");
+      const message = error instanceof Error ? error.message : "行情刷新失败。";
+      automatedTradingWorkflowActionErrorRef.current = message;
+      setMarketRefreshIssue(message);
+      return false;
     } finally {
       if (refreshGuard.overrideApplied) {
         setMarketDataRefreshOverride(null);
@@ -7287,6 +7445,8 @@ export function App() {
 
   const runPipeline = useCallback(async (confirmation?: "accepted") => {
     if (!researchPipelinePreflight.canRun) {
+      automatedTradingWorkflowActionErrorRef.current =
+        researchPipelinePreflightIssueDetail(i18n, researchPipelinePreflight);
       setIsResearchPipelineConfirmationOpen(true);
       setActiveWorkAreaId("research");
       setActiveLoopStepId("research");
@@ -7295,11 +7455,13 @@ export function App() {
         statusLabel: researchPipelinePreflightStatusLabel(i18n, researchPipelinePreflight),
         error: researchPipelinePreflightIssueDetail(i18n, researchPipelinePreflight)
       }));
-      return;
+      return false;
     }
     if (researchPipelinePreflight.requiresConfirmation && confirmation !== "accepted") {
+      automatedTradingWorkflowActionErrorRef.current =
+        i18n.locale === "zh-CN" ? "研究上下文仍需确认。" : "The research context still requires confirmation.";
       setIsResearchPipelineConfirmationOpen(true);
-      return;
+      return false;
     }
     setIsResearchPipelineConfirmationOpen(false);
     setResearchCompletionNotice(null);
@@ -7342,7 +7504,7 @@ export function App() {
       strategy: workspace.strategy
     });
     if (workflowRunIdRef.current !== runId) {
-      return;
+      return false;
     }
     setStrategyValidationState(preflight);
     if (preflight.validation?.status === "blocked") {
@@ -7350,10 +7512,12 @@ export function App() {
         .filter((gate) => gate.status === "blocked")
         .map((gate) => gate.id)
         .join(", ");
+      automatedTradingWorkflowActionErrorRef.current =
+        `Strategy preflight blocked: ${blockedGates || "readiness gate"}`;
       appendLog("factor", "error", `Strategy preflight blocked: ${blockedGates || "readiness gate"}`);
       publishStage("factor", [], "factor");
       setIsRunning(false);
-      return;
+      return false;
     }
     appendLog(
       "factor",
@@ -7367,13 +7531,13 @@ export function App() {
     publishStage("data", []);
     await waitForWorkflowStep();
     if (workflowRunIdRef.current !== runId) {
-      return;
+      return false;
     }
     appendLog("factor", "success", "Factor set staged: SMA / RSI / volume");
     publishStage("factor", ["data"]);
     await waitForWorkflowStep();
     if (workflowRunIdRef.current !== runId) {
-      return;
+      return false;
     }
     appendLog("backtest", "info", "Backtest request sent to local core");
     publishStage("backtest", ["data", "factor"]);
@@ -7390,16 +7554,17 @@ export function App() {
       workspace
     );
     if (workflowRunIdRef.current !== runId) {
-      return;
+      return false;
     }
     setWorkspaceState(result);
 
     if (result.source === "fallback") {
+      automatedTradingWorkflowActionErrorRef.current = result.error ?? result.statusLabel;
       appendLog("backtest", "error", `Pipeline failed before audited backtest: ${result.error ?? result.statusLabel}`);
       publishStage("backtest", ["data", "factor"], "backtest");
       await refreshRunHistory();
       setIsRunning(false);
-      return;
+      return false;
     }
 
     const researchSummary = result.workspace.researchRun;
@@ -7413,7 +7578,7 @@ export function App() {
     publishStage("agent", ["data", "factor", "backtest"]);
     await waitForWorkflowStep();
     if (workflowRunIdRef.current !== runId) {
-      return;
+      return false;
     }
     appendLog("agent", "success", "Agent committee report received");
     appendLog("execution", "warning", "Live execution remains blocked; paper review is ready");
@@ -7421,7 +7586,7 @@ export function App() {
     const runHistoryReadback = await refreshRunHistory();
     const strategyLibraryReadback = await refreshStrategyLibrary();
     if (workflowRunIdRef.current !== runId) {
-      return;
+      return false;
     }
     setIsRunning(false);
     if (researchSummary) {
@@ -7435,6 +7600,7 @@ export function App() {
         timeframe: result.workspace.selectedTimeframe
       });
     }
+    return true;
   }, [
     chartKlineLimit,
     i18n,
@@ -8552,7 +8718,7 @@ export function App() {
     [replayRun, runHistory]
   );
 
-  const ensureGoldenPathLatestRunBound = useCallback(async (): Promise<boolean> => {
+  const ensureGoldenPathLatestRunBound = useCallback(async (latestRunIdOverride?: string | null): Promise<boolean> => {
     if (strategyDraftRequiresReaudit) {
       setWorkspaceState((current) => ({
         ...current,
@@ -8564,7 +8730,7 @@ export function App() {
     if (researchRunContextBinding.canUseRun) {
       return true;
     }
-    const latestRunId = goldenPath?.latestRunId;
+    const latestRunId = latestRunIdOverride ?? goldenPath?.latestRunId;
     if (!latestRunId) {
       setWorkspaceState((current) => ({
         ...current,
@@ -10987,8 +11153,8 @@ export function App() {
     workspace
   ]);
 
-  const submitPaperExecution = useCallback(async () => {
-    const runId = currentResearchRunId;
+  const submitPaperExecution = useCallback(async (runIdOverride?: string) => {
+    const runId = runIdOverride ?? currentResearchRunId;
     if (!runId) {
       setWorkspaceState((current) => ({
         ...current,
@@ -13820,6 +13986,11 @@ export function App() {
     document.documentElement.style.colorScheme = colorScheme;
   }, [colorScheme]);
 
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty("--aiqt-text-scale", String(textScale));
+    window.localStorage.setItem("aiqt.text-scale", String(textScale));
+  }, [textScale]);
+
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const url = new URL(replaceAiReviewRunIdInUrl(
@@ -13918,6 +14089,15 @@ export function App() {
   }, [isResearchPipelineConfirmationOpen]);
 
   useEffect(() => {
+    if (isLiveTradingGateDialogOpen && !liveTradingGateDialogRef.current?.open) {
+      liveTradingGateDialogRef.current?.showModal();
+      liveTradingGateDialogRef.current
+        ?.querySelector<HTMLInputElement>('input[placeholder="实名操作人"]')
+        ?.focus();
+    }
+  }, [isLiveTradingGateDialogOpen]);
+
+  useEffect(() => {
     if (!researchCompletionNotice) {
       return;
     }
@@ -13945,64 +14125,109 @@ export function App() {
     void runPipeline();
   }, [activeLoopStepId, runAiWorkbenchAction, runPipeline, selectProductWorkArea, submitPaperExecution]);
 
+  const openLiveTradingGate = useCallback(() => {
+    setIsLiveTradingGateDialogOpen(true);
+  }, []);
+
+  const completeLiveTradingGate = useCallback(async () => {
+    await Promise.all([
+      refreshGoldenPathStatus(),
+      refreshSettingsStatus()
+    ]);
+    setIsLiveTradingGateDialogOpen(false);
+  }, [refreshGoldenPathStatus, refreshSettingsStatus]);
+
   const runGoldenPathActionById = useCallback(
-    (actionId: string | null | undefined, targetWorkspace?: string | null) => {
+    async (
+      actionId: string | null | undefined,
+      targetWorkspace?: string | null,
+      latestRunIdOverride?: string | null,
+      automated = false
+    ): Promise<boolean> => {
+      automatedTradingWorkflowActionErrorRef.current = null;
       const executableActionId = normalizeP0CurrentGapActionId(actionId);
       if (!executableActionId) {
         runActiveWorkflowAction();
-        return;
+        return false;
       }
       if (executableActionId === "refresh-data") {
-        void refreshSelectedMarketCache();
-        return;
+        return refreshSelectedMarketCache();
       }
       if (executableActionId === "refresh-watchlist-cache") {
-        void refreshWatchlistMarketCache();
-        return;
+        return refreshWatchlistMarketCache();
       }
       if (executableActionId === "run-pipeline") {
-        void runPipeline();
-        return;
+        return runPipeline(automated ? "accepted" : undefined);
       }
       if (executableActionId === "run-ai-review") {
-        setActiveWorkAreaId("ai-review");
-        setActiveLoopStepId("agent-review");
-        setActiveWorkflowStageId("agent");
-        runAiWorkbenchAction("debate");
-        return;
+        const runId = latestRunIdOverride ?? goldenPath?.latestRunId;
+        selectProductWorkArea("ai-review");
+        if (!runId) {
+          if (!automated) {
+            await runPipeline();
+          }
+          return false;
+        }
+        setIsRunningP0AiReview(true);
+        try {
+          const result = await runP0AiReview(quantCoreBaseUrl, {
+            runId,
+            market: workspace.selectedInstrument.market,
+            symbol: workspace.selectedInstrument.symbol,
+            timeframe: workspace.selectedTimeframe
+          });
+          setWorkspaceState((current) => ({
+            ...current,
+            source: result.source,
+            statusLabel: result.statusLabel,
+            error: result.error
+          }));
+          if (result.aiReview) {
+            await refreshGoldenPathStatus();
+          }
+          return Boolean(result.aiReview);
+        } finally {
+          setIsRunningP0AiReview(false);
+        }
       }
       if (executableActionId === "submit-paper-order") {
-        void (async () => {
-          const runWasAlreadyBound = researchRunContextBinding.canUseRun;
-          const runIsBound = await ensureGoldenPathLatestRunBound();
-          if (runWasAlreadyBound && runIsBound) {
-            void submitPaperExecution();
-          }
-        })();
-        return;
+        const goldenPathRunId = latestRunIdOverride ?? goldenPath?.latestRunId;
+        const runIsBound = await ensureGoldenPathLatestRunBound(goldenPathRunId);
+        if (goldenPathRunId && runIsBound) {
+          await submitPaperExecution(goldenPathRunId);
+          return true;
+        }
+        return false;
       }
       if (executableActionId === "fix-paper-handoff") {
         selectProductWorkArea("execution");
-        return;
+        return false;
       }
       if (executableActionId === "certify-live-adapter") {
-        selectProductWorkArea("settings");
-        return;
+        openLiveTradingGate();
+        return false;
       }
       if (targetWorkspace && productWorkAreaIds.includes(targetWorkspace as ProductWorkAreaId)) {
         selectProductWorkArea(targetWorkspace as ProductWorkAreaId);
+        return true;
       }
+      return false;
     },
     [
       refreshSelectedMarketCache,
       refreshWatchlistMarketCache,
       ensureGoldenPathLatestRunBound,
-      researchRunContextBinding.canUseRun,
+      goldenPath?.latestRunId,
+      openLiveTradingGate,
+      quantCoreBaseUrl,
+      refreshGoldenPathStatus,
       runActiveWorkflowAction,
-      runAiWorkbenchAction,
       runPipeline,
       selectProductWorkArea,
-      submitPaperExecution
+      submitPaperExecution,
+      workspace.selectedInstrument.market,
+      workspace.selectedInstrument.symbol,
+      workspace.selectedTimeframe
     ]
   );
 
@@ -14088,6 +14313,9 @@ export function App() {
       if (executableActionId === "run-pipeline") {
         return !researchPipelinePreflight.canRun;
       }
+      if (executableActionId === "run-ai-review") {
+        return isRunningP0AiReview;
+      }
       if (executableActionId === "submit-paper-order") {
         const canRebindGoldenPathRun =
           !strategyDraftRequiresReaudit &&
@@ -14107,6 +14335,7 @@ export function App() {
       isRefreshing,
       isRefreshingWatchlistCache,
       isRunning,
+      isRunningP0AiReview,
       isSubmittingPaperExecution,
       marketDataRefreshGuard.blocked,
       refreshingCacheKey,
@@ -14128,6 +14357,218 @@ export function App() {
   const workspaceContextActionHint =
     strategyDraftReauditHint(i18n, workspaceContextActionId, strategyDraftRequiresReaudit) ??
     goldenPathActionPreflightHint(i18n, workspaceContextActionId, researchPipelinePreflight);
+
+  const stopAutomatedTradingWorkflow = useCallback((message: string) => {
+    automatedTradingWorkflowRunIdRef.current += 1;
+    automatedTradingWorkflowContextRef.current = null;
+    automatedTradingWorkflowActionKeyRef.current = null;
+    automatedTradingWorkflowActionInFlightRef.current = false;
+    setAutomatedTradingWorkflowStatus(message);
+    setIsAutomatedTradingWorkflowRunning(false);
+  }, []);
+
+  const runAutomatedTradingWorkflow = useCallback(() => {
+    if (isAutomatedTradingWorkflowRunning) {
+      return;
+    }
+    const runId = automatedTradingWorkflowRunIdRef.current + 1;
+    automatedTradingWorkflowRunIdRef.current = runId;
+    automatedTradingWorkflowContextRef.current = [
+      workspace.selectedInstrument.market,
+      workspace.selectedInstrument.symbol,
+      workspace.selectedTimeframe
+    ].join(":");
+    automatedTradingWorkflowActionKeyRef.current = null;
+    automatedTradingWorkflowActionInFlightRef.current = true;
+    setAutomatedTradingWorkflowStatus(
+      i18n.locale === "zh-CN" ? "正在读取最新流程状态…" : "Loading the latest workflow status…"
+    );
+    setIsAutomatedTradingWorkflowRunning(true);
+    void refreshGoldenPathStatus().then((result) => {
+      if (automatedTradingWorkflowRunIdRef.current !== runId) {
+        return;
+      }
+      automatedTradingWorkflowActionInFlightRef.current = false;
+      if (!result.goldenPath) {
+        stopAutomatedTradingWorkflow(
+          i18n.locale === "zh-CN"
+            ? `自动流程无法启动：${result.error ?? "未读取到流程状态。"}`
+            : `The automated workflow could not start: ${result.error ?? "No workflow status was returned."}`
+        );
+        return;
+      }
+      setAutomatedTradingWorkflowStatus(
+        i18n.locale === "zh-CN" ? "流程已就绪，正在切换到下一步…" : "Workflow ready. Opening the next step…"
+      );
+    });
+  }, [
+    i18n.locale,
+    isAutomatedTradingWorkflowRunning,
+    refreshGoldenPathStatus,
+    stopAutomatedTradingWorkflow,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
+
+  useEffect(() => {
+    if (
+      !isAutomatedTradingWorkflowRunning ||
+      !goldenPath ||
+      automatedTradingWorkflowActionInFlightRef.current
+    ) {
+      return;
+    }
+    const currentContextKey = [
+      workspace.selectedInstrument.market,
+      workspace.selectedInstrument.symbol,
+      workspace.selectedTimeframe
+    ].join(":");
+    if (automatedTradingWorkflowContextRef.current !== currentContextKey) {
+      stopAutomatedTradingWorkflow(
+        i18n.locale === "zh-CN"
+          ? "自动流程已暂停：标的或周期已改变。"
+          : "The automated workflow paused because the instrument or timeframe changed."
+      );
+      return;
+    }
+    const action = goldenPath.nextAction;
+    if (!action) {
+      selectProductWorkArea("audit");
+      stopAutomatedTradingWorkflow(
+        i18n.locale === "zh-CN"
+          ? "自动流程已完成，审计证据已就绪。"
+          : "The automated workflow is complete and audit evidence is ready."
+      );
+      return;
+    }
+    if (action.id === "certify-live-adapter") {
+      openLiveTradingGate();
+      stopAutomatedTradingWorkflow(
+        i18n.locale === "zh-CN"
+          ? "可自动执行的模拟交易流程已完成；实盘操作需要人工确认。"
+          : "The automated paper-trading flow is complete; live trading requires manual confirmation."
+      );
+      return;
+    }
+    const targetWorkspace = productWorkAreaIds.includes(action.targetWorkspace as ProductWorkAreaId)
+      ? (action.targetWorkspace as ProductWorkAreaId)
+      : null;
+    if (targetWorkspace && activeWorkAreaId !== targetWorkspace) {
+      const targetWorkArea = productWorkAreas.find((area) => area.id === targetWorkspace);
+      const targetLabel = targetWorkArea ? i18n.productWorkAreaLabel(targetWorkArea) : targetWorkspace;
+      setAutomatedTradingWorkflowStatus(
+        i18n.locale === "zh-CN" ? `正在前往：${targetLabel}` : `Opening: ${targetLabel}`
+      );
+      selectProductWorkArea(targetWorkspace);
+      return;
+    }
+    if (automatedTradingWorkflowRequiresManualAction(action.id)) {
+      stopAutomatedTradingWorkflow(
+        i18n.locale === "zh-CN"
+          ? "自动流程已暂停：执行交接需要人工复核。"
+          : "The automated workflow paused because the execution handoff requires manual review."
+      );
+      return;
+    }
+    if (action.id === "run-pipeline" && isChartLoading) {
+      return;
+    }
+    if (isGoldenPathActionDisabledById(action.id)) {
+      stopAutomatedTradingWorkflow(
+        goldenPathActionHint ??
+          goldenPathDetail(
+            i18n,
+            goldenPath.steps.find((step) => step.id === goldenPath.currentStepId),
+            action.reason,
+            goldenPath
+          )
+      );
+      return;
+    }
+
+    const actionKey = automatedTradingWorkflowActionKey(goldenPath);
+    if (!actionKey || automatedTradingWorkflowActionKeyRef.current === actionKey) {
+      stopAutomatedTradingWorkflow(
+        i18n.locale === "zh-CN"
+          ? "自动流程已暂停：当前步骤执行后未推进，请检查页面中的阻断原因。"
+          : "The automated workflow paused because the current step did not advance."
+      );
+      return;
+    }
+
+    const runId = automatedTradingWorkflowRunIdRef.current;
+    const actionLabel = goldenPathActionLabel(i18n, action);
+    automatedTradingWorkflowActionKeyRef.current = actionKey;
+    automatedTradingWorkflowActionInFlightRef.current = true;
+    setAutomatedTradingWorkflowStatus(
+      i18n.locale === "zh-CN" ? `正在自动执行：${actionLabel}` : `Running automatically: ${actionLabel}`
+    );
+    void (async () => {
+      try {
+        const executed = await runGoldenPathActionById(
+          action.id,
+          action.targetWorkspace,
+          goldenPath.latestRunId,
+          true
+        );
+        if (automatedTradingWorkflowRunIdRef.current !== runId) {
+          return;
+        }
+        const nextResult = await refreshGoldenPathStatus();
+        if (automatedTradingWorkflowRunIdRef.current !== runId) {
+          return;
+        }
+        automatedTradingWorkflowActionInFlightRef.current = false;
+        const nextGoldenPath = nextResult.goldenPath;
+        if (!executed || !nextGoldenPath) {
+          const actionError = automatedTradingWorkflowActionErrorRef.current;
+          stopAutomatedTradingWorkflow(
+            i18n.locale === "zh-CN"
+              ? `自动流程已暂停：${nextResult.error ?? (actionError ? `${actionLabel} 未完成：${actionError}` : `${actionLabel} 未完成。`)}`
+              : `The automated workflow paused: ${nextResult.error ?? (actionError ? `${actionLabel} did not complete: ${actionError}` : `${actionLabel} did not complete.`)}`
+          );
+          return;
+        }
+        if (automatedTradingWorkflowActionKey(nextGoldenPath) === actionKey) {
+          stopAutomatedTradingWorkflow(
+            i18n.locale === "zh-CN"
+              ? `${actionLabel} 已执行，但流程状态未推进；请检查当前页面的阻断原因。`
+              : `${actionLabel} ran, but the workflow status did not advance.`
+          );
+          return;
+        }
+        setAutomatedTradingWorkflowStatus(
+          i18n.locale === "zh-CN" ? `${actionLabel} 已完成，正在继续下一步…` : `${actionLabel} complete. Continuing…`
+        );
+      } catch (error) {
+        if (automatedTradingWorkflowRunIdRef.current === runId) {
+          stopAutomatedTradingWorkflow(
+            i18n.locale === "zh-CN"
+              ? `自动流程已暂停：${error instanceof Error ? error.message : "步骤执行失败。"}`
+              : `The automated workflow paused: ${error instanceof Error ? error.message : "The step failed."}`
+          );
+        }
+      }
+    })();
+  }, [
+    activeWorkAreaId,
+    goldenPath,
+    goldenPathActionHint,
+    i18n,
+    isAutomatedTradingWorkflowRunning,
+    isChartLoading,
+    isGoldenPathActionDisabledById,
+    openLiveTradingGate,
+    productWorkAreas,
+    refreshGoldenPathStatus,
+    runGoldenPathActionById,
+    selectProductWorkArea,
+    stopAutomatedTradingWorkflow,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe
+  ]);
 
   const renderChartPanel = (className = "chart-panel") => (
     <Panel
@@ -14258,11 +14699,18 @@ export function App() {
     </Panel>
   );
 
+  const executionLiveTradingAllowed = settingsStatus.settings?.safety.liveTradingAllowed === true;
   const executionReadinessStack = (
-    <details className="execution-readiness-stack" tabIndex={-1}>
+    <details
+      className="execution-readiness-stack"
+      data-live-authorized={executionLiveTradingAllowed}
+      tabIndex={-1}
+    >
       <summary>
-        <span>{i18n.locale === "zh-CN" ? "生产准入与测试网证据" : "Admission & sandbox evidence"}</span>
-        <strong>{i18n.locale === "zh-CN" ? "实盘路由持续阻断" : "Live routing remains blocked"}</strong>
+        <span>{i18n.locale === "zh-CN" ? "生产准入与执行证据" : "Production admission & execution evidence"}</span>
+        <strong>{executionLiveTradingAllowed
+          ? i18n.locale === "zh-CN" ? "生产实盘已授权" : "Production trading authorized"
+          : i18n.locale === "zh-CN" ? "实盘路由持续阻断" : "Live routing remains blocked"}</strong>
       </summary>
       <div className="execution-readiness-stack-body">
         <ExecutionAutoPaperTradingSection baseUrl={quantCoreBaseUrl} />
@@ -14539,7 +14987,7 @@ export function App() {
             onSimulatePortfolioOrderBatch={simulatePortfolioPaperOrderBatch}
             onPortfolioRouteRiskTemplateChange={updatePortfolioRouteRiskTemplate}
             onFocusPortfolioOrderStateAuditQuery={focusPortfolioOrderStateAuditQuery}
-            onSubmitPaperExecution={submitPaperExecution}
+            onSubmitPaperExecution={() => void submitPaperExecution()}
             paperRows={visiblePaperTradingRows}
             positionRows={paperPositionRows}
             portfolioBacktestDraft={portfolioBacktestDraft}
@@ -15280,6 +15728,9 @@ export function App() {
     }
     await runAiReviewStage3(primaryExperimentId);
   };
+  const openAutomaticTradingConsole = () => {
+    selectProductWorkArea("dynamic-trading");
+  };
   const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {
     switch (activeWorkAreaId) {
       case "market":
@@ -15289,7 +15740,11 @@ export function App() {
           disabled: isRefreshingWatchlistCache
         };
       case "research":
-        return { label: "运行研究", onClick: () => void runPipeline(), disabled: isRunning };
+        return {
+          label: isRunning ? "研究运行中…" : "运行研究",
+          onClick: () => void runPipeline(),
+          disabled: isRunning
+        };
       case "strategy":
         return {
           label: isSavingStrategy ? "正在保存…" : "保存版本",
@@ -15343,15 +15798,7 @@ export function App() {
         if (!stage6SandboxAuthorization) {
           return {
             label: "查看执行前置步骤",
-            onClick: () => {
-              const target = document.querySelector<HTMLDetailsElement>(
-                ".surface-execution .execution-readiness-stack"
-              );
-              if (!target) return;
-              target.open = true;
-              target.scrollIntoView({ behavior: "smooth", block: "start" });
-              target.focus({ preventScroll: true });
-            },
+            onClick: openAutomaticTradingConsole,
             tone: "warning"
           };
         }
@@ -15361,6 +15808,8 @@ export function App() {
           disabled: isRunningStage9ProductionAdmission,
           tone: "warning"
         };
+      case "dynamic-trading":
+        return null;
       case "operations":
         return null;
       case "audit":
@@ -15377,9 +15826,114 @@ export function App() {
         };
     }
   })();
+  const terminalSurfaceDisplayAction =
+    terminalSurfaceAction && activeWorkspaceContext
+      ? {
+          ...terminalSurfaceAction,
+          workflowReason: translateGoldenPathDetail(
+            i18n,
+            activeWorkspaceContext.detail || activeWorkspaceContext.reason
+          ),
+          workflowStatus: activeWorkspaceContext.status
+        }
+      : terminalSurfaceAction;
+  const automatedTradingGuideAction =
+    goldenPath?.nextAction?.id === "certify-live-adapter"
+      ? openLiveTradingGate
+      : goldenPath?.nextAction
+        ? runAutomatedTradingWorkflow
+        : openAutomaticTradingConsole;
+  const automatedTradingGuide = (
+    <AutomatedTradingWorkflowGuide
+      actionDisabled={isAutomatedTradingWorkflowRunning || !goldenPath}
+      actionLabel={
+        !goldenPath
+          ? i18n.locale === "zh-CN"
+            ? "正在读取流程…"
+            : "Loading workflow…"
+          : isAutomatedTradingWorkflowRunning
+            ? i18n.locale === "zh-CN"
+              ? "自动执行中…"
+              : "Running automatically…"
+            : goldenPath.nextAction
+              ? automatedTradingWorkflowRequiresManualAction(goldenPath.nextAction.id)
+                ? goldenPathActionLabel(i18n, goldenPath.nextAction)
+                : i18n.locale === "zh-CN"
+                  ? "开始自动交易流程"
+                  : "Start automated trading flow"
+            : i18n.locale === "zh-CN"
+              ? "打开自动交易控制台"
+              : "Open auto-trading console"
+      }
+      activeWorkAreaId={activeWorkAreaId}
+      currentWorkAreaId={activeWorkAreaId}
+      detail={
+        automatedTradingWorkflowStatus ??
+        (goldenPath
+          ? goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason, goldenPath)
+          : i18n.locale === "zh-CN"
+            ? "正在读取黄金路径和实盘闸门。"
+            : "Loading the golden path and live-trading gates.")
+      }
+      i18n={i18n}
+      onAction={automatedTradingGuideAction}
+      onSelectWorkspace={selectProductWorkArea}
+      workAreas={automatedTradingWorkAreas}
+    />
+  );
   const colorSchemeToggleLabel = i18n.locale === "zh-CN"
     ? colorScheme === "dark" ? "切换到浅色模式" : "切换到深色模式"
     : colorScheme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const textScalePercent = Math.round(textScale * 100);
+  const footerExecutionSafety = settingsStatus.settings?.safety;
+  const currentExecutionMode = footerExecutionSafety?.executionMode;
+  const currentExecutionModeLabel = !footerExecutionSafety
+    ? i18n.locale === "zh-CN" ? "状态读取中" : "Loading"
+    : currentExecutionMode === "live"
+      ? footerExecutionSafety.liveTradingAllowed
+        ? i18n.locale === "zh-CN" ? "生产实盘" : "Production live"
+        : i18n.locale === "zh-CN" ? "生产实盘受保护" : "Production live protected"
+      : currentExecutionMode === "testnet"
+        ? i18n.locale === "zh-CN" ? "币安测试网" : "Binance Testnet"
+        : i18n.locale === "zh-CN" ? "纸面模拟" : "Paper simulation";
+  const currentExecutionVenueLabel = currentExecutionMode === "live"
+    ? "Binance Spot"
+    : currentExecutionMode === "testnet"
+      ? "Binance Testnet"
+      : "Paper Broker";
+  const currentExecutionTone = footerExecutionSafety?.liveTradingAllowed
+    ? "live"
+    : currentExecutionMode === "live"
+      ? "blocked"
+      : "paper";
+  const currentLiveBadgeLabel = !footerExecutionSafety
+    ? i18n.locale === "zh-CN" ? "权限读取中" : "Loading permissions"
+    : footerExecutionSafety.liveTradingAllowed
+      ? i18n.locale === "zh-CN" ? "生产会话有效" : "Production session active"
+      : currentExecutionMode === "live"
+        ? i18n.locale === "zh-CN" ? "生产闸门保护中" : "Production gate protected"
+        : i18n.locale === "zh-CN" ? "实盘需授权" : "Live authorization required";
+  const footerExecutionStatus = !footerExecutionSafety
+    ? i18n.locale === "zh-CN" ? "未加载" : "Unavailable"
+    : footerExecutionSafety.liveTradingAllowed
+      ? i18n.locale === "zh-CN" ? "已授权" : "Authorized"
+      : footerExecutionSafety.executionMode === "testnet"
+        ? "Testnet"
+        : footerExecutionSafety.executionMode === "paper"
+          ? "Paper"
+          : i18n.locale === "zh-CN" ? "未授权" : "Not authorized";
+  const footerExecutionDetail = !footerExecutionSafety
+    ? i18n.locale === "zh-CN" ? "正在读取执行状态" : "Loading execution status"
+    : footerExecutionSafety.liveTradingAllowed
+      ? i18n.locale === "zh-CN" ? "生产会话有效" : "Production session active"
+      : footerExecutionSafety.productionLive?.blockingReason ===
+          "stage10_production_execution_control_evidence_stale"
+        ? i18n.locale === "zh-CN" ? "生产权限证据已过期" : "Production permission evidence expired"
+        : footerExecutionSafety.productionLive?.credentialsConfigured === false
+          ? i18n.locale === "zh-CN" ? "生产交易凭据未配置" : "Production credentials missing"
+          : i18n.locale === "zh-CN"
+            ? "生产会话未开启，切换时需实名确认"
+            : "Production session inactive; named confirmation required";
 
   return (
     <div className="terminal-shell" data-theme={colorScheme}>
@@ -15442,7 +15996,7 @@ export function App() {
           <span className="rail-avatar">AQ</span>
           <span>
             <strong>quant.user</strong>
-            <small>{i18n.locale === "zh-CN" ? "研究员 · Level 3" : "Researcher · Level 3"}</small>
+            <small>{i18n.locale === "zh-CN" ? "研究员 · 三级" : "Researcher · Level 3"}</small>
           </span>
           <time dateTime={workspace.researchRun?.createdAt ?? ""}>
             {workspace.researchRun
@@ -15452,7 +16006,7 @@ export function App() {
               : i18n.locale === "zh-CN"
                 ? "等待首次运行"
                 : "Waiting for first run"}
-            <br />Asia/Shanghai
+            <br />{i18n.strategyText("Asia/Shanghai")}
           </time>
         </section>
       </aside>
@@ -15462,7 +16016,7 @@ export function App() {
           <div className="terminal-global-tape" aria-label="全球市场快照">
             {workspace.watchlist.slice(0, 3).map((instrument) => (
               <span key={`${instrument.market}-${instrument.symbol}`}>
-                {instrument.name} <em>
+                {i18n.instrumentName(instrument.name)} <em>
                   {instrument.price?.toLocaleString(undefined, { maximumFractionDigits: 2 }) ?? "—"}
                   {" "}{instrument.changePct >= 0 ? "+" : ""}{instrument.changePct.toFixed(2)}%
                 </em>
@@ -15481,7 +16035,7 @@ export function App() {
             </p>
             <h1>
               {activeWorkArea ? i18n.productWorkAreaLabel(activeWorkArea) : i18n.t("topbar.eyebrow")}
-              <small>{workspace.selectedInstrument.name}</small>
+              <small>{i18n.instrumentName(workspace.selectedInstrument.name)}</small>
             </h1>
           </div>
           <div className="topbar-actions">
@@ -15579,8 +16133,12 @@ export function App() {
                 {i18n.t("action.switchSymbol")}
               </button>
             </form>
-            <span className="terminal-paper-badge">纸面 / 测试网</span>
-            <span className="terminal-live-badge">实盘需授权</span>
+            <span className={`terminal-paper-badge ${currentExecutionTone}`}>
+              {currentExecutionModeLabel}
+            </span>
+            <span className={`terminal-live-badge ${footerExecutionSafety?.liveTradingAllowed ? "authorized" : ""}`}>
+              {currentLiveBadgeLabel}
+            </span>
             <button
               className="context-link-button"
               onClick={() => void copyResearchContextLink()}
@@ -15639,6 +16197,51 @@ export function App() {
               {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
               {i18n.t("action.runPipeline")}
             </button>
+            <details className="text-scale-control">
+              <summary
+                aria-label={i18n.locale === "zh-CN" ? "调整文字大小" : "Adjust text size"}
+                className="panel-icon-button"
+                title={i18n.locale === "zh-CN" ? `文字大小 ${textScalePercent}%` : `Text size ${textScalePercent}%`}
+              >
+                <Type size={16} />
+              </summary>
+              <div className="text-scale-popover">
+                <label htmlFor="terminal-text-scale">
+                  <span>{i18n.locale === "zh-CN" ? "文字大小" : "Text size"}</span>
+                  <strong>{textScalePercent}%</strong>
+                </label>
+                <input
+                  aria-label={i18n.locale === "zh-CN" ? "文字大小比例" : "Text size percentage"}
+                  aria-valuetext={`${textScalePercent}%`}
+                  id="terminal-text-scale"
+                  max={MAX_TEXT_SCALE}
+                  min={MIN_TEXT_SCALE}
+                  onInput={(event) => setTextScale(Number(event.currentTarget.value))}
+                  step={0.05}
+                  type="range"
+                  value={textScale}
+                />
+                <div aria-label={i18n.locale === "zh-CN" ? "文字大小快捷档位" : "Text size presets"} className="text-scale-presets">
+                  {[MIN_TEXT_SCALE, 1.25, MAX_TEXT_SCALE].map((scale) => (
+                    <button
+                      aria-pressed={textScale === scale}
+                      className={textScale === scale ? "active" : ""}
+                      key={scale}
+                      onClick={() => setTextScale(scale)}
+                      type="button"
+                    >
+                      {Math.round(scale * 100)}%
+                    </button>
+                  ))}
+                </div>
+                <footer>
+                  <small>{i18n.locale === "zh-CN" ? "仅保存在当前设备" : "Saved on this device only"}</small>
+                  <button onClick={() => setTextScale(DEFAULT_TEXT_SCALE)} type="button">
+                    {i18n.locale === "zh-CN" ? "恢复默认" : "Reset"}
+                  </button>
+                </footer>
+              </div>
+            </details>
             <button
               aria-label={colorSchemeToggleLabel}
               className="panel-icon-button theme-toggle-button"
@@ -15651,15 +16254,22 @@ export function App() {
           </div>
         </header>
 
-        {activeWorkAreaId === "operations" || !terminalSurfaceAction ? null : (
+        {activeWorkAreaId === "operations" || activeWorkAreaId === "dynamic-trading" || !terminalSurfaceDisplayAction ? null : (
         <TerminalWorkspaceSurface
-          action={terminalSurfaceAction}
+          action={terminalSurfaceDisplayAction}
           activeWorkAreaId={activeWorkAreaId}
-          adapterChainHealthRollups={executionAdapterChainHealthRollups}
-          adapterHealthProbeRows={executionAdapterHealthProbeRows}
-          adapterLedgerRows={executionAdapterLedgerRows}
-          adapterRows={brokerAdapterRows}
+          adapterChainHealthRollups={terminalExecutionAdapterChainHealthRollups}
+          adapterHealthProbeRows={terminalExecutionAdapterHealthProbeRows}
+          adapterLedgerRows={terminalExecutionAdapterLedgerRows}
+          adapterRows={terminalBrokerAdapterRows}
+          isLoadingSettingsConfiguration={!hasLoadedSettingsStatus}
+          isSavingSettingsConfiguration={isSavingSettingsConfiguration}
+          isTestingMonitoringWebhook={isTestingMonitoringWebhook}
+          onLoadOpenAiCompatibleModels={loadSettingsOpenAiCompatibleModels}
+          onSaveSettingsConfiguration={(request) => void saveSettingsConfiguration(request)}
+          onTestMonitoringWebhook={() => void testSettingsMonitoringWebhook()}
           settings={settingsStatus.settings}
+          settingsConfigurationMessage={settingsConfigurationMessage}
           aiReview={{
             busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3
               || isAppendingAiReviewStage3Decision || isStrategyExperimentRunning,
@@ -15766,9 +16376,38 @@ export function App() {
           }}
           strategyWorkbench={renderStrategyWorkbench(false)}
           surfaceRef={activeWorkspaceSurfaceRef}
+          workflowGuide={automatedTradingGuide}
           workspace={workspace}
         />
         )}
+
+        {activeWorkAreaId === "dynamic-trading" ? (
+          <ExecutionAutoPaperTradingSection
+            baseUrl={quantCoreBaseUrl}
+            chart={
+              <>
+                <KlineChartCanvas
+                  key={`dynamic-trading-${workspace.selectedInstrument.market}-${workspace.selectedInstrument.symbol}-${workspace.selectedTimeframe}`}
+                  bars={klinesState.bars}
+                  colorScheme={colorScheme}
+                  locale={locale}
+                  market={klinesState.market}
+                  onLoadHistorical={loadHistoricalKlines}
+                  symbol={klinesState.symbol}
+                  timeframe={klinesState.timeframe}
+                />
+                <ChartDataStrip i18n={i18n} latestChartBar={latestChartBar} state={klinesState} />
+              </>
+            }
+            instruments={workspace.watchlist}
+            onOpenAudit={() => selectProductWorkArea("audit")}
+            onOpenExecution={() => selectProductWorkArea("execution")}
+            onSelectInstrument={(instrument) => selectInstrument(instrument, "dynamic-trading")}
+            selectedSymbol={workspace.selectedInstrument.symbol}
+            variant="workspace"
+            workflowGuide={automatedTradingGuide}
+          />
+        ) : null}
 
         {activeWorkAreaId === "operations" ? (
         <section
@@ -15789,6 +16428,7 @@ export function App() {
               </span>
             </div>
           </header>
+          {automatedTradingGuide}
           <div className="terminal-operations-body">
 
         <section className="terminal-overview-grid market-tape">
@@ -15811,7 +16451,7 @@ export function App() {
                       ? goldenPathStepLabel(i18n, goldenPathCurrentStep.id, goldenPathCurrentStep.label)
                       : goldenPathStatusLabel(i18n, "ready")}
                   </strong>
-                  <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason)}</small>
+                  <small>{goldenPathDetail(i18n, goldenPathCurrentStep, goldenPath.nextAction?.reason, goldenPath)}</small>
                 </div>
               ) : null}
               <details className="workspace-command-center" hidden>
@@ -17258,9 +17898,9 @@ export function App() {
           <span>{i18n.locale === "zh-CN" ? "模型" : "Model"}</span>
           <strong><i className="status-dot" />{i18n.locale === "zh-CN" ? "本地基线有效" : "Local baseline ready"}</strong>
         </div>
-        <div className="terminal-status-item paper">
-          <span>Paper Broker</span>
-          <strong>{i18n.executionMode(workspace.execution)}</strong>
+        <div className={`terminal-status-item ${currentExecutionTone}`}>
+          <span>{currentExecutionVenueLabel}</span>
+          <strong>{currentExecutionModeLabel}</strong>
         </div>
         <div className="terminal-status-item">
           <span>{i18n.locale === "zh-CN" ? "审计" : "Audit"}</span>
@@ -17268,8 +17908,8 @@ export function App() {
         </div>
         <div className="terminal-live-block">
           <span>{i18n.locale === "zh-CN" ? "实盘交易" : "Live trading"}</span>
-          <strong>{i18n.locale === "zh-CN" ? "受控" : "Controlled"}</strong>
-          <small>{i18n.locale === "zh-CN" ? "需 Stage 10 与二次确认" : "Requires Stage 10 and confirmation"}</small>
+          <strong>{footerExecutionStatus}</strong>
+          <small>{footerExecutionDetail}</small>
         </div>
       </footer>
 
@@ -17430,10 +18070,52 @@ export function App() {
               {researchPipelinePreflight.canRun ? (
                 <button className="run-button" onClick={() => void runPipeline("accepted")} type="button">
                   <Play size={15} />
-                  {i18n.locale === "zh-CN" ? "仍然运行" : "Run anyway"}
+                  {i18n.locale === "zh-CN" ? "确认并运行研究" : "Confirm and run research"}
                 </button>
               ) : null}
             </footer>
+          </section>
+        </dialog>
+      ) : null}
+
+      {isLiveTradingGateDialogOpen ? (
+        <dialog
+          aria-describedby="live-trading-gate-dialog-detail"
+          aria-labelledby="live-trading-gate-dialog-title"
+          aria-modal="true"
+          className="research-confirmation-dialog live-trading-gate-dialog"
+          onCancel={() => setIsLiveTradingGateDialogOpen(false)}
+          ref={liveTradingGateDialogRef}
+          role="alertdialog"
+        >
+          <section className="research-confirmation-modal live-trading-gate-modal">
+            <header>
+              <div>
+                <span className="research-confirmation-kicker">
+                  <ShieldCheck size={15} />
+                  实盘人工门禁
+                </span>
+                <h2 id="live-trading-gate-dialog-title">实盘操作确认</h2>
+              </div>
+              <button
+                aria-label="关闭实盘操作确认"
+                className="panel-icon-button"
+                onClick={() => setIsLiveTradingGateDialogOpen(false)}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <p id="live-trading-gate-dialog-detail">
+              按当前状态完成凭据检查、权限核验、控制恢复和实名确认；打开窗口不会自动启用实盘。
+            </p>
+            <ExecutionStage10ProductionExecutionSection
+              baseUrl={quantCoreBaseUrl}
+              candidate={stage9ProductionAdmissionCandidate}
+              onAutoLiveAuthorized={completeLiveTradingGate}
+              review={stage9ProductionAdmissionReview}
+              sectionId="live-trading-gate-dialog-control"
+            />
           </section>
         </dialog>
       ) : null}
@@ -17585,6 +18267,32 @@ function queueStage1P0DailyUseArchiveRecordActionFocus(): void {
   window.requestAnimationFrame(() => focusStage1P0DailyUseArchiveRecordActionElement());
 }
 
+function focusExecutionReadiness(targetSelector?: string): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const stack = document.querySelector<HTMLDetailsElement>(
+    ".surface-execution .execution-readiness-stack"
+  );
+  const target = targetSelector
+    ? document.querySelector<HTMLElement>(targetSelector)
+    : stack;
+  if (!stack || !target) {
+    return;
+  }
+  stack.open = true;
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  target.focus({ preventScroll: true });
+}
+
+function queueExecutionReadinessFocus(targetSelector?: string): void {
+  if (typeof window === "undefined") {
+    focusExecutionReadiness(targetSelector);
+    return;
+  }
+  window.requestAnimationFrame(() => focusExecutionReadiness(targetSelector));
+}
+
 function p0EvidenceDrawerSummary(
   i18n: AppI18n,
   hasSavedReport: boolean,
@@ -17597,6 +18305,95 @@ function p0EvidenceDrawerSummary(
   }
   const report = hasSavedReport ? "saved report" : "no saved report";
   return `${report} · ${preflightGateCount} preflight gates · ${backlogItemCount} open gaps`;
+}
+
+function automatedTradingWorkflowActionKey(goldenPath: GoldenPathStatus): string | null {
+  const action = goldenPath.nextAction;
+  return action
+    ? [
+        goldenPath.currentStepId ?? "",
+        action.id,
+        action.targetWorkspace,
+        goldenPath.latestRunId ?? "",
+        goldenPath.summary.passedSteps
+      ].join(":")
+    : null;
+}
+
+function automatedTradingWorkflowRequiresManualAction(actionId: string): boolean {
+  return actionId === "fix-paper-handoff" || actionId === "certify-live-adapter";
+}
+
+function AutomatedTradingWorkflowGuide({
+  actionDisabled,
+  actionLabel,
+  activeWorkAreaId,
+  currentWorkAreaId,
+  detail,
+  i18n,
+  onAction,
+  onSelectWorkspace,
+  workAreas
+}: {
+  actionDisabled: boolean;
+  actionLabel: string;
+  activeWorkAreaId: ProductWorkAreaId;
+  currentWorkAreaId: ProductWorkAreaId;
+  detail: string;
+  i18n: AppI18n;
+  onAction: () => void;
+  onSelectWorkspace: (workspaceId: ProductWorkAreaId) => void;
+  workAreas: ProductWorkArea[];
+}) {
+  const readyCount = workAreas.filter((area) => area.status === "ready").length;
+
+  return (
+    <section className="automated-trading-guide" aria-label={i18n.locale === "zh-CN" ? "自动化交易流程" : "Automated trading workflow"}>
+      <header className="automated-trading-guide-head">
+        <div>
+          <span>{i18n.locale === "zh-CN" ? "正常推进路线" : "Guided route"}</span>
+          <strong>{i18n.locale === "zh-CN" ? "自动化交易流程" : "Automated trading workflow"}</strong>
+          <small>
+            {i18n.locale === "zh-CN"
+                ? `从平台配置、研究验证到动态交易、运行和审计，按顺序串联全部 ${workAreas.length} 个页面。`
+                : `Connect all ${workAreas.length} pages from setup and research to dynamic trading, operations, and audit.`}
+          </small>
+        </div>
+        <div className="automated-trading-guide-action">
+          <span>{readyCount}/{workAreas.length} {i18n.locale === "zh-CN" ? "页面就绪" : "pages ready"}</span>
+          <small title={detail}>{detail}</small>
+          <button disabled={actionDisabled} onClick={onAction} type="button">
+            <Play size={14} />
+            {actionLabel}
+          </button>
+        </div>
+      </header>
+      <div className="automated-trading-guide-steps">
+        {workAreas.map((area, index) => {
+          const current = area.id === currentWorkAreaId;
+          return (
+            <button
+              aria-current={current ? "step" : undefined}
+              className={`${area.status} ${current ? "current" : ""} ${area.id === activeWorkAreaId ? "active" : ""}`}
+              key={area.id}
+              onClick={() => onSelectWorkspace(area.id)}
+              title={`${i18n.productWorkAreaLabel(area)} · ${i18n.productWorkAreaDescription(area)}`}
+              type="button"
+            >
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <strong>{i18n.productWorkAreaLabel(area)}</strong>
+              <em>{current ? (i18n.locale === "zh-CN" ? "当前步骤" : "Current") : i18n.productWorkAreaStatus(area.status)}</em>
+            </button>
+          );
+        })}
+      </div>
+      <small className="automated-trading-guide-boundary">
+        {i18n.locale === "zh-CN"
+          ? "主按钮会自动切换页面并串行推进可安全执行的步骤；遇到实名确认、生产权限、急停或风控闸门会暂停。"
+          : "The primary action switches pages and advances safe steps in sequence; it pauses at named confirmation, production permission, kill-switch, or risk gates."}
+      </small>
+    </section>
+  );
 }
 
 function P0GoldenPathJourneyPanel({
@@ -19881,7 +20678,7 @@ function goldenPathActionLabelText(i18n: AppI18n, label: string): string {
   }
   return (
     {
-      "Certify live adapter": "查看闸门",
+      "Certify live adapter": "确认实盘操作",
       "Fix paper handoff": "修复交接",
       "Refresh market data": "刷新行情",
       "Refresh watchlist cache": "刷新自选缓存",
@@ -20319,7 +21116,7 @@ function goldenPathActionLabel(i18n: AppI18n, action: NonNullable<GoldenPathStat
       "run-ai-review": "运行 AI 评审",
       "fix-paper-handoff": "修复执行交接",
       "submit-paper-order": "提交模拟委托",
-      "certify-live-adapter": "查看实盘闸门"
+      "certify-live-adapter": "确认实盘操作"
     }[action.id] ?? action.label
   );
 }
@@ -20400,13 +21197,41 @@ function translateGoldenPathDetail(i18n: AppI18n, detail: string): string {
   if (readyRefreshEvidence) {
     return `${readyRefreshEvidence[1]} 根新鲜 K 线缓存可用，自选刷新证据 ${readyRefreshEvidence[2]} 已确认 ${readyRefreshEvidence[3]} 行来自 ${readyRefreshEvidence[4]}。`;
   }
+  const nonBlockingRefreshWarning = detail.match(
+    /^(\d+) fresh cached K-line rows are available\. Matching watchlist cache refresh evidence (.+) includes the non-blocking quality note: (.+) Research may continue with this review note\.$/
+  );
+  if (nonBlockingRefreshWarning) {
+    return `${nonBlockingRefreshWarning[1]} 根新鲜 K 线缓存可用，自选刷新证据 ${nonBlockingRefreshWarning[2]} 包含非阻断质量提示：${translateGoldenPathWarning(nonBlockingRefreshWarning[3])}；研究可继续。`;
+  }
   const reviewRefreshEvidence = detail.match(
     /^(\d+) fresh cached K-line rows are available, but watchlist cache refresh evidence (.+) requires review: (.+)\. Refresh watchlist cache before audited research\.$/
   );
   if (reviewRefreshEvidence) {
-    return `${reviewRefreshEvidence[1]} 根新鲜 K 线缓存可用，但自选刷新证据 ${reviewRefreshEvidence[2]} 需要复核：${reviewRefreshEvidence[3]}；先刷新自选缓存后再运行审计研究。`;
+    return `${reviewRefreshEvidence[1]} 根新鲜 K 线缓存可用，但自选刷新证据 ${reviewRefreshEvidence[2]} 需要复核：${translateGoldenPathWarning(reviewRefreshEvidence[3])}；先刷新自选缓存后再运行审计研究。`;
+  }
+  const runnerFailures = detail.match(/^Automatic trading runner failed (\d+) consecutive cycles: (.+)$/);
+  if (runnerFailures) {
+    return `自动交易后台已连续失败 ${runnerFailures[1]} 轮：${translateAutomaticTradingError(runnerFailures[2])}`;
   }
   return detail;
+}
+
+function translateAutomaticTradingError(detail: string): string {
+  const amountPrecision = detail.match(
+    /^binance amount of (.+) must be greater than minimum amount precision of (.+)$/
+  );
+  return amountPrecision
+    ? `${amountPrecision[1]} 数量低于交易所最小精度 ${amountPrecision[2]}。`
+    : detail;
+}
+
+function translateGoldenPathWarning(warning: string): string {
+  return (
+    {
+      "Expected bar intervals are missing.": "存在缺失的 K 线时间间隔",
+      "The window contains a bar that is still forming.": "当前窗口包含一根仍在形成的 K 线"
+    }[warning] ?? warning
+  );
 }
 
 function auditRunbookStatusLabel(i18n: AppI18n, item: GoldenPathStatus["runbook"][number]): string {
@@ -20495,8 +21320,18 @@ function goldenPathWorkspaceContextDetail(i18n: AppI18n, context: GoldenPathWork
 function goldenPathDetail(
   i18n: AppI18n,
   step: GoldenPathStatus["steps"][number] | undefined,
-  fallback?: string
+  fallback?: string,
+  goldenPath?: GoldenPathStatus
 ): string {
+  const automaticTrading = goldenPath?.workspaces.find((workspace) => workspace.id === "dynamic-trading");
+  if (!step && automaticTrading?.status === "blocked") {
+    return translateGoldenPathDetail(i18n, automaticTrading.reason);
+  }
+  if (!step && goldenPath?.summary.liveTradingAllowed) {
+    return i18n.locale === "zh-CN"
+      ? "模拟闭环与实盘认证均已完成，生产自动交易可用。"
+      : "The simulation loop and live certification are complete; production automatic trading is available.";
+  }
   if (i18n.locale === "en-US") {
     return step?.detail ?? fallback ?? "";
   }
@@ -20826,7 +21661,7 @@ function StrategySummary({
     setStrategyAiProviderId(preferredProvider);
     setStrategyAiGoal(
       i18n.locale === "zh-CN"
-        ? `为${workspace.selectedInstrument.name}编写一套中低风险的${workspace.selectedTimeframe}策略，使用可解释信号并控制单笔损失和最大回撤。`
+        ? `为${i18n.instrumentName(workspace.selectedInstrument.name)}编写一套中低风险的${workspace.selectedTimeframe}策略，使用可解释信号并控制单笔损失和最大回撤。`
         : `Create a medium-low risk ${workspace.selectedTimeframe} strategy for ${workspace.selectedInstrument.name} with explainable signals, controlled per-trade loss, and capped drawdown.`
     );
     setStrategyAiExternalDataApproved(false);
@@ -21027,7 +21862,7 @@ function StrategySummary({
           <span>{i18n.t("strategy.name")}</span>
           <input
             onChange={(event) => onUpdateStrategyRuleDraftField("name", event.currentTarget.value)}
-            value={draft.name}
+            value={i18n.strategyText(draft.name)}
           />
         </label>
         <div className="strategy-draft-grid">
@@ -21330,7 +22165,7 @@ function StrategySummary({
             <p id="strategy-ai-subtitle">{i18n.t("strategy.aiSubtitle")}</p>
             <div className="strategy-ai-context" aria-label={i18n.t("strategy.context")}>
               <span>{i18n.marketLabel(workspace.selectedInstrument.market)}</span>
-              <strong>{workspace.selectedInstrument.symbol} · {workspace.selectedInstrument.name}</strong>
+              <strong>{workspace.selectedInstrument.symbol} · {i18n.instrumentName(workspace.selectedInstrument.name)}</strong>
               <span>{workspace.selectedTimeframe}</span>
               <em>{i18n.t("strategy.aiDraftOnly")}</em>
             </div>
@@ -21454,7 +22289,9 @@ function StrategySummary({
                     <small>
                       {strategyAiCandidate.draft.entryKind === "rsi_below"
                         ? `${i18n.t("strategy.rsiWindow")} ${strategyAiCandidate.draft.entryWindow} · ${i18n.t("strategy.rsiThreshold")} ${strategyAiCandidate.draft.entryThreshold}`
-                        : `SMA ${strategyAiCandidate.draft.entryWindow}`}
+                        : i18n.locale === "zh-CN"
+                          ? `${strategyAiCandidate.draft.entryWindow} 周期简单移动平均线`
+                          : `SMA ${strategyAiCandidate.draft.entryWindow}`}
                     </small>
                   </article>
                   <article>
@@ -21463,7 +22300,9 @@ function StrategySummary({
                     <small>
                       {strategyAiCandidate.draft.exitKind === "rsi_above"
                         ? `${i18n.t("strategy.rsiWindow")} ${strategyAiCandidate.draft.exitWindow} · ${i18n.t("strategy.rsiThreshold")} ${strategyAiCandidate.draft.exitThreshold}`
-                        : `SMA ${strategyAiCandidate.draft.exitWindow}`}
+                        : i18n.locale === "zh-CN"
+                          ? `${strategyAiCandidate.draft.exitWindow} 周期简单移动平均线`
+                          : `SMA ${strategyAiCandidate.draft.exitWindow}`}
                     </small>
                   </article>
                   <article>
@@ -21477,7 +22316,9 @@ function StrategySummary({
                     <span>{i18n.t("strategy.maxDrawdownPct")}</span>
                     <strong>{strategyAiCandidate.draft.maxDrawdownPct}%</strong>
                     <small>
-                      {strategyAiCandidate.draft.entryRsiConfirm ? `RSI ${i18n.locale === "zh-CN" ? "确认" : "confirmation"}` : i18n.locale === "zh-CN" ? "无 RSI 确认" : "No RSI confirmation"}
+                      {strategyAiCandidate.draft.entryRsiConfirm
+                        ? i18n.locale === "zh-CN" ? "相对强弱指标确认" : "RSI confirmation"
+                        : i18n.locale === "zh-CN" ? "无相对强弱指标确认" : "No RSI confirmation"}
                       {" · "}
                       {strategyAiCandidate.draft.entryVolumeConfirm ? i18n.t("strategy.volumeConfirm") : i18n.locale === "zh-CN" ? "无成交量确认" : "No volume confirmation"}
                     </small>
@@ -21717,7 +22558,7 @@ function StrategyConditionField({
             value={threshold}
           />
         ) : (
-          <em>SMA</em>
+          <em>{i18n.strategyText("SMA")}</em>
         )}
       </div>
       <small>{strategyDraftHint(i18n, field)}</small>
@@ -21823,7 +22664,7 @@ function StrategyVolumeConfirmField({
             value={value}
           />
         </span>
-        <em>VOL</em>
+        <em>{i18n.strategyText("VOL")}</em>
       </div>
       <small>{strategyDraftHint(i18n, field)}</small>
     </label>
@@ -21890,7 +22731,7 @@ function StrategyRsiConfirmField({
             value={threshold}
           />
         </span>
-        <em>RSI</em>
+        <em>{i18n.strategyText("RSI")}</em>
       </div>
       <small>{strategyDraftHint(i18n, field)}</small>
     </label>
@@ -22297,13 +23138,13 @@ function MarketCalendarStatusCard({
   return (
     <Panel
       title={i18n.locale === "zh-CN" ? "交易日历" : "Market Calendar"}
-      subtitle={calendar ? `${i18n.marketLabel(calendar.market)} · ${calendar.timezone}` : source}
+      subtitle={calendar ? `${i18n.marketLabel(calendar.market)} · ${i18n.strategyText(calendar.timezone)}` : source}
       className={`market-calendar-card ${status} ${className ?? ""}`}
     >
       <div className="market-calendar-head">
         <span>{i18n.locale === "zh-CN" ? "当前市场状态" : "Current session"}</span>
         <strong>{marketCalendarStatusLabel(i18n, status)}</strong>
-        <em>{calendar?.session ?? "unknown"}</em>
+        <em>{i18n.strategyText(calendar?.session ?? "unknown")}</em>
       </div>
       <div className="market-calendar-grid">
         <article>
@@ -22318,16 +23159,18 @@ function MarketCalendarStatusCard({
         </article>
         <article>
           <span>{i18n.locale === "zh-CN" ? "日历来源" : "Calendar source"}</span>
-          <strong>{calendar?.source ?? source}</strong>
+          <strong>{i18n.strategyText(calendar?.source ?? source)}</strong>
           <small>{source === "core" ? (i18n.locale === "zh-CN" ? "本地核心" : "Local core") : error ?? "fallback"}</small>
         </article>
         <article>
           <span>{i18n.locale === "zh-CN" ? "限制提示" : "Limits"}</span>
           <strong>{warningCount}</strong>
-          <small>{calendar?.warnings[0] ?? (i18n.locale === "zh-CN" ? "无额外提示" : "No additional warning")}</small>
+          <small>{i18n.strategyText(calendar?.warnings[0] ?? (i18n.locale === "zh-CN" ? "无额外提示" : "No additional warning"))}</small>
         </article>
       </div>
-      {calendar?.detail || error ? <p className="market-calendar-detail">{calendar?.detail ?? error}</p> : null}
+      {calendar?.detail || error ? (
+        <p className="market-calendar-detail">{i18n.strategyText(calendar?.detail ?? error ?? "")}</p>
+      ) : null}
     </Panel>
   );
 }
@@ -22512,7 +23355,7 @@ function MarketDataReadinessStrip({
           <dd>{readiness.barCount.toLocaleString(i18n.locale === "zh-CN" ? "zh-CN" : "en-US")}</dd>
         </div>
         <div>
-          <dt>Provider</dt>
+          <dt>{i18n.locale === "zh-CN" ? "数据提供方" : "Provider"}</dt>
           <dd>{marketDataReadinessProviderLabel(i18n, readiness.providerHealthState)}</dd>
         </div>
         <div>
@@ -22551,13 +23394,13 @@ function marketDataReadinessDetail(
       : `${readiness.symbol} is not ready for research.`;
   }
   if (readiness.state === "ready") {
-    return `${readiness.symbol} ${readiness.timeframe} 已可用于研究。`;
+    return `${readiness.symbol} ${i18n.strategyText(readiness.timeframe)} 已可用于研究。`;
   }
   if (readiness.state === "stale") {
     return `${readiness.symbol} 有缓存，但需要刷新后再进入流水线。`;
   }
   return readiness.blockingReasons.length
-    ? readiness.blockingReasons.join(" · ")
+    ? readiness.blockingReasons.map((reason) => i18n.strategyText(reason)).join(" · ")
     : `${readiness.symbol} 当前不能进入研究流水线。`;
 }
 
@@ -22671,7 +23514,7 @@ function MarketDataHealthPanel({
       ? `${latestWatchlistCacheRefresh.runId} · ${latestWatchlistCacheRefresh.summary.upsertedRows.toLocaleString("zh-CN")} 行入库`
       : `${latestWatchlistCacheRefresh.runId} · ${latestWatchlistCacheRefresh.summary.upsertedRows.toLocaleString("en-US")} rows cached`
     : i18n.locale === "zh-CN"
-      ? "批量刷新后会生成可追踪 run。"
+      ? "批量刷新后会生成可追踪运行记录。"
       : "Bulk refreshes create a traceable run.";
   const isRefreshBlocked = Boolean(refreshGuard?.blocked);
 
@@ -22746,12 +23589,12 @@ function MarketDataHealthPanel({
         <article className="neutral">
           <span>{i18n.locale === "zh-CN" ? "数据行数" : "Rows"}</span>
           <strong>{state.quality.rows || state.bars.length}</strong>
-          <p>{`${state.timeframe} · ${state.symbol}`}</p>
+          <p>{`${i18n.strategyText(state.timeframe)} · ${state.symbol}`}</p>
         </article>
         <article className={state.quality.isComplete ? "positive" : "risk"}>
           <span>{i18n.locale === "zh-CN" ? "质量状态" : "Quality"}</span>
           <strong>{i18n.locale === "zh-CN" ? (state.quality.isComplete ? "完整" : "需复核") : freshness}</strong>
-          <p>{warnings[0]}</p>
+          <p>{i18n.strategyText(warnings[0])}</p>
         </article>
         <article
           className={
@@ -22778,7 +23621,7 @@ function MarketDataHealthPanel({
           <div>
             <span>{watchlistCacheRefreshCoverageLabel(i18n, watchlistCacheRefreshCoverageRow)}</span>
             <strong>{watchlistCacheRefreshCoverageValue(i18n, watchlistCacheRefreshCoverageRow)}</strong>
-            <p>{watchlistCacheRefreshCoverageDetail(i18n, watchlistCacheRefreshCoverageRow)}</p>
+            <p>{i18n.strategyText(watchlistCacheRefreshCoverageDetail(i18n, watchlistCacheRefreshCoverageRow))}</p>
           </div>
           {watchlistCacheRefreshCoverageRow.canOpenResearch ? (
             <button onClick={onOpenCoverageResearch} type="button">
@@ -22809,7 +23652,7 @@ function MarketDataHealthPanel({
               >
                 <div>
                   <strong>{watchlistCacheRefreshHistoryValue(i18n, row)}</strong>
-                  <span>{row.label}</span>
+                  <span>{i18n.strategyText(row.label)}</span>
                 </div>
                 <p>{watchlistCacheRefreshHistoryDetail(i18n, row)}</p>
               </button>
@@ -22831,20 +23674,20 @@ function MarketDataHealthPanel({
                 onClick={() => onSelectWatchlistCacheRefreshItem?.(row)}
                 title={
                   i18n.locale === "zh-CN"
-                    ? `切换到 ${row.name} ${row.symbol} ${row.timeframe}`
+                    ? `切换到 ${i18n.instrumentName(row.name)} ${row.symbol} ${i18n.strategyText(row.timeframe)}`
                     : `Open ${row.name} ${row.symbol} ${row.timeframe}`
                 }
                 type="button"
               >
                 <div>
                   <strong>{row.symbol}</strong>
-                  <span>{row.name} · {row.timeframe}</span>
+                  <span>{i18n.instrumentName(row.name)} · {i18n.strategyText(row.timeframe)}</span>
                 </div>
                 <em>
                   <Search size={13} />
                   {watchlistCacheRefreshItemStatusLabel(i18n, row)}
                 </em>
-                <p>{watchlistCacheRefreshItemDetail(i18n, row)}</p>
+                <p>{i18n.strategyText(watchlistCacheRefreshItemDetail(i18n, row))}</p>
               </button>
             ))}
           </div>
@@ -33513,7 +34356,9 @@ function ScannerWorkspace({
   return (
     <Panel title={i18n.t("module.scanner.title")} subtitle={i18n.t("module.scanner.subtitle")} className={className}>
       <div className="module-toolbar">
-        <span>{i18n.t("module.scanner.filters")}: watchlist · momentum · risk</span>
+        <span>
+          {i18n.t("module.scanner.filters")}: {i18n.strategyText("watchlist · momentum · risk")}
+        </span>
         <strong>{candidates.length}</strong>
       </div>
       <div className="scanner-table">
@@ -33528,7 +34373,7 @@ function ScannerWorkspace({
           <div className="scanner-row" key={`${candidate.instrument.market}-${candidate.instrument.symbol}`}>
             <span>
               <strong>{candidate.instrument.symbol}</strong>
-              <em>{candidate.instrument.name}</em>
+              <em>{i18n.instrumentName(candidate.instrument.name)}</em>
             </span>
             <span>
               <b>{candidate.score}</b>
@@ -33567,8 +34412,8 @@ function ResearchOpsQueuePanel({
       className={className}
     >
       <div className={`research-ops-summary ${queue.summary.tone}`}>
-        <strong>{queue.summary.headline}</strong>
-        <span>{queue.summary.detail}</span>
+        <strong>{i18n.strategyText(queue.summary.headline)}</strong>
+        <span>{i18n.strategyText(queue.summary.detail)}</span>
       </div>
       <div className="research-ops-table">
         <div className="research-ops-row research-ops-head">
@@ -33581,15 +34426,17 @@ function ResearchOpsQueuePanel({
           <div className={`research-ops-row ${row.tone} ${row.selected ? "selected" : ""}`} key={row.id}>
             <span>
               <strong>{row.symbol}</strong>
-              <em>{row.name}</em>
+              <em>{i18n.instrumentName(row.name)}</em>
             </span>
             <span>
               <b>{researchOpsStageLabel(i18n, row.stage)}</b>
-              <em>{row.timeframe}</em>
+              <em>{i18n.strategyText(row.timeframe)}</em>
             </span>
-            <span title={row.detail}>
-              <b>{row.latestRunId ?? row.latestCacheRunId ?? row.cacheSource}</b>
-              <em>{row.cacheRows} rows</em>
+            <span title={i18n.strategyText(row.detail)}>
+              <b>{i18n.strategyText(row.latestRunId ?? row.latestCacheRunId ?? row.cacheSource)}</b>
+              <em>
+                {row.cacheRows} {i18n.locale === "zh-CN" ? "行" : "rows"}
+              </em>
             </span>
             <button disabled={isRunningAction} onClick={() => onRunAction(row)} type="button">
               <Play size={13} />
@@ -35991,12 +36838,13 @@ function strategyRuleParameterLabel(i18n: AppI18n, parameter: string): string {
   if (exposureCap) {
     return `${exposureCap[1]}% 暴露上限`;
   }
-  return parameter
-    .replace("SMA20 / relative strength", "SMA20 / 相对强度")
+  const translated = parameter
+    .replace("SMA20 / relative strength", "20 周期简单移动平均线 / 相对强度")
     .replace("Trend support / risk downgrade", "趋势支撑 / 风险下调")
     .replace("Exposure cap / paper sizing", "暴露上限 / 模拟定仓")
     .replace("Stop / drawdown / execution mode", "止损 / 回撤 / 执行模式")
     .replace("Stop / take profit / drawdown / execution mode", "止损 / 止盈 / 回撤 / 执行模式");
+  return i18n.strategyText(translated);
 }
 
 function strategyRuleStatusLabel(i18n: AppI18n, status: StrategyRuleRow["status"]): string {
@@ -36225,16 +37073,16 @@ function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string
   return {
     name: "策略版本名称",
     entryKind: "入场条件类型",
-    entryWindow: "入场：收盘价上穿 SMA",
-    entryThreshold: "RSI 入场阈值",
-    entryRsiConfirm: "可选 RSI 动量闸门",
-    entryRsiWindow: "RSI 确认窗口",
-    entryRsiThreshold: "RSI 需要高于该值",
+    entryWindow: "入场：收盘价上穿简单移动平均线",
+    entryThreshold: "相对强弱指标入场阈值",
+    entryRsiConfirm: "可选相对强弱指标动量闸门",
+    entryRsiWindow: "相对强弱指标确认窗口",
+    entryRsiThreshold: "相对强弱指标需要高于该值",
     entryVolumeConfirm: "可选成交量闸门",
     entryVolumeWindow: "成交量均线窗口",
     exitKind: "出场条件类型",
-    exitWindow: "出场：收盘价跌破 SMA",
-    exitThreshold: "RSI 出场阈值",
+    exitWindow: "出场：收盘价跌破简单移动平均线",
+    exitThreshold: "相对强弱指标出场阈值",
     positionPct: "单次资金上限",
     stopLossPct: "单笔止损",
     takeProfitPct: "单笔止盈",
@@ -37487,7 +38335,7 @@ function brokerCertificationLabel(i18n: AppI18n, certification: string): string 
     .replace("Simulated fills, order log, and risk checks are available locally.", "本地已具备模拟成交、委托日志和风控检查。")
     .replace("No certified A-share broker API is connected.", "尚未连接已认证 A 股券商 API。")
     .replace("Adapter shape is reserved; paper credentials are not configured.", "已预留适配器形态；尚未配置模拟账户凭据。")
-    .replace("Exchange adapter shape is reserved; API keys are not configured.", "已预留交易所适配器形态；尚未配置 API Key。");
+    .replace("Exchange adapter shape is reserved; API keys are not configured.", "已预留交易所适配器形态；尚未配置 API 密钥。");
 }
 
 function brokerNextStepLabel(i18n: AppI18n, nextStep: string): string {
@@ -37503,7 +38351,7 @@ function brokerNextStepLabel(i18n: AppI18n, nextStep: string): string {
     )
     .replace(
       "Start with sandbox or testnet routes plus max order and emergency-stop limits.",
-      "先使用 sandbox/testnet，并配置最大订单和紧急停止限制。"
+      "先使用沙箱或测试网，并配置最大订单和紧急停止限制。"
     );
 }
 
@@ -37549,7 +38397,7 @@ function adapterLedgerReason(i18n: AppI18n, row: ExecutionAdapterLedgerRow): str
     .replace("Paper execution is available locally after audited run and risk handoff checks.", "审计运行和风险交接检查通过后，本地模拟执行可用。")
     .replace("Local paper execution is available after audited run and risk handoff checks.", "审计运行和风险交接检查通过后，本地模拟执行可用。")
     .replace("Real A-share trading stays blocked until a legal broker adapter is certified.", "合法券商适配器认证前，A 股实盘交易保持阻断。")
-    .replace("US live adapters require sandbox credentials, order lifecycle tests, and manual confirmation.", "美股实盘适配器需要 sandbox 凭证、订单生命周期测试和人工确认。")
+    .replace("US live adapters require sandbox credentials, order lifecycle tests, and manual confirmation.", "美股实盘适配器需要沙箱凭证、订单生命周期测试和人工确认。")
     .replace("Exchange trading keys are not read by this status endpoint and live routing remains blocked.", "该状态接口不读取交易密钥；实盘路由保持阻断。")
     .replace("Live execution remains blocked until adapter certification, risk approval, and human confirmation pass.", "适配器认证、风控审批和人工确认全部通过前，实盘执行保持阻断。");
 }
@@ -37561,7 +38409,7 @@ function adapterLedgerNextStep(i18n: AppI18n, row: ExecutionAdapterLedgerRow): s
   return row.nextStep
     .replace("Use paper execution for audited research runs before certifying live adapters.", "认证实盘适配器前，审计研究运行统一使用模拟执行。")
     .replace("Real A-share trading stays blocked until a legal broker adapter is certified.", "合法券商适配器认证前，继续阻断 A 股实盘交易。")
-    .replace("Configure sandbox credentials, order lifecycle tests, and emergency-stop limits before certification.", "认证前先配置 sandbox 凭证、订单生命周期测试和紧急停止限制。")
+    .replace("Configure sandbox credentials, order lifecycle tests, and emergency-stop limits before certification.", "认证前先配置沙箱凭证、订单生命周期测试和紧急停止限制。")
     .replace("Keep human confirmation and risk approval gates attached to every promoted order.", "每笔晋级订单都必须绑定人工确认和风控审批闸门。")
     .replace("Keep live trading blocked until a legal adapter certification passes.", "合法适配器认证通过前，继续阻断实盘交易。");
 }
@@ -37992,10 +38840,10 @@ function adapterHealthProbeCredentialSummaryLabel(i18n: AppI18n, summary: string
     return summary;
   }
   return summary
-    .replace("API key missing", "API Key 未配置")
-    .replace("secret missing", "Secret 未配置")
-    .replace("API key", "API Key")
-    .replace("secret", "Secret");
+    .replace("API key missing", "API 密钥未配置")
+    .replace("secret missing", "密钥未配置")
+    .replace("API key", "API 密钥")
+    .replace("secret", "密钥");
 }
 
 function adapterHealthProbeRouteReviewSummaryLabel(i18n: AppI18n, summary: string): string {

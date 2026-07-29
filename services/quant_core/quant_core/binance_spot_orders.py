@@ -143,8 +143,14 @@ def prepare_spot_market_order(
         or not isinstance(free, dict)
     ):
         raise ValueError(market_or_balance_error)
+    quantity = positive_number(order.get("quantity"), "quantity")
+    limits = market.get("limits") if isinstance(market.get("limits"), dict) else {}
+    amount_limits = limits.get("amount") if isinstance(limits.get("amount"), dict) else {}
+    minimum_amount = _optional_market_number(amount_limits.get("min"), "minimum amount")
+    if minimum_amount is not None and quantity < minimum_amount:
+        raise ValueError("stage6_sandbox_amount_below_minimum")
     amount = positive_number(
-        float(exchange.amount_to_precision(order["symbol"], order["quantity"])),
+        float(exchange.amount_to_precision(order["symbol"], quantity)),
         "normalized quantity",
     )
     price = positive_number(
@@ -166,8 +172,6 @@ def prepare_spot_market_order(
     if available(free, currency) + 1e-12 < needed:
         raise ValueError(balance_error)
     precision = market.get("precision") if isinstance(market.get("precision"), dict) else {}
-    limits = market.get("limits") if isinstance(market.get("limits"), dict) else {}
-    amount_limits = limits.get("amount") if isinstance(limits.get("amount"), dict) else {}
     cost_limits = limits.get("cost") if isinstance(limits.get("cost"), dict) else {}
     taker_fee = market.get("taker")
     return {

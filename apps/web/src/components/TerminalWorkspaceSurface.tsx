@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Send,
   ShieldCheck,
   Sparkles,
   Star,
@@ -18,7 +19,7 @@ import {
   XCircle,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import type { Stage9ProductionAdmissionCandidate } from "../lib/stage9-production-admission";
 import type {
   Stage4PortfolioGoldenPath,
@@ -41,7 +42,10 @@ import {
 import type {
   CacheWatchlistRefreshRun,
   MarketCalendarStatus,
+  OpenAiCompatibleModelsResult,
+  PlatformSettingsSecretName,
   PlatformSettingsStatus,
+  PlatformSettingsUpdateRequest,
   PortfolioBacktestRun,
   ResearchNoteResult,
 } from "../lib/terminal-api";
@@ -55,6 +59,7 @@ import type {
   Instrument,
   PortfolioPaperOrderApprovalRow,
   ProductWorkAreaId,
+  ProductWorkAreaStatus,
   ResearchRunAudit,
   StrategyExperimentDetail,
   StrategyExperimentListItem,
@@ -70,6 +75,8 @@ export interface TerminalWorkspaceSurfaceAction {
   onClick: () => void;
   disabled?: boolean;
   tone?: "primary" | "warning" | "neutral";
+  workflowReason?: string;
+  workflowStatus?: ProductWorkAreaStatus;
 }
 
 interface TerminalWorkspaceSurfaceProps {
@@ -80,6 +87,13 @@ interface TerminalWorkspaceSurfaceProps {
   adapterHealthProbeRows?: ExecutionAdapterHealthProbeRow[];
   adapterLedgerRows?: ExecutionAdapterLedgerRow[];
   settings?: PlatformSettingsStatus;
+  isLoadingSettingsConfiguration?: boolean;
+  isSavingSettingsConfiguration?: boolean;
+  isTestingMonitoringWebhook?: boolean;
+  onLoadOpenAiCompatibleModels?: (baseUrl: string) => Promise<OpenAiCompatibleModelsResult>;
+  onSaveSettingsConfiguration?: (request: PlatformSettingsUpdateRequest) => void;
+  onTestMonitoringWebhook?: () => void;
+  settingsConfigurationMessage?: string | null;
   aiReview: {
     busy: boolean;
     comparisonExperimentIds: string[];
@@ -152,6 +166,7 @@ interface TerminalWorkspaceSurfaceProps {
   };
   strategyWorkbench: ReactNode;
   surfaceRef: RefObject<HTMLElement | null>;
+  workflowGuide?: ReactNode;
   workspace: TerminalWorkspace;
 }
 
@@ -163,6 +178,7 @@ const pageTitles: Record<ProductWorkAreaId, string> = {
   "ai-review": "AI 评审",
   portfolio: "组合风控",
   execution: "执行中心",
+  "dynamic-trading": "动态交易",
   operations: "运行管理",
   audit: "审计回放",
   settings: "设置",
@@ -183,6 +199,17 @@ const aiProviderLabels: Record<AiReviewProviderId, string> = {
 };
 
 const terminalSurfaceZh = createI18n("zh-CN");
+
+const backtestTradeLabels: Record<string, string> = {
+  BUY: "买入",
+  SELL: "卖出",
+  RISK: "风控",
+  HOLD: "持有",
+  filled: "已成交",
+  open: "观察中",
+  review: "待复核",
+  blocked: "已阻断",
+};
 
 function SurfacePanel({
   action,
@@ -242,8 +269,9 @@ function PageHeader({
   subtitle?: string;
   title: string;
 }) {
-  const completed = action.label.includes("已完成");
-  const blocked = Boolean(action.disabled) && !completed;
+  const completed = action.workflowStatus ? action.workflowStatus === "ready" : action.label.includes("已完成");
+  const blocked = action.workflowStatus ? action.workflowStatus === "blocked" : Boolean(action.disabled) && !completed;
+  const pending = action.workflowStatus === "needs_run";
   return (
     <header className="design-page-header">
       <div>
@@ -253,13 +281,13 @@ function PageHeader({
         <div className="design-page-state" aria-label="当前工作区状态">
           <span>
             <small>当前状态</small>
-            <Status tone={completed ? "positive" : blocked ? "warning" : "positive"}>
-              {completed ? "已完成" : blocked ? "待处理" : "可继续"}
+            <Status tone={completed ? "positive" : blocked || pending ? "warning" : "positive"}>
+              {completed ? "已就绪" : blocked ? "阻断" : pending ? "待处理" : "可继续"}
             </Status>
           </span>
           <span>
             <small>阻断原因</small>
-            <strong>{completed ? "无待办阻断" : blocked ? action.label : "无主动作阻断"}</strong>
+            <strong>{completed ? "无待办阻断" : action.workflowReason ?? (blocked ? action.label : "无主动作阻断")}</strong>
           </span>
           <span>
             <small>下一步</small>
@@ -1500,12 +1528,12 @@ function StrategySurface({
       <PageHeader
         action={action}
         title="策略工坊"
-        subtitle={`/ ${workspace.strategy.name}`}
+        subtitle={`/ ${terminalSurfaceZh.strategyText(workspace.strategy.name)}`}
       >
         <div className="design-meta-line">
           状态：<Status tone="warning">草稿</Status>
           <span>
-            修订版：{workspace.researchRun?.strategyRevision ?? "draft"}
+            修订版：{workspace.researchRun?.strategyRevision ?? "草稿"}
           </span>
           <span>
             最后修改：
@@ -1586,7 +1614,7 @@ function BacktestSurface({
       <PageHeader
         action={action}
         title="回测实验室"
-        subtitle={`/ ${workspace.strategy.name}`}
+        subtitle={`/ ${terminalSurfaceZh.strategyText(workspace.strategy.name)}`}
       >
         <div className="design-meta-line">
           <span>标的 {workspace.selectedInstrument.symbol}</span>
@@ -1676,7 +1704,7 @@ function BacktestSurface({
                       <td>{index + 1}</td>
                       <td>{trade.symbol}</td>
                       <td className={trade.side === "BUY" ? "up" : "down"}>
-                        {trade.side}
+                        {backtestTradeLabels[trade.side] ?? trade.side}
                       </td>
                       <td>{trade.timestamp}</td>
                       <td>{trade.quantity}</td>
@@ -1685,7 +1713,7 @@ function BacktestSurface({
                         {trade.pnl}
                       </td>
                       <td>
-                        <Status>{trade.status}</Status>
+                        <Status>{backtestTradeLabels[trade.status] ?? trade.status}</Status>
                       </td>
                     </tr>
                   ))}
@@ -2766,12 +2794,15 @@ function ExecutionSurface({
   action,
   executionCandidate,
   executionReadiness,
+  settings,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "executionCandidate" | "executionReadiness" | "workspace"
+  "action" | "executionCandidate" | "executionReadiness" | "settings" | "workspace"
 >) {
   const orders = executionCandidate?.orders ?? [];
+  const liveTradingAllowed = settings?.safety.liveTradingAllowed === true;
+  const killSwitchTriggered = settings?.safety.productionLive?.triggered === true;
   const stats: Array<[string, number, LucideIcon, string]> = [
     ["影子候选", orders.length, FileText, "positive"],
     ["待复核", orders.length ? 1 : 0, Clock3, "warning"],
@@ -2783,7 +2814,7 @@ function ExecutionSurface({
       <PageHeader
         action={action}
         title="执行中心"
-        subtitle="影子执行、候选路由与恢复演练"
+        subtitle={liveTradingAllowed ? "生产路由、候选执行与恢复对账" : "影子执行、候选路由与恢复演练"}
       />
       <div className="design-execution-stats">
         {stats.map(([label, value, Icon, tone]) => (
@@ -2794,9 +2825,15 @@ function ExecutionSurface({
           </article>
         ))}
       </div>
-      <div className="design-live-warning">
-        <AlertTriangle size={18} />
-        默认仅影子与测试网；生产实盘需 Stage 10 权限核验、急停恢复和自动交易区二次确认
+      <div className={`design-live-warning${liveTradingAllowed ? " positive" : ""}`}>
+        {liveTradingAllowed ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+        {liveTradingAllowed
+          ? `生产实盘已授权；权限核验、急停保护和实名确认均已完成，生产路由可用${
+            settings?.safety.liveAuthorizedUntil
+              ? `，有效至 ${connectorTimestamp(settings.safety.liveAuthorizedUntil)}`
+              : ""
+          }。`
+          : "默认仅影子与测试网；生产实盘需权限核验、急停恢复和实名确认"}
       </div>
       {executionReadiness ? (
         <div className="design-execution-readiness">{executionReadiness}</div>
@@ -2806,7 +2843,7 @@ function ExecutionSurface({
           <table className="design-table">
             <thead>
               <tr>
-                <th>客户端订单 ID</th>
+                <th>客户端委托编号</th>
                 <th>标的</th>
                 <th>方向</th>
                 <th>数量</th>
@@ -2822,11 +2859,11 @@ function ExecutionSurface({
                   <td>{compactRunId(order.clientOrderId)}</td>
                   <td>{order.symbol.replace("/", "")}</td>
                   <td className={order.side === "buy" ? "up" : "down"}>
-                    {order.side.toUpperCase()}
+                    {order.side === "buy" ? "买入" : "卖出"}
                   </td>
                   <td>{order.quantity}</td>
-                  <td>{order.type.toUpperCase()}</td>
-                  <td>PAPER-SANDBOX</td>
+                  <td>{order.type === "limit" ? "限价单" : order.type === "market" ? "市价单" : order.type}</td>
+                  <td>模拟 / 测试网</td>
                   <td>
                     <Status>低风险</Status>
                   </td>
@@ -2839,7 +2876,7 @@ function ExecutionSurface({
                 <tr>
                   <td colSpan={8} className="design-empty">
                     <EmptyState
-                      detail="创建 Stage 9 候选并通过路由预检后显示；不会提交真实订单。"
+                      detail="创建阶段 9 候选并通过路由预检后显示；不会提交真实订单。"
                       title="暂无权威影子候选"
                     />
                   </td>
@@ -2850,40 +2887,50 @@ function ExecutionSurface({
         </SurfacePanel>
         <div className="design-execution-side">
           <SurfacePanel title="路由预检">
-            {workspace.execution.gates.map((gate) => (
-              <div
-                className={`design-check-row ${gate.passed ? "positive" : "warning"}`}
-                key={gate.id}
-              >
-                {gate.passed ? (
-                  <CheckCircle2 size={15} />
-                ) : (
-                  <AlertTriangle size={15} />
-                )}
-                <span>{gate.label}</span>
-                <Status tone={gate.passed ? "positive" : "warning"}>
-                  {gate.passed ? "通过" : "未通过"}
-                </Status>
-              </div>
-            ))}
+            {workspace.execution.gates.map((gate) => {
+              const passed = liveTradingAllowed || gate.passed;
+              const label = {
+                "adapter-certified": "适配器认证",
+                "risk-approved": "风控审批",
+                "human-confirmed": "人工确认",
+              }[gate.id] ?? gate.label;
+              return (
+                <div
+                  className={`design-check-row ${passed ? "positive" : "warning"}`}
+                  key={gate.id}
+                >
+                  {passed ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+                  <span>{label}</span>
+                  <Status tone={passed ? "positive" : "warning"}>
+                    {passed ? "通过" : "未通过"}
+                  </Status>
+                </div>
+              );
+            })}
           </SurfacePanel>
-          <SurfacePanel title="Kill Switch">
+          <SurfacePanel title="急停保护">
             <div className="design-kill-switch">
               <ShieldCheck size={54} />
               <div>
-                <strong>已启用</strong>
-                <span>触发阈值：严格模式</span>
-                <small>实盘权限固定关闭</small>
+                <strong>{killSwitchTriggered ? "已触发" : "保护中"}</strong>
+                <span>保护方式：持久急停</span>
+                <small>
+                  {liveTradingAllowed
+                    ? "当前未触发，生产路由可用"
+                    : killSwitchTriggered
+                      ? "已阻止新的生产委托"
+                      : "生产路由仍受准入控制"}
+                </small>
               </div>
             </div>
           </SurfacePanel>
           <SurfacePanel title="恢复与对账">
             <div className="design-kv-row">
-              <span>replayExact</span>
-              <strong>{executionCandidate ? "true" : "—"}</strong>
+              <span>回放完全一致</span>
+              <strong>{executionCandidate ? "是" : "—"}</strong>
             </div>
             <div className="design-kv-row">
-              <span>discrepancies</span>
+              <span>差异数量</span>
               <strong>0</strong>
             </div>
           </SurfacePanel>
@@ -2897,10 +2944,10 @@ function ExecutionSurface({
               <tr>
                 <th>时间</th>
                 <th>事件类型</th>
-                <th>订单 ID</th>
+                <th>委托编号</th>
                 <th>事件描述</th>
                 <th>路由</th>
-                <th>routeExecuted</th>
+                <th>路由已执行</th>
               </tr>
             </thead>
             <tbody>
@@ -2922,8 +2969,8 @@ function ExecutionSurface({
                           ? "影子成交与系统状态对账完成"
                           : `${event}完成`}
                       </td>
-                      <td>PAPER-SANDBOX</td>
-                      <td>false</td>
+                      <td>模拟 / 测试网</td>
+                      <td>否</td>
                     </tr>
                   ),
                 ),
@@ -2932,7 +2979,7 @@ function ExecutionSurface({
                 <tr>
                   <td className="design-empty" colSpan={6}>
                     <EmptyState
-                      detail="Stage 9 影子候选创建后，事件将按权威时间顺序追加。"
+                      detail="阶段 9 影子候选创建后，事件将按权威时间顺序追加。"
                       title="尚无执行事件"
                     />
                   </td>
@@ -3262,6 +3309,8 @@ function providerHealthReason(reason: string): string {
     endpoint_invalid: "端点配置无效",
     endpoint_not_configured: "端点尚未配置",
     no_recent_provider_errors: "最近 24 小时无 Provider 错误",
+    probe_failed: "只读探测失败",
+    probe_succeeded: "只读探测通过",
     provider_cooldown: "近期错误达到冷却阈值",
     recent_provider_errors: "近期存在 Provider 错误",
   }[reason] ?? reason;
@@ -3280,6 +3329,8 @@ function dataAdapterNextAction(
     return `等待 ${health.retryAfterSeconds} 秒后再试，期间继续使用缓存`;
   }
   if (health.status === "watch") {
+    if (health.reason === "configured_not_probed") return "等待本地端点只读健康探测";
+    if (health.reason === "probe_failed") return "检查本地端点后重新探测；不会调用同步或写入";
     return `检查最近 Provider 错误；${health.retryAfterSeconds} 秒后可重试`;
   }
   if (adapter.status !== "ready") {
@@ -3299,22 +3350,190 @@ function executionProbePending(probe: ExecutionAdapterHealthProbeRow): string {
   return "只读健康探测需要复核";
 }
 
+const platformSecretFields: Array<{
+  name: PlatformSettingsSecretName;
+  label: string;
+  production?: boolean;
+}> = [
+  { name: "finnhubApiKey", label: "Finnhub API Key" },
+  { name: "openaiApiKey", label: "OpenAI API Key" },
+  { name: "openaiCompatibleApiKey", label: "OpenAI 兼容服务 API Key" },
+  { name: "monitoringWebhookUrl", label: "监控 Webhook URL" },
+  { name: "freeStockdbUrl", label: "Free StockDB URL" },
+  { name: "httpsProxy", label: "HTTPS 代理" },
+  { name: "ccxtSandboxApiKey", label: "CCXT Testnet API Key" },
+  { name: "ccxtSandboxSecret", label: "CCXT Testnet Secret" },
+  { name: "ccxtProductionReadonlyApiKey", label: "生产只读 API Key", production: true },
+  { name: "ccxtProductionReadonlySecret", label: "生产只读 Secret", production: true },
+  { name: "ccxtProductionTradingApiKey", label: "生产交易 API Key", production: true },
+  { name: "ccxtProductionTradingSecret", label: "生产交易 Secret", production: true },
+];
+
+function SettingsSecretFields({
+  names,
+  settings,
+}: {
+  names: typeof platformSecretFields;
+  settings: NonNullable<PlatformSettingsStatus["configuration"]>;
+}) {
+  return (
+    <div className="design-settings-form-grid">
+      {names.map(({ name, label }) => {
+        const secret = settings.secrets[name];
+        return (
+          <div className="design-settings-field" key={name}>
+            <label htmlFor={`platform-setting-${name}`}>{label}</label>
+            <input
+              autoComplete="new-password"
+              id={`platform-setting-${name}`}
+              name={name}
+              placeholder={secret.masked ?? "输入后加密保存"}
+              type="password"
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function OpenAiCompatibleModelFields({
+  initialBaseUrl,
+  initialModel,
+  onLoadModels,
+}: {
+  initialBaseUrl: string;
+  initialModel: string;
+  onLoadModels?: (baseUrl: string) => Promise<OpenAiCompatibleModelsResult>;
+}) {
+  const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
+  const [model, setModel] = useState(initialModel);
+  const [models, setModels] = useState<string[]>([]);
+  const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "manual">("idle");
+  const requestSequence = useRef(0);
+  const discoverModels = useCallback(async (candidateBaseUrl: string) => {
+    const normalizedBaseUrl = candidateBaseUrl.trim();
+    const requestId = ++requestSequence.current;
+    if (!normalizedBaseUrl || !onLoadModels) {
+      setModels([]);
+      setStatus("manual");
+      return;
+    }
+    setStatus("loading");
+    const result = await onLoadModels(normalizedBaseUrl);
+    if (requestId !== requestSequence.current) return;
+    if (result.source === "core" && result.models.length) {
+      setModels(result.models);
+      setModel((current) => current.trim() || result.models[0]);
+      setStatus("loaded");
+      return;
+    }
+    setModels([]);
+    setStatus("manual");
+  }, [onLoadModels]);
+
+  useEffect(() => {
+    void discoverModels(initialBaseUrl);
+  }, [discoverModels, initialBaseUrl]);
+
+  const modelOptions = Array.from(new Set([model, ...models].filter(Boolean)));
+  const statusLabel = status === "loading"
+    ? "正在从 /models 获取模型…"
+    : status === "loaded"
+      ? `已从 /models 获取 ${models.length} 个模型`
+      : status === "manual"
+        ? "未获取到模型，可手动输入"
+        : "将从 Base URL 的 /models 自动获取模型";
+
+  return (
+    <>
+      <label className="design-settings-field">
+        <span>OpenAI 兼容 Base URL</span>
+        <input
+          name="openaiCompatibleBaseUrl"
+          onBlur={() => void discoverModels(baseUrl)}
+          onChange={(event) => {
+            requestSequence.current += 1;
+            setBaseUrl(event.currentTarget.value);
+            setModels([]);
+            setStatus("idle");
+          }}
+          type="url"
+          value={baseUrl}
+        />
+      </label>
+      <div className="design-settings-field">
+        <label htmlFor="platform-setting-openai-compatible-model">OpenAI 兼容模型</label>
+        <div className="design-settings-model-control">
+          {status === "loaded" ? (
+            <select
+              id="platform-setting-openai-compatible-model"
+              name="openaiCompatibleModel"
+              onChange={(event) => setModel(event.currentTarget.value)}
+              value={model}
+            >
+              {modelOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          ) : (
+            <input
+              id="platform-setting-openai-compatible-model"
+              name="openaiCompatibleModel"
+              onChange={(event) => setModel(event.currentTarget.value)}
+              placeholder="自动获取失败时手动输入"
+              value={model}
+            />
+          )}
+          <button
+            aria-label="刷新 OpenAI 兼容模型"
+            className="design-secondary-action"
+            disabled={!baseUrl.trim() || status === "loading" || !onLoadModels}
+            onClick={() => void discoverModels(baseUrl)}
+            title="从 Base URL 的 /models 获取模型"
+            type="button"
+          >
+            <RefreshCw className={status === "loading" ? "spin" : undefined} size={12} />
+            获取
+          </button>
+        </div>
+        <small aria-live="polite">{statusLabel}</small>
+      </div>
+    </>
+  );
+}
+
 function SettingsSurface({
   action,
+  adapterRows,
   adapterChainHealthRollups = [],
   adapterHealthProbeRows = [],
   adapterLedgerRows = [],
   aiReview,
+  isLoadingSettingsConfiguration = false,
+  isSavingSettingsConfiguration = false,
+  isTestingMonitoringWebhook = false,
+  onLoadOpenAiCompatibleModels,
+  onSaveSettingsConfiguration,
+  onTestMonitoringWebhook,
   settings,
+  settingsConfigurationMessage,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
   | "action"
+  | "adapterRows"
   | "adapterChainHealthRollups"
   | "adapterHealthProbeRows"
   | "adapterLedgerRows"
   | "aiReview"
+  | "isLoadingSettingsConfiguration"
+  | "isSavingSettingsConfiguration"
+  | "isTestingMonitoringWebhook"
+  | "onLoadOpenAiCompatibleModels"
+  | "onSaveSettingsConfiguration"
+  | "onTestMonitoringWebhook"
   | "settings"
+  | "settingsConfigurationMessage"
 >) {
+  const configuration = settings?.configuration;
   const dataAdapters = settings?.marketDataAdapters ?? [];
   const executionAdapters = settings?.executionAdapters ?? [];
   const dataBlocker = dataAdapters.find(
@@ -3347,6 +3566,34 @@ function SettingsSurface({
         ? "warning"
         : "positive";
   const liveTradingAllowed = settings?.safety.liveTradingAllowed ?? false;
+  const executionMode = settings?.safety.executionMode;
+  const productionLive = settings?.safety.productionLive;
+  const productionEvidenceStale =
+    productionLive?.blockingReason === "stage10_production_execution_control_evidence_stale";
+  const executionStatusLabel = !settings
+    ? "未加载"
+    : liveTradingAllowed
+      ? "生产会话已授权"
+      : executionMode === "testnet"
+        ? "测试网运行中"
+        : executionMode === "paper"
+          ? "模拟运行中"
+          : "生产会话未授权";
+  const runtimeBlockingReason = liveTradingAllowed
+    ? null
+    : productionEvidenceStale
+      ? "生产权限证据已过期"
+      : productionLive?.enabled === false
+        ? "生产实盘功能未启用"
+        : productionLive?.credentialsConfigured === false
+          ? "生产交易凭据未配置"
+          : productionLive?.triggered
+            ? "生产急停已触发"
+            : productionLive && !productionLive.controlActive
+              ? "生产执行控制未恢复"
+              : settings
+                ? "生产会话未开启"
+                : null;
   const blockingChain = adapterChainHealthRollups.find(
     (rollup) => rollup.status === "blocked" || rollup.status === "in_progress",
   );
@@ -3365,12 +3612,19 @@ function SettingsSurface({
     ? "neutral"
     : latestHealthProbe?.tone === "risk"
       ? "risk"
-    : liveTradingAllowed
-      ? "positive"
-      : blockingChain?.status === "blocked"
-        ? "risk"
+      : liveTradingAllowed || executionMode === "paper" || executionMode === "testnet"
+        ? "positive"
         : "warning";
   const executionNextAction =
+    (productionEvidenceStale
+      ? "重新核验生产权限并恢复执行控制"
+      : liveTradingAllowed
+        ? "生产会话有效；继续遵守风险与对账门禁"
+        : productionLive?.credentialsConfigured === false
+          ? "先配置专用生产交易凭据"
+          : executionMode === "paper" || executionMode === "testnet"
+            ? "如需实盘，在执行中心切换生产模式并确认真实资金风险"
+            : null) ??
     (latestHealthProbe && latestHealthProbe.status !== "ready"
       ? `处理“${latestHealthProbePending}”后重新运行只读健康检查`
       : null) ??
@@ -3379,6 +3633,33 @@ function SettingsSurface({
       : latestLedgerRow
         ? "保持纸面执行，按现有门禁顺序补齐认证证据"
         : "保持纸面执行，按门禁顺序补齐认证证据");
+  const saveConfiguration = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!configuration || !onSaveSettingsConfiguration) return;
+    const data = new FormData(event.currentTarget);
+    const text = (name: string) => String(data.get(name) ?? "").trim();
+    const secretUpdates: PlatformSettingsUpdateRequest["secretUpdates"] = {};
+    platformSecretFields.forEach(({ name }) => {
+      const value = String(data.get(name) ?? "");
+      if (value) secretUpdates[name] = value;
+    });
+    onSaveSettingsConfiguration({
+      configuration: {
+        ccxtDefaultExchange: text("ccxtDefaultExchange"),
+        ccxtTimeout: Number(text("ccxtTimeout")),
+        liveSessionTtlHours: Number(text("liveSessionTtlHours")),
+        openaiModel: text("openaiModel"),
+        openaiCompatibleBaseUrl: text("openaiCompatibleBaseUrl"),
+        openaiCompatibleModel: text("openaiCompatibleModel"),
+        ollamaBaseUrl: text("ollamaBaseUrl"),
+        ollamaModel: text("ollamaModel"),
+        monitoringWebhookTimeoutSeconds: Number(text("monitoringWebhookTimeoutSeconds")),
+        freeStockdbTimeoutSeconds: Number(text("freeStockdbTimeoutSeconds")),
+      },
+      secretUpdates,
+      clearSecrets: [],
+    });
+  };
 
   return (
     <>
@@ -3389,13 +3670,147 @@ function SettingsSurface({
       />
       <div className="design-settings-grid">
         <nav aria-label="设置分区" className="design-settings-nav">
-          <a className="selected" href="#settings-connectors">连接器总览</a>
+          <a className="selected" href="#settings-configuration">平台配置</a>
+          <a href="#settings-connectors">连接器总览</a>
           <a href="#settings-data-connectors">数据源</a>
           <a href="#settings-ai-connectors">AI Provider</a>
           <a href="#settings-execution-connectors">执行适配器</a>
           <a href="#settings-safety">安全边界</a>
         </nav>
         <div className="design-settings-main">
+          <SurfacePanel title="平台配置">
+            {configuration ? (
+              <form
+                aria-label="平台配置"
+                className="design-settings-form"
+                id="settings-configuration"
+                key={`${configuration.source}-${configuration.revision}`}
+                onSubmit={saveConfiguration}
+              >
+                <div className="design-settings-form-meta">
+                  <strong>
+                    {configuration.source === "database"
+                      ? `数据库配置 · 修订 ${configuration.revision}`
+                      : "环境变量初始化"}
+                  </strong>
+                  <span>
+                    首次保存后以数据库为准；密钥只返回掩码，保存后实时生效。
+                  </span>
+                </div>
+                <fieldset>
+                  <legend>数据与运行参数</legend>
+                  <div className="design-settings-form-grid">
+                    <label className="design-settings-field">
+                      <span>CCXT 默认交易所</span>
+                      <input defaultValue={configuration.values.ccxtDefaultExchange} name="ccxtDefaultExchange" required />
+                    </label>
+                    <label className="design-settings-field">
+                      <span>CCXT 超时（毫秒）</span>
+                      <input defaultValue={configuration.values.ccxtTimeout} max="120000" min="1000" name="ccxtTimeout" required type="number" />
+                    </label>
+                    <label className="design-settings-field">
+                      <span>监控超时（秒）</span>
+                      <input defaultValue={configuration.values.monitoringWebhookTimeoutSeconds} max="120" min="1" name="monitoringWebhookTimeoutSeconds" required type="number" />
+                    </label>
+                    <label className="design-settings-field">
+                      <span>Free StockDB 超时（秒）</span>
+                      <input defaultValue={configuration.values.freeStockdbTimeoutSeconds} max="120" min="1" name="freeStockdbTimeoutSeconds" required type="number" />
+                    </label>
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>生产安全策略</legend>
+                  <div className="design-settings-form-grid">
+                    <label className="design-settings-field">
+                      <span>生产授权有效时长（小时）</span>
+                      <input
+                        defaultValue={configuration.values.liveSessionTtlHours}
+                        max="8760"
+                        min="0"
+                        name="liveSessionTtlHours"
+                        required
+                        step="1"
+                        type="number"
+                      />
+                      <small>默认 8 小时；0 表示永久有效，直到手动暂停、急停或撤销授权。</small>
+                    </label>
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>AI Provider</legend>
+                  <div className="design-settings-form-grid">
+                    <label className="design-settings-field">
+                      <span>OpenAI 模型</span>
+                      <input defaultValue={configuration.values.openaiModel} name="openaiModel" />
+                    </label>
+                    <OpenAiCompatibleModelFields
+                      initialBaseUrl={configuration.values.openaiCompatibleBaseUrl}
+                      initialModel={configuration.values.openaiCompatibleModel}
+                      onLoadModels={onLoadOpenAiCompatibleModels}
+                    />
+                    <label className="design-settings-field">
+                      <span>Ollama Base URL</span>
+                      <input defaultValue={configuration.values.ollamaBaseUrl} name="ollamaBaseUrl" type="url" />
+                    </label>
+                    <label className="design-settings-field">
+                      <span>Ollama 模型</span>
+                      <input defaultValue={configuration.values.ollamaModel} name="ollamaModel" />
+                    </label>
+                  </div>
+                </fieldset>
+                <fieldset>
+                  <legend>密钥与私密地址</legend>
+                  <SettingsSecretFields
+                    names={platformSecretFields.filter((field) => !field.production)}
+                    settings={configuration}
+                  />
+                </fieldset>
+                <details className="design-settings-disclosure">
+                  <summary>
+                    <span>生产凭据（保存不会启用实盘交易）</span>
+                    <Status tone="risk">独立门禁保持阻断</Status>
+                  </summary>
+                  <SettingsSecretFields
+                    names={platformSecretFields.filter((field) => field.production)}
+                    settings={configuration}
+                  />
+                </details>
+                {settingsConfigurationMessage ? (
+                  <p className="design-settings-message">{settingsConfigurationMessage}</p>
+                ) : null}
+                <div className="design-settings-actions">
+                  <button
+                    className="design-primary-action"
+                    disabled={isSavingSettingsConfiguration || !onSaveSettingsConfiguration}
+                    type="submit"
+                  >
+                    <Save size={15} />
+                    {isSavingSettingsConfiguration ? "保存中…" : "保存配置"}
+                  </button>
+                  <button
+                    className="design-secondary-action"
+                    disabled={
+                      isSavingSettingsConfiguration ||
+                      isTestingMonitoringWebhook ||
+                      !onTestMonitoringWebhook ||
+                      !configuration.secrets.monitoringWebhookUrl.configured
+                    }
+                    onClick={onTestMonitoringWebhook}
+                    type="button"
+                  >
+                    <Send size={14} />
+                    {isTestingMonitoringWebhook ? "测试中…" : "测试 Webhook"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p id="settings-configuration">
+                {isLoadingSettingsConfiguration
+                  ? "正在加载平台配置…"
+                  : "核心服务尚未提供可写配置契约。"}
+              </p>
+            )}
+          </SurfacePanel>
           <SurfacePanel
             className="design-connector-overview"
             title="连接器状态与下一步"
@@ -3455,9 +3870,7 @@ function SettingsSurface({
                 <header>
                   <strong>执行适配器</strong>
                   <Status tone={executionTone}>
-                    {!settings
-                      ? "未加载"
-                      : liveTradingAllowed ? "实盘已授权" : "实盘阻断"}
+                    {executionStatusLabel}
                   </Status>
                 </header>
                 <dl>
@@ -3465,12 +3878,15 @@ function SettingsSurface({
                     (latestHealthProbe && latestHealthProbe.status !== "ready"
                       ? latestHealthProbePending
                       : null) ??
+                    runtimeBlockingReason ??
                     blockingChain?.blockerLabel ??
                     latestLedgerRow?.reason ??
                     (settings ? "生产门禁尚未全部通过" : "核心服务状态未加载")
                   }</dd></div>
                   <div><dt>影响</dt><dd>{settings
-                    ? `${paperReadyAdapterCount} 个纸面适配器就绪；实盘权限 ${String(liveTradingAllowed)}`
+                    ? `当前执行模式：${
+                      executionMode === "testnet" ? "测试网" : executionMode === "live" ? "生产实盘" : "模拟"
+                    }；生产下单：${liveTradingAllowed ? "允许" : "未开启"}`
                     : "不推断订单提交或路由权限"}</dd></div>
                   <div><dt>下一步</dt><dd>{executionNextAction}</dd></div>
                 </dl>
@@ -3600,7 +4016,7 @@ function SettingsSurface({
               <summary>
                 <span>执行适配器权限、健康与链路证据</span>
                 <Status tone={executionTone}>
-                  {settings ? (liveTradingAllowed ? "实盘已授权" : "实盘阻断") : "未加载"}
+                  {executionStatusLabel}
                 </Status>
               </summary>
               <table className="design-table compact design-adapter-table">
@@ -3617,6 +4033,7 @@ function SettingsSurface({
                 </thead>
                 <tbody>
                   {executionAdapters.map((adapter) => {
+                    const broker = adapterRows.find((row) => row.id === adapter.id);
                     const ledger = adapterLedgerRows.find((row) => row.adapterId === adapter.id);
                     const probe = adapterHealthProbeRows.find((row) => row.adapterId === adapter.id);
                     const chain = adapterChainHealthRollups.find((row) => row.adapterId === adapter.id);
@@ -3626,24 +4043,34 @@ function SettingsSurface({
                     return (
                       <tr key={adapter.id}>
                         <td>
-                          <strong>{adapter.adapter}</strong><br />
-                          {adapter.market} · {adapter.route === "paper" ? "纸面" : "实盘"}
+                          <strong>{ledger?.adapter ?? broker?.adapter ?? adapter.adapter}</strong><br />
+                          {adapter.market === "multi" ? "多市场" : terminalSurfaceZh.marketLabel(adapter.market)}
+                          {" · "}{adapter.route === "paper" ? "模拟" : "实盘"}
                         </td>
                         <td>
                           <Status tone={tone}>
-                            {chain?.headline ?? ledger?.label ?? adapter.status}
+                            {chain?.headline ?? ledger?.label ?? (
+                              {
+                                paper_ready: "模拟可用",
+                                interface_only: "仅接口",
+                                config_required: "需要配置",
+                                ready: "可用",
+                                degraded: "受限",
+                                blocked: "已阻断",
+                              }[adapter.status] ?? adapter.status
+                            )}
                           </Status>
                         </td>
                         <td>
-                          {probe?.credentialSummary ?? adapter.certification}
-                          <br />实盘权限 {String(adapter.liveTradingAllowed)}
+                          {probe?.credentialSummary ?? broker?.certification ?? adapter.certification}
+                          <br />实盘权限：{adapter.liveTradingAllowed ? "是" : "否"}
                         </td>
                         <td>未声明</td>
                         <td>{connectorTimestamp(
                           chain?.latestEvidenceTimestamp ?? probe?.timestamp ?? ledger?.timestamp,
                         )}</td>
-                        <td>{chain?.blockerLabel ?? probe?.blockerSummary ?? ledger?.reason ?? adapter.note}</td>
-                        <td>{ledger?.nextStep ?? (chain?.blockerLabel
+                        <td>{chain?.blockerLabel ?? probe?.blockerSummary ?? ledger?.reason ?? broker?.certification ?? adapter.note}</td>
+                        <td>{ledger?.nextStep ?? broker?.nextStep ?? (chain?.blockerLabel
                           ? `补齐 ${chain.blockerLabel} 证据`
                           : adapter.note)}</td>
                       </tr>
@@ -3657,7 +4084,7 @@ function SettingsSurface({
                         <tr key={`probe:${probe.id}`}>
                           <td>
                             <strong>{probe.provider}:{probe.exchangeId}</strong><br />
-                            {probe.adapterId} · {probe.mode}
+                            {probe.adapterId} · {probe.mode === "sandbox" ? "沙箱" : probe.mode}
                           </td>
                           <td><Status tone={probe.tone}>{probe.statusLabel}</Status></td>
                           <td>{probe.credentialSummary}<br />{probe.boundary}</td>
@@ -3686,21 +4113,27 @@ function SettingsSurface({
           <SurfacePanel title="安全边界（核心服务）">
             <div className="design-check-row">
               <LockKeyhole size={13} />
-              <span>纸面适配器就绪</span>
+              <span>模拟适配器就绪</span>
               <strong>{settings ? paperReadyAdapterCount : "未加载"}</strong>
             </div>
             <div className="design-check-row">
               <LockKeyhole size={13} />
               <span>允许实盘交易</span>
               <strong className={liveTradingAllowed ? "up" : "down"}>
-                {settings ? String(liveTradingAllowed) : "未加载"}
+                {settings ? (liveTradingAllowed ? "是" : "否") : "未加载"}
               </strong>
             </div>
             <div className="design-check-row">
               <LockKeyhole size={13} />
-              <span>实盘阻断边界</span>
-              <strong className={!liveTradingAllowed ? "up" : "down"}>
-                {settings ? String(!liveTradingAllowed) : "未加载"}
+              <span>当前执行模式</span>
+              <strong>
+                {settings
+                  ? executionMode === "testnet"
+                    ? "测试网"
+                    : executionMode === "live"
+                      ? "生产实盘"
+                      : "模拟"
+                  : "未加载"}
               </strong>
             </div>
             <div className="design-kv-row">
@@ -3710,8 +4143,12 @@ function SettingsSurface({
             <p className={settings && !liveTradingAllowed ? "down" : ""}>
               {settings
                 ? liveTradingAllowed
-                  ? "核心服务报告实盘已授权，仍需执行工作区二次确认。"
-                  : "核心服务报告实盘未授权；设置页不会推断下单或路由权限。"
+                  ? `生产会话已授权${
+                    settings.safety.liveAuthorizedUntil
+                      ? `，有效至 ${connectorTimestamp(settings.safety.liveAuthorizedUntil)}`
+                      : ""
+                  }。`
+                  : `${runtimeBlockingReason ?? "生产会话未开启"}；${executionNextAction}。`
                 : "安全契约尚未加载。"}
             </p>
           </SurfacePanel>
@@ -3737,8 +4174,8 @@ function SettingsSurface({
           </SurfacePanel>
           <SurfacePanel title="密钥处理规则">
             {[
-              "密钥仅在 API 服务环境注入",
-              "绝不进入浏览器/Web Bundle",
+              "密钥仅通过本机 API 提交",
+              "SQLite 加密存储，响应仅返回掩码",
               "绝不写入 Dockerfile/镜像层",
               "绝不导出到日志/错误堆栈",
             ].map((label) => (
@@ -3805,6 +4242,7 @@ export function TerminalWorkspaceSurface(props: TerminalWorkspaceSurfaceProps) {
       onScroll={(event) => props.onScrollPositionChange(event.currentTarget.scrollTop)}
       ref={props.surfaceRef}
     >
+      {props.workflowGuide}
       {content}
     </section>
   );

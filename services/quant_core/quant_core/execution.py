@@ -11361,7 +11361,7 @@ def _paper_quantity(market: str, price: float, target_notional: float) -> float:
     if market == "ashare":
         return max(100, math.floor(raw_quantity / 100) * 100)
     if market == "crypto":
-        return max(1, math.floor(raw_quantity))
+        return math.floor((target_notional / price) * 100_000_000) / 100_000_000
     return raw_quantity
 
 

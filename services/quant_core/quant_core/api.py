@@ -50,7 +50,11 @@ from quant_core.ai_review_decisions import (
     AiReviewDecisionStore,
     validate_ai_review_decision_archive_records,
 )
-from quant_core.ai_review_providers import AiReviewProviderRegistry
+from quant_core.ai_review_providers import (
+    AiReviewProviderError,
+    AiReviewProviderRegistry,
+    discover_openai_compatible_models,
+)
 from quant_core.ai_review_runs import (
     AiReviewRunRecord,
     AiReviewRunStore,
@@ -379,7 +383,7 @@ from quant_core.runs import (
     research_run_import_precheck,
     research_run_import_to_audit,
 )
-from quant_core.settings import build_execution_adapter_state_ledger, build_settings_status
+from quant_core.settings import PlatformSettingsStore, build_execution_adapter_state_ledger, build_settings_status
 from quant_core.strategy_library import (
     StrategyLibraryRecord,
     StrategyLibraryStore,
@@ -635,6 +639,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     workspace_state_store = ResearchWorkspaceStateStore(Path("data/research_workspace_state.sqlite"))
     watchlist_cache_refresh_store = WatchlistCacheRefreshRunStore(Path("data/watchlist_cache_refreshes.sqlite"))
     adapter_error_store = MarketDataAdapterErrorStore(Path("data/adapter_errors.sqlite"))
+    platform_settings_store = PlatformSettingsStore(
+        Path("data/platform_settings.sqlite"),
+        Path("data/platform-settings.key"),
+    )
+    platform_settings_environ = None
+    settings_restart_required = False
+    auto_paper_trading_service: AutoPaperTradingService | None = None
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
@@ -646,6 +657,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     execution_adapter_health_exchange_factory = None
     execution_adapter_health_environ = None
     monitoring_environ = None
+    monitoring_service: MonitoringService | None = None
     data_foundation_environ = None
     stage6_sandbox_route_factory = None
     stage9_production_admission_route_factory = None
@@ -666,6 +678,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/settings/configuration":
+            try:
+                payload = self._read_json_body()
+                self.platform_settings_store.save(
+                    payload.get("configuration"),
+                    payload.get("secretUpdates"),
+                    payload.get("clearSecrets"),
+                    self._platform_settings_base_environment(),
+                )
+                self._reload_platform_runtime()
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_platform_settings", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json({"settings": self._settings_status_payload()})
+            return
         if parsed.path == "/api/research/workspace-state":
             try:
                 payload = self._read_json_body()
@@ -708,6 +738,30 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/operations/monitoring/test-notifications":
+            try:
+                if self._read_json_body():
+                    raise ValueError("monitoring_webhook_test_request_invalid")
+                result = self._monitoring_service().test_notification()
+            except ValueError as error:
+                code = str(error) or "monitoring_webhook_test_request_invalid"
+                status = 409 if code in {
+                    "monitoring_webhook_unconfigured",
+                    "monitoring_webhook_configuration_invalid",
+                } else 400
+                self._send_json({"error": code, "detail": code}, status=status)
+                return
+            except RuntimeError as error:
+                self._send_json(
+                    {
+                        "error": "monitoring_webhook_test_failed",
+                        "detail": str(error),
+                    },
+                    status=502,
+                )
+                return
+            self._send_json({"monitoringTestNotification": result}, status=201)
+            return
         ai_research_review_id = _ai_research_evidence_route_id(parsed.path)
         if ai_research_review_id is not None:
             if not ai_research_review_id:
@@ -1851,7 +1905,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 health_probe = probe_ccxt_sandbox_health(
                     adapter_id="ccxt-live",
                     exchange_id=exchange_id,
-                    environ=type(self).execution_adapter_health_environ,
+                    environ=self._execution_adapter_environment(),
                     exchange_factory=type(self).execution_adapter_health_exchange_factory,
                 )
                 health_probe_evidence = execution_adapter_health_probe_to_evidence(health_probe)
@@ -2743,7 +2797,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     probe = probe_ccxt_production_readonly(
                         adapter_id="ccxt-live",
                         exchange_id="binance",
-                        environ=type(self).execution_adapter_health_environ,
+                        environ=self._execution_adapter_environment(),
                         exchange_factory=type(self).execution_adapter_health_exchange_factory,
                     )
                     evidence = production_readonly_probe_to_evidence(
@@ -2987,7 +3041,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 if not isinstance(payload, dict) or set(payload) != {"operator"}:
                     raise ValueError("stage10 production trading credential preflight request is invalid")
                 preflight = build_production_trading_credential_preflight(
-                    environ=type(self).execution_adapter_health_environ,
+                    environ=self._execution_adapter_environment(),
                     operator=_required_stage4_string(payload["operator"]),
                 )
                 preflight = self._stage10_production_execution_service().record_credential_preflight(
@@ -3024,7 +3078,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 verification = build_production_trading_permission_verification(
                     preflight,
-                    environ=type(self).execution_adapter_health_environ,
+                    environ=self._execution_adapter_environment(),
                     operator=_required_stage4_string(payload["operator"]),
                     exchange_factory=type(self).execution_adapter_health_exchange_factory,
                 )
@@ -4601,7 +4655,37 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             self._send_json({"state": research_workspace_state_to_payload(state) if state else None})
             return
         if parsed.path == "/api/settings/status":
-            self._send_json({"settings": self._settings_status_payload()})
+            probe = parse_qs(parsed.query).get("probe", [""])[0] == "free-stockdb"
+            self._send_json({
+                "settings": self._settings_status_payload(
+                    free_stockdb_probe_succeeded=self._probe_free_stockdb() if probe else None,
+                ),
+            })
+            return
+        if parsed.path == "/api/settings/openai-compatible-models":
+            environment = self._effective_platform_settings_environment()
+            base_url = parse_qs(parsed.query).get(
+                "baseUrl",
+                [environment.get("OPENAI_COMPATIBLE_BASE_URL", "")],
+            )[0].strip()
+            try:
+                models = discover_openai_compatible_models(
+                    base_url,
+                    environment.get("OPENAI_COMPATIBLE_API_KEY", ""),
+                )
+            except AiReviewProviderError as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=502,
+                )
+                return
+            except ValueError as error:
+                self._send_json(
+                    {"error": "invalid_openai_compatible_base_url", "detail": str(error)},
+                    status=400,
+                )
+                return
+            self._send_json({"models": list(models)})
             return
         if parsed.path == "/api/p0/acceptance/latest":
             self._send_json({"acceptance": load_p0_acceptance_status(Path(self.p0_acceptance_report_path))})
@@ -5105,7 +5189,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             probe = probe_ccxt_sandbox_health(
                 adapter_id=adapter_id,
                 exchange_id=exchange_id,
-                environ=type(self).execution_adapter_health_environ,
+                environ=self._execution_adapter_environment(),
                 exchange_factory=type(self).execution_adapter_health_exchange_factory,
             )
             probe_payload = execution_adapter_health_probe_to_payload(probe)
@@ -5763,17 +5847,24 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 market_calendar = None if latest_run else build_market_calendar_status(market)
             except ValueError:
                 market_calendar = None
+            cache_context = self.cache.context(market, symbol, timeframe)
+            auto_trading = self._auto_paper_trading_service().snapshot()
             self._send_json(
                 {
                     "goldenPath": build_golden_path_status(
                         market=market,
                         symbol=symbol,
                         timeframe=timeframe,
-                        settings=self._settings_status_payload(),
+                        settings=self._settings_status_payload(
+                            cache_contexts=[cache_context] if cache_context else [],
+                            auto_trading=auto_trading,
+                        ),
                         runs=context_runs,
                         paper_executions=paper_executions,
+                        ai_reviews=self.ai_review_store.list_by_run(latest_run.run_id, limit=20) if latest_run else [],
                         watchlist_refreshes=self.watchlist_cache_refresh_store.list_recent(limit=10),
                         market_calendar=market_calendar,
+                        auto_trading=auto_trading,
                     )
                 }
             )
@@ -6328,7 +6419,9 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         return PortfolioM5Service(audit_store=self.audit_event_store)
 
     def _current_ai_review_provider_registry(self) -> AiReviewProviderRegistry:
-        return self.ai_review_provider_registry or AiReviewProviderRegistry.from_environment()
+        return self.ai_review_provider_registry or AiReviewProviderRegistry.from_environment(
+            self._effective_platform_settings_environment()
+        )
 
     def _current_ai_review_decision_store(self) -> AiReviewDecisionStore:
         decision_store = self.ai_review_decision_store
@@ -6363,7 +6456,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def _stage6_sandbox_service(self) -> Stage6SandboxExecutionService:
         factory = self.stage6_sandbox_route_factory
-        route = factory() if callable(factory) else BinanceSpotTestnetRoute()
+        route = (
+            factory()
+            if callable(factory)
+            else BinanceSpotTestnetRoute(env=self._execution_adapter_environment())
+        )
         return Stage6SandboxExecutionService(self.audit_event_store, route)
 
     def _stage9_production_admission_route(self) -> BinanceSpotProductionAdmissionRoute:
@@ -6371,13 +6468,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         if callable(factory):
             return factory()
         return BinanceSpotProductionAdmissionRoute(
-            env=type(self).execution_adapter_health_environ,
+            env=self._execution_adapter_environment(),
             exchange_factory=type(self).execution_adapter_health_exchange_factory,
         )
 
     def _stage10_production_execution_service(self) -> Stage10ProductionExecutionService:
         route = BinanceSpotProductionTradingRoute(
-            env=type(self).execution_adapter_health_environ,
+            env=self._execution_adapter_environment(),
             exchange_factory=type(self).execution_adapter_health_exchange_factory,
         )
         return Stage10ProductionExecutionService(
@@ -6386,28 +6483,108 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         )
 
     def _auto_paper_trading_service(self) -> AutoPaperTradingService:
-        return _build_auto_paper_trading_service(type(self))
+        return (
+            type(self).auto_paper_trading_service
+            or _build_auto_paper_trading_service(type(self))
+        )
 
     def _monitoring_service(self) -> MonitoringService:
-        return _build_monitoring_service(type(self))
+        return type(self).monitoring_service or _build_monitoring_service(type(self))
 
-    def _settings_status_payload(self) -> dict[str, object]:
-        environment = self._data_foundation_environment()
-        return build_settings_status(
+    def _settings_status_payload(
+        self,
+        *,
+        cache_contexts: list[dict[str, object]] | None = None,
+        free_stockdb_probe_succeeded: bool | None = None,
+        auto_trading: dict[str, Any] | None = None,
+    ) -> dict[str, object]:
+        environment = self._effective_platform_settings_environment()
+        configuration = self.platform_settings_store.configuration_payload(
+            self._platform_settings_base_environment(),
+            restart_required=type(self).settings_restart_required,
+        )
+        finnhub_api_key = environment.get("FINNHUB_API_KEY", "")
+        if configuration["source"] == "environment" and not finnhub_api_key:
+            finnhub_api_key = getattr(self.quote_adapter, "finnhub_api_key", "")
+        status = build_settings_status(
             cache_path=self.cache.path,
-            cache_contexts=self.cache.contexts(limit=8),
+            cache_contexts=self.cache.contexts(limit=8) if cache_contexts is None else cache_contexts,
             cache_stats=self.cache.stats(),
-            finnhub_api_key=getattr(self.quote_adapter, "finnhub_api_key", ""),
+            finnhub_api_key=finnhub_api_key,
+            ccxt_exchange=environment.get("CCXT_DEFAULT_EXCHANGE", ""),
             adapter_error_events=[
                 market_data_adapter_error_event_to_payload(event)
                 for event in self.adapter_error_store.list_recent(limit=50)
             ],
-            free_stockdb_url=str(environment.get("AIQT_FREE_STOCKDB_URL") or ""),
+            free_stockdb_url=str(self._data_foundation_environment().get("AIQT_FREE_STOCKDB_URL") or ""),
+            free_stockdb_probe_succeeded=free_stockdb_probe_succeeded,
         )
+        if auto_trading is None:
+            auto_trading = self._auto_paper_trading_service().snapshot()
+        auto_state = auto_trading.get("state", {})
+        status["safety"] = {
+            **status["safety"],
+            "liveTradingAllowed": auto_trading.get("liveTradingAllowed") is True,
+            "executionMode": str(auto_state.get("executionMode") or "paper"),
+            "liveConfirmed": auto_state.get("liveConfirmed") is True,
+            "liveSessionTtlHours": auto_state.get("liveSessionTtlHours"),
+            "liveAuthorizedUntil": auto_state.get("liveAuthorizedUntil"),
+            "productionLive": auto_trading.get("productionLive"),
+        }
+        status["configuration"] = configuration
+        return status
+
+    def _platform_settings_base_environment(self) -> dict[str, str]:
+        configured = self.platform_settings_environ
+        return configured if isinstance(configured, dict) else os.environ
+
+    def _effective_platform_settings_environment(self) -> dict[str, str]:
+        return self.platform_settings_store.effective_environment(
+            self._platform_settings_base_environment()
+        )
+
+    def _execution_adapter_environment(self) -> dict[str, str]:
+        configured = type(self).execution_adapter_health_environ
+        return (
+            configured
+            if isinstance(configured, dict)
+            else self._effective_platform_settings_environment()
+        )
+
+    def _reload_platform_runtime(self) -> None:
+        self.platform_settings_store.apply_to_environment(
+            self._platform_settings_base_environment()
+        )
+        environment = self._effective_platform_settings_environment()
+        updater = getattr(type(self).quote_adapter, "update_finnhub_api_key", None)
+        if callable(updater):
+            updater(environment.get("FINNHUB_API_KEY", ""))
+        kline_updater = getattr(type(self).kline_adapter, "update_ccxt_settings", None)
+        if callable(kline_updater):
+            kline_updater(
+                environment.get("CCXT_DEFAULT_EXCHANGE", "binance"),
+                _runtime_int(environment.get("CCXT_TIMEOUT"), 10_000, 1_000, 120_000),
+            )
+        monitoring_service = type(self).monitoring_service
+        if monitoring_service is not None:
+            notifier, channel = build_webhook_notifier(
+                _handler_monitoring_environment(type(self))
+            )
+            monitoring_service.configure_notifier(notifier, channel)
+        auto_service = type(self).auto_paper_trading_service
+        if auto_service is not None:
+            refreshed = _build_auto_paper_trading_service(type(self))
+            auto_service.reload_runtime(
+                refreshed.providers,
+                refreshed.sandbox,
+                refreshed.production,
+                live_session_ttl_hours=refreshed.live_session_ttl_hours,
+            )
+        type(self).settings_restart_required = False
 
     def _data_foundation_environment(self) -> dict[str, str]:
         configured = self.data_foundation_environ
-        return configured if isinstance(configured, dict) else os.environ
+        return configured if isinstance(configured, dict) else self._effective_platform_settings_environment()
 
     def _comparison_market_data_adapter(self, market: str, timeframe: str):
         if market != "ashare" or timeframe != "1d":
@@ -6417,6 +6594,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         except ValueError:
             return None
 
+    def _probe_free_stockdb(self) -> bool | None:
+        try:
+            adapter = build_free_stockdb_adapter(self._data_foundation_environment())
+            if adapter is None:
+                return None
+            bars, quality = adapter.fetch_ohlcv(
+                MarketDataRequest(market="ashare", symbol="600000", timeframe="1d"),
+                limit=1,
+            )
+            return bool(bars) and quality.is_complete
+        except (RuntimeError, ValueError):
+            return False
+
     def _record_adapter_error_if_needed(
         self,
         request: MarketDataRequest,
@@ -6425,7 +6615,10 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         context: str,
         error: str | None = None,
     ) -> None:
-        target = _adapter_error_target(request.market)
+        target = _adapter_error_target(
+            request.market,
+            source=quality.source if quality else None,
+        )
         if not target:
             return
         message = _adapter_error_message(quality=quality, error=error)
@@ -6449,12 +6642,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         return
 
 
-def _adapter_error_target(market: str) -> tuple[str, str] | None:
-    if market == "ashare":
+def _adapter_error_target(market: str, *, source: str | None) -> tuple[str, str] | None:
+    normalized_source = str(source or "").casefold()
+    if market == "ashare" and normalized_source.startswith("akshare"):
         return "akshare-ohlcv", "akshare"
-    if market == "us":
+    if market == "us" and normalized_source.startswith("yfinance"):
         return "yfinance-ohlcv", "yfinance"
-    if market == "crypto":
+    if market == "crypto" and normalized_source.startswith("ccxt"):
         return "ccxt-ohlcv", "ccxt"
     return None
 
@@ -6846,11 +7040,9 @@ def _adapter_error_message(*, quality: DataQuality | None, error: str | None) ->
         return str(error)
     if quality is None:
         return "provider quality unavailable"
-    if quality.warnings:
-        return quality.warnings[0]
-    if not quality.is_complete:
-        return f"incomplete provider response from {quality.source}"
-    return None
+    if quality.is_complete:
+        return None
+    return quality.warnings[0] if quality.warnings else f"incomplete provider response from {quality.source}"
 
 
 def _attach_production_route_review_to_health_probe(
@@ -7034,17 +7226,69 @@ def resolve_api_bind(
     return bind_host, bind_port
 
 
+def _handler_platform_environment(
+    handler_type: type[QuantApiHandler],
+) -> dict[str, str]:
+    base = (
+        handler_type.platform_settings_environ
+        if isinstance(handler_type.platform_settings_environ, dict)
+        else os.environ
+    )
+    return handler_type.platform_settings_store.effective_environment(base)
+
+
+def _handler_execution_environment(
+    handler_type: type[QuantApiHandler],
+) -> dict[str, str]:
+    configured = handler_type.execution_adapter_health_environ
+    return (
+        configured
+        if isinstance(configured, dict)
+        else _handler_platform_environment(handler_type)
+    )
+
+
+def _handler_monitoring_environment(
+    handler_type: type[QuantApiHandler],
+) -> dict[str, str]:
+    configured = handler_type.monitoring_environ
+    return (
+        configured
+        if isinstance(configured, dict)
+        else _handler_platform_environment(handler_type)
+    )
+
+
+def _runtime_int(
+    value: object,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        parsed = int(str(value))
+    except (TypeError, ValueError):
+        return default
+    return parsed if minimum <= parsed <= maximum else default
+
+
 def _build_auto_paper_trading_service(
     handler_type: type[QuantApiHandler],
 ) -> AutoPaperTradingService:
+    platform_environment = _handler_platform_environment(handler_type)
+    execution_environment = _handler_execution_environment(handler_type)
     factory = handler_type.stage6_sandbox_route_factory
-    sandbox_route = factory() if callable(factory) else BinanceSpotTestnetRoute()
+    sandbox_route = (
+        factory()
+        if callable(factory)
+        else BinanceSpotTestnetRoute(env=execution_environment)
+    )
     sandbox = Stage6SandboxExecutionService(
         handler_type.audit_event_store,
         sandbox_route,
     )
     production_route = BinanceSpotProductionTradingRoute(
-        env=handler_type.execution_adapter_health_environ,
+        env=execution_environment,
         exchange_factory=handler_type.execution_adapter_health_exchange_factory,
     )
     production = Stage10ProductionExecutionService(
@@ -7053,13 +7297,19 @@ def _build_auto_paper_trading_service(
     )
     providers = (
         handler_type.ai_review_provider_registry
-        or AiReviewProviderRegistry.from_environment()
+        or AiReviewProviderRegistry.from_environment(platform_environment)
     )
     return AutoPaperTradingService(
         handler_type.audit_event_store,
         providers,
         sandbox,
         production,
+        live_session_ttl_hours=_runtime_int(
+            platform_environment.get("AIQT_LIVE_SESSION_TTL_HOURS"),
+            8,
+            0,
+            8_760,
+        ),
     )
 
 
@@ -7087,7 +7337,9 @@ def build_auto_paper_trading_runner(
 def _build_monitoring_service(
     handler_type: type[QuantApiHandler],
 ) -> MonitoringService:
-    notifier, channel = build_webhook_notifier(handler_type.monitoring_environ)
+    notifier, channel = build_webhook_notifier(
+        _handler_monitoring_environment(handler_type)
+    )
     return MonitoringService(
         handler_type.audit_event_store,
         notifier=notifier,
@@ -7113,15 +7365,28 @@ def build_monitoring_runner(
 
 
 def run(host: str | None = None, port: int | str | None = None) -> None:
+    if QuantApiHandler.platform_settings_store.apply_to_environment(os.environ):
+        QuantApiHandler.quote_adapter = QuantDingerLiveQuoteAdapter()
+        QuantApiHandler.kline_adapter = QuantDingerKlineAdapter(
+            fallback_adapter=QuantApiHandler.adapter
+        )
     bind_host, bind_port = resolve_api_bind(host=host, port=port)
     factory = QuantApiHandler.stage6_sandbox_route_factory
-    route = factory() if callable(factory) else BinanceSpotTestnetRoute()
+    route = (
+        factory()
+        if callable(factory)
+        else BinanceSpotTestnetRoute(
+            env=_handler_execution_environment(QuantApiHandler)
+        )
+    )
     Stage6SandboxExecutionService(QuantApiHandler.audit_event_store, route).recover_active_batches()
     server = ThreadingHTTPServer((bind_host, bind_port), QuantApiHandler)
     auto_trading_runner = build_auto_paper_trading_runner()
+    QuantApiHandler.auto_paper_trading_service = auto_trading_runner.service
     monitoring_runner = build_monitoring_runner(
         auto_trading_service=auto_trading_runner.service,
     )
+    QuantApiHandler.monitoring_service = monitoring_runner.service
     try:
         auto_trading_runner.start()
         monitoring_runner.start()
@@ -7130,6 +7395,7 @@ def run(host: str | None = None, port: int | str | None = None) -> None:
     finally:
         monitoring_runner.stop()
         auto_trading_runner.stop()
+        QuantApiHandler.auto_paper_trading_service = None
         server.server_close()
 
 

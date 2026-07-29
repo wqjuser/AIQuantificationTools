@@ -135,6 +135,18 @@
 
 final result: passed
 
+## 2026-07-28 生产执行动态状态与权限复验
+
+- 根因是设置状态固定返回 `liveTradingAllowed=false`，底栏固定显示“需 Stage 10 与二次确认”，同时 `auto_live_status` 只检查控制记录为 `active`，没有检查其绑定的凭据预检与权限核验证据是否过期；因此 CCXT Testnet 健康、生产凭据配置、过期控制和生产会话授权被混成一个“实盘阻断”状态。
+- 后端继续复用既有自动交易快照和 `_require_active_control()`：设置状态新增当前执行模式、生产会话确认、授权期限和生产控制新鲜度投影；控制记录存在但证据过期时 `controlActive=false`，并返回明确阻断原因。没有新增 Store、表、权限模型或交易路由。
+- 设置页现在显示“测试网运行中 / 生产权限证据已过期 / 重新核验生产权限并恢复执行控制”；刷新证据后显示“测试网运行中 / 生产会话未开启 / 如需实盘，在执行中心切换生产模式并确认真实资金风险”。底栏同步显示 `Testnet` 与同一下一步，不再展示内部阶段编号。
+- Python 聚焦回归先按预期失败，修复后 Stage 10 与设置聚焦 `15 / 15`、Web 聚焦 `510 / 510`、Python 全量 `807 / 807`、Web 全量 `1098 / 1098` 和生产构建通过，仅保留既知 chunk-size 提示；`git diff --check` 通过，API/Web Docker 镜像重建后均 healthy。
+- 真实主页面 `http://127.0.0.1:5173/?workspace=settings` 在 `1280 × 720` 下显示动态状态，`clientWidth=scrollWidth=1280`，无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 用户明确要求再次校验权限后，系统完成专用凭据离线检查、Binance 权限只读核验和控制证据重新绑定；读取与现货权限开启，IP 白名单有效，保证金、期货、期权、提现和划转危险权限均关闭，变更调用计数为 `0`。只读账户覆盖检查显示 `positionCovered=true`、`quoteCovered=false`、未记录自动挂单数为 `0`；进一步限定读取确认生产现货账户的可用及总 USDT 均为 `0`。
+- 自动交易继续保持 `executionMode=testnet`、`enabled=true`、`liveConfirmed=false`、`liveTradingAllowed=false`。本次没有切换执行模式、开启生产会话、调用 AI、立即评估、创建、查询或提交任何订单。
+
+final result: passed
+
 ### 组合人工审批交互修复
 
 - 复现根因：Stage 4 黄金路径进入“人工审批”后，旧版工作区仍有审批列表，但新版组合风控只把顶部动作映射为一个不存在的旧选择器；点击后既不会定位，也没有批准/拒绝入口，因此表现为完全无响应。
@@ -798,5 +810,428 @@ final result: passed
 - 隔离 Compose 项目 `aiqt-m6-acceptance` 使用独立数据卷和 5176 端口，并显式清空交易、生产、AI、Webhook、free-stockdb 与代理配置。API/Web 均 healthy；真实设置页回读数据源 `1/4` 健康、AI Provider `1/4` 已配置、一个纸面适配器就绪、CCXT Sandbox 凭据未配置和实盘阻断。
 - `http://127.0.0.1:5176/?workspace=settings&market=ashare&symbol=600000&timeframe=1d` 在 `1280 × 720` 深浅主题下页面、body 与工作区均无横向溢出；三类详情全部展开时宽表只在自身容器滚动，浏览器控制台 `0 error / 0 warning`。
 - 页面复验只展开三类连接器详情并切换界面主题，没有点击健康检查、运行研究、AI 评审、保存、执行模式、急停、对账或任何订单动作。原 5173 Testnet 容器未替换、未重启，继续保持 `api + web` healthy。
+
+final result: passed
+
+## 2026-07-28 设置页持久化配置修复复验
+
+- 根因是 M6 设置页只接入了 `GET /api/settings/status` 和只读连接器状态，没有写入 API、表单或持久化来源。现增加一个平台配置表单和 `PUT /api/settings/configuration`，不复制连接器注册表、交易状态机或生产准入逻辑。
+- 首次保存前从环境变量初始化；首次保存会把受支持配置写入单行 SQLite 记录，之后该记录覆盖同名环境变量。普通字段可回读，密钥与私密 URL 使用 AES-256-GCM 加密，HTTP 响应只返回固定掩码；留空保持，清除必须显式勾选。生产交易总开关不进入该表单。
+- Python 全量 `799 / 799`、Web 全量 `1091 / 1091`、设置聚焦 `320 / 320` 和生产构建通过；API/Web Docker 镜像构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示。
+- 隔离 Compose 项目 `aiqt-settings-qa` 使用独立数据卷和 `5183` 端口，显式清空交易与 AI 密钥。页面首次显示“环境变量初始化”；保存一个随机 QA 密钥和模型后显示“数据库配置 · 修订 1”、固定掩码和重启提示，响应与 SQLite 文件均不含 QA 密钥明文。
+- 隔离 API 重启后继续回读数据库修订和模型，密钥保持“已配置”，`restartRequired=false`；`liveTradingAllowed=false` 始终不变。`1280 × 720` 页面无横向溢出，所有密码输入回读值为空，浏览器控制台 `0 error / 0 warning`。
+- 验收没有运行研究、AI 评审、立即评估、健康检查、对账、模式切换、急停或任何订单操作。临时项目与数据卷已删除，没有新增 QA PNG；原 `5173` Testnet 容器未替换、未重启，`api + web` 继续 healthy。
+
+final result: passed
+
+## 2026-07-28 设置配置入口与执行适配器表格高度修复复验
+
+- 用户截图 `codex-clipboard-df32d528-465f-46cd-8a9b-da516a79fdca.png` 为 `2885 × 1702`，显示主 `5173` 仍在运行旧 Web 容器，因此没有平台配置表单；展开执行适配器详情后，第一行几乎占满整个截图高度。
+- 在旧真实页面复现后确认表格实际有 `7` 列，但固定布局只给前 `6` 列分配了合计 `100%` 的宽度，最后一列退化为近零宽并逐字换行；数据行被撑到 `999–1332px`，表格总高约 `4924px`。
+- 保留现有表格和渐进披露结构，只把七列重新分配为合计 `100%`，并增加 CSS 契约回归。聚焦测试 `218 / 218`、Web 全量 `1092 / 1092`、生产构建和 Web Docker 镜像构建通过，仅保留既知 chunk-size 提示。
+- 最新 API/Web 镜像已切换到主 `http://127.0.0.1:5173`，两容器均 healthy。设置页显示平台配置、普通字段、加密字段状态、显式清除选项和“保存配置”；当前来源为“环境变量初始化”，响应含 `9` 个普通字段和 `12` 个密钥字段，未返回任何原始密钥值。
+- 同一真实设置页在 `1280 × 720`、浅色主题、执行适配器详情展开状态下复验：七列表头宽度均非零，数据行高度为 `71–85px`，表格总高 `414px`；页面 body 无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 容器切换后 Testnet 自动恢复为 `enabled=true`、`executionMode=testnet`、`runnerState=running`；`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true` 保持不变。复验没有点击保存、健康检查、立即评估、对账、模式切换、急停或任何订单动作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 OpenAI 兼容模型自动发现复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-d94d0e55-29b9-44c0-973b-907d11c5c5b4.png`，`2876 × 316`，为深色设置页 AI Provider 区域裁图；用户标注要求“OpenAI 兼容模型”优先显示 Base URL `/models` 返回的下拉列表，获取失败才允许手动输入。
+- 实现截图：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-compatible-model-dropdown-dark-1280x720.png`，真实主 Docker 页面 `1280 × 720` 深色状态，CSS 视口 `1280 × 720`、`devicePixelRatio=1.5`。源图是超宽局部裁图，最终以相同深色主题、相同字段状态做聚焦视觉比较，没有按不同画布尺寸伪造像素缩放。
+- 根因是平台配置表单只把兼容模型渲染为普通文本输入，前后端均没有模型发现入口。现复用既有 Provider Base URL 校验、超时、错误清洗和数据库有效配置：本机 API 使用已加密保存或环境初始化的兼容服务密钥请求规范 `/models`，浏览器只提交 Base URL，不回读密钥。
+- 当前真实端点返回 `1392` 个去重模型，页面自动把字段切换为原生 `select`，保留当前配置 `gpt-5.5` 为选中项，旁边提供显式“获取”按钮，并显示“已从 /models 获取 1392 个模型”。模型列表响应单独限制为 `1 MiB`；首次 `64 KiB` 上限会拒绝该真实列表，已按根因调整且不放宽评审响应上限。
+- 降级状态使用未监听端点 `http://127.0.0.1:1/v1` 只读复验：请求失败后字段恢复为文本输入，保留当前值并显示“未获取到模型，可手动输入”；没有保存该测试 URL。最终刷新恢复真实 Base URL 和下拉状态。
+- 页面 `scrollWidth=1280`，无横向溢出；深浅主题对照布局一致，浏览器控制台 `0 error / 0 warning`。Python 全量 `801 / 801`、Web 全量 `1094 / 1094`、Web 聚焦 `505 / 505` 和生产构建通过；API/Web Docker 均 healthy。
+- 验收没有点击保存配置、执行适配器检查、运行研究、AI 评审、立即评估、对账、执行模式、急停或任何订单动作；没有新增仓库 PNG，页面最终恢复原浅色主题。
+
+final result: passed
+
+## 2026-07-28 设置页密钥掩码输入框修复复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-2d04c240-e6b2-4245-80fb-75833ff91691.png`，`2887 × 520`，深色设置页“密钥与私密地址”局部裁图；源图显示已配置状态、固定圆点和“清除”控件位于输入框下方。
+- 实现截图：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-settings-secret-mask-2887x520.png`，真实主 Docker 设置页，CSS 视口 `2887 × 520`、截图 `2887 × 520`、`devicePixelRatio≈1`；另以 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-settings-secret-mask-region-1280x720.png` 检查常用视口下的字段可读性。
+- 状态：深色主题、环境变量初始化、OpenAI 兼容服务与 Testnet 凭据已配置；没有填写、保存或清除任何配置。已配置输入框的实际 `value` 均为空，页面只把服务端脱敏摘要放入 `placeholder`，因此原值不会被浏览器回传；输入新值后既有保存链路会覆盖数据库或环境初始化值。
+- 全视图比较：源图与同宽实现截图已在同一比较输入中打开。原有独立状态行和“清除”控件已删除，字段组高度明显收紧；页面 `scrollWidth=clientWidth=2872`，没有横向溢出。
+- 聚焦比较：OpenAI 兼容服务、CCXT Testnet Key 与 Secret 均在输入框内显示“前四位 + 八个圆点 + 后四位”；未配置项继续显示“输入后加密保存”。表单内 `clearControls=0`，不存在“清除”文本。
+- 字体与排版继续复用现有设置页字号、行高和两列网格；颜色与视觉 token 没有新增或偏离；本区域没有图片或图标资产；文案只移除了重复状态和清除动作。浏览器控制台 `0 error / 0 warning`。
+- 比较历史：首轮源图存在 P1 可用性问题——用户必须在输入框外识别已配置值，并面对不必要的清除动作。修复后掩码进入输入框、保存覆盖语义保持、独立状态行消失；复验没有剩余 P0/P1/P2 差异。
+- Python 聚焦 `2 / 2`、Python 全量 `801 / 801`、设置页聚焦 `218 / 218`、Web 全量 `1094 / 1094` 和生产构建通过。API/Web Docker 均 healthy；自动交易保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+
+final result: passed
+
+## 2026-07-28 AI Provider 左右字段对齐修复复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-940dce9f-b506-4c20-9e48-a9660572e6ba.png`，`2894 × 358`，深色设置页 AI Provider 局部裁图；“OpenAI 兼容模型”包含帮助文字，同一网格行右侧的 “Ollama Base URL” 输入框因此向下偏移且被拉高。
+- 实现截图：`C:\Users\Administrator\AppData\Local\Temp\aiqt-settings-provider-alignment-after.png`，`2223 × 212`，来自真实主 Docker 页面 `2894 × 700` 视口的 AI Provider 聚焦裁图；完整复验截图保存在 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-settings-provider-alignment-full-2894x700.png`。源图和实现图均为字段区域裁图，以行内标签和控件边线对齐关系进行比较。
+- 根因是 `.design-settings-field` 使用内部网格，所在外层网格行被左侧帮助文字撑高后，默认 `align-content: stretch` 把右侧两行内容分散到整行高度。共享字段容器增加 `align-content: start` 后，两列内容统一从网格行顶部开始排列，没有改组件结构或新增高度常量。
+- `1280 × 720` 实测修复前左右控件顶边相差约 `7.83px`；修复后两侧标签顶边同为 `443.229px`，控件顶边同为 `459.563px`。原生 `select` 与 `input` 保留既有浏览器内在高度，视觉顶线和行间距已一致。
+- 超宽视口 `clientWidth=scrollWidth=2879`，无横向溢出；深色主题对照未发现剩余 P0/P1/P2 差异，浏览器控制台 `0 error / 0 warning`。复验结束后已恢复原浅色主题和默认视口。
+- 聚焦测试 `219 / 219`、Web 全量 `1095 / 1095`、生产构建和 Web Docker 镜像构建通过，仅保留既知 chunk-size 提示；`git diff --check` 通过，API/Web 均 healthy。
+- 容器重建后自动交易保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。复验没有点击保存配置、立即评估、模式切换、急停或任何订单动作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 平台配置首屏错误占位修复复验
+
+- 真实主 Docker 设置页完整刷新后稳定复现：首帧显示“核心服务尚未提供可写配置契约”，约 `1.99s` 后才切换为平台配置表单；用户环境中的 `3–5s` 属于同一异步等待路径。
+- `/api/settings/status` 连续五次读取耗时为 `9–76ms`。根因是 `refreshSettingsStatus` 把平台配置与执行适配器台账、只读健康探测及二十余类历史证据放在同一聚合刷新中，直到整组请求完成后才写入已经返回的平台配置。
+- 平台配置请求现在仍与其他请求并行，但一返回就独立更新 `settingsStatus`；首次请求完成前增加明确加载状态，只有请求已完成且确实没有配置契约时才显示原错误。已有表单的后台刷新不会隐藏配置项。
+- 回归测试先确认旧实现失败，再由加载状态修复转绿。最终连续完整刷新五次均捕获“正在加载平台配置…”，错误文案出现 `0` 次，表单在 `198–362ms` 内出现；再等待 `2.5s` 后表单保持稳定，浏览器控制台 `0 error / 0 warning`。
+- 组件聚焦 `36 / 36`、Web 全量 `1096 / 1096`、生产构建、Web Docker 镜像构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示。只替换 Web 容器，API/Testnet 未重启。
+- 自动交易保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。复验没有保存配置、运行健康检查、立即评估、切换模式、急停或触发任何订单动作。
+
+final result: passed
+
+## 2026-07-28 执行适配器表格布局与中文投影修复复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-90b04ed3-7063-4ffb-be92-726cb5263ea3.png`，`2872 × 429`，深色设置页执行适配器表格局部裁图；IBKR / Alpaca 与 ccxt 形态的状态徽标越过状态列，适配器名称、状态、凭据、未决状态和下一步同时混有英文原始字段。
+- 实现截图：`C:\Users\Administrator\AppData\Local\Temp\aiqt-execution-adapter-table-after.png`，`2226 × 240`，来自真实主 Docker 页面 `2872 × 1800` 深色视口的同一区域裁图；完整截图为 `C:\Users\Administrator\AppData\Local\Temp\aiqt-execution-adapter-after-tall.jpg`。源图与实现图已在同一比较输入中复核。
+- 布局根因是全局 `.design-status` 强制不换行，而执行适配器表没有给长状态设置表内宽度边界。表格内状态徽标现在使用 `max-width: 100%` 和正常换行，并统一顶部对齐；五行徽标跨列量均为 `0px`，修复前两条长状态各跨列约 `57.45px`。
+- 中英文混杂根因是设置页直接渲染执行链、台账、健康探测与适配器的后端原始字段。页面改为复用 App 中既有中文名称、认证、原因、状态和下一步映射，技术标识 `IBKR`、`Alpaca`、`ccxt`、`API` 与环境变量名按语义保留。
+- 完整刷新后展开表格，在约 `80ms` 的首屏状态及等待 `3.2s` 后的稳定状态均未出现 `Paper adapter ready`、`adapter chain`、`Local paper execution`、`Secret reference`、`Secret manifest validation`、`not_configured`、`interface_only` 等原始字段；异步证据未到达时也使用中文认证摘要回退。
+- 页面与表格容器横向溢出均为 `0`；字体、字号、间距和颜色继续复用既有设置页样式变量，本区域没有图片资产；折叠与再次展开交互正常，浏览器控制台日志为空。源图中的 P1 布局与语言问题已消除，复验没有剩余 P0/P1/P2 差异。
+- 聚焦测试 `222 / 222`、Web 全量 `1098 / 1098`、生产构建、Web Docker 镜像构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示；API/Web 均 healthy。
+- 自动交易保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。复验没有保存配置、运行健康检查、立即评估、切换模式、急停或触发任何订单动作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-28 AKShare 错误归属与 free-stockdb 只读健康探测修复复验
+
+- 根因一是行情错误账本按 `market=ashare` 固定归入 AKShare，实际 `source=tencent` 的完整数据质量警告也被记为 Provider 错误；现改为按真实 `source` 归属，完整数据的普通警告不写入故障账本，旧账本中的来源错配记录也不参与健康聚合。
+- 根因二是 free-stockdb 只有“端点已配置”状态，没有实际读取证据；设置页现在先快速显示配置契约，再对已配置端点追加一次受超时限制的 `600000 / 1d / limit=1` 只读 `cmd=get`。成功显示“健康 / 只读探测通过”，失败显示“待观察 / 只读探测失败”，不调用同步、计算或写入。
+- Python 聚焦 `12 / 12`、Python 全量 `804 / 804`、终端 API 聚焦 `287 / 287`、Web 全量 `1098 / 1098` 和生产构建通过，仅保留既知 chunk-size 提示；API/Web Docker 镜像重建后均 healthy。
+- 真实 API `GET /api/settings/status?probe=free-stockdb` 返回 AKShare `ready / ok / 0 errors / no_recent_provider_errors`，free-stockdb 返回 `ready / ok / 0 errors / probe_succeeded`，响应未返回本地端点值。
+- 真实主页面 `http://127.0.0.1:5173/?workspace=settings&market=ashare&symbol=600000&timeframe=1d` 在 `1280 × 720` 下显示数据源 `4/4 健康`；展开详情后 AKShare 为“最近 24 小时无 Provider 错误”，free-stockdb 为“只读探测通过”。页面 `clientWidth=scrollWidth=1280`，无页面级横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 复验只展开数据源详情，没有点击保存、检查执行适配器、运行研究、AI 评审、立即评估、对账、模式切换、急停或任何订单动作。容器重建后自动交易继续为 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`，生产路由仍阻断。
+
+final result: passed
+
+## 2026-07-28 Finnhub 密钥实时生效修复复验
+
+- 根因是平台设置已把 Finnhub API Key 写入加密数据库，但运行中的 `QuantDingerLiveQuoteAdapter` 只在 API 启动时读取一次密钥；保存接口同时无条件返回 `restartRequired=true`，因此页面只能提示重启。
+- Finnhub API Key 现在作为只读报价配置单独热应用：保存或清除后直接更新既有报价适配器，并清空 30 秒报价缓存，下一次美股报价立即使用新配置。其他确实变化的 Provider、监控或执行配置继续累计保留重启要求，不热切换 Testnet 或执行器。
+- 接口级回归先缓存旧 Finnhub 报价，再保存新密钥；保存响应为 `restartRequired=false`，随后同一 API 进程使用新密钥请求 Finnhub，证明不依赖重启且旧缓存没有遮蔽配置变化。设置聚焦 `3 / 3`、前端聚焦 `323 / 323`、Python 全量 `805 / 805`、Web 全量 `1098 / 1098` 和生产构建通过，仅保留既知 chunk-size 提示。
+- API/Web Docker 镜像重建后均 healthy；真实设置状态显示 Finnhub 已配置、`restartRequired=false`。只读请求 `AAPL` 返回 `source=finnhub`、`isLive=true`，没有输出、记录或回读密钥原文。
+- 真实设置页 `1280 × 720` 不再显示“重启 API 后应用到运行中的连接器与执行器”，Finnhub 字段仍为 `password` 输入，实际值为空，只在占位符内展示服务端脱敏摘要。页面 `clientWidth=scrollWidth=1280`，控制台 `0 error / 0 warning`。
+- 真实页面复验没有填写或保存密钥，没有运行研究、AI 评审、立即评估、执行适配器检查、对账、模式切换、急停或任何订单动作。自动交易保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+
+final result: passed
+
+## 2026-07-29 自动交易尘埃仓位终态复验
+
+- 根因：测试网部分成交后，本地策略账本残留 `0.00001 BTC`；完整退出每轮都会生成卖单，但交易所准备步骤以 `stage6_sandbox_cost_below_minimum` 拒绝，既不会成交也无法切换执行模式。
+- 修复：继续保留交易所最小数量和最小名义金额检查。仅当测试网或生产模式执行目标仓位为零的完整退出卖单，并明确命中上述最小交易规则时，写入一次脱敏尘埃处置审计，把残余从策略账本释放为不再由策略管理的交易所尘埃资产。该路径不提交委托、不伪造成交、不计入盈亏，也不适用于部分减仓、余额、权限或一般拒单。
+- 回归测试覆盖“部分成交留下尘埃 → 对账 → 完整退出被最小金额拒绝 → 只处置一次 → 后续周期不再生成卖单 → 可切回 Paper”的完整公共接口链。后端聚焦 `63 / 63`、前端聚焦 `239 / 239`、Python 全量 `808 / 808`、Web 全量 `1099 / 1099` 和生产构建通过，仅保留既知 chunk-size 提示。
+- API/Web Docker 镜像重建后均 healthy。实际后台运行器在 `2026-07-29T00:25:06+08:00` 自动处置当前 `0.00001 BTC` 残余，参考价 `63810.66 USDT`、估算名义金额 `0.6381066 USDT`；当前策略仓位为 `0`，状态为“剩余仓位低于交易所最小交易金额，已从策略账本释放为账户尘埃资产，不会重复提交卖出委托”。
+- 尘埃审计明确记录 `orderSubmitted=false`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。本次没有开启生产会话、切换生产模式、放宽交易所规则或提交任何订单。
+- 真实主页面 `http://127.0.0.1:5173/?workspace=execution&market=crypto&symbol=BTC%2FUSDT&timeframe=1m` 在 `1280 × 720` 下展开“生产准入与测试网证据”和“自动交易运行台账”，显示“尘埃仓位已释放”、“0.00001 BTC · 估值 0.64 USDT”和“低于交易所最小交易金额，已退出本策略账本；未提交交易所委托”。页面 `clientWidth=scrollWidth=1280`，浏览器控制台 `0 error / 0 warning`。
+- 页面复验只展开只读证据，没有点击立即评估、对账、模式切换、急停、生产会话确认或任何订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-29 Docker 服务自动恢复复验
+
+- 真实运行状态显示 API 与 Web 容器原先均为 `restart=no`；健康检查只能标记状态，API 内部运行器也无法在 API 进程或容器退出后自行恢复，因此主机或 Docker 恢复后存在无人值守服务持续离线的缺口。
+- 主 Compose 仅为既有 API 与 Web 服务增加 `restart: unless-stopped`，复用 Docker 原生能力，不新增守护进程。进程异常退出或 Docker 守护进程恢复时自动拉起；操作者显式停止后保持停止。
+- 部署契约测试先在缺少策略时失败，修复后聚焦 `15 / 15`、Web 全量 `1100 / 1100`，`docker compose config --quiet` 与 `git diff --check` 通过。
+- 为保持当前 Testnet 连续运行，现有两个容器通过 Docker 在线更新重启策略，没有替换或重启。更新前后容器 `StartedAt` 不变，实际 `RestartPolicy` 均为 `unless-stopped`，API/Web 均为 running / healthy。
+- 服务端监控轮次从核验前 `918` 连续增长到 `928`，状态为 running、活跃事故为 `0`；自动交易继续保持 `executionMode=testnet`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`。本次没有评估、对账、模式切换、急停、生产授权或订单操作。
+
+final result: passed
+
+## 2026-07-29 监控 Webhook 实时生效与测试投递复验
+
+- 根因：监控线程在 API 启动时只构造一次 Webhook 通知器；平台设置虽然已把 URL 加密写入数据库，但保存接口只热更新 Finnhub，运行中的 `MonitoringService` 及监控状态仍保持旧配置，必须重启 API 才能投递。
+- 保存 Webhook URL 或超时后，现在复用既有 `build_webhook_notifier`，在监控锁内原子替换运行中通知器与脱敏渠道状态；保存响应不再把这两个字段计入重启要求。清除 URL 同样立即回到 unconfigured，不重建监控线程、不影响 Testnet 或执行器。
+- 新增 `POST /api/operations/monitoring/test-notifications`，只使用已保存配置发送固定的 `lifecycle=test` 脱敏消息，并写入既有 `monitoring_notification_delivery` 审计。请求不接收 URL，响应、错误、审计和监控快照均不回传 URL；未配置返回 `409 monitoring_webhook_unconfigured`，投递失败不会改变交易状态。
+- 设置页在“保存配置”旁提供“测试 Webhook”。只有服务端确认已保存 URL 后按钮才启用；测试中阻止重复点击，成功文案明确“未触发任何交易动作”。
+- TDD 的真实 HTTP 回归覆盖“环境变量未配置 → 保存加密 URL 与新超时 → 无重启测试投递 → 监控渠道 ready → URL 不出现在响应或快照”。后端聚焦 `16 / 16`、前端聚焦 `511 / 511`、Python 全量 `809 / 809`、Web 全量 `1102 / 1102` 和生产构建通过，仅保留既知 chunk-size 提示。
+- API/Web Docker 镜像重建后均 healthy，`RestartPolicy=unless-stopped`。当前用户配置没有 Webhook，真实接口安全返回 `409 monitoring_webhook_unconfigured`；真实设置页 `1280 × 720` 显示禁用的测试按钮，`clientWidth=scrollWidth=1280`，浏览器控制台 `0 error / 0 warning`。
+- 本次没有写入临时 Webhook URL、发送外部请求、运行评估、对账、切换模式、操作急停、恢复生产授权或提交订单。自动交易继续保持 Testnet，监控任务继续运行。
+
+final result: passed
+
+## 2026-07-29 Binance Spot 生产实盘首单验收
+
+- 用户明确要求完成 Binance 真实自动交易验收。本次真实使用生产交易凭据和真实资金，只执行既有 `BTC/USDT · 1m` 自动生产现货路线，没有调用 Stage 9 手动生产尝试、转账、提现、Margin、Futures 或 Options。
+- 启动前重新完成专用凭据预检和 Binance 权限读取：读取与现货交易为开启，IP 白名单有效；Margin、Futures、Options、提现、内部划转和通用划转全部关闭。Stage 10 急停绑定最新证据并恢复，账户覆盖为通过，可用 USDT 覆盖单笔预算，未记录 `aiqt-auto-` 挂单为 `0`。
+- 为减少验收资金风险，临时把触发线从 `0.3%` 调为产品允许的最小值 `0.05%`，单笔预算从 `10 USDT` 调为 `6 USDT`。真实运行期间 AI 在五根涨幅 `0.1056%`、`0.2389%` 等状态下继续给出 `hold`；系统没有降低 AI 结论门槛或直接构造订单。最终五根涨幅 `0.2143%` 时，OpenAI 兼容服务以 `0.58` 置信度给出买入。
+- 生产市价单 `aiqt-auto-l-1f0d050a5f8b66ea8a09` 终态为 `filled / closed`：成交 `0.00008 BTC`、成交金额 `5.1054208 USDT`、平均价 `63817.76 USDT`、剩余数量 `0`。交易所返回基础币手续费 `0.00000008 BTC`，本地净策略持仓为 `0.00007992 BTC`，`feeEstimated=false`；脱敏成交 ID 为 `auto-live-trade-1bb356dff00b1010b737`。
+- 使用原订单 ID 再次只读查询 Binance，成交数量、成交金额、平均价和终态与本地证据一致。随后调用独立只读对账入口，前后交易 ID、订单结果 ID 和持仓完全相同，没有创建新订单或重复入账。
+- 成交后重新读取权限、恢复 Stage 10 控制，并把策略参数恢复为正式 `0.3% / 10 USDT`。复核状态为 `executionMode=live`、`liveTradingAllowed=true`、`orderSubmissionEnabled=true`、`routeExecuted=true`、`liveBlockedBoundary=false`；账户持仓、报价币覆盖均通过，孤儿自动挂单为 `0`。生产授权有效至 `2026-07-29T10:05:02+08:00`，过期后阻止新委托。
+- 当前真实持仓仍由后台止损、止盈、当日亏损、每小时成交次数和 Stage 10 急停持续管理；验收结束时没有人工卖出、暂停监控或触发急停。
+- 真实主页面 `http://127.0.0.1:5173/?workspace=execution&market=crypto&symbol=BTC%2FUSDT&timeframe=1m` 在 `1280 × 720` 下显示“后端监控中 · 生产实盘委托”、累计成交 `1 笔`、策略权益约 `99.99 USDT`、账户覆盖已通过、生产授权有效和恢复后的 `0.3 / 10` 参数。页面 `clientWidth=scrollWidth=1280`，无横向溢出，浏览器控制台日志为空。
+- 验收期间发现五分钟启动证据到期后，订单路径仍按设计在创建前实时复核权限，但快照把八小时生产会话误报为阻断。最小修复让快照复用实际会话闸门：启动证据过期仍可见且不能开启新会话，已经绑定同一活动控制、仍在授权期内的会话保持 `liveTradingAllowed=true`；订单准备、提交和权限复核代码不变。
+- 状态投影聚焦 `52 / 52`、Python 全量 `809 / 809` 通过。API 镜像使用原数据卷重建后持仓、成交 ID、正式参数和授权期限均精确恢复；启动证据已过期时仍正确返回 `liveTradingAllowed=true`、`orderSubmissionEnabled=true`、`routeExecuted=true`、`liveBlockedBoundary=false`。API/Web 均 healthy，服务端监控正常且无活动事故；最终页面完整刷新后显示“生产会话有效”，不再显示“生产权限证据已过期”，无横向溢出，控制台日志为空。
+
+final result: passed
+
+## 2026-07-29 十页自动化交易流程引导复验
+
+- 审计源截图：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-workflow-before.png`，来自真实主 Docker 行情中心 `1280 × 720`。左侧已有十个工作区，但主视区只显示当前页状态和当前页动作；完整 P0 黄金路径位于运行管理的隐藏低频区域，普通用户无法从任意页面识别“设置到审计”的完整顺序。
+- 实现复用既有 `productWorkAreas`、黄金路径状态、动作禁用条件和 `runGoldenPathActionById`，没有新增流程 Store、API、数据库或执行状态机。全局路线固定为：设置 → 行情中心 → 研究工作台 → 策略工坊 → 回测实验室 → AI 评审 → 组合风控 → 执行中心 → 运行管理 → 审计回放。
+- 每个步骤可直接打开对应工作区，并显示既有就绪、待运行或阻断状态；唯一主按钮执行当前已经允许的刷新、研究流水线、AI 评审或模拟委托动作。动作暂不可执行时按钮沿用既有禁用条件；黄金路径没有下一动作时只打开现有自动交易控制台，不自动开启生产实盘。
+- 实现截图：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-workflow-after-ready.png`，真实主 Docker `1280 × 720`。流程条显示完整十步、当前步骤“行情中心”、`3/10 页面就绪` 和“继续：刷新自选缓存”；主按钮在异步状态加载完成后可用。页面与根节点横向溢出均为 `0`，浏览器控制台 `0 error / 0 warning`。
+- 聚焦测试 `224 / 224`、Web 全量 `1104 / 1104`、生产构建和 Docker 构建通过，仅保留既知 chunk-size 提示；`git diff --check` 通过，API 与 Web 均 healthy。Docker Compose 验证重建了 API 与 Web，持久化生产会话、运行器和授权状态均恢复。
+- 验证未点击流程主按钮、刷新行情、运行研究、AI 评审、自动交易保存、立即评估、模式切换、急停或任何订单动作，也没有新增仓库 PNG。当前后台另有账户覆盖不一致事件，运行器保持 `live / enabled / running` 但按原安全边界暂停新决策；本次前端流程改动未尝试绕过或修复该交易状态。
+
+final result: passed
+
+## 2026-07-29 行情中心宽屏空白修复复验
+
+- 用户反馈截图：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-c580c689-2762-4de3-aed3-78496b168808.png`，`3531 × 1787`。行情数据与 K 线已经渲染，但页面标题和行情网格之间出现大面积空白。
+- 根因是 `>1300px` 断点仍把行情页面顶级容器定义为“两行”；全局自动交易流程条加入后，容器实际变为流程条、页面标题、行情网格三个子元素。流程条占第一行，页面标题被 `minmax(0, 1fr)` 第二行拉伸，行情网格落入隐式第三行。
+- 最小修复只把该宽屏网格改为 `auto auto minmax(0, 1fr)`，没有改动行情数据、K 线、自选列表或刷新动作。布局回归明确校验流程条、标题和内容三行，修复前稳定失败、修复后通过。
+- 聚焦布局测试 `187 / 187`、Web 全量 `1104 / 1104`、生产构建、Docker 构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 真实 Docker 行情页在 `1280 × 720` 下复验无异常空白；宽屏断点由回归测试直接覆盖。复验没有点击刷新行情、流程主按钮、立即评估、模式切换、急停或任何订单动作，也没有新增仓库 PNG。
+- Compose 重建后自动交易持久状态恢复为 `executionMode=live`、`enabled=true`、`runnerState=running`，现有安全状态仍为 `account_mismatch`，本次布局修复未改变或绕过该边界。
+
+final result: passed
+
+## 2026-07-29 研究运行确认与进度反馈修复复验
+
+- 用户反馈截图：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-45928e3b-2757-4401-84b5-85c426dd9f67.png`，`1300 × 879`。研究工作台每次显示两项上下文复核，用户点击“仍然运行”后无法判断研究是否已经启动。
+- 真实 Docker 复现确认两项复核来自同一批数据的显式质量证据：当前 `BTC/USDT · 1d` 有 `500` 根 K 线，Binance 返回完整数据，但包含一根仍在形成的日 K；匹配的自选刷新证据为 `cache-refresh-05fb9e22260a`。这些项目按既有 M3 数据质量契约只要求确认、不阻断研究，未删除或降级。
+- 原按钮链路实际可创建审计研究运行：首次复现前历史为 `21` 条，点击后新增 `run-1c8cf79ac22b`。误导根因是终端工作台主按钮在执行期间仍固定显示“运行研究”，约两秒的运行过程缺少就地状态反馈，随后再次点击又会进入同一质量复核。
+- 最小修复把复核动作改为“确认并运行研究”，并让工作台主按钮在 `isRunning` 期间显示“研究运行中…”且保持禁用；继续复用既有固定完成提示，不新增流程状态、API 或数据库。
+- 修复后的真实页面点击确认后，弹窗关闭，主按钮立即变为“研究运行中…”；完成后显示“研究运行完成”、审计证据已绑定和 `run-5d6bbc1e861b`，API 历史增至 `23` 条，按钮恢复“运行研究”。
+- 聚焦布局测试 `187 / 187`、Web 全量 `1104 / 1104`、生产构建、Web Docker 镜像构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示。只以 `--no-deps` 替换 Web，API 未重启；API 与 Web 均 healthy。
+- 本次只创建两条正常的 `BTC/USDT · 1d` 审计研究运行，没有调用 AI 评审、立即评估、模式切换、急停或任何订单动作。自动交易保持 `executionMode=live`、`enabled=true`、`runnerState=running`，现有 `account_mismatch` 安全状态未改变。
+
+final result: passed
+
+## 2026-07-29 十步流程端到端推进与模拟成交修复复验
+
+- 针对 Issue #34，在当前未提交工作树和 `BTC/USDT · 1d` 持久化上下文上，从设置页开始按顶部主按钮实际推进。没有重做已有研究、回测和评审证据，也没有触发立即评估、测试网投单、生产委托、模式切换或急停。
+- 第一处根因是 Binance 返回的“当前 K 线仍在形成”普通警告被黄金路径当成必须重新刷新，形成无穷刷新循环。该警告现在仍保留为复核信息，但市场步骤可通过；真实接口返回 `marketStatus=review`、`marketPassed=true`、`marketActionId=null`，并继续使用既有 `cache-refresh-9297c37402fe`。
+- 第二处根因是全局主按钮尚未进入目标页面时，就套用了目标页动作的禁用条件。现在跨页点击只负责导航，进入目标页后才检查并执行真实动作；设置页主按钮已成功导航到执行中心，未再被行情冷却条件误锁。
+- 第三处根因是黄金路径把研究运行内置 AI 摘要当成已完成，而模拟委托接口要求独立的 P0 本地证据复核。黄金路径现在读取与模拟委托相同的权威 AI 记录；主按钮成功创建本地、仅证据说明的 P0 复核后，下一步自动切换到模拟委托。
+- 第四处根因是纸面执行把加密货币数量强制为至少 `1` 个整币，`1 BTC` 因超过 `20,000 USDT` 本地仓位上限被正确拒绝。数量计算改为风险名义金额内的 8 位小数后，单次点击生成 `paper-3649b9ce1e47`，纸面订单 `93564a3b-d4c9-437d-ba7b-00e52c82e98f` 以 `0.31042403 BTC @ 64,428 USDT` 本地模拟成交，`paper-risk-check=true`。
+- 成交后黄金路径为 `5/6`，十页引导为 `9/10`；唯一当前步骤是 `live-gate / 设置`，原因是生产权限会话已过期、`liveTradingAllowed=false`。这是既有最终安全门禁，未绕过或自动恢复。
+- 新增的最小回归分别覆盖未收盘 K 线非阻断、权威 P0 AI 复核、单击提交已绑定运行和加密货币纸面数量上限。Python 全量 `811 / 811`、Web 全量 `1104 / 1104`、布局聚焦 `187 / 187`、生产构建和 Docker 镜像构建通过，仅保留既知 chunk-size 提示。
+- API 与 Web 均 healthy。真实页面视口 `1280 × 720`，`clientWidth=scrollWidth=1280`，无横向溢出；浏览器控制台 `0 error / 0 warning`。本轮产生的订单仅写入本地 `paper_only` 账本，没有访问币安订单路由。
+
+final result: passed
+
+## 2026-07-29 十步流程选中态与裸地址默认页修复复验
+
+- 真实 Docker 裸地址 `http://localhost:5173/` 修复前会被改写为 `workspace=research` 并打开研究工作台；切换到策略工坊后 URL 已正确变为 `workspace=strategy`，但流程条仍把行情中心标为“当前步骤”。
+- 根因是两个旧投影点彼此独立：裸地址仍以旧研究入口作为默认工作区；流程条则把黄金路径的下一目标页面当成当前选中页面。页面切换和 URL 同步本身正常。
+- 最小修复只把裸地址默认工作区改为行情中心，并让流程条当前项读取既有 `activeWorkAreaId`。黄金路径目标仍只控制“前往 / 继续”主按钮，不新增路由状态、流程 Store、API 或数据库字段。
+- 修复后裸地址稳定落到 `workspace=market`；从左侧切换策略工坊后，URL 为 `workspace=strategy`，流程条唯一 `aria-current=step` 同步变为“04 策略工坊 当前步骤”。页面 `clientWidth=scrollWidth=1280`，无横向溢出，浏览器日志为空。
+- 回归测试先稳定出现 `2` 项失败，修复后布局聚焦 `187 / 187`、Web 全量 `1104 / 1104`、生产构建、Docker 构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 本次只进行了页面导航和只读状态复核，没有点击流程主按钮、刷新、运行研究、AI 评审、立即评估、模式切换、急停或任何订单动作，也没有新增仓库 PNG。重建后自动交易运行器保持运行，但生产会话已过期，`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。
+
+final result: passed
+
+## 2026-07-29 十步流程自动推进、亮色按钮与中文提示复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-a38ea6be-3d6b-46ce-81d7-4ec78c04e666.png`，`1673 × 246`，亮色主题、行情中心、`5/10` 页面就绪。源图明确标出黄金路径说明中的英文质量告警和未适配亮色主题的深色主按钮，并要求一次点击自动推进交易流程。
+- 浏览器实现证据：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-auto-workflow-after-full.png`，真实 Docker 页面 `1280 × 720`、截图 `1280 × 720`、浏览器 `devicePixelRatio=1.5`；聚焦流程条为 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-auto-workflow-after.png`，CSS 区域 `1034 × 136`。同图对照为 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-auto-workflow-comparison.png`，源图保持 `1673 × 246`，实现聚焦区按宽度归一为 `1673 × 220`，总图 `1673 × 522`。这些临时证据未加入仓库。
+- 状态说明：实现截图来自真实自动流程完成后的同一 `600000 · 1d` 上下文，已从源图的 `5/10` 推进到 `9/10`；因此内容状态不同，只对照流程条结构、排版、亮色语义色、按钮、中文说明和交互可见性，不把已推进的数字与步骤状态误判为视觉偏差。
+- 第一轮发现与修复：
+  - `[P1 · 文案]` 服务端质量提示 `Expected bar intervals are missing.` 原样混入中文说明。前端统一翻译已知质量提示；服务端现在把完整且新鲜数据中的缺口警告保留为非阻断审计提示，不再要求重复刷新。
+  - `[P1 · 颜色]` 主按钮硬编码 `#113b32 / #78e3c8`，亮色模式仍显示深色块。按钮改用既有 `--teal-dim / --teal / --border` 主题变量；真实计算色为背景 `rgb(217, 241, 235)`、文字 `rgb(8, 127, 109)`。
+  - `[P0 · 行为]` 主按钮每次只导航或执行一个动作，普通用户仍需手动串联页面。现在一次点击启动短生命周期控制器，自动切换到需要操作的页面，依次复用刷新、研究、P0 本地 AI 证据复核和本地模拟委托；每步回读权威黄金路径，状态不推进即停止。
+- 第二轮同图比较：字体继续复用现有终端字体与层级；十步网格、边距、描边、圆角和纵向节奏未发生可见回归；亮色按钮与页面语义色一致，图标继续使用既有 Lucide `Play`，没有新增图片、手绘 SVG、CSS 图形或占位资产；中文说明不再夹带该英文告警。源图为局部标注截图，实现为完整流程条聚焦截图，已记录裁切和状态差异；没有剩余可执行的 P0/P1/P2 视觉问题，未单列更小聚焦区。
+- 真实主流程交互：从行情中心点击“开始自动交易流程”后，系统自动完成缺失的 AI 评审和本地模拟委托，并切换到设置页；服务端黄金路径为 `5/6` 通过，唯一未通过步骤为 `live-gate`。页面明确显示“可自动执行的模拟交易流程已完成；实盘适配器认证与人工确认需要手动完成。”，没有开启或恢复生产权限，没有调用测试网或生产订单路由。
+- 页面与根节点 `clientWidth=scrollWidth=1280`，无横向溢出；浏览器控制台 `0 error / 0 warning`。聚焦布局测试 `187 / 187`、Web 全量 `1104 / 1104`、Python 全量 `811 / 811`、生产构建与 Docker API/Web 镜像构建通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+
+final result: passed
+
+## 2026-07-29 实盘闸门下一步定位修复复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-f781e022-0a62-44db-a2a1-269f01a9fc9e.png`，`1559 × 190`，亮色主题、黄金路径 `9/10`，主按钮为“查看实盘闸门”。用户点击后进入只有状态投影的设置页，无法找到真正的下一步操作。
+- 根因与修复：设置页的执行适配器区域只展示健康、权限和链路证据；真实的专用凭据检查、只读权限核验、控制恢复和实名确认都在执行中心现有“生产交易控制链”。入口文案改为“打开生产交易控制链”，并复用现有执行前置详情：切换到执行中心、展开父级详情、滚动并聚焦该控制链；没有新增认证流程、状态机、API 或安全开关。
+- 对照证据：入口聚焦截图为 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-live-gate-entry-after.png`，CSS 区域 `1034 × 136`；同图对照为 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-live-gate-entry-comparison.png`，源图保持 `1559 × 190`，实现按宽度归一为 `1559 × 205`，总图 `1559 × 407`。源图是用户裁出的流程条右半部分，实现证据是完整流程条，因此只比较信息层级、按钮语义、主题变量、字重、间距和十步结构，不把裁切差异当作视觉问题。
+- 交互证据：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-live-gate-after.png`，真实 Docker `1280 × 720`。从行情中心点击入口后 URL 变为 `workspace=execution`，父级详情 `open=true`，焦点元素为 `#execution-live-trading-gate`；“执行权限已撤销”“实名操作人”和“检查专用交易凭据”在同一视口清晰可见。
+- 第一轮 `[P0 · 行为]`：入口把用户带到只读设置状态而非真实操作区，核心任务无法继续。修复后直接定位既有生产控制链；第二轮真实页面没有剩余 P0/P1/P2 问题。
+- 字体与排版继续复用现有终端字体、字号和层级；间距、边框、圆角与亮色主题令牌没有新增漂移；按钮继续使用既有 Lucide `Play` 和主题色，没有新图片、占位图、手绘 SVG 或 CSS 图形；文案由模糊的“查看闸门”改为与落点一致的“打开生产交易控制链”。聚焦截图已经覆盖本次唯一关键控件，无需再拆更小区域。
+- 页面及根节点 `clientWidth=scrollWidth=1280`，无横向溢出；浏览器控制台 `0 error / 0 warning`。聚焦测试 `188 / 188`、Web 全量 `1104 / 1104`、生产构建、Web Docker 构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 复验只执行页面导航、展开和焦点定位，没有填写实名操作人，没有点击专用凭据检查、权限核验、控制恢复、立即评估、模式切换、急停、测试网或生产订单操作；临时 QA 图片未加入仓库。
+
+final result: passed
+
+## 2026-07-29 实盘闸门原地确认弹窗复验
+
+- 用户复核发现上一轮“跳转执行中心并定位”的入口仍要求在页面中寻找信息。根因不是生产控制能力缺失，而是入口交互仍暴露了页面结构。
+- 最小修复复用既有“生产交易控制链”，改由原生 `dialog` 在当前工作区直接弹出；按钮改为“确认实盘操作”，实名操作人输入框自动获得焦点。弹窗和执行中心使用不同 DOM ID，不复制状态机、API 或实盘操作逻辑。
+- 真实 Docker 行情中心点击后 URL 保持 `workspace=market`，弹窗内直接显示凭据检查、权限核验、生产控制和后续人工确认状态；深浅主题均显示正常，页面与根节点横向溢出均为 `0`，浏览器日志为空。
+- 复验未填写操作人，未点击凭据检查、权限核验、控制恢复、立即评估、模式切换、急停、测试网或生产订单操作，也未新增仓库 PNG。
+- 聚焦测试 `188 / 188`、Web 全量 `1104 / 1104`、生产构建、Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+
+final result: passed
+
+## 2026-07-29 实盘确认完成态与生产会话续期修复复验
+
+- 用户完成专用凭据、只读权限核验和生产控制恢复后，顶部仍显示“确认实盘操作”；再次点击只会打开同一弹窗。只读状态复现确认，最新 Stage 10 控制已恢复，但自动交易生产会话仍绑定旧控制 ID 且八小时授权已过期，权威黄金路径因此继续返回 `live-gate=blocked`。
+- 根因是弹窗只投影 Stage 10 控制，没有提供 ADR 0021 要求的自动生产会话真实资金二次确认；同时旧 Stage 9 单笔候选复核被混入自动交易门禁。修复继续复用同一自动交易配置 API：控制恢复后在弹窗内显示“确认并续期生产会话”，请求只提交 `liveOperator + liveConfirmed`，不切换执行模式、不启用已暂停监控、不立即评估；成功后刷新设置与黄金路径并关闭弹窗。
+- 自动交易弹窗不再显示 Stage 9 复核和单笔授权；生产权限证据过期时仍按顺序要求重新核验，不提前显示最终确认。当前真实 Docker 复验时五分钟权限证据已到期，因此只验证了正确回退到“只读核验交易权限”、Stage 9 信息已隐藏、URL 保持行情中心和无横向溢出，没有调用权限核验或生产会话续期。
+- 回归测试固定生产会话续期请求不得携带 `executionMode` 或 `enabled`；聚焦测试 `206 / 206`、Web 全量 `1105 / 1105`、生产构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示。
+- 本轮没有填写或提交真实资金确认，没有权限核验、控制恢复、急停、立即评估、模式切换、测试网或生产订单操作，也未新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-29 独立动态交易页面亮暗主题实现复验
+
+- 视觉真值来自已确认的 Figma 页面：亮色节点 `14:2`、暗色节点 `18:804`，文件 `ecmwpPm6mzXSFU8YSKZa1Y`。实现继续使用项目现有左侧导航、顶部行情带、底部状态栏、主题变量和 Lucide 图标；没有把参考交易所的杠杆、做空或手动下单能力带入产品。
+- 新增“动态交易”独立工作区，导航顺序调整为：设置 → 行情中心 → 研究工作台 → 策略工坊 → 回测实验室 → AI 评审 → 组合风控 → 执行中心 → 动态交易 → 运行管理 → 审计回放。自动交易流程条同步显示十一页，当前项继续跟随真实页面选择。
+- 页面直接复用既有 `ExecutionAutoPaperTradingSection` 的同一份自动交易快照、五秒轮询、配置草稿、保存、立即评估、对账和暂停处理；工作台只增加展示分支。行情区复用真实 `KlineChartCanvas`、VOL、MACD 和快照数据；底部持仓、委托意图、最近成交、决策执行链、账户与风险均来自既有权威快照，没有新增 Store、API、数据库、算法或订单路由。
+- 真实 Docker 页面：`http://127.0.0.1:5173/?workspace=dynamic-trading&market=crypto&symbol=BTC%2FUSDT&timeframe=1m`。亮色证据为 `C:\Users\Administrator\AppData\Local\Temp\aiqt-dynamic-trading-implemented-light.png`，暗色证据为 `C:\Users\Administrator\AppData\Local\Temp\aiqt-dynamic-trading-implemented-dark.png`；与 Figma 同图对照分别为 `aiqt-dynamic-trading-compare-light.png` 和 `aiqt-dynamic-trading-compare-dark.png`，均只保存在临时目录。
+- 同图对照确认三栏交易终端、真实 K 线中心、右侧自动策略控制、五块底部状态面板、语义色、边框、圆角和信息层级与已确认方案一致。Figma 为 `1440 × 900`，本地浏览器为 `1280 × 720`；小视口下底部状态面板按页面内部纵向滚动，不压缩主图。工作区 `clientWidth=scrollWidth=1062`，终端和底部面板均无横向溢出；页面根节点 `clientWidth=scrollWidth=1280`。
+- 浏览器结构确认自动交易为 `BTC/USDT · 1m` 生产现货，其他自选仅作观察；切换到 `600000` 后，图表标题和说明明确显示“行情观察 / 自动交易目标仍为 BTC/USDT”，再切回 BTC 后恢复“现货自动标的”。页面明确显示“不使用杠杆 · 不做空”，控制台日志为空。复验只切换亮暗主题和观察标的，没有点击保存、立即评估、暂停、流程主按钮、权限核验、急停、测试网或生产委托操作。
+- 聚焦测试 `687 / 687`、Web 全量 `1106 / 1106`、生产构建和 Docker 构建通过，仅保留既知 chunk-size 提示；`git diff --check` 通过，API 与 Web 均 healthy。Compose 由于 Web 依赖同时重建了 API，持久化运行状态恢复为 `executionMode=live`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=true`、`orderSubmissionEnabled=true`；本次前端复验未改变该运行状态。
+
+final result: passed
+
+## 2026-07-29 动态交易侧栏与控制区对齐复验
+
+- 用户反馈截图：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-49fdb4e6-c7fd-4df5-94f4-bb884bef9f80.png` 与 `C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-ff1916e1-0c21-40c8-83cd-007b66957bdd.png`。策略标的栏偏窄，自动交易控制区缺少设计稿的信息层级；生产确认复选框还被通用文本输入框规则放大。
+- 根因修复保持现有自动交易状态、轮询、保存、评估和暂停动作不变：策略标的列由 `190px` 加宽为 `220px`；复选框改为独立的 `14px` 原生控件；已有效授权的生产会话只显示授权证据，授权失效时才显示实名操作人与真实资金确认。
+- 右侧重新对齐已确认 Figma 暗色节点 `18:804` 与亮色节点 `14:2`：补回“运行状态 / 风险参数 / 授权证据”分区、后台轮询卡、当日回撤、小时额度、连续失败和生产授权摘要，并压缩输入与按钮节奏，使所有操作在侧栏内完整可见。
+- 暗色同图对照：`C:\Users\Administrator\AppData\Local\Temp\aiqt-dynamic-trading-sidepanels-comparison-dark.png`；亮色实现证据：`C:\Users\Administrator\AppData\Local\Temp\aiqt-dynamic-trading-sidepanels-final-light.png`。这些临时 QA 图片未加入仓库。
+- 真实 Docker `1280 × 720` 复验：策略标的 `220px`、自动交易控制 `300px`；控制区 `clientHeight=scrollHeight=404`，按钮未被底部状态栏遮挡；页面与工作区 `clientWidth=scrollWidth`，无横向溢出，浏览器日志为空。
+- 聚焦测试 `207 / 207`、Web 全量 `1107 / 1107`、生产构建、Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 复验只切换亮暗主题并读取页面状态，没有点击保存、立即评估、暂停、流程主按钮、权限核验、急停、测试网或生产订单操作。运行状态保持 `executionMode=live`、`enabled=true`、`runnerState=running`、`liveTradingAllowed=true`、`orderSubmissionEnabled=true`。
+
+final result: passed
+
+## 2026-07-29 动态交易标签与立即评估反馈修复复验
+
+- 用户反馈截图：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-7fa50e29-1e7f-4590-be54-b02f9baf156b.png`。左侧“全部 / 加密货币 / 其他市场”和右侧“运行状态 / 风险参数 / 授权证据”外观类似标签，但前者没有过滤状态，后者只是静态文字；“立即评估”虽调用既有接口，却没有请求中或完成反馈。
+- 回归检查先稳定得到 `1` 项失败。修复后两组标签均使用原生按钮、`role=tab`、`aria-selected` 和现有组件本地状态；左侧实际过滤自选标的，右侧实际切换运行、风险与授权内容，不新增 Store、API 或交易状态机。
+- “立即评估 / 立即对账”继续复用既有权威路径；点击后切回运行状态页，按钮显示“评估中… / 对账中…”，完成后在最近判断卡显示动作、结果和时间，失败则显示原有中文错误。评估期间保存与暂停按钮同时禁用，防止并发人工操作。
+- 真实 Docker `1280 × 720` 复验：加密货币筛选只保留加密标的，其他市场筛选显示 `600519 / 600000 / AAPL`；风险参数与授权证据内容随标签切换，授权页显示当前生产授权有效期。页面与工作区无横向溢出，浏览器日志为空。
+- 出于生产交易安全，本次未在真实 `live` 会话点击“立即评估”；请求接线、进行中状态、完成反馈和错误反馈由不调用生产接口的组件回归检查固定。聚焦测试 `208 / 208`、Web 全量 `1108 / 1108`、生产构建、Web Docker 构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示。
+- 复验没有点击保存、立即评估、暂停、流程主按钮、权限核验、急停、测试网或生产订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-29 全局文字大小切换复验
+
+- 当前 Windows 主显示器为 `3840 × 2160`、系统缩放 `150%`；抽查动态交易、行情中心、研究工作台和设置页时，既有正文与元数据大量落在 `7.5–10px`，确认是全局固定字号偏小，不是单页问题。
+- 顶部新增原生 `Aa` 文字大小控件，保留连续滑块，并提供 `100% / 125% / 150%` 三个触屏与键盘友好的快捷档位。选择即时作用于所有页面，只保存到当前设备；亮暗主题共用同一偏好，不写数据库或服务端配置。
+- 现有 `939` 个固定像素字号统一接入 `--aiqt-text-scale`，只改变文字与随文字继承的行高，不缩放页面布局、图表、间距或交易控件。损坏或越界的本地偏好会回退或限制在 `100%–150%`。
+- 真实 Docker `1280 × 720 @ 1.5 DPR` 复验：从 `100%` 切换到 `150%` 后，策略筛选文字由 `8px` 变为 `12px`；页面根节点始终 `clientWidth=scrollWidth=1280`，刷新后仍恢复 `150%`。亮色弹层背景与文字对比正常，最后已恢复暗色 `100%`，浏览器控制台 `0 error / 0 warning`。
+- Web 全量 `1111 / 1111`、生产构建和 Web Docker 构建通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy，`git diff --check` 通过。
+- 复验只切换字号、主题和页面刷新，没有点击保存配置、立即评估、暂停、流程主按钮、权限核验、急停、测试网或生产订单操作，也没有重启 API。
+
+final result: passed
+
+## 2026-07-29 自动化交易流程新上下文端到端复验
+
+- 针对 Issue #34 继续从真实 Docker 页面验证全新研究上下文。根因一是切换标的或周期会把当前有效策略替换为待生成占位文本，而流水线入口又先要求策略校验通过，形成无法生成策略也无法启动流水线的循环阻断；修复后继续沿用当前可编辑策略，只清除旧运行和审计结果。
+- 根因二是自动流程切换到研究页时，K 线刷新仍处于加载态，短暂的空数据会让控制器立即判定预检未通过并停止。控制器现在等待既有图表加载结束后再调用流水线，没有新增延时、轮询器或第二套流程状态。
+- `P0PipelineRequest` 原先丢弃了调用方传入的 `watchlistRefreshRunId`；共享请求构建器现在原样携带该字段，使新研究快照能够绑定同一次自选缓存刷新证据。
+- 真实页面以 `ETH/USDT · 5m` 从行情中心重新开始：创建刷新运行 `cache-refresh-578e47d93576`，随后创建研究运行 `run-fea5be10b6ae`，自动完成研究、回测、AI 评审、本地模拟执行、运行管理和审计回放，最终显示 `11/11` 页面就绪。
+- 研究快照哈希为 `b2278d20a79a173c898c96a669539cba2382846eea866c1ef522c8eebbcf1ba9`，其准备证据明确记录同一刷新运行、`ETH/USDT · 5m`、`source=coinbase`、`status=refreshed`、`rows=350`、数据完整且无警告。
+- Web 访问日志确认只调用缓存刷新、策略校验、P0 流水线、AI 评审和 `paper-simulations`；研究运行 `executionMode=paper_only`，没有调用测试网或生产订单路由。当前应用资源的浏览器控制台 `0 error / 0 warning`，未新增仓库 QA 图片。
+- 聚焦回归 `924 / 924`、Web 全量 `1111 / 1111`、生产构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+
+final result: passed
+
+## 2026-07-30 自动流程动作失败反馈复验
+
+- Issue #34 的成功路径已能以全新上下文推进到 `11/11`，本轮继续核对“任一步失败必须显示可操作错误”。根因是刷新和研究流水线函数只更新各自页面状态、没有返回真实执行结果，自动控制器因此先把失败动作视为成功，随后只能显示“流程状态未推进”的泛化提示。
+- 现有单标的刷新、自选刷新和研究流水线现在返回布尔结果；刷新运行只有包含当前市场、标的和周期且状态为 `refreshed` 的条目才算成功，生成了失败 run 不再误判为成功。失败原因通过一次性内存引用交给流程条，不新增 Store、API、数据库或持久流程状态。
+- 真实 Docker 行情中心使用不存在的 `INVALID/USDT · 15m` 复验。点击“开始自动交易流程”后流程停留在行情中心，并明确显示“刷新行情未完成：选中标的行情刷新未完成，请检查数据源状态”；页面仍为 `2/11`，没有进入研究、AI 评审、模拟执行或生产交易。
+- 复验只产生失败的行情缓存刷新尝试；没有调用研究流水线、AI 评审、测试网或订单路由。浏览器控制台 `0 error / 0 warning`，未新增仓库 QA 图片。
+- 聚焦回归 `924 / 924`、Web 全量 `1111 / 1111`、生产构建和 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+
+final result: passed
+
+## 2026-07-30 行情刷新成功但黄金路径不推进修复复验
+
+- 用户截图显示 BTC/USDT · 1d 刷新成功后流程仍停在行情中心，顶部要求继续刷新，而当前页同时显示“无主动作阻断”。只读接口复现确认：数据就绪接口已有 502 根新鲜 K 线和匹配刷新证据，但黄金路径仍返回“没有缓存上下文”。
+- 根因是设置状态为了限制页面载荷只展示最近 8 个缓存上下文，黄金路径错误地把该展示摘要当作完整索引；BTC/USDT · 1d 被更新更晚的其他周期挤出后产生假阻断。黄金路径 API 现在直接查询当前市场、标的和周期的精确缓存上下文，设置页仍保持 8 项摘要，不扩大响应。
+- 工作区状态条原先根据主按钮是否禁用猜测阻断，因此可点击的刷新按钮会显示“无主动作阻断”。状态条现在复用既有黄金路径工作区状态和中文原因；`needs_run` 显示“待处理”，`blocked` 显示“阻断”，`ready` 才显示“无待办阻断”，没有新增第二套流程状态。
+- 真实 Docker `BTC/USDT · 1d` 复验：黄金路径为 `ready`、`6/6`、`currentStepId=null`；行情步骤识别 502 根缓存和 `cache-refresh-4837a5171550`，形成中 K 线仅保留为非阻断提示。页面显示 `10/11 页面就绪`、行情中心“已就绪 / 无待办阻断”，剩余阻断只在独立动态交易页。再次点击“刷新行情”后状态保持一致。
+- Python 全量 `811 / 811`、Web 全量 `1112 / 1112`、生产构建、API/Web Docker 构建与 `git diff --check` 通过。首次 Python 全量中的 Windows 本机连接中止在单项和第二轮全量复跑时均未复现。
+- 复验只刷新公开行情缓存，没有点击自动流程主按钮、立即评估、模式切换、暂停、急停、权限核验、测试网或生产订单操作，也未新增仓库 QA 图片。
+
+final result: passed
+
+## 2026-07-30 动态交易认证文案与运行阻断一致性修复复验
+
+- 用户反馈截图：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-c27662ec-2126-48c5-a855-b0a977b4d1f0.png` 与 `C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-2a3a12c2-0c8a-43f8-bd52-35050b1d9cc5.png`。流程条在实盘已授权时仍固定显示“P0 模拟闭环，实盘仍需认证”，动态交易同时显示阻断。
+- 只读接口确认实盘授权、委托权限和生产会话仍有效；真实阻断来自退出尾仓 `0.00000986 BTC` 低于币安最小数量 `0.00001`。CCXT 在共享精度归一化前抛出原始异常，既有尾仓释放逻辑无法识别，后台因而连续失败。
+- 根因修复不新增状态机：共享现货订单准备在调用 CCXT 前复用交易所 `amount.min` 校验，统一返回既有最小数量错误码；自动交易服务随后沿用原有审计尾仓释放路径。重建后由既有后台轮询自然恢复为 `runnerHealth=running / healthy`、`consecutiveRunnerFailures=0`、`status=monitoring`、`position=0`，没有手动触发评估或委托。
+- 黄金路径 API 复用同一自动交易快照，为动态交易工作区投影运行器真实状态与原因；完成态依据真实 `liveTradingAllowed` 显示生产自动交易可用，不再使用固定认证文案。`BTC/USDT · 1d` 接口为 `ready / 6/6`、`liveTradingAllowed=true`、动态交易 `ready`。
+- 真实 Docker `1280 × 720` 的 `BTC/USDT · 1m` 页面因当前行情刷新证据缺口仍显示真实行情待办，但动态交易按钮底层状态已为 `ready`，当前页仅标“当前步骤”；页面显示“后台运行正常 / 生产会话有效”，不再出现“实盘仍需认证”或最小精度异常。页面与根节点 `clientWidth=scrollWidth=1280`，无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 回归测试先分别锁定 CCXT 原始最小精度异常和动态交易工作区缺失。最终 Python 全量 `813 / 813`、Web 全量 `1112 / 1112`、前端聚焦 `924 / 924`、生产构建、API/Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 复验只切换只读行情上下文并读取状态，没有点击流程主按钮、保存、立即评估、暂停、权限核验、急停、测试网或生产订单操作，也未新增仓库 QA 图片。
+
+final result: passed
+
+## 2026-07-30 自动交易亏损与盈利双回撤风控复验
+
+- 原有自动交易只用当前管理权益相对风险日初权益的差值形成单一“当日回撤”，无法区分跌破日起点的真实亏损与盈利后从峰值回落的利润回吐。
+- 后端继续复用既有自动交易状态和风险调整入口：亏损回撤以扣除尘埃资本转出后的日初管理权益计算；盈利回撤只在权益高于日起点并形成日内峰值后，以扣除资本转出后的峰值权益计算。两项分别配置 `0.1%–20%` 上限，任一触发即锁存到下一 UTC 风险日并拒绝买入或加仓；后台轮询、只读对账、止损、止盈和其它退出不被阻止。
+- 统一决策契约同步记录亏损回撤、亏损上限、盈利回撤和盈利上限证据。旧状态缺少峰值字段时以当日初始权益迁移，不回造历史盈利峰值；切换执行模式重置策略账本时同步重置两项回撤及锁存原因。
+- 动态交易页和执行区风险概览分别显示“亏损回撤 / 盈利回撤”，风险参数新增“盈利回撤上限”；触发项使用既有危险态颜色。窄侧栏的四项运行指标按两列排列，亮暗主题继续复用现有变量。
+- 服务层测试覆盖盈利峰值回落触发、触发后仍允许退出、退出后拒绝重新买入、亏损回撤独立触发及下一风险日恢复；尘埃资本转出回归继续通过。自动交易关键分支、决策重放和组件聚焦均通过。
+- Python 全量 `815 / 815`、Web 全量 `1114 / 1114`、生产构建、API/Web Docker 镜像构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示。
+- 当前生产自动交易仍在运行，因此只构建新镜像，没有执行 `docker compose up` 或重启容器；运行中的 API/Web 继续 healthy，本轮没有调用立即评估、对账、模式切换、暂停、急停、权限核验或任何订单操作，也没有新增仓库 QA 图片。
+
+final result: passed
+
+## 2026-07-30 策略工坊中文化复验
+
+- 真实 Docker 页面先以 `1280 × 720 @ 1.5 DPR` 截图盘点；界面英文主要来自内置策略名称、草稿修订标记、顶部标的名称和研究员等级。`SMA / RSI / VOL`、币对、运行 ID、品牌与用户自定义名称继续保留原值。
+- 复用现有 `i18n.strategyText` 显示层翻译内置与历史策略名，并补充标的名称翻译；名称输入框只对已知内置值显示中文，不改写数据库、审计记录或未知自定义名称。策略页标题、名称输入、版本治理、策略库和删除辅助文本使用同一翻译结果，`draft` 显示为“草稿”。
+- 中文化前截图：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-strategy-before-zh.png`；中文化后截图：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-strategy-after-zh.png`。两张图片仅保存在临时目录，未加入仓库。
+- 真实页面未再出现 `SMA Trend / Bank Sector`、`SMA trend`、`BTC 1D SMA Trend RSI Filter Sim`、`修订版：draft`、`Bitcoin` 或 `Ethereum`；名称输入框显示“SMA 趋势 / 银行板块”。页面 `width=scrollWidth=1280`，浏览器控制台 `0 error / 0 warning`。
+- 聚焦测试 `239 / 239`、Web 全量 `1115 / 1115`、生产构建、Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 本轮只重建 Web，没有重启 API，也没有点击保存、流程主按钮、立即评估、暂停、权限核验、急停、测试网或生产订单操作。
+
+final result: passed
+
+## 2026-07-30 策略工坊指标术语中文化复验
+
+- 根据追加反馈，将策略工坊显示层中的 `SMA / RSI / VOL` 分别统一为“简单移动平均线 / 相对强弱指标 / 成交量均线”；带周期的 `SMA20 / RSI14 / VOL10` 显示为“20 周期简单移动平均线 / 14 周期相对强弱指标 / 10 周期成交量均线”。
+- 复用既有 `i18n.strategyText` 处理模板、策略名称、条件、快照、规则矩阵、治理队列、策略库和 AI 草稿预览；底层策略表达式、API 请求、版本与审计记录均未改写。
+- 真实 Docker `1280 × 720 @ 1.5 DPR` 复验截图为 `C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-strategy-indicators-zh.png`，仅保存在临时目录。页面可见 DOM 中 `SMA / RSI / VOL` 残留为 `0`；名称输入框显示“简单移动平均线趋势 / 银行板块”。
+- 页面与工作区分别保持 `scrollWidth=clientWidth=1280 / 1062`，无横向溢出；浏览器控制台 `0 error / 0 warning`。
+- 聚焦测试 `239 / 239`、Web 全量 `1115 / 1115`、生产构建、Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 本轮只重建 Web，没有重启 API，也没有点击保存、流程主按钮、立即评估、暂停、权限核验、急停、测试网或生产订单操作。
+
+final result: passed
+
+## 2026-07-30 回测实验室标题布局与交易明细中文化复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-35eb1757-3f5b-44b3-998c-446377bed34b.png`，`3840 × 2048`，暗色主题、`BTC/USDT · 1d`。用户只标出了标题区布局，以及交易明细中的方向和回放状态；净值指标、回测算法和其它页面不在本轮范围。
+- 浏览器实现证据：`C:\Users\Administrator\AppData\Local\Temp\aiqt-backtest-final.jpg`，真实 Docker 页面 `3840 × 2048 CSS px @ 1 DPR`，截图 `3840 × 2048`；同图对照为 `C:\Users\Administrator\AppData\Local\Temp\aiqt-backtest-comparison.jpg`。源图来自 Windows 高分屏截图，实现图来自独立浏览器视口；对照时两图均归一到 `1908 × 1018` 后并排，明确保留了浏览器密度差异，不据此判断绝对字号。
+- 第一轮 `[P2 · 布局]`：桌面回测标题使用 `auto minmax(0, 1fr)` 两列，策略名被推到可伸展列的远端，状态行又自动落入第一列，导致高分屏上标题、策略名、元数据和状态彼此松散。修复改为两个内容宽度列，标题与策略名紧邻；元数据和状态各自横跨完整标题组，形成稳定的三行结构。
+- 第一轮 `[P2 · 文案]`：交易方向和回放状态直接显示底层枚举 `BUY / SELL / filled`。修复只在显示层映射为“买入 / 卖出 / 已成交”，并覆盖风控、持有、观察中、待复核和已阻断的同类状态；底层数据、回测结果和审计记录保持原值。
+- 第二轮真实页面：标题坐标 `x=222, y=206`，策略名 `x=366, y=218`；元数据与状态分别位于 `y=241 / 259`，不再被拉到远端。可见 DOM 中策略名为“简单移动平均线趋势 / 银行板块”，十笔交易全部显示“买入 / 卖出”和“已成交”，页面无横向溢出，浏览器控制台 `0 error / 0 warning`。
+- 字体、字号、语义色、边框、图表和图标继续复用现有终端主题；本轮没有新增图片、占位资产、手绘 SVG 或 CSS 图形。源图中未标出的 `Return / Max DD / Win Rate / Trades` 按用户限定范围保留，后续若继续整页中文化再统一处理。
+- 聚焦测试 `231 / 231`、Web 全量 `1116 / 1116`、生产构建、Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy。
+- 复验只打开回测实验室并读取页面状态，没有点击运行回测、流程主按钮、保存、立即评估、暂停、权限核验、急停、测试网或生产订单操作，也没有新增仓库 PNG。
+
+final result: passed
+
+## 2026-07-30 执行中心生产授权状态与中文化复验
+
+- 源视觉真值：`C:\Users\ADMINI~1\AppData\Local\Temp\codex-clipboard-12dc4e67-3c2a-48f9-a68d-0062a551abc9.png`，`3840 × 2048`，暗色主题、`BTC/USDT`、生产实盘会话有效。截图明确标出错误的黄色阻断提示、三项未通过路由闸门、英文急停标题及原始字段名。
+- 只读状态核对：设置接口返回 `executionMode=live`、`liveTradingAllowed=true`、`liveConfirmed=true`，自动交易快照同时允许生产路由。根因是执行中心仍使用初始化工作区中的固定阶段 9 闸门与静态警告，没有读取已经传入页面的权威生产权限状态。
+- 第一轮 `[P1 · 状态]`：顶部与底部均显示生产实盘已授权，但执行中心仍声称实盘持续阻断。修复后复用现有 `settings.safety.liveTradingAllowed`：授权时提示改为绿色“生产实盘已授权”，三项路由预检均显示通过，急停区显示“保护中 / 当前未触发，生产路由可用”；未授权分支继续失败关闭。
+- 第一轮 `[P2 · 文案]`：`Adapter certified / Risk approved / Human confirmed / Kill Switch / replayExact / discrepancies / routeExecuted / Stage 9 / PAPER-SANDBOX` 直接出现在中文页面。显示层现统一为“适配器认证 / 风控审批 / 人工确认 / 急停保护 / 回放完全一致 / 差异数量 / 路由已执行 / 阶段 9 / 模拟与测试网”，底层字段和审计值未改写。
+- 暗色实现证据：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-execution-center-live-dark.png`，真实 Docker 页面 `1280 × 720 CSS px @ 1 DPR`，截图 `1280 × 720`；亮色实现证据：`C:\Users\ADMINI~1\AppData\Local\Temp\aiqt-execution-center-live-light.png`。暗色同图对照为 `C:\Users\Administrator\AppData\Local\Temp\aiqt-execution-center-comparison-dark.png`：源图归一为 `1920 × 1024`，实现图按比例归一为 `1820 × 1024` 并居中到同宽画布；高分屏密度差异只用于检查状态、文案、颜色和布局保持，不用于判断绝对字号。
+- 全视图对照确认页面结构、间距、卡片、表格和侧栏比例均保持现有执行中心设计，变化仅限状态颜色与文字。关键状态在同图中清晰可读，因此无需额外聚焦裁剪；暗色和亮色均未出现黄色假阻断、英文闸门或原始字段名。
+- 回归测试先稳定复现“`liveTradingAllowed=true` 仍显示阻断”的失败，修复后聚焦测试 `232 / 232`、Web 全量 `1117 / 1117`、生产构建、Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示；API 与 Web 均 healthy，浏览器控制台 `0 error / 0 warning`。
+- 复验只切换亮暗主题并读取页面与状态接口，没有点击流程主按钮、保存、立即评估、暂停、权限核验、急停、测试网或生产订单操作，也没有重启 API 或新增仓库 QA 图片。
+
+final result: passed
+
+## 2026-07-30 平台配置实时生效与生产授权时长复验
+
+- 设置页新增“生产授权有效时长（小时）”，默认 `8`，允许范围 `0–8760`；`0` 明确显示为永久有效，直到人工暂停、Stage 10 急停或撤销授权。该策略属于平台级安全配置，因此放在设置页；执行中心和动态交易页只显示当前活动授权的实际期限。
+- 平台配置保存后统一刷新现有运行时消费者：Finnhub 报价、CCXT K 线、AI Provider、Free StockDB、监控 Webhook、测试网与生产路由，以及后台自动交易服务。保存不再返回重启要求，也不重启后台线程，不清空策略账本或未决订单。
+- 授权时长修改只作用于下一次实名生产授权，不会静默延长或把当前限时授权改成永久授权。服务层回归覆盖 `0` 小时授权十年后仍有效，以及活动八小时会话在设置改为 `0` 后仍按原期限到期、重新显式授权才切换为永久有效。
+- 部署前只读确认生产模式为 `live`、后台运行器为 `running`、会话和订单提交权限有效、最近生产订单为 `filled`。API 与 Web 依次更新后均 healthy，原授权期限、`liveTradingAllowed=true` 和 `orderSubmissionEnabled=true` 保持不变；本次容器重启仅用于装载新代码，后续网页配置保存不再需要重启 API。
+- 真实 Docker 设置页 `1280 × 720` 显示数据库修订配置、授权时长值 `8`、`min=0 / max=8760`、“0 表示永久有效”和“保存后实时生效”，不再出现“重启 API 后应用”。动态交易页继续显示生产会话有效及实际到期时间。两页均 `clientWidth=scrollWidth=1280`，浏览器控制台 `0 error / 0 warning`。
+- 后端聚焦 `51 / 51`、前端聚焦 `352 / 352`、Python 全量 `817 / 817`、Web 全量 `1118 / 1118`、生产构建、API/Web Docker 构建与 `git diff --check` 通过，仅保留既知 chunk-size 提示。
+- 复验没有点击保存配置、立即评估、流程主按钮、暂停、权限核验、急停、测试网或生产订单操作，也没有新增仓库 QA 图片。
 
 final result: passed

@@ -576,7 +576,7 @@ const messages = {
     "aria.language": "语言",
     "aria.timeframe": "研究周期",
     "aria.symbolSwitcher": "标的切换",
-    "brand.subtitle": "本地优先量化系统",
+    "brand.subtitle": "智能量化工作台",
     "section.quantLoop": "研究工作流",
     "section.terminalModules": "终端模块",
     "section.auditTrail": "审计轨迹",
@@ -613,7 +613,7 @@ const messages = {
     "moduleFocus.label": "当前任务",
     "moduleFocus.instrument": "标的",
     "panel.chart.title": "图表与因子叠加",
-    "panel.chart.subtitle": "价格 · SMA20 · 交易 · {timeframe}",
+    "panel.chart.subtitle": "价格 · 20 周期简单移动平均线 · 交易 · {timeframe}",
     "chart.noData": "暂无 K 线数据",
     "chart.symbol": "标的",
     "chart.latestClose": "收盘",
@@ -834,28 +834,28 @@ const messages = {
     "strategy.status": "状态",
     "strategy.builder": "结构化构建器",
     "strategy.templates": "策略模板",
-    "strategy.template.smaTrend": "SMA 趋势",
-    "strategy.template.smaTrend.description": "SMA20 趋势基线",
-    "strategy.template.rsiReversal": "RSI 反转",
-    "strategy.template.rsiReversal.description": "RSI14 均值回归",
+    "strategy.template.smaTrend": "简单移动平均线趋势",
+    "strategy.template.smaTrend.description": "20 周期简单移动平均线趋势基线",
+    "strategy.template.rsiReversal": "相对强弱指标反转",
+    "strategy.template.rsiReversal.description": "14 周期相对强弱指标均值回归",
     "strategy.template.volumeBreakout": "放量突破",
-    "strategy.template.volumeBreakout.description": "价格强度 + VOL10",
+    "strategy.template.volumeBreakout.description": "价格强度 + 10 周期成交量均线",
     "strategy.auditRequired": "待审计",
     "strategy.entryCondition": "入场条件",
     "strategy.exitCondition": "出场条件",
-    "strategy.entryWindow": "入场 SMA",
-    "strategy.exitWindow": "出场 SMA",
-    "strategy.entryThreshold": "入场 RSI",
-    "strategy.exitThreshold": "出场 RSI",
-    "strategy.rsiConfirm": "RSI 确认",
+    "strategy.entryWindow": "入场简单移动平均线",
+    "strategy.exitWindow": "出场简单移动平均线",
+    "strategy.entryThreshold": "入场相对强弱指标",
+    "strategy.exitThreshold": "出场相对强弱指标",
+    "strategy.rsiConfirm": "相对强弱指标确认",
     "strategy.rsiWindow": "周期",
     "strategy.rsiThreshold": "阈值",
     "strategy.volumeConfirm": "成交量确认",
     "strategy.volumeWindow": "均线周期",
-    "strategy.condition.closeAboveSma": "收盘价 > SMA",
-    "strategy.condition.closeBelowSma": "收盘价 < SMA",
-    "strategy.condition.rsiBelow": "RSI 低于",
-    "strategy.condition.rsiAbove": "RSI 高于",
+    "strategy.condition.closeAboveSma": "收盘价高于简单移动平均线",
+    "strategy.condition.closeBelowSma": "收盘价低于简单移动平均线",
+    "strategy.condition.rsiBelow": "相对强弱指标低于",
+    "strategy.condition.rsiAbove": "相对强弱指标高于",
     "strategy.positionPct": "仓位上限",
     "strategy.stopLossPct": "止损",
     "strategy.takeProfitPct": "止盈",
@@ -1119,6 +1119,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "AI Review Board",
       portfolio: "Portfolio & Risk",
       execution: "Execution Center",
+      "dynamic-trading": "Dynamic Trading",
       operations: "Operations",
       audit: "Audit & Replay",
       settings: "Settings"
@@ -1131,6 +1132,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "Evidence-locked agent committee",
       portfolio: "Exposure, positions, live gates",
       execution: "Paper orders and adapter readiness",
+      "dynamic-trading": "Live strategy status, decisions, orders, and risk",
       operations: "Data maintenance, research queue, scanners, evidence",
       audit: "Run history, import, export, replay",
       settings: "Data sources, API keys, safety gates"
@@ -1288,6 +1290,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "AI 评审",
       portfolio: "组合风控",
       execution: "执行中心",
+      "dynamic-trading": "动态交易",
       operations: "运行管理",
       audit: "审计回放",
       settings: "设置"
@@ -1300,6 +1303,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       "ai-review": "绑定证据的智能体委员会",
       portfolio: "敞口、持仓、实盘闸门",
       execution: "模拟委托和适配器状态",
+      "dynamic-trading": "自动策略状态、决策、委托与风险",
       operations: "数据维护、研究队列、市场扫描、运行证据",
       audit: "运行历史、导入、导出、回放",
       settings: "数据源、API Key、安全闸门"
@@ -1356,7 +1360,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
     },
     workflowNodes: {
       data: ["数据", "AKShare / yfinance / ccxt"],
-      factor: ["因子", "SMA / RSI / 自定义"],
+      factor: ["因子", "简单移动平均线 / 相对强弱指标 / 自定义"],
       backtest: ["回测", "手续费 / 滑点 / 回放"],
       agent: ["智能体", "辩论 / 风险 / 报告"],
       execution: ["执行", "模拟 / 认证实盘"]
@@ -1448,12 +1452,14 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
 const strategyTextMaps: Record<Locale, Record<string, string>> = {
   "en-US": {},
   "zh-CN": {
-    "SMA Trend / Bank Sector": "SMA 趋势 / 银行板块",
-    "RSI Reversal / Mean Reversion": "RSI 反转 / 均值回归",
+    "SMA Trend / Bank Sector": "简单移动平均线趋势 / 银行板块",
+    "RSI Reversal / Mean Reversion": "相对强弱指标反转 / 均值回归",
     "Volume Breakout / Trend Follow": "放量突破 / 趋势跟随",
-    "SMA trend demo": "SMA 趋势演示",
-    "Close > SMA20 and relative strength improving": "收盘价 > SMA20，且相对强度改善",
-    "Close < SMA20 or risk manager downgrade": "收盘价 < SMA20，或风险经理下调评级",
+    "SMA trend": "简单移动平均线趋势",
+    "SMA trend demo": "简单移动平均线趋势演示",
+    "BTC 1D SMA Trend RSI Filter Sim": "BTC 日线简单移动平均线趋势与相对强弱指标过滤模拟策略",
+    "Close > SMA20 and relative strength improving": "收盘价高于 20 周期简单移动平均线，且相对强度改善",
+    "Close < SMA20 or risk manager downgrade": "收盘价低于 20 周期简单移动平均线，或风险经理下调评级",
     "20% cap per instrument": "单标的仓位上限 20%",
     "Stop -8%, drawdown guard 12%, paper only": "止损 -8%，回撤保护 12%，仅模拟盘",
     "Replay from audited research run": "来自审计研究运行的回放",
@@ -1462,6 +1468,23 @@ const strategyTextMaps: Record<Locale, Record<string, string>> = {
     "Start with paper sizing and cap exposure before audited replay": "先以模拟盘定仓，审计回放前限制暴露",
     "Paper only; require adapter certification, risk approval, and human confirmation":
       "仅模拟盘；需要适配器认证、风控审批和人工确认",
+    "Paper execution only": "仅模拟执行",
+    "Selected research interval": "已选择的研究周期",
+    "Pending run": "等待运行",
+    "Run Pipeline to bind an audited data snapshot.": "运行流水线以绑定已审计的数据快照。",
+    "No watchlist cache refresh evidence for this timeframe.": "此周期没有自选缓存刷新证据。",
+    "The window contains a bar that is still forming.": "当前窗口包含一根仍在形成的 K 线。",
+    "Expected bar intervals are missing.": "预期的 K 线时间间隔存在缺失。",
+    "No source warnings reported.": "数据源未报告警告。",
+    "Crypto markets trade continuously; exchange maintenance windows are not modeled.":
+      "加密货币市场连续交易；暂未建模交易所维护时段。",
+    "watchlist · momentum · risk": "自选 · 动量 · 风险",
+    "Asia/Shanghai": "上海时区",
+    "America/New_York": "纽约时区",
+    unknown: "未知",
+    "static-session-template": "静态时段模板",
+    continuous: "连续交易",
+    none: "无",
     "Pending audited backtest": "等待可审计回测",
     "Pending risk sizing": "等待风控定仓",
     "Paper only until a new audited run is available": "生成新的审计运行前仅允许模拟盘",
@@ -1508,6 +1531,12 @@ export function translationKeysForLocale(locale: Locale): string[] {
   return Object.keys(messages[locale]).sort();
 }
 
+function translateInstrumentName(locale: Locale, name: string): string {
+  return locale === "zh-CN"
+    ? ({ Bitcoin: "比特币", Ethereum: "以太坊", Apple: "苹果" } as Record<string, string>)[name] ?? name
+    : name;
+}
+
 export function createI18n(locale: Locale) {
   const dictionary = messages[locale];
   const labels = labelMaps[locale];
@@ -1522,6 +1551,9 @@ export function createI18n(locale: Locale) {
     },
     marketLabel(market: Market) {
       return labels.markets[market];
+    },
+    instrumentName(name: string) {
+      return translateInstrumentName(locale, name);
     },
     productWorkAreaLabel(area: ProductWorkArea) {
       return valueOf(labels.productWorkAreas, area.id, area.label);
@@ -1606,7 +1638,39 @@ function translateStrategyText(locale: Locale, text: string): string {
   }
   const direct = strategyTextMaps[locale][text];
   if (direct) {
-    return direct;
+    return translateStrategyIndicatorTerms(direct);
+  }
+  const researchOpsHeadline = text.match(/^(\d+) watched research tasks$/);
+  if (researchOpsHeadline) {
+    return `${researchOpsHeadline[1]} 个关注研究任务`;
+  }
+  const researchOpsDetail = text.match(
+    /^(\d+) need data · (\d+) ready for pipeline · (\d+) need AI review · (\d+) paper candidates$/
+  );
+  if (researchOpsDetail) {
+    return `${researchOpsDetail[1]} 个需补数据 · ${researchOpsDetail[2]} 个可运行流水线 · ${researchOpsDetail[3]} 个需 AI 评审 · ${researchOpsDetail[4]} 个模拟候选`;
+  }
+  const instrumentMarket = text.match(/^(.+) · (ashare|us|crypto)$/);
+  if (instrumentMarket) {
+    return `${translateInstrumentName(locale, instrumentMarket[1])} · ${labelMaps[locale].markets[instrumentMarket[2] as Market]}`;
+  }
+  const timeframe = text.match(/^(1d|1w|1m|5m|15m|30m|60m)$/);
+  if (timeframe) {
+    return (
+      {
+        "1d": "日线",
+        "1w": "周线",
+        "1m": "1 分钟",
+        "5m": "5 分钟",
+        "15m": "15 分钟",
+        "30m": "30 分钟",
+        "60m": "60 分钟"
+      } as Record<string, string>
+    )[timeframe[1]];
+  }
+  const contextTimeframe = text.match(/^(.+) · (1d|1w|1m|5m|15m|30m|60m)$/);
+  if (contextTimeframe) {
+    return `${contextTimeframe[1]} · ${translateStrategyText(locale, contextTimeframe[2])}`;
   }
   const researchContext = text.match(/^(.+) ((?:1d|1w|1m|5m|15m|30m|60m)) research context$/);
   if (researchContext) {
@@ -1626,11 +1690,11 @@ function translateStrategyText(locale: Locale, text: string): string {
   }
   const closeAboveSma = text.match(/^Close > SMA(\d+)$/);
   if (closeAboveSma) {
-    return `收盘价 > SMA${closeAboveSma[1]}`;
+    return `收盘价高于 ${closeAboveSma[1]} 周期简单移动平均线`;
   }
   const closeBelowSma = text.match(/^Close < SMA(\d+)$/);
   if (closeBelowSma) {
-    return `收盘价 < SMA${closeBelowSma[1]}`;
+    return `收盘价低于 ${closeBelowSma[1]} 周期简单移动平均线`;
   }
   const maxCapital = text.match(/^(\d+(?:\.\d+)?)% max capital allocation$/);
   if (maxCapital) {
@@ -1646,7 +1710,32 @@ function translateStrategyText(locale: Locale, text: string): string {
   if (revision) {
     return `策略版本 ${revision[1]}；执行模式 ${executionModeText(locale, revision[2])}`;
   }
-  return text;
+  return translateStrategyIndicatorTerms(text)
+    .replace(/\b1d\b/g, "日线")
+    .replace(/\b1w\b/g, "周线")
+    .replace(/\b1m\b/g, "1 分钟")
+    .replace(/\b5m\b/g, "5 分钟")
+    .replace(/\b15m\b/g, "15 分钟")
+    .replace(/\b30m\b/g, "30 分钟")
+    .replace(/\b60m\b/g, "60 分钟")
+    .replace("No watchlist cache refresh evidence for this timeframe.", "此周期没有自选缓存刷新证据。")
+    .replace("The window contains a bar that is still forming.", "当前窗口包含一根仍在形成的 K 线。")
+    .replace("Expected bar intervals are missing.", "预期的 K 线时间间隔存在缺失。");
+}
+
+function translateStrategyIndicatorTerms(text: string): string {
+  return text
+    .replace(/SMA(\d+)/g, "$1 周期简单移动平均线")
+    .replace(/\bSMA\b/g, "简单移动平均线")
+    .replace(/RSI(\d+)/g, "$1 周期相对强弱指标")
+    .replace(/\bRSI\b/g, "相对强弱指标")
+    .replace(/VOL(\d+)/g, "$1 周期成交量均线")
+    .replace(/\bVOL\b/g, "成交量均线")
+    .replace(/Close > /g, "收盘价高于 ")
+    .replace(/Close < /g, "收盘价低于 ")
+    .replace(/Volume > /g, "成交量高于 ")
+    .replace(/ AND /g, "，且")
+    .replace(/ OR /g, "，或");
 }
 
 function translateDecisionMessage(locale: Locale, message: string): string {

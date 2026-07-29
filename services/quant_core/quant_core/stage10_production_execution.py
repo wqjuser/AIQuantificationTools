@@ -1433,10 +1433,32 @@ class Stage10ProductionExecutionService:
             "credentialsConfigured": False,
         }
         control = self.control()
+        control_recorded_active = (
+            control["status"] == "active" and control["triggered"] is False
+        )
+        blocking_reason = None
+        evidence_fresh = False
+        if self.auto_route is None:
+            blocking_reason = "stage10_production_live_route_unavailable"
+        elif route["enabled"] is not True:
+            blocking_reason = "stage10_production_live_route_disabled"
+        elif route["credentialsConfigured"] is not True:
+            blocking_reason = "stage10_production_trading_credentials_not_configured"
+        elif not control_recorded_active:
+            blocking_reason = "stage10_production_execution_kill_switch_triggered"
+        else:
+            try:
+                self._require_active_control()
+                evidence_fresh = True
+            except ValueError as error:
+                blocking_reason = str(error)
         return {
             **route,
-            "controlActive": control["status"] == "active" and control["triggered"] is False,
+            "controlActive": control_recorded_active and evidence_fresh,
+            "controlRecordedActive": control_recorded_active,
             "controlId": control.get("controlId"),
+            "evidenceFresh": evidence_fresh,
+            "blockingReason": blocking_reason,
             "triggered": control["triggered"],
         }
 

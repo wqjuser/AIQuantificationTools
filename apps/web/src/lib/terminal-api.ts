@@ -2250,6 +2250,51 @@ export interface PlatformSettingsExecutionAdapter {
   note: string;
 }
 
+export type PlatformSettingsSecretName =
+  | "finnhubApiKey"
+  | "openaiApiKey"
+  | "openaiCompatibleApiKey"
+  | "ccxtSandboxApiKey"
+  | "ccxtSandboxSecret"
+  | "ccxtProductionReadonlyApiKey"
+  | "ccxtProductionReadonlySecret"
+  | "ccxtProductionTradingApiKey"
+  | "ccxtProductionTradingSecret"
+  | "monitoringWebhookUrl"
+  | "freeStockdbUrl"
+  | "httpsProxy";
+
+export interface PlatformSettingsConfigurationValues {
+  ccxtDefaultExchange: string;
+  ccxtTimeout: number;
+  liveSessionTtlHours: number;
+  openaiModel: string;
+  openaiCompatibleBaseUrl: string;
+  openaiCompatibleModel: string;
+  ollamaBaseUrl: string;
+  ollamaModel: string;
+  monitoringWebhookTimeoutSeconds: number;
+  freeStockdbTimeoutSeconds: number;
+}
+
+export interface PlatformSettingsConfiguration {
+  source: "environment" | "database";
+  revision: number;
+  updatedAt: string | null;
+  restartRequired: boolean;
+  values: PlatformSettingsConfigurationValues;
+  secrets: Record<PlatformSettingsSecretName, {
+    configured: boolean;
+    masked: string | null;
+  }>;
+}
+
+export interface PlatformSettingsUpdateRequest {
+  configuration: PlatformSettingsConfigurationValues;
+  secretUpdates: Partial<Record<PlatformSettingsSecretName, string>>;
+  clearSecrets: PlatformSettingsSecretName[];
+}
+
 export interface PlatformSettingsStatus {
   schemaVersion: 1;
   generatedAt: string;
@@ -2260,11 +2305,45 @@ export interface PlatformSettingsStatus {
   safety: {
     liveTradingAllowed: boolean;
     requiredGates: string[];
+    executionMode?: "paper" | "testnet" | "live";
+    liveConfirmed?: boolean;
+    liveSessionTtlHours?: number;
+    liveAuthorizedUntil?: string | null;
+    productionLive?: {
+      enabled: boolean;
+      credentialsConfigured: boolean;
+      controlActive: boolean;
+      controlRecordedActive: boolean;
+      evidenceFresh: boolean;
+      blockingReason: string | null;
+      triggered: boolean;
+    };
   };
+  configuration?: PlatformSettingsConfiguration;
 }
 
 export interface PlatformSettingsResult {
   settings?: PlatformSettingsStatus;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface OpenAiCompatibleModelsResult {
+  models: string[];
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface MonitoringTestNotification {
+  schemaVersion: 1;
+  deliveryStatus: "sent";
+  observedAt: string;
+  channelType: "webhook";
+  tradingActionsAvailable: false;
+}
+
+export interface MonitoringTestNotificationResult {
+  notification?: MonitoringTestNotification;
   source: WorkspaceSource;
   error?: string;
 }
@@ -4740,6 +4819,7 @@ export interface P0PipelineRequest {
   symbol: string;
   timeframe: ResearchTimeframe;
   limit: number;
+  watchlistRefreshRunId?: string;
   strategyConfig: StrategySnapshot;
   assumptions: BacktestAssumptions;
 }
@@ -5373,8 +5453,27 @@ export function buildMarketSearchUrl(
   });
 }
 
-export function buildSettingsStatusUrl(baseUrl: string): string {
-  return buildApiUrl(baseUrl, "api/settings/status");
+export function buildSettingsStatusUrl(baseUrl: string, probeFreeStockdb = false): string {
+  return buildApiUrl(baseUrl, "api/settings/status", (url) => {
+    if (probeFreeStockdb) url.searchParams.set("probe", "free-stockdb");
+  });
+}
+
+export function buildSettingsConfigurationUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/settings/configuration");
+}
+
+export function buildMonitoringTestNotificationsUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/operations/monitoring/test-notifications");
+}
+
+export function buildOpenAiCompatibleModelsUrl(
+  baseUrl: string,
+  compatibleBaseUrl: string
+): string {
+  return buildApiUrl(baseUrl, "api/settings/openai-compatible-models", (url) => {
+    url.searchParams.set("baseUrl", compatibleBaseUrl.trim());
+  });
 }
 
 export function buildExecutionAdapterLedgerUrl(baseUrl: string): string {
@@ -10234,10 +10333,11 @@ export async function loadAuditSigningKeyRotationAcceptances(
 
 export async function loadPlatformSettings(
   baseUrl: string,
-  fetcher: WorkspaceFetcher = defaultFetcher
+  fetcher: WorkspaceFetcher = defaultFetcher,
+  probeFreeStockdb = false
 ): Promise<PlatformSettingsResult> {
   try {
-    const response = await fetcher(buildSettingsStatusUrl(baseUrl));
+    const response = await fetcher(buildSettingsStatusUrl(baseUrl, probeFreeStockdb));
     if (!response.ok) {
       throw new Error(`HTTP ${response.status ?? "error"}`);
     }
@@ -10253,6 +10353,106 @@ export async function loadPlatformSettings(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown settings status error"
+    };
+  }
+}
+
+export async function savePlatformSettings(
+  baseUrl: string,
+  request: PlatformSettingsUpdateRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PlatformSettingsResult> {
+  try {
+    const response = await fetcher(buildSettingsConfigurationUrl(baseUrl), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { detail?: unknown } | null;
+      throw new Error(typeof payload?.detail === "string" ? payload.detail : `HTTP ${response.status ?? "error"}`);
+    }
+    const payload = await response.json();
+    if (!isPlatformSettingsPayload(payload)) {
+      throw new Error("Invalid settings configuration contract");
+    }
+    return { settings: payload.settings, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown settings configuration error"
+    };
+  }
+}
+
+export async function loadOpenAiCompatibleModels(
+  baseUrl: string,
+  compatibleBaseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<OpenAiCompatibleModelsResult> {
+  try {
+    const payload = await requestJson(
+      buildOpenAiCompatibleModelsUrl(baseUrl, compatibleBaseUrl),
+      undefined,
+      fetcher
+    );
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      !Array.isArray((payload as { models?: unknown }).models) ||
+      !(payload as { models: unknown[] }).models.every(
+        (model) => typeof model === "string" && Boolean(model.trim())
+      )
+    ) {
+      throw new Error("Invalid compatible model discovery contract");
+    }
+    return {
+      models: (payload as { models: string[] }).models,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      models: [],
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown compatible model discovery error"
+    };
+  }
+}
+
+export async function testMonitoringWebhook(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MonitoringTestNotificationResult> {
+  try {
+    const payload = await requestJson(
+      buildMonitoringTestNotificationsUrl(baseUrl),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      },
+      fetcher
+    );
+    const notification = (
+      payload as { monitoringTestNotification?: Partial<MonitoringTestNotification> }
+    )?.monitoringTestNotification;
+    if (
+      notification?.schemaVersion !== 1 ||
+      notification.deliveryStatus !== "sent" ||
+      typeof notification.observedAt !== "string" ||
+      notification.channelType !== "webhook" ||
+      notification.tradingActionsAvailable !== false
+    ) {
+      throw new Error("Invalid monitoring Webhook test contract");
+    }
+    return {
+      notification: notification as MonitoringTestNotification,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown monitoring Webhook test error"
     };
   }
 }
@@ -13268,6 +13468,7 @@ export function buildP0PipelineRequest(
     symbol: params.symbol,
     timeframe: params.timeframe,
     limit: Math.max(1, Math.min(params.limit ?? 500, 500)),
+    watchlistRefreshRunId: params.watchlistRefreshRunId?.trim() || undefined,
     strategyConfig: { ...currentWorkspace.strategy },
     assumptions: resolveBacktestAssumptions(currentWorkspace)
   };
@@ -16436,7 +16637,85 @@ function isPlatformSettingsStatus(value: unknown): value is PlatformSettingsStat
     Boolean(settings.safety) &&
     typeof settings.safety?.liveTradingAllowed === "boolean" &&
     Array.isArray(settings.safety?.requiredGates) &&
-    settings.safety.requiredGates.every((gate) => typeof gate === "string")
+    settings.safety.requiredGates.every((gate) => typeof gate === "string") &&
+    (
+      settings.safety.executionMode === undefined ||
+      settings.safety.executionMode === "paper" ||
+      settings.safety.executionMode === "testnet" ||
+      settings.safety.executionMode === "live"
+    ) &&
+    (settings.safety.liveConfirmed === undefined || typeof settings.safety.liveConfirmed === "boolean") &&
+    (
+      settings.safety.liveSessionTtlHours === undefined ||
+      typeof settings.safety.liveSessionTtlHours === "number"
+    ) &&
+    (
+      settings.safety.liveAuthorizedUntil === undefined ||
+      settings.safety.liveAuthorizedUntil === null ||
+      typeof settings.safety.liveAuthorizedUntil === "string"
+    ) &&
+    (
+      settings.safety.productionLive === undefined ||
+      (
+        typeof settings.safety.productionLive.enabled === "boolean" &&
+        typeof settings.safety.productionLive.credentialsConfigured === "boolean" &&
+        typeof settings.safety.productionLive.controlActive === "boolean" &&
+        typeof settings.safety.productionLive.controlRecordedActive === "boolean" &&
+        typeof settings.safety.productionLive.evidenceFresh === "boolean" &&
+        (
+          settings.safety.productionLive.blockingReason === null ||
+          typeof settings.safety.productionLive.blockingReason === "string"
+        ) &&
+        typeof settings.safety.productionLive.triggered === "boolean"
+      )
+    ) &&
+    (settings.configuration === undefined || isPlatformSettingsConfiguration(settings.configuration))
+  );
+}
+
+const platformSettingsSecretNames: PlatformSettingsSecretName[] = [
+  "finnhubApiKey",
+  "openaiApiKey",
+  "openaiCompatibleApiKey",
+  "ccxtSandboxApiKey",
+  "ccxtSandboxSecret",
+  "ccxtProductionReadonlyApiKey",
+  "ccxtProductionReadonlySecret",
+  "ccxtProductionTradingApiKey",
+  "ccxtProductionTradingSecret",
+  "monitoringWebhookUrl",
+  "freeStockdbUrl",
+  "httpsProxy",
+];
+
+function isPlatformSettingsConfiguration(value: unknown): value is PlatformSettingsConfiguration {
+  if (!value || typeof value !== "object") return false;
+  const configuration = value as Partial<PlatformSettingsConfiguration>;
+  const values = configuration.values as Partial<PlatformSettingsConfigurationValues> | undefined;
+  const secrets = configuration.secrets as PlatformSettingsConfiguration["secrets"] | undefined;
+  return (
+    (configuration.source === "environment" || configuration.source === "database") &&
+    typeof configuration.revision === "number" &&
+    (configuration.updatedAt === null || typeof configuration.updatedAt === "string") &&
+    typeof configuration.restartRequired === "boolean" &&
+    Boolean(values) &&
+    typeof values?.ccxtDefaultExchange === "string" &&
+    typeof values.ccxtTimeout === "number" &&
+    Number.isInteger(values.liveSessionTtlHours) &&
+    Number(values.liveSessionTtlHours) >= 0 &&
+    Number(values.liveSessionTtlHours) <= 8760 &&
+    typeof values.openaiModel === "string" &&
+    typeof values.openaiCompatibleBaseUrl === "string" &&
+    typeof values.openaiCompatibleModel === "string" &&
+    typeof values.ollamaBaseUrl === "string" &&
+    typeof values.ollamaModel === "string" &&
+    typeof values.monitoringWebhookTimeoutSeconds === "number" &&
+    typeof values.freeStockdbTimeoutSeconds === "number" &&
+    Boolean(secrets) &&
+    platformSettingsSecretNames.every((name) =>
+      typeof secrets?.[name]?.configured === "boolean" &&
+      (secrets[name].masked === null || typeof secrets[name].masked === "string")
+    )
   );
 }
 

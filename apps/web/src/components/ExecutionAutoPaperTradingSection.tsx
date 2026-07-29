@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  Bot,
+  ChevronRight,
+  CirclePause,
+  Play,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  WalletCards
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { buildApiUrl, type WorkspaceFetcher } from "../lib/terminal-api";
 
 const defaultFetcher: WorkspaceFetcher = (url, init) => fetch(url, init);
@@ -10,6 +21,7 @@ interface AutoTradingState {
   testnetConfirmed: boolean;
   liveConfirmed: boolean;
   liveOperator: string;
+  liveSessionTtlHours?: number;
   liveAuthorizedUntil: string | null;
   runnerState: "running" | "stopping" | "stopped";
   runnerIntervalSeconds: number;
@@ -27,6 +39,7 @@ interface AutoTradingState {
   stopLossPct: number;
   takeProfitPct: number;
   dailyLossLimitPct: number;
+  dailyProfitDrawdownLimitPct: number;
   maxTradesPerHour: number;
   providerId: string;
   cash: number;
@@ -35,6 +48,11 @@ interface AutoTradingState {
   equity: number;
   realizedPnl: number;
   dailyStartEquity: number;
+  dailyPeakEquity?: number;
+  dailyReleasedDustNotional?: number;
+  dailyLossDrawdownPct?: number;
+  dailyProfitDrawdownPct?: number;
+  dailyRiskHaltReason?: string | null;
   tradeCount: number;
   tradeTimestamps: string[];
   windowChangePct: number | null;
@@ -54,6 +72,16 @@ interface AutoTradingState {
     fees: Array<{ currency: string; cost: number }>;
     feeEstimated: boolean;
     error: string;
+  } | null;
+  lastDustDisposition?: {
+    executionMode: "testnet" | "live";
+    symbol: string;
+    quantity: number;
+    referencePrice: number;
+    estimatedNotional: number;
+    reason: string;
+    releasedAt: string;
+    orderSubmitted: false;
   } | null;
   lastAccountCheck: {
     accountCovered?: boolean;
@@ -128,7 +156,10 @@ interface AutoTradingState {
       reason: string;
       evidence?: {
         dailyDrawdownPct: number;
+        dailyLossDrawdownPct?: number;
         dailyLossLimitPct: number;
+        dailyProfitDrawdownPct?: number;
+        dailyProfitDrawdownLimitPct?: number;
         recentTradeCount: number;
         maxTradesPerHour: number;
       };
@@ -190,6 +221,14 @@ interface AutoTradingSnapshot {
   orderSubmissionEnabled: boolean;
   routeExecuted: boolean;
   liveBlockedBoundary: boolean;
+}
+
+export interface DynamicTradingInstrument {
+  symbol: string;
+  name: string;
+  market: "ashare" | "us" | "crypto";
+  price?: number | null;
+  changePct: number;
 }
 
 interface MonitoringIncident {
@@ -264,7 +303,8 @@ interface MonitoringSnapshot {
 type Draft = Pick<
   AutoTradingState,
   "triggerPct" | "orderNotional" | "stopLossPct" | "takeProfitPct" | "dailyLossLimitPct"
-  | "maxTradesPerHour" | "providerId" | "executionMode" | "liveOperator"
+  | "dailyProfitDrawdownLimitPct" | "maxTradesPerHour" | "providerId" | "executionMode"
+  | "liveOperator"
 >;
 
 const defaultDraft: Draft = {
@@ -273,6 +313,7 @@ const defaultDraft: Draft = {
   stopLossPct: 1,
   takeProfitPct: 2,
   dailyLossLimitPct: 2,
+  dailyProfitDrawdownLimitPct: 2,
   maxTradesPerHour: 3,
   providerId: "auto",
   executionMode: "paper",
@@ -297,6 +338,36 @@ export function autoTradingActionPath(
   return hasUnresolvedAutoOrder(state)
     ? "api/execution/auto-paper-trading/reconciliations"
     : "api/execution/auto-paper-trading/evaluations";
+}
+
+export async function authorizeAutoLiveSession(
+  baseUrl: string,
+  operator: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+) {
+  const response = await fetcher(buildApiUrl(baseUrl, "api/execution/auto-paper-trading"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      liveConfirmed: true,
+      liveOperator: operator.trim()
+    })
+  });
+  const payload = await response.json() as unknown;
+  if (!response.ok) {
+    throw new Error(
+      typeof payload === "object" && payload && "detail" in payload
+        ? String((payload as Record<string, unknown>).detail)
+        : `HTTP ${response.status}`
+    );
+  }
+  if (
+    !payload
+    || typeof payload !== "object"
+    || (payload as Record<string, unknown>).liveTradingAllowed !== true
+  ) {
+    throw new Error("自动交易尚未处于已启用的生产实盘模式");
+  }
 }
 
 export function autoTradingAttention(
@@ -406,12 +477,13 @@ export function AutoTradingLedger({
   state: Pick<
     AutoTradingState,
     "executionMode" | "lastDecision" | "lastDecisionContract" | "lastLiveOrder" | "lastTestnetOrder"
-    | "lastOrderResult" | "position" | "realizedPnl"
+    | "lastOrderResult" | "lastDustDisposition" | "position" | "realizedPnl"
   > | undefined;
 }) {
   const decision = state?.lastDecision;
   const contract = state?.lastDecisionContract;
   const orderResult = state?.lastOrderResult;
+  const dust = state?.lastDustDisposition;
   const order = state?.executionMode === "live"
     ? state.lastLiveOrder
     : state?.executionMode === "testnet" ? state.lastTestnetOrder : null;
@@ -537,6 +609,18 @@ export function AutoTradingLedger({
           </section>
         ) : null}
 
+        {dust ? (
+          <section className="execution-auto-paper-contract">
+            <strong>尘埃仓位已释放</strong>
+            <p>
+              {formatNumber(dust.quantity)} BTC · 估值 {money(dust.estimatedNotional)} USDT
+            </p>
+            <small>
+              低于交易所最小交易金额，已退出本策略账本；未提交交易所委托。
+            </small>
+          </section>
+        ) : null}
+
         {history.length ? (
           <ol className="execution-auto-paper-trades">
             {history.map((event) => {
@@ -590,6 +674,45 @@ export function AutoTradingLedger({
   );
 }
 
+export function autoTradingDailyDrawdown(
+  state: Pick<
+    AutoTradingState,
+    "equity" | "dailyStartEquity" | "dailyReleasedDustNotional" | "dailyLossDrawdownPct"
+  > | undefined
+) {
+  if (state?.dailyLossDrawdownPct !== undefined) {
+    return Math.max(0, state.dailyLossDrawdownPct);
+  }
+  const adjustedStartEquity = Math.max(
+    0,
+    (state?.dailyStartEquity ?? 0) - (state?.dailyReleasedDustNotional ?? 0)
+  );
+  return adjustedStartEquity > 0
+    ? Math.max(0, (adjustedStartEquity - (state?.equity ?? adjustedStartEquity)) / adjustedStartEquity * 100)
+    : 0;
+}
+
+export function autoTradingProfitDrawdown(
+  state: Pick<
+    AutoTradingState,
+    "equity" | "dailyStartEquity" | "dailyPeakEquity" | "dailyReleasedDustNotional"
+    | "dailyProfitDrawdownPct"
+  > | undefined
+) {
+  if (state?.dailyProfitDrawdownPct !== undefined) {
+    return Math.max(0, state.dailyProfitDrawdownPct);
+  }
+  const releasedDust = state?.dailyReleasedDustNotional ?? 0;
+  const adjustedStartEquity = Math.max(0, (state?.dailyStartEquity ?? 0) - releasedDust);
+  const adjustedPeakEquity = Math.max(
+    adjustedStartEquity,
+    (state?.dailyPeakEquity ?? adjustedStartEquity) - releasedDust
+  );
+  return adjustedPeakEquity > adjustedStartEquity
+    ? Math.max(0, (adjustedPeakEquity - (state?.equity ?? adjustedPeakEquity)) / adjustedPeakEquity * 100)
+    : 0;
+}
+
 export function AutoTradingRiskOverview({
   state
 }: {
@@ -597,13 +720,13 @@ export function AutoTradingRiskOverview({
     AutoTradingState,
     "executionMode" | "equity" | "dailyStartEquity" | "dailyLossLimitPct" | "maxTradesPerHour"
     | "tradeTimestamps" | "position" | "avgCost" | "stopLossPct" | "takeProfitPct"
-    | "lastAccountCheck" | "liveAuthorizedUntil"
-  > | undefined;
+    | "lastAccountCheck" | "liveAuthorizedUntil" | "dailyReleasedDustNotional"
+    | "dailyPeakEquity" | "dailyLossDrawdownPct" | "dailyProfitDrawdownPct"
+    | "dailyProfitDrawdownLimitPct" | "dailyRiskHaltReason"
+  > & Partial<Pick<AutoTradingState, "liveConfirmed" | "liveSessionTtlHours">> | undefined;
 }) {
-  const dailyStartEquity = state?.dailyStartEquity ?? 0;
-  const drawdown = dailyStartEquity > 0
-    ? Math.max(0, (dailyStartEquity - (state?.equity ?? dailyStartEquity)) / dailyStartEquity * 100)
-    : 0;
+  const lossDrawdown = autoTradingDailyDrawdown(state);
+  const profitDrawdown = autoTradingProfitDrawdown(state);
   const usedTrades = state?.tradeTimestamps.length ?? 0;
   const remainingTrades = Math.max(0, (state?.maxTradesPerHour ?? 0) - usedTrades);
   const hasPosition = (state?.position ?? 0) > 0 && (state?.avgCost ?? 0) > 0;
@@ -622,10 +745,19 @@ export function AutoTradingRiskOverview({
         <span>后端每轮强制检查</span>
       </header>
       <dl>
-        <div>
-          <dt>当日回撤</dt>
-          <dd>{drawdown.toFixed(2)}% / {(state?.dailyLossLimitPct ?? 0).toFixed(2)}%</dd>
-          <small>达到上限后暂停新交易</small>
+        <div className={state?.dailyRiskHaltReason?.includes("亏损") ? "danger" : undefined}>
+          <dt>亏损回撤</dt>
+          <dd>{lossDrawdown.toFixed(2)}% / {(state?.dailyLossLimitPct ?? 0).toFixed(2)}%</dd>
+          <small>
+            {(state?.dailyReleasedDustNotional ?? 0) > 0
+              ? `已排除 ${money(state?.dailyReleasedDustNotional)} USDT 尾仓转出；上限仅暂停买入与加仓`
+              : "达到上限后仅暂停买入与加仓"}
+          </small>
+        </div>
+        <div className={state?.dailyRiskHaltReason?.includes("盈利") ? "danger" : undefined}>
+          <dt>盈利回撤</dt>
+          <dd>{profitDrawdown.toFixed(2)}% / {(state?.dailyProfitDrawdownLimitPct ?? 0).toFixed(2)}%</dd>
+          <small>仅在权益高于当日起点并形成峰值后计算</small>
         </div>
         <div>
           <dt>小时成交额度</dt>
@@ -653,8 +785,12 @@ export function AutoTradingRiskOverview({
         {state?.executionMode === "live" ? (
           <div>
             <dt>生产授权</dt>
-            <dd>{state.liveAuthorizedUntil ? `有效至 ${formatTime(state.liveAuthorizedUntil)}` : "未授权"}</dd>
-            <small>最长八小时，过期阻止新委托</small>
+            <dd>{liveAuthorizationLabel(state)}</dd>
+            <small>
+              {state.liveSessionTtlHours === 0
+                ? "手动暂停或急停前持续有效"
+                : `${state.liveSessionTtlHours ?? 8} 小时授权，过期阻止新委托`}
+            </small>
           </div>
         ) : null}
       </dl>
@@ -806,10 +942,26 @@ export function AutoTradingServerMonitoring({
 
 export function ExecutionAutoPaperTradingSection({
   baseUrl,
-  fetcher = defaultFetcher
+  chart,
+  fetcher = defaultFetcher,
+  instruments = [],
+  onOpenAudit,
+  onOpenExecution,
+  onSelectInstrument,
+  selectedSymbol,
+  variant = "section",
+  workflowGuide
 }: {
   baseUrl: string;
+  chart?: ReactNode;
   fetcher?: WorkspaceFetcher;
+  instruments?: DynamicTradingInstrument[];
+  onOpenAudit?: () => void;
+  onOpenExecution?: () => void;
+  onSelectInstrument?: (instrument: DynamicTradingInstrument) => void;
+  selectedSymbol?: string;
+  variant?: "section" | "workspace";
+  workflowGuide?: ReactNode;
 }) {
   const [snapshot, setSnapshot] = useState<AutoTradingSnapshot | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringSnapshot | null>(null);
@@ -820,6 +972,10 @@ export function ExecutionAutoPaperTradingSection({
   const [monitoringReadError, setMonitoringReadError] = useState<string | null>(null);
   const [testnetConfirmed, setTestnetConfirmed] = useState(false);
   const [liveConfirmed, setLiveConfirmed] = useState(false);
+  const [instrumentFilter, setInstrumentFilter] = useState<"all" | "crypto" | "other">("all");
+  const [controlTab, setControlTab] = useState<"runtime" | "risk" | "authorization">("runtime");
+  const [evaluating, setEvaluating] = useState(false);
+  const [evaluationFeedback, setEvaluationFeedback] = useState<string | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<SystemNotificationPermission>(
     () => typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
@@ -849,6 +1005,7 @@ export function ExecutionAutoPaperTradingSection({
         stopLossPct: next.state.stopLossPct,
         takeProfitPct: next.state.takeProfitPct,
         dailyLossLimitPct: next.state.dailyLossLimitPct,
+        dailyProfitDrawdownLimitPct: next.state.dailyProfitDrawdownLimitPct ?? 2,
         maxTradesPerHour: next.state.maxTradesPerHour,
         providerId: next.state.providerId,
         executionMode: next.state.executionMode,
@@ -879,16 +1036,27 @@ export function ExecutionAutoPaperTradingSection({
       return;
     }
     requestInFlight.current = true;
+    setControlTab("runtime");
+    setEvaluating(true);
+    setEvaluationFeedback(null);
     try {
-      setSnapshot(await request<AutoTradingSnapshot>(
+      const next = await request<AutoTradingSnapshot>(
         autoTradingActionPath(snapshot?.state),
         { method: "POST" }
-      ));
+      );
+      setSnapshot(next);
+      setEvaluationFeedback(
+        `${hasUnresolvedAutoOrder(snapshot?.state) ? "对账" : "评估"}完成 · `
+        + `${decisionLabel(next.state.lastDecision?.action)} · `
+        + formatTime(next.state.lastDecision?.evaluatedAt ?? new Date().toISOString())
+      );
       setError(null);
       setStatusReadError(null);
     } catch (evaluationError) {
+      setEvaluationFeedback(null);
       setError(autoTradingErrorMessage(evaluationError));
     } finally {
+      setEvaluating(false);
       requestInFlight.current = false;
     }
   }, [request, snapshot?.state]);
@@ -975,6 +1143,412 @@ export function ExecutionAutoPaperTradingSection({
     setDraft((current) => ({ ...current, [key]: Number(value) }));
   };
 
+  if (variant === "workspace") {
+    const runtime = autoTradingRuntimeHealth(state);
+    const lossDrawdown = autoTradingDailyDrawdown(state);
+    const profitDrawdown = autoTradingProfitDrawdown(state);
+    const usedTrades = state?.tradeTimestamps.length ?? 0;
+    const remainingTrades = Math.max(0, (state?.maxTradesPerHour ?? 0) - usedTrades);
+    const contract = state?.lastDecisionContract;
+    const orderIntent = contract?.orderIntent;
+    const shownInstruments: DynamicTradingInstrument[] = instruments.length
+      ? instruments
+      : [{
+          symbol: state?.symbol ?? "BTC/USDT",
+          name: "Bitcoin",
+          market: "crypto" as const,
+          price: null,
+          changePct: state?.windowChangePct ?? 0
+        }];
+    const filteredInstruments = shownInstruments.filter((instrument) =>
+      instrumentFilter === "all"
+      || (instrumentFilter === "crypto" ? instrument.market === "crypto" : instrument.market !== "crypto")
+    );
+    const activeInstrument = shownInstruments.find((instrument) => instrument.symbol === (selectedSymbol ?? state?.symbol))
+      ?? shownInstruments[0];
+    const viewingAutoSymbol = activeInstrument?.symbol === (state?.symbol ?? "BTC/USDT");
+    const lastCycleAt = state?.lastRunnerCycleAt ? Date.parse(state.lastRunnerCycleAt) : Number.NaN;
+    const secondsUntilNextCycle = Number.isFinite(lastCycleAt)
+      ? Math.max(0, Math.ceil((lastCycleAt + (state?.runnerIntervalSeconds ?? 35) * 1_000 - Date.now()) / 1_000))
+      : null;
+    const currentOrderState = state?.lastOrderResult?.state
+      ?? (state?.executionMode === "live" ? state.lastLiveOrder?.state : state?.lastTestnetOrder?.state);
+
+    return (
+      <section className="dynamic-trading-workspace" aria-labelledby="dynamic-trading-title">
+        {workflowGuide}
+        <header className="dynamic-trading-heading">
+          <div>
+            <span>自动交易控制台</span>
+            <h2 id="dynamic-trading-title">动态交易</h2>
+            <p>查看自动策略从行情快照、AI 判断、风险调整到委托结果的完整进程。</p>
+          </div>
+          <div className="dynamic-trading-heading-status">
+            <span className={`dynamic-trading-status ${runtime.tone}`}>
+              <Activity size={13} />
+              {runtime.title}
+            </span>
+            <span className={`dynamic-trading-status ${snapshot?.liveTradingAllowed ? "healthy" : "warning"}`}>
+              <ShieldCheck size={13} />
+              {snapshot?.liveTradingAllowed ? "生产会话有效" : "生产闸门保护中"}
+            </span>
+          </div>
+        </header>
+
+        <div className="dynamic-trading-terminal">
+          <aside className="dynamic-trading-watchlist">
+            <header>
+              <div>
+                <strong>策略标的</strong>
+                <span>{shownInstruments.length} 个已关注</span>
+              </div>
+              <small>自动 / 观察</small>
+            </header>
+            <div aria-label="策略标的筛选" className="dynamic-trading-watchlist-tabs" role="tablist">
+              <button aria-selected={instrumentFilter === "all"}
+                className={instrumentFilter === "all" ? "active" : ""}
+                onClick={() => setInstrumentFilter("all")} role="tab" type="button">全部</button>
+              <button aria-selected={instrumentFilter === "crypto"}
+                className={instrumentFilter === "crypto" ? "active" : ""}
+                onClick={() => setInstrumentFilter("crypto")} role="tab" type="button">加密货币</button>
+              <button aria-selected={instrumentFilter === "other"}
+                className={instrumentFilter === "other" ? "active" : ""}
+                onClick={() => setInstrumentFilter("other")} role="tab" type="button">其他市场</button>
+            </div>
+            <div className="dynamic-trading-watchlist-rows">
+              {filteredInstruments.map((instrument) => {
+                const active = instrument.symbol === activeInstrument?.symbol;
+                return (
+                  <button
+                    className={active ? "active" : ""}
+                    key={`${instrument.market}-${instrument.symbol}`}
+                    onClick={() => onSelectInstrument?.(instrument)}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{instrument.symbol}</strong>
+                      <small>{instrument.name} · {instrument.market}</small>
+                    </span>
+                    <span>
+                      <strong>{instrument.price?.toLocaleString("zh-CN", { maximumFractionDigits: 4 }) ?? "—"}</strong>
+                      <small className={instrument.changePct < 0 ? "negative" : "positive"}>
+                        {instrument.changePct >= 0 ? "+" : ""}{instrument.changePct.toFixed(2)}%
+                      </small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <footer>
+              <span>生产自动交易</span>
+              <strong>{state?.symbol ?? "BTC/USDT"} · {state?.timeframe ?? "1m"}</strong>
+              <small>其他标的仅用于行情观察，不会改变后端固定交易标的。</small>
+            </footer>
+          </aside>
+
+          <section className="dynamic-trading-chart-panel">
+            <header>
+              <div>
+                <span>
+                  {activeInstrument?.symbol ?? state?.symbol ?? "BTC/USDT"} · {viewingAutoSymbol ? "现货自动标的" : "行情观察"}
+                </span>
+                <strong>
+                  {activeInstrument?.price?.toLocaleString("zh-CN", { maximumFractionDigits: 4 }) ?? "—"}
+                  <em className={(state?.windowChangePct ?? 0) < 0 ? "negative" : "positive"}>
+                    {percent(state?.windowChangePct)}
+                  </em>
+                </strong>
+              </div>
+              <dl>
+                <div>
+                  <dt>时间周期</dt>
+                  <dd>{state?.timeframe ?? "1m"}</dd>
+                </div>
+                <div>
+                  <dt>最近判断</dt>
+                  <dd>{viewingAutoSymbol ? decisionLabel(state?.lastDecision?.action) : "仅观察"}</dd>
+                </div>
+                <div>
+                  <dt>置信度</dt>
+                  <dd>{viewingAutoSymbol && state?.lastDecision ? `${Math.round(state.lastDecision.confidence * 100)}%` : "—"}</dd>
+                </div>
+                <div>
+                  <dt>数据快照</dt>
+                  <dd title={viewingAutoSymbol ? contract?.marketSnapshot.snapshotHash : undefined}>
+                    {viewingAutoSymbol ? contract?.marketSnapshot.snapshotHash.slice(0, 10) ?? "等待评估" : "观察行情"}
+                  </dd>
+                </div>
+              </dl>
+            </header>
+            <div className="dynamic-trading-chart">
+              {chart ?? <span className="dynamic-trading-chart-empty">正在读取行情图表…</span>}
+            </div>
+            <footer>
+              <span><i className="positive" /> 买入 / 上涨</span>
+              <span><i className="negative" /> 卖出 / 下跌</span>
+              <span><i className="decision" /> 自动决策</span>
+              <small>
+                {viewingAutoSymbol
+                  ? state?.lastDecision?.reason ?? "等待首次自动评估后显示判断依据"
+                  : `此标的仅用于行情观察；自动交易目标仍为 ${state?.symbol ?? "BTC/USDT"}。`}
+              </small>
+            </footer>
+          </section>
+
+          <aside className="dynamic-trading-control-panel">
+            <header>
+              <div>
+                <strong>自动交易控制</strong>
+                <span>后台持续运行</span>
+              </div>
+              <span className={`dynamic-trading-runner-dot ${state?.enabled ? "active" : ""}`} />
+            </header>
+            <div aria-label="控制信息分区" className="dynamic-trading-control-sections" role="tablist">
+              <button aria-selected={controlTab === "runtime"}
+                className={controlTab === "runtime" ? "active" : ""}
+                onClick={() => setControlTab("runtime")} role="tab" type="button">运行状态</button>
+              <button aria-selected={controlTab === "risk"}
+                className={controlTab === "risk" ? "active" : ""}
+                onClick={() => setControlTab("risk")} role="tab" type="button">风险参数</button>
+              <button aria-selected={controlTab === "authorization"}
+                className={controlTab === "authorization" ? "active" : ""}
+                onClick={() => setControlTab("authorization")} role="tab" type="button">授权证据</button>
+            </div>
+            <div className="dynamic-trading-control-view" hidden={controlTab !== "runtime"}>
+              <div className={`dynamic-trading-cycle ${state?.enabled ? "active" : ""}`}>
+                <span>
+                  <strong><Activity size={12} />{state?.enabled ? "监控运行中" : "监控已暂停"}</strong>
+                  <small>{modeLabel}</small>
+                </span>
+                <span>
+                  <strong>{secondsUntilNextCycle === null ? "—" : `${secondsUntilNextCycle}s`}</strong>
+                  <small>至下次评估 / {state?.runnerIntervalSeconds ?? 35}s</small>
+                </span>
+              </div>
+              <section className="dynamic-trading-decision-card">
+                <span>最近自动判断</span>
+                <strong>{decisionLabel(state?.lastDecision?.action)}</strong>
+                <em>{state?.lastDecision ? `${Math.round(state.lastDecision.confidence * 100)}% 置信度` : "等待首次判断"}</em>
+                <p aria-live="polite">{evaluationFeedback
+                  ?? state?.lastDecision?.reason
+                  ?? "后台完成下一轮评估后，将在这里展示判断理由。"}</p>
+              </section>
+            </div>
+
+            <div className="dynamic-trading-control-view" hidden={controlTab !== "risk"}>
+              <div className="dynamic-trading-control-form">
+                <label>执行模式
+                  <select value={draft.executionMode} onChange={(event) => {
+                    const executionMode = event.target.value as Draft["executionMode"];
+                    setDraft((current) => ({ ...current, executionMode }));
+                    if (executionMode === "paper") setTestnetConfirmed(false);
+                    if (executionMode !== "live") setLiveConfirmed(false);
+                  }}>
+                    <option value="paper">纸面模拟</option>
+                    <option value="testnet">币安测试网</option>
+                    <option value="live">币安生产实盘</option>
+                  </select>
+                </label>
+                <label>AI 服务
+                  <select value={draft.providerId}
+                    onChange={(event) => setDraft((current) => ({ ...current, providerId: event.target.value }))}>
+                    <option value="auto">自动选择</option>
+                    {snapshot?.providers.map((provider) => (
+                      <option disabled={!provider.configured} key={provider.providerId} value={provider.providerId}>
+                        {providerLabel(provider.providerId)}{provider.configured ? "" : "（未配置）"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <NumberField label="触发涨跌幅 %（0.05–20）" min={0.05} max={20} step={0.05}
+                  value={draft.triggerPct} onChange={(value) => updateNumber("triggerPct", value)} />
+                <NumberField label="单笔上限 USDT" min={1} max={10} step={1}
+                  value={draft.orderNotional} onChange={(value) => updateNumber("orderNotional", value)} />
+                <NumberField label="止损 %" min={0.1} max={20} step={0.1}
+                  value={draft.stopLossPct} onChange={(value) => updateNumber("stopLossPct", value)} />
+                <NumberField label="止盈 %" min={0.1} max={50} step={0.1}
+                  value={draft.takeProfitPct} onChange={(value) => updateNumber("takeProfitPct", value)} />
+                <NumberField label="亏损回撤上限 %" min={0.1} max={20} step={0.1}
+                  value={draft.dailyLossLimitPct} onChange={(value) => updateNumber("dailyLossLimitPct", value)} />
+                <NumberField label="盈利回撤上限 %" min={0.1} max={20} step={0.1}
+                  value={draft.dailyProfitDrawdownLimitPct}
+                  onChange={(value) => updateNumber("dailyProfitDrawdownLimitPct", value)} />
+                <NumberField label="每小时最多成交" min={1} max={60} step={1}
+                  value={draft.maxTradesPerHour} onChange={(value) => updateNumber("maxTradesPerHour", value)} />
+              </div>
+              <dl className="dynamic-trading-control-kpis">
+                <div><dt>亏损回撤</dt><dd>{lossDrawdown.toFixed(2)}%</dd></div>
+                <div><dt>盈利回撤</dt><dd>{profitDrawdown.toFixed(2)}%</dd></div>
+                <div><dt>小时额度</dt><dd>{remainingTrades} / {state?.maxTradesPerHour ?? 0} 次</dd></div>
+                <div><dt>连续失败</dt><dd>{state?.consecutiveRunnerFailures ?? 0} 次</dd></div>
+              </dl>
+            </div>
+
+            <div className="dynamic-trading-control-view" hidden={controlTab !== "authorization"}>
+              <div className={`dynamic-trading-authorization ${snapshot?.liveTradingAllowed ? "active" : ""}`}>
+                <span>
+                  {liveMode
+                    ? snapshot?.liveTradingAllowed ? "生产授权有效" : "生产授权待确认"
+                    : "当前为非生产模式"}
+                </span>
+                <strong>
+                  {liveMode && snapshot?.liveTradingAllowed
+                    ? liveAuthorizationLabel(state)
+                    : liveMode ? "需实名操作人与真实资金确认" : modeLabel}
+                </strong>
+              </div>
+
+              {testnetMode ? (
+                <label className="dynamic-trading-confirmation">
+                  <input checked={testnetConfirmed}
+                    onChange={(event) => setTestnetConfirmed(event.target.checked)} type="checkbox" />
+                  确认向币安测试网提交委托
+                </label>
+              ) : null}
+              {liveMode && !snapshot?.liveTradingAllowed ? (
+                <div className="dynamic-trading-live-confirmation">
+                  <label>实名操作人
+                    <input value={draft.liveOperator}
+                      onChange={(event) => setDraft((current) => ({ ...current, liveOperator: event.target.value }))}
+                      placeholder="用于生产审计" />
+                  </label>
+                  <label className="dynamic-trading-confirmation">
+                    <input checked={liveConfirmed}
+                      onChange={(event) => setLiveConfirmed(event.target.checked)} type="checkbox" />
+                    确认使用真实资金，单笔新增风险不超过 10 USDT
+                  </label>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="dynamic-trading-control-actions">
+              <button disabled={
+                busy
+                || evaluating
+                || (testnetMode && !testnetConfirmed)
+                || (liveMode && (!liveConfirmed || !draft.liveOperator.trim()))
+              } onClick={() => void save(true)} type="button">
+                <Save size={14} />
+                {busy ? "保存中…" : state?.enabled ? "保存配置" : "保存并开启"}
+              </button>
+              <button aria-busy={evaluating}
+                disabled={(!state?.enabled && !hasUnresolvedOrder) || busy || evaluating}
+                onClick={() => void evaluate()} type="button">
+                {hasUnresolvedOrder ? <RefreshCw size={14} /> : <Play size={14} />}
+                {evaluating ? hasUnresolvedOrder ? "对账中…" : "评估中…"
+                  : hasUnresolvedOrder ? "立即对账" : "立即评估"}
+              </button>
+              {state?.enabled ? (
+                <button className="danger" disabled={busy || evaluating}
+                  onClick={() => void save(false)} type="button">
+                  <CirclePause size={14} />暂停
+                </button>
+              ) : null}
+            </div>
+            {error ? (
+              <p className="dynamic-trading-error" role="alert">{error}</p>
+            ) : null}
+          </aside>
+        </div>
+
+        {attention ? (
+          <div className={`dynamic-trading-alert ${attention.tone}`} role="alert">
+            <strong>{attention.title}</strong>
+            <span>{attention.detail}</span>
+          </div>
+        ) : null}
+
+        <div className="dynamic-trading-bottom-grid">
+          <section>
+            <header><WalletCards size={14} /><strong>当前持仓</strong></header>
+            <dl className="dynamic-trading-kpis">
+              <div><dt>管理中策略权益</dt><dd>{money(state?.equity)} USDT</dd></div>
+              <div><dt>持仓数量</dt><dd>{formatNumber(state?.position)} BTC</dd></div>
+              <div><dt>平均成本</dt><dd>{money(state?.avgCost)} USDT</dd></div>
+              <div><dt>已实现盈亏</dt><dd className={(state?.realizedPnl ?? 0) < 0 ? "negative" : "positive"}>
+                {signedMoney(state?.realizedPnl)} USDT
+              </dd></div>
+            </dl>
+          </section>
+
+          <section>
+            <header><Bot size={14} /><strong>委托意图</strong></header>
+            {orderIntent ? (
+              <div className="dynamic-trading-order-card">
+                <span>{orderIntent.symbol}</span>
+                <strong className={orderIntent.side}>{orderIntent.side === "buy" ? "买入" : "卖出"}</strong>
+                <p>{formatNumber(orderIntent.quantity)} BTC · {money(orderIntent.notionalValue)} USDT</p>
+                <small>{orderStateLabel(currentOrderState)}</small>
+              </div>
+            ) : (
+              <div className="dynamic-trading-empty">当前没有待提交的委托意图</div>
+            )}
+            <button className="dynamic-trading-link" onClick={onOpenExecution} type="button">
+              查看执行准入 <ChevronRight size={13} />
+            </button>
+          </section>
+
+          <section>
+            <header><Activity size={14} /><strong>最近成交</strong></header>
+            {snapshot?.history.length ? (
+              <ol className="dynamic-trading-trades">
+                {snapshot.history.slice(0, 4).map((event) => (
+                  <li key={event.eventId}>
+                    <span className={stringValue(event.metadata.side)}>
+                      {stringValue(event.metadata.side) === "buy" ? "买入" : "卖出"}
+                    </span>
+                    <strong>{formatNumber(numberValue(event.metadata.price))}</strong>
+                    <time dateTime={event.createdAt}>{formatTime(event.createdAt)}</time>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <div className="dynamic-trading-empty">尚无自动成交</div>
+            )}
+            <button className="dynamic-trading-link" onClick={onOpenAudit} type="button">
+              查看完整审计 <ChevronRight size={13} />
+            </button>
+          </section>
+
+          <section>
+            <header><ShieldCheck size={14} /><strong>执行链</strong></header>
+            <ol className="dynamic-trading-chain">
+              {[
+                ["市场快照", contract?.marketSnapshot.snapshotHash],
+                ["决策提案", contract?.decisionProposal.proposalId],
+                ["标准信号", contract?.signal.signalId],
+                ["风险调整", contract?.riskAdjustedTarget.riskAdjustedTargetId],
+                ["订单结果", state?.lastOrderResult?.orderResultId]
+              ].map(([label, value], index) => (
+                <li className={value ? "complete" : ""} key={label}>
+                  <span>{index + 1}</span>
+                  <div><strong>{label}</strong><small title={value}>{value ? value.slice(0, 12) : "等待"}</small></div>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section>
+            <header><ShieldCheck size={14} /><strong>账户与风险</strong></header>
+            <dl className="dynamic-trading-risk-list">
+              <div><dt>策略可用 USDT</dt><dd>{money(state?.cash)} USDT</dd></div>
+              <div><dt>亏损回撤</dt><dd>{lossDrawdown.toFixed(2)} / {(state?.dailyLossLimitPct ?? 0).toFixed(2)}%</dd></div>
+              <div><dt>盈利回撤</dt><dd>{profitDrawdown.toFixed(2)} / {(state?.dailyProfitDrawdownLimitPct ?? 0).toFixed(2)}%</dd></div>
+              <div><dt>小时额度</dt><dd>剩余 {remainingTrades} 次</dd></div>
+              <div><dt>账户覆盖</dt><dd>{state?.lastAccountCheck?.accountCovered === true ? "已通过" : "待检查"}</dd></div>
+              <div><dt>生产授权</dt><dd>{liveAuthorizationLabel(state)}</dd></div>
+            </dl>
+          </section>
+        </div>
+
+        <footer className="dynamic-trading-boundary">
+          <span>现货自动交易 · 不使用杠杆 · 不做空</span>
+          <span>关闭页面不影响后端运行；生产委托仍受权限、急停、风控和实名确认约束。</span>
+        </footer>
+      </section>
+    );
+  }
+
   return (
     <section className={`execution-auto-paper ${state?.enabled ? "active" : ""}`}
       aria-labelledby="execution-auto-paper-title">
@@ -1057,7 +1631,7 @@ export function ExecutionAutoPaperTradingSection({
             ))}
           </select>
         </label>
-        <NumberField label="触发涨跌幅 %" min={0.05} max={20} step={0.05}
+        <NumberField label="触发涨跌幅 %（0.05–20）" min={0.05} max={20} step={0.05}
           value={draft.triggerPct} onChange={(value) => updateNumber("triggerPct", value)} />
         <NumberField label="单笔上限 USDT" min={1} max={10} step={1}
           value={draft.orderNotional} onChange={(value) => updateNumber("orderNotional", value)} />
@@ -1065,8 +1639,11 @@ export function ExecutionAutoPaperTradingSection({
           value={draft.stopLossPct} onChange={(value) => updateNumber("stopLossPct", value)} />
         <NumberField label="止盈 %" min={0.1} max={50} step={0.1}
           value={draft.takeProfitPct} onChange={(value) => updateNumber("takeProfitPct", value)} />
-        <NumberField label="当日亏损上限 %" min={0.1} max={20} step={0.1}
+        <NumberField label="亏损回撤上限 %" min={0.1} max={20} step={0.1}
           value={draft.dailyLossLimitPct} onChange={(value) => updateNumber("dailyLossLimitPct", value)} />
+        <NumberField label="盈利回撤上限 %" min={0.1} max={20} step={0.1}
+          value={draft.dailyProfitDrawdownLimitPct}
+          onChange={(value) => updateNumber("dailyProfitDrawdownLimitPct", value)} />
         <NumberField label="每小时最多成交" min={1} max={60} step={1}
           value={draft.maxTradesPerHour} onChange={(value) => updateNumber("maxTradesPerHour", value)} />
       </div>
@@ -1091,7 +1668,7 @@ export function ExecutionAutoPaperTradingSection({
             我确认自动策略会使用真实资金提交 Binance Spot 生产现货委托，单笔新增风险不超过 10 USDT
           </label>
           <small>
-            还需先在下方 Stage 10 完成最新权限核验并恢复执行急停；授权会话最长 8 小时。
+            还需先在下方 Stage 10 完成最新权限核验并恢复执行急停；授权时长由设置页控制。
           </small>
         </div>
       ) : null}
@@ -1122,7 +1699,7 @@ export function ExecutionAutoPaperTradingSection({
         后端运行器不依赖当前页面，关闭页面后仍会继续；
         {hasUnresolvedOrder ? "“立即对账”只查询既有委托，不会创建新委托。" : "“立即评估”只用于人工触发一次检查。"}
         低置信度不会被“必须不亏”条件拦截；数据异常、账户亏损上限、成交频率和 Stage 6 急停仍会暂停。
-        测试网使用无价值资产；生产实盘会使用真实资金，并受 Stage 10 急停和 8 小时授权会话控制。
+        测试网使用无价值资产；生产实盘会使用真实资金，并受 Stage 10 急停和生产授权时长控制。
       </small>
     </section>
   );
@@ -1211,6 +1788,19 @@ function formatTime(value?: string | null) {
     });
 }
 
+function liveAuthorizationLabel(
+  state?: Partial<Pick<
+    AutoTradingState,
+    "liveConfirmed" | "liveSessionTtlHours" | "liveAuthorizedUntil"
+  >>,
+) {
+  if (state?.liveConfirmed !== true) return "未授权";
+  if (state.liveSessionTtlHours === 0) return "永久有效";
+  return state.liveAuthorizedUntil
+    ? `有效至 ${formatTime(state.liveAuthorizedUntil)}`
+    : "未授权";
+}
+
 function executionModeLabel(mode?: string) {
   return mode === "live" ? "生产实盘" : mode === "testnet" ? "测试网" : mode === "paper" ? "纸面模拟" : "未知模式";
 }
@@ -1260,6 +1850,9 @@ export function autoTradingErrorMessage(error: unknown) {
     stage10_production_execution_kill_switch_triggered: "Stage 10 急停已触发，请先完成权限核验并恢复执行控制",
     stage10_production_execution_control_evidence_stale: "Stage 10 权限证据已过期，请重新核验",
     stage10_production_trading_permissions_or_ip_invalid: "生产交易权限、危险权限或 IP 白名单不符合要求",
+    triggerPct_out_of_range: "触发涨跌幅必须在 0.05% 到 20% 之间",
+    dailyLossLimitPct_out_of_range: "亏损回撤上限必须在 0.1% 到 20% 之间",
+    dailyProfitDrawdownLimitPct_out_of_range: "盈利回撤上限必须在 0.1% 到 20% 之间",
     live_position_or_order_must_be_reconciled: "生产持仓或委托尚未完成，不能切换执行模式",
     testnet_position_or_order_must_be_reconciled: "测试网持仓或委托尚未完成，不能切换执行模式"
   };

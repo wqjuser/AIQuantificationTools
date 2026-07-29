@@ -127,6 +127,100 @@ describe("TerminalWorkspaceSurface", () => {
     }
   });
 
+  it("localizes the built-in strategy name and draft revision in the strategy header", () => {
+    const markup = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="strategy"
+      />,
+    );
+
+    expect(markup).toContain("/ 简单移动平均线趋势 / 银行板块");
+    expect(markup).toContain("修订版：草稿");
+    expect(markup).not.toContain("SMA Trend / Bank Sector");
+    expect(markup).not.toContain("修订版：draft");
+  });
+
+  it("localizes the backtest header and trade ledger without changing stored values", () => {
+    const backtestTrades = [
+      {
+        id: "trade-buy",
+        timestamp: "2026-07-29T08:00:00Z",
+        symbol: "BTC/USDT",
+        side: "BUY" as const,
+        status: "filled" as const,
+        price: "64000",
+        quantity: "0.001",
+        exposure: "64",
+        pnl: "-",
+        reason: "entry",
+        tone: "positive" as const,
+      },
+      {
+        id: "trade-sell",
+        timestamp: "2026-07-30T08:00:00Z",
+        symbol: "BTC/USDT",
+        side: "SELL" as const,
+        status: "filled" as const,
+        price: "64500",
+        quantity: "0.001",
+        exposure: "64.5",
+        pnl: "+0.5",
+        reason: "exit",
+        tone: "positive" as const,
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="backtest"
+        workspace={{ ...workspace, backtestTrades }}
+      />,
+    );
+
+    expect(markup).toContain("/ 简单移动平均线趋势 / 银行板块");
+    expect(markup).toContain(">买入<");
+    expect(markup).toContain(">卖出<");
+    expect(markup).toContain(">已成交<");
+    expect(markup).not.toContain(">BUY<");
+    expect(markup).not.toContain(">SELL<");
+    expect(markup).not.toContain(">filled<");
+  });
+
+  it("keeps the shared automated-trading guide visible above every workspace", () => {
+    const markup = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        workflowGuide={<section data-testid="automated-trading-guide">10 个页面 · 继续自动化交易流程</section>}
+      />,
+    );
+
+    expect(markup).toContain('data-testid="automated-trading-guide"');
+    expect(markup.indexOf('data-testid="automated-trading-guide"')).toBeLessThan(
+      markup.indexOf("design-page-header"),
+    );
+  });
+
+  it("shows the golden-path blocker even when the local page action is enabled", () => {
+    const markup = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        action={{
+          label: "刷新行情",
+          onClick: () => undefined,
+          workflowReason: "当前标的还没有 K 线缓存上下文，先刷新行情数据后再运行审计研究。",
+          workflowStatus: "needs_run",
+        }}
+        activeWorkAreaId="market"
+      />,
+    );
+
+    expect(markup).toContain("待处理");
+    expect(markup).toContain("当前标的还没有 K 线缓存上下文");
+    expect(markup).not.toContain("无主动作阻断");
+  });
+
   it("provides working audit filters for run, symbol, and event type", () => {
     const run = (
       runId: string,
@@ -581,11 +675,92 @@ describe("TerminalWorkspaceSurface", () => {
       <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="execution" />,
     );
     const settings = renderToStaticMarkup(
-      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="settings" />,
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="settings"
+        settings={{
+          schemaVersion: 1,
+          generatedAt: "2026-07-28T08:00:00Z",
+          dataSources: [],
+          marketDataAdapters: [],
+          cache: {} as PlatformSettingsStatus["cache"],
+          executionAdapters: [],
+          safety: {
+            liveTradingAllowed: false,
+            requiredGates: ["adapter-certified"],
+            executionMode: "testnet",
+            liveConfirmed: false,
+            liveAuthorizedUntil: null,
+            productionLive: {
+              enabled: true,
+              credentialsConfigured: true,
+              controlActive: false,
+              controlRecordedActive: true,
+              evidenceFresh: false,
+              blockingReason: "stage10_production_execution_control_evidence_stale",
+              triggered: false,
+            },
+          },
+        }}
+      />,
     );
-    expect(execution).toContain("生产实盘需 Stage 10 权限核验");
-    expect(execution).toContain("自动交易区二次确认");
-    expect(settings).toContain("实盘阻断边界");
+    expect(execution).toContain("生产实盘需权限核验、急停恢复和实名确认");
+    expect(execution).not.toContain("Stage 10");
+    expect(settings).toContain("测试网运行中");
+    expect(settings).toContain("生产权限证据已过期");
+    expect(settings).toContain("重新核验生产权限并恢复执行控制");
+    expect(settings).not.toContain("实盘阻断");
+  });
+
+  it("projects an active production session into the execution center in Chinese", () => {
+    const execution = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="execution"
+        settings={{
+          schemaVersion: 1,
+          generatedAt: "2026-07-30T02:10:00Z",
+          dataSources: [],
+          marketDataAdapters: [],
+          cache: {} as PlatformSettingsStatus["cache"],
+          executionAdapters: [],
+          safety: {
+            liveTradingAllowed: true,
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"],
+            executionMode: "live",
+            liveConfirmed: true,
+            liveAuthorizedUntil: "2026-07-30T10:15:29Z",
+            productionLive: {
+              enabled: true,
+              credentialsConfigured: true,
+              controlActive: false,
+              controlRecordedActive: true,
+              evidenceFresh: false,
+              blockingReason: "stage10_production_execution_control_evidence_stale",
+              triggered: false,
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(execution).toContain("生产实盘已授权");
+    expect(execution).toContain("生产路由可用");
+    expect(execution).toContain("适配器认证");
+    expect(execution).toContain("风控审批");
+    expect(execution).toContain("人工确认");
+    expect(execution).toContain("急停保护");
+    expect(execution).toContain("回放完全一致");
+    expect(execution).toContain("差异数量");
+    expect(execution).toContain("路由已执行");
+    expect(execution).not.toContain("生产实盘需权限核验");
+    expect(execution).not.toContain("Adapter certified");
+    expect(execution).not.toContain("Risk approved");
+    expect(execution).not.toContain("Human confirmed");
+    expect(execution).not.toContain("Kill Switch");
+    expect(execution).not.toContain("replayExact");
+    expect(execution).not.toContain("discrepancies");
+    expect(execution).not.toContain("routeExecuted");
   });
 
   it("renders the live data adapter capability matrix without treating configuration as health", () => {
@@ -688,9 +863,9 @@ describe("TerminalWorkspaceSurface", () => {
           adapterId: "ccxt-live",
           status: "in_progress",
           tone: "warning",
-          blockerLabel: "Sandbox probe",
+          blockerLabel: "沙箱探针",
           latestEvidenceTimestamp: "2026-07-28T08:10:00Z",
-          headline: "Evidence chain in progress",
+          headline: "证据收集中",
         } as never]}
         adapterHealthProbeRows={[{
           id: "probe-1",
@@ -702,22 +877,22 @@ describe("TerminalWorkspaceSurface", () => {
           status: "blocked",
           statusLabel: "阻断",
           tone: "risk",
-          credentialSummary: "API key configured · secret configured",
-          blockerSummary: "account sync pending",
-          boundary: "Paper only · order routing disabled",
+          credentialSummary: "API 密钥已配置 · 密钥已配置",
+          blockerSummary: "账户同步待复核",
+          boundary: "仅模拟盘 · 订单路由关闭",
         } as never]}
         adapterLedgerRows={[{
           id: "ledger-1",
           adapterId: "ccxt-live",
-          adapter: "ccxt",
+          adapter: "ccxt 交易所适配器",
           market: "crypto",
           route: "live",
           timestamp: "2026-07-28T08:11:00Z",
           state: "live_blocked",
-          label: "Live blocked",
+          label: "实盘阻断",
           actor: "execution-safety",
           source: "settings-status",
-          reason: "sandbox evidence incomplete",
+          reason: "沙箱证据不完整",
           nextStep: "完成沙盒探测并复核只读账户同步",
           gateSummary: "2/4 gates",
           liveTradingAllowed: false,
@@ -768,12 +943,101 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain("https://models.example/v1");
     expect(settings).toContain("需逐次授权证据摘要");
     expect(settings).toContain("端点健康待验证");
-    expect(settings).toContain("Sandbox probe");
-    expect(settings).toContain("API key configured · secret configured");
-    expect(settings).toContain("处理“account sync pending”后重新运行只读健康检查");
+    expect(settings).toContain("ccxt 交易所适配器");
+    expect(settings).toContain("沙箱探针");
+    expect(settings).toContain("API 密钥已配置 · 密钥已配置");
+    expect(settings).toContain("处理“账户同步待复核”后重新运行只读健康检查");
+    expect(settings).not.toContain("CCXT Binance");
+    expect(settings).not.toContain("Evidence chain in progress");
+    expect(settings).not.toContain("account sync pending");
     expect(settings).toContain("<details");
     expect(settings).not.toContain("https://api.openai.com/v1");
     expect(settings).not.toContain("~/AIQuantTools/data");
+  });
+
+  it("renders editable persisted settings without exposing stored secrets", () => {
+    const settings = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="settings"
+        isSavingSettingsConfiguration={false}
+        onLoadOpenAiCompatibleModels={async () => ({ models: [], source: "fallback" })}
+        onSaveSettingsConfiguration={() => undefined}
+        onTestMonitoringWebhook={() => undefined}
+        settings={{
+          schemaVersion: 1,
+          generatedAt: "2026-07-28T08:00:00Z",
+          dataSources: [],
+          marketDataAdapters: [],
+          cache: {} as PlatformSettingsStatus["cache"],
+          executionAdapters: [],
+          safety: { liveTradingAllowed: false, requiredGates: [] },
+          configuration: {
+            source: "database",
+            revision: 2,
+            updatedAt: "2026-07-28T08:00:00Z",
+            restartRequired: false,
+            values: {
+              ccxtDefaultExchange: "binance",
+              ccxtTimeout: 10000,
+              liveSessionTtlHours: 8,
+              openaiModel: "gpt-5-mini",
+              openaiCompatibleBaseUrl: "",
+              openaiCompatibleModel: "",
+              ollamaBaseUrl: "http://127.0.0.1:11434",
+              ollamaModel: "",
+              monitoringWebhookTimeoutSeconds: 5,
+              freeStockdbTimeoutSeconds: 3,
+            },
+            secrets: {
+              finnhubApiKey: { configured: false, masked: null },
+              openaiApiKey: { configured: true, masked: "sk-p••••••••1234" },
+              openaiCompatibleApiKey: { configured: false, masked: null },
+              ccxtSandboxApiKey: { configured: false, masked: null },
+              ccxtSandboxSecret: { configured: false, masked: null },
+              ccxtProductionReadonlyApiKey: { configured: false, masked: null },
+              ccxtProductionReadonlySecret: { configured: false, masked: null },
+              ccxtProductionTradingApiKey: { configured: false, masked: null },
+              ccxtProductionTradingSecret: { configured: false, masked: null },
+              monitoringWebhookUrl: { configured: true, masked: "http••••••••vate" },
+              freeStockdbUrl: { configured: false, masked: null },
+              httpsProxy: { configured: false, masked: null },
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(settings).toContain('aria-label="平台配置"');
+    expect(settings).toContain('name="openaiModel"');
+    expect(settings).toContain('name="liveSessionTtlHours"');
+    expect(settings).toContain("0 表示永久有效");
+    expect(settings).toContain('name="openaiCompatibleModel"');
+    expect(settings).toContain("从 Base URL 的 /models 自动获取模型");
+    expect(settings).toContain("刷新 OpenAI 兼容模型");
+    expect(settings).toContain('name="openaiApiKey"');
+    expect(settings).toContain('type="password"');
+    expect(settings).toContain("数据库配置 · 修订 2");
+    expect(settings).toContain("保存配置");
+    expect(settings).toContain("测试 Webhook");
+    expect(settings).toContain('placeholder="sk-p••••••••1234"');
+    expect(settings).toContain('placeholder="http••••••••vate"');
+    expect(settings).not.toContain('name="clearSecrets"');
+    expect(settings).not.toContain("清除");
+    expect(settings).not.toContain("database-openai-secret");
+  });
+
+  it("shows a loading state before the writable settings contract resolves", () => {
+    const settings = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="settings"
+        isLoadingSettingsConfiguration
+      />,
+    );
+
+    expect(settings).toContain("正在加载平台配置");
+    expect(settings).not.toContain("核心服务尚未提供可写配置契约");
   });
 
   it("keeps the existing execution prerequisite controls reachable in the redesigned surface", () => {

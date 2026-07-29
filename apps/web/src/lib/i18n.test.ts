@@ -288,10 +288,49 @@ describe("i18n", () => {
   test("translates known strategy and decision copy without changing unknown text", () => {
     const zh = createI18n("zh-CN");
 
-    expect(zh.strategyText("Close > SMA20 and relative strength improving")).toBe("收盘价 > SMA20，且相对强度改善");
+    expect(zh.strategyText("Close > SMA20 and relative strength improving")).toBe(
+      "收盘价高于 20 周期简单移动平均线，且相对强度改善"
+    );
     expect(zh.strategyText("Momentum confirmation plus AI committee agreement")).toBe("动量确认 + AI 委员会一致");
-    expect(zh.strategyText("RSI Reversal / Mean Reversion")).toBe("RSI 反转 / 均值回归");
+    expect(zh.strategyText("RSI Reversal / Mean Reversion")).toBe("相对强弱指标反转 / 均值回归");
     expect(zh.strategyText("Volume Breakout / Trend Follow")).toBe("放量突破 / 趋势跟随");
+    expect(zh.strategyText("SMA trend")).toBe("简单移动平均线趋势");
+    expect(zh.strategyText("BTC 1D SMA Trend RSI Filter Sim")).toBe(
+      "BTC 日线简单移动平均线趋势与相对强弱指标过滤模拟策略"
+    );
+    expect(zh.strategyText("SMA20 / RSI14 / VOL10")).toBe(
+      "20 周期简单移动平均线 / 14 周期相对强弱指标 / 10 周期成交量均线"
+    );
+    expect(zh.strategyText("Close > SMA5 AND Volume > VOL10")).toBe(
+      "收盘价高于 5 周期简单移动平均线，且成交量高于 10 周期成交量均线"
+    );
+    expect(zh.strategyText("4 watched research tasks")).toBe("4 个关注研究任务");
+    expect(
+      zh.strategyText("4 need data · 0 ready for pipeline · 0 need AI review · 0 paper candidates")
+    ).toBe("4 个需补数据 · 0 个可运行流水线 · 0 个需 AI 评审 · 0 个模拟候选");
+    expect(zh.strategyText("No watchlist cache refresh evidence for this timeframe.")).toBe(
+      "此周期没有自选缓存刷新证据。"
+    );
+    expect(zh.strategyText("000300 · 1d: No watchlist cache refresh evidence for this timeframe.")).toBe(
+      "000300 · 日线: 此周期没有自选缓存刷新证据。"
+    );
+    expect(zh.strategyText("BTC/USDT · 1d")).toBe("BTC/USDT · 日线");
+    expect(zh.strategyText("Bitcoin · crypto")).toBe("比特币 · 加密货币");
+    expect(zh.strategyText("The window contains a bar that is still forming.")).toBe(
+      "当前窗口包含一根仍在形成的 K 线。"
+    );
+    expect(zh.strategyText("BTC/USDT · 1d: The window contains a bar that is still forming.")).toBe(
+      "BTC/USDT · 日线: 当前窗口包含一根仍在形成的 K 线。"
+    );
+    expect(zh.strategyText("600000 · 1d: Expected bar intervals are missing.")).toBe(
+      "600000 · 日线: 预期的 K 线时间间隔存在缺失。"
+    );
+    expect(zh.strategyText("Crypto markets trade continuously; exchange maintenance windows are not modeled.")).toBe(
+      "加密货币市场连续交易；暂未建模交易所维护时段。"
+    );
+    expect(zh.strategyText("User custom strategy")).toBe("User custom strategy");
+    expect(zh.instrumentName("Bitcoin")).toBe("比特币");
+    expect(zh.instrumentName("Custom asset")).toBe("Custom asset");
     expect(zh.decisionAgent("AI Debate")).toBe("AI 辩论");
     expect(zh.decisionAgent("Strategy Drafter")).toBe("策略起草员");
     expect(
@@ -320,8 +359,8 @@ describe("i18n", () => {
         "Strategy revision rev-aapl-sma8 loaded for AAPL 5m. Archived audit run run-aapl-audited remains read-only; Run Pipeline to generate a fresh audited backtest."
       )
     ).toBe("策略版本 rev-aapl-sma8 已载入到 AAPL 5m。归档审计运行 run-aapl-audited 保持只读；运行流水线以生成新的可审计回测。");
-    expect(zh.strategyText("Close > SMA7")).toBe("收盘价 > SMA7");
-    expect(zh.strategyText("Close < SMA13")).toBe("收盘价 < SMA13");
+    expect(zh.strategyText("Close > SMA7")).toBe("收盘价高于 7 周期简单移动平均线");
+    expect(zh.strategyText("Close < SMA13")).toBe("收盘价低于 13 周期简单移动平均线");
     expect(zh.strategyText("35% max capital allocation")).toBe("最大资金占用 35%");
     expect(zh.strategyText("Stop -8%, take profit +16%, drawdown guard 12%, paper only")).toBe(
       "止损 -8%，止盈 +16%，回撤保护 12%，仅模拟盘"
