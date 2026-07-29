@@ -30,6 +30,7 @@ OPENAI_BASE_URL = "https://api.openai.com/v1"
 CONNECT_TIMEOUT_SECONDS = 5.0
 OVERALL_TIMEOUT_SECONDS = 30.0
 MAX_RESPONSE_BYTES = 65_536
+MAX_MODEL_LIST_RESPONSE_BYTES = 1_048_576
 MAX_STREAM_RESPONSE_BYTES = 524_288
 MAX_OUTPUT_TOKENS = 1_200
 MAX_ERROR_DETAIL_CHARS = 500
@@ -254,6 +255,72 @@ class AiReviewProvider(Protocol):
         reasoning_effort: str | None = None,
         response_validator: StructuredResponseValidator | None = None,
     ) -> Generator[str, None, ProviderAttempt]: ...
+
+
+def discover_openai_compatible_models(base_url: str, api_key: str = "") -> tuple[str, ...]:
+    safe_base_url = validated_provider_base_url(base_url.strip())
+    if safe_base_url is None:
+        raise ValueError("invalid_openai_compatible_base_url")
+    url = safe_base_url.rstrip("/") + "/models"
+    authorization = f"Bearer {api_key.strip()}" if api_key.strip() else None
+    sensitive_values = _request_sensitive_values(url, authorization)
+    headers = {"Accept": "application/json"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    request = Request(url, headers=headers, method="GET")
+    deadline = time.monotonic() + OVERALL_TIMEOUT_SECONDS
+    response: Any | None = None
+    try:
+        response = urlopen(request, timeout=min(CONNECT_TIMEOUT_SECONDS, OVERALL_TIMEOUT_SECONDS))
+    except HTTPError as error:
+        detail = _http_error_detail(error, deadline)
+        try:
+            error.close()
+        except (HTTPException, OSError):
+            pass
+        raise AiReviewProviderError(
+            "http_error",
+            detail,
+            sensitive_values=sensitive_values,
+        ) from None
+    except HTTPException:
+        raise AiReviewProviderError("http_error", "provider_request_failed") from None
+    except (TimeoutError, socket.timeout):
+        raise AiReviewProviderError("timeout", "provider_request_timed_out") from None
+    except URLError as error:
+        code = "timeout" if _is_timeout(error.reason) else "http_error"
+        raise AiReviewProviderError(code, f"provider_request_{code}") from None
+    except (OSError, ValueError):
+        raise AiReviewProviderError("http_error", "provider_request_failed") from None
+    try:
+        with response:
+            raw = _read_bounded(
+                response,
+                deadline,
+                max_bytes=MAX_MODEL_LIST_RESPONSE_BYTES,
+            )
+    except (TimeoutError, socket.timeout):
+        raise AiReviewProviderError("timeout", "provider_response_timed_out") from None
+    except (HTTPException, OSError):
+        raise AiReviewProviderError("http_error", "provider_response_failed") from None
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise AiReviewProviderError("invalid_json", "provider_response_invalid_json") from None
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("data"), list):
+        raise AiReviewProviderError("invalid_schema", "provider_models_missing")
+    models = tuple(
+        dict.fromkeys(
+            item["id"].strip()
+            for item in payload["data"]
+            if isinstance(item, Mapping)
+            and isinstance(item.get("id"), str)
+            and item["id"].strip()
+        )
+    )
+    if not models:
+        raise AiReviewProviderError("invalid_schema", "provider_models_missing")
+    return models
 
 
 def sanitize_base_url(value: str) -> str | None:
@@ -776,14 +843,18 @@ class AiReviewProviderRegistry:
         self._providers = dict(providers)
 
     @classmethod
-    def from_environment(cls) -> AiReviewProviderRegistry:
-        openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
-        openai_model = os.environ.get("OPENAI_MODEL", "").strip()
-        compatible_base = os.environ.get("OPENAI_COMPATIBLE_BASE_URL", "").strip()
-        compatible_key = os.environ.get("OPENAI_COMPATIBLE_API_KEY", "").strip()
-        compatible_model = os.environ.get("OPENAI_COMPATIBLE_MODEL", "").strip()
-        ollama_base = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
-        ollama_model = os.environ.get("OLLAMA_MODEL", "").strip()
+    def from_environment(
+        cls,
+        environment: Mapping[str, str] | None = None,
+    ) -> AiReviewProviderRegistry:
+        configured_environment = environment or os.environ
+        openai_key = configured_environment.get("OPENAI_API_KEY", "").strip()
+        openai_model = configured_environment.get("OPENAI_MODEL", "").strip()
+        compatible_base = configured_environment.get("OPENAI_COMPATIBLE_BASE_URL", "").strip()
+        compatible_key = configured_environment.get("OPENAI_COMPATIBLE_API_KEY", "").strip()
+        compatible_model = configured_environment.get("OPENAI_COMPATIBLE_MODEL", "").strip()
+        ollama_base = configured_environment.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+        ollama_model = configured_environment.get("OLLAMA_MODEL", "").strip()
 
         providers: dict[ProviderId, AiReviewProvider] = {}
         compatible_safe_base = validated_provider_base_url(compatible_base)
@@ -1179,7 +1250,12 @@ def _stream_json_object(data: str) -> Mapping[str, Any]:
     return parsed
 
 
-def _read_bounded(response: Any, deadline: float) -> bytes:
+def _read_bounded(
+    response: Any,
+    deadline: float,
+    *,
+    max_bytes: int = MAX_RESPONSE_BYTES,
+) -> bytes:
     chunks: list[bytes] = []
     total = 0
     while True:
@@ -1187,13 +1263,16 @@ def _read_bounded(response: Any, deadline: float) -> bytes:
         if remaining <= 0:
             raise AiReviewProviderError("timeout", "provider_response_timed_out")
         _set_response_socket_timeout(response, min(CONNECT_TIMEOUT_SECONDS, remaining))
-        chunk = response.read(min(8_192, MAX_RESPONSE_BYTES + 1 - total))
+        chunk = response.read(min(8_192, max_bytes + 1 - total))
         if not chunk:
             return b"".join(chunks)
         chunks.append(chunk)
         total += len(chunk)
-        if total > MAX_RESPONSE_BYTES:
-            raise AiReviewProviderError("response_too_large", "provider_response_exceeds_65536_bytes")
+        if total > max_bytes:
+            raise AiReviewProviderError(
+                "response_too_large",
+                f"provider_response_exceeds_{max_bytes}_bytes",
+            )
 
 
 def _set_response_socket_timeout(response: Any, timeout: float) -> None:

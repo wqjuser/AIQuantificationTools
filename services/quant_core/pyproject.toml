@@ -3,6 +3,7 @@ name = "quant-core"
 version = "0.1.0"
 description = "Local quant research core for AIQuantificationTools"
 requires-python = ">=3.12"
+dependencies = ["cryptography>=42"]
 
 [project.optional-dependencies]
 data = ["akshare", "yfinance", "ccxt"]

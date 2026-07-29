@@ -17,8 +17,8 @@ describe("StrategyConditionMenu", () => {
 
     expect(markup).toContain("<details");
     expect(markup).toContain("<summary");
-    expect(markup).toContain("收盘价 &gt; SMA");
-    expect(markup).toContain("RSI 低于");
+    expect(markup).toContain("收盘价高于简单移动平均线");
+    expect(markup).toContain("相对强弱指标低于");
     expect(markup).toContain('aria-pressed="true"');
     expect(markup).toContain('aria-pressed="false"');
     expect(markup).not.toContain("<select");

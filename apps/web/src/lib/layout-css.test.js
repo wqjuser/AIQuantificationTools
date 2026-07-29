@@ -139,11 +139,11 @@ describe("terminal layout css", () => {
     expect(cssBlock(".design-portfolio-positions")).toContain("min-height: 0;");
     expect(hasCssDeclaration(
       ".design-portfolio-approval .portfolio-order-approval-row strong",
-      "font-size: 12px;"
+      "font-size: calc(12px * var(--aiqt-text-scale, 1));"
     )).toBe(true);
     expect(hasCssDeclaration(
       ".design-portfolio-approval .portfolio-order-approval-actions button",
-      "font-size: 10px;"
+      "font-size: calc(10px * var(--aiqt-text-scale, 1));"
     )).toBe(true);
     expect(hasCssDeclaration(".design-portfolio-donut-value", "stroke-linecap: round;")).toBe(true);
   });
@@ -158,10 +158,22 @@ describe("terminal layout css", () => {
       'case "execution":',
       'case "operations":'
     );
+    const executionConsoleSource = sourceBetweenText(
+      appSource,
+      "const openAutomaticTradingConsole =",
+      "const terminalSurfaceAction:"
+    );
+    const executionFocusSource = sourceBetweenText(
+      appSource,
+      "function focusExecutionReadiness(",
+      "function p0EvidenceDrawerSummary("
+    );
 
     expect(executionActionSource).toContain('label: "查看执行前置步骤"');
-    expect(executionActionSource).toContain("document.querySelector<HTMLDetailsElement>(");
-    expect(executionActionSource).toContain('".surface-execution .execution-readiness-stack"');
+    expect(executionActionSource).toContain("onClick: openAutomaticTradingConsole");
+    expect(executionConsoleSource).toContain('selectProductWorkArea("dynamic-trading");');
+    expect(executionFocusSource).toContain("document.querySelector<HTMLDetailsElement>(");
+    expect(executionFocusSource).toContain('".surface-execution .execution-readiness-stack"');
     expect(executionActionSource).toContain("runStage9ProductionAdmissionCandidateAction");
     expect(hasCssDeclaration(
       ".terminal-design-surface.surface-execution",
@@ -175,6 +187,28 @@ describe("terminal layout css", () => {
       ".execution-stage5-shadow > button + button",
       "margin-left: 8px;"
     )).toBe(true);
+  });
+
+  test("keeps the dynamic trading side panels faithful and compact", () => {
+    expect(styles).toContain("grid-template-columns: 220px minmax(0, 1fr) 300px;");
+    expect(styles).toContain("grid-template-columns: 220px minmax(430px, 1fr) 300px;");
+    expect(executionAutoPaperTradingSource).toContain('className="dynamic-trading-control-sections"');
+    expect(executionAutoPaperTradingSource).toContain('className="dynamic-trading-control-kpis"');
+    expect(executionAutoPaperTradingSource).toContain("liveMode && !snapshot?.liveTradingAllowed");
+    expect(styles).toContain('.dynamic-trading-live-confirmation input:not([type="checkbox"])');
+    expect(cssBlock('.dynamic-trading-confirmation input[type="checkbox"]')).toContain("width: 14px;");
+    expect(cssBlock('.dynamic-trading-confirmation input[type="checkbox"]')).toContain("height: 14px;");
+  });
+
+  test("makes dynamic trading tabs interactive and surfaces evaluation progress", () => {
+    expect(executionAutoPaperTradingSource).toContain('const [instrumentFilter, setInstrumentFilter]');
+    expect(executionAutoPaperTradingSource).toContain('onClick={() => setInstrumentFilter("crypto")}');
+    expect(executionAutoPaperTradingSource).toContain('const [controlTab, setControlTab]');
+    expect(executionAutoPaperTradingSource).toContain('onClick={() => setControlTab("risk")}');
+    expect(executionAutoPaperTradingSource).toContain('aria-selected={controlTab === "runtime"}');
+    expect(executionAutoPaperTradingSource).toContain("setEvaluating(true);");
+    expect(executionAutoPaperTradingSource).toContain('evaluating ? hasUnresolvedOrder ? "对账中…" : "评估中…"');
+    expect(executionAutoPaperTradingSource).toContain("setEvaluationFeedback(");
   });
 
   test("does not reuse a completed AI review experiment after the experiment draft changes", () => {
@@ -203,7 +237,7 @@ describe("terminal layout css", () => {
     );
 
     expect(appSource).toContain('workAreaIds: ["operations", "audit", "settings"]');
-    expect(appSource).toContain('activeWorkAreaId === "operations" || !terminalSurfaceAction ? null : (');
+    expect(appSource).toContain('activeWorkAreaId === "operations" || activeWorkAreaId === "dynamic-trading" || !terminalSurfaceDisplayAction ? null : (');
     expect(appSource).toContain('className="terminal-design-surface terminal-operations-workspace"');
     expect(appSource).toContain('${activeWorkAreaId}-layout');
     expect(appSource).not.toContain('className="terminal-evidence-trigger"');
@@ -296,10 +330,10 @@ describe("terminal layout css", () => {
     ])).toBe(true);
   });
 
-  test("stretches the desktop market rankings to the status bar", () => {
+  test("reserves desktop market rows for the workflow guide, header, and content", () => {
     expect(hasCssBlockWith("  .terminal-design-surface.surface-market", [
       "display: grid;",
-      "grid-template-rows: auto minmax(0, 1fr);",
+      "grid-template-rows: auto auto minmax(0, 1fr);",
       "padding-bottom: 10px;",
     ])).toBe(true);
     expect(hasCssBlockWith("  .surface-market .design-market-grid", [
@@ -428,7 +462,7 @@ describe("terminal layout css", () => {
       "height: 76px;",
     ])).toBe(true);
     expect(hasCssBlockWith(".design-factor-score-ring strong", [
-      "font-size: 22px;",
+      "font-size: calc(22px * var(--aiqt-text-scale, 1));",
       "font-weight: 500;",
     ])).toBe(true);
     expect(styles).toContain("@media (min-width: 1101px) and (max-width: 1300px) {");
@@ -468,11 +502,16 @@ describe("terminal layout css", () => {
       "padding-bottom: 10px;",
     ])).toBe(true);
     expect(hasCssBlockWith("  .surface-backtest .design-page-header > div:first-child", [
-      "grid-template-columns: auto minmax(0, 1fr);",
+      "flex: 1 1 auto;",
+      "grid-template-columns: max-content max-content;",
+      "justify-content: start;",
     ])).toBe(true);
-    expect(hasCssBlockWith("  .surface-backtest .design-page-header .design-meta-line", [
+    expect(hasCssBlockWith(
+      "  .surface-backtest .design-page-header .design-meta-line,\n  .surface-backtest .design-page-header .design-page-state",
+      [
       "grid-column: 1 / -1;",
-    ])).toBe(true);
+      ],
+    )).toBe(true);
     expect(hasCssBlockWith("  .surface-backtest .design-backtest-grid", [
       "grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 340px);",
       "align-items: stretch;",
@@ -734,6 +773,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildProductWorkAreas(workspace)");
     expect(appSource).toContain("resolveInitialWorkAreaId");
     expect(appSource).toContain('new URLSearchParams(window.location.search).get("workspace")');
+    expect(appSource).toContain(
+      'resolveInitialWorkAreaId(resolveSavedResearchWorkspaceId(workspace, "market"))'
+    );
     expect(appSource).toContain("productWorkAreaGroups.map");
     expect(leftRailSource).toContain('className={`work-area-button');
     expect(leftRailSource).toContain("i18n.productWorkAreaLabel");
@@ -805,7 +847,7 @@ describe("terminal layout css", () => {
     const selectSuggestionSource = sourceBetween("const selectSearchSuggestion = useCallback(", "const refreshSearchSuggestionCache");
     const refreshSuggestionSource = sourceBetween("const refreshSearchSuggestionCache = useCallback(", "useEffect(() =>");
     const terminalSurfaceSource = sourceBetween(
-      'activeWorkAreaId === "operations" || !terminalSurfaceAction ? null : (',
+      'activeWorkAreaId === "operations" || activeWorkAreaId === "dynamic-trading" || !terminalSurfaceDisplayAction ? null : (',
       '{activeWorkAreaId === "operations" ? ('
     );
 
@@ -907,6 +949,14 @@ describe("terminal layout css", () => {
     expect(hasCssDeclaration(".work-area-copy small", "display: block;")).toBe(true);
   });
 
+  test("hands narrow workspace scrolling to the document", () => {
+    const mobileScrollGuard = styles.slice(styles.lastIndexOf("@media (max-width: 760px) {"));
+
+    expect(mobileScrollGuard).toContain("  .terminal-design-surface {");
+    expect(mobileScrollGuard).toContain("overflow: visible;");
+    expect(mobileScrollGuard).toContain("overscroll-behavior-y: auto;");
+  });
+
   test("follows streamed research note text to the final line", () => {
     expect(terminalWorkspaceSurfaceSource).toContain(
       "const researchNoteInputRef = useRef<HTMLTextAreaElement>(null);"
@@ -948,6 +998,7 @@ describe("terminal layout css", () => {
 
   test("uses the approved grouped terminal shell, branded logo, and persistent safety status", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
+    const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
     const footerSource = sourceBetween('<footer className="terminal-status-bar"', "</footer>");
 
     expect(appSource).toContain('src="/aiqt-logo.png"');
@@ -963,22 +1014,43 @@ describe("terminal layout css", () => {
     expect(cssBlock(".workspace-command-center-body")).toContain("display: grid;");
     expect(cssBlock(".operations-context-advanced")).toContain("order: 3;");
     expect(appSource).toContain('className="execution-readiness-stack"');
+    expect(appSource).toContain("data-live-authorized={executionLiveTradingAllowed}");
+    expect(appSource).toContain('"生产实盘已授权"');
     expect(cssBlock(".execution-readiness-stack")).toContain("grid-area: stage5;");
+    expect(cssBlock('.execution-readiness-stack[data-live-authorized="true"]')).toContain(
+      "border-color: color-mix(in srgb, var(--teal) 55%, var(--border));"
+    );
     expect(cssBlock(".execution-readiness-stack-body .execution-stage5-shadow")).toContain("grid-area: auto;");
     expect(hasCssDeclaration(".execution-stage5-shadow", "border: 1px solid var(--border-strong);")).toBe(true);
     expect(hasCssDeclaration(".execution-stage5-shadow", "background: var(--surface);")).toBe(true);
-    expect(hasCssDeclaration(".execution-stage5-shadow", "font-size: 10.5px;")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow", "font-size: calc(10.5px * var(--aiqt-text-scale, 1));")).toBe(true);
     expect(hasCssDeclaration(".execution-stage5-shadow header h2", "color: var(--text);")).toBe(true);
-    expect(hasCssDeclaration(".execution-stage5-shadow header h2", "font-size: 13.5px;")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow header h2", "font-size: calc(13.5px * var(--aiqt-text-scale, 1));")).toBe(true);
     expect(hasCssDeclaration(".execution-stage5-shadow header span", "color: var(--muted);")).toBe(true);
-    expect(hasCssDeclaration(".execution-stage5-shadow header p", "font-size: 10.5px;")).toBe(true);
-    expect(hasCssDeclaration(".execution-stage5-shadow > button", "font-size: 11.5px;")).toBe(true);
-    expect(hasCssDeclaration(".execution-stage5-shadow details", "font-size: 10px;")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow header p", "font-size: calc(10.5px * var(--aiqt-text-scale, 1));")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow > button", "font-size: calc(11.5px * var(--aiqt-text-scale, 1));")).toBe(true);
+    expect(hasCssDeclaration(".execution-stage5-shadow details", "font-size: calc(10px * var(--aiqt-text-scale, 1));")).toBe(true);
     expect(footerSource).toContain('className="terminal-live-block"');
-    expect(footerSource).toContain('i18n.locale === "zh-CN" ? "受控" : "Controlled"');
-    expect(footerSource).toContain('i18n.locale === "zh-CN" ? "需 Stage 10 与二次确认"');
+    expect(appSource).toContain("const footerExecutionSafety = settingsStatus.settings?.safety;");
+    expect(appSource).toContain("const currentExecutionModeLabel =");
+    expect(appSource).toContain("const currentExecutionVenueLabel =");
+    expect(appSource).toContain("const currentLiveBadgeLabel =");
+    expect(topbarSource).toContain("{currentExecutionModeLabel}");
+    expect(topbarSource).toContain("{currentLiveBadgeLabel}");
+    expect(topbarSource).not.toContain(">纸面 / 测试网<");
+    expect(topbarSource).not.toContain(">实盘需授权<");
+    expect(footerSource).toContain("{currentExecutionVenueLabel}");
+    expect(footerSource).toContain("{currentExecutionModeLabel}");
+    expect(footerSource).not.toContain("<span>Paper Broker</span>");
+    expect(footerSource).not.toContain("i18n.executionMode(workspace.execution)");
+    expect(appSource).toContain('"生产权限证据已过期"');
+    expect(footerSource).toContain("{footerExecutionStatus}");
+    expect(footerSource).toContain("{footerExecutionDetail}");
+    expect(footerSource).not.toContain('i18n.locale === "zh-CN" ? "需 Stage 10 与二次确认"');
     expect(cssBlock(".terminal-status-bar")).toContain("position: fixed;");
     expect(hasCssDeclaration(".terminal-live-block", "border: 1px solid #8b2d2d;")).toBe(true);
+    expect(hasCssDeclaration(".terminal-live-badge.authorized", "color: var(--teal);")).toBe(true);
+    expect(hasCssDeclaration(".terminal-status-item.live strong", "color: var(--teal);")).toBe(true);
     expect(cssBlock(".terminal-live-block > strong")).toContain("grid-area: status;");
     expect(cssBlock(".terminal-live-block > strong")).toContain("min-height: 12px;");
     expect(styles).toContain(".terminal-live-block > span,\n  .terminal-live-block small {\n    display: block;");
@@ -1017,6 +1089,26 @@ describe("terminal layout css", () => {
     expect(cssBlock(".theme-toggle-button")).toContain("color: #e8be62;");
     expect(styles).toContain('.terminal-shell[data-theme="light"] .theme-toggle-button');
     expect(indexHtmlSource).toContain('<link rel="icon" type="image/png" href="/aiqt-logo.png" />');
+  });
+
+  test("lets each device scale text without scaling the terminal layout", () => {
+    const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
+
+    expect(appSource).toContain('window.localStorage.getItem("aiqt.text-scale")');
+    expect(appSource).toContain('window.localStorage.setItem("aiqt.text-scale", String(textScale))');
+    expect(appSource).toContain('document.documentElement.style.setProperty("--aiqt-text-scale", String(textScale))');
+    expect(topbarSource).toContain('className="text-scale-control"');
+    expect(topbarSource).toContain('type="range"');
+    expect(topbarSource).toContain("onInput={(event) => setTextScale(Number(event.currentTarget.value))}");
+    expect(topbarSource).toContain("MIN_TEXT_SCALE");
+    expect(topbarSource).toContain("MAX_TEXT_SCALE");
+    expect(topbarSource).toContain('className="text-scale-presets"');
+    expect(topbarSource).toContain("[MIN_TEXT_SCALE, 1.25, MAX_TEXT_SCALE].map");
+    expect(styles).toContain("--aiqt-text-scale: 1;");
+    expect(styles).not.toMatch(/font-size:\s*\d+(?:\.\d+)?px;/);
+    expect(cssBlock(".text-scale-popover")).toContain("position: absolute;");
+    expect(cssBlock(".text-scale-popover")).toContain("z-index: 40;");
+    expect(cssBlock(".rail-section")).toContain("overflow-y: auto;");
   });
 
   test("keeps strategy workshop controls readable in the light theme", () => {
@@ -1098,7 +1190,10 @@ describe("terminal layout css", () => {
       "width: 100%;",
     ])).toBe(true);
     expect(terminalWorkspaceSurfaceSource).toContain(
-      'className={`design-check-row ${gate.passed ? "positive" : "warning"}`}'
+      "const passed = liveTradingAllowed || gate.passed;"
+    );
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      '"adapter-certified": "适配器认证"'
     );
     expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article', [
       "border-color: var(--border);",
@@ -1111,6 +1206,14 @@ describe("terminal layout css", () => {
       "border-color: #c9a34c;",
       "background: #fff6da;",
       "color: var(--amber);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-live-warning.positive", [
+      "border-color: color-mix(in srgb, var(--teal) 65%, var(--border));",
+      "color: var(--teal);",
+    ])).toBe(true);
+    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-live-warning.positive', [
+      "background: color-mix(in srgb, var(--teal) 10%, var(--surface));",
+      "color: var(--teal);",
     ])).toBe(true);
     expect(hasCssBlockWith(".design-data-provider-table", [
       "table-layout: fixed;",
@@ -1346,6 +1449,86 @@ describe("terminal layout css", () => {
     expect(cssBlock(".daily-ops-review-reference-actions")).toContain("display: flex;");
     expect(cssBlock(".daily-ops-queue")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
     expect(cssBlock(".daily-ops-item")).toContain("cursor: pointer;");
+  });
+
+  test("keeps one 10-page automated-trading route and primary action visible across workspaces", () => {
+    const guideOrderSource = sourceBetweenText(
+      appSource,
+      "const automatedTradingWorkAreaIds",
+      "];"
+    );
+    const expectedOrder = [
+      '"settings"',
+      '"market"',
+      '"research"',
+      '"strategy"',
+      '"backtest"',
+      '"ai-review"',
+      '"portfolio"',
+      '"execution"',
+      '"operations"',
+      '"audit"'
+    ];
+
+    expectedOrder.forEach((workAreaId, index) => {
+      expect(guideOrderSource.indexOf(workAreaId)).toBeGreaterThan(
+        index === 0 ? -1 : guideOrderSource.indexOf(expectedOrder[index - 1])
+      );
+    });
+    expect(appSource).toContain("function AutomatedTradingWorkflowGuide");
+    expect(appSource).toContain("const runAutomatedTradingWorkflow = useCallback(");
+    expect(appSource).toContain("setIsAutomatedTradingWorkflowRunning(true);");
+    expect(appSource).toContain("automatedTradingWorkflowContextRef.current");
+    expect(appSource).toContain("自动流程已暂停：标的或周期已改变。");
+    expect(appSource).toContain("automatedTradingWorkflowRequiresManualAction(action.id)");
+    expect(appSource).toContain('action.id === "run-pipeline" && isChartLoading');
+    expect(appSource).toContain("await runGoldenPathActionById(");
+    expect(appSource).toContain("return refreshSelectedMarketCache();");
+    expect(appSource).toContain("return refreshWatchlistMarketCache();");
+    expect(appSource).toContain('return runPipeline(automated ? "accepted" : undefined);');
+    expect(appSource).toContain('const contextRefreshed = refreshedItem?.status === "refreshed";');
+    expect(appSource).toContain("automatedTradingWorkflowActionErrorRef.current");
+    expect(appSource).toContain("const actionError = automatedTradingWorkflowActionErrorRef.current;");
+    expect(appSource).toContain('"开始自动交易流程"');
+    expect(appSource).toContain('"自动执行中…"');
+    expect(appSource).toContain(
+      'goldenPath?.nextAction?.id === "certify-live-adapter"'
+    );
+    expect(appSource).toContain("onAction={automatedTradingGuideAction}");
+    expect(appSource).toContain("setIsLiveTradingGateDialogOpen(true);");
+    expect(appSource).toContain("liveTradingGateDialogRef.current?.showModal();");
+    expect(appSource).toContain('aria-labelledby="live-trading-gate-dialog-title"');
+    expect(appSource).toContain('className="research-confirmation-dialog live-trading-gate-dialog"');
+    expect(appSource).toContain('input[placeholder="实名操作人"]');
+    expect(appSource).toContain("onAutoLiveAuthorized={completeLiveTradingGate}");
+    expect(appSource).toContain("setIsLiveTradingGateDialogOpen(false);");
+    expect(appSource).not.toContain(
+      'action.id === "certify-live-adapter" ? "execution"'
+    );
+    expect(appSource).toContain(
+      "isAutomatedTradingWorkflowRunning ||"
+    );
+    expect(appSource).toContain("await runP0AiReview(quantCoreBaseUrl");
+    expect(appSource).toContain("await refreshGoldenPathStatus();");
+    expect(appSource).toContain("currentWorkAreaId={activeWorkAreaId}");
+    expect(appSource).not.toContain("currentWorkAreaId={automatedTradingTargetWorkspaceId}");
+    expect(appSource).toContain("workflowGuide={automatedTradingGuide}");
+    expect(terminalWorkspaceSurfaceSource).toContain("{props.workflowGuide}");
+    expect(cssBlock(".automated-trading-guide-steps")).toContain(
+      "grid-template-columns: repeat(11, minmax(0, 1fr));"
+    );
+    expect(cssBlock(".automated-trading-guide-action button")).toContain(
+      "background: var(--teal-dim);"
+    );
+    expect(cssBlock(".automated-trading-guide-action button")).toContain(
+      "color: var(--teal);"
+    );
+    expect(cssBlock(".automated-trading-guide-action button")).not.toContain(
+      "background: #113b32;"
+    );
+    expect(appSource).toContain(
+      '"Expected bar intervals are missing.": "存在缺失的 K 线时间间隔"'
+    );
   });
 
   test("renders one P0 golden path journey before detailed readiness evidence", () => {
@@ -2214,10 +2397,10 @@ describe("terminal layout css", () => {
     expect(ensureRunSource).toContain("Run Pipeline to audit the current strategy draft");
     expect(actionHandlerSource).toContain("const executableActionId = normalizeP0CurrentGapActionId(actionId);");
     expect(actionHandlerSource).toContain('if (executableActionId === "submit-paper-order")');
-    expect(actionHandlerSource).toContain("void (async () => {");
-    expect(actionHandlerSource).toContain("const runWasAlreadyBound = researchRunContextBinding.canUseRun;");
-    expect(actionHandlerSource).toContain("const runIsBound = await ensureGoldenPathLatestRunBound();");
-    expect(actionHandlerSource).toContain("if (runWasAlreadyBound && runIsBound)");
+    expect(actionHandlerSource).toContain("const goldenPathRunId = latestRunIdOverride ?? goldenPath?.latestRunId;");
+    expect(actionHandlerSource).toContain("const runIsBound = await ensureGoldenPathLatestRunBound(goldenPathRunId);");
+    expect(actionHandlerSource).toContain("if (goldenPathRunId && runIsBound)");
+    expect(actionHandlerSource).toContain("await submitPaperExecution(goldenPathRunId)");
     expect(disabledHandlerSource).toContain("!strategyDraftRequiresReaudit");
     expect(disabledHandlerSource).toContain("strategyDraftRequiresReaudit ||");
     expect(disabledHandlerSource).toContain("const canRebindGoldenPathRun =");
@@ -2255,7 +2438,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("runGoldenPathActionById");
     expect(appSource).toContain("normalizeP0CurrentGapActionId(actionId)");
     expect(appSource).toContain('if (executableActionId === "refresh-watchlist-cache")');
-    expect(appSource).toContain("void refreshWatchlistMarketCache();");
+    expect(appSource).toContain("return refreshWatchlistMarketCache();");
     expect(appSource).toContain("isRefreshingWatchlistCache || Boolean(refreshingCacheKey)");
     expect(appSource).toContain("goldenPathActionPreflightHint");
     expect(overviewSource).toContain("goldenPathActionHint");
@@ -4765,7 +4948,7 @@ describe("terminal layout css", () => {
       runPipelineSource.indexOf("setResearchCompletionNotice({")
     );
     expect(runPipelineSource).toMatch(
-      /const strategyLibraryReadback = await refreshStrategyLibrary\(\);\s*if \(workflowRunIdRef\.current !== runId\) \{\s*return;\s*\}\s*setIsRunning\(false\);\s*if \(researchSummary\)/
+      /const strategyLibraryReadback = await refreshStrategyLibrary\(\);\s*if \(workflowRunIdRef\.current !== runId\) \{\s*return false;\s*\}\s*setIsRunning\(false\);\s*if \(researchSummary\)/
     );
     expect(runPipelineSource).toContain(
       'runHistoryReadback.source === "core" && strategyLibraryReadback.source === "core"'
@@ -4807,6 +4990,10 @@ describe("terminal layout css", () => {
       "const focusExecutionAdapterPaperExecutionAudit"
     );
     const confirmationDialogSource = sourceBetween("{isResearchPipelineConfirmationOpen ? (", "{isChartExpanded ? (");
+    const terminalSurfaceActionSource = sourceBetween(
+      "const terminalSurfaceAction:",
+      "const automatedTradingTargetWorkspaceId"
+    );
 
     expect(appSource).not.toContain("window.confirm");
     expect(runPipelineSource).toContain("setIsResearchPipelineConfirmationOpen(true)");
@@ -4837,6 +5024,8 @@ describe("terminal layout css", () => {
     expect(confirmationDialogSource).toContain("isResearchContextActionDisabled(");
     expect(confirmationDialogSource).not.toContain("<strong>{issue.value}</strong>");
     expect(appSource).toContain('void runPipeline("accepted")');
+    expect(confirmationDialogSource).toContain('"确认并运行研究"');
+    expect(terminalSurfaceActionSource).toContain('label: isRunning ? "研究运行中…" : "运行研究"');
     expect(appSource).toContain('id="terminal-symbol-input"');
     expect(appSource).toContain('id="operations-market-data"');
     expect(appSource).toContain('id="operations-market-calendar"');
@@ -6524,6 +6713,39 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('gateSummary.replace("gates", "个闸门")');
     expect(styles).toContain(".adapter-ledger-list");
     expect(styles).toContain(".adapter-ledger-row");
+  });
+
+  test("allocates width to all seven execution adapter columns", () => {
+    expect(hasCssDeclaration(".design-adapter-table th:nth-child(1)", "width: 17%;")).toBe(true);
+    expect(hasCssDeclaration(".design-adapter-table th:nth-child(2)", "width: 11%;")).toBe(true);
+    expect(hasCssDeclaration(".design-adapter-table th:nth-child(3)", "width: 19%;")).toBe(true);
+    expect(hasCssDeclaration(".design-adapter-table th:nth-child(4)", "width: 8%;")).toBe(true);
+    expect(hasCssDeclaration(".design-adapter-table th:nth-child(5)", "width: 13%;")).toBe(true);
+    expect(hasCssDeclaration(
+      ".design-adapter-table th:nth-child(6),\n.design-adapter-table th:nth-child(7)",
+      "width: 16%;",
+    )).toBe(true);
+  });
+
+  test("keeps execution adapter status badges inside their table column", () => {
+    expect(cssBlock(".design-adapter-table .design-status")).toContain("max-width: 100%;");
+    expect(cssBlock(".design-adapter-table .design-status")).toContain("white-space: normal;");
+  });
+
+  test("localizes the execution adapter projection used by redesigned settings", () => {
+    expect(appSource).toContain("terminalExecutionAdapterChainHealthRollups");
+    expect(appSource).toContain("terminalExecutionAdapterHealthProbeRows");
+    expect(appSource).toContain("terminalExecutionAdapterLedgerRows");
+    expect(appSource).toContain("terminalBrokerAdapterRows");
+    expect(appSource).toContain("adapterChainHealthStatusLabel(i18n, row.status)");
+    expect(appSource).toContain("adapterCertificationApplyBlockerSummary(i18n, row.blockerSummary)");
+    expect(appSource).toContain("adapterHealthProbeCredentialSummaryLabel(i18n, row.credentialSummary)");
+    expect(appSource).toContain("adapterLedgerNextStep(i18n, row)");
+    expect(appSource).toContain("brokerCertificationLabel(i18n, row.certification)");
+  });
+
+  test("top-aligns settings controls when one field includes helper text", () => {
+    expect(cssBlock(".design-settings-field")).toContain("align-content: start;");
   });
 
   test("renders ccxt sandbox health probe in settings", () => {

@@ -23,7 +23,6 @@ from quant_core.stage10_production_execution import Stage10ProductionExecutionSe
 
 CONTROL_EVENT_ID = "auto-paper-trading-current-state"
 FEE_RATE = 0.001
-LIVE_SESSION_TTL = timedelta(hours=8)
 _UNRESOLVED_ORDER_STATES = {
     "submission_pending",
     "open",
@@ -117,11 +116,32 @@ class AutoPaperTradingService:
         providers: AiReviewProviderRegistry,
         sandbox: Stage6SandboxExecutionService | None = None,
         production: Stage10ProductionExecutionService | None = None,
+        *,
+        live_session_ttl_hours: int = 8,
     ) -> None:
+        if not 0 <= live_session_ttl_hours <= 8_760:
+            raise ValueError("live_session_ttl_hours_out_of_range")
         self.store = store
         self.providers = providers
         self.sandbox = sandbox
         self.production = production
+        self.live_session_ttl_hours = live_session_ttl_hours
+
+    def reload_runtime(
+        self,
+        providers: AiReviewProviderRegistry,
+        sandbox: Stage6SandboxExecutionService | None,
+        production: Stage10ProductionExecutionService | None,
+        *,
+        live_session_ttl_hours: int,
+    ) -> None:
+        if not 0 <= live_session_ttl_hours <= 8_760:
+            raise ValueError("live_session_ttl_hours_out_of_range")
+        with _LOCK:
+            self.providers = providers
+            self.sandbox = sandbox
+            self.production = production
+            self.live_session_ttl_hours = live_session_ttl_hours
 
     def snapshot(self) -> dict[str, Any]:
         state = self._load()
@@ -200,6 +220,7 @@ class AutoPaperTradingService:
                 ("stopLossPct", 0.1, 20.0),
                 ("takeProfitPct", 0.1, 50.0),
                 ("dailyLossLimitPct", 0.1, 20.0),
+                ("dailyProfitDrawdownLimitPct", 0.1, 20.0),
                 ("maxTradesPerHour", 1.0, 60.0),
             ):
                 if key in payload:
@@ -239,6 +260,15 @@ class AutoPaperTradingService:
                 _reset_strategy_ledger(next_state)
             if "liveOperator" in payload:
                 next_state["liveOperator"] = str(payload["liveOperator"] or "").strip()
+            continuing_live_session = bool(
+                state["executionMode"] == "live"
+                and state["enabled"] is True
+                and state.get("liveConfirmed") is True
+                and _live_session_authorized(state)
+                and next_state["executionMode"] == "live"
+                and next_state["enabled"] is True
+                and next_state["liveOperator"] == state.get("liveOperator")
+            )
             if next_state["executionMode"] == "testnet":
                 if (
                     next_state["enabled"]
@@ -254,21 +284,25 @@ class AutoPaperTradingService:
             else:
                 next_state["testnetConfirmed"] = False
             if next_state["executionMode"] == "live" and next_state["enabled"]:
-                if payload.get("liveConfirmed") is not True:
-                    raise ValueError("live_confirmation_required")
                 if not next_state["liveOperator"]:
                     raise ValueError("live_operator_required")
-                if self.production is None:
-                    raise ValueError("live_route_unavailable")
-                control = self.production.authorize_auto_session()
-                next_state["liveConfirmed"] = True
-                next_state["liveControlId"] = control["controlId"]
-                next_state["liveIpRestricted"] = (
-                    control["autoRouteSafety"]["ipRestricted"] is True
-                )
-                next_state["liveAuthorizedUntil"] = (
-                    _now() + LIVE_SESSION_TTL
-                ).isoformat()
+                if not continuing_live_session:
+                    if payload.get("liveConfirmed") is not True:
+                        raise ValueError("live_confirmation_required")
+                    if self.production is None:
+                        raise ValueError("live_route_unavailable")
+                    control = self.production.authorize_auto_session()
+                    next_state["liveConfirmed"] = True
+                    next_state["liveControlId"] = control["controlId"]
+                    next_state["liveIpRestricted"] = (
+                        control["autoRouteSafety"]["ipRestricted"] is True
+                    )
+                    next_state["liveSessionTtlHours"] = self.live_session_ttl_hours
+                    next_state["liveAuthorizedUntil"] = (
+                        (_now() + timedelta(hours=self.live_session_ttl_hours)).isoformat()
+                        if self.live_session_ttl_hours
+                        else None
+                    )
             else:
                 next_state["liveConfirmed"] = False
                 next_state["liveControlId"] = None
@@ -276,7 +310,8 @@ class AutoPaperTradingService:
                 next_state["liveAuthorizedUntil"] = None
             next_state["updatedAt"] = _now().isoformat()
             self._save(next_state)
-            live = next_state["executionMode"] == "live" and next_state["enabled"]
+            result = self._payload(next_state)
+            live = bool(result["liveTradingAllowed"])
             self.store.record(_event(
                 event_id=f"auto-paper-trading-control-{uuid4().hex[:12]}",
                 event_type="auto_paper_trading_control_change",
@@ -294,7 +329,7 @@ class AutoPaperTradingService:
                     "liveBlockedBoundary": not live,
                 },
             ))
-            return self._payload(next_state)
+            return result
 
     def evaluate(self, bars: list[OHLCVBar], *, data_source: str) -> dict[str, Any]:
         with _LOCK:
@@ -314,7 +349,7 @@ class AutoPaperTradingService:
                     self.production is None
                     or state.get("liveConfirmed") is not True
                     or state.get("liveIpRestricted") is not True
-                    or _parse_time(state.get("liveAuthorizedUntil")) < _now()
+                    or not _live_session_authorized(state)
                 ):
                     return self._finish(
                         state,
@@ -356,6 +391,9 @@ class AutoPaperTradingService:
             if state["dailyDate"] != now.date().isoformat():
                 state["dailyDate"] = now.date().isoformat()
                 state["dailyStartEquity"] = equity
+                state["dailyPeakEquity"] = equity
+                state["dailyReleasedDustNotional"] = 0.0
+                state["dailyRiskHaltReason"] = None
             state["lastBarTimestamp"] = bar_timestamp
             state["lastPrice"] = price
             state["equity"] = round(equity, 8)
@@ -368,8 +406,35 @@ class AutoPaperTradingService:
                 if _parse_time(value) >= now - timedelta(hours=1)
             ]
             state["tradeTimestamps"] = recent_trades
-            daily_start = max(float(state["dailyStartEquity"]), 0.00000001)
-            drawdown_pct = (daily_start - equity) / daily_start * 100
+            released_dust = float(state["dailyReleasedDustNotional"])
+            daily_start = max(
+                float(state["dailyStartEquity"])
+                - released_dust,
+                0.00000001,
+            )
+            state["dailyPeakEquity"] = max(
+                float(state["dailyPeakEquity"]),
+                equity + released_dust,
+            )
+            daily_peak = max(
+                float(state["dailyPeakEquity"]) - released_dust,
+                daily_start,
+            )
+            loss_drawdown_pct = max(0.0, (daily_start - equity) / daily_start * 100)
+            profit_drawdown_pct = (
+                max(0.0, (daily_peak - equity) / daily_peak * 100)
+                if daily_peak > daily_start
+                else 0.0
+            )
+            state["dailyLossDrawdownPct"] = round(loss_drawdown_pct, 4)
+            state["dailyProfitDrawdownPct"] = round(profit_drawdown_pct, 4)
+            if not state.get("dailyRiskHaltReason"):
+                if loss_drawdown_pct >= float(state["dailyLossLimitPct"]):
+                    state["dailyRiskHaltReason"] = "已达到当日亏损回撤上限。"
+                elif profit_drawdown_pct >= float(
+                    state["dailyProfitDrawdownLimitPct"]
+                ):
+                    state["dailyRiskHaltReason"] = "已达到当日盈利回撤上限。"
 
             action = "hold"
             confidence = 1.0
@@ -421,11 +486,15 @@ class AutoPaperTradingService:
                 available_cash=cash,
                 order_notional=float(state["orderNotional"]),
                 fee_rate=FEE_RATE,
-                daily_drawdown_pct=drawdown_pct,
+                daily_drawdown_pct=loss_drawdown_pct,
                 daily_loss_limit_pct=float(state["dailyLossLimitPct"]),
                 recent_trade_count=len(recent_trades),
                 max_trades_per_hour=int(state["maxTradesPerHour"]),
                 generated_at=now,
+                profit_drawdown_pct=profit_drawdown_pct,
+                profit_drawdown_limit_pct=float(
+                    state["dailyProfitDrawdownLimitPct"]
+                ),
                 account_check=(
                     state.get("lastAccountCheck")
                     if state["executionMode"] in {"testnet", "live"}
@@ -448,8 +517,8 @@ class AutoPaperTradingService:
             portfolio_target = decision_contract["portfolioTarget"]
             increases_risk = float(portfolio_target["targetQuantity"]) > position + 1e-12
             risk_reason = (
-                "已达到当日策略亏损上限。"
-                if increases_risk and drawdown_pct >= float(state["dailyLossLimitPct"])
+                str(state["dailyRiskHaltReason"])
+                if increases_risk and state.get("dailyRiskHaltReason")
                 else "已达到每小时成交次数上限。"
                 if increases_risk and len(recent_trades) >= int(state["maxTradesPerHour"])
                 else None
@@ -496,6 +565,20 @@ class AutoPaperTradingService:
                     decision_contract["orderIntent"] = order_intent
                 except (LookupError, RuntimeError, ValueError) as error:
                     decision_contract["orderIntent"] = None
+                    if self._release_untradeable_dust(
+                        state,
+                        order_intent,
+                        adjusted_target,
+                        error,
+                    ):
+                        return self._finish(
+                            state,
+                            status="monitoring",
+                            detail=(
+                                "剩余仓位低于交易所最小交易金额，已从策略账本释放为账户尘埃资产，"
+                                "不会重复提交卖出委托。"
+                            ),
+                        )
                     return self._finish(
                         state,
                         status="order_rejected",
@@ -629,8 +712,14 @@ class AutoPaperTradingService:
                 self._record_trade(state, trade, recent_trades, now)
             return self._finish(
                 state,
-                status="traded" if trade else "monitoring",
-                detail=reason,
+                status=(
+                    "traded"
+                    if trade
+                    else "risk_paused"
+                    if state.get("dailyRiskHaltReason")
+                    else "monitoring"
+                ),
+                detail=str(state.get("dailyRiskHaltReason") or reason),
             )
 
     def _reconcile_pending_order(
@@ -1020,6 +1109,80 @@ class AutoPaperTradingService:
         )
         return self._finish(state, status="account_mismatch", detail=detail)
 
+    def _release_untradeable_dust(
+        self,
+        state: dict[str, Any],
+        order_intent: Mapping[str, Any],
+        adjusted_target: Mapping[str, Any],
+        error: Exception,
+    ) -> bool:
+        reason = str(error)
+        mode = str(state["executionMode"])
+        quantity = float(state["position"])
+        if (
+            mode not in {"testnet", "live"}
+            or order_intent.get("side") != "sell"
+            or float(adjusted_target.get("approvedTargetQuantity") or 0) > 1e-12
+            or quantity <= 0
+            or reason not in {
+                "stage6_sandbox_amount_below_minimum",
+                "stage6_sandbox_cost_below_minimum",
+            }
+        ):
+            return False
+        reference_price = float(order_intent.get("referencePrice") or 0)
+        released_at = _now().isoformat()
+        disposition = {
+            "executionMode": mode,
+            "symbol": str(state["symbol"]),
+            "quantity": quantity,
+            "referencePrice": reference_price,
+            "estimatedNotional": round(quantity * reference_price, 8),
+            "reason": reason,
+            "releasedAt": released_at,
+            "orderSubmitted": False,
+        }
+        signal_id = str(
+            (state.get("lastDecisionContract") or {}).get("signal", {}).get("signalId")
+            or order_intent.get("signalId")
+            or hashlib.sha256(
+                f"{mode}:{state['symbol']}:{quantity}:{reference_price}".encode()
+            ).hexdigest()
+        )
+        recorded, _ = self.store.record_if_absent(_event(
+            event_id=f"auto-{mode}-dust-{signal_id}",
+            event_type=f"auto_{mode}_dust_disposition",
+            summary=(
+                f"{'生产实盘' if mode == 'live' else '测试网'}自动交易尘埃仓位已释放"
+            ),
+            detail=(
+                f"{state['symbol']} {quantity} 低于交易所最小交易金额，"
+                "未提交委托。"
+            ),
+            metadata={
+                **disposition,
+                "paperOnly": False,
+                "sandboxOnly": mode == "testnet",
+                "liveTradingAllowed": False,
+                "orderSubmissionEnabled": False,
+                "routeExecuted": False,
+                "liveBlockedBoundary": True,
+            },
+        ))
+        state["lastDustDisposition"] = {
+            key: recorded.metadata[key]
+            for key in disposition
+        }
+        state["dailyReleasedDustNotional"] = round(
+            float(state["dailyReleasedDustNotional"])
+            + float(recorded.metadata["estimatedNotional"]),
+            8,
+        )
+        state["position"] = 0.0
+        state["avgCost"] = 0.0
+        state["equity"] = round(float(state["cash"]), 8)
+        return True
+
     @staticmethod
     def _remember_routed_order(
         state: dict[str, Any],
@@ -1129,8 +1292,11 @@ class AutoPaperTradingService:
         event = self.store.get(CONTROL_EVENT_ID)
         stored = event.metadata.get("state") if event else None
         state = {**_default_state(), **stored} if isinstance(stored, dict) else _default_state()
+        if isinstance(stored, dict) and "dailyPeakEquity" not in stored:
+            state["dailyPeakEquity"] = float(state["dailyStartEquity"])
         mode = str(state["executionMode"])
         if mode in {"testnet", "live"}:
+            state["dailyReleasedDustNotional"] = self._daily_released_dust_notional(state)
             intent_events = self.store.list_recent(
                 event_type=f"auto_{mode}_order_intent",
                 limit=1,
@@ -1165,6 +1331,36 @@ class AutoPaperTradingService:
                 state["status"] = "order_pending"
                 state["detail"] = "检测到尚未写回策略状态的委托，等待只读对账。"
         return state
+
+    def _daily_released_dust_notional(self, state: Mapping[str, Any]) -> float:
+        mode = str(state["executionMode"])
+        daily_date = str(state["dailyDate"])
+        total = 0.0
+        offset = 0
+        while True:
+            events = self.store.list_recent(
+                event_type=f"auto_{mode}_dust_disposition",
+                limit=50,
+                offset=offset,
+            )
+            if not events:
+                break
+            reached_older_day = False
+            for event in events:
+                event_date = event.created_at.astimezone(timezone.utc).date().isoformat()
+                if event_date < daily_date:
+                    reached_older_day = True
+                    break
+                if (
+                    event_date == daily_date
+                    and event.metadata.get("executionMode") == mode
+                    and event.metadata.get("symbol") == state["symbol"]
+                ):
+                    total += max(0.0, float(event.metadata.get("estimatedNotional") or 0))
+            if reached_older_day or len(events) < 50:
+                break
+            offset += len(events)
+        return round(total, 8)
 
     def _save(self, state: dict[str, Any]) -> None:
         self.store.record(_event(
@@ -1223,8 +1419,11 @@ class AutoPaperTradingService:
             and state["enabled"]
             and state.get("liveConfirmed") is True
             and state.get("liveIpRestricted") is True
-            and _parse_time(state.get("liveAuthorizedUntil")) >= _now()
-            and live_status["controlActive"]
+            and _live_session_authorized(state)
+            and live_status.get(
+                "controlRecordedActive",
+                live_status["controlActive"],
+            )
             and live_status["controlId"] == state.get("liveControlId")
         )
         state_payload = {**state, "runnerHealth": _runner_health(state)}
@@ -1308,6 +1507,11 @@ def _reset_strategy_ledger(state: dict[str, Any]) -> None:
             "realizedPnl": 0.0,
             "dailyDate": now.date().isoformat(),
             "dailyStartEquity": float(state.get("initialCash") or 100.0),
+            "dailyPeakEquity": float(state.get("initialCash") or 100.0),
+            "dailyReleasedDustNotional": 0.0,
+            "dailyLossDrawdownPct": 0.0,
+            "dailyProfitDrawdownPct": 0.0,
+            "dailyRiskHaltReason": None,
             "tradeCount": 0,
             "tradeTimestamps": [],
             "lastBarTimestamp": None,
@@ -1322,6 +1526,7 @@ def _reset_strategy_ledger(state: dict[str, Any]) -> None:
             "lastAccountCheck": None,
             "lastDecisionContract": None,
             "lastOrderResult": None,
+            "lastDustDisposition": None,
         }
     )
 
@@ -1338,6 +1543,7 @@ def _default_state() -> dict[str, Any]:
         "liveOperator": "",
         "liveControlId": None,
         "liveIpRestricted": False,
+        "liveSessionTtlHours": 8,
         "liveAuthorizedUntil": None,
         "runnerState": "stopped",
         "runnerIntervalSeconds": 35,
@@ -1355,6 +1561,7 @@ def _default_state() -> dict[str, Any]:
         "stopLossPct": 1.0,
         "takeProfitPct": 2.0,
         "dailyLossLimitPct": 2.0,
+        "dailyProfitDrawdownLimitPct": 2.0,
         "maxTradesPerHour": 3,
         "providerId": "auto",
         "initialCash": 100.0,
@@ -1365,6 +1572,11 @@ def _default_state() -> dict[str, Any]:
         "realizedPnl": 0.0,
         "dailyDate": now.date().isoformat(),
         "dailyStartEquity": 100.0,
+        "dailyPeakEquity": 100.0,
+        "dailyReleasedDustNotional": 0.0,
+        "dailyLossDrawdownPct": 0.0,
+        "dailyProfitDrawdownPct": 0.0,
+        "dailyRiskHaltReason": None,
         "tradeCount": 0,
         "tradeTimestamps": [],
         "lastBarTimestamp": None,
@@ -1381,6 +1593,7 @@ def _default_state() -> dict[str, Any]:
         "lastTestnetOrderIntentId": None,
         "lastLiveOrderIntentId": None,
         "lastAccountCheck": None,
+        "lastDustDisposition": None,
         "updatedAt": now.isoformat(),
     }
 
@@ -1556,6 +1769,13 @@ def _parse_time(value: Any) -> datetime:
     except ValueError:
         return datetime.min.replace(tzinfo=timezone.utc)
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _live_session_authorized(state: Mapping[str, Any]) -> bool:
+    return (
+        state.get("liveSessionTtlHours") == 0
+        or _parse_time(state.get("liveAuthorizedUntil")) >= _now()
+    )
 
 
 def _now() -> datetime:

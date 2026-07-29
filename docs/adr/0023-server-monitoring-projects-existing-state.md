@@ -17,12 +17,17 @@ M2 不新增交易状态机，也不把浏览器提醒搬成另一套自动交�
 
 首个外部渠道是可选 Webhook，使用 Python 标准库和 `AIQT_MONITORING_WEBHOOK_URL`。Webhook URL 不进入 API、审计或页面；消息只包含脱敏事件身份、生命周期、严重度、说明和观察时间。投递失败被记录但不抛回自动交易运行器，也不改变交易、风险、授权、对账或审计状态。已有浏览器 Notification API 继续作为页面打开时的本地渠道。
 
+平台设置保存 Webhook URL 或超时后，使用同一 `build_webhook_notifier` 重新构造通知器，并在监控锁内原子替换运行中 `MonitoringService` 的通知器与脱敏渠道状态。该变更不重启 API，不重建监控线程，也不热切换 Testnet 或执行器。`POST /api/operations/monitoring/test-notifications` 只消费已保存配置，发送固定脱敏测试消息并写入既有通知审计；未配置或配置无效时返回冲突，投递失败返回安全错误，任何响应都不包含 URL。
+
+主 Compose 的 API 与 Web 使用 Docker 原生 `restart: unless-stopped`。进程异常退出或 Docker 守护进程恢复时由 Docker 重新启动原服务；操作者显式停止后不会被强制拉起。健康检查仍只负责健康标记，不承担重启语义；容器恢复也不会触发监控任务之外的交易命令、权限恢复或模式切换。
+
 只读 API `GET /api/operations/monitoring` 返回任务、受观察任务、当前事件、投递记录和渠道状态，并明确 `tradingActionsAvailable=false`。执行中心先显示状态、阻断原因和下一步，任务 ID、轮次及投递错误放在渐进披露区域；没有重启、评估、对账或委托按钮。
 
 ## 安全边界
 
 - 服务端监控没有行情、AI、对账、重启、模式切换或订单方法。
 - Webhook 响应不会被解释为命令。
+- Webhook 测试消息固定标记为 `lifecycle=test`，不创建真实事故，也不提供交易动作。
 - 未配置或配置无效时 fail closed，只保留持久事件和浏览器提醒。
 - 普通 CI 与 Docker smoke 不配置交易凭据，不产生 Testnet 或 Production 外部写入。
 - 当前 Testnet 后台监控不因 M2 开发或验收被暂停、重启或切换模式。

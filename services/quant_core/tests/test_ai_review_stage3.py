@@ -31,6 +31,7 @@ from quant_core.ai_review_providers import (
     OpenAiResponsesProvider,
     ProviderAttempt,
     ProviderStatus,
+    discover_openai_compatible_models,
     sanitize_base_url,
     sanitize_error_detail,
 )
@@ -135,6 +136,16 @@ class _FakeProviderServer:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
+            def do_GET(self) -> None:
+                fixture.requests.append(
+                    {
+                        "method": self.command,
+                        "path": self.path,
+                        "headers": {key.casefold(): value for key, value in self.headers.items()},
+                    }
+                )
+                self._send_fixture()
+
             def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
                 raw_body = self.rfile.read(length)
@@ -146,6 +157,9 @@ class _FakeProviderServer:
                         "body": json.loads(raw_body.decode("utf-8")),
                     }
                 )
+                self._send_fixture()
+
+            def _send_fixture(self) -> None:
                 if fixture.delay_seconds:
                     time.sleep(fixture.delay_seconds)
                 self.send_response(fixture.status)
@@ -4886,6 +4900,33 @@ class AiReviewProviderContractTests(unittest.TestCase):
             "https://example.test/Prefix",
         )
         self.assertIsNone(validated_provider_base_url("ftp://example.test/Prefix"))
+
+    def test_compatible_model_discovery_uses_models_endpoint_and_deduplicates_ids(self) -> None:
+        server = self._server(
+            {
+                "object": "list",
+                "data": [
+                    {"id": "model-b"},
+                    {"id": "model-a"},
+                    {"id": "model-b"},
+                    {"object": "model"},
+                ],
+            }
+        )
+
+        models = discover_openai_compatible_models(
+            f"{server.base_url}/v1",
+            "fake-compatible-key",
+        )
+
+        self.assertEqual(models, ("model-b", "model-a"))
+        self.assertEqual(len(server.requests), 1)
+        self.assertEqual(server.requests[0]["method"], "GET")
+        self.assertEqual(server.requests[0]["path"], "/v1/models")
+        self.assertEqual(
+            server.requests[0]["headers"]["authorization"],
+            "Bearer fake-compatible-key",
+        )
 
     def test_configuration_status_and_base_url_sanitization_never_expose_keys(self) -> None:
         environment = {

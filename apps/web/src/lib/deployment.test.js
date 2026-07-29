@@ -313,6 +313,13 @@ describe("docker deployment contract", () => {
     expect(compose).toContain("quant-data:");
   });
 
+  test("restarts API and Web containers after host or process recovery", () => {
+    const compose = readRepoFile("compose.yaml");
+
+    expect(composeService(compose, "api")).toContain("restart: unless-stopped");
+    expect(composeService(compose, "web")).toContain("restart: unless-stopped");
+  });
+
   test("passes Stage 3 provider environment to the API service only", () => {
     const compose = readRepoFile("compose.yaml");
     const apiService = composeService(compose, "api");

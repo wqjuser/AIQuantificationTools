@@ -9,12 +9,17 @@ import json
 import tempfile
 from threading import Thread
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-from quant_core.adapter_error_ledger import MarketDataAdapterErrorStore
+from quant_core.adapter_error_ledger import (
+    MarketDataAdapterErrorStore,
+    create_market_data_adapter_error_event,
+    market_data_adapter_error_event_to_payload,
+)
 from quant_core.adapters import FreeStockDbMarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
-from quant_core.api import QuantApiHandler
+from quant_core.api import QuantApiHandler, _adapter_error_message, _adapter_error_target
 from quant_core.cache import MarketDataCache
 from quant_core.canonical import canonical_data_hash, canonical_sha256, normalize_snapshot_bars
 from quant_core.data_foundation import (
@@ -25,6 +30,7 @@ from quant_core.data_foundation import (
 from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
 from quant_core.research import run_terminal_research
 from quant_core.runs import ResearchRunStore
+from quant_core.settings import build_settings_status
 from quant_core.strategy_library import StrategyLibraryStore
 
 
@@ -286,6 +292,45 @@ class M3DataFoundationTests(unittest.TestCase):
         self.assertEqual(len(bars), 1)
         self.assertEqual(quality.adjustment_mode, "none")
 
+    def test_adapter_error_ledger_uses_actual_provider_and_ignores_non_blocking_warnings(self):
+        warning_quality = DataQuality(
+            source="tencent",
+            is_complete=True,
+            warnings=["Expected bar intervals are missing."],
+            rows=20,
+        )
+        blocked_quality = replace(warning_quality, source="akshare", is_complete=False)
+
+        self.assertIsNone(_adapter_error_target("ashare", source=warning_quality.source))
+        self.assertIsNone(_adapter_error_message(quality=warning_quality, error=None))
+        self.assertEqual(_adapter_error_target("ashare", source=blocked_quality.source), ("akshare-ohlcv", "akshare"))
+        self.assertEqual(
+            _adapter_error_message(quality=blocked_quality, error=None),
+            "Expected bar intervals are missing.",
+        )
+        legacy_event = create_market_data_adapter_error_event(
+            adapter_id="akshare-ohlcv",
+            provider="akshare",
+            market="ashare",
+            symbol="600000",
+            timeframe="1d",
+            source="tencent",
+            context="market-klines",
+            message="Expected bar intervals are missing.",
+            created_at=datetime(2026, 7, 28, 14, 0, tzinfo=timezone.utc),
+        )
+        settings = build_settings_status(
+            cache_path="unused.sqlite",
+            adapter_dependency_statuses={"akshare": True, "yfinance": True, "ccxt": True},
+            adapter_error_events=[market_data_adapter_error_event_to_payload(legacy_event)],
+            generated_at=datetime(2026, 7, 28, 14, 1, tzinfo=timezone.utc),
+        )
+        akshare = next(
+            item for item in settings["marketDataAdapters"]
+            if item["id"] == "akshare-ohlcv"
+        )
+        self.assertEqual(akshare["externalTelemetry"]["providerHealth"]["status"], "ok")
+
     def test_research_blocks_invalid_primary_and_material_source_difference_before_ai(self):
         invalid = daily_bars()
         invalid[-1] = replace(invalid[-1], high=invalid[-1].close - 1)
@@ -374,7 +419,46 @@ class M3DataFoundationTests(unittest.TestCase):
         } <= item.keys() for item in adapters))
         self.assertTrue(free_stockdb["readOnly"])
         self.assertEqual(free_stockdb["capabilities"], ["daily_ohlcv_comparison"])
-        self.assertNotIn("127.0.0.1", json.dumps(payload))
+        self.assertNotIn("http://127.0.0.1:7899/private", json.dumps(payload))
+
+    def test_settings_api_can_probe_free_stockdb_with_a_bounded_read_only_get(self):
+        with tempfile.TemporaryDirectory() as directory:
+            class Handler(QuantApiHandler):
+                cache = MarketDataCache(Path(directory) / "market.sqlite")
+                adapter_error_store = MarketDataAdapterErrorStore(Path(directory) / "errors.sqlite")
+                data_foundation_environ = {
+                    "AIQT_FREE_STOCKDB_URL": "http://127.0.0.1:7899/private",
+                }
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            try:
+                with patch(
+                    "quant_core.api.build_free_stockdb_adapter",
+                    return_value=FixedAdapter(daily_bars(1), source="free-stockdb"),
+                ):
+                    connection.request("GET", "/api/settings/status?probe=free-stockdb")
+                    response = connection.getresponse()
+                    payload = json.loads(response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+        free_stockdb = next(
+            item for item in payload["settings"]["marketDataAdapters"]
+            if item["id"] == "free-stockdb-ohlcv"
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(free_stockdb["status"], "ready")
+        self.assertEqual(free_stockdb["externalTelemetry"]["providerHealth"]["status"], "ok")
+        self.assertEqual(
+            free_stockdb["externalTelemetry"]["providerHealth"]["reason"],
+            "probe_succeeded",
+        )
 
     def test_research_api_persists_the_quality_comparison_and_offline_replay_contract(self):
         with tempfile.TemporaryDirectory() as directory:

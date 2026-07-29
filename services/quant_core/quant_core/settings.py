@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import base64
+import json
 import os
+import re
+import secrets
+import sqlite3
+from contextlib import closing
+from dataclasses import dataclass
 from importlib.util import find_spec
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, MutableMapping
 from urllib.parse import urlparse
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from quant_core.ai_review_providers import validated_provider_base_url
 
 _PROVIDER_ERROR_CATEGORIES = ("rate_limit", "dependency", "network", "upstream", "incomplete_data", "unknown")
 _PROVIDER_ERROR_CATEGORY_PRIORITY = {category: index for index, category in enumerate(_PROVIDER_ERROR_CATEGORIES)}
@@ -14,6 +25,351 @@ _PROVIDER_ERROR_WINDOWS = {
     "twentyFourHours": 24 * 60 * 60,
     "sevenDays": 7 * 24 * 60 * 60,
 }
+
+_PUBLIC_SETTING_SPECS = {
+    "ccxtDefaultExchange": ("CCXT_DEFAULT_EXCHANGE", "binance"),
+    "ccxtTimeout": ("CCXT_TIMEOUT", "10000"),
+    "liveSessionTtlHours": ("AIQT_LIVE_SESSION_TTL_HOURS", "8"),
+    "openaiModel": ("OPENAI_MODEL", ""),
+    "openaiCompatibleBaseUrl": ("OPENAI_COMPATIBLE_BASE_URL", ""),
+    "openaiCompatibleModel": ("OPENAI_COMPATIBLE_MODEL", ""),
+    "ollamaBaseUrl": ("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+    "ollamaModel": ("OLLAMA_MODEL", ""),
+    "monitoringWebhookTimeoutSeconds": ("AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS", "5"),
+    "freeStockdbTimeoutSeconds": ("AIQT_FREE_STOCKDB_TIMEOUT_SECONDS", "3"),
+}
+_INTEGER_SETTING_RANGES = {
+    "ccxtTimeout": (1_000, 120_000),
+    "liveSessionTtlHours": (0, 8_760),
+    "monitoringWebhookTimeoutSeconds": (1, 120),
+    "freeStockdbTimeoutSeconds": (1, 120),
+}
+_PROVIDER_URL_SETTINGS = {"openaiCompatibleBaseUrl", "ollamaBaseUrl"}
+_SECRET_SETTING_SPECS = {
+    "finnhubApiKey": "FINNHUB_API_KEY",
+    "openaiApiKey": "OPENAI_API_KEY",
+    "openaiCompatibleApiKey": "OPENAI_COMPATIBLE_API_KEY",
+    "ccxtSandboxApiKey": "CCXT_SANDBOX_API_KEY",
+    "ccxtSandboxSecret": "CCXT_SANDBOX_SECRET",
+    "ccxtProductionReadonlyApiKey": "CCXT_PRODUCTION_READONLY_API_KEY",
+    "ccxtProductionReadonlySecret": "CCXT_PRODUCTION_READONLY_SECRET",
+    "ccxtProductionTradingApiKey": "CCXT_PRODUCTION_TRADING_API_KEY",
+    "ccxtProductionTradingSecret": "CCXT_PRODUCTION_TRADING_SECRET",
+    "monitoringWebhookUrl": "AIQT_MONITORING_WEBHOOK_URL",
+    "freeStockdbUrl": "AIQT_FREE_STOCKDB_URL",
+    "httpsProxy": "HTTPS_PROXY",
+}
+_SECRET_URL_SETTINGS = {"monitoringWebhookUrl", "freeStockdbUrl", "httpsProxy"}
+_SETTINGS_AAD = b"aiqt:platform-settings:v1"
+_SECRET_MASK = "••••••••"
+
+
+@dataclass(frozen=True)
+class PlatformSettingsRecord:
+    revision: int
+    public_values: dict[str, str]
+    secret_values: dict[str, str]
+    updated_at: str
+
+
+class PlatformSettingsStore:
+    """Persist one encrypted, authoritative platform configuration."""
+
+    def __init__(self, path: str | Path, key_path: str | Path) -> None:
+        self.path = Path(path)
+        self.key_path = Path(key_path)
+
+    def effective_environment(self, environment: Mapping[str, str]) -> dict[str, str]:
+        effective = dict(environment)
+        record = self._load(environment)
+        if record is None:
+            return effective
+        for key, value in {**record.public_values, **record.secret_values}.items():
+            if value:
+                effective[key] = value
+            else:
+                effective.pop(key, None)
+        return effective
+
+    def apply_to_environment(self, environment: MutableMapping[str, str]) -> bool:
+        record = self._load(environment)
+        if record is None:
+            return False
+        for key, value in {**record.public_values, **record.secret_values}.items():
+            if value:
+                environment[key] = value
+            else:
+                environment.pop(key, None)
+        return True
+
+    def configuration_payload(
+        self,
+        environment: Mapping[str, str],
+        *,
+        restart_required: bool = False,
+    ) -> dict[str, Any]:
+        record = self._load(environment)
+        public_values = record.public_values if record else {
+            env_key: str(environment.get(env_key, default))
+            for env_key, default in _PUBLIC_SETTING_SPECS.values()
+        }
+        secret_values = record.secret_values if record else {
+            env_key: str(environment.get(env_key, ""))
+            for env_key in _SECRET_SETTING_SPECS.values()
+        }
+        return {
+            "source": "database" if record else "environment",
+            "revision": record.revision if record else 0,
+            "updatedAt": record.updated_at if record else None,
+            "restartRequired": restart_required,
+            "values": {
+                field: _public_setting_for_payload(field, public_values.get(env_key, default))
+                for field, (env_key, default) in _PUBLIC_SETTING_SPECS.items()
+            },
+            "secrets": {
+                field: {
+                    "configured": bool(secret_values.get(env_key, "")),
+                    "masked": _mask_secret(secret_values.get(env_key, "")),
+                }
+                for field, env_key in _SECRET_SETTING_SPECS.items()
+            },
+        }
+
+    def save(
+        self,
+        configuration: object,
+        secret_updates: object,
+        clear_secrets: object,
+        environment: Mapping[str, str],
+    ) -> PlatformSettingsRecord:
+        public_updates = _validate_public_settings(configuration)
+        secret_changes = _validate_secret_updates(secret_updates)
+        cleared = _validate_clear_secrets(clear_secrets)
+        if set(secret_changes) & cleared:
+            raise ValueError("secret_cannot_be_updated_and_cleared")
+        current = self._load(environment)
+        public_values = (
+            dict(current.public_values)
+            if current
+            else {
+                env_key: str(environment.get(env_key, default))
+                for env_key, default in _PUBLIC_SETTING_SPECS.values()
+            }
+        )
+        secret_values = (
+            dict(current.secret_values)
+            if current
+            else {
+                env_key: str(environment.get(env_key, ""))
+                for env_key in _SECRET_SETTING_SPECS.values()
+            }
+        )
+        for field, value in public_updates.items():
+            public_values[_PUBLIC_SETTING_SPECS[field][0]] = str(value)
+        for field, value in secret_changes.items():
+            secret_values[_SECRET_SETTING_SPECS[field]] = value
+        for field in cleared:
+            secret_values[_SECRET_SETTING_SPECS[field]] = ""
+
+        revision = current.revision + 1 if current else 1
+        updated_at = datetime.now(timezone.utc).isoformat()
+        secret_blob = self._encrypt(secret_values, environment)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(self.path)) as connection:
+            with connection:
+                self._ensure_schema(connection)
+                connection.execute(
+                    """
+                    INSERT INTO platform_settings (id, revision, public_json, secret_blob, updated_at)
+                    VALUES (1, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        revision = excluded.revision,
+                        public_json = excluded.public_json,
+                        secret_blob = excluded.secret_blob,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        revision,
+                        json.dumps(public_values, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+                        secret_blob,
+                        updated_at,
+                    ),
+                )
+        return PlatformSettingsRecord(revision, public_values, secret_values, updated_at)
+
+    def _load(self, environment: Mapping[str, str]) -> PlatformSettingsRecord | None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(self.path)) as connection:
+            self._ensure_schema(connection)
+            row = connection.execute(
+                "SELECT revision, public_json, secret_blob, updated_at FROM platform_settings WHERE id = 1"
+            ).fetchone()
+        if row is None:
+            return None
+        public_values = json.loads(str(row[1]))
+        secret_values = json.loads(self._decrypt(bytes(row[2]), environment))
+        if not isinstance(public_values, dict) or not isinstance(secret_values, dict):
+            raise ValueError("platform_settings_record_invalid")
+        return PlatformSettingsRecord(
+            int(row[0]),
+            {str(key): str(value) for key, value in public_values.items()},
+            {str(key): str(value) for key, value in secret_values.items()},
+            str(row[3]),
+        )
+
+    @staticmethod
+    def _ensure_schema(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS platform_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                revision INTEGER NOT NULL,
+                public_json TEXT NOT NULL,
+                secret_blob BLOB NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    def _encrypt(self, values: dict[str, str], environment: Mapping[str, str]) -> bytes:
+        nonce = secrets.token_bytes(12)
+        plaintext = json.dumps(values, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+        return nonce + AESGCM(self._encryption_key(environment)).encrypt(nonce, plaintext, _SETTINGS_AAD)
+
+    def _decrypt(self, blob: bytes, environment: Mapping[str, str]) -> str:
+        if len(blob) < 29:
+            raise ValueError("platform_settings_secret_blob_invalid")
+        return AESGCM(self._encryption_key(environment)).decrypt(
+            blob[:12],
+            blob[12:],
+            _SETTINGS_AAD,
+        ).decode()
+
+    def _encryption_key(self, environment: Mapping[str, str]) -> bytes:
+        configured = str(environment.get("AIQT_SETTINGS_MASTER_KEY", "")).strip()
+        if configured:
+            try:
+                key = base64.urlsafe_b64decode(configured.encode())
+            except ValueError as error:
+                raise ValueError("AIQT_SETTINGS_MASTER_KEY must be URL-safe base64") from error
+            if len(key) != 32:
+                raise ValueError("AIQT_SETTINGS_MASTER_KEY must decode to 32 bytes")
+            return key
+        if self.key_path.exists():
+            key = base64.urlsafe_b64decode(self.key_path.read_bytes().strip())
+            if len(key) != 32:
+                raise ValueError("platform settings key file must decode to 32 bytes")
+            return key
+        self.key_path.parent.mkdir(parents=True, exist_ok=True)
+        key = AESGCM.generate_key(bit_length=256)
+        encoded = base64.urlsafe_b64encode(key)
+        try:
+            descriptor = os.open(self.key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            return self._encryption_key(environment)
+        with os.fdopen(descriptor, "wb") as key_file:
+            key_file.write(encoded)
+        try:
+            self.key_path.chmod(0o600)
+        except OSError:
+            pass
+        return key
+
+
+def _validate_public_settings(value: object) -> dict[str, str | int]:
+    if not isinstance(value, dict):
+        raise ValueError("configuration_must_be_object")
+    unknown = set(value) - set(_PUBLIC_SETTING_SPECS)
+    if unknown:
+        raise ValueError(f"unsupported_configuration_fields:{','.join(sorted(unknown))}")
+    missing = set(_PUBLIC_SETTING_SPECS) - set(value)
+    if missing:
+        raise ValueError(f"missing_configuration_fields:{','.join(sorted(missing))}")
+    validated: dict[str, str | int] = {}
+    for field, raw in value.items():
+        if field in _INTEGER_SETTING_RANGES:
+            if isinstance(raw, bool) or not isinstance(raw, int):
+                raise ValueError(f"{field}_must_be_integer")
+            minimum, maximum = _INTEGER_SETTING_RANGES[field]
+            if not minimum <= raw <= maximum:
+                raise ValueError(f"{field}_out_of_range")
+            validated[field] = raw
+            continue
+        if not isinstance(raw, str):
+            raise ValueError(f"{field}_must_be_string")
+        normalized = raw.strip()
+        if len(normalized) > 500:
+            raise ValueError(f"{field}_too_long")
+        if field == "ccxtDefaultExchange":
+            normalized = normalized.casefold()
+            if not re.fullmatch(r"[a-z0-9_-]{1,64}", normalized):
+                raise ValueError("ccxtDefaultExchange_invalid")
+        if field in _PROVIDER_URL_SETTINGS and normalized:
+            normalized = validated_provider_base_url(normalized) or ""
+            if not normalized:
+                raise ValueError(f"{field}_invalid")
+        validated[field] = normalized
+    return validated
+
+
+def _mask_secret(value: str) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 4:
+        return _SECRET_MASK
+    visible = 1 if len(value) <= 8 else 4
+    return f"{value[:visible]}{_SECRET_MASK}{value[-visible:]}"
+
+
+def _validate_secret_updates(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise ValueError("secretUpdates_must_be_object")
+    unknown = set(value) - set(_SECRET_SETTING_SPECS)
+    if unknown:
+        raise ValueError(f"unsupported_secret_fields:{','.join(sorted(unknown))}")
+    validated: dict[str, str] = {}
+    for field, raw in value.items():
+        if not isinstance(raw, str):
+            raise ValueError(f"{field}_must_be_string")
+        if not raw:
+            continue
+        if "\0" in raw or len(raw) > 8_192:
+            raise ValueError(f"{field}_invalid")
+        if field in _SECRET_URL_SETTINGS:
+            _validate_http_url(raw, field)
+        validated[field] = raw
+    return validated
+
+
+def _validate_clear_secrets(value: object) -> set[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError("clearSecrets_must_be_array")
+    cleared = set(value)
+    unknown = cleared - set(_SECRET_SETTING_SPECS)
+    if unknown:
+        raise ValueError(f"unsupported_secret_fields:{','.join(sorted(unknown))}")
+    return cleared
+
+
+def _validate_http_url(value: str, field: str) -> None:
+    try:
+        parsed = urlparse(value)
+        _ = parsed.port
+    except (UnicodeError, ValueError) as error:
+        raise ValueError(f"{field}_invalid") from error
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"{field}_invalid")
+
+
+def _public_setting_for_payload(field: str, value: str) -> str | int:
+    if field not in _INTEGER_SETTING_RANGES:
+        return value
+    try:
+        parsed = int(value)
+    except ValueError:
+        parsed = int(_PUBLIC_SETTING_SPECS[field][1])
+    minimum, maximum = _INTEGER_SETTING_RANGES[field]
+    return min(max(parsed, minimum), maximum)
 
 
 def build_settings_status(
@@ -26,6 +382,7 @@ def build_settings_status(
     adapter_dependency_statuses: dict[str, bool] | None = None,
     adapter_error_events: list[dict[str, Any]] | None = None,
     free_stockdb_url: str | None = None,
+    free_stockdb_probe_succeeded: bool | None = None,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a read-only platform settings status payload without returning secrets."""
@@ -37,7 +394,9 @@ def build_settings_status(
         _cache_context_to_payload(context, generated_at=generated_timestamp) for context in (cache_contexts or [])
     ]
     finnhub_configured = bool((finnhub_api_key if finnhub_api_key is not None else os.getenv("FINNHUB_API_KEY", "")).strip())
-    exchange = (ccxt_exchange if ccxt_exchange is not None else os.getenv("CCXT_DEFAULT_EXCHANGE", "binance")).strip() or "binance"
+    raw_exchange = ccxt_exchange if ccxt_exchange is not None else os.getenv("CCXT_DEFAULT_EXCHANGE", "")
+    exchange_configured = bool(raw_exchange.strip())
+    exchange = raw_exchange.strip() or "binance"
 
     return {
         "schemaVersion": 1,
@@ -74,7 +433,7 @@ def build_settings_status(
                 "klineSource": f"binance / coinbase / ccxt:{exchange}",
                 "status": "ready",
                 "optionalKeyName": "CCXT_DEFAULT_EXCHANGE",
-                "optionalKeyConfigured": bool(os.getenv("CCXT_DEFAULT_EXCHANGE", "").strip()),
+                "optionalKeyConfigured": exchange_configured,
                 "note": "Public OHLCV and ticker routes stay paper-only until exchange trade keys are explicitly certified.",
             },
         ],
@@ -84,6 +443,7 @@ def build_settings_status(
             adapter_dependency_statuses=adapter_dependency_statuses,
             adapter_error_events=adapter_error_events,
             free_stockdb_url=free_stockdb_url,
+            free_stockdb_probe_succeeded=free_stockdb_probe_succeeded,
             generated_at=generated_timestamp,
         ),
         "cache": {
@@ -153,6 +513,7 @@ def _market_data_adapter_statuses(
     adapter_dependency_statuses: dict[str, bool] | None,
     adapter_error_events: list[dict[str, Any]] | None,
     free_stockdb_url: str | None,
+    free_stockdb_probe_succeeded: bool | None,
     generated_at: datetime,
 ) -> list[dict[str, Any]]:
     akshare_telemetry = _market_data_adapter_external_telemetry(
@@ -178,6 +539,7 @@ def _market_data_adapter_statuses(
     )
     free_stockdb_telemetry = _free_stockdb_external_telemetry(
         free_stockdb_url,
+        probe_succeeded=free_stockdb_probe_succeeded,
         generated_at=generated_at,
     )
     return [
@@ -274,20 +636,31 @@ def _market_data_adapter_statuses(
 def _free_stockdb_external_telemetry(
     value: str | None,
     *,
+    probe_succeeded: bool | None,
     generated_at: datetime,
 ) -> dict[str, Any]:
     raw_url = str(value or "").strip()
     parsed = urlparse(raw_url) if raw_url else None
     valid = bool(parsed and parsed.scheme in {"http", "https"} and parsed.netloc)
     configured = bool(raw_url)
-    status = "degraded" if valid else "blocked"
-    reason = "configured_not_probed" if valid else "endpoint_invalid" if configured else "endpoint_not_configured"
+    status = "ok" if valid and probe_succeeded else "degraded" if valid else "blocked"
+    reason = (
+        "probe_succeeded"
+        if valid and probe_succeeded
+        else "probe_failed"
+        if valid and probe_succeeded is False
+        else "configured_not_probed"
+        if valid
+        else "endpoint_invalid"
+        if configured
+        else "endpoint_not_configured"
+    )
     return {
         "status": status,
         "dependency": "free-stockdb-local-service",
         "dependencyAvailable": valid,
-        "lastError": None if valid else reason,
-        "retryState": "idle" if valid else "dependency_missing",
+        "lastError": None if valid and probe_succeeded is not False else reason,
+        "retryState": "provider_error" if valid and probe_succeeded is False else "idle" if valid else "dependency_missing",
         "checkedAt": generated_at.isoformat(),
         "installGuidance": {
             "packageName": "free-stockdb",
@@ -298,7 +671,7 @@ def _free_stockdb_external_telemetry(
         },
         "lastProviderError": None,
         "providerHealth": {
-            "status": "watch" if valid else "blocked",
+            "status": "ok" if valid and probe_succeeded else "watch" if valid else "blocked",
             "recentErrorCount": 0,
             "lastErrorAt": None,
             "affectedSymbols": [],
@@ -393,12 +766,7 @@ def _market_data_adapter_install_guidance(dependency: str) -> dict[str, str]:
 
 
 def _latest_provider_error_for_adapter(adapter_id: str, events: list[dict[str, Any]] | None) -> dict[str, str] | None:
-    matching_events = [
-        _provider_error_payload(event)
-        for event in (events or [])
-        if isinstance(event, dict) and event.get("adapterId") == adapter_id
-    ]
-    matching_events = [event for event in matching_events if event is not None]
+    matching_events = _provider_error_events_for_adapter(adapter_id, events)
     if not matching_events:
         return None
     return max(matching_events, key=lambda event: (event["createdAt"], event["eventId"]))
@@ -411,12 +779,7 @@ def _provider_health_for_adapter(
     dependency_available: bool,
     generated_at: datetime,
 ) -> dict[str, Any]:
-    matching_events = [
-        _provider_error_payload(event)
-        for event in (events or [])
-        if isinstance(event, dict) and event.get("adapterId") == adapter_id
-    ]
-    matching_events = [event for event in matching_events if event is not None]
+    matching_events = _provider_error_events_for_adapter(adapter_id, events)
     window_summary = _provider_error_window_summary(matching_events, generated_at=generated_at)
     recent_events = _provider_error_events_in_window(
         matching_events,
@@ -460,6 +823,28 @@ def _provider_health_for_adapter(
         "retryAfterSeconds": retry_after_seconds,
         "reason": reason,
     }
+
+
+def _provider_error_events_for_adapter(
+    adapter_id: str,
+    events: list[dict[str, Any]] | None,
+) -> list[dict[str, str]]:
+    expected_source = {
+        "akshare-ohlcv": "akshare",
+        "yfinance-ohlcv": "yfinance",
+        "ccxt-ohlcv": "ccxt",
+    }.get(adapter_id, "")
+    matching_events = []
+    for event in events or []:
+        if not isinstance(event, dict) or event.get("adapterId") != adapter_id:
+            continue
+        payload = _provider_error_payload(event)
+        if payload and (
+            payload["source"].casefold().startswith(expected_source)
+            or payload["source"].casefold() == "local-cache"
+        ):
+            matching_events.append(payload)
+    return matching_events
 
 
 def _provider_error_payload(event: dict[str, Any]) -> dict[str, str] | None:

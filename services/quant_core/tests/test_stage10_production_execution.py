@@ -259,6 +259,26 @@ def _activate_gate(
 
 
 class Stage10ProductionExecutionTest(unittest.TestCase):
+    def test_auto_live_status_marks_expired_control_evidence_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            route = BinanceSpotProductionTradingRoute(
+                env={**_trading_env(), "AIQT_ENABLE_PRODUCTION_TRADING": "true"},
+                exchange_factory=lambda _exchange_id, _config: ProductionOrderExchange({}),
+            )
+            service = Stage10ProductionExecutionService(store, auto_route=route)
+            _activate_gate(service, datetime.now(timezone.utc) - timedelta(hours=1))
+
+            status = service.auto_live_status()
+
+            self.assertTrue(status["controlRecordedActive"])
+            self.assertFalse(status["controlActive"])
+            self.assertFalse(status["evidenceFresh"])
+            self.assertEqual(
+                status["blockingReason"],
+                "stage10_production_execution_control_evidence_stale",
+            )
+
     def test_auto_live_session_rechecks_credential_isolation_after_restart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")

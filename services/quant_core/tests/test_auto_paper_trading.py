@@ -146,6 +146,40 @@ class FakeRejectedPreparationSandboxService(FakeSandboxService):
         raise ValueError("stage6_sandbox_cost_below_minimum")
 
 
+class FakeDustFillSandboxService(FakePendingSandboxService):
+    def submit_auto_market_order(self, order):
+        self.orders.append(order)
+        return {
+            "exchangeOrderId": "testnet-order-dust",
+            "clientOrderId": order["clientOrderId"],
+            "state": "partially_filled",
+            "filledQuantity": 0.00001,
+            "remainingQuantity": max(0, order["quantity"] - 0.00001),
+            "averagePrice": order["referencePrice"],
+            "filledNotional": 0.00001 * order["referencePrice"],
+            "fees": [],
+            "exchangeStatus": "open",
+            "timestamp": 1,
+        }
+
+    def reconcile_auto_market_order(self, order, evidence):
+        self.reconciliation_calls += 1
+        return {
+            **evidence,
+            "state": "canceled",
+            "remainingQuantity": order["quantity"] - evidence["filledQuantity"],
+            "exchangeStatus": "canceled",
+            "timestamp": 2,
+            "operation": "query",
+        }
+
+    def prepare_auto_market_order(self, order):
+        self.preparations.append(order)
+        if order["side"] == "sell" and order["notionalValue"] < 1:
+            raise ValueError("stage6_sandbox_cost_below_minimum")
+        return super().prepare_auto_market_order(order)
+
+
 class FakePartialFillSandboxService(FakePendingSandboxService):
     def submit_auto_market_order(self, order):
         self.orders.append(order)
@@ -211,24 +245,36 @@ class FakeThirdCurrencyFeeSandboxService(FakeFeeSandboxService):
 class FakeProductionService:
     def __init__(self) -> None:
         self.triggered = False
+        self.evidence_fresh = True
         self.orders = []
         self.preparations = []
         self.account_covered = True
         self.account_checks = 0
         self.control_id = "stage10-control-live"
+        self.authorization_calls = 0
 
     def auto_live_status(self):
         return {
             "enabled": True,
             "credentialsConfigured": True,
-            "controlActive": not self.triggered,
+            "controlActive": not self.triggered and self.evidence_fresh,
+            "controlRecordedActive": not self.triggered,
+            "evidenceFresh": self.evidence_fresh,
+            "blockingReason": (
+                None
+                if self.evidence_fresh
+                else "stage10_production_execution_control_evidence_stale"
+            ),
             "controlId": self.control_id,
             "triggered": self.triggered,
         }
 
     def authorize_auto_session(self):
+        self.authorization_calls += 1
         if self.triggered:
             raise ValueError("stage10_production_execution_kill_switch_triggered")
+        if not self.evidence_fresh:
+            raise ValueError("stage10_production_execution_control_evidence_stale")
         return {
             "controlId": self.control_id,
             "autoRouteSafety": {"ipRestricted": True},
@@ -975,6 +1021,24 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertTrue(configured["orderSubmissionEnabled"])
             self.assertFalse(configured["liveBlockedBoundary"])
 
+            production.evidence_fresh = False
+            authorized = service.snapshot()
+            self.assertFalse(authorized["productionLive"]["evidenceFresh"])
+            self.assertTrue(authorized["liveTradingAllowed"])
+            self.assertTrue(authorized["orderSubmissionEnabled"])
+            self.assertFalse(authorized["liveBlockedBoundary"])
+
+            updated = service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 0.4,
+            })
+            self.assertEqual(updated["state"]["triggerPct"], 0.4)
+            self.assertEqual(production.authorization_calls, 1)
+            self.assertTrue(updated["liveTradingAllowed"])
+
             result = service.evaluate(
                 bars([100, 100, 100, 100, 100, 101]),
                 data_source="test",
@@ -1053,6 +1117,92 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(expired["state"]["status"], "risk_paused")
             self.assertEqual(production.account_checks, 0)
             self.assertEqual(production.orders, [])
+
+    def test_zero_hour_live_session_remains_authorized_until_manually_revoked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            production = FakeProductionService()
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                production=production,  # type: ignore[arg-type]
+                live_session_ttl_hours=0,
+            )
+            started = datetime(2026, 7, 27, 8, tzinfo=timezone.utc)
+            with patch("quant_core.auto_paper_trading._now", return_value=started):
+                configured = service.configure({
+                    "enabled": True,
+                    "executionMode": "live",
+                    "liveConfirmed": True,
+                    "liveOperator": "wenqingjie",
+                })
+            with patch(
+                "quant_core.auto_paper_trading._now",
+                return_value=started + timedelta(days=3650),
+            ):
+                later = service.snapshot()
+
+            self.assertEqual(configured["state"]["liveSessionTtlHours"], 0)
+            self.assertIsNone(configured["state"]["liveAuthorizedUntil"])
+            self.assertTrue(later["liveTradingAllowed"])
+
+    def test_runtime_ttl_change_applies_only_to_the_next_live_authorization(self):
+        with tempfile.TemporaryDirectory() as directory:
+            production = FakeProductionService()
+            registry = AiReviewProviderRegistry(
+                (
+                    ProviderStatus("local", True, None, None),
+                    ProviderStatus(
+                        "openai-compatible",
+                        True,
+                        "fake",
+                        "https://example.invalid",
+                    ),
+                ),
+                {"openai-compatible": FakeProvider()},
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                registry,
+                production=production,  # type: ignore[arg-type]
+            )
+            started = datetime(2026, 7, 27, 8, tzinfo=timezone.utc)
+            with patch("quant_core.auto_paper_trading._now", return_value=started):
+                service.configure({
+                    "enabled": True,
+                    "executionMode": "live",
+                    "liveConfirmed": True,
+                    "liveOperator": "wenqingjie",
+                })
+            service.reload_runtime(
+                registry,
+                None,
+                production,  # type: ignore[arg-type]
+                live_session_ttl_hours=0,
+            )
+            after_expiry = started + timedelta(hours=9)
+            with patch("quant_core.auto_paper_trading._now", return_value=after_expiry):
+                expired = service.snapshot()
+                reauthorized = service.configure({
+                    "liveConfirmed": True,
+                    "liveOperator": "wenqingjie",
+                })
+
+            self.assertFalse(expired["liveTradingAllowed"])
+            self.assertEqual(reauthorized["state"]["liveSessionTtlHours"], 0)
+            self.assertIsNone(reauthorized["state"]["liveAuthorizedUntil"])
+            self.assertTrue(reauthorized["liveTradingAllowed"])
+            self.assertEqual(production.authorization_calls, 2)
 
     def test_expired_live_session_still_reconciles_existing_order_read_only(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1525,7 +1675,10 @@ class AutoPaperTradingTests(unittest.TestCase):
                 contract["riskAdjustedTarget"]["evidence"],
                 {
                     "dailyDrawdownPct": 0,
+                    "dailyLossDrawdownPct": 0,
                     "dailyLossLimitPct": 2,
+                    "dailyProfitDrawdownPct": 0,
+                    "dailyProfitDrawdownLimitPct": 2,
                     "recentTradeCount": 0,
                     "maxTradesPerHour": 3,
                 },
@@ -1661,6 +1814,8 @@ class AutoPaperTradingTests(unittest.TestCase):
                 recent_trade_count=0,
                 max_trades_per_hour=3,
                 generated_at=datetime.fromisoformat(proposal["proposedAt"]),
+                profit_drawdown_pct=0,
+                profit_drawdown_limit_pct=2,
             )
             self.assertEqual(provider.calls, 1)
             self.assertEqual(replayed, contract)
@@ -1733,6 +1888,145 @@ class AutoPaperTradingTests(unittest.TestCase):
                 0,
             )
             self.assertIsNone(blocked_contract["orderIntent"])
+
+    def test_profit_drawdown_halts_new_risk_but_still_allows_an_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+            )
+            configured = service.configure({
+                "enabled": True,
+                "triggerPct": 0.3,
+                "takeProfitPct": 50,
+                "dailyLossLimitPct": 20,
+                "dailyProfitDrawdownLimitPct": 0.5,
+                "maxTradesPerHour": 60,
+            })
+            self.assertEqual(configured["state"]["dailyProfitDrawdownLimitPct"], 0.5)
+
+            bought = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            peaked = service.evaluate(
+                bars(
+                    [120, 120, 120, 120, 120, 120],
+                    start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            pulled_back = service.evaluate(
+                bars(
+                    [110, 110, 110, 110, 110, 110],
+                    start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            exited = service.evaluate(
+                bars(
+                    [98, 98, 98, 98, 98, 98],
+                    start=datetime(2026, 7, 26, 3, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            blocked = service.evaluate(
+                bars(
+                    [98, 98, 98, 98, 98, 99],
+                    start=datetime(2026, 7, 26, 4, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertGreater(bought["state"]["position"], 0)
+            self.assertGreater(peaked["state"]["dailyPeakEquity"], 100)
+            self.assertEqual(pulled_back["state"]["status"], "risk_paused")
+            self.assertGreater(pulled_back["state"]["dailyProfitDrawdownPct"], 0.5)
+            self.assertEqual(
+                pulled_back["state"]["dailyRiskHaltReason"],
+                "已达到当日盈利回撤上限。",
+            )
+            self.assertEqual(exited["state"]["status"], "traded")
+            self.assertEqual(exited["state"]["position"], 0)
+            self.assertEqual(blocked["state"]["status"], "risk_paused")
+            self.assertEqual(blocked["state"]["position"], 0)
+            self.assertEqual(
+                blocked["state"]["lastDecisionContract"]["riskAdjustedTarget"]["decision"],
+                "reject",
+            )
+            self.assertIn("盈利回撤", blocked["state"]["detail"])
+
+    def test_loss_drawdown_is_independent_and_resets_on_the_next_risk_day(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+            )
+            service.configure({
+                "enabled": True,
+                "triggerPct": 0.3,
+                "dailyLossLimitPct": 0.2,
+                "dailyProfitDrawdownLimitPct": 20,
+                "maxTradesPerHour": 60,
+            })
+            service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            exited = service.evaluate(
+                bars(
+                    [98, 98, 98, 98, 98, 98],
+                    start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(exited["state"]["status"], "traded")
+            self.assertEqual(exited["state"]["position"], 0)
+            self.assertGreater(exited["state"]["dailyLossDrawdownPct"], 0.2)
+            self.assertEqual(exited["state"]["dailyProfitDrawdownPct"], 0)
+            self.assertEqual(
+                exited["state"]["dailyRiskHaltReason"],
+                "已达到当日亏损回撤上限。",
+            )
+
+            tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
+            with patch("quant_core.auto_paper_trading._now", return_value=tomorrow):
+                resumed = service.evaluate(
+                    bars(
+                        [99, 99, 99, 99, 99, 100],
+                        start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
+                    ),
+                    data_source="test",
+                )
+
+            self.assertEqual(resumed["state"]["status"], "traded")
+            self.assertGreater(resumed["state"]["position"], 0)
+            self.assertIsNone(resumed["state"]["dailyRiskHaltReason"])
+            self.assertEqual(resumed["state"]["dailyLossDrawdownPct"], 0)
+            self.assertEqual(resumed["state"]["dailyProfitDrawdownPct"], 0)
 
     def test_risk_adjustment_can_reduce_or_zero_but_never_amplify_a_target(self):
         target = {
@@ -1884,6 +2178,8 @@ class AutoPaperTradingTests(unittest.TestCase):
                 generated_at=datetime.fromisoformat(
                     contract["decisionProposal"]["proposedAt"]
                 ),
+                profit_drawdown_pct=0,
+                profit_drawdown_limit_pct=2,
                 account_check=result["state"]["lastAccountCheck"],
                 execution_preparation={
                     key: intent[key]
@@ -1998,6 +2294,83 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(len(sandbox.preparations), 1)
             self.assertEqual(sandbox.orders, [])
             self.assertEqual(store.count(event_type="auto_testnet_order_intent"), 0)
+
+    def test_untradeable_exit_dust_is_audited_once_and_no_longer_blocks_mode_switch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            registry = AiReviewProviderRegistry(
+                (
+                    ProviderStatus("local", True, None, None),
+                    ProviderStatus("openai-compatible", True, "fake", "https://example.invalid"),
+                ),
+                {"openai-compatible": FakeProvider()},
+            )
+            sandbox = FakeDustFillSandboxService()
+            service = AutoPaperTradingService(
+                store,
+                registry,
+                sandbox,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "testnet",
+                "testnetConfirmed": True,
+                "triggerPct": 0.3,
+            })
+            rising = bars([65_000, 65_000, 65_000, 65_000, 65_000, 65_500])
+
+            pending = service.evaluate(rising, data_source="test")
+            settled = service.evaluate(rising, data_source="test")
+            released = service.evaluate(
+                bars(
+                    [65_000, 65_000, 65_000, 65_000, 65_000, 63_500],
+                    start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            repeated = service.evaluate(
+                bars(
+                    [63_500, 63_500, 63_500, 63_500, 63_500, 63_510],
+                    start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            switched = service.configure({"enabled": False, "executionMode": "paper"})
+
+            self.assertEqual(pending["state"]["status"], "order_pending")
+            self.assertEqual(settled["state"]["position"], 0.00001)
+            self.assertEqual(released["state"]["status"], "monitoring")
+            self.assertEqual(released["state"]["position"], 0)
+            self.assertEqual(released["state"]["avgCost"], 0)
+            self.assertEqual(
+                released["state"]["lastDustDisposition"]["reason"],
+                "stage6_sandbox_cost_below_minimum",
+            )
+            self.assertEqual(released["state"]["lastDustDisposition"]["quantity"], 0.00001)
+            self.assertFalse(released["state"]["lastDustDisposition"]["orderSubmitted"])
+            self.assertEqual(
+                released["state"]["dailyReleasedDustNotional"],
+                released["state"]["lastDustDisposition"]["estimatedNotional"],
+            )
+            adjusted_start_equity = (
+                released["state"]["dailyStartEquity"]
+                - released["state"]["dailyReleasedDustNotional"]
+            )
+            adjusted_drawdown_pct = (
+                adjusted_start_equity - released["state"]["equity"]
+            ) / adjusted_start_equity * 100
+            self.assertLess(adjusted_drawdown_pct, 0.1)
+            self.assertEqual(store.count(event_type="auto_testnet_dust_disposition"), 1)
+            dust_event = store.list_recent(
+                event_type="auto_testnet_dust_disposition",
+                limit=1,
+            )[0]
+            self.assertFalse(dust_event.metadata["liveTradingAllowed"])
+            self.assertFalse(dust_event.metadata["orderSubmissionEnabled"])
+            self.assertFalse(dust_event.metadata["routeExecuted"])
+            self.assertEqual(len(sandbox.orders), 1)
+            self.assertEqual(repeated["state"]["position"], 0)
+            self.assertEqual(switched["state"]["executionMode"], "paper")
 
     def test_partial_testnet_fill_settles_actual_quantity_and_fee_once(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2261,6 +2634,32 @@ class AutoPaperTradingTests(unittest.TestCase):
                 "slippageModel": "venue_market_fill",
             },
         )
+
+    def test_shared_spot_preparation_normalizes_below_minimum_before_ccxt_precision(self):
+        class StrictPrecisionExchange(FakeBinanceTestnet):
+            def amount_to_precision(self, symbol, value):
+                if value < 0.00001:
+                    raise RuntimeError(
+                        f"binance amount of {symbol} must be greater than minimum amount precision of 0.00001"
+                    )
+                return super().amount_to_precision(symbol, value)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "stage6_sandbox_amount_below_minimum",
+        ):
+            prepare_spot_market_order(
+                StrictPrecisionExchange({}),
+                {
+                    "symbol": "BTC/USDT",
+                    "side": "sell",
+                    "quantity": 0.00000986,
+                    "referencePrice": 64_000,
+                    "notionalValue": 0.63104,
+                },
+                market_or_balance_error="stage10_auto_live_market_or_balance_unavailable",
+                balance_error="stage10_production_balance_insufficient",
+            )
 
     def test_shared_spot_runtime_derives_missing_filled_notional(self):
         exchange = FakeBinanceTestnet({})

@@ -56,6 +56,9 @@ class KlineCache:
         self._items[key] = (self._now(), bars, quality)
         return bars, quality
 
+    def clear(self) -> None:
+        self._items.clear()
+
 
 class QuantDingerKlineAdapter:
     """K-line adapter modeled after QuantDinger's /api/kline + KlineService path."""
@@ -77,6 +80,13 @@ class QuantDingerKlineAdapter:
         self.yfinance_adapter = yfinance_adapter or YFinanceMarketDataAdapter()
         self.ccxt_adapter = ccxt_adapter or CcxtMarketDataAdapter()
         self.cache = KlineCache(ttl_seconds=cache_ttl_seconds, now=now)
+
+    def update_ccxt_settings(self, exchange_id: str, timeout_ms: int) -> None:
+        self.ccxt_adapter = CcxtMarketDataAdapter(
+            exchange_id=exchange_id,
+            timeout_ms=timeout_ms,
+        )
+        self.cache.clear()
 
     def cache_key(self, request: MarketDataRequest, limit: int) -> str:
         start_key = request.start.isoformat() if request.start else ""

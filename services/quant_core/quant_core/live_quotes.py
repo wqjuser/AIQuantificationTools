@@ -38,6 +38,9 @@ class QuoteCache:
         self._items[key] = (self._now(), quote)
         return quote
 
+    def clear(self) -> None:
+        self._items.clear()
+
 
 class QuantDingerLiveQuoteAdapter:
     """REST quote adapter modeled after QuantDinger's get_ticker + watchlist cache path."""
@@ -53,6 +56,12 @@ class QuantDingerLiveQuoteAdapter:
         self.finnhub_api_key = finnhub_api_key if finnhub_api_key is not None else os.getenv("FINNHUB_API_KEY", "")
         self.fetch_text = fetch_text or default_fetch_text
         self.cache = QuoteCache(ttl_seconds=cache_ttl_seconds, now=now)
+
+    def update_finnhub_api_key(self, api_key: str) -> None:
+        if api_key == self.finnhub_api_key:
+            return
+        self.finnhub_api_key = api_key
+        self.cache.clear()
 
     def cache_key(self, market: Market, symbol: str) -> str:
         return f"watchlist_price:{market}:{symbol.strip().upper()}"

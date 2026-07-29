@@ -17,8 +17,10 @@ def build_golden_path_status(
     settings: dict[str, Any],
     runs: list[Any],
     paper_executions: list[PaperExecutionRecord],
+    ai_reviews: list[Any] | None = None,
     watchlist_refreshes: list[Any] | None = None,
     market_calendar: dict[str, Any] | None = None,
+    auto_trading: dict[str, Any] | None = None,
 ) -> GoldenPathPayload:
     context_runs = _matching_runs(runs, market=market, symbol=symbol, timeframe=timeframe)
     latest_run = context_runs[0] if context_runs else None
@@ -41,7 +43,7 @@ def build_golden_path_status(
     )
     research_step = _research_run_step(latest_run)
     backtest_step = _backtest_report_step(latest_run)
-    ai_step = _ai_review_step(latest_run)
+    ai_step = _ai_review_step(latest_run, ai_reviews or [])
     paper_step = _paper_execution_step(latest_run, paper_executions)
     live_step = _live_gate_step(settings)
     steps = [market_step, research_step, backtest_step, ai_step, paper_step, live_step]
@@ -58,7 +60,7 @@ def build_golden_path_status(
         "nextAction": _next_action(current_step),
         "summary": _summary_from_steps(steps, current_step, settings),
         "runbook": _runbook_from_steps(steps, current_step),
-        "workspaces": _workspaces_from_steps(steps, current_step),
+        "workspaces": _workspaces_from_steps(steps, current_step, auto_trading),
         "steps": steps,
     }
 
@@ -161,9 +163,10 @@ def _market_data_step(
             "refresh-data",
         )
     refresh_ready = _refresh_evidence_is_ready(refresh_evidence)
+    refresh_warning = _refresh_evidence_warning(refresh_evidence) if refresh_ready else None
     refresh_needs_review = refresh_evidence_supplied and not refresh_ready
     calendar_review = None if refresh_needs_review else _market_calendar_review_detail(market_calendar)
-    status = "review" if refresh_needs_review or calendar_review else "passed"
+    status = "review" if refresh_warning or refresh_needs_review or calendar_review else "passed"
     action_id = "refresh-watchlist-cache" if refresh_needs_review else "run-pipeline" if calendar_review else None
     detail = _fresh_market_data_detail(
         row_count,
@@ -181,6 +184,7 @@ def _market_data_step(
         status,
         detail,
         action_id,
+        passed=True if refresh_warning and not calendar_review else None,
     )
 
 
@@ -211,6 +215,12 @@ def _fresh_market_data_detail(
             f"{row_count} fresh cached K-line rows are available, but watchlist cache refresh evidence {run_id} "
             f"requires review: {reason}. Refresh watchlist cache before audited research."
         )
+    warning = _refresh_evidence_warning(refresh_evidence)
+    if warning:
+        return (
+            f"{row_count} fresh cached K-line rows are available. Matching watchlist cache refresh evidence {run_id} "
+            f"includes the non-blocking quality note: {warning} Research may continue with this review note."
+        )
     return (
         f"{row_count} fresh cached K-line rows are available. Matching watchlist cache refresh evidence {run_id} "
         f"confirms {rows_cached} rows from {source}."
@@ -232,13 +242,17 @@ def _refresh_evidence_review_reason(refresh_evidence: dict[str, Any]) -> str | N
     quality = _field(item, "quality") or {}
     if not bool(_field(quality, "isComplete") if _field(quality, "isComplete") is not None else _field(quality, "is_complete")):
         return "refresh quality incomplete"
-    warnings = [str(warning).strip() for warning in (_field(quality, "warnings") or []) if str(warning).strip()]
-    if warnings:
-        return warnings[0]
     source = str(_field(quality, "source") or "unknown").strip().lower()
     if source in {"demo-fallback", "unknown"}:
         return "source requires review"
     return None
+
+
+def _refresh_evidence_warning(refresh_evidence: dict[str, Any] | None) -> str | None:
+    item = refresh_evidence.get("item") if refresh_evidence else None
+    quality = _field(item, "quality") or {}
+    warnings = [str(warning).strip() for warning in (_field(quality, "warnings") or []) if str(warning).strip()]
+    return warnings[0] if warnings else None
 
 
 def _market_calendar_review_detail(market_calendar: dict[str, Any] | None) -> str | None:
@@ -321,7 +335,7 @@ def _backtest_report_step(latest_run: Any | None) -> GoldenPathPayload:
     )
 
 
-def _ai_review_step(latest_run: Any | None) -> GoldenPathPayload:
+def _ai_review_step(latest_run: Any | None, ai_reviews: list[Any]) -> GoldenPathPayload:
     if not latest_run:
         return _step(
             "ai-review",
@@ -340,7 +354,40 @@ def _ai_review_step(latest_run: Any | None) -> GoldenPathPayload:
             "The latest audited run does not include an AI evidence summary.",
             "run-ai-review",
         )
+    if not _p0_ai_review_is_ready(latest_run, ai_reviews):
+        return _step(
+            "ai-review",
+            "AI review",
+            "review",
+            "The audited run is ready for the local evidence review required by paper simulation.",
+            "run-ai-review",
+        )
     return _step("ai-review", "AI review", "passed", "AI review evidence is bound to the audited run.")
+
+
+def _p0_ai_review_is_ready(latest_run: Any, ai_reviews: list[Any]) -> bool:
+    for review in ai_reviews:
+        record = _field(review, "record")
+        if not isinstance(record, dict):
+            record = review if isinstance(review, dict) else None
+        if not isinstance(record, dict) or str(record.get("status") or "") != "ready":
+            continue
+        if str(record.get("market") or _field(latest_run, "market")) != str(_field(latest_run, "market")):
+            continue
+        if str(record.get("symbol") or _field(latest_run, "symbol")) != str(_field(latest_run, "symbol")):
+            continue
+        if str(record.get("timeframe") or _field(latest_run, "timeframe")) != str(_field(latest_run, "timeframe")):
+            continue
+        if str(record.get("strategyRevision") or _field(latest_run, "strategyRevision")) != str(
+            _field(latest_run, "strategyRevision")
+        ):
+            continue
+        if not isinstance(record.get("citations"), list) or not record["citations"]:
+            continue
+        if not str(record.get("boundary") or "").strip():
+            continue
+        return True
+    return False
 
 
 def _paper_execution_step(latest_run: Any | None, paper_executions: list[PaperExecutionRecord]) -> GoldenPathPayload:
@@ -398,12 +445,20 @@ def _live_gate_step(settings: dict[str, Any]) -> GoldenPathPayload:
     )
 
 
-def _step(step_id: str, label: str, status: str, detail: str, action_id: str | None = None) -> GoldenPathPayload:
+def _step(
+    step_id: str,
+    label: str,
+    status: str,
+    detail: str,
+    action_id: str | None = None,
+    *,
+    passed: bool | None = None,
+) -> GoldenPathPayload:
     return {
         "id": step_id,
         "label": label,
         "status": status,
-        "passed": status == "passed",
+        "passed": status == "passed" if passed is None else passed,
         "detail": detail,
         "actionId": action_id,
     }
@@ -470,7 +525,11 @@ def _next_action(current_step: GoldenPathPayload | None) -> GoldenPathPayload | 
     return actions.get(action_id) if isinstance(action_id, str) else None
 
 
-def _workspaces_from_steps(steps: list[GoldenPathPayload], current_step: GoldenPathPayload | None) -> list[GoldenPathPayload]:
+def _workspaces_from_steps(
+    steps: list[GoldenPathPayload],
+    current_step: GoldenPathPayload | None,
+    auto_trading: dict[str, Any] | None = None,
+) -> list[GoldenPathPayload]:
     by_id = {step["id"]: step for step in steps}
     market = by_id["market-data"]
     research = by_id["research-run"]
@@ -479,7 +538,7 @@ def _workspaces_from_steps(steps: list[GoldenPathPayload], current_step: GoldenP
     paper = by_id["paper-execution"]
     live_gate = by_id["live-gate"]
 
-    return [
+    workspaces = [
         _workspace_from_step("market", "Market", market, current_step, blocked_status="needs_run"),
         _workspace_from_step("research", "Research", research, current_step, blocked_status="needs_run"),
         _workspace(
@@ -506,6 +565,30 @@ def _workspaces_from_steps(steps: list[GoldenPathPayload], current_step: GoldenP
         ),
         _workspace_from_step("settings", "Settings", live_gate, current_step, blocked_status="blocked"),
     ]
+    if auto_trading is not None:
+        workspaces.append(_automatic_trading_workspace(auto_trading))
+    return workspaces
+
+
+def _automatic_trading_workspace(auto_trading: dict[str, Any]) -> GoldenPathPayload:
+    state = auto_trading.get("state") if isinstance(auto_trading.get("state"), dict) else {}
+    health = state.get("runnerHealth") if isinstance(state.get("runnerHealth"), dict) else {}
+    health_status = str(health.get("status") or "offline")
+    health_reason = str(health.get("reason") or "heartbeat_missing")
+    enabled = state.get("enabled") is True
+    if not enabled:
+        status, reason = "blocked", "Automatic trading is disabled."
+    elif health_status == "running":
+        mode = str(state.get("executionMode") or "paper")
+        status, reason = "ready", f"Automatic trading runner is healthy in {mode} mode."
+    elif health_reason == "runner_failures":
+        failures = int(state.get("consecutiveRunnerFailures") or 0)
+        detail = str(state.get("lastRunnerError") or state.get("detail") or "unknown runner error")
+        status, reason = "blocked", f"Automatic trading runner failed {failures} consecutive cycles: {detail}"
+    else:
+        detail = str(state.get("detail") or state.get("lastRunnerError") or health_reason)
+        status, reason = "blocked", f"Automatic trading runner is {health_status}: {detail}"
+    return _workspace("dynamic-trading", "Dynamic trading", status, None, [], reason, None)
 
 
 def _summary_from_steps(
@@ -517,7 +600,7 @@ def _summary_from_steps(
     safety = settings.get("safety") if isinstance(settings, dict) else None
     return {
         "totalSteps": len(steps),
-        "passedSteps": sum(1 for step in steps if step["status"] == "passed"),
+        "passedSteps": sum(1 for step in steps if step["passed"]),
         "reviewSteps": sum(1 for step in steps if step["status"] == "review"),
         "blockedSteps": sum(1 for step in steps if step["status"] == "blocked"),
         "currentStepLabel": str(current_step["label"]) if current_step else None,
@@ -567,7 +650,7 @@ def _workspace_from_step(
     *,
     blocked_status: str,
 ) -> GoldenPathPayload:
-    if step["status"] == "passed":
+    if step["passed"]:
         status = "ready"
         action_id = None
     elif step["status"] == "review":

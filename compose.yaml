@@ -5,12 +5,15 @@ services:
       dockerfile: Dockerfile.api
       args:
         INSTALL_DATA_DEPS: ${INSTALL_DATA_DEPS:-false}
+    restart: unless-stopped
     environment:
       QUANT_CORE_HOST: 0.0.0.0
       QUANT_CORE_PORT: "8765"
+      AIQT_SETTINGS_MASTER_KEY: ${AIQT_SETTINGS_MASTER_KEY:-}
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
       CCXT_DEFAULT_EXCHANGE: ${CCXT_DEFAULT_EXCHANGE:-binance}
       CCXT_TIMEOUT: ${CCXT_TIMEOUT:-10000}
+      AIQT_LIVE_SESSION_TTL_HOURS: ${AIQT_LIVE_SESSION_TTL_HOURS:-8}
       CCXT_SANDBOX_API_KEY: ${CCXT_SANDBOX_API_KEY:-}
       CCXT_SANDBOX_SECRET: ${CCXT_SANDBOX_SECRET:-}
       CCXT_PRODUCTION_READONLY_API_KEY: ${CCXT_PRODUCTION_READONLY_API_KEY:-}
@@ -47,6 +50,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         VITE_QUANT_API_BASE: /
+    restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy

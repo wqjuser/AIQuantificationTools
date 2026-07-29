@@ -146,6 +146,8 @@ import {
   buildExecutionAdapterSecretReferenceUrl,
   buildExecutionAdapterCertificationsUrl,
   buildExecutionAdapterLedgerUrl,
+  buildMonitoringTestNotificationsUrl,
+  buildOpenAiCompatibleModelsUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
   buildStrategyDetailUrl,
@@ -228,6 +230,8 @@ import {
   recordExecutionAdapterSecretReference,
   loadResearchNote,
   loadPlatformSettings,
+  loadOpenAiCompatibleModels,
+  testMonitoringWebhook,
   loadWatchlistCacheRefreshRuns,
   refreshMarketCache,
   refreshMarketCacheBatch,
@@ -3311,7 +3315,13 @@ describe("terminal workspace API client", () => {
 
     const result = await runP0Pipeline(
       "/",
-      { market: "ashare", symbol: "600000", timeframe: "1d", limit: 240 },
+      {
+        market: "ashare",
+        symbol: "600000",
+        timeframe: "1d",
+        limit: 240,
+        watchlistRefreshRunId: "cache-refresh-p0"
+      },
       currentWorkspace,
       fetcher
     );
@@ -3324,6 +3334,7 @@ describe("terminal workspace API client", () => {
       symbol: "600000",
       timeframe: "1d",
       limit: 240,
+      watchlistRefreshRunId: "cache-refresh-p0",
       strategyConfig: currentWorkspace.strategy,
       assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 }
     });
@@ -3759,6 +3770,27 @@ describe("terminal workspace API client", () => {
 
   test("builds the settings status URL", () => {
     expect(buildSettingsStatusUrl("http://127.0.0.1:8765/")).toBe("http://127.0.0.1:8765/api/settings/status");
+    expect(buildSettingsStatusUrl("http://127.0.0.1:8765/", true)).toBe(
+      "http://127.0.0.1:8765/api/settings/status?probe=free-stockdb"
+    );
+  });
+
+  test("builds the monitoring Webhook test URL", () => {
+    expect(buildMonitoringTestNotificationsUrl("http://127.0.0.1:8765/")).toBe(
+      "http://127.0.0.1:8765/api/operations/monitoring/test-notifications"
+    );
+  });
+
+  test("builds the compatible model discovery URL", () => {
+    expect(
+      buildOpenAiCompatibleModelsUrl(
+        "http://127.0.0.1:8765/",
+        "https://models.example.test/v1"
+      )
+    ).toBe(
+      "http://127.0.0.1:8765/api/settings/openai-compatible-models"
+      + "?baseUrl=https%3A%2F%2Fmodels.example.test%2Fv1"
+    );
   });
 
   test("builds the execution adapter ledger URL", () => {
@@ -5863,7 +5895,19 @@ describe("terminal workspace API client", () => {
             ],
             safety: {
               liveTradingAllowed: false,
-              requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"]
+              requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"],
+              executionMode: "testnet",
+              liveConfirmed: false,
+              liveAuthorizedUntil: null,
+              productionLive: {
+                enabled: true,
+                credentialsConfigured: true,
+                controlActive: false,
+                controlRecordedActive: true,
+                evidenceFresh: false,
+                blockingReason: "stage10_production_execution_control_evidence_stale",
+                triggered: false
+              }
             }
           }
         })
@@ -5872,6 +5916,15 @@ describe("terminal workspace API client", () => {
 
     expect(calls).toEqual(["http://127.0.0.1:8765/api/settings/status"]);
     expect(result.source).toBe("core");
+    expect(result.settings?.safety).toMatchObject({
+      executionMode: "testnet",
+      liveConfirmed: false,
+      productionLive: {
+        controlActive: false,
+        evidenceFresh: false,
+        blockingReason: "stage10_production_execution_control_evidence_stale"
+      }
+    });
     expect(result.settings?.dataSources[0]).toMatchObject({
       market: "us",
       optionalKeyName: "FINNHUB_API_KEY",
@@ -5964,6 +6017,72 @@ describe("terminal workspace API client", () => {
     });
     expect((result.settings?.cache as unknown as { freshnessSummary?: { fresh?: number } }).freshnessSummary?.fresh).toBe(1);
     expect(JSON.stringify(result.settings)).not.toContain("secret-finnhub-token");
+  });
+
+  test("loads OpenAI-compatible models for a select control", async () => {
+    const calls: string[] = [];
+    const result = await loadOpenAiCompatibleModels(
+      "http://127.0.0.1:8765/",
+      "https://models.example.test/v1",
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({ models: ["model-a", "model-b"] })
+        };
+      }
+    );
+
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/settings/openai-compatible-models"
+      + "?baseUrl=https%3A%2F%2Fmodels.example.test%2Fv1"
+    ]);
+    expect(result).toEqual({
+      models: ["model-a", "model-b"],
+      source: "core"
+    });
+  });
+
+  test("sends a monitoring Webhook test without exposing configuration", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await testMonitoringWebhook(
+      "http://127.0.0.1:8765/",
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            monitoringTestNotification: {
+              schemaVersion: 1,
+              deliveryStatus: "sent",
+              observedAt: "2026-07-29T01:00:00+08:00",
+              channelType: "webhook",
+              tradingActionsAvailable: false
+            }
+          })
+        };
+      }
+    );
+
+    expect(calls).toEqual([{
+      url: "http://127.0.0.1:8765/api/operations/monitoring/test-notifications",
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      }
+    }]);
+    expect(result).toEqual({
+      notification: {
+        schemaVersion: 1,
+        deliveryStatus: "sent",
+        observedAt: "2026-07-29T01:00:00+08:00",
+        channelType: "webhook",
+        tradingActionsAvailable: false
+      },
+      source: "core"
+    });
   });
 
   test("loads execution adapter state ledger from the Python core", async () => {
