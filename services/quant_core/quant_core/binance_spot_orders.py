@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import hashlib
+import json
 import math
 from typing import Any
 
@@ -48,12 +51,160 @@ def check_spot_account_coverage(
         for order in open_orders
         if isinstance(order, dict)
     )
+    unexpected_open_orders = sum(
+        1
+        for order in open_orders
+        if isinstance(order, dict)
+    )
+    account_snapshot = _spot_account_snapshot(
+        exchange,
+        markets,
+        balance,
+        base=base,
+        quote=quote,
+        account_fingerprint=_exchange_account_fingerprint(exchange),
+    )
     return {
-        "accountCovered": position_covered and quote_covered and unexpected == 0,
+        "accountCovered": (
+            position_covered
+            and quote_covered
+            and unexpected_open_orders == 0
+            and (
+                account_snapshot is None
+                or account_snapshot["valuationComplete"] is True
+            )
+        ),
         "positionCovered": position_covered,
         "quoteCovered": quote_covered,
         "unexpectedOpenAutoOrderCount": unexpected,
+        "unexpectedOpenOrderCount": unexpected_open_orders,
+        **(
+            {"accountSnapshot": account_snapshot}
+            if account_snapshot is not None
+            else {}
+        ),
     }
+
+
+def _spot_account_snapshot(
+    exchange: Any,
+    markets: Any,
+    balance: Any,
+    *,
+    base: str,
+    quote: str,
+    account_fingerprint: str | None,
+) -> dict[str, Any] | None:
+    if not isinstance(balance, dict) or not isinstance(markets, dict):
+        return None
+    free = balance.get("free")
+    used = balance.get("used")
+    total = balance.get("total")
+    fetch_ticker = getattr(exchange, "fetch_ticker", None)
+    if (
+        not isinstance(free, dict)
+        or not isinstance(used, dict)
+        or not isinstance(total, dict)
+        or not callable(fetch_ticker)
+    ):
+        return None
+    assets: dict[str, dict[str, float | None]] = {}
+    unpriced_assets: list[str] = []
+    total_equity = 0.0
+    asset_names = {
+        str(asset)
+        for asset in {*free, *used, *total, base, quote}
+        if isinstance(asset, str) and asset
+    }
+    for asset in sorted(asset_names):
+        free_amount = nonnegative_number(free.get(asset, 0), f"{asset} free")
+        used_amount = nonnegative_number(used.get(asset, 0), f"{asset} used")
+        total_amount = nonnegative_number(total.get(asset, 0), f"{asset} total")
+        if not math.isclose(
+            free_amount + used_amount,
+            total_amount,
+            rel_tol=0,
+            abs_tol=1e-8,
+        ):
+            raise ValueError("binance_spot_account_snapshot_unavailable")
+        if total_amount <= 0 and asset not in {base, quote}:
+            continue
+        price = 1.0 if asset == quote else _direct_quote_price(
+            fetch_ticker,
+            markets,
+            asset,
+            quote,
+        )
+        value = total_amount * price if price is not None else None
+        if total_amount > 0 and price is None:
+            unpriced_assets.append(asset)
+        if value is not None:
+            total_equity += value
+        assets[asset] = {
+            "free": round(free_amount, 12),
+            "used": round(used_amount, 12),
+            "total": round(total_amount, 12),
+            "priceUsdt": round(price, 8) if price is not None else None,
+            "valueUsdt": round(value, 8) if value is not None else None,
+        }
+    identity = {
+        **(
+            {"accountFingerprint": account_fingerprint}
+            if account_fingerprint
+            else {}
+        ),
+        "quoteCurrency": quote,
+        "assets": assets,
+        "totalEquityUsdt": round(total_equity, 8),
+        "valuationComplete": not unpriced_assets,
+        "unpricedAssets": unpriced_assets,
+    }
+    return {
+        "observedAt": datetime.now(timezone.utc).isoformat(),
+        **identity,
+        "snapshotHash": hashlib.sha256(
+            json.dumps(
+                identity,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def _exchange_account_fingerprint(exchange: Any) -> str | None:
+    api_key = getattr(exchange, "apiKey", None)
+    if not isinstance(api_key, str) or not api_key.strip():
+        return None
+    return hashlib.sha256(
+        f"binance-spot:{api_key.strip()}".encode("utf-8")
+    ).hexdigest()
+
+
+def _direct_quote_price(
+    fetch_ticker: Any,
+    markets: dict[str, Any],
+    asset: str,
+    quote: str,
+) -> float | None:
+    symbol = f"{asset}/{quote}"
+    market = markets.get(symbol)
+    if not isinstance(market, dict) or market.get("active") is False:
+        return None
+    ticker = fetch_ticker(symbol)
+    if not isinstance(ticker, dict):
+        return None
+    for field in ("bid", "last", "close"):
+        value = ticker.get(field)
+        if (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) > 0
+        ):
+            return float(value)
+    return None
 
 
 def create_spot_market_order(

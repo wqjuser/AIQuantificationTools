@@ -1934,6 +1934,65 @@ export interface StrategyDeleteResult {
   error?: string;
 }
 
+export interface StrategyProductionBinding {
+  kind: "builtin" | "library";
+  bindingId: string | null;
+  strategyId: string;
+  revision: string;
+  name: string;
+  auditRunId: string | null;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  status: "ready" | "blocked";
+  detail: string;
+  switchAllowed: boolean;
+  switchBlockedReason: string | null;
+  operator: string;
+}
+
+export interface StrategyProductionBindingResult {
+  binding?: StrategyProductionBinding;
+  source: WorkspaceSource;
+  error?: string;
+}
+
+export interface ProductionStrategyHandoff {
+  runId: string;
+  strategyId: string;
+  strategyRevision: string;
+  strategyName: string;
+  market: Market;
+  symbol: string;
+  timeframe: ResearchTimeframe;
+  status: "active" | "ready" | "review";
+  evidenceStatus: "eligible";
+  switchAllowed: boolean;
+  switchBlockedReason: string | null;
+  alreadyBound: boolean;
+  auditHash: string;
+  dataSnapshotHash: string;
+  productionReplay: {
+    feeBps: number;
+    slippageBps: number;
+    auditedMaxDrawdownPct: number;
+    productionMaxDrawdownPct: number;
+    strategyMaxDrawdownPct: number;
+  };
+  boundary: {
+    authorizesLive: false;
+    startsMonitoring: false;
+    evaluatesNow: false;
+    submitsOrder: false;
+  };
+}
+
+export interface ProductionStrategyHandoffResult {
+  handoff?: ProductionStrategyHandoff;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface StrategyValidation {
   status: "ready" | "review" | "blocked";
   revision: string;
@@ -2076,6 +2135,95 @@ export interface MarketSearchResult {
   timeframe?: ResearchTimeframe;
   results: MarketSearchSuggestion[];
   source: WorkspaceSource;
+  error?: string;
+}
+
+export type MarketDiscoverySort =
+  | "changePct"
+  | "amount"
+  | "turnoverRate"
+  | "marketCap"
+  | "peRatio";
+
+export interface MarketDiscoveryParams {
+  market: Extract<Market, "ashare" | "crypto">;
+  query?: string;
+  minChangePct?: number;
+  maxChangePct?: number;
+  minAmount?: number;
+  minTurnoverRate?: number;
+  maxPe?: number;
+  sort?: MarketDiscoverySort;
+  direction?: "asc" | "desc";
+  limit?: number;
+}
+
+export interface MarketDiscoveryOverview {
+  universeCount: number;
+  advancing: number;
+  declining: number;
+  flat: number;
+  totalAmount: number;
+}
+
+export interface MarketDiscoveryItem {
+  market: Market;
+  symbol: string;
+  name: string;
+  price: number;
+  changePct: number;
+  volume: number;
+  amount: number;
+  turnoverRate: number | null;
+  peRatio: number | null;
+  pbRatio: number | null;
+  marketCap: number | null;
+  source: string;
+  observedAt: string;
+}
+
+export interface MarketDiscoveryResult {
+  market: Market;
+  source: string;
+  observedAt: string;
+  freshness: string;
+  warnings: string[];
+  snapshotHash: string;
+  overview: MarketDiscoveryOverview;
+  totalMatched: number;
+  items: MarketDiscoveryItem[];
+  error?: string;
+}
+
+export interface MarketInformationParams {
+  market: Market;
+  symbol?: string;
+  name?: string;
+  limit?: number;
+}
+
+export interface MarketInformationNewsItem {
+  id: string;
+  headline: string;
+  summary: string;
+  publishedAt: string;
+  source: string;
+  scope: "market" | "instrument";
+  url: string | null;
+}
+
+export interface MarketInformationResult {
+  market: Market;
+  symbol: string;
+  overview: MarketDiscoveryOverview;
+  leaders: MarketDiscoveryItem[];
+  active: MarketDiscoveryItem[];
+  news: MarketInformationNewsItem[];
+  source: string;
+  observedAt: string;
+  freshness: "fresh" | "stale";
+  warnings: string[];
+  snapshotHash: string;
   error?: string;
 }
 
@@ -2267,6 +2415,7 @@ export type PlatformSettingsSecretName =
 export interface PlatformSettingsConfigurationValues {
   ccxtDefaultExchange: string;
   ccxtTimeout: number;
+  autoTradingIntervalSeconds: number;
   liveSessionTtlHours: number;
   openaiModel: string;
   openaiCompatibleBaseUrl: string;
@@ -5077,6 +5226,10 @@ export function buildResearchRunDetailUrl(baseUrl: string, runId: string): strin
   return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}`);
 }
 
+export function buildResearchRunProductionStrategyHandoffUrl(baseUrl: string, runId: string): string {
+  return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/production-strategy-handoff`);
+}
+
 export function buildResearchRunExportUrl(baseUrl: string, runId: string): string {
   return buildApiUrl(baseUrl, `api/research/runs/${encodeURIComponent(runId)}/export`);
 }
@@ -5449,6 +5602,62 @@ export function buildMarketSearchUrl(
     url.searchParams.set("limit", String(Math.max(1, Math.min(limit, 20))));
     if (timeframe) {
       url.searchParams.set("timeframe", timeframe);
+    }
+  });
+}
+
+export function buildMarketDiscoveryUrl(
+  baseUrl: string,
+  params: MarketDiscoveryParams
+): string {
+  return buildApiUrl(baseUrl, "api/market/discovery", (url) => {
+    url.searchParams.set("market", params.market);
+    if (params.query?.trim()) {
+      url.searchParams.set("query", params.query.trim());
+    }
+    ([
+      ["minChangePct", params.minChangePct],
+      ["maxChangePct", params.maxChangePct],
+      ["minAmount", params.minAmount],
+      ["minTurnoverRate", params.minTurnoverRate],
+      ["maxPe", params.maxPe],
+    ] as const).forEach(([key, value]) => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        url.searchParams.set(key, String(value));
+      }
+    });
+    if (params.sort) {
+      url.searchParams.set("sort", params.sort);
+    }
+    if (params.direction) {
+      url.searchParams.set("direction", params.direction);
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set(
+        "limit",
+        String(Math.max(1, Math.min(Math.trunc(params.limit), 100)))
+      );
+    }
+  });
+}
+
+export function buildMarketInformationUrl(
+  baseUrl: string,
+  params: MarketInformationParams
+): string {
+  return buildApiUrl(baseUrl, "api/market/information", (url) => {
+    url.searchParams.set("market", params.market);
+    if (params.symbol?.trim()) {
+      url.searchParams.set("symbol", params.symbol.trim());
+    }
+    if (params.name?.trim()) {
+      url.searchParams.set("name", params.name.trim());
+    }
+    if (params.limit !== undefined) {
+      url.searchParams.set(
+        "limit",
+        String(Math.max(1, Math.min(Math.trunc(params.limit), 50)))
+      );
     }
   });
 }
@@ -6171,6 +6380,42 @@ export async function loadResearchRunDetail(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown research run detail error"
+    };
+  }
+}
+
+export async function loadResearchRunProductionStrategyHandoff(
+  baseUrl: string,
+  runId: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<ProductionStrategyHandoffResult> {
+  try {
+    const response = await fetcher(buildResearchRunProductionStrategyHandoffUrl(baseUrl, runId));
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(response.ok
+        ? "Invalid production strategy handoff contract"
+        : `HTTP ${response.status ?? "error"}`);
+    }
+    if (!response.ok) {
+      return {
+        source: "core",
+        error: coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`
+      };
+    }
+    if (!isProductionStrategyHandoffPayload(payload)) {
+      throw new Error("Invalid production strategy handoff contract");
+    }
+    return {
+      handoff: payload.productionStrategyHandoff,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown production strategy handoff error"
     };
   }
 }
@@ -12666,6 +12911,71 @@ export async function loadStrategyLibrary(
   }
 }
 
+export async function loadStrategyProductionBinding(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategyProductionBindingResult> {
+  return requestStrategyProductionBinding(
+    buildApiUrl(baseUrl, "api/execution/auto-paper-trading"),
+    undefined,
+    fetcher
+  );
+}
+
+export async function updateStrategyProductionBinding(
+  baseUrl: string,
+  params: {
+    strategyRevision: string | null;
+    auditRunId: string | null;
+    operator: string;
+  },
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<StrategyProductionBindingResult> {
+  return requestStrategyProductionBinding(
+    buildApiUrl(baseUrl, "api/execution/auto-paper-trading"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        strategyRevision: params.strategyRevision,
+        auditRunId: params.auditRunId,
+        operator: params.operator,
+        confirmed: true
+      })
+    },
+    fetcher
+  );
+}
+
+async function requestStrategyProductionBinding(
+  url: string,
+  init: RequestInit | undefined,
+  fetcher: WorkspaceFetcher
+): Promise<StrategyProductionBindingResult> {
+  try {
+    const response = await fetcher(url, init);
+    const payload = await response.json();
+    if (!response.ok) {
+      const detail = isPlainRecord(payload) && typeof payload.detail === "string"
+        ? payload.detail
+        : `HTTP ${response.status ?? "error"}`;
+      throw new Error(detail);
+    }
+    if (!isStrategyProductionBindingPayload(payload)) {
+      throw new Error("Invalid production strategy binding contract");
+    }
+    return {
+      binding: payload.strategyBinding,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown production strategy binding error"
+    };
+  }
+}
+
 export async function loadStrategyDetail(
   baseUrl: string,
   revision: string,
@@ -13455,6 +13765,97 @@ export async function loadMarketSearch(
       results: [],
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown market search error"
+    };
+  }
+}
+
+export async function loadMarketDiscovery(
+  baseUrl: string,
+  params: MarketDiscoveryParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketDiscoveryResult> {
+  try {
+    const response = await fetcher(buildMarketDiscoveryUrl(baseUrl, params));
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (!isMarketDiscoveryPayload(payload) || payload.market !== params.market) {
+      throw new Error("Invalid market discovery contract");
+    }
+    return payload;
+  } catch (error) {
+    return {
+      market: params.market,
+      source: "fallback",
+      observedAt: "",
+      freshness: "unavailable",
+      warnings: [],
+      snapshotHash: "",
+      overview: {
+        universeCount: 0,
+        advancing: 0,
+        declining: 0,
+        flat: 0,
+        totalAmount: 0,
+      },
+      totalMatched: 0,
+      items: [],
+      error: error instanceof Error ? error.message : "Unknown market discovery error",
+    };
+  }
+}
+
+export async function loadMarketInformation(
+  baseUrl: string,
+  params: MarketInformationParams,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketInformationResult> {
+  try {
+    const response = await fetcher(buildMarketInformationUrl(baseUrl, params));
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    const requestedSymbol = params.symbol?.trim();
+    if (
+      !isMarketInformationPayload(payload)
+      || payload.market !== params.market
+      || (requestedSymbol && payload.symbol !== requestedSymbol)
+    ) {
+      throw new Error("Invalid market information contract");
+    }
+    return payload;
+  } catch (error) {
+    return {
+      market: params.market,
+      symbol: params.symbol?.trim() ?? "",
+      overview: {
+        universeCount: 0,
+        advancing: 0,
+        declining: 0,
+        flat: 0,
+        totalAmount: 0,
+      },
+      leaders: [],
+      active: [],
+      news: [],
+      source: "fallback",
+      observedAt: "",
+      freshness: "stale",
+      warnings: [],
+      snapshotHash: "",
+      error: error instanceof Error ? error.message : "Unknown market information error",
     };
   }
 }
@@ -16080,6 +16481,75 @@ function isStrategyLibraryItemPayload(value: unknown): value is { strategy: Stra
   return isStrategyLibraryItem(payload.strategy);
 }
 
+export function isStrategyProductionBindingPayload(
+  value: unknown
+): value is { strategyBinding: StrategyProductionBinding } {
+  if (!isPlainRecord(value) || !isPlainRecord(value.strategyBinding)) {
+    return false;
+  }
+  const binding = value.strategyBinding;
+  return (
+    (binding.kind === "builtin" || binding.kind === "library") &&
+    (binding.bindingId === null || typeof binding.bindingId === "string") &&
+    typeof binding.strategyId === "string" &&
+    typeof binding.revision === "string" &&
+    typeof binding.name === "string" &&
+    (binding.auditRunId === null || typeof binding.auditRunId === "string") &&
+    isMarket(binding.market) &&
+    typeof binding.symbol === "string" &&
+    isTimeframe(binding.timeframe) &&
+    (binding.status === "ready" || binding.status === "blocked") &&
+    typeof binding.detail === "string" &&
+    typeof binding.switchAllowed === "boolean" &&
+    (binding.switchBlockedReason === null || typeof binding.switchBlockedReason === "string") &&
+    typeof binding.operator === "string"
+  );
+}
+
+function isProductionStrategyHandoffPayload(
+  value: unknown
+): value is { productionStrategyHandoff: ProductionStrategyHandoff } {
+  if (!isPlainRecord(value) || !isPlainRecord(value.productionStrategyHandoff)) {
+    return false;
+  }
+  const handoff = value.productionStrategyHandoff;
+  if (!isPlainRecord(handoff.productionReplay) || !isPlainRecord(handoff.boundary)) {
+    return false;
+  }
+  const replay = handoff.productionReplay;
+  const boundary = handoff.boundary;
+  return (
+    typeof handoff.runId === "string" &&
+    typeof handoff.strategyId === "string" &&
+    typeof handoff.strategyRevision === "string" &&
+    typeof handoff.strategyName === "string" &&
+    isMarket(handoff.market) &&
+    typeof handoff.symbol === "string" &&
+    isTimeframe(handoff.timeframe) &&
+    (handoff.status === "active" || handoff.status === "ready" || handoff.status === "review") &&
+    handoff.evidenceStatus === "eligible" &&
+    typeof handoff.switchAllowed === "boolean" &&
+    (handoff.switchBlockedReason === null || typeof handoff.switchBlockedReason === "string") &&
+    typeof handoff.alreadyBound === "boolean" &&
+    typeof handoff.auditHash === "string" &&
+    typeof handoff.dataSnapshotHash === "string" &&
+    typeof replay.feeBps === "number" &&
+    Number.isFinite(replay.feeBps) &&
+    typeof replay.slippageBps === "number" &&
+    Number.isFinite(replay.slippageBps) &&
+    typeof replay.auditedMaxDrawdownPct === "number" &&
+    Number.isFinite(replay.auditedMaxDrawdownPct) &&
+    typeof replay.productionMaxDrawdownPct === "number" &&
+    Number.isFinite(replay.productionMaxDrawdownPct) &&
+    typeof replay.strategyMaxDrawdownPct === "number" &&
+    Number.isFinite(replay.strategyMaxDrawdownPct) &&
+    boundary.authorizesLive === false &&
+    boundary.startsMonitoring === false &&
+    boundary.evaluatesNow === false &&
+    boundary.submitsOrder === false
+  );
+}
+
 function isStrategyValidationPayload(value: unknown): value is { validation: StrategyValidation } {
   if (!value || typeof value !== "object") {
     return false;
@@ -16701,6 +17171,9 @@ function isPlatformSettingsConfiguration(value: unknown): value is PlatformSetti
     Boolean(values) &&
     typeof values?.ccxtDefaultExchange === "string" &&
     typeof values.ccxtTimeout === "number" &&
+    Number.isInteger(values.autoTradingIntervalSeconds) &&
+    Number(values.autoTradingIntervalSeconds) >= 5 &&
+    Number(values.autoTradingIntervalSeconds) <= 3600 &&
     Number.isInteger(values.liveSessionTtlHours) &&
     Number(values.liveSessionTtlHours) >= 0 &&
     Number(values.liveSessionTtlHours) <= 8760 &&
@@ -21146,6 +21619,115 @@ function isPortfolioCovarianceRiskContribution(value: unknown): value is Portfol
     typeof contribution.marginalContributionPct === "number" &&
     typeof contribution.contributionPct === "number"
   );
+}
+
+function isMarketDiscoveryPayload(value: unknown): value is MarketDiscoveryResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<MarketDiscoveryResult>;
+  return (
+    isMarket(payload.market) &&
+    typeof payload.source === "string" &&
+    typeof payload.observedAt === "string" &&
+    typeof payload.freshness === "string" &&
+    Array.isArray(payload.warnings) &&
+    payload.warnings.every((warning) => typeof warning === "string") &&
+    typeof payload.snapshotHash === "string" &&
+    isMarketDiscoveryOverview(payload.overview) &&
+    isNonNegativeFiniteNumber(payload.totalMatched) &&
+    Array.isArray(payload.items) &&
+    payload.items.every(isMarketDiscoveryItem)
+  );
+}
+
+function isMarketInformationPayload(value: unknown): value is MarketInformationResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as Partial<MarketInformationResult>;
+  return (
+    isMarket(payload.market) &&
+    typeof payload.symbol === "string" &&
+    isMarketDiscoveryOverview(payload.overview) &&
+    Array.isArray(payload.leaders) &&
+    payload.leaders.every(isMarketDiscoveryItem) &&
+    Array.isArray(payload.active) &&
+    payload.active.every(isMarketDiscoveryItem) &&
+    Array.isArray(payload.news) &&
+    payload.news.every(isMarketInformationNewsItem) &&
+    typeof payload.source === "string" &&
+    typeof payload.observedAt === "string" &&
+    (payload.freshness === "fresh" || payload.freshness === "stale") &&
+    Array.isArray(payload.warnings) &&
+    payload.warnings.every((warning) => typeof warning === "string") &&
+    typeof payload.snapshotHash === "string"
+  );
+}
+
+function isMarketInformationNewsItem(value: unknown): value is MarketInformationNewsItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const item = value as Partial<MarketInformationNewsItem>;
+  return (
+    typeof item.id === "string" &&
+    typeof item.headline === "string" &&
+    typeof item.summary === "string" &&
+    typeof item.publishedAt === "string" &&
+    typeof item.source === "string" &&
+    (item.scope === "market" || item.scope === "instrument") &&
+    (item.url === null || typeof item.url === "string")
+  );
+}
+
+function isMarketDiscoveryOverview(value: unknown): value is MarketDiscoveryOverview {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const overview = value as Partial<MarketDiscoveryOverview>;
+  return (
+    isNonNegativeFiniteNumber(overview.universeCount) &&
+    isNonNegativeFiniteNumber(overview.advancing) &&
+    isNonNegativeFiniteNumber(overview.declining) &&
+    isNonNegativeFiniteNumber(overview.flat) &&
+    isNonNegativeFiniteNumber(overview.totalAmount)
+  );
+}
+
+function isMarketDiscoveryItem(value: unknown): value is MarketDiscoveryItem {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const item = value as Partial<MarketDiscoveryItem>;
+  return (
+    isMarket(item.market) &&
+    typeof item.symbol === "string" &&
+    typeof item.name === "string" &&
+    isNonNegativeFiniteNumber(item.price) &&
+    typeof item.changePct === "number" &&
+    Number.isFinite(item.changePct) &&
+    isNonNegativeFiniteNumber(item.volume) &&
+    isNonNegativeFiniteNumber(item.amount) &&
+    isNullableNonNegativeFiniteNumber(item.turnoverRate) &&
+    isNullableFiniteNumber(item.peRatio) &&
+    isNullableFiniteNumber(item.pbRatio) &&
+    isNullableFiniteNumber(item.marketCap) &&
+    typeof item.source === "string" &&
+    typeof item.observedAt === "string"
+  );
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+function isNullableNonNegativeFiniteNumber(value: unknown): value is number | null {
+  return value === null || isNonNegativeFiniteNumber(value);
 }
 
 function isMarketSearchPayload(value: unknown): value is Omit<MarketSearchResult, "source" | "error"> {

@@ -238,6 +238,16 @@ from quant_core.execution_adapter_health import (
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
 from quant_core.market_calendar import build_market_calendar_status
+from quant_core.market_discovery import (
+    MarketDiscoveryService,
+    MarketDiscoveryUnavailable,
+    market_discovery_query_from_params,
+)
+from quant_core.market_information import (
+    MarketInformationService,
+    MarketInformationUnavailable,
+    market_information_query_from_params,
+)
 from quant_core.market_klines import (
     QuantDingerKlineAdapter,
     build_market_data_readiness,
@@ -562,11 +572,12 @@ def evaluate_auto_paper_trading_once(
         symbol=state["symbol"],
         timeframe=state["timeframe"],
     )
+    required_bars = service.required_bar_count()
     bars, quality = _fetch_market_klines_with_cache(
         cache=cache,
         adapter=adapter,
         request=request,
-        limit=7,
+        limit=min(required_bars + 1, 500),
     )
     if not quality.is_complete:
         return (
@@ -583,9 +594,11 @@ def evaluate_auto_paper_trading_once(
         ),
         key=lambda bar: bar.timestamp,
     )
-    if len(closed) < 6:
+    if len(closed) < required_bars:
         return (
-            service.record_data_blocked("完整 K 线不足 6 根，已跳过本轮决策。"),
+            service.record_data_blocked(
+                f"完整 K 线不足 {required_bars} 根，已跳过本轮决策。"
+            ),
             quality,
         )
     if closed[-1].timestamp + interval < now - interval * 2:
@@ -593,7 +606,7 @@ def evaluate_auto_paper_trading_once(
             service.record_data_blocked("最新完整 K 线已过期，已跳过本轮决策。"),
             quality,
         )
-    window = closed[-6:]
+    window = closed[-required_bars:]
     if any(
         current.timestamp - previous.timestamp != interval
         for previous, current in zip(window, window[1:])
@@ -646,9 +659,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     platform_settings_environ = None
     settings_restart_required = False
     auto_paper_trading_service: AutoPaperTradingService | None = None
+    auto_paper_trading_runner: AutoPaperTradingRunner | None = None
     quote_adapter = QuantDingerLiveQuoteAdapter()
     kline_adapter = QuantDingerKlineAdapter(fallback_adapter=adapter)
     search_adapter = MarketSymbolSearchAdapter()
+    market_discovery_service = MarketDiscoveryService()
+    market_information_service = MarketInformationService(
+        market_discovery_service=market_discovery_service
+    )
     audit_signing_secret = os.environ.get("AIQT_AUDIT_SIGNING_SECRET", "local-dev-audit-secret")
     audit_signing_key_id = os.environ.get("AIQT_AUDIT_SIGNING_KEY_ID", "local-audit-key")
     audit_signer_name = os.environ.get("AIQT_AUDIT_SIGNER_NAME", "Local Audit Key")
@@ -730,6 +748,19 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             record = self.strategy_store.get(revision)
             if record is None:
                 self._send_json({"error": "strategy_not_found", "revision": revision}, status=404)
+                return
+            binding = self._auto_paper_trading_service().snapshot().get(
+                "strategyBinding",
+                {},
+            )
+            if isinstance(binding, dict) and binding.get("revision") == revision:
+                self._send_json(
+                    {
+                        "error": "strategy_is_active_for_auto_trading",
+                        "detail": "请先暂停自动交易并恢复内置策略，再删除该版本。",
+                    },
+                    status=409,
+                )
                 return
             self.strategy_store.delete(revision)
             self._send_json({"deleted": True, "revision": revision})
@@ -2999,7 +3030,15 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 payload = self._read_json_body()
                 result = self._auto_paper_trading_service().configure(payload)
             except ValueError as error:
-                self._send_json({"error": "invalid_auto_paper_trading_control", "detail": str(error)}, status=400)
+                detail = str(error)
+                conflict = detail.startswith("strategy_switch_requires_") or detail in {
+                    "strategy_binding_audit_evidence_changed",
+                    "strategy_binding_audit_run_changed",
+                }
+                self._send_json(
+                    {"error": "invalid_auto_paper_trading_control", "detail": detail},
+                    status=409 if conflict else 400,
+                )
                 return
             self._send_json(result)
             return
@@ -5896,6 +5935,62 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/market/information":
+            try:
+                information_query = market_information_query_from_params(
+                    parse_qs(parsed.query, keep_blank_values=True)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_market_information_query",
+                        "detail": str(error),
+                    },
+                    status=400,
+                )
+                return
+            try:
+                payload = self.market_information_service.read(
+                    information_query
+                )
+            except MarketInformationUnavailable as error:
+                self._send_json(
+                    {
+                        "error": "market_information_unavailable",
+                        "detail": str(error),
+                    },
+                    status=502,
+                )
+                return
+            self._send_json(payload)
+            return
+        if parsed.path == "/api/market/discovery":
+            try:
+                discovery_query = market_discovery_query_from_params(
+                    parse_qs(parsed.query, keep_blank_values=True)
+                )
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_market_discovery_query",
+                        "detail": str(error),
+                    },
+                    status=400,
+                )
+                return
+            try:
+                payload = self.market_discovery_service.discover(discovery_query)
+            except MarketDiscoveryUnavailable as error:
+                self._send_json(
+                    {
+                        "error": "market_discovery_unavailable",
+                        "detail": str(error),
+                    },
+                    status=502,
+                )
+                return
+            self._send_json(payload)
+            return
         if parsed.path == "/api/market/quotes":
             query = parse_qs(parsed.query)
             workspace = self._workspace_with_saved_watchlist()
@@ -6127,6 +6222,41 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 self.strategy_store.save(strategy, audit_run_id=workspace.research_run.run_id)
             self._send_json(terminal_workspace_to_payload(workspace))
+            return
+        if (
+            parsed.path.startswith("/api/research/runs/")
+            and parsed.path.endswith("/production-strategy-handoff")
+        ):
+            run_id = unquote(
+                parsed.path
+                .removeprefix("/api/research/runs/")
+                .removesuffix("/production-strategy-handoff")
+            ).strip()
+            try:
+                handoff = self._auto_paper_trading_service().preflight_strategy_binding(
+                    run_id
+                )
+            except ValueError as error:
+                detail = str(error)
+                status = (
+                    404
+                    if detail in {
+                        "strategy_binding_audit_run_not_found",
+                        "strategy_binding_strategy_not_found",
+                    }
+                    else 500
+                    if detail == "strategy_binding_store_unavailable"
+                    else 409
+                )
+                self._send_json(
+                    {
+                        "error": "production_strategy_handoff_blocked",
+                        "detail": detail,
+                    },
+                    status=status,
+                )
+                return
+            self._send_json({"productionStrategyHandoff": handoff})
             return
         if parsed.path.startswith("/api/research/runs/") and parsed.path.endswith("/paper-executions"):
             run_id = unquote(parsed.path.removeprefix("/api/research/runs/").removesuffix("/paper-executions")).strip()
@@ -6559,6 +6689,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         updater = getattr(type(self).quote_adapter, "update_finnhub_api_key", None)
         if callable(updater):
             updater(environment.get("FINNHUB_API_KEY", ""))
+        information_updater = getattr(
+            type(self).market_information_service,
+            "update_finnhub_api_key",
+            None,
+        )
+        if callable(information_updater):
+            information_updater(environment.get("FINNHUB_API_KEY", ""))
         kline_updater = getattr(type(self).kline_adapter, "update_ccxt_settings", None)
         if callable(kline_updater):
             kline_updater(
@@ -6579,6 +6716,16 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 refreshed.sandbox,
                 refreshed.production,
                 live_session_ttl_hours=refreshed.live_session_ttl_hours,
+            )
+        auto_runner = type(self).auto_paper_trading_runner
+        if auto_runner is not None:
+            auto_runner.update_interval(
+                _runtime_int(
+                    environment.get("AIQT_AUTO_TRADING_INTERVAL_SECONDS"),
+                    35,
+                    5,
+                    3_600,
+                )
             )
         type(self).settings_restart_required = False
 
@@ -7310,15 +7457,26 @@ def _build_auto_paper_trading_service(
             0,
             8_760,
         ),
+        strategy_store=handler_type.strategy_store,
+        run_store=handler_type.run_store,
     )
 
 
 def build_auto_paper_trading_runner(
     handler_type: type[QuantApiHandler] = QuantApiHandler,
     *,
-    interval_seconds: float = 35,
+    interval_seconds: float | None = None,
 ) -> AutoPaperTradingRunner:
     service = _build_auto_paper_trading_service(handler_type)
+    if interval_seconds is None:
+        interval_seconds = _runtime_int(
+            _handler_platform_environment(handler_type).get(
+                "AIQT_AUTO_TRADING_INTERVAL_SECONDS"
+            ),
+            35,
+            5,
+            3_600,
+        )
 
     def evaluate_once() -> None:
         evaluate_auto_paper_trading_once(
@@ -7370,6 +7528,9 @@ def run(host: str | None = None, port: int | str | None = None) -> None:
         QuantApiHandler.kline_adapter = QuantDingerKlineAdapter(
             fallback_adapter=QuantApiHandler.adapter
         )
+        QuantApiHandler.market_information_service.update_finnhub_api_key(
+            os.environ.get("FINNHUB_API_KEY", "")
+        )
     bind_host, bind_port = resolve_api_bind(host=host, port=port)
     factory = QuantApiHandler.stage6_sandbox_route_factory
     route = (
@@ -7383,6 +7544,7 @@ def run(host: str | None = None, port: int | str | None = None) -> None:
     server = ThreadingHTTPServer((bind_host, bind_port), QuantApiHandler)
     auto_trading_runner = build_auto_paper_trading_runner()
     QuantApiHandler.auto_paper_trading_service = auto_trading_runner.service
+    QuantApiHandler.auto_paper_trading_runner = auto_trading_runner
     monitoring_runner = build_monitoring_runner(
         auto_trading_service=auto_trading_runner.service,
     )
@@ -7396,6 +7558,7 @@ def run(host: str | None = None, port: int | str | None = None) -> None:
         monitoring_runner.stop()
         auto_trading_runner.stop()
         QuantApiHandler.auto_paper_trading_service = None
+        QuantApiHandler.auto_paper_trading_runner = None
         server.server_close()
 
 

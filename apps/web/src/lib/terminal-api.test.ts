@@ -60,6 +60,7 @@ import {
   buildP0PipelineUrl,
   buildResearchRunUrl,
   buildResearchRunDetailUrl,
+  buildResearchRunProductionStrategyHandoffUrl,
   buildResearchRunExportUrl,
   buildResearchRunImportUrl,
   buildResearchRunImportUndoUrl,
@@ -156,6 +157,8 @@ import {
   buildStrategyValidationUrl,
   buildResearchRunsUrl,
   buildMarketDataReadinessUrl,
+  buildMarketDiscoveryUrl,
+  buildMarketInformationUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
   buildWatchlistUrl,
@@ -163,10 +166,13 @@ import {
   buildGoldenPathStatusUrl,
   loadGoldenPathStatus,
   loadMarketDataReadiness,
+  loadMarketDiscovery,
+  loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
   loadMarketSearch,
   loadResearchRunDetail,
+  loadResearchRunProductionStrategyHandoff,
   loadResearchRunExport,
   loadLatestResearchRunPaperExecution,
   loadResearchRunPromotion,
@@ -237,6 +243,8 @@ import {
   refreshMarketCacheBatch,
   refreshWatchlistCacheRun,
   loadStrategyLibrary,
+  loadStrategyProductionBinding,
+  updateStrategyProductionBinding,
   loadStrategyExperimentDetail,
   loadStrategyExperiments,
   loadAiReviewProviders,
@@ -20633,6 +20641,165 @@ describe("terminal workspace API client", () => {
     expect(result.strategies[0]?.strategySnapshot.entry).toBe("Close > SMA8");
   });
 
+  test("reads and updates the audited production strategy binding", async () => {
+    const payload = {
+      strategyBinding: {
+        kind: "library",
+        bindingId: "strategy-binding-123",
+        strategyId: "strategy-rev123",
+        revision: "rev123",
+        name: "BTC 一分钟均线策略",
+        auditRunId: "run-live-strategy",
+        market: "crypto",
+        symbol: "BTC/USDT",
+        timeframe: "1m",
+        status: "ready",
+        detail: "当前自动交易将使用该审计策略。",
+        switchAllowed: true,
+        switchBlockedReason: null,
+        operator: "wenqingjie"
+      }
+    } as const;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return { ok: true, status: 200, json: async () => payload };
+    };
+
+    const loaded = await loadStrategyProductionBinding("http://127.0.0.1:8765", fetcher);
+    const updated = await updateStrategyProductionBinding(
+      "http://127.0.0.1:8765",
+      {
+        strategyRevision: "rev123",
+        auditRunId: "run-live-strategy",
+        operator: "wenqingjie"
+      },
+      fetcher
+    );
+
+    expect(loaded.binding?.revision).toBe("rev123");
+    expect(updated.source).toBe("core");
+    expect(calls[0]).toEqual({
+      url: "http://127.0.0.1:8765/api/execution/auto-paper-trading",
+      init: undefined
+    });
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({
+      strategyRevision: "rev123",
+      auditRunId: "run-live-strategy",
+      operator: "wenqingjie",
+      confirmed: true
+    });
+
+    const rejected = await updateStrategyProductionBinding(
+      "http://127.0.0.1:8765",
+      { strategyRevision: "rev123", auditRunId: "run-live-strategy", operator: "wenqingjie" },
+      async () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: "invalid_auto_paper_trading_control",
+          detail: "strategy_switch_requires_paused_monitoring"
+        })
+      })
+    );
+    expect(rejected).toEqual({
+      source: "fallback",
+      error: "strategy_switch_requires_paused_monitoring"
+    });
+  });
+
+  test("loads a read-only production handoff preflight and rejects unsafe boundaries", async () => {
+    const payload = {
+      productionStrategyHandoff: {
+        runId: "run-live-strategy",
+        strategyId: "strategy-rev123",
+        strategyRevision: "rev123",
+        strategyName: "BTC 一分钟均线策略",
+        market: "crypto",
+        symbol: "BTC/USDT",
+        timeframe: "1m",
+        status: "ready",
+        evidenceStatus: "eligible",
+        switchAllowed: true,
+        switchBlockedReason: null,
+        alreadyBound: false,
+        auditHash: "audit-hash",
+        dataSnapshotHash: "snapshot-hash",
+        productionReplay: {
+          feeBps: 10,
+          slippageBps: 10,
+          auditedMaxDrawdownPct: 1.2,
+          productionMaxDrawdownPct: 1.4,
+          strategyMaxDrawdownPct: 2
+        },
+        boundary: {
+          authorizesLive: false,
+          startsMonitoring: false,
+          evaluatesNow: false,
+          submitsOrder: false
+        }
+      }
+    } as const;
+    const calls: string[] = [];
+    const result = await loadResearchRunProductionStrategyHandoff(
+      "http://127.0.0.1:8765",
+      "run/live",
+      async (url) => {
+        calls.push(url);
+        return { ok: true, status: 200, json: async () => payload };
+      }
+    );
+
+    expect(buildResearchRunProductionStrategyHandoffUrl(
+      "http://127.0.0.1:8765",
+      "run/live"
+    )).toBe("http://127.0.0.1:8765/api/research/runs/run%2Flive/production-strategy-handoff");
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/research/runs/run%2Flive/production-strategy-handoff"
+    ]);
+    expect(result.handoff?.productionReplay.feeBps).toBe(10);
+    expect(result.handoff?.boundary.submitsOrder).toBe(false);
+
+    const blocked = await loadResearchRunProductionStrategyHandoff(
+      "http://127.0.0.1:8765",
+      "run-live-strategy",
+      async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: "production_strategy_handoff_blocked",
+          detail: "strategy_binding_context_unsupported"
+        })
+      })
+    );
+    expect(blocked).toEqual({
+      source: "core",
+      error: "strategy_binding_context_unsupported"
+    });
+
+    const unsafe = await loadResearchRunProductionStrategyHandoff(
+      "http://127.0.0.1:8765",
+      "run-live-strategy",
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          productionStrategyHandoff: {
+            ...payload.productionStrategyHandoff,
+            boundary: {
+              ...payload.productionStrategyHandoff.boundary,
+              submitsOrder: true
+            }
+          }
+        })
+      })
+    );
+    expect(unsafe).toEqual({
+      source: "fallback",
+      error: "Invalid production strategy handoff contract"
+    });
+  });
+
   test("loads the latest paper execution for an audited research run", async () => {
     const calls: string[] = [];
     const result = await loadLatestResearchRunPaperExecution("http://127.0.0.1:8765", "run-new", async (url) => {
@@ -21205,6 +21372,340 @@ describe("terminal workspace API client", () => {
     expect(result.timeframe).toBe("1d");
     expect(result.results[0].name).toBe("浦发银行");
     expect(result.results[0].cache).toMatchObject({ freshness: "fresh", rowCount: 240, ageHours: 12 });
+  });
+
+  test("loads market information with breadth, rankings, and linked news", async () => {
+    const calls: string[] = [];
+    const result = await loadMarketInformation(
+      "http://127.0.0.1:8765",
+      { market: "ashare", symbol: "600000", name: "浦发银行", limit: 20 },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            market: "ashare",
+            symbol: "600000",
+            overview: {
+              universeCount: 5_432,
+              advancing: 3_100,
+              declining: 2_100,
+              flat: 232,
+              totalAmount: 980_000_000_000,
+            },
+            leaders: [{
+              market: "ashare",
+              symbol: "600000",
+              name: "浦发银行",
+              price: 10.25,
+              changePct: 2.5,
+              volume: 1_000,
+              amount: 2_000_000,
+              turnoverRate: 1.2,
+              peRatio: 6.5,
+              pbRatio: 0.8,
+              marketCap: 200_000_000_000,
+              source: "eastmoney",
+              observedAt: "2026-07-31T01:00:00+00:00",
+            }],
+            active: [],
+            news: [{
+              id: "news-1",
+              headline: "浦发银行发布公告",
+              summary: "只保留简短摘要。",
+              publishedAt: "2026-07-31T00:30:00+00:00",
+              source: "证券时报",
+              scope: "instrument",
+              url: "https://finance.eastmoney.com/a/news-1.html",
+            }],
+            source: "eastmoney",
+            observedAt: "2026-07-31T01:05:00+00:00",
+            freshness: "fresh",
+            warnings: [],
+            snapshotHash: "f".repeat(64),
+          }),
+        };
+      },
+    );
+
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/market/information?market=ashare&symbol=600000&name=%E6%B5%A6%E5%8F%91%E9%93%B6%E8%A1%8C&limit=20",
+    ]);
+    expect(buildMarketInformationUrl("/", {
+      market: "ashare",
+      symbol: "600000",
+      name: " 浦发银行 ",
+      limit: 20,
+    })).toBe(
+      "/api/market/information?market=ashare&symbol=600000&name=%E6%B5%A6%E5%8F%91%E9%93%B6%E8%A1%8C&limit=20",
+    );
+    expect(buildMarketInformationUrl("/", {
+      market: "ashare",
+      limit: 999,
+    })).toBe("/api/market/information?market=ashare&limit=50");
+    expect(result.error).toBeUndefined();
+    expect(result.overview.universeCount).toBe(5_432);
+    expect(result.news[0]?.scope).toBe("instrument");
+  });
+
+  test("rejects market information returned for a different selected symbol", async () => {
+    const result = await loadMarketInformation(
+      "http://127.0.0.1:8765",
+      { market: "us", symbol: "AAPL" },
+      async () => ({
+        ok: true,
+        json: async () => ({
+          market: "us",
+          symbol: "MSFT",
+          overview: {
+            universeCount: 0,
+            advancing: 0,
+            declining: 0,
+            flat: 0,
+            totalAmount: 0,
+          },
+          leaders: [],
+          active: [],
+          news: [],
+          source: "finnhub",
+          observedAt: "2026-07-31T01:05:00+00:00",
+          freshness: "fresh",
+          warnings: ["美股市场广度暂未接入。"],
+          snapshotHash: "a".repeat(64),
+        }),
+      }),
+    );
+
+    expect(result.market).toBe("us");
+    expect(result.symbol).toBe("AAPL");
+    expect(result.news).toEqual([]);
+    expect(result.error).toBe("Invalid market information contract");
+  });
+
+  test("loads a filtered A-share market discovery snapshot from the Python core", async () => {
+    const calls: string[] = [];
+    const result = await loadMarketDiscovery(
+      "http://127.0.0.1:8765",
+      {
+        market: "ashare",
+        query: "银行",
+        minChangePct: 0,
+        maxChangePct: 5,
+        minAmount: 1_000_000,
+        minTurnoverRate: 0.5,
+        maxPe: 20,
+        sort: "amount",
+        direction: "desc",
+        limit: 20,
+      },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            market: "ashare",
+            source: "eastmoney",
+            observedAt: "2026-07-30T08:00:00+00:00",
+            freshness: "fresh",
+            warnings: [],
+            snapshotHash: "a".repeat(64),
+            overview: {
+              universeCount: 5_432,
+              advancing: 3_100,
+              declining: 2_100,
+              flat: 232,
+              totalAmount: 980_000_000_000,
+            },
+            totalMatched: 2,
+            items: [
+              {
+                market: "ashare",
+                symbol: "600000",
+                name: "浦发银行",
+                price: 10.2,
+                changePct: 1.5,
+                volume: 1_200_000,
+                amount: 2_000_000,
+                turnoverRate: 0.8,
+                peRatio: 5.2,
+                pbRatio: 0.6,
+                marketCap: 300_000_000_000,
+                source: "eastmoney",
+                observedAt: "2026-07-30T08:00:00+00:00",
+              },
+            ],
+          }),
+        };
+      },
+    );
+
+    expect(calls).toEqual([
+      "http://127.0.0.1:8765/api/market/discovery?market=ashare&query=%E9%93%B6%E8%A1%8C&minChangePct=0&maxChangePct=5&minAmount=1000000&minTurnoverRate=0.5&maxPe=20&sort=amount&direction=desc&limit=20",
+    ]);
+    expect(buildMarketDiscoveryUrl("/", {
+      market: "ashare",
+      sort: "changePct",
+      direction: "desc",
+      limit: 10,
+    })).toBe("/api/market/discovery?market=ashare&sort=changePct&direction=desc&limit=10");
+    expect(result.source).toBe("eastmoney");
+    expect(result.overview.universeCount).toBe(5_432);
+    expect(result.items[0]?.symbol).toBe("600000");
+  });
+
+  test("accepts nullable enrichment metrics from a degraded market discovery source", async () => {
+    const result = await loadMarketDiscovery(
+      "/",
+      { market: "ashare", sort: "amount", direction: "desc", limit: 20 },
+      async () => ({
+        ok: true,
+        json: async () => ({
+          market: "ashare",
+          source: "sina",
+          observedAt: "2026-07-30T08:00:00+00:00",
+          freshness: "stale",
+          warnings: ["fallback_without_enrichment"],
+          snapshotHash: "e".repeat(64),
+          overview: {
+            universeCount: 1,
+            advancing: 1,
+            declining: 0,
+            flat: 0,
+            totalAmount: 2_000_000,
+          },
+          totalMatched: 1,
+          items: [{
+            market: "ashare",
+            symbol: "600000",
+            name: "浦发银行",
+            price: 10.2,
+            changePct: 1.5,
+            volume: 1_200_000,
+            amount: 2_000_000,
+            turnoverRate: null,
+            peRatio: null,
+            pbRatio: null,
+            marketCap: null,
+            source: "sina",
+            observedAt: "2026-07-30T08:00:00+00:00",
+          }],
+        }),
+      }),
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.source).toBe("sina");
+    expect(result.items[0]?.turnoverRate).toBeNull();
+  });
+
+  test("loads Binance USDT spot discovery without A-share-only filters", async () => {
+    const calls: string[] = [];
+    const result = await loadMarketDiscovery(
+      "/",
+      {
+        market: "crypto",
+        query: "SHIB",
+        minAmount: 100_000,
+        sort: "amount",
+        direction: "desc",
+        limit: 20,
+      },
+      async (url) => {
+        calls.push(url);
+        return {
+          ok: true,
+          json: async () => ({
+            market: "crypto",
+            source: "binance-data-api",
+            observedAt: "2026-07-31T08:00:00+00:00",
+            freshness: "fresh",
+            warnings: [],
+            snapshotHash: "f".repeat(64),
+            overview: {
+              universeCount: 480,
+              advancing: 250,
+              declining: 220,
+              flat: 10,
+              totalAmount: 12_345_678_900,
+            },
+            totalMatched: 1,
+            items: [{
+              market: "crypto",
+              symbol: "SHIB/USDT",
+              name: "SHIB",
+              price: 0.00001234,
+              changePct: 2.15,
+              volume: 9_876_543_210,
+              amount: 123_456.78,
+              turnoverRate: null,
+              peRatio: null,
+              pbRatio: null,
+              marketCap: null,
+              source: "binance-data-api",
+              observedAt: "2026-07-31T08:00:00+00:00",
+            }],
+          }),
+        };
+      },
+    );
+
+    expect(calls).toEqual([
+      "/api/market/discovery?market=crypto&query=SHIB&minAmount=100000&sort=amount&direction=desc&limit=20",
+    ]);
+    expect(result.error).toBeUndefined();
+    expect(result.source).toBe("binance-data-api");
+    expect(result.items[0]?.price).toBe(0.00001234);
+    expect(result.items[0]?.turnoverRate).toBeNull();
+  });
+
+  test("rejects a market discovery response for a different market", async () => {
+    const result = await loadMarketDiscovery(
+      "/",
+      { market: "crypto", sort: "amount", direction: "desc", limit: 20 },
+      async () => ({
+        ok: true,
+        json: async () => ({
+          market: "ashare",
+          source: "eastmoney",
+          observedAt: "2026-07-31T08:00:00+00:00",
+          freshness: "fresh",
+          warnings: [],
+          snapshotHash: "a".repeat(64),
+          overview: {
+            universeCount: 1,
+            advancing: 1,
+            declining: 0,
+            flat: 0,
+            totalAmount: 100,
+          },
+          totalMatched: 0,
+          items: [],
+        }),
+      }),
+    );
+
+    expect(result.market).toBe("crypto");
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("Invalid market discovery contract");
+  });
+
+  test("surfaces the core detail when market discovery is unavailable", async () => {
+    const result = await loadMarketDiscovery(
+      "/",
+      { market: "ashare", sort: "changePct", direction: "desc", limit: 20 },
+      async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({
+          error: "market_discovery_unavailable",
+          detail: "全市场行情源暂时不可用，请稍后重试。",
+        }),
+      }),
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.items).toEqual([]);
+    expect(result.error).toBe("全市场行情源暂时不可用，请稍后重试。");
   });
 
   test("returns an empty run history when the Python core is unavailable", async () => {

@@ -14,6 +14,7 @@ import {
   Languages,
   Maximize2,
   Moon,
+  Newspaper,
   Play,
   Radar,
   RefreshCw,
@@ -61,6 +62,8 @@ import {
   recordAuditSigningKeyRotationAcceptance,
   loadResearchRunAiReviews,
   loadMarketDataReadiness,
+  loadMarketDiscovery,
+  loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
   loadMarketSearch,
@@ -71,6 +74,7 @@ import {
   loadPortfolioPaperOrderStateHistory,
   loadPortfolioPaperOrderSimulations,
   loadResearchRunDetail,
+  loadResearchRunProductionStrategyHandoff,
   loadResearchRunExport,
   loadResearchRunHistory,
   loadResearchRunPromotion,
@@ -149,6 +153,8 @@ import {
   refreshMarketCache,
   refreshWatchlistCacheRun,
   loadStrategyLibrary,
+  loadStrategyProductionBinding,
+  updateStrategyProductionBinding,
   loadTerminalWorkspace,
   marketKlinesFromResearchRunAudit,
   mergeMarketKlines,
@@ -178,6 +184,9 @@ import {
   MarketCalendarResult,
   MarketCalendarStatus,
   MarketDataReadinessResult,
+  MarketDiscoveryParams,
+  MarketDiscoveryResult,
+  MarketInformationResult,
   MarketKlinesResult,
   MarketSearchSuggestion,
   PaperExecutionRecord,
@@ -253,6 +262,7 @@ import {
   PortfolioPaperOrderReplay,
   PortfolioPaperOrderStateHistory,
   PortfolioPaperOrderSimulation,
+  ProductionStrategyHandoffResult,
   resolveQuantCoreBaseUrl,
   saveAiReviewRunRecord,
   runP0AiReview,
@@ -279,6 +289,7 @@ import {
   StrategyAiDraftResult,
   StrategyLibraryItem,
   StrategyLibraryResult,
+  StrategyProductionBindingResult,
   StrategyValidationResult,
   validateStrategySnapshot,
   verifyAuditReportEvent,
@@ -294,25 +305,27 @@ import {
   PortfolioStage4Section,
   selectCurrentStage4PortfolioWorkflow
 } from "./components/PortfolioStage4Section";
-import { ExecutionStage5ShadowSection } from "./components/ExecutionStage5ShadowSection";
-import { ExecutionStage6SandboxSection } from "./components/ExecutionStage6SandboxSection";
-import { ExecutionStage7ProductionReadonlySection } from "./components/ExecutionStage7ProductionReadonlySection";
 import {
   TerminalWorkspaceSurface,
   type TerminalWorkspaceSurfaceAction
 } from "./components/TerminalWorkspaceSurface";
 import {
-  ExecutionStage9ProductionAdmissionSection,
-  Stage9ProductionAdmissionAuditLedgerPanel
+  ExecutionAcceptanceAuditLedgerPanel,
+  executionAcceptanceAuditEventTypes
 } from "./components/ExecutionStage9ProductionAdmissionSection";
 import { ExecutionStage10ProductionExecutionSection } from "./components/ExecutionStage10ProductionExecutionSection";
-import { ExecutionAutoPaperTradingSection } from "./components/ExecutionAutoPaperTradingSection";
+import {
+  AUTO_TRADING_STATUS_REFRESH_INTERVAL_MS,
+  ExecutionAutoPaperTradingSection,
+  autoTradingErrorMessage,
+  loadAutoTradingSnapshot,
+  type AutoTradingSnapshot
+} from "./components/ExecutionAutoPaperTradingSection";
 import { createI18n, Locale, resolveInitialLocale, supportedLocales } from "./lib/i18n";
 import {
   DEFAULT_TEXT_SCALE,
   MAX_TEXT_SCALE,
   MIN_TEXT_SCALE,
-  resolveStoredColorSchemePreference,
   resolveStoredTextScale,
   resolveSystemColorScheme,
   type ColorScheme,
@@ -945,6 +958,16 @@ const initialStrategyLibraryState: StrategyLibraryResult = {
   strategies: [],
   source: "fallback"
 };
+const initialStrategyProductionBindingState: StrategyProductionBindingResult = {
+  source: "fallback"
+};
+const initialProductionStrategyHandoffState: ProductionStrategyHandoffResult = {
+  source: "fallback"
+};
+type ProductionStrategyBindingTarget = Pick<
+  StrategyLibraryItem,
+  "revision" | "auditRunId" | "status"
+>;
 const initialStrategyValidationState: StrategyValidationResult = {
   source: "fallback"
 };
@@ -1703,6 +1726,7 @@ const workflowIcons: Record<string, typeof BarChart3> = {
 
 const workAreaIcons: Record<ProductWorkAreaId, typeof BarChart3> = {
   market: Database,
+  "market-information": Newspaper,
   research: Radar,
   strategy: GitBranch,
   backtest: BarChart3,
@@ -1725,6 +1749,7 @@ const workflowAccentByStep: Record<string, TerminalModule["accent"]> = {
 const workflowStepIds = ["research", "strategy", "backtest", "agent-review", "paper"] as const;
 const productWorkAreaIds: ProductWorkAreaId[] = [
   "market",
+  "market-information",
   "research",
   "strategy",
   "backtest",
@@ -1819,7 +1844,7 @@ const productWorkAreaGroups: Array<{
     id: "market-research",
     labelEn: "Market & Research",
     labelZh: "市场与研究",
-    workAreaIds: ["market", "research"]
+    workAreaIds: ["market", "market-information", "research"]
   },
   {
     id: "decision-validation",
@@ -1848,7 +1873,7 @@ function researchOpsActionTargetWorkspace(actionId: ResearchOpsQueueRow["nextAct
   if (actionId === "run-ai-review") {
     return "ai-review";
   }
-  if (actionId === "submit-paper-order") {
+  if (actionId === "review-production-handoff") {
     return "execution";
   }
   return "research";
@@ -2255,6 +2280,11 @@ export function App() {
   const [isAppendingAiReviewStage3Decision, setIsAppendingAiReviewStage3Decision] = useState(false);
   const [aiReviewStage3Error, setAiReviewStage3Error] = useState<string | null>(null);
   const [strategyLibraryState, setStrategyLibraryState] = useState<StrategyLibraryResult>(initialStrategyLibraryState);
+  const [strategyProductionBindingState, setStrategyProductionBindingState] =
+    useState<StrategyProductionBindingResult>(initialStrategyProductionBindingState);
+  const [productionStrategyHandoffState, setProductionStrategyHandoffState] =
+    useState<ProductionStrategyHandoffResult>(initialProductionStrategyHandoffState);
+  const [bindingStrategyRevision, setBindingStrategyRevision] = useState<string | null>(null);
   const [strategyValidationState, setStrategyValidationState] =
     useState<StrategyValidationResult>(initialStrategyValidationState);
   const [researchNoteState, setResearchNoteState] = useState<ResearchNoteResult>(initialResearchNoteState);
@@ -2469,6 +2499,10 @@ export function App() {
   const [portfolioRiskAssessments, setPortfolioRiskAssessments] = useState<PortfolioRiskAssessment[]>([]);
   const [portfolioRiskAssessmentError, setPortfolioRiskAssessmentError] = useState<string | null>(null);
   const [isRunningPortfolioRiskAssessment, setIsRunningPortfolioRiskAssessment] = useState(false);
+  const [autoTradingSnapshot, setAutoTradingSnapshot] =
+    useState<AutoTradingSnapshot | null>(null);
+  const [portfolioProductionRiskError, setPortfolioProductionRiskError] = useState<string | null>(null);
+  const [isLoadingPortfolioProductionRisk, setIsLoadingPortfolioProductionRisk] = useState(false);
   const [portfolioStage4RefreshGeneration, setPortfolioStage4RefreshGeneration] = useState(0);
   const [stage5ShadowSessions, setStage5ShadowSessions] = useState<Stage5ShadowSession[]>([]);
   const [stage5SandboxReadinessDecisions, setStage5SandboxReadinessDecisions] =
@@ -2522,14 +2556,19 @@ export function App() {
   const [marketCalendarState, setMarketCalendarState] = useState<MarketCalendarResult>(() =>
     buildFallbackMarketCalendarState(workspace.selectedInstrument.market)
   );
+  const [marketDiscoveryResult, setMarketDiscoveryResult] = useState<MarketDiscoveryResult | null>(null);
+  const [isLoadingMarketDiscovery, setIsLoadingMarketDiscovery] = useState(false);
+  const marketDiscoveryRequestIdRef = useRef(0);
+  const marketDiscoveryRequestMarketRef = useRef<MarketDiscoveryParams["market"] | null>(null);
+  const [marketInformationResult, setMarketInformationResult] =
+    useState<MarketInformationResult | null>(null);
+  const [isLoadingMarketInformation, setIsLoadingMarketInformation] = useState(false);
+  const marketInformationRequestRef = useRef(createLatestRequestCoordinator());
+  const marketInformationRequestContextRef = useRef<string | null>(null);
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
   );
-  const [colorSchemePreference, setColorSchemePreference] = useState<ColorScheme | null>(() =>
-    resolveStoredColorSchemePreference(
-      typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.theme"),
-    )
-  );
+  const [colorSchemePreference, setColorSchemePreference] = useState<ColorScheme | null>(null);
   const [textScale, setTextScale] = useState(() =>
     resolveStoredTextScale(
       typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.text-scale"),
@@ -2664,7 +2703,7 @@ export function App() {
   const initialImportAuditEvidenceDeepLink = resolveInitialImportAuditEvidenceDeepLink();
   const initialPaperExecutionDeepLink = resolveInitialPaperExecutionDeepLink();
   const [auditEvidenceReportEvents, setAuditEvidenceReportEvents] = useState<AuditEventRecord[]>([]);
-  const [stage9ProductionAdmissionAuditEvents, setStage9ProductionAdmissionAuditEvents] =
+  const [executionAcceptanceAuditEvents, setExecutionAcceptanceAuditEvents] =
     useState<AuditEventRecord[]>([]);
   const [marketDataRefreshOverrideAuditEvents, setMarketDataRefreshOverrideAuditEvents] = useState<AuditEventRecord[]>([]);
   const [portfolioPaperOrderAuditEvents, setPortfolioPaperOrderAuditEvents] = useState<AuditEventRecord[]>([]);
@@ -2825,8 +2864,9 @@ export function App() {
   const aiReviewHistoryRequestIdRef = useRef(0);
   const aiReviewArchivePreviewRequestIdRef = useRef(0);
   const auditEvidenceReportRequestIdRef = useRef(0);
-  const stage9ProductionAdmissionAuditRequestIdRef = useRef(0);
+  const executionAcceptanceAuditRequestIdRef = useRef(0);
   const marketDataRefreshOverrideAuditRequestIdRef = useRef(0);
+  const portfolioProductionRiskRequestIdRef = useRef(0);
   const portfolioPaperOrderAuditRequestIdRef = useRef(0);
   const executionAdapterPaperExecutionAuditRequestIdRef = useRef(0);
   const researchRunImportAuditRequestIdRef = useRef(0);
@@ -3005,6 +3045,28 @@ export function App() {
       (experiment) => experiment.experimentId === aiReviewStage3PrimaryExperimentId
     ) ?? null,
     aiReviewStage3Experiments
+  );
+  const aiReviewStage3PrimaryReference = aiReviewStage3CurrentReview?.primaryExperiment ?? null;
+  const aiReviewStage3PrimaryCandidate = visibleStrategyExperimentActive?.candidates.find(
+    (candidate) => candidate.candidateId === visibleStrategyExperimentActive.selectedCandidateId
+  ) ?? null;
+  const aiReviewStage3PrimaryCandidateAvailable = Boolean(
+    aiReviewStage3PrimaryReference
+    && visibleStrategyExperimentActive?.status === "completed"
+    && visibleStrategyExperimentActive.experimentId === aiReviewStage3PrimaryReference.experimentId
+    && visibleStrategyExperimentActive.sourceRunId === aiReviewStage3PrimaryReference.sourceRunId
+    && visibleStrategyExperimentActive.strategyRevision === aiReviewStage3PrimaryReference.strategyRevision
+    && visibleStrategyExperimentActive.snapshotId === aiReviewStage3PrimaryReference.snapshotId
+    && visibleStrategyExperimentActive.definitionHash === aiReviewStage3PrimaryReference.definitionHash
+    && visibleStrategyExperimentActive.resultHash === aiReviewStage3PrimaryReference.resultHash
+    && visibleStrategyExperimentActive.selectedCandidateId === aiReviewStage3PrimaryReference.selectedCandidateId
+    && visibleStrategyExperimentActive.strategyLineageKey === aiReviewStage3CurrentReview?.strategyLineageKey
+    && visibleStrategyExperimentActive.definition.canonicalDataHash === aiReviewStage3PrimaryReference.canonicalDataHash
+    && visibleStrategyExperimentActive.snapshot.startAt === aiReviewStage3PrimaryReference.dataRange.startAt
+    && visibleStrategyExperimentActive.snapshot.endAt === aiReviewStage3PrimaryReference.dataRange.endAt
+    && aiReviewStage3PrimaryCandidate?.candidateRevision === aiReviewStage3PrimaryReference.candidateRevision
+    && aiReviewStage3PrimaryCandidate.eligible
+    && aiReviewStage3PrimaryCandidate.testMetrics
   );
   const visibleStrategyExperimentUrlId = resolveStrategyExperimentIdForCurrentSource(
     visibleStrategyExperimentActive,
@@ -5033,17 +5095,17 @@ export function App() {
     return auditHistory;
   }, [auditEvidenceReportOffset, auditEvidenceReportQuery, quantCoreBaseUrl]);
 
-  const refreshStage9ProductionAdmissionAuditEvents = useCallback(async () => {
-    const requestId = stage9ProductionAdmissionAuditRequestIdRef.current + 1;
-    stage9ProductionAdmissionAuditRequestIdRef.current = requestId;
+  const refreshExecutionAcceptanceAuditEvents = useCallback(async () => {
+    const requestId = executionAcceptanceAuditRequestIdRef.current + 1;
+    executionAcceptanceAuditRequestIdRef.current = requestId;
     const auditHistory = await loadAuditEvents(quantCoreBaseUrl, {
-      eventType: "stage9_production_order_admission_candidate,stage9_production_order_admission_review",
-      limit: 50
+      eventType: executionAcceptanceAuditEventTypes.join(","),
+      limit: 100
     });
-    if (stage9ProductionAdmissionAuditRequestIdRef.current !== requestId) {
+    if (executionAcceptanceAuditRequestIdRef.current !== requestId) {
       return auditHistory;
     }
-    setStage9ProductionAdmissionAuditEvents(auditHistory.source === "core" ? auditHistory.events : []);
+    setExecutionAcceptanceAuditEvents(auditHistory.source === "core" ? auditHistory.events : []);
     return auditHistory;
   }, [quantCoreBaseUrl]);
 
@@ -5069,6 +5131,26 @@ export function App() {
     setIsLoadingMarketDataRefreshOverrideAudit(false);
     return auditHistory;
   }, [marketDataRefreshOverrideAuditOffset, marketDataRefreshOverrideAuditQuery, quantCoreBaseUrl]);
+
+  const refreshPortfolioProductionRisk = useCallback(async (showLoading = false) => {
+    const requestId = portfolioProductionRiskRequestIdRef.current + 1;
+    portfolioProductionRiskRequestIdRef.current = requestId;
+    if (showLoading) setIsLoadingPortfolioProductionRisk(true);
+    try {
+      const snapshot = await loadAutoTradingSnapshot(quantCoreBaseUrl);
+      if (portfolioProductionRiskRequestIdRef.current !== requestId) return;
+      setAutoTradingSnapshot(snapshot);
+      setPortfolioProductionRiskError(null);
+    } catch (error) {
+      if (portfolioProductionRiskRequestIdRef.current !== requestId) return;
+      setAutoTradingSnapshot(null);
+      setPortfolioProductionRiskError(autoTradingErrorMessage(error));
+    } finally {
+      if (showLoading && portfolioProductionRiskRequestIdRef.current === requestId) {
+        setIsLoadingPortfolioProductionRisk(false);
+      }
+    }
+  }, [quantCoreBaseUrl]);
 
   const refreshPortfolioPaperOrderAuditEvents = useCallback(async () => {
     const requestId = portfolioPaperOrderAuditRequestIdRef.current + 1;
@@ -5362,7 +5444,7 @@ export function App() {
       return;
     }
     void refreshAuditEvidenceReportEvents();
-    void refreshStage9ProductionAdmissionAuditEvents();
+    void refreshExecutionAcceptanceAuditEvents();
     void refreshMarketDataRefreshOverrideAuditEvents();
     void refreshPortfolioPaperOrderAuditEvents();
     void refreshExecutionAdapterPaperExecutionAuditEvents();
@@ -5371,7 +5453,7 @@ export function App() {
   }, [
     activeWorkAreaId,
     refreshAuditEvidenceReportEvents,
-    refreshStage9ProductionAdmissionAuditEvents,
+    refreshExecutionAcceptanceAuditEvents,
     refreshMarketDataRefreshOverrideAuditEvents,
     refreshPortfolioPaperOrderAuditEvents,
     refreshExecutionAdapterPaperExecutionAuditEvents,
@@ -5423,6 +5505,12 @@ export function App() {
       limit: 12
     });
     setStrategyLibraryState(result);
+    return result;
+  }, []);
+
+  const refreshStrategyProductionBinding = useCallback(async () => {
+    const result = await loadStrategyProductionBinding(quantCoreBaseUrl);
+    setStrategyProductionBindingState(result);
     return result;
   }, []);
 
@@ -5479,6 +5567,99 @@ export function App() {
   useEffect(() => {
     void refreshMarketCalendarStatus();
   }, [refreshMarketCalendarStatus]);
+
+  const searchMarketDiscovery = useCallback(async (params: MarketDiscoveryParams) => {
+    const requestId = marketDiscoveryRequestIdRef.current + 1;
+    marketDiscoveryRequestIdRef.current = requestId;
+    marketDiscoveryRequestMarketRef.current = params.market;
+    setIsLoadingMarketDiscovery(true);
+    setMarketDiscoveryResult((current) =>
+      current?.market === params.market ? current : null
+    );
+    const result = await loadMarketDiscovery(quantCoreBaseUrl, params);
+    if (marketDiscoveryRequestIdRef.current !== requestId) {
+      return;
+    }
+    marketDiscoveryRequestMarketRef.current = null;
+    setMarketDiscoveryResult(result);
+    setIsLoadingMarketDiscovery(false);
+  }, [quantCoreBaseUrl]);
+
+  const marketDiscoveryMarket = workspace.selectedInstrument.market === "crypto"
+    ? "crypto"
+    : "ashare";
+  useEffect(() => {
+    if (
+      activeWorkAreaId !== "market"
+      || marketDiscoveryResult?.market === marketDiscoveryMarket
+      || marketDiscoveryRequestMarketRef.current === marketDiscoveryMarket
+    ) {
+      return;
+    }
+    void searchMarketDiscovery({
+      market: marketDiscoveryMarket,
+      sort: "changePct",
+      direction: "desc",
+      limit: 20,
+    });
+  }, [
+    activeWorkAreaId,
+    marketDiscoveryMarket,
+    marketDiscoveryResult,
+    searchMarketDiscovery,
+  ]);
+
+  const refreshMarketInformation = useCallback(async () => {
+    const market = workspace.selectedInstrument.market;
+    const symbol = workspace.selectedInstrument.symbol;
+    const name = workspace.selectedInstrument.name;
+    const contextKey = `${market}:${symbol}:${name}`;
+    const requestToken = marketInformationRequestRef.current.begin();
+    marketInformationRequestContextRef.current = contextKey;
+    setIsLoadingMarketInformation(true);
+    setMarketInformationResult((current) =>
+      current?.market === market && current.symbol === symbol ? current : null
+    );
+    const result = await loadMarketInformation(quantCoreBaseUrl, {
+      market,
+      symbol,
+      name,
+      limit: 20,
+    });
+    if (!marketInformationRequestRef.current.isCurrent(requestToken)) {
+      return;
+    }
+    marketInformationRequestContextRef.current = null;
+    setMarketInformationResult(result);
+    setIsLoadingMarketInformation(false);
+  }, [
+    quantCoreBaseUrl,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.name,
+    workspace.selectedInstrument.symbol,
+  ]);
+
+  useEffect(() => {
+    const contextKey = `${workspace.selectedInstrument.market}:${workspace.selectedInstrument.symbol}:${workspace.selectedInstrument.name}`;
+    if (
+      activeWorkAreaId !== "market-information"
+      || (
+        marketInformationResult?.market === workspace.selectedInstrument.market
+        && marketInformationResult.symbol === workspace.selectedInstrument.symbol
+      )
+      || marketInformationRequestContextRef.current === contextKey
+    ) {
+      return;
+    }
+    void refreshMarketInformation();
+  }, [
+    activeWorkAreaId,
+    marketInformationResult,
+    refreshMarketInformation,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.name,
+    workspace.selectedInstrument.symbol,
+  ]);
 
   const refreshExecutionAdapterHealthProbe = useCallback(async () => {
     setIsRefreshingAdapterHealthProbe(true);
@@ -10437,6 +10618,51 @@ export function App() {
     setIsSavingStrategy(false);
   }, [workspace.researchRun?.runId, workspace.selectedInstrument.market, workspace.selectedInstrument.symbol, workspace.selectedTimeframe, workspace.strategy]);
 
+  const bindStrategyToProduction = useCallback(async (
+    strategy: ProductionStrategyBindingTarget | null,
+    operator: string
+  ) => {
+    if (
+      bindingStrategyRevision
+      || (strategy && (strategy.status !== "audited" || !strategy.auditRunId))
+    ) {
+      return false;
+    }
+    if (!operator.trim()) {
+      return false;
+    }
+
+    const targetRevision = strategy?.revision ?? "builtin";
+    setBindingStrategyRevision(targetRevision);
+    const result = await updateStrategyProductionBinding(quantCoreBaseUrl, {
+      strategyRevision: strategy?.revision ?? null,
+      auditRunId: strategy?.auditRunId ?? null,
+      operator: operator.trim()
+    });
+    setBindingStrategyRevision(null);
+    setStrategyProductionBindingState((current) =>
+      result.binding ? result : { ...result, binding: current.binding }
+    );
+    if (!result.binding) {
+      setWorkspaceState((current) => ({
+        ...current,
+        statusLabel: locale === "zh-CN" ? "生产策略交接失败" : "Production strategy handoff failed",
+        error: strategyProductionBindingErrorLabel(i18n, result.error)
+      }));
+      return false;
+    }
+    setWorkspaceState((current) => ({
+      ...current,
+      statusLabel: locale === "zh-CN" ? "生产策略已交接，自动交易保持暂停" : "Production strategy bound; automated trading remains paused",
+      error: undefined
+    }));
+    return true;
+  }, [
+    bindingStrategyRevision,
+    i18n,
+    locale
+  ]);
+
   const deleteSavedStrategyVersion = useCallback(async (strategy: StrategyLibraryItem) => {
     const result = await deleteStrategyVersion(quantCoreBaseUrl, strategy.revision);
     if (!result.deleted) {
@@ -13898,6 +14124,64 @@ export function App() {
   }, [refreshStrategyLibrary]);
 
   useEffect(() => {
+    void refreshStrategyProductionBinding();
+  }, [refreshStrategyProductionBinding]);
+
+  useEffect(() => {
+    if (activeWorkAreaId !== "portfolio") return;
+    void refreshPortfolioProductionRisk(true);
+    const intervalId = window.setInterval(
+      () => void refreshPortfolioProductionRisk(),
+      AUTO_TRADING_STATUS_REFRESH_INTERVAL_MS
+    );
+    return () => {
+      portfolioProductionRiskRequestIdRef.current += 1;
+      window.clearInterval(intervalId);
+    };
+  }, [activeWorkAreaId, refreshPortfolioProductionRisk]);
+
+  useEffect(() => {
+    const handoffRunId = activeWorkAreaId === "backtest"
+      ? currentResearchRunId
+      : activeWorkAreaId === "ai-review"
+        && aiReviewStage3PrimaryCandidateAvailable
+        && aiReviewStage3PrimaryReference
+        && aiReviewStage3PrimaryReference.candidateRevision === aiReviewStage3PrimaryReference.strategyRevision
+        ? aiReviewStage3PrimaryReference.sourceRunId
+        : null;
+    if (!handoffRunId) {
+      setProductionStrategyHandoffState(initialProductionStrategyHandoffState);
+      return;
+    }
+    let cancelled = false;
+    setProductionStrategyHandoffState((current) =>
+      current.handoff?.runId === handoffRunId
+        ? current
+        : initialProductionStrategyHandoffState
+    );
+    void loadResearchRunProductionStrategyHandoff(
+      quantCoreBaseUrl,
+      handoffRunId
+    ).then((result) => {
+      if (!cancelled) {
+        setProductionStrategyHandoffState(result);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeWorkAreaId,
+    aiReviewStage3PrimaryCandidateAvailable,
+    aiReviewStage3PrimaryReference?.candidateRevision,
+    aiReviewStage3PrimaryReference?.sourceRunId,
+    aiReviewStage3PrimaryReference?.strategyRevision,
+    currentResearchRunId,
+    strategyProductionBindingState.binding?.auditRunId,
+    strategyProductionBindingState.binding?.bindingId
+  ]);
+
+  useEffect(() => {
     void refreshResearchNote();
   }, [refreshResearchNote]);
 
@@ -13967,19 +14251,12 @@ export function App() {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const syncSystemColorScheme = () => {
       setSystemColorScheme(resolveSystemColorScheme(media.matches));
+      setColorSchemePreference(null);
     };
     syncSystemColorScheme();
     media.addEventListener("change", syncSystemColorScheme);
     return () => media.removeEventListener("change", syncSystemColorScheme);
   }, []);
-
-  useEffect(() => {
-    if (colorSchemePreference) {
-      window.localStorage.setItem("aiqt.theme", `manual:${colorSchemePreference}`);
-    } else {
-      window.localStorage.removeItem("aiqt.theme");
-    }
-  }, [colorSchemePreference]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = colorScheme;
@@ -14000,7 +14277,9 @@ export function App() {
         ? currentResearchRunId ?? initialAiReviewRunIdRef.current
         : currentResearchRunId
     ));
-    const shouldSyncResearchContext = activeWorkAreaId === "market" || activeWorkAreaId === "research";
+    const shouldSyncResearchContext = activeWorkAreaId === "market"
+      || activeWorkAreaId === "market-information"
+      || activeWorkAreaId === "research";
     const runIdChanged = url.searchParams.toString() !== currentUrl.searchParams.toString();
     const contextChanged =
       shouldSyncResearchContext &&
@@ -14130,12 +14409,15 @@ export function App() {
   }, []);
 
   const completeLiveTradingGate = useCallback(async () => {
+    setAutoTradingSnapshot(null);
+    const snapshot = await loadAutoTradingSnapshot(quantCoreBaseUrl);
+    setAutoTradingSnapshot(snapshot);
     await Promise.all([
       refreshGoldenPathStatus(),
       refreshSettingsStatus()
     ]);
     setIsLiveTradingGateDialogOpen(false);
-  }, [refreshGoldenPathStatus, refreshSettingsStatus]);
+  }, [quantCoreBaseUrl, refreshGoldenPathStatus, refreshSettingsStatus]);
 
   const runGoldenPathActionById = useCallback(
     async (
@@ -14145,6 +14427,10 @@ export function App() {
       automated = false
     ): Promise<boolean> => {
       automatedTradingWorkflowActionErrorRef.current = null;
+      if (actionId === "review-production-handoff") {
+        selectProductWorkArea("execution");
+        return false;
+      }
       const executableActionId = normalizeP0CurrentGapActionId(actionId);
       if (!executableActionId) {
         runActiveWorkflowAction();
@@ -14606,12 +14892,14 @@ export function App() {
 
   const renderStrategyWorkbench = (showSaveAction = true) => (
     <StrategySummary
+      bindingStrategyRevision={bindingStrategyRevision}
       draft={strategyRuleDraft}
       i18n={i18n}
       isSavingStrategy={isSavingStrategy}
       library={visibleStrategyLibrary}
       onApplyAiStrategyDraft={applyGeneratedStrategyDraft}
       onApplyStrategyTemplate={applyStrategyTemplate}
+      onBindStrategyToProduction={bindStrategyToProduction}
       onDeleteStrategyVersion={deleteSavedStrategyVersion}
       onLoadStrategyVersion={loadSavedStrategyVersion}
       onRunStrategyGovernanceAction={runStrategyGovernanceAction}
@@ -14622,6 +14910,7 @@ export function App() {
       rows={strategyRuleRows}
       showSaveAction={showSaveAction}
       strategyGovernanceQueue={strategyGovernanceQueue}
+      strategyProductionBinding={strategyProductionBindingState}
       templates={strategyTemplateOptions}
       validationSource={strategyValidationState.source}
       workspace={workspace}
@@ -14688,8 +14977,12 @@ export function App() {
     </Panel>
   );
 
-  const renderWorkflowNodesPanel = (className = "watchlist-workflow-panel") => (
-    <Panel title={i18n.t("panel.nodeWorkflow.title")} subtitle={i18n.t("panel.nodeWorkflow.subtitle")} className={className}>
+  const renderWorkflowNodesPanel = (
+    className = "watchlist-workflow-panel",
+    title = i18n.t("panel.nodeWorkflow.title"),
+    subtitle = i18n.t("panel.nodeWorkflow.subtitle")
+  ) => (
+    <Panel title={title} subtitle={subtitle} className={className}>
       <CompactWorkflowNodes
         activeStageId={activeWorkflowStageId}
         i18n={i18n}
@@ -14699,75 +14992,103 @@ export function App() {
     </Panel>
   );
 
-  const executionLiveTradingAllowed = settingsStatus.settings?.safety.liveTradingAllowed === true;
+  const syncExecutionSafety = useCallback((
+    executionMode: "paper" | "testnet" | "live",
+    liveTradingAllowed: boolean
+  ) => {
+    setSettingsStatus((current) => {
+      const settings = current.settings;
+      if (!settings || (
+        settings.safety.executionMode === executionMode
+        && settings.safety.liveTradingAllowed === liveTradingAllowed
+      )) return current;
+      return {
+        ...current,
+        settings: {
+          ...settings,
+          safety: { ...settings.safety, executionMode, liveTradingAllowed }
+        }
+      };
+    });
+  }, []);
+  const executionLiveTradingAllowed = autoTradingSnapshot?.liveTradingAllowed === true;
+  const executionMode =
+    autoTradingSnapshot?.state.executionMode
+    ?? settingsStatus.settings?.safety.executionMode
+    ?? "paper";
+  const executionTestnetKillSwitch = stage6SandboxBatch?.killSwitch ?? stage6KillSwitch;
   const executionReadinessStack = (
     <details
       className="execution-readiness-stack"
       data-live-authorized={executionLiveTradingAllowed}
+      open
       tabIndex={-1}
     >
       <summary>
-        <span>{i18n.locale === "zh-CN" ? "生产准入与执行证据" : "Production admission & execution evidence"}</span>
-        <strong>{executionLiveTradingAllowed
-          ? i18n.locale === "zh-CN" ? "生产实盘已授权" : "Production trading authorized"
-          : i18n.locale === "zh-CN" ? "实盘路由持续阻断" : "Live routing remains blocked"}</strong>
+        <span>{i18n.locale === "zh-CN" ? "自动交易控制与生产授权" : "Automatic trading controls & production authorization"}</span>
+        <strong>{!autoTradingSnapshot
+          ? i18n.locale === "zh-CN" ? "运行状态读取中或暂不可用" : "Runtime status loading or unavailable"
+          : executionLiveTradingAllowed
+          ? i18n.locale === "zh-CN" ? "生产会话有效" : "Production session active"
+          : executionMode === "live"
+            ? i18n.locale === "zh-CN" ? "生产实盘需授权" : "Production authorization required"
+            : executionMode === "testnet"
+              ? i18n.locale === "zh-CN" ? "当前为测试网模式" : "Sandbox mode"
+              : i18n.locale === "zh-CN" ? "当前为纸面模拟" : "Paper mode"}</strong>
       </summary>
       <div className="execution-readiness-stack-body">
-        <ExecutionAutoPaperTradingSection baseUrl={quantCoreBaseUrl} />
-        <ExecutionStage10ProductionExecutionSection
+        <ExecutionAutoPaperTradingSection
           baseUrl={quantCoreBaseUrl}
-          candidate={stage9ProductionAdmissionCandidate}
-          review={stage9ProductionAdmissionReview}
+          onSafetyChange={syncExecutionSafety}
+          onSnapshotChange={setAutoTradingSnapshot}
         />
-        <ExecutionStage9ProductionAdmissionSection
-          authorization={stage6SandboxAuthorization}
-          batch={stage6SandboxBatch}
-          busy={isRunningStage9ProductionAdmission}
-          candidate={stage9ProductionAdmissionCandidate}
-          continuity={stage8ProductionReadonlyContinuity}
-          error={stage9ProductionAdmissionError}
-          onCreateCandidate={() => void runStage9ProductionAdmissionCandidateAction()}
-          onReview={(reviewer, outcome, reason) => void runStage9ProductionAdmissionReviewAction(
-            reviewer, outcome, reason
-          )}
-          review={stage9ProductionAdmissionReview}
-        />
-        <ExecutionStage7ProductionReadonlySection
-          busy={isRunningStage7ProductionReadonly}
-          continuity={stage8ProductionReadonlyContinuity}
-          continuityBusy={isUpdatingStage8ProductionReadonly}
-          continuityError={stage8ProductionReadonlyError}
-          error={stage7ProductionReadonlyError}
-          onOpenSettings={() => selectProductWorkArea("settings")}
-          onRun={(eligibilityConfirmed) => void runStage7ProductionReadonlyAction(eligibilityConfirmed)}
-          onSetAccess={(action, reason) => void runStage8ProductionReadonlyAccessAction(action, reason)}
-          probe={latestStage7ProductionReadonlyProbe}
-          productionRouteReviewId={latestCcxtProductionRouteReviewId}
-        />
-        <ExecutionStage6SandboxSection
-          action={stage6GoldenPath.action}
-          authorization={stage6SandboxAuthorization}
-          batch={stage6SandboxBatch}
-          busy={isRunningStage6Sandbox}
-          detail={stage6GoldenPath.detail}
-          error={stage6SandboxError}
-          exitAcceptance={stage6ExitAcceptance}
-          killSwitch={stage6KillSwitch}
-          onAction={() => void runStage6SandboxAction()}
-          onKillSwitch={(triggered) => void runStage6KillSwitchAction(triggered)}
-        />
-        <ExecutionStage5ShadowSection
-          busy={isRunningStage5Shadow}
-          error={stage5ShadowError}
-          exitAcceptance={stage5ExitAcceptance}
-          exitAcceptanceError={stage5ExitAcceptanceError}
-          i18n={i18n}
-          onOpenSettings={() => selectProductWorkArea("settings")}
-          onPrimaryAction={(reviewInput) => void runStage5ShadowPrimaryAction(reviewInput)}
-          state={stage5ShadowState}
+        {executionMode === "testnet" ? (
+          <section className="execution-testnet-safety" aria-labelledby="execution-testnet-safety-title">
+            <div>
+              <span>{i18n.locale === "zh-CN" ? "测试网安全边界" : "Sandbox safety boundary"}</span>
+              <h2 id="execution-testnet-safety-title">
+                {i18n.locale === "zh-CN" ? "币安现货测试网急停" : "Binance Spot sandbox kill switch"}
+              </h2>
+              <p>
+                {i18n.locale === "zh-CN"
+                  ? "只控制测试网委托；不会改变生产实盘急停或授权。"
+                  : "Controls sandbox orders only; production authorization is unchanged."}
+              </p>
+            </div>
+            <strong className={executionTestnetKillSwitch?.triggered ? "blocked" : "ready"}>
+              {executionTestnetKillSwitch?.triggered
+                ? i18n.locale === "zh-CN" ? "已触发" : "Triggered"
+                : i18n.locale === "zh-CN" ? "未触发" : "Clear"}
+            </strong>
+            <button
+              disabled={isRunningStage6Sandbox}
+              onClick={() => void runStage6KillSwitchAction(!executionTestnetKillSwitch?.triggered)}
+              type="button"
+            >
+              {isRunningStage6Sandbox
+                ? i18n.locale === "zh-CN" ? "处理中…" : "Working…"
+                : executionTestnetKillSwitch?.triggered
+                  ? i18n.locale === "zh-CN" ? "完成对账后重置测试网急停" : "Reset after reconciliation"
+                  : i18n.locale === "zh-CN" ? "触发测试网急停" : "Trigger sandbox kill switch"}
+            </button>
+            {stage6SandboxError ? <p role="status">{stage6SandboxError}</p> : null}
+          </section>
+        ) : null}
+        <ExecutionStage10ProductionExecutionSection
+          autoTradingSnapshot={autoTradingSnapshot}
+          baseUrl={quantCoreBaseUrl}
+          onAutoLiveAuthorized={completeLiveTradingGate}
+          sectionId="execution-center-live-trading-control"
         />
       </div>
     </details>
+  );
+  const executionAcceptanceAuditPanel = (
+    <ExecutionAcceptanceAuditLedgerPanel
+      className="workflow-execution-acceptance-audit-panel"
+      events={executionAcceptanceAuditEvents}
+      locale={i18n.locale}
+    />
   );
 
   const renderActiveProductWorkspace = () => {
@@ -14788,7 +15109,13 @@ export function App() {
               i18n={i18n}
               onSelectInstrument={selectInstrument}
             />
-            {renderWorkflowNodesPanel("workflow-nodes-panel")}
+            {renderWorkflowNodesPanel(
+              "workflow-nodes-panel",
+              i18n.locale === "zh-CN" ? "研究验证节点" : "Research validation nodes",
+              i18n.locale === "zh-CN"
+                ? "仅生成研究与模拟执行证据，不代表生产自动交易运行状态"
+                : "Produces research and simulated-execution evidence; not production runtime"
+            )}
           </div>
           <div className="operations-column operations-side-column">
             <div className="operations-focus-target" id="operations-market-data" tabIndex={-1}>
@@ -15263,11 +15590,7 @@ export function App() {
             query={executionAdapterPaperExecutionAuditQuery}
             rows={executionAdapterPaperExecutionAuditRows}
           />
-          <Stage9ProductionAdmissionAuditLedgerPanel
-            className="workflow-stage9-production-admission-audit-panel"
-            events={stage9ProductionAdmissionAuditEvents}
-            locale={i18n.locale}
-          />
+          {executionAcceptanceAuditPanel}
           <P2PreLiveAcceptancePanel
             className="workflow-p2-pre-live-acceptance-audit-panel"
             headline={p2PreLiveAcceptanceSummaryHeadlineText}
@@ -15739,6 +16062,12 @@ export function App() {
           onClick: () => void refreshWatchlistMarketCache(),
           disabled: isRefreshingWatchlistCache
         };
+      case "market-information":
+        return {
+          label: isLoadingMarketInformation ? "加载资讯中…" : "刷新资讯",
+          onClick: () => void refreshMarketInformation(),
+          disabled: isLoadingMarketInformation
+        };
       case "research":
         return {
           label: isRunning ? "研究运行中…" : "运行研究",
@@ -15795,18 +16124,9 @@ export function App() {
             isRecordingPortfolioStage4Workflow
         };
       case "execution":
-        if (!stage6SandboxAuthorization) {
-          return {
-            label: "查看执行前置步骤",
-            onClick: openAutomaticTradingConsole,
-            tone: "warning"
-          };
-        }
         return {
-          label: "创建影子候选",
-          onClick: () => void runStage9ProductionAdmissionCandidateAction(),
-          disabled: isRunningStage9ProductionAdmission,
-          tone: "warning"
+          label: "打开自动交易控制台",
+          onClick: openAutomaticTradingConsole
         };
       case "dynamic-trading":
         return null;
@@ -15886,50 +16206,62 @@ export function App() {
     : colorScheme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   const textScalePercent = Math.round(textScale * 100);
   const footerExecutionSafety = settingsStatus.settings?.safety;
-  const currentExecutionMode = footerExecutionSafety?.executionMode;
-  const currentExecutionModeLabel = !footerExecutionSafety
+  const authoritativeFooterSnapshotExpected = activeWorkAreaId === "execution"
+    || activeWorkAreaId === "dynamic-trading"
+    || activeWorkAreaId === "portfolio"
+    || activeWorkAreaId === "operations";
+  const footerExecutionStateAvailable = authoritativeFooterSnapshotExpected
+    ? autoTradingSnapshot !== null
+    : Boolean(footerExecutionSafety);
+  const currentExecutionMode = authoritativeFooterSnapshotExpected
+    ? autoTradingSnapshot?.state.executionMode ?? footerExecutionSafety?.executionMode
+    : footerExecutionSafety?.executionMode;
+  const footerLiveTradingAllowed = authoritativeFooterSnapshotExpected
+    ? autoTradingSnapshot?.liveTradingAllowed === true
+    : footerExecutionSafety?.liveTradingAllowed === true;
+  const currentExecutionModeLabel = !footerExecutionStateAvailable
     ? i18n.locale === "zh-CN" ? "状态读取中" : "Loading"
     : currentExecutionMode === "live"
-      ? footerExecutionSafety.liveTradingAllowed
+      ? footerLiveTradingAllowed
         ? i18n.locale === "zh-CN" ? "生产实盘" : "Production live"
         : i18n.locale === "zh-CN" ? "生产实盘受保护" : "Production live protected"
       : currentExecutionMode === "testnet"
         ? i18n.locale === "zh-CN" ? "币安测试网" : "Binance Testnet"
         : i18n.locale === "zh-CN" ? "纸面模拟" : "Paper simulation";
   const currentExecutionVenueLabel = currentExecutionMode === "live"
-    ? "Binance Spot"
+    ? i18n.locale === "zh-CN" ? "币安现货" : "Binance Spot"
     : currentExecutionMode === "testnet"
-      ? "Binance Testnet"
-      : "Paper Broker";
-  const currentExecutionTone = footerExecutionSafety?.liveTradingAllowed
+      ? i18n.locale === "zh-CN" ? "币安测试网" : "Binance Testnet"
+      : i18n.locale === "zh-CN" ? "纸面经纪" : "Paper Broker";
+  const currentExecutionTone = footerLiveTradingAllowed
     ? "live"
     : currentExecutionMode === "live"
       ? "blocked"
       : "paper";
-  const currentLiveBadgeLabel = !footerExecutionSafety
+  const currentLiveBadgeLabel = !footerExecutionStateAvailable
     ? i18n.locale === "zh-CN" ? "权限读取中" : "Loading permissions"
-    : footerExecutionSafety.liveTradingAllowed
+    : footerLiveTradingAllowed
       ? i18n.locale === "zh-CN" ? "生产会话有效" : "Production session active"
       : currentExecutionMode === "live"
         ? i18n.locale === "zh-CN" ? "生产闸门保护中" : "Production gate protected"
         : i18n.locale === "zh-CN" ? "实盘需授权" : "Live authorization required";
-  const footerExecutionStatus = !footerExecutionSafety
+  const footerExecutionStatus = !footerExecutionStateAvailable
     ? i18n.locale === "zh-CN" ? "未加载" : "Unavailable"
-    : footerExecutionSafety.liveTradingAllowed
+    : footerLiveTradingAllowed
       ? i18n.locale === "zh-CN" ? "已授权" : "Authorized"
-      : footerExecutionSafety.executionMode === "testnet"
+      : currentExecutionMode === "testnet"
         ? "Testnet"
-        : footerExecutionSafety.executionMode === "paper"
+        : currentExecutionMode === "paper"
           ? "Paper"
           : i18n.locale === "zh-CN" ? "未授权" : "Not authorized";
-  const footerExecutionDetail = !footerExecutionSafety
+  const footerExecutionDetail = !footerExecutionStateAvailable
     ? i18n.locale === "zh-CN" ? "正在读取执行状态" : "Loading execution status"
-    : footerExecutionSafety.liveTradingAllowed
+    : footerLiveTradingAllowed
       ? i18n.locale === "zh-CN" ? "生产会话有效" : "Production session active"
-      : footerExecutionSafety.productionLive?.blockingReason ===
+      : footerExecutionSafety?.productionLive?.blockingReason ===
           "stage10_production_execution_control_evidence_stale"
         ? i18n.locale === "zh-CN" ? "生产权限证据已过期" : "Production permission evidence expired"
-        : footerExecutionSafety.productionLive?.credentialsConfigured === false
+        : footerExecutionSafety?.productionLive?.credentialsConfigured === false
           ? i18n.locale === "zh-CN" ? "生产交易凭据未配置" : "Production credentials missing"
           : i18n.locale === "zh-CN"
             ? "生产会话未开启，切换时需实名确认"
@@ -16136,7 +16468,7 @@ export function App() {
             <span className={`terminal-paper-badge ${currentExecutionTone}`}>
               {currentExecutionModeLabel}
             </span>
-            <span className={`terminal-live-badge ${footerExecutionSafety?.liveTradingAllowed ? "authorized" : ""}`}>
+            <span className={`terminal-live-badge ${footerLiveTradingAllowed ? "authorized" : ""}`}>
               {currentLiveBadgeLabel}
             </span>
             <button
@@ -16271,19 +16603,37 @@ export function App() {
           settings={settingsStatus.settings}
           settingsConfigurationMessage={settingsConfigurationMessage}
           aiReview={{
+            appendingDecision: isAppendingAiReviewStage3Decision,
             busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3
               || isAppendingAiReviewStage3Decision || isStrategyExperimentRunning,
             comparisonExperimentIds: aiReviewStage3ComparisonExperimentIds,
             currentReview: aiReviewStage3CurrentReview,
+            decisionDraft: aiReviewStage3DecisionDraft,
             decisions: aiReviewStage3Decisions,
             error: aiReviewStage3Error ?? strategyExperimentError,
             experiments: aiReviewStage3Experiments,
             externalDataApproved: aiReviewStage3ExternalDataApproved,
             history: aiReviewStage3History,
+            onAppendDecision: () => void appendAiReviewStage3Decision(),
             onComparisonToggle: toggleAiReviewStage3Comparison,
+            onDecisionDraftChange: updateAiReviewStage3DecisionDraft,
             onExternalDataApprovedChange: approveAiReviewStage3ExternalData,
+            onOpenProductionHandoff: () => selectProductWorkArea("backtest"),
             onProviderChange: selectAiReviewStage3Provider,
+            onStagePrimaryCandidate: () => {
+              if (
+                !aiReviewStage3PrimaryCandidateAvailable
+                || !aiReviewStage3PrimaryReference
+              ) {
+                setAiReviewStage3Error("当前评审候选与已载入实验不一致，请先恢复完整评审上下文。");
+                return;
+              }
+              void loadStrategyExperimentCandidate(
+                aiReviewStage3PrimaryReference.selectedCandidateId
+              );
+            },
             primaryExperimentId: aiReviewStage3PrimaryExperimentId,
+            primaryCandidateAvailable: aiReviewStage3PrimaryCandidateAvailable,
             providerId: aiReviewStage3ProviderId,
             providers: aiReviewStage3Providers,
             researchLoop: (
@@ -16311,11 +16661,22 @@ export function App() {
             </>
           }
           colorScheme={colorScheme}
-          executionCandidate={stage9ProductionAdmissionCandidate}
+          executionAcceptanceAudit={executionAcceptanceAuditPanel}
           executionReadiness={executionReadinessStack}
+          executionSnapshot={autoTradingSnapshot}
           isSavingWatchlist={isSavingWatchlist}
           latestWatchlistCacheRefresh={latestWatchlistCacheRefresh}
           marketCalendar={marketCalendarState.calendar}
+          marketDiscovery={{
+            isLoading: isLoadingMarketDiscovery,
+            onSearch: (params) => void searchMarketDiscovery(params),
+            result: marketDiscoveryResult,
+          }}
+          marketInformation={{
+            isLoading: isLoadingMarketInformation,
+            onRefresh: () => void refreshMarketInformation(),
+            result: marketInformationResult,
+          }}
           marketRefreshIssue={marketRefreshIssue}
           onApprovePortfolioOrder={approvePortfolioPaperOrder}
           onRemoveWatchlistInstrument={(instrument) => void removeWatchlistInstrument(instrument)}
@@ -16323,6 +16684,7 @@ export function App() {
           onSaveWatchlist={() => void saveCurrentWatchlist()}
           onScrollPositionChange={rememberActiveWorkspaceScrollPosition}
           onSelectInstrument={(instrument) => selectInstrument(instrument, "market")}
+          onResearchInstrument={(instrument) => selectInstrument(instrument, "research")}
           onSelectTimeframe={(timeframe) => selectTimeframe(timeframe, "market")}
           approvingPortfolioOrderId={approvingPortfolioPaperOrderId}
           portfolio={portfolioBacktestState.portfolio ?? null}
@@ -16338,9 +16700,50 @@ export function App() {
               row.batchId === portfolioStage4LatestBatch?.batchId
           )}
           portfolioRiskAssessment={portfolioRiskAssessment}
+          portfolioProductionRisk={{
+            error: portfolioProductionRiskError,
+            loading: isLoadingPortfolioProductionRisk,
+            onRefresh: () => void refreshPortfolioProductionRisk(true),
+            snapshot: autoTradingSnapshot
+          }}
           portfolioStage4Workflow={portfolioStage4Workflow}
           isRunningPortfolioRiskAssessment={isRunningPortfolioRiskAssessment}
           onRunPortfolioRiskAssessment={(request) => void runPortfolioRiskAssessment(request)}
+          productionStrategyHandoff={{
+            binding: strategyProductionBindingState.binding ?? null,
+            busy: bindingStrategyRevision === productionStrategyHandoffState.handoff?.strategyRevision,
+            errorLabel: strategyProductionBindingState.error
+              || productionStrategyHandoffState.error
+              ? strategyProductionBindingErrorLabel(
+                  i18n,
+                  strategyProductionBindingState.error
+                    ?? productionStrategyHandoffState.error
+                    ?? undefined
+                )
+              : null,
+            switchBlockedReasonLabel: productionStrategyHandoffState.handoff?.switchBlockedReason
+              ? strategyProductionBindingErrorLabel(
+                  i18n,
+                  productionStrategyHandoffState.handoff.switchBlockedReason
+                )
+              : null,
+            onBind: async (operator) => {
+              const handoff = productionStrategyHandoffState.handoff;
+              if (activeWorkAreaId !== "backtest" || !handoff) {
+                return false;
+              }
+              return bindStrategyToProduction(
+                {
+                  auditRunId: handoff.runId,
+                  revision: handoff.strategyRevision,
+                  status: "audited"
+                },
+                operator
+              );
+            },
+            onOpenDynamicTrading: () => selectProductWorkArea("dynamic-trading"),
+            result: productionStrategyHandoffState
+          }}
           researchPreparation={{
             externalDataApproved: researchNoteExternalDataApproved,
             generationError: researchNoteGenerationError,
@@ -16376,7 +16779,11 @@ export function App() {
           }}
           strategyWorkbench={renderStrategyWorkbench(false)}
           surfaceRef={activeWorkspaceSurfaceRef}
-          workflowGuide={automatedTradingGuide}
+          workflowGuide={
+            activeWorkAreaId === "market-information"
+              ? undefined
+              : automatedTradingGuide
+          }
           workspace={workspace}
         />
         )}
@@ -16402,6 +16809,8 @@ export function App() {
             instruments={workspace.watchlist}
             onOpenAudit={() => selectProductWorkArea("audit")}
             onOpenExecution={() => selectProductWorkArea("execution")}
+            onSafetyChange={syncExecutionSafety}
+            onSnapshotChange={setAutoTradingSnapshot}
             onSelectInstrument={(instrument) => selectInstrument(instrument, "dynamic-trading")}
             selectedSymbol={workspace.selectedInstrument.symbol}
             variant="workspace"
@@ -16424,24 +16833,35 @@ export function App() {
               <span>
                 {activeWorkArea
                   ? i18n.productWorkAreaDescription(activeWorkArea)
-                  : "数据维护、研究队列、市场扫描与运行证据"}
+                  : "生产运行、服务健康、告警与研究维护"}
               </span>
             </div>
           </header>
           {automatedTradingGuide}
+          <ExecutionAutoPaperTradingSection
+            baseUrl={quantCoreBaseUrl}
+            onOpenAudit={() => selectProductWorkArea("audit")}
+            onOpenDynamicTrading={() => selectProductWorkArea("dynamic-trading")}
+            onOpenExecution={() => selectProductWorkArea("execution")}
+            onSafetyChange={syncExecutionSafety}
+            onSnapshotChange={setAutoTradingSnapshot}
+            variant="operations"
+          />
           <div className="terminal-operations-body">
 
         <section className="terminal-overview-grid market-tape">
           <section className={`module-focus-card ${activeWorkflowAccent}`}>
             <div>
-              <span className="section-label">{i18n.t("moduleFocus.label")}</span>
+              <span className="section-label">
+                {i18n.locale === "zh-CN" ? "研究与数据维护" : "Research and data maintenance"}
+              </span>
               <strong>
-                {activeWorkArea ? i18n.productWorkAreaLabel(activeWorkArea) : i18n.quantLoopLabel(activeLoopStep?.id ?? "research", activeLoopStep?.label ?? "Market Research")}
+                {i18n.locale === "zh-CN" ? "研究队列与数据工具" : "Research queue and data tools"}
               </strong>
               <p>
-                {activeWorkArea
-                  ? i18n.productWorkAreaDescription(activeWorkArea)
-                  : i18n.quantLoopFocus(activeLoopStep?.id ?? "research", { symbol: workspace.selectedInstrument.symbol })}
+                {i18n.locale === "zh-CN"
+                  ? "用于补齐研究数据和证据；上方生产运行总览才是当前自动交易状态。"
+                  : "Maintains research data and evidence; the production overview above is the current trading runtime."}
               </p>
               {goldenPath ? (
                 <div className={`golden-path-status ${goldenPath.status}`}>
@@ -18111,9 +18531,7 @@ export function App() {
             </p>
             <ExecutionStage10ProductionExecutionSection
               baseUrl={quantCoreBaseUrl}
-              candidate={stage9ProductionAdmissionCandidate}
               onAutoLiveAuthorized={completeLiveTradingGate}
-              review={stage9ProductionAdmissionReview}
               sectionId="live-trading-gate-dialog-control"
             />
           </section>
@@ -18265,32 +18683,6 @@ function queueStage1P0DailyUseArchiveRecordActionFocus(): void {
     return;
   }
   window.requestAnimationFrame(() => focusStage1P0DailyUseArchiveRecordActionElement());
-}
-
-function focusExecutionReadiness(targetSelector?: string): void {
-  if (typeof document === "undefined") {
-    return;
-  }
-  const stack = document.querySelector<HTMLDetailsElement>(
-    ".surface-execution .execution-readiness-stack"
-  );
-  const target = targetSelector
-    ? document.querySelector<HTMLElement>(targetSelector)
-    : stack;
-  if (!stack || !target) {
-    return;
-  }
-  stack.open = true;
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
-  target.focus({ preventScroll: true });
-}
-
-function queueExecutionReadinessFocus(targetSelector?: string): void {
-  if (typeof window === "undefined") {
-    focusExecutionReadiness(targetSelector);
-    return;
-  }
-  window.requestAnimationFrame(() => focusExecutionReadiness(targetSelector));
 }
 
 function p0EvidenceDrawerSummary(
@@ -21547,12 +21939,14 @@ export function strategyAiDraftDiffRows(
 }
 
 function StrategySummary({
+  bindingStrategyRevision,
   draft,
   i18n,
   isSavingStrategy,
   library,
   onApplyAiStrategyDraft,
   onApplyStrategyTemplate,
+  onBindStrategyToProduction,
   onDeleteStrategyVersion,
   onLoadStrategyVersion,
   onRunStrategyGovernanceAction,
@@ -21563,16 +21957,19 @@ function StrategySummary({
   rows,
   showSaveAction,
   strategyGovernanceQueue,
+  strategyProductionBinding,
   templates,
   validationSource,
   workspace
 }: {
+  bindingStrategyRevision: string | null;
   draft: StrategyRuleDraft;
   i18n: AppI18n;
   isSavingStrategy: boolean;
   library: StrategyLibraryItem[];
   onApplyAiStrategyDraft: (draft: StrategyRuleDraft, reasons: string[]) => void;
   onApplyStrategyTemplate: (templateId: StrategyTemplateId) => void;
+  onBindStrategyToProduction: (strategy: StrategyLibraryItem | null, operator: string) => Promise<boolean>;
   onDeleteStrategyVersion: (strategy: StrategyLibraryItem) => Promise<boolean>;
   onLoadStrategyVersion: (strategy: StrategyLibraryItem) => void;
   onRunStrategyGovernanceAction: (row: StrategyGovernanceQueueRow) => void;
@@ -21583,6 +21980,7 @@ function StrategySummary({
   rows: StrategyRuleRow[];
   showSaveAction: boolean;
   strategyGovernanceQueue: StrategyGovernanceQueue;
+  strategyProductionBinding: StrategyProductionBindingResult;
   templates: StrategyTemplateOption[];
   validationSource: WorkspaceLoadResult["source"];
   workspace: TerminalWorkspace;
@@ -21590,8 +21988,13 @@ function StrategySummary({
   const [strategyToDelete, setStrategyToDelete] = useState<StrategyLibraryItem | null>(null);
   const [deletingStrategyRevision, setDeletingStrategyRevision] = useState<string | null>(null);
   const [strategyDeleteFailed, setStrategyDeleteFailed] = useState(false);
+  const [strategyBindingTarget, setStrategyBindingTarget] =
+    useState<{ strategy: StrategyLibraryItem | null } | null>(null);
+  const [strategyBindingOperator, setStrategyBindingOperator] = useState("");
   const strategyDeleteDialogRef = useRef<HTMLDialogElement>(null);
   const strategyDeleteCancelRef = useRef<HTMLButtonElement>(null);
+  const strategyBindingDialogRef = useRef<HTMLDialogElement>(null);
+  const strategyBindingOperatorRef = useRef<HTMLInputElement>(null);
   const strategyLibraryRef = useRef<HTMLDivElement>(null);
   const strategyAiDialogRef = useRef<HTMLDialogElement>(null);
   const strategyAiGoalRef = useRef<HTMLTextAreaElement>(null);
@@ -21617,6 +22020,13 @@ function StrategySummary({
       strategyDeleteCancelRef.current?.focus();
     }
   }, [strategyToDelete]);
+
+  useEffect(() => {
+    if (strategyBindingTarget && !strategyBindingDialogRef.current?.open) {
+      strategyBindingDialogRef.current?.showModal();
+      strategyBindingOperatorRef.current?.focus();
+    }
+  }, [strategyBindingTarget]);
 
   useEffect(() => {
     if (isStrategyAiDialogOpen && !strategyAiDialogRef.current?.open) {
@@ -21808,6 +22218,35 @@ function StrategySummary({
     strategyLibraryRef.current?.focus();
   };
 
+  const openStrategyBindingDialog = (strategy: StrategyLibraryItem | null) => {
+    setStrategyBindingOperator(strategyProductionBinding.binding?.operator ?? "");
+    setStrategyBindingTarget({ strategy });
+  };
+
+  const closeStrategyBindingDialog = () => {
+    if (bindingStrategyRevision) {
+      return;
+    }
+    strategyBindingDialogRef.current?.close();
+    setStrategyBindingTarget(null);
+  };
+
+  const confirmStrategyBinding = async () => {
+    if (!strategyBindingTarget || !strategyBindingOperator.trim() || bindingStrategyRevision) {
+      return;
+    }
+    const bound = await onBindStrategyToProduction(
+      strategyBindingTarget.strategy,
+      strategyBindingOperator
+    );
+    if (!bound) {
+      return;
+    }
+    strategyBindingDialogRef.current?.close();
+    setStrategyBindingTarget(null);
+    strategyLibraryRef.current?.focus();
+  };
+
   const selectedStrategyAiProvider = providers.find(
     (provider) => provider.providerId === strategyAiProviderId
   ) ?? providers.find((provider) => provider.providerId === "local");
@@ -21978,6 +22417,76 @@ function StrategySummary({
           </div>
         ) : null}
       </div>
+      <section
+        className={`strategy-production-binding ${strategyProductionBinding.binding?.status ?? "loading"}`}
+        aria-labelledby="strategy-production-binding-title"
+      >
+        <div className="strategy-production-binding-heading">
+          <div>
+            <span>{i18n.locale === "zh-CN" ? "生产策略交接" : "Production strategy handoff"}</span>
+            <strong id="strategy-production-binding-title">
+              {strategyProductionBinding.binding?.name
+                ?? (i18n.locale === "zh-CN" ? "正在读取自动交易策略" : "Loading automated-trading strategy")}
+            </strong>
+          </div>
+          <em>
+            {strategyProductionBinding.binding?.kind === "library"
+              ? i18n.locale === "zh-CN" ? "审计策略" : "Audited strategy"
+              : i18n.locale === "zh-CN" ? "内置策略" : "Built-in strategy"}
+          </em>
+        </div>
+        {strategyProductionBinding.binding ? (
+          <>
+            <div className="strategy-production-binding-grid">
+              <span>
+                <small>{i18n.locale === "zh-CN" ? "运行上下文" : "Runtime context"}</small>
+                <strong>
+                  {i18n.marketLabel(strategyProductionBinding.binding.market)}
+                  {" · "}
+                  {strategyProductionBinding.binding.symbol}
+                  {" · "}
+                  {strategyProductionBinding.binding.timeframe}
+                </strong>
+              </span>
+              <span>
+                <small>{i18n.locale === "zh-CN" ? "审计运行" : "Audit run"}</small>
+                <strong>{strategyProductionBinding.binding.auditRunId ?? (i18n.locale === "zh-CN" ? "内置规则" : "Built-in rules")}</strong>
+              </span>
+              <span>
+                <small>{i18n.locale === "zh-CN" ? "切换条件" : "Switch condition"}</small>
+                <strong>
+                  {strategyProductionBinding.binding.switchAllowed
+                    ? i18n.locale === "zh-CN" ? "已暂停、空仓且无未决委托" : "Paused, flat, and reconciled"
+                    : strategyProductionSwitchReasonLabel(i18n, strategyProductionBinding.binding.switchBlockedReason)}
+                </strong>
+              </span>
+            </div>
+            <p>{strategyProductionBinding.binding.detail}</p>
+            <div className="strategy-production-binding-footer">
+              <small>
+                {i18n.locale === "zh-CN"
+                  ? "交接只改变自动评估使用的策略；不会自动授权实盘、启动监控或提交订单。运行参数与策略风控冲突时采用更严格限制。"
+                  : "Handoff only changes the strategy used by automated evaluation. It does not authorize, start, or submit live orders; the stricter risk limit wins."}
+              </small>
+              {strategyProductionBinding.binding.kind === "library" ? (
+                <button
+                  disabled={!strategyProductionBinding.binding.switchAllowed || bindingStrategyRevision !== null}
+                  onClick={() => openStrategyBindingDialog(null)}
+                  type="button"
+                >
+                  {bindingStrategyRevision === "builtin"
+                    ? i18n.locale === "zh-CN" ? "正在恢复" : "Restoring"
+                    : i18n.locale === "zh-CN" ? "恢复内置策略" : "Restore built-in strategy"}
+                </button>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <p className="strategy-production-binding-error" role="status">
+            {strategyProductionBindingErrorLabel(i18n, strategyProductionBinding.error)}
+          </p>
+        )}
+      </section>
       <div className="strategy-rule-board">
         <div className="strategy-rule-title">
           <span>{i18n.t("strategy.rules")}</span>
@@ -22079,6 +22588,20 @@ function StrategySummary({
               item.strategySnapshot.exit === workspace.strategy.exit &&
               item.strategySnapshot.position === workspace.strategy.position &&
               item.strategySnapshot.risk === workspace.strategy.risk;
+            const isActiveProductionStrategy =
+              strategyProductionBinding.binding?.kind === "library"
+              && strategyProductionBinding.binding.revision === item.revision;
+            const isProductionCompatible =
+              item.status === "audited"
+              && Boolean(item.auditRunId)
+              && item.market === "crypto"
+              && item.symbol === "BTC/USDT"
+              && item.timeframe === "1m";
+            const productionHandoffDisabled =
+              !isProductionCompatible
+              || isActiveProductionStrategy
+              || strategyProductionBinding.binding?.switchAllowed !== true
+              || bindingStrategyRevision !== null;
 
             return (
               <article className={`strategy-library-card ${item.status}`} key={item.revision}>
@@ -22105,17 +22628,48 @@ function StrategySummary({
                     ))}
                   </div>
                 </span>
-                <span>{strategyLibraryStatusLabel(i18n, item.status)}</span>
+                <span className={isActiveProductionStrategy ? "strategy-production-active-badge" : undefined}>
+                  {isActiveProductionStrategy
+                    ? i18n.locale === "zh-CN" ? "当前生产策略" : "Active production strategy"
+                    : strategyLibraryStatusLabel(i18n, item.status)}
+                </span>
                 <div className="strategy-library-card-actions">
                   <button disabled={isCurrentDraft} onClick={() => onLoadStrategyVersion(item)} type="button">
                     {isCurrentDraft ? i18n.t("strategy.loadedVersion") : i18n.t("strategy.loadVersion")}
                   </button>
+                  {item.status === "audited" ? (
+                    <button
+                      className="strategy-production-bind-button"
+                      disabled={productionHandoffDisabled}
+                      onClick={() => openStrategyBindingDialog(item)}
+                      title={
+                        !isProductionCompatible
+                          ? i18n.locale === "zh-CN"
+                            ? "当前生产路由仅支持已审计的 BTC/USDT 一分钟策略"
+                            : "The current production route only supports audited BTC/USDT one-minute strategies"
+                          : isActiveProductionStrategy
+                            ? i18n.locale === "zh-CN" ? "该版本已是当前生产策略" : "This version is already active"
+                            : strategyProductionSwitchReasonLabel(
+                                i18n,
+                                strategyProductionBinding.binding?.switchBlockedReason
+                              )
+                      }
+                      type="button"
+                    >
+                      {bindingStrategyRevision === item.revision
+                        ? i18n.locale === "zh-CN" ? "正在交接" : "Binding"
+                        : isActiveProductionStrategy
+                          ? i18n.locale === "zh-CN" ? "已交接" : "Bound"
+                          : i18n.locale === "zh-CN" ? "交接到自动交易" : "Bind to automated trading"}
+                    </button>
+                  ) : null}
                   <button
                     aria-label={i18n.t("strategy.deleteVersionLabel", {
                       name: i18n.strategyText(item.name),
                       revision: item.revision
                     })}
                     className="strategy-delete-button"
+                    disabled={isActiveProductionStrategy}
                     onClick={() => {
                       setStrategyDeleteFailed(false);
                       setStrategyToDelete(item);
@@ -22132,6 +22686,114 @@ function StrategySummary({
           <p className="strategy-library-empty">{i18n.t("strategy.libraryEmpty")}</p>
         )}
       </div>
+      {strategyBindingTarget ? (
+        <dialog
+          aria-describedby="strategy-production-dialog-description"
+          aria-labelledby="strategy-production-dialog-title"
+          aria-modal="true"
+          className="research-confirmation-dialog strategy-production-dialog"
+          onCancel={(event) => {
+            event.preventDefault();
+            closeStrategyBindingDialog();
+          }}
+          ref={strategyBindingDialogRef}
+          role="alertdialog"
+        >
+          <section className="research-confirmation-modal strategy-production-modal">
+            <header>
+              <div>
+                <span className="research-confirmation-kicker">
+                  <ShieldCheck aria-hidden="true" size={14} />
+                  {i18n.locale === "zh-CN" ? "生产策略交接确认" : "Production strategy handoff"}
+                </span>
+                <h2 id="strategy-production-dialog-title">
+                  {strategyBindingTarget.strategy
+                    ? i18n.strategyText(strategyBindingTarget.strategy.name)
+                    : i18n.locale === "zh-CN"
+                      ? "恢复内置涨跌幅与 AI 自动策略"
+                      : "Restore the built-in price-change and AI strategy"}
+                </h2>
+              </div>
+              <button
+                aria-label={i18n.locale === "zh-CN" ? "关闭生产策略交接确认" : "Close production strategy handoff"}
+                className="panel-icon-button"
+                disabled={bindingStrategyRevision !== null}
+                onClick={closeStrategyBindingDialog}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <p id="strategy-production-dialog-description">
+              {i18n.locale === "zh-CN"
+                ? "交接会更新后台自动评估所使用的策略，只清除旧判断缓存；资金、成交与当日风控账本保持不变，自动交易继续暂停。"
+                : "This updates the strategy used by background evaluation and only clears cached decisions; funds, trades, and daily risk state remain unchanged while automated trading stays paused."}
+            </p>
+            <div className="strategy-production-dialog-summary">
+              <span>
+                {i18n.locale === "zh-CN" ? "目标策略" : "Target strategy"}
+                <strong>
+                  {strategyBindingTarget.strategy?.revision
+                    ?? (i18n.locale === "zh-CN" ? "内置策略" : "Built-in strategy")}
+                </strong>
+              </span>
+              <span>
+                {i18n.locale === "zh-CN" ? "审计证据" : "Audit evidence"}
+                <strong>
+                  {strategyBindingTarget.strategy?.auditRunId
+                    ?? (i18n.locale === "zh-CN" ? "内置规则" : "Built-in rules")}
+                </strong>
+              </span>
+              <span>
+                {i18n.locale === "zh-CN" ? "运行结果" : "Runtime result"}
+                <strong>{i18n.locale === "zh-CN" ? "保持暂停、不下单" : "Paused; no order"}</strong>
+              </span>
+            </div>
+            <label className="strategy-production-operator-field" htmlFor="strategy-production-operator">
+              <span>{i18n.locale === "zh-CN" ? "实名操作人" : "Named operator"}</span>
+              <input
+                autoComplete="name"
+                disabled={bindingStrategyRevision !== null}
+                id="strategy-production-operator"
+                maxLength={80}
+                onChange={(event) => setStrategyBindingOperator(event.currentTarget.value)}
+                ref={strategyBindingOperatorRef}
+                value={strategyBindingOperator}
+              />
+            </label>
+            <p className="strategy-production-dialog-warning">
+              {i18n.locale === "zh-CN"
+                ? "本操作不替代生产授权、账户覆盖检查、急停、幂等与对账。之后仍需前往动态交易页重新检查并人工启动。"
+                : "This does not replace production authorization, account coverage, kill switch, idempotency, or reconciliation. Review and start it manually from Dynamic Trading."}
+            </p>
+            {strategyProductionBinding.error ? (
+              <p className="strategy-production-dialog-error" role="alert">
+                {strategyProductionBindingErrorLabel(i18n, strategyProductionBinding.error)}
+              </p>
+            ) : null}
+            <footer className="research-confirmation-actions">
+              <button
+                className="design-secondary-action"
+                disabled={bindingStrategyRevision !== null}
+                onClick={closeStrategyBindingDialog}
+                type="button"
+              >
+                {i18n.locale === "zh-CN" ? "取消" : "Cancel"}
+              </button>
+              <button
+                className="strategy-production-confirm"
+                disabled={!strategyBindingOperator.trim() || bindingStrategyRevision !== null}
+                onClick={() => void confirmStrategyBinding()}
+                type="button"
+              >
+                {bindingStrategyRevision
+                  ? i18n.locale === "zh-CN" ? "正在交接…" : "Binding…"
+                  : i18n.locale === "zh-CN" ? "确认交接并保持暂停" : "Confirm handoff and stay paused"}
+              </button>
+            </footer>
+          </section>
+        </dialog>
+      ) : null}
       {isStrategyAiDialogOpen ? (
         <dialog
           aria-describedby="strategy-ai-subtitle"
@@ -22887,10 +23549,10 @@ function BacktestReportPanel({
             <strong>{report.aiReviewReady ? (i18n.locale === "zh-CN" ? "已就绪" : "Ready") : i18n.locale === "zh-CN" ? "阻断" : "Blocked"}</strong>
             <p>{i18n.locale === "zh-CN" ? "AI 只能引用这份已审计报告。" : "AI may cite only this audited report."}</p>
           </article>
-          <article className={report.executionReady ? "positive" : "warning"}>
-            <span>{i18n.locale === "zh-CN" ? "执行交接" : "Execution handoff"}</span>
-            <strong>{report.executionReady ? (i18n.locale === "zh-CN" ? "可交接" : "Ready") : i18n.locale === "zh-CN" ? "需复核" : "Review"}</strong>
-            <p>{i18n.locale === "zh-CN" ? "实盘仍必须通过后续闸门。" : "Live trading still requires downstream gates."}</p>
+          <article className={report.researchEvidenceReady ? "positive" : "warning"}>
+            <span>{i18n.locale === "zh-CN" ? "生产预检证据" : "Production preflight evidence"}</span>
+            <strong>{report.researchEvidenceReady ? (i18n.locale === "zh-CN" ? "证据完整" : "Evidence ready") : i18n.locale === "zh-CN" ? "需复核" : "Review"}</strong>
+            <p>{i18n.locale === "zh-CN" ? "最终生产资格由核心服务复算，不会在回测中授权或下单。" : "The core service revalidates final eligibility; backtesting never authorizes or submits orders."}</p>
           </article>
         </div>
 
@@ -34455,14 +35117,14 @@ function researchOpsStageLabel(i18n: AppI18n, stage: ResearchOpsQueueRow["stage"
       needs_data: "需修数据",
       ready_for_pipeline: "可跑流水线",
       needs_ai_review: "需 AI 评审",
-      paper_candidate: "模拟候选"
+      paper_candidate: "已评审候选"
     }[stage];
   }
   return {
     needs_data: "Needs data",
     ready_for_pipeline: "Pipeline ready",
     needs_ai_review: "Needs AI review",
-    paper_candidate: "Paper candidate"
+    paper_candidate: "Reviewed candidate"
   }[stage];
 }
 
@@ -34473,7 +35135,7 @@ function researchOpsActionLabel(i18n: AppI18n, label: string): string {
         "Refresh data": "刷新数据",
         "Run pipeline": "运行流水线",
         "Run AI review": "运行 AI 评审",
-        "Stage paper simulation": "准备模拟"
+        "Review production handoff": "查看生产交接"
       }[label] ?? label
     );
   }
@@ -37049,6 +37711,146 @@ function strategyLibraryStatusLabel(i18n: AppI18n, status: StrategyLibraryItem["
   return { draft: "草稿", audited: "已审计" }[status];
 }
 
+function strategyProductionSwitchReasonLabel(i18n: AppI18n, reason?: string | null): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    strategy_switch_requires_paused_monitoring: {
+      zh: "请先在动态交易页暂停自动监控",
+      en: "Pause automated monitoring first"
+    },
+    strategy_switch_requires_flat_position: {
+      zh: "请先完成持仓退出与账户对账",
+      en: "Exit the position and reconcile the account first"
+    },
+    strategy_switch_requires_reconciled_orders: {
+      zh: "请先完成未决委托对账",
+      en: "Reconcile pending orders first"
+    }
+  };
+  if (!reason) {
+    return i18n.locale === "zh-CN" ? "可安全切换" : "Safe to switch";
+  }
+  const label = labels[reason];
+  return label
+    ? i18n.locale === "zh-CN" ? label.zh : label.en
+    : reason;
+}
+
+function strategyProductionBindingErrorLabel(i18n: AppI18n, error?: string): string {
+  if (!error) {
+    return i18n.locale === "zh-CN" ? "正在读取生产策略状态。" : "Loading production strategy state.";
+  }
+  const labels: Record<string, { zh: string; en: string }> = {
+    strategy_binding_audit_required: {
+      zh: "该策略尚未绑定完整审计运行，不能交接到自动交易。",
+      en: "This strategy has no complete audited run and cannot be bound."
+    },
+    strategy_binding_audit_run_required: {
+      zh: "请选择有效的审计运行后再执行生产预检。",
+      en: "Select a valid audited run before production preflight."
+    },
+    strategy_binding_strategy_not_found: {
+      zh: "审计运行对应的策略版本不在策略库中，请重新保存并审计。",
+      en: "The audited strategy version is missing from the strategy library."
+    },
+    strategy_binding_store_unavailable: {
+      zh: "生产策略审计存储暂不可用，请稍后重试。",
+      en: "The production strategy audit store is unavailable."
+    },
+    strategy_binding_context_unsupported: {
+      zh: "当前生产路由仅支持 BTC/USDT 一分钟策略。",
+      en: "The current production route only supports BTC/USDT one-minute strategies."
+    },
+    strategy_binding_drawdown_limit_exceeded: {
+      zh: "审计回测的最大回撤超过策略设定上限。",
+      en: "The audited backtest drawdown exceeds the strategy limit."
+    },
+    strategy_binding_audit_snapshot_mismatch: {
+      zh: "审计运行的数据快照校验失败，请重新运行研究与回测。",
+      en: "The audited data snapshot failed verification; rerun research and backtesting."
+    },
+    strategy_binding_audit_run_not_found: {
+      zh: "未找到该策略绑定的审计运行。",
+      en: "The audited run for this strategy binding was not found."
+    },
+    strategy_binding_audit_run_changed: {
+      zh: "策略库指向的审计运行已改变，请暂停并重新交接。",
+      en: "The strategy library now points to a different audited run; pause and bind it again."
+    },
+    strategy_binding_audit_identity_missing: {
+      zh: "当前生产策略缺少固定的审计身份，请暂停并重新交接。",
+      en: "The active production strategy lacks a pinned audit identity; pause and bind it again."
+    },
+    strategy_binding_audit_evidence_changed: {
+      zh: "绑定后的审计证据已发生变化，请重新运行审计并交接。",
+      en: "The bound audit evidence changed; rerun the audit and bind it again."
+    },
+    strategy_binding_audit_data_incomplete: {
+      zh: "审计运行缺少完整行情快照，不能用于生产策略。",
+      en: "The audited run lacks a complete market snapshot and cannot be used in production."
+    },
+    strategy_binding_audit_execution_mode_invalid: {
+      zh: "该运行不是隔离的审计回测证据，不能进入生产资格复核。",
+      en: "This run is not isolated audited backtest evidence and cannot enter production qualification."
+    },
+    strategy_binding_audit_context_mismatch: {
+      zh: "审计运行与策略市场、标的或周期不一致。",
+      en: "The audited run does not match the strategy market, symbol, or timeframe."
+    },
+    strategy_binding_audit_strategy_missing: {
+      zh: "审计运行缺少完整策略快照，请重新运行研究与回测。",
+      en: "The audited run lacks a complete strategy snapshot."
+    },
+    strategy_binding_audit_revision_mismatch: {
+      zh: "审计运行中的策略版本与策略库不一致。",
+      en: "The audited strategy revision does not match the strategy library."
+    },
+    strategy_binding_audit_metrics_invalid: {
+      zh: "审计回测指标不完整，无法执行生产资格复核。",
+      en: "The audited backtest metrics are incomplete."
+    },
+    strategy_binding_backtest_assumptions_invalid: {
+      zh: "审计回测缺少有效的手续费、滑点或资金假设。",
+      en: "The audited backtest lacks valid fee, slippage, or capital assumptions."
+    },
+    strategy_binding_backtest_replay_mismatch: {
+      zh: "审计回测无法按原始证据复现，请重新运行研究与回测。",
+      en: "The audited backtest cannot be reproduced from its evidence; rerun research and backtesting."
+    },
+    strategy_binding_backtest_has_no_completed_trade: {
+      zh: "审计回测没有完成的买卖闭环，不能交接到自动交易。",
+      en: "The audited backtest has no completed trade cycle and cannot be bound."
+    },
+    strategy_binding_context_mismatch: {
+      zh: "策略记录与规范策略上下文不一致。",
+      en: "The strategy record and canonical strategy context do not match."
+    },
+    strategy_binding_revision_mismatch: {
+      zh: "策略版本校验失败，请重新保存并审计。",
+      en: "The strategy revision failed verification; save and audit it again."
+    },
+    strategy_binding_audit_strategy_mismatch: {
+      zh: "策略库内容与审计运行中的完整策略不一致。",
+      en: "The strategy library content does not match the complete strategy in the audited run."
+    },
+    strategy_binding_risk_invalid: {
+      zh: "策略风控参数不完整或超出生产允许范围。",
+      en: "The strategy risk settings are incomplete or outside production limits."
+    },
+    strategy_binding_operator_required: {
+      zh: "请输入有效的实名操作人。",
+      en: "Enter a valid named operator."
+    },
+    strategy_binding_audit_run_mismatch: {
+      zh: "所选审计运行与策略版本不匹配。",
+      en: "The selected audited run does not match the strategy revision."
+    }
+  };
+  const label = labels[error];
+  return label
+    ? i18n.locale === "zh-CN" ? label.zh : label.en
+    : strategyProductionSwitchReasonLabel(i18n, error);
+}
+
 function strategyDraftHint(i18n: AppI18n, field: StrategyRuleDraftField): string {
   if (i18n.locale === "en-US") {
     return {
@@ -37227,8 +38029,8 @@ function backtestReportSummary(i18n: AppI18n, report: BacktestReport): string {
   if (i18n.locale === "en-US") {
     return report.summary;
   }
-  if (report.summary === "Run Pipeline to create a reproducible backtest before AI review or execution.") {
-    return "先运行流水线生成可复现回测，再进入 AI 评审或执行。";
+  if (report.summary === "Run Pipeline to create a reproducible backtest before AI review or production qualification.") {
+    return "先运行流水线生成可复现回测，再进入 AI 评审或生产资格预检。";
   }
   return report.summary
     .replace("bars", "根K线")
@@ -37271,6 +38073,7 @@ function backtestEvidenceDetail(i18n: AppI18n, card: BacktestEvidenceCard): stri
   return card.detail
     .replace("Run Pipeline to bind a reproducible run id.", "运行流水线以绑定可复现运行编号。")
     .replace("No core diagnostics supplied yet.", "核心服务尚未返回诊断。")
+    .replace("audited backtest", "审计回测")
     .replace("Cash", "资金")
     .replace("bars", "根K线")
     .replace("paper_only", "仅模拟盘")
@@ -37288,7 +38091,7 @@ function backtestGateLabel(i18n: AppI18n, gate: BacktestReadinessGate): string {
       data: "数据快照",
       strategy: "策略结构",
       costs: "费用模型",
-      execution: "执行晋级"
+      execution: "生产预检输入"
     }[gate.id] ?? gate.label
   );
 }
@@ -37307,8 +38110,11 @@ function backtestGateDetail(i18n: AppI18n, detail: string): string {
   return detail
     .replace("Run Pipeline to bind a reproducible OHLCV snapshot.", "运行流水线以绑定可复现 OHLCV 快照。")
     .replace("Complete entry, exit, position, and risk rules before audit.", "审计前需要补齐入场、出场、仓位和风控规则。")
-    .replace("Paper execution waits for an audited run id.", "模拟执行等待可审计运行编号。")
-    .replace("Paper execution can be staged; live adapters remain gated.", "可以创建模拟执行；实盘适配器仍受闸门限制。")
+    .replace("Production qualification waits for an audited run id.", "生产资格预检等待可审计运行编号。")
+    .replace(
+      "Audited evidence can enter server-side production qualification; it does not authorize or submit an order.",
+      "审计证据可以进入服务端生产资格复核；本步骤不会授权或提交订单。"
+    )
     .replace("is parseable.", "已可解析。")
     .replace("Audited", "已审计")
     .replace("bars are bound.", "根K线已绑定。")

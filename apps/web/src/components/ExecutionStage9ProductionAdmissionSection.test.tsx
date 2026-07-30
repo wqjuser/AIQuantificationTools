@@ -4,8 +4,8 @@ import type { Stage6SandboxBatch, Stage6SandboxBatchAuthorization } from "../lib
 import type { Stage8ProductionReadonlyContinuity } from "../lib/stage8-readonly-continuity";
 import type { Stage9ProductionAdmissionCandidate, Stage9ProductionAdmissionReview } from "../lib/stage9-production-admission";
 import {
+  ExecutionAcceptanceAuditLedgerPanel,
   ExecutionStage9ProductionAdmissionSection,
-  Stage9ProductionAdmissionAuditLedgerPanel
 } from "./ExecutionStage9ProductionAdmissionSection";
 
 describe("ExecutionStage9ProductionAdmissionSection", () => {
@@ -75,9 +75,15 @@ describe("ExecutionStage9ProductionAdmissionSection", () => {
       ] as const,
       status: "admission_review_recorded" as const, authorizationEffective: false as const, ...boundary
     };
-    const detachedHtml = renderToStaticMarkup(<Stage9ProductionAdmissionAuditLedgerPanel
+    const detachedHtml = renderToStaticMarkup(<ExecutionAcceptanceAuditLedgerPanel
       locale="zh-CN"
       events={[
+        {
+          schemaVersion: 1, eventId: "stage6-authorization-a", eventType: "stage6_sandbox_batch_authorization",
+          runId: "run-a", createdAt: "2026-07-14T05:59:00+00:00",
+          stage: "stage6-sandbox", source: "李复核",
+          summary: "authorization", detail: "read-only", metadata: {}
+        },
         {
           schemaVersion: 1, eventId: review.reviewId, eventType: "stage9_production_order_admission_review",
           runId: review.baseRunId, createdAt: review.reviewedAt,
@@ -86,7 +92,7 @@ describe("ExecutionStage9ProductionAdmissionSection", () => {
         }
       ]}
     />);
-    const invalidHtml = renderToStaticMarkup(<Stage9ProductionAdmissionAuditLedgerPanel
+    const invalidHtml = renderToStaticMarkup(<ExecutionAcceptanceAuditLedgerPanel
       locale="zh-CN"
       events={[
         {
@@ -96,12 +102,15 @@ describe("ExecutionStage9ProductionAdmissionSection", () => {
         }
       ]}
     />);
-    expect(detachedHtml).toContain("生产委托准入审计");
+    expect(detachedHtml).toContain("历史执行验收证据");
+    expect(detachedHtml).toContain("阶段 6 · 手工测试网验收");
+    expect(detachedHtml).toContain("测试网批次授权");
+    expect(detachedHtml).toContain("阶段 9 · 旧单笔生产准入");
     expect(detachedHtml).toContain("人工复核");
-    expect(detachedHtml).toContain("detached · audit-only");
-    expect(detachedHtml).toContain("authorizationEffective=false");
+    expect(detachedHtml).toContain("导入证据 · 绑定有效");
+    expect(detachedHtml).toContain("本面板不提供授权、急停、委托或恢复操作");
     expect(detachedHtml).not.toContain("<button");
-    expect(invalidHtml).toContain("invalid · audit-only");
-    expect(invalidHtml).not.toContain("detached · audit-only");
+    expect(invalidHtml).toContain("证据绑定无效");
+    expect(invalidHtml).not.toContain("导入证据 · 绑定有效");
   });
 });

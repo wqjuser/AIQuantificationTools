@@ -957,6 +957,9 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
             ),
             ("attacker_controlled_event", "stage7-production-readonly-existing"),
             ("attacker_controlled_event", "stage8-production-readonly-revoke-existing"),
+            ("auto_live_order_intent", "imported-auto-live-order-intent"),
+            ("attacker_controlled_event", "auto-live-order-intent-forged"),
+            ("auto_trading_strategy_binding", "strategy-binding-forged"),
         ):
             with self.subTest(forbidden_import_type=event_type):
                 authority_import = copy.deepcopy(exported)

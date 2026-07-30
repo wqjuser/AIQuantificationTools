@@ -48,6 +48,7 @@ describe("i18n", () => {
     const en = createI18n("en-US");
     const workAreas = buildProductWorkAreas(buildTerminalWorkspace());
     const marketArea = workAreas.find((area) => area.id === "market");
+    const marketInformationArea = workAreas.find((area) => area.id === "market-information");
     const operationsArea = workAreas.find((area) => area.id === "operations");
     const auditArea = workAreas.find((area) => area.id === "audit");
     const executionArea = workAreas.find((area) => area.id === "execution");
@@ -96,8 +97,19 @@ describe("i18n", () => {
     );
     expect(marketArea ? zh.productWorkAreaDeliveryStage(marketArea) : "").toBe("阶段 1 · 行情与研究");
     expect(marketArea ? zh.productDevelopmentStageStatus(marketArea.deliveryStageStatus) : "").toBe("基础维护");
+    expect(marketInformationArea ? zh.productWorkAreaLabel(marketInformationArea) : "").toBe("市场资讯");
+    expect(marketInformationArea ? en.productWorkAreaLabel(marketInformationArea) : "").toBe("Market Information");
+    expect(marketInformationArea ? zh.productWorkAreaDescription(marketInformationArea) : "").toBe(
+      "市场广度、涨幅领先、成交活跃与原文资讯"
+    );
     expect(operationsArea ? zh.productWorkAreaLabel(operationsArea) : "").toBe("运行管理");
     expect(operationsArea ? en.productWorkAreaLabel(operationsArea) : "").toBe("Operations");
+    expect(operationsArea ? zh.productWorkAreaDescription(operationsArea) : "").toBe(
+      "生产运行、服务健康、告警与研究维护"
+    );
+    expect(operationsArea ? en.productWorkAreaDescription(operationsArea) : "").toBe(
+      "Production runtime, service health, alerts, and research maintenance"
+    );
     expect(auditArea ? zh.productDevelopmentStageStatus(auditArea.deliveryStageStatus) : "").toBe("基础维护");
     expect(
       executionArea
@@ -306,8 +318,8 @@ describe("i18n", () => {
     );
     expect(zh.strategyText("4 watched research tasks")).toBe("4 个关注研究任务");
     expect(
-      zh.strategyText("4 need data · 0 ready for pipeline · 0 need AI review · 0 paper candidates")
-    ).toBe("4 个需补数据 · 0 个可运行流水线 · 0 个需 AI 评审 · 0 个模拟候选");
+      zh.strategyText("4 need data · 0 ready for pipeline · 0 need AI review · 0 reviewed candidates")
+    ).toBe("4 个需补数据 · 0 个可运行流水线 · 0 个需 AI 评审 · 0 个已评审候选");
     expect(zh.strategyText("No watchlist cache refresh evidence for this timeframe.")).toBe(
       "此周期没有自选缓存刷新证据。"
     );

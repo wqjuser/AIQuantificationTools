@@ -102,70 +102,163 @@ export function ExecutionStage9ProductionAdmissionSection({
   );
 }
 
-const stage9AuditEventTypes = new Set([
+export const executionAcceptanceAuditEventTypes = [
+  "stage5_shadow_execution_session",
+  "stage5_sandbox_readiness_decision",
+  "stage5_sandbox_authorization_preflight",
+  "stage5_sandbox_authorization_review",
+  "stage6_sandbox_batch_authorization",
+  "stage6_sandbox_order_transition",
+  "stage6_sandbox_kill_switch",
+  "stage7_production_readonly_probe",
+  "stage8_production_readonly_access_control",
   "stage9_production_order_admission_candidate",
   "stage9_production_order_admission_review"
-]);
+] as const;
 
-export function Stage9ProductionAdmissionAuditLedgerPanel({
+const executionAcceptanceAuditEventTypeSet = new Set<string>(executionAcceptanceAuditEventTypes);
+const executionAcceptanceStages = [
+  {
+    id: 5,
+    title: "影子执行验收",
+    titleEn: "Shadow execution acceptance",
+    detail: "隔离执行、测试网准备与人工授权证据"
+  },
+  {
+    id: 6,
+    title: "手工测试网验收",
+    titleEn: "Manual sandbox acceptance",
+    detail: "批次授权、订单状态与测试网急停证据"
+  },
+  {
+    id: 7,
+    title: "生产只读探针",
+    titleEn: "Production read-only probe",
+    detail: "历史只读账户与权限探测证据"
+  },
+  {
+    id: 8,
+    title: "只读连续性控制",
+    titleEn: "Read-only continuity control",
+    detail: "历史生产只读访问恢复与撤销证据"
+  },
+  {
+    id: 9,
+    title: "旧单笔生产准入",
+    titleEn: "Legacy single-order admission",
+    detail: "候选与人工复核证据；不授予自动交易权限"
+  }
+] as const;
+
+const executionAcceptanceEventLabels: Record<string, string> = {
+  stage5_shadow_execution_session: "影子执行会话",
+  stage5_sandbox_readiness_decision: "测试网就绪决策",
+  stage5_sandbox_authorization_preflight: "测试网授权预检",
+  stage5_sandbox_authorization_review: "测试网授权复核",
+  stage6_sandbox_batch_authorization: "测试网批次授权",
+  stage6_sandbox_order_transition: "测试网订单状态",
+  stage6_sandbox_kill_switch: "测试网急停",
+  stage7_production_readonly_probe: "生产只读探针",
+  stage8_production_readonly_access_control: "只读访问控制",
+  stage9_production_order_admission_candidate: "生产准入候选",
+  stage9_production_order_admission_review: "人工复核"
+};
+
+export function ExecutionAcceptanceAuditLedgerPanel({
   className, events, locale
 }: {
   className?: string;
   events: AuditEventRecord[];
   locale: "zh-CN" | "en-US";
 }) {
-  const rows = events.filter((event) => stage9AuditEventTypes.has(event.eventType));
+  const rows = events.filter((event) => executionAcceptanceAuditEventTypeSet.has(event.eventType));
   return (
     <section className={`execution-stage5-shadow ${className ?? ""}`}
-      aria-labelledby="stage9-production-admission-audit-title">
+      aria-labelledby="execution-acceptance-audit-title">
       <header>
         <div>
-          <span>Stage 9 · Audit</span>
-          <h2 id="stage9-production-admission-audit-title">
-            {locale === "zh-CN" ? "生产委托准入审计" : "Production admission audit"}
+          <span>{locale === "zh-CN" ? "历史验收 · 只读审计" : "Historical acceptance · Read-only audit"}</span>
+          <h2 id="execution-acceptance-audit-title">
+            {locale === "zh-CN" ? "历史执行验收证据" : "Historical execution acceptance evidence"}
           </h2>
-          <p>{locale === "zh-CN" ? "候选与人工复核只读回放，不提供任何执行操作" : "Read-only candidate and review evidence with no execution actions"}</p>
+          <p>
+            {locale === "zh-CN"
+              ? "阶段 5–9 已退出当前自动交易主流程，仅保留不可操作的历史证据"
+              : "Stages 5–9 are retired from the automatic-trading path and remain read-only"}
+          </p>
         </div>
-        <strong>Audit-only · Orders blocked</strong>
+        <strong>{locale === "zh-CN" ? `只读证据 ${rows.length} 条` : `${rows.length} read-only records`}</strong>
       </header>
-      <details open>
-        <summary>{locale === "zh-CN" ? `准入证据 ${rows.length}` : `Admission evidence ${rows.length}`}</summary>
-        {rows.length ? (
-          <ul>{rows.map((event) => {
-            const snapshot = event.metadata.snapshot;
-            const record = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
-              ? snapshot as Record<string, unknown> : {};
-            const isReview = event.eventType.endsWith("_review");
-            const candidate = !isReview && isStage9ProductionAdmissionCandidate(record) ? record : null;
-            const review = isReview && isStage9ProductionAdmissionReview(record) ? record : null;
-            const valid = candidate
-              ? event.eventId === candidate.candidateId
-                && event.runId === candidate.baseRunId
-                && event.createdAt === candidate.generatedAt
-                && event.stage === "stage9-production-order-admission"
-                && event.source === candidate.operator
-              : review
-                ? event.eventId === review.reviewId
-                  && event.runId === review.baseRunId
-                  && event.createdAt === review.reviewedAt
-                  && event.stage === "stage9-production-order-admission-review"
-                  && event.source === review.reviewer
-                : false;
-            const identity = candidate?.candidateId ?? review?.reviewId ?? event.eventId;
-            const hash = candidate?.candidateHash ?? review?.reviewHash ?? "";
-            const detached = event.metadata.detached === true;
-            return (
-              <li key={event.eventId}>
-                <strong>{isReview ? (locale === "zh-CN" ? "人工复核" : "Review") : (locale === "zh-CN" ? "准入候选" : "Candidate")}</strong>
-                <span>{identity}</span>
-                <small>{!valid ? "invalid · audit-only" : detached ? "detached · audit-only" : "local · audit-only"}</small>
-                <small>{hash}</small>
-              </li>
-            );
-          })}</ul>
-        ) : <p>{locale === "zh-CN" ? "暂无 Stage 9 准入审计证据。" : "No Stage 9 admission evidence yet."}</p>}
-      </details>
-      <p>authorizationEffective=false · liveBlockedBoundary=true</p>
+      <div className="execution-acceptance-audit-groups">
+        {executionAcceptanceStages.map((stage) => {
+          const stageRows = rows.filter((event) => event.eventType.startsWith(`stage${stage.id}_`));
+          return (
+            <section key={stage.id}>
+              <header>
+                <div>
+                  <strong>{locale === "zh-CN" ? `阶段 ${stage.id} · ${stage.title}` : `Stage ${stage.id} · ${stage.titleEn}`}</strong>
+                  <small>{locale === "zh-CN" ? stage.detail : "Historical evidence; not part of automatic trading"}</small>
+                </div>
+                <span>{stageRows.length}</span>
+              </header>
+              {stageRows.length ? (
+                <ul>{stageRows.map((event) => {
+                  const validity = stage9AuditBindingValidity(event);
+                  const detached = event.metadata.detached === true;
+                  return (
+                    <li key={event.eventId}>
+                      <strong>
+                        {locale === "zh-CN"
+                          ? executionAcceptanceEventLabels[event.eventType] ?? event.eventType
+                          : event.eventType}
+                      </strong>
+                      <span>{event.eventId}</span>
+                      <small>{event.createdAt} · {event.source}</small>
+                      <small className={validity === false ? "blocked" : undefined}>
+                        {locale === "zh-CN"
+                          ? validity === false ? "证据绑定无效"
+                            : validity === true ? detached ? "导入证据 · 绑定有效" : "本地证据 · 绑定有效"
+                              : detached ? "导入只读证据" : "本地只读证据"
+                          : validity === false ? "Invalid binding"
+                            : validity === true ? detached ? "Detached · valid binding" : "Local · valid binding"
+                              : detached ? "Detached read-only evidence" : "Local read-only evidence"}
+                      </small>
+                    </li>
+                  );
+                })}</ul>
+              ) : (
+                <p>{locale === "zh-CN" ? "暂无历史证据。" : "No historical evidence."}</p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+      <p>{locale === "zh-CN"
+        ? "本面板不提供授权、急停、委托或恢复操作。"
+        : "This panel provides no authorization, kill-switch, order, or restore actions."}</p>
     </section>
   );
+}
+
+function stage9AuditBindingValidity(event: AuditEventRecord): boolean | null {
+  if (!event.eventType.startsWith("stage9_")) return null;
+  const snapshot = event.metadata.snapshot;
+  const record = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? snapshot as Record<string, unknown> : {};
+  const isReview = event.eventType.endsWith("_review");
+  const candidate = !isReview && isStage9ProductionAdmissionCandidate(record) ? record : null;
+  const review = isReview && isStage9ProductionAdmissionReview(record) ? record : null;
+  return candidate
+    ? event.eventId === candidate.candidateId
+      && event.runId === candidate.baseRunId
+      && event.createdAt === candidate.generatedAt
+      && event.stage === "stage9-production-order-admission"
+      && event.source === candidate.operator
+    : review
+      ? event.eventId === review.reviewId
+        && event.runId === review.baseRunId
+        && event.createdAt === review.reviewedAt
+        && event.stage === "stage9-production-order-admission-review"
+        && event.source === review.reviewer
+      : false;
 }

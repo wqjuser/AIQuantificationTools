@@ -119,50 +119,61 @@ class AuditEventStore:
             connection.close()
 
     def record(self, event: dict[str, Any]) -> AuditEventRecord:
-        normalized = _normalize_audit_event(event)
-        stored = _normalized_to_audit_event_record(normalized)
+        return self.record_many([event])[0]
+
+    def record_many(self, events: list[dict[str, Any]]) -> list[AuditEventRecord]:
+        stored_events = [
+            _normalized_to_audit_event_record(_normalize_audit_event(event))
+            for event in events
+        ]
+        if not stored_events:
+            return []
         connection = self._connect()
         try:
-            connection.execute(
-                """
-                insert into audit_events (
-                    event_id,
-                    event_type,
-                    run_id,
-                    created_at,
-                    stage,
-                    source,
-                    summary,
-                    detail,
-                    metadata_json
+            for stored in stored_events:
+                connection.execute(
+                    """
+                    insert into audit_events (
+                        event_id,
+                        event_type,
+                        run_id,
+                        created_at,
+                        stage,
+                        source,
+                        summary,
+                        detail,
+                        metadata_json
+                    )
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    on conflict(event_id) do update set
+                        event_type = excluded.event_type,
+                        run_id = excluded.run_id,
+                        created_at = excluded.created_at,
+                        stage = excluded.stage,
+                        source = excluded.source,
+                        summary = excluded.summary,
+                        detail = excluded.detail,
+                        metadata_json = excluded.metadata_json
+                    """,
+                    (
+                        stored.event_id,
+                        stored.event_type,
+                        stored.run_id,
+                        stored.created_at.isoformat(),
+                        stored.stage,
+                        stored.source,
+                        stored.summary,
+                        stored.detail,
+                        json.dumps(stored.metadata, ensure_ascii=False, sort_keys=True),
+                    ),
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict(event_id) do update set
-                    event_type = excluded.event_type,
-                    run_id = excluded.run_id,
-                    created_at = excluded.created_at,
-                    stage = excluded.stage,
-                    source = excluded.source,
-                    summary = excluded.summary,
-                    detail = excluded.detail,
-                    metadata_json = excluded.metadata_json
-                """,
-                (
-                    stored.event_id,
-                    stored.event_type,
-                    stored.run_id,
-                    stored.created_at.isoformat(),
-                    stored.stage,
-                    stored.source,
-                    stored.summary,
-                    stored.detail,
-                    json.dumps(stored.metadata, ensure_ascii=False, sort_keys=True),
-                ),
-            )
             connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
-        return stored
+        return stored_events
 
     def record_if_absent(self, event: dict[str, Any]) -> tuple[AuditEventRecord, bool]:
         normalized = _normalize_audit_event(event)
@@ -239,14 +250,24 @@ class AuditEventStore:
         self,
         *,
         run_id: str | None = None,
+        run_id_is_null: bool = False,
         event_type: str | None = None,
+        stage: str | None = None,
+        source: str | None = None,
         limit: int = 20,
         offset: int = 0,
         query: str = "",
     ) -> list[AuditEventRecord]:
         bounded_limit = _bounded_limit(limit)
         bounded_offset = max(0, int(_number_or_default(offset, 0)))
-        filter_sql, parameters = _filter_parameters(run_id=run_id, event_type=event_type, query=query)
+        filter_sql, parameters = _filter_parameters(
+            run_id=run_id,
+            run_id_is_null=run_id_is_null,
+            event_type=event_type,
+            stage=stage,
+            source=source,
+            query=query,
+        )
         connection = self._connect()
         try:
             rows = connection.execute(
@@ -396,18 +417,25 @@ def _normalized_to_audit_event_record(normalized: dict[str, Any]) -> AuditEventR
 def _filter_parameters(
     *,
     run_id: str | None,
+    run_id_is_null: bool = False,
     event_type: str | None,
+    stage: str | None = None,
+    source: str | None = None,
     query: str,
 ) -> tuple[str, tuple[Any, ...]]:
     clauses: list[str] = []
     parameters: list[Any] = []
     normalized_run_id = _optional_string(run_id)
     normalized_event_types = _event_type_filter_values(event_type)
+    normalized_stage = _optional_string(stage)
+    normalized_source = _optional_string(source)
     normalized_query = str(query or "").strip()
 
     if normalized_run_id:
         clauses.append("run_id = ?")
         parameters.append(normalized_run_id)
+    elif run_id_is_null:
+        clauses.append("run_id is null")
     if normalized_event_types:
         if len(normalized_event_types) == 1:
             clauses.append("event_type = ?")
@@ -416,6 +444,12 @@ def _filter_parameters(
             placeholders = ", ".join("?" for _ in normalized_event_types)
             clauses.append(f"event_type in ({placeholders})")
             parameters.extend(normalized_event_types)
+    if normalized_stage:
+        clauses.append("stage = ?")
+        parameters.append(normalized_stage)
+    if normalized_source:
+        clauses.append("source = ?")
+        parameters.append(normalized_source)
     if normalized_query:
         clauses.append(
             """(

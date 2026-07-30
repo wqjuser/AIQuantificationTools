@@ -10,12 +10,17 @@ import {
   WalletCards
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { buildApiUrl, type WorkspaceFetcher } from "../lib/terminal-api";
+import {
+  buildApiUrl,
+  isStrategyProductionBindingPayload,
+  type StrategyProductionBinding,
+  type WorkspaceFetcher
+} from "../lib/terminal-api";
 
 const defaultFetcher: WorkspaceFetcher = (url, init) => fetch(url, init);
-const statusRefreshIntervalMs = 5_000;
+export const AUTO_TRADING_STATUS_REFRESH_INTERVAL_MS = 5_000;
 
-interface AutoTradingState {
+export interface AutoTradingState {
   enabled: boolean;
   executionMode: "paper" | "testnet" | "live";
   testnetConfirmed: boolean;
@@ -30,6 +35,14 @@ interface AutoTradingState {
   lastRunnerCycleAt: string | null;
   lastRunnerSuccessAt: string | null;
   lastRunnerErrorAt: string | null;
+  runnerHealth?: {
+    status: "running" | "offline" | "delayed" | "blocked";
+    reason: string;
+    heartbeatAgeSeconds: number | null;
+    staleAfterSeconds: number;
+    lastHeartbeatAt: string | null;
+    recovered: boolean;
+  };
   status: string;
   detail: string;
   symbol: string;
@@ -43,9 +56,12 @@ interface AutoTradingState {
   maxTradesPerHour: number;
   providerId: string;
   cash: number;
+  availableCash?: number;
   position: number;
   avgCost: number;
   equity: number;
+  accountEquity?: number | null;
+  accountAuthority?: "binance_spot" | null;
   realizedPnl: number;
   dailyStartEquity: number;
   dailyPeakEquity?: number;
@@ -89,6 +105,20 @@ interface AutoTradingState {
     positionCovered: boolean;
     quoteCovered: boolean;
     unexpectedOpenAutoOrderCount: number;
+    unexpectedOpenOrderCount?: number;
+    checkCode?: string;
+    accountSnapshot?: {
+      valuationComplete: boolean;
+      unpricedAssets: string[];
+      totalEquityUsdt: number;
+      assets?: Record<string, {
+        free: number;
+        used: number;
+        total: number;
+        priceUsdt: number | null;
+        valueUsdt: number | null;
+      }>;
+    };
   } | null;
   lastDecision: {
     action: "buy" | "sell" | "hold";
@@ -116,6 +146,9 @@ interface AutoTradingState {
       strategyRevision: string;
       source: "rules" | "risk" | "ai";
       providerId: string;
+      model?: string | null;
+      usage?: Partial<Record<"inputTokens" | "outputTokens" | "totalTokens", number>> | null;
+      latencyMs?: number;
       action: "buy" | "sell" | "hold";
       confidence: number;
       reason: string;
@@ -196,14 +229,53 @@ interface AutoTradingState {
   } | null;
 }
 
+export function autoTradingCycleCountdown(
+  state: Pick<AutoTradingState, "enabled" | "lastRunnerCycleAt" | "runnerIntervalSeconds"> | undefined,
+  nowMs = Date.now()
+): number | null {
+  if (!state?.enabled || !state.lastRunnerCycleAt) return null;
+  const lastCycleAt = Date.parse(state.lastRunnerCycleAt);
+  return Number.isFinite(lastCycleAt)
+    ? Math.max(0, Math.ceil((lastCycleAt + state.runnerIntervalSeconds * 1_000 - nowMs) / 1_000))
+    : null;
+}
+
+export interface AutoTradingEconomics {
+  currency: "USDT";
+  executionMode: "paper" | "testnet" | "live";
+  tradeCount: number;
+  tradingPnlBeforeAi: number | null;
+  tradingFees: number | null;
+  tradingFeesEstimated: boolean;
+  estimatedFeeCount: number;
+  feeEvidenceComplete: boolean;
+  realizedPnl: number;
+  unrealizedPnl: number | null;
+  aiUsage: {
+    callCount: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    providerId: string;
+    model: string | null;
+    latencyMs: number;
+  } | null;
+  aiUsageEvidenceComplete: boolean;
+  aiCostUsdt: null;
+  aiCostStatus: "unpriced";
+  netPnlAfterAi: null;
+}
+
 interface AutoTradingHistoryEvent {
   eventId: string;
   createdAt: string;
   metadata: Record<string, unknown>;
 }
 
-interface AutoTradingSnapshot {
+export interface AutoTradingSnapshot {
   state: AutoTradingState;
+  strategyBinding?: StrategyProductionBinding | null;
+  economics: AutoTradingEconomics;
   providers: Array<{ providerId: string; configured: boolean; model: string | null }>;
   history: AutoTradingHistoryEvent[];
   paperOnly: boolean;
@@ -221,6 +293,205 @@ interface AutoTradingSnapshot {
   orderSubmissionEnabled: boolean;
   routeExecuted: boolean;
   liveBlockedBoundary: boolean;
+}
+
+type AutoTradingProductionStrategySnapshot = Pick<AutoTradingSnapshot, "strategyBinding"> & {
+  state: Pick<
+    AutoTradingState,
+    "executionMode" | "runnerIntervalSeconds" | "symbol" | "timeframe"
+  >;
+};
+
+export function showBuiltInAutoTradingSignalControls(
+  binding?: Pick<StrategyProductionBinding, "kind"> | null
+) {
+  return binding?.kind !== "library";
+}
+
+export function AutoTradingProductionStrategyOverview({
+  snapshot
+}: {
+  snapshot?: AutoTradingProductionStrategySnapshot | null;
+}) {
+  const binding = snapshot?.strategyBinding;
+  const state = snapshot?.state;
+  const libraryStrategy = !showBuiltInAutoTradingSignalControls(binding);
+  const bindingBlocked = binding?.status === "blocked";
+  const bindingUnavailable = Boolean(snapshot && !binding);
+  return (
+    <section
+      aria-label="生产策略概览"
+      className={`execution-auto-paper-risk execution-auto-production-strategy${
+        bindingBlocked ? " blocked" : bindingUnavailable ? " unavailable" : ""
+      }`}
+    >
+      <header>
+        <strong>生产策略概览</strong>
+        <span>
+          {bindingBlocked
+            ? "策略证据阻断"
+            : binding
+              ? libraryStrategy ? "已审计策略" : "内置策略"
+              : snapshot ? "绑定证据未提供" : "正在读取"}
+        </span>
+      </header>
+      <dl>
+        <div>
+          <dt>当前策略</dt>
+          <dd>{binding?.name ?? (snapshot ? "未提供策略绑定身份" : "等待生产策略状态")}</dd>
+        </div>
+        <div>
+          <dt>运行上下文</dt>
+          <dd>{state ? `${state.symbol} · ${state.timeframe}` : "—"}</dd>
+        </div>
+        <div>
+          <dt>运行模式</dt>
+          <dd>{state ? executionModeLabel(state.executionMode) : "—"}</dd>
+        </div>
+        <div>
+          <dt>自动评估</dt>
+          <dd>{state ? `每 ${state.runnerIntervalSeconds} 秒` : "—"}</dd>
+        </div>
+        <div>
+          <dt>审计证据</dt>
+          <dd>{binding?.auditRunId ?? (binding ? "内置规则" : "—")}</dd>
+        </div>
+      </dl>
+      <small>
+        {binding?.detail ?? (snapshot
+          ? "当前 API 响应未包含策略绑定证据，不能据此判断活动策略身份。"
+          : "正在读取当前生产策略及运行上下文。")}
+      </small>
+      <small>
+        {!binding
+          ? "读取到绑定证据后，本页会区分已审计策略与内置策略的可配置边界。"
+          : libraryStrategy
+          ? "已审计策略的信号与触发条件由绑定版本固定；本页只配置执行模式、委托额度与账户级风控，不会改写策略。"
+          : "内置策略使用涨跌幅阈值与已配置的智能决策服务；切换生产策略需先暂停监控并完成审计交接。"}
+      </small>
+    </section>
+  );
+}
+
+function isAutoTradingSnapshot(payload: unknown): payload is AutoTradingSnapshot {
+  if (!payload || typeof payload !== "object") return false;
+  const snapshot = payload as Record<string, unknown>;
+  const state = snapshot.state;
+  const binding = snapshot.strategyBinding;
+  const economics = snapshot.economics;
+  if (!state || typeof state !== "object") return false;
+  if (binding !== undefined && binding !== null && typeof binding !== "object") return false;
+  if (!isAutoTradingEconomics(economics)) return false;
+  const stateRecord = state as Record<string, unknown>;
+  const numericStateFields = [
+    "runnerIntervalSeconds",
+    "runnerCycleCount",
+    "consecutiveRunnerFailures",
+    "triggerPct",
+    "orderNotional",
+    "stopLossPct",
+    "takeProfitPct",
+    "dailyLossLimitPct",
+    "dailyProfitDrawdownLimitPct",
+    "maxTradesPerHour",
+    "cash",
+    "equity",
+    "position",
+    "avgCost",
+    "realizedPnl",
+    "dailyStartEquity",
+    "tradeCount",
+  ];
+  return ["paper", "testnet", "live"].includes(String(stateRecord.executionMode))
+    && ["running", "stopping", "stopped"].includes(String(stateRecord.runnerState))
+    && typeof stateRecord.enabled === "boolean"
+    && typeof stateRecord.testnetConfirmed === "boolean"
+    && typeof stateRecord.liveConfirmed === "boolean"
+    && typeof stateRecord.liveOperator === "string"
+    && typeof stateRecord.status === "string"
+    && typeof stateRecord.detail === "string"
+    && typeof stateRecord.symbol === "string"
+    && typeof stateRecord.timeframe === "string"
+    && typeof stateRecord.providerId === "string"
+    && Array.isArray(stateRecord.tradeTimestamps)
+    && numericStateFields.every((field) =>
+      typeof stateRecord[field] === "number" && Number.isFinite(stateRecord[field])
+    )
+    && (
+      binding === undefined
+      || binding === null
+      || isStrategyProductionBindingPayload({ strategyBinding: binding })
+    )
+    && typeof snapshot.liveTradingAllowed === "boolean"
+    && typeof snapshot.orderSubmissionEnabled === "boolean"
+    && typeof snapshot.routeExecuted === "boolean"
+    && typeof snapshot.liveBlockedBoundary === "boolean"
+    && typeof snapshot.paperOnly === "boolean"
+    && Array.isArray(snapshot.providers)
+    && Array.isArray(snapshot.history);
+}
+
+function isAutoTradingEconomics(payload: unknown): payload is AutoTradingEconomics {
+  if (!payload || typeof payload !== "object") return false;
+  const economics = payload as Record<string, unknown>;
+  const nullableNumbers = ["tradingPnlBeforeAi", "tradingFees", "unrealizedPnl"];
+  const aiUsage = economics.aiUsage;
+  return economics.currency === "USDT"
+    && ["paper", "testnet", "live"].includes(String(economics.executionMode))
+    && typeof economics.tradeCount === "number"
+    && Number.isInteger(economics.tradeCount)
+    && economics.tradeCount >= 0
+    && nullableNumbers.every((field) =>
+      economics[field] === null
+      || (typeof economics[field] === "number" && Number.isFinite(economics[field]))
+    )
+    && typeof economics.realizedPnl === "number"
+    && Number.isFinite(economics.realizedPnl)
+    && typeof economics.tradingFeesEstimated === "boolean"
+    && typeof economics.estimatedFeeCount === "number"
+    && Number.isInteger(economics.estimatedFeeCount)
+    && economics.estimatedFeeCount >= 0
+    && typeof economics.feeEvidenceComplete === "boolean"
+    && typeof economics.aiUsageEvidenceComplete === "boolean"
+    && economics.aiCostUsdt === null
+    && economics.aiCostStatus === "unpriced"
+    && economics.netPnlAfterAi === null
+    && (
+      aiUsage === null
+      || (
+        typeof aiUsage === "object"
+        && ["callCount", "inputTokens", "outputTokens", "totalTokens", "latencyMs"].every((field) =>
+          typeof (aiUsage as Record<string, unknown>)[field] === "number"
+          && Number.isInteger((aiUsage as Record<string, unknown>)[field])
+          && ((aiUsage as Record<string, unknown>)[field] as number) >= 0
+        )
+        && ((aiUsage as Record<string, unknown>).callCount as number) > 0
+        && typeof (aiUsage as Record<string, unknown>).providerId === "string"
+        && (
+          (aiUsage as Record<string, unknown>).model === null
+          || typeof (aiUsage as Record<string, unknown>).model === "string"
+        )
+      )
+    );
+}
+
+export async function loadAutoTradingSnapshot(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+) {
+  const response = await fetcher(buildApiUrl(baseUrl, "api/execution/auto-paper-trading"));
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(
+      typeof payload === "object" && payload && "detail" in payload
+        ? String(payload.detail)
+        : `HTTP ${response.status}`
+    );
+  }
+  if (!isAutoTradingSnapshot(payload)) {
+    throw new Error("auto_trading_snapshot_invalid");
+  }
+  return payload;
 }
 
 export interface DynamicTradingInstrument {
@@ -274,7 +545,7 @@ interface MonitoringObservedJob {
   nextEligibleRunAt: string | null;
 }
 
-interface MonitoringSnapshot {
+export interface MonitoringSnapshot {
   schemaVersion: 1;
   status: "healthy" | "attention" | "degraded" | "waiting";
   reason: string;
@@ -298,6 +569,52 @@ interface MonitoringSnapshot {
     configurationError: string | null;
   };
   tradingActionsAvailable: false;
+}
+
+export function isMonitoringSnapshot(payload: unknown): payload is MonitoringSnapshot {
+  if (!payload || typeof payload !== "object") return false;
+  const snapshot = payload as Record<string, unknown>;
+  if (!snapshot.job || typeof snapshot.job !== "object") return false;
+  if (!snapshot.channel || typeof snapshot.channel !== "object") return false;
+  const job = snapshot.job as Record<string, unknown>;
+  const channel = snapshot.channel as Record<string, unknown>;
+  const health = job.health;
+  return snapshot.schemaVersion === 1
+    && ["healthy", "attention", "degraded", "waiting"].includes(String(snapshot.status))
+    && typeof snapshot.reason === "string"
+    && typeof snapshot.nextAction === "string"
+    && Array.isArray(snapshot.observedJobs)
+    && snapshot.observedJobs.every(
+      (item) => Boolean(item && typeof item === "object"
+        && typeof (item as Record<string, unknown>).jobId === "string")
+    )
+    && Array.isArray(snapshot.activeIncidents)
+    && snapshot.activeIncidents.every(
+      (item) => Boolean(item && typeof item === "object"
+        && typeof (item as Record<string, unknown>).title === "string"
+        && typeof (item as Record<string, unknown>).detail === "string"
+        && typeof (item as Record<string, unknown>).nextAction === "string")
+    )
+    && Array.isArray(snapshot.incidents)
+    && Array.isArray(snapshot.notifications)
+    && snapshot.notifications.every(
+      (item) => Boolean(item && typeof item === "object"
+        && (item as Record<string, unknown>).metadata
+        && typeof (item as Record<string, unknown>).metadata === "object")
+    )
+    && typeof job.jobId === "string"
+    && typeof job.cycleCount === "number"
+    && typeof job.consecutiveFailures === "number"
+    && typeof job.deliveryFailureCount === "number"
+    && Boolean(health && typeof health === "object"
+      && typeof (health as Record<string, unknown>).detail === "string")
+    && channel.type === "webhook"
+    && ["ready", "unconfigured", "invalid"].includes(String(channel.status))
+    && snapshot.tradingActionsAvailable === false;
+}
+
+function localizeMonitoringText(value: string) {
+  return value.replace(/\s*Webhook/g, "回调通知");
 }
 
 type Draft = Pick<
@@ -385,22 +702,35 @@ export function autoTradingAttention(
     };
   }
   if (state.status === "account_mismatch") {
-    const orphanOrderCount = state.lastAccountCheck?.unexpectedOpenAutoOrderCount ?? 0;
-    const issues = [
-      state.lastAccountCheck?.positionCovered === false ? "可用 BTC 不足以覆盖策略持仓" : "",
-      state.lastAccountCheck?.quoteCovered === false ? "可用 USDT 不足以覆盖下一笔预算" : "",
-      orphanOrderCount
-        ? `发现 ${orphanOrderCount} 笔未记录的自动挂单`
-        : ""
-    ].filter(Boolean);
+    const pendingOrderCount = state.lastAccountCheck?.unexpectedOpenOrderCount
+      ?? state.lastAccountCheck?.unexpectedOpenAutoOrderCount
+      ?? 0;
+    const accountSnapshot = state.lastAccountCheck?.accountSnapshot;
+    if (pendingOrderCount) {
+      return {
+        tone: "danger",
+        title: "存在未决现货挂单",
+        detail: `发现 ${pendingOrderCount} 笔未决现货挂单。请先在交易所核对并处理，再重新检查。`
+      };
+    }
+    if (accountSnapshot?.valuationComplete === false) {
+      return {
+        tone: "danger",
+        title: "账户估值不完整",
+        detail: `${accountSnapshot.unpricedAssets.join("、")} 无法按 USDT 估值，请先处理该资产或补充直接交易对。`
+      };
+    }
+    if (state.lastAccountCheck?.checkCode === "binance_spot_account_identity_changed") {
+      return {
+        tone: "danger",
+        title: "交易所账户已变化",
+        detail: "当前 Binance Spot 账户与已同步账户不一致，自动交易已停止。"
+      };
+    }
     return {
       tone: "danger",
-      title: orphanOrderCount ? "发现未记录的自动挂单" : "账户资产不足",
-      detail: issues.length
-        ? `${issues.join("；")}。${orphanOrderCount
-          ? "请先在交易所核对并处理，再重新检查。"
-          : "请补足资产或核对本地策略账本后重新检查。"}`
-        : state.detail
+      title: "交易所账户检查未通过",
+      detail: state.detail
     };
   }
   if (state.status === "risk_paused") {
@@ -469,6 +799,87 @@ export function autoTradingNotification(
   };
 }
 
+export function AutoTradingEconomicsSummary({
+  economics
+}: {
+  economics?: AutoTradingEconomics;
+}) {
+  const usage = economics?.aiUsage;
+  const modeEvidence = !economics
+    ? "账本模式不可得"
+    : economics.executionMode === "live"
+      ? "生产策略账本"
+      : economics.executionMode === "testnet"
+        ? "测试网模拟金额"
+        : "纸面模拟金额";
+  const feeEvidence = !economics
+    ? "正在读取费用证据"
+    : !economics.feeEvidenceComplete
+      ? "手续费证据不完整"
+      : economics.tradingFeesEstimated
+        ? "含估算手续费"
+        : "手续费证据完整";
+
+  return (
+    <section aria-label="自动交易经济账本" className="dynamic-trading-economics">
+      <header>
+        <span><WalletCards size={14} /><strong>自动交易经济账本</strong></span>
+        <em>{modeEvidence} · {feeEvidence}</em>
+      </header>
+      <dl>
+        <div>
+          <dt>AI 成本前交易盈亏</dt>
+          <dd className={(economics?.tradingPnlBeforeAi ?? 0) < 0 ? "negative" : "positive"}>
+            {economics?.tradingPnlBeforeAi === null || !economics
+              ? "不可得"
+              : `${signedLedgerMoney(economics.tradingPnlBeforeAi)} USDT`}
+          </dd>
+        </div>
+        <div>
+          <dt>交易手续费</dt>
+          <dd>{economics?.tradingFees === null || !economics
+            ? "不可得"
+            : `${ledgerMoney(economics.tradingFees)} USDT`}</dd>
+        </div>
+        <div>
+          <dt>已实现盈亏</dt>
+          <dd className={(economics?.realizedPnl ?? 0) < 0 ? "negative" : "positive"}>
+            {!economics ? "不可得" : `${signedLedgerMoney(economics.realizedPnl)} USDT`}
+          </dd>
+        </div>
+        <div>
+          <dt>未实现盈亏</dt>
+          <dd className={(economics?.unrealizedPnl ?? 0) < 0 ? "negative" : "positive"}>
+            {economics?.unrealizedPnl === null || !economics
+              ? "不可得"
+              : `${signedLedgerMoney(economics.unrealizedPnl)} USDT`}
+          </dd>
+        </div>
+        <div>
+          <dt>智能模型成本</dt>
+          <dd>未计价</dd>
+          <small>{usage
+            ? `${usage.callCount} 次 · ${formatNumber(usage.totalTokens)} 令牌 · 最近 ${providerLabel(usage.providerId)} / ${usage.model || "模型未报告"} / ${usage.latencyMs} 毫秒${economics?.aiUsageEvidenceComplete ? "" : " · 历史用量不完整"}`
+            : !economics
+              ? "正在读取调用证据"
+              : economics.aiUsageEvidenceComplete
+                ? "尚无外部模型调用"
+                : "旧版本未累计完整用量"}</small>
+        </div>
+        <div>
+          <dt>扣除模型成本后净盈亏</dt>
+          <dd>不可得</dd>
+          <small>等待服务商账单或显式计价</small>
+        </div>
+      </dl>
+      <footer>
+        <span>交易盈亏 = 已实现盈亏 + 未实现盈亏，已包含已发生手续费，尚未计未来退出费用。</span>
+        <span>模型调用仅作运行遥测，不是服务商账单；生产模式也不代表 Binance 全账户收益。</span>
+      </footer>
+    </section>
+  );
+}
+
 export function AutoTradingLedger({
   history,
   state
@@ -477,7 +888,7 @@ export function AutoTradingLedger({
   state: Pick<
     AutoTradingState,
     "executionMode" | "lastDecision" | "lastDecisionContract" | "lastLiveOrder" | "lastTestnetOrder"
-    | "lastOrderResult" | "lastDustDisposition" | "position" | "realizedPnl"
+    | "lastOrderResult" | "lastDustDisposition" | "position" | "realizedPnl" | "accountAuthority"
   > | undefined;
 }) {
   const decision = state?.lastDecision;
@@ -514,7 +925,7 @@ export function AutoTradingLedger({
           <div>
             <dt>当前持仓</dt>
             <dd>{formatNumber(state?.position)} BTC</dd>
-            <small>仅本策略持仓</small>
+            <small>{state?.accountAuthority === "binance_spot" ? "Binance Spot 现货总量" : "仅本策略持仓"}</small>
           </div>
           <div>
             <dt>委托状态</dt>
@@ -879,21 +1290,22 @@ export function AutoTradingServerMonitoring({
     (item) => item.metadata.lifecycle === "recovered"
   ).length ?? 0;
   const channelLabel = snapshot?.channel.status === "ready"
-    ? "Webhook 已就绪"
+    ? "回调通知已就绪"
     : snapshot?.channel.status === "invalid"
-      ? "Webhook 配置无效" : "Webhook 未配置";
+      ? "回调通知配置无效" : "回调通知未配置";
+  const nextAction = snapshot ? localizeMonitoringText(snapshot.nextAction) : undefined;
 
   return (
     <section className={`execution-auto-server-monitoring ${tone}`}
       aria-label="服务端监控告警">
       <header>
         <div>
-          <span>M2 · 服务端告警</span>
+          <span>服务端运行告警</span>
           <strong>{error ? "监控状态读取失败" : snapshot?.reason ?? "等待服务端监控状态"}</strong>
         </div>
         <em>{snapshot?.activeIncidents.length ?? 0} 个待恢复事件</em>
       </header>
-      <p>{error ?? snapshot?.nextAction ?? "本区域只读取运行状态，不执行评估、对账或委托。"}</p>
+      <p>{error ?? nextAction ?? "本区域只读取运行状态，不执行评估、对账或委托。"}</p>
       <dl>
         <div>
           <dt>监控任务</dt>
@@ -920,7 +1332,7 @@ export function AutoTradingServerMonitoring({
         <div className="execution-auto-server-incident" role="alert">
           <strong>{active.title}</strong>
           <span>{active.detail}</span>
-          <small>下一步：{active.nextAction}</small>
+          <small>下一步：{localizeMonitoringText(active.nextAction)}</small>
         </div>
       ) : null}
       <details>
@@ -940,13 +1352,162 @@ export function AutoTradingServerMonitoring({
   );
 }
 
+export function AutoTradingOperationsOverview({
+  monitoring,
+  monitoringError,
+  onOpenAudit,
+  onOpenDynamicTrading,
+  onOpenExecution,
+  snapshot,
+  statusError
+}: {
+  monitoring?: MonitoringSnapshot | null;
+  monitoringError?: string | null;
+  onOpenAudit?: () => void;
+  onOpenDynamicTrading?: () => void;
+  onOpenExecution?: () => void;
+  snapshot?: AutoTradingSnapshot | null;
+  statusError?: string | null;
+}) {
+  const state = snapshot?.state;
+  const runtime = autoTradingRuntimeHealth(state);
+  const attention = autoTradingAttention(state);
+  const liveMode = state?.executionMode === "live";
+  const bindingBlocked = snapshot?.strategyBinding?.status === "blocked";
+  const bindingReady = snapshot?.strategyBinding?.status === "ready";
+  const currentOrderState = state?.lastOrderResult?.state
+    ?? (liveMode ? state?.lastLiveOrder?.state : state?.lastTestnetOrder?.state);
+  const healthy = Boolean(
+    snapshot
+    && monitoring
+    && runtime.tone === "healthy"
+    && monitoring.status === "healthy"
+    && !attention
+    && bindingReady
+    && (!liveMode || snapshot.liveTradingAllowed)
+  );
+  const runtimeBlocked = runtime.tone === "danger";
+  const monitoringDegraded = monitoring?.status === "degraded";
+  const tone = statusError || monitoringError || runtimeBlocked || monitoringDegraded
+    ? "danger"
+    : attention || monitoring?.status === "attention" || (snapshot && !bindingReady)
+      ? "warning"
+      : healthy ? "healthy" : "waiting";
+  const headline = statusError || monitoringError
+    ? "生产运行状态读取失败"
+    : runtimeBlocked
+      ? runtime.title
+      : monitoringDegraded
+        ? monitoring?.reason ?? "服务端监控已降级"
+        : attention
+          ? attention.title
+          : monitoring?.status === "attention"
+            ? monitoring.reason
+            : !snapshot || !monitoring
+      ? "正在读取生产运行状态"
+              : bindingBlocked
+                ? "生产策略证据已阻断"
+                : bindingReady ? monitoring.reason : "生产策略绑定证据待确认";
+  const mode = state?.executionMode === "live"
+    ? "币安现货生产实盘"
+    : state?.executionMode === "testnet" ? "币安现货测试网" : "纸面模拟";
+
+  return (
+    <section
+      aria-labelledby="operations-production-runtime-title"
+      className={`operations-production-runtime ${tone}`}
+    >
+      <header>
+        <div>
+          <span>生产运行控制面</span>
+          <h2 id="operations-production-runtime-title">生产自动交易运行总览</h2>
+          <p>只读汇总活动策略、后台心跳、账户风险、委托状态与服务端告警。</p>
+        </div>
+        <div className="operations-production-runtime-actions">
+          <strong>{headline}</strong>
+          <nav aria-label="生产运行详情导航">
+            {onOpenDynamicTrading ? (
+              <button onClick={onOpenDynamicTrading} type="button">
+                动态交易 <ChevronRight size={13} />
+              </button>
+            ) : null}
+            {onOpenExecution ? (
+              <button onClick={onOpenExecution} type="button">
+                执行授权 <ChevronRight size={13} />
+              </button>
+            ) : null}
+            {onOpenAudit ? (
+              <button onClick={onOpenAudit} type="button">
+                审计回放 <ChevronRight size={13} />
+              </button>
+            ) : null}
+          </nav>
+        </div>
+      </header>
+
+      {statusError || attention ? (
+        <div className={`operations-production-runtime-alert ${statusError ? "danger" : attention?.tone}`} role="alert">
+          <strong>{statusError ? "自动交易状态不可用" : attention?.title}</strong>
+          <span>{statusError ?? attention?.detail}</span>
+        </div>
+      ) : null}
+
+      <div className="operations-production-runtime-metrics">
+        <article>
+          <span>当前执行</span>
+          <strong>{state ? mode : "正在读取"}</strong>
+          <small>
+            {!state
+              ? "等待权威运行状态"
+              : liveMode
+                ? snapshot?.liveTradingAllowed
+                  ? liveAuthorizationLabel(state)
+                  : "生产路由受保护，请查看阻断原因"
+                : "不会使用生产资金"}
+          </small>
+        </article>
+        <article>
+          <span>后台运行器</span>
+          <strong>{runtime.title}</strong>
+          <small>
+            已完成 {state?.runnerCycleCount ?? 0} 轮 · {
+              runtime.heartbeatAgeSeconds === null ? "等待心跳" : `${runtime.heartbeatAgeSeconds} 秒前`
+            }
+          </small>
+        </article>
+        <article>
+          <span>最近自动判断</span>
+          <strong>{decisionLabel(state?.lastDecision?.action)}</strong>
+          <small>{state?.lastDecision?.evaluatedAt ? formatTime(state.lastDecision.evaluatedAt) : "等待首次判断"}</small>
+        </article>
+        <article>
+          <span>最近委托结果</span>
+          <strong>{orderStateLabel(currentOrderState)}</strong>
+          <small>{hasUnresolvedAutoOrder(state) ? "仅允许查询原委托并完成对账" : "没有待对账委托"}</small>
+        </article>
+      </div>
+
+      <AutoTradingProductionStrategyOverview snapshot={snapshot} />
+      <AutoTradingRiskOverview state={state} />
+      <AutoTradingServerMonitoring error={monitoringError} snapshot={monitoring} />
+
+      <footer>
+        本生产总览只读取后端事实，不会自动评估、对账、授权、急停、切换模式或提交委托。
+      </footer>
+    </section>
+  );
+}
+
 export function ExecutionAutoPaperTradingSection({
   baseUrl,
   chart,
   fetcher = defaultFetcher,
   instruments = [],
   onOpenAudit,
+  onOpenDynamicTrading,
   onOpenExecution,
+  onSafetyChange,
+  onSnapshotChange,
   onSelectInstrument,
   selectedSymbol,
   variant = "section",
@@ -957,10 +1518,16 @@ export function ExecutionAutoPaperTradingSection({
   fetcher?: WorkspaceFetcher;
   instruments?: DynamicTradingInstrument[];
   onOpenAudit?: () => void;
+  onOpenDynamicTrading?: () => void;
   onOpenExecution?: () => void;
+  onSafetyChange?: (
+    executionMode: AutoTradingState["executionMode"],
+    liveTradingAllowed: boolean
+  ) => void;
+  onSnapshotChange?: (snapshot: AutoTradingSnapshot | null) => void;
   onSelectInstrument?: (instrument: DynamicTradingInstrument) => void;
   selectedSymbol?: string;
-  variant?: "section" | "workspace";
+  variant?: "section" | "workspace" | "operations";
   workflowGuide?: ReactNode;
 }) {
   const [snapshot, setSnapshot] = useState<AutoTradingSnapshot | null>(null);
@@ -976,11 +1543,20 @@ export function ExecutionAutoPaperTradingSection({
   const [controlTab, setControlTab] = useState<"runtime" | "risk" | "authorization">("runtime");
   const [evaluating, setEvaluating] = useState(false);
   const [evaluationFeedback, setEvaluationFeedback] = useState<string | null>(null);
+  const [clockNowMs, setClockNowMs] = useState(() => Date.now());
   const [notificationPermission, setNotificationPermission] = useState<SystemNotificationPermission>(
     () => typeof Notification === "undefined" ? "unsupported" : Notification.permission
   );
+  const mountedRef = useRef(true);
+  const snapshotReadRequestIdRef = useRef(0);
+  const monitoringReadRequestIdRef = useRef(0);
   const requestInFlight = useRef(false);
   const lastNotificationKey = useRef<string | null>(null);
+  const commitSnapshot = useCallback((next: AutoTradingSnapshot | null) => {
+    if (!mountedRef.current) return;
+    setSnapshot(next);
+    onSnapshotChange?.(next);
+  }, [onSnapshotChange]);
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const response = await fetcher(buildApiUrl(baseUrl, path), init);
@@ -996,9 +1572,12 @@ export function ExecutionAutoPaperTradingSection({
   }, [baseUrl, fetcher]);
 
   const load = useCallback(async () => {
+    const requestId = snapshotReadRequestIdRef.current + 1;
+    snapshotReadRequestIdRef.current = requestId;
     try {
-      const next = await request<AutoTradingSnapshot>("api/execution/auto-paper-trading");
-      setSnapshot(next);
+      const next = await loadAutoTradingSnapshot(baseUrl, fetcher);
+      if (!mountedRef.current || snapshotReadRequestIdRef.current !== requestId) return;
+      commitSnapshot(next);
       setDraft({
         triggerPct: next.state.triggerPct,
         orderNotional: next.state.orderNotional,
@@ -1016,17 +1595,25 @@ export function ExecutionAutoPaperTradingSection({
       setError(null);
       setStatusReadError(null);
     } catch (loadError) {
+      if (!mountedRef.current || snapshotReadRequestIdRef.current !== requestId) return;
       const detail = autoTradingErrorMessage(loadError);
+      commitSnapshot(null);
       setError(detail);
       setStatusReadError(detail);
     }
-  }, [request]);
+  }, [baseUrl, commitSnapshot, fetcher]);
 
   const refreshMonitoring = useCallback(async () => {
+    const requestId = monitoringReadRequestIdRef.current + 1;
+    monitoringReadRequestIdRef.current = requestId;
     try {
-      setMonitoring(await request<MonitoringSnapshot>("api/operations/monitoring"));
+      const next = await request<unknown>("api/operations/monitoring");
+      if (!mountedRef.current || monitoringReadRequestIdRef.current !== requestId) return;
+      if (!isMonitoringSnapshot(next)) throw new Error("operations_monitoring_snapshot_invalid");
+      setMonitoring(next);
       setMonitoringReadError(null);
     } catch (monitoringError) {
+      if (!mountedRef.current || monitoringReadRequestIdRef.current !== requestId) return;
       setMonitoringReadError(autoTradingErrorMessage(monitoringError));
     }
   }, [request]);
@@ -1036,6 +1623,7 @@ export function ExecutionAutoPaperTradingSection({
       return;
     }
     requestInFlight.current = true;
+    snapshotReadRequestIdRef.current += 1;
     setControlTab("runtime");
     setEvaluating(true);
     setEvaluationFeedback(null);
@@ -1044,7 +1632,8 @@ export function ExecutionAutoPaperTradingSection({
         autoTradingActionPath(snapshot?.state),
         { method: "POST" }
       );
-      setSnapshot(next);
+      if (!mountedRef.current) return;
+      commitSnapshot(next);
       setEvaluationFeedback(
         `${hasUnresolvedAutoOrder(snapshot?.state) ? "对账" : "评估"}完成 · `
         + `${decisionLabel(next.state.lastDecision?.action)} · `
@@ -1053,27 +1642,38 @@ export function ExecutionAutoPaperTradingSection({
       setError(null);
       setStatusReadError(null);
     } catch (evaluationError) {
+      if (!mountedRef.current) return;
       setEvaluationFeedback(null);
       setError(autoTradingErrorMessage(evaluationError));
     } finally {
-      setEvaluating(false);
+      if (mountedRef.current) setEvaluating(false);
       requestInFlight.current = false;
     }
-  }, [request, snapshot?.state]);
+  }, [commitSnapshot, request, snapshot?.state]);
 
   const refresh = useCallback(async () => {
+    if (requestInFlight.current) return;
+    const requestId = snapshotReadRequestIdRef.current + 1;
+    snapshotReadRequestIdRef.current = requestId;
     try {
-      setSnapshot(await request<AutoTradingSnapshot>("api/execution/auto-paper-trading"));
+      const next = await loadAutoTradingSnapshot(baseUrl, fetcher);
+      if (!mountedRef.current || snapshotReadRequestIdRef.current !== requestId) return;
+      commitSnapshot(next);
       setError(null);
       setStatusReadError(null);
     } catch (refreshError) {
+      if (!mountedRef.current || snapshotReadRequestIdRef.current !== requestId) return;
       const detail = autoTradingErrorMessage(refreshError);
+      commitSnapshot(null);
       setError(detail);
       setStatusReadError(detail);
     }
-  }, [request]);
+  }, [baseUrl, commitSnapshot, fetcher]);
 
   const save = useCallback(async (enabled: boolean) => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
+    snapshotReadRequestIdRef.current += 1;
     setBusy(true);
     try {
       const next = await request<AutoTradingSnapshot>("api/execution/auto-paper-trading", {
@@ -1081,29 +1681,45 @@ export function ExecutionAutoPaperTradingSection({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...draft, enabled, testnetConfirmed, liveConfirmed })
       });
-      setSnapshot(next);
+      if (!mountedRef.current) return;
+      commitSnapshot(next);
       setTestnetConfirmed(next.state.testnetConfirmed);
       setLiveConfirmed(next.state.liveConfirmed);
       setError(null);
       setStatusReadError(null);
     } catch (saveError) {
+      if (!mountedRef.current) return;
       setError(autoTradingErrorMessage(saveError));
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
+      requestInFlight.current = false;
     }
-  }, [draft, liveConfirmed, request, testnetConfirmed]);
+  }, [commitSnapshot, draft, liveConfirmed, request, testnetConfirmed]);
 
   useEffect(() => {
+    if (snapshot) onSafetyChange?.(snapshot.state.executionMode, snapshot.liveTradingAllowed);
+  }, [onSafetyChange, snapshot]);
+  useEffect(() => {
+    mountedRef.current = true;
     void load();
     void refreshMonitoring();
-  }, [load, refreshMonitoring]);
-  useEffect(() => {
     const intervalId = window.setInterval(() => {
       void refresh();
       void refreshMonitoring();
-    }, statusRefreshIntervalMs);
+    }, AUTO_TRADING_STATUS_REFRESH_INTERVAL_MS);
+    return () => {
+      mountedRef.current = false;
+      snapshotReadRequestIdRef.current += 1;
+      monitoringReadRequestIdRef.current += 1;
+      window.clearInterval(intervalId);
+    };
+  }, [load, refresh, refreshMonitoring]);
+  useEffect(() => {
+    setClockNowMs(Date.now());
+    if (!snapshot?.state.enabled) return;
+    const intervalId = window.setInterval(() => setClockNowMs(Date.now()), 1_000);
     return () => window.clearInterval(intervalId);
-  }, [refresh, refreshMonitoring]);
+  }, [snapshot?.state.enabled]);
 
   const state = snapshot?.state;
   const notification = autoTradingNotification(state, Date.now(), statusReadError);
@@ -1137,11 +1753,25 @@ export function ExecutionAutoPaperTradingSection({
   const attention = autoTradingAttention(state);
   const testnetMode = draft.executionMode === "testnet";
   const liveMode = draft.executionMode === "live";
-  const modeLabel = liveMode ? "Binance Spot 生产实盘"
-    : testnetMode ? "Binance Spot Testnet" : "模拟账户";
+  const modeLabel = liveMode ? "币安现货生产实盘"
+    : testnetMode ? "币安现货测试网" : "模拟账户";
   const updateNumber = (key: keyof Draft, value: string) => {
     setDraft((current) => ({ ...current, [key]: Number(value) }));
   };
+
+  if (variant === "operations") {
+    return (
+      <AutoTradingOperationsOverview
+        monitoring={monitoring}
+        monitoringError={monitoringReadError}
+        onOpenAudit={onOpenAudit}
+        onOpenDynamicTrading={onOpenDynamicTrading}
+        onOpenExecution={onOpenExecution}
+        snapshot={snapshot}
+        statusError={statusReadError}
+      />
+    );
+  }
 
   if (variant === "workspace") {
     const runtime = autoTradingRuntimeHealth(state);
@@ -1167,10 +1797,7 @@ export function ExecutionAutoPaperTradingSection({
     const activeInstrument = shownInstruments.find((instrument) => instrument.symbol === (selectedSymbol ?? state?.symbol))
       ?? shownInstruments[0];
     const viewingAutoSymbol = activeInstrument?.symbol === (state?.symbol ?? "BTC/USDT");
-    const lastCycleAt = state?.lastRunnerCycleAt ? Date.parse(state.lastRunnerCycleAt) : Number.NaN;
-    const secondsUntilNextCycle = Number.isFinite(lastCycleAt)
-      ? Math.max(0, Math.ceil((lastCycleAt + (state?.runnerIntervalSeconds ?? 35) * 1_000 - Date.now()) / 1_000))
-      : null;
+    const secondsUntilNextCycle = autoTradingCycleCountdown(state, clockNowMs);
     const currentOrderState = state?.lastOrderResult?.state
       ?? (state?.executionMode === "live" ? state.lastLiveOrder?.state : state?.lastTestnetOrder?.state);
 
@@ -1322,7 +1949,9 @@ export function ExecutionAutoPaperTradingSection({
                 </span>
                 <span>
                   <strong>{secondsUntilNextCycle === null ? "—" : `${secondsUntilNextCycle}s`}</strong>
-                  <small>至下次评估 / {state?.runnerIntervalSeconds ?? 35}s</small>
+                  <small>
+                    {state?.enabled ? "至下次评估" : "监控已暂停"} / {state?.runnerIntervalSeconds ?? 35}s
+                  </small>
                 </span>
               </div>
               <section className="dynamic-trading-decision-card">
@@ -1458,12 +2087,16 @@ export function ExecutionAutoPaperTradingSection({
           </div>
         ) : null}
 
+        <AutoTradingEconomicsSummary economics={snapshot?.economics} />
+
         <div className="dynamic-trading-bottom-grid">
           <section>
             <header><WalletCards size={14} /><strong>当前持仓</strong></header>
             <dl className="dynamic-trading-kpis">
-              <div><dt>管理中策略权益</dt><dd>{money(state?.equity)} USDT</dd></div>
-              <div><dt>持仓数量</dt><dd>{formatNumber(state?.position)} BTC</dd></div>
+              <div><dt>{state?.accountAuthority === "binance_spot" ? "Binance Spot 总净值" : "管理中策略权益"}</dt>
+                <dd>{money(state?.accountEquity ?? state?.equity)} USDT</dd></div>
+              <div><dt>{state?.accountAuthority === "binance_spot" ? "BTC 现货总量" : "持仓数量"}</dt>
+                <dd>{formatNumber(state?.position)} BTC</dd></div>
               <div><dt>平均成本</dt><dd>{money(state?.avgCost)} USDT</dd></div>
               <div><dt>已实现盈亏</dt><dd className={(state?.realizedPnl ?? 0) < 0 ? "negative" : "positive"}>
                 {signedMoney(state?.realizedPnl)} USDT
@@ -1531,7 +2164,9 @@ export function ExecutionAutoPaperTradingSection({
           <section>
             <header><ShieldCheck size={14} /><strong>账户与风险</strong></header>
             <dl className="dynamic-trading-risk-list">
-              <div><dt>策略可用 USDT</dt><dd>{money(state?.cash)} USDT</dd></div>
+              <div><dt>Binance Spot 总净值</dt><dd>{money(state?.accountEquity ?? state?.equity)} USDT</dd></div>
+              <div><dt>可用 USDT</dt><dd>{money(state?.availableCash ?? state?.cash)} USDT</dd></div>
+              <div><dt>可用 BTC</dt><dd>{formatNumber(state?.lastAccountCheck?.accountSnapshot?.assets?.BTC?.free)} BTC</dd></div>
               <div><dt>亏损回撤</dt><dd>{lossDrawdown.toFixed(2)} / {(state?.dailyLossLimitPct ?? 0).toFixed(2)}%</dd></div>
               <div><dt>盈利回撤</dt><dd>{profitDrawdown.toFixed(2)} / {(state?.dailyProfitDrawdownLimitPct ?? 0).toFixed(2)}%</dd></div>
               <div><dt>小时额度</dt><dd>剩余 {remainingTrades} 次</dd></div>
@@ -1549,24 +2184,35 @@ export function ExecutionAutoPaperTradingSection({
     );
   }
 
+  const persistedExecutionMode = state?.executionMode ?? draft.executionMode;
+  const persistedModeLabel = executionModeLabel(persistedExecutionMode);
+  const persistedTestnetMode = persistedExecutionMode === "testnet";
+  const persistedLiveMode = persistedExecutionMode === "live";
+  const showBuiltInSignalControls = showBuiltInAutoTradingSignalControls(snapshot?.strategyBinding);
+  const strategyBindingBlocked = snapshot?.strategyBinding?.status === "blocked";
+  const runtimeContext = state
+    ? `${state.symbol} · ${state.timeframe}，每 ${state.runnerIntervalSeconds} 秒自动评估`
+    : "正在读取已保存的运行上下文";
+
   return (
     <section className={`execution-auto-paper ${state?.enabled ? "active" : ""}`}
       aria-labelledby="execution-auto-paper-title">
       <header>
         <div>
-          <span>AI 自动交易 · {modeLabel}</span>
-          <h2 id="execution-auto-paper-title">涨跌幅自动监控</h2>
-          <p>由后端每 35 秒检查 BTC/USDT；触发后由 AI 选择买入、卖出或观望，仓位由风控计算。</p>
+          <span>自动交易 · {persistedModeLabel}</span>
+          <h2 id="execution-auto-paper-title">自动交易运行与委托控制</h2>
+          <p>{runtimeContext}；当前生产策略生成信号后，由风控计算仓位并进入受控委托链。</p>
         </div>
         <strong>
           {state?.enabled
             ? state.runnerState === "running" ? "后端监控中" : "等待后端运行器"
             : "已暂停"} · {
-            liveMode ? "生产实盘委托" : testnetMode ? "测试网委托" : "纸面模拟"
+            persistedLiveMode ? "生产实盘委托" : persistedTestnetMode ? "测试网委托" : "纸面模拟"
           }
         </strong>
       </header>
 
+      <AutoTradingProductionStrategyOverview snapshot={snapshot} />
       <div className="execution-auto-runtime-tools">
         <AutoTradingRuntimeHealth state={state} />
         <button
@@ -1587,7 +2233,7 @@ export function ExecutionAutoPaperTradingSection({
       />
 
       <div className="execution-auto-paper-metrics">
-        <article><span>五根涨跌幅</span><strong>{percent(state?.windowChangePct)}</strong></article>
+        <article><span>当前窗口涨跌幅</span><strong>{percent(state?.windowChangePct)}</strong></article>
         <article><span>最近判断</span><strong>{decisionLabel(state?.lastDecision?.action)}</strong></article>
         <article><span>策略权益</span><strong>{money(state?.equity)} USDT</strong></article>
         <article><span>累计成交</span><strong>{state?.tradeCount ?? 0} 笔</strong></article>
@@ -1616,23 +2262,27 @@ export function ExecutionAutoPaperTradingSection({
             }
           }}>
             <option value="paper">纸面模拟</option>
-            <option value="testnet">Binance Spot Testnet</option>
-            <option value="live">Binance Spot 生产实盘</option>
+            <option value="testnet">币安现货测试网</option>
+            <option value="live">币安现货生产实盘</option>
           </select>
         </label>
-        <label>AI 服务
-          <select value={draft.providerId}
-            onChange={(event) => setDraft((current) => ({ ...current, providerId: event.target.value }))}>
-            <option value="auto">自动选择已配置服务</option>
-            {snapshot?.providers.map((provider) => (
-              <option disabled={!provider.configured} key={provider.providerId} value={provider.providerId}>
-                {providerLabel(provider.providerId)}{provider.configured ? "" : "（未配置）"}
-              </option>
-            ))}
-          </select>
-        </label>
-        <NumberField label="触发涨跌幅 %（0.05–20）" min={0.05} max={20} step={0.05}
-          value={draft.triggerPct} onChange={(value) => updateNumber("triggerPct", value)} />
+        {showBuiltInSignalControls ? (
+          <>
+            <label>智能决策服务
+              <select value={draft.providerId}
+                onChange={(event) => setDraft((current) => ({ ...current, providerId: event.target.value }))}>
+                <option value="auto">自动选择已配置服务</option>
+                {snapshot?.providers.map((provider) => (
+                  <option disabled={!provider.configured} key={provider.providerId} value={provider.providerId}>
+                    {providerLabel(provider.providerId)}{provider.configured ? "" : "（未配置）"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <NumberField label="触发涨跌幅 %（0.05–20）" min={0.05} max={20} step={0.05}
+              value={draft.triggerPct} onChange={(value) => updateNumber("triggerPct", value)} />
+          </>
+        ) : null}
         <NumberField label="单笔上限 USDT" min={1} max={10} step={1}
           value={draft.orderNotional} onChange={(value) => updateNumber("orderNotional", value)} />
         <NumberField label="止损 %" min={0.1} max={20} step={0.1}
@@ -1652,7 +2302,7 @@ export function ExecutionAutoPaperTradingSection({
         <label className="execution-auto-paper-confirmation">
           <input checked={testnetConfirmed} onChange={(event) => setTestnetConfirmed(event.target.checked)}
             type="checkbox" />
-          我确认自动策略会向 Binance Spot Testnet 提交真实测试网委托，并受 Stage 6 急停控制
+          我确认自动策略会向币安现货测试网提交测试委托，并受测试网急停控制
         </label>
       ) : null}
       {liveMode ? (
@@ -1665,10 +2315,10 @@ export function ExecutionAutoPaperTradingSection({
           <label className="execution-auto-paper-confirmation">
             <input checked={liveConfirmed} onChange={(event) => setLiveConfirmed(event.target.checked)}
               type="checkbox" />
-            我确认自动策略会使用真实资金提交 Binance Spot 生产现货委托，单笔新增风险不超过 10 USDT
+            我确认自动策略会使用真实资金提交币安现货生产委托，单笔新增风险不超过 10 USDT
           </label>
           <small>
-            还需先在下方 Stage 10 完成最新权限核验并恢复执行急停；授权时长由设置页控制。
+            还需先在下方生产交易控制链完成最新权限核验并恢复执行急停；授权时长由设置页控制。
           </small>
         </div>
       ) : null}
@@ -1676,6 +2326,7 @@ export function ExecutionAutoPaperTradingSection({
       <div className="execution-auto-paper-actions">
         <button disabled={
           busy
+          || strategyBindingBlocked
           || (testnetMode && !testnetConfirmed)
           || (liveMode && (!liveConfirmed || !draft.liveOperator.trim()))
         } onClick={() => void save(true)} type="button">
@@ -1683,7 +2334,11 @@ export function ExecutionAutoPaperTradingSection({
             : liveMode ? "保存并开启生产实盘"
               : testnetMode ? "保存并开启测试网委托" : "保存并开启"}
         </button>
-        <button disabled={(!state?.enabled && !hasUnresolvedOrder) || busy}
+        <button disabled={
+          (!state?.enabled && !hasUnresolvedOrder)
+          || (strategyBindingBlocked && !hasUnresolvedOrder)
+          || busy
+        }
           onClick={() => void evaluate()} type="button">
           {hasUnresolvedOrder ? "立即对账" : "立即评估"}
         </button>
@@ -1698,8 +2353,8 @@ export function ExecutionAutoPaperTradingSection({
       <small>
         后端运行器不依赖当前页面，关闭页面后仍会继续；
         {hasUnresolvedOrder ? "“立即对账”只查询既有委托，不会创建新委托。" : "“立即评估”只用于人工触发一次检查。"}
-        低置信度不会被“必须不亏”条件拦截；数据异常、账户亏损上限、成交频率和 Stage 6 急停仍会暂停。
-        测试网使用无价值资产；生产实盘会使用真实资金，并受 Stage 10 急停和生产授权时长控制。
+        低置信度不会被“必须不亏”条件拦截；数据异常、账户亏损上限、成交频率和测试网急停仍会暂停。
+        测试网使用无价值资产；生产实盘会使用真实资金，并受生产急停和授权时长控制。
       </small>
     </section>
   );
@@ -1762,6 +2417,19 @@ function signedMoney(value?: number) {
   return typeof value === "number" ? `${value >= 0 ? "+" : ""}${value.toFixed(2)}` : "—";
 }
 
+function ledgerMoney(value?: number) {
+  return typeof value === "number"
+    ? new Intl.NumberFormat("zh-CN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+      }).format(value)
+    : "—";
+}
+
+function signedLedgerMoney(value?: number) {
+  return typeof value === "number" ? `${value >= 0 ? "+" : ""}${ledgerMoney(value)}` : "—";
+}
+
 function percentRate(value: number) {
   return `${(value * 100).toFixed(3)}%`;
 }
@@ -1788,7 +2456,7 @@ function formatTime(value?: string | null) {
     });
 }
 
-function liveAuthorizationLabel(
+export function liveAuthorizationLabel(
   state?: Partial<Pick<
     AutoTradingState,
     "liveConfirmed" | "liveSessionTtlHours" | "liveAuthorizedUntil"
@@ -1844,11 +2512,13 @@ export function autoTradingErrorMessage(error: unknown) {
     "Failed to fetch": "无法连接自动交易服务，请检查本地 API 是否运行。",
     "fetch failed": "无法连接自动交易服务，请检查本地 API 是否运行。",
     "NetworkError when attempting to fetch resource.": "无法连接自动交易服务，请检查本地 API 是否运行。",
+    auto_trading_snapshot_invalid: "自动交易状态响应不完整，请稍后刷新或检查 API。",
+    operations_monitoring_snapshot_invalid: "服务端监控响应不完整，请稍后刷新或检查 API。",
     live_confirmation_required: "请确认真实资金风险",
     live_operator_required: "请填写实名操作人",
     stage10_production_live_mode_disabled: "本地生产实盘开关尚未启用",
-    stage10_production_execution_kill_switch_triggered: "Stage 10 急停已触发，请先完成权限核验并恢复执行控制",
-    stage10_production_execution_control_evidence_stale: "Stage 10 权限证据已过期，请重新核验",
+    stage10_production_execution_kill_switch_triggered: "生产执行急停已触发，请先完成权限核验并恢复执行控制",
+    stage10_production_execution_control_evidence_stale: "生产权限证据已过期，请重新核验",
     stage10_production_trading_permissions_or_ip_invalid: "生产交易权限、危险权限或 IP 白名单不符合要求",
     triggerPct_out_of_range: "触发涨跌幅必须在 0.05% 到 20% 之间",
     dailyLossLimitPct_out_of_range: "亏损回撤上限必须在 0.1% 到 20% 之间",

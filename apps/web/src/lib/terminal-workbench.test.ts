@@ -3573,6 +3573,7 @@ describe("terminal workbench model", () => {
 
     expect(areas.map((area) => area.id)).toEqual([
       "market",
+      "market-information",
       "research",
       "strategy",
       "backtest",
@@ -3600,6 +3601,13 @@ describe("terminal workbench model", () => {
     expect(areas.find((area) => area.id === "market")).toMatchObject({
       deliveryStageId: "market-research",
       deliveryStageStatus: "maintenance"
+    });
+    expect(areas.find((area) => area.id === "market-information")).toMatchObject({
+      label: "Market Information",
+      quantLoopStepId: "research",
+      workflowStageId: "data",
+      deliveryStageId: "market-research",
+      status: "ready"
     });
     expect(areas.find((area) => area.id === "operations")).toMatchObject({
       label: "Operations",
@@ -9372,7 +9380,7 @@ describe("terminal workbench model", () => {
       summary: "Run Pipeline to create a fresh audited run for the selected market, symbol, and timeframe.",
       runId: "run-context-mismatch",
       aiReviewReady: false,
-      executionReady: false
+      researchEvidenceReady: false
     });
   });
 
@@ -23173,7 +23181,7 @@ describe("terminal workbench model", () => {
       "688111:needs_data:refresh-watchlist-cache",
       "600000:ready_for_pipeline:run-pipeline",
       "000300:needs_ai_review:run-ai-review",
-      "600519:paper_candidate:submit-paper-order"
+      "600519:paper_candidate:review-production-handoff"
     ]);
     expect(rows.rows[0].detail).toContain("provider failed");
     expect(rows.rows[1].latestCacheRunId).toBe("cache-refresh-p1");
@@ -31975,7 +31983,7 @@ describe("terminal workbench model", () => {
         id: "run",
         label: "Run package",
         value: "run-backtest-package",
-        detail: "240 1d bars · paper_only · snapshot decision-snapsho",
+        detail: "240 1d bars · audited backtest · snapshot decision-snapsho",
         tone: "positive"
       },
       {
@@ -32086,7 +32094,7 @@ describe("terminal workbench model", () => {
       summary: "240 1d bars · 9 trades · AI review ready",
       runId: "run-report",
       aiReviewReady: true,
-      executionReady: true,
+      researchEvidenceReady: true,
       assumptions: { initialCash: 250000, feeBps: 8, slippageBps: 4 },
       benchmark: {
         label: "Buy and hold",
@@ -32217,6 +32225,8 @@ describe("terminal workbench model", () => {
     expect(markdown).toContain("No investment advice");
     expect(markdown).toContain("关注银行板块相对强度");
     expect(markdown).toContain("| BUY | filled | 9.20 | 2100 | +8.20% |");
+    expect(markdown).toContain("## Production Handoff Boundary");
+    expect(markdown).toContain("does not authorize live trading, start monitoring, evaluate, or submit an order");
   });
 
   test("does not build a markdown report before an audited run exists", () => {
@@ -32287,10 +32297,10 @@ describe("terminal workbench model", () => {
     expect(report).toMatchObject({
       status: "blocked",
       headline: "Backtest report needs an audited run",
-      summary: "Run Pipeline to create a reproducible backtest before AI review or execution.",
+      summary: "Run Pipeline to create a reproducible backtest before AI review or production qualification.",
       runId: null,
       aiReviewReady: false,
-      executionReady: false,
+      researchEvidenceReady: false,
       benchmark: {
         benchmarkReturn: "Pending snapshot",
         alpha: "N/A",
@@ -32333,9 +32343,9 @@ describe("terminal workbench model", () => {
       },
       {
         id: "execution",
-        label: "Execution promotion",
+        label: "Production preflight input",
         status: "blocked",
-        detail: "Paper execution waits for an audited run id.",
+        detail: "Production qualification waits for an audited run id.",
         tone: "risk"
       }
     ]);
@@ -33073,6 +33083,7 @@ describe("terminal workbench model", () => {
   test("formats optional live quote prices for watchlist display", () => {
     expect(formatInstrumentPrice(8.66)).toBe("8.66");
     expect(formatInstrumentPrice(3898.221)).toBe("3898.22");
+    expect(formatInstrumentPrice(0.00001234)).toBe("0.00001234");
     expect(formatInstrumentPrice(undefined)).toBe("N/A");
   });
 

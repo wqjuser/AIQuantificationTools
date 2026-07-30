@@ -1113,6 +1113,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
     },
     productWorkAreas: {
       market: "Market Center",
+      "market-information": "Market Information",
       research: "Research Terminal",
       strategy: "Strategy Lab",
       backtest: "Backtest Lab",
@@ -1126,14 +1127,15 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
     },
     productWorkAreaDescriptions: {
       market: "Search, quotes, K-lines, source health",
+      "market-information": "Market breadth, leaders, activity, and linked news",
       research: "Chart, factors, notes, context",
       strategy: "Rules, versions, risk configuration",
       backtest: "Assumptions, trades, reproducible run",
       "ai-review": "Evidence-locked agent committee",
       portfolio: "Exposure, positions, live gates",
-      execution: "Paper orders and adapter readiness",
+      execution: "Trading runtime, order controls, and production authorization",
       "dynamic-trading": "Live strategy status, decisions, orders, and risk",
-      operations: "Data maintenance, research queue, scanners, evidence",
+      operations: "Production runtime, service health, alerts, and research maintenance",
       audit: "Run history, import, export, replay",
       settings: "Data sources, API keys, safety gates"
     },
@@ -1284,6 +1286,7 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
     },
     productWorkAreas: {
       market: "行情中心",
+      "market-information": "市场资讯",
       research: "研究工作台",
       strategy: "策略工坊",
       backtest: "回测实验室",
@@ -1297,14 +1300,15 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
     },
     productWorkAreaDescriptions: {
       market: "搜索、报价、K线、数据源健康",
+      "market-information": "市场广度、涨幅领先、成交活跃与原文资讯",
       research: "图表、因子、笔记、研究上下文",
       strategy: "规则、版本、风控配置",
       backtest: "假设、交易流水、可复现运行",
       "ai-review": "绑定证据的智能体委员会",
       portfolio: "敞口、持仓、实盘闸门",
-      execution: "模拟委托和适配器状态",
+      execution: "交易运行、委托控制与生产授权",
       "dynamic-trading": "自动策略状态、决策、委托与风险",
-      operations: "数据维护、研究队列、市场扫描、运行证据",
+      operations: "生产运行、服务健康、告警与研究维护",
       audit: "运行历史、导入、导出、回放",
       settings: "数据源、API Key、安全闸门"
     },
@@ -1645,10 +1649,10 @@ function translateStrategyText(locale: Locale, text: string): string {
     return `${researchOpsHeadline[1]} 个关注研究任务`;
   }
   const researchOpsDetail = text.match(
-    /^(\d+) need data · (\d+) ready for pipeline · (\d+) need AI review · (\d+) paper candidates$/
+    /^(\d+) need data · (\d+) ready for pipeline · (\d+) need AI review · (\d+) reviewed candidates$/
   );
   if (researchOpsDetail) {
-    return `${researchOpsDetail[1]} 个需补数据 · ${researchOpsDetail[2]} 个可运行流水线 · ${researchOpsDetail[3]} 个需 AI 评审 · ${researchOpsDetail[4]} 个模拟候选`;
+    return `${researchOpsDetail[1]} 个需补数据 · ${researchOpsDetail[2]} 个可运行流水线 · ${researchOpsDetail[3]} 个需 AI 评审 · ${researchOpsDetail[4]} 个已评审候选`;
   }
   const instrumentMarket = text.match(/^(.+) · (ashare|us|crypto)$/);
   if (instrumentMarket) {

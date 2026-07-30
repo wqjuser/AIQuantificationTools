@@ -29,6 +29,7 @@ _PROVIDER_ERROR_WINDOWS = {
 _PUBLIC_SETTING_SPECS = {
     "ccxtDefaultExchange": ("CCXT_DEFAULT_EXCHANGE", "binance"),
     "ccxtTimeout": ("CCXT_TIMEOUT", "10000"),
+    "autoTradingIntervalSeconds": ("AIQT_AUTO_TRADING_INTERVAL_SECONDS", "35"),
     "liveSessionTtlHours": ("AIQT_LIVE_SESSION_TTL_HOURS", "8"),
     "openaiModel": ("OPENAI_MODEL", ""),
     "openaiCompatibleBaseUrl": ("OPENAI_COMPATIBLE_BASE_URL", ""),
@@ -40,6 +41,7 @@ _PUBLIC_SETTING_SPECS = {
 }
 _INTEGER_SETTING_RANGES = {
     "ccxtTimeout": (1_000, 120_000),
+    "autoTradingIntervalSeconds": (5, 3_600),
     "liveSessionTtlHours": (0, 8_760),
     "monitoringWebhookTimeoutSeconds": (1, 120),
     "freeStockdbTimeoutSeconds": (1, 120),

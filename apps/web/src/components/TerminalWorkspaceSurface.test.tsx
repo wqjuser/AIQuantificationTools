@@ -12,8 +12,15 @@ import {
 } from "../lib/terminal-workbench";
 import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
 import type { PortfolioRiskAssessment } from "../lib/portfolio-m5";
-import type { PlatformSettingsStatus, PortfolioBacktestRun } from "../lib/terminal-api";
+import type {
+  MarketDiscoveryResult,
+  MarketInformationResult,
+  PlatformSettingsStatus,
+  PortfolioBacktestRun,
+} from "../lib/terminal-api";
+import type { AutoTradingSnapshot } from "./ExecutionAutoPaperTradingSection";
 import {
+  buildAiReviewProductionPath,
   buildAuditLedgerRows,
   TerminalWorkspaceSurface,
 } from "./TerminalWorkspaceSurface";
@@ -21,6 +28,7 @@ import {
 describe("TerminalWorkspaceSurface", () => {
   const workAreaIds: ProductWorkAreaId[] = [
     "market",
+    "market-information",
     "research",
     "strategy",
     "backtest",
@@ -35,18 +43,30 @@ describe("TerminalWorkspaceSurface", () => {
     action: { label: "运行", onClick: () => undefined },
     adapterRows: buildBrokerAdapterRows(workspace),
     aiReview: {
+      appendingDecision: false,
       busy: false,
       comparisonExperimentIds: [],
       currentReview: null,
+      decisionDraft: {
+        operator: "",
+        status: "accepted_for_research" as const,
+        rationale: "",
+        supersedesDecisionId: null,
+      },
       decisions: [],
       error: null,
       experiments: [],
       externalDataApproved: false,
       history: [],
+      onAppendDecision: () => undefined,
       onComparisonToggle: () => undefined,
+      onDecisionDraftChange: () => undefined,
       onExternalDataApprovedChange: () => undefined,
+      onOpenProductionHandoff: () => undefined,
       onProviderChange: () => undefined,
+      onStagePrimaryCandidate: () => undefined,
       primaryExperimentId: null,
+      primaryCandidateAvailable: false,
       providerId: "local" as const,
       providers: [
         {
@@ -59,7 +79,6 @@ describe("TerminalWorkspaceSurface", () => {
     },
     chart: <div>chart</div>,
     colorScheme: "dark" as const,
-    executionCandidate: null,
     isSavingWatchlist: false,
     latestWatchlistCacheRefresh: null,
     marketRefreshIssue: null,
@@ -255,11 +274,17 @@ describe("TerminalWorkspaceSurface", () => {
     })).toHaveLength(4);
 
     const audit = renderToStaticMarkup(
-      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="audit" />,
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="audit"
+        executionAcceptanceAudit={<section>历史执行验收证据</section>}
+      />,
     );
     expect(audit).toContain('aria-label="审计事件筛选"');
     expect(audit).toContain('name="runId"');
     expect(audit).toContain('name="symbol"');
+    expect(audit).toContain("历史执行验收证据");
+    expect(audit).toContain("design-execution-acceptance-audit");
     expect(audit).not.toContain("readonly");
   });
 
@@ -382,6 +407,119 @@ describe("TerminalWorkspaceSurface", () => {
     expect(backtest).toContain("训练 K 线数");
     expect(backtest).toContain("验证 K 线数");
     expect(backtest).toContain("步进 K 线数");
+  });
+
+  it("uses server-qualified backtest evidence for an explicit production strategy handoff", () => {
+    const handoff = {
+      runId: "run-live-strategy",
+      strategyId: "strategy-revision-1",
+      strategyRevision: "revision-1",
+      strategyName: "BTC 一分钟均线策略",
+      market: "crypto" as const,
+      symbol: "BTC/USDT",
+      timeframe: "1m" as const,
+      status: "ready" as const,
+      evidenceStatus: "eligible" as const,
+      switchAllowed: true,
+      switchBlockedReason: null,
+      alreadyBound: false,
+      auditHash: "audit-hash",
+      dataSnapshotHash: "snapshot-hash",
+      productionReplay: {
+        feeBps: 10,
+        slippageBps: 10,
+        auditedMaxDrawdownPct: 1.2,
+        productionMaxDrawdownPct: 1.4,
+        strategyMaxDrawdownPct: 2,
+      },
+      boundary: {
+        authorizesLive: false as const,
+        startsMonitoring: false as const,
+        evaluatesNow: false as const,
+        submitsOrder: false as const,
+      },
+    };
+    const ready = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="backtest"
+        productionStrategyHandoff={{
+          binding: null,
+          busy: false,
+          errorLabel: null,
+          onBind: async () => true,
+          onOpenDynamicTrading: () => undefined,
+          result: { handoff, source: "core" },
+        }}
+      />,
+    );
+    const active = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="backtest"
+        productionStrategyHandoff={{
+          binding: {
+            kind: "library",
+            bindingId: "binding-1",
+            strategyId: handoff.strategyId,
+            revision: handoff.strategyRevision,
+            name: handoff.strategyName,
+            auditRunId: handoff.runId,
+            market: handoff.market,
+            symbol: handoff.symbol,
+            timeframe: handoff.timeframe,
+            status: "ready",
+            detail: "已绑定",
+            switchAllowed: true,
+            switchBlockedReason: null,
+            operator: "wenqingjie",
+          },
+          busy: false,
+          errorLabel: null,
+          onBind: async () => true,
+          onOpenDynamicTrading: () => undefined,
+          result: {
+            handoff: { ...handoff, alreadyBound: true, status: "active" },
+            source: "core",
+          },
+        }}
+      />,
+    );
+    const blocked = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="backtest"
+        productionStrategyHandoff={{
+          binding: null,
+          busy: false,
+          errorLabel: "当前自动监控正在运行，请先暂停后再切换策略。",
+          onBind: async () => false,
+          onOpenDynamicTrading: () => undefined,
+          result: {
+            handoff: {
+              ...handoff,
+              status: "review",
+              switchAllowed: false,
+              switchBlockedReason: "strategy_switch_requires_paused_monitoring",
+            },
+            source: "core",
+          },
+        }}
+      />,
+    );
+
+    expect(ready).toContain("生产策略资格与交接");
+    expect(ready).toContain("服务端按生产边界复算");
+    expect(ready).toContain("交接为生产自动策略");
+    expect(ready).toContain('id="backtest-production-confirm"');
+    expect(ready).toContain('maxLength="80"');
+    expect(ready).toContain("disabled");
+    expect(ready).toContain("不会授权实盘、启动监控、立即评估或提交订单");
+    expect(active).toContain(">已交接<");
+    expect(active).toContain("前往动态交易复核");
+    expect(active).not.toContain("交接为生产自动策略");
+    expect(blocked).toContain("需处理切换条件");
+    expect(blocked).toContain("当前自动监控正在运行，请先暂停后再切换策略。");
   });
 
   it("shows completed backtest experiments and failures instead of returning silently to idle", () => {
@@ -517,6 +655,7 @@ describe("TerminalWorkspaceSurface", () => {
         {...baseProps}
         activeWorkAreaId="ai-review"
         aiReview={{
+          ...baseProps.aiReview,
           busy: false,
           comparisonExperimentIds: [],
           currentReview: reviewRecord,
@@ -647,6 +786,7 @@ describe("TerminalWorkspaceSurface", () => {
         {...baseProps}
         activeWorkAreaId="ai-review"
         aiReview={{
+          ...baseProps.aiReview,
           busy: false,
           comparisonExperimentIds: [],
           currentReview: failedReview,
@@ -668,26 +808,336 @@ describe("TerminalWorkspaceSurface", () => {
     expect(failed).toContain("证据不完整：1 项必需证据缺失或无效。");
     expect(failed).not.toContain("raw provider validation detail must not render");
     expect(failed).not.toContain("权威 AI 评审失败");
+
+    expect(review).toContain("人工研究决策");
+    expect(review).toContain("等待人工研究决策");
+    expect(review).toContain("生产策略关联");
+    expect(review).not.toContain("采用已评审候选并重新审计");
+
+    const acceptedDecision = {
+      schemaVersion: 1,
+      recordType: "aiqt.aiReviewDecision",
+      decisionId: "decision-accepted",
+      aiReviewId: reviewRecord.aiReviewId,
+      createdAt: "2026-07-21T08:01:00+00:00",
+      operator: "researcher",
+      status: "accepted_for_research",
+      rationale: "接受用于后续研究与生产资格复核。",
+      supersedesDecisionId: null,
+      reviewRecordHash: reviewRecord.recordHash,
+      evidenceHash: reviewRecord.evidenceHash,
+      boundary: {
+        paperOnly: true,
+        liveTradingAllowed: false,
+        orderSubmissionAllowed: false,
+      },
+      recordHash: "1".repeat(64),
+    } as const;
+    const candidateReaudit = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="ai-review"
+        aiReview={{
+          ...baseProps.aiReview,
+          currentReview: reviewRecord,
+          decisions: [acceptedDecision],
+          history: [reviewRecord],
+          primaryCandidateAvailable: true,
+          primaryExperimentId: "experiment-1",
+        }}
+      />,
+    );
+    expect(candidateReaudit).toContain("候选需重新审计");
+    expect(candidateReaudit).toContain("采用已评审候选并重新审计");
+    expect(candidateReaudit).not.toContain("交接为生产自动策略");
+
+    const sameRevisionReference = {
+      ...reference,
+      candidateRevision: reference.strategyRevision,
+    };
+    const sameRevisionReview: AuthoritativeAiReviewRun = {
+      ...reviewRecord,
+      primaryExperiment: sameRevisionReference,
+      evidenceBundle: {
+        ...reviewRecord.evidenceBundle,
+        primaryExperiment: sameRevisionReference,
+      },
+    };
+    const handoff = {
+      runId: sameRevisionReference.sourceRunId,
+      strategyId: "strategy-revision-1",
+      strategyRevision: sameRevisionReference.strategyRevision,
+      strategyName: "BTC 一分钟均线策略",
+      market: "crypto" as const,
+      symbol: "BTC/USDT",
+      timeframe: "1m" as const,
+      status: "active" as const,
+      evidenceStatus: "eligible" as const,
+      switchAllowed: true,
+      switchBlockedReason: null,
+      alreadyBound: true,
+      auditHash: "audit-hash",
+      dataSnapshotHash: sameRevisionReference.snapshotId,
+      productionReplay: {
+        feeBps: 10,
+        slippageBps: 10,
+        auditedMaxDrawdownPct: 1.2,
+        productionMaxDrawdownPct: 1.4,
+        strategyMaxDrawdownPct: 2,
+      },
+      boundary: {
+        authorizesLive: false as const,
+        startsMonitoring: false as const,
+        evaluatesNow: false as const,
+        submitsOrder: false as const,
+      },
+    };
+    const productionBinding = {
+      kind: "library" as const,
+      bindingId: "binding-1",
+      strategyId: handoff.strategyId,
+      revision: handoff.strategyRevision,
+      name: handoff.strategyName,
+      auditRunId: handoff.runId,
+      market: handoff.market,
+      symbol: handoff.symbol,
+      timeframe: handoff.timeframe,
+      status: "ready" as const,
+      detail: "已绑定",
+      switchAllowed: true,
+      switchBlockedReason: null,
+      operator: "wenqingjie",
+    };
+    const productionLinked = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="ai-review"
+        aiReview={{
+          ...baseProps.aiReview,
+          currentReview: sameRevisionReview,
+          decisions: [acceptedDecision],
+          history: [sameRevisionReview],
+          primaryCandidateAvailable: true,
+          primaryExperimentId: "experiment-1",
+        }}
+        productionStrategyHandoff={{
+          binding: productionBinding,
+          busy: false,
+          errorLabel: null,
+          onBind: async () => true,
+          onOpenDynamicTrading: () => undefined,
+          result: { handoff, source: "core" },
+        }}
+      />,
+    );
+    expect(productionLinked).toContain("生产策略已关联");
+    expect(productionLinked).toContain("前往动态交易复核");
+    expect(productionLinked).not.toContain("交接为生产自动策略");
+    expect(productionLinked).not.toContain(">立即评估<");
+    expect(productionLinked).not.toContain(">提交订单<");
+
+    const rejectedDecision = {
+      ...acceptedDecision,
+      decisionId: "decision-rejected",
+      status: "rejected" as const,
+      supersedesDecisionId: acceptedDecision.decisionId,
+    };
+    expect(buildAiReviewProductionPath({
+      binding: null,
+      decisions: [acceptedDecision, rejectedDecision],
+      handoff: null,
+      handoffError: null,
+      primaryCandidateAvailable: true,
+      review: reviewRecord,
+    })).toMatchObject({
+      action: null,
+      label: "研究决策未接受",
+      tone: "risk",
+    });
+    expect(buildAiReviewProductionPath({
+      binding: { ...productionBinding, status: "blocked" },
+      decisions: [acceptedDecision],
+      handoff,
+      handoffError: "固定审计证据已失效",
+      primaryCandidateAvailable: true,
+      review: sameRevisionReview,
+    })).toMatchObject({
+      action: "open-production-handoff",
+      label: "生产预检未通过",
+      tone: "risk",
+    });
+    expect(buildAiReviewProductionPath({
+      binding: null,
+      decisions: [acceptedDecision],
+      handoff: {
+        ...handoff,
+        status: "review",
+        switchAllowed: false,
+        switchBlockedReason: "active_position",
+        alreadyBound: false,
+      },
+      handoffError: null,
+      primaryCandidateAvailable: true,
+      review: sameRevisionReview,
+      switchBlockedReason: "当前仍有策略持仓",
+    })).toMatchObject({
+      action: "open-production-handoff",
+      label: "生产切换条件待处理",
+      tone: "warning",
+    });
+    expect(buildAiReviewProductionPath({
+      binding: null,
+      decisions: [acceptedDecision],
+      handoff: {
+        ...handoff,
+        status: "review",
+        switchAllowed: false,
+        switchBlockedReason: "active_position",
+        alreadyBound: false,
+      },
+      handoffError: "生产绑定读取失败",
+      primaryCandidateAvailable: true,
+      review: sameRevisionReview,
+      switchBlockedReason: "当前仍有策略持仓",
+    })).toMatchObject({
+      action: "open-production-handoff",
+      label: "生产预检未通过",
+      tone: "risk",
+    });
+    expect(buildAiReviewProductionPath({
+      binding: productionBinding,
+      decisions: [acceptedDecision],
+      handoff: { ...handoff, dataSnapshotHash: "mismatched-snapshot" },
+      handoffError: null,
+      primaryCandidateAvailable: true,
+      review: sameRevisionReview,
+    })).toMatchObject({
+      action: "open-production-handoff",
+      label: "生产身份不一致",
+      tone: "risk",
+    });
+    expect(buildAiReviewProductionPath({
+      binding: null,
+      decisions: [{ ...acceptedDecision, evidenceHash: "mismatched-evidence" }],
+      handoff: null,
+      handoffError: null,
+      primaryCandidateAvailable: true,
+      review: reviewRecord,
+    })).toMatchObject({
+      action: null,
+      label: "等待人工研究决策",
+      tone: "warning",
+    });
   });
 
-  it("shows the controlled live-trading authorization boundary", () => {
-    const execution = renderToStaticMarkup(
+  it("projects paper, testnet, and blocked production execution semantics", () => {
+    const paperExecution = renderToStaticMarkup(
       <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="execution" />,
+    );
+    const testnetSettings: PlatformSettingsStatus = {
+      schemaVersion: 1,
+      generatedAt: "2026-07-28T08:00:00Z",
+      dataSources: [],
+      marketDataAdapters: [],
+      cache: {} as PlatformSettingsStatus["cache"],
+      executionAdapters: [],
+      safety: {
+        liveTradingAllowed: false,
+        requiredGates: ["adapter-certified"],
+        executionMode: "testnet",
+        liveConfirmed: false,
+        liveAuthorizedUntil: null,
+        productionLive: {
+          enabled: true,
+          credentialsConfigured: true,
+          controlActive: false,
+          controlRecordedActive: true,
+          evidenceFresh: false,
+          blockingReason: "stage10_production_execution_control_evidence_stale",
+          triggered: false,
+        },
+      },
+    };
+    const testnetExecution = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="execution"
+        settings={testnetSettings}
+      />,
+    );
+    const blockedLiveExecution = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="execution"
+        settings={{
+          ...testnetSettings,
+          safety: {
+            ...testnetSettings.safety,
+            executionMode: "live",
+          },
+        }}
+      />,
+    );
+    const unavailableLiveExecution = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="execution"
+        executionSnapshot={null}
+        settings={{
+          ...testnetSettings,
+          safety: {
+            ...testnetSettings.safety,
+            executionMode: "live",
+            liveTradingAllowed: true,
+          },
+        }}
+      />,
     );
     const settings = renderToStaticMarkup(
       <TerminalWorkspaceSurface
         {...baseProps}
         activeWorkAreaId="settings"
+        settings={testnetSettings}
+      />,
+    );
+    expect(paperExecution).toContain("当前为纸面模拟");
+    expect(paperExecution).toContain("不会向交易所提交委托");
+    expect(testnetExecution).toContain("当前为币安现货测试网");
+    expect(testnetExecution).toContain("仅使用测试网资金");
+    expect(blockedLiveExecution).toContain("当前为币安现货生产实盘");
+    expect(blockedLiveExecution).toContain("生产会话尚未授权或已过期");
+    expect(blockedLiveExecution).toContain("权限核验、急停恢复和实名确认");
+    expect(blockedLiveExecution).not.toContain("Stage 10");
+    expect(unavailableLiveExecution).toContain("自动交易运行状态暂不可用");
+    expect(unavailableLiveExecution).not.toContain("；生产路由可用。");
+    expect(settings).toContain("测试网运行中");
+    expect(settings).toContain("生产权限证据已过期");
+    expect(settings).toContain("重新核验生产权限并恢复执行控制");
+    expect(settings).not.toContain("实盘阻断");
+  });
+
+  it("projects an active production session into the execution center in Chinese", () => {
+    const execution = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="execution"
+        executionSnapshot={{
+          state: {
+            executionMode: "live",
+            liveAuthorizedUntil: "2026-07-30T10:15:29Z",
+          },
+          liveTradingAllowed: true,
+        } as AutoTradingSnapshot}
         settings={{
           schemaVersion: 1,
-          generatedAt: "2026-07-28T08:00:00Z",
+          generatedAt: "2026-07-30T02:10:00Z",
           dataSources: [],
           marketDataAdapters: [],
           cache: {} as PlatformSettingsStatus["cache"],
           executionAdapters: [],
           safety: {
             liveTradingAllowed: false,
-            requiredGates: ["adapter-certified"],
+            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"],
             executionMode: "testnet",
             liveConfirmed: false,
             liveAuthorizedUntil: null,
@@ -701,59 +1151,43 @@ describe("TerminalWorkspaceSurface", () => {
               triggered: false,
             },
           },
-        }}
-      />,
-    );
-    expect(execution).toContain("生产实盘需权限核验、急停恢复和实名确认");
-    expect(execution).not.toContain("Stage 10");
-    expect(settings).toContain("测试网运行中");
-    expect(settings).toContain("生产权限证据已过期");
-    expect(settings).toContain("重新核验生产权限并恢复执行控制");
-    expect(settings).not.toContain("实盘阻断");
-  });
-
-  it("projects an active production session into the execution center in Chinese", () => {
-    const execution = renderToStaticMarkup(
-      <TerminalWorkspaceSurface
-        {...baseProps}
-        activeWorkAreaId="execution"
-        settings={{
-          schemaVersion: 1,
-          generatedAt: "2026-07-30T02:10:00Z",
-          dataSources: [],
-          marketDataAdapters: [],
-          cache: {} as PlatformSettingsStatus["cache"],
-          executionAdapters: [],
-          safety: {
-            liveTradingAllowed: true,
-            requiredGates: ["adapter-certified", "risk-approved", "human-confirmed"],
-            executionMode: "live",
-            liveConfirmed: true,
-            liveAuthorizedUntil: "2026-07-30T10:15:29Z",
-            productionLive: {
-              enabled: true,
-              credentialsConfigured: true,
-              controlActive: false,
-              controlRecordedActive: true,
-              evidenceFresh: false,
-              blockingReason: "stage10_production_execution_control_evidence_stale",
-              triggered: false,
+          configuration: {
+            source: "database",
+            revision: 3,
+            updatedAt: "2026-07-30T02:10:00Z",
+            restartRequired: false,
+            values: {
+              ccxtDefaultExchange: "binance",
+              ccxtTimeout: 10000,
+              autoTradingIntervalSeconds: 35,
+              liveSessionTtlHours: 8,
+              openaiModel: "",
+              openaiCompatibleBaseUrl: "",
+              openaiCompatibleModel: "",
+              ollamaBaseUrl: "http://127.0.0.1:11434",
+              ollamaModel: "",
+              monitoringWebhookTimeoutSeconds: 5,
+              freeStockdbTimeoutSeconds: 3,
             },
+            secrets: {} as NonNullable<PlatformSettingsStatus["configuration"]>["secrets"],
           },
         }}
+        onSaveSettingsConfiguration={() => undefined}
       />,
     );
 
-    expect(execution).toContain("生产实盘已授权");
+    expect(execution).toContain("生产会话有效");
     expect(execution).toContain("生产路由可用");
-    expect(execution).toContain("适配器认证");
-    expect(execution).toContain("风控审批");
-    expect(execution).toContain("人工确认");
-    expect(execution).toContain("急停保护");
-    expect(execution).toContain("回放完全一致");
-    expect(execution).toContain("差异数量");
-    expect(execution).toContain("路由已执行");
-    expect(execution).not.toContain("生产实盘需权限核验");
+    expect(execution).toContain("每笔委托仍会复核权限、急停、账户覆盖和风险边界");
+    expect(execution).not.toContain("权限核验、急停保护和实名确认均已完成");
+    expect(execution).toContain("自动交易运行状态、风险参数与生产授权");
+    expect(execution).toContain("生产授权策略");
+    expect(execution).toContain('aria-label="生产授权有效时长配置"');
+    expect(execution).toContain('name="liveSessionTtlHours"');
+    expect(execution).toContain('value="8"');
+    expect(execution).toContain("0 表示永久有效");
+    expect(execution).toContain("保存授权时长");
+    expect(execution).not.toContain("生产会话尚未授权或已过期");
     expect(execution).not.toContain("Adapter certified");
     expect(execution).not.toContain("Risk approved");
     expect(execution).not.toContain("Human confirmed");
@@ -980,6 +1414,7 @@ describe("TerminalWorkspaceSurface", () => {
             values: {
               ccxtDefaultExchange: "binance",
               ccxtTimeout: 10000,
+              autoTradingIntervalSeconds: 35,
               liveSessionTtlHours: 8,
               openaiModel: "gpt-5-mini",
               openaiCompatibleBaseUrl: "",
@@ -1011,6 +1446,8 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain('aria-label="平台配置"');
     expect(settings).toContain('name="openaiModel"');
     expect(settings).toContain('name="liveSessionTtlHours"');
+    expect(settings).toContain('name="autoTradingIntervalSeconds"');
+    expect(settings).toContain("保存后实时应用");
     expect(settings).toContain("0 表示永久有效");
     expect(settings).toContain('name="openaiCompatibleModel"');
     expect(settings).toContain("从 Base URL 的 /models 自动获取模型");
@@ -1040,23 +1477,25 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).not.toContain("核心服务尚未提供可写配置契约");
   });
 
-  it("keeps the existing execution prerequisite controls reachable in the redesigned surface", () => {
+  it("keeps the current automatic-trading controls reachable in the execution center", () => {
     const execution = renderToStaticMarkup(
       <TerminalWorkspaceSurface
         {...baseProps}
         activeWorkAreaId="execution"
         executionReadiness={(
           <details className="execution-readiness-stack">
-            <summary>生产准入与测试网证据</summary>
-            <button type="button">开始 Stage 5 影子执行</button>
+            <summary>自动交易控制与生产授权</summary>
+            <section>生产交易控制链</section>
           </details>
         )}
       />,
     );
 
-    expect(execution).toContain("生产准入与测试网证据");
-    expect(execution).toContain("开始 Stage 5 影子执行");
+    expect(execution).toContain("自动交易控制与生产授权");
+    expect(execution).toContain("生产交易控制链");
     expect(execution).toContain("design-execution-readiness");
+    expect(execution).not.toContain("候选执行队列");
+    expect(execution).not.toContain("阶段 9");
   });
 
   it("keeps research preparation controls reachable in the redesigned surface", () => {
@@ -1389,15 +1828,9 @@ describe("TerminalWorkspaceSurface", () => {
     const portfolio = renderToStaticMarkup(
       <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="portfolio" />,
     );
-    const execution = renderToStaticMarkup(
-      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="execution" />,
-    );
-
     expect(backtest).toContain("暂无权威净值曲线");
     expect(backtest).toContain("当前运行未产生交易");
     expect(portfolio).toContain("暂无可展示的组合腿");
-    expect(execution).toContain("暂无权威影子候选");
-    expect(execution).toContain("不会提交真实订单");
   });
 
   it("renders the authoritative portfolio step and an accessible equity ring", () => {
@@ -1622,6 +2055,152 @@ describe("TerminalWorkspaceSurface", () => {
     expect(portfolio).not.toContain("权威组合回测结果");
   });
 
+  it("projects the existing production risk chain without turning research M5 into live execution", () => {
+    const snapshot = {
+      state: {
+        dailyLossDrawdownPct: 0.03,
+        dailyLossLimitPct: 2,
+        dailyProfitDrawdownLimitPct: 20,
+        dailyProfitDrawdownPct: 0.05,
+        dailyRiskHaltReason: null,
+        detail: "自动监控中",
+        enabled: true,
+        equity: 91.7056,
+        executionMode: "live",
+        liveConfirmed: true,
+        liveSessionTtlHours: 0,
+        lastAccountCheck: {
+          accountCovered: true,
+          positionCovered: true,
+          quoteCovered: true,
+          unexpectedOpenAutoOrderCount: 0,
+        },
+        lastDecisionContract: {
+          strategyRevision: "bfef1234567890abcdef",
+          riskAdjustedTarget: {
+            approvedNotional: 0.6292,
+            decision: "preserve",
+            evidence: { recentTradeCount: 1 },
+            reason: "账户覆盖与双回撤检查均通过。",
+          },
+        },
+        liveAuthorizedUntil: "2026-07-31T05:40:50+08:00",
+        maxTradesPerHour: 20,
+        position: 0.00000986,
+        runnerHealth: {
+          status: "running",
+        },
+        runnerState: "running",
+        symbol: "BTC/USDT",
+        timeframe: "1m",
+        tradeTimestamps: [],
+      },
+      strategyBinding: {
+        auditRunId: null,
+        kind: "builtin",
+        name: "内置涨跌幅与 AI 自动策略",
+        revision: "bfef1234567890abcdef",
+        status: "ready",
+        symbol: "BTC/USDT",
+        timeframe: "1m",
+      },
+      liveBlockedBoundary: false,
+      liveTradingAllowed: true,
+      orderSubmissionEnabled: true,
+    } as unknown as AutoTradingSnapshot;
+    const props = {
+      portfolioProductionRisk: {
+        error: null,
+        loading: false,
+        onRefresh: () => undefined,
+        snapshot,
+      },
+      productionStrategyHandoff: {
+        binding: null,
+        busy: false,
+        errorLabel: null,
+        onBind: async () => false,
+        onOpenDynamicTrading: () => undefined,
+        result: { source: "fallback" as const },
+      },
+    };
+    const portfolio = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        {...props}
+        activeWorkAreaId="portfolio"
+      />,
+    );
+
+    expect(portfolio).toContain("独立生产策略与运行风险");
+    expect(portfolio).toContain("独立生产链运行中 · 未覆盖当前研究组合");
+    expect(portfolio).toContain("生产实盘 · 后台运行正常");
+    expect(portfolio).toContain("内置涨跌幅与 AI 自动策略");
+    expect(portfolio).toContain("bfef1234");
+    expect(portfolio).toContain("保持目标");
+    expect(portfolio).toContain("91.7056 USDT");
+    expect(portfolio).toContain("0.03% / 2.00%");
+    expect(portfolio).toContain("0.05% / 20.00%");
+    expect(portfolio).toContain("1 / 20 笔");
+    expect(portfolio).toContain("账户已覆盖");
+    expect(portfolio).toContain("生产授权：永久有效");
+    expect(portfolio).toContain("刷新生产风险");
+    expect(portfolio).toContain("前往动态交易复核");
+    expect(portfolio).toContain("M5 · 组合研究风险");
+    expect(portfolio).toContain("该评估不写入生产风险链");
+    expect(portfolio).not.toContain("模拟成交状态");
+    expect(portfolio).not.toContain("回放精确性");
+    expect(portfolio).not.toContain("交接为生产自动策略");
+    expect(portfolio).not.toContain("授权实盘");
+    expect(portfolio).not.toContain("立即评估");
+    expect(portfolio).not.toContain("提交订单");
+
+    const blocked = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        {...props}
+        activeWorkAreaId="portfolio"
+        portfolioProductionRisk={{
+          ...props.portfolioProductionRisk,
+          snapshot: {
+            ...snapshot,
+            liveBlockedBoundary: true,
+            liveTradingAllowed: false,
+          },
+        }}
+      />,
+    );
+    expect(blocked).toContain("生产风险链已阻断");
+
+    const riskPaused = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        {...props}
+        activeWorkAreaId="portfolio"
+        portfolioProductionRisk={{
+          ...props.portfolioProductionRisk,
+          snapshot: {
+            ...snapshot,
+            state: {
+              ...snapshot.state,
+              dailyRiskHaltReason: "已达到当日亏损回撤上限。",
+              lastAccountCheck: {
+                ...snapshot.state.lastAccountCheck!,
+                accountCovered: false,
+              },
+              runnerHealth: {
+                ...snapshot.state.runnerHealth!,
+                status: "blocked",
+              },
+            },
+          },
+        }}
+      />,
+    );
+    expect(riskPaused).toContain("生产风险链已阻断");
+    expect(riskPaused).toContain("已触发风险暂停");
+  });
+
   it("keeps the redesigned operator approval step actionable", () => {
     const approvalRow: PortfolioPaperOrderApprovalRow = {
       id: "batch-1:order-1",
@@ -1804,6 +2383,454 @@ describe("TerminalWorkspaceSurface", () => {
     expect(market).not.toContain('aria-label="搜索行情"');
     expect(market).not.toContain("design-market-toolbar");
     expect(market).not.toContain("今开 —");
+  });
+
+  it("shows a server-backed market overview and actionable stock-selection results", () => {
+    const discovery: MarketDiscoveryResult = {
+      market: "ashare",
+      source: "eastmoney",
+      observedAt: "2026-07-30T08:00:00+00:00",
+      freshness: "fresh",
+      warnings: [],
+      snapshotHash: "b".repeat(64),
+      overview: {
+        universeCount: 5_432,
+        advancing: 3_100,
+        declining: 2_100,
+        flat: 232,
+        totalAmount: 980_000_000_000,
+      },
+      totalMatched: 1,
+      items: [{
+        market: "ashare",
+        symbol: "601318",
+        name: "中国平安",
+        price: 52.36,
+        changePct: 2.15,
+        volume: 36_800_000,
+        amount: 1_920_000_000,
+        turnoverRate: 0.75,
+        peRatio: 7.8,
+        pbRatio: 0.92,
+        marketCap: 1_040_000_000_000,
+        source: "eastmoney",
+        observedAt: "2026-07-30T08:00:00+00:00",
+      }],
+    };
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: discovery,
+        }}
+        onResearchInstrument={() => undefined}
+      />,
+    );
+
+    expect(market).toContain("市场概览");
+    expect(market).toContain("全市场股票");
+    expect(market).toContain("5,432");
+    expect(market).toContain("上涨");
+    expect(market).toContain("3,100");
+    expect(market).toContain("条件选股");
+    expect(market).toContain('aria-label="条件选股筛选"');
+    expect(market).toContain('name="minChangePct"');
+    expect(market).toContain("中国平安");
+    expect(market).toContain("601318");
+    expect(market).toContain(">查看并加入<");
+    expect(market).not.toContain(">查看行情<");
+    expect(market).not.toContain(">加入自选<");
+    expect(market).toContain(">开始研究<");
+  });
+
+  it("shows Binance USDT spot discovery with crypto-specific labels and fields", () => {
+    const cryptoInstrument = {
+      market: "crypto" as const,
+      symbol: "SHIB/USDT",
+      name: "SHIB",
+      price: 0.00001234,
+      changePct: 2.15,
+      quoteSource: "binance-data-api",
+      quoteAsOf: "2026-07-31T08:00:00+00:00",
+    };
+    const discovery: MarketDiscoveryResult = {
+      market: "crypto",
+      source: "binance-data-api",
+      observedAt: "2026-07-31T08:00:00+00:00",
+      freshness: "fresh",
+      warnings: [],
+      snapshotHash: "e".repeat(64),
+      overview: {
+        universeCount: 480,
+        advancing: 250,
+        declining: 220,
+        flat: 10,
+        totalAmount: 12_345_678_900,
+      },
+      totalMatched: 1,
+      items: [{
+        market: "crypto",
+        symbol: "SHIB/USDT",
+        name: "SHIB",
+        price: 0.00001234,
+        changePct: 2.15,
+        volume: 9_876_543_210,
+        amount: 123_456.78,
+        turnoverRate: null,
+        peRatio: null,
+        pbRatio: null,
+        marketCap: null,
+        source: "binance-data-api",
+        observedAt: "2026-07-31T08:00:00+00:00",
+      }],
+    };
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: discovery,
+        }}
+        onResearchInstrument={() => undefined}
+        workspace={{
+          ...workspace,
+          selectedInstrument: cryptoInstrument,
+          watchlist: [...workspace.watchlist, cryptoInstrument],
+        }}
+      />,
+    );
+
+    expect(market).toContain("Binance USDT 现货市场");
+    expect(market).toContain("USDT 现货交易对");
+    expect(market).toContain("交易对筛选");
+    expect(market).toContain('aria-label="交易对筛选"');
+    expect(market).toContain("24 小时成交额");
+    expect(market).toContain("24 小时成交量（基础资产）");
+    expect(market).toContain("9,876,543,210 SHIB");
+    expect(market.split("0.00001234")).toHaveLength(4);
+    expect(market).toContain("来源 Binance 公开现货行情");
+    expect(market).toContain("仅覆盖 Binance 当前可交易的 USDT 现货交易对");
+    expect(market).not.toContain('name="minTurnoverRate"');
+    expect(market).not.toContain('name="maxPe"');
+    expect(market).not.toContain("<th>换手率</th>");
+    expect(market).not.toContain("<th>市盈率</th>");
+    expect(market).not.toContain("<th>总市值</th>");
+  });
+
+  it("renders market information as a separate read-only page", () => {
+    const item = {
+      market: "ashare" as const,
+      symbol: "600000",
+      name: "浦发银行",
+      price: 10.25,
+      changePct: 2.5,
+      volume: 1_000,
+      amount: 2_000_000,
+      turnoverRate: 1.2,
+      peRatio: 6.5,
+      pbRatio: 0.8,
+      marketCap: 200_000_000_000,
+      source: "eastmoney",
+      observedAt: "2026-07-31T01:00:00+00:00",
+    };
+    const result: MarketInformationResult = {
+      market: "ashare",
+      symbol: "600000",
+      overview: {
+        universeCount: 5_432,
+        advancing: 3_100,
+        declining: 2_100,
+        flat: 232,
+        totalAmount: 980_000_000_000,
+      },
+      leaders: [item],
+      active: [{ ...item, symbol: "601318", name: "中国平安" }],
+      news: [
+        {
+          id: "market-news",
+          headline: "A 股早盘重要快讯",
+          summary: "市场成交活跃。",
+          publishedAt: "2026-07-31T01:00:00+00:00",
+          source: "东方财富",
+          scope: "market",
+          url: "https://finance.eastmoney.com/a/market-news.html",
+        },
+        {
+          id: "instrument-news",
+          headline: "浦发银行发布公告",
+          summary: "公司披露最新公告。",
+          publishedAt: "2026-07-31T00:30:00+00:00",
+          source: "证券时报",
+          scope: "instrument",
+          url: "https://finance.eastmoney.com/a/instrument-news.html",
+        },
+      ],
+      source: "binance-data-api+finnhub",
+      observedAt: "2026-07-31T01:05:00+00:00",
+      freshness: "fresh",
+      warnings: [],
+      snapshotHash: "f".repeat(64),
+    };
+    const information = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market-information"
+        marketInformation={{
+          isLoading: false,
+          onRefresh: () => undefined,
+          result,
+        }}
+      />,
+    );
+
+    expect(information).toContain("市场资讯");
+    expect(information).toContain("市场概览");
+    expect(information).toContain("涨幅领先");
+    expect(information).toContain("成交活跃");
+    expect(information).toContain('role="tablist"');
+    expect(information).toContain(">全部<");
+    expect(information).toContain(">市场快讯<");
+    expect(information).toContain(">标的资讯<");
+    expect(information).toContain("新闻资讯");
+    expect(information).not.toContain("新闻与公告");
+    expect(information).toContain("来源 Binance 公开现货行情、Finnhub 新闻");
+    expect(information).not.toContain("binance-data-api+finnhub");
+    expect(information).toContain("A 股早盘重要快讯");
+    expect(information).toContain("浦发银行发布公告");
+    expect(information).toContain('target="_blank"');
+    expect(information).toContain('rel="noreferrer noopener"');
+    expect(information).not.toContain("开始交易");
+  });
+
+  it("does not present an unavailable US market breadth as real zero statistics", () => {
+    const usInstrument = {
+      market: "us" as const,
+      symbol: "AAPL",
+      name: "Apple",
+      price: 210,
+      changePct: 0.5,
+      quoteSource: "finnhub",
+      quoteAsOf: "2026-07-31T01:00:00+00:00",
+    };
+    const result: MarketInformationResult = {
+      market: "us",
+      symbol: "AAPL",
+      overview: {
+        universeCount: 0,
+        advancing: 0,
+        declining: 0,
+        flat: 0,
+        totalAmount: 0,
+      },
+      leaders: [],
+      active: [],
+      news: [],
+      source: "finnhub",
+      observedAt: "2026-07-31T01:05:00+00:00",
+      freshness: "fresh",
+      warnings: ["美股市场广度暂未接入。"],
+      snapshotHash: "a".repeat(64),
+    };
+    const information = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market-information"
+        marketInformation={{
+          isLoading: false,
+          onRefresh: () => undefined,
+          result,
+        }}
+        workspace={{
+          ...workspace,
+          selectedInstrument: usInstrument,
+        }}
+      />,
+    );
+
+    expect(information).toContain("市场广度暂未接入");
+    expect(information).not.toContain("<span>覆盖标的</span>");
+    expect(information).not.toContain("<span>成交额</span>");
+    expect(information).toContain("暂无资讯");
+  });
+
+  it("shows explicit loading and matching error states for market information", () => {
+    const loading = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market-information"
+        marketInformation={{
+          isLoading: true,
+          onRefresh: () => undefined,
+          result: null,
+        }}
+      />,
+    );
+    const failed: MarketInformationResult = {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      overview: {
+        universeCount: 0,
+        advancing: 0,
+        declining: 0,
+        flat: 0,
+        totalAmount: 0,
+      },
+      leaders: [],
+      active: [],
+      news: [],
+      source: "fallback",
+      observedAt: "",
+      freshness: "stale",
+      warnings: [],
+      snapshotHash: "",
+      error: "上游资讯服务暂时不可用",
+    };
+    const error = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market-information"
+        marketInformation={{
+          isLoading: false,
+          onRefresh: () => undefined,
+          result: failed,
+        }}
+      />,
+    );
+
+    expect(loading).toContain('role="status"');
+    expect(loading).toContain("正在加载市场概览与最新资讯");
+    expect(error).toContain('role="alert"');
+    expect(error).toContain("上游资讯服务暂时不可用");
+    expect(error).toContain("重新加载");
+    expect(error).not.toContain("<span>覆盖标的</span>");
+  });
+
+  it("shows an explicit loading state while market discovery is running", () => {
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: true,
+          onSearch: () => undefined,
+          result: null,
+        }}
+      />,
+    );
+
+    expect(market).toContain('role="status"');
+    expect(market).toContain("正在加载全市场快照与候选");
+    expect(market).toContain("筛选中…");
+  });
+
+  it("shows a market discovery error without presenting zeroes as a real snapshot", () => {
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: {
+            market: "ashare",
+            source: "fallback",
+            observedAt: "",
+            freshness: "unavailable",
+            warnings: [],
+            snapshotHash: "",
+            overview: {
+              universeCount: 0,
+              advancing: 0,
+              declining: 0,
+              flat: 0,
+              totalAmount: 0,
+            },
+            totalMatched: 0,
+            items: [],
+            error: "HTTP 503",
+          },
+        }}
+      />,
+    );
+
+    expect(market).toContain('role="alert"');
+    expect(market).toContain("暂时无法加载市场概览与选股结果");
+    expect(market).toContain("HTTP 503");
+    expect(market).toContain("全市场股票</span><strong class=\"\">—");
+  });
+
+  it("explains when no stocks match the current discovery filters", () => {
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: {
+            market: "ashare",
+            source: "eastmoney",
+            observedAt: "2026-07-30T08:00:00+00:00",
+            freshness: "fresh",
+            warnings: [],
+            snapshotHash: "c".repeat(64),
+            overview: {
+              universeCount: 5_432,
+              advancing: 3_100,
+              declining: 2_100,
+              flat: 232,
+              totalAmount: 980_000_000_000,
+            },
+            totalMatched: 0,
+            items: [],
+          },
+        }}
+      />,
+    );
+
+    expect(market).toContain('role="status"');
+    expect(market).toContain("没有符合当前条件的股票");
+    expect(market).toContain("请放宽筛选条件后重试");
+  });
+
+  it("localizes discovery source and exposes freshness warnings", () => {
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: {
+            market: "ashare",
+            source: "akshare-sina",
+            observedAt: "2026-07-30T08:00:00+00:00",
+            freshness: "stale",
+            warnings: ["降级行情不含换手率与估值字段。"],
+            snapshotHash: "d".repeat(64),
+            overview: {
+              universeCount: 5_432,
+              advancing: 3_100,
+              declining: 2_100,
+              flat: 232,
+              totalAmount: 980_000_000_000,
+            },
+            totalMatched: 0,
+            items: [],
+          },
+        }}
+      />,
+    );
+
+    expect(market).toContain("来源 新浪行情（AKShare）");
+    expect(market).toContain("数据可能延迟");
+    expect(market).toContain("降级行情不含换手率与估值字段。");
+    expect(market).not.toContain("来源 akshare-sina");
   });
 
   it("shows the selected market calendar instead of fixed A-share trading hours", () => {

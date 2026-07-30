@@ -32,6 +32,10 @@ const executionAutoPaperTradingSource = readFileSync(
   new URL("../components/ExecutionAutoPaperTradingSection.tsx", import.meta.url),
   "utf8"
 );
+const executionAcceptanceAuditPanelSource = readFileSync(
+  new URL("../components/ExecutionStage9ProductionAdmissionSection.tsx", import.meta.url),
+  "utf8"
+);
 const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
 const readmeSource = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
 const productPlanSource = readFileSync(new URL("../../../../docs/product-plan.md", import.meta.url), "utf8");
@@ -148,7 +152,7 @@ describe("terminal layout css", () => {
     expect(hasCssDeclaration(".design-portfolio-donut-value", "stroke-linecap: round;")).toBe(true);
   });
 
-  test("keeps execution prerequisites actionable and clears the fixed status bar", () => {
+  test("routes the execution center to the current automatic-trading controls", () => {
     const terminalActionSource = sourceBetween(
       "const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {",
       "const colorSchemeToggleLabel ="
@@ -163,18 +167,12 @@ describe("terminal layout css", () => {
       "const openAutomaticTradingConsole =",
       "const terminalSurfaceAction:"
     );
-    const executionFocusSource = sourceBetweenText(
-      appSource,
-      "function focusExecutionReadiness(",
-      "function p0EvidenceDrawerSummary("
-    );
 
-    expect(executionActionSource).toContain('label: "查看执行前置步骤"');
+    expect(executionActionSource).toContain('label: "打开自动交易控制台"');
     expect(executionActionSource).toContain("onClick: openAutomaticTradingConsole");
     expect(executionConsoleSource).toContain('selectProductWorkArea("dynamic-trading");');
-    expect(executionFocusSource).toContain("document.querySelector<HTMLDetailsElement>(");
-    expect(executionFocusSource).toContain('".surface-execution .execution-readiness-stack"');
-    expect(executionActionSource).toContain("runStage9ProductionAdmissionCandidateAction");
+    expect(executionActionSource).not.toContain("stage6SandboxAuthorization");
+    expect(executionActionSource).not.toContain("runStage9ProductionAdmissionCandidateAction");
     expect(hasCssDeclaration(
       ".terminal-design-surface.surface-execution",
       "padding-bottom: 16px;"
@@ -182,10 +180,6 @@ describe("terminal layout css", () => {
     expect(hasCssDeclaration(
       ".design-execution-readiness",
       "margin-bottom: 10px;"
-    )).toBe(true);
-    expect(hasCssDeclaration(
-      ".execution-stage5-shadow > button + button",
-      "margin-left: 8px;"
     )).toBe(true);
   });
 
@@ -198,6 +192,14 @@ describe("terminal layout css", () => {
     expect(styles).toContain('.dynamic-trading-live-confirmation input:not([type="checkbox"])');
     expect(cssBlock('.dynamic-trading-confirmation input[type="checkbox"]')).toContain("width: 14px;");
     expect(cssBlock('.dynamic-trading-confirmation input[type="checkbox"]')).toContain("height: 14px;");
+    expect(executionAutoPaperTradingSource).toContain('aria-label="自动交易经济账本"');
+    expect(cssBlock(".dynamic-trading-economics > dl")).toContain(
+      "grid-template-columns: repeat(6, minmax(0, 1fr));"
+    );
+    expect(cssBlock(".dynamic-trading-workspace")).toContain("grid-auto-rows: max-content;");
+    expect(styles).toContain(
+      ".dynamic-trading-economics > dl {\n    grid-template-columns: repeat(2, minmax(0, 1fr));"
+    );
   });
 
   test("makes dynamic trading tabs interactive and surfaces evaluation progress", () => {
@@ -239,11 +241,23 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('workAreaIds: ["operations", "audit", "settings"]');
     expect(appSource).toContain('activeWorkAreaId === "operations" || activeWorkAreaId === "dynamic-trading" || !terminalSurfaceDisplayAction ? null : (');
     expect(appSource).toContain('className="terminal-design-surface terminal-operations-workspace"');
+    expect(appSource).toContain('variant="operations"');
+    expect(appSource).toContain('onOpenDynamicTrading={() => selectProductWorkArea("dynamic-trading")}');
+    expect(appSource).toContain('if (actionId === "review-production-handoff")');
+    expect(appSource).toContain('"Review production handoff": "查看生产交接"');
+    expect(appSource).toContain("生产运行总览才是当前自动交易状态");
     expect(appSource).toContain('${activeWorkAreaId}-layout');
     expect(appSource).not.toContain('className="terminal-evidence-trigger"');
     expect(appSource).not.toContain("legacyWorkspaceDialogRef");
     expect(operationsWorkspaceSource).not.toContain("<dialog");
     expect(cssBlock(".terminal-operations-workspace")).toContain("overflow-y: auto;");
+    expect(cssBlock(".operations-production-runtime")).toContain("display: grid;");
+    expect(cssBlock(".operations-production-runtime-metrics")).toContain(
+      "repeat(auto-fit, minmax(180px, 1fr))"
+    );
+    expect(styles).toContain(
+      ".operations-production-runtime-actions nav {\n    display: grid;\n    grid-template-columns: repeat(3, minmax(0, 1fr));"
+    );
     expect(operationsWorkspaceSource).not.toContain('renderChartPanel("chart-panel workflow-chart-panel")');
     expect(operationsWorkspaceSource).toContain('className="operations-column operations-primary-column"');
     expect(operationsWorkspaceSource).toContain('className="operations-column operations-side-column"');
@@ -304,6 +318,65 @@ describe("terminal layout css", () => {
     expect(marketSurfaceSource).not.toContain("workspace.watchlist.slice(0, 5)");
   });
 
+  test("lays out the market overview and stock screener without clipping dense results", () => {
+    expect(hasCssBlockWith(".design-market-discovery", [
+      "display: grid;",
+      "gap: 10px;",
+    ])).toBe(true);
+    expect(hasCssDeclaration(
+      ".design-market-overview-cards",
+      "grid-template-columns: repeat(5, minmax(0, 1fr));",
+    )).toBe(true);
+    expect(hasCssBlockWith(".design-market-screener-form", [
+      "display: grid;",
+      "align-items: end;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-market-screener-table", [
+      "overflow-x: auto;",
+      "overflow-y: auto;",
+    ])).toBe(true);
+  });
+
+  test("keeps the separate market information page readable on desktop and mobile", () => {
+    expect(hasCssBlockWith(".design-market-information-grid", [
+      "display: grid;",
+      "grid-template-columns: repeat(2, minmax(0, 1fr));",
+      "gap: 10px;",
+    ])).toBe(true);
+    expect(hasCssDeclaration(
+      ".design-market-information-news",
+      "grid-column: 1 / -1;",
+    )).toBe(true);
+    expect(hasCssBlockWith("  .design-market-information-grid", [
+      "grid-template-columns: minmax(0, 1fr);",
+    ])).toBe(true);
+  });
+
+  test("loads market information only on its page and protects the latest instrument request", () => {
+    const marketInformationSource = sourceBetweenText(
+      appSource,
+      "const refreshMarketInformation = useCallback",
+      "const refreshExecutionAdapterHealthProbe = useCallback",
+    );
+
+    expect(appSource).toContain(
+      "const marketInformationRequestRef = useRef(createLatestRequestCoordinator());",
+    );
+    expect(marketInformationSource).toContain('activeWorkAreaId !== "market-information"');
+    expect(marketInformationSource).toContain("marketInformationRequestRef.current.begin()");
+    expect(marketInformationSource).toContain(
+      "marketInformationRequestRef.current.isCurrent(requestToken)",
+    );
+    expect(marketInformationSource).toContain("workspace.selectedInstrument.market");
+    expect(marketInformationSource).toContain("workspace.selectedInstrument.symbol");
+    expect(marketInformationSource).toContain("workspace.selectedInstrument.name");
+    expect(marketInformationSource).toContain("const contextKey = `${market}:${symbol}:${name}`;");
+    expect(marketInformationSource).toContain("name,");
+    expect(appSource).toContain(
+      'activeWorkAreaId === "market-information"\n              ? undefined\n              : automatedTradingGuide',
+    );
+  });
+
   test("keeps the watchlist overview focused on counts and market distribution", () => {
     expect(
       hasCssDeclaration(
@@ -333,7 +406,7 @@ describe("terminal layout css", () => {
   test("reserves desktop market rows for the workflow guide, header, and content", () => {
     expect(hasCssBlockWith("  .terminal-design-surface.surface-market", [
       "display: grid;",
-      "grid-template-rows: auto auto minmax(0, 1fr);",
+      "grid-template-rows: auto auto auto minmax(0, 1fr);",
       "padding-bottom: 10px;",
     ])).toBe(true);
     expect(hasCssBlockWith("  .surface-market .design-market-grid", [
@@ -660,7 +733,8 @@ describe("terminal layout css", () => {
     expect(terminalWorkspaceSurfaceSource).toContain("<PortfolioM5Section");
     expect(terminalWorkspaceSurfaceSource).toContain("allocation.currentWeight");
     expect(terminalWorkspaceSurfaceSource).not.toContain("组合年化波动率");
-    expect(portfolioM5SectionSource).toContain("只读取 Stage 4 纸面账户回放");
+    expect(portfolioM5SectionSource).toContain("读取阶段 4 模拟账户回放");
+    expect(portfolioM5SectionSource).toContain("该评估不写入生产风险链");
     expect(portfolioM5SectionSource).toContain('className="portfolio-m5-table-scroll"');
     expect(cssBlock(".portfolio-m5-section")).toContain("min-width: 0;");
     expect(cssBlock(".portfolio-m5-table-scroll")).toContain("overflow-x: auto;");
@@ -668,7 +742,9 @@ describe("terminal layout css", () => {
       "grid-template-columns: minmax(420px, 0.85fr) minmax(560px, 1.15fr);"
     );
     expect(hasCssBlockWith("  .portfolio-m5-two-column", ["grid-template-columns: minmax(0, 1fr);"])).toBe(true);
-    expect(hasCssBlockWith("  .portfolio-m5-section", ["grid-column: 1;"])).toBe(true);
+    expect(styles).toContain(
+      ".portfolio-m5-section,\n  .design-portfolio-production-risk {\n    grid-column: 1;"
+    );
   });
 
   test("keeps the authoritative AI review section presentational and responsive", () => {
@@ -1013,14 +1089,37 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('className="operations-context-advanced-body"');
     expect(cssBlock(".workspace-command-center-body")).toContain("display: grid;");
     expect(cssBlock(".operations-context-advanced")).toContain("order: 3;");
+    const executionReadinessSource = sourceBetween(
+      "const executionReadinessStack = (",
+      "const executionAcceptanceAuditPanel = ("
+    );
     expect(appSource).toContain('className="execution-readiness-stack"');
     expect(appSource).toContain("data-live-authorized={executionLiveTradingAllowed}");
-    expect(appSource).toContain('"生产实盘已授权"');
+    expect(executionReadinessSource).toContain("<ExecutionAutoPaperTradingSection");
+    expect(executionReadinessSource).toContain("onSafetyChange={syncExecutionSafety}");
+    expect(executionReadinessSource).toContain("onSnapshotChange={setAutoTradingSnapshot}");
+    expect(executionReadinessSource).toContain("<ExecutionStage10ProductionExecutionSection");
+    expect(executionReadinessSource).toContain("autoTradingSnapshot={autoTradingSnapshot}");
+    expect(executionReadinessSource).toContain("onAutoLiveAuthorized={completeLiveTradingGate}");
+    expect((appSource.match(/onSnapshotChange=\{setAutoTradingSnapshot\}/g) ?? [])).toHaveLength(3);
+    expect(appSource).toContain("const snapshot = await loadAutoTradingSnapshot(quantCoreBaseUrl);");
+    expect(executionAutoPaperTradingSource).toContain("commitSnapshot(null);");
+    expect(terminalWorkspaceSurfaceSource).toContain("自动交易运行状态暂不可用");
+    expect(executionReadinessSource).not.toContain("<ExecutionStage5ShadowSection");
+    expect(executionReadinessSource).not.toContain("<ExecutionStage6SandboxSection");
+    expect(executionReadinessSource).not.toContain("<ExecutionStage7ProductionReadonlySection");
+    expect(executionReadinessSource).not.toContain("<ExecutionStage9ProductionAdmissionSection");
+    expect((appSource.match(/onSafetyChange=\{syncExecutionSafety\}/g) ?? [])).toHaveLength(3);
+    expect(executionAutoPaperTradingSource).toContain(
+      "onSafetyChange?.(snapshot.state.executionMode, snapshot.liveTradingAllowed)"
+    );
+    expect(appSource).toContain('"生产会话有效"');
+    expect(appSource).toContain("executionSnapshot={autoTradingSnapshot}");
     expect(cssBlock(".execution-readiness-stack")).toContain("grid-area: stage5;");
     expect(cssBlock('.execution-readiness-stack[data-live-authorized="true"]')).toContain(
       "border-color: color-mix(in srgb, var(--teal) 55%, var(--border));"
     );
-    expect(cssBlock(".execution-readiness-stack-body .execution-stage5-shadow")).toContain("grid-area: auto;");
+    expect(hasCssDeclaration(".execution-testnet-safety", "grid-template-columns: minmax(0, 1fr) auto auto;")).toBe(true);
     expect(hasCssDeclaration(".execution-stage5-shadow", "border: 1px solid var(--border-strong);")).toBe(true);
     expect(hasCssDeclaration(".execution-stage5-shadow", "background: var(--surface);")).toBe(true);
     expect(hasCssDeclaration(".execution-stage5-shadow", "font-size: calc(10.5px * var(--aiqt-text-scale, 1));")).toBe(true);
@@ -1059,7 +1158,7 @@ describe("terminal layout css", () => {
     expect(cssBlock("h1")).toContain("white-space: nowrap;");
   });
 
-  test("follows the system theme until the topbar records a manual preference", () => {
+  test("follows system theme changes while keeping a session manual toggle", () => {
     const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
     const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
     const chartSource = sourceBetween("function KlineChartCanvas", "function toKlineChartData");
@@ -1069,8 +1168,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('data-theme={colorScheme}');
     expect(appSource).toContain('window.matchMedia("(prefers-color-scheme: dark)")');
     expect(appSource).toContain('media.addEventListener("change", syncSystemColorScheme)');
-    expect(appSource).toContain('window.localStorage.setItem("aiqt.theme", `manual:${colorSchemePreference}`)');
-    expect(appSource).toContain('window.localStorage.removeItem("aiqt.theme")');
+    expect(appSource).toContain("setColorSchemePreference(null)");
+    expect(appSource).not.toContain('window.localStorage.setItem("aiqt.theme"');
+    expect(appSource).not.toContain('window.localStorage.getItem("aiqt.theme"');
     expect(leftRailSource).not.toContain('role="switch"');
     expect(leftRailSource).not.toContain("rail-profile-controls");
     expect(leftRailSource).not.toContain("data-theme-available");
@@ -1190,15 +1290,10 @@ describe("terminal layout css", () => {
       "width: 100%;",
     ])).toBe(true);
     expect(terminalWorkspaceSurfaceSource).toContain(
-      "const passed = liveTradingAllowed || gate.passed;"
+      'subtitle="自动交易运行状态、风险参数与生产授权"'
     );
-    expect(terminalWorkspaceSurfaceSource).toContain(
-      '"adapter-certified": "适配器认证"'
-    );
-    expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-execution-stats article', [
-      "border-color: var(--border);",
-      "background: var(--surface-raised);",
-    ])).toBe(true);
+    expect(terminalWorkspaceSurfaceSource).not.toContain("候选执行队列");
+    expect(terminalWorkspaceSurfaceSource).not.toContain("暂无权威影子候选");
     expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-check-row.warning svg', [
       "color: var(--amber);",
     ])).toBe(true);
@@ -1210,6 +1305,24 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith(".design-live-warning.positive", [
       "border-color: color-mix(in srgb, var(--teal) 65%, var(--border));",
       "color: var(--teal);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-live-session-policy form", [
+      "grid-template-columns: minmax(220px, 340px) auto minmax(0, 1fr);",
+      "grid-template-areas:",
+      "\"input button message\"",
+      "align-items: center;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-live-session-policy form > input", [
+      "grid-area: input;",
+      "height: calc(34px * var(--aiqt-text-scale, 1));",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-live-session-policy .design-secondary-action", [
+      "grid-area: button;",
+      "height: calc(34px * var(--aiqt-text-scale, 1));",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".design-live-session-policy form", [
+      "grid-template-columns: minmax(0, 1fr) auto;",
+      "\"input button\"",
     ])).toBe(true);
     expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-live-warning.positive', [
       "background: color-mix(in srgb, var(--teal) 10%, var(--surface));",
@@ -1475,6 +1588,7 @@ describe("terminal layout css", () => {
         index === 0 ? -1 : guideOrderSource.indexOf(expectedOrder[index - 1])
       );
     });
+    expect(guideOrderSource).not.toContain('"market-information"');
     expect(appSource).toContain("function AutomatedTradingWorkflowGuide");
     expect(appSource).toContain("const runAutomatedTradingWorkflow = useCallback(");
     expect(appSource).toContain("setIsAutomatedTradingWorkflowRunning(true);");
@@ -3291,10 +3405,20 @@ describe("terminal layout css", () => {
     expect(appSource).toContain(
       '"audit_evidence_report,backtest_report,portfolio_report,p0_readiness_report,p0_acceptance_review,p2_manifest_chain_preflight,p2_manifest_chain_preflight_review,p2_readiness_evidence_coverage_review,p2_readiness_acceptance_generated,p2_readiness_acceptance_review,personal_team_readiness_review,daily_ops_control_room_review,daily_start_brief_review,stage1_daily_archive_review,operator_runbook_report,pre_live_runbook_report,research_context_readiness_report"'
     );
-    expect(auditWorkspaceSource).toContain("Stage9ProductionAdmissionAuditLedgerPanel");
-    expect(appSource).toContain('eventType: "stage9_production_order_admission_candidate,stage9_production_order_admission_review"');
-    expect(appSource).toContain("const stage9ProductionAdmissionAuditRequestIdRef = useRef(0);");
-    expect(appSource).toContain("if (stage9ProductionAdmissionAuditRequestIdRef.current !== requestId)");
+    expect(auditWorkspaceSource).toContain("executionAcceptanceAuditPanel");
+    expect(terminalWorkspaceSurfaceSource).toContain("executionAcceptanceAudit");
+    expect(appSource).toContain("eventType: executionAcceptanceAuditEventTypes.join");
+    expect(executionAcceptanceAuditPanelSource).toContain('"stage5_shadow_execution_session"');
+    expect(executionAcceptanceAuditPanelSource).toContain('"stage6_sandbox_kill_switch"');
+    expect(executionAcceptanceAuditPanelSource).toContain('"stage7_production_readonly_probe"');
+    expect(executionAcceptanceAuditPanelSource).toContain('"stage8_production_readonly_access_control"');
+    expect(executionAcceptanceAuditPanelSource).toContain('"stage9_production_order_admission_review"');
+    expect(hasCssDeclaration(
+      ".execution-acceptance-audit-groups",
+      "grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));"
+    )).toBe(true);
+    expect(appSource).toContain("const executionAcceptanceAuditRequestIdRef = useRef(0);");
+    expect(appSource).toContain("if (executionAcceptanceAuditRequestIdRef.current !== requestId)");
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_plan"');
     expect(appSource).toContain('eventType: "audit_signing_key_rotation_apply"');
     expect(appSource).toContain("const [auditEvidenceReportEvents, setAuditEvidenceReportEvents]");
@@ -5118,6 +5242,127 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .design-strategy-workbench .strategy-governance-row button", ["justify-self: start;"])).toBe(true);
   });
 
+  test("hands an audited strategy to automated trading without starting or authorizing it", () => {
+    const bindingSource = sourceBetween(
+      "const bindStrategyToProduction = useCallback",
+      "const deleteSavedStrategyVersion = useCallback"
+    );
+    const strategySummarySource = sourceBetween(
+      "function StrategySummary",
+      "function StrategyTemplatePicker"
+    );
+
+    expect(appSource).toContain("loadStrategyProductionBinding");
+    expect(bindingSource).toContain("updateStrategyProductionBinding(quantCoreBaseUrl");
+    expect(bindingSource).toContain("strategyRevision: strategy?.revision ?? null");
+    expect(bindingSource).toContain("auditRunId: strategy?.auditRunId ?? null");
+    expect(bindingSource).not.toContain("enabled:");
+    expect(bindingSource).not.toContain("liveConfirmed:");
+    expect(strategySummarySource).toContain('className={`strategy-production-binding');
+    expect(strategySummarySource).toContain('className="research-confirmation-dialog strategy-production-dialog"');
+    expect(strategySummarySource).toContain('id="strategy-production-operator"');
+    expect(strategySummarySource).toContain("交接只改变自动评估使用的策略");
+    expect(strategySummarySource).toContain('item.market === "crypto"');
+    expect(strategySummarySource).toContain('item.symbol === "BTC/USDT"');
+    expect(strategySummarySource).toContain('item.timeframe === "1m"');
+    expect(appSource).not.toContain("window.confirm");
+    expect(styles).toContain(".strategy-production-binding");
+    expect(styles).toContain(".strategy-production-dialog-summary");
+  });
+
+  test("qualifies a backtest on the server before explicit production strategy handoff", () => {
+    const backtestSource = sourceBetweenText(
+      terminalWorkspaceSurfaceSource,
+      "function BacktestSurface",
+      "function AiReviewSurface"
+    );
+    const bindingSource = sourceBetween(
+      "const bindStrategyToProduction = useCallback",
+      "const deleteSavedStrategyVersion = useCallback"
+    );
+
+    expect(appSource).toContain("loadResearchRunProductionStrategyHandoff(");
+    expect(appSource).toContain("productionStrategyHandoff={{");
+    expect(backtestSource).toContain("productionStrategyHandoff?.result.handoff");
+    expect(backtestSource).toContain("生产策略资格与交接");
+    expect(backtestSource).toContain("不会授权实盘、启动监控、立即评估或提交订单");
+    expect(backtestSource).toContain('id="backtest-production-confirm"');
+    expect(backtestSource).toContain("maxLength={80}");
+    expect(bindingSource).toContain("result.binding ? result : { ...result, binding: current.binding }");
+    expect(bindingSource).not.toContain("enabled:");
+    expect(bindingSource).not.toContain("liveConfirmed:");
+    expect(styles).toContain(".design-production-handoff");
+    expect(styles).toContain(".design-production-handoff-grid");
+    expect(styles).toContain(".design-production-handoff-check");
+  });
+
+  test("routes AI-reviewed candidates through re-audit or the existing production handoff", () => {
+    const aiReviewSource = sourceBetweenText(
+      terminalWorkspaceSurfaceSource,
+      "function AiReviewSurface",
+      "function PortfolioSurface"
+    );
+
+    expect(appSource).toContain("const aiReviewStage3PrimaryCandidateAvailable = Boolean(");
+    expect(appSource).toContain(
+      "visibleStrategyExperimentActive.resultHash === aiReviewStage3PrimaryReference.resultHash"
+    );
+    expect(appSource).toContain(
+      "aiReviewStage3PrimaryCandidate?.candidateRevision === aiReviewStage3PrimaryReference.candidateRevision"
+    );
+    expect(appSource).toContain('activeWorkAreaId === "ai-review"');
+    expect(appSource).toContain("aiReviewStage3PrimaryReference.sourceRunId");
+    expect(appSource).toContain("onStagePrimaryCandidate: () => {");
+    expect(appSource).toContain("loadStrategyExperimentCandidate(");
+    expect(appSource).toContain('activeWorkAreaId !== "backtest" || !handoff');
+    expect(appSource).toContain("switchBlockedReasonLabel:");
+    expect(aiReviewSource).toContain("人工研究决策");
+    expect(terminalWorkspaceSurfaceSource).toContain("采用已评审候选并重新审计");
+    expect(terminalWorkspaceSurfaceSource).toContain("前往回测完成生产交接");
+    expect(terminalWorkspaceSurfaceSource).toContain("前往动态交易复核");
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      "handoff.dataSnapshotHash === reference.snapshotId"
+    );
+    expect(terminalWorkspaceSurfaceSource).toContain('binding.status === "ready"');
+    expect(terminalWorkspaceSurfaceSource).toContain('handoff?.status === "active"');
+    expect(aiReviewSource).toContain("不等于生产批准");
+    expect(aiReviewSource).not.toContain("productionStrategyHandoff.onBind");
+    expect(aiReviewSource).not.toContain("liveConfirmed:");
+    expect(aiReviewSource).not.toContain("enabled:");
+    expect(styles).toContain(".surface-ai-review .design-ai-decision-form");
+    expect(styles).toContain(".surface-ai-review .design-ai-production-handoff");
+  });
+
+  test("projects the existing production risk chain into portfolio without adding live actions", () => {
+    const portfolioSource = sourceBetweenText(
+      terminalWorkspaceSurfaceSource,
+      "function PortfolioSurface",
+      "function ExecutionSurface"
+    );
+
+    expect(appSource).toContain("loadAutoTradingSnapshot(quantCoreBaseUrl)");
+    expect(appSource).toContain("AUTO_TRADING_STATUS_REFRESH_INTERVAL_MS");
+    expect(appSource).toContain("portfolioProductionRiskRequestIdRef.current !== requestId");
+    expect(appSource).toContain("portfolioProductionRisk={{");
+    expect(portfolioSource).toContain("独立生产策略与运行风险");
+    expect(portfolioSource).toContain("不代表研究组合已接入生产");
+    expect(portfolioSource).toContain("productionSnapshot?.strategyBinding");
+    expect(portfolioSource).toContain("productionPortfolioCoverageCount");
+    expect(portfolioSource).toContain('productionState.runnerHealth?.status === "running"');
+    expect(portfolioSource).toContain("productionState.lastAccountCheck?.accountCovered === true");
+    expect(portfolioSource).toContain("productionState?.lastDecisionContract?.riskAdjustedTarget");
+    expect(portfolioSource).toContain("生产授权：{liveAuthorizationLabel(productionState)}");
+    expect(portfolioSource).toContain("前往动态交易复核");
+    expect(portfolioSource).not.toContain('["路由风险", "模拟成交状态", "回放精确性"]');
+    expect(portfolioSource).not.toContain("productionStrategyHandoff.onBind");
+    expect(portfolioSource).not.toContain("liveConfirmed:");
+    expect(portfolioSource).not.toContain("enabled:");
+    expect(cssBlock(".design-portfolio-production-risk")).toContain("grid-column: 1 / 3;");
+    expect(styles).toContain(
+      ".portfolio-m5-section,\n  .design-portfolio-production-risk {\n    grid-column: 1;"
+    );
+  });
+
   test("renders a compact portfolio paper ops queue across portfolio and execution workspaces", () => {
     expect(appSource).toContain("buildPortfolioPaperOpsQueueRows");
     expect(appSource).toContain("runPortfolioPaperOpsQueueAction");
@@ -6831,10 +7076,19 @@ describe("terminal layout css", () => {
     expect(cssBlock(".history-import-input")).toContain("display: none;");
   });
 
-  test("keeps M2 server monitoring read-only and responsive", () => {
+  test("keeps server monitoring and operations projection read-only and responsive", () => {
     expect(executionAutoPaperTradingSource).toContain("api/operations/monitoring");
-    expect(executionAutoPaperTradingSource).toContain("M2 · 服务端告警");
+    expect(executionAutoPaperTradingSource).toContain("服务端运行告警");
     expect(executionAutoPaperTradingSource).toContain("本区域只读取运行状态");
+    expect(executionAutoPaperTradingSource).toContain("本生产总览只读取后端事实");
+    expect(executionAutoPaperTradingSource).toContain('variant === "operations"');
+    expect(executionAutoPaperTradingSource).toContain(
+      "snapshotReadRequestIdRef.current !== requestId"
+    );
+    expect(executionAutoPaperTradingSource).toContain(
+      "monitoringReadRequestIdRef.current !== requestId"
+    );
+    expect(executionAutoPaperTradingSource).toContain("mountedRef.current = false");
     expect(executionAutoPaperTradingSource).toContain("<details>");
     expect(executionAutoPaperTradingSource).not.toContain("monitoring/restart");
     expect(cssBlock(".execution-auto-server-monitoring")).toContain("min-width");

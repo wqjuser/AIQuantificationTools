@@ -5,6 +5,7 @@ import {
   Clock3,
   Copy,
   Download,
+  ExternalLink,
   FileText,
   LockKeyhole,
   Play,
@@ -20,7 +21,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
-import type { Stage9ProductionAdmissionCandidate } from "../lib/stage9-production-admission";
 import type {
   Stage4PortfolioGoldenPath,
   Stage4PortfolioWorkflow,
@@ -32,22 +32,31 @@ import type {
 import {
   aiReviewRequiresExternalApproval,
   buildComparisonEligibility,
+  type AiReviewDecisionStatus,
   type AiReviewDecision,
   type AiReviewExperimentReference,
   type AiReviewProviderId,
   type AiReviewProviderStatus,
   type AiReviewStance,
+  type AppendAiReviewDecisionRequest,
   type AuthoritativeAiReviewRun,
 } from "../lib/ai-review-stage3";
 import type {
   CacheWatchlistRefreshRun,
   MarketCalendarStatus,
+  MarketDiscoveryItem,
+  MarketDiscoveryParams,
+  MarketDiscoveryResult,
+  MarketInformationResult,
   OpenAiCompatibleModelsResult,
   PlatformSettingsSecretName,
   PlatformSettingsStatus,
   PlatformSettingsUpdateRequest,
   PortfolioBacktestRun,
+  ProductionStrategyHandoff,
+  ProductionStrategyHandoffResult,
   ResearchNoteResult,
+  StrategyProductionBinding,
 } from "../lib/terminal-api";
 import type { ColorScheme } from "../lib/theme";
 import { createI18n, type TranslationKey } from "../lib/i18n";
@@ -68,6 +77,10 @@ import type {
   Timeframe,
 } from "../lib/terminal-workbench";
 import { DEFAULT_STRATEGY_EXPERIMENT_WALK_FORWARD } from "../lib/terminal-workbench";
+import {
+  liveAuthorizationLabel,
+  type AutoTradingSnapshot,
+} from "./ExecutionAutoPaperTradingSection";
 import { PortfolioM5Section } from "./PortfolioM5Section";
 
 export interface TerminalWorkspaceSurfaceAction {
@@ -95,29 +108,47 @@ interface TerminalWorkspaceSurfaceProps {
   onTestMonitoringWebhook?: () => void;
   settingsConfigurationMessage?: string | null;
   aiReview: {
+    appendingDecision: boolean;
     busy: boolean;
     comparisonExperimentIds: string[];
     currentReview: AuthoritativeAiReviewRun | null;
+    decisionDraft: AppendAiReviewDecisionRequest;
     decisions: AiReviewDecision[];
     error: string | null;
     experiments: StrategyExperimentListItem[];
     externalDataApproved: boolean;
     history: AuthoritativeAiReviewRun[];
+    onAppendDecision: () => void;
     onComparisonToggle: (experimentId: string) => void;
+    onDecisionDraftChange: (draft: AppendAiReviewDecisionRequest) => void;
     onExternalDataApprovedChange: (approved: boolean) => void;
+    onOpenProductionHandoff: () => void;
     onProviderChange: (providerId: AiReviewProviderId) => void;
+    onStagePrimaryCandidate: () => void;
     primaryExperimentId: string | null;
+    primaryCandidateAvailable: boolean;
     providerId: AiReviewProviderId;
     providers: AiReviewProviderStatus[];
     researchLoop?: ReactNode;
   };
   chart: ReactNode;
   colorScheme: ColorScheme;
-  executionCandidate: Stage9ProductionAdmissionCandidate | null;
+  executionAcceptanceAudit?: ReactNode;
   executionReadiness?: ReactNode;
+  executionSnapshot?: AutoTradingSnapshot | null;
   isSavingWatchlist: boolean;
   latestWatchlistCacheRefresh: CacheWatchlistRefreshRun | null;
   marketCalendar?: MarketCalendarStatus;
+  marketDiscovery?: {
+    isLoading: boolean;
+    onSearch: (params: MarketDiscoveryParams) => void;
+    result: MarketDiscoveryResult | null;
+  };
+  marketInformation?: {
+    isLoading: boolean;
+    onRefresh: () => void;
+    result: MarketInformationResult | null;
+  };
   marketRefreshIssue: string | null;
   onApprovePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onRemoveWatchlistInstrument: (instrument: Instrument) => void;
@@ -125,16 +156,32 @@ interface TerminalWorkspaceSurfaceProps {
   onSaveWatchlist: () => void;
   onScrollPositionChange: (scrollTop: number) => void;
   onSelectInstrument: (instrument: Instrument) => void;
+  onResearchInstrument?: (instrument: Instrument) => void;
   onSelectTimeframe: (timeframe: Timeframe) => void;
   approvingPortfolioOrderId?: string | null;
   portfolio: PortfolioBacktestRun | null;
   portfolioActionError?: string | null;
   portfolioGoldenPath?: Stage4PortfolioGoldenPath;
   portfolioPaperOrderApprovalRows?: PortfolioPaperOrderApprovalRow[];
+  portfolioProductionRisk?: {
+    snapshot: AutoTradingSnapshot | null;
+    error: string | null;
+    loading: boolean;
+    onRefresh: () => void;
+  };
   portfolioRiskAssessment?: PortfolioRiskAssessment | null;
   portfolioStage4Workflow?: Stage4PortfolioWorkflow | null;
   isRunningPortfolioRiskAssessment?: boolean;
   onRunPortfolioRiskAssessment?: (request: PortfolioRiskAssessmentRequest) => void;
+  productionStrategyHandoff?: {
+    binding: StrategyProductionBinding | null;
+    busy: boolean;
+    errorLabel: string | null;
+    switchBlockedReasonLabel?: string | null;
+    onBind: (operator: string) => Promise<boolean>;
+    onOpenDynamicTrading: () => void;
+    result: ProductionStrategyHandoffResult;
+  };
   researchPreparation: {
     externalDataApproved: boolean;
     generationError: string | null;
@@ -172,6 +219,7 @@ interface TerminalWorkspaceSurfaceProps {
 
 const pageTitles: Record<ProductWorkAreaId, string> = {
   market: "行情中心",
+  "market-information": "市场资讯",
   research: "研究工作台",
   strategy: "策略工坊",
   backtest: "回测实验室",
@@ -315,9 +363,10 @@ function PageHeader({
 }
 
 function formatPrice(value: number | null | undefined): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value.toFixed(value >= 1000 ? 2 : 2)
-    : "—";
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return Math.abs(value) >= 1 || value === 0
+    ? value.toFixed(2)
+    : value.toLocaleString("zh-CN", { maximumFractionDigits: 8 });
 }
 
 function compactRunId(runId: string | null | undefined): string {
@@ -426,14 +475,323 @@ function DonutCanvas({ cashWeight }: { cashWeight: number }) {
   );
 }
 
+function marketDiscoveryInstrument(item: MarketDiscoveryItem): Instrument {
+  return {
+    market: item.market,
+    symbol: item.symbol,
+    name: item.name,
+    price: item.price,
+    changePct: item.changePct,
+    quoteSource: item.source,
+    quoteAsOf: item.observedAt,
+  };
+}
+
+function marketDiscoveryNumber(
+  value: number | null,
+  suffix = "",
+  maximumFractionDigits = 2,
+) {
+  return value === null
+    ? "—"
+    : `${value.toLocaleString("zh-CN", { maximumFractionDigits })}${suffix}`;
+}
+
+function marketDiscoverySourceLabel(source: string) {
+  const normalized = source.trim().toLowerCase();
+  if (normalized === "eastmoney") return "东方财富";
+  if (
+    normalized === "sina" ||
+    normalized === "akshare" ||
+    normalized === "akshare-sina"
+  ) {
+    return "新浪行情（AKShare）";
+  }
+  if (normalized === "binance-data-api" || normalized === "binance") {
+    return "Binance 公开现货行情";
+  }
+  return source || "未知来源";
+}
+
+function marketInformationSourceLabel(source: string) {
+  const labels: Record<string, string> = {
+    akshare: "AKShare 市场数据",
+    binance: "Binance 公开现货行情",
+    "binance-data-api": "Binance 公开现货行情",
+    eastmoney: "东方财富市场资讯",
+    fallback: "降级数据",
+    finnhub: "Finnhub 新闻",
+    "free-stockdb": "本地股票数据库",
+    sina: "新浪市场数据",
+    yfinance: "Yahoo Finance 市场数据",
+  };
+  const parts = source
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => labels[part.toLowerCase()] ?? part);
+  return [...new Set(parts)].join("、") || "未知来源";
+}
+
+function marketDiscoveryFreshnessLabel(freshness: string) {
+  const normalized = freshness.trim().toLowerCase();
+  if (normalized === "fresh") return "数据新鲜";
+  if (normalized === "stale") return "数据可能延迟";
+  return "新鲜度未知";
+}
+
+function optionalNumber(value: string): number | undefined {
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function marketInformationExternalUrl(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function marketInformationAmount(item: MarketDiscoveryItem): string {
+  if (item.market === "crypto") {
+    return marketDiscoveryNumber(item.amount / 100_000_000, " 亿 USDT");
+  }
+  if (item.market === "us") {
+    return marketDiscoveryNumber(item.amount / 1_000_000, " 百万美元");
+  }
+  return marketDiscoveryNumber(item.amount / 100_000_000, " 亿元");
+}
+
+function MarketInformationRanking({
+  items,
+  title,
+}: {
+  items: MarketDiscoveryItem[];
+  title: string;
+}) {
+  return (
+    <SurfacePanel title={title}>
+      {items.length ? (
+        <div className="design-market-information-table">
+          <table className="design-table compact">
+            <thead>
+              <tr>
+                <th>代码 / 名称</th>
+                <th>最新价</th>
+                <th>涨跌幅</th>
+                <th>成交额</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.slice(0, 10).map((item) => (
+                <tr key={`${item.market}-${item.symbol}`}>
+                  <td><strong>{item.symbol}</strong><br /><span>{item.name}</span></td>
+                  <td>{formatPrice(item.price)}</td>
+                  <td className={item.changePct >= 0 ? "up" : "down"}>
+                    {item.changePct >= 0 ? "+" : ""}{item.changePct.toFixed(2)}%
+                  </td>
+                  <td>{marketInformationAmount(item)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <EmptyState detail="当前数据源尚未返回可展示的排行。" title={`暂无${title}`} />
+      )}
+    </SurfacePanel>
+  );
+}
+
+function MarketInformationSurface({
+  action,
+  marketInformation,
+  workspace,
+}: Pick<TerminalWorkspaceSurfaceProps, "action" | "marketInformation" | "workspace">) {
+  const [newsFilter, setNewsFilter] = useState<"all" | "market" | "instrument">("all");
+  const result = marketInformation?.result;
+  const matchesContext = Boolean(
+    result
+    && result.market === workspace.selectedInstrument.market
+    && result.symbol === workspace.selectedInstrument.symbol,
+  );
+  const snapshot = matchesContext && !result?.error ? result : null;
+  const filteredNews = snapshot?.news.filter(
+    (item) => newsFilter === "all" || item.scope === newsFilter,
+  ) ?? [];
+  const marketLabel = terminalSurfaceZh.marketLabel(workspace.selectedInstrument.market);
+  const marketBreadthAvailable = Boolean(
+    snapshot
+    && (
+      snapshot.market !== "us"
+      || Object.values(snapshot.overview).some((value) => value > 0)
+    ),
+  );
+  return (
+    <>
+      <PageHeader
+        action={action}
+        subtitle={`${marketLabel} · ${workspace.selectedInstrument.symbol}`}
+        title="市场资讯"
+      >
+        <div className="design-meta-line">
+          <span>只读研究信息，不触发策略、委托或自动交易</span>
+        </div>
+      </PageHeader>
+      {marketInformation?.isLoading ? (
+        <p className="design-market-information-state" role="status">正在加载市场概览与最新资讯…</p>
+      ) : null}
+      {result?.error && matchesContext ? (
+        <div className="design-market-information-state risk" role="alert">
+          <span>市场资讯暂时不可用：{result.error}</span>
+          <button className="design-link-button" onClick={marketInformation?.onRefresh} type="button">
+            重新加载
+          </button>
+        </div>
+      ) : null}
+      {!marketInformation?.isLoading && !snapshot && !(result?.error && matchesContext) ? (
+        <EmptyState detail="刷新后将显示市场广度、排行和带来源的新闻链接。" title="等待市场资讯" />
+      ) : null}
+      {snapshot ? (
+        <div className="design-market-information-grid">
+          <section aria-label="市场概览" className="design-market-overview design-market-information-overview">
+            <header>
+              <div>
+                <span>市场概览</span>
+                <strong>{marketLabel}市场快照</strong>
+              </div>
+              <small>
+                {snapshot.observedAt
+                  ? `更新 ${new Date(snapshot.observedAt).toLocaleString("zh-CN")}`
+                  : "更新时间未知"}
+              </small>
+            </header>
+            {marketBreadthAvailable ? (
+              <div className="design-market-overview-cards">
+                {[
+                  ["覆盖标的", snapshot.overview.universeCount.toLocaleString("zh-CN"), ""],
+                  ["上涨", snapshot.overview.advancing.toLocaleString("zh-CN"), "up"],
+                  ["下跌", snapshot.overview.declining.toLocaleString("zh-CN"), "down"],
+                  ["平盘", snapshot.overview.flat.toLocaleString("zh-CN"), ""],
+                  [
+                    "成交额",
+                    snapshot.market === "crypto"
+                      ? `${(snapshot.overview.totalAmount / 100_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 亿 USDT`
+                      : snapshot.market === "us"
+                        ? `${(snapshot.overview.totalAmount / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 百万美元`
+                        : `${(snapshot.overview.totalAmount / 100_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 亿元`,
+                    "",
+                  ],
+                ].map(([label, value, tone]) => (
+                  <article key={label}>
+                    <span>{label}</span>
+                    <strong className={tone}>{value}</strong>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="design-market-information-breadth-empty">
+                <EmptyState
+                  detail="当前数据源仅提供美股资讯，市场广度统计将在接入后显示。"
+                  title="市场广度暂未接入"
+                />
+              </div>
+            )}
+            <footer className="design-market-information-source">
+              <span>来源 {marketInformationSourceLabel(snapshot.source)}</span>
+              <Status tone={snapshot.freshness === "fresh" ? "positive" : "warning"}>
+                {snapshot.freshness === "fresh" ? "数据新鲜" : "缓存数据"}
+              </Status>
+              <span title={snapshot.snapshotHash}>快照 {compactRunId(snapshot.snapshotHash)}</span>
+            </footer>
+            {snapshot.warnings.length ? (
+              <ul className="design-market-screener-warnings">
+                {snapshot.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            ) : null}
+          </section>
+          <MarketInformationRanking items={snapshot.leaders} title="涨幅领先" />
+          <MarketInformationRanking items={snapshot.active} title="成交活跃" />
+          <SurfacePanel
+            action={
+              <div aria-label="资讯筛选" className="design-market-information-tabs" role="tablist">
+                {([
+                  ["all", "全部"],
+                  ["market", "市场快讯"],
+                  ["instrument", "标的资讯"],
+                ] as const).map(([id, label]) => (
+                  <button
+                    aria-selected={newsFilter === id}
+                    className={newsFilter === id ? "active" : ""}
+                    key={id}
+                    onClick={() => setNewsFilter(id)}
+                    role="tab"
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            }
+            className="design-market-information-news"
+            subtitle={`${snapshot.symbol} · ${snapshot.news.length} 条`}
+            title="新闻资讯"
+          >
+            {filteredNews.length ? (
+              <div className="design-market-information-news-list">
+                {filteredNews.map((item) => {
+                  const url = marketInformationExternalUrl(item.url);
+                  return (
+                    <article key={item.id}>
+                      <header>
+                        <Status tone={item.scope === "instrument" ? "positive" : "neutral"}>
+                          {item.scope === "instrument" ? "标的资讯" : "市场快讯"}
+                        </Status>
+                        <span>{marketInformationSourceLabel(item.source)}</span>
+                        <time dateTime={item.publishedAt}>
+                          {item.publishedAt ? new Date(item.publishedAt).toLocaleString("zh-CN") : "时间未知"}
+                        </time>
+                      </header>
+                      <strong>{item.headline}</strong>
+                      {item.summary ? <p>{item.summary}</p> : null}
+                      {url ? (
+                        <a href={url} rel="noreferrer noopener" target="_blank">
+                          查看原文 <ExternalLink aria-hidden="true" size={12} />
+                        </a>
+                      ) : (
+                        <span className="design-market-information-link-missing">暂无原文链接</span>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyState detail="当前筛选范围内没有可展示的资讯。" title="暂无资讯" />
+            )}
+          </SurfacePanel>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function MarketSurface({
   action,
   chart,
   isSavingWatchlist,
   latestWatchlistCacheRefresh,
   marketCalendar,
+  marketDiscovery,
   marketRefreshIssue,
   onRemoveWatchlistInstrument,
+  onResearchInstrument,
   onSaveWatchlist,
   onSelectInstrument,
   onSelectTimeframe,
@@ -446,8 +804,10 @@ function MarketSurface({
   | "isSavingWatchlist"
   | "latestWatchlistCacheRefresh"
   | "marketCalendar"
+  | "marketDiscovery"
   | "marketRefreshIssue"
   | "onRemoveWatchlistInstrument"
+  | "onResearchInstrument"
   | "onSaveWatchlist"
   | "onSelectInstrument"
   | "onSelectTimeframe"
@@ -455,6 +815,28 @@ function MarketSurface({
   | "workspace"
 >) {
   const [isEditingWatchlist, setIsEditingWatchlist] = useState(false);
+  const [discoveryQuery, setDiscoveryQuery] = useState("");
+  const [discoveryMinChangePct, setDiscoveryMinChangePct] = useState("");
+  const [discoveryMaxChangePct, setDiscoveryMaxChangePct] = useState("");
+  const [discoveryMinAmountWan, setDiscoveryMinAmountWan] = useState("");
+  const [discoveryMinTurnoverRate, setDiscoveryMinTurnoverRate] = useState("");
+  const [discoveryMaxPe, setDiscoveryMaxPe] = useState("");
+  const [discoverySort, setDiscoverySort] = useState<NonNullable<MarketDiscoveryParams["sort"]>>("changePct");
+  const [discoveryDirection, setDiscoveryDirection] = useState<NonNullable<MarketDiscoveryParams["direction"]>>("desc");
+  const discoveryMarket = workspace.selectedInstrument.market === "crypto"
+    ? "crypto"
+    : "ashare";
+  const isCryptoDiscovery = discoveryMarket === "crypto";
+  const effectiveDiscoverySort = isCryptoDiscovery
+    && discoverySort !== "changePct"
+    && discoverySort !== "amount"
+    ? "changePct"
+    : discoverySort;
+  useEffect(() => {
+    if (effectiveDiscoverySort !== discoverySort) {
+      setDiscoverySort(effectiveDiscoverySort);
+    }
+  }, [discoverySort, effectiveDiscoverySort]);
   const sorted = [...workspace.watchlist].sort(
     (left, right) => right.changePct - left.changePct,
   );
@@ -545,9 +927,352 @@ function MarketSurface({
           timeZone: marketCalendar?.timezone === "unknown" ? undefined : marketCalendar?.timezone,
         })
         : "—";
+  const submitMarketDiscovery = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!marketDiscovery) return;
+    const minAmountWan = optionalNumber(discoveryMinAmountWan);
+    marketDiscovery.onSearch({
+      market: discoveryMarket,
+      query: discoveryQuery,
+      minChangePct: optionalNumber(discoveryMinChangePct),
+      maxChangePct: optionalNumber(discoveryMaxChangePct),
+      minAmount: minAmountWan === undefined ? undefined : minAmountWan * 10_000,
+      minTurnoverRate: isCryptoDiscovery ? undefined : optionalNumber(discoveryMinTurnoverRate),
+      maxPe: isCryptoDiscovery ? undefined : optionalNumber(discoveryMaxPe),
+      sort: effectiveDiscoverySort,
+      direction: discoveryDirection,
+      limit: 20,
+    });
+  };
+  const discoveryResult = marketDiscovery?.result?.market === discoveryMarket
+    ? marketDiscovery.result
+    : null;
+  const discoverySnapshot = discoveryResult?.error ? null : discoveryResult;
+  const discoveryOverviewItems = [
+    {
+      label: isCryptoDiscovery ? "USDT 现货交易对" : "全市场股票",
+      tone: "",
+      value: discoverySnapshot
+        ? discoverySnapshot.overview.universeCount.toLocaleString("zh-CN")
+        : "—",
+    },
+    {
+      label: "上涨",
+      tone: "up",
+      value: discoverySnapshot
+        ? discoverySnapshot.overview.advancing.toLocaleString("zh-CN")
+        : "—",
+    },
+    {
+      label: "下跌",
+      tone: "down",
+      value: discoverySnapshot
+        ? discoverySnapshot.overview.declining.toLocaleString("zh-CN")
+        : "—",
+    },
+    {
+      label: "平盘",
+      tone: "",
+      value: discoverySnapshot
+        ? discoverySnapshot.overview.flat.toLocaleString("zh-CN")
+        : "—",
+    },
+    {
+      label: isCryptoDiscovery ? "24 小时成交额" : "成交额",
+      tone: "",
+      value: discoverySnapshot
+        ? `${(discoverySnapshot.overview.totalAmount / 100_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 亿${isCryptoDiscovery ? " USDT" : "元"}`
+        : "—",
+    },
+  ];
   return (
     <>
       <PageHeader action={action} title="行情中心" />
+      {marketDiscovery ? (
+        <div className="design-market-discovery">
+          <section aria-label="市场概览" className="design-market-overview">
+            <header>
+              <div>
+                <span>市场概览</span>
+                <strong>
+                  {isCryptoDiscovery ? "Binance USDT 现货市场" : "A 股全市场快照"}
+                </strong>
+              </div>
+              <small>
+                {discoverySnapshot?.observedAt
+                  ? `更新 ${new Date(discoverySnapshot.observedAt).toLocaleString("zh-CN")}`
+                  : "等待加载"}
+              </small>
+            </header>
+            <div className="design-market-overview-cards">
+              {discoveryOverviewItems.map((item) => (
+                <article key={item.label}>
+                  <span>{item.label}</span>
+                  <strong className={item.tone}>{item.value}</strong>
+                </article>
+              ))}
+            </div>
+          </section>
+          <SurfacePanel
+            className="design-market-screener"
+            title={isCryptoDiscovery ? "交易对筛选" : "条件选股"}
+            subtitle={isCryptoDiscovery
+              ? "筛选只生成研究候选，不会直接触发交易"
+              : "先筛选候选，再查看并加入自选或进入研究工作台"}
+          >
+            <form
+              aria-label={isCryptoDiscovery ? "交易对筛选" : "条件选股筛选"}
+              className="design-market-screener-form"
+              onSubmit={submitMarketDiscovery}
+            >
+              <label>
+                <span>{isCryptoDiscovery ? "资产或交易对" : "名称或代码"}</span>
+                <input
+                  name="query"
+                  onChange={(event) => setDiscoveryQuery(event.currentTarget.value)}
+                  placeholder={isCryptoDiscovery ? "例如：BTC、BTC/USDT" : "例如：银行、600000"}
+                  type="search"
+                  value={discoveryQuery}
+                />
+              </label>
+              <label>
+                <span>{isCryptoDiscovery ? "最低 24 小时涨跌幅 %" : "最低涨跌幅 %"}</span>
+                <input
+                  name="minChangePct"
+                  onChange={(event) => setDiscoveryMinChangePct(event.currentTarget.value)}
+                  step="0.01"
+                  type="number"
+                  value={discoveryMinChangePct}
+                />
+              </label>
+              <label>
+                <span>{isCryptoDiscovery ? "最高 24 小时涨跌幅 %" : "最高涨跌幅 %"}</span>
+                <input
+                  name="maxChangePct"
+                  onChange={(event) => setDiscoveryMaxChangePct(event.currentTarget.value)}
+                  step="0.01"
+                  type="number"
+                  value={discoveryMaxChangePct}
+                />
+              </label>
+              <label>
+                <span>
+                  {isCryptoDiscovery ? "最低 24 小时成交额 万 USDT" : "最低成交额 万元"}
+                </span>
+                <input
+                  min="0"
+                  name="minAmount"
+                  onChange={(event) => setDiscoveryMinAmountWan(event.currentTarget.value)}
+                  step="1"
+                  type="number"
+                  value={discoveryMinAmountWan}
+                />
+              </label>
+              {!isCryptoDiscovery ? (
+                <>
+                  <label>
+                    <span>最低换手率 %</span>
+                    <input
+                      min="0"
+                      name="minTurnoverRate"
+                      onChange={(event) => setDiscoveryMinTurnoverRate(event.currentTarget.value)}
+                      step="0.01"
+                      type="number"
+                      value={discoveryMinTurnoverRate}
+                    />
+                  </label>
+                  <label>
+                    <span>最高市盈率</span>
+                    <input
+                      min="0"
+                      name="maxPe"
+                      onChange={(event) => setDiscoveryMaxPe(event.currentTarget.value)}
+                      step="0.01"
+                      type="number"
+                      value={discoveryMaxPe}
+                    />
+                  </label>
+                </>
+              ) : null}
+              <label>
+                <span>排序指标</span>
+                <select
+                  name="sort"
+                  onChange={(event) => setDiscoverySort(
+                    event.currentTarget.value as NonNullable<MarketDiscoveryParams["sort"]>,
+                  )}
+                  value={effectiveDiscoverySort}
+                >
+                  <option value="changePct">
+                    {isCryptoDiscovery ? "24 小时涨跌幅" : "涨跌幅"}
+                  </option>
+                  <option value="amount">
+                    {isCryptoDiscovery ? "24 小时成交额" : "成交额"}
+                  </option>
+                  {!isCryptoDiscovery ? (
+                    <>
+                      <option value="turnoverRate">换手率</option>
+                      <option value="marketCap">总市值</option>
+                      <option value="peRatio">市盈率</option>
+                    </>
+                  ) : null}
+                </select>
+              </label>
+              <label>
+                <span>排序方向</span>
+                <select
+                  name="direction"
+                  onChange={(event) => setDiscoveryDirection(
+                    event.currentTarget.value as NonNullable<MarketDiscoveryParams["direction"]>,
+                  )}
+                  value={discoveryDirection}
+                >
+                  <option value="desc">从高到低</option>
+                  <option value="asc">从低到高</option>
+                </select>
+              </label>
+              <button
+                className="design-primary-action"
+                disabled={marketDiscovery.isLoading}
+                type="submit"
+              >
+                <Search aria-hidden="true" size={14} />
+                {marketDiscovery.isLoading ? "筛选中…" : "开始筛选"}
+              </button>
+            </form>
+            {marketDiscovery.isLoading ? (
+              <p className="design-market-screener-state" role="status">
+                {isCryptoDiscovery
+                  ? "正在加载 Binance USDT 现货快照与候选…"
+                  : "正在加载全市场快照与候选…"}
+              </p>
+            ) : null}
+            {discoveryResult?.error ? (
+              <p className="design-market-screener-state risk" role="alert">
+                暂时无法加载市场概览与
+                {isCryptoDiscovery ? "交易对筛选" : "选股"}
+                结果：{discoveryResult.error}
+              </p>
+            ) : null}
+            {discoverySnapshot ? (
+              <>
+                <div className="design-market-screener-meta">
+                  <span>
+                    匹配 {discoverySnapshot.totalMatched.toLocaleString("zh-CN")}
+                    {isCryptoDiscovery ? " 个交易对" : " 只"}
+                  </span>
+                  <span>来源 {marketDiscoverySourceLabel(discoverySnapshot.source)}</span>
+                  <span>{marketDiscoveryFreshnessLabel(discoverySnapshot.freshness)}</span>
+                  <span title={discoverySnapshot.snapshotHash}>
+                    快照 {compactRunId(discoverySnapshot.snapshotHash)}
+                  </span>
+                </div>
+                {discoverySnapshot.warnings.length > 0 ? (
+                  <ul className="design-market-screener-warnings">
+                    {discoverySnapshot.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {isCryptoDiscovery ? (
+                  <p className="design-market-screener-state">
+                    仅覆盖 Binance 当前可交易的 USDT 现货交易对；24 小时指标为滚动窗口。
+                    筛选只生成研究候选，当前生产自动交易仍仅支持 BTC/USDT · 1m。
+                  </p>
+                ) : null}
+                {discoverySnapshot.items.length === 0 ? (
+                  <p className="design-market-screener-state" role="status">
+                    没有符合当前条件的
+                    {isCryptoDiscovery ? "交易对" : "股票"}
+                    ，请放宽筛选条件后重试。
+                  </p>
+                ) : (
+                <div className="design-market-screener-table">
+                  <table className="design-table compact">
+                    <thead>
+                      <tr>
+                        <th>{isCryptoDiscovery ? "交易对 / 资产" : "代码 / 名称"}</th>
+                        <th>{isCryptoDiscovery ? "最新价（USDT）" : "最新价"}</th>
+                        <th>{isCryptoDiscovery ? "24 小时涨跌" : "涨跌幅"}</th>
+                        <th>{isCryptoDiscovery ? "24 小时成交额" : "成交额"}</th>
+                        {isCryptoDiscovery ? <th>24 小时成交量（基础资产）</th> : (
+                          <>
+                            <th>换手率</th>
+                            <th>市盈率</th>
+                            <th>总市值</th>
+                          </>
+                        )}
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {discoverySnapshot.items.map((item) => {
+                        const instrument = marketDiscoveryInstrument(item);
+                        const inWatchlist = workspace.watchlist.some(
+                          (candidate) => candidate.market === item.market
+                            && candidate.symbol === item.symbol,
+                        );
+                        return (
+                          <tr key={`${item.market}-${item.symbol}`}>
+                            <td><strong>{item.symbol}</strong><br /><span>{item.name}</span></td>
+                            <td>
+                              {marketDiscoveryNumber(item.price, "", isCryptoDiscovery ? 8 : 2)}
+                            </td>
+                            <td className={item.changePct >= 0 ? "up" : "down"}>
+                              {item.changePct >= 0 ? "+" : ""}
+                              {marketDiscoveryNumber(item.changePct, "%")}
+                            </td>
+                            <td>
+                              {marketDiscoveryNumber(
+                                item.amount / 10_000,
+                                isCryptoDiscovery ? " 万 USDT" : " 万",
+                              )}
+                            </td>
+                            {isCryptoDiscovery ? (
+                              <td>{marketDiscoveryNumber(item.volume, ` ${item.name}`)}</td>
+                            ) : (
+                              <>
+                                <td>{marketDiscoveryNumber(item.turnoverRate, "%")}</td>
+                                <td>{marketDiscoveryNumber(item.peRatio)}</td>
+                                <td>
+                                  {item.marketCap === null
+                                    ? "—"
+                                    : marketDiscoveryNumber(item.marketCap / 100_000_000, " 亿")}
+                                </td>
+                              </>
+                            )}
+                            <td>
+                              <div className="design-market-screener-actions">
+                                <button
+                                  className="design-link-button"
+                                  onClick={() => onSelectInstrument(instrument)}
+                                  type="button"
+                                >
+                                  {inWatchlist ? "查看行情" : "查看并加入"}
+                                </button>
+                                {onResearchInstrument ? (
+                                  <button
+                                    className="design-link-button"
+                                    onClick={() => onResearchInstrument(instrument)}
+                                    type="button"
+                                  >
+                                    开始研究
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                )}
+              </>
+            ) : null}
+          </SurfacePanel>
+        </div>
+      ) : null}
       <div className="design-market-grid">
         <SurfacePanel
           className="design-watchlist-panel"
@@ -1558,12 +2283,50 @@ function StrategySurface({
 function BacktestSurface({
   action,
   colorScheme,
+  productionStrategyHandoff,
   strategyExperiment,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "colorScheme" | "strategyExperiment" | "workspace"
+  "action" | "colorScheme" | "productionStrategyHandoff" | "strategyExperiment" | "workspace"
 >) {
+  const [handoffConfirmed, setHandoffConfirmed] = useState(false);
+  const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
+  const [handoffOperator, setHandoffOperator] = useState("");
+  const productionHandoff = productionStrategyHandoff?.result.handoff;
+  const productionHandoffStatus = productionStrategyHandoff?.result.error
+    ? { label: "预检未通过", tone: "risk" as const }
+    : productionHandoff?.alreadyBound
+      ? { label: "已交接", tone: "positive" as const }
+      : productionHandoff?.status === "ready"
+        ? { label: "可交接", tone: "positive" as const }
+        : productionHandoff?.status === "review"
+          ? { label: "需处理切换条件", tone: "warning" as const }
+          : { label: workspace.researchRun ? "预检中" : "等待审计运行", tone: "neutral" as const };
+  const canBindProductionStrategy = Boolean(
+    productionHandoff
+    && productionHandoff.status === "ready"
+    && productionHandoff.switchAllowed
+    && !productionHandoff.alreadyBound
+    && handoffConfirmed
+    && handoffOperator.trim()
+    && !productionStrategyHandoff?.busy
+  );
+  useEffect(() => {
+    setHandoffConfirmed(false);
+    setHandoffMessage(null);
+  }, [productionHandoff?.runId]);
+  const bindProductionStrategy = async () => {
+    if (!canBindProductionStrategy || !productionStrategyHandoff) return;
+    setHandoffMessage(null);
+    const bound = await productionStrategyHandoff.onBind(handoffOperator);
+    setHandoffConfirmed(false);
+    setHandoffMessage(
+      bound
+        ? "审计策略已交接；自动交易保持暂停，未授权、未评估、未下单。"
+        : null,
+    );
+  };
   const curve =
     workspace.backtestEquityCurve?.map((point) => point.equity) ?? [];
   const curveForChart = curve;
@@ -1776,6 +2539,119 @@ function BacktestSurface({
               <strong>{workspace.researchRun?.dataRows ?? 0}</strong>
             </div>
           </SurfacePanel>
+          <SurfacePanel
+            className="design-production-handoff"
+            title="生产策略资格与交接"
+            subtitle="服务端按生产边界复算；回测本身不会触发真实交易"
+          >
+            <div className="design-production-handoff-status">
+              <div>
+                <span>资格状态</span>
+                <Status tone={productionHandoffStatus.tone}>
+                  {productionHandoffStatus.label}
+                </Status>
+              </div>
+              <p>
+                点击交接只会固定这份审计策略；不会授权实盘、启动监控、立即评估或提交订单。
+              </p>
+            </div>
+            <div className="design-production-handoff-grid">
+              <div>
+                <span>审计运行</span>
+                <strong title={productionHandoff?.runId ?? "—"}>
+                  {compactRunId(productionHandoff?.runId)}
+                </strong>
+              </div>
+              <div>
+                <span>策略版本</span>
+                <strong title={productionHandoff?.strategyRevision ?? "—"}>
+                  {compactRunId(productionHandoff?.strategyRevision)}
+                </strong>
+              </div>
+              <div>
+                <span>当前生产策略</span>
+                <strong>
+                  {productionStrategyHandoff?.binding
+                    ? `${productionStrategyHandoff.binding.name} · ${compactRunId(productionStrategyHandoff.binding.revision)}`
+                    : "尚未读取"}
+                </strong>
+              </div>
+              <div>
+                <span>生产保守复算</span>
+                <strong>
+                  {productionHandoff
+                    ? `手续费 ${productionHandoff.productionReplay.feeBps} / 滑点 ${productionHandoff.productionReplay.slippageBps} 基点`
+                    : "等待服务端预检"}
+                </strong>
+                {productionHandoff ? (
+                  <small>
+                    最大回撤 {productionHandoff.productionReplay.productionMaxDrawdownPct.toFixed(2)}%
+                    {" / "}策略上限 {productionHandoff.productionReplay.strategyMaxDrawdownPct.toFixed(2)}%
+                  </small>
+                ) : null}
+              </div>
+            </div>
+            {productionStrategyHandoff?.errorLabel
+              || productionStrategyHandoff?.switchBlockedReasonLabel ? (
+              <p className="design-production-handoff-error" role="alert">
+                {productionStrategyHandoff.errorLabel
+                  ?? productionStrategyHandoff.switchBlockedReasonLabel}
+              </p>
+            ) : null}
+            {productionHandoff && !productionHandoff.alreadyBound ? (
+              <div className="design-production-handoff-confirm">
+                <label htmlFor="backtest-production-operator">
+                  <span>实名操作人</span>
+                  <input
+                    autoComplete="name"
+                    id="backtest-production-operator"
+                    maxLength={80}
+                    onChange={(event) => setHandoffOperator(event.currentTarget.value)}
+                    placeholder="输入实名操作人"
+                    type="text"
+                    value={handoffOperator}
+                  />
+                </label>
+                <label className="design-production-handoff-check" htmlFor="backtest-production-confirm">
+                  <input
+                    checked={handoffConfirmed}
+                    id="backtest-production-confirm"
+                    onChange={(event) => setHandoffConfirmed(event.currentTarget.checked)}
+                    type="checkbox"
+                  />
+                  <span>我确认只交接审计策略，后续授权、监控与下单仍需单独完成。</span>
+                </label>
+              </div>
+            ) : null}
+            <div className="design-production-handoff-actions">
+              {!productionHandoff?.alreadyBound ? (
+                <button
+                  className="design-primary-action"
+                  disabled={!canBindProductionStrategy}
+                  onClick={() => void bindProductionStrategy()}
+                  type="button"
+                >
+                  <ShieldCheck size={14} />
+                  {productionStrategyHandoff?.busy ? "交接中…" : "交接为生产自动策略"}
+                </button>
+              ) : null}
+              {productionHandoff?.alreadyBound || handoffMessage?.startsWith("审计策略已交接") ? (
+                <button
+                  className="design-secondary-action"
+                  onClick={productionStrategyHandoff?.onOpenDynamicTrading}
+                  type="button"
+                >
+                  <Play size={14} />
+                  前往动态交易复核
+                </button>
+              ) : null}
+            </div>
+            {handoffMessage ? (
+              <p className="design-production-handoff-message" role="status">
+                {handoffMessage}
+              </p>
+            ) : null}
+          </SurfacePanel>
           <SurfacePanel title="成本与假设">
             {[
               ["手续费", `${workspace.backtestAssumptions?.feeBps ?? 3} bps`],
@@ -1900,11 +2776,195 @@ function BacktestSurface({
   );
 }
 
+export type AiReviewProductionPathAction =
+  | "stage-primary-candidate"
+  | "open-production-handoff"
+  | "open-dynamic-trading"
+  | null;
+
+export interface AiReviewProductionPath {
+  action: AiReviewProductionPathAction;
+  actionLabel: string | null;
+  detail: string;
+  label: string;
+  tone: "neutral" | "positive" | "warning" | "risk";
+}
+
+const aiReviewDecisionStatuses: AiReviewDecisionStatus[] = [
+  "accepted_for_research",
+  "revision_requested",
+  "rejected",
+  "insufficient_evidence",
+];
+
+export function buildAiReviewProductionPath({
+  binding,
+  decisions,
+  handoff,
+  handoffError,
+  primaryCandidateAvailable,
+  review,
+  switchBlockedReason,
+}: {
+  binding: StrategyProductionBinding | null;
+  decisions: readonly AiReviewDecision[];
+  handoff: ProductionStrategyHandoff | null;
+  handoffError: string | null;
+  primaryCandidateAvailable: boolean;
+  review: AuthoritativeAiReviewRun | null;
+  switchBlockedReason?: string | null;
+}): AiReviewProductionPath {
+  if (!review) {
+    return {
+      action: null,
+      actionLabel: null,
+      detail: "先完成权威评审；AI 评审只形成研究证据，不会直接授权实盘。",
+      label: "等待权威评审",
+      tone: "neutral",
+    };
+  }
+  if (review.deterministicAssessment.stance !== "supported") {
+    return {
+      action: null,
+      actionLabel: null,
+      detail: "本地确定性评估尚未支持该候选，不能进入生产策略交接。",
+      label: "确定性评估未支持",
+      tone: "risk",
+    };
+  }
+  const externalSupported = review.externalAssessment.status === "completed"
+    && review.externalAssessment.assessment?.stance === "supported";
+  if (
+    review.externalAssessment.provider !== "local"
+      ? !externalSupported
+      : review.externalAssessment.status !== "skipped" && !externalSupported
+  ) {
+    return {
+      action: null,
+      actionLabel: null,
+      detail: "本次已请求外部补充评估，但结果未明确支持该候选；请先处理评审风险。",
+      label: "外部评估未支持",
+      tone: "risk",
+    };
+  }
+  const latestDecision = decisions[decisions.length - 1] ?? null;
+  if (
+    !latestDecision
+    || latestDecision.aiReviewId !== review.aiReviewId
+    || latestDecision.reviewRecordHash !== review.recordHash
+    || latestDecision.evidenceHash !== review.evidenceHash
+  ) {
+    return {
+      action: null,
+      actionLabel: null,
+      detail: "请实名追加一条与当前证据哈希一致的研究决策；该决定仍不构成生产授权。",
+      label: "等待人工研究决策",
+      tone: "warning",
+    };
+  }
+  if (latestDecision.status !== "accepted_for_research") {
+    return {
+      action: null,
+      actionLabel: null,
+      detail: "最新人工结论没有接受该候选用于后续研究，生产关联保持阻断。",
+      label: "研究决策未接受",
+      tone: "risk",
+    };
+  }
+
+  const reference = review.primaryExperiment;
+  if (reference.candidateRevision !== reference.strategyRevision) {
+    return primaryCandidateAvailable
+      ? {
+          action: "stage-primary-candidate",
+          actionLabel: "采用已评审候选并重新审计",
+          detail: "选中候选与源运行策略版本不同；采用后会清除旧审计结果，并回到策略工坊重新运行完整研究链。",
+          label: "候选需重新审计",
+          tone: "warning",
+        }
+      : {
+          action: null,
+          actionLabel: null,
+          detail: "当前页面没有载入与评审哈希完全一致的实验详情，不能采用候选。",
+          label: "候选上下文待恢复",
+          tone: "warning",
+        };
+  }
+
+  const handoffMatchesReview = Boolean(
+    handoff
+    && handoff.runId === reference.sourceRunId
+    && handoff.strategyRevision === reference.candidateRevision
+    && handoff.dataSnapshotHash === reference.snapshotId
+  );
+  if (handoffError) {
+    return {
+      action: "open-production-handoff",
+      actionLabel: "前往回测检查生产资格",
+      detail: `服务端生产预检未通过：${handoffError}`,
+      label: "生产预检未通过",
+      tone: "risk",
+    };
+  }
+  const bindingMatchesReview = Boolean(
+    binding
+    && binding.auditRunId === reference.sourceRunId
+    && binding.revision === reference.candidateRevision
+    && binding.status === "ready"
+    && handoffMatchesReview
+    && handoff?.status === "active"
+    && handoff?.alreadyBound === true
+  );
+  if (bindingMatchesReview) {
+    return {
+      action: "open-dynamic-trading",
+      actionLabel: "前往动态交易复核",
+      detail: "当前生产策略已精确绑定这份审计运行；进入动态交易后仍由独立授权、风控和人工确认控制真实委托。",
+      label: "生产策略已关联",
+      tone: "positive",
+    };
+  }
+
+  if (
+    !handoff
+    || !handoffMatchesReview
+  ) {
+    const identityMismatch = Boolean(handoff);
+    return {
+      action: "open-production-handoff",
+      actionLabel: "前往回测检查生产资格",
+      detail: identityMismatch
+        ? "服务端生产预检返回的运行、策略版本或快照与当前评审不一致，请前往回测实验室重新核对。"
+        : "等待服务端读取该审计运行的生产预检；可前往回测实验室查看完整证据。",
+      label: identityMismatch ? "生产身份不一致" : "等待生产预检",
+      tone: identityMismatch ? "risk" : "neutral",
+    };
+  }
+
+  return {
+    action: "open-production-handoff",
+    actionLabel: handoff.status === "ready"
+      ? "前往回测完成生产交接"
+      : "前往回测处理切换条件",
+    detail: handoff.status === "ready"
+      ? "服务端已复算通过；生产交接仍需在回测页实名确认，完成后保持自动交易暂停。"
+      : switchBlockedReason
+        ? `审计证据已通过；当前切换条件：${switchBlockedReason}`
+        : "审计证据已通过，但当前生产策略切换条件尚未满足；请在回测页查看阻断原因。",
+    label: handoff.status === "ready" ? "可进入生产交接" : "生产切换条件待处理",
+    tone: handoff.status === "ready" ? "positive" : "warning",
+  };
+}
+
 function AiReviewSurface({
   action,
   aiReview,
+  productionStrategyHandoff,
   workspace,
-}: Pick<TerminalWorkspaceSurfaceProps, "action" | "aiReview" | "workspace">) {
+}: Pick<
+  TerminalWorkspaceSurfaceProps,
+  "action" | "aiReview" | "productionStrategyHandoff" | "workspace"
+>) {
   const currentReview = aiReview.currentReview;
   const deterministicAssessment = currentReview?.deterministicAssessment ?? null;
   const externalAssessment = currentReview?.externalAssessment ?? null;
@@ -2064,6 +3124,31 @@ function AiReviewSurface({
   const decisionRows = [...appendedDecisionRows, ...assessmentRows].slice(0, 5);
   const chainRows = ["回测运行", "证据包", "因子库", "数据同步", "审计回放"];
   const timelineRows = ["证据锁定", "确定性评估", "外部评估", "追加决策"];
+  const canAppendDecision = Boolean(
+    currentReview
+    && aiReview.decisionDraft.operator.trim()
+    && aiReview.decisionDraft.rationale.trim()
+    && !aiReview.busy,
+  );
+  const productionHandoff = productionStrategyHandoff?.result.handoff ?? null;
+  const productionPath = buildAiReviewProductionPath({
+    binding: productionStrategyHandoff?.binding ?? null,
+    decisions: aiReview.decisions,
+    handoff: productionHandoff,
+    handoffError: productionStrategyHandoff?.errorLabel ?? null,
+    primaryCandidateAvailable: aiReview.primaryCandidateAvailable,
+    review: currentReview,
+    switchBlockedReason: productionStrategyHandoff?.switchBlockedReasonLabel ?? null,
+  });
+  const runProductionPathAction = () => {
+    if (productionPath.action === "stage-primary-candidate") {
+      aiReview.onStagePrimaryCandidate();
+    } else if (productionPath.action === "open-production-handoff") {
+      aiReview.onOpenProductionHandoff();
+    } else if (productionPath.action === "open-dynamic-trading") {
+      productionStrategyHandoff?.onOpenDynamicTrading();
+    }
+  };
   return (
     <>
       <PageHeader
@@ -2248,6 +3333,139 @@ function AiReviewSurface({
             {!decisionRows.length ? (
               <p className="design-ai-empty">暂无当前权威评审记录，请先运行评审或载入最近评审。</p>
             ) : null}
+          </SurfacePanel>
+          <SurfacePanel
+            className="design-ai-decision-entry"
+            subtitle="决定只追加到当前证据链，不覆盖历史记录"
+            title="人工研究决策"
+          >
+            <div className="design-ai-decision-form">
+              <label htmlFor="ai-review-decision-operator">
+                <span>实名操作人</span>
+                <input
+                  autoComplete="name"
+                  disabled={aiReview.busy}
+                  id="ai-review-decision-operator"
+                  maxLength={80}
+                  onChange={(event) => aiReview.onDecisionDraftChange({
+                    ...aiReview.decisionDraft,
+                    operator: event.currentTarget.value,
+                  })}
+                  placeholder="输入实名操作人"
+                  type="text"
+                  value={aiReview.decisionDraft.operator}
+                />
+              </label>
+              <label htmlFor="ai-review-decision-status">
+                <span>研究决定</span>
+                <select
+                  disabled={aiReview.busy}
+                  id="ai-review-decision-status"
+                  onChange={(event) => aiReview.onDecisionDraftChange({
+                    ...aiReview.decisionDraft,
+                    status: event.currentTarget.value as AiReviewDecisionStatus,
+                  })}
+                  value={aiReview.decisionDraft.status}
+                >
+                  {aiReviewDecisionStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {terminalSurfaceZh.t(`aiReviewStage3.decision.${status}` as TranslationKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="design-ai-decision-rationale" htmlFor="ai-review-decision-rationale">
+                <span>决定依据</span>
+                <textarea
+                  disabled={aiReview.busy}
+                  id="ai-review-decision-rationale"
+                  maxLength={2000}
+                  onChange={(event) => aiReview.onDecisionDraftChange({
+                    ...aiReview.decisionDraft,
+                    rationale: event.currentTarget.value,
+                  })}
+                  placeholder="说明接受、修订或拒绝该研究候选的依据"
+                  value={aiReview.decisionDraft.rationale}
+                />
+              </label>
+              <div className="design-ai-decision-actions">
+                <button
+                  className="design-primary-action"
+                  disabled={!canAppendDecision}
+                  onClick={aiReview.onAppendDecision}
+                  type="button"
+                >
+                  <Check size={14} />
+                  {aiReview.appendingDecision ? "正在追加…" : "追加研究决策"}
+                </button>
+              </div>
+            </div>
+            <p className="design-ai-decision-boundary">
+              “接受用于研究”仅确认后续研究方向，不等于生产批准，也不会授权、启动、评估或提交订单。
+            </p>
+          </SurfacePanel>
+          <SurfacePanel
+            className="design-production-handoff design-ai-production-handoff"
+            subtitle="评审候选先与已审计策略对齐，再进入既有生产交接"
+            title="生产策略关联"
+          >
+            <div className="design-production-handoff-status">
+              <div>
+                <span>关联状态</span>
+                <Status tone={productionPath.tone}>{productionPath.label}</Status>
+              </div>
+              <p>{productionPath.detail}</p>
+            </div>
+            <div className="design-production-handoff-grid">
+              <div>
+                <span>评审源运行</span>
+                <strong title={currentReview?.primaryExperiment.sourceRunId ?? "—"}>
+                  {compactRunId(currentReview?.primaryExperiment.sourceRunId)}
+                </strong>
+              </div>
+              <div>
+                <span>源策略版本</span>
+                <strong title={currentReview?.primaryExperiment.strategyRevision ?? "—"}>
+                  {compactRunId(currentReview?.primaryExperiment.strategyRevision)}
+                </strong>
+              </div>
+              <div>
+                <span>已评审候选</span>
+                <strong title={currentReview?.primaryExperiment.candidateRevision ?? "—"}>
+                  {compactRunId(currentReview?.primaryExperiment.candidateRevision)}
+                </strong>
+                <small title={currentReview?.primaryExperiment.selectedCandidateId ?? "—"}>
+                  候选 {compactRunId(currentReview?.primaryExperiment.selectedCandidateId)}
+                </small>
+              </div>
+              <div>
+                <span>当前生产策略</span>
+                <strong>
+                  {productionStrategyHandoff?.binding
+                    ? `${productionStrategyHandoff.binding.name} · ${compactRunId(productionStrategyHandoff.binding.revision)}`
+                    : "尚未绑定"}
+                </strong>
+              </div>
+            </div>
+            <div className="design-production-handoff-actions">
+              {productionPath.action && productionPath.actionLabel ? (
+                <button
+                  className={productionPath.action === "open-dynamic-trading"
+                    ? "design-secondary-action"
+                    : "design-primary-action"}
+                  disabled={aiReview.busy}
+                  onClick={runProductionPathAction}
+                  type="button"
+                >
+                  {productionPath.action === "stage-primary-candidate"
+                    ? <Check size={14} />
+                    : productionPath.action === "open-dynamic-trading"
+                      ? <Play size={14} />
+                      : <ShieldCheck size={14} />}
+                  {productionPath.actionLabel}
+                </button>
+              ) : null}
+            </div>
           </SurfacePanel>
           {aiReview.researchLoop}
         </main>
@@ -2436,8 +3654,10 @@ function PortfolioSurface({
   portfolioActionError,
   portfolioGoldenPath,
   portfolioPaperOrderApprovalRows,
+  portfolioProductionRisk,
   portfolioRiskAssessment,
   portfolioStage4Workflow,
+  productionStrategyHandoff,
   isRunningPortfolioRiskAssessment,
   onRunPortfolioRiskAssessment,
   workspace,
@@ -2451,8 +3671,10 @@ function PortfolioSurface({
   | "portfolioActionError"
   | "portfolioGoldenPath"
   | "portfolioPaperOrderApprovalRows"
+  | "portfolioProductionRisk"
   | "portfolioRiskAssessment"
   | "portfolioStage4Workflow"
+  | "productionStrategyHandoff"
   | "isRunningPortfolioRiskAssessment"
   | "onRunPortfolioRiskAssessment"
   | "workspace"
@@ -2496,6 +3718,84 @@ function PortfolioSurface({
   const currentStepLabel = goldenPathComplete
     ? "黄金路径已完成"
     : stepLabels[currentStep?.id] ?? currentStep?.label ?? "组合构建";
+  const productionSnapshot = portfolioProductionRisk?.snapshot;
+  const productionState = productionSnapshot?.state;
+  const productionBinding = productionSnapshot?.strategyBinding;
+  const productionRiskTarget = productionState?.lastDecisionContract?.riskAdjustedTarget;
+  const productionRiskEvidence = productionRiskTarget?.evidence;
+  const productionPortfolioCoverageCount = productionBinding?.auditRunId
+    ? legs.filter((leg) => {
+      const allocation = riskAllocations.get(leg.symbol);
+      return leg.symbol === productionBinding.symbol
+        && allocation?.sourceRunId === productionBinding.auditRunId;
+    }).length
+    : 0;
+  const productionCoversCurrentPortfolio =
+    legs.length === 1 && productionPortfolioCoverageCount === 1;
+  const productionRiskReady = Boolean(
+    productionState?.executionMode === "live"
+    && productionState.enabled
+    && productionState.runnerState === "running"
+    && productionState.runnerHealth?.status === "running"
+    && !productionState.dailyRiskHaltReason
+    && productionState.lastAccountCheck?.accountCovered === true
+    && productionBinding?.status === "ready"
+    && productionSnapshot?.liveTradingAllowed
+    && productionSnapshot.orderSubmissionEnabled
+    && !productionSnapshot.liveBlockedBoundary
+  );
+  const productionRiskTone: "positive" | "warning" | "risk" | "neutral" =
+    portfolioProductionRisk?.error
+      ? "risk"
+      : !productionSnapshot || portfolioProductionRisk?.loading
+        ? "neutral"
+        : productionRiskReady && productionCoversCurrentPortfolio
+          ? "positive"
+          : productionRiskReady
+            ? "warning"
+          : productionState?.executionMode === "live"
+            ? "risk"
+            : "warning";
+  const productionRiskStatus =
+    portfolioProductionRisk?.error
+      ? "生产风险读取失败"
+      : !productionSnapshot || portfolioProductionRisk?.loading
+        ? "正在读取生产风险"
+        : productionRiskReady && productionCoversCurrentPortfolio
+          ? "生产风险链运行中 · 已覆盖当前单策略组合"
+          : productionRiskReady
+            ? "独立生产链运行中 · 未覆盖当前研究组合"
+          : productionState?.executionMode === "live"
+            ? "生产风险链已阻断"
+            : productionState?.executionMode === "testnet"
+              ? "当前为测试网风险链"
+              : "当前为纸面模拟风险链";
+  const productionModeLabel = productionState?.executionMode === "live"
+    ? "生产实盘"
+    : productionState?.executionMode === "testnet"
+      ? "测试网"
+      : productionState
+        ? "纸面模拟"
+        : "等待连接";
+  const productionRunnerLabel = productionState?.runnerHealth?.status === "running"
+    ? "后台运行正常"
+    : productionState?.runnerHealth?.status === "delayed"
+      ? "后台心跳延迟"
+      : productionState?.runnerHealth?.status === "blocked"
+        ? "后台风险阻断"
+        : productionState?.runnerState === "stopping"
+          ? "正在停止"
+          : productionState
+            ? "后台已停止"
+            : "—";
+  const productionDecisionLabel = ({
+    preserve: "保持目标",
+    reduce: "下调目标",
+    zero: "清零目标",
+    reject: "拒绝目标",
+  } as Record<string, string>)[productionRiskTarget?.decision ?? ""] ?? "尚无风险调整";
+  const productionBaseAsset =
+    (productionBinding?.symbol ?? productionState?.symbol)?.split("/")[0] ?? "标的";
   return (
     <>
       <PageHeader
@@ -2652,12 +3952,6 @@ function PortfolioSurface({
                       : "—"}
               </strong>
             </div>
-            {["路由风险", "模拟成交状态", "回放精确性"].map((label) => (
-              <div className="design-kv-row" key={label}>
-                <span>{label}</span>
-                <strong>未运行</strong>
-              </div>
-            ))}
           </SurfacePanel>
           <SurfacePanel title="状态时间线">
             {steps.map((step) => {
@@ -2672,6 +3966,153 @@ function PortfolioSurface({
             })}
           </SurfacePanel>
         </div>
+        {portfolioProductionRisk ? (
+          <SurfacePanel
+            action={<Status tone={productionRiskTone}>{productionRiskStatus}</Status>}
+            className="design-production-handoff design-portfolio-production-risk"
+            subtitle="只读投影当前单策略自动交易链，不代表研究组合已接入生产"
+            title="独立生产策略与运行风险"
+          >
+            <div className="design-production-handoff-status">
+              <div>
+                <span>生产运行状态</span>
+                <strong>{productionRiskStatus}</strong>
+              </div>
+              <p>
+                {portfolioProductionRisk.error
+                  ?? (productionBinding?.status === "blocked" ? productionBinding.detail : null)
+                  ?? (!productionBinding && productionSnapshot
+                    ? "当前 API 尚未提供生产策略绑定证据，不能把最近决策解释为当前生产策略。"
+                    : null)
+                  ?? productionState?.detail
+                  ?? "进入组合风控后会自动读取生产运行、账户覆盖与风险调整结果。"}
+              </p>
+            </div>
+            <div className="design-production-handoff-grid">
+              <div>
+                <span>运行上下文</span>
+                <strong>{productionState ? `${productionState.symbol} · ${productionState.timeframe}` : "—"}</strong>
+                <small>{productionModeLabel} · {productionRunnerLabel}</small>
+              </div>
+              <div>
+                <span>当前生产策略</span>
+                <strong>{productionBinding?.name ?? "—"}</strong>
+                <small>
+                  {productionBinding
+                    ? `修订 ${compactRunId(productionBinding.revision)} · ${productionBinding.status === "ready" ? "证据有效" : "证据阻断"}`
+                    : "当前接口未提供绑定证据"}
+                </small>
+              </div>
+              <div>
+                <span>当前研究组合覆盖</span>
+                <strong>
+                  {legs.length
+                    ? `${productionPortfolioCoverageCount} / ${legs.length} 个组合腿`
+                    : "尚无研究组合"}
+                </strong>
+                <small>
+                  {productionCoversCurrentPortfolio
+                    ? `审计运行 ${compactRunId(productionBinding?.auditRunId)} 已匹配`
+                    : "单策略生产链不会自动覆盖多标的研究组合"}
+                </small>
+              </div>
+              <div>
+                <span>风险调整目标</span>
+                <strong>{productionDecisionLabel}</strong>
+                <small>
+                  {productionRiskTarget
+                    ? `批准名义金额 ${productionRiskTarget.approvedNotional.toLocaleString("zh-CN", {
+                      maximumFractionDigits: 4,
+                    })} USDT`
+                    : "尚无自动评估结果"}
+                </small>
+              </div>
+              <div>
+                <span>
+                  {productionState?.accountAuthority === "binance_spot"
+                    ? "Binance Spot 总净值 / BTC 现货总量"
+                    : "策略账本权益 / 策略持仓"}
+                </span>
+                <strong>
+                  {productionState
+                    ? `${(productionState.accountEquity ?? productionState.equity).toLocaleString("zh-CN", {
+                      maximumFractionDigits: 4,
+                    })} USDT`
+                    : "—"}
+                </strong>
+                <small>
+                  {productionState
+                    ? `${productionState.position.toLocaleString("zh-CN", {
+                      maximumFractionDigits: 8,
+                    })} ${productionBaseAsset}`
+                    : "尚未读取账户快照"}
+                </small>
+              </div>
+              <div>
+                <span>亏损回撤</span>
+                <strong>
+                  {productionState
+                    ? `${(productionState.dailyLossDrawdownPct ?? 0).toFixed(2)}% / ${productionState.dailyLossLimitPct.toFixed(2)}%`
+                    : "—"}
+                </strong>
+                <small>{productionState?.dailyRiskHaltReason ? "已触发风险暂停" : "未触发亏损上限"}</small>
+              </div>
+              <div>
+                <span>盈利回撤</span>
+                <strong>
+                  {productionState
+                    ? `${(productionState.dailyProfitDrawdownPct ?? 0).toFixed(2)}% / ${productionState.dailyProfitDrawdownLimitPct.toFixed(2)}%`
+                    : "—"}
+                </strong>
+                <small>按当日盈利峰值独立计算</small>
+              </div>
+              <div>
+                <span>小时成交额度</span>
+                <strong>
+                  {productionState
+                    ? `${productionRiskEvidence?.recentTradeCount ?? productionState.tradeTimestamps.length} / ${productionState.maxTradesPerHour} 笔`
+                    : "—"}
+                </strong>
+                <small>来自最新风险调整证据</small>
+              </div>
+              <div>
+                <span>账户与授权覆盖</span>
+                <strong>{productionState?.lastAccountCheck?.accountCovered ? "账户已覆盖" : "等待账户覆盖"}</strong>
+                <small>
+                  生产授权：{liveAuthorizationLabel(productionState)}
+                </small>
+              </div>
+            </div>
+            {productionRiskTarget?.reason ? (
+              <p className="design-production-handoff-message">
+                最新风险判断：{productionRiskTarget.reason}
+              </p>
+            ) : null}
+            <div className="design-production-handoff-actions">
+              <button
+                className="design-secondary-action"
+                disabled={portfolioProductionRisk.loading}
+                onClick={portfolioProductionRisk.onRefresh}
+                type="button"
+              >
+                <RefreshCw className={portfolioProductionRisk.loading ? "spin" : undefined} size={14} />
+                {portfolioProductionRisk.loading ? "刷新中…" : "刷新生产风险"}
+              </button>
+              <button
+                className="design-secondary-action"
+                disabled={!productionStrategyHandoff?.onOpenDynamicTrading}
+                onClick={productionStrategyHandoff?.onOpenDynamicTrading}
+                type="button"
+              >
+                <Play size={14} />
+                前往动态交易复核
+              </button>
+            </div>
+            <p className="design-production-handoff-message">
+              下方组合研究评估仍为模拟链；当前生产后端只支持单策略、单标的运行，不会直接改写生产目标、授权或委托。
+            </p>
+          </SurfacePanel>
+        ) : null}
         {showApprovalPanel ? (
           <SurfacePanel
             action={
@@ -2792,203 +4233,119 @@ function PortfolioSurface({
 
 function ExecutionSurface({
   action,
-  executionCandidate,
   executionReadiness,
+  executionSnapshot,
+  isSavingSettingsConfiguration,
+  onSaveSettingsConfiguration,
   settings,
-  workspace,
+  settingsConfigurationMessage,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "executionCandidate" | "executionReadiness" | "settings" | "workspace"
+  | "action"
+  | "executionReadiness"
+  | "executionSnapshot"
+  | "isSavingSettingsConfiguration"
+  | "onSaveSettingsConfiguration"
+  | "settings"
+  | "settingsConfigurationMessage"
 >) {
-  const orders = executionCandidate?.orders ?? [];
-  const liveTradingAllowed = settings?.safety.liveTradingAllowed === true;
-  const killSwitchTriggered = settings?.safety.productionLive?.triggered === true;
-  const stats: Array<[string, number, LucideIcon, string]> = [
-    ["影子候选", orders.length, FileText, "positive"],
-    ["待复核", orders.length ? 1 : 0, Clock3, "warning"],
-    ["已取消", 0, XCircle, "neutral"],
-    ["实盘路由", 0, Upload, "neutral"],
-  ];
+  const configuration = settings?.configuration;
+  const authoritativeSnapshotExpected = executionSnapshot !== undefined;
+  const authoritativeSnapshotAvailable = executionSnapshot != null;
+  const executionMode = executionSnapshot?.state.executionMode
+    ?? settings?.safety.executionMode
+    ?? "paper";
+  const liveTradingAllowed = authoritativeSnapshotAvailable
+    ? executionSnapshot.liveTradingAllowed
+    : authoritativeSnapshotExpected
+      ? false
+      : settings?.safety.liveTradingAllowed === true;
+  const liveAuthorizedUntil = authoritativeSnapshotAvailable
+    ? executionSnapshot.state.liveAuthorizedUntil
+    : authoritativeSnapshotExpected
+      ? null
+      : settings?.safety.liveAuthorizedUntil;
+  const productionSessionActive = executionMode === "live" && liveTradingAllowed;
+  const executionModeMessage = authoritativeSnapshotExpected && !authoritativeSnapshotAvailable
+    ? "自动交易运行状态暂不可用；为避免使用陈旧配置，当前不宣称生产会话或生产路由可用。"
+    : productionSessionActive
+    ? `生产会话有效${
+      liveAuthorizedUntil
+        ? `，有效至 ${connectorTimestamp(liveAuthorizedUntil)}`
+        : ""
+    }；生产路由可用。每笔委托仍会复核权限、急停、账户覆盖和风险边界。`
+    : executionMode === "live"
+      ? "当前为币安现货生产实盘，但生产会话尚未授权或已过期；需重新完成权限核验、急停恢复和实名确认。"
+      : executionMode === "testnet"
+        ? "当前为币安现货测试网；仅使用测试网资金，不会提交生产实盘委托。"
+        : "当前为纸面模拟；仅记录模拟决策与成交，不会向交易所提交委托。";
   return (
     <>
       <PageHeader
         action={action}
         title="执行中心"
-        subtitle={liveTradingAllowed ? "生产路由、候选执行与恢复对账" : "影子执行、候选路由与恢复演练"}
+        subtitle="自动交易运行状态、风险参数与生产授权"
       />
-      <div className="design-execution-stats">
-        {stats.map(([label, value, Icon, tone]) => (
-          <article key={String(label)}>
-            <span>{String(label)}</span>
-            <strong className={String(tone)}>{String(value)}</strong>
-            <Icon size={34} />
-          </article>
-        ))}
+      <div className={`design-live-warning${productionSessionActive ? " positive" : ""}`}>
+        {productionSessionActive ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+        {executionModeMessage}
       </div>
-      <div className={`design-live-warning${liveTradingAllowed ? " positive" : ""}`}>
-        {liveTradingAllowed ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-        {liveTradingAllowed
-          ? `生产实盘已授权；权限核验、急停保护和实名确认均已完成，生产路由可用${
-            settings?.safety.liveAuthorizedUntil
-              ? `，有效至 ${connectorTimestamp(settings.safety.liveAuthorizedUntil)}`
-              : ""
-          }。`
-          : "默认仅影子与测试网；生产实盘需权限核验、急停恢复和实名确认"}
-      </div>
+      {configuration && onSaveSettingsConfiguration ? (
+        <SurfacePanel
+          className="design-live-session-policy"
+          subtitle="修改后实时保存；在下一次实名授权或续期时采用"
+          title="生产授权策略"
+        >
+          <form
+            aria-label="生产授权有效时长配置"
+            className="design-settings-field"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              onSaveSettingsConfiguration({
+                configuration: {
+                  ...configuration.values,
+                  liveSessionTtlHours: Number(data.get("liveSessionTtlHours")),
+                },
+                secretUpdates: {},
+                clearSecrets: [],
+              });
+            }}
+          >
+            <label htmlFor="execution-live-session-ttl">生产授权有效时长（小时）</label>
+            <input
+              aria-describedby="execution-live-session-ttl-hint"
+              defaultValue={configuration.values.liveSessionTtlHours}
+              id="execution-live-session-ttl"
+              max="8760"
+              min="0"
+              name="liveSessionTtlHours"
+              required
+              step="1"
+              type="number"
+            />
+            <small id="execution-live-session-ttl-hint">
+              默认 8 小时；0 表示永久有效。修改不会静默延长当前会话。
+            </small>
+            <button
+              className="design-secondary-action"
+              disabled={isSavingSettingsConfiguration}
+              type="submit"
+            >
+              <Save size={13} />
+              {isSavingSettingsConfiguration ? "保存中…" : "保存授权时长"}
+            </button>
+            {settingsConfigurationMessage ? (
+              <p aria-live="polite" className="design-settings-message">
+                {settingsConfigurationMessage}
+              </p>
+            ) : null}
+          </form>
+        </SurfacePanel>
+      ) : null}
       {executionReadiness ? (
         <div className="design-execution-readiness">{executionReadiness}</div>
       ) : null}
-      <div className="design-execution-grid">
-        <SurfacePanel className="design-execution-queue" title="候选执行队列">
-          <table className="design-table">
-            <thead>
-              <tr>
-                <th>客户端委托编号</th>
-                <th>标的</th>
-                <th>方向</th>
-                <th>数量</th>
-                <th>订单类型</th>
-                <th>路由</th>
-                <th>风控状态</th>
-                <th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.orderId}>
-                  <td>{compactRunId(order.clientOrderId)}</td>
-                  <td>{order.symbol.replace("/", "")}</td>
-                  <td className={order.side === "buy" ? "up" : "down"}>
-                    {order.side === "buy" ? "买入" : "卖出"}
-                  </td>
-                  <td>{order.quantity}</td>
-                  <td>{order.type === "limit" ? "限价单" : order.type === "market" ? "市价单" : order.type}</td>
-                  <td>模拟 / 测试网</td>
-                  <td>
-                    <Status>低风险</Status>
-                  </td>
-                  <td>
-                    <Status tone="warning">待复核</Status>
-                  </td>
-                </tr>
-              ))}
-              {!orders.length ? (
-                <tr>
-                  <td colSpan={8} className="design-empty">
-                    <EmptyState
-                      detail="创建阶段 9 候选并通过路由预检后显示；不会提交真实订单。"
-                      title="暂无权威影子候选"
-                    />
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </SurfacePanel>
-        <div className="design-execution-side">
-          <SurfacePanel title="路由预检">
-            {workspace.execution.gates.map((gate) => {
-              const passed = liveTradingAllowed || gate.passed;
-              const label = {
-                "adapter-certified": "适配器认证",
-                "risk-approved": "风控审批",
-                "human-confirmed": "人工确认",
-              }[gate.id] ?? gate.label;
-              return (
-                <div
-                  className={`design-check-row ${passed ? "positive" : "warning"}`}
-                  key={gate.id}
-                >
-                  {passed ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-                  <span>{label}</span>
-                  <Status tone={passed ? "positive" : "warning"}>
-                    {passed ? "通过" : "未通过"}
-                  </Status>
-                </div>
-              );
-            })}
-          </SurfacePanel>
-          <SurfacePanel title="急停保护">
-            <div className="design-kill-switch">
-              <ShieldCheck size={54} />
-              <div>
-                <strong>{killSwitchTriggered ? "已触发" : "保护中"}</strong>
-                <span>保护方式：持久急停</span>
-                <small>
-                  {liveTradingAllowed
-                    ? "当前未触发，生产路由可用"
-                    : killSwitchTriggered
-                      ? "已阻止新的生产委托"
-                      : "生产路由仍受准入控制"}
-                </small>
-              </div>
-            </div>
-          </SurfacePanel>
-          <SurfacePanel title="恢复与对账">
-            <div className="design-kv-row">
-              <span>回放完全一致</span>
-              <strong>{executionCandidate ? "是" : "—"}</strong>
-            </div>
-            <div className="design-kv-row">
-              <span>差异数量</span>
-              <strong>0</strong>
-            </div>
-          </SurfacePanel>
-        </div>
-        <SurfacePanel
-          className="design-execution-timeline"
-          title="执行事件时间线"
-        >
-          <table className="design-table compact">
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>事件类型</th>
-                <th>委托编号</th>
-                <th>事件描述</th>
-                <th>路由</th>
-                <th>路由已执行</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.flatMap((order) =>
-                ["候选创建", "路由预检", "影子确认", "对账完成"].map(
-                  (event, index) => (
-                    <tr key={`${order.orderId}-${event}`}>
-                      <td>
-                        {executionCandidate
-                          ? new Date(
-                              executionCandidate.generatedAt,
-                            ).toLocaleString("zh-CN")
-                          : "—"}
-                      </td>
-                      <td>{event}</td>
-                      <td>{compactRunId(order.clientOrderId)}</td>
-                      <td>
-                        {index === 3
-                          ? "影子成交与系统状态对账完成"
-                          : `${event}完成`}
-                      </td>
-                      <td>模拟 / 测试网</td>
-                      <td>否</td>
-                    </tr>
-                  ),
-                ),
-              )}
-              {!orders.length ? (
-                <tr>
-                  <td className="design-empty" colSpan={6}>
-                    <EmptyState
-                      detail="阶段 9 影子候选创建后，事件将按权威时间顺序追加。"
-                      title="尚无执行事件"
-                    />
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </SurfacePanel>
-      </div>
     </>
   );
 }
@@ -3038,9 +4395,10 @@ export function buildAuditLedgerRows(
 
 function AuditSurface({
   action,
+  executionAcceptanceAudit,
   runs,
   workspace,
-}: Pick<TerminalWorkspaceSurfaceProps, "action" | "runs" | "workspace">) {
+}: Pick<TerminalWorkspaceSurfaceProps, "action" | "executionAcceptanceAudit" | "runs" | "workspace">) {
   const contextRunId = workspace.researchRun?.runId ?? "";
   const contextSymbol = workspace.selectedInstrument.symbol;
   const [draftFilters, setDraftFilters] = useState<AuditLedgerFilters>({
@@ -3134,6 +4492,9 @@ function AuditSurface({
           查询
         </button>
       </form>
+      {executionAcceptanceAudit ? (
+        <div className="design-execution-acceptance-audit">{executionAcceptanceAudit}</div>
+      ) : null}
       <div className="design-audit-grid">
         <SurfacePanel
           className="design-audit-ledger"
@@ -3647,6 +5008,7 @@ function SettingsSurface({
       configuration: {
         ccxtDefaultExchange: text("ccxtDefaultExchange"),
         ccxtTimeout: Number(text("ccxtTimeout")),
+        autoTradingIntervalSeconds: Number(text("autoTradingIntervalSeconds")),
         liveSessionTtlHours: Number(text("liveSessionTtlHours")),
         openaiModel: text("openaiModel"),
         openaiCompatibleBaseUrl: text("openaiCompatibleBaseUrl"),
@@ -3715,6 +5077,19 @@ function SettingsSurface({
                     <label className="design-settings-field">
                       <span>Free StockDB 超时（秒）</span>
                       <input defaultValue={configuration.values.freeStockdbTimeoutSeconds} max="120" min="1" name="freeStockdbTimeoutSeconds" required type="number" />
+                    </label>
+                    <label className="design-settings-field">
+                      <span>自动评估间隔（秒）</span>
+                      <input
+                        defaultValue={configuration.values.autoTradingIntervalSeconds}
+                        max="3600"
+                        min="5"
+                        name="autoTradingIntervalSeconds"
+                        required
+                        step="1"
+                        type="number"
+                      />
+                      <small>5–3600 秒；保存后实时应用，无需重启 API。</small>
                     </label>
                   </div>
                 </fieldset>
@@ -4206,7 +5581,15 @@ export function TerminalWorkspaceSurface(props: TerminalWorkspaceSurfaceProps) {
   let content: ReactNode;
   switch (props.activeWorkAreaId) {
     case "market":
-      content = <MarketSurface {...props} />;
+      content = (
+        <MarketSurface
+          key={props.workspace.selectedInstrument.market === "crypto" ? "crypto" : "ashare"}
+          {...props}
+        />
+      );
+      break;
+    case "market-information":
+      content = <MarketInformationSurface {...props} />;
       break;
     case "research":
       content = <ResearchSurface {...props} />;

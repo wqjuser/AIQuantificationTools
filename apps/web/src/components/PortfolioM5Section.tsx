@@ -75,9 +75,9 @@ export function PortfolioM5Section({
     <section aria-labelledby="portfolio-m5-title" className="design-surface-panel portfolio-m5-section">
       <header className="portfolio-m5-header">
         <div>
-          <span className="portfolio-m5-kicker">M5 · 真实组合与风险</span>
+          <span className="portfolio-m5-kicker">M5 · 组合研究风险</span>
           <h2 id="portfolio-m5-title">账户、目标与批次风险</h2>
-          <p>只读取 Stage 4 纸面账户回放；评估不会批准、提交或路由任何订单。</p>
+          <p>读取阶段 4 模拟账户回放；该评估不写入生产风险链，也不会批准、提交或路由任何订单。</p>
         </div>
         <span className={`portfolio-m5-status ${assessment?.batch.status ?? "pending"}`}>
           <ShieldCheck aria-hidden="true" size={15} />

@@ -35,6 +35,7 @@ export interface TerminalModule {
 
 export type ProductWorkAreaId =
   | "market"
+  | "market-information"
   | "research"
   | "strategy"
   | "backtest"
@@ -1523,7 +1524,7 @@ export interface BacktestReport {
   summary: string;
   runId: string | null;
   aiReviewReady: boolean;
-  executionReady: boolean;
+  researchEvidenceReady: boolean;
   assumptions: BacktestAssumptions;
   assumptionRows: BacktestAssumptionRow[];
   evidenceCards: BacktestEvidenceCard[];
@@ -4130,7 +4131,7 @@ export type ResearchOpsQueueAction =
   | "refresh-watchlist-cache"
   | "run-pipeline"
   | "run-ai-review"
-  | "submit-paper-order";
+  | "review-production-handoff";
 
 export interface ResearchOpsQueueRow {
   id: string;
@@ -9290,6 +9291,15 @@ const productWorkAreaDefinitions = [
     id: "market",
     label: "Market Center",
     description: "Search, quotes, K-lines, source health",
+    accent: "market",
+    quantLoopStepId: "research",
+    workflowStageId: "data",
+    deliveryStageId: "market-research"
+  },
+  {
+    id: "market-information",
+    label: "Market Information",
+    description: "Market breadth, leaders, activity, and linked news",
     accent: "market",
     quantLoopStepId: "research",
     workflowStageId: "data",
@@ -24655,7 +24665,7 @@ export function buildResearchOpsQueueRows({
             ? "run-pipeline"
             : stage === "needs_ai_review"
               ? "run-ai-review"
-              : "submit-paper-order";
+              : "review-production-handoff";
       const cacheRows = Math.max(0, latestCache?.item?.quality.rows ?? latestCache?.item?.upsertedRows ?? 0);
       return {
         id: `${instrument.market}:${instrument.symbol}:${timeframe}`,
@@ -24753,7 +24763,7 @@ function researchOpsActionLabel(action: ResearchOpsQueueAction): string {
     "refresh-watchlist-cache": "Refresh data",
     "run-pipeline": "Run pipeline",
     "run-ai-review": "Run AI review",
-    "submit-paper-order": "Stage paper simulation"
+    "review-production-handoff": "Review production handoff"
   }[action];
 }
 
@@ -24777,7 +24787,7 @@ function researchOpsQueueDetail(
   if (stage === "needs_ai_review") {
     return `${context}: audited run ${run?.runId ?? "unknown"} is ready for evidence-bound AI review.`;
   }
-  return `${context}: AI-reviewed run ${run?.runId ?? "unknown"} can be staged for paper-only simulation.`;
+  return `${context}: AI-reviewed run ${run?.runId ?? "unknown"} is ready for production handoff review.`;
 }
 
 function researchOpsQueueSort(left: ResearchOpsQueueRow, right: ResearchOpsQueueRow): number {
@@ -24811,7 +24821,7 @@ function buildResearchOpsQueueSummary(rows: ResearchOpsQueueRow[]): ResearchOpsQ
     needsAiReviewCount,
     paperCandidateCount,
     headline: `${rows.length} watched research tasks`,
-    detail: `${needsDataCount} need data · ${readyForPipelineCount} ready for pipeline · ${needsAiReviewCount} need AI review · ${paperCandidateCount} paper candidates`,
+    detail: `${needsDataCount} need data · ${readyForPipelineCount} ready for pipeline · ${needsAiReviewCount} need AI review · ${paperCandidateCount} reviewed candidates`,
     tone
   };
 }
@@ -32473,7 +32483,7 @@ export function buildBacktestEvidenceCards(workspace: TerminalWorkspace): Backte
           id: "run",
           label: "Run package",
           value: run.runId,
-          detail: `${run.dataRows} ${run.timeframe} bars · ${run.executionMode}${snapshotIdentity ? ` · snapshot ${snapshotIdentity.slice(0, 16)}` : ""}`,
+          detail: `${run.dataRows} ${run.timeframe} bars · audited backtest${snapshotIdentity ? ` · snapshot ${snapshotIdentity.slice(0, 16)}` : ""}`,
           tone: "positive"
         }
       : run
@@ -32577,16 +32587,16 @@ export function buildBacktestReadinessGates(workspace: TerminalWorkspace): Backt
     hasAuditedRun
       ? {
           id: "execution",
-          label: "Execution promotion",
+          label: "Production preflight input",
           status: "review",
-          detail: "Paper execution can be staged; live adapters remain gated.",
+          detail: "Audited evidence can enter server-side production qualification; it does not authorize or submit an order.",
           tone: "warning"
         }
       : {
           id: "execution",
-          label: "Execution promotion",
+          label: "Production preflight input",
           status: "blocked",
-          detail: "Paper execution waits for an audited run id.",
+          detail: "Production qualification waits for an audited run id.",
           tone: "risk"
         }
   ];
@@ -32606,17 +32616,17 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
   const blockedGates = readinessGates.filter((gate) => gate.status === "blocked");
   const aiReviewReady =
     contextBinding.canUseRun && !blockedGates.some((gate) => gate.id === "data" || gate.id === "strategy");
-  const executionReady = contextBinding.canUseRun && !blockedGates.length;
+  const researchEvidenceReady = contextBinding.canUseRun && !blockedGates.length;
   const metricTradeCount = metricValue(workspace, "Trades", "0");
 
   if (!run) {
     return {
       status: "blocked",
       headline: "Backtest report needs an audited run",
-      summary: "Run Pipeline to create a reproducible backtest before AI review or execution.",
+      summary: "Run Pipeline to create a reproducible backtest before AI review or production qualification.",
       runId: null,
       aiReviewReady: false,
-      executionReady: false,
+      researchEvidenceReady: false,
       assumptions,
       assumptionRows,
       evidenceCards,
@@ -32639,7 +32649,7 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
       summary: "Run Pipeline to create a fresh audited run for the selected market, symbol, and timeframe.",
       runId: run.runId,
       aiReviewReady: false,
-      executionReady: false,
+      researchEvidenceReady: false,
       assumptions,
       assumptionRows,
       evidenceCards,
@@ -32663,7 +32673,7 @@ export function buildBacktestReport(workspace: TerminalWorkspace): BacktestRepor
     }`,
     runId: run.runId,
     aiReviewReady,
-    executionReady,
+    researchEvidenceReady,
     assumptions,
     assumptionRows,
     evidenceCards,
@@ -32874,11 +32884,11 @@ export function buildBacktestReportMarkdown(
       ? markdownTable(["Time", "Side", "Status", "Price", "Quantity", "PnL", "Reason"], tradeRows)
       : "No trade rows are attached to this audited run.",
     "",
-    "## Execution Boundary",
+    "## Production Handoff Boundary",
     "",
-    report.executionReady
-      ? "Paper execution handoff is ready. Live execution still requires certified adapters, risk approval, and human confirmation."
-      : "Execution remains blocked until all readiness gates pass."
+    report.researchEvidenceReady
+      ? "Audited research evidence may enter server-side production qualification. This report does not authorize live trading, start monitoring, evaluate, or submit an order."
+      : "Production qualification remains blocked until all research evidence gates pass."
   ]
     .filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
     .join("\n")
@@ -34795,7 +34805,9 @@ export function formatInstrumentPrice(value: number | null | undefined): string 
   if (value === undefined || value === null || !Number.isFinite(value)) {
     return "N/A";
   }
-  return value.toFixed(2);
+  return Math.abs(value) >= 1 || value === 0
+    ? value.toFixed(2)
+    : value.toLocaleString("zh-CN", { maximumFractionDigits: 8 });
 }
 
 export function buildInstrumentFromSymbol(market: Market, rawSymbol: string): Instrument | null {

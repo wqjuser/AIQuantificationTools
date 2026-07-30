@@ -11,7 +11,11 @@ import {
   type Stage10ProductionExecutionState
 } from "../lib/stage10-production-execution";
 import type { WorkspaceFetcher } from "../lib/terminal-api";
-import { authorizeAutoLiveSession } from "./ExecutionAutoPaperTradingSection";
+import {
+  authorizeAutoLiveSession,
+  liveAuthorizationLabel,
+  type AutoTradingSnapshot
+} from "./ExecutionAutoPaperTradingSection";
 import { executionEvidenceLabel } from "./execution-readiness-display";
 
 const defaultFetcher: WorkspaceFetcher = (url, init) => fetch(url, init);
@@ -27,6 +31,7 @@ const confirmationLabels: Record<(typeof stage10ConfirmationIds)[number], string
 };
 
 export function ExecutionStage10ProductionExecutionSection({
+  autoTradingSnapshot,
   baseUrl,
   candidate = null,
   fetcher = defaultFetcher,
@@ -34,6 +39,7 @@ export function ExecutionStage10ProductionExecutionSection({
   review = null,
   sectionId = "execution-live-trading-gate"
 }: {
+  autoTradingSnapshot?: AutoTradingSnapshot | null;
   baseUrl: string;
   candidate?: Stage9ProductionAdmissionCandidate | null;
   fetcher?: WorkspaceFetcher;
@@ -49,6 +55,11 @@ export function ExecutionStage10ProductionExecutionSection({
   const [confirmations, setConfirmations] = useState(emptyConfirmations);
   const [liveFundsConfirmed, setLiveFundsConfirmed] = useState(false);
   const autoLiveGate = Boolean(onAutoLiveAuthorized);
+  const productionSessionActive = Boolean(
+    autoLiveGate
+    && autoTradingSnapshot?.state.executionMode === "live"
+    && autoTradingSnapshot.liveTradingAllowed
+  );
   const baseRunId = candidate?.baseRunId;
   const refresh = useCallback(async () => {
     try {
@@ -97,12 +108,13 @@ export function ExecutionStage10ProductionExecutionSection({
     }
   };
 
-  const status = attempt ? "blocked_before_network"
-    : authorization ? "deterministic_execution_authorized"
-      : controlActive ? "active"
-        : verificationReady ? "verified"
-          : preflightReady ? "configured_offline"
-            : "revoked";
+  const status = !state ? "loading"
+    : attempt ? "blocked_before_network"
+      : authorization ? "deterministic_execution_authorized"
+        : controlActive ? "active"
+          : verificationReady ? "verified"
+            : preflightReady ? "configured_offline"
+              : "revoked";
 
   const authorizeLiveSession = async () => {
     setBusy("live-session");
@@ -120,7 +132,9 @@ export function ExecutionStage10ProductionExecutionSection({
   return (
     <section
       aria-labelledby={`${sectionId}-title`}
-      className={`execution-stage5-shadow ${error ? "blocked" : controlActive ? "review" : "ready"}`}
+      className={`execution-stage5-shadow ${
+        error ? "blocked" : productionSessionActive || controlActive ? "review" : "ready"
+      }`}
       id={sectionId}
       tabIndex={-1}
     >
@@ -134,11 +148,19 @@ export function ExecutionStage10ProductionExecutionSection({
               : "专用密钥、权限、急停、单笔授权与提交前演练使用同一条审计链"}
           </p>
         </div>
-        <strong>自动实盘需显式开启</strong>
+        <strong>
+          {productionSessionActive
+            ? `生产会话${liveAuthorizationLabel(autoTradingSnapshot?.state)}`
+            : "生产权限与急停全程受控"}
+        </strong>
       </header>
 
       <p role="status" className={error ? "execution-stage5-shadow-error" : undefined}>
-        {error ?? stage10StatusLabel(status)}
+        {error ?? (productionSessionActive
+          ? controlActive
+            ? "生产会话有效，权限与急停安全链已恢复，可按需续期。"
+            : "生产会话仍然有效；续期或重新授权前需更新权限与急停证据。"
+          : stage10StatusLabel(status))}
       </p>
 
       <label>操作人
@@ -196,14 +218,14 @@ export function ExecutionStage10ProductionExecutionSection({
 
       {autoLiveGate && controlActive ? (
         <fieldset className="execution-stage10-live-session">
-          <legend>最后一步 · 开启生产会话</legend>
+          <legend>生产会话授权与续期</legend>
           <label>
             <input
               checked={liveFundsConfirmed}
               onChange={(event) => setLiveFundsConfirmed(event.target.checked)}
               type="checkbox"
             />
-            我确认自动策略会使用真实资金提交 Binance Spot 生产现货委托，单笔新增风险不超过 10 USDT
+            我确认自动策略会使用真实资金提交币安现货生产委托，单笔新增风险不超过 10 USDT
           </label>
           <button
             disabled={!!busy || !operatorReady || !liveFundsConfirmed}
@@ -245,11 +267,24 @@ export function ExecutionStage10ProductionExecutionSection({
       ) : null}
 
       <details open>
-        <summary>交易流程状态</summary>
+        <summary>{autoLiveGate ? "生产权限与急停状态" : "交易流程状态"}</summary>
         <dl>
-          <div><dt>专用凭据</dt><dd>{executionEvidenceLabel(preflightReady)}</dd></div>
-          <div><dt>安全权限</dt><dd>{executionEvidenceLabel(verificationReady)}</dd></div>
-          <div><dt>生产执行控制</dt><dd>{controlActive ? "已恢复 · 实盘仍需二次确认" : "已撤销 · 急停已触发"}</dd></div>
+          <div><dt>专用凭据</dt><dd>{state ? executionEvidenceLabel(preflightReady) : "正在读取"}</dd></div>
+          <div><dt>安全权限</dt><dd>{state ? executionEvidenceLabel(verificationReady) : "正在读取"}</dd></div>
+          <div>
+            <dt>生产执行控制</dt>
+            <dd>
+              {!state
+                ? productionSessionActive
+                  ? "当前会话有效 · 续期证据读取中"
+                  : "正在读取"
+                : controlActive
+                ? "安全链已恢复"
+                : productionSessionActive
+                  ? "当前会话有效 · 续期前需更新证据"
+                  : "安全链已撤销 · 急停保护已生效"}
+            </dd>
+          </div>
           {!autoLiveGate ? (
             <>
               <div><dt>阶段 9 复核</dt><dd>{executionEvidenceLabel(reviewReady)}</dd></div>
@@ -269,8 +304,10 @@ export function ExecutionStage10ProductionExecutionSection({
       {!autoLiveGate && !reviewReady ? <p>先完成阶段 9 候选及批准复核；本区不会代替人工确认。</p> : null}
       <p>
         {autoLiveGate
-          ? "凭据、权限与急停控制完成后，还需在本窗口确认真实资金风险才会开启生产会话。"
-          : "本区负责凭据、权限和急停控制；上方自动交易区仍需实名操作人和真实资金二次确认才会开启生产委托。"}
+          ? productionSessionActive
+            ? "当前生产会话继续受每笔委托门禁保护；本区仅用于更新证据或续期，不会立即评估或提交委托。"
+            : "凭据、权限与急停安全链恢复后，可由实名操作人在本窗口显式授权或续期生产会话；本区不会立即评估或提交委托。"
+          : "本区负责凭据、权限和急停控制；自动交易区的生产会话授权仍由实名操作人显式完成。"}
       </p>
     </section>
   );
@@ -278,16 +315,17 @@ export function ExecutionStage10ProductionExecutionSection({
 
 function stage10StatusLabel(status: string) {
   const labels: Record<string, string> = {
+    loading: "正在读取生产执行控制状态…",
     revoked: "执行权限已撤销（急停已触发）；从专用凭据检查开始。",
     configured_offline: "专用交易凭据已通过离线隔离检查。",
     verified: "读取与现货权限已验证，危险权限均关闭。",
-    active: "生产执行控制已恢复；自动实盘仍需实名与真实资金二次确认。",
+    active: "生产权限与急停安全链已恢复；生产会话授权仍由实名操作人显式完成。",
     deterministic_execution_authorized: "单笔确定性授权已记录，等待提交前阻断演练。",
     blocked_before_network: "提交前演练已在访问生产网络前阻断，未提交订单。"
   };
-  return labels[status] ?? "正在读取 Stage 10 状态…";
+  return labels[status] ?? labels.loading;
 }
 
 function message(error: unknown) {
-  return error instanceof Error ? error.message : "Stage 10 操作失败";
+  return error instanceof Error ? error.message : "生产执行控制操作失败";
 }

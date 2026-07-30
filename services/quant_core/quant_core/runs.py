@@ -870,7 +870,14 @@ def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | N
         adapter_paper_executions=adapter_paper_executions,
     )
     if any(
-        event["eventType"] in {
+        event["eventType"].startswith(("auto_", "stage10_auto_"))
+        or event["eventId"].startswith((
+            "auto-",
+            "auto-paper-trading-",
+            "stage10-auto-",
+            "strategy-binding-",
+        ))
+        or event["eventType"] in {
             "execution_adapter_production_route_review",
             "stage7_production_readonly_probe",
             "stage8_production_readonly_access_control",

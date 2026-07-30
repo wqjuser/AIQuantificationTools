@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 from http.server import HTTPServer
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 from threading import Event, Thread
@@ -21,6 +23,7 @@ from quant_core.ai_review_providers import (
 )
 from quant_core.audit_events import AuditEventStore
 from quant_core.auto_paper_trading import AutoPaperTradingRunner, AutoPaperTradingService
+from quant_core.backtest import BacktestEngine
 from quant_core.api import (
     QuantApiHandler,
     build_auto_paper_trading_runner,
@@ -38,8 +41,24 @@ from quant_core.binance_spot_orders import (
     prepare_spot_market_order,
 )
 from quant_core.cache import MarketDataCache
-from quant_core.domain import DataQuality, OHLCVBar
+from quant_core.canonical import (
+    DATA_SNAPSHOT_HASH_VERSION,
+    canonical_data_hash,
+    canonical_snapshot_id,
+    normalize_snapshot_bars,
+    strategy_config_to_payload,
+)
+from quant_core.domain import (
+    Condition,
+    DataQuality,
+    OHLCVBar,
+    RiskRules,
+    StrategyConfig,
+)
+from quant_core.runs import ResearchRunAudit, ResearchRunStore
+from quant_core.settings import PlatformSettingsStore
 from quant_core.stage6_sandbox import BinanceSpotTestnetRoute
+from quant_core.strategy_library import StrategyLibraryStore
 
 
 class FakeProvider:
@@ -249,6 +268,7 @@ class FakeProductionService:
         self.orders = []
         self.preparations = []
         self.account_covered = True
+        self.account_snapshot = None
         self.account_checks = 0
         self.control_id = "stage10-control-live"
         self.authorization_calls = 0
@@ -299,6 +319,11 @@ class FakeProductionService:
             "positionCovered": self.account_covered,
             "quoteCovered": self.account_covered,
             "unexpectedOpenAutoOrderCount": 0 if self.account_covered else 1,
+            **(
+                {"accountSnapshot": self.account_snapshot}
+                if self.account_snapshot is not None
+                else {}
+            ),
         }
 
     def submit_auto_market_order(self, order, *, control_id, operator):
@@ -381,7 +406,23 @@ class FakeBinanceTestnet:
 
     def __init__(self, _config):
         self.calls = []
+        self.apiKey = _config.get("apiKey")
         self.open_orders = []
+        self.balance = {
+            "free": {"BTC": 1.0, "USDT": 100.0},
+            "used": {"BTC": 0.0, "USDT": 0.0},
+            "total": {"BTC": 1.0, "USDT": 100.0},
+        }
+        self.tickers = {
+            "BTC/USDT": {
+                "bid": 60_000.0,
+                "last": 60_000.0,
+            },
+            "ETH/USDT": {
+                "bid": 3_000.0,
+                "last": 3_000.0,
+            },
+        }
         type(self).instances.append(self)
 
     def set_sandbox_mode(self, enabled):
@@ -396,11 +437,23 @@ class FakeBinanceTestnet:
                 "precision": {"amount": 0.000001, "price": 0.01},
                 "limits": {"amount": {"min": 0.00001}, "price": {}, "cost": {"min": 1}},
                 "taker": 0.001,
-            }
+            },
+            "ETH/USDT": {
+                "active": True,
+                "base": "ETH",
+                "quote": "USDT",
+                "precision": {"amount": 0.000001, "price": 0.01},
+                "limits": {"amount": {"min": 0.00001}, "price": {}, "cost": {"min": 1}},
+                "taker": 0.001,
+            },
         }
 
     def fetch_balance(self):
-        return {"free": {"BTC": 1, "USDT": 100}}
+        return self.balance
+
+    def fetch_ticker(self, symbol):
+        self.calls.append(("fetch-ticker", symbol))
+        return self.tickers[symbol]
 
     def fetch_open_orders(self, symbol):
         self.calls.append(("fetch-open-orders", symbol))
@@ -508,6 +561,26 @@ class CrashAfterLiveOrderIntentStore(AuditEventStore):
         return stored
 
 
+class ConflictingOrderIntentStore(AuditEventStore):
+    def record_if_absent(self, event):
+        if event.get("eventType") == "auto_testnet_order_intent":
+            metadata = event["metadata"]
+            order = metadata["order"]
+            self.record(
+                {
+                    **event,
+                    "metadata": {
+                        **metadata,
+                        "order": {
+                            **order,
+                            "quantity": float(order["quantity"]) * 2,
+                        },
+                    },
+                }
+            )
+        return super().record_if_absent(event)
+
+
 def bars(prices: list[float], *, start: datetime | None = None) -> list[OHLCVBar]:
     started = start or datetime(2026, 7, 26, tzinfo=timezone.utc)
     return [
@@ -526,7 +599,852 @@ def bars(prices: list[float], *, start: datetime | None = None) -> list[OHLCVBar
     ]
 
 
+def audited_strategy_stores(
+    directory: str,
+    *,
+    entry_window: int = 3,
+) -> tuple[StrategyConfig, StrategyLibraryStore, ResearchRunStore]:
+    strategy = StrategyConfig(
+        name="BTC 一分钟均线策略",
+        market="crypto",
+        symbols=["BTC/USDT"],
+        timeframe="1m",
+        entry_conditions=[
+            Condition(kind="close_above_sma", params={"window": entry_window})
+        ],
+        exit_conditions=[
+            Condition(kind="close_below_sma", params={"window": entry_window})
+        ],
+        risk=RiskRules(
+            position_pct=0.2,
+            stop_loss_pct=0.01,
+            take_profit_pct=0.02,
+            max_drawdown_pct=0.05,
+        ),
+    )
+    audit_bars = bars([100 + index for index in range(max(6, entry_window))])
+    backtest = BacktestEngine().run(strategy, audit_bars)
+    normalized = normalize_snapshot_bars(audit_bars)
+    data_hash = canonical_data_hash(normalized)
+    snapshot_hash = canonical_snapshot_id(
+        market="crypto",
+        symbol="BTC/USDT",
+        timeframe="1m",
+        canonical_data_hash=data_hash,
+    )
+    run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+    run_store.record(
+        ResearchRunAudit(
+            run_id="run-live-strategy",
+            created_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            strategy_name=strategy.name,
+            strategy_revision=strategy.revision,
+            data_rows=len(normalized),
+            metrics=asdict(backtest.metrics),
+            decisions=[],
+            execution_mode="paper_only",
+            data_quality={
+                "source": "test",
+                "isComplete": True,
+                "warnings": [],
+                "rows": len(normalized),
+                "canonicalHash": data_hash,
+            },
+            data_snapshot={
+                "source": "test",
+                "isComplete": True,
+                "warnings": [],
+                "rows": len(normalized),
+                "hash": data_hash,
+                "snapshotHash": snapshot_hash,
+                "hashVersion": DATA_SNAPSHOT_HASH_VERSION,
+                "bars": normalized,
+            },
+            strategy_config=strategy_config_to_payload(strategy),
+            backtest_assumptions={
+                "initialCash": 100_000,
+                "feeBps": 3,
+                "slippageBps": 2,
+            },
+            backtest_trades=[
+                {
+                    "timestamp": trade.timestamp.isoformat(),
+                    "side": trade.side.upper(),
+                    "status": "filled",
+                    "price": trade.price,
+                    "quantity": trade.quantity,
+                }
+                for trade in backtest.trades
+            ],
+            backtest_equity_curve=[
+                {
+                    "timestamp": point.timestamp.isoformat(),
+                    "equity": round(point.equity, 4),
+                }
+                for point in backtest.equity_curve
+            ],
+        )
+    )
+    strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
+    strategy_store.save(strategy, audit_run_id="run-live-strategy")
+    return strategy, strategy_store, run_store
+
+
 class AutoPaperTradingTests(unittest.TestCase):
+    def test_audited_strategy_binding_stays_paused_and_drives_the_next_rule_evaluation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_operator_required",
+            ):
+                service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": {"name": "wenqingjie"},
+                        "confirmed": True,
+                    }
+                )
+
+            bound = service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "run-live-strategy",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+
+            self.assertFalse(bound["state"]["enabled"])
+            self.assertFalse(bound["orderSubmissionEnabled"])
+            self.assertFalse(bound["routeExecuted"])
+            self.assertEqual(
+                bound["strategyBinding"]["revision"],
+                strategy.revision,
+            )
+            binding_event = store.list_recent(
+                event_type="auto_trading_strategy_binding",
+                limit=1,
+            )[0]
+            self.assertIsNone(binding_event.run_id)
+            self.assertEqual(
+                binding_event.metadata["auditRunId"],
+                "run-live-strategy",
+            )
+            self.assertFalse(binding_event.metadata["routeExecuted"])
+
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+            evaluated = service.evaluate(
+                bars([100, 100, 101, 102, 103, 104]),
+                data_source="test",
+            )
+
+            self.assertEqual(evaluated["state"]["lastDecision"]["action"], "buy")
+            self.assertEqual(
+                evaluated["state"]["lastDecisionContract"]["strategyRevision"],
+                strategy.revision,
+            )
+            self.assertEqual(
+                evaluated["state"]["lastDecisionContract"]["signal"]["strategyId"],
+                f"strategy-{strategy.revision}",
+            )
+            self.assertEqual(
+                evaluated["state"]["lastDecisionContract"]["marketSnapshot"]["barCount"],
+                6,
+            )
+            risk_evidence = evaluated["state"]["lastDecisionContract"][
+                "riskAdjustedTarget"
+            ]["evidence"]
+            self.assertEqual(risk_evidence["dailyLossLimitPct"], 5)
+            self.assertEqual(risk_evidence["dailyProfitDrawdownLimitPct"], 5)
+
+    def test_strategy_binding_preflight_is_read_only_and_reports_production_replay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+
+            preflight = service.preflight_strategy_binding("run-live-strategy")
+
+            self.assertEqual(preflight["status"], "ready")
+            self.assertTrue(preflight["switchAllowed"])
+            self.assertFalse(preflight["alreadyBound"])
+            self.assertEqual(preflight["strategyRevision"], strategy.revision)
+            self.assertEqual(preflight["productionReplay"]["feeBps"], 10)
+            self.assertEqual(preflight["productionReplay"]["slippageBps"], 10)
+            self.assertEqual(
+                preflight["boundary"],
+                {
+                    "authorizesLive": False,
+                    "startsMonitoring": False,
+                    "evaluatesNow": False,
+                    "submitsOrder": False,
+                },
+            )
+            self.assertEqual(store.list_recent(limit=100), [])
+
+            service.configure({"enabled": True})
+            event_ids = [
+                event.event_id for event in store.list_recent(limit=100)
+            ]
+            blocked = service.preflight_strategy_binding("run-live-strategy")
+
+            self.assertEqual(blocked["status"], "review")
+            self.assertFalse(blocked["switchAllowed"])
+            self.assertEqual(
+                blocked["switchBlockedReason"],
+                "strategy_switch_requires_paused_monitoring",
+            )
+            self.assertEqual(
+                [event.event_id for event in store.list_recent(limit=100)],
+                event_ids,
+            )
+
+    def test_strategy_binding_rejects_non_backtest_execution_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            audit = run_store.get("run-live-strategy")
+            self.assertIsNotNone(audit)
+            run_store.record(replace(audit, execution_mode="certified_live"))
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_audit_execution_mode_invalid",
+            ):
+                service.preflight_strategy_binding("run-live-strategy")
+
+    def test_active_strategy_keeps_its_pinned_audit_when_a_new_backtest_becomes_current(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "run-live-strategy",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            original = run_store.get("run-live-strategy")
+            self.assertIsNotNone(original)
+            run_store.record(
+                replace(
+                    original,
+                    run_id="run-live-strategy-new",
+                    created_at=datetime(2026, 7, 30, 1, tzinfo=timezone.utc),
+                )
+            )
+            strategy_store.save(
+                strategy,
+                audit_run_id="run-live-strategy-new",
+            )
+
+            snapshot = service.snapshot()
+            active = service.preflight_strategy_binding("run-live-strategy")
+            candidate = service.preflight_strategy_binding(
+                "run-live-strategy-new"
+            )
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_audit_run_mismatch",
+            ):
+                AutoPaperTradingService(
+                    AuditEventStore(Path(directory) / "new-audit.sqlite"),
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                    strategy_store=strategy_store,
+                    run_store=run_store,
+                ).configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": "wenqingjie",
+                        "confirmed": True,
+                    }
+                )
+            new_current = run_store.get("run-live-strategy-new")
+            self.assertIsNotNone(new_current)
+            run_store.record(
+                replace(
+                    new_current,
+                    execution_mode="certified_live",
+                )
+            )
+            service.configure({"enabled": True})
+            evaluated = service.evaluate(
+                bars([100, 100, 101, 102, 103, 104]),
+                data_source="test",
+            )
+            trade = store.list_recent(
+                event_type="auto_paper_trade",
+                limit=1,
+            )[0]
+
+            self.assertEqual(
+                snapshot["strategyBinding"]["auditRunId"],
+                "run-live-strategy",
+            )
+            self.assertEqual(active["status"], "active")
+            self.assertTrue(active["alreadyBound"])
+            self.assertEqual(candidate["status"], "ready")
+            self.assertFalse(candidate["alreadyBound"])
+            self.assertEqual(evaluated["state"]["lastDecision"]["action"], "buy")
+            self.assertEqual(trade.metadata["auditRunId"], "run-live-strategy")
+            self.assertEqual(
+                trade.metadata["auditHash"],
+                snapshot["state"]["activeStrategyAuditHash"],
+            )
+
+    def test_strategy_binding_state_and_audit_event_are_written_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            request = {
+                "strategyRevision": strategy.revision,
+                "auditRunId": "run-live-strategy",
+                "operator": "wenqingjie",
+                "confirmed": True,
+            }
+            connection = sqlite3.connect(store.path)
+            try:
+                connection.execute(
+                    """
+                    create trigger fail_strategy_binding
+                    before insert on audit_events
+                    when new.event_type = 'auto_trading_strategy_binding'
+                    begin
+                        select raise(abort, 'injected_batch_failure');
+                    end
+                    """
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            with self.assertRaisesRegex(
+                sqlite3.IntegrityError,
+                "injected_batch_failure",
+            ):
+                service.configure(request)
+
+            self.assertEqual(store.list_recent(limit=100), [])
+            connection = sqlite3.connect(store.path)
+            try:
+                connection.execute("drop trigger fail_strategy_binding")
+                connection.commit()
+            finally:
+                connection.close()
+            bound = service.configure(request)
+            self.assertEqual(
+                bound["strategyBinding"]["auditRunId"],
+                "run-live-strategy",
+            )
+            self.assertEqual(
+                len(
+                    store.list_recent(
+                        event_type="auto_trading_strategy_binding",
+                        limit=10,
+                    )
+                ),
+                1,
+            )
+
+    def test_repeated_strategy_binding_requires_confirmation_and_writes_no_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            request = {
+                "strategyRevision": strategy.revision,
+                "auditRunId": "run-live-strategy",
+                "operator": "wenqingjie",
+                "confirmed": True,
+            }
+            first = service.configure(request)
+            event_ids = [event.event_id for event in store.list_recent(limit=100)]
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_confirmation_required",
+            ):
+                service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": "wenqingjie",
+                    }
+                )
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_operator_required",
+            ):
+                service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "confirmed": True,
+                    }
+                )
+            repeated = service.configure(request)
+
+            self.assertEqual(repeated["state"]["updatedAt"], first["state"]["updatedAt"])
+            self.assertEqual(
+                [event.event_id for event in store.list_recent(limit=100)],
+                event_ids,
+            )
+
+    def test_strategy_binding_requires_paused_flat_state_and_fetches_strategy_warmup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(
+                directory,
+                entry_window=20,
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            service.configure({"enabled": True})
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_switch_requires_paused_monitoring",
+            ):
+                service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": "wenqingjie",
+                        "confirmed": True,
+                    }
+                )
+
+            service.configure({"enabled": False})
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "run-live-strategy",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            self.assertEqual(service.required_bar_count(), 20)
+
+    def test_strategy_binding_rejects_position_and_unreconciled_order_switches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            registry = AiReviewProviderRegistry(
+                (
+                    ProviderStatus("local", True, None, None),
+                    ProviderStatus(
+                        "openai-compatible",
+                        True,
+                        "fake",
+                        "https://example.invalid",
+                    ),
+                ),
+                {"openai-compatible": FakeProvider()},
+            )
+            position_service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "position-audit.sqlite"),
+                registry,
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            position_service.configure(
+                {"enabled": True, "triggerPct": 0.3}
+            )
+            bought = position_service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            self.assertGreater(bought["state"]["position"], 0)
+            position_service.configure({"enabled": False})
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_switch_requires_flat_position",
+            ):
+                position_service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": "wenqingjie",
+                        "confirmed": True,
+                    }
+                )
+
+            pending_service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "pending-audit.sqlite"),
+                registry,
+                FakePendingSandboxService(),  # type: ignore[arg-type]
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            pending_service.configure(
+                {
+                    "enabled": True,
+                    "executionMode": "testnet",
+                    "testnetConfirmed": True,
+                    "triggerPct": 0.3,
+                }
+            )
+            pending = pending_service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            self.assertEqual(pending["state"]["status"], "order_pending")
+            pending_service.configure({"enabled": False})
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_switch_requires_reconciled_orders",
+            ):
+                pending_service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": "wenqingjie",
+                        "confirmed": True,
+                    }
+                )
+
+    def test_strategy_binding_preserves_risk_and_trade_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            service.configure(
+                {
+                    "enabled": True,
+                    "triggerPct": 0.3,
+                    "dailyLossLimitPct": 0.1,
+                }
+            )
+            service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            exited = service.evaluate(
+                bars(
+                    [101, 101, 101, 101, 101, 99],
+                    start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            self.assertEqual(exited["state"]["position"], 0)
+            self.assertTrue(exited["state"]["dailyRiskHaltReason"])
+            service.configure({"enabled": False})
+            before = service.snapshot()["state"]
+
+            bound = service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "run-live-strategy",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            after = bound["state"]
+
+            for field in (
+                "cash",
+                "equity",
+                "realizedPnl",
+                "dailyStartEquity",
+                "dailyPeakEquity",
+                "dailyLossDrawdownPct",
+                "dailyRiskHaltReason",
+                "tradeCount",
+                "tradeTimestamps",
+                "lastTrade",
+                "lastOrderResult",
+            ):
+                self.assertEqual(after[field], before[field], field)
+            self.assertIsNone(after["lastBarTimestamp"])
+            self.assertIsNone(after["lastDecisionContract"])
+
+            service.configure({"enabled": True})
+            blocked = service.evaluate(
+                bars(
+                    [99, 99, 99, 99, 99, 100],
+                    start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            self.assertEqual(blocked["state"]["position"], 0)
+            self.assertEqual(blocked["state"]["tradeCount"], before["tradeCount"])
+            self.assertEqual(blocked["state"]["status"], "risk_paused")
+
+    def test_strategy_binding_pins_audit_identity_and_keeps_trade_events_detached_from_research_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "run-live-strategy",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            control = store.list_recent(
+                event_type="auto_paper_trading_control_change",
+                limit=1,
+            )[0]
+            self.assertIsNone(control.run_id)
+            self.assertEqual(control.metadata["auditRunId"], "run-live-strategy")
+            self.assertTrue(control.metadata["auditHash"])
+
+            original = run_store.get("run-live-strategy")
+            self.assertIsNotNone(original)
+            run_store.record(
+                replace(
+                    original,
+                    metrics={
+                        **original.metrics,
+                        "total_return_pct": (
+                            float(original.metrics["total_return_pct"]) + 1
+                        ),
+                    },
+                )
+            )
+
+            snapshot = service.snapshot()
+            self.assertEqual(snapshot["strategyBinding"]["status"], "blocked")
+            self.assertIn("绑定的审计证据已变更", snapshot["strategyBinding"]["detail"])
+
+    def test_strategy_binding_audit_drift_blocks_entry_but_keeps_frozen_exit_rules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(
+                directory,
+                entry_window=20,
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+            bound = service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "run-live-strategy",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            self.assertTrue(bound["state"]["activeStrategyConfigHash"])
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+            bought = service.evaluate(
+                bars([100 + index for index in range(20)]),
+                data_source="test",
+            )
+            self.assertGreater(bought["state"]["position"], 0)
+
+            original = run_store.get("run-live-strategy")
+            self.assertIsNotNone(original)
+            run_store.record(
+                replace(
+                    original,
+                    metrics={
+                        **original.metrics,
+                        "total_return_pct": (
+                            float(original.metrics["total_return_pct"]) + 1
+                        ),
+                    },
+                )
+            )
+
+            self.assertEqual(service.required_bar_count(), 20)
+            exited = service.evaluate(
+                bars(
+                    [119] * 19 + [118.5],
+                    start=datetime(2026, 7, 27, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            self.assertEqual(exited["state"]["position"], 0)
+            self.assertEqual(exited["state"]["lastDecision"]["action"], "sell")
+
+            blocked = service.evaluate(
+                bars(
+                    [118.5] * 19 + [119],
+                    start=datetime(2026, 7, 28, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            self.assertEqual(blocked["state"]["status"], "risk_paused")
+            self.assertIn("已禁止开新仓", blocked["state"]["detail"])
+
+    def test_strategy_binding_rejects_forged_backtest_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            audit = run_store.get("run-live-strategy")
+            self.assertIsNotNone(audit)
+            run_store.record(
+                replace(
+                    audit,
+                    metrics={
+                        **audit.metrics,
+                        "trade_count": int(audit.metrics["trade_count"]) + 1,
+                    },
+                )
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_backtest_replay_mismatch",
+            ):
+                service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": "wenqingjie",
+                        "confirmed": True,
+                    }
+                )
+
+    def test_strategy_binding_compares_full_strategy_payload_not_only_short_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            collision = replace(strategy, name="伪造的同短版本策略")
+            object.__setattr__(collision, "revision", strategy.revision)
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+
+            with patch(
+                "quant_core.auto_paper_trading.strategy_config_from_payload",
+                side_effect=(strategy, collision),
+            ), self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_audit_strategy_mismatch",
+            ):
+                service.configure(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "auditRunId": "run-live-strategy",
+                        "operator": "wenqingjie",
+                        "confirmed": True,
+                    }
+                )
+
     def test_stale_market_data_blocks_ai_and_trading(self):
         class CountingProvider(FakeProvider):
             calls = 0
@@ -774,6 +1692,49 @@ class AutoPaperTradingTests(unittest.TestCase):
             runner.stop()
             self.assertEqual(service.snapshot()["state"]["runnerState"], "stopped")
 
+    def test_backend_runner_adopts_interval_without_direct_evaluation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry((), {}),
+            )
+            evaluations = 0
+
+            def evaluate_once():
+                nonlocal evaluations
+                evaluations += 1
+
+            runner = AutoPaperTradingRunner(
+                service,
+                evaluate_once,
+                interval_seconds=60,
+            )
+            runner.start()
+            try:
+                deadline = time.monotonic() + 0.5
+                while (
+                    service.snapshot()["state"]["runnerCycleCount"] < 1
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+                runner.update_interval(0.05)
+                self.assertEqual(evaluations, 0)
+                deadline = time.monotonic() + 1.2
+                while (
+                    service.snapshot()["state"]["runnerCycleCount"] < 2
+                    and time.monotonic() < deadline
+                ):
+                    time.sleep(0.01)
+            finally:
+                runner.stop()
+
+            self.assertGreaterEqual(
+                service.snapshot()["state"]["runnerCycleCount"],
+                2,
+            )
+            self.assertEqual(evaluations, 0)
+            self.assertEqual(runner.interval_seconds, 0.05)
+
     def test_backend_runner_records_heartbeat_and_recovery_after_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             service = AutoPaperTradingService(
@@ -899,6 +1860,25 @@ class AutoPaperTradingTests(unittest.TestCase):
 
             self.assertEqual(state["tradeCount"], 1)
 
+    def test_api_runner_reads_interval_from_platform_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            class Handler(QuantApiHandler):
+                audit_event_store = AuditEventStore(Path(directory) / "audit.sqlite")
+                platform_settings_environ = {
+                    "AIQT_AUTO_TRADING_INTERVAL_SECONDS": "17",
+                }
+                platform_settings_store = PlatformSettingsStore(
+                    Path(directory) / "settings.sqlite",
+                    Path(directory) / "settings.key",
+                )
+                execution_adapter_health_environ = {}
+                execution_adapter_health_exchange_factory = None
+                stage6_sandbox_route_factory = None
+
+            runner = build_auto_paper_trading_runner(Handler)
+
+            self.assertEqual(runner.interval_seconds, 17)
+
     def test_manual_reconciliation_api_returns_snapshot_without_evaluating_market_data(self):
         class ReconciliationService:
             def __init__(self) -> None:
@@ -940,6 +1920,58 @@ class AutoPaperTradingTests(unittest.TestCase):
         self.assertEqual(payload, {"state": {"status": "order_closed"}})
         self.assertEqual(service.reconciliation_calls, 1)
         self.assertEqual(service.snapshot_calls, 1)
+
+    def test_production_strategy_handoff_preflight_api_is_read_only(self):
+        class PreflightService:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def preflight_strategy_binding(self, run_id):
+                self.calls.append(run_id)
+                return {
+                    "runId": run_id,
+                    "strategyRevision": "rev-production",
+                    "status": "ready",
+                    "evidenceStatus": "eligible",
+                    "switchAllowed": True,
+                    "alreadyBound": False,
+                    "boundary": {
+                        "authorizesLive": False,
+                        "startsMonitoring": False,
+                        "evaluatesNow": False,
+                        "submitsOrder": False,
+                    },
+                }
+
+        service = PreflightService()
+
+        class Handler(QuantApiHandler):
+            def _auto_paper_trading_service(self):
+                return service
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(*server.server_address, timeout=5)
+        try:
+            connection.request(
+                "GET",
+                "/api/research/runs/run-production/production-strategy-handoff",
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+        finally:
+            connection.close()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(service.calls, ["run-production"])
+        self.assertEqual(
+            payload["productionStrategyHandoff"]["boundary"]["submitsOrder"],
+            False,
+        )
 
     def test_backend_and_manual_evaluations_cannot_duplicate_the_same_bar(self):
         provider_started = Event()
@@ -1291,6 +2323,569 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(production.orders, [])
             self.assertEqual(store.count(event_type="auto_live_trade"), 0)
 
+    def test_live_first_account_snapshot_establishes_real_baseline_without_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            production = FakeProductionService()
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:30:00+08:00",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 14.74497057,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-snapshot-first",
+                "assets": {
+                    "BTC": {
+                        "free": 0.0,
+                        "used": 0.0,
+                        "total": 0.0,
+                        "priceUsdt": 64_500.0,
+                        "valueUsdt": 0.0,
+                    },
+                    "USDT": {
+                        "free": 14.74497057,
+                        "used": 0.0,
+                        "total": 14.74497057,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 14.74497057,
+                    },
+                },
+            }
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                production=production,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 0.3,
+            })
+
+            result = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+
+            self.assertEqual(result["state"]["status"], "account_synchronized")
+            self.assertEqual(result["state"]["cash"], 14.74497057)
+            self.assertEqual(result["state"]["position"], 0.0)
+            self.assertEqual(result["state"]["equity"], 14.74497057)
+            self.assertEqual(result["state"]["dailyStartEquity"], 14.74497057)
+            self.assertEqual(result["state"]["dailyPeakEquity"], 14.74497057)
+            self.assertEqual(
+                result["state"]["lastAccountCheck"]["accountSnapshotHash"],
+                "account-snapshot-first",
+            )
+            self.assertTrue(
+                result["state"]["lastAccountCheck"]["accountCovered"]
+            )
+            self.assertEqual(
+                store.count(event_type="auto_live_account_sync"),
+                1,
+            )
+            self.assertEqual(production.orders, [])
+
+    def test_live_account_identity_change_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            production = FakeProductionService()
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:30:00+08:00",
+                "accountFingerprint": "binance-account-a",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 20.0,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-a-snapshot",
+                "assets": {
+                    "BTC": {
+                        "free": 0.0,
+                        "used": 0.0,
+                        "total": 0.0,
+                        "priceUsdt": 64_500.0,
+                        "valueUsdt": 0.0,
+                    },
+                    "USDT": {
+                        "free": 20.0,
+                        "used": 0.0,
+                        "total": 20.0,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 20.0,
+                    },
+                },
+            }
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                production=production,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 10.0,
+            })
+            service.evaluate(
+                bars([100, 100, 100, 100, 100, 100]),
+                data_source="test",
+            )
+            production.account_snapshot = None
+            missing = service.evaluate(
+                bars(
+                    [100, 100, 100, 100, 100, 100],
+                    start=datetime(2026, 7, 26, 0, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            self.assertEqual(missing["state"]["status"], "account_mismatch")
+            self.assertEqual(
+                missing["state"]["lastAccountCheck"]["checkCode"],
+                "binance_spot_account_snapshot_required",
+            )
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:31:00+08:00",
+                "accountFingerprint": "binance-account-b",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 20.0,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-b-snapshot",
+                "assets": {
+                    "BTC": {
+                        "free": 0.0,
+                        "used": 0.0,
+                        "total": 0.0,
+                        "priceUsdt": 64_500.0,
+                        "valueUsdt": 0.0,
+                    },
+                    "USDT": {
+                        "free": 20.0,
+                        "used": 0.0,
+                        "total": 20.0,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 20.0,
+                    },
+                },
+            }
+
+            blocked = service.evaluate(
+                bars(
+                    [100, 100, 100, 100, 100, 100],
+                    start=datetime(2026, 7, 26, 0, 2, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(blocked["state"]["status"], "account_mismatch")
+            self.assertEqual(
+                blocked["state"]["accountFingerprint"],
+                "binance-account-a",
+            )
+            self.assertFalse(
+                blocked["state"]["lastAccountCheck"]["accountCovered"]
+            )
+            self.assertEqual(
+                blocked["state"]["lastAccountCheck"]["checkCode"],
+                "binance_spot_account_identity_changed",
+            )
+            self.assertIn("账户身份变化", blocked["state"]["detail"])
+            self.assertEqual(production.orders, [])
+
+    def test_live_account_conversion_syncs_asset_mix_without_drawdown_or_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            production = FakeProductionService()
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:30:00+08:00",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 14.74497057,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-snapshot-with-btc",
+                "assets": {
+                    "BTC": {
+                        "free": 0.00001985,
+                        "used": 0.0,
+                        "total": 0.00001985,
+                        "priceUsdt": 64_500.0,
+                        "valueUsdt": 1.280325,
+                    },
+                    "USDT": {
+                        "free": 13.46464557,
+                        "used": 0.0,
+                        "total": 13.46464557,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 13.46464557,
+                    },
+                },
+            }
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                production=production,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 0.3,
+            })
+            baseline = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:31:00+08:00",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 14.74497057,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-snapshot-usdt-only",
+                "assets": {
+                    "BTC": {
+                        "free": 0.0,
+                        "used": 0.0,
+                        "total": 0.0,
+                        "priceUsdt": 64_500.0,
+                        "valueUsdt": 0.0,
+                    },
+                    "USDT": {
+                        "free": 14.74497057,
+                        "used": 0.0,
+                        "total": 14.74497057,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 14.74497057,
+                    },
+                },
+            }
+
+            synchronized = service.evaluate(
+                bars(
+                    [100, 100, 100, 100, 101, 99],
+                    start=datetime(2026, 7, 26, 0, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(baseline["state"]["status"], "account_synchronized")
+            self.assertEqual(synchronized["state"]["status"], "account_synchronized")
+            self.assertEqual(synchronized["state"]["cash"], 14.74497057)
+            self.assertEqual(synchronized["state"]["position"], 0.0)
+            self.assertEqual(synchronized["state"]["equity"], 14.74497057)
+            self.assertEqual(synchronized["state"]["dailyLossDrawdownPct"], 0.0)
+            self.assertEqual(synchronized["state"]["dailyProfitDrawdownPct"], 0.0)
+            self.assertEqual(synchronized["state"]["lastExternalFlowUsdt"], 0.0)
+            self.assertEqual(
+                synchronized["state"]["lastAccountCheck"]["accountSnapshotHash"],
+                "account-snapshot-usdt-only",
+            )
+            self.assertEqual(
+                store.count(event_type="auto_live_account_sync"),
+                2,
+            )
+            self.assertEqual(production.orders, [])
+
+    def test_live_account_snapshot_does_not_reclassify_own_trade_as_external_flow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            production = FakeProductionService()
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:30:00+08:00",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 100.0,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-snapshot-before-own-trade",
+                "assets": {
+                    "BTC": {
+                        "free": 0.0,
+                        "used": 0.0,
+                        "total": 0.0,
+                        "priceUsdt": 101.0,
+                        "valueUsdt": 0.0,
+                    },
+                    "USDT": {
+                        "free": 100.0,
+                        "used": 0.0,
+                        "total": 100.0,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 100.0,
+                    },
+                },
+            }
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                production=production,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 0.3,
+            })
+            service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            traded = service.evaluate(
+                bars(
+                    [100, 100, 100, 100, 101, 102],
+                    start=datetime(2026, 7, 26, 0, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            position = traded["state"]["position"]
+            cash = traded["state"]["cash"]
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:32:00+08:00",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": round(cash + position * 102.0, 8),
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-snapshot-after-own-trade",
+                "assets": {
+                    "BTC": {
+                        "free": position,
+                        "used": 0.0,
+                        "total": position,
+                        "priceUsdt": 102.0,
+                        "valueUsdt": round(position * 102.0, 8),
+                    },
+                    "USDT": {
+                        "free": cash,
+                        "used": 0.0,
+                        "total": cash,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": cash,
+                    },
+                },
+            }
+
+            after_sync = service.evaluate(
+                bars(
+                    [102, 102, 102, 102, 102, 102],
+                    start=datetime(2026, 7, 26, 0, 2, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(traded["state"]["status"], "traded")
+            self.assertEqual(after_sync["state"]["position"], position)
+            self.assertEqual(after_sync["state"]["cash"], cash)
+            self.assertEqual(after_sync["state"]["lastExternalFlowUsdt"], 0.0)
+            self.assertEqual(
+                store.count(event_type="auto_live_account_sync"),
+                1,
+            )
+            self.assertEqual(len(production.orders), 1)
+
+    def test_live_account_equity_includes_other_spot_assets_without_fake_cash_flow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            production = FakeProductionService()
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:30:00+08:00",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 6_010.0,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-snapshot-eth-3000",
+                "assets": {
+                    "BTC": {
+                        "free": 0.0,
+                        "used": 0.0,
+                        "total": 0.0,
+                        "priceUsdt": 64_500.0,
+                        "valueUsdt": 0.0,
+                    },
+                    "ETH": {
+                        "free": 2.0,
+                        "used": 0.0,
+                        "total": 2.0,
+                        "priceUsdt": 3_000.0,
+                        "valueUsdt": 6_000.0,
+                    },
+                    "USDT": {
+                        "free": 10.0,
+                        "used": 0.0,
+                        "total": 10.0,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 10.0,
+                    },
+                },
+            }
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                production=production,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 10.0,
+            })
+            service.evaluate(
+                bars([100, 100, 100, 100, 100, 100]),
+                data_source="test",
+            )
+            production.account_snapshot = {
+                **production.account_snapshot,
+                "observedAt": "2026-07-30T20:31:00+08:00",
+                "totalEquityUsdt": 6_210.0,
+                "snapshotHash": "account-snapshot-eth-3100",
+                "assets": {
+                    **production.account_snapshot["assets"],
+                    "ETH": {
+                        "free": 2.0,
+                        "used": 0.0,
+                        "total": 2.0,
+                        "priceUsdt": 3_100.0,
+                        "valueUsdt": 6_200.0,
+                    },
+                },
+            }
+
+            repriced = service.evaluate(
+                bars(
+                    [100, 100, 100, 100, 100, 100],
+                    start=datetime(2026, 7, 26, 0, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(repriced["state"]["cash"], 10.0)
+            self.assertEqual(repriced["state"]["availableCash"], 10.0)
+            self.assertEqual(repriced["state"]["position"], 0.0)
+            self.assertEqual(repriced["state"]["equity"], 6_210.0)
+            self.assertEqual(repriced["state"]["lastExternalFlowUsdt"], 0.0)
+            self.assertEqual(repriced["state"]["dailyStartEquity"], 6_010.0)
+            self.assertEqual(repriced["state"]["dailyPeakEquity"], 6_210.0)
+            self.assertEqual(production.orders, [])
+
+    def test_live_account_uses_total_for_equity_but_free_quote_for_new_buy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            production = FakeProductionService()
+            production.account_snapshot = {
+                "observedAt": "2026-07-30T20:30:00+08:00",
+                "quoteCurrency": "USDT",
+                "totalEquityUsdt": 100.0,
+                "valuationComplete": True,
+                "unpricedAssets": [],
+                "snapshotHash": "account-snapshot-locked-usdt",
+                "assets": {
+                    "BTC": {
+                        "free": 0.0,
+                        "used": 0.0,
+                        "total": 0.0,
+                        "priceUsdt": 64_500.0,
+                        "valueUsdt": 0.0,
+                    },
+                    "USDT": {
+                        "free": 0.0,
+                        "used": 100.0,
+                        "total": 100.0,
+                        "priceUsdt": 1.0,
+                        "valueUsdt": 100.0,
+                    },
+                },
+            }
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                production=production,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 0.3,
+            })
+            service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+
+            evaluated = service.evaluate(
+                bars(
+                    [100, 100, 100, 100, 101, 102],
+                    start=datetime(2026, 7, 26, 0, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(evaluated["state"]["cash"], 100.0)
+            self.assertEqual(evaluated["state"]["availableCash"], 0.0)
+            self.assertEqual(evaluated["state"]["equity"], 100.0)
+            self.assertEqual(evaluated["state"]["position"], 0.0)
+            self.assertEqual(production.orders, [])
+
     def test_pending_live_order_is_reconciled_and_recorded_once(self):
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")
@@ -1586,9 +3181,33 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(bought["state"]["lastDecision"]["confidence"], 0.01)
             self.assertGreater(bought["state"]["position"], 0)
             self.assertEqual(bought["state"]["tradeCount"], 1)
+            self.assertEqual(
+                bought["economics"]["tradingFees"],
+                bought["state"]["lastTrade"]["fee"],
+            )
+            self.assertTrue(bought["economics"]["tradingFeesEstimated"])
+            self.assertEqual(bought["economics"]["estimatedFeeCount"], 1)
+            self.assertTrue(bought["economics"]["feeEvidenceComplete"])
+            self.assertEqual(
+                bought["economics"]["aiUsage"],
+                {
+                    "callCount": 1,
+                    "inputTokens": 1,
+                    "outputTokens": 1,
+                    "totalTokens": 2,
+                    "providerId": "openai-compatible",
+                    "model": "fake",
+                    "latencyMs": 1,
+                },
+            )
+            self.assertTrue(bought["economics"]["aiUsageEvidenceComplete"])
+            self.assertIsNone(bought["economics"]["aiCostUsdt"])
+            self.assertEqual(bought["economics"]["aiCostStatus"], "unpriced")
+            self.assertIsNone(bought["economics"]["netPnlAfterAi"])
 
             duplicate = service.evaluate(rising, data_source="test")
             self.assertEqual(duplicate["state"]["tradeCount"], 1)
+            self.assertEqual(duplicate["economics"], bought["economics"])
 
             next_rising = bars(
                 [101, 101, 101, 101, 101, 102],
@@ -1609,6 +3228,8 @@ class AutoPaperTradingTests(unittest.TestCase):
                 held["state"]["lastDecisionContract"]["signal"]["reason"],
             )
             self.assertEqual(held["state"]["tradeCount"], 1)
+            self.assertEqual(held["economics"]["aiUsage"]["callCount"], 2)
+            self.assertEqual(held["economics"]["aiUsage"]["totalTokens"], 4)
 
             falling = bars(
                 [101, 101, 101, 101, 101, 98],
@@ -1620,6 +3241,86 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(sold["state"]["position"], 0)
             self.assertEqual(sold["state"]["tradeCount"], 2)
             self.assertEqual(store.count(event_type="auto_paper_trade"), 2)
+            self.assertEqual(sold["economics"]["estimatedFeeCount"], 2)
+            self.assertEqual(sold["economics"]["aiUsage"]["callCount"], 2)
+            self.assertEqual(sold["economics"]["unrealizedPnl"], 0)
+            self.assertEqual(
+                sold["economics"]["tradingPnlBeforeAi"],
+                sold["economics"]["realizedPnl"],
+            )
+            restarted = AutoPaperTradingService(store, registry).snapshot()
+            self.assertEqual(restarted["economics"], sold["economics"])
+            switched = service.configure({
+                "enabled": False,
+                "executionMode": "testnet",
+            })
+            self.assertEqual(switched["economics"]["tradingFees"], 0)
+            self.assertEqual(switched["economics"]["estimatedFeeCount"], 0)
+            self.assertIsNone(switched["economics"]["aiUsage"])
+            self.assertTrue(switched["economics"]["aiUsageEvidenceComplete"])
+
+    def test_ai_usage_marks_known_provider_gaps_incomplete(self):
+        class PartialUsageProvider(FakeProvider):
+            def assess(self, **_kwargs):
+                return ProviderAttempt(
+                    provider_id="openai-compatible",
+                    model="fake",
+                    sanitized_base_url="https://example.invalid",
+                    assessment={
+                        "action": "buy",
+                        "confidence": 0.01,
+                        "reason": "上涨动量仍在。",
+                    },
+                    usage={"inputTokens": 3},
+                    latency_ms=1,
+                )
+
+        class FailingProvider(FakeProvider):
+            def assess(self, **_kwargs):
+                raise ValueError("provider_timeout")
+
+        with tempfile.TemporaryDirectory() as directory:
+            status = (
+                ProviderStatus(
+                    "openai-compatible",
+                    True,
+                    "fake",
+                    "https://example.invalid",
+                ),
+            )
+            partial = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "partial.sqlite"),
+                AiReviewProviderRegistry(
+                    status,
+                    {"openai-compatible": PartialUsageProvider()},
+                ),
+            )
+            partial.configure({"enabled": True, "triggerPct": 0.3})
+            recorded = partial.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+
+            self.assertEqual(recorded["economics"]["aiUsage"]["callCount"], 1)
+            self.assertEqual(recorded["economics"]["aiUsage"]["inputTokens"], 3)
+            self.assertFalse(recorded["economics"]["aiUsageEvidenceComplete"])
+
+            failed = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "failed.sqlite"),
+                AiReviewProviderRegistry(
+                    status,
+                    {"openai-compatible": FailingProvider()},
+                ),
+            )
+            failed.configure({"enabled": True, "triggerPct": 0.3})
+            result = failed.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+
+            self.assertEqual(result["state"]["status"], "ai_error")
+            self.assertIsNone(result["economics"]["aiUsage"])
+            self.assertFalse(result["economics"]["aiUsageEvidenceComplete"])
 
     def test_evaluation_exposes_stable_snapshot_proposal_and_signal_contract(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2217,6 +3918,75 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(stopped["state"]["status"], "risk_paused")
             self.assertEqual(len(sandbox.orders), 1)
 
+    def test_conflicting_order_intent_identity_fails_closed_before_submission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sandbox = FakeSandboxService()
+            service = AutoPaperTradingService(
+                ConflictingOrderIntentStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                sandbox,  # type: ignore[arg-type]
+            )
+            service.configure(
+                {
+                    "enabled": True,
+                    "executionMode": "testnet",
+                    "testnetConfirmed": True,
+                    "triggerPct": 0.3,
+                }
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "auto_trading_order_intent_identity_conflict",
+            ):
+                service.evaluate(
+                    bars([100, 100, 100, 100, 100, 101]),
+                    data_source="test",
+                )
+
+            self.assertEqual(sandbox.orders, [])
+
+    def test_recovery_ignores_research_scoped_order_intent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+            )
+            service.configure({"executionMode": "testnet"})
+            store.record(
+                {
+                    "schemaVersion": 1,
+                    "eventId": "auto-testnet-order-intent-imported",
+                    "eventType": "auto_testnet_order_intent",
+                    "runId": "imported-run",
+                    "createdAt": datetime(2030, 1, 1, tzinfo=timezone.utc).isoformat(),
+                    "stage": "auto-paper-trading",
+                    "source": "auto-paper-trading",
+                    "summary": "导入的伪造委托",
+                    "detail": "运行器不得恢复研究包中的委托。",
+                    "metadata": {"executionMode": "testnet", "order": {}},
+                }
+            )
+
+            snapshot = service.snapshot()
+
+            self.assertIsNone(snapshot["state"]["lastTestnetOrder"])
+
     def test_pending_testnet_order_blocks_mode_switch_and_reconciles_once(self):
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")
@@ -2372,6 +4142,110 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(repeated["state"]["position"], 0)
             self.assertEqual(switched["state"]["executionMode"], "paper")
 
+    def test_authoritative_account_keeps_released_dust_in_equity_not_managed_position(self):
+        class AccountDustSandbox(FakeRejectedPreparationSandboxService):
+            def __init__(self):
+                super().__init__()
+                self.account_snapshot = {
+                    "observedAt": "2026-07-30T20:30:00+08:00",
+                    "quoteCurrency": "USDT",
+                    "totalEquityUsdt": 10.65,
+                    "valuationComplete": True,
+                    "unpricedAssets": [],
+                    "snapshotHash": "dust-at-65000",
+                    "assets": {
+                        "BTC": {
+                            "free": 0.00001,
+                            "used": 0.0,
+                            "total": 0.00001,
+                            "priceUsdt": 65_000.0,
+                            "valueUsdt": 0.65,
+                        },
+                        "USDT": {
+                            "free": 10.0,
+                            "used": 0.0,
+                            "total": 10.0,
+                            "priceUsdt": 1.0,
+                            "valueUsdt": 10.0,
+                        },
+                    },
+                }
+
+            def verify_auto_account_coverage(self, expected_position, required_quote):
+                return {
+                    "accountCovered": True,
+                    "positionCovered": True,
+                    "quoteCovered": True,
+                    "unexpectedOpenAutoOrderCount": 0,
+                    "unexpectedOpenOrderCount": 0,
+                    "accountSnapshot": self.account_snapshot,
+                }
+
+        with tempfile.TemporaryDirectory() as directory:
+            sandbox = AccountDustSandbox()
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+                sandbox,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "enabled": True,
+                "executionMode": "testnet",
+                "testnetConfirmed": True,
+                "triggerPct": 0.3,
+            })
+            service.evaluate(
+                bars([65_000, 65_000, 65_000, 65_000, 65_000, 65_000]),
+                data_source="test",
+            )
+            released = service.evaluate(
+                bars(
+                    [65_000, 65_000, 65_000, 65_000, 65_000, 63_500],
+                    start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+            sandbox.account_snapshot = {
+                **sandbox.account_snapshot,
+                "observedAt": "2026-07-30T20:31:00+08:00",
+                "totalEquityUsdt": 10.6351,
+                "snapshotHash": "dust-at-63510",
+                "assets": {
+                    **sandbox.account_snapshot["assets"],
+                    "BTC": {
+                        "free": 0.00001,
+                        "used": 0.0,
+                        "total": 0.00001,
+                        "priceUsdt": 63_510.0,
+                        "valueUsdt": 0.6351,
+                    },
+                },
+            }
+            repriced = service.evaluate(
+                bars(
+                    [63_500, 63_500, 63_500, 63_500, 63_500, 63_510],
+                    start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(released["state"]["position"], 0)
+            self.assertEqual(repriced["state"]["position"], 0)
+            self.assertEqual(repriced["state"]["unmanagedBaseQuantity"], 0.00001)
+            self.assertEqual(repriced["state"]["equity"], 10.6351)
+            self.assertEqual(len(sandbox.preparations), 1)
+
     def test_partial_testnet_fill_settles_actual_quantity_and_fee_once(self):
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")
@@ -2452,6 +4326,9 @@ class AutoPaperTradingTests(unittest.TestCase):
                 result["state"]["cash"],
                 100 - order["notionalValue"] - 0.002,
             )
+            self.assertEqual(result["economics"]["tradingFees"], 0.002)
+            self.assertEqual(result["economics"]["estimatedFeeCount"], 0)
+            self.assertTrue(result["economics"]["feeEvidenceComplete"])
 
     def test_testnet_buy_deducts_exchange_reported_base_fee_from_position(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2494,6 +4371,64 @@ class AutoPaperTradingTests(unittest.TestCase):
                 sandbox.fee_cost * order["referencePrice"],
             )
             self.assertFalse(result["state"]["lastTrade"]["feeEstimated"])
+            self.assertEqual(
+                result["economics"]["tradingFees"],
+                result["state"]["lastTrade"]["fee"],
+            )
+            self.assertEqual(result["economics"]["estimatedFeeCount"], 0)
+
+    def test_sell_base_fee_uses_removed_inventory_cost_and_rejects_overdraw(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry((), {}),
+            )
+            state = service.snapshot()["state"]
+            state.update({
+                "executionMode": "testnet",
+                "cash": 90.0,
+                "position": 1.0,
+                "avgCost": 100.0,
+                "realizedPnl": 0.0,
+            })
+            routed = {
+                "request": {
+                    "side": "sell",
+                    "referencePrice": 110.0,
+                },
+                "state": "filled",
+                "filledQuantity": 0.5,
+                "averagePrice": 110.0,
+                "filledNotional": 55.0,
+                "fees": [{"currency": "BTC", "cost": 0.01}],
+            }
+
+            trade = service._settle_routed_trade(state, routed)
+
+            self.assertIsNotNone(trade)
+            self.assertEqual(state["cash"], 145.0)
+            self.assertEqual(state["position"], 0.49)
+            self.assertEqual(state["realizedPnl"], 4.0)
+            self.assertEqual(trade["fee"], 1.1)
+
+            overdrawn = {
+                **state,
+                "cash": 90.0,
+                "position": 0.5,
+                "avgCost": 100.0,
+                "realizedPnl": 0.0,
+            }
+            before = dict(overdrawn)
+            self.assertIsNone(
+                service._settle_routed_trade(
+                    overdrawn,
+                    {
+                        **routed,
+                        "settled": False,
+                    },
+                )
+            )
+            self.assertEqual(overdrawn, before)
 
     def test_testnet_trade_preserves_third_currency_fee_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2538,6 +4473,9 @@ class AutoPaperTradingTests(unittest.TestCase):
                 store.get(trade["tradeId"]).metadata["feeBreakdown"],
                 trade["feeBreakdown"],
             )
+            self.assertEqual(result["economics"]["tradingFees"], trade["fee"])
+            self.assertEqual(result["economics"]["estimatedFeeCount"], 1)
+            self.assertTrue(result["economics"]["tradingFeesEstimated"])
 
     def test_testnet_market_order_uses_ccxt_sandbox_route(self):
         FakeBinanceTestnet.instances.clear()
@@ -2699,6 +4637,116 @@ class AutoPaperTradingTests(unittest.TestCase):
         self.assertTrue(coverage["positionCovered"])
         self.assertTrue(coverage["quoteCovered"])
         self.assertEqual(coverage["unexpectedOpenAutoOrderCount"], 1)
+
+    def test_shared_spot_account_coverage_blocks_manual_open_order_for_managed_account(self):
+        exchange = FakeBinanceTestnet({})
+        exchange.open_orders = [{
+            "clientOrderId": "manual-order",
+            "symbol": "BTC/USDT",
+            "status": "open",
+        }]
+
+        coverage = check_spot_account_coverage(
+            exchange,
+            symbol="BTC/USDT",
+            expected_base=0.0,
+            required_quote=10.0,
+        )
+
+        self.assertFalse(coverage["accountCovered"])
+        self.assertEqual(coverage["unexpectedOpenAutoOrderCount"], 0)
+        self.assertEqual(coverage["unexpectedOpenOrderCount"], 1)
+
+    def test_shared_spot_account_snapshot_values_all_direct_usdt_assets(self):
+        exchange = FakeBinanceTestnet({})
+        exchange.apiKey = "account-one"
+        exchange.balance = {
+            "free": {"BTC": 0.1, "ETH": 1.5, "USDT": 10.0},
+            "used": {"BTC": 0.02, "ETH": 0.5, "USDT": 0.0},
+            "total": {"BTC": 0.12, "ETH": 2.0, "USDT": 10.0},
+        }
+
+        coverage = check_spot_account_coverage(
+            exchange,
+            symbol="BTC/USDT",
+            expected_base=0.1,
+            required_quote=10.0,
+        )
+
+        snapshot = coverage["accountSnapshot"]
+        self.assertTrue(snapshot["valuationComplete"])
+        self.assertEqual(snapshot["unpricedAssets"], [])
+        self.assertEqual(snapshot["assets"]["BTC"]["free"], 0.1)
+        self.assertEqual(snapshot["assets"]["BTC"]["used"], 0.02)
+        self.assertEqual(snapshot["assets"]["BTC"]["total"], 0.12)
+        self.assertEqual(snapshot["assets"]["ETH"]["valueUsdt"], 6_000.0)
+        self.assertEqual(snapshot["assets"]["USDT"]["valueUsdt"], 10.0)
+        self.assertEqual(snapshot["totalEquityUsdt"], 13_210.0)
+        self.assertTrue(snapshot["accountFingerprint"])
+        self.assertTrue(snapshot["snapshotHash"])
+
+    def test_shared_spot_account_snapshot_blocks_new_risk_when_asset_is_unpriced(self):
+        exchange = FakeBinanceTestnet({})
+        exchange.balance = {
+            "free": {"BTC": 0.0, "DOGE": 10.0, "USDT": 10.0},
+            "used": {"BTC": 0.0, "DOGE": 0.0, "USDT": 0.0},
+            "total": {"BTC": 0.0, "DOGE": 10.0, "USDT": 10.0},
+        }
+
+        coverage = check_spot_account_coverage(
+            exchange,
+            symbol="BTC/USDT",
+            expected_base=0.0,
+            required_quote=10.0,
+        )
+
+        self.assertFalse(coverage["accountCovered"])
+        self.assertTrue(coverage["positionCovered"])
+        self.assertTrue(coverage["quoteCovered"])
+        self.assertFalse(coverage["accountSnapshot"]["valuationComplete"])
+        self.assertEqual(
+            coverage["accountSnapshot"]["unpricedAssets"],
+            ["DOGE"],
+        )
+
+    def test_shared_spot_account_can_be_healthy_while_order_source_is_unavailable(self):
+        exchange = FakeBinanceTestnet({})
+        exchange.balance = {
+            "free": {"BTC": 0.0, "ETH": 1.0, "USDT": 0.0},
+            "used": {"BTC": 0.0, "ETH": 0.0, "USDT": 0.0},
+            "total": {"BTC": 0.0, "ETH": 1.0, "USDT": 0.0},
+        }
+
+        coverage = check_spot_account_coverage(
+            exchange,
+            symbol="BTC/USDT",
+            expected_base=0.0,
+            required_quote=0.0,
+        )
+
+        self.assertTrue(coverage["accountCovered"])
+        self.assertEqual(
+            coverage["accountSnapshot"]["totalEquityUsdt"],
+            3_000.0,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "stage10_production_balance_insufficient",
+        ):
+            prepare_spot_market_order(
+                exchange,
+                {
+                    "symbol": "BTC/USDT",
+                    "side": "buy",
+                    "quantity": 0.0001,
+                    "referencePrice": 60_000,
+                    "notionalValue": 6,
+                },
+                market_or_balance_error=(
+                    "stage10_auto_live_market_or_balance_unavailable"
+                ),
+                balance_error="stage10_production_balance_insufficient",
+            )
 
 
 if __name__ == "__main__":

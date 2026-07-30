@@ -30,6 +30,83 @@ class _Position:
     entry_price: float = 0.0
 
 
+def strategy_conditions_met(
+    conditions: list[Condition],
+    closes: list[float],
+    volumes: list[float],
+    index: int,
+) -> bool:
+    return bool(conditions) and all(
+        strategy_condition_met(condition, closes, volumes, index)
+        for condition in conditions
+    )
+
+
+def strategy_condition_met(
+    condition: Condition,
+    closes: list[float],
+    volumes: list[float],
+    index: int,
+) -> bool:
+    if condition.kind == "close_above_sma":
+        average = sma(closes, int(condition.params["window"]), index)
+        return average is not None and closes[index] > average
+    if condition.kind == "close_below_sma":
+        average = sma(closes, int(condition.params["window"]), index)
+        return average is not None and closes[index] < average
+    if condition.kind == "volume_above_sma":
+        average = sma(volumes, int(condition.params["window"]), index)
+        return average is not None and volumes[index] > average
+    if condition.kind == "rsi_below":
+        value = rsi(closes, int(condition.params.get("window", 14)), index)
+        threshold = float(condition.params.get("threshold", 30))
+        return value is not None and value < threshold
+    if condition.kind == "rsi_above":
+        value = rsi(closes, int(condition.params.get("window", 14)), index)
+        threshold = float(condition.params.get("threshold", 70))
+        return value is not None and value > threshold
+    raise ValueError(f"unsupported condition: {condition.kind}")
+
+
+def strategy_exit_reason(
+    strategy: StrategyConfig,
+    entry_price: float,
+    close: float,
+    closes: list[float],
+    volumes: list[float],
+    index: int,
+) -> str | None:
+    if (
+        strategy.risk.stop_loss_pct is not None
+        and close <= entry_price * (1 - strategy.risk.stop_loss_pct)
+    ):
+        return "stop_loss"
+    if (
+        strategy.risk.take_profit_pct is not None
+        and close >= entry_price * (1 + strategy.risk.take_profit_pct)
+    ):
+        return "take_profit"
+    if strategy_conditions_met(
+        strategy.exit_conditions,
+        closes,
+        volumes,
+        index,
+    ):
+        return "exit_conditions"
+    return None
+
+
+def strategy_required_bars(strategy: StrategyConfig) -> int:
+    return max(
+        1,
+        *(
+            int(condition.params["window"])
+            + (1 if condition.kind in {"rsi_below", "rsi_above"} else 0)
+            for condition in (*strategy.entry_conditions, *strategy.exit_conditions)
+        ),
+    )
+
+
 class BacktestEngine:
     def __init__(self, initial_cash: float = 100_000, fee_rate: float = 0.0003, slippage_rate: float = 0.0002) -> None:
         self.initial_cash = initial_cash
@@ -73,11 +150,23 @@ class BacktestEngine:
             )
             proposal_action = "hold"
             proposal_reason = "conditions_not_met"
-            if position.quantity <= 0 and self._all_conditions(strategy.entry_conditions, closes, volumes, index):
+            if position.quantity <= 0 and strategy_conditions_met(
+                strategy.entry_conditions,
+                closes,
+                volumes,
+                index,
+            ):
                 proposal_action = "buy"
                 proposal_reason = "entry_conditions"
             elif position.quantity > 0:
-                exit_reason = self._exit_reason(strategy, position.entry_price, bar.close, closes, volumes, index)
+                exit_reason = strategy_exit_reason(
+                    strategy,
+                    position.entry_price,
+                    bar.close,
+                    closes,
+                    volumes,
+                    index,
+                )
                 if exit_reason is not None:
                     proposal_action = "sell"
                     proposal_reason = exit_reason
@@ -180,46 +269,6 @@ class BacktestEngine:
             equity_curve=equity_curve,
             data_quality=DataQuality(source="local-cache", is_complete=True, rows=evaluation_rows),
         )
-
-    def _all_conditions(self, conditions: list[Condition], closes: list[float], volumes: list[float], index: int) -> bool:
-        return bool(conditions) and all(self._condition_met(condition, closes, volumes, index) for condition in conditions)
-
-    def _condition_met(self, condition: Condition, closes: list[float], volumes: list[float], index: int) -> bool:
-        if condition.kind == "close_above_sma":
-            average = sma(closes, int(condition.params["window"]), index)
-            return average is not None and closes[index] > average
-        if condition.kind == "close_below_sma":
-            average = sma(closes, int(condition.params["window"]), index)
-            return average is not None and closes[index] < average
-        if condition.kind == "volume_above_sma":
-            average = sma(volumes, int(condition.params["window"]), index)
-            return average is not None and volumes[index] > average
-        if condition.kind == "rsi_below":
-            value = rsi(closes, int(condition.params.get("window", 14)), index)
-            threshold = float(condition.params.get("threshold", 30))
-            return value is not None and value < threshold
-        if condition.kind == "rsi_above":
-            value = rsi(closes, int(condition.params.get("window", 14)), index)
-            threshold = float(condition.params.get("threshold", 70))
-            return value is not None and value > threshold
-        raise ValueError(f"unsupported condition: {condition.kind}")
-
-    def _exit_reason(
-        self,
-        strategy: StrategyConfig,
-        entry_price: float,
-        close: float,
-        closes: list[float],
-        volumes: list[float],
-        index: int,
-    ) -> str | None:
-        if strategy.risk.stop_loss_pct is not None and close <= entry_price * (1 - strategy.risk.stop_loss_pct):
-            return "stop_loss"
-        if strategy.risk.take_profit_pct is not None and close >= entry_price * (1 + strategy.risk.take_profit_pct):
-            return "take_profit"
-        if self._all_conditions(strategy.exit_conditions, closes, volumes, index):
-            return "exit_conditions"
-        return None
 
     def _metrics(self, trades: list[Trade], equity_values: list[float], bar_count: int, timeframe: str) -> BacktestMetrics:
         ending_equity = equity_values[-1] if equity_values else self.initial_cash

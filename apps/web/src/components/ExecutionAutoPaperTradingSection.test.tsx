@@ -2,37 +2,336 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFetcher } from "../lib/terminal-api";
 import {
+  AutoTradingEconomicsSummary,
   AutoTradingLedger,
+  AutoTradingOperationsOverview,
   AutoTradingRiskOverview,
   AutoTradingRuntimeHealth,
   AutoTradingServerMonitoring,
   authorizeAutoLiveSession,
   autoTradingActionPath,
   autoTradingAttention,
+  autoTradingCycleCountdown,
   autoTradingDailyDrawdown,
   autoTradingErrorMessage,
   autoTradingNotification,
   autoTradingProfitDrawdown,
+  AutoTradingProductionStrategyOverview,
   ExecutionAutoPaperTradingSection,
-  hasUnresolvedAutoOrder
+  hasUnresolvedAutoOrder,
+  isMonitoringSnapshot,
+  loadAutoTradingSnapshot,
+  showBuiltInAutoTradingSignalControls,
+  type MonitoringSnapshot,
+  type AutoTradingSnapshot
 } from "./ExecutionAutoPaperTradingSection";
 
+function productionSnapshot(): AutoTradingSnapshot {
+  const lastCycleAt = new Date(Date.now() - 1_000).toISOString();
+  return {
+    state: {
+      enabled: true,
+      executionMode: "live",
+      testnetConfirmed: false,
+      liveConfirmed: true,
+      liveOperator: "wenqingjie",
+      liveSessionTtlHours: 0,
+      liveAuthorizedUntil: null,
+      runnerState: "running",
+      runnerIntervalSeconds: 35,
+      runnerCycleCount: 42,
+      consecutiveRunnerFailures: 0,
+      lastRunnerCycleAt: lastCycleAt,
+      lastRunnerSuccessAt: lastCycleAt,
+      lastRunnerErrorAt: null,
+      status: "monitoring",
+      detail: "生产自动交易监控中",
+      symbol: "BTC/USDT",
+      timeframe: "1m",
+      triggerPct: 0.05,
+      orderNotional: 10,
+      stopLossPct: 1,
+      takeProfitPct: 2,
+      dailyLossLimitPct: 2,
+      dailyProfitDrawdownLimitPct: 2,
+      maxTradesPerHour: 20,
+      providerId: "rules",
+      cash: 94,
+      availableCash: 14.74,
+      position: 0.00001,
+      avgCost: 64_000,
+      equity: 95,
+      accountEquity: 110,
+      accountAuthority: "binance_spot",
+      realizedPnl: 0,
+      dailyStartEquity: 95,
+      dailyPeakEquity: 95,
+      tradeCount: 1,
+      tradeTimestamps: [],
+      windowChangePct: 0.01,
+      lastTestnetOrder: null,
+      lastLiveOrder: { state: "filled" },
+      lastOrderResult: {
+        orderResultId: "result-live-1",
+        orderIntentId: "intent-live-1",
+        executionMode: "live",
+        state: "filled",
+        clientOrderId: "aiqt-live-1",
+        externalOrderId: "exchange-live-1",
+        filledQuantity: 0.00001,
+        remainingQuantity: 0,
+        averagePrice: 64_000,
+        filledNotional: 0.64,
+        fees: [{ currency: "USDT", cost: 0.00064 }],
+        feeEstimated: false,
+        error: ""
+      },
+      lastAccountCheck: {
+        accountCovered: true,
+        checkedAt: lastCycleAt,
+        positionCovered: true,
+        quoteCovered: true,
+        unexpectedOpenAutoOrderCount: 0,
+        unexpectedOpenOrderCount: 0,
+        accountSnapshot: {
+          valuationComplete: true,
+          unpricedAssets: [],
+          totalEquityUsdt: 110
+        }
+      },
+      lastDecision: {
+        action: "hold",
+        confidence: 1,
+        reason: "尚未达到交易条件",
+        providerId: "rules",
+        evaluatedAt: lastCycleAt
+      }
+    },
+    economics: {
+      currency: "USDT",
+      executionMode: "live",
+      tradeCount: 1,
+      tradingPnlBeforeAi: 0.009,
+      tradingFees: 0.001,
+      tradingFeesEstimated: false,
+      estimatedFeeCount: 0,
+      feeEvidenceComplete: true,
+      realizedPnl: 0,
+      unrealizedPnl: 0.009,
+      aiUsage: null,
+      aiUsageEvidenceComplete: true,
+      aiCostUsdt: null,
+      aiCostStatus: "unpriced",
+      netPnlAfterAi: null
+    },
+    strategyBinding: {
+      auditRunId: null,
+      bindingId: null,
+      detail: "当前自动交易使用内置策略。",
+      kind: "builtin",
+      market: "crypto",
+      name: "内置自动交易策略",
+      operator: "wenqingjie",
+      revision: "builtin-revision",
+      status: "ready",
+      strategyId: "auto-paper-trading-v1",
+      symbol: "BTC/USDT",
+      switchAllowed: false,
+      switchBlockedReason: "strategy_switch_requires_paused_monitoring",
+      timeframe: "1m"
+    },
+    providers: [],
+    history: [],
+    paperOnly: false,
+    liveTradingAllowed: true,
+    orderSubmissionEnabled: true,
+    routeExecuted: false,
+    liveBlockedBoundary: false
+  };
+}
+
+function healthyMonitoringSnapshot(snapshot: AutoTradingSnapshot): MonitoringSnapshot {
+  return {
+    schemaVersion: 1,
+    status: "healthy",
+    reason: "服务端监控正常",
+    nextAction: "如需外部提醒，请配置 Webhook。",
+    job: {
+      jobId: "server-monitoring",
+      runnerState: "running",
+      cycleCount: 42,
+      consecutiveFailures: 0,
+      lastCycleAt: snapshot.state.lastRunnerCycleAt,
+      lastSuccessAt: snapshot.state.lastRunnerSuccessAt,
+      lastErrorAt: null,
+      lastError: null,
+      nextEligibleRunAt: snapshot.state.lastRunnerCycleAt,
+      deliveryFailureCount: 0,
+      lastDeliveryErrorAt: null,
+      lastDeliveryError: null,
+      health: { status: "running", detail: "服务端监控正常。" }
+    },
+    observedJobs: [],
+    activeIncidents: [],
+    incidents: [],
+    notifications: [],
+    channel: {
+      type: "webhook",
+      configured: false,
+      status: "unconfigured",
+      configurationError: null
+    },
+    tradingActionsAvailable: false
+  };
+}
+
 describe("ExecutionAutoPaperTradingSection", () => {
+  it("counts down only while automatic monitoring is enabled", () => {
+    const state = productionSnapshot().state;
+    state.lastRunnerCycleAt = "2026-07-30T00:00:00.000Z";
+    state.runnerIntervalSeconds = 35;
+
+    expect(autoTradingCycleCountdown(state, Date.parse(state.lastRunnerCycleAt) + 12_000))
+      .toBe(23);
+
+    state.enabled = false;
+    expect(autoTradingCycleCountdown(state, Date.parse(state.lastRunnerCycleAt) + 12_000))
+      .toBeNull();
+  });
+
   it("offers paper, testnet, and explicitly confirmed production modes", () => {
     const html = renderToStaticMarkup(
       <ExecutionAutoPaperTradingSection baseUrl="http://127.0.0.1:8765" />
     );
 
     expect(html).toContain("纸面模拟");
-    expect(html).toContain("Binance Spot Testnet");
-    expect(html).toContain("Binance Spot 生产实盘");
+    expect(html).toContain("币安现货测试网");
+    expect(html).toContain("币安现货生产实盘");
     expect(html).toContain("保存并开启");
     expect(html).toContain("触发涨跌幅 %（0.05–20）");
     expect(html).toContain("生产实盘会使用真实资金");
-    expect(html).toContain("由后端每 35 秒");
+    expect(html).toContain("自动交易运行与委托控制");
+    expect(html).toContain("正在读取已保存的运行上下文");
+    expect(html).toContain("当前窗口涨跌幅");
+    expect(html).not.toContain("Binance Spot");
+    expect(html).not.toContain("五根涨跌幅");
     expect(html).toContain("关闭页面后仍会继续");
     expect(html).toContain("系统通知不可用");
-    expect(html).toContain("M2 · 服务端告警");
+    expect(html).toContain("服务端运行告警");
+  });
+
+  it("projects production runtime in operations without exposing trading actions", () => {
+    const snapshot = productionSnapshot();
+    const monitoring = healthyMonitoringSnapshot(snapshot);
+    const html = renderToStaticMarkup(
+      <AutoTradingOperationsOverview
+        monitoring={monitoring}
+        onOpenAudit={() => undefined}
+        onOpenDynamicTrading={() => undefined}
+        onOpenExecution={() => undefined}
+        snapshot={snapshot}
+      />
+    );
+
+    expect(html).toContain("生产自动交易运行总览");
+    expect(html).toContain("币安现货生产实盘");
+    expect(html).toContain("永久有效");
+    expect(html).toContain("后台运行正常");
+    expect(html).toContain("已完成 42 轮");
+    expect(html).toContain("观望");
+    expect(html).toContain("已成交");
+    expect(html).toContain("内置自动交易策略");
+    expect(html).toContain("账户覆盖");
+    expect(html).toContain("服务端运行告警");
+    expect(html).toContain("回调通知未配置");
+    expect(html).toContain("请配置回调通知");
+    expect(html).not.toContain("Webhook");
+    expect(html).toContain("本生产总览只读取后端事实");
+    expect(html).not.toContain("保存并开启");
+    expect(html).not.toContain("立即评估");
+    expect(html).not.toContain("立即对账");
+    expect(html).not.toContain(">暂停监控<");
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain("<select");
+    expect(isMonitoringSnapshot(monitoring)).toBe(true);
+    expect(isMonitoringSnapshot({ ...monitoring, notifications: [{}] })).toBe(false);
+  });
+
+  it("surfaces runtime failure and protected production routing without mislabeling authorization", () => {
+    const snapshot = productionSnapshot();
+    snapshot.liveTradingAllowed = false;
+    snapshot.state.runnerState = "stopped";
+    const html = renderToStaticMarkup(
+      <AutoTradingOperationsOverview
+        monitoring={healthyMonitoringSnapshot(snapshot)}
+        snapshot={snapshot}
+      />
+    );
+
+    expect(html).toContain('class="operations-production-runtime danger"');
+    expect(html).toContain("后台运行器已停止");
+    expect(html).toContain("生产路由受保护，请查看阻断原因");
+    expect(html).not.toContain("生产会话未授权或已过期");
+  });
+
+  it("keeps operations in a loading state instead of falling back to paper mode", () => {
+    const html = renderToStaticMarkup(
+      <ExecutionAutoPaperTradingSection
+        baseUrl="http://127.0.0.1:8765"
+        variant="operations"
+      />
+    );
+
+    expect(html).toContain("正在读取生产运行状态");
+    expect(html).toContain("当前执行");
+    expect(html).not.toContain("纸面模拟");
+    expect(html).not.toContain("保存并开启");
+  });
+
+  it("projects the persisted production strategy and runtime context in Chinese", () => {
+    expect(showBuiltInAutoTradingSignalControls({ kind: "library" })).toBe(false);
+    expect(showBuiltInAutoTradingSignalControls({ kind: "builtin" })).toBe(true);
+
+    const html = renderToStaticMarkup(
+      <AutoTradingProductionStrategyOverview
+        snapshot={{
+          state: {
+            executionMode: "live",
+            runnerIntervalSeconds: 27,
+            symbol: "ETH/USDT",
+            timeframe: "5m"
+          },
+          strategyBinding: {
+            auditRunId: "run-audited-eth-5m",
+            bindingId: "binding-eth-5m",
+            detail: "当前自动交易使用已审计的以太坊趋势策略。",
+            kind: "library",
+            market: "crypto",
+            name: "以太坊趋势策略",
+            operator: "wenqingjie",
+            revision: "strategy-eth-5m-r3",
+            status: "ready",
+            strategyId: "strategy-eth-5m",
+            symbol: "ETH/USDT",
+            switchAllowed: false,
+            switchBlockedReason: "strategy_switch_requires_paused_monitoring",
+            timeframe: "5m"
+          }
+        }}
+      />
+    );
+
+    expect(html).toContain("生产策略概览");
+    expect(html).toContain("已审计策略");
+    expect(html).toContain("以太坊趋势策略");
+    expect(html).toContain("ETH/USDT · 5m");
+    expect(html).toContain("生产实盘");
+    expect(html).toContain("每 27 秒");
+    expect(html).toContain("run-audited-eth-5m");
+    expect(html).toContain("信号与触发条件由绑定版本固定");
+    expect(html).toContain("不会改写策略");
+    expect(html).not.toContain("BTC/USDT");
+    expect(html).not.toContain("35 秒");
   });
 
   it("renders the separate dynamic-trading workspace from the same auto-trading controls", () => {
@@ -70,7 +369,67 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("最近成交");
     expect(html).toContain("执行链");
     expect(html).toContain("账户与风险");
+    expect(html).toContain("Binance Spot 总净值");
+    expect(html).toContain("可用 USDT");
+    expect(html).toContain("可用 BTC");
     expect(html).toContain("不使用杠杆");
+  });
+
+  it("shows automatic-trading economics and AI usage without inventing a model cost", () => {
+    const html = renderToStaticMarkup(
+      <AutoTradingEconomicsSummary
+        economics={{
+          currency: "USDT",
+          executionMode: "live",
+          tradeCount: 3,
+          tradingPnlBeforeAi: 2.3,
+          tradingFees: 0.001,
+          tradingFeesEstimated: true,
+          estimatedFeeCount: 1,
+          feeEvidenceComplete: true,
+          realizedPnl: 1.5,
+          unrealizedPnl: 0.8,
+          aiUsage: {
+            callCount: 2,
+            inputTokens: 280,
+            outputTokens: 41,
+            totalTokens: 321,
+            providerId: "openai-compatible",
+            model: "gpt-5.5",
+            latencyMs: 860
+          },
+          aiUsageEvidenceComplete: true,
+          aiCostUsdt: null,
+          aiCostStatus: "unpriced",
+          netPnlAfterAi: null
+        }}
+      />
+    );
+
+    expect(html).toContain("自动交易经济账本");
+    expect(html).toContain("生产策略账本");
+    expect(html).toContain("含估算手续费");
+    expect(html).toContain("AI 成本前交易盈亏");
+    expect(html).toContain("+2.30 USDT");
+    expect(html).toContain("0.001 USDT");
+    expect(html).toContain("+1.50 USDT");
+    expect(html).toContain("+0.80 USDT");
+    expect(html).toContain("智能模型成本");
+    expect(html).toContain("未计价");
+    expect(html).toContain("2 次 · 321 令牌 · 最近 OpenAI 兼容服务 / gpt-5.5 / 860 毫秒");
+    expect(html).toContain("扣除模型成本后净盈亏");
+    expect(html).toContain("不可得");
+    expect(html).toContain("不是服务商账单");
+    expect(html).toContain("不代表 Binance 全账户收益");
+  });
+
+  it("does not mislabel an unavailable economics snapshot as paper money", () => {
+    const html = renderToStaticMarkup(<AutoTradingEconomicsSummary />);
+
+    expect(html).toContain("账本模式不可得");
+    expect(html).toContain("正在读取费用证据");
+    expect(html).toContain("正在读取调用证据");
+    expect(html).not.toContain("纸面模拟金额");
   });
 
   it("reauthorizes the current live session without switching mode or enabling monitoring", async () => {
@@ -92,6 +451,29 @@ describe("ExecutionAutoPaperTradingSection", () => {
       liveConfirmed: true,
       liveOperator: "wenqingjie"
     });
+  });
+
+  it("loads the production risk projection from the existing auto-trading status endpoint", async () => {
+    const payload = productionSnapshot();
+    const fetcher: WorkspaceFetcher = async (url) => {
+      expect(url).toBe("http://127.0.0.1:8765/api/execution/auto-paper-trading");
+      return {
+        json: async () => payload,
+        ok: true,
+      } as Response;
+    };
+
+    expect(await loadAutoTradingSnapshot("http://127.0.0.1:8765", fetcher)).toBe(payload);
+  });
+
+  it("rejects an incomplete auto-trading status response before rendering it", async () => {
+    const fetcher: WorkspaceFetcher = async () => ({
+      json: async () => ({ state: {} }),
+      ok: true,
+    }) as Response;
+
+    await expect(loadAutoTradingSnapshot("http://127.0.0.1:8765", fetcher))
+      .rejects.toThrow("auto_trading_snapshot_invalid");
   });
 
   it("recognizes only unresolved testnet and production orders for manual reconciliation", () => {
@@ -139,8 +521,8 @@ describe("ExecutionAutoPaperTradingSection", () => {
       }
     })).toEqual({
       tone: "danger",
-      title: "账户资产不足",
-      detail: "可用 USDT 不足以覆盖下一笔预算。请补足资产或核对本地策略账本后重新检查。"
+      title: "交易所账户检查未通过",
+      detail: "account mismatch"
     });
     expect(autoTradingAttention({
       status: "account_mismatch",
@@ -151,12 +533,35 @@ describe("ExecutionAutoPaperTradingSection", () => {
       lastAccountCheck: {
         positionCovered: true,
         quoteCovered: true,
-        unexpectedOpenAutoOrderCount: 1
+        unexpectedOpenAutoOrderCount: 1,
+        unexpectedOpenOrderCount: 1
       }
     })).toEqual({
       tone: "danger",
-      title: "发现未记录的自动挂单",
-      detail: "发现 1 笔未记录的自动挂单。请先在交易所核对并处理，再重新检查。"
+      title: "存在未决现货挂单",
+      detail: "发现 1 笔未决现货挂单。请先在交易所核对并处理，再重新检查。"
+    });
+    expect(autoTradingAttention({
+      status: "account_mismatch",
+      detail: "valuation incomplete",
+      executionMode: "live",
+      lastLiveOrder: null,
+      lastTestnetOrder: null,
+      lastAccountCheck: {
+        positionCovered: true,
+        quoteCovered: true,
+        unexpectedOpenAutoOrderCount: 0,
+        unexpectedOpenOrderCount: 0,
+        accountSnapshot: {
+          valuationComplete: false,
+          unpricedAssets: ["DOGE"],
+          totalEquityUsdt: 20
+        }
+      }
+    })).toEqual({
+      tone: "danger",
+      title: "账户估值不完整",
+      detail: "DOGE 无法按 USDT 估值，请先处理该资产或补充直接交易对。"
     });
     expect(autoTradingAttention({
       status: "risk_paused",
@@ -646,7 +1051,7 @@ describe("ExecutionAutoPaperTradingSection", () => {
 
     expect(html).toContain("自动委托等待对账");
     expect(html).toContain("下一步：在执行中心使用“立即对账”核对原订单。");
-    expect(html).toContain("Webhook 已就绪");
+    expect(html).toContain("回调通知已就绪");
     expect(html).toContain('title="服务端监控正常。"');
     expect(html).toContain("<details>");
     expect(html).toContain("任务 ID：server-monitoring");
@@ -724,5 +1129,7 @@ describe("ExecutionAutoPaperTradingSection", () => {
       .toBe("无法连接自动交易服务，请检查本地 API 是否运行。");
     expect(autoTradingErrorMessage(new Error("triggerPct_out_of_range")))
       .toBe("触发涨跌幅必须在 0.05% 到 20% 之间");
+    expect(autoTradingErrorMessage(new Error("operations_monitoring_snapshot_invalid")))
+      .toBe("服务端监控响应不完整，请稍后刷新或检查 API。");
   });
 });

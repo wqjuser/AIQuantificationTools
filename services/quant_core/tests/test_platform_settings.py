@@ -287,7 +287,14 @@ class PlatformSettingsTests(unittest.TestCase):
                         "liveTradingAllowed": False,
                     }
 
+            class RuntimeAutoTradingRunner:
+                interval_seconds = 35
+
+                def update_interval(self, interval_seconds):
+                    self.interval_seconds = interval_seconds
+
             runtime_auto_trading = RuntimeAutoTradingService()
+            runtime_auto_trading_runner = RuntimeAutoTradingRunner()
 
             class TestHandler(QuantApiHandler):
                 cache = MarketDataCache(root / "market.sqlite")
@@ -296,6 +303,7 @@ class PlatformSettingsTests(unittest.TestCase):
                 platform_settings_environ = environment
                 settings_restart_required = False
                 auto_paper_trading_service = runtime_auto_trading
+                auto_paper_trading_runner = runtime_auto_trading_runner
 
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
@@ -312,6 +320,7 @@ class PlatformSettingsTests(unittest.TestCase):
                             **initial["values"],
                             "ccxtDefaultExchange": "kraken",
                             "liveSessionTtlHours": 0,
+                            "autoTradingIntervalSeconds": 17,
                             "openaiModel": "database-model",
                         },
                         "secretUpdates": {
@@ -342,6 +351,7 @@ class PlatformSettingsTests(unittest.TestCase):
             self.assertEqual(initial["source"], "environment")
             self.assertEqual(initial["values"]["openaiModel"], "environment-model")
             self.assertEqual(initial["values"]["liveSessionTtlHours"], 8)
+            self.assertEqual(initial["values"]["autoTradingIntervalSeconds"], 35)
             self.assertTrue(initial["secrets"]["openaiApiKey"]["configured"])
             self.assertEqual(saved_response.status, 200)
             self.assertEqual(saved["source"], "database")
@@ -349,9 +359,12 @@ class PlatformSettingsTests(unittest.TestCase):
             self.assertFalse(saved["restartRequired"])
             self.assertEqual(saved["values"]["ccxtDefaultExchange"], "kraken")
             self.assertEqual(saved["values"]["liveSessionTtlHours"], 0)
+            self.assertEqual(saved["values"]["autoTradingIntervalSeconds"], 17)
             self.assertEqual(saved["values"]["openaiModel"], "database-model")
             self.assertEqual(runtime_auto_trading.reloaded_ttl_hours, 0)
+            self.assertEqual(runtime_auto_trading_runner.interval_seconds, 17)
             self.assertEqual(environment["CCXT_DEFAULT_EXCHANGE"], "kraken")
+            self.assertEqual(environment["AIQT_AUTO_TRADING_INTERVAL_SECONDS"], "17")
             self.assertEqual(environment["OPENAI_MODEL"], "database-model")
             self.assertEqual(saved["secrets"]["openaiApiKey"]["masked"], "data••••••••cret")
             self.assertEqual(saved["secrets"]["monitoringWebhookUrl"]["masked"], "http••••••••vate")
@@ -373,6 +386,7 @@ class PlatformSettingsTests(unittest.TestCase):
             )
             self.assertEqual(effective["CCXT_DEFAULT_EXCHANGE"], "kraken")
             self.assertEqual(effective["AIQT_LIVE_SESSION_TTL_HOURS"], "0")
+            self.assertEqual(effective["AIQT_AUTO_TRADING_INTERVAL_SECONDS"], "17")
             self.assertEqual(effective["OPENAI_MODEL"], "database-model")
             self.assertEqual(effective["OPENAI_API_KEY"], "database-openai-secret")
             self.assertEqual(
@@ -392,6 +406,13 @@ class PlatformSettingsTests(unittest.TestCase):
                 store.configuration_payload(effective)["secrets"]["openaiApiKey"],
                 {"configured": False, "masked": None},
             )
+
+            invalid = {**saved["values"], "autoTradingIntervalSeconds": 4}
+            with self.assertRaisesRegex(
+                ValueError,
+                "autoTradingIntervalSeconds_out_of_range",
+            ):
+                store.save(invalid, {}, [], effective)
 
     def test_model_discovery_uses_effective_encrypted_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
