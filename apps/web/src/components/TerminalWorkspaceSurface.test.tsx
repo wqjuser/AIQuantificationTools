@@ -14,6 +14,7 @@ import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
 import type { PortfolioRiskAssessment } from "../lib/portfolio-m5";
 import type {
   MarketDiscoveryResult,
+  MarketAiSelectionQualityStatistics,
   MarketAiSelectionReview,
   MarketAiSelectionResult,
   MarketInformationResult,
@@ -2962,6 +2963,11 @@ describe("TerminalWorkspaceSurface", () => {
       <TerminalWorkspaceSurface
         {...baseProps}
         activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: null,
+        }}
         marketAiSelection={{
           isLoading: false,
           onResearchInstrument: () => undefined,
@@ -2975,11 +2981,6 @@ describe("TerminalWorkspaceSurface", () => {
             onRun: () => undefined,
             result: review,
           },
-        }}
-        marketDiscovery={{
-          isLoading: false,
-          onSearch: () => undefined,
-          result: null,
         }}
       />,
     );
@@ -3003,6 +3004,94 @@ describe("TerminalWorkspaceSurface", () => {
     expect(market).not.toContain("提交订单");
     expect(market).not.toContain("买入");
     expect(market).not.toContain("卖出");
+  });
+
+  it("renders audited AI selection quality statistics with every sample size", () => {
+    const statistics: MarketAiSelectionQualityStatistics = {
+      schemaVersion: 1,
+      recordType: "aiqt.marketAiSelectionQualityStatistics",
+      generatedAt: "2026-08-01T08:00:00+00:00",
+      selectionCount: 3,
+      candidateQualification: { qualifiedCount: 60, sampleCount: 75, ratePct: 80 },
+      majorExclusions: {
+        excludedCount: 15,
+        reasons: [{ reason: "候选未进入成交活跃度前 20 名。", count: 15, ratePct: 100 }],
+      },
+      dataSourceDegradation: { degradedCount: 12, sampleCount: 60, ratePct: 20 },
+      aiSuccess: { successCount: 2, sampleCount: 3, ratePct: 66.67 },
+      stylePerformance: [
+        {
+          profile: "balanced",
+          selectionCount: 2,
+          reviewedSelectionCount: 1,
+          absoluteHitCount: 1,
+          absoluteSampleCount: 2,
+          absoluteHitRatePct: 50,
+          benchmarkHitCount: 1,
+          benchmarkSampleCount: 1,
+          benchmarkHitRatePct: 100,
+        },
+        ...(["quality_growth", "value", "trend"] as const).map((profile, index) => ({
+          profile,
+          selectionCount: index === 2 ? 1 : 0,
+          reviewedSelectionCount: 0,
+          absoluteHitCount: 0,
+          absoluteSampleCount: 0,
+          absoluteHitRatePct: null,
+          benchmarkHitCount: 0,
+          benchmarkSampleCount: 0,
+          benchmarkHitRatePct: null,
+        })),
+      ],
+      boundary: {
+        researchOnly: true,
+        watchlistModified: false,
+        researchStarted: false,
+        riskModified: false,
+        autoTradingModified: false,
+        orderSubmissionAllowed: false,
+        routeExecuted: false,
+      },
+    };
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: null,
+        }}
+        marketAiSelection={{
+          isLoading: false,
+          onResearchInstrument: () => undefined,
+          onRun: () => undefined,
+          onViewInstrument: () => undefined,
+          requestKey: null,
+          result: null,
+          statistics: {
+            isLoading: false,
+            onRefresh: () => undefined,
+            result: statistics,
+          },
+        }}
+      />,
+    );
+
+    expect(market).toContain("选股质量统计");
+    expect(market).toContain("候选合格 60 / 75 · 80.0%");
+    expect(market).toContain("数据源降级 12 / 60 · 20.0%");
+    expect(market).toContain("AI 成功 2 / 3 · 66.7%");
+    expect(market).toContain("候选未进入成交活跃度前 20 名。");
+    expect(market).toContain("均衡 · 选股 2 · 已复盘 1");
+    expect(market).toContain("绝对收益命中");
+    expect(market).toContain("1 / 2 · 50.0%");
+    expect(market).toContain("相对基准命中");
+    expect(market).toContain("1 / 1 · 100.0%");
+    expect(market).toContain("趋势 · 选股 1 · 已复盘 0");
+    expect(market).toContain("仅汇总受保护审计样本");
+    expect(market).not.toContain("提交订单");
+    expect(market).not.toContain(">自动加入<");
   });
 
   it("shows Binance USDT spot discovery with crypto-specific labels and fields", () => {

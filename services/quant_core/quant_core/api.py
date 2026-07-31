@@ -4690,6 +4690,26 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/market/ai-selection-statistics":
+            if parsed.query:
+                self._send_json(
+                    {
+                        "error": "invalid_market_ai_selection_statistics_query",
+                        "detail": "AI 选股质量统计不接受浏览器提供的统计事实。",
+                    },
+                    status=400,
+                )
+                return
+            try:
+                statistics = self._market_ai_selection_service().quality_statistics()
+            except MarketAiSelectionError as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=error.status,
+                )
+                return
+            self._send_json({"statistics": statistics})
+            return
         decision_review_id = _ai_review_decision_route_id(parsed.path)
         if decision_review_id is not None:
             if not decision_review_id:

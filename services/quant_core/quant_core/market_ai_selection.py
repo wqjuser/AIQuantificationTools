@@ -4,6 +4,7 @@ import json
 import math
 import re
 import time
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import (
     Future,
@@ -91,6 +92,7 @@ _STOCK_FUNDAMENTAL_TTL = timedelta(hours=24)
 _CRYPTO_FUNDAMENTAL_TTL = timedelta(minutes=5)
 _MARKET_SNAPSHOT_FRESHNESS = timedelta(minutes=5)
 _US_QUOTE_FRESHNESS = _MARKET_SNAPSHOT_FRESHNESS
+_QUALITY_STATISTICS_PROFILES = ("balanced", "quality_growth", "value", "trend")
 
 
 def resolve_market_ai_selection_research_evidence(
@@ -598,6 +600,315 @@ class MarketAiSelectionService:
         self._sec_request_lock = Lock()
         self._sec_last_request_at: float | None = None
 
+    def quality_statistics(self) -> dict[str, Any]:
+        computed_at = _as_utc(self.clock())
+        selections = [
+            self._quality_statistics_selection(record, computed_at=computed_at)
+            for record in self._quality_statistics_events("market_ai_selection")
+        ]
+        qualified_count = sum(len(item["evidenceCandidates"]) for item in selections)
+        exclusions = [
+            exclusion
+            for item in selections
+            for exclusion in item["exclusions"]
+        ]
+        evaluated_count = qualified_count + len(exclusions)
+        degraded_count = sum(
+            bool(candidate["dataGaps"])
+            for item in selections
+            for candidate in item["evidenceCandidates"]
+        )
+        ai_attempts = [
+            item["generation"]
+            for item in selections
+            if item["generation"]["requestedProvider"] != "local"
+        ]
+        ai_success_count = sum(
+            item["status"] == "completed"
+            and item["usedProvider"] == item["requestedProvider"]
+            and item["fallbackUsed"] is False
+            for item in ai_attempts
+        )
+        reason_counts = Counter(str(item["reason"]) for item in exclusions)
+        style_selection_counts = Counter(str(item["profile"]) for item in selections)
+        selections_by_id = {str(item["selectionId"]): item for item in selections}
+        latest_reviews: dict[str, dict[str, Any]] = {}
+        for record in self._quality_statistics_events("market_ai_selection_review"):
+            review = self._quality_statistics_review(
+                record,
+                selections=selections_by_id,
+                computed_at=computed_at,
+            )
+            current = latest_reviews.get(str(review["selectionId"]))
+            if current is None or (
+                review["createdAt"],
+                review["summary"]["absoluteSampleCount"],
+                review["summary"]["benchmarkSampleCount"],
+                review["reviewId"],
+            ) > (
+                current["createdAt"],
+                current["summary"]["absoluteSampleCount"],
+                current["summary"]["benchmarkSampleCount"],
+                current["reviewId"],
+            ):
+                latest_reviews[str(review["selectionId"])] = review
+        performance_by_profile = {
+            profile: {
+                "reviewedSelectionCount": 0,
+                "absoluteHitCount": 0,
+                "absoluteSampleCount": 0,
+                "benchmarkHitCount": 0,
+                "benchmarkSampleCount": 0,
+            }
+            for profile in _QUALITY_STATISTICS_PROFILES
+        }
+        for review in latest_reviews.values():
+            profile = str(selections_by_id[str(review["selectionId"])]["profile"])
+            performance = performance_by_profile[profile]
+            summary = review["summary"]
+            performance["reviewedSelectionCount"] += 1
+            for key in (
+                "absoluteHitCount",
+                "absoluteSampleCount",
+                "benchmarkHitCount",
+                "benchmarkSampleCount",
+            ):
+                performance[key] += int(summary[key])
+        return {
+            "schemaVersion": 1,
+            "recordType": "aiqt.marketAiSelectionQualityStatistics",
+            "generatedAt": computed_at.isoformat(),
+            "selectionCount": len(selections),
+            "candidateQualification": {
+                "qualifiedCount": qualified_count,
+                "sampleCount": evaluated_count,
+                "ratePct": _market_ai_selection_rate(qualified_count, evaluated_count),
+            },
+            "majorExclusions": {
+                "excludedCount": len(exclusions),
+                "reasons": [
+                    {
+                        "reason": reason,
+                        "count": count,
+                        "ratePct": _market_ai_selection_rate(count, len(exclusions)),
+                    }
+                    for reason, count in sorted(
+                        reason_counts.items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )[:5]
+                ],
+            },
+            "dataSourceDegradation": {
+                "degradedCount": degraded_count,
+                "sampleCount": qualified_count,
+                "ratePct": _market_ai_selection_rate(degraded_count, qualified_count),
+            },
+            "aiSuccess": {
+                "successCount": ai_success_count,
+                "sampleCount": len(ai_attempts),
+                "ratePct": _market_ai_selection_rate(ai_success_count, len(ai_attempts)),
+            },
+            "stylePerformance": [
+                {
+                    "profile": profile,
+                    "selectionCount": style_selection_counts[profile],
+                    **performance_by_profile[profile],
+                    "absoluteHitRatePct": _market_ai_selection_rate(
+                        performance_by_profile[profile]["absoluteHitCount"],
+                        performance_by_profile[profile]["absoluteSampleCount"],
+                    ),
+                    "benchmarkHitRatePct": _market_ai_selection_rate(
+                        performance_by_profile[profile]["benchmarkHitCount"],
+                        performance_by_profile[profile]["benchmarkSampleCount"],
+                    ),
+                }
+                for profile in _QUALITY_STATISTICS_PROFILES
+            ],
+            "boundary": _market_ai_selection_boundary(),
+        }
+
+    def _quality_statistics_events(self, event_type: str) -> list[Any]:
+        records: list[Any] = []
+        try:
+            while True:
+                page = self.audit_store.list_recent(
+                    event_type=event_type,
+                    run_id_is_null=True,
+                    limit=50,
+                    offset=len(records),
+                )
+                records.extend(page)
+                if len(page) < 50:
+                    return records
+        except Exception as error:
+            raise MarketAiSelectionError(
+                "market_ai_selection_statistics_audit_unavailable",
+                503,
+                "AI 选股质量审计暂不可用。",
+            ) from error
+
+    def _quality_statistics_selection(
+        self,
+        record: Any,
+        *,
+        computed_at: datetime,
+    ) -> dict[str, Any]:
+        try:
+            artifact = record.metadata["artifact"]
+            request = validate_market_ai_selection_request(artifact["request"])
+            result = artifact["result"]
+            candidates = artifact["evidenceCandidates"]
+            exclusions = artifact["exclusions"]
+            generation = artifact["generation"]
+            recommendations = result["recommendations"]
+            selection_id = str(artifact["selectionId"])
+            market = str(request["market"])
+            profile = str(request["profile"])
+            provider_identity = artifact["providerIdentity"]
+            record_hash = canonical_sha256(
+                {key: value for key, value in artifact.items() if key != "recordHash"}
+            )
+            candidate_ids = {str(item["evidenceId"]) for item in candidates}
+            recommendation_ids = [str(item["evidenceId"]) for item in recommendations]
+            ranks = [item["rank"] for item in recommendations]
+            _require_market_ai_selection_statistics(
+                record.event_type == "market_ai_selection"
+                and record.run_id is None
+                and record.stage == "market_ai_selection"
+                and record.source == "market-ai-selection"
+                and set(record.metadata) == {"artifact"}
+                and artifact["schemaVersion"] == 1
+                and artifact["recordType"] == "aiqt.marketAiSelection"
+                and record.event_id == f"market-ai-selection-{selection_id}"
+                and artifact["recordHash"] == record_hash
+                and request == artifact["request"]
+                and artifact["weightsVersion"] == _WEIGHTS_VERSION
+                and artifact["weights"]
+                == (_CRYPTO_WEIGHTS if market == "crypto" else _STOCK_WEIGHTS)[profile]
+                and result["selectionId"] == selection_id
+                and result["auditEventId"] == record.event_id
+                and result["generatedAt"] == artifact["generatedAt"]
+                and result["exclusions"] == exclusions
+                and result["generation"] == generation
+                and result["boundary"] == artifact["boundary"]
+                and artifact["boundary"] == _market_ai_selection_boundary()
+                and _parse_datetime(artifact["generatedAt"]) == _as_utc(record.created_at)
+                and _as_utc(record.created_at) <= computed_at
+                and isinstance(candidates, list)
+                and 0 < len(candidates) <= _EVIDENCE_CANDIDATE_LIMIT
+                and all(_valid_statistics_candidate(item, market) for item in candidates)
+                and isinstance(exclusions, list)
+                and all(_valid_statistics_exclusion(item, market) for item in exclusions)
+                and _valid_statistics_generation(generation, request["providerId"])
+                and isinstance(provider_identity, Mapping)
+                and provider_identity.get("providerId") == request["providerId"]
+                and isinstance(recommendations, list)
+                and 0 < len(recommendations) <= _RECOMMENDATION_LIMIT
+                and len(candidate_ids) == len(candidates)
+                and len(set(recommendation_ids)) == len(recommendation_ids)
+                and set(recommendation_ids) <= candidate_ids
+                and len(set(ranks)) == len(ranks)
+                and all(
+                    isinstance(item, Mapping)
+                    and isinstance(item.get("rank"), int)
+                    and not isinstance(item.get("rank"), bool)
+                    and 1 <= item["rank"] <= _RECOMMENDATION_LIMIT
+                    and item.get("tier") in _AI_TIERS
+                    for item in recommendations
+                )
+            )
+        except (KeyError, TypeError, ValueError, MarketAiSelectionError) as error:
+            raise _market_ai_selection_statistics_invalid() from error
+        return {
+            "selectionId": selection_id,
+            "recordHash": str(record_hash),
+            "market": market,
+            "profile": profile,
+            "horizon": str(request.get("horizon") or ""),
+            "evidenceCandidates": list(candidates),
+            "exclusions": list(exclusions),
+            "generation": dict(generation),
+            "recommendationIds": frozenset(recommendation_ids),
+        }
+
+    def _quality_statistics_review(
+        self,
+        record: Any,
+        *,
+        selections: Mapping[str, Mapping[str, Any]],
+        computed_at: datetime,
+    ) -> dict[str, Any]:
+        try:
+            review = record.metadata["review"]
+            selection_id = str(review["selectionId"])
+            selection = selections[selection_id]
+            items = review["items"]
+            summary = review["summary"]
+            benchmark = review["benchmark"]
+            review_id = str(review["reviewId"])
+            item_ids = [str(item["candidateEvidenceId"]) for item in items]
+            identity = {
+                "selectionId": selection_id,
+                "selectionRecordHash": review["selectionRecordHash"],
+                "benchmarkRunId": benchmark["runId"],
+                "benchmarkAuditHash": benchmark["auditHash"],
+                "items": items,
+                "summary": summary,
+            }
+            _require_market_ai_selection_statistics(
+                record.event_type == "market_ai_selection_review"
+                and record.run_id is None
+                and record.stage == "market_ai_selection_review"
+                and record.source == "audited-selection-and-market-data"
+                and set(record.metadata) == {"review"}
+                and review["schemaVersion"] == 1
+                and review["recordType"] == "aiqt.marketAiSelectionReview"
+                and record.event_id == review_id
+                and review["recordHash"] == canonical_sha256(
+                    {key: value for key, value in review.items() if key != "recordHash"}
+                )
+                and review["selectionRecordHash"] == selection["recordHash"]
+                and review["market"] == selection["market"]
+                and review["timeframe"] == "1d"
+                and set(benchmark) == {"runId", "symbol", "auditHash"}
+                and bool(str(benchmark["runId"]).strip())
+                and bool(str(benchmark["symbol"]).strip())
+                and len(str(benchmark["auditHash"])) == 64
+                and isinstance(items, list)
+                and 0 < len(items) <= _RECOMMENDATION_LIMIT
+                and all(isinstance(item, Mapping) for item in items)
+                and len(set(item_ids)) == len(item_ids)
+                and set(item_ids) <= selection["recommendationIds"]
+                and all(
+                    item.get("market") == selection["market"]
+                    and item.get("horizon") == selection["horizon"]
+                    for item in items
+                )
+                and isinstance(summary, Mapping)
+                and dict(summary) == _market_ai_selection_review_summary(items)
+                and review["boundary"] == _market_ai_selection_review_boundary()
+                and review_id
+                == f"market-ai-selection-review-{canonical_sha256(identity)[:32]}"
+                and _parse_datetime(review["createdAt"]) == _as_utc(record.created_at)
+                and _as_utc(record.created_at) <= computed_at
+                and record.summary == "AI 选股到期表现已按已审计基准复盘。"
+                and record.detail
+                == (
+                    f"matured={summary['maturedCount']} "
+                    f"observing={summary['observingCount']} "
+                    f"insufficient={summary['dataInsufficientCount']} "
+                    "researchOnly=true"
+                )
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise _market_ai_selection_statistics_invalid() from error
+        return {
+            "reviewId": review_id,
+            "selectionId": selection_id,
+            "createdAt": _as_utc(record.created_at),
+            "summary": dict(summary),
+        }
+
     def review(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, Mapping) or set(payload) != {
             "selectionId",
@@ -671,15 +982,7 @@ class MarketAiSelectionService:
             for evidence in evidence_rows
         ]
         summary = _market_ai_selection_review_summary(items)
-        boundary = {
-            "researchOnly": True,
-            "affectsRisk": False,
-            "affectsAuthorization": False,
-            "affectsPermissions": False,
-            "affectsOrderRouting": False,
-            "orderSubmissionAllowed": False,
-            "routeExecuted": False,
-        }
+        boundary = _market_ai_selection_review_boundary()
         identity = {
             "selectionId": selection_id,
             "selectionRecordHash": evidence_rows[0]["selectionRecordHash"],
@@ -1301,15 +1604,7 @@ class MarketAiSelectionService:
         warnings = list(dict.fromkeys(warnings))
         market_snapshot["warnings"] = warnings
         status = "partial" if warnings else "complete"
-        boundary = {
-            "researchOnly": True,
-            "watchlistModified": False,
-            "researchStarted": False,
-            "riskModified": False,
-            "autoTradingModified": False,
-            "orderSubmissionAllowed": False,
-            "routeExecuted": False,
-        }
+        boundary = _market_ai_selection_boundary()
         result: dict[str, Any] = {
             "selectionId": selection_id,
             "status": "partial" if status == "partial" else "completed",
@@ -2678,6 +2973,96 @@ def _market_ai_selection_review_summary(
             else None
         ),
     }
+
+
+def _market_ai_selection_rate(numerator: int, denominator: int) -> float | None:
+    return round(numerator / denominator * 100, 2) if denominator else None
+
+
+def _market_ai_selection_boundary() -> dict[str, bool]:
+    return {
+        "researchOnly": True,
+        "watchlistModified": False,
+        "researchStarted": False,
+        "riskModified": False,
+        "autoTradingModified": False,
+        "orderSubmissionAllowed": False,
+        "routeExecuted": False,
+    }
+
+
+def _market_ai_selection_review_boundary() -> dict[str, bool]:
+    return {
+        "researchOnly": True,
+        "affectsRisk": False,
+        "affectsAuthorization": False,
+        "affectsPermissions": False,
+        "affectsOrderRouting": False,
+        "orderSubmissionAllowed": False,
+        "routeExecuted": False,
+    }
+
+
+def _require_market_ai_selection_statistics(value: bool) -> None:
+    if not value:
+        raise ValueError("market_ai_selection_statistics_audit_invalid")
+
+
+def _market_ai_selection_statistics_invalid() -> MarketAiSelectionError:
+    return MarketAiSelectionError(
+        "market_ai_selection_statistics_audit_invalid",
+        409,
+        "AI 选股质量统计检测到无效或冲突的受保护审计记录。",
+    )
+
+
+def _valid_statistics_candidate(value: Any, market: str) -> bool:
+    if not isinstance(value, Mapping) or not isinstance(value.get("fundamental"), Mapping):
+        return False
+    return (
+        value.get("market") == market
+        and bool(str(value.get("evidenceId") or "").strip())
+        and isinstance(value.get("dataGaps"), list)
+        and value["dataGaps"] == _data_gaps(value["fundamental"], market=market)
+        and value.get("evidenceHash")
+        == canonical_sha256(
+            {
+                "candidate": value.get("snapshot"),
+                "dailyBars": value.get("dailyBars"),
+                "factors": value.get("factors"),
+                "fundamental": value.get("fundamental"),
+            }
+        )
+    )
+
+
+def _valid_statistics_exclusion(value: Any, market: str) -> bool:
+    return (
+        isinstance(value, Mapping)
+        and set(value) == {"market", "symbol", "name", "reason"}
+        and value.get("market") == market
+        and bool(str(value.get("reason") or "").strip())
+    )
+
+
+def _valid_statistics_generation(value: Any, requested_provider: str) -> bool:
+    if not isinstance(value, Mapping) or value.get("requestedProvider") != requested_provider:
+        return False
+    status = value.get("status")
+    used_provider = value.get("usedProvider")
+    fallback = value.get("fallbackUsed")
+    return (
+        requested_provider == "local"
+        and status == "skipped"
+        and used_provider == "local"
+        and fallback is False
+    ) or (
+        requested_provider != "local"
+        and (
+            (status == "completed" and used_provider == requested_provider and fallback is False)
+            or (status == "failed" and used_provider == "local" and fallback is True)
+        )
+    )
 
 
 def _technical_factors(bars: Sequence[OHLCVBar]) -> dict[str, float]:

@@ -161,6 +161,7 @@ import {
   buildMarketDiscoveryUrl,
   buildMarketAiSelectionsUrl,
   buildMarketAiSelectionReviewsUrl,
+  buildMarketAiSelectionStatisticsUrl,
   buildMarketInformationUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -172,6 +173,7 @@ import {
   loadMarketDiscovery,
   createMarketAiSelection,
   createMarketAiSelectionReview,
+  loadMarketAiSelectionQualityStatistics,
   loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -353,6 +355,7 @@ import {
   coreErrorDetail,
   type AuditEventRecord,
   type MarketAiSelectionResult,
+  type MarketAiSelectionQualityStatistics,
   type PortfolioBacktestRun,
   type ResearchRunExportPackage
 } from "./terminal-api";
@@ -21854,6 +21857,102 @@ describe("terminal workspace API client", () => {
     expect(String(calls[0]?.init?.body)).not.toContain("\"items\"");
     expect(result.source).toBe("core");
     expect(result.selection?.recommendations[0]?.evidenceId).toBe("evidence-600000");
+  });
+
+  test("loads and strictly validates server-derived AI selection quality statistics", async () => {
+    const statistics: MarketAiSelectionQualityStatistics = {
+      schemaVersion: 1,
+      recordType: "aiqt.marketAiSelectionQualityStatistics",
+      generatedAt: "2026-08-01T08:00:00+00:00",
+      selectionCount: 1,
+      candidateQualification: {
+        qualifiedCount: 20,
+        sampleCount: 25,
+        ratePct: 80,
+      },
+      majorExclusions: {
+        excludedCount: 5,
+        reasons: [{ reason: "候选未进入成交活跃度前 20 名。", count: 5, ratePct: 100 }],
+      },
+      dataSourceDegradation: {
+        degradedCount: 0,
+        sampleCount: 20,
+        ratePct: 0,
+      },
+      aiSuccess: {
+        successCount: 0,
+        sampleCount: 0,
+        ratePct: null,
+      },
+      stylePerformance: ["balanced", "quality_growth", "value", "trend"].map(
+        (profile) => ({
+          profile: profile as MarketAiSelectionQualityStatistics["stylePerformance"][number]["profile"],
+          selectionCount: profile === "balanced" ? 1 : 0,
+          reviewedSelectionCount: 0,
+          absoluteHitCount: 0,
+          absoluteSampleCount: 0,
+          absoluteHitRatePct: null,
+          benchmarkHitCount: 0,
+          benchmarkSampleCount: 0,
+          benchmarkHitRatePct: null,
+        }),
+      ),
+      boundary: {
+        researchOnly: true,
+        watchlistModified: false,
+        researchStarted: false,
+        riskModified: false,
+        autoTradingModified: false,
+        orderSubmissionAllowed: false,
+        routeExecuted: false,
+      },
+    };
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await loadMarketAiSelectionQualityStatistics(
+      "http://127.0.0.1:8765/",
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ statistics }),
+        };
+      },
+    );
+
+    expect(buildMarketAiSelectionStatisticsUrl("/")).toBe(
+      "/api/market/ai-selection-statistics",
+    );
+    expect(calls).toEqual([{
+      url: "http://127.0.0.1:8765/api/market/ai-selection-statistics",
+      init: undefined,
+    }]);
+    expect(result).toEqual({ statistics, source: "core" });
+
+    for (const invalidStatistics of [
+      { ...statistics, orderSubmissionAllowed: true },
+      {
+        ...statistics,
+        candidateQualification: { ...statistics.candidateQualification, ratePct: 79 },
+      },
+      {
+        ...statistics,
+        aiSuccess: { successCount: 0, sampleCount: 0, ratePct: 0 },
+      },
+    ]) {
+      const invalid = await loadMarketAiSelectionQualityStatistics(
+        "/",
+        async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ statistics: invalidStatistics }),
+        }),
+      );
+      expect(invalid).toEqual({
+        source: "fallback",
+        error: "Invalid market AI selection statistics contract",
+      });
+    }
   });
 
   test("posts only audited identities and validates AI selection outcome review samples", async () => {

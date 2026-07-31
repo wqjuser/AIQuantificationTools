@@ -2408,6 +2408,50 @@ export interface MarketAiSelectionReviewLoadResult {
   error?: string;
 }
 
+export interface MarketAiSelectionQualityStatistics {
+  schemaVersion: 1;
+  recordType: "aiqt.marketAiSelectionQualityStatistics";
+  generatedAt: string;
+  selectionCount: number;
+  candidateQualification: {
+    qualifiedCount: number;
+    sampleCount: number;
+    ratePct: number | null;
+  };
+  majorExclusions: {
+    excludedCount: number;
+    reasons: Array<{ reason: string; count: number; ratePct: number }>;
+  };
+  dataSourceDegradation: {
+    degradedCount: number;
+    sampleCount: number;
+    ratePct: number | null;
+  };
+  aiSuccess: {
+    successCount: number;
+    sampleCount: number;
+    ratePct: number | null;
+  };
+  stylePerformance: Array<{
+    profile: MarketAiSelectionProfile;
+    selectionCount: number;
+    reviewedSelectionCount: number;
+    absoluteHitCount: number;
+    absoluteSampleCount: number;
+    absoluteHitRatePct: number | null;
+    benchmarkHitCount: number;
+    benchmarkSampleCount: number;
+    benchmarkHitRatePct: number | null;
+  }>;
+  boundary: MarketAiSelectionResult["boundary"];
+}
+
+export interface MarketAiSelectionQualityStatisticsLoadResult {
+  statistics?: MarketAiSelectionQualityStatistics;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketInformationParams {
   market: Market;
   symbol?: string;
@@ -5892,6 +5936,10 @@ export function buildMarketAiSelectionsUrl(baseUrl: string): string {
 
 export function buildMarketAiSelectionReviewsUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/market/ai-selection-reviews");
+}
+
+export function buildMarketAiSelectionStatisticsUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/market/ai-selection-statistics");
 }
 
 export function buildMarketInformationUrl(
@@ -14222,6 +14270,33 @@ export async function createMarketAiSelectionReview(
   }
 }
 
+export async function loadMarketAiSelectionQualityStatistics(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketAiSelectionQualityStatisticsLoadResult> {
+  try {
+    const response = await fetcher(buildMarketAiSelectionStatisticsUrl(baseUrl));
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (
+      !hasExactAiReviewEnvelopeKeys(payload, ["statistics"])
+      || !isMarketAiSelectionQualityStatistics(payload.statistics)
+    ) {
+      throw new Error("Invalid market AI selection statistics contract");
+    }
+    return { statistics: payload.statistics, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error
+        ? error.message
+        : "Unknown market AI selection statistics error"
+    };
+  }
+}
+
 export async function loadMarketInformation(
   baseUrl: string,
   params: MarketInformationParams,
@@ -22156,6 +22231,145 @@ function isMarketAiSelectionPayload(
     ranks.add(item.rank);
     return true;
   });
+}
+
+function isMarketAiSelectionQualityStatistics(
+  value: unknown
+): value is MarketAiSelectionQualityStatistics {
+  if (!hasExactAiReviewEnvelopeKeys(value, [
+    "schemaVersion",
+    "recordType",
+    "generatedAt",
+    "selectionCount",
+    "candidateQualification",
+    "majorExclusions",
+    "dataSourceDegradation",
+    "aiSuccess",
+    "stylePerformance",
+    "boundary"
+  ])) {
+    return false;
+  }
+  const qualification = value.candidateQualification;
+  const exclusions = value.majorExclusions;
+  const degradation = value.dataSourceDegradation;
+  const aiSuccess = value.aiSuccess;
+  if (
+    value.schemaVersion !== 1
+    || value.recordType !== "aiqt.marketAiSelectionQualityStatistics"
+    || !isOffsetDateTime(value.generatedAt)
+    || !isMarketAiSelectionNonNegativeInteger(value.selectionCount)
+    || !isMarketAiSelectionQualityRate(
+      qualification,
+      "qualifiedCount",
+      "sampleCount",
+      "ratePct",
+    )
+    || !hasExactAiReviewEnvelopeKeys(exclusions, ["excludedCount", "reasons"])
+    || !isMarketAiSelectionNonNegativeInteger(exclusions.excludedCount)
+    || Number(qualification.sampleCount)
+      !== Number(qualification.qualifiedCount) + Number(exclusions.excludedCount)
+    || !Array.isArray(exclusions.reasons)
+    || exclusions.reasons.length > 5
+    || !exclusions.reasons.every((item) => (
+      hasExactAiReviewEnvelopeKeys(item, ["reason", "count", "ratePct"])
+      && typeof item.reason === "string"
+      && Boolean(item.reason.trim())
+      && isMarketAiSelectionNonNegativeInteger(item.count)
+      && item.count > 0
+      && isMarketAiSelectionReviewHitRate(
+        item.ratePct,
+        item.count,
+        Number(exclusions.excludedCount),
+      )
+    ))
+    || (exclusions.excludedCount === 0) !== (exclusions.reasons.length === 0)
+    || exclusions.reasons.reduce((total, item) => total + item.count, 0)
+      > exclusions.excludedCount
+    || !isMarketAiSelectionQualityRate(
+      degradation,
+      "degradedCount",
+      "sampleCount",
+      "ratePct",
+    )
+    || Number(degradation.sampleCount) !== Number(qualification.qualifiedCount)
+    || !isMarketAiSelectionQualityRate(
+      aiSuccess,
+      "successCount",
+      "sampleCount",
+      "ratePct",
+    )
+    || Number(aiSuccess.sampleCount) > value.selectionCount
+    || !Array.isArray(value.stylePerformance)
+    || value.stylePerformance.length !== 4
+    || !isMarketAiSelectionBoundary(value.boundary)
+  ) {
+    return false;
+  }
+  const profiles = new Set<MarketAiSelectionProfile>();
+  let styleSelectionCount = 0;
+  for (const item of value.stylePerformance) {
+    if (
+      !hasExactAiReviewEnvelopeKeys(item, [
+        "profile",
+        "selectionCount",
+        "reviewedSelectionCount",
+        "absoluteHitCount",
+        "absoluteSampleCount",
+        "absoluteHitRatePct",
+        "benchmarkHitCount",
+        "benchmarkSampleCount",
+        "benchmarkHitRatePct"
+      ])
+      || !["balanced", "quality_growth", "value", "trend"].includes(String(item.profile))
+      || profiles.has(item.profile as MarketAiSelectionProfile)
+      || !isMarketAiSelectionNonNegativeInteger(item.selectionCount)
+      || !isMarketAiSelectionNonNegativeInteger(item.reviewedSelectionCount)
+      || item.reviewedSelectionCount > item.selectionCount
+      || !isMarketAiSelectionReviewHitRate(
+        item.absoluteHitRatePct,
+        Number(item.absoluteHitCount),
+        Number(item.absoluteSampleCount),
+      )
+      || !isMarketAiSelectionReviewHitRate(
+        item.benchmarkHitRatePct,
+        Number(item.benchmarkHitCount),
+        Number(item.benchmarkSampleCount),
+      )
+      || !isMarketAiSelectionNonNegativeInteger(item.absoluteHitCount)
+      || !isMarketAiSelectionNonNegativeInteger(item.absoluteSampleCount)
+      || item.absoluteHitCount > item.absoluteSampleCount
+      || !isMarketAiSelectionNonNegativeInteger(item.benchmarkHitCount)
+      || !isMarketAiSelectionNonNegativeInteger(item.benchmarkSampleCount)
+      || item.benchmarkHitCount > item.benchmarkSampleCount
+    ) {
+      return false;
+    }
+    profiles.add(item.profile as MarketAiSelectionProfile);
+    styleSelectionCount += item.selectionCount;
+  }
+  return styleSelectionCount === value.selectionCount;
+}
+
+function isMarketAiSelectionQualityRate(
+  value: unknown,
+  numeratorKey: string,
+  denominatorKey: string,
+  rateKey: string,
+): value is Record<string, number | null> {
+  if (!hasExactAiReviewEnvelopeKeys(value, [numeratorKey, denominatorKey, rateKey])) {
+    return false;
+  }
+  const numerator = value[numeratorKey];
+  const denominator = value[denominatorKey];
+  return isMarketAiSelectionNonNegativeInteger(numerator)
+    && isMarketAiSelectionNonNegativeInteger(denominator)
+    && numerator <= denominator
+    && isMarketAiSelectionReviewHitRate(value[rateKey], numerator, denominator);
+}
+
+function isMarketAiSelectionNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && Number(value) >= 0;
 }
 
 const marketAiSelectionReviewItemBaseKeys = [

@@ -49,6 +49,7 @@ import type {
   MarketDiscoveryResult,
   MarketAiSelectionHorizon,
   MarketAiSelectionProfile,
+  MarketAiSelectionQualityStatistics,
   MarketAiSelectionReview,
   MarketAiSelectionReviewRequest,
   MarketAiSelectionRequest,
@@ -173,6 +174,12 @@ interface TerminalWorkspaceSurfaceProps {
       isLoading: boolean;
       onRun: (request: MarketAiSelectionReviewRequest) => void;
       result: MarketAiSelectionReview | null;
+    };
+    statistics?: {
+      error?: string;
+      isLoading: boolean;
+      onRefresh: () => void;
+      result: MarketAiSelectionQualityStatistics | null;
     };
   };
   marketAiSelectionResearchOrigin?: MarketAiSelectionResearchOrigin | null;
@@ -2047,6 +2054,129 @@ function MarketSurface({
                   </div>
                   <p className="design-market-ai-boundary">
                     仅用于研究复盘；不生成买卖、仓位、授权、风控或订单指令。
+                  </p>
+                </div>
+              ) : null}
+            </div>
+            <div className="design-market-ai-review">
+              <header className="design-market-ai-review-header">
+                <div>
+                  <strong>选股质量统计</strong>
+                  <span>仅回放受保护选股与到期复盘审计，不接受浏览器收益事实</span>
+                </div>
+                <button
+                  className="design-link-button"
+                  disabled={marketAiSelection?.statistics?.isLoading}
+                  onClick={marketAiSelection?.statistics?.onRefresh}
+                  type="button"
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={marketAiSelection?.statistics?.isLoading ? "spin" : undefined}
+                    size={12}
+                  />
+                  {marketAiSelection?.statistics?.isLoading ? "刷新中…" : "刷新统计"}
+                </button>
+              </header>
+              {marketAiSelection?.statistics?.isLoading
+              && !marketAiSelection.statistics.result ? (
+                <p className="design-market-ai-state" role="status">正在回放审计统计…</p>
+              ) : null}
+              {marketAiSelection?.statistics?.error ? (
+                <p className="design-market-ai-state risk" role="alert">
+                  质量统计未刷新：{marketAiSelection.statistics.error}
+                </p>
+              ) : null}
+              {marketAiSelection?.statistics?.result ? (
+                <div className="design-market-ai-review-result">
+                  <div className="design-market-ai-review-summary">
+                    <span>已审计选股 {marketAiSelection.statistics.result.selectionCount}</span>
+                    <strong>
+                      候选合格 {marketAiSelectionReviewHitRate(
+                        marketAiSelection.statistics.result.candidateQualification.qualifiedCount,
+                        marketAiSelection.statistics.result.candidateQualification.sampleCount,
+                        marketAiSelection.statistics.result.candidateQualification.ratePct,
+                      )}
+                    </strong>
+                    <strong>
+                      合格候选数据源降级 {marketAiSelectionReviewHitRate(
+                        marketAiSelection.statistics.result.dataSourceDegradation.degradedCount,
+                        marketAiSelection.statistics.result.dataSourceDegradation.sampleCount,
+                        marketAiSelection.statistics.result.dataSourceDegradation.ratePct,
+                      )}
+                    </strong>
+                    <strong>
+                      AI 成功 {marketAiSelectionReviewHitRate(
+                        marketAiSelection.statistics.result.aiSuccess.successCount,
+                        marketAiSelection.statistics.result.aiSuccess.sampleCount,
+                        marketAiSelection.statistics.result.aiSuccess.ratePct,
+                      )}
+                    </strong>
+                  </div>
+                  <details className="design-market-ai-exclusions">
+                    <summary>
+                      主要排除原因 · 排除样本{
+                        marketAiSelection.statistics.result.majorExclusions.excludedCount
+                      }
+                    </summary>
+                    {marketAiSelection.statistics.result.majorExclusions.reasons.length ? (
+                      <ul>
+                        {marketAiSelection.statistics.result.majorExclusions.reasons.map((item) => (
+                          <li key={item.reason}>
+                            {item.reason} · {marketAiSelectionReviewHitRate(
+                              item.count,
+                              marketAiSelection.statistics?.result?.majorExclusions.excludedCount ?? 0,
+                              item.ratePct,
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </details>
+                  <div className="design-market-ai-results design-market-ai-review-items">
+                    {marketAiSelection.statistics.result.stylePerformance.map((item, index) => (
+                      <article key={item.profile}>
+                        <header>
+                          <span className="design-market-ai-rank">{index + 1}</span>
+                          <div>
+                            <strong>{marketAiSelectionProfileLabels[item.profile]}</strong>
+                            <span>
+                              {marketAiSelectionProfileLabels[item.profile]}
+                              {" · 选股 "}{item.selectionCount}
+                              {" · 已复盘 "}{item.reviewedSelectionCount}
+                            </span>
+                          </div>
+                          <Status tone={item.absoluteSampleCount ? "positive" : "neutral"}>
+                            n={item.absoluteSampleCount}
+                          </Status>
+                        </header>
+                        <dl>
+                          <div>
+                            <dt>绝对收益命中</dt>
+                            <dd>
+                              {marketAiSelectionReviewHitRate(
+                                item.absoluteHitCount,
+                                item.absoluteSampleCount,
+                                item.absoluteHitRatePct,
+                              )}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>相对基准命中</dt>
+                            <dd>
+                              {marketAiSelectionReviewHitRate(
+                                item.benchmarkHitCount,
+                                item.benchmarkSampleCount,
+                                item.benchmarkHitRatePct,
+                              )}
+                            </dd>
+                          </div>
+                        </dl>
+                      </article>
+                    ))}
+                  </div>
+                  <p className="design-market-ai-boundary">
+                    仅汇总受保护审计样本；不自动加入观察池、运行研究或连接订单与生产交易。
                   </p>
                 </div>
               ) : null}

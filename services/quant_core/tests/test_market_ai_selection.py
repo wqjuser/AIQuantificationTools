@@ -574,6 +574,144 @@ def test_local_selection_uses_backend_100_to_20_to_5_and_audits(tmp_path: object
     assert len(artifact["evidenceCandidates"][0]["dailyBars"]) == 180
 
 
+def test_quality_statistics_replay_audited_selection_metrics_and_samples(
+    tmp_path: object,
+) -> None:
+    successful_provider = _Provider()
+    failed_provider = _Provider(invalid=True)
+    service = _service(tmp_path)
+    balanced = service.select(_request(profile="balanced"))
+
+    service.update_runtime(
+        provider_registry=_registry(successful_provider),
+        sec_user_agent="",
+    )
+    service.select(
+        _request(
+            profile="trend",
+            providerId="openai-compatible",
+            externalDataApproved=True,
+        )
+    )
+    service.update_runtime(
+        provider_registry=_registry(failed_provider),
+        sec_user_agent="",
+    )
+    service.select(
+        _request(
+            profile="value",
+            providerId="openai-compatible",
+            externalDataApproved=True,
+        )
+    )
+
+    def degraded_fundamental(
+        candidate: object,
+        cutoff: datetime,
+    ) -> dict[str, object]:
+        value = _stock_fundamental(candidate, cutoff)
+        value["sourceVerification"] = {
+            "status": "not_available",
+            "sources": ["source-a"],
+        }
+        return value
+
+    degraded_service = _service(
+        tmp_path,
+        fundamental_loaders={"ashare": degraded_fundamental},
+    )
+    degraded_service.select(_request(profile="quality_growth"))
+
+    statistics = degraded_service.quality_statistics()
+
+    assert statistics == {
+        "schemaVersion": 1,
+        "recordType": "aiqt.marketAiSelectionQualityStatistics",
+        "generatedAt": NOW.isoformat(),
+        "selectionCount": 4,
+        "candidateQualification": {
+            "qualifiedCount": 80,
+            "sampleCount": 100,
+            "ratePct": 80.0,
+        },
+        "majorExclusions": {
+            "excludedCount": 20,
+            "reasons": [
+                {
+                    "reason": balanced["exclusions"][0]["reason"],
+                    "count": 20,
+                    "ratePct": 100.0,
+                }
+            ],
+        },
+        "dataSourceDegradation": {
+            "degradedCount": 20,
+            "sampleCount": 80,
+            "ratePct": 25.0,
+        },
+        "aiSuccess": {
+            "successCount": 1,
+            "sampleCount": 2,
+            "ratePct": 50.0,
+        },
+        "stylePerformance": [
+            {
+                "profile": profile,
+                "selectionCount": 1,
+                "reviewedSelectionCount": 0,
+                "absoluteHitCount": 0,
+                "absoluteSampleCount": 0,
+                "absoluteHitRatePct": None,
+                "benchmarkHitCount": 0,
+                "benchmarkSampleCount": 0,
+                "benchmarkHitRatePct": None,
+            }
+            for profile in ("balanced", "quality_growth", "value", "trend")
+        ],
+        "boundary": {
+            "researchOnly": True,
+            "watchlistModified": False,
+            "researchStarted": False,
+            "riskModified": False,
+            "autoTradingModified": False,
+            "orderSubmissionAllowed": False,
+            "routeExecuted": False,
+        },
+    }
+
+
+def test_quality_statistics_reject_cross_context_audit_tampering(
+    tmp_path: object,
+) -> None:
+    service = _service(
+        tmp_path,
+        discovery=_Discovery(_rows(), snapshot_hash="a" * 64),
+    )
+    selection = service.select(_request(profile="balanced"))
+    event = service.audit_store.get(selection["auditEventId"])
+    assert event is not None
+    artifact = json.loads(json.dumps(event.metadata["artifact"]))
+    artifact["request"]["profile"] = "trend"
+    artifact["recordHash"] = canonical_sha256(
+        {key: value for key, value in artifact.items() if key != "recordHash"}
+    )
+    connection = sqlite3.connect(tmp_path / "audit.db")  # type: ignore[operator]
+    try:
+        connection.execute(
+            "update audit_events set metadata_json = ? where event_id = ?",
+            (json.dumps({"artifact": artifact}), selection["auditEventId"]),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    with _raises(MarketAiSelectionError) as caught:
+        service.quality_statistics()
+
+    assert caught.value.status == 409
+    assert caught.value.code == "market_ai_selection_statistics_audit_invalid"
+
+
 def test_real_http_handler_is_idempotent_and_rejects_browser_candidates(
     tmp_path: object,
 ) -> None:
@@ -621,11 +759,20 @@ def test_real_http_handler_is_idempotent_and_rejects_browser_candidates(
         response = connection.getresponse()
         return response.status, json.loads(response.read().decode("utf-8"))
 
+    def get_statistics(path: str = "/api/market/ai-selection-statistics") -> tuple[int, dict[str, object]]:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        return response.status, json.loads(response.read().decode("utf-8"))
+
     try:
         first_status, first = post(_request())
         second_status, second = post(_request())
         invalid_status, invalid = post(
             _request(discovery={"items": [{"symbol": "browser-row"}]})
+        )
+        statistics_status, statistics_payload = get_statistics()
+        invalid_statistics_query = get_statistics(
+            "/api/market/ai-selection-statistics?returnPct=999"
         )
     finally:
         connection.close()
@@ -645,6 +792,23 @@ def test_real_http_handler_is_idempotent_and_rejects_browser_candidates(
     assert service.audit_store.count(event_type="market_ai_selection") == 1
     assert invalid_status == 400
     assert invalid["error"] == "invalid_market_ai_selection_discovery"
+    assert statistics_status == 200
+    assert set(statistics_payload) == {"statistics"}
+    statistics = statistics_payload["statistics"]
+    assert statistics["selectionCount"] == 1
+    assert statistics["candidateQualification"] == {
+        "qualifiedCount": 20,
+        "sampleCount": 25,
+        "ratePct": 80.0,
+    }
+    assert statistics["boundary"]["orderSubmissionAllowed"] is False
+    assert invalid_statistics_query == (
+        400,
+        {
+            "error": "invalid_market_ai_selection_statistics_query",
+            "detail": "AI 选股质量统计不接受浏览器提供的统计事实。",
+        },
+    )
 
 
 def test_external_ai_can_choose_candidate_six_and_is_idempotent(tmp_path: object) -> None:
@@ -1542,6 +1706,17 @@ def test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts(
         event.event_type == "market_ai_selection_review"
         for event in service.audit_store.list_all_by_run("run-benchmark")
     )
+    assert service.quality_statistics()["stylePerformance"][0] == {
+        "profile": "balanced",
+        "selectionCount": 1,
+        "reviewedSelectionCount": 1,
+        "absoluteHitCount": 1,
+        "absoluteSampleCount": 1,
+        "absoluteHitRatePct": 100.0,
+        "benchmarkHitCount": 1,
+        "benchmarkSampleCount": 1,
+        "benchmarkHitRatePct": 100.0,
+    }
 
     review_bars["000300"] = [_review_bar("000300", reference_at, 200)]
     degraded = service.review(
@@ -1997,6 +2172,16 @@ class MarketAiSelectionTests(unittest.TestCase):
 
     def test_local_selection_uses_backend_100_to_20_to_5_and_audits(self) -> None:
         self._with_tmp(test_local_selection_uses_backend_100_to_20_to_5_and_audits)
+
+    def test_quality_statistics_replay_audited_selection_metrics_and_samples(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_quality_statistics_replay_audited_selection_metrics_and_samples
+        )
+
+    def test_quality_statistics_reject_cross_context_audit_tampering(self) -> None:
+        self._with_tmp(test_quality_statistics_reject_cross_context_audit_tampering)
 
     def test_real_http_handler_is_idempotent_and_rejects_browser_candidates(
         self,

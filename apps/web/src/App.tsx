@@ -65,6 +65,7 @@ import {
   loadMarketDiscovery,
   createMarketAiSelection,
   createMarketAiSelectionReview,
+  loadMarketAiSelectionQualityStatistics,
   loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -190,6 +191,7 @@ import {
   MarketDiscoveryParams,
   MarketDiscoveryResult,
   MarketAiSelectionLoadResult,
+  MarketAiSelectionQualityStatisticsLoadResult,
   MarketAiSelectionReviewLoadResult,
   MarketAiSelectionReviewRequest,
   MarketAiSelectionRequest,
@@ -2599,6 +2601,11 @@ export function App() {
   const [isLoadingMarketAiSelectionReview, setIsLoadingMarketAiSelectionReview] =
     useState(false);
   const marketAiSelectionReviewRequestRef = useRef(createLatestRequestCoordinator());
+  const [marketAiSelectionStatistics, setMarketAiSelectionStatistics] =
+    useState<MarketAiSelectionQualityStatisticsLoadResult>({ source: "fallback" });
+  const [isLoadingMarketAiSelectionStatistics, setIsLoadingMarketAiSelectionStatistics] =
+    useState(false);
+  const marketAiSelectionStatisticsRequestRef = useRef(createLatestRequestCoordinator());
   const [pendingMarketAiSelectionResearchOrigin, setPendingMarketAiSelectionResearchOrigin] =
     useState<(MarketAiSelectionResearchOrigin & { market: Market; symbol: string }) | null>(
       resolveInitialMarketAiSelectionResearchOrigin,
@@ -5641,6 +5648,30 @@ export function App() {
     setIsLoadingMarketDiscovery(false);
   }, [quantCoreBaseUrl]);
 
+  const refreshMarketAiSelectionStatistics = useCallback(async () => {
+    const token = marketAiSelectionStatisticsRequestRef.current.begin();
+    setIsLoadingMarketAiSelectionStatistics(true);
+    setMarketAiSelectionStatistics((current) => ({ ...current, error: undefined }));
+    const result = await loadMarketAiSelectionQualityStatistics(quantCoreBaseUrl);
+    if (!marketAiSelectionStatisticsRequestRef.current.isCurrent(token)) {
+      return;
+    }
+    setIsLoadingMarketAiSelectionStatistics(false);
+    setMarketAiSelectionStatistics((current) => result.statistics
+      ? result
+      : {
+          ...current,
+          source: "fallback",
+          error: result.error ?? "AI 选股质量统计暂时不可用",
+        });
+  }, [quantCoreBaseUrl]);
+
+  useEffect(() => {
+    if (activeWorkAreaId === "market") {
+      void refreshMarketAiSelectionStatistics();
+    }
+  }, [activeWorkAreaId, refreshMarketAiSelectionStatistics]);
+
   const runMarketAiSelection = useCallback(async (
     request: MarketAiSelectionRequest,
     requestKey: string
@@ -5662,6 +5693,7 @@ export function App() {
       marketAiSelectionReviewRequestRef.current.begin();
       setIsLoadingMarketAiSelectionReview(false);
       setMarketAiSelectionReview({ source: "fallback" });
+      void refreshMarketAiSelectionStatistics();
       return;
     }
     setMarketAiSelection((current) => ({
@@ -5669,7 +5701,7 @@ export function App() {
       source: "fallback",
       error: result.error ?? "AI 选股服务暂时不可用"
     }));
-  }, [quantCoreBaseUrl]);
+  }, [quantCoreBaseUrl, refreshMarketAiSelectionStatistics]);
 
   const runMarketAiSelectionReview = useCallback(async (
     request: MarketAiSelectionReviewRequest,
@@ -5687,6 +5719,7 @@ export function App() {
     setIsLoadingMarketAiSelectionReview(false);
     if (result.review) {
       setMarketAiSelectionReview(result);
+      void refreshMarketAiSelectionStatistics();
       return;
     }
     setMarketAiSelectionReview((current) => ({
@@ -5694,7 +5727,7 @@ export function App() {
       source: "fallback",
       error: result.error ?? "AI 选股复盘服务暂时不可用",
     }));
-  }, [quantCoreBaseUrl]);
+  }, [quantCoreBaseUrl, refreshMarketAiSelectionStatistics]);
 
   const marketDiscoveryMarket = workspace.selectedInstrument.market === "crypto"
     ? "crypto"
@@ -17095,6 +17128,12 @@ export function App() {
               isLoading: isLoadingMarketAiSelectionReview,
               onRun: (request) => void runMarketAiSelectionReview(request),
               result: marketAiSelectionReview.review ?? null,
+            },
+            statistics: {
+              error: marketAiSelectionStatistics.error,
+              isLoading: isLoadingMarketAiSelectionStatistics,
+              onRefresh: () => void refreshMarketAiSelectionStatistics(),
+              result: marketAiSelectionStatistics.statistics ?? null,
             },
           }}
           marketAiSelectionResearchOrigin={
