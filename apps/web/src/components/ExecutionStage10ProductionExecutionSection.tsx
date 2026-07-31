@@ -14,6 +14,7 @@ import type { WorkspaceFetcher } from "../lib/terminal-api";
 import {
   authorizeAutoLiveSession,
   liveAuthorizationLabel,
+  startAutoLiveSession,
   type AutoTradingSnapshot
 } from "./ExecutionAutoPaperTradingSection";
 import { executionEvidenceLabel } from "./execution-readiness-display";
@@ -101,6 +102,18 @@ export function ExecutionStage10ProductionExecutionSection({
     verificationReady &&
     state.control.credentialPreflightId === state.preflight?.preflightId &&
     state.control.permissionVerificationId === state.verification?.verificationId;
+  const effectiveAutoControlActive = state
+    ? controlActive
+    : autoTradingSnapshot?.productionLive?.controlActive === true;
+  const autoLiveStartAvailable = Boolean(
+    autoLiveGate
+    && autoTradingSnapshot
+    && productionTradingEnabled
+    && effectiveAutoControlActive
+    && !autoLiveModeConfigured
+  );
+  const autoLiveRenewalAvailable = autoLiveGate &&
+    isAutoLiveSessionRenewalAvailable(autoTradingSnapshot, effectiveAutoControlActive);
   const reviewReady = review?.outcome === "approved" && review.candidateId === candidate?.candidateId;
   const authorization = useMemo(() => state?.authorizations.find(
     (item) => item.candidateId === candidate?.candidateId
@@ -133,11 +146,15 @@ export function ExecutionStage10ProductionExecutionSection({
             : preflightReady ? "configured_offline"
               : "revoked";
 
-  const authorizeLiveSession = async () => {
+  const completeLiveSessionAction = async (action: "start" | "renew") => {
     setBusy("live-session");
     setError(null);
     try {
-      await authorizeAutoLiveSession(baseUrl, operator, fetcher);
+      if (action === "start") {
+        await startAutoLiveSession(baseUrl, operator, fetcher);
+      } else {
+        await authorizeAutoLiveSession(baseUrl, operator, fetcher);
+      }
       await onAutoLiveAuthorized?.();
     } catch (actionError) {
       setError(message(actionError));
@@ -237,13 +254,13 @@ export function ExecutionStage10ProductionExecutionSection({
         <p role="status">先到设置开启生产实盘总开关，再返回完成生产会话授权。</p>
       ) : null}
 
-      {autoLiveGate && autoTradingSnapshot && productionTradingEnabled && !autoLiveModeConfigured ? (
-        <p role="status">先到自动交易控制台选择生产实盘并保存开启，再返回完成生产会话授权。</p>
+      {autoLiveGate && autoTradingSnapshot === null ? (
+        <p role="status">自动交易状态暂不可用，无法启动或续期生产会话。</p>
       ) : null}
 
-      {autoLiveGate && isAutoLiveSessionRenewalAvailable(autoTradingSnapshot, controlActive) ? (
+      {autoLiveStartAvailable || autoLiveRenewalAvailable ? (
         <fieldset className="execution-stage10-live-session">
-          <legend>生产会话授权与续期</legend>
+          <legend>{autoLiveStartAvailable ? "启动生产实盘自动交易" : "生产会话授权与续期"}</legend>
           <label>
             <input
               checked={liveFundsConfirmed}
@@ -254,12 +271,20 @@ export function ExecutionStage10ProductionExecutionSection({
           </label>
           <button
             disabled={!!busy || !operatorReady || !liveFundsConfirmed}
-            onClick={() => void authorizeLiveSession()}
+            onClick={() => void completeLiveSessionAction(autoLiveStartAvailable ? "start" : "renew")}
             type="button"
           >
-            {busy === "live-session" ? "确认中…" : "确认并续期生产会话"}
+            {busy === "live-session"
+              ? "确认中…"
+              : autoLiveStartAvailable
+                ? "确认并启动生产实盘"
+                : "确认并续期生产会话"}
           </button>
-          <small>仅续期当前已启用的生产实盘模式，不会切换执行模式或立即发起评估。</small>
+          <small>
+            {autoLiveStartAvailable
+              ? "确认后将启动生产实盘后台监控，可能在下一周期评估并提交真实委托；不会立即评估。"
+              : "仅续期当前已启用的生产实盘模式，不会切换执行模式或立即发起评估。"}
+          </small>
         </fieldset>
       ) : null}
 

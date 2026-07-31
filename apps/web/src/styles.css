@@ -22460,10 +22460,6 @@ em {
   line-height: 1.2;
 }
 
-.design-settings-live-toggle-state .on {
-  display: none;
-}
-
 .design-settings-live-toggle-copy small {
   color: var(--muted);
   font-size: calc(9px * var(--aiqt-text-scale, 1));
@@ -22503,14 +22499,6 @@ em {
   color: var(--teal);
 }
 
-.design-settings-live-toggle input:checked ~ .design-settings-live-toggle-copy .off {
-  display: none;
-}
-
-.design-settings-live-toggle input:checked ~ .design-settings-live-toggle-copy .on {
-  display: inline;
-}
-
 .design-settings-live-toggle input:checked ~ .design-settings-live-toggle-control {
   border-color: var(--teal);
   background: var(--teal-dim);
@@ -22519,6 +22507,17 @@ em {
 .design-settings-live-toggle input:checked ~ .design-settings-live-toggle-control::after {
   background: var(--teal);
   transform: translateX(16px);
+}
+
+.design-settings-live-toggle input ~ .design-settings-live-toggle-copy .design-settings-live-toggle-state.dirty {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.design-settings-live-save {
+  grid-column: 1;
+  justify-self: start;
+  min-height: 30px;
 }
 
 .design-settings-field input:focus,

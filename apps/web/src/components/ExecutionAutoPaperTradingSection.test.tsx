@@ -22,6 +22,7 @@ import {
   isMonitoringSnapshot,
   loadAutoTradingSnapshot,
   showBuiltInAutoTradingSignalControls,
+  startAutoLiveSession,
   type MonitoringSnapshot,
   type AutoTradingSnapshot
 } from "./ExecutionAutoPaperTradingSection";
@@ -451,6 +452,49 @@ describe("ExecutionAutoPaperTradingSection", () => {
       liveConfirmed: true,
       liveOperator: "wenqingjie"
     });
+  });
+
+  it("starts live automatic trading with an explicit production mode request", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    const fetcher: WorkspaceFetcher = async (url, init) => {
+      calls.push([String(url), init]);
+      return {
+        json: async () => ({
+          liveTradingAllowed: true,
+          state: { enabled: true, executionMode: "live" }
+        }),
+        ok: true
+      } as Response;
+    };
+
+    await startAutoLiveSession("http://127.0.0.1:8765", " wenqingjie ", fetcher);
+
+    expect(calls).toHaveLength(1);
+    const [url, init] = calls[0];
+    expect(url).toBe("http://127.0.0.1:8765/api/execution/auto-paper-trading");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      enabled: true,
+      executionMode: "live",
+      liveConfirmed: true,
+      liveOperator: "wenqingjie"
+    });
+  });
+
+  it("rejects a start response unless production live monitoring is enabled", async () => {
+    for (const payload of [
+      { liveTradingAllowed: false, state: { enabled: true, executionMode: "live" } },
+      { liveTradingAllowed: true, state: { enabled: false, executionMode: "live" } },
+      { liveTradingAllowed: true, state: { enabled: true, executionMode: "paper" } },
+    ]) {
+      const fetcher: WorkspaceFetcher = async () => ({
+        json: async () => payload,
+        ok: true
+      } as Response);
+
+      await expect(startAutoLiveSession("http://127.0.0.1:8765", "wenqingjie", fetcher))
+        .rejects.toThrow("自动交易未能启动已启用的生产实盘模式");
+    }
   });
 
   it("loads the production risk projection from the existing auto-trading status endpoint", async () => {

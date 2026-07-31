@@ -657,18 +657,15 @@ export function autoTradingActionPath(
     : "api/execution/auto-paper-trading/evaluations";
 }
 
-export async function authorizeAutoLiveSession(
+async function updateAutoTradingState(
   baseUrl: string,
-  operator: string,
+  request: Record<string, unknown>,
   fetcher: WorkspaceFetcher = defaultFetcher
 ) {
   const response = await fetcher(buildApiUrl(baseUrl, "api/execution/auto-paper-trading"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      liveConfirmed: true,
-      liveOperator: operator.trim()
-    })
+    body: JSON.stringify(request)
   });
   const payload = await response.json() as unknown;
   if (!response.ok) {
@@ -678,12 +675,51 @@ export async function authorizeAutoLiveSession(
         : `HTTP ${response.status}`
     );
   }
+  return payload;
+}
+
+export async function authorizeAutoLiveSession(
+  baseUrl: string,
+  operator: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+) {
+  const payload = await updateAutoTradingState(baseUrl, {
+    liveConfirmed: true,
+    liveOperator: operator.trim()
+  }, fetcher);
   if (
     !payload
     || typeof payload !== "object"
     || (payload as Record<string, unknown>).liveTradingAllowed !== true
   ) {
     throw new Error("自动交易尚未处于已启用的生产实盘模式");
+  }
+}
+
+export async function startAutoLiveSession(
+  baseUrl: string,
+  operator: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+) {
+  const payload = await updateAutoTradingState(baseUrl, {
+    enabled: true,
+    executionMode: "live",
+    liveConfirmed: true,
+    liveOperator: operator.trim()
+  }, fetcher);
+  const state = payload && typeof payload === "object"
+    ? (payload as Record<string, unknown>).state
+    : null;
+  if (
+    !payload
+    || typeof payload !== "object"
+    || (payload as Record<string, unknown>).liveTradingAllowed !== true
+    || !state
+    || typeof state !== "object"
+    || (state as Record<string, unknown>).enabled !== true
+    || (state as Record<string, unknown>).executionMode !== "live"
+  ) {
+    throw new Error("自动交易未能启动已启用的生产实盘模式");
   }
 }
 

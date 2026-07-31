@@ -60,9 +60,12 @@ describe("ExecutionStage10ProductionExecutionSection", () => {
     expect(html).not.toContain("急停保护已生效");
     expect(html).not.toContain("先到设置开启生产实盘总开关");
     expect(html).not.toContain("先到自动交易控制台选择生产实盘并保存开启");
+    expect(html).toContain("生产会话授权与续期");
+    expect(html).toContain("确认并续期生产会话");
+    expect(html).not.toContain("启动生产实盘自动交易");
   });
 
-  test("guides non-live automatic trading to enable production mode before renewal", () => {
+  test("offers an explicit production start after route and control are ready", () => {
     for (const state of [
       { enabled: true, executionMode: "paper" },
       { enabled: true, executionMode: "testnet" },
@@ -85,9 +88,48 @@ describe("ExecutionStage10ProductionExecutionSection", () => {
         />,
       );
 
-      expect(html).toContain("先到自动交易控制台选择生产实盘并保存开启");
+      expect(html).toContain("启动生产实盘自动交易");
+      expect(html).toContain("确认并启动生产实盘");
+      expect(html).toContain("确认后将启动生产实盘后台监控，可能在下一周期评估并提交真实委托；不会立即评估");
+      expect(html).not.toContain("先到自动交易控制台选择生产实盘并保存开启");
       expect(html).not.toContain("确认并续期生产会话");
     }
+  });
+
+  test("fails closed when the automatic trading snapshot is unavailable", () => {
+    const html = renderToStaticMarkup(
+      <ExecutionStage10ProductionExecutionSection
+        autoTradingSnapshot={null}
+        baseUrl="http://127.0.0.1:8765"
+        onAutoLiveAuthorized={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("自动交易状态暂不可用，无法启动或续期生产会话");
+    expect(html).not.toContain("确认并启动生产实盘");
+    expect(html).not.toContain("确认并续期生产会话");
+  });
+
+  test("does not offer production start while execution control is inactive", () => {
+    const html = renderToStaticMarkup(
+      <ExecutionStage10ProductionExecutionSection
+        autoTradingSnapshot={{
+          state: { enabled: true, executionMode: "paper" },
+          productionLive: {
+            enabled: true,
+            credentialsConfigured: true,
+            controlActive: false,
+            triggered: false,
+          },
+          liveTradingAllowed: false,
+        } as AutoTradingSnapshot}
+        baseUrl="http://127.0.0.1:8765"
+        onAutoLiveAuthorized={() => undefined}
+      />,
+    );
+
+    expect(html).not.toContain("确认并启动生产实盘");
+    expect(html).not.toContain("确认并续期生产会话");
   });
 
   test("guides a disabled production route before changing automatic trading mode", () => {
@@ -110,6 +152,7 @@ describe("ExecutionStage10ProductionExecutionSection", () => {
 
     expect(html).toContain("先到设置开启生产实盘总开关");
     expect(html).not.toContain("先到自动交易控制台选择生产实盘并保存开启");
+    expect(html).not.toContain("确认并启动生产实盘");
     expect(html).not.toContain("确认并续期生产会话");
   });
 
@@ -140,8 +183,11 @@ describe("ExecutionStage10ProductionExecutionSection", () => {
     expect(isAutoLiveSessionRenewalAvailable(enabledSnapshot, true)).toBe(true);
     expect(isAutoLiveSessionRenewalAvailable(enabledSnapshot, false)).toBe(false);
     expect(disabled).toContain("先到设置开启生产实盘总开关");
+    expect(disabled).not.toContain("确认并启动生产实盘");
     expect(disabled).not.toContain("确认并续期生产会话");
     expect(enabled).not.toContain("先到设置开启生产实盘总开关");
     expect(enabled).not.toContain("先到自动交易控制台选择生产实盘并保存开启");
+    expect(enabled).toContain("确认并续期生产会话");
+    expect(enabled).not.toContain("确认并启动生产实盘");
   });
 });

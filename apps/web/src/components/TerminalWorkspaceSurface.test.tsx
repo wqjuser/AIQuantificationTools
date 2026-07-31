@@ -1593,8 +1593,14 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain('id="platform-setting-production-trading"');
     expect(settings).toContain('aria-describedby="platform-setting-production-trading-help"');
     expect(settings).toContain('type="checkbox" name="productionTradingEnabled" checked=""');
-    expect(settings).toContain('<span class="off">关闭</span><span class="on">开启</span>');
+    expect(settings).toContain('class="design-settings-live-toggle-state">已开启</span>');
     expect(settings).toContain('class="design-settings-live-toggle-control"');
+    expect(settings).toContain(
+      '</label><button class="design-secondary-action design-settings-live-save" disabled="" type="submit">',
+    );
+    expect(settings).toContain("保存并应用配置");
+    expect(settings).not.toContain("待保存开启");
+    expect(settings).not.toContain("待保存关闭");
     expect(settings).toContain('name="autoTradingIntervalSeconds"');
     expect(settings).toContain('name="secEdgarUserAgent"');
     expect(settings).toContain("请包含产品名和联系邮箱");

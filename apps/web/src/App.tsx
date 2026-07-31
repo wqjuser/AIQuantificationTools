@@ -14651,9 +14651,15 @@ export function App() {
     void runPipeline();
   }, [activeLoopStepId, runAiWorkbenchAction, runPipeline, selectProductWorkArea, submitPaperExecution]);
 
-  const openLiveTradingGate = useCallback(() => {
+  const openLiveTradingGate = useCallback(async () => {
+    setAutoTradingSnapshot(null);
+    try {
+      setAutoTradingSnapshot(await loadAutoTradingSnapshot(quantCoreBaseUrl));
+    } catch {
+      setAutoTradingSnapshot(null);
+    }
     setIsLiveTradingGateDialogOpen(true);
-  }, []);
+  }, [quantCoreBaseUrl]);
 
   const completeLiveTradingGate = useCallback(async () => {
     setAutoTradingSnapshot(null);

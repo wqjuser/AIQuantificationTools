@@ -5475,6 +5475,19 @@ function SettingsSurface({
   | "settingsConfigurationMessage"
 >) {
   const configuration = settings?.configuration;
+  const [productionTradingEnabledDraft, setProductionTradingEnabledDraft] = useState(
+    configuration?.values.productionTradingEnabled ?? false,
+  );
+  useEffect(() => {
+    setProductionTradingEnabledDraft(configuration?.values.productionTradingEnabled ?? false);
+  }, [configuration?.revision, configuration?.values.productionTradingEnabled]);
+  const productionTradingEnabledDirty = Boolean(
+    configuration
+    && productionTradingEnabledDraft !== configuration.values.productionTradingEnabled,
+  );
+  const productionTradingStatusLabel = productionTradingEnabledDirty
+    ? productionTradingEnabledDraft ? "待保存开启" : "待保存关闭"
+    : productionTradingEnabledDraft ? "已开启" : "已关闭";
   const dataAdapters = settings?.marketDataAdapters ?? [];
   const fundamentalDataSources = settings?.fundamentalDataSources ?? [];
   const executionAdapters = settings?.executionAdapters ?? [];
@@ -5700,17 +5713,19 @@ function SettingsSurface({
                     <label className="design-settings-live-toggle">
                       <input
                         aria-describedby="platform-setting-production-trading-help"
-                        defaultChecked={configuration.values.productionTradingEnabled}
+                        checked={productionTradingEnabledDraft}
                         id="platform-setting-production-trading"
                         name="productionTradingEnabled"
+                        onChange={(event) => setProductionTradingEnabledDraft(event.currentTarget.checked)}
                         type="checkbox"
                       />
                       <span className="design-settings-live-toggle-copy">
                         <span className="design-settings-live-toggle-heading">
                           <strong>生产实盘总开关</strong>
-                          <span aria-hidden="true" className="design-settings-live-toggle-state">
-                            <span className="off">关闭</span>
-                            <span className="on">开启</span>
+                          <span className={`design-settings-live-toggle-state${
+                            productionTradingEnabledDirty ? " dirty" : ""
+                          }`}>
+                            {productionTradingStatusLabel}
                           </span>
                         </span>
                         <small id="platform-setting-production-trading-help">
@@ -5733,6 +5748,18 @@ function SettingsSurface({
                       />
                       <small>默认 8 小时；0 表示永久有效，直到手动暂停、急停或撤销授权。</small>
                     </label>
+                    <button
+                      className="design-secondary-action design-settings-live-save"
+                      disabled={
+                        isSavingSettingsConfiguration
+                        || !onSaveSettingsConfiguration
+                        || !productionTradingEnabledDirty
+                      }
+                      type="submit"
+                    >
+                      <Save size={13} />
+                      {isSavingSettingsConfiguration ? "保存中…" : "保存并应用配置"}
+                    </button>
                   </div>
                 </fieldset>
                 <fieldset>

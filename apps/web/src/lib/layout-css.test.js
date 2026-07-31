@@ -32,6 +32,10 @@ const executionAutoPaperTradingSource = readFileSync(
   new URL("../components/ExecutionAutoPaperTradingSection.tsx", import.meta.url),
   "utf8"
 );
+const executionStage10ProductionSource = readFileSync(
+  new URL("../components/ExecutionStage10ProductionExecutionSection.tsx", import.meta.url),
+  "utf8"
+);
 const executionAcceptanceAuditPanelSource = readFileSync(
   new URL("../components/ExecutionStage9ProductionAdmissionSection.tsx", import.meta.url),
   "utf8"
@@ -104,6 +108,29 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
+  test("wires explicit production route saving and live-session actions", () => {
+    const productionSafetySource = sourceBetweenText(
+      terminalWorkspaceSurfaceSource,
+      "<legend>生产安全策略</legend>",
+      "<legend>AI Provider</legend>"
+    );
+
+    expect(productionSafetySource).toContain("checked={productionTradingEnabledDraft}");
+    expect(productionSafetySource).toContain(
+      "onChange={(event) => setProductionTradingEnabledDraft(event.currentTarget.checked)}"
+    );
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      '? productionTradingEnabledDraft ? "待保存开启" : "待保存关闭"'
+    );
+    expect(productionSafetySource).toContain('type="submit"');
+    expect(terminalWorkspaceSurfaceSource).toContain(
+      'productionTradingEnabled: data.has("productionTradingEnabled")'
+    );
+    expect(executionStage10ProductionSource).toContain(
+      'completeLiveSessionAction(autoLiveStartAvailable ? "start" : "renew")'
+    );
+  });
+
   test("runs the configured strategy experiment from the redesigned backtest action", () => {
     const terminalActionSource = sourceBetween(
       "const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {",
@@ -1640,6 +1667,11 @@ describe("terminal layout css", () => {
       "const automatedTradingWorkAreaIds",
       "];"
     );
+    const liveGateOpenSource = sourceBetweenText(
+      appSource,
+      "const openLiveTradingGate = useCallback(",
+      "const completeLiveTradingGate = useCallback("
+    );
     const expectedOrder = [
       '"settings"',
       '"market"',
@@ -1680,6 +1712,11 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain("onAction={automatedTradingGuideAction}");
     expect(appSource).toContain("setIsLiveTradingGateDialogOpen(true);");
+    expect(liveGateOpenSource).toContain(
+      "await loadAutoTradingSnapshot(quantCoreBaseUrl)"
+    );
+    expect(liveGateOpenSource.indexOf("await loadAutoTradingSnapshot"))
+      .toBeLessThan(liveGateOpenSource.indexOf("setIsLiveTradingGateDialogOpen(true)"));
     expect(appSource).toContain("liveTradingGateDialogRef.current?.showModal();");
     expect(appSource).toContain('aria-labelledby="live-trading-gate-dialog-title"');
     expect(appSource).toContain('className="research-confirmation-dialog live-trading-gate-dialog"');
