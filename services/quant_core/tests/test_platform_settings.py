@@ -15,13 +15,15 @@ from quant_core.audit_events import AuditEventStore
 from quant_core.cache import MarketDataCache
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 from quant_core.monitoring import MonitoringService
-from quant_core.settings import PlatformSettingsStore
+from quant_core.settings import PlatformSettingsStore, build_settings_status
 
 
 class PlatformSettingsTests(unittest.TestCase):
     def test_settings_status_projects_current_execution_mode_and_production_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            environment = {}
+            sec_user_agent = "AIQuantificationTools settings-test@example.test"
 
             class AutoTradingService:
                 @staticmethod
@@ -51,6 +53,7 @@ class PlatformSettingsTests(unittest.TestCase):
                     root / "platform_settings.sqlite",
                     root / "platform-settings.key",
                 )
+                platform_settings_environ = environment
 
                 def _auto_paper_trading_service(self):
                     return AutoTradingService()
@@ -62,7 +65,36 @@ class PlatformSettingsTests(unittest.TestCase):
             try:
                 connection.request("GET", "/api/settings/status")
                 response = connection.getresponse()
-                safety = json.loads(response.read().decode("utf-8"))["settings"]["safety"]
+                initial_settings = json.loads(response.read().decode("utf-8"))["settings"]
+                safety = initial_settings["safety"]
+                initial_sources = {
+                    source["id"]: source
+                    for source in initial_settings["fundamentalDataSources"]
+                }
+                configuration = {
+                    **initial_settings["configuration"]["values"],
+                    "secEdgarUserAgent": sec_user_agent,
+                }
+                connection.request(
+                    "PUT",
+                    "/api/settings/configuration",
+                    body=json.dumps(
+                        {
+                            "configuration": configuration,
+                            "secretUpdates": {},
+                            "clearSecrets": [],
+                        }
+                    ),
+                    headers={"Content-Type": "application/json"},
+                )
+                saved_response = connection.getresponse()
+                saved_settings = json.loads(saved_response.read().decode("utf-8"))[
+                    "settings"
+                ]
+                saved_sources = {
+                    source["id"]: source
+                    for source in saved_settings["fundamentalDataSources"]
+                }
             finally:
                 connection.close()
                 server.shutdown()
@@ -78,6 +110,93 @@ class PlatformSettingsTests(unittest.TestCase):
                 "stage10_production_execution_control_evidence_stale",
             )
             self.assertFalse(safety["productionLive"]["controlActive"])
+            self.assertEqual(
+                initial_sources["us-sec-companyfacts"],
+                {
+                    "id": "us-sec-companyfacts",
+                    "market": "us",
+                    "provider": "sec-companyfacts",
+                    "status": "blocked",
+                    "configured": False,
+                    "reasonCode": "sec_edgar_user_agent_missing",
+                    "reason": "请配置 SEC EDGAR User-Agent 联系信息。",
+                },
+            )
+            self.assertEqual(saved_response.status, 200)
+            self.assertEqual(saved_sources["us-sec-companyfacts"]["status"], "ready")
+            self.assertTrue(saved_sources["us-sec-companyfacts"]["configured"])
+            self.assertEqual(
+                saved_sources["us-sec-companyfacts"]["reasonCode"],
+                "sec_edgar_user_agent_configured",
+            )
+            self.assertNotIn(
+                sec_user_agent,
+                json.dumps(saved_sources["us-sec-companyfacts"], ensure_ascii=False),
+            )
+            self.assertEqual(environment["SEC_EDGAR_USER_AGENT"], sec_user_agent)
+            self.assertEqual(
+                saved_sources["crypto-coingecko-binance-mapping"]["status"],
+                "ready_for_probe",
+            )
+
+    def test_fundamental_status_respects_akshare_dependency_override(self):
+        blocked = build_settings_status(
+            cache_path="unused.sqlite",
+            adapter_dependency_statuses={
+                "akshare": False,
+                "yfinance": True,
+                "ccxt": True,
+            },
+        )
+        ready = build_settings_status(
+            cache_path="unused.sqlite",
+            adapter_dependency_statuses={
+                "akshare": True,
+                "yfinance": True,
+                "ccxt": True,
+            },
+        )
+        invalid_sec = build_settings_status(
+            cache_path="unused.sqlite",
+            sec_edgar_user_agent="x",
+            adapter_dependency_statuses={
+                "akshare": True,
+                "yfinance": True,
+                "ccxt": True,
+            },
+        )
+
+        blocked_source = next(
+            source
+            for source in blocked["fundamentalDataSources"]
+            if source["id"] == "ashare-akshare-financials"
+        )
+        ready_source = next(
+            source
+            for source in ready["fundamentalDataSources"]
+            if source["id"] == "ashare-akshare-financials"
+        )
+        invalid_sec_source = next(
+            source
+            for source in invalid_sec["fundamentalDataSources"]
+            if source["id"] == "us-sec-companyfacts"
+        )
+        self.assertEqual(
+            (blocked_source["status"], blocked_source["reasonCode"]),
+            ("blocked", "dependency_missing"),
+        )
+        self.assertEqual(
+            (ready_source["status"], ready_source["reasonCode"]),
+            ("ready", "dependency_available"),
+        )
+        self.assertEqual(
+            (
+                invalid_sec_source["status"],
+                invalid_sec_source["configured"],
+                invalid_sec_source["reasonCode"],
+            ),
+            ("blocked", True, "sec_edgar_user_agent_invalid"),
+        )
 
     def test_finnhub_key_is_applied_to_live_quotes_without_api_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -253,6 +372,7 @@ class PlatformSettingsTests(unittest.TestCase):
                 "OPENAI_API_KEY": "environment-openai-secret",
                 "OPENAI_MODEL": "environment-model",
                 "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+                "SEC_EDGAR_USER_AGENT": "environment-contact@example.test",
                 "AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS": "5",
                 "AIQT_FREE_STOCKDB_TIMEOUT_SECONDS": "3",
             }
@@ -322,6 +442,7 @@ class PlatformSettingsTests(unittest.TestCase):
                             "liveSessionTtlHours": 0,
                             "autoTradingIntervalSeconds": 17,
                             "openaiModel": "database-model",
+                            "secEdgarUserAgent": "AIQuantificationTools database-contact@example.test",
                         },
                         "secretUpdates": {
                             "openaiApiKey": "database-openai-secret",
@@ -350,6 +471,10 @@ class PlatformSettingsTests(unittest.TestCase):
             self.assertEqual(initial_response.status, 200)
             self.assertEqual(initial["source"], "environment")
             self.assertEqual(initial["values"]["openaiModel"], "environment-model")
+            self.assertEqual(
+                initial["values"]["secEdgarUserAgent"],
+                "environment-contact@example.test",
+            )
             self.assertEqual(initial["values"]["liveSessionTtlHours"], 8)
             self.assertEqual(initial["values"]["autoTradingIntervalSeconds"], 35)
             self.assertTrue(initial["secrets"]["openaiApiKey"]["configured"])
@@ -361,11 +486,19 @@ class PlatformSettingsTests(unittest.TestCase):
             self.assertEqual(saved["values"]["liveSessionTtlHours"], 0)
             self.assertEqual(saved["values"]["autoTradingIntervalSeconds"], 17)
             self.assertEqual(saved["values"]["openaiModel"], "database-model")
+            self.assertEqual(
+                saved["values"]["secEdgarUserAgent"],
+                "AIQuantificationTools database-contact@example.test",
+            )
             self.assertEqual(runtime_auto_trading.reloaded_ttl_hours, 0)
             self.assertEqual(runtime_auto_trading_runner.interval_seconds, 17)
             self.assertEqual(environment["CCXT_DEFAULT_EXCHANGE"], "kraken")
             self.assertEqual(environment["AIQT_AUTO_TRADING_INTERVAL_SECONDS"], "17")
             self.assertEqual(environment["OPENAI_MODEL"], "database-model")
+            self.assertEqual(
+                environment["SEC_EDGAR_USER_AGENT"],
+                "AIQuantificationTools database-contact@example.test",
+            )
             self.assertEqual(saved["secrets"]["openaiApiKey"]["masked"], "data••••••••cret")
             self.assertEqual(saved["secrets"]["monitoringWebhookUrl"]["masked"], "http••••••••vate")
             self.assertFalse(saved_settings["safety"]["liveTradingAllowed"])
@@ -382,12 +515,17 @@ class PlatformSettingsTests(unittest.TestCase):
                     "CCXT_DEFAULT_EXCHANGE": "coinbase",
                     "OPENAI_API_KEY": "changed-environment-secret",
                     "OPENAI_MODEL": "changed-environment-model",
+                    "SEC_EDGAR_USER_AGENT": "changed-contact@example.test",
                 }
             )
             self.assertEqual(effective["CCXT_DEFAULT_EXCHANGE"], "kraken")
             self.assertEqual(effective["AIQT_LIVE_SESSION_TTL_HOURS"], "0")
             self.assertEqual(effective["AIQT_AUTO_TRADING_INTERVAL_SECONDS"], "17")
             self.assertEqual(effective["OPENAI_MODEL"], "database-model")
+            self.assertEqual(
+                effective["SEC_EDGAR_USER_AGENT"],
+                "AIQuantificationTools database-contact@example.test",
+            )
             self.assertEqual(effective["OPENAI_API_KEY"], "database-openai-secret")
             self.assertEqual(
                 effective["CCXT_PRODUCTION_TRADING_SECRET"],
@@ -426,6 +564,7 @@ class PlatformSettingsTests(unittest.TestCase):
                 root / "platform-settings.key",
             )
             configuration = store.configuration_payload(environment)["values"]
+            self.assertEqual(configuration["secEdgarUserAgent"], "")
             store.save(
                 {
                     **configuration,

@@ -36,6 +36,7 @@ _PUBLIC_SETTING_SPECS = {
     "openaiCompatibleModel": ("OPENAI_COMPATIBLE_MODEL", ""),
     "ollamaBaseUrl": ("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
     "ollamaModel": ("OLLAMA_MODEL", ""),
+    "secEdgarUserAgent": ("SEC_EDGAR_USER_AGENT", ""),
     "monitoringWebhookTimeoutSeconds": ("AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS", "5"),
     "freeStockdbTimeoutSeconds": ("AIQT_FREE_STOCKDB_TIMEOUT_SECONDS", "3"),
 }
@@ -374,12 +375,20 @@ def _public_setting_for_payload(field: str, value: str) -> str | int:
     return min(max(parsed, minimum), maximum)
 
 
+def _valid_sec_edgar_user_agent(value: str) -> bool:
+    normalized = value.strip()
+    return 8 <= len(normalized) <= 255 and bool(
+        re.search(r"(?:\S+@\S+|https?://\S+)", normalized, re.IGNORECASE)
+    )
+
+
 def build_settings_status(
     *,
     cache_path: str | Path,
     cache_contexts: list[dict[str, Any]] | None = None,
     cache_stats: dict[str, Any] | None = None,
     finnhub_api_key: str | None = None,
+    sec_edgar_user_agent: str | None = None,
     ccxt_exchange: str | None = None,
     adapter_dependency_statuses: dict[str, bool] | None = None,
     adapter_error_events: list[dict[str, Any]] | None = None,
@@ -396,6 +405,17 @@ def build_settings_status(
         _cache_context_to_payload(context, generated_at=generated_timestamp) for context in (cache_contexts or [])
     ]
     finnhub_configured = bool((finnhub_api_key if finnhub_api_key is not None else os.getenv("FINNHUB_API_KEY", "")).strip())
+    raw_sec_edgar_user_agent = (
+        sec_edgar_user_agent
+        if sec_edgar_user_agent is not None
+        else os.getenv("SEC_EDGAR_USER_AGENT", "")
+    )
+    sec_edgar_configured = bool(raw_sec_edgar_user_agent.strip())
+    sec_edgar_ready = _valid_sec_edgar_user_agent(raw_sec_edgar_user_agent)
+    akshare_financials_available = _adapter_dependency_available(
+        "akshare",
+        adapter_dependency_statuses,
+    )
     raw_exchange = ccxt_exchange if ccxt_exchange is not None else os.getenv("CCXT_DEFAULT_EXCHANGE", "")
     exchange_configured = bool(raw_exchange.strip())
     exchange = raw_exchange.strip() or "binance"
@@ -437,6 +457,58 @@ def build_settings_status(
                 "optionalKeyName": "CCXT_DEFAULT_EXCHANGE",
                 "optionalKeyConfigured": exchange_configured,
                 "note": "Public OHLCV and ticker routes stay paper-only until exchange trade keys are explicitly certified.",
+            },
+        ],
+        "fundamentalDataSources": [
+            {
+                "id": "ashare-akshare-financials",
+                "market": "ashare",
+                "provider": "akshare",
+                "status": "ready" if akshare_financials_available else "blocked",
+                "configured": akshare_financials_available,
+                "reasonCode": (
+                    "dependency_available"
+                    if akshare_financials_available
+                    else "dependency_missing"
+                ),
+                "reason": (
+                    "AKShare 财务依赖已就绪。"
+                    if akshare_financials_available
+                    else "未安装 AKShare 财务依赖。"
+                ),
+            },
+            {
+                "id": "us-sec-companyfacts",
+                "market": "us",
+                "provider": "sec-companyfacts",
+                "status": "ready" if sec_edgar_ready else "blocked",
+                "configured": sec_edgar_configured,
+                "reasonCode": (
+                    "sec_edgar_user_agent_configured"
+                    if sec_edgar_ready
+                    else "sec_edgar_user_agent_invalid"
+                    if sec_edgar_configured
+                    else "sec_edgar_user_agent_missing"
+                ),
+                "reason": (
+                    "SEC EDGAR 联系信息已配置。"
+                    if sec_edgar_ready
+                    else "SEC EDGAR User-Agent 必须包含有效邮箱或 HTTP(S) 联系地址。"
+                    if sec_edgar_configured
+                    else "请配置 SEC EDGAR User-Agent 联系信息。"
+                ),
+            },
+            {
+                "id": "crypto-coingecko-binance-mapping",
+                "market": "crypto",
+                "provider": "coingecko-binance",
+                "status": "ready_for_probe",
+                "configured": True,
+                "reasonCode": "runtime_mapping_validation_required",
+                "reason": (
+                    "公共只读源已就绪；生成候选时仍会逐项校验 Binance 交易对"
+                    "与 CoinGecko coin_id 的精确映射。"
+                ),
             },
         ],
         "marketDataAdapters": _market_data_adapter_statuses(

@@ -63,6 +63,7 @@ import {
   loadResearchRunAiReviews,
   loadMarketDataReadiness,
   loadMarketDiscovery,
+  createMarketAiSelection,
   loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -186,6 +187,8 @@ import {
   MarketDataReadinessResult,
   MarketDiscoveryParams,
   MarketDiscoveryResult,
+  MarketAiSelectionLoadResult,
+  MarketAiSelectionRequest,
   MarketInformationResult,
   MarketKlinesResult,
   MarketSearchSuggestion,
@@ -2560,10 +2563,21 @@ export function App() {
   const [isLoadingMarketDiscovery, setIsLoadingMarketDiscovery] = useState(false);
   const marketDiscoveryRequestIdRef = useRef(0);
   const marketDiscoveryRequestMarketRef = useRef<MarketDiscoveryParams["market"] | null>(null);
+  const [marketAiSelection, setMarketAiSelection] =
+    useState<MarketAiSelectionLoadResult>({ source: "fallback" });
+  const [marketAiSelectionRequestKey, setMarketAiSelectionRequestKey] = useState<string | null>(null);
+  const [isLoadingMarketAiSelection, setIsLoadingMarketAiSelection] = useState(false);
+  const marketAiSelectionRequestRef = useRef(createLatestRequestCoordinator());
   const [marketInformationResult, setMarketInformationResult] =
     useState<MarketInformationResult | null>(null);
+  const [marketInformationNewsResult, setMarketInformationNewsResult] =
+    useState<MarketInformationResult | null>(null);
+  const [marketInformationMarket, setMarketInformationMarket] =
+    useState<Market>(() => workspace.selectedInstrument.market);
   const [isLoadingMarketInformation, setIsLoadingMarketInformation] = useState(false);
+  const [isLoadingMarketInformationNews, setIsLoadingMarketInformationNews] = useState(false);
   const marketInformationRequestRef = useRef(createLatestRequestCoordinator());
+  const marketInformationNewsRequestRef = useRef(createLatestRequestCoordinator());
   const marketInformationRequestContextRef = useRef<string | null>(null);
   const [locale, setLocale] = useState<Locale>(() =>
     resolveInitialLocale(typeof window === "undefined" ? null : window.localStorage.getItem("aiqt.locale"))
@@ -4533,7 +4547,8 @@ export function App() {
       });
     };
 
-    const loadsProviderRegistryOnly = activeWorkAreaId === "settings";
+    const loadsProviderRegistryOnly =
+      activeWorkAreaId === "settings" || activeWorkAreaId === "market";
     if (loadsProviderRegistryOnly) {
       void loadAiReviewProviders(quantCoreBaseUrl, request.signal).then((providerResult) => {
         if (!coordinator.isCurrent(request)) {
@@ -5585,6 +5600,33 @@ export function App() {
     setIsLoadingMarketDiscovery(false);
   }, [quantCoreBaseUrl]);
 
+  const runMarketAiSelection = useCallback(async (
+    request: MarketAiSelectionRequest,
+    requestKey: string
+  ) => {
+    const token = marketAiSelectionRequestRef.current.begin();
+    setIsLoadingMarketAiSelection(true);
+    setMarketAiSelection((current) => ({
+      ...current,
+      error: undefined
+    }));
+    const result = await createMarketAiSelection(quantCoreBaseUrl, request);
+    if (!marketAiSelectionRequestRef.current.isCurrent(token)) {
+      return;
+    }
+    setIsLoadingMarketAiSelection(false);
+    if (result.selection) {
+      setMarketAiSelection(result);
+      setMarketAiSelectionRequestKey(requestKey);
+      return;
+    }
+    setMarketAiSelection((current) => ({
+      ...current,
+      source: "fallback",
+      error: result.error ?? "AI 选股服务暂时不可用"
+    }));
+  }, [quantCoreBaseUrl]);
+
   const marketDiscoveryMarket = workspace.selectedInstrument.market === "crypto"
     ? "crypto"
     : "ashare";
@@ -5609,43 +5651,103 @@ export function App() {
     searchMarketDiscovery,
   ]);
 
+  const marketInformationSymbol =
+    workspace.selectedInstrument.market === marketInformationMarket
+      ? workspace.selectedInstrument.symbol
+      : "";
+  const marketInformationName =
+    workspace.selectedInstrument.market === marketInformationMarket
+      ? workspace.selectedInstrument.name
+      : "";
+
   const refreshMarketInformation = useCallback(async () => {
-    const market = workspace.selectedInstrument.market;
-    const symbol = workspace.selectedInstrument.symbol;
-    const name = workspace.selectedInstrument.name;
+    const market = marketInformationMarket;
+    const symbol = marketInformationSymbol;
+    const name = marketInformationName;
     const contextKey = `${market}:${symbol}:${name}`;
     const requestToken = marketInformationRequestRef.current.begin();
+    const newsRequestToken = marketInformationNewsRequestRef.current.begin();
     marketInformationRequestContextRef.current = contextKey;
     setIsLoadingMarketInformation(true);
+    setIsLoadingMarketInformationNews(true);
     setMarketInformationResult((current) =>
       current?.market === market && current.symbol === symbol ? current : null
     );
+    setMarketInformationNewsResult((current) =>
+      current?.market === market && current.symbol === symbol ? current : null
+    );
+    const newsResult = await loadMarketInformation(quantCoreBaseUrl, {
+      market,
+      symbol,
+      name,
+      limit: 20,
+      offset: 0,
+      section: "news",
+      scope: "all",
+    });
+    if (!marketInformationNewsRequestRef.current.isCurrent(newsRequestToken)) {
+      return;
+    }
+    setMarketInformationNewsResult(newsResult);
+    setIsLoadingMarketInformationNews(false);
     const result = await loadMarketInformation(quantCoreBaseUrl, {
       market,
       symbol,
       name,
       limit: 20,
+      offset: 0,
+      scope: "all",
     });
     if (!marketInformationRequestRef.current.isCurrent(requestToken)) {
       return;
     }
     marketInformationRequestContextRef.current = null;
-    setMarketInformationResult(result);
+    setMarketInformationResult((current) => result.error && current ? current : result);
+    if (!result.error) {
+      setMarketInformationNewsResult((current) => !current || current.error ? result : current);
+    }
     setIsLoadingMarketInformation(false);
   }, [
+    marketInformationMarket,
+    marketInformationName,
+    marketInformationSymbol,
     quantCoreBaseUrl,
-    workspace.selectedInstrument.market,
-    workspace.selectedInstrument.name,
-    workspace.selectedInstrument.symbol,
+  ]);
+
+  const refreshMarketInformationNews = useCallback(async (
+    offset: number,
+    scope: "all" | "market" | "instrument",
+  ) => {
+    const requestToken = marketInformationNewsRequestRef.current.begin();
+    setIsLoadingMarketInformationNews(true);
+    const result = await loadMarketInformation(quantCoreBaseUrl, {
+      market: marketInformationMarket,
+      symbol: marketInformationSymbol,
+      name: marketInformationName,
+      limit: 20,
+      offset,
+      section: "news",
+      scope,
+    });
+    if (!marketInformationNewsRequestRef.current.isCurrent(requestToken)) {
+      return;
+    }
+    setMarketInformationNewsResult(result);
+    setIsLoadingMarketInformationNews(false);
+  }, [
+    marketInformationMarket,
+    marketInformationName,
+    marketInformationSymbol,
+    quantCoreBaseUrl,
   ]);
 
   useEffect(() => {
-    const contextKey = `${workspace.selectedInstrument.market}:${workspace.selectedInstrument.symbol}:${workspace.selectedInstrument.name}`;
+    const contextKey = `${marketInformationMarket}:${marketInformationSymbol}:${marketInformationName}`;
     if (
       activeWorkAreaId !== "market-information"
       || (
-        marketInformationResult?.market === workspace.selectedInstrument.market
-        && marketInformationResult.symbol === workspace.selectedInstrument.symbol
+        marketInformationResult?.market === marketInformationMarket
+        && marketInformationResult.symbol === marketInformationSymbol
       )
       || marketInformationRequestContextRef.current === contextKey
     ) {
@@ -5654,12 +5756,26 @@ export function App() {
     void refreshMarketInformation();
   }, [
     activeWorkAreaId,
+    marketInformationMarket,
+    marketInformationName,
     marketInformationResult,
+    marketInformationSymbol,
     refreshMarketInformation,
-    workspace.selectedInstrument.market,
-    workspace.selectedInstrument.name,
-    workspace.selectedInstrument.symbol,
   ]);
+
+  const selectMarketInformationMarket = useCallback((market: Market) => {
+    if (market === marketInformationMarket) {
+      return;
+    }
+    marketInformationRequestRef.current.begin();
+    marketInformationNewsRequestRef.current.begin();
+    marketInformationRequestContextRef.current = null;
+    setMarketInformationResult(null);
+    setMarketInformationNewsResult(null);
+    setIsLoadingMarketInformation(false);
+    setIsLoadingMarketInformationNews(false);
+    setMarketInformationMarket(market);
+  }, [marketInformationMarket]);
 
   const refreshExecutionAdapterHealthProbe = useCallback(async () => {
     setIsRefreshingAdapterHealthProbe(true);
@@ -10418,7 +10534,8 @@ export function App() {
   const selectInstrument = useCallback(
     (
       instrument: TerminalWorkspace["selectedInstrument"],
-      targetWorkAreaId: ProductWorkAreaId = "research"
+      targetWorkAreaId: ProductWorkAreaId = "research",
+      addToWatchlist = true
     ) => {
       const isExistingWatchlistInstrument = watchlistIncludesInstrument(workspace.watchlist, instrument);
       manualSelectionVersionRef.current += 1;
@@ -10427,12 +10544,22 @@ export function App() {
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
       resetAiReviewHistoryState();
-      setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
-      setWorkspaceState((current) => ({
-        workspace: workspaceWithSelectedInstrument(current.workspace, instrument),
-        source: "core",
-        statusLabel: "Instrument selected"
-      }));
+      if (addToWatchlist) {
+        setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
+      }
+      setWorkspaceState((current) => {
+        const selectedWorkspace = workspaceWithSelectedInstrument(current.workspace, instrument);
+        return {
+          workspace: addToWatchlist
+            ? selectedWorkspace
+            : {
+                ...selectedWorkspace,
+                watchlist: current.workspace.watchlist
+              },
+          source: "core",
+          statusLabel: "Instrument selected"
+        };
+      });
       setActiveWorkAreaId(targetWorkAreaId);
       setActiveLoopStepId("research");
       setActiveWorkflowStageId("data");
@@ -16672,10 +16799,29 @@ export function App() {
             onSearch: (params) => void searchMarketDiscovery(params),
             result: marketDiscoveryResult,
           }}
+          marketAiSelection={{
+            error: marketAiSelection.error,
+            isLoading: isLoadingMarketAiSelection,
+            onResearchInstrument: (instrument) =>
+              selectInstrument(instrument, "research", false),
+            onRun: (request, requestKey) =>
+              void runMarketAiSelection(request, requestKey),
+            onViewInstrument: (instrument) =>
+              selectInstrument(instrument, "market", false),
+            requestKey: marketAiSelectionRequestKey,
+            result: marketAiSelection.selection ?? null,
+          }}
           marketInformation={{
             isLoading: isLoadingMarketInformation,
+            isLoadingNews: isLoadingMarketInformationNews,
+            market: marketInformationMarket,
+            newsResult: marketInformationNewsResult,
+            onMarketChange: selectMarketInformationMarket,
+            onNewsPageChange: (offset, scope) =>
+              void refreshMarketInformationNews(offset, scope),
             onRefresh: () => void refreshMarketInformation(),
             result: marketInformationResult,
+            symbol: marketInformationSymbol,
           }}
           marketRefreshIssue={marketRefreshIssue}
           onApprovePortfolioOrder={approvePortfolioPaperOrder}

@@ -158,6 +158,7 @@ import {
   buildResearchRunsUrl,
   buildMarketDataReadinessUrl,
   buildMarketDiscoveryUrl,
+  buildMarketAiSelectionsUrl,
   buildMarketInformationUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -167,6 +168,7 @@ import {
   loadGoldenPathStatus,
   loadMarketDataReadiness,
   loadMarketDiscovery,
+  createMarketAiSelection,
   loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -346,6 +348,7 @@ import {
   buildApiUrl,
   coreErrorDetail,
   type AuditEventRecord,
+  type MarketAiSelectionResult,
   type PortfolioBacktestRun,
   type ResearchRunExportPackage
 } from "./terminal-api";
@@ -1047,6 +1050,75 @@ const samplePlatformSettingsMarketDataAdapters = [
     note: "Crypto public OHLCV adapter."
   }
 ] as const;
+
+function marketAiSelectionFixture(): MarketAiSelectionResult {
+  const candidate: MarketAiSelectionResult["baselineCandidates"][number] = {
+    evidenceId: "evidence-600000",
+    market: "ashare",
+    symbol: "600000",
+    name: "浦发银行",
+    score: 82.5,
+    pillarScores: {
+      quality: 80,
+      growth: 72,
+      valuation: 91,
+      trend: 75,
+      liquidityRisk: 88,
+    },
+    fundamentalPeriod: "2026-Q1",
+    dataGaps: [],
+  };
+  return {
+    selectionId: "selection-test",
+    status: "completed",
+    generatedAt: "2026-07-31T08:00:00+00:00",
+    marketSnapshot: {
+      snapshotHash: "a".repeat(64),
+      observedAt: "2026-07-31T08:00:00+00:00",
+      source: "eastmoney",
+      freshness: "fresh",
+      warnings: [],
+    },
+    baselineCandidates: [candidate],
+    recommendations: [{
+      ...candidate,
+      rank: 1,
+      tier: "priority_research",
+      reasons: ["质量和估值证据在当前候选中更完整。"],
+      risks: ["历史事实不能保证未来表现。"],
+      evidenceReferences: ["evidence-600000"],
+      summary: "建议优先进入既有研究链继续核验。",
+    }],
+    exclusions: [{
+      market: "ashare",
+      symbol: "600001",
+      name: "示例公司",
+      reason: "缺少可比报告期净利润。",
+    }],
+    generation: {
+      requestedProvider: "local",
+      usedProvider: "local",
+      status: "skipped",
+      fallbackUsed: false,
+      model: null,
+      sanitizedBaseUrl: null,
+      latencyMs: 0,
+      externalDataApproved: false,
+      outboundFields: [],
+      errorCode: null,
+    },
+    auditEventId: "market-ai-selection-selection-test",
+    boundary: {
+      researchOnly: true,
+      watchlistModified: false,
+      researchStarted: false,
+      riskModified: false,
+      autoTradingModified: false,
+      orderSubmissionAllowed: false,
+      routeExecuted: false,
+    },
+  };
+}
 
 describe("terminal workspace API client", () => {
   test("builds the local core workspace URL without duplicate slashes", () => {
@@ -5797,6 +5869,7 @@ describe("terminal workspace API client", () => {
                 note: "Secret values stay local."
               }
             ],
+            fundamentalDataSources: [],
             marketDataAdapters: [
               {
                 id: "akshare-ohlcv",
@@ -13121,6 +13194,7 @@ describe("terminal workspace API client", () => {
                   note: "No key required."
                 }
               ],
+              fundamentalDataSources: [],
               marketDataAdapters: samplePlatformSettingsMarketDataAdapters,
               cache: {
                 engine: "sqlite",
@@ -13231,6 +13305,7 @@ describe("terminal workspace API client", () => {
                   note: "No key required."
                 }
               ],
+              fundamentalDataSources: [],
               marketDataAdapters: samplePlatformSettingsMarketDataAdapters,
               cache: {
                 engine: "sqlite",
@@ -13359,6 +13434,7 @@ describe("terminal workspace API client", () => {
                   note: "No key required."
                 }
               ],
+              fundamentalDataSources: [],
               marketDataAdapters: samplePlatformSettingsMarketDataAdapters,
               cache: {
                 engine: "sqlite",
@@ -21378,7 +21454,15 @@ describe("terminal workspace API client", () => {
     const calls: string[] = [];
     const result = await loadMarketInformation(
       "http://127.0.0.1:8765",
-      { market: "ashare", symbol: "600000", name: "浦发银行", limit: 20 },
+      {
+        market: "ashare",
+        symbol: "600000",
+        name: "浦发银行",
+        limit: 20,
+        offset: 20,
+        section: "news",
+        scope: "market",
+      },
       async (url) => {
         calls.push(url);
         return {
@@ -21386,6 +21470,7 @@ describe("terminal workspace API client", () => {
           json: async () => ({
             market: "ashare",
             symbol: "600000",
+            section: "news",
             overview: {
               universeCount: 5_432,
               advancing: 3_100,
@@ -21415,9 +21500,15 @@ describe("terminal workspace API client", () => {
               summary: "只保留简短摘要。",
               publishedAt: "2026-07-31T00:30:00+00:00",
               source: "证券时报",
-              scope: "instrument",
+              scope: "market",
               url: "https://finance.eastmoney.com/a/news-1.html",
             }],
+            pagination: {
+              limit: 20,
+              offset: 20,
+              hasMore: true,
+              scope: "market",
+            },
             source: "eastmoney",
             observedAt: "2026-07-31T01:05:00+00:00",
             freshness: "fresh",
@@ -21429,23 +21520,27 @@ describe("terminal workspace API client", () => {
     );
 
     expect(calls).toEqual([
-      "http://127.0.0.1:8765/api/market/information?market=ashare&symbol=600000&name=%E6%B5%A6%E5%8F%91%E9%93%B6%E8%A1%8C&limit=20",
+      "http://127.0.0.1:8765/api/market/information?market=ashare&symbol=600000&name=%E6%B5%A6%E5%8F%91%E9%93%B6%E8%A1%8C&limit=20&offset=20&section=news&scope=market",
     ]);
     expect(buildMarketInformationUrl("/", {
       market: "ashare",
       symbol: "600000",
       name: " 浦发银行 ",
       limit: 20,
+      offset: 20,
+      section: "news",
+      scope: "market",
     })).toBe(
-      "/api/market/information?market=ashare&symbol=600000&name=%E6%B5%A6%E5%8F%91%E9%93%B6%E8%A1%8C&limit=20",
+      "/api/market/information?market=ashare&symbol=600000&name=%E6%B5%A6%E5%8F%91%E9%93%B6%E8%A1%8C&limit=20&offset=20&section=news&scope=market",
     );
     expect(buildMarketInformationUrl("/", {
       market: "ashare",
       limit: 999,
-    })).toBe("/api/market/information?market=ashare&limit=50");
+      offset: 9_999,
+    })).toBe("/api/market/information?market=ashare&limit=50&offset=1000");
     expect(result.error).toBeUndefined();
     expect(result.overview.universeCount).toBe(5_432);
-    expect(result.news[0]?.scope).toBe("instrument");
+    expect(result.news[0]?.scope).toBe("market");
   });
 
   test("rejects market information returned for a different selected symbol", async () => {
@@ -21457,6 +21552,7 @@ describe("terminal workspace API client", () => {
         json: async () => ({
           market: "us",
           symbol: "MSFT",
+          section: "all",
           overview: {
             universeCount: 0,
             advancing: 0,
@@ -21467,6 +21563,12 @@ describe("terminal workspace API client", () => {
           leaders: [],
           active: [],
           news: [],
+          pagination: {
+            limit: 20,
+            offset: 0,
+            hasMore: false,
+            scope: "all",
+          },
           source: "finnhub",
           observedAt: "2026-07-31T01:05:00+00:00",
           freshness: "fresh",
@@ -21551,6 +21653,142 @@ describe("terminal workspace API client", () => {
     expect(result.source).toBe("eastmoney");
     expect(result.overview.universeCount).toBe(5_432);
     expect(result.items[0]?.symbol).toBe("600000");
+  });
+
+  test("posts the exact authoritative AI selection request without browser candidate rows", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await createMarketAiSelection(
+      "http://127.0.0.1:8765/",
+      {
+        market: "ashare",
+        universeMode: "discovery",
+        discovery: {
+          query: "银行",
+          minChangePct: 0,
+          maxPe: 20,
+          sort: "amount",
+          direction: "desc",
+        },
+        profile: "value",
+        horizon: "medium",
+        providerId: "local",
+        externalDataApproved: false,
+      },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => marketAiSelectionFixture(),
+        };
+      },
+    );
+
+    expect(buildMarketAiSelectionsUrl("/")).toBe("/api/market/ai-selections");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/market/ai-selections");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      market: "ashare",
+      universeMode: "discovery",
+      discovery: {
+        query: "银行",
+        minChangePct: 0,
+        maxPe: 20,
+        sort: "amount",
+        direction: "desc",
+      },
+      profile: "value",
+      horizon: "medium",
+      providerId: "local",
+      externalDataApproved: false,
+    });
+    expect(String(calls[0]?.init?.body)).not.toContain("\"limit\"");
+    expect(String(calls[0]?.init?.body)).not.toContain("\"items\"");
+    expect(result.source).toBe("core");
+    expect(result.selection?.recommendations[0]?.evidenceId).toBe("evidence-600000");
+  });
+
+  test("rejects AI selection responses that add trading authority or unknown fields", async () => {
+    const request = {
+      market: "ashare" as const,
+      universeMode: "discovery" as const,
+      discovery: {},
+      profile: "balanced" as const,
+      horizon: "short" as const,
+      providerId: "local" as const,
+      externalDataApproved: false,
+    };
+    const invalidPayloads = [
+      {
+        ...marketAiSelectionFixture(),
+        order: { symbol: "600000" },
+      },
+      {
+        ...marketAiSelectionFixture(),
+        boundary: {
+          ...marketAiSelectionFixture().boundary,
+          orderSubmissionAllowed: true,
+        },
+      },
+      {
+        ...marketAiSelectionFixture(),
+        recommendations: [{
+          ...marketAiSelectionFixture().recommendations[0],
+          evidenceId: "unknown-evidence",
+        }],
+      },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const result = await createMarketAiSelection("/", request, async () => ({
+        ok: true,
+        status: 200,
+        json: async () => payload,
+      }));
+      expect(result.source).toBe("fallback");
+      expect(result.error).toBe("Invalid market AI selection contract");
+    }
+  });
+
+  test("accepts an approved external provider failure before any fields were sent", async () => {
+    const payload = marketAiSelectionFixture();
+    payload.generation = {
+      requestedProvider: "openai-compatible",
+      usedProvider: "local",
+      status: "failed",
+      fallbackUsed: true,
+      model: "selection-model",
+      sanitizedBaseUrl: "https://models.example/v1",
+      latencyMs: 0,
+      externalDataApproved: true,
+      outboundFields: [],
+      errorCode: "provider_not_configured",
+    };
+    const result = await createMarketAiSelection(
+      "/",
+      {
+        market: "ashare",
+        universeMode: "discovery",
+        discovery: {},
+        profile: "balanced",
+        horizon: "short",
+        providerId: "openai-compatible",
+        externalDataApproved: true,
+      },
+      async () => ({
+        ok: true,
+        status: 200,
+        json: async () => payload,
+      }),
+    );
+
+    expect(result.source).toBe("core");
+    expect(result.selection?.generation).toMatchObject({
+      status: "failed",
+      fallbackUsed: true,
+      outboundFields: [],
+    });
   });
 
   test("accepts nullable enrichment metrics from a degraded market discovery source", async () => {

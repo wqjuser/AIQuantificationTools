@@ -237,6 +237,10 @@ from quant_core.execution_adapter_health import (
 )
 from quant_core.golden_path import build_golden_path_status
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to_payload, workspace_with_live_quotes
+from quant_core.market_ai_selection import (
+    MarketAiSelectionError,
+    MarketAiSelectionService,
+)
 from quant_core.market_calendar import build_market_calendar_status
 from quant_core.market_discovery import (
     MarketDiscoveryService,
@@ -642,6 +646,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     ai_review_store = AiReviewRunStore(Path("data/ai_review_runs.sqlite"))
     ai_review_decision_store = AiReviewDecisionStore(ai_review_store.path, review_store=ai_review_store)
     ai_review_provider_registry: AiReviewProviderRegistry | None = None
+    market_ai_selection_service: MarketAiSelectionService | None = None
     audit_event_store = AuditEventStore(Path("data/audit_events.sqlite"))
     import_undo_store = ResearchRunImportUndoStore(Path("data/research_import_undo.sqlite"))
     strategy_store = StrategyLibraryStore(Path("data/strategies.sqlite"))
@@ -769,6 +774,28 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/market/ai-selections":
+            try:
+                selection = self._market_ai_selection_service().select(
+                    self._read_json_body()
+                )
+            except MarketAiSelectionError as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=error.status,
+                )
+                return
+            except ValueError:
+                self._send_json(
+                    {
+                        "error": "invalid_market_ai_selection_request",
+                        "detail": "请求正文必须是有效的 JSON 对象。",
+                    },
+                    status=400,
+                )
+                return
+            self._send_json(selection, status=201)
+            return
         if parsed.path == "/api/operations/monitoring/test-notifications":
             try:
                 if self._read_json_body():
@@ -6545,6 +6572,31 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             audit_store=self.audit_event_store,
         )
 
+    def _market_ai_selection_service(self) -> MarketAiSelectionService:
+        handler_type = type(self)
+        configured = handler_type.__dict__.get("market_ai_selection_service")
+        environment = self._effective_platform_settings_environment()
+        provider_registry = self._current_ai_review_provider_registry()
+        sec_user_agent = environment.get("SEC_EDGAR_USER_AGENT", "")
+        if configured is None:
+            configured = MarketAiSelectionService(
+                discovery_service=self.market_discovery_service,
+                market_information_service=self.market_information_service,
+                kline_loader=self.kline_adapter.fetch_ohlcv,
+                watchlist_store=self.watchlist_store,
+                audit_store=self.audit_event_store,
+                provider_registry=provider_registry,
+                sec_user_agent=sec_user_agent,
+            )
+            handler_type.market_ai_selection_service = configured
+        update_runtime = getattr(configured, "update_runtime", None)
+        if callable(update_runtime):
+            update_runtime(
+                provider_registry=provider_registry,
+                sec_user_agent=sec_user_agent,
+            )
+        return configured
+
     def _portfolio_m5_service(self) -> PortfolioM5Service:
         return PortfolioM5Service(audit_store=self.audit_event_store)
 
@@ -6641,6 +6693,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
             cache_contexts=self.cache.contexts(limit=8) if cache_contexts is None else cache_contexts,
             cache_stats=self.cache.stats(),
             finnhub_api_key=finnhub_api_key,
+            sec_edgar_user_agent=environment.get("SEC_EDGAR_USER_AGENT", ""),
             ccxt_exchange=environment.get("CCXT_DEFAULT_EXCHANGE", ""),
             adapter_error_events=[
                 market_data_adapter_error_event_to_payload(event)

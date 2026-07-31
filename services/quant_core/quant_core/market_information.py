@@ -23,7 +23,16 @@ EASTMONEY_SEARCH_URL = "https://search-api-web.eastmoney.com/search/jsonp"
 FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
 MARKET_INFORMATION_CACHE_TTL = timedelta(minutes=5)
 MARKET_INFORMATION_RETRY_COOLDOWN = timedelta(seconds=30)
-MARKET_INFORMATION_QUERY_KEYS = frozenset({"market", "symbol", "name", "limit"})
+MARKET_INFORMATION_MAX_NEWS_OFFSET = 1_000
+MARKET_INFORMATION_QUERY_KEYS = frozenset({
+    "market",
+    "symbol",
+    "name",
+    "limit",
+    "offset",
+    "section",
+    "scope",
+})
 
 
 @dataclass(frozen=True)
@@ -32,6 +41,9 @@ class MarketInformationQuery:
     symbol: str = ""
     name: str = ""
     limit: int = 20
+    offset: int = 0
+    section: str = "all"
+    scope: str = "all"
 
 
 class MarketInformationUnavailable(RuntimeError):
@@ -71,11 +83,28 @@ def market_information_query_from_params(
         raise ValueError("invalid_limit") from error
     if not 1 <= limit <= 50:
         raise ValueError("invalid_limit")
+    raw_offset = _single_param(params, "offset", "0")
+    try:
+        offset = int(raw_offset)
+    except ValueError as error:
+        raise ValueError("invalid_offset") from error
+    # ponytail: bound public-provider fan-out; use persisted provider cursors for deeper history.
+    if not 0 <= offset <= MARKET_INFORMATION_MAX_NEWS_OFFSET:
+        raise ValueError("invalid_offset")
+    section = _single_param(params, "section", "all").casefold()
+    if section not in {"all", "news"}:
+        raise ValueError("unsupported_section")
+    scope = _single_param(params, "scope", "all").casefold()
+    if scope not in {"all", "market", "instrument"}:
+        raise ValueError("unsupported_scope")
     return MarketInformationQuery(
         market=market,
         symbol=symbol,
         name=name,
         limit=limit,
+        offset=offset,
+        section=section,
+        scope=scope,
     )
 
 
@@ -103,18 +132,35 @@ class MarketInformationService:
         )
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self._cache: dict[
-            tuple[str, str, str, int],
+            tuple[str, str, str, int, int, str, str],
             tuple[datetime, dict[str, object]],
         ] = {}
-        self._retry_after: dict[tuple[str, str, str, int], datetime] = {}
+        self._retry_after: dict[
+            tuple[str, str, str, int, int, str, str],
+            datetime,
+        ] = {}
         # ponytail: one lock keeps this low-volume read cache coherent; split per key if contention appears.
         self._cache_lock = Lock()
 
     def read(self, query: MarketInformationQuery) -> dict[str, object]:
         if query.market not in {"ashare", "us", "crypto"}:
             raise ValueError("unsupported_market")
+        if query.section not in {"all", "news"}:
+            raise ValueError("unsupported_section")
+        if query.scope not in {"all", "market", "instrument"}:
+            raise ValueError("unsupported_scope")
+        if not 0 <= query.offset <= MARKET_INFORMATION_MAX_NEWS_OFFSET:
+            raise ValueError("invalid_offset")
         now = self.clock().astimezone(timezone.utc)
-        cache_key = (query.market, query.symbol, query.name, query.limit)
+        cache_key = (
+            query.market,
+            query.symbol,
+            query.name,
+            query.limit,
+            query.offset,
+            query.section,
+            query.scope,
+        )
         with self._cache_lock:
             cached = self._cache.get(cache_key)
             if cached is not None and now - cached[0] < MARKET_INFORMATION_CACHE_TTL:
@@ -157,7 +203,9 @@ class MarketInformationService:
     ) -> dict[str, object]:
         warnings: list[str] = []
         discovery_results: list[dict[str, object]] = []
-        if query.market in {"ashare", "crypto"}:
+        if query.section == "news":
+            leaders = active = None
+        elif query.market in {"ashare", "crypto"}:
             try:
                 leaders = self.market_discovery_service.discover(
                     MarketDiscoveryQuery(
@@ -188,26 +236,31 @@ class MarketInformationService:
             leaders = active = None
             warnings.append("美股市场广度暂未接入。")
         if query.market == "ashare":
-            news, news_warnings, news_available = self._ashare_news(
+            news, news_warnings, news_available, news_has_more = self._ashare_news(
                 query,
                 at=now,
             )
             news_source = "eastmoney" if news_available else ""
         elif query.market == "us":
-            news, news_warnings, news_available = self._finnhub_news(
+            news, news_warnings, news_available, news_has_more = self._finnhub_news(
                 "general",
-                symbol=query.symbol,
+                query=query,
                 at=now,
             )
             news_source = "finnhub" if news_available else ""
         else:
-            news, news_warnings, news_available = self._finnhub_news(
+            news, news_warnings, news_available, news_has_more = self._finnhub_news(
                 "crypto",
+                query=query,
                 at=now,
             )
             news_source = "finnhub" if news_available else ""
         known_empty_state = (
             query.market == "us"
+            and not self.finnhub_api_key
+        ) or (
+            query.section == "news"
+            and query.market == "crypto"
             and not self.finnhub_api_key
         )
         if not discovery_results and not news_available and not known_empty_state:
@@ -234,6 +287,7 @@ class MarketInformationService:
         payload: dict[str, object] = {
             "market": query.market,
             "symbol": query.symbol,
+            "section": query.section,
             "overview": (
                 overview_result["overview"]
                 if overview_result is not None
@@ -241,7 +295,13 @@ class MarketInformationService:
             ),
             "leaders": leaders["items"] if leaders is not None else [],
             "active": active["items"] if active is not None else [],
-            "news": news[: query.limit],
+            "news": news,
+            "pagination": {
+                "limit": query.limit,
+                "offset": query.offset,
+                "hasMore": news_has_more,
+                "scope": query.scope,
+            },
             "source": "+".join(dict.fromkeys(sources)),
             "observedAt": observed_at,
             "freshness": (
@@ -262,104 +322,181 @@ class MarketInformationService:
         query: MarketInformationQuery,
         *,
         at: datetime,
-    ) -> tuple[list[dict[str, object]], list[str], bool]:
-        request_trace = str(
-            int(at.timestamp() * 1_000)
-        )
-        fast_news_params = urlencode({
-            "client": "web",
-            "biz": "web_724",
-            "fastColumn": "102",
-            "sortEnd": "",
-            "pageSize": query.limit,
-            "req_trace": request_trace,
-        })
+    ) -> tuple[list[dict[str, object]], list[str], bool, bool]:
+        target = query.offset + query.limit + 1
         general: list[dict[str, object]] = []
         instrument: list[dict[str, object]] = []
         warnings: list[str] = []
         available = False
-        try:
-            general = _eastmoney_fast_news(
-                json.loads(
-                    self.fetch_text(
-                        f"{EASTMONEY_FAST_NEWS_URL}?{fast_news_params}",
-                        "utf-8",
-                    )
-                )
-            )
-            available = True
-        except Exception:
-            warnings.append("东方财富市场快讯暂不可用。")
-        search_params = urlencode({
-            "cb": "aiqt",
-            "param": json.dumps(
-                {
-                    "uid": "",
-                    "keyword": query.name or query.symbol,
-                    "type": ["cmsArticleWebOld"],
-                    "client": "web",
-                    "clientType": "web",
-                    "clientVersion": "curr",
-                    "param": {
-                        "cmsArticleWebOld": {
-                            "searchScope": "default",
-                            "sort": "default",
-                            "pageIndex": 1,
-                            "pageSize": query.limit,
-                            "preTag": "<em>",
-                            "postTag": "</em>",
-                        }
-                    },
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ),
-        })
-        if query.symbol:
+        general_has_more = False
+        instrument_has_more = False
+        if query.scope in {"all", "market"}:
             try:
-                instrument = _eastmoney_search_news(
-                    _jsonp_payload(
-                        self.fetch_text(
-                            f"{EASTMONEY_SEARCH_URL}?{search_params}",
-                            "utf-8",
-                        )
-                    )
+                general, general_has_more = self._eastmoney_fast_news_window(
+                    target,
+                    at=at,
                 )
                 available = True
             except Exception:
-                warnings.append("东方财富个股新闻暂不可用。")
-        return _interleave_news(general, instrument), warnings, available
+                warnings.append("东方财富市场快讯暂不可用。")
+        if query.scope in {"all", "instrument"}:
+            if query.symbol:
+                try:
+                    instrument, instrument_has_more = (
+                        self._eastmoney_search_news_window(query, target)
+                    )
+                    available = True
+                except Exception:
+                    warnings.append("东方财富个股新闻暂不可用。")
+            elif query.scope == "instrument":
+                warnings.append("当前市场未选择标的，暂无标的资讯。")
+                available = True
+        page, has_more = _news_page(
+            general,
+            instrument,
+            query,
+            market_has_more=general_has_more,
+            instrument_has_more=instrument_has_more,
+        )
+        return page, warnings, available, has_more
+
+    def _eastmoney_fast_news_window(
+        self,
+        target: int,
+        *,
+        at: datetime,
+    ) -> tuple[list[dict[str, object]], bool]:
+        items: list[dict[str, object]] = []
+        sort_end = ""
+        total: int | None = None
+        while len(items) < target:
+            page_size = min(200, target - len(items))
+            params = urlencode({
+                "client": "web",
+                "biz": "web_724",
+                "fastColumn": "102",
+                "sortEnd": sort_end,
+                "pageSize": page_size,
+                "req_trace": str(int(at.timestamp() * 1_000)),
+            })
+            payload = json.loads(
+                self.fetch_text(
+                    f"{EASTMONEY_FAST_NEWS_URL}?{params}",
+                    "utf-8",
+                )
+            )
+            page = _eastmoney_fast_news(payload)
+            data = payload.get("data") if isinstance(payload, dict) else None
+            next_sort_end = (
+                str(data.get("sortEnd") or "")
+                if isinstance(data, dict)
+                else ""
+            )
+            try:
+                total = int(data.get("total")) if isinstance(data, dict) else None
+            except (TypeError, ValueError):
+                total = None
+            items.extend(page)
+            if not page or not next_sort_end or next_sort_end == sort_end:
+                break
+            sort_end = next_sort_end
+        unique = _dedupe_news(items)
+        return unique[:target], (
+            total > len(items)
+            if total is not None
+            else len(items) >= target
+        )
+
+    def _eastmoney_search_news_window(
+        self,
+        query: MarketInformationQuery,
+        target: int,
+    ) -> tuple[list[dict[str, object]], bool]:
+        items: list[dict[str, object]] = []
+        page_index = 1
+        page_size = min(100, target)
+        total: int | None = None
+        while len(items) < target:
+            search_params = urlencode({
+                "cb": "aiqt",
+                "param": json.dumps(
+                    {
+                        "uid": "",
+                        "keyword": query.name or query.symbol,
+                        "type": ["cmsArticleWebOld"],
+                        "client": "web",
+                        "clientType": "web",
+                        "clientVersion": "curr",
+                        "param": {
+                            "cmsArticleWebOld": {
+                                "searchScope": "default",
+                                "sort": "default",
+                                "pageIndex": page_index,
+                                "pageSize": page_size,
+                                "preTag": "<em>",
+                                "postTag": "</em>",
+                            }
+                        },
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+            })
+            payload = _jsonp_payload(
+                self.fetch_text(
+                    f"{EASTMONEY_SEARCH_URL}?{search_params}",
+                    "utf-8",
+                )
+            )
+            page = _eastmoney_search_news(payload)
+            try:
+                total = int(payload.get("hitsTotal")) if isinstance(payload, dict) else None
+            except (TypeError, ValueError):
+                total = None
+            items.extend(page)
+            if len(page) < page_size:
+                break
+            page_index += 1
+        unique = _dedupe_news(items)
+        return unique[:target], (
+            total > len(items)
+            if total is not None
+            else len(items) >= target
+        )
 
     def _finnhub_news(
         self,
         category: str,
         *,
-        symbol: str = "",
+        query: MarketInformationQuery,
         at: datetime,
-    ) -> tuple[list[dict[str, object]], list[str], bool]:
+    ) -> tuple[list[dict[str, object]], list[str], bool, bool]:
+        if query.scope == "instrument" and not query.symbol:
+            return [], ["当前市场未选择标的，暂无标的资讯。"], True, False
         if not self.finnhub_api_key:
-            return [], ["Finnhub API Key 未配置，新闻暂不可用。"], False
+            return [], ["Finnhub API Key 未配置，新闻暂不可用。"], False, False
         market_news: list[dict[str, object]] = []
         company_news: list[dict[str, object]] = []
         warnings: list[str] = []
         available = False
-        url = f"{FINNHUB_BASE_URL}/news?{urlencode({'category': category})}"
-        try:
-            market_news = _finnhub_news_items(
-                json.loads(
-                    self.fetch_finnhub_text(
-                        url,
-                        self.finnhub_api_key,
-                    )
-                ),
-                scope="market",
-            )
-            available = True
-        except Exception:
-            warnings.append("Finnhub 市场新闻暂不可用。")
-        if symbol:
+        if query.scope in {"all", "market"}:
+            url = f"{FINNHUB_BASE_URL}/news?{urlencode({'category': category})}"
+            try:
+                market_news = _finnhub_news_items(
+                    json.loads(
+                        self.fetch_finnhub_text(
+                            url,
+                            self.finnhub_api_key,
+                        )
+                    ),
+                    scope="market",
+                )
+                available = True
+            except Exception:
+                warnings.append("Finnhub 市场新闻暂不可用。")
+        if query.symbol and query.scope in {"all", "instrument"}:
             company_params = urlencode({
-                'symbol': symbol,
+                'symbol': query.symbol,
                 'from': (at.date() - timedelta(days=7)).isoformat(),
                 'to': at.date().isoformat(),
             })
@@ -377,7 +514,12 @@ class MarketInformationService:
                 available = True
             except Exception:
                 warnings.append("Finnhub 个股新闻暂不可用。")
-        return _interleave_news(market_news, company_news), warnings, available
+        page, has_more = _news_page(
+            market_news,
+            company_news,
+            query,
+        )
+        return page, warnings, available, has_more
 
 
 def _finnhub_news_items(
@@ -571,6 +713,30 @@ def _interleave_news(
         if index < len(instrument_news):
             items.append(instrument_news[index])
     return _dedupe_news(items)
+
+
+def _news_page(
+    market_news: list[dict[str, object]],
+    instrument_news: list[dict[str, object]],
+    query: MarketInformationQuery,
+    *,
+    market_has_more: bool = False,
+    instrument_has_more: bool = False,
+) -> tuple[list[dict[str, object]], bool]:
+    if query.scope == "market":
+        items = _dedupe_news(market_news)
+        provider_has_more = market_has_more
+    elif query.scope == "instrument":
+        items = _dedupe_news(instrument_news)
+        provider_has_more = instrument_has_more
+    else:
+        items = _interleave_news(market_news, instrument_news)
+        provider_has_more = market_has_more or instrument_has_more
+    end = query.offset + query.limit
+    return items[query.offset:end], (
+        (len(items) > end or provider_has_more)
+        and end <= MARKET_INFORMATION_MAX_NEWS_OFFSET
+    )
 
 
 def _payload_hash(payload: dict[str, object]) -> str:

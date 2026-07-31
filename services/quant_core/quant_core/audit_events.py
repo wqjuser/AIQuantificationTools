@@ -32,6 +32,7 @@ PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPES = frozenset({
     "stage10_auto_live_order_transition",
     "auto_live_order_intent",
     "auto_live_trade",
+    "market_ai_selection",
 })
 
 PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES = (
@@ -50,6 +51,7 @@ PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES = (
     "stage8-production-readonly-",
     "stage9-production-admission-",
     "stage10-production-execution-",
+    "market-ai-selection-",
 )
 
 

@@ -14,6 +14,7 @@ import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
 import type { PortfolioRiskAssessment } from "../lib/portfolio-m5";
 import type {
   MarketDiscoveryResult,
+  MarketAiSelectionResult,
   MarketInformationResult,
   PlatformSettingsStatus,
   PortfolioBacktestRun,
@@ -1038,6 +1039,7 @@ describe("TerminalWorkspaceSurface", () => {
       schemaVersion: 1,
       generatedAt: "2026-07-28T08:00:00Z",
       dataSources: [],
+      fundamentalDataSources: [],
       marketDataAdapters: [],
       cache: {} as PlatformSettingsStatus["cache"],
       executionAdapters: [],
@@ -1132,6 +1134,7 @@ describe("TerminalWorkspaceSurface", () => {
           schemaVersion: 1,
           generatedAt: "2026-07-30T02:10:00Z",
           dataSources: [],
+          fundamentalDataSources: [],
           marketDataAdapters: [],
           cache: {} as PlatformSettingsStatus["cache"],
           executionAdapters: [],
@@ -1166,6 +1169,7 @@ describe("TerminalWorkspaceSurface", () => {
               openaiCompatibleModel: "",
               ollamaBaseUrl: "http://127.0.0.1:11434",
               ollamaModel: "",
+              secEdgarUserAgent: "",
               monitoringWebhookTimeoutSeconds: 5,
               freeStockdbTimeoutSeconds: 3,
             },
@@ -1206,6 +1210,35 @@ describe("TerminalWorkspaceSurface", () => {
           schemaVersion: 1,
           generatedAt: "2026-07-28T08:00:00Z",
           dataSources: [],
+          fundamentalDataSources: [
+            {
+              id: "ashare-akshare-financials",
+              market: "ashare",
+              provider: "akshare",
+              status: "ready",
+              configured: true,
+              reasonCode: "dependency_available",
+              reason: "AKShare 财务依赖已就绪。",
+            },
+            {
+              id: "us-sec-companyfacts",
+              market: "us",
+              provider: "sec-companyfacts",
+              status: "blocked",
+              configured: false,
+              reasonCode: "sec_edgar_user_agent_missing",
+              reason: "请配置 SEC EDGAR User-Agent 联系信息。",
+            },
+            {
+              id: "crypto-coingecko-binance-mapping",
+              market: "crypto",
+              provider: "coingecko-binance",
+              status: "ready_for_probe",
+              configured: true,
+              reasonCode: "runtime_mapping_validation_required",
+              reason: "生成候选时逐项校验精确映射。",
+            },
+          ],
           marketDataAdapters: [{
             id: "free-stockdb-ohlcv",
             market: "ashare",
@@ -1349,6 +1382,7 @@ describe("TerminalWorkspaceSurface", () => {
           schemaVersion: 1,
           generatedAt: "2026-07-28T08:00:00Z",
           dataSources: [],
+          fundamentalDataSources: [],
           marketDataAdapters: [],
           cache: {} as PlatformSettingsStatus["cache"],
           executionAdapters: [{
@@ -1402,6 +1436,35 @@ describe("TerminalWorkspaceSurface", () => {
           schemaVersion: 1,
           generatedAt: "2026-07-28T08:00:00Z",
           dataSources: [],
+          fundamentalDataSources: [
+            {
+              id: "ashare-akshare-financials",
+              market: "ashare",
+              provider: "akshare",
+              status: "ready",
+              configured: true,
+              reasonCode: "dependency_available",
+              reason: "AKShare 财务依赖已就绪。",
+            },
+            {
+              id: "us-sec-companyfacts",
+              market: "us",
+              provider: "sec-companyfacts",
+              status: "blocked",
+              configured: false,
+              reasonCode: "sec_edgar_user_agent_missing",
+              reason: "请配置 SEC EDGAR User-Agent 联系信息。",
+            },
+            {
+              id: "crypto-coingecko-binance-mapping",
+              market: "crypto",
+              provider: "coingecko-binance",
+              status: "ready_for_probe",
+              configured: true,
+              reasonCode: "runtime_mapping_validation_required",
+              reason: "生成候选时逐项校验精确映射。",
+            },
+          ],
           marketDataAdapters: [],
           cache: {} as PlatformSettingsStatus["cache"],
           executionAdapters: [],
@@ -1421,6 +1484,7 @@ describe("TerminalWorkspaceSurface", () => {
               openaiCompatibleModel: "",
               ollamaBaseUrl: "http://127.0.0.1:11434",
               ollamaModel: "",
+              secEdgarUserAgent: "AIQuantificationTools contact@example.com",
               monitoringWebhookTimeoutSeconds: 5,
               freeStockdbTimeoutSeconds: 3,
             },
@@ -1447,6 +1511,13 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain('name="openaiModel"');
     expect(settings).toContain('name="liveSessionTtlHours"');
     expect(settings).toContain('name="autoTradingIntervalSeconds"');
+    expect(settings).toContain('name="secEdgarUserAgent"');
+    expect(settings).toContain("请包含产品名和联系邮箱");
+    expect(settings).toContain("AI 选股基本面数据");
+    expect(settings).toContain("AKShare 财务");
+    expect(settings).toContain("SEC Company Facts");
+    expect(settings).toContain("CoinGecko / Binance 映射");
+    expect(settings).toContain("运行时校验");
     expect(settings).toContain("保存后实时应用");
     expect(settings).toContain("0 表示永久有效");
     expect(settings).toContain('name="openaiCompatibleModel"');
@@ -2446,6 +2517,185 @@ describe("TerminalWorkspaceSurface", () => {
     expect(market).toContain(">开始研究<");
   });
 
+  it("renders auditable AI research candidates without watchlist or trading actions", () => {
+    const candidate = {
+      evidenceId: "evidence-600000",
+      market: "ashare" as const,
+      symbol: "600000",
+      name: "浦发银行",
+      score: 84.2,
+      pillarScores: {
+        quality: 80,
+        growth: 72,
+        valuation: 92,
+        trend: 76,
+        liquidityRisk: 86,
+      },
+      fundamentalPeriod: "2026 年一季度",
+      dataGaps: ["第二财务源仍待复核"],
+    };
+    const result: MarketAiSelectionResult = {
+      selectionId: "selection-test",
+      status: "partial",
+      generatedAt: "2026-07-31T08:00:00+00:00",
+      marketSnapshot: {
+        snapshotHash: "a".repeat(64),
+        observedAt: "2026-07-31T08:00:00+00:00",
+        source: "eastmoney",
+        freshness: "partial",
+        warnings: ["新闻源暂不可用，排名继续使用行情与基本面证据。"],
+      },
+      baselineCandidates: [candidate],
+      recommendations: [{
+        ...candidate,
+        rank: 1,
+        tier: "priority_research",
+        reasons: ["质量与估值证据在当前候选中更完整。"],
+        risks: ["历史表现不能保证未来结果。"],
+        evidenceReferences: ["evidence-600000"],
+        summary: "优先进入既有研究链继续核验。",
+      }],
+      exclusions: [{
+        market: "ashare",
+        symbol: "600001",
+        name: "示例公司",
+        reason: "缺少上一可比报告期净利润。",
+      }],
+      generation: {
+        requestedProvider: "local",
+        usedProvider: "local",
+        status: "skipped",
+        fallbackUsed: false,
+        model: null,
+        sanitizedBaseUrl: null,
+        latencyMs: 0,
+        externalDataApproved: false,
+        outboundFields: [],
+        errorCode: null,
+      },
+      auditEventId: "market-ai-selection-selection-test",
+      boundary: {
+        researchOnly: true,
+        watchlistModified: false,
+        researchStarted: false,
+        riskModified: false,
+        autoTradingModified: false,
+        orderSubmissionAllowed: false,
+        routeExecuted: false,
+      },
+    };
+    const requestKey = JSON.stringify({
+      market: "ashare",
+      universeMode: "discovery",
+      discovery: { sort: "changePct", direction: "desc" },
+      profile: "balanced",
+      horizon: "medium",
+      providerId: "local",
+      externalDataApproved: false,
+    });
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketAiSelection={{
+          isLoading: false,
+          onResearchInstrument: () => undefined,
+          onRun: () => undefined,
+          onViewInstrument: () => undefined,
+          requestKey,
+          result,
+        }}
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: null,
+        }}
+      />,
+    );
+
+    expect(market).toContain("AI 选股");
+    expect(market).toContain("A 股全市场");
+    expect(market).toContain("Binance USDT");
+    expect(market).toContain("美股自选池");
+    expect(market).toContain("AI 分析当前候选");
+    expect(market).toContain("确定性基准候选");
+    expect(market).toContain("浦发银行");
+    expect(market).toContain("流动性与风险");
+    expect(market).toContain("2026 年一季度");
+    expect(market).toContain("第二财务源仍待复核");
+    expect(market).toContain("已排除 1 项");
+    expect(market).toContain("缺少上一可比报告期净利润");
+    expect(market).toContain(">查看行情<");
+    expect(market).toContain(">开始研究<");
+    expect(market).toContain("不修改自选、风控、自动交易或订单路由");
+    expect(market).not.toContain(">查看并加入<");
+    expect(market).not.toContain(">加入自选<");
+    expect(market).not.toContain("目标价");
+    expect(market).not.toContain("提交订单");
+  });
+
+  it("marks an AI selection stale when the current controls no longer match", () => {
+    const result: MarketAiSelectionResult = {
+      selectionId: "selection-stale",
+      status: "completed",
+      generatedAt: "2026-07-31T08:00:00+00:00",
+      marketSnapshot: {
+        snapshotHash: "b".repeat(64),
+        observedAt: "2026-07-31T08:00:00+00:00",
+        source: "eastmoney",
+        freshness: "fresh",
+        warnings: [],
+      },
+      baselineCandidates: [],
+      recommendations: [],
+      exclusions: [],
+      generation: {
+        requestedProvider: "local",
+        usedProvider: "local",
+        status: "skipped",
+        fallbackUsed: false,
+        model: null,
+        sanitizedBaseUrl: null,
+        latencyMs: 0,
+        externalDataApproved: false,
+        outboundFields: [],
+        errorCode: null,
+      },
+      auditEventId: "market-ai-selection-selection-stale",
+      boundary: {
+        researchOnly: true,
+        watchlistModified: false,
+        researchStarted: false,
+        riskModified: false,
+        autoTradingModified: false,
+        orderSubmissionAllowed: false,
+        routeExecuted: false,
+      },
+    };
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketAiSelection={{
+          isLoading: false,
+          onResearchInstrument: () => undefined,
+          onRun: () => undefined,
+          onViewInstrument: () => undefined,
+          requestKey: "old-request",
+          result,
+        }}
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: null,
+        }}
+      />,
+    );
+
+    expect(market).toContain("旧结果已失效");
+    expect(market).toContain("请重新分析");
+  });
+
   it("shows Binance USDT spot discovery with crypto-specific labels and fields", () => {
     const cryptoInstrument = {
       market: "crypto" as const,
@@ -2541,6 +2791,7 @@ describe("TerminalWorkspaceSurface", () => {
     const result: MarketInformationResult = {
       market: "ashare",
       symbol: "600000",
+      section: "all",
       overview: {
         universeCount: 5_432,
         advancing: 3_100,
@@ -2569,7 +2820,22 @@ describe("TerminalWorkspaceSurface", () => {
           scope: "instrument",
           url: "https://finance.eastmoney.com/a/instrument-news.html",
         },
+        ...Array.from({ length: 18 }, (_, index) => ({
+          id: `more-news-${index}`,
+          headline: `更多新闻 ${index + 1}`,
+          summary: "用于验证新闻分页。",
+          publishedAt: "2026-07-31T00:00:00+00:00",
+          source: "东方财富",
+          scope: "market" as const,
+          url: null,
+        })),
       ],
+      pagination: {
+        limit: 20,
+        offset: 0,
+        hasMore: true,
+        scope: "all",
+      },
       source: "binance-data-api+finnhub",
       observedAt: "2026-07-31T01:05:00+00:00",
       freshness: "fresh",
@@ -2582,13 +2848,23 @@ describe("TerminalWorkspaceSurface", () => {
         activeWorkAreaId="market-information"
         marketInformation={{
           isLoading: false,
+          isLoadingNews: false,
+          market: "ashare",
+          newsResult: result,
+          onMarketChange: () => undefined,
+          onNewsPageChange: () => undefined,
           onRefresh: () => undefined,
           result,
+          symbol: "600000",
         }}
       />,
     );
 
     expect(information).toContain("市场资讯");
+    expect(information).toContain('aria-label="市场切换"');
+    expect(information).toContain(">A 股<");
+    expect(information).toContain(">美股<");
+    expect(information).toContain(">加密货币<");
     expect(information).toContain("市场概览");
     expect(information).toContain("涨幅领先");
     expect(information).toContain("成交活跃");
@@ -2602,9 +2878,128 @@ describe("TerminalWorkspaceSurface", () => {
     expect(information).not.toContain("binance-data-api+finnhub");
     expect(information).toContain("A 股早盘重要快讯");
     expect(information).toContain("浦发银行发布公告");
+    expect(information).toContain("第 1 页 · 本页 20 条");
+    expect(information).toContain(">上一页<");
+    expect(information).toContain(">下一页<");
+    expect(information).not.toContain("更多新闻 19");
     expect(information).toContain('target="_blank"');
     expect(information).toContain('rel="noreferrer noopener"');
     expect(information).not.toContain("开始交易");
+  });
+
+  it("keeps the information market independent from the selected watchlist instrument", () => {
+    const result: MarketInformationResult = {
+      market: "ashare",
+      symbol: "",
+      section: "all",
+      overview: {
+        universeCount: 5_432,
+        advancing: 3_100,
+        declining: 2_100,
+        flat: 232,
+        totalAmount: 980_000_000_000,
+      },
+      leaders: [],
+      active: [],
+      news: [],
+      pagination: { limit: 20, offset: 0, hasMore: false, scope: "all" },
+      source: "eastmoney",
+      observedAt: "2026-07-31T01:05:00+00:00",
+      freshness: "fresh",
+      warnings: [],
+      snapshotHash: "f".repeat(64),
+    };
+    const information = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market-information"
+        marketInformation={{
+          isLoading: false,
+          isLoadingNews: false,
+          market: "ashare",
+          newsResult: result,
+          onMarketChange: () => undefined,
+          onNewsPageChange: () => undefined,
+          onRefresh: () => undefined,
+          result,
+          symbol: "",
+        }}
+        workspace={{
+          ...workspace,
+          selectedInstrument: {
+            ...workspace.selectedInstrument,
+            market: "crypto",
+            symbol: "BTC/USDT",
+            name: "Bitcoin",
+          },
+        }}
+      />,
+    );
+
+    expect(information).toContain("A 股市场快照");
+    expect(information).toContain(
+      'aria-selected="true" class="active" role="tab" type="button">A 股</button>',
+    );
+    expect(information).not.toContain("等待市场资讯");
+  });
+
+  it("renders the backend news page without slicing it again", () => {
+    const result: MarketInformationResult = {
+      market: "ashare",
+      symbol: "600000",
+      section: "all",
+      overview: {
+        universeCount: 1,
+        advancing: 1,
+        declining: 0,
+        flat: 0,
+        totalAmount: 1,
+      },
+      leaders: [],
+      active: [],
+      news: [{
+        id: "page-two-news",
+        headline: "第二页后端新闻",
+        summary: "",
+        publishedAt: "2026-07-30T23:00:00+00:00",
+        source: "东方财富",
+        scope: "market",
+        url: null,
+      }],
+      pagination: {
+        limit: 20,
+        offset: 20,
+        hasMore: false,
+        scope: "all",
+      },
+      source: "eastmoney",
+      observedAt: "2026-07-31T01:05:00+00:00",
+      freshness: "fresh",
+      warnings: [],
+      snapshotHash: "e".repeat(64),
+    };
+    const information = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market-information"
+        marketInformation={{
+          isLoading: false,
+          isLoadingNews: false,
+          market: "ashare",
+          newsResult: result,
+          onMarketChange: () => undefined,
+          onNewsPageChange: () => undefined,
+          onRefresh: () => undefined,
+          result,
+          symbol: "600000",
+        }}
+      />,
+    );
+
+    expect(information).toContain("第二页后端新闻");
+    expect(information).toContain("第 2 页 · 本页 1 条");
+    expect(information).toContain('<button type="button">上一页</button>');
+    expect(information).toContain('<button disabled="" type="button">下一页</button>');
   });
 
   it("does not present an unavailable US market breadth as real zero statistics", () => {
@@ -2620,6 +3015,7 @@ describe("TerminalWorkspaceSurface", () => {
     const result: MarketInformationResult = {
       market: "us",
       symbol: "AAPL",
+      section: "all",
       overview: {
         universeCount: 0,
         advancing: 0,
@@ -2630,6 +3026,7 @@ describe("TerminalWorkspaceSurface", () => {
       leaders: [],
       active: [],
       news: [],
+      pagination: { limit: 20, offset: 0, hasMore: false, scope: "all" },
       source: "finnhub",
       observedAt: "2026-07-31T01:05:00+00:00",
       freshness: "fresh",
@@ -2642,8 +3039,14 @@ describe("TerminalWorkspaceSurface", () => {
         activeWorkAreaId="market-information"
         marketInformation={{
           isLoading: false,
+          isLoadingNews: false,
+          market: "us",
+          newsResult: result,
+          onMarketChange: () => undefined,
+          onNewsPageChange: () => undefined,
           onRefresh: () => undefined,
           result,
+          symbol: "AAPL",
         }}
         workspace={{
           ...workspace,
@@ -2665,14 +3068,67 @@ describe("TerminalWorkspaceSurface", () => {
         activeWorkAreaId="market-information"
         marketInformation={{
           isLoading: true,
+          isLoadingNews: true,
+          market: workspace.selectedInstrument.market,
+          newsResult: null,
+          onMarketChange: () => undefined,
+          onNewsPageChange: () => undefined,
           onRefresh: () => undefined,
           result: null,
+          symbol: workspace.selectedInstrument.symbol,
+        }}
+      />,
+    );
+    const preview: MarketInformationResult = {
+      market: workspace.selectedInstrument.market,
+      symbol: workspace.selectedInstrument.symbol,
+      section: "news",
+      overview: {
+        universeCount: 0,
+        advancing: 0,
+        declining: 0,
+        flat: 0,
+        totalAmount: 0,
+      },
+      leaders: [],
+      active: [],
+      news: [{
+        id: "preview-news",
+        headline: "新闻先行展示",
+        summary: "市场排行仍在加载。",
+        publishedAt: "2026-07-31T01:00:00+00:00",
+        source: "东方财富",
+        scope: "market",
+        url: null,
+      }],
+      pagination: { limit: 20, offset: 0, hasMore: true, scope: "all" },
+      source: "eastmoney",
+      observedAt: "2026-07-31T01:05:00+00:00",
+      freshness: "fresh",
+      warnings: [],
+      snapshotHash: "b".repeat(64),
+    };
+    const previewLoading = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market-information"
+        marketInformation={{
+          isLoading: true,
+          isLoadingNews: false,
+          market: workspace.selectedInstrument.market,
+          newsResult: preview,
+          onMarketChange: () => undefined,
+          onNewsPageChange: () => undefined,
+          onRefresh: () => undefined,
+          result: null,
+          symbol: workspace.selectedInstrument.symbol,
         }}
       />,
     );
     const failed: MarketInformationResult = {
       market: workspace.selectedInstrument.market,
       symbol: workspace.selectedInstrument.symbol,
+      section: "all",
       overview: {
         universeCount: 0,
         advancing: 0,
@@ -2683,6 +3139,7 @@ describe("TerminalWorkspaceSurface", () => {
       leaders: [],
       active: [],
       news: [],
+      pagination: { limit: 20, offset: 0, hasMore: false, scope: "all" },
       source: "fallback",
       observedAt: "",
       freshness: "stale",
@@ -2696,14 +3153,24 @@ describe("TerminalWorkspaceSurface", () => {
         activeWorkAreaId="market-information"
         marketInformation={{
           isLoading: false,
+          isLoadingNews: false,
+          market: workspace.selectedInstrument.market,
+          newsResult: failed,
+          onMarketChange: () => undefined,
+          onNewsPageChange: () => undefined,
           onRefresh: () => undefined,
           result: failed,
+          symbol: workspace.selectedInstrument.symbol,
         }}
       />,
     );
 
     expect(loading).toContain('role="status"');
-    expect(loading).toContain("正在加载市场概览与最新资讯");
+    expect(loading).toContain("正在加载最新资讯");
+    expect(previewLoading).toContain("新闻先行展示");
+    expect(previewLoading).toContain("正在加载市场概览与排行");
+    expect(previewLoading).not.toContain("覆盖标的");
+    expect(previewLoading).not.toContain("涨幅领先");
     expect(error).toContain('role="alert"');
     expect(error).toContain("上游资讯服务暂时不可用");
     expect(error).toContain("重新加载");

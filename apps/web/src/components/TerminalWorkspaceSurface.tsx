@@ -47,6 +47,10 @@ import type {
   MarketDiscoveryItem,
   MarketDiscoveryParams,
   MarketDiscoveryResult,
+  MarketAiSelectionHorizon,
+  MarketAiSelectionProfile,
+  MarketAiSelectionRequest,
+  MarketAiSelectionResult,
   MarketInformationResult,
   OpenAiCompatibleModelsResult,
   PlatformSettingsSecretName,
@@ -66,6 +70,7 @@ import type {
   ExecutionAdapterHealthProbeRow,
   ExecutionAdapterLedgerRow,
   Instrument,
+  Market,
   PortfolioPaperOrderApprovalRow,
   ProductWorkAreaId,
   ProductWorkAreaStatus,
@@ -144,10 +149,28 @@ interface TerminalWorkspaceSurfaceProps {
     onSearch: (params: MarketDiscoveryParams) => void;
     result: MarketDiscoveryResult | null;
   };
+  marketAiSelection?: {
+    error?: string;
+    isLoading: boolean;
+    onResearchInstrument: (instrument: Instrument) => void;
+    onRun: (request: MarketAiSelectionRequest, requestKey: string) => void;
+    onViewInstrument: (instrument: Instrument) => void;
+    requestKey: string | null;
+    result: MarketAiSelectionResult | null;
+  };
   marketInformation?: {
     isLoading: boolean;
+    isLoadingNews: boolean;
+    market: Market;
+    newsResult: MarketInformationResult | null;
+    onMarketChange: (market: Market) => void;
+    onNewsPageChange: (
+      offset: number,
+      scope: "all" | "market" | "instrument",
+    ) => void;
     onRefresh: () => void;
     result: MarketInformationResult | null;
+    symbol: string;
   };
   marketRefreshIssue: string | null;
   onApprovePortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
@@ -244,6 +267,19 @@ const aiProviderLabels: Record<AiReviewProviderId, string> = {
   openai: "OpenAI",
   "openai-compatible": "OpenAI 兼容服务",
   ollama: "Ollama",
+};
+
+const marketAiSelectionPillarLabels: Record<string, string> = {
+  quality: "质量",
+  growth: "成长",
+  valuation: "估值",
+  trend: "趋势",
+  liquidityRisk: "流动性与风险",
+  liquidity_risk: "流动性与风险",
+  maturity: "资产成熟度",
+  supply: "供应结构",
+  liquidity: "流动性",
+  risk: "风险",
 };
 
 const terminalSurfaceZh = createI18n("zh-CN");
@@ -487,6 +523,18 @@ function marketDiscoveryInstrument(item: MarketDiscoveryItem): Instrument {
   };
 }
 
+function marketAiSelectionInstrument(
+  item: MarketAiSelectionResult["baselineCandidates"][number],
+): Instrument {
+  return {
+    market: item.market,
+    symbol: item.symbol,
+    name: item.name,
+    changePct: 0,
+    quoteSource: "AI 选股研究候选",
+  };
+}
+
 function marketDiscoveryNumber(
   value: number | null,
   suffix = "",
@@ -613,20 +661,36 @@ function MarketInformationRanking({
 function MarketInformationSurface({
   action,
   marketInformation,
-  workspace,
-}: Pick<TerminalWorkspaceSurfaceProps, "action" | "marketInformation" | "workspace">) {
+}: Pick<TerminalWorkspaceSurfaceProps, "action" | "marketInformation">) {
   const [newsFilter, setNewsFilter] = useState<"all" | "market" | "instrument">("all");
+  useEffect(() => {
+    setNewsFilter("all");
+  }, [marketInformation?.market, marketInformation?.symbol]);
   const result = marketInformation?.result;
   const matchesContext = Boolean(
     result
-    && result.market === workspace.selectedInstrument.market
-    && result.symbol === workspace.selectedInstrument.symbol,
+    && result.market === marketInformation?.market
+    && result.symbol === marketInformation.symbol,
   );
-  const snapshot = matchesContext && !result?.error ? result : null;
-  const filteredNews = snapshot?.news.filter(
-    (item) => newsFilter === "all" || item.scope === newsFilter,
-  ) ?? [];
-  const marketLabel = terminalSurfaceZh.marketLabel(workspace.selectedInstrument.market);
+  const overviewSnapshot = matchesContext && !result?.error ? result : null;
+  const newsResult = marketInformation?.newsResult;
+  const newsMatchesContext = Boolean(
+    newsResult
+    && newsResult.market === marketInformation?.market
+    && newsResult.symbol === marketInformation.symbol,
+  );
+  const newsSnapshot = newsMatchesContext && !newsResult?.error
+    ? newsResult
+    : overviewSnapshot;
+  const snapshot = overviewSnapshot ?? newsSnapshot;
+  const pagination = newsSnapshot?.pagination;
+  const newsMatchesFilter = pagination?.scope === newsFilter;
+  const visibleNews = newsMatchesFilter ? newsSnapshot?.news ?? [] : [];
+  const visibleNewsPage = pagination
+    ? Math.floor(pagination.offset / pagination.limit) + 1
+    : 1;
+  const newsOnlySnapshot = Boolean(!overviewSnapshot && newsSnapshot);
+  const marketLabel = terminalSurfaceZh.marketLabel(marketInformation?.market ?? "ashare");
   const marketBreadthAvailable = Boolean(
     snapshot
     && (
@@ -638,19 +702,61 @@ function MarketInformationSurface({
     <>
       <PageHeader
         action={action}
-        subtitle={`${marketLabel} · ${workspace.selectedInstrument.symbol}`}
+        subtitle={[marketLabel, marketInformation?.symbol].filter(Boolean).join(" · ")}
         title="市场资讯"
       >
         <div className="design-meta-line">
           <span>只读研究信息，不触发策略、委托或自动交易</span>
         </div>
       </PageHeader>
+      <div
+        aria-label="市场切换"
+        className="design-market-information-tabs design-market-information-market-tabs"
+        role="tablist"
+      >
+        {([
+          ["ashare", "A 股"],
+          ["us", "美股"],
+          ["crypto", "加密货币"],
+        ] as const).map(([market, label]) => (
+          <button
+            aria-selected={marketInformation?.market === market}
+            className={marketInformation?.market === market ? "active" : ""}
+            key={market}
+            onClick={() => marketInformation?.onMarketChange(market)}
+            role="tab"
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {marketInformation?.isLoading ? (
-        <p className="design-market-information-state" role="status">正在加载市场概览与最新资讯…</p>
+        <p className="design-market-information-state" role="status">
+          {newsOnlySnapshot
+            ? "最新资讯已显示，正在加载市场概览与排行…"
+            : "正在加载最新资讯…"}
+        </p>
+      ) : null}
+      {!marketInformation?.isLoading && newsOnlySnapshot ? (
+        <div className="design-market-information-state risk" role="alert">
+          <span>新闻已加载，市场概览与排行暂时不可用。</span>
+          <button className="design-link-button" onClick={marketInformation?.onRefresh} type="button">
+            重新加载
+          </button>
+        </div>
       ) : null}
       {result?.error && matchesContext ? (
         <div className="design-market-information-state risk" role="alert">
           <span>市场资讯暂时不可用：{result.error}</span>
+          <button className="design-link-button" onClick={marketInformation?.onRefresh} type="button">
+            重新加载
+          </button>
+        </div>
+      ) : null}
+      {newsResult?.error && newsMatchesContext ? (
+        <div className="design-market-information-state risk" role="alert">
+          <span>新闻资讯暂时不可用：{newsResult.error}</span>
           <button className="design-link-button" onClick={marketInformation?.onRefresh} type="button">
             重新加载
           </button>
@@ -661,7 +767,9 @@ function MarketInformationSurface({
       ) : null}
       {snapshot ? (
         <div className="design-market-information-grid">
-          <section aria-label="市场概览" className="design-market-overview design-market-information-overview">
+          {!newsOnlySnapshot ? (
+            <>
+              <section aria-label="市场概览" className="design-market-overview design-market-information-overview">
             <header>
               <div>
                 <span>市场概览</span>
@@ -716,9 +824,11 @@ function MarketInformationSurface({
                 {snapshot.warnings.map((warning) => <li key={warning}>{warning}</li>)}
               </ul>
             ) : null}
-          </section>
-          <MarketInformationRanking items={snapshot.leaders} title="涨幅领先" />
-          <MarketInformationRanking items={snapshot.active} title="成交活跃" />
+              </section>
+              <MarketInformationRanking items={snapshot.leaders} title="涨幅领先" />
+              <MarketInformationRanking items={snapshot.active} title="成交活跃" />
+            </>
+          ) : null}
           <SurfacePanel
             action={
               <div aria-label="资讯筛选" className="design-market-information-tabs" role="tablist">
@@ -730,8 +840,12 @@ function MarketInformationSurface({
                   <button
                     aria-selected={newsFilter === id}
                     className={newsFilter === id ? "active" : ""}
+                    disabled={marketInformation?.isLoadingNews}
                     key={id}
-                    onClick={() => setNewsFilter(id)}
+                    onClick={() => {
+                      setNewsFilter(id);
+                      marketInformation?.onNewsPageChange(0, id);
+                    }}
                     role="tab"
                     type="button"
                   >
@@ -741,12 +855,16 @@ function MarketInformationSurface({
               </div>
             }
             className="design-market-information-news"
-            subtitle={`${snapshot.symbol} · ${snapshot.news.length} 条`}
+            subtitle={[
+              newsSnapshot?.symbol,
+              `${visibleNews.length} 条`,
+              `第 ${visibleNewsPage} 页`,
+            ].filter(Boolean).join(" · ")}
             title="新闻资讯"
           >
-            {filteredNews.length ? (
+            {visibleNews.length ? (
               <div className="design-market-information-news-list">
-                {filteredNews.map((item) => {
+                {visibleNews.map((item) => {
                   const url = marketInformationExternalUrl(item.url);
                   return (
                     <article key={item.id}>
@@ -772,10 +890,50 @@ function MarketInformationSurface({
                   );
                 })}
               </div>
+            ) : marketInformation?.isLoadingNews ? (
+              <p className="design-market-information-state" role="status">正在加载新闻…</p>
             ) : (
               <EmptyState detail="当前筛选范围内没有可展示的资讯。" title="暂无资讯" />
             )}
+            {pagination && newsMatchesFilter ? (
+              <nav
+                aria-busy={marketInformation?.isLoadingNews}
+                aria-label="新闻分页"
+                className="design-market-information-pagination"
+              >
+                <span aria-live="polite">
+                  {marketInformation?.isLoadingNews
+                    ? "正在加载新闻…"
+                    : `第 ${visibleNewsPage} 页 · 本页 ${visibleNews.length} 条`}
+                </span>
+                <button
+                  disabled={marketInformation?.isLoadingNews || pagination.offset === 0}
+                  onClick={() => marketInformation?.onNewsPageChange(
+                    Math.max(0, pagination.offset - pagination.limit),
+                    newsFilter,
+                  )}
+                  type="button"
+                >
+                  上一页
+                </button>
+                <button
+                  disabled={marketInformation?.isLoadingNews || !pagination.hasMore}
+                  onClick={() => marketInformation?.onNewsPageChange(
+                    pagination.offset + pagination.limit,
+                    newsFilter,
+                  )}
+                  type="button"
+                >
+                  下一页
+                </button>
+              </nav>
+            ) : null}
           </SurfacePanel>
+          {newsOnlySnapshot && newsSnapshot?.warnings.length ? (
+            <ul className="design-market-screener-warnings design-market-information-news-warnings">
+              {newsSnapshot.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+            </ul>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -784,10 +942,12 @@ function MarketInformationSurface({
 
 function MarketSurface({
   action,
+  aiReview,
   chart,
   isSavingWatchlist,
   latestWatchlistCacheRefresh,
   marketCalendar,
+  marketAiSelection,
   marketDiscovery,
   marketRefreshIssue,
   onRemoveWatchlistInstrument,
@@ -800,10 +960,12 @@ function MarketSurface({
 }: Pick<
   TerminalWorkspaceSurfaceProps,
   | "action"
+  | "aiReview"
   | "chart"
   | "isSavingWatchlist"
   | "latestWatchlistCacheRefresh"
   | "marketCalendar"
+  | "marketAiSelection"
   | "marketDiscovery"
   | "marketRefreshIssue"
   | "onRemoveWatchlistInstrument"
@@ -823,6 +985,17 @@ function MarketSurface({
   const [discoveryMaxPe, setDiscoveryMaxPe] = useState("");
   const [discoverySort, setDiscoverySort] = useState<NonNullable<MarketDiscoveryParams["sort"]>>("changePct");
   const [discoveryDirection, setDiscoveryDirection] = useState<NonNullable<MarketDiscoveryParams["direction"]>>("desc");
+  const [aiSelectionMarket, setAiSelectionMarket] = useState<Market>(
+    workspace.selectedInstrument.market,
+  );
+  const [aiSelectionProfile, setAiSelectionProfile] =
+    useState<MarketAiSelectionProfile>("balanced");
+  const [aiSelectionHorizon, setAiSelectionHorizon] =
+    useState<MarketAiSelectionHorizon>("medium");
+  const [aiSelectionProviderId, setAiSelectionProviderId] =
+    useState<AiReviewProviderId>("local");
+  const [aiSelectionExternalDataApproved, setAiSelectionExternalDataApproved] =
+    useState(false);
   const discoveryMarket = workspace.selectedInstrument.market === "crypto"
     ? "crypto"
     : "ashare";
@@ -837,6 +1010,24 @@ function MarketSurface({
       setDiscoverySort(effectiveDiscoverySort);
     }
   }, [discoverySort, effectiveDiscoverySort]);
+  useEffect(() => {
+    if (
+      aiSelectionMarket === "crypto"
+      && aiSelectionProfile !== "balanced"
+      && aiSelectionProfile !== "trend"
+    ) {
+      setAiSelectionProfile("balanced");
+    }
+  }, [aiSelectionMarket, aiSelectionProfile]);
+  useEffect(() => {
+    const selectedProvider = aiReview.providers.find(
+      (provider) => provider.providerId === aiSelectionProviderId,
+    );
+    if (!selectedProvider?.configured) {
+      setAiSelectionProviderId("local");
+      setAiSelectionExternalDataApproved(false);
+    }
+  }, [aiReview.providers, aiSelectionProviderId]);
   const sorted = [...workspace.watchlist].sort(
     (left, right) => right.changePct - left.changePct,
   );
@@ -985,6 +1176,73 @@ function MarketSurface({
         : "—",
     },
   ];
+  const aiSelectionMinAmountWan = optionalNumber(discoveryMinAmountWan);
+  const aiSelectionRequest: MarketAiSelectionRequest = {
+    market: aiSelectionMarket,
+    universeMode: aiSelectionMarket === "us" ? "watchlist" : "discovery",
+    discovery: aiSelectionMarket === "us" ? {} : {
+      query: discoveryQuery.trim() || undefined,
+      minChangePct: optionalNumber(discoveryMinChangePct),
+      maxChangePct: optionalNumber(discoveryMaxChangePct),
+      minAmount: aiSelectionMinAmountWan === undefined
+        ? undefined
+        : aiSelectionMinAmountWan * 10_000,
+      minTurnoverRate: aiSelectionMarket === "crypto"
+        ? undefined
+        : optionalNumber(discoveryMinTurnoverRate),
+      maxPe: aiSelectionMarket === "crypto"
+        ? undefined
+        : optionalNumber(discoveryMaxPe),
+      sort: aiSelectionMarket === "crypto"
+        && effectiveDiscoverySort !== "changePct"
+        && effectiveDiscoverySort !== "amount"
+        ? "changePct"
+        : effectiveDiscoverySort,
+      direction: discoveryDirection,
+    },
+    profile: aiSelectionProfile,
+    horizon: aiSelectionHorizon,
+    providerId: aiSelectionProviderId,
+    externalDataApproved: aiSelectionProviderId !== "local"
+      && aiSelectionExternalDataApproved,
+  };
+  const aiSelectionRequestKey = JSON.stringify(aiSelectionRequest);
+  const aiSelectionResult = marketAiSelection?.result ?? null;
+  const aiSelectionIsStale = Boolean(
+    aiSelectionResult
+    && marketAiSelection?.requestKey !== aiSelectionRequestKey,
+  );
+  const aiSelectionProvider = aiReview.providers.find(
+    (provider) => provider.providerId === aiSelectionProviderId,
+  );
+  const aiSelectionProviders = aiReview.providers.length > 0
+    ? aiReview.providers
+    : [{
+        providerId: "local" as const,
+        configured: true,
+        model: null,
+        sanitizedBaseUrl: null,
+      }];
+  const aiSelectionCanRun = Boolean(
+    marketAiSelection
+    && !marketAiSelection.isLoading
+    && (
+      aiSelectionProviderId === "local"
+      || (
+        aiSelectionProvider?.configured
+        && aiSelectionExternalDataApproved
+      )
+    ),
+  );
+  const aiSelectionRows = aiSelectionResult?.recommendations.length
+    ? aiSelectionResult.recommendations.map((recommendation) => ({
+        candidate: recommendation,
+        recommendation,
+      }))
+    : (aiSelectionResult?.baselineCandidates ?? []).slice(0, 5).map((candidate) => ({
+        candidate,
+        recommendation: null,
+      }));
   return (
     <>
       <PageHeader action={action} title="行情中心" />
@@ -1269,6 +1527,271 @@ function MarketSurface({
                 </div>
                 )}
               </>
+            ) : null}
+          </SurfacePanel>
+          <SurfacePanel
+            className="design-market-ai-selection"
+            title="AI 选股"
+            subtitle="后端重新生成权威候选并冻结证据；结果仅用于优先研究，不会加入自选或触发交易"
+          >
+            <div aria-label="AI 选股市场" className="design-market-ai-market-tabs" role="group">
+              {([
+                ["ashare", "A 股全市场"],
+                ["crypto", "Binance USDT"],
+                ["us", "美股自选池"],
+              ] as const).map(([market, label]) => (
+                <button
+                  aria-pressed={aiSelectionMarket === market}
+                  className={aiSelectionMarket === market ? "active" : ""}
+                  key={market}
+                  onClick={() => setAiSelectionMarket(market)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="design-market-ai-controls">
+              <label>
+                <span>风格档案</span>
+                <select
+                  onChange={(event) => setAiSelectionProfile(
+                    event.currentTarget.value as MarketAiSelectionProfile,
+                  )}
+                  value={aiSelectionProfile}
+                >
+                  <option value="balanced">均衡</option>
+                  {aiSelectionMarket !== "crypto" ? (
+                    <>
+                      <option value="quality_growth">质量成长</option>
+                      <option value="value">价值</option>
+                    </>
+                  ) : null}
+                  <option value="trend">趋势</option>
+                </select>
+              </label>
+              <label>
+                <span>研究周期</span>
+                <select
+                  onChange={(event) => setAiSelectionHorizon(
+                    event.currentTarget.value as MarketAiSelectionHorizon,
+                  )}
+                  value={aiSelectionHorizon}
+                >
+                  <option value="short">短期</option>
+                  <option value="medium">中期</option>
+                  <option value="long">长期</option>
+                </select>
+              </label>
+              <label>
+                <span>AI 服务</span>
+                <select
+                  onChange={(event) => {
+                    const providerId = event.currentTarget.value as AiReviewProviderId;
+                    setAiSelectionProviderId(providerId);
+                    setAiSelectionExternalDataApproved(false);
+                  }}
+                  value={aiSelectionProviderId}
+                >
+                  {aiSelectionProviders.map((provider) => (
+                    <option
+                      disabled={!provider.configured}
+                      key={provider.providerId}
+                      value={provider.providerId}
+                    >
+                      {aiProviderLabels[provider.providerId]}
+                      {provider.configured ? "" : "（未配置）"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="design-market-ai-approval">
+                <input
+                  checked={aiSelectionExternalDataApproved}
+                  disabled={aiSelectionProviderId === "local"}
+                  onChange={(event) =>
+                    setAiSelectionExternalDataApproved(event.currentTarget.checked)}
+                  type="checkbox"
+                />
+                <span>允许向所选外部服务发送冻结后的研究证据字段</span>
+              </label>
+              <button
+                className="design-primary-action"
+                disabled={!aiSelectionCanRun}
+                onClick={() => marketAiSelection?.onRun(
+                  aiSelectionRequest,
+                  aiSelectionRequestKey,
+                )}
+                type="button"
+              >
+                <Sparkles aria-hidden="true" size={14} />
+                {marketAiSelection?.isLoading ? "分析中…" : "AI 分析当前候选"}
+              </button>
+            </div>
+            {aiSelectionProviderId === "local" ? (
+              <p className="design-market-ai-hint">
+                本地基线不向外发送数据，将返回可复算的确定性研究排名。
+              </p>
+            ) : !aiSelectionProvider?.configured ? (
+              <p className="design-market-ai-state risk" role="alert">
+                所选 AI 服务尚未配置，请先在设置页完成配置。
+              </p>
+            ) : !aiSelectionExternalDataApproved ? (
+              <p className="design-market-ai-hint">
+                使用外部 AI 前需明确确认本次研究证据外发。
+              </p>
+            ) : null}
+            {marketAiSelection?.isLoading ? (
+              <p className="design-market-ai-state" role="status">
+                正在由后端生成权威候选、冻结证据并调用所选模型…
+              </p>
+            ) : null}
+            {marketAiSelection?.error ? (
+              <p className="design-market-ai-state risk" role="alert">
+                AI 选股未完成：{marketAiSelection.error}。原条件筛选结果仍可继续使用。
+              </p>
+            ) : null}
+            {aiSelectionResult ? (
+              <div className={`design-market-ai-result${aiSelectionIsStale ? " stale" : ""}`}>
+                <header className="design-market-ai-result-header">
+                  <div>
+                    <strong>
+                      {aiSelectionResult.generation.status === "completed"
+                        ? "AI 研究候选"
+                        : aiSelectionResult.generation.status === "failed"
+                          ? "AI 分析失败，显示确定性基准"
+                          : "确定性基准候选"}
+                    </strong>
+                    <span>
+                      {aiSelectionResult.status === "partial" ? "部分数据" : "完整结果"}
+                      {" · "}
+                      {aiSelectionRows.length} 个候选
+                      {" · "}
+                      快照 {compactRunId(aiSelectionResult.marketSnapshot.snapshotHash)}
+                    </span>
+                  </div>
+                  <span title={aiSelectionResult.auditEventId}>
+                    审计 {compactRunId(aiSelectionResult.auditEventId)}
+                  </span>
+                </header>
+                {aiSelectionIsStale ? (
+                  <p className="design-market-ai-state warning" role="status">
+                    市场、筛选条件、风格、周期或 AI 服务已改变，旧结果已失效，请重新分析。
+                  </p>
+                ) : null}
+                {aiSelectionResult.marketSnapshot.warnings.length > 0 ? (
+                  <ul className="design-market-screener-warnings">
+                    {aiSelectionResult.marketSnapshot.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {aiSelectionRows.length === 0 ? (
+                  <p className="design-market-ai-state">
+                    当前没有可展示的研究候选；已排除 {aiSelectionResult.exclusions.length} 项。
+                  </p>
+                ) : (
+                  <div className="design-market-ai-results">
+                    {aiSelectionRows.map(({ candidate, recommendation }, index) => {
+                      const instrument = marketAiSelectionInstrument(candidate);
+                      const tierLabel = recommendation?.tier === "priority_research"
+                        ? "优先研究"
+                        : recommendation?.tier === "watch"
+                          ? "观察"
+                          : recommendation?.tier === "insufficient_evidence"
+                            ? "证据不足"
+                            : "基准候选";
+                      return (
+                        <article key={candidate.evidenceId}>
+                          <header>
+                            <span className="design-market-ai-rank">
+                              {recommendation?.rank ?? index + 1}
+                            </span>
+                            <div>
+                              <strong>{candidate.symbol} · {candidate.name}</strong>
+                              <span>{tierLabel}</span>
+                            </div>
+                            <strong className="design-market-ai-score">
+                              {candidate.score.toFixed(1)}
+                            </strong>
+                          </header>
+                          <div className="design-market-ai-pillars">
+                            {Object.entries(candidate.pillarScores).map(([pillar, score]) => (
+                              <span key={pillar}>
+                                {marketAiSelectionPillarLabels[pillar] ?? pillar}
+                                <strong>{score.toFixed(1)}</strong>
+                              </span>
+                            ))}
+                          </div>
+                          <dl>
+                            <div>
+                              <dt>基本面期间</dt>
+                              <dd>{candidate.fundamentalPeriod || "不适用"}</dd>
+                            </div>
+                            {recommendation?.summary ? (
+                              <div>
+                                <dt>研究摘要</dt>
+                                <dd>{recommendation.summary}</dd>
+                              </div>
+                            ) : null}
+                          </dl>
+                          {recommendation?.reasons.length ? (
+                            <p><strong>优先理由：</strong>{recommendation.reasons.join("；")}</p>
+                          ) : null}
+                          {recommendation?.risks.length ? (
+                            <p className="risk">
+                              <strong>主要风险：</strong>{recommendation.risks.join("；")}
+                            </p>
+                          ) : null}
+                          {candidate.dataGaps.length ? (
+                            <p className="warning">
+                              <strong>数据缺口：</strong>{candidate.dataGaps.join("；")}
+                            </p>
+                          ) : null}
+                          {recommendation?.evidenceReferences.length ? (
+                            <small>
+                              证据引用 {recommendation.evidenceReferences.join(" · ")}
+                            </small>
+                          ) : null}
+                          <footer>
+                            <button
+                              className="design-link-button"
+                              disabled={aiSelectionIsStale}
+                              onClick={() => marketAiSelection?.onViewInstrument(instrument)}
+                              type="button"
+                            >
+                              查看行情
+                            </button>
+                            <button
+                              className="design-link-button"
+                              disabled={aiSelectionIsStale}
+                              onClick={() => marketAiSelection?.onResearchInstrument(instrument)}
+                              type="button"
+                            >
+                              开始研究
+                            </button>
+                          </footer>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+                {aiSelectionResult.exclusions.length > 0 ? (
+                  <details className="design-market-ai-exclusions">
+                    <summary>已排除 {aiSelectionResult.exclusions.length} 项</summary>
+                    <ul>
+                      {aiSelectionResult.exclusions.map((item, index) => (
+                        <li key={`${item.market}-${item.symbol}-${index}`}>
+                          {item.symbol} / {item.name} · {item.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+                <p className="design-market-ai-boundary">
+                  本结果仅切换研究上下文，不修改自选、风控、自动交易或订单路由。
+                </p>
+              </div>
             ) : null}
           </SurfacePanel>
         </div>
@@ -4896,6 +5419,7 @@ function SettingsSurface({
 >) {
   const configuration = settings?.configuration;
   const dataAdapters = settings?.marketDataAdapters ?? [];
+  const fundamentalDataSources = settings?.fundamentalDataSources ?? [];
   const executionAdapters = settings?.executionAdapters ?? [];
   const dataBlocker = dataAdapters.find(
     (adapter) =>
@@ -5015,6 +5539,7 @@ function SettingsSurface({
         openaiCompatibleModel: text("openaiCompatibleModel"),
         ollamaBaseUrl: text("ollamaBaseUrl"),
         ollamaModel: text("ollamaModel"),
+        secEdgarUserAgent: text("secEdgarUserAgent"),
         monitoringWebhookTimeoutSeconds: Number(text("monitoringWebhookTimeoutSeconds")),
         freeStockdbTimeoutSeconds: Number(text("freeStockdbTimeoutSeconds")),
       },
@@ -5090,6 +5615,17 @@ function SettingsSurface({
                         type="number"
                       />
                       <small>5–3600 秒；保存后实时应用，无需重启 API。</small>
+                    </label>
+                    <label className="design-settings-field">
+                      <span>SEC EDGAR User-Agent</span>
+                      <input
+                        defaultValue={configuration.values.secEdgarUserAgent}
+                        name="secEdgarUserAgent"
+                        placeholder="AIQuantificationTools contact@example.com"
+                      />
+                      <small>
+                        用于美股 SEC 财务数据访问；请包含产品名和联系邮箱，保存后实时生效。
+                      </small>
                     </label>
                   </div>
                 </fieldset>
@@ -5332,6 +5868,68 @@ function SettingsSurface({
                   ) : null}
                 </tbody>
               </table>
+              <section
+                aria-label="基本面数据就绪状态"
+                className="design-settings-fundamental-readiness"
+              >
+                <header>
+                  <strong>AI 选股基本面数据</strong>
+                  <span>
+                    {fundamentalDataSources.filter((source) => source.status === "ready").length}
+                    /{fundamentalDataSources.length} 已直接就绪
+                  </span>
+                </header>
+                <table className="design-table compact">
+                  <thead>
+                    <tr>
+                      <th>市场 / 数据源</th>
+                      <th>状态</th>
+                      <th>配置</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fundamentalDataSources.map((source) => {
+                      const marketLabel = source.market === "ashare"
+                        ? "A 股"
+                        : source.market === "us"
+                          ? "美股"
+                          : "加密资产";
+                      const providerLabel = source.id === "ashare-akshare-financials"
+                        ? "AKShare 财务"
+                        : source.id === "us-sec-companyfacts"
+                          ? "SEC Company Facts"
+                          : "CoinGecko / Binance 映射";
+                      const tone: ConnectorTone = source.status === "ready"
+                        ? "positive"
+                        : source.status === "ready_for_probe"
+                          ? "warning"
+                          : "risk";
+                      return (
+                        <tr key={source.id}>
+                          <td><strong>{marketLabel}</strong><br />{providerLabel}</td>
+                          <td>
+                            <Status tone={tone}>
+                              {source.status === "ready"
+                                ? "就绪"
+                                : source.status === "ready_for_probe"
+                                  ? "运行时校验"
+                                  : "阻断"}
+                            </Status>
+                          </td>
+                          <td>{source.configured ? "已配置" : "未配置"}</td>
+                          <td>{source.reason}</td>
+                        </tr>
+                      );
+                    })}
+                    {!fundamentalDataSources.length ? (
+                      <tr>
+                        <td colSpan={4}>基本面数据源状态尚未加载。</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </section>
             </details>
             <details className="design-settings-disclosure" id="settings-ai-connectors">
               <summary>

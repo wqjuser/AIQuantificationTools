@@ -144,6 +144,7 @@ class MarketInformationTest(unittest.TestCase):
 
         self.assertEqual(payload["market"], "ashare")
         self.assertEqual(payload["symbol"], "600000")
+        self.assertEqual(payload["section"], "all")
         self.assertEqual(payload["overview"]["universeCount"], 5_432)
         self.assertEqual(payload["leaders"][0]["symbol"], "600000")
         self.assertEqual(payload["active"][0]["symbol"], "601318")
@@ -224,6 +225,167 @@ class MarketInformationTest(unittest.TestCase):
             search_urls[1],
         )
 
+    def test_news_section_skips_discovery_and_has_its_own_cache_entry(self):
+        from quant_core.market_information import (
+            MarketInformationQuery,
+            MarketInformationService,
+        )
+
+        discovery_calls = []
+
+        class FakeDiscoveryService:
+            def discover(self, query):
+                discovery_calls.append(query.sort)
+                return {
+                    "market": "ashare",
+                    "overview": {
+                        "universeCount": 5_432,
+                        "advancing": 3_100,
+                        "declining": 2_100,
+                        "flat": 232,
+                        "totalAmount": 980_000_000_000,
+                    },
+                    "items": [],
+                    "source": "eastmoney",
+                    "freshness": "fresh",
+                    "warnings": [],
+                }
+
+        def fake_fetch_text(url: str, _encoding: str = "utf-8") -> str:
+            if "getFastNewsList" in url:
+                return json.dumps({
+                    "data": {
+                        "fastNewsList": [{
+                            "code": "202607311234567890",
+                            "title": "A 股早盘重要快讯",
+                            "summary": "市场成交活跃。",
+                            "showTime": "2026-07-31 09:00:00",
+                            "stockList": [],
+                        }]
+                    }
+                })
+            raise AssertionError(f"unexpected upstream: {url}")
+
+        service = MarketInformationService(
+            market_discovery_service=FakeDiscoveryService(),
+            fetch_text=fake_fetch_text,
+            clock=lambda: datetime(2026, 7, 31, 1, 5, tzinfo=timezone.utc),
+        )
+        news = service.read(MarketInformationQuery(
+            market="ashare",
+            limit=50,
+            section="news",
+        ))
+        full = service.read(MarketInformationQuery(
+            market="ashare",
+            limit=50,
+        ))
+
+        self.assertEqual(news["section"], "news")
+        self.assertEqual(news["overview"]["universeCount"], 0)
+        self.assertEqual(news["leaders"], [])
+        self.assertEqual(news["active"], [])
+        self.assertEqual(len(news["news"]), 1)
+        self.assertEqual(full["section"], "all")
+        self.assertEqual(full["overview"]["universeCount"], 5_432)
+        self.assertEqual(discovery_calls, ["changePct", "amount"])
+
+    def test_news_pages_are_sliced_by_the_backend_and_report_more_rows(self):
+        from quant_core.market_information import (
+            MarketInformationQuery,
+            MarketInformationService,
+        )
+
+        requested_urls = []
+
+        def fake_fetch_text(url: str, _encoding: str = "utf-8") -> str:
+            requested_urls.append(url)
+            return json.dumps({
+                "data": {
+                    "sortEnd": "older-cursor",
+                    "total": 10,
+                    "fastNewsList": [
+                        {
+                            "code": f"20260731123456789{index}",
+                            "title": f"市场快讯 {index}",
+                            "summary": "",
+                            "showTime": f"2026-07-31 09:0{index}:00",
+                        }
+                        for index in range(5)
+                    ],
+                }
+            })
+
+        payload = MarketInformationService(
+            fetch_text=fake_fetch_text,
+            clock=lambda: datetime(2026, 7, 31, 1, 5, tzinfo=timezone.utc),
+        ).read(MarketInformationQuery(
+            market="ashare",
+            limit=2,
+            offset=2,
+            section="news",
+            scope="market",
+        ))
+
+        self.assertEqual(
+            [item["headline"] for item in payload["news"]],
+            ["市场快讯 2", "市场快讯 3"],
+        )
+        self.assertEqual(payload["pagination"], {
+            "limit": 2,
+            "offset": 2,
+            "hasMore": True,
+            "scope": "market",
+        })
+        self.assertIn("pageSize=5", requested_urls[0])
+        self.assertNotIn("search/jsonp", requested_urls[0])
+
+    def test_instrument_scope_is_filtered_before_backend_pagination(self):
+        from quant_core.market_information import (
+            MarketInformationQuery,
+            MarketInformationService,
+        )
+
+        requested_urls = []
+
+        def fake_fetch_text(url: str, _encoding: str = "utf-8") -> str:
+            requested_urls.append(url)
+            return "aiqt(" + json.dumps({
+                "hitsTotal": 4,
+                "result": {
+                    "cmsArticleWebOld": [
+                        {
+                            "code": f"20260731111111111{index}",
+                            "title": f"<em>浦发银行</em>资讯 {index}",
+                            "content": "",
+                            "date": f"2026-07-31 08:0{index}:00",
+                            "mediaName": "证券时报",
+                            "url": f"https://finance.eastmoney.com/a/{index}.html",
+                        }
+                        for index in range(3)
+                    ]
+                },
+            }, ensure_ascii=False) + ")"
+
+        payload = MarketInformationService(
+            fetch_text=fake_fetch_text,
+            clock=lambda: datetime(2026, 7, 31, 1, 5, tzinfo=timezone.utc),
+        ).read(MarketInformationQuery(
+            market="ashare",
+            symbol="600000",
+            name="浦发银行",
+            limit=1,
+            offset=1,
+            section="news",
+            scope="instrument",
+        ))
+
+        self.assertEqual(payload["news"][0]["headline"], "浦发银行资讯 1")
+        self.assertEqual(payload["news"][0]["scope"], "instrument")
+        self.assertTrue(payload["pagination"]["hasMore"])
+        self.assertEqual(len(requested_urls), 1)
+        self.assertIn("search/jsonp", requested_urls[0])
+
     def test_market_information_query_removes_control_characters_from_name(self):
         from quant_core.market_information import (
             market_information_query_from_params,
@@ -233,9 +395,15 @@ class MarketInformationTest(unittest.TestCase):
             "market": ["ashare"],
             "symbol": ["600000"],
             "name": ["浦发\n银\u0000行"],
+            "offset": ["20"],
+            "section": ["news"],
+            "scope": ["instrument"],
         })
 
         self.assertEqual(query.name, "浦发银行")
+        self.assertEqual(query.offset, 20)
+        self.assertEqual(query.section, "news")
+        self.assertEqual(query.scope, "instrument")
 
     def test_crypto_information_uses_binance_breadth_and_finnhub_news_without_token_in_url(self):
         from quant_core.market_information import (
@@ -465,6 +633,30 @@ class MarketInformationTest(unittest.TestCase):
         self.assertEqual(payload["news"], [])
         self.assertEqual(payload["source"], "")
         self.assertEqual(payload["freshness"], "fresh")
+        self.assertIn(
+            "Finnhub API Key 未配置，新闻暂不可用。",
+            payload["warnings"],
+        )
+
+    def test_crypto_news_without_finnhub_key_returns_an_actionable_empty_state(self):
+        from quant_core.market_information import (
+            MarketInformationQuery,
+            MarketInformationService,
+        )
+
+        class RejectDiscoveryService:
+            def discover(self, _query):
+                raise AssertionError("news-only information must not use discovery")
+
+        payload = MarketInformationService(
+            market_discovery_service=RejectDiscoveryService(),
+            finnhub_api_key="",
+            clock=lambda: datetime(2026, 7, 31, 2, 0, tzinfo=timezone.utc),
+        ).read(MarketInformationQuery(market="crypto", section="news"))
+
+        self.assertEqual(payload["section"], "news")
+        self.assertEqual(payload["news"], [])
+        self.assertEqual(payload["source"], "")
         self.assertIn(
             "Finnhub API Key 未配置，新闻暂不可用。",
             payload["warnings"],
@@ -722,6 +914,9 @@ class MarketInformationTest(unittest.TestCase):
                 "/api/market/information?market=us&symbol=..%2Fsecret",
                 "/api/market/information?market=us&market=crypto",
                 f"/api/market/information?market=ashare&name={'A' * 65}",
+                "/api/market/information?market=ashare&section=slow",
+                "/api/market/information?market=ashare&offset=1001",
+                "/api/market/information?market=ashare&scope=company",
             ):
                 connection.request("GET", path)
                 response = connection.getresponse()

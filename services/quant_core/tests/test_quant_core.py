@@ -8421,6 +8421,139 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(events[0].context, "market-klines")
         self.assertEqual(events[0].message, "Yahoo chart timed out; yfinance returned no chart bars")
 
+    def test_market_ai_selection_api_forwards_request_and_maps_domain_errors(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.api import QuantApiHandler
+        from quant_core.market_ai_selection import MarketAiSelectionError
+
+        class FakeMarketAiSelectionService:
+            def __init__(self):
+                self.requests = []
+
+            def select(self, payload):
+                self.requests.append(payload)
+                if payload.get("fail"):
+                    raise MarketAiSelectionError(
+                        "market_ai_selection_no_eligible_candidates",
+                        409,
+                        "没有候选通过基本面与数据完整性检查。",
+                    )
+                return {
+                    "selectionId": "market-ai-selection-http",
+                    "status": "completed",
+                }
+
+        service = FakeMarketAiSelectionService()
+
+        class TestHandler(QuantApiHandler):
+            market_ai_selection_service = service
+
+        server = HTTPServer(("127.0.0.1", 0), TestHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+
+        def post(body):
+            raw = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
+            connection.request(
+                "POST",
+                "/api/market/ai-selections",
+                body=raw,
+                headers={
+                    "Content-Type": "application/json",
+                    "Content-Length": str(len(raw)),
+                },
+            )
+            response = connection.getresponse()
+            return response.status, json.loads(response.read().decode("utf-8"))
+
+        request = {
+            "sentinel": {
+                "candidateRows": [{"symbol": "browser-must-not-be-authority"}]
+            }
+        }
+        try:
+            success = post(request)
+            domain_error = post({"fail": True})
+            malformed = post(b"{")
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+        self.assertEqual(
+            success,
+            (
+                201,
+                {
+                    "selectionId": "market-ai-selection-http",
+                    "status": "completed",
+                },
+            ),
+        )
+        self.assertEqual(service.requests, [request, {"fail": True}])
+        self.assertEqual(
+            domain_error,
+            (
+                409,
+                {
+                    "error": "market_ai_selection_no_eligible_candidates",
+                    "detail": "没有候选通过基本面与数据完整性检查。",
+                },
+            ),
+        )
+        self.assertEqual(
+            malformed,
+            (
+                400,
+                {
+                    "error": "invalid_market_ai_selection_request",
+                    "detail": "请求正文必须是有效的 JSON 对象。",
+                },
+            ),
+        )
+
+    def test_market_ai_selection_api_reuses_default_service_and_refreshes_runtime(self):
+        from quant_core.ai_review_providers import AiReviewProviderRegistry
+        from quant_core.api import QuantApiHandler
+
+        runtime = {
+            "registry": AiReviewProviderRegistry.from_environment({}),
+            "sec_user_agent": "AIQuantificationTools first@example.com",
+        }
+
+        class TestHandler(QuantApiHandler):
+            market_ai_selection_service = None
+
+            def _effective_platform_settings_environment(self):
+                return {"SEC_EDGAR_USER_AGENT": runtime["sec_user_agent"]}
+
+            def _current_ai_review_provider_registry(self):
+                return runtime["registry"]
+
+        handler = object.__new__(TestHandler)
+        first = handler._market_ai_selection_service()
+        replacement_registry = AiReviewProviderRegistry.from_environment({})
+        runtime.update(
+            {
+                "registry": replacement_registry,
+                "sec_user_agent": "AIQuantificationTools changed@example.com",
+            }
+        )
+        second = handler._market_ai_selection_service()
+
+        self.assertIs(first, second)
+        self.assertIs(second.provider_registry, replacement_registry)
+        self.assertEqual(
+            second.sec_user_agent,
+            "AIQuantificationTools changed@example.com",
+        )
+
     def test_market_data_readiness_api_summarizes_cache_provider_and_repair_actions(self):
         import json
         from http.client import HTTPConnection
@@ -18309,12 +18442,43 @@ class QuantCoreContractTest(unittest.TestCase):
                 )
                 response = connection.getresponse()
                 saved_payload = json.loads(response.read().decode("utf-8"))
+                protected_responses = []
+                for protected_event in (
+                    {
+                        **event,
+                        "eventId": "browser-market-ai-selection",
+                        "eventType": "market_ai_selection",
+                    },
+                    {
+                        **event,
+                        "eventId": "market-ai-selection-forged",
+                        "eventType": "browser_note",
+                    },
+                ):
+                    protected_body = json.dumps(protected_event).encode("utf-8")
+                    connection.request(
+                        "POST",
+                        "/api/audit/events",
+                        body=protected_body,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Content-Length": str(len(protected_body)),
+                        },
+                    )
+                    protected_response = connection.getresponse()
+                    protected_responses.append(
+                        (
+                            protected_response.status,
+                            json.loads(protected_response.read().decode("utf-8")),
+                        )
+                    )
                 connection.request(
                     "GET",
                     "/api/audit/events?eventType=research_run_import&runId=run-api-ledger&query=safe-import",
                 )
                 list_response = connection.getresponse()
                 list_payload = json.loads(list_response.read().decode("utf-8"))
+                stored_event_count = audit_event_store.count()
             finally:
                 connection.close()
                 server.shutdown()
@@ -18323,6 +18487,26 @@ class QuantCoreContractTest(unittest.TestCase):
 
         self.assertEqual(response.status, 201)
         self.assertEqual(saved_payload["event"]["eventId"], "audit-import-run-api-confirmed")
+        self.assertEqual(
+            protected_responses,
+            [
+                (
+                    400,
+                    {
+                        "error": "invalid_audit_event",
+                        "detail": "production authority audit events are reserved",
+                    },
+                ),
+                (
+                    400,
+                    {
+                        "error": "invalid_audit_event",
+                        "detail": "production authority audit events are reserved",
+                    },
+                ),
+            ],
+        )
+        self.assertEqual(stored_event_count, 1)
         self.assertEqual(list_response.status, 200)
         self.assertEqual(list_payload["events"][0]["eventId"], "audit-import-run-api-confirmed")
         self.assertEqual(list_payload["events"][0]["metadata"]["fileName"], "safe-import.json")

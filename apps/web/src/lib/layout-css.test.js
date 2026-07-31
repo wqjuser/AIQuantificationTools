@@ -337,6 +337,49 @@ describe("terminal layout css", () => {
     ])).toBe(true);
   });
 
+  test("keeps AI selection research-only, race-safe, scalable, and mobile readable", () => {
+    const marketSurfaceSource = sourceBetweenText(
+      terminalWorkspaceSurfaceSource,
+      "function MarketSurface",
+      "function ResearchSurface",
+    );
+    const aiSelectionRequestSource = sourceBetween(
+      "const runMarketAiSelection = useCallback",
+      "const marketDiscoveryMarket =",
+    );
+
+    expect(appSource).toContain(
+      "const marketAiSelectionRequestRef = useRef(createLatestRequestCoordinator());",
+    );
+    expect(aiSelectionRequestSource).toContain("marketAiSelectionRequestRef.current.begin()");
+    expect(aiSelectionRequestSource).toContain(
+      "marketAiSelectionRequestRef.current.isCurrent(token)",
+    );
+    expect(appSource).toContain('selectInstrument(instrument, "research", false)');
+    expect(appSource).toContain('selectInstrument(instrument, "market", false)');
+    expect(marketSurfaceSource).toContain('title="AI 选股"');
+    expect(marketSurfaceSource).toContain("本结果仅切换研究上下文");
+    expect(marketSurfaceSource).toContain("已排除 {aiSelectionResult.exclusions.length} 项");
+    expect(marketSurfaceSource).toContain(
+      "setAiSelectionProviderId(providerId);\n                    setAiSelectionExternalDataApproved(false);",
+    );
+    expect(marketSurfaceSource).not.toContain(
+      'if (providerId === "local") {\n                      setAiSelectionExternalDataApproved(false);',
+    );
+    expect(hasCssBlockWith(".design-market-ai-controls", [
+      "display: grid;",
+      "align-items: end;",
+    ])).toBe(true);
+    expect(hasCssDeclaration(
+      ".design-market-ai-results article > header > div strong",
+      "font-size: calc(11px * var(--aiqt-text-scale, 1));",
+    )).toBe(true);
+    expect(hasCssBlockWith("  .design-market-ai-controls", [
+      "grid-template-columns: minmax(0, 1fr);",
+    ])).toBe(true);
+    expect(cssBlock(".design-market-ai-market-tabs button")).toContain("var(--surface-raised)");
+  });
+
   test("keeps the separate market information page readable on desktop and mobile", () => {
     expect(hasCssBlockWith(".design-market-information-grid", [
       "display: grid;",
@@ -350,9 +393,14 @@ describe("terminal layout css", () => {
     expect(hasCssBlockWith("  .design-market-information-grid", [
       "grid-template-columns: minmax(0, 1fr);",
     ])).toBe(true);
+    expect(hasCssBlockWith(".design-market-information-market-tabs", [
+      "margin-bottom: 8px;",
+      "padding: 6px;",
+      "border: 1px solid var(--border);",
+    ])).toBe(true);
   });
 
-  test("loads market information only on its page and protects the latest instrument request", () => {
+  test("loads market information for its independent market selection and protects the latest request", () => {
     const marketInformationSource = sourceBetweenText(
       appSource,
       "const refreshMarketInformation = useCallback",
@@ -362,19 +410,41 @@ describe("terminal layout css", () => {
     expect(appSource).toContain(
       "const marketInformationRequestRef = useRef(createLatestRequestCoordinator());",
     );
+    expect(appSource).toContain(
+      "const marketInformationNewsRequestRef = useRef(createLatestRequestCoordinator());",
+    );
+    expect(appSource).toContain(
+      "const [marketInformationMarket, setMarketInformationMarket] =",
+    );
     expect(marketInformationSource).toContain('activeWorkAreaId !== "market-information"');
     expect(marketInformationSource).toContain("marketInformationRequestRef.current.begin()");
     expect(marketInformationSource).toContain(
       "marketInformationRequestRef.current.isCurrent(requestToken)",
     );
-    expect(marketInformationSource).toContain("workspace.selectedInstrument.market");
-    expect(marketInformationSource).toContain("workspace.selectedInstrument.symbol");
-    expect(marketInformationSource).toContain("workspace.selectedInstrument.name");
+    expect(marketInformationSource).toContain("const market = marketInformationMarket;");
+    expect(marketInformationSource).toContain("const symbol = marketInformationSymbol;");
+    expect(marketInformationSource).toContain("const name = marketInformationName;");
+    expect(marketInformationSource).not.toContain(
+      "const market = workspace.selectedInstrument.market;",
+    );
     expect(marketInformationSource).toContain("const contextKey = `${market}:${symbol}:${name}`;");
     expect(marketInformationSource).toContain("name,");
+    expect(marketInformationSource).toContain('section: "news",');
+    expect(marketInformationSource.match(/limit: 20,/g)).toHaveLength(3);
+    expect(marketInformationSource).toContain("offset,");
+    expect(marketInformationSource).toContain("scope,");
+    expect(appSource).toContain("market: marketInformationMarket,");
+    expect(appSource).toContain("onMarketChange: selectMarketInformationMarket,");
+    expect(appSource).toContain("onNewsPageChange: (offset, scope) =>");
+    expect(terminalWorkspaceSurfaceSource).not.toContain("filteredNews.slice(");
     expect(appSource).toContain(
       'activeWorkAreaId === "market-information"\n              ? undefined\n              : automatedTradingGuide',
     );
+    expect(hasCssBlockWith(".design-market-information-pagination", [
+      "display: flex;",
+      "flex-wrap: wrap;",
+      "justify-content: flex-end;",
+    ])).toBe(true);
   });
 
   test("keeps the watchlist overview focused on counts and market distribution", () => {
