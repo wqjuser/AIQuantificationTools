@@ -5697,18 +5697,28 @@ function SettingsSurface({
                 <fieldset>
                   <legend>生产安全策略</legend>
                   <div className="design-settings-form-grid">
-                    <label className="design-settings-field">
-                      <span>生产实盘总开关</span>
+                    <label className="design-settings-live-toggle">
                       <input
-                        className="design-settings-checkbox"
+                        aria-describedby="platform-setting-production-trading-help"
                         defaultChecked={configuration.values.productionTradingEnabled}
+                        id="platform-setting-production-trading"
                         name="productionTradingEnabled"
                         type="checkbox"
                       />
-                      <small>
-                        仅解锁生产路由；不会切换执行模式、授权生产会话、发起评估或提交委托。
-                        仍需凭据、权限、IP 白名单、急停与实名确认。
-                      </small>
+                      <span className="design-settings-live-toggle-copy">
+                        <span className="design-settings-live-toggle-heading">
+                          <strong>生产实盘总开关</strong>
+                          <span aria-hidden="true" className="design-settings-live-toggle-state">
+                            <span className="off">关闭</span>
+                            <span className="on">开启</span>
+                          </span>
+                        </span>
+                        <small id="platform-setting-production-trading-help">
+                          保存后实时生效；仅解锁生产路由，不会切换执行模式、授权生产会话、发起评估或提交委托。
+                          仍需凭据、权限、IP 白名单、急停与实名确认。
+                        </small>
+                      </span>
+                      <span aria-hidden="true" className="design-settings-live-toggle-control" />
                     </label>
                     <label className="design-settings-field">
                       <span>生产授权有效时长（小时）</span>

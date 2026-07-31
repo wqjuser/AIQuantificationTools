@@ -1589,8 +1589,12 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain('name="openaiModel"');
     expect(settings).toContain('name="liveSessionTtlHours"');
     expect(settings).toContain('name="productionTradingEnabled"');
-    expect(settings).toContain('class="design-settings-checkbox"');
+    expect(settings).toContain('class="design-settings-live-toggle"');
+    expect(settings).toContain('id="platform-setting-production-trading"');
+    expect(settings).toContain('aria-describedby="platform-setting-production-trading-help"');
     expect(settings).toContain('type="checkbox" name="productionTradingEnabled" checked=""');
+    expect(settings).toContain('<span class="off">关闭</span><span class="on">开启</span>');
+    expect(settings).toContain('class="design-settings-live-toggle-control"');
     expect(settings).toContain('name="autoTradingIntervalSeconds"');
     expect(settings).toContain('name="secEdgarUserAgent"');
     expect(settings).toContain("请包含产品名和联系邮箱");
@@ -1601,7 +1605,7 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain("运行时校验");
     expect(settings).toContain("保存后实时应用");
     expect(settings).toContain("0 表示永久有效");
-    expect(settings).toContain("仅解锁生产路由");
+    expect(settings).toContain("保存后实时生效；仅解锁生产路由");
     expect(settings).toContain("不会切换执行模式、授权生产会话、发起评估或提交委托");
     expect(settings).toContain("仍需凭据、权限、IP 白名单、急停与实名确认");
     expect(settings).toContain('name="openaiCompatibleModel"');
