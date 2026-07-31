@@ -1164,6 +1164,7 @@ describe("TerminalWorkspaceSurface", () => {
               ccxtTimeout: 10000,
               autoTradingIntervalSeconds: 35,
               liveSessionTtlHours: 8,
+              productionTradingEnabled: true,
               openaiModel: "",
               openaiCompatibleBaseUrl: "",
               openaiCompatibleModel: "",
@@ -1555,6 +1556,7 @@ describe("TerminalWorkspaceSurface", () => {
               ccxtTimeout: 10000,
               autoTradingIntervalSeconds: 35,
               liveSessionTtlHours: 8,
+              productionTradingEnabled: true,
               openaiModel: "gpt-5-mini",
               openaiCompatibleBaseUrl: "",
               openaiCompatibleModel: "",
@@ -1586,6 +1588,9 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain('aria-label="平台配置"');
     expect(settings).toContain('name="openaiModel"');
     expect(settings).toContain('name="liveSessionTtlHours"');
+    expect(settings).toContain('name="productionTradingEnabled"');
+    expect(settings).toContain('class="design-settings-checkbox"');
+    expect(settings).toContain('type="checkbox" name="productionTradingEnabled" checked=""');
     expect(settings).toContain('name="autoTradingIntervalSeconds"');
     expect(settings).toContain('name="secEdgarUserAgent"');
     expect(settings).toContain("请包含产品名和联系邮箱");
@@ -1596,6 +1601,9 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain("运行时校验");
     expect(settings).toContain("保存后实时应用");
     expect(settings).toContain("0 表示永久有效");
+    expect(settings).toContain("仅解锁生产路由");
+    expect(settings).toContain("不会切换执行模式、授权生产会话、发起评估或提交委托");
+    expect(settings).toContain("仍需凭据、权限、IP 白名单、急停与实名确认");
     expect(settings).toContain('name="openaiCompatibleModel"');
     expect(settings).toContain("从 Base URL 的 /models 自动获取模型");
     expect(settings).toContain("刷新 OpenAI 兼容模型");

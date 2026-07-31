@@ -263,6 +263,7 @@ class FakeThirdCurrencyFeeSandboxService(FakeFeeSandboxService):
 
 class FakeProductionService:
     def __init__(self) -> None:
+        self.enabled = True
         self.triggered = False
         self.evidence_fresh = True
         self.orders = []
@@ -275,13 +276,15 @@ class FakeProductionService:
 
     def auto_live_status(self):
         return {
-            "enabled": True,
+            "enabled": self.enabled,
             "credentialsConfigured": True,
-            "controlActive": not self.triggered and self.evidence_fresh,
+            "controlActive": self.enabled and not self.triggered and self.evidence_fresh,
             "controlRecordedActive": not self.triggered,
             "evidenceFresh": self.evidence_fresh,
             "blockingReason": (
-                None
+                "stage10_production_live_route_disabled"
+                if not self.enabled
+                else None
                 if self.evidence_fresh
                 else "stage10_production_execution_control_evidence_stale"
             ),
@@ -2070,6 +2073,15 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(updated["state"]["triggerPct"], 0.4)
             self.assertEqual(production.authorization_calls, 1)
             self.assertTrue(updated["liveTradingAllowed"])
+
+            production.enabled = False
+            disabled = service.snapshot()
+            self.assertEqual(disabled["state"]["executionMode"], "live")
+            self.assertTrue(disabled["state"]["enabled"])
+            self.assertFalse(disabled["productionLive"]["enabled"])
+            self.assertFalse(disabled["liveTradingAllowed"])
+            self.assertFalse(disabled["orderSubmissionEnabled"])
+            production.enabled = True
 
             result = service.evaluate(
                 bars([100, 100, 100, 100, 100, 101]),

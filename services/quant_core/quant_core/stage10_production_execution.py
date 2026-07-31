@@ -1041,6 +1041,10 @@ class BinanceSpotProductionTradingRoute:
         status = self.status()
         if not status["enabled"]:
             raise ValueError("stage10_production_live_mode_disabled")
+        self._require_configured()
+
+    def _require_configured(self) -> None:
+        status = self.status()
         if not status["credentialsConfigured"]:
             raise ValueError("stage10_production_trading_credentials_missing")
         preflight = build_production_trading_credential_preflight(
@@ -1052,6 +1056,13 @@ class BinanceSpotProductionTradingRoute:
 
     def exchange(self) -> Any:
         self.require_enabled()
+        return self._exchange_client()
+
+    def _reconciliation_exchange(self) -> Any:
+        self._require_configured()
+        return self._exchange_client()
+
+    def _exchange_client(self) -> Any:
         if self._exchange is not None:
             return self._exchange
         if (str(self.env.get("CCXT_DEFAULT_TYPE", "spot")).strip().lower() or "spot") != "spot":
@@ -1209,6 +1220,16 @@ class BinanceSpotProductionTradingRoute:
     ) -> dict[str, Any]:
         self._validate_order(order)
         return fetch_spot_order(self.exchange(), order, exchange_order_id)
+
+    def fetch_order_for_reconciliation(
+        self,
+        order: dict[str, Any],
+        exchange_order_id: str | None = None,
+    ) -> dict[str, Any]:
+        self._validate_order(order)
+        return fetch_spot_order(
+            self._reconciliation_exchange(), order, exchange_order_id
+        )
 
     def _load_ccxt(self) -> Any:
         if self.ccxt_module is not _CCXT_UNSET:
@@ -1603,7 +1624,6 @@ class Stage10ProductionExecutionService:
             raise ValueError("stage10_auto_live_operator_required")
         if self.auto_route is None:
             raise ValueError("stage10_production_live_route_unavailable")
-        self.auto_route.require_enabled()
         client_order_id = str(order.get("clientOrderId") or "")
         if not client_order_id:
             raise ValueError("stage10_auto_live_order_invalid")
@@ -1611,7 +1631,7 @@ class Stage10ProductionExecutionService:
         try:
             try:
                 current = {
-                    **self.auto_route.fetch_order(
+                    **self.auto_route.fetch_order_for_reconciliation(
                         order,
                         evidence.get("exchangeOrderId"),
                     ),

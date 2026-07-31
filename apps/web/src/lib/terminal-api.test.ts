@@ -6195,6 +6195,80 @@ describe("terminal workspace API client", () => {
     });
   });
 
+  test("requires a boolean production trading flag in platform configuration", async () => {
+    const load = (productionTradingEnabled: unknown) => loadPlatformSettings(
+      "http://127.0.0.1:8765/",
+      async () => ({
+        ok: true,
+        json: async () => ({
+          settings: {
+            schemaVersion: 1,
+            generatedAt: "2026-07-31T11:00:00+00:00",
+            dataSources: [],
+            fundamentalDataSources: [],
+            marketDataAdapters: [],
+            cache: {
+              engine: "sqlite",
+              path: "data/market.sqlite",
+              exists: true,
+              scope: "ohlcv",
+              rowCount: 0,
+              contextCount: 0,
+              latestTimestamp: null,
+              freshnessSummary: { fresh: 0, stale: 0, empty: 0 },
+              contexts: [],
+            },
+            executionAdapters: [],
+            safety: { liveTradingAllowed: false, requiredGates: [] },
+            configuration: {
+              source: "database",
+              revision: 1,
+              updatedAt: "2026-07-31T11:00:00+00:00",
+              restartRequired: false,
+              values: {
+                ccxtDefaultExchange: "binance",
+                ccxtTimeout: 10000,
+                autoTradingIntervalSeconds: 35,
+                liveSessionTtlHours: 8,
+                productionTradingEnabled,
+                openaiModel: "",
+                openaiCompatibleBaseUrl: "",
+                openaiCompatibleModel: "",
+                ollamaBaseUrl: "http://127.0.0.1:11434",
+                ollamaModel: "",
+                secEdgarUserAgent: "",
+                monitoringWebhookTimeoutSeconds: 5,
+                freeStockdbTimeoutSeconds: 3,
+              },
+              secrets: Object.fromEntries([
+                "finnhubApiKey",
+                "openaiApiKey",
+                "openaiCompatibleApiKey",
+                "ccxtSandboxApiKey",
+                "ccxtSandboxSecret",
+                "ccxtProductionReadonlyApiKey",
+                "ccxtProductionReadonlySecret",
+                "ccxtProductionTradingApiKey",
+                "ccxtProductionTradingSecret",
+                "monitoringWebhookUrl",
+                "freeStockdbUrl",
+                "httpsProxy",
+              ].map((name) => [name, { configured: false, masked: null }])),
+            },
+          },
+        }),
+      }),
+    );
+
+    const enabled = await load(true);
+    const malformed = await load("true");
+
+    expect(enabled.source).toBe("core");
+    expect(enabled.settings?.configuration?.values.productionTradingEnabled).toBe(true);
+    expect(malformed.source).toBe("fallback");
+    expect(malformed.error).toBe("Invalid settings status contract");
+  });
+
   test("sends a monitoring Webhook test without exposing configuration", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const result = await testMonitoringWebhook(

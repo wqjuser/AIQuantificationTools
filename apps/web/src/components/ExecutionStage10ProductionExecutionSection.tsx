@@ -30,6 +30,18 @@ const confirmationLabels: Record<(typeof stage10ConfirmationIds)[number], string
   "production-kill-switch-required-before-live-route": "任何真实路由前必须再次检查急停"
 };
 
+export function isAutoLiveSessionRenewalAvailable(
+  snapshot: AutoTradingSnapshot | null | undefined,
+  controlActive: boolean
+) {
+  return Boolean(
+    controlActive
+    && snapshot?.state.executionMode === "live"
+    && snapshot.state.enabled
+    && snapshot.productionLive?.enabled === true
+  );
+}
+
 export function ExecutionStage10ProductionExecutionSection({
   autoTradingSnapshot,
   baseUrl,
@@ -60,6 +72,11 @@ export function ExecutionStage10ProductionExecutionSection({
     && autoTradingSnapshot?.state.executionMode === "live"
     && autoTradingSnapshot.liveTradingAllowed
   );
+  const autoLiveModeConfigured = Boolean(
+    autoTradingSnapshot?.state.executionMode === "live"
+    && autoTradingSnapshot.state.enabled
+  );
+  const productionTradingEnabled = autoTradingSnapshot?.productionLive?.enabled === true;
   const baseRunId = candidate?.baseRunId;
   const refresh = useCallback(async () => {
     try {
@@ -216,7 +233,15 @@ export function ExecutionStage10ProductionExecutionSection({
         </button>
       ) : null}
 
-      {autoLiveGate && controlActive ? (
+      {autoLiveGate && autoTradingSnapshot && !productionTradingEnabled ? (
+        <p role="status">先到设置开启生产实盘总开关，再返回完成生产会话授权。</p>
+      ) : null}
+
+      {autoLiveGate && autoTradingSnapshot && productionTradingEnabled && !autoLiveModeConfigured ? (
+        <p role="status">先到自动交易控制台选择生产实盘并保存开启，再返回完成生产会话授权。</p>
+      ) : null}
+
+      {autoLiveGate && isAutoLiveSessionRenewalAvailable(autoTradingSnapshot, controlActive) ? (
         <fieldset className="execution-stage10-live-session">
           <legend>生产会话授权与续期</legend>
           <label>

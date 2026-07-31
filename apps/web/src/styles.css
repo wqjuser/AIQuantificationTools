@@ -22405,6 +22405,15 @@ em {
   font: inherit;
 }
 
+.design-settings-field input.design-settings-checkbox {
+  width: auto;
+  min-width: auto;
+  justify-self: start;
+  padding: 0;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
 .design-settings-field input:focus,
 .design-settings-field select:focus {
   border-color: var(--teal);

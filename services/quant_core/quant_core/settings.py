@@ -96,6 +96,7 @@ _PUBLIC_SETTING_SPECS = {
     "ccxtDefaultExchange": ("CCXT_DEFAULT_EXCHANGE", "binance"),
     "ccxtTimeout": ("CCXT_TIMEOUT", "10000"),
     "autoTradingIntervalSeconds": ("AIQT_AUTO_TRADING_INTERVAL_SECONDS", "35"),
+    "productionTradingEnabled": ("AIQT_ENABLE_PRODUCTION_TRADING", "false"),
     "liveSessionTtlHours": ("AIQT_LIVE_SESSION_TTL_HOURS", "8"),
     "openaiModel": ("OPENAI_MODEL", ""),
     "openaiCompatibleBaseUrl": ("OPENAI_COMPATIBLE_BASE_URL", ""),
@@ -106,6 +107,7 @@ _PUBLIC_SETTING_SPECS = {
     "monitoringWebhookTimeoutSeconds": ("AIQT_MONITORING_WEBHOOK_TIMEOUT_SECONDS", "5"),
     "freeStockdbTimeoutSeconds": ("AIQT_FREE_STOCKDB_TIMEOUT_SECONDS", "3"),
 }
+_BOOLEAN_SETTING_FIELDS = {"productionTradingEnabled"}
 _INTEGER_SETTING_RANGES = {
     "ccxtTimeout": (1_000, 120_000),
     "autoTradingIntervalSeconds": (5, 3_600),
@@ -275,13 +277,19 @@ class PlatformSettingsStore:
             ).fetchone()
         if row is None:
             return None
-        public_values = json.loads(str(row[1]))
+        stored_public_values = json.loads(str(row[1]))
         secret_values = json.loads(self._decrypt(bytes(row[2]), environment))
-        if not isinstance(public_values, dict) or not isinstance(secret_values, dict):
+        if not isinstance(stored_public_values, dict) or not isinstance(secret_values, dict):
             raise ValueError("platform_settings_record_invalid")
+        public_values = {
+            env_key: default for env_key, default in _PUBLIC_SETTING_SPECS.values()
+        }
+        public_values.update(
+            {str(key): str(value) for key, value in stored_public_values.items()}
+        )
         return PlatformSettingsRecord(
             int(row[0]),
-            {str(key): str(value) for key, value in public_values.items()},
+            public_values,
             {str(key): str(value) for key, value in secret_values.items()},
             str(row[3]),
         )
@@ -345,7 +353,7 @@ class PlatformSettingsStore:
         return key
 
 
-def _validate_public_settings(value: object) -> dict[str, str | int]:
+def _validate_public_settings(value: object) -> dict[str, str | int | bool]:
     if not isinstance(value, dict):
         raise ValueError("configuration_must_be_object")
     unknown = set(value) - set(_PUBLIC_SETTING_SPECS)
@@ -354,8 +362,13 @@ def _validate_public_settings(value: object) -> dict[str, str | int]:
     missing = set(_PUBLIC_SETTING_SPECS) - set(value)
     if missing:
         raise ValueError(f"missing_configuration_fields:{','.join(sorted(missing))}")
-    validated: dict[str, str | int] = {}
+    validated: dict[str, str | int | bool] = {}
     for field, raw in value.items():
+        if field in _BOOLEAN_SETTING_FIELDS:
+            if not isinstance(raw, bool):
+                raise ValueError(f"{field}_must_be_boolean")
+            validated[field] = raw
+            continue
         if field in _INTEGER_SETTING_RANGES:
             if isinstance(raw, bool) or not isinstance(raw, int):
                 raise ValueError(f"{field}_must_be_integer")
@@ -430,7 +443,9 @@ def _validate_http_url(value: str, field: str) -> None:
         raise ValueError(f"{field}_invalid")
 
 
-def _public_setting_for_payload(field: str, value: str) -> str | int:
+def _public_setting_for_payload(field: str, value: str) -> str | int | bool:
+    if field in _BOOLEAN_SETTING_FIELDS:
+        return value.strip().lower() in {"1", "true", "yes", "on"}
     if field not in _INTEGER_SETTING_RANGES:
         return value
     try:

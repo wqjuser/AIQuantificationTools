@@ -5598,6 +5598,7 @@ function SettingsSurface({
         ccxtTimeout: Number(text("ccxtTimeout")),
         autoTradingIntervalSeconds: Number(text("autoTradingIntervalSeconds")),
         liveSessionTtlHours: Number(text("liveSessionTtlHours")),
+        productionTradingEnabled: data.has("productionTradingEnabled"),
         openaiModel: text("openaiModel"),
         openaiCompatibleBaseUrl: text("openaiCompatibleBaseUrl"),
         openaiCompatibleModel: text("openaiCompatibleModel"),
@@ -5696,6 +5697,19 @@ function SettingsSurface({
                 <fieldset>
                   <legend>生产安全策略</legend>
                   <div className="design-settings-form-grid">
+                    <label className="design-settings-field">
+                      <span>生产实盘总开关</span>
+                      <input
+                        className="design-settings-checkbox"
+                        defaultChecked={configuration.values.productionTradingEnabled}
+                        name="productionTradingEnabled"
+                        type="checkbox"
+                      />
+                      <small>
+                        仅解锁生产路由；不会切换执行模式、授权生产会话、发起评估或提交委托。
+                        仍需凭据、权限、IP 白名单、急停与实名确认。
+                      </small>
+                    </label>
                     <label className="design-settings-field">
                       <span>生产授权有效时长（小时）</span>
                       <input

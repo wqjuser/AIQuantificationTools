@@ -138,6 +138,7 @@ class ProductionOrderExchange:
         self.order = None
         self.open_orders = []
         self.create_calls = 0
+        self.fetch_calls = 0
         self.ip_restricted = True
 
     def load_markets(self):
@@ -180,6 +181,7 @@ class ProductionOrderExchange:
         return f"{value:.2f}"
 
     def fetch_order(self, _exchange_order_id, _symbol, params):
+        self.fetch_calls += 1
         if self.order is None:
             raise OrderNotFound("Order not found")
         if params["origClientOrderId"] != self.order["clientOrderId"]:
@@ -486,6 +488,7 @@ class Stage10ProductionExecutionTest(unittest.TestCase):
                 operator="wenqingjie",
                 reason="Stop new production orders.",
             )
+            route.env["AIQT_ENABLE_PRODUCTION_TRADING"] = "false"
 
             evidence = service.reconcile_auto_market_order(
                 order,
@@ -498,7 +501,15 @@ class Stage10ProductionExecutionTest(unittest.TestCase):
 
             self.assertEqual(evidence["state"], "filled")
             self.assertEqual(evidence["operation"], "query")
+            self.assertEqual(exchange.fetch_calls, 1)
             self.assertEqual(exchange.create_calls, 0)
+            for action in (
+                lambda: route.prepare_market_order(order),
+                lambda: route.create_market_order(order),
+                lambda: route.account_coverage(0, 1),
+            ):
+                with self.assertRaisesRegex(ValueError, "live_mode_disabled"):
+                    action()
 
     def test_authorization_and_deterministic_attempt_are_bound_and_fail_closed(self) -> None:
         candidate, review, reviewed_at, _workflow, _sandbox_authorization = _stage9_chain()

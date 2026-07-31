@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from http.client import HTTPConnection
 from http.server import HTTPServer
 from pathlib import Path
@@ -478,6 +480,7 @@ class PlatformSettingsTests(unittest.TestCase):
             environment = {
                 "CCXT_DEFAULT_EXCHANGE": "binance",
                 "CCXT_TIMEOUT": "10000",
+                "AIQT_ENABLE_PRODUCTION_TRADING": "false",
                 "OPENAI_API_KEY": "environment-openai-secret",
                 "OPENAI_MODEL": "environment-model",
                 "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
@@ -491,16 +494,18 @@ class PlatformSettingsTests(unittest.TestCase):
             )
 
             class RuntimeAutoTradingService:
+                reloaded_production_enabled = None
                 reloaded_ttl_hours = None
 
                 def reload_runtime(
                     self,
                     _providers,
                     _sandbox,
-                    _production,
+                    production,
                     *,
                     live_session_ttl_hours,
                 ):
+                    self.reloaded_production_enabled = production.auto_route.status()["enabled"]
                     self.reloaded_ttl_hours = live_session_ttl_hours
 
                 @staticmethod
@@ -548,6 +553,7 @@ class PlatformSettingsTests(unittest.TestCase):
                         "configuration": {
                             **initial["values"],
                             "ccxtDefaultExchange": "kraken",
+                            "productionTradingEnabled": True,
                             "liveSessionTtlHours": 0,
                             "autoTradingIntervalSeconds": 17,
                             "openaiModel": "database-model",
@@ -569,7 +575,9 @@ class PlatformSettingsTests(unittest.TestCase):
                 )
                 saved_response = connection.getresponse()
                 saved_raw = saved_response.read().decode("utf-8")
-                saved_settings = json.loads(saved_raw)["settings"]
+                saved_payload = json.loads(saved_raw)
+                self.assertEqual(saved_response.status, 200, saved_payload)
+                saved_settings = saved_payload["settings"]
                 saved = saved_settings["configuration"]
             finally:
                 connection.close()
@@ -586,12 +594,14 @@ class PlatformSettingsTests(unittest.TestCase):
             )
             self.assertEqual(initial["values"]["liveSessionTtlHours"], 8)
             self.assertEqual(initial["values"]["autoTradingIntervalSeconds"], 35)
+            self.assertFalse(initial["values"]["productionTradingEnabled"])
             self.assertTrue(initial["secrets"]["openaiApiKey"]["configured"])
             self.assertEqual(saved_response.status, 200)
             self.assertEqual(saved["source"], "database")
             self.assertEqual(saved["revision"], 1)
             self.assertFalse(saved["restartRequired"])
             self.assertEqual(saved["values"]["ccxtDefaultExchange"], "kraken")
+            self.assertTrue(saved["values"]["productionTradingEnabled"])
             self.assertEqual(saved["values"]["liveSessionTtlHours"], 0)
             self.assertEqual(saved["values"]["autoTradingIntervalSeconds"], 17)
             self.assertEqual(saved["values"]["openaiModel"], "database-model")
@@ -600,9 +610,11 @@ class PlatformSettingsTests(unittest.TestCase):
                 "AIQuantificationTools database-contact@example.test",
             )
             self.assertEqual(runtime_auto_trading.reloaded_ttl_hours, 0)
+            self.assertTrue(runtime_auto_trading.reloaded_production_enabled)
             self.assertEqual(runtime_auto_trading_runner.interval_seconds, 17)
             self.assertEqual(environment["CCXT_DEFAULT_EXCHANGE"], "kraken")
             self.assertEqual(environment["AIQT_AUTO_TRADING_INTERVAL_SECONDS"], "17")
+            self.assertEqual(environment["AIQT_ENABLE_PRODUCTION_TRADING"].lower(), "true")
             self.assertEqual(environment["OPENAI_MODEL"], "database-model")
             self.assertEqual(
                 environment["SEC_EDGAR_USER_AGENT"],
@@ -611,6 +623,8 @@ class PlatformSettingsTests(unittest.TestCase):
             self.assertEqual(saved["secrets"]["openaiApiKey"]["masked"], "data••••••••cret")
             self.assertEqual(saved["secrets"]["monitoringWebhookUrl"]["masked"], "http••••••••vate")
             self.assertFalse(saved_settings["safety"]["liveTradingAllowed"])
+            self.assertEqual(saved_settings["safety"]["executionMode"], "paper")
+            self.assertFalse(saved_settings["safety"]["liveConfirmed"])
             self.assertNotIn("environment-openai-secret", saved_raw)
             self.assertNotIn("database-openai-secret", saved_raw)
             database_bytes = store.path.read_bytes().decode("latin1")
@@ -625,6 +639,7 @@ class PlatformSettingsTests(unittest.TestCase):
                     "OPENAI_API_KEY": "changed-environment-secret",
                     "OPENAI_MODEL": "changed-environment-model",
                     "SEC_EDGAR_USER_AGENT": "changed-contact@example.test",
+                    "AIQT_ENABLE_PRODUCTION_TRADING": "false",
                 }
             )
             self.assertEqual(effective["CCXT_DEFAULT_EXCHANGE"], "kraken")
@@ -640,7 +655,7 @@ class PlatformSettingsTests(unittest.TestCase):
                 effective["CCXT_PRODUCTION_TRADING_SECRET"],
                 "database-production-secret",
             )
-            self.assertNotIn("AIQT_ENABLE_PRODUCTION_TRADING", effective)
+            self.assertEqual(effective["AIQT_ENABLE_PRODUCTION_TRADING"].lower(), "true")
             self.assertEqual(
                 effective["AIQT_MONITORING_WEBHOOK_URL"],
                 "https://hooks.example.test/private",
@@ -660,6 +675,64 @@ class PlatformSettingsTests(unittest.TestCase):
                 "autoTradingIntervalSeconds_out_of_range",
             ):
                 store.save(invalid, {}, [], effective)
+            invalid = {**saved["values"], "productionTradingEnabled": "true"}
+            with self.assertRaisesRegex(ValueError, "productionTradingEnabled_must_be_boolean"):
+                store.save(invalid, {}, [], effective)
+
+    def test_legacy_database_configuration_defaults_production_trading_to_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            environment = {"AIQT_ENABLE_PRODUCTION_TRADING": "true"}
+            settings_store = PlatformSettingsStore(
+                root / "platform_settings.sqlite",
+                root / "platform-settings.key",
+            )
+            settings_store.save(
+                settings_store.configuration_payload(environment)["values"],
+                {},
+                [],
+                environment,
+            )
+            with closing(sqlite3.connect(settings_store.path)) as connection, connection:
+                public_values = json.loads(connection.execute(
+                    "SELECT public_json FROM platform_settings WHERE id = 1"
+                ).fetchone()[0])
+                public_values.pop("AIQT_ENABLE_PRODUCTION_TRADING")
+                connection.execute(
+                    "UPDATE platform_settings SET public_json = ? WHERE id = 1",
+                    (json.dumps(public_values),),
+                )
+
+            class TestHandler(QuantApiHandler):
+                audit_event_store = AuditEventStore(root / "audit.sqlite")
+                cache = MarketDataCache(root / "market.sqlite")
+                adapter_error_store = MarketDataAdapterErrorStore(root / "adapter_errors.sqlite")
+                platform_settings_store = settings_store
+                platform_settings_environ = environment
+                execution_adapter_health_environ = None
+                auto_paper_trading_service = None
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            try:
+                connection.request("GET", "/api/settings/status")
+                response = connection.getresponse()
+                settings = json.loads(response.read().decode("utf-8"))["settings"]
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(response.status, 200)
+            self.assertEqual(settings["configuration"]["source"], "database")
+            self.assertFalse(
+                settings["configuration"]["values"]["productionTradingEnabled"]
+            )
+            self.assertFalse(settings["safety"]["productionLive"]["enabled"])
+            self.assertFalse(settings["safety"]["liveTradingAllowed"])
 
     def test_model_discovery_uses_effective_encrypted_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:

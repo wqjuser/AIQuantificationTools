@@ -2398,6 +2398,7 @@ class AutoPaperTradingService:
             and state.get("liveConfirmed") is True
             and state.get("liveIpRestricted") is True
             and _live_session_authorized(state)
+            and live_status.get("enabled") is True
             and live_status.get(
                 "controlRecordedActive",
                 live_status["controlActive"],

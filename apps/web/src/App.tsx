@@ -18805,6 +18805,7 @@ export function App() {
               按当前状态完成凭据检查、权限核验、控制恢复和实名确认；打开窗口不会自动启用实盘。
             </p>
             <ExecutionStage10ProductionExecutionSection
+              autoTradingSnapshot={autoTradingSnapshot}
               baseUrl={quantCoreBaseUrl}
               onAutoLiveAuthorized={completeLiveTradingGate}
               sectionId="live-trading-gate-dialog-control"

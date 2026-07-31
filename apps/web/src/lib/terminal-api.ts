@@ -2535,6 +2535,7 @@ export interface PlatformSettingsConfigurationValues {
   ccxtTimeout: number;
   autoTradingIntervalSeconds: number;
   liveSessionTtlHours: number;
+  productionTradingEnabled: boolean;
   openaiModel: string;
   openaiCompatibleBaseUrl: string;
   openaiCompatibleModel: string;
@@ -17442,6 +17443,7 @@ function isPlatformSettingsConfiguration(value: unknown): value is PlatformSetti
     Number.isInteger(values.liveSessionTtlHours) &&
     Number(values.liveSessionTtlHours) >= 0 &&
     Number(values.liveSessionTtlHours) <= 8760 &&
+    typeof values.productionTradingEnabled === "boolean" &&
     typeof values.openaiModel === "string" &&
     typeof values.openaiCompatibleBaseUrl === "string" &&
     typeof values.openaiCompatibleModel === "string" &&
