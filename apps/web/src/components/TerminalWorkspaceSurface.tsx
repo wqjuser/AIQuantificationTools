@@ -55,6 +55,7 @@ import type {
   MarketInformationResult,
   OpenAiCompatibleModelsResult,
   InstallablePlatformDataDependency,
+  PlatformSettingsConfigurationValues,
   PlatformSettingsSecretName,
   PlatformSettingsStatus,
   PlatformSettingsUpdateRequest,
@@ -113,7 +114,8 @@ interface TerminalWorkspaceSurfaceProps {
   isTestingMonitoringWebhook?: boolean;
   onLoadOpenAiCompatibleModels?: (baseUrl: string) => Promise<OpenAiCompatibleModelsResult>;
   onInstallDataDependency?: (dependency: InstallablePlatformDataDependency) => void;
-  onSaveSettingsConfiguration?: (request: PlatformSettingsUpdateRequest) => void;
+  onSaveSettingsConfiguration?: (request: PlatformSettingsUpdateRequest) => Promise<boolean> | void;
+  onSettingsConfigurationDirtyChange?: (dirty: boolean) => void;
   onTestMonitoringWebhook?: () => void;
   settingsConfigurationMessage?: string | null;
   aiReview: {
@@ -5306,6 +5308,43 @@ const platformSecretFields: Array<{
   { name: "ccxtProductionTradingSecret", label: "生产交易 Secret", production: true },
 ];
 
+function buildPlatformSettingsUpdateRequest(data: FormData): PlatformSettingsUpdateRequest {
+  const text = (name: string) => String(data.get(name) ?? "").trim();
+  const secretUpdates: PlatformSettingsUpdateRequest["secretUpdates"] = {};
+  platformSecretFields.forEach(({ name }) => {
+    const value = String(data.get(name) ?? "");
+    if (value) secretUpdates[name] = value;
+  });
+  return {
+    configuration: {
+      ccxtDefaultExchange: text("ccxtDefaultExchange"),
+      ccxtTimeout: Number(text("ccxtTimeout")),
+      autoTradingIntervalSeconds: Number(text("autoTradingIntervalSeconds")),
+      liveSessionTtlHours: Number(text("liveSessionTtlHours")),
+      productionTradingEnabled: data.has("productionTradingEnabled"),
+      openaiModel: text("openaiModel"),
+      openaiCompatibleBaseUrl: text("openaiCompatibleBaseUrl"),
+      openaiCompatibleModel: text("openaiCompatibleModel"),
+      ollamaBaseUrl: text("ollamaBaseUrl"),
+      ollamaModel: text("ollamaModel"),
+      secEdgarUserAgent: text("secEdgarUserAgent"),
+      monitoringWebhookTimeoutSeconds: Number(text("monitoringWebhookTimeoutSeconds")),
+      freeStockdbTimeoutSeconds: Number(text("freeStockdbTimeoutSeconds")),
+    },
+    secretUpdates,
+    clearSecrets: [],
+  };
+}
+
+export function hasPlatformSettingsConfigurationChanges(
+  saved: PlatformSettingsConfigurationValues,
+  draft: PlatformSettingsUpdateRequest,
+) {
+  return Object.entries(draft.configuration).some(
+    ([name, value]) => saved[name as keyof PlatformSettingsConfigurationValues] !== value,
+  ) || Object.keys(draft.secretUpdates).length > 0 || draft.clearSecrets.length > 0;
+}
+
 function SettingsSecretFields({
   names,
   settings,
@@ -5361,7 +5400,6 @@ function OpenAiCompatibleModelFields({
     if (requestId !== requestSequence.current) return;
     if (result.source === "core" && result.models.length) {
       setModels(result.models);
-      setModel((current) => current.trim() || result.models[0]);
       setStatus("loaded");
       return;
     }
@@ -5409,6 +5447,7 @@ function OpenAiCompatibleModelFields({
               onChange={(event) => setModel(event.currentTarget.value)}
               value={model}
             >
+              {!model ? <option value="">请选择模型</option> : null}
               {modelOptions.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           ) : (
@@ -5452,6 +5491,7 @@ function SettingsSurface({
   onLoadOpenAiCompatibleModels,
   onInstallDataDependency,
   onSaveSettingsConfiguration,
+  onSettingsConfigurationDirtyChange,
   onTestMonitoringWebhook,
   settings,
   settingsConfigurationMessage,
@@ -5470,17 +5510,24 @@ function SettingsSurface({
   | "onLoadOpenAiCompatibleModels"
   | "onInstallDataDependency"
   | "onSaveSettingsConfiguration"
+  | "onSettingsConfigurationDirtyChange"
   | "onTestMonitoringWebhook"
   | "settings"
   | "settingsConfigurationMessage"
 >) {
   const configuration = settings?.configuration;
+  const configurationFormRef = useRef<HTMLFormElement | null>(null);
   const [productionTradingEnabledDraft, setProductionTradingEnabledDraft] = useState(
     configuration?.values.productionTradingEnabled ?? false,
   );
   useEffect(() => {
     setProductionTradingEnabledDraft(configuration?.values.productionTradingEnabled ?? false);
-  }, [configuration?.revision, configuration?.values.productionTradingEnabled]);
+    onSettingsConfigurationDirtyChange?.(false);
+  }, [
+    configuration?.revision,
+    configuration?.values.productionTradingEnabled,
+    onSettingsConfigurationDirtyChange,
+  ]);
   const productionTradingEnabledDirty = Boolean(
     configuration
     && productionTradingEnabledDraft !== configuration.values.productionTradingEnabled,
@@ -5598,33 +5645,15 @@ function SettingsSurface({
   const saveConfiguration = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!configuration || !onSaveSettingsConfiguration) return;
-    const data = new FormData(event.currentTarget);
-    const text = (name: string) => String(data.get(name) ?? "").trim();
-    const secretUpdates: PlatformSettingsUpdateRequest["secretUpdates"] = {};
-    platformSecretFields.forEach(({ name }) => {
-      const value = String(data.get(name) ?? "");
-      if (value) secretUpdates[name] = value;
-    });
-    onSaveSettingsConfiguration({
-      configuration: {
-        ccxtDefaultExchange: text("ccxtDefaultExchange"),
-        ccxtTimeout: Number(text("ccxtTimeout")),
-        autoTradingIntervalSeconds: Number(text("autoTradingIntervalSeconds")),
-        liveSessionTtlHours: Number(text("liveSessionTtlHours")),
-        productionTradingEnabled: data.has("productionTradingEnabled"),
-        openaiModel: text("openaiModel"),
-        openaiCompatibleBaseUrl: text("openaiCompatibleBaseUrl"),
-        openaiCompatibleModel: text("openaiCompatibleModel"),
-        ollamaBaseUrl: text("ollamaBaseUrl"),
-        ollamaModel: text("ollamaModel"),
-        secEdgarUserAgent: text("secEdgarUserAgent"),
-        monitoringWebhookTimeoutSeconds: Number(text("monitoringWebhookTimeoutSeconds")),
-        freeStockdbTimeoutSeconds: Number(text("freeStockdbTimeoutSeconds")),
-      },
-      secretUpdates,
-      clearSecrets: [],
-    });
+    void onSaveSettingsConfiguration(buildPlatformSettingsUpdateRequest(new FormData(event.currentTarget)));
   };
+  const updateConfigurationDirtyState = useCallback(() => {
+    if (!configuration || !configurationFormRef.current || !onSettingsConfigurationDirtyChange) return;
+    onSettingsConfigurationDirtyChange(hasPlatformSettingsConfigurationChanges(
+      configuration.values,
+      buildPlatformSettingsUpdateRequest(new FormData(configurationFormRef.current)),
+    ));
+  }, [configuration, onSettingsConfigurationDirtyChange]);
 
   return (
     <>
@@ -5647,10 +5676,14 @@ function SettingsSurface({
             {configuration ? (
               <form
                 aria-label="平台配置"
+                aria-busy={isSavingSettingsConfiguration}
                 className="design-settings-form"
                 id="settings-configuration"
+                inert={isSavingSettingsConfiguration}
                 key={`${configuration.source}-${configuration.revision}`}
+                onChange={updateConfigurationDirtyState}
                 onSubmit={saveConfiguration}
+                ref={configurationFormRef}
               >
                 <div className="design-settings-form-meta">
                   <strong>

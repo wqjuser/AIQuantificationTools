@@ -2707,6 +2707,8 @@ export function App() {
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [isResearchPipelineConfirmationOpen, setIsResearchPipelineConfirmationOpen] = useState(false);
   const [isLiveTradingGateDialogOpen, setIsLiveTradingGateDialogOpen] = useState(false);
+  const [hasUnsavedSettingsConfiguration, setHasUnsavedSettingsConfiguration] = useState(false);
+  const [pendingSettingsWorkAreaId, setPendingSettingsWorkAreaId] = useState<ProductWorkAreaId | null>(null);
   const [researchCompletionNotice, setResearchCompletionNotice] = useState<{
     dataRows: number;
     instrumentName: string;
@@ -2718,6 +2720,10 @@ export function App() {
   const researchPipelineConfirmationDialogRef = useRef<HTMLDialogElement | null>(null);
   const researchPipelineConfirmationCancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const liveTradingGateDialogRef = useRef<HTMLDialogElement | null>(null);
+  const settingsUnsavedDialogRef = useRef<HTMLDialogElement | null>(null);
+  const settingsUnsavedContinueButtonRef = useRef<HTMLButtonElement | null>(null);
+  const pendingSettingsNavigationActionRef = useRef<(() => void) | null>(null);
+  const settingsSaveRequestIdRef = useRef(0);
   const [paperExecutionRecord, setPaperExecutionRecord] = useState<PaperExecutionRecord | null>(null);
   const [p0PaperSimulationRecord, setP0PaperSimulationRecord] = useState<P0PaperSimulationResponse | null>(null);
   const [promotionCandidateRecord, setPromotionCandidateRecord] = useState<PromotionCandidateRecord | null>(null);
@@ -6972,26 +6978,42 @@ export function App() {
   ]);
 
   const saveSettingsConfiguration = useCallback(async (request: PlatformSettingsUpdateRequest) => {
+    const requestId = ++settingsSaveRequestIdRef.current;
     setIsSavingSettingsConfiguration(true);
     setSettingsConfigurationMessage(null);
     try {
       const result = await savePlatformSettings(quantCoreBaseUrl, request);
       if (result.source !== "core" || !result.settings) {
         setSettingsConfigurationMessage(`保存失败：${result.error ?? "核心服务未返回配置"}`);
-        return;
+        return false;
       }
       setSettingsStatus(result);
+      setHasUnsavedSettingsConfiguration(false);
+      setSettingsConfigurationMessage("配置已加密保存并实时生效。");
+      const navigationAction = pendingSettingsNavigationActionRef.current;
+      pendingSettingsNavigationActionRef.current = null;
+      setPendingSettingsWorkAreaId(null);
+      navigationAction?.();
       if (result.settings.marketDataAdapters.some(
         (adapter) => adapter.id === "free-stockdb-ohlcv" && adapter.externalTelemetry.dependencyAvailable
       )) {
-        const probedResult = await loadPlatformSettings(quantCoreBaseUrl, undefined, true);
-        if (probedResult.source === "core") setSettingsStatus(probedResult);
+        void loadPlatformSettings(quantCoreBaseUrl, undefined, true).then((probedResult) => {
+          if (settingsSaveRequestIdRef.current === requestId && probedResult.source === "core") {
+            setSettingsStatus(probedResult);
+          }
+        }).catch(() => undefined);
       }
-      const providers = await loadAiReviewProviders(quantCoreBaseUrl);
-      if (providers.source === "core") {
-        setAiReviewStage3Providers(providers.providers);
-      }
-      setSettingsConfigurationMessage("配置已加密保存并实时生效。");
+      void loadAiReviewProviders(quantCoreBaseUrl).then((providers) => {
+        if (settingsSaveRequestIdRef.current === requestId && providers.source === "core") {
+          setAiReviewStage3Providers(providers.providers);
+        }
+      }).catch(() => undefined);
+      return true;
+    } catch (saveError) {
+      setSettingsConfigurationMessage(
+        `保存失败：${saveError instanceof Error ? saveError.message : "无法保存当前配置"}`
+      );
+      return false;
     } finally {
       setIsSavingSettingsConfiguration(false);
     }
@@ -10589,42 +10611,62 @@ export function App() {
     });
   }, [aiReviewHistoryPagination?.total]);
 
+  const deferSettingsNavigation = useCallback((
+    targetWorkAreaId: ProductWorkAreaId,
+    navigationAction: () => void,
+  ) => {
+    if (
+      activeWorkAreaId === "settings"
+      && targetWorkAreaId !== activeWorkAreaId
+      && hasUnsavedSettingsConfiguration
+    ) {
+      pendingSettingsNavigationActionRef.current = navigationAction;
+      setPendingSettingsWorkAreaId(targetWorkAreaId);
+      return true;
+    }
+    return false;
+  }, [activeWorkAreaId, hasUnsavedSettingsConfiguration]);
+
   const selectInstrument = useCallback(
     (
       instrument: TerminalWorkspace["selectedInstrument"],
       targetWorkAreaId: ProductWorkAreaId = "research",
       addToWatchlist = true
     ) => {
-      const isExistingWatchlistInstrument = watchlistIncludesInstrument(workspace.watchlist, instrument);
-      manualSelectionVersionRef.current += 1;
-      workflowRunIdRef.current += 1;
-      setIsRunning(false);
-      setPaperExecutionRecord(null);
-      setPromotionCandidateRecord(null);
-      setPendingMarketAiSelectionResearchOrigin(null);
-      resetAiReviewHistoryState();
-      if (addToWatchlist) {
-        setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
-      }
-      setWorkspaceState((current) => {
-        const selectedWorkspace = workspaceWithSelectedInstrument(current.workspace, instrument);
-        return {
-          workspace: addToWatchlist
-            ? selectedWorkspace
-            : {
-                ...selectedWorkspace,
-                watchlist: current.workspace.watchlist
-              },
-          source: "core",
-          statusLabel: "Instrument selected"
-        };
-      });
-      setActiveWorkAreaId(targetWorkAreaId);
-      setActiveLoopStepId("research");
-      setActiveWorkflowStageId("data");
-      setWorkflowRunState(createWorkflowRunState());
+      const applySelection = () => {
+        const isExistingWatchlistInstrument = watchlistIncludesInstrument(workspace.watchlist, instrument);
+        manualSelectionVersionRef.current += 1;
+        workflowRunIdRef.current += 1;
+        setIsRunning(false);
+        setPaperExecutionRecord(null);
+        setPromotionCandidateRecord(null);
+        setPendingMarketAiSelectionResearchOrigin(null);
+        resetAiReviewHistoryState();
+        if (addToWatchlist) {
+          setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
+        }
+        setWorkspaceState((current) => {
+          const selectedWorkspace = workspaceWithSelectedInstrument(current.workspace, instrument);
+          return {
+            workspace: addToWatchlist
+              ? selectedWorkspace
+              : {
+                  ...selectedWorkspace,
+                  watchlist: current.workspace.watchlist
+                },
+            source: "core",
+            statusLabel: "Instrument selected"
+          };
+        });
+        setActiveWorkAreaId(targetWorkAreaId);
+        setActiveLoopStepId("research");
+        setActiveWorkflowStageId("data");
+        setWorkflowRunState(createWorkflowRunState());
+      };
+      if (deferSettingsNavigation(targetWorkAreaId, applySelection)) return;
+      applySelection();
     },
-    [resetAiReviewHistoryState, workspace.watchlist]
+    [deferSettingsNavigation, resetAiReviewHistoryState, workspace.watchlist]
   );
 
   const researchMarketAiSelectionCandidate = useCallback(
@@ -10695,26 +10737,30 @@ export function App() {
 
   const selectTimeframe = useCallback(
     (timeframe: Timeframe, targetWorkAreaId: "market" | "research" = "research") => {
-      setSearchSuggestions([]);
-      setIsSearchOpen(false);
-      manualSelectionVersionRef.current += 1;
-      workflowRunIdRef.current += 1;
-      setIsRunning(false);
-      setPaperExecutionRecord(null);
-      setPromotionCandidateRecord(null);
-      setPendingMarketAiSelectionResearchOrigin(null);
-      resetAiReviewHistoryState();
-      setWorkspaceState((current) => ({
-        workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
-        source: "core",
-        statusLabel: "Timeframe selected"
-      }));
-      setActiveWorkAreaId(targetWorkAreaId);
-      setActiveLoopStepId("research");
-      setActiveWorkflowStageId("data");
-      setWorkflowRunState(createWorkflowRunState());
+      const applySelection = () => {
+        setSearchSuggestions([]);
+        setIsSearchOpen(false);
+        manualSelectionVersionRef.current += 1;
+        workflowRunIdRef.current += 1;
+        setIsRunning(false);
+        setPaperExecutionRecord(null);
+        setPromotionCandidateRecord(null);
+        setPendingMarketAiSelectionResearchOrigin(null);
+        resetAiReviewHistoryState();
+        setWorkspaceState((current) => ({
+          workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
+          source: "core",
+          statusLabel: "Timeframe selected"
+        }));
+        setActiveWorkAreaId(targetWorkAreaId);
+        setActiveLoopStepId("research");
+        setActiveWorkflowStageId("data");
+        setWorkflowRunState(createWorkflowRunState());
+      };
+      if (deferSettingsNavigation(targetWorkAreaId, applySelection)) return;
+      applySelection();
     },
-    [resetAiReviewHistoryState]
+    [deferSettingsNavigation, resetAiReviewHistoryState]
   );
 
   const runAiWorkbenchAction = useCallback((action: AiWorkbenchAction) => {
@@ -11641,7 +11687,7 @@ export function App() {
     workspace.selectedTimeframe
   ]);
 
-  const selectProductWorkArea = useCallback(
+  const commitProductWorkAreaSelection = useCallback(
     (areaId: ProductWorkAreaId) => {
       manualSelectionVersionRef.current += 1;
       const selection = resolveProductWorkAreaSelection(workspace, areaId, activeWorkAreaId);
@@ -11651,6 +11697,40 @@ export function App() {
     },
     [activeWorkAreaId, workspace]
   );
+
+  const selectProductWorkArea = useCallback(
+    (areaId: ProductWorkAreaId) => {
+      const commitSelection = () => commitProductWorkAreaSelection(areaId);
+      if (deferSettingsNavigation(areaId, commitSelection)) return;
+      commitSelection();
+    },
+    [commitProductWorkAreaSelection, deferSettingsNavigation]
+  );
+
+  const continueEditingSettings = useCallback(() => {
+    pendingSettingsNavigationActionRef.current = null;
+    setPendingSettingsWorkAreaId(null);
+  }, []);
+
+  const saveSettingsAndLeave = useCallback(() => {
+    const form = document.querySelector<HTMLFormElement>("#settings-configuration");
+    if (!form) return;
+    if (!form.checkValidity()) {
+      continueEditingSettings();
+      window.requestAnimationFrame(() => form.reportValidity());
+      return;
+    }
+    form.requestSubmit();
+  }, [continueEditingSettings]);
+
+  const discardSettingsAndLeave = useCallback(() => {
+    const navigationAction = pendingSettingsNavigationActionRef.current;
+    if (!pendingSettingsWorkAreaId || !navigationAction) return;
+    pendingSettingsNavigationActionRef.current = null;
+    setHasUnsavedSettingsConfiguration(false);
+    setPendingSettingsWorkAreaId(null);
+    navigationAction();
+  }, [pendingSettingsWorkAreaId]);
 
   const openResearchPipelinePreflightIssue = useCallback(
     (issue: ResearchPipelinePreflight["issues"][number]) => {
@@ -12212,10 +12292,9 @@ export function App() {
   const openMarketDataAdapterWorkflow = useCallback(
     (adapter: PlatformSettingsStatus["marketDataAdapters"][number]) => {
       const instrument = resolveAdapterWorkflowInstrument(workspace, adapter.market);
-      selectInstrument(instrument);
-      selectProductWorkArea("market");
+      selectInstrument(instrument, "market");
     },
-    [selectInstrument, selectProductWorkArea, workspace]
+    [selectInstrument, workspace]
   );
 
   const openAuditReportLedgerEvidenceLink = useCallback(
@@ -14624,6 +14703,23 @@ export function App() {
   }, [isLiveTradingGateDialogOpen]);
 
   useEffect(() => {
+    if (pendingSettingsWorkAreaId && !settingsUnsavedDialogRef.current?.open) {
+      settingsUnsavedDialogRef.current?.showModal();
+      settingsUnsavedContinueButtonRef.current?.focus();
+    }
+  }, [pendingSettingsWorkAreaId]);
+
+  useEffect(() => {
+    if (!hasUnsavedSettingsConfiguration) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [hasUnsavedSettingsConfiguration]);
+
+  useEffect(() => {
     if (!researchCompletionNotice) {
       return;
     }
@@ -14948,6 +15044,26 @@ export function App() {
     workspace.selectedInstrument.market,
     workspace.selectedInstrument.symbol,
     workspace.selectedTimeframe
+  ]);
+
+  const runAutomatedTradingWorkflowFromCurrentWorkspace = useCallback(() => {
+    const targetWorkspace = goldenPath?.nextAction?.targetWorkspace;
+    const targetWorkAreaId = targetWorkspace && productWorkAreaIds.includes(targetWorkspace as ProductWorkAreaId)
+      ? targetWorkspace as ProductWorkAreaId
+      : null;
+    const leaveSettingsAndRun = targetWorkAreaId
+      ? () => {
+          commitProductWorkAreaSelection(targetWorkAreaId);
+          runAutomatedTradingWorkflow();
+        }
+      : runAutomatedTradingWorkflow;
+    if (targetWorkAreaId && deferSettingsNavigation(targetWorkAreaId, leaveSettingsAndRun)) return;
+    runAutomatedTradingWorkflow();
+  }, [
+    commitProductWorkAreaSelection,
+    deferSettingsNavigation,
+    goldenPath?.nextAction?.targetWorkspace,
+    runAutomatedTradingWorkflow,
   ]);
 
   useEffect(() => {
@@ -16414,7 +16530,7 @@ export function App() {
     goldenPath?.nextAction?.id === "certify-live-adapter"
       ? openLiveTradingGate
       : goldenPath?.nextAction
-        ? runAutomatedTradingWorkflow
+        ? runAutomatedTradingWorkflowFromCurrentWorkspace
         : openAutomaticTradingConsole;
   const automatedTradingGuide = (
     <AutomatedTradingWorkflowGuide
@@ -16853,7 +16969,8 @@ export function App() {
           installingDataDependency={installingDataDependency}
           onLoadOpenAiCompatibleModels={loadSettingsOpenAiCompatibleModels}
           onInstallDataDependency={(dependency) => void installSettingsDataDependency(dependency)}
-          onSaveSettingsConfiguration={(request) => void saveSettingsConfiguration(request)}
+          onSaveSettingsConfiguration={saveSettingsConfiguration}
+          onSettingsConfigurationDirtyChange={setHasUnsavedSettingsConfiguration}
           onTestMonitoringWebhook={() => void testSettingsMonitoringWebhook()}
           settings={settingsStatus.settings}
           settingsConfigurationMessage={settingsConfigurationMessage}
@@ -18642,6 +18759,81 @@ export function App() {
             <X size={15} />
           </button>
         </aside>
+      ) : null}
+
+      {pendingSettingsWorkAreaId ? (
+        <dialog
+          aria-describedby="settings-unsaved-dialog-detail"
+          aria-labelledby="settings-unsaved-dialog-title"
+          aria-modal="true"
+          className="research-confirmation-dialog settings-unsaved-dialog"
+          onCancel={(event) => {
+            if (isSavingSettingsConfiguration) {
+              event.preventDefault();
+              return;
+            }
+            continueEditingSettings();
+          }}
+          ref={settingsUnsavedDialogRef}
+          role="alertdialog"
+        >
+          <section className="research-confirmation-modal">
+            <header>
+              <div>
+                <span className="research-confirmation-kicker">
+                  <Save size={15} />
+                  未保存配置
+                </span>
+                <h2 id="settings-unsaved-dialog-title">保存设置后再离开？</h2>
+              </div>
+              <button
+                aria-label="返回继续编辑设置"
+                className="panel-icon-button"
+                disabled={isSavingSettingsConfiguration}
+                onClick={continueEditingSettings}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <p id="settings-unsaved-dialog-detail">
+              检测到配置项尚未保存。保存并离开会应用当前表单全部配置；不保存离开将丢失这些修改。
+            </p>
+            {settingsConfigurationMessage?.startsWith("保存失败") ? (
+              <p className="execution-stage5-shadow-error" role="alert">
+                {settingsConfigurationMessage}
+              </p>
+            ) : null}
+            <footer className="research-confirmation-actions">
+              <button
+                className="design-secondary-action"
+                disabled={isSavingSettingsConfiguration}
+                onClick={continueEditingSettings}
+                ref={settingsUnsavedContinueButtonRef}
+                type="button"
+              >
+                返回继续编辑
+              </button>
+              <button
+                className="design-secondary-action"
+                disabled={isSavingSettingsConfiguration}
+                onClick={discardSettingsAndLeave}
+                type="button"
+              >
+                不保存并离开
+              </button>
+              <button
+                className="run-button"
+                disabled={isSavingSettingsConfiguration}
+                onClick={saveSettingsAndLeave}
+                type="button"
+              >
+                <Save size={15} />
+                {isSavingSettingsConfiguration ? "保存中…" : "保存并离开"}
+              </button>
+            </footer>
+          </section>
+        </dialog>
       ) : null}
 
       {isResearchPipelineConfirmationOpen ? (

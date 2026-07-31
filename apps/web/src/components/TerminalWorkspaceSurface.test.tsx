@@ -17,16 +17,51 @@ import type {
   MarketAiSelectionResult,
   MarketInformationResult,
   PlatformSettingsStatus,
+  PlatformSettingsConfigurationValues,
   PortfolioBacktestRun,
 } from "../lib/terminal-api";
 import type { AutoTradingSnapshot } from "./ExecutionAutoPaperTradingSection";
 import {
   buildAiReviewProductionPath,
   buildAuditLedgerRows,
+  hasPlatformSettingsConfigurationChanges,
   TerminalWorkspaceSurface,
 } from "./TerminalWorkspaceSurface";
 
 describe("TerminalWorkspaceSurface", () => {
+  it("tracks unsaved platform settings across configuration fields and secrets", () => {
+    const values: PlatformSettingsConfigurationValues = {
+      ccxtDefaultExchange: "binance",
+      ccxtTimeout: 10000,
+      autoTradingIntervalSeconds: 20,
+      liveSessionTtlHours: 24,
+      productionTradingEnabled: false,
+      openaiModel: "",
+      openaiCompatibleBaseUrl: "https://example.com/v1",
+      openaiCompatibleModel: "",
+      ollamaBaseUrl: "http://127.0.0.1:11434",
+      ollamaModel: "",
+      secEdgarUserAgent: "AIQuantificationTools contact@example.com",
+      monitoringWebhookTimeoutSeconds: 5,
+      freeStockdbTimeoutSeconds: 3,
+    };
+    const unchanged = {
+      configuration: { ...values },
+      secretUpdates: {},
+      clearSecrets: [],
+    };
+
+    expect(hasPlatformSettingsConfigurationChanges(values, unchanged)).toBe(false);
+    expect(hasPlatformSettingsConfigurationChanges(values, {
+      ...unchanged,
+      configuration: { ...values, ccxtTimeout: 12000 },
+    })).toBe(true);
+    expect(hasPlatformSettingsConfigurationChanges(values, {
+      ...unchanged,
+      secretUpdates: { openaiApiKey: "sk-updated" },
+    })).toBe(true);
+  });
+
   const workAreaIds: ProductWorkAreaId[] = [
     "market",
     "market-information",

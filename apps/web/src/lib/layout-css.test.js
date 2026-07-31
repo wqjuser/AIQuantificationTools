@@ -131,6 +131,67 @@ describe("terminal layout css", () => {
     );
   });
 
+  test("guards unsaved platform settings before leaving the settings workspace", () => {
+    const settingsNavigationGuardSource = sourceBetweenText(
+      appSource,
+      "const deferSettingsNavigation = useCallback(",
+      "const selectInstrument = useCallback("
+    );
+    const workAreaSelectionSource = sourceBetweenText(
+      appSource,
+      "const selectProductWorkArea = useCallback(",
+      "const openResearchPipelinePreflightIssue = useCallback("
+    );
+    const instrumentSelectionSource = sourceBetweenText(
+      appSource,
+      "const selectInstrument = useCallback(",
+      "const researchMarketAiSelectionCandidate = useCallback("
+    );
+    const timeframeSelectionSource = sourceBetweenText(
+      appSource,
+      "const selectTimeframe = useCallback(",
+      "const runAiWorkbenchAction = useCallback("
+    );
+    const adapterWorkflowSource = sourceBetweenText(
+      appSource,
+      "const openMarketDataAdapterWorkflow = useCallback(",
+      "const openAuditReportLedgerEvidenceLink = useCallback("
+    );
+    const automatedWorkflowSource = sourceBetweenText(
+      appSource,
+      "const runAutomatedTradingWorkflowFromCurrentWorkspace = useCallback(",
+      "useEffect(() => {"
+    );
+
+    expect(terminalWorkspaceSurfaceSource).toContain("onSettingsConfigurationDirtyChange");
+    expect(settingsNavigationGuardSource).toContain('activeWorkAreaId === "settings"');
+    expect(settingsNavigationGuardSource).toContain("hasUnsavedSettingsConfiguration");
+    expect(settingsNavigationGuardSource).toContain("setPendingSettingsWorkAreaId(targetWorkAreaId)");
+    expect(instrumentSelectionSource).toContain("deferSettingsNavigation(targetWorkAreaId, applySelection)");
+    expect(timeframeSelectionSource).toContain("deferSettingsNavigation(targetWorkAreaId, applySelection)");
+    expect(workAreaSelectionSource).toContain("deferSettingsNavigation(areaId, commitSelection)");
+    expect(adapterWorkflowSource).toContain('selectInstrument(instrument, "market")');
+    expect(adapterWorkflowSource).not.toContain("selectProductWorkArea");
+    expect(automatedWorkflowSource).toContain(
+      "deferSettingsNavigation(targetWorkAreaId, leaveSettingsAndRun)"
+    );
+    expect(automatedWorkflowSource).toContain("commitProductWorkAreaSelection(targetWorkAreaId)");
+    expect(appSource).toContain('window.addEventListener("beforeunload"');
+    expect(appSource).toContain('id="settings-unsaved-dialog-title"');
+    expect(appSource).toContain("保存设置后再离开？");
+    expect(appSource).toContain("返回继续编辑");
+    expect(appSource).toContain("不保存并离开");
+    expect(appSource).toContain("保存并离开");
+    expect(appSource).toContain("form.checkValidity()");
+    expect(appSource).toContain("form.reportValidity()");
+    expect(appSource).toContain("form.requestSubmit()");
+    expect(terminalWorkspaceSurfaceSource).not.toContain(
+      "setModel((current) => current.trim() || result.models[0])"
+    );
+    expect(terminalWorkspaceSurfaceSource).toContain("inert={isSavingSettingsConfiguration}");
+    expect(appSource).toContain("settingsSaveRequestIdRef.current === requestId");
+  });
+
   test("runs the configured strategy experiment from the redesigned backtest action", () => {
     const terminalActionSource = sourceBetween(
       "const terminalSurfaceAction: TerminalWorkspaceSurfaceAction | null = (() => {",
