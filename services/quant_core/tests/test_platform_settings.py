@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import tempfile
 import unittest
 from http.client import HTTPConnection
@@ -15,10 +17,117 @@ from quant_core.audit_events import AuditEventStore
 from quant_core.cache import MarketDataCache
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 from quant_core.monitoring import MonitoringService
-from quant_core.settings import PlatformSettingsStore, build_settings_status
+from quant_core.settings import (
+    PlatformSettingsStore,
+    build_settings_status,
+    install_optional_data_dependency,
+)
 
 
 class PlatformSettingsTests(unittest.TestCase):
+    def test_optional_data_dependency_can_be_installed_without_restart(self):
+        installed_dependencies: set[str] = set()
+
+        def fake_install(command, **_options):
+            installed_dependencies.add(command[-1])
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "HTTPS_PROXY": "http://proxy.example.test:8080",
+                    "OPENAI_API_KEY": "must-not-reach-pip",
+                },
+                clear=True,
+            ),
+            patch(
+                "quant_core.settings.find_spec",
+                side_effect=lambda dependency: (
+                    object() if dependency in installed_dependencies else None
+                ),
+            ),
+            patch("quant_core.settings.import_module") as import_module,
+            patch("quant_core.settings.invalidate_caches") as invalidate_caches,
+            patch("quant_core.settings.subprocess.run", side_effect=fake_install) as run,
+        ):
+            self.assertTrue(install_optional_data_dependency("akshare"))
+            command = run.call_args.args[0]
+            options = run.call_args.kwargs
+            self.assertEqual(
+                command,
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-cache-dir",
+                    "--no-input",
+                    "akshare",
+                ],
+            )
+            self.assertEqual(options["timeout"], 80)
+            self.assertEqual(options["env"]["HTTPS_PROXY"], "http://proxy.example.test:8080")
+            self.assertNotIn("OPENAI_API_KEY", options["env"])
+            invalidate_caches.assert_called_once_with()
+            import_module.side_effect = ImportError("broken optional dependency")
+            with self.assertRaisesRegex(RuntimeError, "optional_data_dependency_install_failed"):
+                install_optional_data_dependency("akshare")
+
+        class TestHandler(QuantApiHandler):
+            def _settings_status_payload(self, **_options):
+                return {"marketDataAdapters": []}
+
+        server = HTTPServer(("127.0.0.1", 0), TestHandler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(*server.server_address, timeout=5)
+        install_headers = {
+            "Content-Type": "application/json",
+            "Origin": "http://127.0.0.1:5173",
+            "Sec-Fetch-Site": "same-site",
+            "X-AIQT-Install-Intent": "settings-ui",
+        }
+
+        def post(path, headers):
+            connection.request("POST", path, body="{}", headers=headers)
+            response = connection.getresponse()
+            return response.status, json.loads(response.read().decode("utf-8"))
+
+        try:
+            with patch("quant_core.api.install_optional_data_dependency", return_value=True) as installer:
+                missing_intent = post(
+                    "/api/settings/dependencies/akshare/install",
+                    {key: value for key, value in install_headers.items() if key != "X-AIQT-Install-Intent"},
+                )
+                cross_site = post(
+                    "/api/settings/dependencies/akshare/install",
+                    {**install_headers, "Origin": "https://cross-site.example.test", "Sec-Fetch-Site": "cross-site"},
+                )
+                missing_metadata = post(
+                    "/api/settings/dependencies/akshare/install",
+                    {key: value for key, value in install_headers.items() if key != "Sec-Fetch-Site"},
+                )
+                unsupported = post("/api/settings/dependencies/numpy/install", install_headers)
+                installed = post("/api/settings/dependencies/akshare/install", install_headers)
+        finally:
+            connection.close()
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+
+        self.assertEqual([missing_intent[0], cross_site[0], missing_metadata[0]], [403, 403, 403])
+        self.assertEqual(unsupported, (400, {
+            "error": "optional_data_dependency_not_supported",
+            "detail": "Only akshare and yfinance can be installed at runtime.",
+        }))
+        self.assertEqual(installed[0], 201)
+        self.assertEqual(
+            installed[1]["dependencyInstallation"],
+            {"dependency": "akshare", "installed": True, "alreadyInstalled": False},
+        )
+        installer.assert_called_once_with("akshare")
+
     def test_settings_status_projects_current_execution_mode_and_production_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

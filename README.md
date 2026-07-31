@@ -449,6 +449,8 @@ docker compose build api
 docker compose up
 ```
 
+运行中的 API 容器缺少 AKShare 或 yfinance 时，也可以在 Settings 的数据源总览中直接安装；安装完成并确认模块可导入后，当前容器无需重启。该安装不会写回镜像，后续重新创建容器时仍应设置 `INSTALL_DATA_DEPS=true` 并重建镜像。
+
 ccxt sandbox/testnet 健康检查只读取环境变量是否存在，不会把密钥值返回给浏览器。通用变量和交易所前缀变量都支持：
 
 ```powershell

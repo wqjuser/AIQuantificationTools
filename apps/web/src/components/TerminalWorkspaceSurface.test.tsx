@@ -1321,6 +1321,82 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).not.toContain("Tencent");
   });
 
+  it("offers an immediate install action for missing optional data dependencies", () => {
+    const missingDependencySettings = {
+      schemaVersion: 1,
+      generatedAt: "2026-07-31T10:00:00Z",
+      dataSources: [],
+      fundamentalDataSources: [],
+      marketDataAdapters: [{
+        id: "akshare-ohlcv",
+        market: "ashare",
+        adapter: "AkShareMarketDataAdapter",
+        provider: "akshare",
+        status: "blocked",
+        route: "public_ohlcv",
+        capabilities: ["stock_zh_a_hist"],
+        timeframes: ["1d"],
+        requiresApiKey: false,
+        requiresTradingKey: false,
+        cacheScope: "ohlcv",
+        cacheDiagnostics: { latestTimestamp: null } as never,
+        externalTelemetry: {
+          status: "blocked",
+          dependency: "akshare",
+          dependencyAvailable: false,
+          lastError: "optional package 'akshare' is not installed",
+          retryState: "dependency_missing",
+          checkedAt: "2026-07-31T10:00:00Z",
+          installGuidance: {
+            packageName: "akshare",
+            dockerBuildArg: "INSTALL_DATA_DEPS=true",
+            packageInstallCommand: "pip install akshare",
+            projectExtraInstallCommand: "pip install -e services/quant_core[data]",
+            note: "Installs public market data dependencies only.",
+          },
+          lastProviderError: null,
+          providerHealth: {
+            status: "blocked",
+            retryAfterSeconds: 0,
+            reason: "dependency_missing",
+          } as never,
+        },
+        note: "A-share public OHLCV adapter.",
+      }],
+      cache: {} as PlatformSettingsStatus["cache"],
+      executionAdapters: [],
+      safety: { liveTradingAllowed: false, requiredGates: [] },
+    } satisfies PlatformSettingsStatus;
+    const available = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="settings"
+        onInstallDataDependency={() => undefined}
+        settings={missingDependencySettings}
+        settingsConfigurationMessage="akshare 已安装"
+      />,
+    );
+    const installing = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="settings"
+        installingDataDependency="akshare"
+        onInstallDataDependency={() => undefined}
+        settings={missingDependencySettings}
+      />,
+    );
+
+    expect(available).toContain('aria-label="安装 akshare 可选依赖"');
+    expect(available).toContain("安装 akshare");
+    expect(available.indexOf('aria-label="安装 akshare 可选依赖"')).toBeLessThan(
+      available.indexOf('id="settings-data-connectors"'),
+    );
+    expect(available).toContain('role="status"');
+    expect(available).toContain('aria-live="polite"');
+    expect(installing).toContain("正在安装…");
+    expect(installing).toMatch(/aria-label="安装 akshare 可选依赖"[^>]*disabled=""/);
+  });
+
   it("projects actual M6 connector health, permissions, evidence, and next actions", () => {
     const settings = renderToStaticMarkup(
       <TerminalWorkspaceSurface

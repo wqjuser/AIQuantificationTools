@@ -99,6 +99,7 @@ import {
   generateP2ManifestChainPreflight,
   loadOpenAiCompatibleModels,
   loadPlatformSettings,
+  installPlatformDataDependency,
   savePlatformSettings,
   testMonitoringWebhook,
   loadWatchlistCacheRefreshRuns,
@@ -257,6 +258,7 @@ import {
   ExecutionAdapterRuntimeReloadPlanResult,
   ExecutionAdapterLedgerResult,
   ExecutionAdapterCertificationRun,
+  InstallablePlatformDataDependency,
   PlatformSettingsResult,
   PlatformSettingsStatus,
   PlatformSettingsUpdateRequest,
@@ -2315,6 +2317,8 @@ export function App() {
   const [hasLoadedSettingsStatus, setHasLoadedSettingsStatus] = useState(false);
   const [isSavingSettingsConfiguration, setIsSavingSettingsConfiguration] = useState(false);
   const [isTestingMonitoringWebhook, setIsTestingMonitoringWebhook] = useState(false);
+  const [installingDataDependency, setInstallingDataDependency] =
+    useState<InstallablePlatformDataDependency | null>(null);
   const [settingsConfigurationMessage, setSettingsConfigurationMessage] = useState<string | null>(null);
   const [executionAdapterLedger, setExecutionAdapterLedger] = useState<ExecutionAdapterLedgerResult>(
     initialExecutionAdapterLedgerState
@@ -6992,6 +6996,24 @@ export function App() {
       setIsSavingSettingsConfiguration(false);
     }
   }, []);
+
+  const installSettingsDataDependency = useCallback(async (dependency: InstallablePlatformDataDependency) => {
+    setInstallingDataDependency(dependency);
+    setSettingsConfigurationMessage(`正在安装 ${dependency}…`);
+    try {
+      const result = await installPlatformDataDependency(quantCoreBaseUrl, dependency);
+      if (result.source !== "core" || !result.settings) {
+        setSettingsConfigurationMessage(`安装失败：${result.error ?? "核心服务未返回状态"}`);
+        return;
+      }
+      setSettingsStatus(result);
+      setSettingsConfigurationMessage(
+        `${dependency} 已安装并可在当前 API 环境导入，无需重启；数据源健康仍以首次读取证据为准。`
+      );
+    } finally {
+      setInstallingDataDependency(null);
+    }
+  }, [quantCoreBaseUrl]);
 
   const loadSettingsOpenAiCompatibleModels = useCallback(
     (baseUrl: string) => loadOpenAiCompatibleModels(quantCoreBaseUrl, baseUrl),
@@ -16822,7 +16844,9 @@ export function App() {
           isLoadingSettingsConfiguration={!hasLoadedSettingsStatus}
           isSavingSettingsConfiguration={isSavingSettingsConfiguration}
           isTestingMonitoringWebhook={isTestingMonitoringWebhook}
+          installingDataDependency={installingDataDependency}
           onLoadOpenAiCompatibleModels={loadSettingsOpenAiCompatibleModels}
+          onInstallDataDependency={(dependency) => void installSettingsDataDependency(dependency)}
           onSaveSettingsConfiguration={(request) => void saveSettingsConfiguration(request)}
           onTestMonitoringWebhook={() => void testSettingsMonitoringWebhook()}
           settings={settingsStatus.settings}

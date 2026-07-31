@@ -54,6 +54,7 @@ import type {
   MarketAiSelectionResult,
   MarketInformationResult,
   OpenAiCompatibleModelsResult,
+  InstallablePlatformDataDependency,
   PlatformSettingsSecretName,
   PlatformSettingsStatus,
   PlatformSettingsUpdateRequest,
@@ -107,9 +108,11 @@ interface TerminalWorkspaceSurfaceProps {
   adapterLedgerRows?: ExecutionAdapterLedgerRow[];
   settings?: PlatformSettingsStatus;
   isLoadingSettingsConfiguration?: boolean;
+  installingDataDependency?: InstallablePlatformDataDependency | null;
   isSavingSettingsConfiguration?: boolean;
   isTestingMonitoringWebhook?: boolean;
   onLoadOpenAiCompatibleModels?: (baseUrl: string) => Promise<OpenAiCompatibleModelsResult>;
+  onInstallDataDependency?: (dependency: InstallablePlatformDataDependency) => void;
   onSaveSettingsConfiguration?: (request: PlatformSettingsUpdateRequest) => void;
   onTestMonitoringWebhook?: () => void;
   settingsConfigurationMessage?: string | null;
@@ -5443,9 +5446,11 @@ function SettingsSurface({
   adapterLedgerRows = [],
   aiReview,
   isLoadingSettingsConfiguration = false,
+  installingDataDependency = null,
   isSavingSettingsConfiguration = false,
   isTestingMonitoringWebhook = false,
   onLoadOpenAiCompatibleModels,
+  onInstallDataDependency,
   onSaveSettingsConfiguration,
   onTestMonitoringWebhook,
   settings,
@@ -5459,9 +5464,11 @@ function SettingsSurface({
   | "adapterLedgerRows"
   | "aiReview"
   | "isLoadingSettingsConfiguration"
+  | "installingDataDependency"
   | "isSavingSettingsConfiguration"
   | "isTestingMonitoringWebhook"
   | "onLoadOpenAiCompatibleModels"
+  | "onInstallDataDependency"
   | "onSaveSettingsConfiguration"
   | "onTestMonitoringWebhook"
   | "settings"
@@ -5475,6 +5482,13 @@ function SettingsSurface({
     (adapter) =>
       adapter.status !== "ready" ||
       adapter.externalTelemetry.providerHealth.status !== "ok",
+  );
+  const missingInstallableDataDependencies = dataAdapters.flatMap<InstallablePlatformDataDependency>(
+    ({ externalTelemetry }) =>
+      !externalTelemetry.dependencyAvailable &&
+      (externalTelemetry.dependency === "akshare" || externalTelemetry.dependency === "yfinance")
+        ? [externalTelemetry.dependency]
+        : [],
   );
   const readyDataAdapterCount = dataAdapters.filter(
     (adapter) =>
@@ -5736,9 +5750,6 @@ function SettingsSurface({
                     settings={configuration}
                   />
                 </details>
-                {settingsConfigurationMessage ? (
-                  <p className="design-settings-message">{settingsConfigurationMessage}</p>
-                ) : null}
                 <div className="design-settings-actions">
                   <button
                     className="design-primary-action"
@@ -5772,6 +5783,11 @@ function SettingsSurface({
               </p>
             )}
           </SurfacePanel>
+          {settingsConfigurationMessage ? (
+            <p aria-live="polite" className="design-settings-message" role="status">
+              {settingsConfigurationMessage}
+            </p>
+          ) : null}
           <SurfacePanel
             className="design-connector-overview"
             title="连接器状态与下一步"
@@ -5799,6 +5815,26 @@ function SettingsSurface({
                     ? dataAdapterNextAction(dataBlocker)
                     : settings && dataAdapters.length ? "按需刷新只读行情" : "重新加载核心服务状态"}</dd></div>
                 </dl>
+                {missingInstallableDataDependencies.length && onInstallDataDependency ? (
+                  <div className="design-settings-actions">
+                    {missingInstallableDataDependencies.map((dependency) => (
+                      <button
+                        aria-label={`安装 ${dependency} 可选依赖`}
+                        className="design-secondary-action"
+                        disabled={Boolean(installingDataDependency)}
+                        key={dependency}
+                        onClick={() => onInstallDataDependency(dependency)}
+                        type="button"
+                      >
+                        <Download
+                          className={installingDataDependency === dependency ? "spin" : undefined}
+                          size={12}
+                        />
+                        {installingDataDependency === dependency ? "正在安装…" : `安装 ${dependency}`}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </article>
               <article>
                 <header>

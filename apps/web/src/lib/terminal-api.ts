@@ -2597,6 +2597,8 @@ export interface PlatformSettingsResult {
   error?: string;
 }
 
+export type InstallablePlatformDataDependency = "akshare" | "yfinance";
+
 export interface OpenAiCompatibleModelsResult {
   models: string[];
   source: WorkspaceSource;
@@ -5813,6 +5815,16 @@ export function buildSettingsStatusUrl(baseUrl: string, probeFreeStockdb = false
 
 export function buildSettingsConfigurationUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/settings/configuration");
+}
+
+export function buildSettingsDependencyInstallUrl(
+  baseUrl: string,
+  dependency: InstallablePlatformDataDependency
+): string {
+  return buildApiUrl(
+    baseUrl,
+    `api/settings/dependencies/${encodeURIComponent(dependency)}/install`
+  );
 }
 
 export function buildMonitoringTestNotificationsUrl(baseUrl: string): string {
@@ -10769,6 +10781,52 @@ export async function savePlatformSettings(
     return {
       source: "fallback",
       error: error instanceof Error ? error.message : "Unknown settings configuration error"
+    };
+  }
+}
+
+export async function installPlatformDataDependency(
+  baseUrl: string,
+  dependency: InstallablePlatformDataDependency,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<PlatformSettingsResult> {
+  try {
+    const payload = await requestJson(
+      buildSettingsDependencyInstallUrl(baseUrl, dependency),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-AIQT-Install-Intent": "settings-ui"
+        },
+        body: "{}"
+      },
+      fetcher
+    );
+    const installation = (
+      payload as {
+        dependencyInstallation?: {
+          dependency?: unknown;
+          installed?: unknown;
+          alreadyInstalled?: unknown;
+        };
+      }
+    )?.dependencyInstallation;
+    if (
+      !isPlatformSettingsPayload(payload) ||
+      installation?.dependency !== dependency ||
+      installation.installed !== true ||
+      typeof installation.alreadyInstalled !== "boolean"
+    ) {
+      throw new Error("Invalid optional data dependency installation contract");
+    }
+    return { settings: payload.settings, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error
+        ? error.message
+        : "Unknown optional data dependency installation error"
     };
   }
 }

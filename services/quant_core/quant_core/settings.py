@@ -6,10 +6,13 @@ import os
 import re
 import secrets
 import sqlite3
+import subprocess
+import sys
 from contextlib import closing
 from dataclasses import dataclass
-from importlib.util import find_spec
 from datetime import datetime, timezone
+from importlib import import_module, invalidate_caches
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping
 from urllib.parse import urlparse
@@ -25,6 +28,69 @@ _PROVIDER_ERROR_WINDOWS = {
     "twentyFourHours": 24 * 60 * 60,
     "sevenDays": 7 * 24 * 60 * 60,
 }
+INSTALLABLE_OPTIONAL_DATA_DEPENDENCIES = frozenset({"akshare", "yfinance"})
+_OPTIONAL_DEPENDENCY_INSTALL_ENVIRONMENT_KEYS = frozenset({
+    "CURL_CA_BUNDLE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "LANG",
+    "LC_ALL",
+    "NO_PROXY",
+    "PATH",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+})
+
+
+def install_optional_data_dependency(dependency: str) -> bool:
+    if dependency not in INSTALLABLE_OPTIONAL_DATA_DEPENDENCIES:
+        raise ValueError("optional_data_dependency_not_supported")
+    if find_spec(dependency) is not None:
+        _require_importable_optional_data_dependency(dependency)
+        return False
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() in _OPTIONAL_DEPENDENCY_INSTALL_ENVIRONMENT_KEYS
+        or key.upper().startswith("PIP_")
+    }
+    environment["PYTHONNOUSERSITE"] = "1"
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--no-cache-dir",
+                "--no-input",
+                dependency,
+            ],
+            check=True,
+            env=environment,
+            timeout=80,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("optional_data_dependency_install_timeout") from error
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError("optional_data_dependency_install_failed") from error
+    invalidate_caches()
+    _require_importable_optional_data_dependency(dependency)
+    return True
+
+
+def _require_importable_optional_data_dependency(dependency: str) -> None:
+    try:
+        import_module(dependency)
+    except Exception as error:
+        raise RuntimeError("optional_data_dependency_install_failed") from error
+
 
 _PUBLIC_SETTING_SPECS = {
     "ccxtDefaultExchange": ("CCXT_DEFAULT_EXCHANGE", "binance"),

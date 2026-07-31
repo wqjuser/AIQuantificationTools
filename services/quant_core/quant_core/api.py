@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
 from threading import Event, Lock, Thread
 from urllib.parse import parse_qs, unquote, urlparse
@@ -398,7 +399,13 @@ from quant_core.runs import (
     research_run_import_precheck,
     research_run_import_to_audit,
 )
-from quant_core.settings import PlatformSettingsStore, build_execution_adapter_state_ledger, build_settings_status
+from quant_core.settings import (
+    INSTALLABLE_OPTIONAL_DATA_DEPENDENCIES,
+    PlatformSettingsStore,
+    build_execution_adapter_state_ledger,
+    build_settings_status,
+    install_optional_data_dependency,
+)
 from quant_core.strategy_library import (
     StrategyLibraryRecord,
     StrategyLibraryStore,
@@ -634,6 +641,8 @@ class QuantApiHandler(BaseHTTPRequestHandler):
     # ponytail: one local API process has low-volume admission authority changes and writes;
     # use a DB uniqueness constraint for multi-worker deployment.
     production_readonly_authority_lock = Lock()
+    # ponytail: one local install at a time is enough; use a shared job queue for multi-worker deployment.
+    optional_dependency_install_lock = Lock()
     cache = MarketDataCache(Path("data/market.sqlite"))
     adapter = DemoMarketDataAdapter()
     assistant = LocalResearchAssistant()
@@ -775,6 +784,73 @@ class QuantApiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        optional_dependency = _optional_dependency_install_route_dependency(parsed.path)
+        if optional_dependency is not None:
+            if not _optional_dependency_install_request_allowed(
+                intent=self.headers.get("X-AIQT-Install-Intent"),
+                fetch_site=self.headers.get("Sec-Fetch-Site"),
+                origin=self.headers.get("Origin"),
+                host=self.headers.get("Host"),
+            ):
+                self._send_json(
+                    {"error": "optional_data_dependency_install_forbidden"},
+                    status=403,
+                )
+                return
+            if optional_dependency not in INSTALLABLE_OPTIONAL_DATA_DEPENDENCIES:
+                self._send_json(
+                    {
+                        "error": "optional_data_dependency_not_supported",
+                        "detail": "Only akshare and yfinance can be installed at runtime.",
+                    },
+                    status=400,
+                )
+                return
+            try:
+                if self._read_json_body():
+                    raise ValueError("optional_data_dependency_install_body_must_be_empty")
+            except ValueError as error:
+                self._send_json(
+                    {
+                        "error": "invalid_optional_data_dependency_install_request",
+                        "detail": str(error),
+                    },
+                    status=400,
+                )
+                return
+            lock = type(self).optional_dependency_install_lock
+            if not lock.acquire(blocking=False):
+                self._send_json(
+                    {
+                        "error": "optional_data_dependency_install_in_progress",
+                        "detail": "Another optional dependency installation is already running.",
+                    },
+                    status=409,
+                )
+                return
+            try:
+                installed = install_optional_data_dependency(optional_dependency)
+            except RuntimeError as error:
+                code = str(error)
+                self._send_json(
+                    {"error": code, "detail": f"{optional_dependency} installation failed."},
+                    status=504 if code.endswith("_timeout") else 502,
+                )
+                return
+            finally:
+                lock.release()
+            self._send_json(
+                {
+                    "dependencyInstallation": {
+                        "dependency": optional_dependency,
+                        "installed": True,
+                        "alreadyInstalled": not installed,
+                    },
+                    "settings": self._settings_status_payload(),
+                },
+                status=201 if installed else 200,
+            )
+            return
         if parsed.path == "/api/market/ai-selections":
             try:
                 selection = self._market_ai_selection_service().select(
@@ -6484,7 +6560,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AIQT-Install-Intent")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         try:
@@ -7351,6 +7427,42 @@ def _ai_research_evidence_route_id(path: str) -> str | None:
         return None
     ai_review_id = unquote(path[len(prefix) : -len(suffix)]).strip()
     return ai_review_id if ai_review_id and "/" not in ai_review_id else ""
+
+
+def _optional_dependency_install_route_dependency(path: str) -> str | None:
+    prefix = "/api/settings/dependencies/"
+    suffix = "/install"
+    if not path.startswith(prefix) or not path.endswith(suffix):
+        return None
+    dependency = unquote(path[len(prefix) : -len(suffix)]).strip().lower()
+    return dependency if dependency and "/" not in dependency else ""
+
+
+def _optional_dependency_install_request_allowed(
+    *,
+    intent: str | None,
+    fetch_site: str | None,
+    origin: str | None,
+    host: str | None,
+) -> bool:
+    if intent != "settings-ui" or fetch_site not in {"same-origin", "same-site"}:
+        return False
+    origin_hostname = urlparse(origin or "").hostname
+    request_hostname = urlparse(f"//{host or ''}").hostname
+    if not origin_hostname or not request_hostname:
+        return False
+    return origin_hostname == request_hostname or (
+        _is_loopback_hostname(origin_hostname) and _is_loopback_hostname(request_hostname)
+    )
+
+
+def _is_loopback_hostname(hostname: str) -> bool:
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        return True
+    try:
+        return ip_address(hostname).is_loopback
+    except ValueError:
+        return False
 
 
 def _ai_review_http_projection(

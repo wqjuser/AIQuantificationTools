@@ -149,6 +149,7 @@ import {
   buildExecutionAdapterLedgerUrl,
   buildMonitoringTestNotificationsUrl,
   buildOpenAiCompatibleModelsUrl,
+  buildSettingsDependencyInstallUrl,
   buildSettingsStatusUrl,
   buildStrategiesUrl,
   buildStrategyDetailUrl,
@@ -237,6 +238,7 @@ import {
   recordExecutionAdapterRuntimeReloadPlan,
   recordExecutionAdapterSecretReference,
   loadResearchNote,
+  installPlatformDataDependency,
   loadPlatformSettings,
   loadOpenAiCompatibleModels,
   testMonitoringWebhook,
@@ -3884,6 +3886,44 @@ describe("terminal workspace API client", () => {
     expect(buildSettingsStatusUrl("http://127.0.0.1:8765/", true)).toBe(
       "http://127.0.0.1:8765/api/settings/status?probe=free-stockdb"
     );
+  });
+
+  test("builds and requests the optional data dependency install URL", async () => {
+    expect(
+      buildSettingsDependencyInstallUrl("http://127.0.0.1:8765/", "akshare")
+    ).toBe("http://127.0.0.1:8765/api/settings/dependencies/akshare/install");
+
+    let requestedUrl = "";
+    let requestedInit: RequestInit | undefined;
+    const result = await installPlatformDataDependency(
+      "http://127.0.0.1:8765/",
+      "akshare",
+      async (url, init) => {
+        requestedUrl = url;
+        requestedInit = init;
+        return {
+          ok: false,
+          status: 502,
+          json: async () => ({ detail: "akshare installation failed." }),
+        };
+      },
+    );
+
+    expect(requestedUrl).toBe(
+      "http://127.0.0.1:8765/api/settings/dependencies/akshare/install"
+    );
+    expect(requestedInit).toMatchObject({
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-AIQT-Install-Intent": "settings-ui",
+      },
+      body: "{}",
+    });
+    expect(result).toEqual({
+      source: "fallback",
+      error: "akshare installation failed.",
+    });
   });
 
   test("builds the monitoring Webhook test URL", () => {
