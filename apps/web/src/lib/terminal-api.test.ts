@@ -3337,6 +3337,27 @@ describe("terminal workspace API client", () => {
         start: "2026-06-22T08:00:00+00:00",
         end: "2026-06-23T08:00:00+00:00",
         hash: "abc123def456",
+        marketAiSelectionEvidence: {
+          selectionId: "selection-abc123",
+          auditEventId: "market-ai-selection-selection-abc123",
+          candidateEvidenceId: "candidate-ashare-600000",
+          selectionRecordHash: "a".repeat(64),
+          candidateEvidenceHash: "b".repeat(64),
+          marketSnapshotHash: "c".repeat(64),
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          profile: "balanced",
+          horizon: "short",
+          horizonBars: 5,
+          rank: 1,
+          tier: "priority_research",
+          referenceAt: "2026-06-22T08:00:00+00:00",
+          referencePrice: 9.1,
+          generatedAt: "2026-06-23T07:55:00+00:00",
+          researchOnly: true,
+          recordHash: "d".repeat(64)
+        },
         bars: [
           {
             timestamp: "2026-06-23T08:00:00+00:00",
@@ -3400,7 +3421,11 @@ describe("terminal workspace API client", () => {
         symbol: "600000",
         timeframe: "1d",
         limit: 240,
-        watchlistRefreshRunId: "cache-refresh-p0"
+        watchlistRefreshRunId: "cache-refresh-p0",
+        selectionOrigin: {
+          selectionId: "selection-abc123",
+          candidateEvidenceId: "candidate-ashare-600000"
+        }
       },
       currentWorkspace,
       fetcher
@@ -3415,6 +3440,10 @@ describe("terminal workspace API client", () => {
       timeframe: "1d",
       limit: 240,
       watchlistRefreshRunId: "cache-refresh-p0",
+      selectionOrigin: {
+        selectionId: "selection-abc123",
+        candidateEvidenceId: "candidate-ashare-600000"
+      },
       strategyConfig: currentWorkspace.strategy,
       assumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 }
     });
@@ -3424,6 +3453,8 @@ describe("terminal workspace API client", () => {
     expect(result.pipeline?.paperOnly).toBe(true);
     expect(result.pipeline?.liveTradingAllowed).toBe(false);
     expect(result.workspace.researchRun?.runId).toBe("run-p0abc123");
+    expect(result.workspace.researchRun?.dataSnapshot?.marketAiSelectionEvidence?.selectionId)
+      .toBe("selection-abc123");
     expect(result.workspace.strategy.entry).toBe("Close > SMA20");
   });
 

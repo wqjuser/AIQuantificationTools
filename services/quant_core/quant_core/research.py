@@ -70,6 +70,7 @@ def run_terminal_research(
     strategy_snapshot: StrategySnapshot | None = None,
     research_note: dict[str, Any] | None = None,
     data_preparation_evidence: dict[str, Any] | None = None,
+    market_ai_selection_evidence: dict[str, Any] | None = None,
     comparison_adapter: MarketDataAdapter | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
@@ -136,6 +137,8 @@ def run_terminal_research(
         market_calendar=market_calendar,
         source_comparison=source_comparison,
     )
+    if market_ai_selection_evidence:
+        data_snapshot["marketAiSelectionEvidence"] = dict(market_ai_selection_evidence)
     audit = ResearchRunAudit(
         run_id=run_id,
         created_at=created_at,

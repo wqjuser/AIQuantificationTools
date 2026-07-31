@@ -50,6 +50,7 @@ import type {
   MarketAiSelectionHorizon,
   MarketAiSelectionProfile,
   MarketAiSelectionRequest,
+  MarketAiSelectionResearchOrigin,
   MarketAiSelectionResult,
   MarketInformationResult,
   OpenAiCompatibleModelsResult,
@@ -152,12 +153,16 @@ interface TerminalWorkspaceSurfaceProps {
   marketAiSelection?: {
     error?: string;
     isLoading: boolean;
-    onResearchInstrument: (instrument: Instrument) => void;
+    onResearchInstrument: (
+      instrument: Instrument,
+      origin: MarketAiSelectionResearchOrigin,
+    ) => void;
     onRun: (request: MarketAiSelectionRequest, requestKey: string) => void;
     onViewInstrument: (instrument: Instrument) => void;
     requestKey: string | null;
     result: MarketAiSelectionResult | null;
   };
+  marketAiSelectionResearchOrigin?: MarketAiSelectionResearchOrigin | null;
   marketInformation?: {
     isLoading: boolean;
     isLoadingNews: boolean;
@@ -280,6 +285,17 @@ const marketAiSelectionPillarLabels: Record<string, string> = {
   supply: "供应结构",
   liquidity: "流动性",
   risk: "风险",
+};
+const marketAiSelectionProfileLabels: Record<MarketAiSelectionProfile, string> = {
+  balanced: "均衡",
+  quality_growth: "质量成长",
+  value: "价值",
+  trend: "趋势",
+};
+const marketAiSelectionHorizonLabels: Record<MarketAiSelectionHorizon, string> = {
+  short: "短期",
+  medium: "中期",
+  long: "长期",
 };
 
 const terminalSurfaceZh = createI18n("zh-CN");
@@ -1765,7 +1781,13 @@ function MarketSurface({
                             <button
                               className="design-link-button"
                               disabled={aiSelectionIsStale}
-                              onClick={() => marketAiSelection?.onResearchInstrument(instrument)}
+                              onClick={() => marketAiSelection?.onResearchInstrument(
+                                instrument,
+                                {
+                                  selectionId: aiSelectionResult.selectionId,
+                                  candidateEvidenceId: candidate.evidenceId,
+                                },
+                              )}
                               type="button"
                             >
                               开始研究
@@ -2056,12 +2078,13 @@ function MarketSurface({
 function ResearchSurface({
   action,
   chart,
+  marketAiSelectionResearchOrigin,
   researchPreparation,
   runs,
   workspace,
 }: Pick<
   TerminalWorkspaceSurfaceProps,
-  "action" | "chart" | "researchPreparation" | "runs" | "workspace"
+  "action" | "chart" | "marketAiSelectionResearchOrigin" | "researchPreparation" | "runs" | "workspace"
 >) {
   const researchNoteInputRef = useRef<HTMLTextAreaElement>(null);
   const [researchEvidenceTab, setResearchEvidenceTab] = useState<
@@ -2081,6 +2104,7 @@ function ResearchSurface({
     ?? null;
   const evidenceQuality = evidenceRun?.dataQuality ?? activeRun?.dataQuality;
   const evidenceSnapshot = evidenceRun?.dataSnapshot ?? activeRun?.dataSnapshot;
+  const marketAiSelectionEvidence = evidenceSnapshot?.marketAiSelectionEvidence;
   const evidenceStrategy = evidenceRun?.strategyConfig ?? activeRun?.strategyConfig;
   const hasResearchEvidence = Boolean(evidenceRun || activeRun);
   const metricNumber = (...keys: string[]): number | null => {
@@ -2348,6 +2372,14 @@ function ResearchSurface({
             {activeRun ? "证据已绑定" : evidenceRun ? "历史证据已载入" : "待运行"}
           </span>
         </div>
+        {marketAiSelectionResearchOrigin && !marketAiSelectionEvidence ? (
+          <div className="design-inline-quote">
+            <strong>AI 选股候选待核验</strong>
+            <span title={marketAiSelectionResearchOrigin.candidateEvidenceId}>
+              运行研究后由核心服务绑定冻结证据
+            </span>
+          </div>
+        ) : null}
       </PageHeader>
       <div className="design-research-grid">
         <SurfacePanel
@@ -2535,6 +2567,24 @@ function ResearchSurface({
             </ul>
           </SurfacePanel>
           <SurfacePanel className="design-research-evidence-card" title="数据源血缘">
+            {marketAiSelectionEvidence ? (
+              <>
+                <div className="design-kv-row">
+                  <span>AI 选股来源</span>
+                  <Status>证据已绑定</Status>
+                </div>
+                <div className="design-kv-row">
+                  <span>风格 / 周期</span>
+                  <strong>
+                    {marketAiSelectionProfileLabels[marketAiSelectionEvidence.profile]}
+                    {" · "}
+                    {marketAiSelectionHorizonLabels[marketAiSelectionEvidence.horizon]}
+                    {" · "}
+                    第 {marketAiSelectionEvidence.rank} 名
+                  </strong>
+                </div>
+              </>
+            ) : null}
             <div className="design-kv-row"><span>行情数据</span><strong>{dataSource}</strong></div>
             <div className="design-kv-row"><span>数据行数</span><strong>{dataRows.toLocaleString()}</strong></div>
             <div className="design-kv-row"><span>快照范围</span><strong>{evidenceSnapshot?.end ? new Date(evidenceSnapshot.end).toLocaleDateString("zh-CN") : "—"}</strong></div>

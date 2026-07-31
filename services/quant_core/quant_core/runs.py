@@ -14,6 +14,7 @@ from quant_core.ai_review_runs import validate_ai_review_run_record
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
     canonical_data_hash,
+    canonical_sha256,
     canonical_snapshot_id,
     normalize_snapshot_bars,
 )
@@ -2497,6 +2498,14 @@ def _normalize_data_snapshot(
     preparation_evidence = _normalize_data_preparation_evidence(snapshot.get("preparationEvidence"))
     if preparation_evidence:
         normalized["preparationEvidence"] = preparation_evidence
+    selection_evidence = _normalize_market_ai_selection_evidence(
+        snapshot.get("marketAiSelectionEvidence"),
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    if selection_evidence:
+        normalized["marketAiSelectionEvidence"] = selection_evidence
     market_calendar = _normalize_market_calendar_snapshot(snapshot.get("marketCalendar"))
     if market_calendar:
         normalized["marketCalendar"] = market_calendar
@@ -2570,6 +2579,133 @@ def _normalize_data_preparation_evidence(value: Any) -> dict[str, Any] | None:
         },
         "error": _nullable_string(value.get("error")),
     }
+
+
+def _normalize_market_ai_selection_evidence(
+    value: Any,
+    *,
+    market: str = "",
+    symbol: str = "",
+    timeframe: str = "",
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("market_ai_selection_evidence_invalid")
+    expected_fields = {
+        "selectionId",
+        "auditEventId",
+        "candidateEvidenceId",
+        "selectionRecordHash",
+        "candidateEvidenceHash",
+        "marketSnapshotHash",
+        "market",
+        "symbol",
+        "timeframe",
+        "profile",
+        "horizon",
+        "horizonBars",
+        "rank",
+        "tier",
+        "referenceAt",
+        "referencePrice",
+        "generatedAt",
+        "researchOnly",
+        "recordHash",
+    }
+    if set(value) != expected_fields:
+        raise ValueError("market_ai_selection_evidence_invalid")
+    required_text = {
+        key: str(value.get(key) or "").strip()
+        for key in (
+            "selectionId",
+            "auditEventId",
+            "candidateEvidenceId",
+            "selectionRecordHash",
+            "candidateEvidenceHash",
+            "marketSnapshotHash",
+            "market",
+            "symbol",
+            "timeframe",
+            "profile",
+            "horizon",
+            "tier",
+            "referenceAt",
+            "generatedAt",
+            "recordHash",
+        )
+    }
+    horizon_bars = value.get("horizonBars")
+    rank = value.get("rank")
+    reference_price = value.get("referencePrice")
+    expected_horizon_bars = {
+        "ashare": {"short": 5, "medium": 20, "long": 60},
+        "us": {"short": 5, "medium": 20, "long": 60},
+        "crypto": {"short": 7, "medium": 30, "long": 90},
+    }.get(required_text["market"], {}).get(required_text["horizon"])
+    if (
+        not all(required_text.values())
+        or value.get("researchOnly") is not True
+        or required_text["auditEventId"]
+        != f"market-ai-selection-{required_text['selectionId']}"
+        or not isinstance(horizon_bars, int)
+        or isinstance(horizon_bars, bool)
+        or horizon_bars != expected_horizon_bars
+        or not isinstance(rank, int)
+        or isinstance(rank, bool)
+        or not 1 <= rank <= 5
+        or type(reference_price) not in {int, float}
+        or float(reference_price) <= 0
+        or required_text["market"] not in {"ashare", "us", "crypto"}
+        or required_text["timeframe"] != "1d"
+        or required_text["profile"] not in {"balanced", "quality_growth", "value", "trend"}
+        or (
+            required_text["market"] == "crypto"
+            and required_text["profile"] not in {"balanced", "trend"}
+        )
+        or required_text["horizon"] not in {"short", "medium", "long"}
+        or required_text["tier"] not in {"priority_research", "watch", "insufficient_evidence"}
+        or (market and required_text["market"] != market)
+        or (symbol and required_text["symbol"] != symbol)
+        or (timeframe and required_text["timeframe"] != timeframe)
+        or any(
+            not _is_sha256_text(required_text[key])
+            for key in (
+                "selectionRecordHash",
+                "candidateEvidenceHash",
+                "marketSnapshotHash",
+                "recordHash",
+            )
+        )
+    ):
+        raise ValueError("market_ai_selection_evidence_invalid")
+    normalized = {
+        "selectionId": required_text["selectionId"],
+        "auditEventId": required_text["auditEventId"],
+        "candidateEvidenceId": required_text["candidateEvidenceId"],
+        "selectionRecordHash": required_text["selectionRecordHash"].lower(),
+        "candidateEvidenceHash": required_text["candidateEvidenceHash"].lower(),
+        "marketSnapshotHash": required_text["marketSnapshotHash"].lower(),
+        "market": required_text["market"],
+        "symbol": required_text["symbol"],
+        "timeframe": "1d",
+        "profile": required_text["profile"],
+        "horizon": required_text["horizon"],
+        "horizonBars": horizon_bars,
+        "rank": rank,
+        "tier": required_text["tier"],
+        "referenceAt": required_text["referenceAt"],
+        "referencePrice": float(reference_price),
+        "generatedAt": required_text["generatedAt"],
+        "researchOnly": True,
+    }
+    if canonical_sha256(normalized) != required_text["recordHash"].lower():
+        raise ValueError("market_ai_selection_evidence_hash_invalid")
+    return {**normalized, "recordHash": required_text["recordHash"].lower()}
+
+
+def _is_sha256_text(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value.lower())
 
 
 def _normalize_snapshot_bar(value: dict[str, Any]) -> dict[str, Any] | None:

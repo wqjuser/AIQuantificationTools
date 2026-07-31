@@ -240,6 +240,7 @@ from quant_core.live_quotes import QuantDingerLiveQuoteAdapter, market_quotes_to
 from quant_core.market_ai_selection import (
     MarketAiSelectionError,
     MarketAiSelectionService,
+    resolve_market_ai_selection_research_evidence,
 )
 from quant_core.market_calendar import build_market_calendar_status
 from quant_core.market_discovery import (
@@ -1105,6 +1106,13 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     symbol=symbol,
                     timeframe=timeframe,
                 )
+                selection_evidence = resolve_market_ai_selection_research_evidence(
+                    payload.get("selectionOrigin"),
+                    audit_store=self.audit_event_store,
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                )
                 workspace = run_terminal_research(
                     market=market,
                     symbol=symbol,
@@ -1117,6 +1125,7 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                     data_limit=_p0_data_limit_from_payload(payload),
                     strategy_snapshot=strategy_snapshot,
                     data_preparation_evidence=data_preparation_evidence,
+                    market_ai_selection_evidence=selection_evidence,
                     comparison_adapter=self._comparison_market_data_adapter(market, timeframe),
                 )
                 if not workspace.research_run:
@@ -1131,6 +1140,12 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 audit = self.run_store.get(workspace.research_run.run_id)
                 if audit is None:
                     raise ValueError("p0_pipeline_audit_missing")
+            except MarketAiSelectionError as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=error.status,
+                )
+                return
             except ValueError as error:
                 self._send_json({"error": "invalid_p0_pipeline", "detail": str(error)}, status=400)
                 return

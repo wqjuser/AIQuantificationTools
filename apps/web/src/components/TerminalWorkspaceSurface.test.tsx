@@ -1571,9 +1571,18 @@ describe("TerminalWorkspaceSurface", () => {
 
   it("keeps research preparation controls reachable in the redesigned surface", () => {
     const research = renderToStaticMarkup(
-      <TerminalWorkspaceSurface {...baseProps} activeWorkAreaId="research" />,
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="research"
+        marketAiSelectionResearchOrigin={{
+          selectionId: "selection-pending",
+          candidateEvidenceId: "candidate-ashare-600000",
+        }}
+      />,
     );
 
+    expect(research).toContain("AI 选股候选待核验");
+    expect(research).toContain("运行研究后由核心服务绑定冻结证据");
     expect(research).toContain("研究准备");
     expect(research).toContain('id="research-note-input"');
     expect(research).toContain('id="research-note-generate"');
@@ -1639,6 +1648,27 @@ describe("TerminalWorkspaceSurface", () => {
           end: "2026-07-20T00:00:00+08:00",
           hash: "snapshot-hash-reference",
           snapshotHash: "decision-snapshot-hash-reference",
+          marketAiSelectionEvidence: {
+            selectionId: "selection-bound",
+            auditEventId: "market-ai-selection-selection-bound",
+            candidateEvidenceId: "candidate-ashare-600000",
+            selectionRecordHash: "a".repeat(64),
+            candidateEvidenceHash: "b".repeat(64),
+            marketSnapshotHash: "c".repeat(64),
+            market: "ashare" as const,
+            symbol: "600000",
+            timeframe: "1d" as const,
+            profile: "balanced" as const,
+            horizon: "short" as const,
+            horizonBars: 5,
+            rank: 1,
+            tier: "priority_research" as const,
+            referenceAt: "2026-07-19T00:00:00+08:00",
+            referencePrice: 10.5,
+            generatedAt: "2026-07-20T14:55:00+08:00",
+            researchOnly: true as const,
+            recordHash: "d".repeat(64),
+          },
           bars: [],
           adjustmentMode: "qfq",
           freshness: "fresh",
@@ -1761,6 +1791,9 @@ describe("TerminalWorkspaceSurface", () => {
     expect(research).toContain("证据链");
     expect(research).toContain("最新 AI 研究摘要");
     expect(research).toContain("数据源血缘");
+    expect(research).toContain("AI 选股来源");
+    expect(research).toContain("均衡 · 短期 · 第 1 名");
+    expect(research).toContain("证据已绑定");
     expect(research).toContain("审计回放");
     expect(research).toContain("恢复与复现");
     expect(research).toContain("复权 / 时效");

@@ -28218,6 +28218,211 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].execution_mode, "paper_only")
         self.assertTrue(latest[0].data_snapshot["hash"])
 
+    def test_p0_pipeline_binds_audited_market_ai_selection_candidate(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapters import DemoMarketDataAdapter
+        from quant_core.api import QuantApiHandler
+        from quant_core.audit_events import AuditEventStore
+        from quant_core.cache import MarketDataCache
+        from quant_core.canonical import canonical_sha256
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        selection_id = "selection-research-binding"
+        audit_event_id = f"market-ai-selection-{selection_id}"
+        evidence_id = "candidate-600000"
+        generated_at = "2026-07-31T02:00:00+00:00"
+        reference_at = "2026-07-30T00:00:00+00:00"
+        market_snapshot_hash = "c" * 64
+        candidate_snapshot = {
+            "market": "ashare",
+            "symbol": "600000",
+            "name": "浦发银行",
+        }
+        candidate_daily_bars = [
+            {
+                "timestamp": reference_at,
+                "timestampMs": 1_753_833_600_000,
+                "open": 10,
+                "high": 11,
+                "low": 9,
+                "close": 10.5,
+                "volume": 1000,
+            }
+        ]
+        candidate_factors = {"trend": 55.0}
+        candidate_fundamental = {"currentPeriod": "2026-Q2"}
+        candidate_evidence_hash = canonical_sha256(
+            {
+                "candidate": candidate_snapshot,
+                "dailyBars": candidate_daily_bars,
+                "factors": candidate_factors,
+                "fundamental": candidate_fundamental,
+            }
+        )
+        request_payload = {
+            "market": "ashare",
+            "symbol": "600000",
+            "timeframe": "1d",
+            "selectionOrigin": {
+                "selectionId": selection_id,
+                "candidateEvidenceId": evidence_id,
+            },
+            "strategyConfig": {
+                "name": "SMA trend",
+                "entry": {"type": "sma_cross", "window": 20},
+                "exit": {"type": "sma_break", "window": 20},
+                "position": {"maxPositionPct": 20},
+                "risk": {"stopLossPct": 8, "maxDrawdownPct": 12},
+            },
+            "assumptions": {"initialCash": 100000, "feeBps": 3, "slippageBps": 2},
+        }
+        artifact_without_hash = {
+            "schemaVersion": 1,
+            "recordType": "aiqt.marketAiSelection",
+            "selectionId": selection_id,
+            "generatedAt": generated_at,
+            "request": {
+                "market": "ashare",
+                "profile": "balanced",
+                "horizon": "short",
+            },
+            "marketSnapshot": {"snapshotHash": market_snapshot_hash},
+            "evidenceCandidates": [
+                {
+                    "evidenceId": evidence_id,
+                    "evidenceHash": candidate_evidence_hash,
+                    "market": "ashare",
+                    "symbol": "600000",
+                    "snapshot": candidate_snapshot,
+                    "dailyBars": candidate_daily_bars,
+                    "factors": candidate_factors,
+                    "fundamental": candidate_fundamental,
+                }
+            ],
+            "result": {
+                "selectionId": selection_id,
+                "recommendations": [
+                    {
+                        "evidenceId": evidence_id,
+                        "rank": 1,
+                        "tier": "priority_research",
+                    }
+                ],
+            },
+        }
+        artifact = {
+            **artifact_without_hash,
+            "recordHash": canonical_sha256(artifact_without_hash),
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            audit_store = AuditEventStore(f"{tmp}/audit.sqlite")
+            audit_store.record(
+                {
+                    "schemaVersion": 1,
+                    "eventId": audit_event_id,
+                    "eventType": "market_ai_selection",
+                    "runId": None,
+                    "createdAt": generated_at,
+                    "stage": "market_ai_selection",
+                    "source": "market-ai-selection",
+                    "summary": "AI 选股研究候选证据已冻结。",
+                    "detail": "A 股均衡风格研究候选。",
+                    "metadata": {"artifact": artifact},
+                }
+            )
+
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.run_store = run_store
+            TestHandler.audit_event_store = audit_store
+            TestHandler.cache = MarketDataCache(f"{tmp}/market.sqlite")
+            TestHandler.strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            TestHandler.kline_adapter = DemoMarketDataAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(request_payload).encode("utf-8")
+            try:
+                connection.request(
+                    "POST",
+                    "/api/p0/pipeline",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                mismatched_body = json.dumps(
+                    {**request_payload, "symbol": "600519"}
+                ).encode("utf-8")
+                connection.request(
+                    "POST",
+                    "/api/p0/pipeline",
+                    body=mismatched_body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(mismatched_body)),
+                    },
+                )
+                mismatched_response = connection.getresponse()
+                mismatched_payload = json.loads(
+                    mismatched_response.read().decode("utf-8")
+                )
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            self.assertEqual(response.status, 200, payload)
+            run = run_store.get(payload["runId"])
+            runs = run_store.list_recent()
+
+        self.assertIsNotNone(run)
+        evidence = run.data_snapshot["marketAiSelectionEvidence"]
+        evidence_without_hash = {
+            key: value for key, value in evidence.items() if key != "recordHash"
+        }
+        self.assertEqual(
+            evidence_without_hash,
+            {
+                "selectionId": selection_id,
+                "auditEventId": audit_event_id,
+                "candidateEvidenceId": evidence_id,
+                "selectionRecordHash": artifact["recordHash"],
+                "candidateEvidenceHash": candidate_evidence_hash,
+                "marketSnapshotHash": market_snapshot_hash,
+                "market": "ashare",
+                "symbol": "600000",
+                "timeframe": "1d",
+                "profile": "balanced",
+                "horizon": "short",
+                "horizonBars": 5,
+                "rank": 1,
+                "tier": "priority_research",
+                "referenceAt": reference_at,
+                "referencePrice": 10.5,
+                "generatedAt": generated_at,
+                "researchOnly": True,
+            },
+        )
+        self.assertEqual(evidence["recordHash"], canonical_sha256(evidence_without_hash))
+        self.assertEqual(mismatched_response.status, 400)
+        self.assertEqual(
+            mismatched_payload["detail"],
+            "market_ai_selection_origin_candidate_mismatch",
+        )
+        self.assertEqual([item.run_id for item in runs], [run.run_id])
+
     def test_p0_pipeline_locks_watchlist_refresh_evidence_from_payload(self):
         import json
         from http.client import HTTPConnection

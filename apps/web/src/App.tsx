@@ -189,6 +189,7 @@ import {
   MarketDiscoveryResult,
   MarketAiSelectionLoadResult,
   MarketAiSelectionRequest,
+  MarketAiSelectionResearchOrigin,
   MarketInformationResult,
   MarketKlinesResult,
   MarketSearchSuggestion,
@@ -845,6 +846,7 @@ import {
   findLatestResearchRunForContext,
   replaceAiReviewRunIdInUrl,
   resolveAiReviewRunIdFromUrl,
+  resolveMarketAiSelectionResearchOriginUrlState,
   resolveResearchContextUrlState,
   resolveAdapterWorkflowInstrument,
   resolveWatchlistCacheRefreshRunSelection,
@@ -2004,6 +2006,23 @@ function resolveInitialResearchContextUrlState(): ResearchContextUrlState | null
   return resolveResearchContextUrlState(window.location.search);
 }
 
+function resolveInitialMarketAiSelectionResearchOrigin():
+  | (MarketAiSelectionResearchOrigin & { market: Market; symbol: string })
+  | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const origin = resolveMarketAiSelectionResearchOriginUrlState(window.location.search);
+  return origin
+    ? {
+        selectionId: origin.selectionId,
+        candidateEvidenceId: origin.candidateEvidenceId,
+        market: origin.market,
+        symbol: origin.symbol,
+      }
+    : null;
+}
+
 function hasExplicitResearchContextUrl(): boolean {
   return Boolean(resolveInitialResearchContextUrlState());
 }
@@ -2568,6 +2587,10 @@ export function App() {
   const [marketAiSelectionRequestKey, setMarketAiSelectionRequestKey] = useState<string | null>(null);
   const [isLoadingMarketAiSelection, setIsLoadingMarketAiSelection] = useState(false);
   const marketAiSelectionRequestRef = useRef(createLatestRequestCoordinator());
+  const [pendingMarketAiSelectionResearchOrigin, setPendingMarketAiSelectionResearchOrigin] =
+    useState<(MarketAiSelectionResearchOrigin & { market: Market; symbol: string }) | null>(
+      resolveInitialMarketAiSelectionResearchOrigin,
+    );
   const [marketInformationResult, setMarketInformationResult] =
     useState<MarketInformationResult | null>(null);
   const [marketInformationNewsResult, setMarketInformationNewsResult] =
@@ -7846,7 +7869,18 @@ export function App() {
         symbol: workspace.selectedInstrument.symbol,
         timeframe: workspace.selectedTimeframe,
         limit: chartKlineLimit,
-        watchlistRefreshRunId: researchPipelinePreparationEvidenceRunId
+        watchlistRefreshRunId: researchPipelinePreparationEvidenceRunId,
+        selectionOrigin:
+          pendingMarketAiSelectionResearchOrigin
+          && pendingMarketAiSelectionResearchOrigin.market === workspace.selectedInstrument.market
+          && pendingMarketAiSelectionResearchOrigin.symbol === workspace.selectedInstrument.symbol
+          && workspace.selectedTimeframe === "1d"
+            ? {
+                selectionId: pendingMarketAiSelectionResearchOrigin.selectionId,
+                candidateEvidenceId:
+                  pendingMarketAiSelectionResearchOrigin.candidateEvidenceId,
+              }
+            : undefined,
       },
       workspace
     );
@@ -7901,6 +7935,7 @@ export function App() {
   }, [
     chartKlineLimit,
     i18n,
+    pendingMarketAiSelectionResearchOrigin,
     quantCoreBaseUrl,
     refreshRunHistory,
     refreshStrategyLibrary,
@@ -8832,6 +8867,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setPendingMarketAiSelectionResearchOrigin(null);
       resetAiReviewHistoryState();
       setPaperExecutionDeepLinkStatus({ ...deepLink, status: "loading", error: null });
       setWorkspaceState((current) => ({
@@ -10543,6 +10579,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setPendingMarketAiSelectionResearchOrigin(null);
       resetAiReviewHistoryState();
       if (addToWatchlist) {
         setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
@@ -10568,6 +10605,26 @@ export function App() {
     [resetAiReviewHistoryState, workspace.watchlist]
   );
 
+  const researchMarketAiSelectionCandidate = useCallback(
+    (
+      instrument: TerminalWorkspace["selectedInstrument"],
+      origin: MarketAiSelectionResearchOrigin,
+    ) => {
+      selectInstrument(instrument, "research", false);
+      setWorkspaceState((current) => ({
+        workspace: workspaceWithSelectedTimeframe(current.workspace, "1d"),
+        source: "core",
+        statusLabel: "AI 选股候选已选择，等待运行研究并核验证据",
+      }));
+      setPendingMarketAiSelectionResearchOrigin({
+        ...origin,
+        market: instrument.market,
+        symbol: instrument.symbol,
+      });
+    },
+    [selectInstrument],
+  );
+
   const runResearchOpsQueueAction = useCallback(
     (row: ResearchOpsQueueRow) => {
       setPendingResearchOpsAction(row);
@@ -10587,6 +10644,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setPendingMarketAiSelectionResearchOrigin(null);
       resetAiReviewHistoryState();
       setHasUnsavedWatchlistChanges((current) => current || !isExistingWatchlistInstrument);
       setWorkspaceState((current) => {
@@ -10622,6 +10680,7 @@ export function App() {
       setIsRunning(false);
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
+      setPendingMarketAiSelectionResearchOrigin(null);
       resetAiReviewHistoryState();
       setWorkspaceState((current) => ({
         workspace: workspaceWithSelectedTimeframe(current.workspace, timeframe),
@@ -14390,6 +14449,24 @@ export function App() {
     document.documentElement.style.colorScheme = colorScheme;
   }, [colorScheme]);
 
+  useEffect(() => {
+    if (
+      pendingMarketAiSelectionResearchOrigin
+      && (
+        pendingMarketAiSelectionResearchOrigin.market !== workspace.selectedInstrument.market
+        || pendingMarketAiSelectionResearchOrigin.symbol !== workspace.selectedInstrument.symbol
+        || workspace.selectedTimeframe !== "1d"
+      )
+    ) {
+      setPendingMarketAiSelectionResearchOrigin(null);
+    }
+  }, [
+    pendingMarketAiSelectionResearchOrigin,
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe,
+  ]);
+
   useLayoutEffect(() => {
     document.documentElement.style.setProperty("--aiqt-text-scale", String(textScale));
     window.localStorage.setItem("aiqt.text-scale", String(textScale));
@@ -14407,16 +14484,29 @@ export function App() {
     const shouldSyncResearchContext = activeWorkAreaId === "market"
       || activeWorkAreaId === "market-information"
       || activeWorkAreaId === "research";
+    const selectionOrigin =
+      activeWorkAreaId === "research"
+      && workspace.selectedTimeframe === "1d"
+      && pendingMarketAiSelectionResearchOrigin?.market === workspace.selectedInstrument.market
+      && pendingMarketAiSelectionResearchOrigin.symbol === workspace.selectedInstrument.symbol
+        ? pendingMarketAiSelectionResearchOrigin
+        : null;
     const runIdChanged = url.searchParams.toString() !== currentUrl.searchParams.toString();
     const contextChanged =
       shouldSyncResearchContext &&
       (url.searchParams.get("market") !== workspace.selectedInstrument.market ||
         url.searchParams.get("symbol") !== workspace.selectedInstrument.symbol ||
         url.searchParams.get("timeframe") !== workspace.selectedTimeframe);
+    const selectionOriginChanged =
+      url.searchParams.get("selectionId") !== (selectionOrigin?.selectionId ?? null)
+      || url.searchParams.get("candidateEvidenceId") !== (
+        selectionOrigin?.candidateEvidenceId ?? null
+      );
     if (url.searchParams.get("workspace") === activeWorkAreaId
       && !url.searchParams.has("workflow")
       && !contextChanged
-      && !runIdChanged) {
+      && !runIdChanged
+      && !selectionOriginChanged) {
       return;
     }
     url.searchParams.set("workspace", activeWorkAreaId);
@@ -14426,10 +14516,18 @@ export function App() {
       url.searchParams.set("symbol", workspace.selectedInstrument.symbol);
       url.searchParams.set("timeframe", workspace.selectedTimeframe);
     }
+    if (selectionOrigin) {
+      url.searchParams.set("selectionId", selectionOrigin.selectionId);
+      url.searchParams.set("candidateEvidenceId", selectionOrigin.candidateEvidenceId);
+    } else {
+      url.searchParams.delete("selectionId");
+      url.searchParams.delete("candidateEvidenceId");
+    }
     window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
   }, [
     activeWorkAreaId,
     currentResearchRunId,
+    pendingMarketAiSelectionResearchOrigin,
     workspace.selectedInstrument.market,
     workspace.selectedInstrument.symbol,
     workspace.selectedTimeframe
@@ -16802,8 +16900,7 @@ export function App() {
           marketAiSelection={{
             error: marketAiSelection.error,
             isLoading: isLoadingMarketAiSelection,
-            onResearchInstrument: (instrument) =>
-              selectInstrument(instrument, "research", false),
+            onResearchInstrument: researchMarketAiSelectionCandidate,
             onRun: (request, requestKey) =>
               void runMarketAiSelection(request, requestKey),
             onViewInstrument: (instrument) =>
@@ -16811,6 +16908,14 @@ export function App() {
             requestKey: marketAiSelectionRequestKey,
             result: marketAiSelection.selection ?? null,
           }}
+          marketAiSelectionResearchOrigin={
+            pendingMarketAiSelectionResearchOrigin
+            && pendingMarketAiSelectionResearchOrigin.market === workspace.selectedInstrument.market
+            && pendingMarketAiSelectionResearchOrigin.symbol === workspace.selectedInstrument.symbol
+            && workspace.selectedTimeframe === "1d"
+              ? pendingMarketAiSelectionResearchOrigin
+              : null
+          }
           marketInformation={{
             isLoading: isLoadingMarketInformation,
             isLoadingNews: isLoadingMarketInformationNews,

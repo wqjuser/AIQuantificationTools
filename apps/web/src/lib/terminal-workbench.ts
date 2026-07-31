@@ -110,6 +110,13 @@ export interface ResearchContextUrlState {
   timeframe: Timeframe;
 }
 
+export interface MarketAiSelectionResearchOriginUrlState
+  extends Omit<ResearchContextUrlState, "timeframe"> {
+  timeframe: "1d";
+  selectionId: string;
+  candidateEvidenceId: string;
+}
+
 export type GoldenPathRunbookStatus = "passed" | "review" | "blocked";
 
 export interface GoldenPathRunbookSourceItem {
@@ -8632,6 +8639,28 @@ export interface ResearchRunDataPreparationEvidence {
   error: string | null;
 }
 
+export interface ResearchRunMarketAiSelectionEvidence {
+  selectionId: string;
+  auditEventId: string;
+  candidateEvidenceId: string;
+  selectionRecordHash: string;
+  candidateEvidenceHash: string;
+  marketSnapshotHash: string;
+  market: Market;
+  symbol: string;
+  timeframe: "1d";
+  profile: "balanced" | "quality_growth" | "value" | "trend";
+  horizon: "short" | "medium" | "long";
+  horizonBars: number;
+  rank: number;
+  tier: "priority_research" | "watch" | "insufficient_evidence";
+  referenceAt: string;
+  referencePrice: number;
+  generatedAt: string;
+  researchOnly: true;
+  recordHash: string;
+}
+
 export interface ResearchRunDataSnapshot {
   hashVersion?: "aiqt-data-v2";
   source: string;
@@ -8659,6 +8688,7 @@ export interface ResearchRunDataSnapshot {
   };
   sourceComparison?: ResearchRunSourceComparison;
   preparationEvidence?: ResearchRunDataPreparationEvidence;
+  marketAiSelectionEvidence?: ResearchRunMarketAiSelectionEvidence;
   marketCalendar?: ResearchContextMarketCalendar;
 }
 
@@ -35253,6 +35283,40 @@ export function resolveResearchContextUrlState(
     market,
     symbol,
     timeframe
+  };
+}
+
+export function resolveMarketAiSelectionResearchOriginUrlState(
+  search: string | URLSearchParams | null | undefined
+): MarketAiSelectionResearchOriginUrlState | null {
+  if (!search) {
+    return null;
+  }
+  const params =
+    search instanceof URLSearchParams
+      ? search
+      : new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const context = resolveResearchContextUrlState(params);
+  const selectionIds = params.getAll("selectionId").map((value) => value.trim()).filter(Boolean);
+  const evidenceIds = params
+    .getAll("candidateEvidenceId")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (
+    !context
+    || params.getAll("workspace").length !== 1
+    || params.get("workspace") !== "research"
+    || context.timeframe !== "1d"
+    || selectionIds.length !== 1
+    || evidenceIds.length !== 1
+  ) {
+    return null;
+  }
+  return {
+    ...context,
+    timeframe: "1d",
+    selectionId: selectionIds[0],
+    candidateEvidenceId: evidenceIds[0],
   };
 }
 

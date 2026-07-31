@@ -242,6 +242,7 @@ import {
   resolveSavedResearchWorkspaceSelection,
   resolveSavedResearchWorkspaceId,
   buildResearchContextDeepLink,
+  resolveMarketAiSelectionResearchOriginUrlState,
   resolveResearchContextUrlState,
   replaceAiReviewRunIdInUrl,
   researchWorkspaceStateMatchesDraft,
@@ -2509,6 +2510,30 @@ describe("terminal workbench model", () => {
     expect(resolveResearchContextUrlState("?market=fx&symbol=EURUSD&timeframe=5m")).toBeNull();
     expect(resolveResearchContextUrlState("?market=us&symbol=MSFT&timeframe=2h")).toBeNull();
     expect(resolveResearchContextUrlState("?market=us&symbol=&timeframe=5m")).toBeNull();
+  });
+
+  test("restores an AI selection research origin only for its exact daily context", () => {
+    const search =
+      "?workspace=research&market=ashare&symbol=sh600000&timeframe=1d"
+      + "&selectionId=selection-123&candidateEvidenceId=candidate-ashare-600000";
+    expect(resolveMarketAiSelectionResearchOriginUrlState(search)).toEqual({
+      market: "ashare",
+      symbol: "600000",
+      timeframe: "1d",
+      selectionId: "selection-123",
+      candidateEvidenceId: "candidate-ashare-600000",
+    });
+    expect(
+      resolveMarketAiSelectionResearchOriginUrlState(search.replace("timeframe=1d", "timeframe=5m")),
+    ).toBeNull();
+    expect(
+      resolveMarketAiSelectionResearchOriginUrlState(`${search}&selectionId=selection-duplicate`),
+    ).toBeNull();
+    expect(
+      resolveMarketAiSelectionResearchOriginUrlState(
+        search.replace("&candidateEvidenceId=candidate-ashare-600000", ""),
+      ),
+    ).toBeNull();
   });
 
   test("builds a shareable Stage 1 research context link", () => {

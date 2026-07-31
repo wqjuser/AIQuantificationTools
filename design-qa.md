@@ -1460,3 +1460,14 @@ final result: passed
 - 重建后只读状态保持 `executionMode=live`、`enabled=false`、`runnerState=running`、`status=paused`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。复验没有点击 AI 分析、开始研究、保存、授权、启停、立即评估、急停或任何订单操作，也没有新增仓库 QA 图片。
 
 final result: passed
+
+## 2026-07-31 AI 选股候选与研究运行证据绑定复验
+
+- “开始研究”仍只切换到既有日 K 研究上下文；浏览器只携带选股 ID 与候选证据 ID，不上传行情、评分、风格、周期或哈希，也不自动运行研究。用户显式运行研究时，核心服务从受保护审计事件重新派生并校验结构版本、事件身份、选股记录哈希、候选内容哈希、最终推荐、市场、标的和周期，再把紧凑来源证据写入现有研究快照。
+- 研究快照归一化与数据库回读再次交叉校验外层市场、标的、周期、授权事件 ID、持有周期根数和加密资产风格，防止导入或其它写入路径使用内容自洽但上下文不一致的证据。没有新增数据库表、研究状态机、策略链、风控、授权或订单入口。
+- 待绑定来源写入研究链接；手动换标的或周期会清除。真实 Docker 页面使用不对应任何审计记录的只读测试身份打开并刷新，刷新前后均显示“AI 选股候选待核验 / 运行研究后由核心服务绑定冻结证据”，URL 中两个不透明身份保持不变；未点击“运行研究”。
+- 桌面视口 `1280 × 720` 下文档 `clientWidth=scrollWidth=1280`；手机视口 `375 × 844` 下文档 `clientWidth=scrollWidth=375`、高度约 `3615px`，可纵向滚动且无页面级横向溢出。两种视口控制台均为 `0 error / 0 warning`。
+- 后端聚焦测试 `1 / 1`、前端聚焦测试 `802 / 802`、Python 全量 `914 / 914`、Web 全量 `1164 / 1164`、生产构建、API/Web Docker 重建和 `git diff --check` 通过，仅保留既知 chunk-size 提示；两个容器均 healthy。
+- 重建后只读状态保持 `executionMode=live`、`enabled=false`、`runnerState=running`、`status=paused`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。复验没有点击 AI 分析、开始研究、运行研究、保存、授权、启停、立即评估、急停或任何订单操作，也没有新增仓库 QA 图片。
+
+final result: passed

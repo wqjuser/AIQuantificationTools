@@ -5074,6 +5074,11 @@ export interface WorkspaceResponse {
 
 export type WorkspaceFetcher = (url: string, init?: RequestInit) => Promise<WorkspaceResponse>;
 
+export interface MarketAiSelectionResearchOrigin {
+  selectionId: string;
+  candidateEvidenceId: string;
+}
+
 export interface TerminalResearchParams {
   market: Market;
   symbol: string;
@@ -5081,6 +5086,7 @@ export interface TerminalResearchParams {
   limit?: number;
   end?: string;
   watchlistRefreshRunId?: string | null;
+  selectionOrigin?: MarketAiSelectionResearchOrigin | null;
 }
 
 export interface P0PipelineRequest {
@@ -5089,6 +5095,7 @@ export interface P0PipelineRequest {
   timeframe: ResearchTimeframe;
   limit: number;
   watchlistRefreshRunId?: string;
+  selectionOrigin?: MarketAiSelectionResearchOrigin;
   strategyConfig: StrategySnapshot;
   assumptions: BacktestAssumptions;
 }
@@ -14067,6 +14074,7 @@ export function buildP0PipelineRequest(
     timeframe: params.timeframe,
     limit: Math.max(1, Math.min(params.limit ?? 500, 500)),
     watchlistRefreshRunId: params.watchlistRefreshRunId?.trim() || undefined,
+    selectionOrigin: params.selectionOrigin ?? undefined,
     strategyConfig: { ...currentWorkspace.strategy },
     assumptions: resolveBacktestAssumptions(currentWorkspace)
   };
@@ -22348,7 +22356,41 @@ function isResearchRunDataSnapshot(value: unknown): boolean {
     (snapshot.offlineReplay === undefined || isOfflineReplayEvidence(snapshot.offlineReplay)) &&
     (snapshot.sourceComparison === undefined || isSourceComparisonReport(snapshot.sourceComparison)) &&
     (snapshot.preparationEvidence === undefined ||
-      isResearchRunDataPreparationEvidence(snapshot.preparationEvidence))
+      isResearchRunDataPreparationEvidence(snapshot.preparationEvidence)) &&
+    (snapshot.marketAiSelectionEvidence === undefined ||
+      isResearchRunMarketAiSelectionEvidence(snapshot.marketAiSelectionEvidence))
+  );
+}
+
+function isResearchRunMarketAiSelectionEvidence(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.selectionId === "string" &&
+    typeof value.auditEventId === "string" &&
+    typeof value.candidateEvidenceId === "string" &&
+    typeof value.selectionRecordHash === "string" &&
+    typeof value.candidateEvidenceHash === "string" &&
+    typeof value.marketSnapshotHash === "string" &&
+    isMarket(value.market) &&
+    typeof value.symbol === "string" &&
+    value.timeframe === "1d" &&
+    (value.profile === "balanced" ||
+      value.profile === "quality_growth" ||
+      value.profile === "value" ||
+      value.profile === "trend") &&
+    (value.horizon === "short" || value.horizon === "medium" || value.horizon === "long") &&
+    typeof value.horizonBars === "number" &&
+    typeof value.rank === "number" &&
+    (value.tier === "priority_research" ||
+      value.tier === "watch" ||
+      value.tier === "insufficient_evidence") &&
+    typeof value.referenceAt === "string" &&
+    typeof value.referencePrice === "number" &&
+    typeof value.generatedAt === "string" &&
+    value.researchOnly === true &&
+    typeof value.recordHash === "string"
   );
 }
 
