@@ -22514,12 +22514,6 @@ em {
   color: var(--amber);
 }
 
-.design-settings-live-save {
-  grid-column: 1;
-  justify-self: start;
-  min-height: 30px;
-}
-
 .design-settings-field input:focus,
 .design-settings-field select:focus {
   border-color: var(--teal);

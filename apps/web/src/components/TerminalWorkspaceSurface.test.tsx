@@ -1630,10 +1630,8 @@ describe("TerminalWorkspaceSurface", () => {
     expect(settings).toContain('type="checkbox" name="productionTradingEnabled" checked=""');
     expect(settings).toContain('class="design-settings-live-toggle-state">已开启</span>');
     expect(settings).toContain('class="design-settings-live-toggle-control"');
-    expect(settings).toContain(
-      '</label><button class="design-secondary-action design-settings-live-save" disabled="" type="submit">',
-    );
-    expect(settings).toContain("保存并应用配置");
+    expect(settings).not.toContain("design-settings-live-save");
+    expect(settings).not.toContain("保存并应用配置");
     expect(settings).not.toContain("待保存开启");
     expect(settings).not.toContain("待保存关闭");
     expect(settings).toContain('name="autoTradingIntervalSeconds"');

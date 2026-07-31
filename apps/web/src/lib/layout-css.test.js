@@ -122,7 +122,7 @@ describe("terminal layout css", () => {
     expect(terminalWorkspaceSurfaceSource).toContain(
       '? productionTradingEnabledDraft ? "待保存开启" : "待保存关闭"'
     );
-    expect(productionSafetySource).toContain('type="submit"');
+    expect(productionSafetySource).not.toContain('type="submit"');
     expect(terminalWorkspaceSurfaceSource).toContain(
       'productionTradingEnabled: data.has("productionTradingEnabled")'
     );

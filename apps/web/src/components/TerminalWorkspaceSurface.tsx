@@ -5781,18 +5781,6 @@ function SettingsSurface({
                       />
                       <small>默认 8 小时；0 表示永久有效，直到手动暂停、急停或撤销授权。</small>
                     </label>
-                    <button
-                      className="design-secondary-action design-settings-live-save"
-                      disabled={
-                        isSavingSettingsConfiguration
-                        || !onSaveSettingsConfiguration
-                        || !productionTradingEnabledDirty
-                      }
-                      type="submit"
-                    >
-                      <Save size={13} />
-                      {isSavingSettingsConfiguration ? "保存中…" : "保存并应用配置"}
-                    </button>
                   </div>
                 </fieldset>
                 <fieldset>
