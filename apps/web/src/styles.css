@@ -20150,6 +20150,106 @@ em {
   border-top: 1px solid var(--border);
 }
 
+.design-market-ai-review {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+}
+
+.design-market-ai-review-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.design-market-ai-review-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.design-market-ai-review-header strong {
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-header span {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.design-market-ai-review-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.design-market-ai-review-form label > span {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-form input {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-form input:focus {
+  border-color: color-mix(in srgb, var(--teal) 65%, var(--border));
+  outline: 2px solid color-mix(in srgb, var(--teal) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.design-market-ai-review-form .design-secondary-action {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.design-market-ai-review-result {
+  display: grid;
+  gap: 8px;
+}
+
+.design-market-ai-review-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.design-market-ai-review-summary span,
+.design-market-ai-review-summary strong {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-summary strong {
+  color: var(--text);
+}
+
+.design-market-ai-review-items .design-status {
+  justify-self: end;
+}
+
 @media (max-width: 1500px) {
   .design-market-screener-form {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -20243,6 +20343,16 @@ em {
 
   .design-market-ai-result-header {
     display: grid;
+  }
+
+  .design-market-ai-review-header,
+  .design-market-ai-review-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-market-ai-review-form .design-secondary-action {
+    width: 100%;
   }
 
   .design-market-ai-results dl {

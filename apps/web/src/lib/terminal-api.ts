@@ -2293,6 +2293,121 @@ export interface MarketAiSelectionLoadResult {
   error?: string;
 }
 
+export interface MarketAiSelectionReviewRequest {
+  selectionId: string;
+  benchmarkRunId: string;
+}
+
+interface MarketAiSelectionReviewItemBase {
+  candidateEvidenceId: string;
+  researchRunId?: string;
+  rank: number;
+  tier: "priority_research" | "watch" | "insufficient_evidence";
+  market: Market;
+  symbol: string;
+  timeframe: "1d";
+  horizon: MarketAiSelectionHorizon;
+  horizonBars: number;
+  referenceAt: string;
+  referencePrice: number;
+}
+
+export interface MarketAiSelectionReviewCompletedItem
+  extends MarketAiSelectionReviewItemBase {
+  researchRunId: string;
+  status: "completed";
+  completedBars: number;
+  remainingBars: 0;
+  outcomeAt: string;
+  outcomePrice: number;
+  returnPct: number;
+  absoluteHit: boolean;
+  outcomeSource: string;
+  outcomeAdjustmentMode: string;
+  outcomeDataHash: string;
+  benchmarkRunId: string;
+  benchmarkSymbol: string;
+  benchmarkReturnPct: number;
+  relativeReturnPct: number;
+  benchmarkHit: boolean;
+  benchmarkSource: string;
+  benchmarkAdjustmentMode: string;
+  benchmarkDataHash: string;
+}
+
+export interface MarketAiSelectionReviewObservingItem
+  extends MarketAiSelectionReviewItemBase {
+  researchRunId: string;
+  status: "observing";
+  completedBars: number;
+  remainingBars: number;
+}
+
+export interface MarketAiSelectionReviewInsufficientItem
+  extends MarketAiSelectionReviewItemBase {
+  status: "data_insufficient";
+  reason: string;
+  completedBars?: number;
+  remainingBars?: number;
+  outcomeAt?: string;
+  outcomePrice?: number;
+  returnPct?: number;
+  absoluteHit?: boolean;
+  outcomeSource?: string;
+  outcomeAdjustmentMode?: string;
+  outcomeDataHash?: string;
+}
+
+export type MarketAiSelectionReviewItem =
+  | MarketAiSelectionReviewCompletedItem
+  | MarketAiSelectionReviewObservingItem
+  | MarketAiSelectionReviewInsufficientItem;
+
+export interface MarketAiSelectionReview {
+  schemaVersion: 1;
+  recordType: "aiqt.marketAiSelectionReview";
+  reviewId: string;
+  selectionId: string;
+  selectionRecordHash: string;
+  createdAt: string;
+  market: Market;
+  timeframe: "1d";
+  benchmark: {
+    runId: string;
+    symbol: string;
+    auditHash: string;
+  };
+  items: MarketAiSelectionReviewItem[];
+  summary: {
+    recommendationCount: number;
+    maturedCount: number;
+    observingCount: number;
+    dataInsufficientCount: number;
+    absoluteHitCount: number;
+    absoluteSampleCount: number;
+    absoluteHitRatePct: number | null;
+    benchmarkHitCount: number;
+    benchmarkSampleCount: number;
+    benchmarkHitRatePct: number | null;
+  };
+  boundary: {
+    researchOnly: true;
+    affectsRisk: false;
+    affectsAuthorization: false;
+    affectsPermissions: false;
+    affectsOrderRouting: false;
+    orderSubmissionAllowed: false;
+    routeExecuted: false;
+  };
+  recordHash: string;
+}
+
+export interface MarketAiSelectionReviewLoadResult {
+  review?: MarketAiSelectionReview;
+  source: WorkspaceSource;
+  error?: string;
+}
+
 export interface MarketInformationParams {
   market: Market;
   symbol?: string;
@@ -5773,6 +5888,10 @@ export function buildMarketDiscoveryUrl(
 
 export function buildMarketAiSelectionsUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/market/ai-selections");
+}
+
+export function buildMarketAiSelectionReviewsUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/market/ai-selection-reviews");
 }
 
 export function buildMarketInformationUrl(
@@ -14058,6 +14177,51 @@ export async function createMarketAiSelection(
   }
 }
 
+export async function createMarketAiSelectionReview(
+  baseUrl: string,
+  request: MarketAiSelectionReviewRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketAiSelectionReviewLoadResult> {
+  try {
+    const response = await fetcher(buildMarketAiSelectionReviewsUrl(baseUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        selectionId: request.selectionId,
+        benchmarkRunId: request.benchmarkRunId
+      })
+    });
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (
+      !hasExactAiReviewEnvelopeKeys(payload, ["review"])
+      || !isMarketAiSelectionReviewPayload(payload.review, request)
+    ) {
+      throw new Error("Invalid market AI selection review contract");
+    }
+    return {
+      review: payload.review,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error
+        ? error.message
+        : "Unknown market AI selection review error"
+    };
+  }
+}
+
 export async function loadMarketInformation(
   baseUrl: string,
   params: MarketInformationParams,
@@ -21992,6 +22156,426 @@ function isMarketAiSelectionPayload(
     ranks.add(item.rank);
     return true;
   });
+}
+
+const marketAiSelectionReviewItemBaseKeys = [
+  "candidateEvidenceId",
+  "rank",
+  "tier",
+  "market",
+  "symbol",
+  "timeframe",
+  "horizon",
+  "horizonBars",
+  "referenceAt",
+  "referencePrice"
+] as const;
+
+function isMarketAiSelectionReviewPayload(
+  value: unknown,
+  request: MarketAiSelectionReviewRequest
+): value is MarketAiSelectionReview {
+  if (!hasExactAiReviewEnvelopeKeys(value, [
+    "schemaVersion",
+    "recordType",
+    "reviewId",
+    "selectionId",
+    "selectionRecordHash",
+    "createdAt",
+    "market",
+    "timeframe",
+    "benchmark",
+    "items",
+    "summary",
+    "boundary",
+    "recordHash"
+  ])) {
+    return false;
+  }
+  if (
+    value.schemaVersion !== 1
+    || value.recordType !== "aiqt.marketAiSelectionReview"
+    || typeof value.reviewId !== "string"
+    || !value.reviewId.trim()
+    || value.selectionId !== request.selectionId
+    || !isSha256Text(value.selectionRecordHash)
+    || typeof value.createdAt !== "string"
+    || !value.createdAt.trim()
+    || !isOffsetDateTime(value.createdAt)
+    || value.timeframe !== "1d"
+    || !isSha256Text(value.recordHash)
+  ) {
+    return false;
+  }
+  if (
+    !isMarket(value.market)
+    || !hasExactAiReviewEnvelopeKeys(value.benchmark, ["runId", "symbol", "auditHash"])
+  ) {
+    return false;
+  }
+  const market = value.market;
+  const benchmark = value.benchmark;
+  if (
+    benchmark.runId !== request.benchmarkRunId
+    || typeof benchmark.symbol !== "string"
+    || !benchmark.symbol.trim()
+    || !isSha256Text(benchmark.auditHash)
+  ) {
+    return false;
+  }
+  const benchmarkSymbol = benchmark.symbol;
+  if (
+    !Array.isArray(value.items)
+    || value.items.length < 1
+    || value.items.length > 5
+    || !value.items.every((item) => isMarketAiSelectionReviewItem(
+      item,
+      market,
+      request.benchmarkRunId,
+      benchmarkSymbol,
+      Date.parse(String(value.createdAt))
+    ))
+    || !isMarketAiSelectionReviewSummary(value.summary, value.items)
+    || !isMarketAiSelectionReviewBoundary(value.boundary)
+  ) {
+    return false;
+  }
+  const evidenceIds = new Set<string>();
+  const ranks = new Set<number>();
+  const horizon = value.items[0]?.horizon;
+  return value.items.every((item) => {
+    if (
+      evidenceIds.has(item.candidateEvidenceId)
+      || ranks.has(item.rank)
+      || item.horizon !== horizon
+    ) {
+      return false;
+    }
+    evidenceIds.add(item.candidateEvidenceId);
+    ranks.add(item.rank);
+    return true;
+  });
+}
+
+function isMarketAiSelectionReviewItem(
+  value: unknown,
+  market: Market,
+  benchmarkRunId: string,
+  benchmarkSymbol: string,
+  createdAtMs: number
+): value is MarketAiSelectionReviewItem {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  const hasResearchRun = Object.prototype.hasOwnProperty.call(value, "researchRunId");
+  const hasMaturity = Object.prototype.hasOwnProperty.call(value, "completedBars")
+    || Object.prototype.hasOwnProperty.call(value, "remainingBars");
+  const hasOutcome = Object.prototype.hasOwnProperty.call(value, "returnPct");
+  const outcomeKeys = [
+    "completedBars", "remainingBars", "outcomeAt", "outcomePrice", "returnPct",
+    "absoluteHit", "outcomeSource", "outcomeAdjustmentMode", "outcomeDataHash"
+  ];
+  const statusKeys = value.status === "completed"
+    ? [
+        "status", "researchRunId", "completedBars", "remainingBars", "outcomeAt",
+        "outcomePrice", "returnPct", "absoluteHit", "outcomeSource",
+        "outcomeAdjustmentMode", "outcomeDataHash", "benchmarkRunId",
+        "benchmarkSymbol", "benchmarkReturnPct", "relativeReturnPct", "benchmarkHit",
+        "benchmarkSource", "benchmarkAdjustmentMode", "benchmarkDataHash"
+      ]
+    : value.status === "observing"
+      ? ["status", "researchRunId", "completedBars", "remainingBars"]
+      : value.status === "data_insufficient"
+        ? [
+            "status",
+            "reason",
+            ...(hasResearchRun ? ["researchRunId"] : []),
+            ...(hasOutcome ? outcomeKeys : hasMaturity ? ["completedBars", "remainingBars"] : [])
+          ]
+        : [];
+  if (
+    statusKeys.length === 0
+    || !hasExactAiReviewEnvelopeKeys(value, [
+      ...marketAiSelectionReviewItemBaseKeys,
+      ...statusKeys
+    ])
+    || typeof value.candidateEvidenceId !== "string"
+    || !value.candidateEvidenceId.trim()
+    || !Number.isInteger(value.rank)
+    || Number(value.rank) < 1
+    || Number(value.rank) > 5
+    || (
+      value.tier !== "priority_research"
+      && value.tier !== "watch"
+      && value.tier !== "insufficient_evidence"
+    )
+    || value.market !== market
+    || typeof value.symbol !== "string"
+    || !value.symbol.trim()
+    || value.timeframe !== "1d"
+    || (
+      value.horizon !== "short"
+      && value.horizon !== "medium"
+      && value.horizon !== "long"
+    )
+    || value.horizonBars !== marketAiSelectionReviewHorizonBars(market, value.horizon)
+    || typeof value.referenceAt !== "string"
+    || !value.referenceAt.trim()
+    || !isOffsetDateTime(value.referenceAt)
+    || Date.parse(value.referenceAt) > createdAtMs
+    || !isPositiveFiniteNumber(value.referencePrice)
+    || (hasResearchRun && (
+      typeof value.researchRunId !== "string"
+      || !value.researchRunId.trim()
+    ))
+  ) {
+    return false;
+  }
+  const referenceAtMs = Date.parse(value.referenceAt);
+  if (value.status === "data_insufficient") {
+    if (typeof value.reason !== "string" || !value.reason.trim()) {
+      return false;
+    }
+    const unknownMaturityReasons = new Set([
+      "research_evidence_not_bound",
+      "outcome_bars_unavailable",
+      "outcome_bars_incomplete",
+      "outcome_bar_context_mismatch",
+      "reference_time_invalid",
+    ]);
+    const optionalMaturityReasons = new Set([
+      "outcome_reference_bar_missing",
+      "outcome_reference_price_mismatch",
+    ]);
+    const requiredMaturityWithoutOutcomeReasons = new Set(["outcome_bar_gap"]);
+    const benchmarkReasons = new Set([
+      "benchmark_must_use_different_symbol",
+      "benchmark_bars_unavailable",
+      "benchmark_bars_incomplete",
+      "benchmark_adjustment_mode_mismatch",
+      "benchmark_bar_context_mismatch",
+      "benchmark_same_period_coverage_missing",
+    ]);
+    const outcomeValidationReasons = new Set([
+      "review_price_invalid",
+      "review_bar_window_invalid",
+    ]);
+    if (unknownMaturityReasons.has(value.reason)) {
+      return !hasMaturity && !hasOutcome;
+    }
+    if (optionalMaturityReasons.has(value.reason)) {
+      if (hasOutcome) {
+        return false;
+      }
+      if (!hasMaturity) {
+        return true;
+      }
+    }
+    if (requiredMaturityWithoutOutcomeReasons.has(value.reason) && hasOutcome) {
+      return false;
+    }
+    if (
+      !optionalMaturityReasons.has(value.reason)
+      && !requiredMaturityWithoutOutcomeReasons.has(value.reason)
+      && !benchmarkReasons.has(value.reason)
+      && !outcomeValidationReasons.has(value.reason)
+    ) {
+      return false;
+    }
+    if (!hasMaturity) {
+      return false;
+    }
+    if (
+      !Number.isInteger(value.completedBars)
+      || value.completedBars !== value.horizonBars
+      || value.remainingBars !== 0
+    ) {
+      return false;
+    }
+    if (
+      optionalMaturityReasons.has(value.reason)
+      || requiredMaturityWithoutOutcomeReasons.has(value.reason)
+    ) {
+      return true;
+    }
+    return benchmarkReasons.has(value.reason)
+      ? hasOutcome && isMarketAiSelectionReviewOutcome(value, referenceAtMs, createdAtMs)
+      : !hasOutcome || isMarketAiSelectionReviewOutcome(value, referenceAtMs, createdAtMs);
+  }
+  if (
+    !Number.isInteger(value.completedBars)
+    || Number(value.completedBars) < 0
+    || !Number.isInteger(value.remainingBars)
+    || Number(value.remainingBars) < 0
+    || Number(value.completedBars) + Number(value.remainingBars) !== value.horizonBars
+  ) {
+    return false;
+  }
+  if (value.status === "observing") {
+    return Number(value.completedBars) < value.horizonBars
+      && Number(value.remainingBars) > 0;
+  }
+  return isMarketAiSelectionReviewOutcome(value, referenceAtMs, createdAtMs)
+    && value.benchmarkRunId === benchmarkRunId
+    && value.benchmarkSymbol === benchmarkSymbol
+    && value.symbol !== benchmarkSymbol
+    && isFiniteNumber(value.benchmarkReturnPct)
+    && isFiniteNumber(value.relativeReturnPct)
+    && isFiniteNumber(value.returnPct)
+    && Math.abs(value.relativeReturnPct - (value.returnPct - value.benchmarkReturnPct)) < 0.000001
+    && typeof value.benchmarkHit === "boolean"
+    && value.benchmarkHit === (value.relativeReturnPct > 0)
+    && isNonEmptyText(value.benchmarkSource)
+    && isNonEmptyText(value.benchmarkAdjustmentMode)
+    && value.benchmarkAdjustmentMode === value.outcomeAdjustmentMode
+    && isSha256Text(value.benchmarkDataHash);
+}
+
+function isMarketAiSelectionReviewOutcome(
+  value: Record<string, unknown>,
+  referenceAtMs: number,
+  createdAtMs: number
+): boolean {
+  if (
+    !Number.isInteger(value.completedBars)
+    || value.completedBars !== value.horizonBars
+    || value.remainingBars !== 0
+    || !isOffsetDateTime(value.outcomeAt)
+    || Date.parse(value.outcomeAt) <= referenceAtMs
+    || Date.parse(value.outcomeAt) > createdAtMs
+    || !isPositiveFiniteNumber(value.referencePrice)
+    || !isPositiveFiniteNumber(value.outcomePrice)
+    || !isFiniteNumber(value.returnPct)
+    || typeof value.absoluteHit !== "boolean"
+    || value.absoluteHit !== (value.returnPct > 0)
+    || !isNonEmptyText(value.outcomeSource)
+    || !isNonEmptyText(value.outcomeAdjustmentMode)
+    || !isSha256Text(value.outcomeDataHash)
+  ) {
+    return false;
+  }
+  const rawReturn = (value.outcomePrice / value.referencePrice - 1) * 100;
+  return Math.abs(value.returnPct - rawReturn) <= 0.500001e-6;
+}
+
+function isMarketAiSelectionReviewSummary(
+  value: unknown,
+  items: MarketAiSelectionReviewItem[]
+): value is MarketAiSelectionReview["summary"] {
+  if (!hasExactAiReviewEnvelopeKeys(value, [
+    "recommendationCount",
+    "maturedCount",
+    "observingCount",
+    "dataInsufficientCount",
+    "absoluteHitCount",
+    "absoluteSampleCount",
+    "absoluteHitRatePct",
+    "benchmarkHitCount",
+    "benchmarkSampleCount",
+    "benchmarkHitRatePct"
+  ])) {
+    return false;
+  }
+  const matured = items.filter(
+    (item) => item.completedBars === item.horizonBars
+  );
+  const absoluteSampleCount = items.filter(
+    (item) => "absoluteHit" in item && typeof item.absoluteHit === "boolean"
+  ).length;
+  const benchmarkSampleCount = items.filter(
+    (item) => item.status === "completed"
+  ).length;
+  const absoluteHits = items.filter(
+    (item) => "absoluteHit" in item && item.absoluteHit === true
+  ).length;
+  const benchmarkHits = items.filter(
+    (item) => item.status === "completed" && item.benchmarkHit
+  ).length;
+  return value.recommendationCount === items.length
+    && value.maturedCount === matured.length
+    && value.observingCount === items.filter((item) => item.status === "observing").length
+    && value.dataInsufficientCount === items.filter(
+      (item) => item.status === "data_insufficient"
+    ).length
+    && value.absoluteHitCount === absoluteHits
+    && value.absoluteSampleCount === absoluteSampleCount
+    && isMarketAiSelectionReviewHitRate(
+      value.absoluteHitRatePct,
+      absoluteHits,
+      absoluteSampleCount
+    )
+    && value.benchmarkHitCount === benchmarkHits
+    && value.benchmarkSampleCount === benchmarkSampleCount
+    && isMarketAiSelectionReviewHitRate(
+      value.benchmarkHitRatePct,
+      benchmarkHits,
+      benchmarkSampleCount
+    );
+}
+
+function isMarketAiSelectionReviewBoundary(
+  value: unknown
+): value is MarketAiSelectionReview["boundary"] {
+  return hasExactAiReviewEnvelopeKeys(value, [
+    "researchOnly",
+    "affectsRisk",
+    "affectsAuthorization",
+    "affectsPermissions",
+    "affectsOrderRouting",
+    "orderSubmissionAllowed",
+    "routeExecuted"
+  ])
+    && value.researchOnly === true
+    && value.affectsRisk === false
+    && value.affectsAuthorization === false
+    && value.affectsPermissions === false
+    && value.affectsOrderRouting === false
+    && value.orderSubmissionAllowed === false
+    && value.routeExecuted === false;
+}
+
+function marketAiSelectionReviewHorizonBars(
+  market: Market,
+  horizon: MarketAiSelectionHorizon
+): number {
+  if (market === "crypto") {
+    return { short: 7, medium: 30, long: 90 }[horizon];
+  }
+  return { short: 5, medium: 20, long: 60 }[horizon];
+}
+
+function isMarketAiSelectionReviewHitRate(
+  value: unknown,
+  hits: number,
+  samples: number
+): boolean {
+  if (samples === 0) {
+    return hits === 0 && value === null;
+  }
+  return isFiniteNumber(value)
+    && Math.abs(value - Math.round(hits / samples * 10_000) / 100) < 0.000001;
+}
+
+function isSha256Text(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{64}$/i.test(value);
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value > 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNonEmptyText(value: unknown): value is string {
+  return typeof value === "string" && Boolean(value.trim());
+}
+
+function isOffsetDateTime(value: unknown): value is string {
+  return typeof value === "string"
+    && /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    && Number.isFinite(Date.parse(value));
 }
 
 function isMarketAiSelectionSnapshot(

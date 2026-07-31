@@ -31,15 +31,32 @@ class MarketDataCache:
                     low real not null,
                     close real not null,
                     volume real not null,
+                    source text,
+                    adjustment_mode text,
+                    snapshot_id text,
                     primary key (market, symbol, timeframe, timestamp)
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute("pragma table_info(ohlcv)").fetchall()
+            }
+            for name in ("source", "adjustment_mode", "snapshot_id"):
+                if name not in columns:
+                    connection.execute(f"alter table ohlcv add column {name} text")
             connection.commit()
         finally:
             connection.close()
 
-    def upsert_bars(self, bars: list[OHLCVBar]) -> int:
+    def upsert_bars(
+        self,
+        bars: list[OHLCVBar],
+        *,
+        source: str | None = None,
+        adjustment_mode: str | None = None,
+        snapshot_id: str | None = None,
+    ) -> int:
         rows = [
             (
                 bar.market,
@@ -51,6 +68,9 @@ class MarketDataCache:
                 bar.low,
                 bar.close,
                 bar.volume,
+                source,
+                adjustment_mode,
+                snapshot_id,
             )
             for bar in bars
         ]
@@ -58,14 +78,38 @@ class MarketDataCache:
         try:
             connection.executemany(
                 """
-                insert into ohlcv (market, symbol, timeframe, timestamp, open, high, low, close, volume)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                insert into ohlcv (
+                    market, symbol, timeframe, timestamp, open, high, low, close, volume,
+                    source, adjustment_mode, snapshot_id
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(market, symbol, timeframe, timestamp) do update set
                     open = excluded.open,
                     high = excluded.high,
                     low = excluded.low,
                     close = excluded.close,
-                    volume = excluded.volume
+                    volume = excluded.volume,
+                    source = case
+                        when excluded.source is not null then excluded.source
+                        when excluded.open = ohlcv.open and excluded.high = ohlcv.high
+                            and excluded.low = ohlcv.low and excluded.close = ohlcv.close
+                            and excluded.volume = ohlcv.volume then ohlcv.source
+                        else null
+                    end,
+                    adjustment_mode = case
+                        when excluded.adjustment_mode is not null then excluded.adjustment_mode
+                        when excluded.open = ohlcv.open and excluded.high = ohlcv.high
+                            and excluded.low = ohlcv.low and excluded.close = ohlcv.close
+                            and excluded.volume = ohlcv.volume then ohlcv.adjustment_mode
+                        else null
+                    end,
+                    snapshot_id = case
+                        when excluded.snapshot_id is not null then excluded.snapshot_id
+                        when excluded.open = ohlcv.open and excluded.high = ohlcv.high
+                            and excluded.low = ohlcv.low and excluded.close = ohlcv.close
+                            and excluded.volume = ohlcv.volume then ohlcv.snapshot_id
+                        else null
+                    end
                 """,
                 rows,
             )
@@ -119,6 +163,45 @@ class MarketDataCache:
             )
             for row in rows
         ]
+
+    def read_provenance(
+        self,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        *,
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, str] | None:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select distinct source, adjustment_mode, snapshot_id
+                from ohlcv
+                where market = ? and symbol = ? and timeframe = ?
+                  and timestamp >= ? and timestamp <= ?
+                """,
+                (
+                    market,
+                    symbol,
+                    timeframe,
+                    start.isoformat(),
+                    end.isoformat(),
+                ),
+            ).fetchall()
+        finally:
+            connection.close()
+        if (
+            len(rows) != 1
+            or not all(isinstance(value, str) and value for value in rows[0])
+        ):
+            return None
+        return {
+            "source": rows[0][0],
+            "adjustmentMode": rows[0][1],
+            "snapshotId": rows[0][2],
+        }
 
     def stats(self) -> dict[str, int | str | None]:
         connection = self._connect()

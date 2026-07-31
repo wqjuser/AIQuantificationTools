@@ -523,6 +523,7 @@ def _fetch_market_klines_with_cache(
     adapter: object,
     request: MarketDataRequest,
     limit: int,
+    require_cache_provenance: bool = False,
 ) -> tuple[list[OHLCVBar], DataQuality]:
     bounded_limit = max(1, min(int(limit or 160), 500))
     upstream_error: str | None = None
@@ -535,7 +536,12 @@ def _fetch_market_klines_with_cache(
         upstream_error = str(error)
 
     if quality and quality.is_complete:
-        cache.upsert_bars(bars)
+        cache.upsert_bars(
+            bars,
+            source=quality.origin_source or quality.source,
+            adjustment_mode=quality.adjustment_mode,
+            snapshot_id=quality.canonical_hash,
+        )
         return bars, quality
 
     cached_bars = cache.read_bars(
@@ -545,15 +551,28 @@ def _fetch_market_klines_with_cache(
         end=request.end,
     )[-bounded_limit:]
     if cached_bars:
+        provenance = cache.read_provenance(
+            request.market,
+            request.symbol,
+            request.timeframe,
+            start=cached_bars[0].timestamp,
+            end=cached_bars[-1].timestamp,
+        )
         warnings = _cache_fallback_warnings(quality, upstream_error)
+        if provenance is None:
+            warnings.append("Persistent cache provenance is unavailable or mixed.")
         return cached_bars, assess_market_data_quality(
             request,
             cached_bars,
             DataQuality(
                 source="local-cache",
-                is_complete=True,
+                origin_source=provenance["source"] if provenance else None,
+                is_complete=provenance is not None or not require_cache_provenance,
                 warnings=warnings,
                 rows=len(cached_bars),
+                adjustment_mode=(
+                    provenance["adjustmentMode"] if provenance else "none"
+                ),
             ),
         )
 
@@ -872,6 +891,28 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 )
                 return
             self._send_json(selection, status=201)
+            return
+        if parsed.path == "/api/market/ai-selection-reviews":
+            try:
+                review = self._market_ai_selection_service().review(
+                    self._read_json_body()
+                )
+            except MarketAiSelectionError as error:
+                self._send_json(
+                    {"error": error.code, "detail": error.detail},
+                    status=error.status,
+                )
+                return
+            except ValueError:
+                self._send_json(
+                    {
+                        "error": "invalid_market_ai_selection_review_request",
+                        "detail": "请求正文必须是有效的 JSON 对象。",
+                    },
+                    status=400,
+                )
+                return
+            self._send_json({"review": review}, status=201)
             return
         if parsed.path == "/api/operations/monitoring/test-notifications":
             try:
@@ -6677,6 +6718,14 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 watchlist_store=self.watchlist_store,
                 audit_store=self.audit_event_store,
                 provider_registry=provider_registry,
+                run_store=self.run_store,
+                review_kline_loader=lambda request, limit: _fetch_market_klines_with_cache(
+                    cache=self.cache,
+                    adapter=self.kline_adapter,
+                    request=request,
+                    limit=limit,
+                    require_cache_provenance=True,
+                ),
                 sec_user_agent=sec_user_agent,
             )
             handler_type.market_ai_selection_service = configured

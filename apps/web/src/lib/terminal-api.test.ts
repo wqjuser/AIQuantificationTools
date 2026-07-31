@@ -160,6 +160,7 @@ import {
   buildMarketDataReadinessUrl,
   buildMarketDiscoveryUrl,
   buildMarketAiSelectionsUrl,
+  buildMarketAiSelectionReviewsUrl,
   buildMarketInformationUrl,
   buildMarketKlinesUrl,
   buildMarketSearchUrl,
@@ -170,6 +171,7 @@ import {
   loadMarketDataReadiness,
   loadMarketDiscovery,
   createMarketAiSelection,
+  createMarketAiSelectionReview,
   loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -21852,6 +21854,314 @@ describe("terminal workspace API client", () => {
     expect(String(calls[0]?.init?.body)).not.toContain("\"items\"");
     expect(result.source).toBe("core");
     expect(result.selection?.recommendations[0]?.evidenceId).toBe("evidence-600000");
+  });
+
+  test("posts only audited identities and validates AI selection outcome review samples", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const review = {
+      schemaVersion: 1,
+      recordType: "aiqt.marketAiSelectionReview",
+      reviewId: "market-ai-selection-review-test",
+      selectionId: "selection-test",
+      selectionRecordHash: "a".repeat(64),
+      createdAt: "2026-08-08T08:00:00+00:00",
+      market: "ashare",
+      timeframe: "1d",
+      benchmark: {
+        runId: "run-benchmark",
+        symbol: "000300",
+        auditHash: "b".repeat(64),
+      },
+      items: [
+        {
+          candidateEvidenceId: "evidence-completed",
+          researchRunId: "run-candidate",
+          rank: 1,
+          tier: "priority_research",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          horizon: "short",
+          horizonBars: 5,
+          referenceAt: "2026-08-01T00:00:00+00:00",
+          referencePrice: 10,
+          status: "completed",
+          completedBars: 5,
+          remainingBars: 0,
+          outcomeAt: "2026-08-08T00:00:00+00:00",
+          outcomePrice: 11,
+          returnPct: 10,
+          absoluteHit: true,
+          outcomeSource: "local-cache",
+          outcomeAdjustmentMode: "qfq",
+          outcomeDataHash: "c".repeat(64),
+          benchmarkRunId: "run-benchmark",
+          benchmarkSymbol: "000300",
+          benchmarkReturnPct: 2,
+          relativeReturnPct: 8,
+          benchmarkHit: true,
+          benchmarkSource: "local-cache",
+          benchmarkAdjustmentMode: "qfq",
+          benchmarkDataHash: "d".repeat(64),
+        },
+        {
+          candidateEvidenceId: "evidence-observing",
+          researchRunId: "run-observing",
+          rank: 2,
+          tier: "watch",
+          market: "ashare",
+          symbol: "600001",
+          timeframe: "1d",
+          horizon: "short",
+          horizonBars: 5,
+          referenceAt: "2026-08-06T00:00:00+00:00",
+          referencePrice: 20,
+          status: "observing",
+          completedBars: 1,
+          remainingBars: 4,
+        },
+        {
+          candidateEvidenceId: "evidence-benchmark-insufficient",
+          researchRunId: "run-benchmark-insufficient",
+          rank: 3,
+          tier: "insufficient_evidence",
+          market: "ashare",
+          symbol: "600002",
+          timeframe: "1d",
+          horizon: "short",
+          horizonBars: 5,
+          referenceAt: "2026-08-01T00:00:00+00:00",
+          referencePrice: 30,
+          status: "data_insufficient",
+          reason: "benchmark_same_period_coverage_missing",
+          completedBars: 5,
+          remainingBars: 0,
+          outcomeAt: "2026-08-08T00:00:00+00:00",
+          outcomePrice: 33,
+          returnPct: 10,
+          absoluteHit: true,
+          outcomeSource: "local-cache",
+          outcomeAdjustmentMode: "qfq",
+          outcomeDataHash: "f".repeat(64),
+        },
+        {
+          candidateEvidenceId: "evidence-insufficient",
+          rank: 4,
+          tier: "insufficient_evidence",
+          market: "ashare",
+          symbol: "600003",
+          timeframe: "1d",
+          horizon: "short",
+          horizonBars: 5,
+          referenceAt: "2026-08-01T00:00:00+00:00",
+          referencePrice: 30,
+          status: "data_insufficient",
+          reason: "research_evidence_not_bound",
+        },
+      ],
+      summary: {
+        recommendationCount: 4,
+        maturedCount: 2,
+        observingCount: 1,
+        dataInsufficientCount: 2,
+        absoluteHitCount: 2,
+        absoluteSampleCount: 2,
+        absoluteHitRatePct: 100,
+        benchmarkHitCount: 1,
+        benchmarkSampleCount: 1,
+        benchmarkHitRatePct: 100,
+      },
+      boundary: {
+        researchOnly: true,
+        affectsRisk: false,
+        affectsAuthorization: false,
+        affectsPermissions: false,
+        affectsOrderRouting: false,
+        orderSubmissionAllowed: false,
+        routeExecuted: false,
+      },
+      recordHash: "e".repeat(64),
+    };
+    const result = await createMarketAiSelectionReview(
+      "http://127.0.0.1:8765/",
+      { selectionId: "selection-test", benchmarkRunId: "run-benchmark" },
+      async (url, init) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ review }),
+        };
+      },
+    );
+
+    expect(buildMarketAiSelectionReviewsUrl("/")).toBe("/api/market/ai-selection-reviews");
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/api/market/ai-selection-reviews");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      selectionId: "selection-test",
+      benchmarkRunId: "run-benchmark",
+    });
+    expect(String(calls[0]?.init?.body)).not.toMatch(/price|return|hit|bars/i);
+    expect(result.source).toBe("core");
+    expect(result.review?.summary).toMatchObject({
+      recommendationCount: 4,
+      absoluteSampleCount: 2,
+      benchmarkSampleCount: 1,
+    });
+    const halfEvenReview = {
+      ...review,
+      items: [
+        {
+          ...review.items[0],
+          referencePrice: 5.12,
+          outcomePrice: 4.33,
+          returnPct: -15.429688,
+          absoluteHit: false,
+          relativeReturnPct: -17.429688,
+          benchmarkHit: false,
+        },
+        ...review.items.slice(1),
+      ],
+      summary: {
+        ...review.summary,
+        absoluteHitCount: 1,
+        absoluteHitRatePct: 50,
+        benchmarkHitCount: 0,
+        benchmarkHitRatePct: 0,
+      },
+    };
+    const halfEven = await createMarketAiSelectionReview(
+      "/",
+      { selectionId: "selection-test", benchmarkRunId: "run-benchmark" },
+      async () => ({
+        ok: true,
+        status: 201,
+        json: async () => ({ review: halfEvenReview }),
+      }),
+    );
+    expect(halfEven.source).toBe("core");
+
+    const benchmarkWithoutOutcome = {
+      ...review.items[2],
+    } as Record<string, unknown>;
+    for (const key of [
+      "outcomeAt",
+      "outcomePrice",
+      "returnPct",
+      "absoluteHit",
+      "outcomeSource",
+      "outcomeAdjustmentMode",
+      "outcomeDataHash",
+    ]) {
+      delete benchmarkWithoutOutcome[key];
+    }
+    const benchmarkWithoutOutcomeReview = {
+      ...review,
+      items: [
+        review.items[0],
+        review.items[1],
+        benchmarkWithoutOutcome,
+        review.items[3],
+      ],
+      summary: {
+        ...review.summary,
+        absoluteHitCount: 1,
+        absoluteSampleCount: 1,
+      },
+    };
+    const unboundWithOutcomeReview = {
+      ...review,
+      items: [
+        review.items[0],
+        review.items[1],
+        review.items[2],
+        {
+          ...review.items[2],
+          candidateEvidenceId: "evidence-unbound-with-outcome",
+          researchRunId: "run-unbound-with-outcome",
+          rank: 4,
+          symbol: "600003",
+          reason: "research_evidence_not_bound",
+        },
+      ],
+      summary: {
+        ...review.summary,
+        maturedCount: 3,
+        absoluteHitCount: 3,
+        absoluteSampleCount: 3,
+      },
+    };
+    const gapWithoutMaturityReview = {
+      ...review,
+      items: [
+        review.items[0],
+        review.items[1],
+        review.items[2],
+        {
+          ...review.items[3],
+          reason: "outcome_bar_gap",
+        },
+      ],
+    };
+    for (const invalidReview of [
+      benchmarkWithoutOutcomeReview,
+      unboundWithOutcomeReview,
+      gapWithoutMaturityReview,
+      {
+        ...review,
+        summary: { ...review.summary, recommendationCount: 5 },
+      },
+      {
+        ...review,
+        boundary: { ...review.boundary, orderSubmissionAllowed: true },
+      },
+      {
+        ...review,
+        items: [
+          review.items[0],
+          { ...review.items[1], returnPct: 0 },
+          review.items[2],
+        ],
+      },
+      {
+        ...review,
+        items: [
+          { ...review.items[0], outcomeAt: "not-a-date" },
+          review.items[1],
+          review.items[2],
+        ],
+      },
+      {
+        ...review,
+        items: [
+          { ...review.items[0], outcomeAt: "2026-08-09T00:00:00+00:00" },
+          review.items[1],
+          review.items[2],
+        ],
+      },
+      {
+        ...review,
+        items: [
+          { ...review.items[0], outcomePrice: 5 },
+          review.items[1],
+          review.items[2],
+        ],
+      },
+    ]) {
+      const invalid = await createMarketAiSelectionReview(
+        "/",
+        { selectionId: "selection-test", benchmarkRunId: "run-benchmark" },
+        async () => ({
+          ok: true,
+          status: 201,
+          json: async () => ({ review: invalidReview }),
+        }),
+      );
+      expect(invalid).toEqual({
+        source: "fallback",
+        error: "Invalid market AI selection review contract",
+      });
+    }
   });
 
   test("rejects AI selection responses that add trading authority or unknown fields", async () => {

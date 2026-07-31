@@ -14,6 +14,7 @@ import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
 import type { PortfolioRiskAssessment } from "../lib/portfolio-m5";
 import type {
   MarketDiscoveryResult,
+  MarketAiSelectionReview,
   MarketAiSelectionResult,
   MarketInformationResult,
   PlatformSettingsStatus,
@@ -2757,6 +2758,11 @@ describe("TerminalWorkspaceSurface", () => {
       <TerminalWorkspaceSurface
         {...baseProps}
         activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: null,
+        }}
         marketAiSelection={{
           isLoading: false,
           onResearchInstrument: () => undefined,
@@ -2764,11 +2770,6 @@ describe("TerminalWorkspaceSurface", () => {
           onViewInstrument: () => undefined,
           requestKey,
           result,
-        }}
-        marketDiscovery={{
-          isLoading: false,
-          onSearch: () => undefined,
-          result: null,
         }}
       />,
     );
@@ -2836,6 +2837,11 @@ describe("TerminalWorkspaceSurface", () => {
       <TerminalWorkspaceSurface
         {...baseProps}
         activeWorkAreaId="market"
+        marketDiscovery={{
+          isLoading: false,
+          onSearch: () => undefined,
+          result: null,
+        }}
         marketAiSelection={{
           isLoading: false,
           onResearchInstrument: () => undefined,
@@ -2843,6 +2849,132 @@ describe("TerminalWorkspaceSurface", () => {
           onViewInstrument: () => undefined,
           requestKey: "old-request",
           result,
+        }}
+      />,
+    );
+
+    expect(market).toContain("旧结果已失效");
+    expect(market).toContain("请重新分析");
+  });
+
+  it("renders matured, observing, and insufficient AI selection review samples", () => {
+    const review: MarketAiSelectionReview = {
+      schemaVersion: 1,
+      recordType: "aiqt.marketAiSelectionReview",
+      reviewId: "market-ai-selection-review-test",
+      selectionId: "selection-review-test",
+      selectionRecordHash: "a".repeat(64),
+      createdAt: "2026-08-08T08:00:00+00:00",
+      market: "ashare",
+      timeframe: "1d",
+      benchmark: {
+        runId: "run-benchmark",
+        symbol: "000300",
+        auditHash: "b".repeat(64),
+      },
+      items: [
+        {
+          candidateEvidenceId: "evidence-completed",
+          researchRunId: "run-candidate",
+          rank: 1,
+          tier: "priority_research",
+          market: "ashare",
+          symbol: "600000",
+          timeframe: "1d",
+          horizon: "short",
+          horizonBars: 5,
+          referenceAt: "2026-08-01T00:00:00+00:00",
+          referencePrice: 10,
+          status: "completed",
+          completedBars: 5,
+          remainingBars: 0,
+          outcomeAt: "2026-08-08T00:00:00+00:00",
+          outcomePrice: 11,
+          returnPct: 10,
+          absoluteHit: true,
+          outcomeSource: "local-cache",
+          outcomeAdjustmentMode: "qfq",
+          outcomeDataHash: "c".repeat(64),
+          benchmarkRunId: "run-benchmark",
+          benchmarkSymbol: "000300",
+          benchmarkReturnPct: 2,
+          relativeReturnPct: 8,
+          benchmarkHit: true,
+          benchmarkSource: "local-cache",
+          benchmarkAdjustmentMode: "qfq",
+          benchmarkDataHash: "d".repeat(64),
+        },
+        {
+          candidateEvidenceId: "evidence-observing",
+          researchRunId: "run-observing",
+          rank: 2,
+          tier: "watch",
+          market: "ashare",
+          symbol: "600001",
+          timeframe: "1d",
+          horizon: "short",
+          horizonBars: 5,
+          referenceAt: "2026-08-06T00:00:00+00:00",
+          referencePrice: 20,
+          status: "observing",
+          completedBars: 1,
+          remainingBars: 4,
+        },
+        {
+          candidateEvidenceId: "evidence-insufficient",
+          rank: 3,
+          tier: "insufficient_evidence",
+          market: "ashare",
+          symbol: "600002",
+          timeframe: "1d",
+          horizon: "short",
+          horizonBars: 5,
+          referenceAt: "2026-08-01T00:00:00+00:00",
+          referencePrice: 30,
+          status: "data_insufficient",
+          reason: "research_evidence_not_bound",
+        },
+      ],
+      summary: {
+        recommendationCount: 3,
+        maturedCount: 1,
+        observingCount: 1,
+        dataInsufficientCount: 1,
+        absoluteHitCount: 1,
+        absoluteSampleCount: 1,
+        absoluteHitRatePct: 100,
+        benchmarkHitCount: 1,
+        benchmarkSampleCount: 1,
+        benchmarkHitRatePct: 100,
+      },
+      boundary: {
+        researchOnly: true,
+        affectsRisk: false,
+        affectsAuthorization: false,
+        affectsPermissions: false,
+        affectsOrderRouting: false,
+        orderSubmissionAllowed: false,
+        routeExecuted: false,
+      },
+      recordHash: "e".repeat(64),
+    };
+    const market = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="market"
+        marketAiSelection={{
+          isLoading: false,
+          onResearchInstrument: () => undefined,
+          onRun: () => undefined,
+          onViewInstrument: () => undefined,
+          requestKey: null,
+          result: null,
+          review: {
+            error: "旧请求失败",
+            isLoading: false,
+            onRun: () => undefined,
+            result: review,
+          },
         }}
         marketDiscovery={{
           isLoading: false,
@@ -2852,8 +2984,25 @@ describe("TerminalWorkspaceSurface", () => {
       />,
     );
 
-    expect(market).toContain("旧结果已失效");
-    expect(market).toContain("请重新分析");
+    expect(market).toContain("到期收益与基准复盘");
+    expect(market).toContain("推荐数 3");
+    expect(market).toContain("已到期 1");
+    expect(market).toContain("观察中 1");
+    expect(market).toContain("数据不足 1");
+    expect(market).toContain("绝对收益命中 1 / 1 · 100.0%");
+    expect(market).toContain("相对基准命中 1 / 1 · 100.0%");
+    expect(market).toContain("持有周期目标 5 根已完成日 K");
+    expect(market).not.toContain("短期 · 5 根已完成日 K");
+    expect(market).toContain("+10.00%");
+    expect(market).toContain("基准 000300 +2.00%");
+    expect(market).toContain("相对 +8.00%");
+    expect(market).toContain("还需 4 根已完成日 K");
+    expect(market).toContain("尚未绑定研究证据");
+    expect(market).toContain("仅用于研究复盘");
+    expect(market).not.toContain("旧请求失败");
+    expect(market).not.toContain("提交订单");
+    expect(market).not.toContain("买入");
+    expect(market).not.toContain("卖出");
   });
 
   it("shows Binance USDT spot discovery with crypto-specific labels and fields", () => {

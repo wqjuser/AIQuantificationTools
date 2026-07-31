@@ -54,7 +54,7 @@ def assess_market_data_quality(
         _add_issue(issues, "empty_window", "blocked", 1, "No OHLCV bars were returned.")
 
     sorted_bars = sorted(bars, key=lambda bar: bar.timestamp)
-    gap_count = _gap_count(request, sorted_bars)
+    gap_count = market_data_gap_count(request, sorted_bars)
     if gap_count:
         severity = "blocked" if request.market == "crypto" or request.timeframe not in {"1d", "1w"} else "warning"
         _add_issue(issues, "missing_bar_gap", severity, gap_count, "Expected bar intervals are missing.")
@@ -280,7 +280,7 @@ def offline_replay_evidence(bars: list[OHLCVBar | dict[str, Any]], expected_hash
     }
 
 
-def _gap_count(request: MarketDataRequest, bars: list[OHLCVBar]) -> int:
+def market_data_gap_count(request: MarketDataRequest, bars: list[OHLCVBar]) -> int:
     if len(bars) < 2:
         return 0
     step = _TIMEFRAME_SECONDS[request.timeframe]

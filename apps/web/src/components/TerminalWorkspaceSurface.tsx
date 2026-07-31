@@ -49,6 +49,8 @@ import type {
   MarketDiscoveryResult,
   MarketAiSelectionHorizon,
   MarketAiSelectionProfile,
+  MarketAiSelectionReview,
+  MarketAiSelectionReviewRequest,
   MarketAiSelectionRequest,
   MarketAiSelectionResearchOrigin,
   MarketAiSelectionResult,
@@ -166,6 +168,12 @@ interface TerminalWorkspaceSurfaceProps {
     onViewInstrument: (instrument: Instrument) => void;
     requestKey: string | null;
     result: MarketAiSelectionResult | null;
+    review?: {
+      error?: string;
+      isLoading: boolean;
+      onRun: (request: MarketAiSelectionReviewRequest) => void;
+      result: MarketAiSelectionReview | null;
+    };
   };
   marketAiSelectionResearchOrigin?: MarketAiSelectionResearchOrigin | null;
   marketInformation?: {
@@ -302,6 +310,37 @@ const marketAiSelectionHorizonLabels: Record<MarketAiSelectionHorizon, string> =
   medium: "中期",
   long: "长期",
 };
+
+const marketAiSelectionReviewReasonLabels: Record<string, string> = {
+  research_evidence_not_bound: "尚未绑定研究证据",
+  outcome_bars_unavailable: "到期 K 线暂不可用",
+  outcome_bars_incomplete: "到期 K 线数据不完整",
+  outcome_bar_context_mismatch: "到期 K 线上下文不一致",
+  outcome_reference_bar_missing: "到期 K 线缺少冻结参考日",
+  outcome_reference_price_mismatch: "冻结参考价与当前 K 线口径不一致",
+  outcome_bar_gap: "持有周期 K 线存在无法确认的缺口",
+  reference_time_invalid: "参考时间无效",
+  benchmark_must_use_different_symbol: "基准必须使用不同标的",
+  benchmark_bars_unavailable: "基准 K 线暂不可用",
+  benchmark_bars_incomplete: "基准 K 线数据不完整",
+  benchmark_adjustment_mode_mismatch: "标的与基准复权口径不一致",
+  benchmark_bar_context_mismatch: "基准 K 线上下文不一致",
+  benchmark_same_period_coverage_missing: "基准缺少同周期端点",
+  review_price_invalid: "到期价格数据无效",
+  review_bar_window_invalid: "到期 K 线窗口校验失败",
+};
+
+function marketAiSelectionReviewHitRate(
+  hits: number,
+  samples: number,
+  rate: number | null,
+): string {
+  return `${hits} / ${samples} · ${rate === null ? "—" : `${rate.toFixed(1)}%`}`;
+}
+
+function marketAiSelectionReviewPct(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
 
 const terminalSurfaceZh = createI18n("zh-CN");
 
@@ -1017,6 +1056,23 @@ function MarketSurface({
     useState<AiReviewProviderId>("local");
   const [aiSelectionExternalDataApproved, setAiSelectionExternalDataApproved] =
     useState(false);
+  const [aiSelectionReviewSelectionId, setAiSelectionReviewSelectionId] = useState(
+    marketAiSelection?.result?.selectionId
+      ?? marketAiSelection?.review?.result?.selectionId
+      ?? "",
+  );
+  const [aiSelectionReviewBenchmarkRunId, setAiSelectionReviewBenchmarkRunId] = useState(
+    marketAiSelection?.review?.result?.benchmark.runId ?? "",
+  );
+  const [aiSelectionReviewSubmittedKey, setAiSelectionReviewSubmittedKey] =
+    useState<string | null>(null);
+  const aiSelectionReviewInputKey = `${aiSelectionReviewSelectionId.trim()}\u0000${aiSelectionReviewBenchmarkRunId.trim()}`;
+  const aiSelectionReviewResult = marketAiSelection?.review?.result;
+  const visibleAiSelectionReviewResult =
+    aiSelectionReviewResult?.selectionId === aiSelectionReviewSelectionId.trim()
+    && aiSelectionReviewResult.benchmark.runId === aiSelectionReviewBenchmarkRunId.trim()
+      ? aiSelectionReviewResult
+      : null;
   const discoveryMarket = workspace.selectedInstrument.market === "crypto"
     ? "crypto"
     : "ashare";
@@ -1031,6 +1087,11 @@ function MarketSurface({
       setDiscoverySort(effectiveDiscoverySort);
     }
   }, [discoverySort, effectiveDiscoverySort]);
+  useEffect(() => {
+    if (marketAiSelection?.result?.selectionId) {
+      setAiSelectionReviewSelectionId(marketAiSelection.result.selectionId);
+    }
+  }, [marketAiSelection?.result?.selectionId]);
   useEffect(() => {
     if (
       aiSelectionMarket === "crypto"
@@ -1820,6 +1881,176 @@ function MarketSurface({
                 </p>
               </div>
             ) : null}
+            <div className="design-market-ai-review">
+              <header className="design-market-ai-review-header">
+                <div>
+                  <strong>到期收益与基准复盘</strong>
+                  <span>只读取受保护选股证据、已绑定研究证据与服务端已完成日 K</span>
+                </div>
+                {visibleAiSelectionReviewResult ? (
+                  <span title={visibleAiSelectionReviewResult.reviewId}>
+                    审计 {compactRunId(visibleAiSelectionReviewResult.reviewId)}
+                  </span>
+                ) : null}
+              </header>
+              <form
+                aria-label="AI 选股到期复盘"
+                className="design-market-ai-review-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const selectionId = aiSelectionReviewSelectionId.trim();
+                  const benchmarkRunId = aiSelectionReviewBenchmarkRunId.trim();
+                  if (selectionId && benchmarkRunId) {
+                    setAiSelectionReviewSubmittedKey(`${selectionId}\u0000${benchmarkRunId}`);
+                    marketAiSelection?.review?.onRun({ selectionId, benchmarkRunId });
+                  }
+                }}
+              >
+                <label>
+                  <span>选股记录 ID</span>
+                  <input
+                    onChange={(event) => setAiSelectionReviewSelectionId(
+                      event.currentTarget.value,
+                    )}
+                    placeholder="selection-…"
+                    value={aiSelectionReviewSelectionId}
+                  />
+                </label>
+                <label>
+                  <span>基准研究运行 ID</span>
+                  <input
+                    onChange={(event) => setAiSelectionReviewBenchmarkRunId(
+                      event.currentTarget.value,
+                    )}
+                    placeholder="run-…"
+                    value={aiSelectionReviewBenchmarkRunId}
+                  />
+                </label>
+                <button
+                  className="design-secondary-action"
+                  disabled={
+                    !marketAiSelection?.review
+                    || marketAiSelection.review.isLoading
+                    || !aiSelectionReviewSelectionId.trim()
+                    || !aiSelectionReviewBenchmarkRunId.trim()
+                  }
+                  type="submit"
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={marketAiSelection?.review?.isLoading ? "spin" : undefined}
+                    size={13}
+                  />
+                  {marketAiSelection?.review?.isLoading ? "复盘中…" : "运行复盘"}
+                </button>
+              </form>
+              <p className="design-market-ai-hint">
+                基准由已审计研究运行明确指定；浏览器不提交价格、收益、K 线或命中事实。
+              </p>
+              {marketAiSelection?.review?.error
+              && aiSelectionReviewSubmittedKey === aiSelectionReviewInputKey ? (
+                <p className="design-market-ai-state risk" role="alert">
+                  复盘未完成：{marketAiSelection.review.error}
+                </p>
+              ) : null}
+              {visibleAiSelectionReviewResult ? (
+                <div className="design-market-ai-review-result">
+                  <div className="design-market-ai-review-summary">
+                    <span>推荐数 {visibleAiSelectionReviewResult.summary.recommendationCount}</span>
+                    <span>已到期 {visibleAiSelectionReviewResult.summary.maturedCount}</span>
+                    <span>观察中 {visibleAiSelectionReviewResult.summary.observingCount}</span>
+                    <span>数据不足 {visibleAiSelectionReviewResult.summary.dataInsufficientCount}</span>
+                    <strong>
+                      绝对收益命中 {marketAiSelectionReviewHitRate(
+                        visibleAiSelectionReviewResult.summary.absoluteHitCount,
+                        visibleAiSelectionReviewResult.summary.absoluteSampleCount,
+                        visibleAiSelectionReviewResult.summary.absoluteHitRatePct,
+                      )}
+                    </strong>
+                    <strong>
+                      相对基准命中 {marketAiSelectionReviewHitRate(
+                        visibleAiSelectionReviewResult.summary.benchmarkHitCount,
+                        visibleAiSelectionReviewResult.summary.benchmarkSampleCount,
+                        visibleAiSelectionReviewResult.summary.benchmarkHitRatePct,
+                      )}
+                    </strong>
+                  </div>
+                  <div className="design-market-ai-results design-market-ai-review-items">
+                    {visibleAiSelectionReviewResult.items.map((item) => (
+                      <article key={item.candidateEvidenceId}>
+                        <header>
+                          <span className="design-market-ai-rank">{item.rank}</span>
+                          <div>
+                            <strong>{item.symbol}</strong>
+                            <span>
+                              {marketAiSelectionHorizonLabels[item.horizon]}
+                              {" · 持有周期目标 "}{item.horizonBars} 根已完成日 K
+                            </span>
+                          </div>
+                          <Status
+                            tone={item.status === "completed"
+                              ? "positive"
+                              : item.status === "observing"
+                                ? "warning"
+                                : "risk"}
+                          >
+                            {item.status === "completed"
+                              ? "已到期"
+                              : item.status === "observing"
+                                ? "观察中"
+                                : "数据不足"}
+                          </Status>
+                        </header>
+                        {item.status === "completed" ? (
+                          <dl>
+                            <div>
+                              <dt>到期收益</dt>
+                              <dd>{marketAiSelectionReviewPct(item.returnPct)}</dd>
+                            </div>
+                            <div>
+                              <dt>同周期基准</dt>
+                              <dd>
+                                基准 {item.benchmarkSymbol}{" "}
+                                {marketAiSelectionReviewPct(item.benchmarkReturnPct)}
+                                {" · "}相对 {marketAiSelectionReviewPct(item.relativeReturnPct)}
+                              </dd>
+                            </div>
+                          </dl>
+                        ) : item.status === "observing" ? (
+                          <p className="warning">
+                            已完成 {item.completedBars} 根，还需 {item.remainingBars} 根已完成日 K。
+                          </p>
+                        ) : (
+                          <>
+                            {typeof item.returnPct === "number" ? (
+                              <dl>
+                                <div>
+                                  <dt>到期收益</dt>
+                                  <dd>{marketAiSelectionReviewPct(item.returnPct)}</dd>
+                                </div>
+                              </dl>
+                            ) : null}
+                            <p className="risk">
+                              {item.completedBars === item.horizonBars
+                                ? "持有周期已到期；"
+                                : ""}
+                              {marketAiSelectionReviewReasonLabels[item.reason] ?? item.reason}
+                            </p>
+                          </>
+                        )}
+                        <small>
+                          参考 {new Date(item.referenceAt).toLocaleDateString("zh-CN")}
+                          {" · "}证据 {compactRunId(item.candidateEvidenceId)}
+                        </small>
+                      </article>
+                    ))}
+                  </div>
+                  <p className="design-market-ai-boundary">
+                    仅用于研究复盘；不生成买卖、仓位、授权、风控或订单指令。
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </SurfacePanel>
         </div>
       ) : null}

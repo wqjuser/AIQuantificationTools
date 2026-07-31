@@ -64,6 +64,7 @@ import {
   loadMarketDataReadiness,
   loadMarketDiscovery,
   createMarketAiSelection,
+  createMarketAiSelectionReview,
   loadMarketInformation,
   loadMarketKlines,
   loadMarketCalendarStatus,
@@ -189,6 +190,8 @@ import {
   MarketDiscoveryParams,
   MarketDiscoveryResult,
   MarketAiSelectionLoadResult,
+  MarketAiSelectionReviewLoadResult,
+  MarketAiSelectionReviewRequest,
   MarketAiSelectionRequest,
   MarketAiSelectionResearchOrigin,
   MarketInformationResult,
@@ -2591,6 +2594,11 @@ export function App() {
   const [marketAiSelectionRequestKey, setMarketAiSelectionRequestKey] = useState<string | null>(null);
   const [isLoadingMarketAiSelection, setIsLoadingMarketAiSelection] = useState(false);
   const marketAiSelectionRequestRef = useRef(createLatestRequestCoordinator());
+  const [marketAiSelectionReview, setMarketAiSelectionReview] =
+    useState<MarketAiSelectionReviewLoadResult>({ source: "fallback" });
+  const [isLoadingMarketAiSelectionReview, setIsLoadingMarketAiSelectionReview] =
+    useState(false);
+  const marketAiSelectionReviewRequestRef = useRef(createLatestRequestCoordinator());
   const [pendingMarketAiSelectionResearchOrigin, setPendingMarketAiSelectionResearchOrigin] =
     useState<(MarketAiSelectionResearchOrigin & { market: Market; symbol: string }) | null>(
       resolveInitialMarketAiSelectionResearchOrigin,
@@ -5651,12 +5659,40 @@ export function App() {
     if (result.selection) {
       setMarketAiSelection(result);
       setMarketAiSelectionRequestKey(requestKey);
+      marketAiSelectionReviewRequestRef.current.begin();
+      setIsLoadingMarketAiSelectionReview(false);
+      setMarketAiSelectionReview({ source: "fallback" });
       return;
     }
     setMarketAiSelection((current) => ({
       ...current,
       source: "fallback",
       error: result.error ?? "AI 选股服务暂时不可用"
+    }));
+  }, [quantCoreBaseUrl]);
+
+  const runMarketAiSelectionReview = useCallback(async (
+    request: MarketAiSelectionReviewRequest,
+  ) => {
+    const token = marketAiSelectionReviewRequestRef.current.begin();
+    setIsLoadingMarketAiSelectionReview(true);
+    setMarketAiSelectionReview((current) => ({
+      ...current,
+      error: undefined,
+    }));
+    const result = await createMarketAiSelectionReview(quantCoreBaseUrl, request);
+    if (!marketAiSelectionReviewRequestRef.current.isCurrent(token)) {
+      return;
+    }
+    setIsLoadingMarketAiSelectionReview(false);
+    if (result.review) {
+      setMarketAiSelectionReview(result);
+      return;
+    }
+    setMarketAiSelectionReview((current) => ({
+      ...current,
+      source: "fallback",
+      error: result.error ?? "AI 选股复盘服务暂时不可用",
     }));
   }, [quantCoreBaseUrl]);
 
@@ -17054,6 +17090,12 @@ export function App() {
               selectInstrument(instrument, "market", false),
             requestKey: marketAiSelectionRequestKey,
             result: marketAiSelection.selection ?? null,
+            review: {
+              error: marketAiSelectionReview.error,
+              isLoading: isLoadingMarketAiSelectionReview,
+              onRun: (request) => void runMarketAiSelectionReview(request),
+              result: marketAiSelectionReview.review ?? null,
+            },
           }}
           marketAiSelectionResearchOrigin={
             pendingMarketAiSelectionResearchOrigin

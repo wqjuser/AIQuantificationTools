@@ -362,6 +362,52 @@ class ResearchRunStore:
 
         return [_row_to_research_run_audit(row) for row in rows]
 
+    def list_by_market_ai_selection(
+        self,
+        selection_id: str,
+    ) -> list[ResearchRunAudit]:
+        normalized_selection_id = str(selection_id or "").strip()
+        if not normalized_selection_id:
+            return []
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select
+                    run_id,
+                    created_at,
+                    market,
+                    symbol,
+                    timeframe,
+                    strategy_name,
+                    strategy_revision,
+                    data_rows,
+                    metrics_json,
+                    decisions_json,
+                    execution_mode,
+                    ai_report_json,
+                    data_quality_json,
+                    data_snapshot_json,
+                    strategy_config_json,
+                    backtest_assumptions_json,
+                    backtest_trades_json,
+                    backtest_equity_curve_json,
+                    backtest_diagnostics_json,
+                    research_note_json
+                from research_runs
+                where json_extract(
+                    data_snapshot_json,
+                    '$.marketAiSelectionEvidence.selectionId'
+                ) = ?
+                order by created_at desc
+                """,
+                (normalized_selection_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+
+        return [_row_to_research_run_audit(row) for row in rows]
+
     def get(self, run_id: str) -> ResearchRunAudit | None:
         connection = self._connect()
         try:
@@ -882,11 +928,14 @@ def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | N
             "execution_adapter_production_route_review",
             "stage7_production_readonly_probe",
             "stage8_production_readonly_access_control",
+            "market_ai_selection",
+            "market_ai_selection_review",
         }
         or event["eventId"].startswith((
             "execution-adapter-production-route-review-",
             "stage7-production-readonly-",
             "stage8-production-readonly-",
+            "market-ai-selection-",
         ))
         for event in events
     ):
