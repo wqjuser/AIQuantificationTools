@@ -3017,7 +3017,7 @@ describe("TerminalWorkspaceSurface", () => {
         excludedCount: 15,
         reasons: [{ reason: "候选未进入成交活跃度前 20 名。", count: 15, ratePct: 100 }],
       },
-      dataSourceDegradation: { degradedCount: 12, sampleCount: 60, ratePct: 20 },
+      dataSourceDegradation: { degradedCount: 1, sampleCount: 3, ratePct: 33.33 },
       aiSuccess: { successCount: 2, sampleCount: 3, ratePct: 66.67 },
       stylePerformance: [
         {
@@ -3080,7 +3080,7 @@ describe("TerminalWorkspaceSurface", () => {
 
     expect(market).toContain("选股质量统计");
     expect(market).toContain("候选合格 60 / 75 · 80.0%");
-    expect(market).toContain("数据源降级 12 / 60 · 20.0%");
+    expect(market).toContain("选股运行数据源降级 1 / 3 · 33.3%");
     expect(market).toContain("AI 成功 2 / 3 · 66.7%");
     expect(market).toContain("候选未进入成交活跃度前 20 名。");
     expect(market).toContain("均衡 · 选股 2 · 已复盘 1");

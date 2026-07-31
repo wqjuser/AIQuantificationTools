@@ -21876,7 +21876,7 @@ describe("terminal workspace API client", () => {
       },
       dataSourceDegradation: {
         degradedCount: 0,
-        sampleCount: 20,
+        sampleCount: 1,
         ratePct: 0,
       },
       aiSuccess: {
@@ -21930,7 +21930,10 @@ describe("terminal workspace API client", () => {
     expect(result).toEqual({ statistics, source: "core" });
 
     for (const invalidStatistics of [
-      { ...statistics, orderSubmissionAllowed: true },
+      {
+        ...statistics,
+        boundary: { ...statistics.boundary, orderSubmissionAllowed: true },
+      },
       {
         ...statistics,
         candidateQualification: { ...statistics.candidateQualification, ratePct: 79 },
@@ -21938,6 +21941,14 @@ describe("terminal workspace API client", () => {
       {
         ...statistics,
         aiSuccess: { successCount: 0, sampleCount: 0, ratePct: 0 },
+      },
+      {
+        ...statistics,
+        stylePerformance: statistics.stylePerformance.map((item, index) => (
+          index === 0
+            ? { ...item, benchmarkSampleCount: 1, benchmarkHitRatePct: 0 }
+            : item
+        )),
       },
     ]) {
       const invalid = await loadMarketAiSelectionQualityStatistics(
@@ -21958,7 +21969,7 @@ describe("terminal workspace API client", () => {
   test("posts only audited identities and validates AI selection outcome review samples", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const review = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       recordType: "aiqt.marketAiSelectionReview",
       reviewId: "market-ai-selection-review-test",
       selectionId: "selection-test",
@@ -21996,6 +22007,8 @@ describe("terminal workspace API client", () => {
           outcomeDataHash: "c".repeat(64),
           benchmarkRunId: "run-benchmark",
           benchmarkSymbol: "000300",
+          benchmarkReferencePrice: 200,
+          benchmarkOutcomePrice: 204,
           benchmarkReturnPct: 2,
           relativeReturnPct: 8,
           benchmarkHit: true,
@@ -22242,6 +22255,14 @@ describe("terminal workspace API client", () => {
         ...review,
         items: [
           { ...review.items[0], outcomePrice: 5 },
+          review.items[1],
+          review.items[2],
+        ],
+      },
+      {
+        ...review,
+        items: [
+          { ...review.items[0], benchmarkOutcomePrice: 205 },
           review.items[1],
           review.items[2],
         ],

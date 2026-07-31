@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from quant_core.ai_review_providers import validated_provider_base_url
+from quant_core.sec_edgar import is_valid_sec_edgar_user_agent
 
 _PROVIDER_ERROR_CATEGORIES = ("rate_limit", "dependency", "network", "upstream", "incomplete_data", "unknown")
 _PROVIDER_ERROR_CATEGORY_PRIORITY = {category: index for index, category in enumerate(_PROVIDER_ERROR_CATEGORIES)}
@@ -456,13 +457,6 @@ def _public_setting_for_payload(field: str, value: str) -> str | int | bool:
     return min(max(parsed, minimum), maximum)
 
 
-def _valid_sec_edgar_user_agent(value: str) -> bool:
-    normalized = value.strip()
-    return 8 <= len(normalized) <= 255 and bool(
-        re.search(r"(?:\S+@\S+|https?://\S+)", normalized, re.IGNORECASE)
-    )
-
-
 def build_settings_status(
     *,
     cache_path: str | Path,
@@ -492,7 +486,7 @@ def build_settings_status(
         else os.getenv("SEC_EDGAR_USER_AGENT", "")
     )
     sec_edgar_configured = bool(raw_sec_edgar_user_agent.strip())
-    sec_edgar_ready = _valid_sec_edgar_user_agent(raw_sec_edgar_user_agent)
+    sec_edgar_ready = is_valid_sec_edgar_user_agent(raw_sec_edgar_user_agent)
     akshare_financials_available = _adapter_dependency_available(
         "akshare",
         adapter_dependency_statuses,

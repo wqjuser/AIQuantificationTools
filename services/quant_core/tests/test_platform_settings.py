@@ -269,7 +269,7 @@ class PlatformSettingsTests(unittest.TestCase):
         )
         invalid_sec = build_settings_status(
             cache_path="unused.sqlite",
-            sec_edgar_user_agent="x",
+            sec_edgar_user_agent="AIQT contact@example",
             adapter_dependency_statuses={
                 "akshare": True,
                 "yfinance": True,

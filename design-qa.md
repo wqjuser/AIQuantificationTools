@@ -1471,3 +1471,22 @@ final result: passed
 - 重建后只读状态保持 `executionMode=live`、`enabled=false`、`runnerState=running`、`status=paused`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false`、`liveBlockedBoundary=true`。复验没有点击 AI 分析、开始研究、运行研究、保存、授权、启停、立即评估、急停或任何订单操作，也没有新增仓库 QA 图片。
 
 final result: passed
+
+## 2026-08-01 AI 选股到期复盘与质量统计复验
+
+- 到期复盘只读取受保护选股审计、已绑定研究证据、服务端已完成日 K 与同周期基准；未达到固定持有根数的推荐保持“观察中”，缺失行情或基准进入“数据不足”。受保护复盘事件保存最小 K 线事实和规范哈希，公共响应不下发原始复盘 K 线；重复请求复用同一审计结果，未来数据、未完成 K 线、删除推荐、跨上下文替换和哈希篡改均被测试阻断。
+- 质量统计直接回放既有 `AuditEventStore` 中的选股与复盘事件，不新增数据库表或第二套状态机。真实环境同时回放旧 v1 与新 v2 两次选股：候选合格 `16 / 200 · 8.0%`、排除样本 `184`、选股运行数据源降级 `2 / 2 · 100.0%`、AI 成功 `0 / 0 · —`；均衡风格选股 `2`、已复盘 `0`，绝对与相对基准命中均明确显示 `0 / 0 · —` 和 `n=0`。
+- Docker 真实页面桌面 `1440 × 1000` 下文档 `1440/1440`，手机 `390 × 844` 下文档 `390/390`、统计面板约 `352px`，均无页面级横向溢出。点击“刷新统计”实际发送 `GET /api/market/ai-selection-statistics` 并返回 `200`；浏览器控制台 `0 error / 0 warning`，复验后已恢复 `1280 × 720` 并关闭标签页。
+- 后端聚焦测试 `49 / 49`、Python 全量 `929 / 929`、Web 全量 `1181 / 1181`、生产构建和 API 镜像重建通过，仅保留既知 chunk-size 提示；API/Web 均 healthy。统计边界保持 `researchOnly=true`，没有修改自选、启动研究、修改风控或自动交易，也没有允许订单或执行路由。
+- 当前到期复盘样本仍为 `0`，因此没有实现批量研究或自动加入观察池；AI 选股仍不连接订单或生产交易。
+
+final result: passed
+
+## 2026-08-01 AI 选股真实数据源验收复验
+
+- A 股财务双源比较补齐币种、同源名称、元/万元/亿元单位归一化和实际新浪/东方财富字段解析；真实 `600519` 双源均识别为 `CNY`。最终 Docker 全市场选股返回 `201` 和 schema v2 审计身份，服务端继续执行 `100 → 20 → 5`；证据预算内完成 `8` 个候选并产出 `5` 个推荐、`92` 个可审计排除。因东方财富市场快照不可用及证据预算耗尽，结果如实标记 `partial`，未伪装成完整成功。
+- CoinGecko 映射现在区分精确、歧义、缺失和未解析状态，按交易对记录观测时间；缺失 coin id、过期、异常或不完整 ticker 均不能成为基本面事实，合法空结果也会负缓存至固定 TTL，避免重复请求绕过降级。真实 Binance USDT 探测返回 `502 market_ai_selection_fundamental_source_unavailable`，本轮保留该真实阻断，没有猜测币种映射或填造基本面。
+- SEC EDGAR User-Agent 增加共享格式校验，必须包含可联系邮箱或公开 URL；当前配置仍为空，状态为 `blocked / sec_edgar_user_agent_missing`，且美股自选池为 `0`，真实选股请求返回 `409 market_ai_selection_watchlist_quotes_stale`。仓库没有获得可授权用作 SEC 联系人的身份，因此未用 Git 身份或虚构地址代填；提供合规联系信息并加入至少一个有新鲜报价的美股自选标的后，才可完成实网 Company Facts 验收。
+- SEC Company Facts 解析会合并收入/利润标签期间，以同期间标签优先级选值；流通股只接受股份标签，并限制相对财务期的时效。官方样本复验中 `GOOGL`、`AAPL` 可用，`FOX` 的陈旧 2019 股数正确降级为估值缺失。上述行为由聚焦与全量门禁覆盖，未新增数据库表、Provider 注册表、研究/策略/交易状态机或订单入口。
+
+final result: passed

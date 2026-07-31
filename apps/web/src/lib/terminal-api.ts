@@ -2327,6 +2327,8 @@ export interface MarketAiSelectionReviewCompletedItem
   outcomeDataHash: string;
   benchmarkRunId: string;
   benchmarkSymbol: string;
+  benchmarkReferencePrice?: number;
+  benchmarkOutcomePrice?: number;
   benchmarkReturnPct: number;
   relativeReturnPct: number;
   benchmarkHit: boolean;
@@ -2364,7 +2366,7 @@ export type MarketAiSelectionReviewItem =
   | MarketAiSelectionReviewInsufficientItem;
 
 export interface MarketAiSelectionReview {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   recordType: "aiqt.marketAiSelectionReview";
   reviewId: string;
   selectionId: string;
@@ -22292,7 +22294,7 @@ function isMarketAiSelectionQualityStatistics(
       "sampleCount",
       "ratePct",
     )
-    || Number(degradation.sampleCount) !== Number(qualification.qualifiedCount)
+    || Number(degradation.sampleCount) !== value.selectionCount
     || !isMarketAiSelectionQualityRate(
       aiSuccess,
       "successCount",
@@ -22342,6 +22344,9 @@ function isMarketAiSelectionQualityStatistics(
       || !isMarketAiSelectionNonNegativeInteger(item.benchmarkHitCount)
       || !isMarketAiSelectionNonNegativeInteger(item.benchmarkSampleCount)
       || item.benchmarkHitCount > item.benchmarkSampleCount
+      || item.benchmarkSampleCount > item.absoluteSampleCount
+      || (item.reviewedSelectionCount === 0
+        && (item.absoluteSampleCount !== 0 || item.benchmarkSampleCount !== 0))
     ) {
       return false;
     }
@@ -22406,8 +22411,9 @@ function isMarketAiSelectionReviewPayload(
   ])) {
     return false;
   }
+  const schemaVersion = value.schemaVersion;
   if (
-    value.schemaVersion !== 1
+    (schemaVersion !== 1 && schemaVersion !== 2)
     || value.recordType !== "aiqt.marketAiSelectionReview"
     || typeof value.reviewId !== "string"
     || !value.reviewId.trim()
@@ -22447,7 +22453,8 @@ function isMarketAiSelectionReviewPayload(
       market,
       request.benchmarkRunId,
       benchmarkSymbol,
-      Date.parse(String(value.createdAt))
+      Date.parse(String(value.createdAt)),
+      schemaVersion,
     ))
     || !isMarketAiSelectionReviewSummary(value.summary, value.items)
     || !isMarketAiSelectionReviewBoundary(value.boundary)
@@ -22476,7 +22483,8 @@ function isMarketAiSelectionReviewItem(
   market: Market,
   benchmarkRunId: string,
   benchmarkSymbol: string,
-  createdAtMs: number
+  createdAtMs: number,
+  schemaVersion: 1 | 2,
 ): value is MarketAiSelectionReviewItem {
   if (!isPlainRecord(value)) {
     return false;
@@ -22494,7 +22502,11 @@ function isMarketAiSelectionReviewItem(
         "status", "researchRunId", "completedBars", "remainingBars", "outcomeAt",
         "outcomePrice", "returnPct", "absoluteHit", "outcomeSource",
         "outcomeAdjustmentMode", "outcomeDataHash", "benchmarkRunId",
-        "benchmarkSymbol", "benchmarkReturnPct", "relativeReturnPct", "benchmarkHit",
+        "benchmarkSymbol",
+        ...(schemaVersion === 2
+          ? ["benchmarkReferencePrice", "benchmarkOutcomePrice"]
+          : []),
+        "benchmarkReturnPct", "relativeReturnPct", "benchmarkHit",
         "benchmarkSource", "benchmarkAdjustmentMode", "benchmarkDataHash"
       ]
     : value.status === "observing"
@@ -22634,6 +22646,14 @@ function isMarketAiSelectionReviewItem(
     && value.benchmarkSymbol === benchmarkSymbol
     && value.symbol !== benchmarkSymbol
     && isFiniteNumber(value.benchmarkReturnPct)
+    && (schemaVersion === 1 || (
+      isPositiveFiniteNumber(value.benchmarkReferencePrice)
+      && isPositiveFiniteNumber(value.benchmarkOutcomePrice)
+      && Math.abs(
+        value.benchmarkReturnPct
+        - (value.benchmarkOutcomePrice / value.benchmarkReferencePrice - 1) * 100
+      ) <= 0.500001e-6
+    ))
     && isFiniteNumber(value.relativeReturnPct)
     && isFiniteNumber(value.returnPct)
     && Math.abs(value.relativeReturnPct - (value.returnPct - value.benchmarkReturnPct)) < 0.000001

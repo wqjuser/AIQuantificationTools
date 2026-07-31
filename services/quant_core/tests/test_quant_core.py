@@ -28232,8 +28232,6 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.runs import ResearchRunStore
         from quant_core.strategy_library import StrategyLibraryStore
 
-        selection_id = "selection-research-binding"
-        audit_event_id = f"market-ai-selection-{selection_id}"
         evidence_id = "candidate-600000"
         generated_at = "2026-07-31T02:00:00+00:00"
         reference_at = "2026-07-30T00:00:00+00:00"
@@ -28264,6 +28262,35 @@ class QuantCoreContractTest(unittest.TestCase):
                 "fundamental": candidate_fundamental,
             }
         )
+        selection_request = {
+            "market": "ashare",
+            "profile": "balanced",
+            "horizon": "short",
+        }
+        provider_identity = {"providerId": "local"}
+        market_snapshot = {"snapshotHash": market_snapshot_hash, "warnings": []}
+        market_context = {}
+        news_evidence = {"market": [], evidence_id: []}
+        selection_identity = {
+            "request": selection_request,
+            "providerIdentity": provider_identity,
+            "marketSnapshot": market_snapshot,
+            "marketContext": market_context,
+            "newsHash": canonical_sha256(news_evidence),
+            "newsWarnings": [],
+            "exclusions": [],
+            "timedOut": False,
+            "weightsVersion": "market-ai-selection-v1",
+            "evidence": [
+                {
+                    "evidenceId": evidence_id,
+                    "evidenceHash": candidate_evidence_hash,
+                    "newsReferences": [],
+                }
+            ],
+        }
+        selection_id = f"selection-{canonical_sha256(selection_identity)[:20]}"
+        audit_event_id = f"market-ai-selection-{selection_id}"
         request_payload = {
             "market": "ashare",
             "symbol": "600000",
@@ -28286,12 +28313,11 @@ class QuantCoreContractTest(unittest.TestCase):
             "recordType": "aiqt.marketAiSelection",
             "selectionId": selection_id,
             "generatedAt": generated_at,
-            "request": {
-                "market": "ashare",
-                "profile": "balanced",
-                "horizon": "short",
-            },
-            "marketSnapshot": {"snapshotHash": market_snapshot_hash},
+            "request": selection_request,
+            "marketSnapshot": market_snapshot,
+            "marketContext": market_context,
+            "weightsVersion": "market-ai-selection-v1",
+            "providerIdentity": provider_identity,
             "evidenceCandidates": [
                 {
                     "evidenceId": evidence_id,
@@ -28302,8 +28328,17 @@ class QuantCoreContractTest(unittest.TestCase):
                     "dailyBars": candidate_daily_bars,
                     "factors": candidate_factors,
                     "fundamental": candidate_fundamental,
+                    "newsReferences": [],
                 }
             ],
+            "newsEvidence": news_evidence,
+            "exclusions": [],
+            "generation": {
+                "requestedProvider": "local",
+                "usedProvider": "local",
+                "status": "skipped",
+                "fallbackUsed": False,
+            },
             "result": {
                 "selectionId": selection_id,
                 "recommendations": [

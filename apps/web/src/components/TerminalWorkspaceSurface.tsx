@@ -2099,7 +2099,7 @@ function MarketSurface({
                       )}
                     </strong>
                     <strong>
-                      合格候选数据源降级 {marketAiSelectionReviewHitRate(
+                      选股运行数据源降级 {marketAiSelectionReviewHitRate(
                         marketAiSelection.statistics.result.dataSourceDegradation.degradedCount,
                         marketAiSelection.statistics.result.dataSourceDegradation.sampleCount,
                         marketAiSelection.statistics.result.dataSourceDegradation.ratePct,

@@ -5,7 +5,7 @@ import math
 import re
 import time
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import (
     Future,
     ThreadPoolExecutor,
@@ -36,6 +36,7 @@ from quant_core.market_discovery import MarketDiscoveryQuery
 from quant_core.market_information import MarketInformationQuery
 from quant_core.market_calendar import build_market_calendar_status
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
+from quant_core.sec_edgar import is_valid_sec_edgar_user_agent
 
 
 _REQUEST_FIELDS = frozenset(
@@ -89,10 +90,14 @@ _RECOMMENDATION_LIMIT = 5
 _DAILY_BAR_COUNT = 180
 _EVIDENCE_BUDGET_SECONDS = 20.0
 _STOCK_FUNDAMENTAL_TTL = timedelta(hours=24)
+_STOCK_FUNDAMENTAL_MAX_AGE = timedelta(days=400)
+_STOCK_SHARES_MAX_PERIOD_DISTANCE = timedelta(days=180)
 _CRYPTO_FUNDAMENTAL_TTL = timedelta(minutes=5)
 _MARKET_SNAPSHOT_FRESHNESS = timedelta(minutes=5)
 _US_QUOTE_FRESHNESS = _MARKET_SNAPSHOT_FRESHNESS
 _QUALITY_STATISTICS_PROFILES = ("balanced", "quality_growth", "value", "trend")
+_SELECTION_SCHEMA_VERSION = 2
+_REVIEW_SCHEMA_VERSION = 2
 
 
 def resolve_market_ai_selection_research_evidence(
@@ -123,10 +128,13 @@ def resolve_market_ai_selection_research_evidence(
         raise ValueError("market_ai_selection_origin_not_found")
 
     artifact = record.metadata.get("artifact")
+    schema_version = artifact.get("schemaVersion") if isinstance(artifact, Mapping) else None
     if (
         not isinstance(artifact, Mapping)
-        or artifact.get("schemaVersion") != 1
+        or type(schema_version) is not int
+        or schema_version not in {1, _SELECTION_SCHEMA_VERSION}
         or artifact.get("recordType") != "aiqt.marketAiSelection"
+        or not _market_ai_selection_id_matches_artifact(selection_id, artifact)
     ):
         raise ValueError("market_ai_selection_origin_invalid")
     artifact_without_hash = {key: item for key, item in artifact.items() if key != "recordHash"}
@@ -149,6 +157,27 @@ def resolve_market_ai_selection_research_evidence(
         or timeframe != "1d"
     ):
         raise ValueError("market_ai_selection_origin_mismatch")
+    if schema_version == _SELECTION_SCHEMA_VERSION:
+        market_context = artifact.get("marketContext")
+        source_coverage = (
+            market_context.get("fundamentalSourceCoverage")
+            if isinstance(market_context, Mapping)
+            else None
+        )
+        if market == "crypto":
+            initial_candidates = artifact.get("initialCandidates")
+            if (
+                not isinstance(initial_candidates, list)
+                or not _valid_statistics_source_coverage(
+                    source_coverage,
+                    generated_at=str(artifact.get("generatedAt") or ""),
+                )
+                or source_coverage["sampleCount"]
+                != len(_prefilter_candidates(initial_candidates, market=market)[0])
+            ):
+                raise ValueError("market_ai_selection_origin_invalid")
+        elif source_coverage is not None:
+            raise ValueError("market_ai_selection_origin_invalid")
 
     evidence_candidates = artifact.get("evidenceCandidates")
     recommendation_rows = result.get("recommendations")
@@ -256,7 +285,7 @@ def _required_research_origin_text(value: Mapping[str, Any], key: str) -> str:
     return text
 _WEIGHTS_VERSION = "market-ai-selection-v1"
 
-_STOCK_WEIGHTS: dict[str, dict[str, float]] = {
+_V1_STOCK_WEIGHTS: dict[str, dict[str, float]] = {
     "balanced": {
         "quality": 0.25,
         "growth": 0.20,
@@ -286,7 +315,7 @@ _STOCK_WEIGHTS: dict[str, dict[str, float]] = {
         "liquidityRisk": 0.20,
     },
 }
-_CRYPTO_WEIGHTS: dict[str, dict[str, float]] = {
+_V1_CRYPTO_WEIGHTS: dict[str, dict[str, float]] = {
     "balanced": {
         "maturity": 0.25,
         "supply": 0.20,
@@ -302,6 +331,23 @@ _CRYPTO_WEIGHTS: dict[str, dict[str, float]] = {
         "risk": 0.15,
     },
 }
+_WEIGHTS_BY_VERSION = {
+    "market-ai-selection-v1": {
+        "stock": _V1_STOCK_WEIGHTS,
+        "crypto": _V1_CRYPTO_WEIGHTS,
+    }
+}
+_STOCK_WEIGHTS = _V1_STOCK_WEIGHTS
+_CRYPTO_WEIGHTS = _V1_CRYPTO_WEIGHTS
+_V1_NON_DEGRADED_EXCLUSION_REASONS = frozenset(
+    {"候选未进入成交活跃度前 20 名。"}
+)
+_V1_NON_DEGRADED_WARNINGS = frozenset(
+    {
+        "AI 分析失败，已返回确定性基准榜。",
+        "美股首版仅覆盖当前自选池，不代表全市场。",
+    }
+)
 _HORIZON_LABELS: dict[str, dict[str, str]] = {
     "ashare": {
         "short": "5 个交易日",
@@ -613,11 +659,7 @@ class MarketAiSelectionService:
             for exclusion in item["exclusions"]
         ]
         evaluated_count = qualified_count + len(exclusions)
-        degraded_count = sum(
-            bool(candidate["dataGaps"])
-            for item in selections
-            for candidate in item["evidenceCandidates"]
-        )
+        degraded_count = sum(bool(item["sourceDegraded"]) for item in selections)
         ai_attempts = [
             item["generation"]
             for item in selections
@@ -700,8 +742,8 @@ class MarketAiSelectionService:
             },
             "dataSourceDegradation": {
                 "degradedCount": degraded_count,
-                "sampleCount": qualified_count,
-                "ratePct": _market_ai_selection_rate(degraded_count, qualified_count),
+                "sampleCount": len(selections),
+                "ratePct": _market_ai_selection_rate(degraded_count, len(selections)),
             },
             "aiSuccess": {
                 "successCount": ai_success_count,
@@ -758,9 +800,12 @@ class MarketAiSelectionService:
             request = validate_market_ai_selection_request(artifact["request"])
             result = artifact["result"]
             candidates = artifact["evidenceCandidates"]
+            initial_candidates = artifact["initialCandidates"]
             exclusions = artifact["exclusions"]
             generation = artifact["generation"]
             recommendations = result["recommendations"]
+            market_snapshot = artifact["marketSnapshot"]
+            market_context = artifact["marketContext"]
             selection_id = str(artifact["selectionId"])
             market = str(request["market"])
             profile = str(request["profile"])
@@ -771,34 +816,106 @@ class MarketAiSelectionService:
             candidate_ids = {str(item["evidenceId"]) for item in candidates}
             recommendation_ids = [str(item["evidenceId"]) for item in recommendations]
             ranks = [item["rank"] for item in recommendations]
+            initial_keys = [
+                (str(item["market"]), str(item["symbol"]))
+                for item in initial_candidates
+            ]
+            candidate_keys = [
+                (str(item["market"]), str(item["symbol"]))
+                for item in candidates
+            ]
+            exclusion_keys = [
+                (str(item["market"]), str(item["symbol"]))
+                for item in exclusions
+            ]
+            weights_by_market = _WEIGHTS_BY_VERSION.get(
+                str(artifact["weightsVersion"])
+            )
+            warnings = market_snapshot["warnings"]
+            source_coverage = (
+                market_context.get("fundamentalSourceCoverage")
+                if isinstance(market_context, Mapping)
+                else None
+            )
+            schema_version = artifact["schemaVersion"]
+            prefiltered_count = len(
+                _prefilter_candidates(initial_candidates, market=market)[0]
+            )
             _require_market_ai_selection_statistics(
                 record.event_type == "market_ai_selection"
                 and record.run_id is None
                 and record.stage == "market_ai_selection"
                 and record.source == "market-ai-selection"
                 and set(record.metadata) == {"artifact"}
-                and artifact["schemaVersion"] == 1
+                and type(schema_version) is int
+                and schema_version in {1, _SELECTION_SCHEMA_VERSION}
                 and artifact["recordType"] == "aiqt.marketAiSelection"
+                and _market_ai_selection_id_matches_artifact(
+                    selection_id,
+                    artifact,
+                )
                 and record.event_id == f"market-ai-selection-{selection_id}"
                 and artifact["recordHash"] == record_hash
                 and request == artifact["request"]
-                and artifact["weightsVersion"] == _WEIGHTS_VERSION
+                and weights_by_market is not None
                 and artifact["weights"]
-                == (_CRYPTO_WEIGHTS if market == "crypto" else _STOCK_WEIGHTS)[profile]
+                == weights_by_market["crypto" if market == "crypto" else "stock"][profile]
                 and result["selectionId"] == selection_id
                 and result["auditEventId"] == record.event_id
                 and result["generatedAt"] == artifact["generatedAt"]
+                and result["marketSnapshot"] == market_snapshot
                 and result["exclusions"] == exclusions
                 and result["generation"] == generation
                 and result["boundary"] == artifact["boundary"]
+                and isinstance(market_snapshot, Mapping)
+                and isinstance(market_context, Mapping)
+                and (
+                    market != "crypto"
+                    and source_coverage is None
+                    or market == "crypto"
+                    and schema_version == 1
+                    and (
+                        source_coverage is None
+                        or _valid_statistics_source_coverage(
+                            source_coverage,
+                            generated_at=str(artifact["generatedAt"]),
+                        )
+                    )
+                    or market == "crypto"
+                    and schema_version == _SELECTION_SCHEMA_VERSION
+                    and _valid_statistics_source_coverage(
+                        source_coverage,
+                        generated_at=str(artifact["generatedAt"]),
+                    )
+                    and source_coverage["sampleCount"] == prefiltered_count
+                )
+                and isinstance(warnings, list)
+                and all(isinstance(item, str) and item.strip() for item in warnings)
+                and result["status"] == ("partial" if warnings else "completed")
                 and artifact["boundary"] == _market_ai_selection_boundary()
                 and _parse_datetime(artifact["generatedAt"]) == _as_utc(record.created_at)
                 and _as_utc(record.created_at) <= computed_at
                 and isinstance(candidates, list)
                 and 0 < len(candidates) <= _EVIDENCE_CANDIDATE_LIMIT
                 and all(_valid_statistics_candidate(item, market) for item in candidates)
+                and isinstance(initial_candidates, list)
+                and 0 < len(initial_candidates) <= _INITIAL_CANDIDATE_LIMIT
+                and all(key[0] == market and key[1] for key in initial_keys)
+                and len(set(initial_keys)) == len(initial_keys)
+                and len(set(candidate_keys)) == len(candidate_keys)
                 and isinstance(exclusions, list)
                 and all(_valid_statistics_exclusion(item, market) for item in exclusions)
+                and len(set(exclusion_keys)) == len(exclusion_keys)
+                and set(candidate_keys) <= set(initial_keys)
+                and set(candidate_keys).isdisjoint(exclusion_keys)
+                and (
+                    schema_version == 1
+                    and set(initial_keys)
+                    <= set(candidate_keys) | set(exclusion_keys)
+                    or schema_version == _SELECTION_SCHEMA_VERSION
+                    and set(initial_keys)
+                    == set(candidate_keys) | set(exclusion_keys)
+                )
                 and _valid_statistics_generation(generation, request["providerId"])
                 and isinstance(provider_identity, Mapping)
                 and provider_identity.get("providerId") == request["providerId"]
@@ -828,7 +945,21 @@ class MarketAiSelectionService:
             "evidenceCandidates": list(candidates),
             "exclusions": list(exclusions),
             "generation": dict(generation),
+            "recommendations": list(recommendations),
             "recommendationIds": frozenset(recommendation_ids),
+            "sourceDegraded": any(candidate["dataGaps"] for candidate in candidates)
+            or any(
+                exclusion["reason"] not in _V1_NON_DEGRADED_EXCLUSION_REASONS
+                for exclusion in exclusions
+            )
+            or any(
+                warning not in _V1_NON_DEGRADED_WARNINGS
+                for warning in warnings
+            )
+            or (
+                isinstance(source_coverage, Mapping)
+                and source_coverage["mappedCount"] < source_coverage["sampleCount"]
+            ),
         }
 
     def _quality_statistics_review(
@@ -845,8 +976,38 @@ class MarketAiSelectionService:
             items = review["items"]
             summary = review["summary"]
             benchmark = review["benchmark"]
+            benchmark_run = (
+                self.run_store.get(str(benchmark["runId"]))
+                if self.run_store is not None
+                else None
+            )
             review_id = str(review["reviewId"])
             item_ids = [str(item["candidateEvidenceId"]) for item in items]
+            source_runs: dict[str, ResearchRunAudit | None] = {}
+            expected_evidence: dict[str, dict[str, Any] | None] = {}
+            for item in items:
+                evidence_id = str(item["candidateEvidenceId"])
+                symbol = str(item["symbol"])
+                run_id = item.get("researchRunId")
+                source_runs[evidence_id] = (
+                    self.run_store.get(str(run_id))
+                    if self.run_store is not None and isinstance(run_id, str)
+                    else None
+                )
+                expected_evidence[evidence_id] = (
+                    resolve_market_ai_selection_research_evidence(
+                        {
+                            "selectionId": selection_id,
+                            "candidateEvidenceId": evidence_id,
+                        },
+                        audit_store=self.audit_store,
+                        market=selection["market"],
+                        symbol=symbol,
+                        timeframe="1d",
+                    )
+                    if isinstance(run_id, str)
+                    else None
+                )
             identity = {
                 "selectionId": selection_id,
                 "selectionRecordHash": review["selectionRecordHash"],
@@ -861,7 +1022,8 @@ class MarketAiSelectionService:
                 and record.stage == "market_ai_selection_review"
                 and record.source == "audited-selection-and-market-data"
                 and set(record.metadata) == {"review"}
-                and review["schemaVersion"] == 1
+                and type(review["schemaVersion"]) is int
+                and review["schemaVersion"] in {1, _REVIEW_SCHEMA_VERSION}
                 and review["recordType"] == "aiqt.marketAiSelectionReview"
                 and record.event_id == review_id
                 and review["recordHash"] == canonical_sha256(
@@ -874,18 +1036,43 @@ class MarketAiSelectionService:
                 and bool(str(benchmark["runId"]).strip())
                 and bool(str(benchmark["symbol"]).strip())
                 and len(str(benchmark["auditHash"])) == 64
+                and benchmark_run is not None
+                and benchmark_run.market == selection["market"]
+                and benchmark_run.timeframe == "1d"
+                and benchmark_run.symbol == benchmark["symbol"]
+                and _market_ai_selection_run_hash(benchmark_run)
+                == benchmark["auditHash"]
+                and _as_utc(benchmark_run.created_at) <= _as_utc(record.created_at)
                 and isinstance(items, list)
                 and 0 < len(items) <= _RECOMMENDATION_LIMIT
                 and all(isinstance(item, Mapping) for item in items)
                 and len(set(item_ids)) == len(item_ids)
-                and set(item_ids) <= selection["recommendationIds"]
+                and set(item_ids) == selection["recommendationIds"]
                 and all(
                     item.get("market") == selection["market"]
                     and item.get("horizon") == selection["horizon"]
+                    and _valid_statistics_review_item(
+                        item,
+                        selection=selection,
+                        benchmark=benchmark,
+                        source_run=source_runs[str(item["candidateEvidenceId"])],
+                        expected_evidence=expected_evidence[
+                            str(item["candidateEvidenceId"])
+                        ],
+                        reviewed_at=_as_utc(record.created_at),
+                        schema_version=int(review["schemaVersion"]),
+                    )
                     for item in items
                 )
                 and isinstance(summary, Mapping)
                 and dict(summary) == _market_ai_selection_review_summary(items)
+                and summary["benchmarkSampleCount"] <= summary["absoluteSampleCount"]
+                and summary["absoluteSampleCount"] <= summary["maturedCount"]
+                and all(
+                    not isinstance(item.get("benchmarkHit"), bool)
+                    or isinstance(item.get("absoluteHit"), bool)
+                    for item in items
+                )
                 and review["boundary"] == _market_ai_selection_review_boundary()
                 and review_id
                 == f"market-ai-selection-review-{canonical_sha256(identity)[:32]}"
@@ -993,7 +1180,7 @@ class MarketAiSelectionService:
         }
         review_id = f"market-ai-selection-review-{canonical_sha256(identity)[:32]}"
         artifact_without_hash: dict[str, Any] = {
-            "schemaVersion": 1,
+            "schemaVersion": _REVIEW_SCHEMA_VERSION,
             "recordType": "aiqt.marketAiSelectionReview",
             "reviewId": review_id,
             "selectionId": selection_id,
@@ -1069,7 +1256,7 @@ class MarketAiSelectionService:
                 409,
                 "已有复盘审计记录与当前证据冲突。",
             )
-        return dict(stored_review)
+        return _public_market_ai_selection_review(stored_review)
 
     def _review_evidence(self, selection_id: str) -> list[dict[str, Any]]:
         record = self.audit_store.get(f"market-ai-selection-{selection_id}")
@@ -1289,7 +1476,8 @@ class MarketAiSelectionService:
                 "reason": "review_price_invalid",
             }
         try:
-            outcome_hash = canonical_sha256(normalize_snapshot_bars(outcome_bars))
+            normalized_outcome_bars = normalize_snapshot_bars(outcome_bars)
+            outcome_hash = canonical_sha256(normalized_outcome_bars)
         except ValueError:
             return {
                 **base,
@@ -1311,6 +1499,7 @@ class MarketAiSelectionService:
             "outcomeSource": quality.origin_source or quality.source,
             "outcomeAdjustmentMode": quality.adjustment_mode,
             "outcomeDataHash": outcome_hash,
+            "outcomeBars": normalized_outcome_bars,
         }
         return self._completed_review_item(
             matured,
@@ -1416,6 +1605,7 @@ class MarketAiSelectionService:
                 "outcomeSource",
                 "outcomeAdjustmentMode",
                 "outcomeDataHash",
+                "outcomeBars",
             }
             return {
                 **{
@@ -1440,9 +1630,10 @@ class MarketAiSelectionService:
                 "reason": "review_price_invalid",
             }
         try:
-            benchmark_hash = canonical_sha256(
-                normalize_snapshot_bars([benchmark_start, benchmark_end])
+            normalized_benchmark_bars = normalize_snapshot_bars(
+                [benchmark_start, benchmark_end]
             )
+            benchmark_hash = canonical_sha256(normalized_benchmark_bars)
         except ValueError:
             return {
                 **base,
@@ -1459,12 +1650,15 @@ class MarketAiSelectionService:
             "status": "completed",
             "benchmarkRunId": benchmark_run.run_id,
             "benchmarkSymbol": benchmark_run.symbol,
+            "benchmarkReferencePrice": benchmark_start_price,
+            "benchmarkOutcomePrice": benchmark_end_price,
             "benchmarkReturnPct": benchmark_return_pct,
             "relativeReturnPct": relative_return_pct,
             "benchmarkHit": relative_return_pct > 0,
             "benchmarkSource": benchmark_quality.origin_source or benchmark_quality.source,
             "benchmarkAdjustmentMode": benchmark_quality.adjustment_mode,
             "benchmarkDataHash": benchmark_hash,
+            "benchmarkBars": normalized_benchmark_bars,
         }
 
     def update_runtime(
@@ -1479,10 +1673,26 @@ class MarketAiSelectionService:
 
     def select(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         request = validate_market_ai_selection_request(payload)
-        generated_at = _as_utc(self.clock())
-        evidence_deadline = self.monotonic() + _EVIDENCE_BUDGET_SECONDS
+        requested_at = _as_utc(self.clock())
         source_candidates, market_snapshot, market_context, source_exclusions = (
-            self._authoritative_candidates(request, generated_at=generated_at)
+            self._authoritative_candidates(request, generated_at=requested_at)
+        )
+        generated_at = max(requested_at, _as_utc(self.clock()))
+        evidence_deadline = self.monotonic() + _EVIDENCE_BUDGET_SECONDS
+        initial_candidates = [dict(item) for item in source_candidates]
+        initial_keys = {
+            (str(item["market"]), str(item["symbol"]))
+            for item in initial_candidates
+        }
+        initial_candidates.extend(
+            {
+                "market": exclusion["market"],
+                "symbol": exclusion["symbol"],
+                "name": exclusion["name"],
+            }
+            for exclusion in source_exclusions
+            if (str(exclusion["market"]), str(exclusion["symbol"]))
+            not in initial_keys
         )
         prefiltered, prefilter_exclusions = _prefilter_candidates(
             source_candidates,
@@ -1496,7 +1706,7 @@ class MarketAiSelectionService:
                 "当前筛选条件没有可用于证据组装的权威候选。",
             )
         try:
-            source_timed_out = self._prepare_fundamental_sources(
+            source_timed_out, source_coverage = self._prepare_fundamental_sources(
                 prefiltered,
                 market=str(request["market"]),
                 cutoff=generated_at,
@@ -1508,6 +1718,11 @@ class MarketAiSelectionService:
                 502,
                 "必需基本面数据源暂不可用。",
             ) from error
+        if source_coverage is not None:
+            market_context = {
+                **market_context,
+                "fundamentalSourceCoverage": source_coverage,
+            }
 
         evidence, evidence_exclusions, evidence_timed_out = self._assemble_evidence(
             prefiltered,
@@ -1547,28 +1762,31 @@ class MarketAiSelectionService:
             self.provider_registry,
             str(request["providerId"]),
         )
-        evidence_identity = canonical_sha256(
-            {
-                "request": request,
-                "providerIdentity": provider_identity,
-                "marketSnapshot": market_snapshot,
-                "marketContext": market_context,
-                "newsHash": canonical_sha256(news),
-                "newsWarnings": news_warnings,
-                "exclusions": exclusions,
-                "timedOut": timed_out,
-                "weightsVersion": _WEIGHTS_VERSION,
-                "evidence": [
-                    {
-                        "evidenceId": item["evidenceId"],
-                        "evidenceHash": item["evidenceHash"],
-                        "newsReferences": item["newsReferences"],
-                    }
-                    for item in scored
-                ],
-            }
-        )
-        selection_id = f"selection-{evidence_identity[:20]}"
+        selection_identity = {
+            "schemaVersion": _SELECTION_SCHEMA_VERSION,
+            "request": dict(request),
+            "providerIdentity": dict(provider_identity),
+            "marketSnapshot": {
+                **market_snapshot,
+                "warnings": list(market_snapshot["warnings"]),
+            },
+            "marketContext": dict(market_context),
+            "newsHash": canonical_sha256(news),
+            "newsWarnings": list(news_warnings),
+            "exclusions": list(exclusions),
+            "timedOut": timed_out,
+            "weightsVersion": _WEIGHTS_VERSION,
+            "evidence": [
+                {
+                    "evidenceId": item["evidenceId"],
+                    "evidenceHash": item["evidenceHash"],
+                    "newsReferences": item["newsReferences"],
+                }
+                for item in scored
+            ],
+        }
+        evidence_identity = canonical_sha256(selection_identity)
+        selection_id = f"selection-v{_SELECTION_SCHEMA_VERSION}-{evidence_identity[:20]}"
         audit_event_id = f"market-ai-selection-{selection_id}"
         try:
             existing = self.audit_store.get(audit_event_id)
@@ -1618,7 +1836,7 @@ class MarketAiSelectionService:
             "boundary": boundary,
         }
         artifact_without_hash: dict[str, Any] = {
-            "schemaVersion": 1,
+            "schemaVersion": _SELECTION_SCHEMA_VERSION,
             "recordType": "aiqt.marketAiSelection",
             "selectionId": selection_id,
             "generatedAt": generated_at.isoformat(),
@@ -1626,13 +1844,14 @@ class MarketAiSelectionService:
             "marketSnapshot": market_snapshot,
             "marketContext": market_context,
             "weightsVersion": _WEIGHTS_VERSION,
+            "selectionIdentity": selection_identity,
             "providerIdentity": provider_identity,
             "weights": (
                 _CRYPTO_WEIGHTS[request["profile"]]
                 if request["market"] == "crypto"
                 else _STOCK_WEIGHTS[request["profile"]]
             ),
-            "initialCandidates": source_candidates,
+            "initialCandidates": initial_candidates,
             "evidenceCandidates": scored,
             "newsEvidence": news,
             "exclusions": exclusions,
@@ -1845,7 +2064,7 @@ class MarketAiSelectionService:
                 409,
                 "权威市场快照缺少可验证的观察时间。",
             )
-        if observed_at > generated_at:
+        if observed_at > max(generated_at, _as_utc(self.clock())):
             raise MarketAiSelectionError(
                 "market_ai_selection_snapshot_timestamp_invalid",
                 409,
@@ -2045,7 +2264,7 @@ class MarketAiSelectionService:
                 "factors": factors,
                 "fundamental": normalized_fundamental,
                 "fundamentalPeriod": fundamental_period,
-                "dataGaps": _data_gaps(
+                "dataGaps": _market_ai_selection_v1_data_gaps(
                     normalized_fundamental,
                     market=str(request["market"]),
                 ),
@@ -2070,7 +2289,12 @@ class MarketAiSelectionService:
             else _STOCK_FUNDAMENTAL_TTL
         )
         cached = self._cache_get(key, ttl=ttl, now=cutoff)
-        if cached is not None:
+        if cached is not None and (
+            market != "crypto"
+            or not isinstance(cached, Mapping)
+            or cached.get("source") != "coingecko+binance"
+            or _valid_crypto_fundamental_observation(cached, cutoff=cutoff)
+        ):
             return dict(cached) if isinstance(cached, Mapping) else None
         loader = self.fundamental_loaders.get(market)
         if loader is not None:
@@ -2102,9 +2326,9 @@ class MarketAiSelectionService:
         market: str,
         cutoff: datetime,
         deadline: float,
-    ) -> bool:
+    ) -> tuple[bool, dict[str, Any] | None]:
         if market != "crypto" or self.fundamental_loaders.get("crypto") is not None:
-            return False
+            return False, None
         required_pairs = {
             f"{base}/{target}"
             for item in candidates
@@ -2115,6 +2339,15 @@ class MarketAiSelectionService:
             required_pairs,
             cutoff=cutoff,
             deadline=deadline,
+        )
+        coverage = _coingecko_mapping_coverage(
+            mapping,
+            required_pairs,
+            observed_at=_coingecko_mapping_observed_at(
+                mapping,
+                required_pairs,
+                fallback=cutoff,
+            ),
         )
         coin_ids = sorted(
             {
@@ -2135,9 +2368,9 @@ class MarketAiSelectionService:
             is None
         ]
         if not missing_ids:
-            return timed_out
+            return timed_out, coverage
         if self.monotonic() >= deadline:
-            return True
+            return True, coverage
         payload = self._read_json(
             "https://api.coingecko.com/api/v3/coins/markets?"
             + urlencode(
@@ -2150,19 +2383,44 @@ class MarketAiSelectionService:
             deadline=deadline,
         )
         if not isinstance(payload, list):
-            return timed_out or self.monotonic() >= deadline
+            return timed_out or self.monotonic() >= deadline, coverage
+        returned_ids: set[str] = set()
         for row in payload:
             if (
                 isinstance(row, Mapping)
                 and isinstance(row.get("id"), str)
                 and row["id"] in missing_ids
             ):
+                returned_ids.add(row["id"])
+                observed_at = _parse_datetime(row.get("last_updated"))
+                source_status = (
+                    "crypto_market_facts_timestamp_missing"
+                    if observed_at is None
+                    else "crypto_market_facts_timestamp_future"
+                    if observed_at > cutoff
+                    else "crypto_market_facts_stale"
+                    if cutoff - observed_at > _CRYPTO_FUNDAMENTAL_TTL
+                    else None
+                )
                 self._cache_put(
                     f"source:coingecko-market:{row['id']}",
-                    dict(row),
+                    (
+                        {"_sourceStatus": source_status}
+                        if source_status is not None
+                        else dict(row)
+                    ),
                     now=cutoff,
                 )
-        return timed_out or self.monotonic() >= deadline
+        for coin_id in set(missing_ids) - returned_ids:
+            self._cache_put(
+                f"source:coingecko-market:{coin_id}",
+                {
+                    "_sourceStatus": "crypto_market_facts_missing",
+                    "checkedAt": cutoff.isoformat(),
+                },
+                now=cutoff,
+            )
+        return timed_out or self.monotonic() >= deadline, coverage
 
     def _load_ashare_fundamental(
         self,
@@ -2230,7 +2488,7 @@ class MarketAiSelectionService:
         cutoff: datetime,
         deadline: float,
     ) -> Mapping[str, Any] | None:
-        if not _valid_sec_user_agent(self.sec_user_agent):
+        if not is_valid_sec_edgar_user_agent(self.sec_user_agent):
             return {
                 "sourceStatus": "sec_user_agent_invalid",
                 "source": "sec-companyfacts",
@@ -2276,8 +2534,22 @@ class MarketAiSelectionService:
             deadline=None,
         )
         mapped = mapping.get(f"{base}/{target}")
-        if not isinstance(mapped, Mapping) or not mapped.get("coinId"):
-            return None
+        mapping_status = (
+            str(mapped.get("status") or "")
+            if isinstance(mapped, Mapping)
+            else "unresolved"
+        )
+        if mapping_status != "mapped" or not mapped.get("coinId"):
+            source_status = (
+                "crypto_mapping_source_invalid"
+                if isinstance(mapped, Mapping)
+                and mapped.get("reason") == "source_observation_invalid"
+                else f"crypto_mapping_{mapping_status or 'unresolved'}"
+            )
+            return {
+                "sourceStatus": source_status,
+                "source": "coingecko+binance",
+            }
         coin_id = str(mapped["coinId"])
         row = self._cache_get(
             f"source:coingecko-market:{coin_id}",
@@ -2285,7 +2557,32 @@ class MarketAiSelectionService:
             now=cutoff,
         )
         if not isinstance(row, Mapping):
-            return None
+            return {
+                "sourceStatus": "crypto_market_facts_missing",
+                "source": "coingecko+binance",
+                "coinId": coin_id,
+            }
+        if row.get("_sourceStatus"):
+            return {
+                "sourceStatus": str(row["_sourceStatus"]),
+                "source": "coingecko+binance",
+                "coinId": coin_id,
+            }
+        observed_at = _parse_datetime(row.get("last_updated"))
+        mapping_observed_at = _parse_datetime(mapped.get("observedAt"))
+        if (
+            observed_at is None
+            or observed_at > cutoff
+            or cutoff - observed_at > _CRYPTO_FUNDAMENTAL_TTL
+            or mapping_observed_at is None
+            or mapping_observed_at > cutoff
+            or cutoff - mapping_observed_at > _CRYPTO_FUNDAMENTAL_TTL
+        ):
+            return {
+                "sourceStatus": "crypto_market_facts_timestamp_invalid",
+                "source": "coingecko+binance",
+                "coinId": coin_id,
+            }
         return {
             "coinId": coin_id,
             "mappedFrom": f"binance:{base}/{target}",
@@ -2298,7 +2595,8 @@ class MarketAiSelectionService:
             ),
             "bidAskSpreadPct": _finite_or_none(mapped.get("bidAskSpreadPct")),
             "binanceQuoteVolume": _finite_or_none(candidate.get("amount")),
-            "observedAt": cutoff.isoformat(),
+            "mappingObservedAt": mapping_observed_at.isoformat(),
+            "observedAt": observed_at.isoformat(),
             "source": "coingecko+binance",
         }
 
@@ -2315,8 +2613,15 @@ class MarketAiSelectionService:
             ttl=_CRYPTO_FUNDAMENTAL_TTL,
             now=cutoff,
         )
-        if isinstance(cached, Mapping) and required_pairs <= set(cached):
-            return cached, False
+        if (
+            isinstance(cached, Mapping)
+            and required_pairs <= set(cached)
+            and not any(
+                _coingecko_mapping_entry_expired(cached.get(pair), cutoff=cutoff)
+                for pair in required_pairs
+            )
+        ):
+            return cached, _coingecko_mapping_incomplete(cached, required_pairs)
         effective_deadline = (
             deadline
             if deadline is not None
@@ -2329,15 +2634,28 @@ class MarketAiSelectionService:
                 now=cutoff,
             )
             existing = dict(cached) if isinstance(cached, Mapping) else {}
+            expired = {
+                pair
+                for pair in required_pairs
+                if _coingecko_mapping_entry_expired(
+                    existing.get(pair),
+                    cutoff=cutoff,
+                )
+            }
+            for pair in expired:
+                existing.pop(pair, None)
             missing = required_pairs - set(existing)
             if not missing:
-                return existing, False
+                return existing, _coingecko_mapping_incomplete(
+                    existing,
+                    required_pairs,
+                )
             ticker_rows: list[Mapping[str, Any]] = []
-            timed_out = False
-            last_required_pair = max(required_pairs) if required_pairs else ""
+            invalid_pairs: set[str] = set()
+            scan_complete = False
+            last_required_pair = max(missing) if missing else ""
             for page in range(1, 21):
                 if self.monotonic() >= effective_deadline:
-                    timed_out = True
                     break
                 payload = self._read_json(
                     "https://api.coingecko.com/api/v3/exchanges/binance/tickers?"
@@ -2350,11 +2668,22 @@ class MarketAiSelectionService:
                     if isinstance(payload, Mapping)
                     else None
                 )
-                if not isinstance(rows, list) or not rows:
+                if not isinstance(rows, list):
                     break
-                ticker_rows.extend(
-                    item for item in rows if isinstance(item, Mapping)
-                )
+                if not rows:
+                    scan_complete = True
+                    break
+                for item in rows:
+                    if not isinstance(item, Mapping):
+                        continue
+                    pair = (
+                        f"{str(item.get('base') or '').strip().upper()}/"
+                        f"{str(item.get('target') or '').strip().upper()}"
+                    )
+                    if _valid_coingecko_ticker_observation(item, cutoff=cutoff):
+                        ticker_rows.append(item)
+                    elif pair in missing:
+                        invalid_pairs.add(pair)
                 page_pairs = [
                     f"{str(item.get('base') or '').strip().upper()}/"
                     f"{str(item.get('target') or '').strip().upper()}"
@@ -2371,13 +2700,40 @@ class MarketAiSelectionService:
                         and max(page_pairs) > last_required_pair
                     )
                 ):
+                    scan_complete = True
                     break
             discovered = build_coingecko_binance_mapping(ticker_rows)
+            for item in discovered.values():
+                if "observedAt" not in item:
+                    item["checkedAt"] = cutoff.isoformat()
             existing.update(discovered)
             for pair in missing - set(discovered):
-                existing[pair] = None
+                existing[pair] = (
+                    {
+                        "status": "unresolved",
+                        "reason": "source_observation_invalid",
+                        "checkedAt": cutoff.isoformat(),
+                    }
+                    if pair in invalid_pairs
+                    else {
+                        "status": "missing" if scan_complete else "unresolved",
+                        "checkedAt": cutoff.isoformat(),
+                    }
+                )
+            observed_times = [
+                value
+                for value in (
+                    _parse_datetime(existing.get("_observedAt")),
+                    *(
+                        _parse_datetime(item.get("last_fetch_at"))
+                        for item in ticker_rows
+                    ),
+                )
+                if value is not None
+            ]
+            existing["_observedAt"] = max(observed_times or [cutoff]).isoformat()
             self._cache_put(key, existing, now=cutoff)
-            return existing, timed_out or self.monotonic() >= effective_deadline
+            return existing, not scan_complete
 
     def _load_news(
         self,
@@ -2975,6 +3331,22 @@ def _market_ai_selection_review_summary(
     }
 
 
+def _public_market_ai_selection_review(
+    review: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        **review,
+        "items": [
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"outcomeBars", "benchmarkBars"}
+            }
+            for item in review["items"]
+        ],
+    }
+
+
 def _market_ai_selection_rate(numerator: int, denominator: int) -> float | None:
     return round(numerator / denominator * 100, 2) if denominator else None
 
@@ -3016,14 +3388,197 @@ def _market_ai_selection_statistics_invalid() -> MarketAiSelectionError:
     )
 
 
+def _market_ai_selection_id_matches_artifact(
+    value: str,
+    artifact: Mapping[str, Any],
+) -> bool:
+    schema_version = artifact.get("schemaVersion")
+    if type(schema_version) is not int:
+        return False
+    pattern = (
+        r"selection-[0-9a-f]{20}"
+        if schema_version == 1
+        else rf"selection-v{_SELECTION_SCHEMA_VERSION}-[0-9a-f]{{20}}"
+    )
+    if re.fullmatch(pattern, value) is None:
+        return False
+    if schema_version == _SELECTION_SCHEMA_VERSION:
+        identity = artifact.get("selectionIdentity")
+        return (
+            isinstance(identity, Mapping)
+            and _valid_market_ai_selection_identity(identity, artifact)
+            and value
+            == f"selection-v{_SELECTION_SCHEMA_VERSION}-{canonical_sha256(identity)[:20]}"
+        )
+    if schema_version != 1:
+        return False
+    return any(
+        value == f"selection-{canonical_sha256(identity)[:20]}"
+        for identity in _legacy_market_ai_selection_identities(artifact)
+    )
+
+
+def _valid_market_ai_selection_identity(
+    identity: Mapping[str, Any],
+    artifact: Mapping[str, Any],
+) -> bool:
+    fields = {
+        "schemaVersion",
+        "request",
+        "providerIdentity",
+        "marketSnapshot",
+        "marketContext",
+        "newsHash",
+        "newsWarnings",
+        "exclusions",
+        "timedOut",
+        "weightsVersion",
+        "evidence",
+    }
+    snapshot = identity.get("marketSnapshot")
+    artifact_snapshot = artifact.get("marketSnapshot")
+    news_warnings = identity.get("newsWarnings")
+    generation = artifact.get("generation")
+    if (
+        set(identity) != fields
+        or identity.get("schemaVersion") != _SELECTION_SCHEMA_VERSION
+        or identity.get("request") != artifact.get("request")
+        or identity.get("providerIdentity") != artifact.get("providerIdentity")
+        or identity.get("marketContext") != artifact.get("marketContext")
+        or identity.get("exclusions") != artifact.get("exclusions")
+        or identity.get("weightsVersion") != artifact.get("weightsVersion")
+        or not isinstance(identity.get("timedOut"), bool)
+        or not isinstance(snapshot, Mapping)
+        or not isinstance(artifact_snapshot, Mapping)
+        or not isinstance(snapshot.get("warnings"), list)
+        or not isinstance(artifact_snapshot.get("warnings"), list)
+        or not isinstance(news_warnings, list)
+        or not all(isinstance(item, str) and item.strip() for item in news_warnings)
+        or not isinstance(generation, Mapping)
+    ):
+        return False
+    source_snapshot = {
+        **artifact_snapshot,
+        "warnings": list(snapshot["warnings"]),
+    }
+    expected_warnings = [*snapshot["warnings"], *news_warnings]
+    if identity["timedOut"]:
+        expected_warnings.append("证据组装达到 20 秒预算，已使用按时完成的候选。")
+    if generation.get("status") == "failed":
+        expected_warnings.append("AI 分析失败，已返回确定性基准榜。")
+    return (
+        source_snapshot == snapshot
+        and list(dict.fromkeys(expected_warnings)) == artifact_snapshot["warnings"]
+        and identity.get("newsHash") == canonical_sha256(artifact.get("newsEvidence"))
+        and identity.get("evidence") == _market_ai_selection_identity_evidence(artifact)
+    )
+
+
+def _market_ai_selection_identity_evidence(
+    artifact: Mapping[str, Any],
+) -> list[dict[str, Any]] | None:
+    candidates = artifact.get("evidenceCandidates")
+    if not isinstance(candidates, list) or not all(
+        isinstance(item, Mapping) for item in candidates
+    ):
+        return None
+    try:
+        return [
+            {
+                "evidenceId": item["evidenceId"],
+                "evidenceHash": item["evidenceHash"],
+                "newsReferences": item["newsReferences"],
+            }
+            for item in candidates
+        ]
+    except KeyError:
+        return None
+
+
+def _legacy_market_ai_selection_identities(
+    artifact: Mapping[str, Any],
+) -> Iterator[dict[str, Any]]:
+    snapshot = artifact.get("marketSnapshot")
+    warnings = snapshot.get("warnings") if isinstance(snapshot, Mapping) else None
+    generation = artifact.get("generation")
+    evidence = _market_ai_selection_identity_evidence(artifact)
+    required = (
+        artifact.get("request"),
+        artifact.get("providerIdentity"),
+        snapshot,
+        artifact.get("marketContext"),
+        artifact.get("newsEvidence"),
+        artifact.get("exclusions"),
+        artifact.get("weightsVersion"),
+        generation,
+    )
+    if (
+        any(value is None for value in required)
+        or not isinstance(warnings, list)
+        or len(warnings) > 16
+        or not isinstance(generation, Mapping)
+        or evidence is None
+    ):
+        return
+    for timed_out in (False, True):
+        identity_warnings = list(warnings)
+        if timed_out:
+            identity_warnings = [
+                warning
+                for warning in identity_warnings
+                if warning != "证据组装达到 20 秒预算，已使用按时完成的候选。"
+            ]
+        if generation.get("status") == "failed":
+            identity_warnings = [
+                warning
+                for warning in identity_warnings
+                if warning != "AI 分析失败，已返回确定性基准榜。"
+            ]
+        for split in range(len(identity_warnings) + 1):
+            source_warnings = identity_warnings[:split]
+            for overlap_mask in range(1 << split):
+                news_warnings = [
+                    warning
+                    for index, warning in enumerate(source_warnings)
+                    if overlap_mask & (1 << index)
+                ] + identity_warnings[split:]
+                expected_warnings = [*source_warnings, *news_warnings]
+                if timed_out:
+                    expected_warnings.append(
+                        "证据组装达到 20 秒预算，已使用按时完成的候选。"
+                    )
+                if generation.get("status") == "failed":
+                    expected_warnings.append("AI 分析失败，已返回确定性基准榜。")
+                if list(dict.fromkeys(expected_warnings)) != warnings:
+                    continue
+                yield {
+                    "request": artifact["request"],
+                    "providerIdentity": artifact["providerIdentity"],
+                    "marketSnapshot": {**snapshot, "warnings": source_warnings},
+                    "marketContext": artifact["marketContext"],
+                    "newsHash": canonical_sha256(artifact["newsEvidence"]),
+                    "newsWarnings": news_warnings,
+                    "exclusions": artifact["exclusions"],
+                    "timedOut": timed_out,
+                    "weightsVersion": artifact["weightsVersion"],
+                    "evidence": evidence,
+                }
+
+
 def _valid_statistics_candidate(value: Any, market: str) -> bool:
-    if not isinstance(value, Mapping) or not isinstance(value.get("fundamental"), Mapping):
+    if (
+        not isinstance(value, Mapping)
+        or not isinstance(value.get("snapshot"), Mapping)
+        or not isinstance(value.get("fundamental"), Mapping)
+    ):
         return False
     return (
         value.get("market") == market
+        and value.get("symbol") == value["snapshot"].get("symbol")
         and bool(str(value.get("evidenceId") or "").strip())
         and isinstance(value.get("dataGaps"), list)
-        and value["dataGaps"] == _data_gaps(value["fundamental"], market=market)
+        and value["dataGaps"]
+        == _market_ai_selection_v1_data_gaps(value["fundamental"], market=market)
         and value.get("evidenceHash")
         == canonical_sha256(
             {
@@ -3062,6 +3617,350 @@ def _valid_statistics_generation(value: Any, requested_provider: str) -> bool:
             (status == "completed" and used_provider == requested_provider and fallback is False)
             or (status == "failed" and used_provider == "local" and fallback is True)
         )
+    )
+
+
+def _valid_statistics_review_item(
+    value: Mapping[str, Any],
+    *,
+    selection: Mapping[str, Any],
+    benchmark: Mapping[str, Any],
+    source_run: ResearchRunAudit | None,
+    expected_evidence: Mapping[str, Any] | None,
+    reviewed_at: datetime,
+    schema_version: int,
+) -> bool:
+    base_fields = {
+        "candidateEvidenceId",
+        "rank",
+        "tier",
+        "market",
+        "symbol",
+        "timeframe",
+        "horizon",
+        "horizonBars",
+        "referenceAt",
+        "referencePrice",
+    }
+    progress_fields = {"completedBars", "remainingBars"}
+    outcome_fields = {
+        "outcomeAt",
+        "outcomePrice",
+        "returnPct",
+        "absoluteHit",
+        "outcomeSource",
+        "outcomeAdjustmentMode",
+        "outcomeDataHash",
+    }
+    outcome_bar_fields = {"outcomeBars"}
+    benchmark_fields = {
+        "benchmarkRunId",
+        "benchmarkSymbol",
+        "benchmarkReturnPct",
+        "relativeReturnPct",
+        "benchmarkHit",
+        "benchmarkSource",
+        "benchmarkAdjustmentMode",
+        "benchmarkDataHash",
+    }
+    benchmark_price_fields = {
+        "benchmarkReferencePrice",
+        "benchmarkOutcomePrice",
+    }
+    benchmark_bar_fields = {"benchmarkBars"}
+    evidence_id = str(value.get("candidateEvidenceId") or "")
+    candidate = next(
+        (
+            item
+            for item in selection["evidenceCandidates"]
+            if str(item.get("evidenceId") or "") == evidence_id
+        ),
+        None,
+    )
+    recommendation = next(
+        (
+            item
+            for item in selection["recommendations"]
+            if str(item.get("evidenceId") or "") == evidence_id
+        ),
+        None,
+    )
+    daily_bars = candidate.get("dailyBars") if isinstance(candidate, Mapping) else None
+    reference_bar = (
+        daily_bars[-1]
+        if isinstance(daily_bars, list) and daily_bars
+        else None
+    )
+    reference_price = (
+        _finite_or_none(reference_bar.get("close"))
+        if isinstance(reference_bar, Mapping)
+        else None
+    )
+    status = value.get("status")
+    fields = set(value)
+    has_research = "researchRunId" in fields
+    has_progress = bool(fields & progress_fields)
+    has_outcome = bool(fields & (outcome_fields | outcome_bar_fields))
+    has_benchmark = bool(
+        fields & (benchmark_fields | benchmark_price_fields | benchmark_bar_fields)
+    )
+    expected_fields = base_fields | {"status"}
+    if has_research:
+        expected_fields.add("researchRunId")
+    if has_progress:
+        expected_fields |= progress_fields
+    if has_outcome:
+        expected_fields |= outcome_fields
+        if schema_version == _REVIEW_SCHEMA_VERSION:
+            expected_fields |= outcome_bar_fields
+    if has_benchmark:
+        expected_fields |= benchmark_fields
+        if schema_version == _REVIEW_SCHEMA_VERSION:
+            expected_fields |= benchmark_price_fields | benchmark_bar_fields
+    if status == "data_insufficient":
+        expected_fields.add("reason")
+    if fields != expected_fields:
+        return False
+
+    horizon_bars = value.get("horizonBars")
+    completed_bars = value.get("completedBars")
+    remaining_bars = value.get("remainingBars")
+    progress_valid = (
+        not has_progress
+        or isinstance(horizon_bars, int)
+        and not isinstance(horizon_bars, bool)
+        and isinstance(completed_bars, int)
+        and not isinstance(completed_bars, bool)
+        and isinstance(remaining_bars, int)
+        and not isinstance(remaining_bars, bool)
+        and 0 <= completed_bars <= horizon_bars
+        and remaining_bars == horizon_bars - completed_bars
+    )
+    research_valid = (
+        has_research
+        and isinstance(value.get("researchRunId"), str)
+        and bool(str(value["researchRunId"]).strip())
+        and source_run is not None
+        and expected_evidence is not None
+        and source_run.run_id == value["researchRunId"]
+        and source_run.market == selection["market"]
+        and source_run.symbol == value.get("symbol")
+        and source_run.timeframe == "1d"
+        and _as_utc(source_run.created_at) <= reviewed_at
+        and source_run.data_snapshot.get("marketAiSelectionEvidence")
+        == expected_evidence
+    )
+    reference_at = _parse_datetime(value.get("referenceAt"))
+    outcome_at = _parse_datetime(value.get("outcomeAt")) if has_outcome else None
+    outcome_price = _finite_or_none(value.get("outcomePrice"))
+    return_pct = _finite_or_none(value.get("returnPct"))
+    outcome_bars = value.get("outcomeBars")
+    normalized_outcome_bars = (
+        normalize_snapshot_bars(outcome_bars)
+        if schema_version == _REVIEW_SCHEMA_VERSION
+        and isinstance(outcome_bars, list)
+        else None
+    )
+    outcome_valid = (
+        not has_outcome
+        or has_progress
+        and completed_bars == horizon_bars
+        and remaining_bars == 0
+        and reference_price is not None
+        and reference_price > 0
+        and outcome_price is not None
+        and outcome_price > 0
+        and return_pct
+        == round((outcome_price / reference_price - 1) * 100, 6)
+        and value.get("absoluteHit") is (return_pct > 0)
+        and reference_at is not None
+        and outcome_at is not None
+        and reference_at < outcome_at <= reviewed_at
+        and bool(str(value.get("outcomeSource") or "").strip())
+        and bool(str(value.get("outcomeAdjustmentMode") or "").strip())
+        and re.fullmatch(r"[0-9a-f]{64}", str(value.get("outcomeDataHash") or ""))
+        is not None
+        and (
+            schema_version == 1
+            or normalized_outcome_bars == outcome_bars
+            and len(normalized_outcome_bars) == horizon_bars
+            and canonical_sha256(normalized_outcome_bars)
+            == value.get("outcomeDataHash")
+            and normalized_outcome_bars[-1]["timestamp"] == value.get("outcomeAt")
+            and _finite_or_none(normalized_outcome_bars[-1]["close"])
+            == outcome_price
+            and all(
+                reference_at
+                < _parse_datetime(item["timestamp"])
+                <= outcome_at
+                for item in normalized_outcome_bars
+            )
+        )
+    )
+    benchmark_start = _finite_or_none(value.get("benchmarkReferencePrice"))
+    benchmark_end = _finite_or_none(value.get("benchmarkOutcomePrice"))
+    benchmark_return = _finite_or_none(value.get("benchmarkReturnPct"))
+    relative_return = _finite_or_none(value.get("relativeReturnPct"))
+    benchmark_bars = value.get("benchmarkBars")
+    normalized_benchmark_bars = (
+        normalize_snapshot_bars(benchmark_bars)
+        if schema_version == _REVIEW_SCHEMA_VERSION
+        and isinstance(benchmark_bars, list)
+        else None
+    )
+    benchmark_valid = (
+        not has_benchmark
+        or status == "completed"
+        and has_outcome
+        and value.get("benchmarkRunId") == benchmark.get("runId")
+        and value.get("benchmarkSymbol") == benchmark.get("symbol")
+        and benchmark_return is not None
+        and (
+            schema_version == 1
+            or benchmark_start is not None
+            and benchmark_start > 0
+            and benchmark_end is not None
+            and benchmark_end > 0
+            and benchmark_return
+            == round((benchmark_end / benchmark_start - 1) * 100, 6)
+            and normalized_benchmark_bars == benchmark_bars
+            and len(normalized_benchmark_bars) == 2
+            and canonical_sha256(normalized_benchmark_bars)
+            == value.get("benchmarkDataHash")
+            and normalized_benchmark_bars[0]["timestamp"]
+            == value.get("referenceAt")
+            and normalized_benchmark_bars[-1]["timestamp"]
+            == value.get("outcomeAt")
+            and _finite_or_none(normalized_benchmark_bars[0]["close"])
+            == benchmark_start
+            and _finite_or_none(normalized_benchmark_bars[-1]["close"])
+            == benchmark_end
+        )
+        and return_pct is not None
+        and relative_return == round(return_pct - benchmark_return, 6)
+        and value.get("benchmarkHit") is (relative_return > 0)
+        and value.get("benchmarkAdjustmentMode")
+        == value.get("outcomeAdjustmentMode")
+        and bool(str(value.get("benchmarkSource") or "").strip())
+        and re.fullmatch(r"[0-9a-f]{64}", str(value.get("benchmarkDataHash") or ""))
+        is not None
+    )
+    common_valid = (
+        isinstance(candidate, Mapping)
+        and isinstance(recommendation, Mapping)
+        and isinstance(reference_bar, Mapping)
+        and reference_price is not None
+        and value.get("rank") == recommendation.get("rank")
+        and value.get("tier") == recommendation.get("tier")
+        and value.get("market") == selection["market"]
+        and value.get("symbol") == candidate.get("symbol")
+        and value.get("timeframe") == "1d"
+        and value.get("horizon") == selection["horizon"]
+        and value.get("horizonBars")
+        == _HORIZON_BARS[selection["market"]][selection["horizon"]]
+        and value.get("referenceAt") == reference_bar.get("timestamp")
+        and _finite_or_none(value.get("referencePrice")) == reference_price
+        and status in {"observing", "data_insufficient", "completed"}
+        and progress_valid
+        and outcome_valid
+        and benchmark_valid
+    )
+    if not common_valid:
+        return False
+    if status == "completed":
+        return (
+            research_valid
+            and has_progress
+            and has_outcome
+            and has_benchmark
+            and completed_bars == horizon_bars
+            and remaining_bars == 0
+        )
+    if status == "observing":
+        return (
+            research_valid
+            and has_progress
+            and not has_outcome
+            and not has_benchmark
+            and isinstance(completed_bars, int)
+            and completed_bars < horizon_bars
+        )
+    reasons = {
+        "research_evidence_not_bound",
+        "outcome_bars_unavailable",
+        "outcome_bars_incomplete",
+        "outcome_bar_context_mismatch",
+        "reference_time_invalid",
+        "outcome_reference_bar_missing",
+        "outcome_reference_price_mismatch",
+        "outcome_bar_gap",
+        "review_price_invalid",
+        "review_bar_window_invalid",
+        "benchmark_must_use_different_symbol",
+        "benchmark_bars_unavailable",
+        "benchmark_bars_incomplete",
+        "benchmark_adjustment_mode_mismatch",
+        "benchmark_bar_context_mismatch",
+        "benchmark_same_period_coverage_missing",
+    }
+    reason = value.get("reason")
+    return (
+        reason in reasons
+        and not has_benchmark
+        and (
+            not has_research
+            and reason == "research_evidence_not_bound"
+            and not has_progress
+            and not has_outcome
+            and source_run is None
+            and expected_evidence is None
+            or research_valid
+            and reason != "research_evidence_not_bound"
+        )
+    )
+
+
+def _valid_statistics_source_coverage(
+    value: Any,
+    *,
+    generated_at: str,
+) -> bool:
+    if not isinstance(value, Mapping) or set(value) != {
+        "provider",
+        "scope",
+        "observedAt",
+        "sampleCount",
+        "mappedCount",
+        "ambiguousCount",
+        "missingCount",
+        "unresolvedCount",
+        "mappedRatePct",
+    }:
+        return False
+    counts = [
+        value[key]
+        for key in (
+            "mappedCount",
+            "ambiguousCount",
+            "missingCount",
+            "unresolvedCount",
+        )
+    ]
+    sample_count = value["sampleCount"]
+    observed_at = _parse_datetime(value.get("observedAt"))
+    selection_at = _parse_datetime(generated_at)
+    return (
+        value["provider"] == "coingecko-binance"
+        and value["scope"] == "prefiltered_candidates"
+        and observed_at is not None
+        and selection_at is not None
+        and observed_at <= selection_at
+        and type(sample_count) is int
+        and 0 < sample_count <= _EVIDENCE_CANDIDATE_LIMIT
+        and all(type(count) is int and count >= 0 for count in counts)
+        and sum(counts) == sample_count
+        and value["mappedRatePct"]
+        == _market_ai_selection_rate(value["mappedCount"], sample_count)
     )
 
 
@@ -3128,6 +4027,19 @@ def _validate_fundamental(
             "sec_ticker_mapping_missing",
             "美股代码没有可验证的 SEC CIK 映射。",
         )
+    crypto_source_errors = {
+        "crypto_mapping_ambiguous": "Binance 交易对对应多个 CoinGecko coin_id，已阻断猜测映射。",
+        "crypto_mapping_missing": "完整映射扫描未找到该 Binance 交易对。",
+        "crypto_mapping_unresolved": "CoinGecko 映射扫描未完成，不能判定币种覆盖。",
+        "crypto_mapping_source_invalid": "CoinGecko 交易对映射时间无效、陈旧或被标记为异常。",
+        "crypto_market_facts_missing": "已映射币种缺少本次 CoinGecko 市场事实。",
+        "crypto_market_facts_timestamp_missing": "CoinGecko 市场事实缺少可验证的更新时间。",
+        "crypto_market_facts_timestamp_future": "CoinGecko 市场事实更新时间晚于选股截止时间。",
+        "crypto_market_facts_stale": "CoinGecko 市场事实已超过允许的新鲜度。",
+        "crypto_market_facts_timestamp_invalid": "CoinGecko 市场事实或映射时间无效。",
+    }
+    if source_status in crypto_source_errors:
+        return False, str(source_status), crypto_source_errors[str(source_status)]
     if market == "crypto":
         required = (
             "coinId",
@@ -3189,6 +4101,12 @@ def _validate_fundamental(
             "stock_fundamental_period_invalid",
             "基本面报告期、可比期或披露截止时间无效。",
         )
+    if _as_utc(cutoff) - current_period > _STOCK_FUNDAMENTAL_MAX_AGE:
+        return (
+            False,
+            "stock_fundamental_stale",
+            "最新可用基本面报告期已超过允许的新鲜度。",
+        )
     verification = fundamental.get("sourceVerification")
     if fundamental.get("conflict") is True or (
         isinstance(verification, Mapping)
@@ -3247,7 +4165,7 @@ def _stock_valuation(
     }
 
 
-def _data_gaps(
+def _market_ai_selection_v1_data_gaps(
     fundamental: Mapping[str, Any],
     *,
     market: str,
@@ -3423,6 +4341,65 @@ def _percentile(values: Sequence[float], fraction: float) -> float:
     return ordered[lower] * (1 - weight) + ordered[upper] * weight
 
 
+def _ashare_financial_source_unit(
+    rows: Sequence[Mapping[str, Any]],
+) -> tuple[str, float] | None:
+    currencies: set[str] = set()
+    scales: set[float] = set()
+    for row in rows:
+        raw_currency = _first_value(
+            row,
+            "币种",
+            "货币单位",
+            "CURRENCY",
+            "CURRENCY_NAME",
+        )
+        if raw_currency is not None:
+            currency = _normalize_ashare_currency(raw_currency)
+            if currency is None:
+                return None
+            currencies.add(currency)
+        raw_scale = _first_value(
+            row,
+            "单位",
+            "金额单位",
+            "MONETARY_UNIT",
+            "UNIT",
+        )
+        if raw_scale is not None:
+            normalized = _normalize_ashare_scale(raw_scale)
+            if normalized is None:
+                return None
+            currency, scale = normalized
+            currencies.add(currency)
+            scales.add(scale)
+    if len(currencies) != 1 or len(scales) > 1:
+        return None
+    return next(iter(currencies)), next(iter(scales)) if scales else 1.0
+
+
+def _normalize_ashare_currency(value: Any) -> str | None:
+    normalized = str(value).strip().upper().replace(" ", "")
+    if normalized in {"CNY", "RMB", "人民币", "人民币元"}:
+        return "CNY"
+    if normalized in {"USD", "美元", "美元元"}:
+        return "USD"
+    return None
+
+
+def _normalize_ashare_scale(value: Any) -> tuple[str, float] | None:
+    normalized = str(value).strip().upper().replace(" ", "")
+    return {
+        "元": ("CNY", 1.0),
+        "人民币元": ("CNY", 1.0),
+        "万元": ("CNY", 10_000.0),
+        "亿元": ("CNY", 100_000_000.0),
+        "美元": ("USD", 1.0),
+        "万美元": ("USD", 10_000.0),
+        "亿美元": ("USD", 100_000_000.0),
+    }.get(normalized)
+
+
 def parse_ashare_financial_reports(
     income_source: Any,
     balance_source: Any,
@@ -3432,6 +4409,8 @@ def parse_ashare_financial_reports(
 ) -> dict[str, Any] | None:
     income_rows = _frame_records(income_source)
     balance_rows = _frame_records(balance_source)
+    source_unit = _ashare_financial_source_unit([*income_rows, *balance_rows])
+    source_scale = source_unit[1] if source_unit is not None else 1.0
     cutoff_utc = _as_utc(cutoff)
     incomes: list[dict[str, Any]] = []
     for row in income_rows:
@@ -3486,8 +4465,8 @@ def parse_ashare_financial_reports(
                 {
                     "period": period,
                     "disclosed": disclosed,
-                    "revenue": revenue,
-                    "profit": profit,
+                    "revenue": revenue * source_scale,
+                    "profit": profit * source_scale,
                 }
             )
     incomes.sort(key=lambda item: (item["period"], item["disclosed"]), reverse=True)
@@ -3555,8 +4534,8 @@ def parse_ashare_financial_reports(
                 {
                     "period": period,
                     "disclosed": disclosed,
-                    "assets": assets,
-                    "equity": equity,
+                    "assets": assets * source_scale,
+                    "equity": equity * source_scale,
                 }
             )
     balances.sort(key=lambda item: (item["period"], item["disclosed"]), reverse=True)
@@ -3581,6 +4560,8 @@ def parse_ashare_financial_reports(
         "currentPeriod": current["period"].isoformat(),
         "previousPeriod": previous["period"].isoformat(),
         "disclosedAt": disclosed_at.isoformat(),
+        "monetaryUnit": source_unit[0] if source_unit is not None else None,
+        "sourceMonetaryScale": source_unit[1] if source_unit is not None else None,
         "source": source,
         "dualSourceStatus": "not_available",
         "sourceVerification": {
@@ -3606,6 +4587,28 @@ def compare_stock_fundamental_sources(
         str(primary.get("source") or "primary"),
         str(secondary.get("source") or "secondary"),
     ]
+    if sources[0].strip().casefold() == sources[1].strip().casefold():
+        return {
+            "status": "conflict",
+            "sources": sources,
+            "reason": "sources_not_independent",
+        }
+    units = [
+        str(primary.get("monetaryUnit") or "").strip().casefold(),
+        str(secondary.get("monetaryUnit") or "").strip().casefold(),
+    ]
+    if not all(units):
+        return {
+            "status": "conflict",
+            "sources": sources,
+            "reason": "unit_unknown",
+        }
+    if units[0] != units[1]:
+        return {
+            "status": "conflict",
+            "sources": sources,
+            "reason": "unit_mismatch",
+        }
     if (
         primary.get("currentPeriod") != secondary.get("currentPeriod")
         or primary.get("previousPeriod") != secondary.get("previousPeriod")
@@ -3648,6 +4651,7 @@ def parse_sec_companyfacts(
         return None
     facts = payload.get("facts")
     us_gaap = facts.get("us-gaap") if isinstance(facts, Mapping) else None
+    dei = facts.get("dei") if isinstance(facts, Mapping) else None
     if not isinstance(us_gaap, Mapping):
         return None
     revenues = _sec_fact_values(
@@ -3682,12 +4686,25 @@ def parse_sec_companyfacts(
         duration=False,
     )
     shares = _sec_fact_values(
-        us_gaap,
-        ("EntityCommonStockSharesOutstanding", "CommonStocksIncludingAdditionalPaidInCapital"),
+        dei if isinstance(dei, Mapping) else {},
+        ("EntityCommonStockSharesOutstanding",),
         cutoff=cutoff,
         duration=False,
         unit_names=("shares",),
     )
+    share_periods = {(item["start"], item["end"]) for item in shares}
+    shares.extend(
+        item
+        for item in _sec_fact_values(
+            us_gaap,
+            ("CommonStockSharesOutstanding",),
+            cutoff=cutoff,
+            duration=False,
+            unit_names=("shares",),
+        )
+        if (item["start"], item["end"]) not in share_periods
+    )
+    shares.sort(key=lambda item: (item["end"], item["filed"]), reverse=True)
     if not revenues or not profits or not assets or not equities:
         return None
     current_revenue = revenues[0]
@@ -3719,7 +4736,15 @@ def parse_sec_companyfacts(
             current_equity,
         )
     )
-    latest_shares = _latest_sec_instant(shares, current_revenue["end"]) if shares else None
+    latest_shares = next(
+        (
+            item
+            for item in shares
+            if abs(item["end"] - current_revenue["end"])
+            <= _STOCK_SHARES_MAX_PERIOD_DISTANCE
+        ),
+        None,
+    )
     return {
         "currentRevenue": current_revenue["value"],
         "previousRevenue": previous_revenue["value"],
@@ -3746,7 +4771,7 @@ def _sec_fact_values(
 ) -> list[dict[str, Any]]:
     cutoff_utc = _as_utc(cutoff)
     values: list[dict[str, Any]] = []
-    for tag in tags:
+    for tag_priority, tag in enumerate(tags):
         fact = facts.get(tag)
         units = fact.get("units") if isinstance(fact, Mapping) else None
         if not isinstance(units, Mapping):
@@ -3785,21 +4810,29 @@ def _sec_fact_values(
                     "form": form,
                     "fy": row.get("fy"),
                     "fp": str(row.get("fp") or ""),
+                    "tagPriority": tag_priority,
                 }
             )
-        if values:
-            break
     latest_by_period: dict[tuple[Any, ...], dict[str, Any]] = {}
     for item in values:
-        key = (item["start"], item["end"], item["form"], item["fp"])
+        key = (item["start"], item["end"])
         previous = latest_by_period.get(key)
-        if previous is None or item["filed"] > previous["filed"]:
+        if (
+            previous is None
+            or item["tagPriority"] < previous["tagPriority"]
+            or item["tagPriority"] == previous["tagPriority"]
+            and item["filed"] > previous["filed"]
+        ):
             latest_by_period[key] = item
-    return sorted(
+    ordered = sorted(
         latest_by_period.values(),
         key=lambda item: (item["end"], item["filed"]),
         reverse=True,
     )
+    return [
+        {key: value for key, value in item.items() if key != "tagPriority"}
+        for item in ordered
+    ]
 
 
 def _previous_comparable_sec_fact(
@@ -3859,7 +4892,7 @@ def _sec_ticker_map(payload: Any) -> dict[str, str]:
 
 def build_coingecko_binance_mapping(
     tickers: Sequence[Mapping[str, Any]],
-) -> dict[str, dict[str, Any] | None]:
+) -> dict[str, dict[str, Any]]:
     grouped: dict[str, list[Mapping[str, Any]]] = {}
     for ticker in tickers:
         base = str(ticker.get("base") or "").strip().upper()
@@ -3868,11 +4901,21 @@ def build_coingecko_binance_mapping(
         if not base or target != "USDT" or not coin_id:
             continue
         grouped.setdefault(f"{base}/{target}", []).append(ticker)
-    result: dict[str, dict[str, Any] | None] = {}
+    result: dict[str, dict[str, Any]] = {}
     for pair, rows in grouped.items():
         coin_ids = {str(item.get("coin_id") or "").strip() for item in rows}
         if len(coin_ids) != 1:
-            result[pair] = None
+            result[pair] = {
+                "status": "ambiguous",
+                "coinIds": sorted(coin_ids),
+            }
+            observed_times = [
+                value
+                for item in rows
+                if (value := _parse_datetime(item.get("last_fetch_at"))) is not None
+            ]
+            if observed_times:
+                result[pair]["observedAt"] = min(observed_times).isoformat()
             continue
         best = min(
             rows,
@@ -3882,12 +4925,121 @@ def build_coingecko_binance_mapping(
             ),
         )
         result[pair] = {
+            "status": "mapped",
             "coinId": next(iter(coin_ids)),
             "bidAskSpreadPct": _positive_or_none(
                 best.get("bid_ask_spread_percentage")
             ),
         }
+        observed_at = str(best.get("last_fetch_at") or "").strip()
+        if observed_at:
+            result[pair]["observedAt"] = observed_at
     return result
+
+
+def _valid_coingecko_ticker_observation(
+    value: Mapping[str, Any],
+    *,
+    cutoff: datetime,
+) -> bool:
+    observed_at = _parse_datetime(value.get("last_fetch_at"))
+    return (
+        observed_at is not None
+        and observed_at <= cutoff
+        and cutoff - observed_at <= _CRYPTO_FUNDAMENTAL_TTL
+        and value.get("is_stale") is False
+        and value.get("is_anomaly") is False
+    )
+
+
+def _coingecko_mapping_entry_expired(
+    value: Any,
+    *,
+    cutoff: datetime,
+) -> bool:
+    if not isinstance(value, Mapping):
+        return True
+    observed_at = _parse_datetime(value.get("observedAt") or value.get("checkedAt"))
+    return (
+        observed_at is None
+        or observed_at > cutoff
+        or cutoff - observed_at > _CRYPTO_FUNDAMENTAL_TTL
+    )
+
+
+def _valid_crypto_fundamental_observation(
+    value: Mapping[str, Any],
+    *,
+    cutoff: datetime,
+) -> bool:
+    observed_at = _parse_datetime(value.get("observedAt"))
+    mapping_observed_at = _parse_datetime(value.get("mappingObservedAt"))
+    return all(
+        timestamp is not None
+        and timestamp <= cutoff
+        and cutoff - timestamp <= _CRYPTO_FUNDAMENTAL_TTL
+        for timestamp in (observed_at, mapping_observed_at)
+    )
+
+
+def _coingecko_mapping_coverage(
+    mapping: Mapping[str, Any],
+    required_pairs: set[str],
+    *,
+    observed_at: datetime,
+) -> dict[str, Any]:
+    statuses = Counter(
+        (
+            str(mapping[pair].get("status"))
+            if isinstance(mapping.get(pair), Mapping)
+            and mapping[pair].get("status") in {"mapped", "ambiguous", "missing"}
+            else "unresolved"
+        )
+        for pair in required_pairs
+    )
+    sample_count = len(required_pairs)
+    return {
+        "provider": "coingecko-binance",
+        "scope": "prefiltered_candidates",
+        "observedAt": observed_at.isoformat(),
+        "sampleCount": sample_count,
+        "mappedCount": statuses["mapped"],
+        "ambiguousCount": statuses["ambiguous"],
+        "missingCount": statuses["missing"],
+        "unresolvedCount": statuses["unresolved"],
+        "mappedRatePct": _market_ai_selection_rate(statuses["mapped"], sample_count),
+    }
+
+
+def _coingecko_mapping_observed_at(
+    mapping: Mapping[str, Any],
+    required_pairs: set[str],
+    *,
+    fallback: datetime,
+) -> datetime:
+    observed = [
+        timestamp
+        for pair in required_pairs
+        if isinstance((item := mapping.get(pair)), Mapping)
+        if (
+            timestamp := _parse_datetime(
+                item.get("observedAt") or item.get("checkedAt")
+            )
+        )
+        is not None
+    ]
+    return min(observed) if observed else fallback
+
+
+def _coingecko_mapping_incomplete(
+    mapping: Mapping[str, Any],
+    required_pairs: set[str],
+) -> bool:
+    return any(
+        not isinstance(mapping.get(pair), Mapping)
+        or mapping[pair].get("status") == "unresolved"
+        for pair in required_pairs
+    )
 
 
 def _frame_records(value: Any) -> list[Mapping[str, Any]]:
@@ -4255,19 +5407,6 @@ def _split_crypto_symbol(value: str) -> tuple[str, str]:
     else:
         return normalized, ""
     return base, target
-
-
-def _valid_sec_user_agent(value: str) -> bool:
-    normalized = value.strip()
-    return (
-        8 <= len(normalized) <= 255
-        and bool(
-            re.search(
-                r"(?:[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|https?://\S+)",
-                normalized,
-            )
-        )
-    )
 
 
 def _us_quote_is_fresh(quote_at: datetime, *, cutoff: datetime) -> bool:
