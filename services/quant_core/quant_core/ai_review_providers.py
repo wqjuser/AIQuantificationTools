@@ -87,6 +87,14 @@ _SAFE_UNCONDITIONAL_NEGATION_PATTERNS = tuple(
         r"\b(?:the\s+)?(?:target\s+price|position\s+instruction)(?:\s+(?:or|and)\s+(?:target\s+price|position\s+instruction))*\s+(?:is|are)\s+not\s+(?:provided|given|set)\b",
     )
 )
+_SAFE_NEGATED_ACTION_LIST = re.compile(
+    r"(?:(?:本次?|该|此)(?:评审|结论|分析)\s*)?"
+    r"(?:不\s*建议|不\s*推荐|不要|不得|禁止)\s*"
+    r"(?:买入|卖出|持有)"
+    r"(?:\s*(?:、|或|和|与)\s*(?:买入|卖出|持有))+"
+    r"(?:\s*(?:任何|任一|该|本)?\s*(?:标的|资产|证券|股票|仓位))?",
+    re.IGNORECASE,
+)
 _OUTPUT_CLAUSE_BOUNDARY = re.compile(
     r"[，,；;。！？!?\n]+|(?:但(?:是)?|然而|却|同时|并且|以及|且)|"
     r"并(?=\s*(?:保证|目标价|收益|建议|推荐|立即|请|应该|应当|可考虑|可以|可|"
@@ -1440,8 +1448,14 @@ def contains_prohibited_output(value: Any) -> bool:
             ):
                 return True
             explicitly_safe = (
-                len(_EXECUTION_ACTION_VERB.findall(normalized)) <= 1
-                and any(pattern.fullmatch(normalized) for pattern in _SAFE_NEGATION_PATTERNS)
+                _SAFE_NEGATED_ACTION_LIST.fullmatch(normalized) is not None
+                or (
+                    len(_EXECUTION_ACTION_VERB.findall(normalized)) <= 1
+                    and any(
+                        pattern.fullmatch(normalized)
+                        for pattern in _SAFE_NEGATION_PATTERNS
+                    )
+                )
             )
             if (
                 safe_unconditional_negation
