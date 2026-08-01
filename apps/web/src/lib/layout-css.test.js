@@ -8,6 +8,10 @@ const terminalWorkspaceSurfaceSource = readFileSync(
   new URL("../components/TerminalWorkspaceSurface.tsx", import.meta.url),
   "utf8"
 );
+const marketAiSelectionPanelSource = readFileSync(
+  new URL("../components/MarketAiSelectionPanel.tsx", import.meta.url),
+  "utf8"
+);
 const strategyExperimentSectionSource = readFileSync(
   new URL("../components/StrategyExperimentSection.tsx", import.meta.url),
   "utf8"
@@ -377,11 +381,6 @@ describe("terminal layout css", () => {
   });
 
   test("keeps AI selection research-only, race-safe, scalable, and mobile readable", () => {
-    const marketSurfaceSource = sourceBetweenText(
-      terminalWorkspaceSurfaceSource,
-      "function MarketSurface",
-      "function ResearchSurface",
-    );
     const aiSelectionRequestSource = sourceBetween(
       "const runMarketAiSelection = useCallback",
       "const marketDiscoveryMarket =",
@@ -396,14 +395,14 @@ describe("terminal layout css", () => {
     );
     expect(appSource).toContain('selectInstrument(instrument, "research", false)');
     expect(appSource).toContain('selectInstrument(instrument, "market", false)');
-    expect(marketSurfaceSource).toContain('title="AI 选股"');
-    expect(marketSurfaceSource).toContain("本结果仅切换研究上下文");
-    expect(marketSurfaceSource).toContain("已排除 {aiSelectionResult.exclusions.length} 项");
-    expect(marketSurfaceSource).toContain(
-      "setAiSelectionProviderId(providerId);\n                    setAiSelectionExternalDataApproved(false);",
+    expect(marketAiSelectionPanelSource).toContain('title="AI 选股"');
+    expect(marketAiSelectionPanelSource).toContain("本结果仅切换研究上下文");
+    expect(marketAiSelectionPanelSource).toContain("已排除 {result.exclusions.length} 项");
+    expect(marketAiSelectionPanelSource).toContain(
+      "setProviderId(event.currentTarget.value as AiReviewProviderId);\n              setExternalDataApproved(false);",
     );
-    expect(marketSurfaceSource).not.toContain(
-      'if (providerId === "local") {\n                      setAiSelectionExternalDataApproved(false);',
+    expect(marketAiSelectionPanelSource).not.toContain(
+      'if (providerId === "local") {\n              setExternalDataApproved(false);',
     );
     expect(hasCssBlockWith(".design-market-ai-controls", [
       "display: grid;",
