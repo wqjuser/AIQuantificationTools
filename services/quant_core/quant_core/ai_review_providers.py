@@ -95,10 +95,23 @@ _SAFE_NEGATED_ACTION_LIST = re.compile(
     r"(?:\s*(?:任何|任一|该|本)?\s*(?:标的|资产|证券|股票|仓位))?",
     re.IGNORECASE,
 )
-_SAFE_EVIDENCE_GAP = re.compile(
-    r"(?:(?:当前|现有|本次|该)\s*)?(?:仍|尚)?\s*"
-    r"(?:缺少|未(?:能)?(?:提供|覆盖|包含|验证)|没有|无)\s*"
-    r"[^。！？!?]*(?:证据|依据|数据|信息|验证|覆盖)(?:不足|缺失|不完整)?",
+_EVIDENCE_GAP_CONTEXT = re.compile(
+    r"缺少|缺失|缺乏|不足|有限|不完整|尚无|没有|无法|无从|不能|不可|"
+    r"未(?:能)?(?:提供|给出|覆盖|包含|记录|验证|披露|说明|观察|评估|支持|见)|"
+    r"(?:仍|尚)?有待(?:补充|验证|覆盖|确认|评估)|需要补充",
+    re.IGNORECASE,
+)
+_UNSAFE_EVIDENCE_GAP = re.compile(
+    r"(?:建议|推荐|立即|请|应该|应当|可考虑|可以)[^。！？!?]{0,24}"
+    r"(?:买入|卖出|下单|建仓|加仓|增持|减仓|减持|清仓|持有|做多|做空|"
+    r"开多|开空|平仓|止损|止盈|目标价|仓位)|"
+    r"(?:^|[，,；;。！？!?\n])\s*(?:买入|卖出|持有|做多|做空|开多|开空)\s*"
+    r"(?:该标的|本标的|[A-Z][A-Za-z0-9.-]{1,15}|[\u4e00-\u9fff]{2,32})|"
+    r"(?:^|[，,；;。！？!?\n])\s*(?:下单|清仓|平仓|止损|止盈)(?:\s|$)|"
+    r"(?:目标价|买点|卖点|入场价|出场价|止损位|止盈位|止损价格|止盈价格)"
+    r"[^。！？!?]{0,12}\d|"
+    r"(?:仓位|持仓比例)[^。！？!?]{0,12}\d+(?:\.\d+)?\s*%|"
+    r"(?:买入|卖出)\s*\d+(?:\.\d+)?\s*股|收益保证|保证收益",
     re.IGNORECASE,
 )
 _OUTPUT_CLAUSE_BOUNDARY = re.compile(
@@ -1460,7 +1473,8 @@ def prohibited_output_field_path(value: Any, path: str = "$") -> str | None:
         normalized_value = value.strip(" \t\r\n。！？!?.,，；;")
         if (
             re.fullmatch(r"\$\.evidenceGaps\[\d+\]", path)
-            and _SAFE_EVIDENCE_GAP.fullmatch(normalized_value)
+            and _EVIDENCE_GAP_CONTEXT.search(normalized_value)
+            and _UNSAFE_EVIDENCE_GAP.search(normalized_value) is None
         ):
             return None
         for clause in _OUTPUT_CLAUSE_BOUNDARY.split(value):

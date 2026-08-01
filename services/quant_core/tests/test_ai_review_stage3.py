@@ -6186,33 +6186,49 @@ class AiReviewProviderContractTests(unittest.TestCase):
                 )
 
     def test_provider_output_allows_evidence_gap_that_names_absent_execution_evidence(self) -> None:
-        assessment = _provider_assessment()
-        assessment["evidenceGaps"] = [
-            "缺少买卖、持仓、目标价或订单等执行语义的证据。"
-        ]
-        server = self._server(self._compatible_response(assessment))
-        provider = OpenAiCompatibleProvider(
-            base_url=server.base_url,
-            api_key="fake-compatible-key",
-            model="compatible-test",
+        safe_gaps = (
+            "缺少买卖、持仓、目标价或订单等执行语义的证据。",
+            "未提供实际订单与持仓变化信息，无法评估执行层面的数据完整性。",
+            "当前样本未覆盖目标价或止损规则的实现记录，相关结论仍有待验证。",
+            "交易成本、滑点及订单执行数据不足，无法完成稳健性评估。",
         )
+        for safe_gap in safe_gaps:
+            with self.subTest(gap=safe_gap):
+                assessment = _provider_assessment()
+                assessment["evidenceGaps"] = [safe_gap]
+                server = self._server(self._compatible_response(assessment))
+                provider = OpenAiCompatibleProvider(
+                    base_url=server.base_url,
+                    api_key="fake-compatible-key",
+                    model="compatible-test",
+                )
 
-        attempt = self._assess(provider)
+                attempt = self._assess(provider)
 
-        self.assertEqual(attempt.assessment["evidenceGaps"], assessment["evidenceGaps"])
-        self.assertEqual(len(server.requests), 1)
+                self.assertEqual(attempt.assessment["evidenceGaps"], [safe_gap])
+                self.assertEqual(len(server.requests), 1)
 
-        assessment["evidenceGaps"] = ["缺少证据，但建议买入贵州茅台。"]
-        unsafe_server = self._server(self._compatible_response(assessment))
-        unsafe_provider = OpenAiCompatibleProvider(
-            base_url=unsafe_server.base_url,
-            api_key="fake-compatible-key",
-            model="compatible-test",
+        unsafe_gaps = (
+            "缺少证据，但建议买入贵州茅台。",
+            "缺少证据，买入贵州茅台。",
+            "数据不足，目标价为120元。",
+            "数据不足，仓位提高到50%。",
+            "没有证据，清仓。",
         )
-        self._assert_provider_error(
-            "execution_semantics",
-            lambda: self._assess(unsafe_provider),
-        )
+        for unsafe_gap in unsafe_gaps:
+            with self.subTest(gap=unsafe_gap):
+                assessment = _provider_assessment()
+                assessment["evidenceGaps"] = [unsafe_gap]
+                unsafe_server = self._server(self._compatible_response(assessment))
+                unsafe_provider = OpenAiCompatibleProvider(
+                    base_url=unsafe_server.base_url,
+                    api_key="fake-compatible-key",
+                    model="compatible-test",
+                )
+                self._assert_provider_error(
+                    "execution_semantics",
+                    lambda: self._assess(unsafe_provider),
+                )
 
     def test_provider_error_identifies_rejected_response_field(self) -> None:
         assessment = _provider_assessment()
