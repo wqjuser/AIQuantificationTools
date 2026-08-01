@@ -19652,6 +19652,7 @@ function translateGoldenPathDetail(i18n: AppI18n, detail: string): string {
     "The latest audited run does not include an AI evidence summary.": "最新审计运行缺少 AI 证据摘要。",
     "The audited run is ready for the local evidence review required by paper simulation.": "审计运行已就绪，等待完成模拟执行所需的本地证据评审。",
     "AI review evidence is bound to the audited run.": "AI 评审证据已绑定到当前审计运行。",
+    "Audited AI evidence is ready, but no filled paper execution is bound.": "AI 评审证据已就绪，但尚未绑定已成交的模拟执行记录。",
   } as Record<string, string>)[detail];
   if (localizedAiReviewDetail) {
     return localizedAiReviewDetail;

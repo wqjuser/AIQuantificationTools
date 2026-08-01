@@ -332,7 +332,9 @@ def build_production_trading_permission_verification(
         )
     )
     blockers = []
-    if not probe.capabilities.get("apiRestrictions"):
+    if "production_readonly_permission_check_failed" in probe.blocked_reasons:
+        blockers.append("stage10_production_trading_permission_check_failed")
+    elif not probe.capabilities.get("apiRestrictions"):
         blockers.append("stage10_production_trading_permission_endpoint_unavailable")
     elif not authoritative:
         blockers.append("stage10_production_trading_permissions_incomplete")
@@ -1120,8 +1122,8 @@ class BinanceSpotProductionTradingRoute:
 
     def _validate_new_order(self, order: dict[str, Any]) -> None:
         requested_notional, risk_budget_notional = self._validate_order(order)
-        if risk_budget_notional > 10 or (
-            order["side"] == "buy" and requested_notional > 10
+        if order["side"] == "buy" and (
+            requested_notional > 10 or risk_budget_notional > 10
         ):
             raise ValueError("stage10_auto_live_order_notional_exceeded")
 

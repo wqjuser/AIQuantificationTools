@@ -1106,5 +1106,7 @@ describe("ExecutionAutoPaperTradingSection", () => {
       .toBe("触发涨跌幅必须在 0.05% 到 20% 之间");
     expect(autoTradingErrorMessage(new Error("operations_monitoring_snapshot_invalid")))
       .toBe("服务端监控响应不完整，请稍后刷新或检查 API。");
+    expect(autoTradingErrorMessage(new Error("stage10_auto_live_order_notional_exceeded")))
+      .toBe("上一轮生产订单风险预算超过 10 USDT 上限");
   });
 });

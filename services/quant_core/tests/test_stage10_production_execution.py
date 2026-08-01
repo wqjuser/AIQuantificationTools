@@ -261,6 +261,84 @@ def _activate_gate(
 
 
 class Stage10ProductionExecutionTest(unittest.TestCase):
+    def test_permission_verification_distinguishes_failed_call_from_missing_endpoint(self) -> None:
+        checked_at = datetime.now(timezone.utc)
+        preflight = build_production_trading_credential_preflight(
+            environ=_trading_env(),
+            operator="wenqingjie",
+            checked_at=checked_at.isoformat(),
+        )
+
+        class AuthenticationFailureExchange(SafeTradingPermissionExchange):
+            def sapi_get_account_apirestrictions(self):
+                raise RuntimeError("Binance rejected the credential")
+
+        verification = build_production_trading_permission_verification(
+            preflight,
+            environ=_trading_env(),
+            operator="wenqingjie",
+            exchange_factory=lambda _exchange_id, config: AuthenticationFailureExchange(config),
+            verified_at=(checked_at + timedelta(seconds=1)).isoformat(),
+        )
+
+        self.assertEqual(
+            verification["blockedReasons"],
+            ["stage10_production_trading_permission_check_failed"],
+        )
+
+    def test_permission_verification_http_conflict_exposes_blocker(self) -> None:
+        class AuthenticationFailureExchange(SafeTradingPermissionExchange):
+            def sapi_get_account_apirestrictions(self):
+                raise RuntimeError("Binance rejected the credential")
+
+        with tempfile.TemporaryDirectory() as directory:
+            class Handler(QuantApiHandler):
+                audit_event_store = AuditEventStore(Path(directory) / "audit.sqlite")
+                execution_adapter_health_environ = _trading_env()
+                execution_adapter_health_exchange_factory = staticmethod(
+                    lambda _exchange_id, config: AuthenticationFailureExchange(config)
+                )
+
+            server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/execution/stage10/production-trading-credential-preflights",
+                    json.dumps({"operator": "wenqingjie"}),
+                    {"Content-Type": "application/json"},
+                )
+                preflight_response = connection.getresponse()
+                preflight = json.loads(preflight_response.read())[
+                    "productionTradingCredentialPreflight"
+                ]
+                connection.request(
+                    "POST",
+                    "/api/execution/stage10/production-trading-permission-verifications",
+                    json.dumps(
+                        {
+                            "preflightId": preflight["preflightId"],
+                            "operator": "wenqingjie",
+                        }
+                    ),
+                    {"Content-Type": "application/json"},
+                )
+                verification_response = connection.getresponse()
+                verification_payload = json.loads(verification_response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+        self.assertEqual(verification_response.status, 409)
+        self.assertEqual(
+            verification_payload["blockers"],
+            ["stage10_production_trading_permission_check_failed"],
+        )
+
     def test_auto_live_status_marks_expired_control_evidence_stale(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")
@@ -369,6 +447,51 @@ class Stage10ProductionExecutionTest(unittest.TestCase):
                 prepared["executionAssumptions"]["slippageModel"],
                 "venue_market_fill",
             )
+            self.assertEqual(exchange.create_calls, 0)
+
+    def test_auto_live_order_preparation_allows_full_exit_above_buy_risk_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            exchange = ProductionOrderExchange({})
+            route = BinanceSpotProductionTradingRoute(
+                env={**_trading_env(), "AIQT_ENABLE_PRODUCTION_TRADING": "true"},
+                exchange_factory=lambda _exchange_id, _config: exchange,
+            )
+            service = Stage10ProductionExecutionService(store, auto_route=route)
+            _activate_gate(service, datetime.now(timezone.utc))
+            control = service.authorize_auto_session()
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "stage10_auto_live_order_notional_exceeded",
+            ):
+                service.prepare_auto_market_order(
+                    {
+                        "symbol": "BTC/USDT",
+                        "side": "buy",
+                        "quantity": 0.00014303,
+                        "referencePrice": 62_928,
+                        "notionalValue": 9.0,
+                        "riskBudgetNotional": 10.1837472,
+                    },
+                    control_id=control["controlId"],
+                    operator="wenqingjie",
+                )
+
+            prepared = service.prepare_auto_market_order(
+                {
+                    "symbol": "BTC/USDT",
+                    "side": "sell",
+                    "quantity": 0.00015972,
+                    "referencePrice": 62_928,
+                    "notionalValue": 10.05086016,
+                    "riskBudgetNotional": 10.1837472,
+                },
+                control_id=control["controlId"],
+                operator="wenqingjie",
+            )
+
+            self.assertEqual(prepared["side"], "sell")
             self.assertEqual(exchange.create_calls, 0)
 
     def test_auto_live_order_is_gated_query_first_and_idempotent(self) -> None:

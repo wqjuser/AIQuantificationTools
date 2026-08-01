@@ -279,6 +279,7 @@ function safeBoundary(value: Record<string, any>) {
 
 function stage10Error(value: string) {
   const messages: Record<string, string> = {
+    stage10_production_trading_permission_check_failed: "Binance 权限核验请求失败，请检查网络、API Key、IP 白名单和现货交易权限",
     stage10_production_execution_control_permission_verification_required: "需要五分钟内有效的交易权限核验",
     stage10_production_execution_kill_switch_triggered: "执行急停仍处于撤销状态",
     stage10_production_execution_control_evidence_stale: "执行控制绑定的权限证据已过期",

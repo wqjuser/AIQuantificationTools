@@ -1667,6 +1667,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("自选刷新证据");
     expect(appSource).toContain("The audited run is ready for the local evidence review required by paper simulation.");
     expect(appSource).toContain("审计运行已就绪，等待完成模拟执行所需的本地证据评审。");
+    expect(appSource).toContain("Audited AI evidence is ready, but no filled paper execution is bound.");
+    expect(appSource).toContain("AI 评审证据已就绪，但尚未绑定已成交的模拟执行记录。");
   });
 
   test("renders risk approval references in the AI review audit trail", () => {

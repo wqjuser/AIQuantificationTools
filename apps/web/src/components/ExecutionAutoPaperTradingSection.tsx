@@ -2222,7 +2222,7 @@ export function ExecutionAutoPaperTradingSection({
       </div>
 
       <p className={error ? "execution-auto-paper-error" : undefined} role="status">
-        {error ?? state?.detail ?? "正在读取监控状态…"}
+        {error ?? (state?.detail ? autoTradingErrorMessage(new Error(state.detail)) : "正在读取监控状态…")}
       </p>
       <small>
         后端运行器不依赖当前页面，关闭页面后仍会继续；
@@ -2394,6 +2394,7 @@ export function autoTradingErrorMessage(error: unknown) {
     stage10_production_execution_kill_switch_triggered: "生产执行急停已触发，请先完成权限核验并恢复执行控制",
     stage10_production_execution_control_evidence_stale: "生产权限证据已过期，请重新核验",
     stage10_production_trading_permissions_or_ip_invalid: "生产交易权限、危险权限或 IP 白名单不符合要求",
+    stage10_auto_live_order_notional_exceeded: "上一轮生产订单风险预算超过 10 USDT 上限",
     triggerPct_out_of_range: "触发涨跌幅必须在 0.05% 到 20% 之间",
     dailyLossLimitPct_out_of_range: "亏损回撤上限必须在 0.1% 到 20% 之间",
     dailyProfitDrawdownLimitPct_out_of_range: "盈利回撤上限必须在 0.1% 到 20% 之间",

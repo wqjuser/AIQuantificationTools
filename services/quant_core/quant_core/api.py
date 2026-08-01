@@ -3295,6 +3295,11 @@ class QuantApiHandler(BaseHTTPRequestHandler):
                 {
                     "productionTradingPermissionVerification": verification,
                     "auditEvent": audit_event_record_to_payload(event),
+                    **(
+                        {"blockers": verification["blockedReasons"]}
+                        if verification["status"] == "blocked"
+                        else {}
+                    ),
                 },
                 status=201 if verification["status"] == "verified" else 409,
             )
