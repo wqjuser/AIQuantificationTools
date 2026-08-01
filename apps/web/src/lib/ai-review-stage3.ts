@@ -80,7 +80,7 @@ export interface AiReviewExternalAssessment {
   model: string | null;
   sanitizedBaseUrl: string | null;
   endpointHash: string | null;
-  promptTemplateVersion: "aiqt-ai-review-v1" | "aiqt-ai-review-v2" | "aiqt-ai-review-v3";
+  promptTemplateVersion: "aiqt-ai-review-v1" | "aiqt-ai-review-v2" | "aiqt-ai-review-v3" | "aiqt-ai-review-v4";
   outputSchemaVersion: "aiqt-ai-review-assessment-v1";
   renderedPrompt: string;
   renderedPromptHash: string;
@@ -683,7 +683,8 @@ function isExternalAssessment(
     || typeof value.provider !== "string" || !providerIds.has(value.provider as AiReviewProviderId)
     || (value.promptTemplateVersion !== "aiqt-ai-review-v1"
       && value.promptTemplateVersion !== "aiqt-ai-review-v2"
-      && value.promptTemplateVersion !== "aiqt-ai-review-v3")
+      && value.promptTemplateVersion !== "aiqt-ai-review-v3"
+      && value.promptTemplateVersion !== "aiqt-ai-review-v4")
     || value.outputSchemaVersion !== "aiqt-ai-review-assessment-v1"
     || typeof value.renderedPrompt !== "string"
     || !isHash(value.renderedPromptHash)

@@ -120,6 +120,7 @@ _SUPPORTED_PROMPT_TEMPLATE_VERSIONS = {
     "aiqt-ai-review-v1",
     "aiqt-ai-review-v2",
     "aiqt-ai-review-v3",
+    "aiqt-ai-review-v4",
 }
 _V2_OUTPUT_SCHEMA_VERSION = "aiqt-ai-review-assessment-v1"
 _V2_OPENAI_BASE_URL = "https://api.openai.com/v1"

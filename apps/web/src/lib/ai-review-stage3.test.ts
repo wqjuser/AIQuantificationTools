@@ -394,22 +394,30 @@ describe("Stage 3 AI review runtime contracts", () => {
         promptTemplateVersion: "aiqt-ai-review-v2"
       }
     };
-    const current = {
+    const researchOnly = {
       ...legacy,
       externalAssessment: {
         ...legacy.externalAssessment,
         promptTemplateVersion: "aiqt-ai-review-v3"
       }
     };
+    const current = {
+      ...legacy,
+      externalAssessment: {
+        ...legacy.externalAssessment,
+        promptTemplateVersion: "aiqt-ai-review-v4"
+      }
+    };
 
     expect(isAuthoritativeAiReviewRun(legacy)).toBe(true);
     expect(isAuthoritativeAiReviewRun(previous)).toBe(true);
+    expect(isAuthoritativeAiReviewRun(researchOnly)).toBe(true);
     expect(isAuthoritativeAiReviewRun(current)).toBe(true);
     expect(isAuthoritativeAiReviewRun({
       ...current,
       externalAssessment: {
         ...current.externalAssessment,
-        promptTemplateVersion: "aiqt-ai-review-v4"
+        promptTemplateVersion: "aiqt-ai-review-v5"
       }
     })).toBe(false);
   });

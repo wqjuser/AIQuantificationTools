@@ -125,6 +125,7 @@ interface TerminalWorkspaceSurfaceProps {
   aiReview: {
     appendingDecision: boolean;
     busy: boolean;
+    running: boolean;
     comparisonExperimentIds: string[];
     currentReview: AuthoritativeAiReviewRun | null;
     decisionDraft: AppendAiReviewDecisionRequest;
@@ -3905,7 +3906,7 @@ function AiReviewSurface({
   TerminalWorkspaceSurfaceProps,
   "action" | "aiReview" | "productionStrategyHandoff" | "workspace"
 >) {
-  const currentReview = aiReview.currentReview;
+  const currentReview = aiReview.running ? null : aiReview.currentReview;
   const deterministicAssessment = currentReview?.deterministicAssessment ?? null;
   const externalAssessment = currentReview?.externalAssessment ?? null;
   const hasCurrentReview = Boolean(currentReview);
@@ -4001,25 +4002,29 @@ function AiReviewSurface({
     : externalAssessment?.status === "failed"
       ? "risk" as const
       : "neutral" as const;
-  const externalLabel = externalAssessment?.status === "completed"
-    ? stanceLabel(externalAssessment.assessment?.stance)
-    : externalAssessment
-      ? terminalSurfaceZh.t(
-          `aiReviewStage3.external.status.${externalAssessment.status}` as TranslationKey,
-        )
-      : "待运行";
+  const externalLabel = aiReview.running
+    ? "运行中"
+    : externalAssessment?.status === "completed"
+      ? stanceLabel(externalAssessment.assessment?.stance)
+      : externalAssessment
+        ? terminalSurfaceZh.t(
+            `aiReviewStage3.external.status.${externalAssessment.status}` as TranslationKey,
+          )
+        : "待运行";
   const externalErrorKey = aiReviewExternalErrorTranslationKey(
     externalAssessment?.error ?? null,
   );
-  const externalSummary = externalAssessment?.assessment?.summary
-    ? localizedMessage(externalAssessment.assessment.summary, externalAssessment.assessment.summary)
-    : externalAssessment?.error
-      ? terminalSurfaceZh.t(externalErrorKey)
-      : externalAssessment
-        ? terminalSurfaceZh.t(
-            `aiReviewStage3.external.${externalAssessment.status}` as TranslationKey,
-          )
-        : "运行权威评审后，才会显示外部模型的补充意见。";
+  const externalSummary = aiReview.running
+    ? "正在等待本次外部模型结果，不显示历史评审结论。"
+    : externalAssessment?.assessment?.summary
+      ? localizedMessage(externalAssessment.assessment.summary, externalAssessment.assessment.summary)
+      : externalAssessment?.error
+        ? terminalSurfaceZh.t(externalErrorKey)
+        : externalAssessment
+          ? terminalSurfaceZh.t(
+              `aiReviewStage3.external.${externalAssessment.status}` as TranslationKey,
+            )
+          : "运行权威评审后，才会显示外部模型的补充意见。";
   const assessmentRows = currentReview && deterministicAssessment
     ? [
         {

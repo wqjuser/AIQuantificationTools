@@ -17047,6 +17047,7 @@ export function App() {
             appendingDecision: isAppendingAiReviewStage3Decision,
             busy: isLoadingAiReviewStage3 || isRunningAiReviewStage3
               || isAppendingAiReviewStage3Decision || isStrategyExperimentRunning,
+            running: isRunningAiReviewStage3 || isStrategyExperimentRunning,
             comparisonExperimentIds: aiReviewStage3ComparisonExperimentIds,
             currentReview: aiReviewStage3CurrentReview,
             decisionDraft: aiReviewStage3DecisionDraft,
@@ -17080,7 +17081,9 @@ export function App() {
             researchLoop: (
               <AiResearchM4Section
                 baseUrl={quantCoreBaseUrl}
-                currentReview={aiReviewStage3CurrentReview}
+                currentReview={isRunningAiReviewStage3 || isStrategyExperimentRunning
+                  ? null
+                  : aiReviewStage3CurrentReview}
                 i18n={i18n}
                 runHistory={runHistory}
               />

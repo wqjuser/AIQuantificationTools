@@ -3664,9 +3664,19 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
 
         self.assertEqual(first, second)
         payload = json.loads(first[0])
-        self.assertEqual(payload["promptTemplateVersion"], "aiqt-ai-review-v3")
-        self.assertIn("Use research-only language", payload["instruction"])
-        self.assertIn("buying, selling, or holding", payload["instruction"])
+        self.assertEqual(payload["promptTemplateVersion"], "aiqt-ai-review-v4")
+        self.assertIn("concise Chinese research-only language", payload["instruction"])
+        self.assertIn("Do not add disclaimers", payload["instruction"])
+        for forbidden in (
+            "buying",
+            "selling",
+            "holding",
+            "order placement",
+            "position changes",
+            "target",
+            "guaranteed returns",
+        ):
+            self.assertNotIn(forbidden, payload["instruction"])
         projected_items = payload["evidence"]["evidenceItems"]
         self.assertEqual(
             first[1],

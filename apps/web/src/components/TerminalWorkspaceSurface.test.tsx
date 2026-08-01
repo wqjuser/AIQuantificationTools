@@ -83,6 +83,7 @@ describe("TerminalWorkspaceSurface", () => {
     aiReview: {
       appendingDecision: false,
       busy: false,
+      running: false,
       comparisonExperimentIds: [],
       currentReview: null,
       decisionDraft: {
@@ -847,6 +848,23 @@ describe("TerminalWorkspaceSurface", () => {
     expect(failed).toContain("证据不完整：1 项必需证据缺失或无效。");
     expect(failed).not.toContain("provider_assessment_contains_execution_semantics");
     expect(failed).not.toContain("权威 AI 评审失败");
+
+    const running = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="ai-review"
+        aiReview={{
+          ...baseProps.aiReview,
+          currentReview: failedReview,
+          history: [],
+          primaryExperimentId: "experiment-1",
+          running: true,
+        }}
+      />,
+    );
+    expect(running).toContain("正在等待本次外部模型结果");
+    expect(running).not.toContain("外部模型返回了买卖、持仓、目标价或订单等执行语义");
+    expect(running).not.toContain("ai-review…tive-1");
 
     expect(review).toContain("人工研究决策");
     expect(review).toContain("等待人工研究决策");

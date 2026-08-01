@@ -935,6 +935,21 @@ describe("terminal layout css", () => {
     expect(cssBlock(
       "  .ai-research-m4-financial-grid,\n  .ai-research-m4-score-grid,\n  .ai-research-m4-claims,\n  .ai-research-m4-views,\n  .ai-research-m4-outcomes dl"
     )).toContain("grid-template-columns: 1fr;");
+    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-review-stage3-card")).toContain(
+      "background: var(--surface-raised);"
+    );
+    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-review-stage3-boundary")).toContain(
+      "background: var(--surface-raised);"
+    );
+    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-research-m4-config select")).toContain(
+      "background: var(--surface-raised);"
+    );
+  });
+
+  test("keeps at most five AI review comparison rows visible before scrolling", () => {
+    const comparisonList = cssBlock(".surface-ai-review .design-ai-comparison-list");
+    expect(comparisonList).toContain("max-height: 318px;");
+    expect(comparisonList).toContain("overflow-y: auto;");
   });
 
   test("owns Stage 3 authority state in App and re-reads the Decision chain after append", () => {

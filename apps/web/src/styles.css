@@ -28879,6 +28879,9 @@ button.ai-review-record {
 .surface-ai-review .design-ai-comparison-list {
   display: grid;
   gap: 6px;
+  max-height: 318px;
+  overflow-y: auto;
+  padding-right: 3px;
 }
 
 .surface-ai-review .design-ai-comparison-list .design-ai-external-approval {
@@ -28888,6 +28891,34 @@ button.ai-review-record {
 .surface-ai-review .design-ai-comparison-list .ineligible {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading span,
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card label > span {
+  color: var(--muted);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong,
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3 {
+  color: var(--text);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-boundary {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--amber);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-research-m4-config select {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
 }
 
 @media (max-width: 760px) {
