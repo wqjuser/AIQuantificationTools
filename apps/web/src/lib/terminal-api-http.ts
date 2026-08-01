@@ -42,3 +42,25 @@ export function coreErrorDetail(value: unknown): string | null {
   }
   return null;
 }
+
+export class WorkspaceHttpError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
+
+export async function requestJson(
+  url: string,
+  init: RequestInit | undefined,
+  fetcher: WorkspaceFetcher
+): Promise<unknown> {
+  const response = await fetcher(url, init);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new WorkspaceHttpError(
+      coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`,
+      response.status
+    );
+  }
+  return payload;
+}
