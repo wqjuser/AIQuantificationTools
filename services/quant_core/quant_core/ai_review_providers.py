@@ -95,6 +95,12 @@ _SAFE_NEGATED_ACTION_LIST = re.compile(
     r"(?:\s*(?:任何|任一|该|本)?\s*(?:标的|资产|证券|股票|仓位))?",
     re.IGNORECASE,
 )
+_SAFE_EVIDENCE_GAP = re.compile(
+    r"(?:(?:当前|现有|本次|该)\s*)?(?:仍|尚)?\s*"
+    r"(?:缺少|未(?:能)?(?:提供|覆盖|包含|验证)|没有|无)\s*"
+    r"[^。！？!?]*(?:证据|依据|数据|信息|验证|覆盖)(?:不足|缺失|不完整)?",
+    re.IGNORECASE,
+)
 _OUTPUT_CLAUSE_BOUNDARY = re.compile(
     r"[，,；;。！？!?\n]+|(?:但(?:是)?|然而|却|同时|并且|以及|且)|"
     r"并(?=\s*(?:保证|目标价|收益|建议|推荐|立即|请|应该|应当|可考虑|可以|可|"
@@ -1451,6 +1457,12 @@ def contains_prohibited_output(value: Any) -> bool:
 
 def prohibited_output_field_path(value: Any, path: str = "$") -> str | None:
     if isinstance(value, str):
+        normalized_value = value.strip(" \t\r\n。！？!?.,，；;")
+        if (
+            re.fullmatch(r"\$\.evidenceGaps\[\d+\]", path)
+            and _SAFE_EVIDENCE_GAP.fullmatch(normalized_value)
+        ):
+            return None
         for clause in _OUTPUT_CLAUSE_BOUNDARY.split(value):
             normalized = clause.strip(" \t\r\n。！？!?.,，；;")
             if not normalized:

@@ -6185,6 +6185,35 @@ class AiReviewProviderContractTests(unittest.TestCase):
                     ai_review_providers.contains_prohibited_output(forbidden_text)
                 )
 
+    def test_provider_output_allows_evidence_gap_that_names_absent_execution_evidence(self) -> None:
+        assessment = _provider_assessment()
+        assessment["evidenceGaps"] = [
+            "缺少买卖、持仓、目标价或订单等执行语义的证据。"
+        ]
+        server = self._server(self._compatible_response(assessment))
+        provider = OpenAiCompatibleProvider(
+            base_url=server.base_url,
+            api_key="fake-compatible-key",
+            model="compatible-test",
+        )
+
+        attempt = self._assess(provider)
+
+        self.assertEqual(attempt.assessment["evidenceGaps"], assessment["evidenceGaps"])
+        self.assertEqual(len(server.requests), 1)
+
+        assessment["evidenceGaps"] = ["缺少证据，但建议买入贵州茅台。"]
+        unsafe_server = self._server(self._compatible_response(assessment))
+        unsafe_provider = OpenAiCompatibleProvider(
+            base_url=unsafe_server.base_url,
+            api_key="fake-compatible-key",
+            model="compatible-test",
+        )
+        self._assert_provider_error(
+            "execution_semantics",
+            lambda: self._assess(unsafe_provider),
+        )
+
     def test_provider_error_identifies_rejected_response_field(self) -> None:
         assessment = _provider_assessment()
         assessment["risks"][0]["message"] = "建议买入100股"
