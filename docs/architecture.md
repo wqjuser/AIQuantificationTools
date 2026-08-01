@@ -139,7 +139,7 @@ CI 使用 `if: always()` 上传 `stage5-release-manifests`，包含 Stage 3、St
 - `AiReviewRunV2Store` 持久化 canonical Review，`AiReviewDecisionStore` 持久化 append-only Decision；二者通过 run、experiment、candidate、前序 Decision 与 canonical hash 严格绑定。Audit 导出包使用 `aiReviewRunsV2[]`、`aiReviewDecisions[]`，旧 `aiReviewRuns[]` 只标记为非权威历史。
 - Provider 顺序为本地 deterministic baseline 在先，外部 enrichment 在后。支持 `local`、`openai`、`openai-compatible`、`ollama`；外部响应必须通过结构、安全与禁止执行语义校验，失败只记录安全错误码，不覆盖 baseline。
 - `openai-compatible` URL 规范为 `OPENAI_COMPATIBLE_BASE_URL.rstrip("/") + "/chat/completions"`。Compose 仅向 API 注入 Provider 类型、Base URL、model、timeout 与 key；Web service、Dockerfile、浏览器 bundle 和导出包不得包含 key。
-- Provider transport 继续使用严格的 30 秒墙钟总预算。一次性响应与最终结构化正文上限保持 65,536 bytes/字符；流式 SSE/NDJSON 允许最多 524,288 bytes 的有界传输信封，以容纳 Provider 附带但不会下发浏览器的 reasoning metadata，最终正文仍不能突破 65,536 字符。三种流式适配器在权威终止标记出现后立即结束，不等待 HTTP EOF；客户端取消研究笔记生成时，API 每 100ms 检测连接状态并把取消信号传到 Provider transport，后者关闭活跃 socket 和读取线程。标准库 `urllib` 的 DNS/TLS 建连仍不能被跨线程强制中止，但外层 daemon 与墙钟截止保证请求不会阻塞 API 主流程。
+- Provider transport 使用严格的 60 秒墙钟总预算，兼容需要完整生成结构化结果后才返回的外部模型；建连仍限制为 5 秒。一次性响应与最终结构化正文上限保持 65,536 bytes/字符；流式 SSE/NDJSON 允许最多 524,288 bytes 的有界传输信封，以容纳 Provider 附带但不会下发浏览器的 reasoning metadata，最终正文仍不能突破 65,536 字符。三种流式适配器在权威终止标记出现后立即结束，不等待 HTTP EOF；客户端取消研究笔记生成时，API 每 100ms 检测连接状态并把取消信号传到 Provider transport，后者关闭活跃 socket 和读取线程。标准库 `urllib` 的 DNS/TLS 建连仍不能被跨线程强制中止，但外层 daemon 与墙钟截止保证请求不会阻塞 API 主流程。
 - 无论 Provider 成功、未配置或失败，`paperOnly=true`、`liveTradingAllowed=false`、`orderSubmissionEnabled=false`、`routeExecuted=false` 都是不可变边界。
 - Re-run the Stage 1 regression chain: `npm run stage1:prepare`
 

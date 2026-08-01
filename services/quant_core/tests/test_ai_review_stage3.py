@@ -5915,7 +5915,7 @@ class AiReviewProviderContractTests(unittest.TestCase):
 
         self.assertEqual(len(server.requests), 1)
 
-    def test_provider_waits_for_response_headers_within_overall_timeout(self) -> None:
+    def test_provider_waits_beyond_thirty_seconds_for_response_headers(self) -> None:
         server = self._server(self._compatible_response())
         provider = OpenAiCompatibleProvider(
             base_url=server.base_url,
@@ -5926,13 +5926,12 @@ class AiReviewProviderContractTests(unittest.TestCase):
 
         with (
             patch.object(ai_review_providers, "CONNECT_TIMEOUT_SECONDS", 5.0),
-            patch.object(ai_review_providers, "OVERALL_TIMEOUT_SECONDS", 30.0),
             patch.object(ai_review_providers, "urlopen", wraps=actual_urlopen) as urlopen,
         ):
             self._assess(provider)
 
-        self.assertGreater(urlopen.call_args.kwargs["timeout"], 5.0)
-        self.assertLessEqual(urlopen.call_args.kwargs["timeout"], 30.0)
+        self.assertGreater(urlopen.call_args.kwargs["timeout"], 30.0)
+        self.assertLessEqual(urlopen.call_args.kwargs["timeout"], 60.0)
 
     def test_provider_total_budget_is_a_wall_clock_cap_when_transport_ignores_timeout(self) -> None:
         started = threading.Event()
