@@ -948,7 +948,7 @@ describe("terminal layout css", () => {
 
   test("keeps at most five AI review comparison rows visible before scrolling", () => {
     const comparisonList = cssBlock(".surface-ai-review .design-ai-comparison-list");
-    expect(comparisonList).toContain("max-height: 318px;");
+    expect(comparisonList).toContain("max-height: 259px;");
     expect(comparisonList).toContain("overflow-y: auto;");
   });
 

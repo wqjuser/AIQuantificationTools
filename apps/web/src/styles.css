@@ -28879,7 +28879,7 @@ button.ai-review-record {
 .surface-ai-review .design-ai-comparison-list {
   display: grid;
   gap: 6px;
-  max-height: 318px;
+  max-height: 259px;
   overflow-y: auto;
   padding-right: 3px;
 }
