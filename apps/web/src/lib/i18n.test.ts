@@ -50,7 +50,6 @@ describe("i18n", () => {
     const workAreas = buildProductWorkAreas(buildTerminalWorkspace());
     const marketArea = workAreas.find((area) => area.id === "market");
     const marketInformationArea = workAreas.find((area) => area.id === "market-information");
-    const operationsArea = workAreas.find((area) => area.id === "operations");
     const auditArea = workAreas.find((area) => area.id === "audit");
     const executionArea = workAreas.find((area) => area.id === "execution");
 
@@ -102,14 +101,6 @@ describe("i18n", () => {
     expect(marketInformationArea ? en.productWorkAreaLabel(marketInformationArea) : "").toBe("Market Information");
     expect(marketInformationArea ? zh.productWorkAreaDescription(marketInformationArea) : "").toBe(
       "市场广度、涨幅领先、成交活跃与原文资讯"
-    );
-    expect(operationsArea ? zh.productWorkAreaLabel(operationsArea) : "").toBe("运行管理");
-    expect(operationsArea ? en.productWorkAreaLabel(operationsArea) : "").toBe("Operations");
-    expect(operationsArea ? zh.productWorkAreaDescription(operationsArea) : "").toBe(
-      "生产运行、服务健康、告警与研究维护"
-    );
-    expect(operationsArea ? en.productWorkAreaDescription(operationsArea) : "").toBe(
-      "Production runtime, service health, alerts, and research maintenance"
     );
     expect(auditArea ? zh.productDevelopmentStageStatus(auditArea.deliveryStageStatus) : "").toBe("基础维护");
     expect(

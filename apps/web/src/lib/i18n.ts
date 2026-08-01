@@ -1125,7 +1125,6 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       portfolio: "Portfolio & Risk",
       execution: "Execution Center",
       "dynamic-trading": "Dynamic Trading",
-      operations: "Operations",
       audit: "Audit & Replay",
       settings: "Settings"
     },
@@ -1139,7 +1138,6 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       portfolio: "Exposure, positions, live gates",
       execution: "Trading runtime, order controls, and production authorization",
       "dynamic-trading": "Live strategy status, decisions, orders, and risk",
-      operations: "Production runtime, service health, alerts, and research maintenance",
       audit: "Run history, import, export, replay",
       settings: "Data sources, API keys, safety gates"
     },
@@ -1298,7 +1296,6 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       portfolio: "组合风控",
       execution: "执行中心",
       "dynamic-trading": "动态交易",
-      operations: "运行管理",
       audit: "审计回放",
       settings: "设置"
     },
@@ -1312,7 +1309,6 @@ const labelMaps: Record<Locale, LocalizedLabelMap> = {
       portfolio: "敞口、持仓、实盘闸门",
       execution: "交易运行、委托控制与生产授权",
       "dynamic-trading": "自动策略状态、决策、委托与风险",
-      operations: "生产运行、服务健康、告警与研究维护",
       audit: "运行历史、导入、导出、回放",
       settings: "数据源、API Key、安全闸门"
     },

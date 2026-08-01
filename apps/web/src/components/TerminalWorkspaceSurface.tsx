@@ -277,7 +277,6 @@ const pageTitles: Record<ProductWorkAreaId, string> = {
   portfolio: "组合风控",
   execution: "执行中心",
   "dynamic-trading": "动态交易",
-  operations: "运行管理",
   audit: "审计回放",
   settings: "设置",
 };

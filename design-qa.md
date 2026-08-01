@@ -1537,3 +1537,12 @@ final result: passed
 - 后端评审聚焦 `127 / 127`、Python 全量 `934 / 934`、前端聚焦 `609 / 609`、Web 全量 `1187 / 1187`、Web 生产构建、API/Web Docker 重建和 `git diff --check` 通过，仅保留既知 chunk-size 提示。
 
 final result: passed
+
+## 2026-08-01 运行管理页面删除复验
+
+- 运行管理原页面仅重复投影执行、动态交易、研究维护和审计数据，没有独立管理动作；本轮按用户确认直接删除整个工作区、左侧入口、工作区类型、国际化文案、专用只读生产总览、页面布局样式与对应旧源码断言，没有把卡片或工具迁移到其它页面，也没有新增 API、Store、数据库表或状态机。
+- 自动化交易流程由十一页收敛为十页：设置 → 行情中心 → 研究工作台 → 策略工坊 → 回测实验室 → AI 评审 → 组合风控 → 执行中心 → 动态交易 → 审计回放。`workspace=operations` 不再是合法工作区；真实 Docker 访问旧链接后自动回退到行情中心，地址规范化为 `workspace=market`。
+- 真实 Docker 亮色桌面视口 `1280 × 720` 下，左侧导航“运行管理”文本数量为 `0`，流程条显示 `10` 个步骤，文档 `clientWidth=scrollWidth=1280`，浏览器控制台 `0 error / 0 warning`；实现截图为 `/var/tmp/aiqt-operations-workspace-removed.png`。
+- Web 暂存快照全量 `1094 / 1094`、Web 生产构建、API/Web Docker 重建、健康检查和 `git diff --check` 通过；本轮没有运行研究、AI 评审、保存设置、授权、启停、急停或提交任何订单。
+
+final result: passed

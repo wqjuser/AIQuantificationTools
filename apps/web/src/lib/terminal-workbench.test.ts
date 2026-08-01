@@ -2376,7 +2376,7 @@ describe("terminal workbench model", () => {
     expect(stages.find((stage) => stage.id === "market-research")).toMatchObject({
       label: "Stage 1 · A-share P0 Golden Path",
       status: "maintenance",
-      workAreaIds: ["market", "research", "operations"],
+      workAreaIds: ["market", "research"],
       focus: "Preserve the accepted market and research golden path as a regression gate for later maintenance stages."
     });
     expect(stages.filter((stage) => stage.status === "current")).toEqual([]);
@@ -3606,7 +3606,6 @@ describe("terminal workbench model", () => {
       "portfolio",
       "execution",
       "dynamic-trading",
-      "operations",
       "audit",
       "settings"
     ]);
@@ -3632,12 +3631,6 @@ describe("terminal workbench model", () => {
       quantLoopStepId: "research",
       workflowStageId: "data",
       deliveryStageId: "market-research",
-      status: "ready"
-    });
-    expect(areas.find((area) => area.id === "operations")).toMatchObject({
-      label: "Operations",
-      deliveryStageId: "market-research",
-      deliveryStageStatus: "maintenance",
       status: "ready"
     });
     expect(areas.find((area) => area.id === "audit")).toMatchObject({

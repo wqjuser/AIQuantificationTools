@@ -4,7 +4,6 @@ import type { WorkspaceFetcher } from "../lib/terminal-api";
 import {
   AutoTradingEconomicsSummary,
   AutoTradingLedger,
-  AutoTradingOperationsOverview,
   AutoTradingRiskOverview,
   AutoTradingRuntimeHealth,
   AutoTradingServerMonitoring,
@@ -219,74 +218,6 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("关闭页面后仍会继续");
     expect(html).toContain("系统通知不可用");
     expect(html).toContain("服务端运行告警");
-  });
-
-  it("projects production runtime in operations without exposing trading actions", () => {
-    const snapshot = productionSnapshot();
-    const monitoring = healthyMonitoringSnapshot(snapshot);
-    const html = renderToStaticMarkup(
-      <AutoTradingOperationsOverview
-        monitoring={monitoring}
-        onOpenAudit={() => undefined}
-        onOpenDynamicTrading={() => undefined}
-        onOpenExecution={() => undefined}
-        snapshot={snapshot}
-      />
-    );
-
-    expect(html).toContain("生产自动交易运行总览");
-    expect(html).toContain("币安现货生产实盘");
-    expect(html).toContain("永久有效");
-    expect(html).toContain("后台运行正常");
-    expect(html).toContain("已完成 42 轮");
-    expect(html).toContain("观望");
-    expect(html).toContain("已成交");
-    expect(html).toContain("内置自动交易策略");
-    expect(html).toContain("账户覆盖");
-    expect(html).toContain("服务端运行告警");
-    expect(html).toContain("回调通知未配置");
-    expect(html).toContain("请配置回调通知");
-    expect(html).not.toContain("Webhook");
-    expect(html).toContain("本生产总览只读取后端事实");
-    expect(html).not.toContain("保存并开启");
-    expect(html).not.toContain("立即评估");
-    expect(html).not.toContain("立即对账");
-    expect(html).not.toContain(">暂停监控<");
-    expect(html).not.toContain("<input");
-    expect(html).not.toContain("<select");
-    expect(isMonitoringSnapshot(monitoring)).toBe(true);
-    expect(isMonitoringSnapshot({ ...monitoring, notifications: [{}] })).toBe(false);
-  });
-
-  it("surfaces runtime failure and protected production routing without mislabeling authorization", () => {
-    const snapshot = productionSnapshot();
-    snapshot.liveTradingAllowed = false;
-    snapshot.state.runnerState = "stopped";
-    const html = renderToStaticMarkup(
-      <AutoTradingOperationsOverview
-        monitoring={healthyMonitoringSnapshot(snapshot)}
-        snapshot={snapshot}
-      />
-    );
-
-    expect(html).toContain('class="operations-production-runtime danger"');
-    expect(html).toContain("后台运行器已停止");
-    expect(html).toContain("生产路由受保护，请查看阻断原因");
-    expect(html).not.toContain("生产会话未授权或已过期");
-  });
-
-  it("keeps operations in a loading state instead of falling back to paper mode", () => {
-    const html = renderToStaticMarkup(
-      <ExecutionAutoPaperTradingSection
-        baseUrl="http://127.0.0.1:8765"
-        variant="operations"
-      />
-    );
-
-    expect(html).toContain("正在读取生产运行状态");
-    expect(html).toContain("当前执行");
-    expect(html).not.toContain("纸面模拟");
-    expect(html).not.toContain("保存并开启");
   });
 
   it("projects the persisted production strategy and runtime context in Chinese", () => {

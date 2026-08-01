@@ -43,7 +43,6 @@ export type ProductWorkAreaId =
   | "portfolio"
   | "execution"
   | "dynamic-trading"
-  | "operations"
   | "audit"
   | "settings";
 
@@ -9209,7 +9208,7 @@ const productDevelopmentStageDefinitions = [
     id: "market-research",
     label: "Stage 1 · A-share P0 Golden Path",
     status: "maintenance",
-    workAreaIds: ["market", "research", "operations"],
+    workAreaIds: ["market", "research"],
     focus: "Preserve the accepted market and research golden path as a regression gate for later maintenance stages.",
     exitCriteria: [
       "A-share symbols can be searched, selected, refreshed, charted, and cached with visible data-quality evidence.",
@@ -9397,15 +9396,6 @@ const productWorkAreaDefinitions = [
     quantLoopStepId: "paper",
     workflowStageId: "execution",
     deliveryStageId: "production-order-admission"
-  },
-  {
-    id: "operations",
-    label: "Operations",
-    description: "Data maintenance, research queue, scanners, evidence",
-    accent: "market",
-    quantLoopStepId: "research",
-    workflowStageId: "data",
-    deliveryStageId: "market-research"
   },
   {
     id: "audit",
@@ -17902,7 +17892,6 @@ const auditReportLedgerProductWorkAreaIds: readonly ProductWorkAreaId[] = [
   "ai-review",
   "portfolio",
   "execution",
-  "operations",
   "audit",
   "settings"
 ];

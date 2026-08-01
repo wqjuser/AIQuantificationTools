@@ -1388,159 +1388,12 @@ export function AutoTradingServerMonitoring({
   );
 }
 
-export function AutoTradingOperationsOverview({
-  monitoring,
-  monitoringError,
-  onOpenAudit,
-  onOpenDynamicTrading,
-  onOpenExecution,
-  snapshot,
-  statusError
-}: {
-  monitoring?: MonitoringSnapshot | null;
-  monitoringError?: string | null;
-  onOpenAudit?: () => void;
-  onOpenDynamicTrading?: () => void;
-  onOpenExecution?: () => void;
-  snapshot?: AutoTradingSnapshot | null;
-  statusError?: string | null;
-}) {
-  const state = snapshot?.state;
-  const runtime = autoTradingRuntimeHealth(state);
-  const attention = autoTradingAttention(state);
-  const liveMode = state?.executionMode === "live";
-  const bindingBlocked = snapshot?.strategyBinding?.status === "blocked";
-  const bindingReady = snapshot?.strategyBinding?.status === "ready";
-  const currentOrderState = state?.lastOrderResult?.state
-    ?? (liveMode ? state?.lastLiveOrder?.state : state?.lastTestnetOrder?.state);
-  const healthy = Boolean(
-    snapshot
-    && monitoring
-    && runtime.tone === "healthy"
-    && monitoring.status === "healthy"
-    && !attention
-    && bindingReady
-    && (!liveMode || snapshot.liveTradingAllowed)
-  );
-  const runtimeBlocked = runtime.tone === "danger";
-  const monitoringDegraded = monitoring?.status === "degraded";
-  const tone = statusError || monitoringError || runtimeBlocked || monitoringDegraded
-    ? "danger"
-    : attention || monitoring?.status === "attention" || (snapshot && !bindingReady)
-      ? "warning"
-      : healthy ? "healthy" : "waiting";
-  const headline = statusError || monitoringError
-    ? "生产运行状态读取失败"
-    : runtimeBlocked
-      ? runtime.title
-      : monitoringDegraded
-        ? monitoring?.reason ?? "服务端监控已降级"
-        : attention
-          ? attention.title
-          : monitoring?.status === "attention"
-            ? monitoring.reason
-            : !snapshot || !monitoring
-      ? "正在读取生产运行状态"
-              : bindingBlocked
-                ? "生产策略证据已阻断"
-                : bindingReady ? monitoring.reason : "生产策略绑定证据待确认";
-  const mode = state?.executionMode === "live"
-    ? "币安现货生产实盘"
-    : state?.executionMode === "testnet" ? "币安现货测试网" : "纸面模拟";
-
-  return (
-    <section
-      aria-labelledby="operations-production-runtime-title"
-      className={`operations-production-runtime ${tone}`}
-    >
-      <header>
-        <div>
-          <span>生产运行控制面</span>
-          <h2 id="operations-production-runtime-title">生产自动交易运行总览</h2>
-          <p>只读汇总活动策略、后台心跳、账户风险、委托状态与服务端告警。</p>
-        </div>
-        <div className="operations-production-runtime-actions">
-          <strong>{headline}</strong>
-          <nav aria-label="生产运行详情导航">
-            {onOpenDynamicTrading ? (
-              <button onClick={onOpenDynamicTrading} type="button">
-                动态交易 <ChevronRight size={13} />
-              </button>
-            ) : null}
-            {onOpenExecution ? (
-              <button onClick={onOpenExecution} type="button">
-                执行授权 <ChevronRight size={13} />
-              </button>
-            ) : null}
-            {onOpenAudit ? (
-              <button onClick={onOpenAudit} type="button">
-                审计回放 <ChevronRight size={13} />
-              </button>
-            ) : null}
-          </nav>
-        </div>
-      </header>
-
-      {statusError || attention ? (
-        <div className={`operations-production-runtime-alert ${statusError ? "danger" : attention?.tone}`} role="alert">
-          <strong>{statusError ? "自动交易状态不可用" : attention?.title}</strong>
-          <span>{statusError ?? attention?.detail}</span>
-        </div>
-      ) : null}
-
-      <div className="operations-production-runtime-metrics">
-        <article>
-          <span>当前执行</span>
-          <strong>{state ? mode : "正在读取"}</strong>
-          <small>
-            {!state
-              ? "等待权威运行状态"
-              : liveMode
-                ? snapshot?.liveTradingAllowed
-                  ? liveAuthorizationLabel(state)
-                  : "生产路由受保护，请查看阻断原因"
-                : "不会使用生产资金"}
-          </small>
-        </article>
-        <article>
-          <span>后台运行器</span>
-          <strong>{runtime.title}</strong>
-          <small>
-            已完成 {state?.runnerCycleCount ?? 0} 轮 · {
-              runtime.heartbeatAgeSeconds === null ? "等待心跳" : `${runtime.heartbeatAgeSeconds} 秒前`
-            }
-          </small>
-        </article>
-        <article>
-          <span>最近自动判断</span>
-          <strong>{decisionLabel(state?.lastDecision?.action)}</strong>
-          <small>{state?.lastDecision?.evaluatedAt ? formatTime(state.lastDecision.evaluatedAt) : "等待首次判断"}</small>
-        </article>
-        <article>
-          <span>最近委托结果</span>
-          <strong>{orderStateLabel(currentOrderState)}</strong>
-          <small>{hasUnresolvedAutoOrder(state) ? "仅允许查询原委托并完成对账" : "没有待对账委托"}</small>
-        </article>
-      </div>
-
-      <AutoTradingProductionStrategyOverview snapshot={snapshot} />
-      <AutoTradingRiskOverview state={state} />
-      <AutoTradingServerMonitoring error={monitoringError} snapshot={monitoring} />
-
-      <footer>
-        本生产总览只读取后端事实，不会自动评估、对账、授权、急停、切换模式或提交委托。
-      </footer>
-    </section>
-  );
-}
-
 export function ExecutionAutoPaperTradingSection({
   baseUrl,
   chart,
   fetcher = defaultFetcher,
   instruments = [],
   onOpenAudit,
-  onOpenDynamicTrading,
   onOpenExecution,
   onSafetyChange,
   onSnapshotChange,
@@ -1554,7 +1407,6 @@ export function ExecutionAutoPaperTradingSection({
   fetcher?: WorkspaceFetcher;
   instruments?: DynamicTradingInstrument[];
   onOpenAudit?: () => void;
-  onOpenDynamicTrading?: () => void;
   onOpenExecution?: () => void;
   onSafetyChange?: (
     executionMode: AutoTradingState["executionMode"],
@@ -1563,7 +1415,7 @@ export function ExecutionAutoPaperTradingSection({
   onSnapshotChange?: (snapshot: AutoTradingSnapshot | null) => void;
   onSelectInstrument?: (instrument: DynamicTradingInstrument) => void;
   selectedSymbol?: string;
-  variant?: "section" | "workspace" | "operations";
+  variant?: "section" | "workspace";
   workflowGuide?: ReactNode;
 }) {
   const [snapshot, setSnapshot] = useState<AutoTradingSnapshot | null>(null);
@@ -1794,20 +1646,6 @@ export function ExecutionAutoPaperTradingSection({
   const updateNumber = (key: keyof Draft, value: string) => {
     setDraft((current) => ({ ...current, [key]: Number(value) }));
   };
-
-  if (variant === "operations") {
-    return (
-      <AutoTradingOperationsOverview
-        monitoring={monitoring}
-        monitoringError={monitoringReadError}
-        onOpenAudit={onOpenAudit}
-        onOpenDynamicTrading={onOpenDynamicTrading}
-        onOpenExecution={onOpenExecution}
-        snapshot={snapshot}
-        statusError={statusReadError}
-      />
-    );
-  }
 
   if (variant === "workspace") {
     const runtime = autoTradingRuntimeHealth(state);
