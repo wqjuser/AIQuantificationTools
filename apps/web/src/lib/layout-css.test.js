@@ -2824,4 +2824,9 @@ describe("terminal layout css", () => {
       ".execution-auto-server-monitoring > dl {\n    grid-template-columns: repeat(2, minmax(0, 1fr));",
     );
   });
+
+  test("keeps historical execution acceptance evidence to three visible rows", () => {
+    expect(cssBlock(".execution-acceptance-audit-groups ul")).toContain("max-height: 17.5lh;");
+    expect(cssBlock(".execution-acceptance-audit-groups ul")).toContain("overflow-y: auto;");
+  });
 });

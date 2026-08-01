@@ -10702,8 +10702,10 @@ em {
 .execution-acceptance-audit-groups ul {
   display: grid;
   gap: 6px;
+  max-height: 17.5lh;
   margin: 8px 0 0;
   list-style: none;
+  overflow-y: auto;
   padding: 0;
 }
 
