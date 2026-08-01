@@ -1454,6 +1454,76 @@ def test_crypto_mapping_and_market_facts_are_loaded_once_in_batches(
             )
 
 
+def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
+    tmp_path: object,
+) -> None:
+    rows = _rows(20, market="crypto")
+    calls = {"tickers": 0, "markets": 0}
+
+    def fetch_json(url: str, headers: object) -> object:
+        if "/exchanges/binance/tickers" in url:
+            calls["tickers"] += 1
+            if calls["tickers"] == 2:
+                raise RuntimeError("coingecko_rate_limited")
+            mapped = [
+                {
+                    "base": f"C{index:02d}",
+                    "target": "USDT",
+                    "coin_id": f"coin-{index}",
+                    "bid_ask_spread_percentage": 0.1,
+                    "last_fetch_at": NOW.isoformat(),
+                    "is_stale": False,
+                    "is_anomaly": False,
+                }
+                for index in range(5)
+            ]
+            return {"tickers": [*mapped, *([mapped[0]] * 95)]}
+        if "/coins/markets" in url:
+            calls["markets"] += 1
+            ids = parse_qs(urlparse(url).query)["ids"][0].split(",")
+            return [
+                {
+                    "id": coin_id,
+                    "market_cap": 1_000_000 + index,
+                    "circulating_supply": 80_000,
+                    "total_supply": 100_000,
+                    "max_supply": 100_000,
+                    "fully_diluted_valuation": 1_200_000,
+                    "last_updated": NOW.isoformat(),
+                }
+                for index, coin_id in enumerate(ids)
+            ]
+        raise AssertionError(url)
+
+    service = _service(
+        tmp_path,
+        discovery=_Discovery(rows),
+        fundamental_loaders={},
+        fetch_json=fetch_json,
+    )
+
+    result = service.select(
+        _request(market="crypto", discovery={}, profile="balanced")
+    )
+
+    assert result["status"] == "partial"
+    assert {item["symbol"] for item in result["baselineCandidates"]} == {
+        "C00/USDT",
+        "C01/USDT",
+        "C02/USDT",
+        "C03/USDT",
+    }
+    assert calls == {"tickers": 2, "markets": 1}
+    event = service.audit_store.get(result["auditEventId"])
+    assert event is not None
+    coverage = event.metadata["artifact"]["marketContext"][
+        "fundamentalSourceCoverage"
+    ]
+    assert coverage["sampleCount"] == 20
+    assert coverage["mappedCount"] == 4
+    assert coverage["unresolvedCount"] == 16
+
+
 def test_crypto_rejects_future_or_stale_coingecko_source_facts(
     tmp_path: object,
 ) -> None:
@@ -1596,6 +1666,111 @@ def test_crypto_market_fact_omissions_are_negative_cached_idempotently(
     assert second == first
     assert calls == {"tickers": 1, "markets": 1}
     assert service.audit_store.count(event_type="market_ai_selection") == 1
+
+
+def test_crypto_market_fact_source_failure_is_an_explicit_candidate_exclusion(
+    tmp_path: object,
+) -> None:
+    rows = _rows(20, market="crypto")
+
+    def fetch_json(url: str, headers: object) -> object:
+        if "/exchanges/binance/tickers" in url:
+            return {
+                "tickers": [
+                    {
+                        "base": f"C{index:02d}",
+                        "target": "USDT",
+                        "coin_id": f"coin-{index}",
+                        "bid_ask_spread_percentage": 0.1,
+                        "last_fetch_at": NOW.isoformat(),
+                        "is_stale": False,
+                        "is_anomaly": False,
+                    }
+                    for index in range(20)
+                ]
+            }
+        if "/coins/markets" in url:
+            raise RuntimeError("coingecko_rate_limited")
+        raise AssertionError(url)
+
+    service = _service(
+        tmp_path,
+        discovery=_Discovery(rows),
+        fundamental_loaders={},
+        fetch_json=fetch_json,
+    )
+
+    with _raises(MarketAiSelectionError) as caught:
+        service.select(
+            _request(market="crypto", discovery={}, profile="balanced")
+        )
+
+    assert caught.value.code == "market_ai_selection_no_eligible_candidates"
+    assert caught.value.status == 409
+    assert "已映射币种缺少本次 CoinGecko 市场事实" in caught.value.detail
+
+
+def test_crypto_market_fact_source_failure_is_not_reported_as_budget_timeout(
+    tmp_path: object,
+) -> None:
+    rows = _rows(20, market="crypto")
+    discovery = _Discovery(rows[:5])
+    market_calls = 0
+
+    def fetch_json(url: str, headers: object) -> object:
+        nonlocal market_calls
+        if "/exchanges/binance/tickers" in url:
+            return {
+                "tickers": [
+                    {
+                        "base": f"C{index:02d}",
+                        "target": "USDT",
+                        "coin_id": f"coin-{index}",
+                        "bid_ask_spread_percentage": 0.1,
+                        "last_fetch_at": NOW.isoformat(),
+                        "is_stale": False,
+                        "is_anomaly": False,
+                    }
+                    for index in range(20)
+                ]
+            }
+        if "/coins/markets" in url:
+            market_calls += 1
+            if market_calls == 2:
+                raise RuntimeError("coingecko_rate_limited")
+            ids = parse_qs(urlparse(url).query)["ids"][0].split(",")
+            return [
+                {
+                    "id": coin_id,
+                    "market_cap": 1_000_000 + index,
+                    "circulating_supply": 80_000,
+                    "total_supply": 100_000,
+                    "max_supply": 100_000,
+                    "fully_diluted_valuation": 1_200_000,
+                    "last_updated": NOW.isoformat(),
+                }
+                for index, coin_id in enumerate(ids)
+            ]
+        raise AssertionError(url)
+
+    service = _service(
+        tmp_path,
+        discovery=discovery,
+        fundamental_loaders={},
+        fetch_json=fetch_json,
+    )
+    service.select(_request(market="crypto", discovery={}, profile="balanced"))
+    discovery.rows = rows
+
+    result = service.select(
+        _request(market="crypto", discovery={}, profile="balanced")
+    )
+
+    assert result["status"] == "partial"
+    assert len(result["baselineCandidates"]) == 5
+    warnings = result["marketSnapshot"]["warnings"]
+    assert "CoinGecko 市场事实源未完整返回，已排除缺失事实的候选。" in warnings
+    assert not any("预算" in warning for warning in warnings)
 
 
 def test_coingecko_mapping_detects_ambiguity_across_pages(tmp_path: object) -> None:
@@ -3293,6 +3468,13 @@ class MarketAiSelectionTests(unittest.TestCase):
     def test_crypto_mapping_and_market_facts_are_loaded_once_in_batches(self) -> None:
         self._with_tmp(test_crypto_mapping_and_market_facts_are_loaded_once_in_batches)
 
+    def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_crypto_selection_keeps_verified_mapping_when_later_page_fails
+        )
+
     def test_crypto_rejects_future_or_stale_coingecko_source_facts(self) -> None:
         self._with_tmp(test_crypto_rejects_future_or_stale_coingecko_source_facts)
 
@@ -3301,6 +3483,20 @@ class MarketAiSelectionTests(unittest.TestCase):
     ) -> None:
         self._with_tmp(
             test_crypto_market_fact_omissions_are_negative_cached_idempotently
+        )
+
+    def test_crypto_market_fact_source_failure_is_an_explicit_candidate_exclusion(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_crypto_market_fact_source_failure_is_an_explicit_candidate_exclusion
+        )
+
+    def test_crypto_market_fact_source_failure_is_not_reported_as_budget_timeout(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_crypto_market_fact_source_failure_is_not_reported_as_budget_timeout
         )
 
     def test_coingecko_mapping_detects_ambiguity_across_pages(self) -> None:

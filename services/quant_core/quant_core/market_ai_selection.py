@@ -1706,11 +1706,13 @@ class MarketAiSelectionService:
                 "当前筛选条件没有可用于证据组装的权威候选。",
             )
         try:
-            source_timed_out, source_coverage = self._prepare_fundamental_sources(
-                prefiltered,
-                market=str(request["market"]),
-                cutoff=generated_at,
-                deadline=evidence_deadline,
+            source_timed_out, source_coverage, source_warnings = (
+                self._prepare_fundamental_sources(
+                    prefiltered,
+                    market=str(request["market"]),
+                    cutoff=generated_at,
+                    deadline=evidence_deadline,
+                )
             )
         except Exception as error:
             raise MarketAiSelectionError(
@@ -1723,6 +1725,9 @@ class MarketAiSelectionService:
                 **market_context,
                 "fundamentalSourceCoverage": source_coverage,
             }
+        market_snapshot["warnings"] = list(
+            dict.fromkeys([*market_snapshot["warnings"], *source_warnings])
+        )
 
         evidence, evidence_exclusions, evidence_timed_out = self._assemble_evidence(
             prefiltered,
@@ -2326,19 +2331,24 @@ class MarketAiSelectionService:
         market: str,
         cutoff: datetime,
         deadline: float,
-    ) -> tuple[bool, dict[str, Any] | None]:
+    ) -> tuple[bool, dict[str, Any] | None, list[str]]:
         if market != "crypto" or self.fundamental_loaders.get("crypto") is not None:
-            return False, None
+            return False, None, []
         required_pairs = {
             f"{base}/{target}"
             for item in candidates
             if (base := _split_crypto_symbol(str(item["symbol"]))[0])
             and (target := _split_crypto_symbol(str(item["symbol"]))[1])
         }
-        mapping, timed_out = self._ensure_coingecko_mapping(
+        mapping, mapping_incomplete = self._ensure_coingecko_mapping(
             required_pairs,
             cutoff=cutoff,
             deadline=deadline,
+        )
+        warnings = (
+            ["CoinGecko 交易对映射源未完整返回，已仅使用验证完成的精确映射。"]
+            if mapping_incomplete
+            else []
         )
         coverage = _coingecko_mapping_coverage(
             mapping,
@@ -2368,22 +2378,39 @@ class MarketAiSelectionService:
             is None
         ]
         if not missing_ids:
-            return timed_out, coverage
+            return self.monotonic() >= deadline, coverage, warnings
         if self.monotonic() >= deadline:
-            return True, coverage
-        payload = self._read_json(
-            "https://api.coingecko.com/api/v3/coins/markets?"
-            + urlencode(
-                {
-                    "vs_currency": "usd",
-                    "ids": ",".join(missing_ids),
-                }
-            ),
-            {"Accept": "application/json"},
-            deadline=deadline,
-        )
+            return True, coverage, warnings
+        try:
+            payload = self._read_json(
+                "https://api.coingecko.com/api/v3/coins/markets?"
+                + urlencode(
+                    {
+                        "vs_currency": "usd",
+                        "ids": ",".join(missing_ids),
+                    }
+                ),
+                {"Accept": "application/json"},
+                deadline=deadline,
+            )
+        except Exception:
+            return (
+                self.monotonic() >= deadline,
+                coverage,
+                [
+                    *warnings,
+                    "CoinGecko 市场事实源未完整返回，已排除缺失事实的候选。",
+                ],
+            )
         if not isinstance(payload, list):
-            return timed_out or self.monotonic() >= deadline, coverage
+            return (
+                self.monotonic() >= deadline,
+                coverage,
+                [
+                    *warnings,
+                    "CoinGecko 市场事实源未完整返回，已排除缺失事实的候选。",
+                ],
+            )
         returned_ids: set[str] = set()
         for row in payload:
             if (
@@ -2420,7 +2447,7 @@ class MarketAiSelectionService:
                 },
                 now=cutoff,
             )
-        return timed_out or self.monotonic() >= deadline, coverage
+        return self.monotonic() >= deadline, coverage, warnings
 
     def _load_ashare_fundamental(
         self,
@@ -2653,16 +2680,20 @@ class MarketAiSelectionService:
             ticker_rows: list[Mapping[str, Any]] = []
             invalid_pairs: set[str] = set()
             scan_complete = False
+            last_page_boundary_pair = ""
             last_required_pair = max(missing) if missing else ""
             for page in range(1, 21):
                 if self.monotonic() >= effective_deadline:
                     break
-                payload = self._read_json(
-                    "https://api.coingecko.com/api/v3/exchanges/binance/tickers?"
-                    + urlencode({"page": page, "order": "base_target"}),
-                    {"Accept": "application/json"},
-                    deadline=effective_deadline,
-                )
+                try:
+                    payload = self._read_json(
+                        "https://api.coingecko.com/api/v3/exchanges/binance/tickers?"
+                        + urlencode({"page": page, "order": "base_target"}),
+                        {"Accept": "application/json"},
+                        deadline=effective_deadline,
+                    )
+                except Exception:
+                    break
                 rows = (
                     payload.get("tickers")
                     if isinstance(payload, Mapping)
@@ -2692,6 +2723,8 @@ class MarketAiSelectionService:
                     and item.get("base")
                     and item.get("target")
                 ]
+                if page_pairs:
+                    last_page_boundary_pair = max(page_pairs)
                 if (
                     len(rows) < 100
                     or (
@@ -2702,6 +2735,16 @@ class MarketAiSelectionService:
                 ):
                     scan_complete = True
                     break
+            if not scan_complete and last_page_boundary_pair:
+                ticker_rows = [
+                    item
+                    for item in ticker_rows
+                    if (
+                        f"{str(item.get('base') or '').strip().upper()}/"
+                        f"{str(item.get('target') or '').strip().upper()}"
+                    )
+                    != last_page_boundary_pair
+                ]
             discovered = build_coingecko_binance_mapping(ticker_rows)
             for item in discovered.values():
                 if "observedAt" not in item:

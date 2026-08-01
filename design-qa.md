@@ -1555,3 +1555,12 @@ final result: passed
 - 本机根命令 Python 全量 `939 / 939`、Web 全量 `1096 / 1096`、Web 生产构建、Compose 配置校验和 `git diff --check` 通过，仅保留既知 chunk-size 提示。本轮没有访问外部 AI、运行研究、修改生产授权、恢复急停或触发任何订单动作。
 
 final result: passed
+
+## 2026-08-01 AI 选股公开数据源中途失败复验
+
+- CoinGecko Binance ticker 分页中途失败时，服务端保留此前已经通过时间、新鲜度和异常标记校验的精确 `coin_id` 映射，其余交易对保持“未解析”；CoinGecko 市场事实请求失败时，已映射候选按“市场事实缺失”排除。两类公开源失败不再越过既有候选门槛变成通用 `502`，也没有增加同名币种猜测、重试框架、数据库表或第二套状态机。
+- 使用 `INSTALL_DATA_DEPS=true` 重建 API 后，设置状态确认 AKShare 与 yfinance 均为 `ready`。最终代码的真实 A 股全市场请求返回 `201 / partial`，完成 `6` 个基线候选和 `5` 个研究推荐；CoinGecko 官方 Binance ticker 端点当前返回 `429` 与 `Retry-After: 28`，真实 Binance USDT 请求因此返回明确的 `409 market_ai_selection_no_eligible_candidates`，没有回退成通用 `502`。分页失败测试固定只保留 `4` 个已经闭合的映射组，并把可能跨页继续的页尾组及其余 `16` 个交易对保持为未解析。
+- SEC EDGAR User-Agent 仍为空，状态继续为 `blocked / sec_edgar_user_agent_missing`；仓库没有可代填的联系人身份，因此没有虚构配置，也没有宣称完成美股 Company Facts 实网验收。到期复盘样本仍不足，未实现批量研究、自动观察池或任何订单连接。
+- AI 选股安全聚焦 `43 / 43`、Stage 10 安全聚焦 `14 / 14`、Python 全量 `942 / 942`、Web 全量 `1096 / 1096`、生产构建、API 数据依赖镜像重建、API/Web 健康检查和 `git diff --check` 通过；所有真实选股均使用本地确定性 Provider，边界保持 `researchOnly=true`、`orderSubmissionAllowed=false`、`routeExecuted=false`。
+
+final result: passed
