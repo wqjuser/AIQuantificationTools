@@ -75,6 +75,15 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+export function hasExactObjectKeys(
+  value: unknown,
+  keys: readonly string[]
+): value is Record<string, unknown> {
+  return isPlainRecord(value)
+    && Object.keys(value).length === keys.length
+    && keys.every((key) => key in value);
+}
+
 export function isMarket(value: unknown): value is Market {
   return value === "ashare" || value === "us" || value === "crypto";
 }

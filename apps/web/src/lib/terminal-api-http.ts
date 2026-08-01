@@ -12,6 +12,15 @@ export type WorkspaceFetcher = (
 
 export const defaultFetcher: WorkspaceFetcher = async (url, init) => fetch(url, init);
 
+export function resolveRequestOptions(
+  signalOrFetcher: AbortSignal | WorkspaceFetcher | undefined,
+  maybeFetcher: WorkspaceFetcher
+): { signal?: AbortSignal; fetcher: WorkspaceFetcher } {
+  return typeof signalOrFetcher === "function"
+    ? { fetcher: signalOrFetcher }
+    : { signal: signalOrFetcher, fetcher: maybeFetcher };
+}
+
 export function buildApiUrl(
   baseUrl: string,
   path: string,
