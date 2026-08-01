@@ -261,7 +261,16 @@ describe("Stage 3 AI review runtime contracts", () => {
         renderedPrompt: "Bounded canonical evidence",
         requestHash: hash("c"),
         latencyMs: 7,
-        error: { code: "execution_semantics", message: "Provider assessment contains execution semantics." }
+        error: {
+          code: "execution_semantics",
+          message: "Provider assessment contains execution semantics.",
+          diagnostic: {
+            stage: "response_safety_validation",
+            responseReceived: true,
+            fieldPath: "$.risks[0].message",
+            category: "execution_semantics"
+          }
+        }
       }
     };
     expect(isAuthoritativeAiReviewRun(failed)).toBe(true);
@@ -278,6 +287,33 @@ describe("Stage 3 AI review runtime contracts", () => {
       }
     };
     expect(isAuthoritativeAiReviewRun(completed)).toBe(true);
+  });
+
+  test("accepts authoritative evidence with completed original K-lines", () => {
+    const review = sampleAuthoritativeReview();
+    review.evidenceBundle.evidenceItems.push({
+      id: "experiment:primary:completed-klines",
+      kind: "completed_klines",
+      value: {
+        sourceSnapshotHash: hash("6"),
+        completedDataHash: hash("b"),
+        rows: 1,
+        omittedFormingRows: 0,
+        startAt: "2026-06-30T00:00:00+00:00",
+        endAt: "2026-06-30T00:00:00+00:00",
+        klines: [{
+          timestamp: "2026-06-30T00:00:00+00:00",
+          timestampMs: 1782777600000,
+          open: 10,
+          high: 11,
+          low: 9,
+          close: 10.5,
+          volume: 1000
+        }]
+      }
+    } as never);
+
+    expect(isAuthoritativeAiReviewRun(review)).toBe(true);
   });
 
   test("classifies current and historical execution-semantics failures consistently", () => {
@@ -670,6 +706,7 @@ describe("Stage 3 authoritative workspace view model", () => {
       "experimentReferences",
       "strategyDefinition",
       "dataQuality",
+      "completedKlines",
       "candidateMetrics"
     ]);
   });

@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from quant_core.canonical import (
+    canonical_data_hash,
     canonical_json,
     canonical_sha256,
+    normalize_snapshot_bars,
     strategy_config_from_payload,
     strategy_config_to_payload,
 )
@@ -106,6 +108,7 @@ _EVIDENCE_KINDS = {
     "experiment_context",
     "strategy_definition",
     "data_quality",
+    "completed_klines",
     "candidate_metrics",
 }
 _METRIC_FIELDS = {
@@ -956,6 +959,9 @@ def _validate_evidence_item(kind: str, value: Any) -> None:
     if kind == "data_quality":
         _validate_data_quality_evidence(value)
         return
+    if kind == "completed_klines":
+        _validate_completed_klines_evidence(value)
+        return
     _validate_candidate_evidence(value)
 
 
@@ -1007,6 +1013,39 @@ def _validate_data_quality_evidence(value: Any) -> None:
     start_at = _required_string(value, "startAt", "ai_review_evidence_items_invalid")
     end_at = _required_string(value, "endAt", "ai_review_evidence_items_invalid")
     if _parse_datetime(start_at) > _parse_datetime(end_at):
+        raise ValueError("ai_review_evidence_items_invalid")
+
+
+def _validate_completed_klines_evidence(value: Any) -> None:
+    required = {
+        "sourceSnapshotHash",
+        "completedDataHash",
+        "rows",
+        "omittedFormingRows",
+        "startAt",
+        "endAt",
+        "klines",
+    }
+    _require_object_fields(value, required=required)
+    _required_hash(value.get("sourceSnapshotHash"), "ai_review_evidence_items_invalid")
+    completed_hash = _required_hash(
+        value.get("completedDataHash"),
+        "ai_review_evidence_items_invalid",
+    )
+    _validate_strict_int(value.get("rows"), minimum=1)
+    _validate_strict_int(value.get("omittedFormingRows"), minimum=0)
+    klines = value.get("klines")
+    try:
+        normalized = normalize_snapshot_bars(klines)
+    except (TypeError, ValueError) as error:
+        raise ValueError("ai_review_evidence_items_invalid") from error
+    if (
+        canonical_json(normalized) != canonical_json(klines)
+        or len(normalized) != value["rows"]
+        or canonical_data_hash(normalized) != completed_hash
+        or normalized[0]["timestamp"] != value.get("startAt")
+        or normalized[-1]["timestamp"] != value.get("endAt")
+    ):
         raise ValueError("ai_review_evidence_items_invalid")
 
 
@@ -1336,7 +1375,11 @@ def _is_unconfigured_error(value: Any) -> bool:
 
 
 def _validate_external_error(value: Any) -> None:
-    if not isinstance(value, dict) or set(value) != {"code", "message"}:
+    if (
+        not isinstance(value, dict)
+        or not {"code", "message"} <= set(value)
+        or not set(value) <= {"code", "message", "diagnostic"}
+    ):
         raise ValueError("ai_review_external_assessment_invalid")
     code = value.get("code")
     message = value.get("message")
@@ -1350,6 +1393,26 @@ def _validate_external_error(value: Any) -> None:
         or not message
         or message != message.strip()
         or len(message) > 500
+    ):
+        raise ValueError("ai_review_external_assessment_invalid")
+    diagnostic = value.get("diagnostic")
+    if diagnostic is not None and (
+        code != "execution_semantics"
+        or not isinstance(diagnostic, dict)
+        or set(diagnostic) != {
+            "stage",
+            "responseReceived",
+            "fieldPath",
+            "category",
+        }
+        or diagnostic.get("stage") != "response_safety_validation"
+        or diagnostic.get("responseReceived") is not True
+        or diagnostic.get("category") != "execution_semantics"
+        or not isinstance(diagnostic.get("fieldPath"), str)
+        or re.fullmatch(
+            r"\$\.(?:summary|risks\[\d+\]\.message|invalidationConditions\[\d+\]|watchItems\[\d+\]|evidenceGaps\[\d+\])",
+            diagnostic["fieldPath"],
+        ) is None
     ):
         raise ValueError("ai_review_external_assessment_invalid")
     from quant_core.ai_review_stage3 import contains_ai_review_secret_text

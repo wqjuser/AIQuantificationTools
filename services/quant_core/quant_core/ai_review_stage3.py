@@ -19,6 +19,8 @@ from quant_core.canonical import (
     strategy_config_from_payload,
     strategy_config_to_payload,
 )
+from quant_core.data_foundation import completed_market_bars
+from quant_core.domain import MarketDataRequest, OHLCVBar
 from quant_core.runs import ResearchRunStore
 from quant_core.strategy_experiment_store import (
     StrategyExperimentCandidateRecord,
@@ -44,7 +46,7 @@ MAX_REVIEW_DRAWDOWN_PCT = 15.0
 WALK_FORWARD_FAILURE_RATIO = 0.5
 MAX_ASSESSMENT_ITEMS = 50
 MAX_ASSESSMENT_TEXT_CHARS = 2_000
-MAX_RENDERED_PROMPT_CHARS = 24_000
+MAX_RENDERED_PROMPT_CHARS = 120_000
 LEGACY_PROMPT_TEMPLATE_VERSION = "aiqt-ai-review-v1"
 MINIMIZED_PROMPT_TEMPLATE_VERSION = "aiqt-ai-review-v2"
 RESEARCH_ONLY_PROMPT_TEMPLATE_VERSION = "aiqt-ai-review-v3"
@@ -670,6 +672,37 @@ class AiReviewEvidenceAssembler:
         ):
             raise _evidence_conflict(experiment.experiment_id, "snapshot metadata does not match its bars")
 
+        completed_bars = normalize_snapshot_bars(
+            completed_market_bars(
+                MarketDataRequest(
+                    market=experiment.market,
+                    symbol=experiment.symbol,
+                    timeframe=experiment.timeframe,
+                ),
+                [
+                    OHLCVBar(
+                        market=experiment.market,
+                        symbol=experiment.symbol,
+                        timeframe=experiment.timeframe,
+                        timestamp=datetime.fromisoformat(bar["timestamp"]),
+                        open=bar["open"],
+                        high=bar["high"],
+                        low=bar["low"],
+                        close=bar["close"],
+                        volume=bar["volume"],
+                    )
+                    for bar in bars
+                ],
+                observed_at=snapshot.test_consumed_at,
+            )
+        )
+        if not completed_bars:
+            raise _evidence_conflict(
+                experiment.experiment_id,
+                "snapshot has no completed K-line evidence",
+            )
+        completed_data_hash = canonical_data_hash(completed_bars)
+
         try:
             source_run = self.run_store.get(experiment.source_run_id)
         except (TypeError, ValueError) as error:
@@ -757,6 +790,19 @@ class AiReviewEvidenceAssembler:
                         "canonicalDataHash": snapshot.canonical_data_hash,
                         "startAt": snapshot.start_at,
                         "endAt": snapshot.end_at,
+                    },
+                },
+                {
+                    "id": f"{prefix}:completed-klines",
+                    "kind": "completed_klines",
+                    "value": {
+                        "sourceSnapshotHash": snapshot.canonical_data_hash,
+                        "completedDataHash": completed_data_hash,
+                        "rows": len(completed_bars),
+                        "omittedFormingRows": len(bars) - len(completed_bars),
+                        "startAt": completed_bars[0]["timestamp"],
+                        "endAt": completed_bars[-1]["timestamp"],
+                        "klines": completed_bars,
                     },
                 },
                 *[_candidate_evidence(prefix, candidate, selected.candidate_id) for candidate in detail.candidates],
@@ -994,9 +1040,14 @@ class AiReviewStage3Service:
         except AiReviewProviderError as error:
             code = error.code
             message = _bounded_provider_error_message(error.detail)
+            diagnostic = error.diagnostic
         except Exception:
             code = "ai_review_provider_failed"
             message = "Provider execution failed."
+            diagnostic = None
+        error_payload = {"code": code, "message": message}
+        if diagnostic is not None:
+            error_payload["diagnostic"] = diagnostic
         return {
             **base,
             "status": "failed",
@@ -1006,7 +1057,7 @@ class AiReviewStage3Service:
             "assessment": None,
             "usage": None,
             "latencyMs": max(0, int((time.monotonic() - started) * 1_000)),
-            "error": {"code": code, "message": message},
+            "error": error_payload,
         }
 
 
@@ -1097,7 +1148,7 @@ def render_external_prompt(
         raise AiReviewStage3Error(
             "ai_review_prompt_too_large",
             400,
-            "The canonical evidence prompt exceeds the 24000 character limit.",
+            "The canonical evidence prompt exceeds the 120000 character limit.",
         )
     parsed = json.loads(rendered)
     assert_external_evidence_safe(parsed["evidence"])
@@ -1184,6 +1235,19 @@ def _project_external_evidence_item(
                 "canonicalDataHash",
                 "startAt",
                 "endAt",
+            ),
+        )
+    elif kind == "completed_klines":
+        projected = _selected_fields(
+            item_value,
+            (
+                "sourceSnapshotHash",
+                "completedDataHash",
+                "rows",
+                "omittedFormingRows",
+                "startAt",
+                "endAt",
+                "klines",
             ),
         )
     elif kind == "candidate_metrics":

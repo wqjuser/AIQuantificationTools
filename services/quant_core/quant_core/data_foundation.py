@@ -96,6 +96,24 @@ def assess_market_data_quality(
     )
 
 
+def completed_market_bars(
+    request: MarketDataRequest,
+    bars: list[OHLCVBar],
+    *,
+    observed_at: datetime,
+) -> list[OHLCVBar]:
+    observed = _aware(observed_at)
+    calendar = build_market_calendar_status(request.market, at=observed)
+    return sorted(
+        (
+            bar
+            for bar in bars
+            if _bar_is_complete(request, bar, observed, calendar)
+        ),
+        key=lambda bar: bar.timestamp,
+    )
+
+
 def data_quality_to_payload(quality: DataQuality) -> dict[str, object]:
     return {
         "source": quality.source,

@@ -229,6 +229,7 @@ class AiReviewProviderError(ValueError):
         code: str,
         detail: Any,
         *,
+        diagnostic: Mapping[str, Any] | None = None,
         sensitive_values: Iterable[str] = (),
     ) -> None:
         if code not in _ERROR_CODES:
@@ -240,6 +241,7 @@ class AiReviewProviderError(ValueError):
         super().__init__(bounded_detail)
         self.code = code
         self.detail = bounded_detail
+        self.diagnostic = _validated_provider_diagnostic(diagnostic)
 
 
 class AiReviewProvider(Protocol):
@@ -1400,8 +1402,22 @@ def _validated_assessment(
         raise failure
     if assessment is None:
         raise AiReviewProviderError("invalid_schema", "provider_assessment_missing")
-    if response_validator is None and contains_prohibited_output(assessment):
-        raise AiReviewProviderError("execution_semantics", "provider_assessment_contains_execution_semantics")
+    rejected_field = (
+        prohibited_output_field_path(assessment)
+        if response_validator is None
+        else None
+    )
+    if rejected_field is not None:
+        raise AiReviewProviderError(
+            "execution_semantics",
+            "provider_assessment_contains_execution_semantics",
+            diagnostic={
+                "stage": "response_safety_validation",
+                "responseReceived": True,
+                "fieldPath": rejected_field,
+                "category": "execution_semantics",
+            },
+        )
     return assessment
 
 
@@ -1430,6 +1446,10 @@ def _non_negative_int(value: Any) -> int | None:
 
 
 def contains_prohibited_output(value: Any) -> bool:
+    return prohibited_output_field_path(value) is not None
+
+
+def prohibited_output_field_path(value: Any, path: str = "$") -> str | None:
     if isinstance(value, str):
         for clause in _OUTPUT_CLAUSE_BOUNDARY.split(value):
             normalized = clause.strip(" \t\r\n。！？!?.,，；;")
@@ -1446,7 +1466,7 @@ def contains_prohibited_output(value: Any) -> bool:
                     for pattern in _UNCONDITIONAL_PROHIBITED_OUTPUT_PATTERNS
                 )
             ):
-                return True
+                return path
             explicitly_safe = (
                 _SAFE_NEGATED_ACTION_LIST.fullmatch(normalized) is not None
                 or (
@@ -1468,15 +1488,45 @@ def contains_prohibited_output(value: Any) -> bool:
             ):
                 continue
             if _EXECUTION_ACTION_VERB.search(normalized):
-                return True
+                return path
             if any(pattern.search(normalized) for pattern in _PROHIBITED_OUTPUT_PATTERNS):
-                return True
-        return False
+                return path
+        return None
     if isinstance(value, Mapping):
-        return any(contains_prohibited_output(item) for item in value.values())
+        for key, item in value.items():
+            match = prohibited_output_field_path(item, f"{path}.{key}")
+            if match is not None:
+                return match
+        return None
     if isinstance(value, (list, tuple)):
-        return any(contains_prohibited_output(item) for item in value)
-    return False
+        for index, item in enumerate(value):
+            match = prohibited_output_field_path(item, f"{path}[{index}]")
+            if match is not None:
+                return match
+        return None
+    return None
+
+
+def _validated_provider_diagnostic(value: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    expected = {
+        "stage": "response_safety_validation",
+        "responseReceived": True,
+        "category": "execution_semantics",
+    }
+    field_path = value.get("fieldPath")
+    if (
+        set(value) != {*expected, "fieldPath"}
+        or any(value.get(key) != item for key, item in expected.items())
+        or not isinstance(field_path, str)
+        or re.fullmatch(
+            r"\$\.(?:summary|risks\[\d+\]\.message|invalidationConditions\[\d+\]|watchItems\[\d+\]|evidenceGaps\[\d+\])",
+            field_path,
+        ) is None
+    ):
+        raise ValueError("invalid_provider_error_diagnostic")
+    return {**expected, "fieldPath": field_path}
 
 
 def _redact_sensitive_fields(value: Any) -> Any:

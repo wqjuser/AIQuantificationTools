@@ -439,7 +439,7 @@ function PageHeader({
             </Status>
           </span>
           <span>
-            <small>阻断原因</small>
+            <small>{action.workflowStatus && !blocked ? "状态说明" : "阻断原因"}</small>
             <strong>{completed ? "无待办阻断" : action.workflowReason ?? (blocked ? action.label : "无主动作阻断")}</strong>
           </span>
           <span>
@@ -4002,10 +4002,23 @@ function AiReviewSurface({
     : externalAssessment?.status === "failed"
       ? "risk" as const
       : "neutral" as const;
+  const executionSemanticsFailure = externalAssessment?.status === "failed" && (
+    externalAssessment.error?.code === "execution_semantics"
+    || (
+      externalAssessment.error?.code === "invalid_schema"
+      && externalAssessment.error.message === "provider_assessment_contains_execution_semantics"
+    )
+  );
   const externalLabel = aiReview.running
     ? "运行中"
     : externalAssessment?.status === "completed"
       ? stanceLabel(externalAssessment.assessment?.stance)
+      : executionSemanticsFailure
+        ? "安全校验拒绝"
+        : externalAssessment?.error?.code === "timeout"
+          ? "响应超时"
+          : externalAssessment?.error?.code === "invalid_schema"
+            ? "格式校验拒绝"
       : externalAssessment
         ? terminalSurfaceZh.t(
             `aiReviewStage3.external.status.${externalAssessment.status}` as TranslationKey,
@@ -4018,6 +4031,12 @@ function AiReviewSurface({
     ? "正在等待本次外部模型结果，不显示历史评审结论。"
     : externalAssessment?.assessment?.summary
       ? localizedMessage(externalAssessment.assessment.summary, externalAssessment.assessment.summary)
+      : executionSemanticsFailure && externalAssessment
+        ? `外部响应${externalAssessment.latencyMs > 0
+            ? `已在 ${(externalAssessment.latencyMs / 1_000).toFixed(1)} 秒返回`
+            : "已返回"}，但在响应安全校验阶段被拒绝${externalAssessment.error?.diagnostic?.fieldPath
+            ? `（字段：${externalAssessment.error.diagnostic.fieldPath.replace(/^\$\./, "")}）`
+            : ""}：检测到买卖、持仓、目标价或订单等执行语义。本地确定性评估仍有效。`
       : externalAssessment?.error
         ? terminalSurfaceZh.t(externalErrorKey)
         : externalAssessment
@@ -4490,8 +4509,8 @@ function AiReviewSurface({
               {usesExternalProvider ? (
                 <>
                   <p>
-                    仅发送实验引用与哈希、策略定义、数据质量摘要和候选指标证据；
-                    不发送原始 K 线、密钥或已有研究笔记。
+                    发送服务端冻结且已完成的原始 K 线、实验引用与哈希、策略定义、
+                    数据质量摘要和候选指标证据；不发送形成中 K 线、密钥或已有研究笔记。
                   </p>
                   <label
                     className="design-ai-external-approval"
@@ -4507,7 +4526,7 @@ function AiReviewSurface({
                       type="checkbox"
                     />
                     <span className="design-ai-external-approval-copy">
-                      <strong>允许发送证据摘要</strong>
+                      <strong>允许发送已完成 K 线与证据</strong>
                       <small>仅本次评审有效，切换模型或实验后需重新确认</small>
                     </span>
                   </label>
@@ -4548,10 +4567,10 @@ function AiReviewSurface({
             </div>
             <div className="design-kv-row">
               <span>出站字段</span>
-              <strong>仅指标聚合与摘要</strong>
+              <strong>已完成 K 线与审计证据</strong>
             </div>
             <div className="design-ai-disclosure">
-              <LockKeyhole size={14} /> 不发送原始 K 线、密钥或已有研究笔记
+              <LockKeyhole size={14} /> 不发送形成中 K 线、密钥或已有研究笔记
             </div>
           </SurfacePanel>
 

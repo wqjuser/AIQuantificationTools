@@ -1527,3 +1527,13 @@ final result: passed
 - Web 全量 `1185 / 1185`、Web 生产构建和 Docker Web 重建通过；API/Web 均 healthy。真实页面控制台 `0 error / 0 warning`。
 
 final result: passed
+
+## 2026-08-01 AI 评审完整 K 线与失败阶段复验
+
+- 外部 AI 评审的权威证据现包含服务端冻结快照中的原始已完成 K 线、源快照哈希、已完成子集哈希、区间和省略形成中行数；形成中与未来 K 线由既有市场完整性规则剔除。500 根日 K 提示覆盖、点时截断和哈希回放均由后端测试验证，浏览器仍不能上传收益或 K 线事实。
+- Provider 成功返回但被执行语义安全校验拒绝时，审计新增结构化诊断：响应已返回、`response_safety_validation` 阶段、`execution_semantics` 类别和具体 JSON 字段路径；不保存或回显被拒绝原文，旧记录保持兼容。
+- 页面把旧记录 `ai-review-67cf8ae570634823a1eaffeff6992092` 的 `20.605s + execution_semantics` 明确显示为“安全校验拒绝 / 外部响应已在 20.6 秒返回”，不再误报网络或 Provider 失败。黄金路径等待状态使用中文“状态说明”，模型披露明确外发已完成 K 线并排除形成中 K 线、密钥和已有研究笔记。
+- 真实 Docker 亮色页面 `1280 × 720` 下评审结论与对照实验高度均为 `343px`，文档宽度 `1280/1280`，控制台 `0 error / 0 warning`。API/Web 均 healthy；本轮没有重新授权、调用外部模型、运行研究或触发任何订单动作。
+- 后端评审聚焦 `127 / 127`、Python 全量 `934 / 934`、前端聚焦 `609 / 609`、Web 全量 `1187 / 1187`、Web 生产构建、API/Web Docker 重建和 `git diff --check` 通过，仅保留既知 chunk-size 提示。
+
+final result: passed

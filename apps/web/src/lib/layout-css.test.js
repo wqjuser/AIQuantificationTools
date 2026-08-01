@@ -1015,6 +1015,8 @@ describe("terminal layout css", () => {
     expect(aiReviewStage3SectionSource).toContain("buildAiReviewAssessmentColumns(currentReview)");
     expect(aiReviewStage3SectionSource).toContain("legacyHistory.map");
     expect(aiReviewStage3SectionSource).toContain("canRunAiReviewStage3({");
+    expect(appSource).toContain("请先授权已完成 K 线与证据");
+    expect(appSource).toContain("请先在评审设置中允许发送本次已完成 K 线与证据。");
   });
 
   test("restores a URL-bound AI review run without weakening audit deep links or stale-request guards", () => {
@@ -2766,6 +2768,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("当前上下文没有可用 K 线缓存");
     expect(appSource).toContain("还没有匹配的自选刷新证据");
     expect(appSource).toContain("自选刷新证据");
+    expect(appSource).toContain("The audited run is ready for the local evidence review required by paper simulation.");
+    expect(appSource).toContain("审计运行已就绪，等待完成模拟执行所需的本地证据评审。");
   });
 
   test("renders the active work-area golden path context inside the task card", () => {

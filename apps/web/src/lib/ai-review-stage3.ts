@@ -44,7 +44,7 @@ export interface AiReviewExperimentReference {
 
 export interface AiReviewEvidenceItem {
   id: string;
-  kind: "experiment_context" | "strategy_definition" | "data_quality" | "candidate_metrics";
+  kind: "experiment_context" | "strategy_definition" | "data_quality" | "completed_klines" | "candidate_metrics";
   value: Record<string, unknown>;
 }
 
@@ -90,7 +90,16 @@ export interface AiReviewExternalAssessment {
   assessment: AiReviewAssessment | null;
   usage: Partial<Record<"inputTokens" | "outputTokens" | "totalTokens", number>> | null;
   latencyMs: number;
-  error: { code: AiReviewExternalErrorCode; message: string } | null;
+  error: {
+    code: AiReviewExternalErrorCode;
+    message: string;
+    diagnostic?: {
+      stage: "response_safety_validation";
+      responseReceived: true;
+      fieldPath: string;
+      category: "execution_semantics";
+    };
+  } | null;
 }
 
 export function aiReviewExternalErrorTranslationKey(
@@ -208,6 +217,7 @@ export const AI_REVIEW_EXTERNAL_DATA_FIELDS = [
   "experimentReferences",
   "strategyDefinition",
   "dataQuality",
+  "completedKlines",
   "candidateMetrics"
 ] as const;
 
@@ -594,6 +604,39 @@ function isEvidenceItem(value: unknown): value is AiReviewEvidenceItem {
       && isUtcTimestamp(value.value.endAt)
       && Date.parse(value.value.startAt) <= Date.parse(value.value.endAt);
   }
+  if (value.kind === "completed_klines") {
+    if (!hasExactKeys(value.value, [
+      "sourceSnapshotHash", "completedDataHash", "rows", "omittedFormingRows",
+      "startAt", "endAt", "klines"
+    ]) || !isHash(value.value.sourceSnapshotHash) || !isHash(value.value.completedDataHash)
+      || !isNonNegativeInteger(value.value.rows) || value.value.rows < 1
+      || !isNonNegativeInteger(value.value.omittedFormingRows)
+      || !isUtcTimestamp(value.value.startAt) || !isUtcTimestamp(value.value.endAt)
+      || !Array.isArray(value.value.klines) || value.value.klines.length !== value.value.rows) {
+      return false;
+    }
+    let previousTimestamp = -1;
+    for (const bar of value.value.klines) {
+      if (!hasExactKeys(bar, ["timestamp", "timestampMs", "open", "high", "low", "close", "volume"])
+        || !isUtcTimestamp(bar.timestamp) || !isNonNegativeInteger(bar.timestampMs)
+        || bar.timestampMs !== Date.parse(bar.timestamp)
+        || bar.timestampMs <= previousTimestamp) {
+        return false;
+      }
+      const numbers = [bar.open, bar.high, bar.low, bar.close, bar.volume];
+      if (!numbers.every(isFiniteNumber)) {
+        return false;
+      }
+      const [open, high, low, close, volume] = numbers as number[];
+      if (open <= 0 || high <= 0 || low <= 0 || close <= 0 || volume < 0
+        || high < Math.max(open, low, close) || low > Math.min(open, high, close)) {
+        return false;
+      }
+      previousTimestamp = bar.timestampMs;
+    }
+    return value.value.startAt === value.value.klines[0].timestamp
+      && value.value.endAt === value.value.klines[value.value.klines.length - 1].timestamp;
+  }
   if (value.kind !== "candidate_metrics" || !hasExactKeys(value.value, [
     "candidateId", "candidateRevision", "parameters", "trainMetrics", "validationMetrics",
     "walkForward", "eligible", "rank", "selected"
@@ -663,10 +706,19 @@ function isUsage(value: unknown): value is NonNullable<AiReviewExternalAssessmen
 }
 
 function isExternalError(value: unknown): value is NonNullable<AiReviewExternalAssessment["error"]> {
-  return hasExactKeys(value, ["code", "message"])
+  return hasExactKeys(value, ["code", "message"], ["diagnostic"])
     && typeof value.code === "string"
     && externalErrorCodes.has(value.code as AiReviewExternalErrorCode)
     && isTrimmedText(value.message, 500)
+    && (!("diagnostic" in value) || (
+      value.code === "execution_semantics"
+      && hasExactKeys(value.diagnostic, ["stage", "responseReceived", "fieldPath", "category"])
+      && value.diagnostic.stage === "response_safety_validation"
+      && value.diagnostic.responseReceived === true
+      && value.diagnostic.category === "execution_semantics"
+      && typeof value.diagnostic.fieldPath === "string"
+      && /^\$\.(?:summary|risks\[\d+\]\.message|invalidationConditions\[\d+\]|watchItems\[\d+\]|evidenceGaps\[\d+\])$/.test(value.diagnostic.fieldPath)
+    ))
     && !/(?:\btoken\b|access[_ -]?token|api[_ -]?key|private[_ -]?key|authorization|password|bearer|secret|\bsk-(?:proj-)?[a-z0-9_-]{8,}\b)/i.test(value.message);
 }
 

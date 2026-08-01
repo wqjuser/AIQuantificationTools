@@ -4811,7 +4811,7 @@ export function App() {
       return;
     }
     if (aiReviewRequiresExternalApproval(aiReviewStage3ProviderId) && !aiReviewStage3ExternalDataApproved) {
-      setAiReviewStage3Error("请先在评审设置中允许发送本次证据摘要。");
+      setAiReviewStage3Error("请先在评审设置中允许发送本次已完成 K 线与证据。");
       return;
     }
     if (!canRunAiReviewStage3({
@@ -16474,7 +16474,7 @@ export function App() {
         : !aiReviewStage3SelectedExperiment && !aiReviewStage3DraftExperiment && !canPrepareTerminalAiReview
           ? "请先完善实验参数"
           : aiReviewNeedsExternalApproval
-            ? "请先授权证据摘要"
+            ? "请先授权已完成 K 线与证据"
             : canRunTerminalAiReview
               ? "运行 AI 评审"
               : "AI 评审暂不可用";
@@ -22114,6 +22114,15 @@ function goldenPathRunbookDetail(i18n: AppI18n, item: GoldenPathRunbookPreviewIt
 function translateGoldenPathDetail(i18n: AppI18n, detail: string): string {
   if (i18n.locale === "en-US") {
     return detail;
+  }
+  const localizedAiReviewDetail = ({
+    "AI review waits for audited backtest evidence.": "AI 评审等待已审计的回测证据。",
+    "The latest audited run does not include an AI evidence summary.": "最新审计运行缺少 AI 证据摘要。",
+    "The audited run is ready for the local evidence review required by paper simulation.": "审计运行已就绪，等待完成模拟执行所需的本地证据评审。",
+    "AI review evidence is bound to the audited run.": "AI 评审证据已绑定到当前审计运行。",
+  } as Record<string, string>)[detail];
+  if (localizedAiReviewDetail) {
+    return localizedAiReviewDetail;
   }
   const freshCache = detail.match(/^(\d+) fresh cached K-line rows are available for audited research\.$/);
   if (freshCache) {

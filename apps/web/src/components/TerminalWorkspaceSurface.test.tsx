@@ -368,9 +368,27 @@ describe("TerminalWorkspaceSurface", () => {
     expect(review).toContain("评审设置");
     expect(review).toContain("模型服务");
     expect(review).toContain("OpenAI 兼容服务");
-    expect(review).toContain("允许发送证据摘要");
+    expect(review).toContain("允许发送已完成 K 线与证据");
     expect(review).toContain("仅本次评审有效");
-    expect(review).toContain("不发送原始 K 线、密钥或已有研究笔记");
+    expect(review).toContain("服务端冻结且已完成的原始 K 线");
+    expect(review).toContain("不发送形成中 K 线、密钥或已有研究笔记");
+    expect(review).toContain("已完成 K 线与审计证据");
+  });
+
+  it("labels a pending AI review reason as status information", () => {
+    const review = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        action={{
+          ...baseProps.action,
+          workflowReason: "审计运行已就绪，等待完成模拟执行所需的本地证据评审。",
+          workflowStatus: "needs_run",
+        }}
+        activeWorkAreaId="ai-review"
+      />,
+    );
+
+    expect(review).toContain("<small>状态说明</small><strong>审计运行已就绪");
   });
 
   it("offers only existing experiments through the authoritative comparison selector", () => {
@@ -811,12 +829,19 @@ describe("TerminalWorkspaceSurface", () => {
       externalAssessment: {
         ...reviewRecord.externalAssessment,
         status: "failed",
+        latencyMs: 20_605,
         assessment: null,
         responseHash: null,
         usage: null,
         error: {
-          code: "invalid_schema",
+          code: "execution_semantics",
           message: "provider_assessment_contains_execution_semantics",
+          diagnostic: {
+            stage: "response_safety_validation",
+            responseReceived: true,
+            fieldPath: "$.risks[0].message",
+            category: "execution_semantics",
+          },
         },
       },
     };
@@ -843,7 +868,10 @@ describe("TerminalWorkspaceSurface", () => {
         }}
       />,
     );
-    expect(failed).toContain("外部模型返回了买卖、持仓、目标价或订单等执行语义");
+    expect(failed).toContain("安全校验拒绝");
+    expect(failed).toContain("外部响应已在 20.6 秒返回");
+    expect(failed).toContain("响应安全校验阶段");
+    expect(failed).toContain("risks[0].message");
     expect(failed).toContain("本地确定性评估仍有效");
     expect(failed).toContain("证据不完整：1 项必需证据缺失或无效。");
     expect(failed).not.toContain("provider_assessment_contains_execution_semantics");
