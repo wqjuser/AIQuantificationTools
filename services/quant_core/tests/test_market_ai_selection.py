@@ -2468,6 +2468,61 @@ def test_ashare_source_comparison_verifies_or_blocks_conflict() -> None:
     assert compare_stock_fundamental_sources(primary, scaled)["status"] == "verified"
 
 
+def test_ashare_fact_conflict_keeps_the_auditable_exclusion_cause(
+    tmp_path: object,
+) -> None:
+    conflicts = {
+        "600000": {
+            "mismatchedFields": ["currentRevenue", "shareholdersEquity"],
+        },
+        "600001": {"reason": "sources_not_independent"},
+        "600002": {"reason": "unit_unknown"},
+        "600003": {"reason": "unit_mismatch"},
+        "600004": {"reason": "report_period_mismatch"},
+    }
+
+    def conflicting_fundamental(
+        candidate: object,
+        cutoff: datetime,
+    ) -> dict[str, object]:
+        value = _stock_fundamental(candidate, cutoff)
+        symbol = str(candidate["symbol"])  # type: ignore[index]
+        if symbol in conflicts:
+            value["conflict"] = True
+            value["sourceVerification"] = {
+                "status": "conflict",
+                "sources": ["source-a", "source-b"],
+                **conflicts[symbol],
+            }
+        return value
+
+    service = _service(
+        tmp_path,
+        discovery=_Discovery(_rows(20)),
+        fundamental_loaders={"ashare": conflicting_fundamental},
+    )
+    result = service.select(_request())
+    expected = {
+        "600000": "双源财务事实字段不一致：本期营收、股东权益。",
+        "600001": "双源财务事实来源不独立。",
+        "600002": "双源财务事实缺少可核验货币单位。",
+        "600003": "双源财务事实货币单位不一致。",
+        "600004": "双源财务事实报告期不一致。",
+    }
+    exclusions = {
+        item["symbol"]: item["reason"]
+        for item in result["exclusions"]
+    }
+    assert exclusions == expected
+    event = service.audit_store.get(result["auditEventId"])
+    assert event is not None
+    assert event.metadata["artifact"]["exclusions"] == result["exclusions"]
+    reasons = service.quality_statistics()["majorExclusions"]["reasons"]
+    assert {item["reason"]: item["count"] for item in reasons} == {
+        reason: 1 for reason in expected.values()
+    }
+
+
 def test_provider_output_rejects_unknown_reference_and_trade_field() -> None:
     with _raises(ValueError):
         validate_market_ai_selection_output(
@@ -3586,6 +3641,13 @@ class MarketAiSelectionTests(unittest.TestCase):
 
     def test_ashare_source_comparison_verifies_or_blocks_conflict(self) -> None:
         test_ashare_source_comparison_verifies_or_blocks_conflict()
+
+    def test_ashare_fact_conflict_keeps_the_auditable_exclusion_cause(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_ashare_fact_conflict_keeps_the_auditable_exclusion_cause
+        )
 
     def test_provider_output_rejects_unknown_reference_and_trade_field(self) -> None:
         test_provider_output_rejects_unknown_reference_and_trade_field()

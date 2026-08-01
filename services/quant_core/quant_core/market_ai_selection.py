@@ -4223,10 +4223,42 @@ def _validate_fundamental(
         isinstance(verification, Mapping)
         and verification.get("status") == "conflict"
     ):
+        mismatched = (
+            verification.get("mismatchedFields")
+            if isinstance(verification, Mapping)
+            else None
+        )
+        labels = [
+            label
+            for field, label in (
+                ("currentRevenue", "本期营收"),
+                ("previousRevenue", "上期营收"),
+                ("currentNetProfit", "本期净利润"),
+                ("previousNetProfit", "上期净利润"),
+                ("totalAssets", "总资产"),
+                ("shareholdersEquity", "股东权益"),
+            )
+            if isinstance(mismatched, list) and field in mismatched
+        ]
+        structural_detail = {
+            "sources_not_independent": "双源财务事实来源不独立。",
+            "unit_unknown": "双源财务事实缺少可核验货币单位。",
+            "unit_mismatch": "双源财务事实货币单位不一致。",
+            "report_period_mismatch": "双源财务事实报告期不一致。",
+        }.get(
+            str(verification.get("reason") or "")
+            if isinstance(verification, Mapping)
+            else ""
+        )
         return (
             False,
             "stock_fundamental_conflict",
-            "双源财务事实存在单位或报告期冲突。",
+            (
+                f"双源财务事实字段不一致：{'、'.join(labels)}。"
+                if labels
+                else structural_detail
+                or "双源财务事实存在未分类冲突。"
+            ),
         )
     if profile == "value":
         valuation = _stock_valuation(candidate, fundamental)
