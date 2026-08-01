@@ -99,6 +99,7 @@ _V2_EXTERNAL_ERROR_CODES = {
     "response_too_large",
     "invalid_json",
     "invalid_schema",
+    "execution_semantics",
     "unknown_evidence_reference",
 }
 _EVIDENCE_KINDS = {
@@ -118,6 +119,7 @@ _METRIC_FIELDS = {
 _SUPPORTED_PROMPT_TEMPLATE_VERSIONS = {
     "aiqt-ai-review-v1",
     "aiqt-ai-review-v2",
+    "aiqt-ai-review-v3",
 }
 _V2_OUTPUT_SCHEMA_VERSION = "aiqt-ai-review-assessment-v1"
 _V2_OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -1224,7 +1226,7 @@ def _validate_external_assessment(
         raise ValueError("ai_review_external_assessment_invalid")
     from quant_core.ai_review_stage3 import (
         LEGACY_PROMPT_TEMPLATE_VERSION,
-        PROMPT_TEMPLATE_VERSION,
+        MINIMIZED_PROMPT_TEMPLATE_VERSION,
         render_external_prompt,
     )
 
@@ -1239,7 +1241,7 @@ def _validate_external_assessment(
         ):
             transitional_prompt, rendered_evidence_ids = render_external_prompt(
                 evidence_bundle,
-                prompt_template_version=PROMPT_TEMPLATE_VERSION,
+                prompt_template_version=MINIMIZED_PROMPT_TEMPLATE_VERSION,
             )
             transitional_payload = json.loads(transitional_prompt)
             transitional_payload["promptTemplateVersion"] = (

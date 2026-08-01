@@ -25,6 +25,7 @@ describe("i18n", () => {
     expect(zh.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("外部模型服务尚未配置。");
     expect(zh.t("aiReviewStage3.external.error.timeout")).toBe("外部模型响应超时，请稍后重新运行评审。");
     expect(zh.t("aiReviewStage3.external.error.invalid_schema")).toContain("本地确定性评估仍有效");
+    expect(zh.t("aiReviewStage3.external.error.execution_semantics")).toContain("执行语义");
     expect(en.t("aiReviewStage3.external.error.ai_review_provider_not_configured")).toBe("Provider is not configured.");
     expect(zh.t("aiReviewStage3.error.serviceLoadFailed")).toBe("AI 评审服务加载失败。");
     expect(zh.t("aiReviewStage3.error.historyLoadFailed")).toBe("AI 评审历史加载失败。");

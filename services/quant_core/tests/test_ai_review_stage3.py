@@ -3663,7 +3663,11 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
         second = render_external_prompt(copy.deepcopy(bundle))
 
         self.assertEqual(first, second)
-        projected_items = json.loads(first[0])["evidence"]["evidenceItems"]
+        payload = json.loads(first[0])
+        self.assertEqual(payload["promptTemplateVersion"], "aiqt-ai-review-v3")
+        self.assertIn("Use research-only language", payload["instruction"])
+        self.assertIn("buying, selling, or holding", payload["instruction"])
+        projected_items = payload["evidence"]["evidenceItems"]
         self.assertEqual(
             first[1],
             frozenset(item["id"] for item in projected_items),
@@ -3711,7 +3715,11 @@ class AiReviewStage3ServiceTests(_AiReviewStage3Fixture, unittest.TestCase):
             f"ai-review-{canonical_sha256('transitional-selected-prompt')[:32]}"
         )
         transitional_external = transitional["externalAssessment"]
-        transitional_payload = json.loads(transitional_external["renderedPrompt"])
+        minimized_prompt, _ = render_external_prompt(
+            transitional["evidenceBundle"],
+            prompt_template_version="aiqt-ai-review-v2",
+        )
+        transitional_payload = json.loads(minimized_prompt)
         transitional_payload["promptTemplateVersion"] = "aiqt-ai-review-v1"
         transitional_prompt = canonical_json(transitional_payload)
         transitional_external["promptTemplateVersion"] = "aiqt-ai-review-v1"
@@ -6120,7 +6128,7 @@ class AiReviewProviderContractTests(unittest.TestCase):
                         api_key="fake-compatible-key",
                         model="compatible-test",
                     )
-                    self._assert_provider_error("invalid_schema", lambda: self._assess(provider))
+                    self._assert_provider_error("execution_semantics", lambda: self._assess(provider))
                     self.assertEqual(len(server.requests), 1)
                 finally:
                     server.close()
@@ -6573,7 +6581,10 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
 
     def test_provider_failure_is_a_persisted_201_review(self) -> None:
         provider = _StubReviewProvider(
-            error=AiReviewProviderError("timeout", "provider timed out")
+            error=AiReviewProviderError(
+                "execution_semantics",
+                "provider_assessment_contains_execution_semantics",
+            )
         )
         self.handler.ai_review_provider_registry = AiReviewProviderRegistry(
             (
@@ -6590,7 +6601,10 @@ class AiReviewStage3HttpTests(_AiReviewStage3Fixture, unittest.TestCase):
 
         self.assertEqual(status, 201)
         self.assertEqual(payload["review"]["externalAssessment"]["status"], "failed")
-        self.assertEqual(payload["review"]["externalAssessment"]["error"]["code"], "timeout")
+        self.assertEqual(
+            payload["review"]["externalAssessment"]["error"]["code"],
+            "execution_semantics",
+        )
         self.assertEqual(provider.calls, 1)
         self.assertEqual(self.review_store.count_recent(), 1)
 

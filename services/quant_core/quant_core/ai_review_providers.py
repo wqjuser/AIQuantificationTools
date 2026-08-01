@@ -41,6 +41,7 @@ _ERROR_CODES = {
     "response_too_large",
     "invalid_json",
     "invalid_schema",
+    "execution_semantics",
     "unknown_evidence_reference",
 }
 _SECRET_KEY_PARTS = (
@@ -1385,7 +1386,7 @@ def _validated_assessment(
     if assessment is None:
         raise AiReviewProviderError("invalid_schema", "provider_assessment_missing")
     if response_validator is None and contains_prohibited_output(assessment):
-        raise AiReviewProviderError("invalid_schema", "provider_assessment_contains_execution_semantics")
+        raise AiReviewProviderError("execution_semantics", "provider_assessment_contains_execution_semantics")
     return assessment
 
 

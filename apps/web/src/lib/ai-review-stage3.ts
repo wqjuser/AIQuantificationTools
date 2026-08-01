@@ -71,6 +71,7 @@ export type AiReviewExternalErrorCode =
   | "response_too_large"
   | "invalid_json"
   | "invalid_schema"
+  | "execution_semantics"
   | "unknown_evidence_reference";
 
 export interface AiReviewExternalAssessment {
@@ -79,7 +80,7 @@ export interface AiReviewExternalAssessment {
   model: string | null;
   sanitizedBaseUrl: string | null;
   endpointHash: string | null;
-  promptTemplateVersion: "aiqt-ai-review-v1" | "aiqt-ai-review-v2";
+  promptTemplateVersion: "aiqt-ai-review-v1" | "aiqt-ai-review-v2" | "aiqt-ai-review-v3";
   outputSchemaVersion: "aiqt-ai-review-assessment-v1";
   renderedPrompt: string;
   renderedPromptHash: string;
@@ -90,6 +91,26 @@ export interface AiReviewExternalAssessment {
   usage: Partial<Record<"inputTokens" | "outputTokens" | "totalTokens", number>> | null;
   latencyMs: number;
   error: { code: AiReviewExternalErrorCode; message: string } | null;
+}
+
+export function aiReviewExternalErrorTranslationKey(
+  error: AiReviewExternalAssessment["error"]
+) {
+  if (error?.code === "execution_semantics"
+    || (error?.code === "invalid_schema"
+      && error.message === "provider_assessment_contains_execution_semantics")) {
+    return "aiReviewStage3.external.error.execution_semantics" as const;
+  }
+  if (error?.code === "ai_review_provider_not_configured") {
+    return "aiReviewStage3.external.error.ai_review_provider_not_configured" as const;
+  }
+  if (error?.code === "timeout") {
+    return "aiReviewStage3.external.error.timeout" as const;
+  }
+  if (error?.code === "invalid_schema") {
+    return "aiReviewStage3.external.error.invalid_schema" as const;
+  }
+  return "aiReviewStage3.external.error.generic" as const;
 }
 
 export interface AuthoritativeAiReviewRun {
@@ -262,6 +283,7 @@ const externalErrorCodes = new Set<AiReviewExternalErrorCode>([
   "response_too_large",
   "invalid_json",
   "invalid_schema",
+  "execution_semantics",
   "unknown_evidence_reference"
 ]);
 const hashPattern = /^[0-9a-f]{64}$/;
@@ -660,7 +682,8 @@ function isExternalAssessment(
   ]) || (value.status !== "completed" && value.status !== "failed" && value.status !== "skipped")
     || typeof value.provider !== "string" || !providerIds.has(value.provider as AiReviewProviderId)
     || (value.promptTemplateVersion !== "aiqt-ai-review-v1"
-      && value.promptTemplateVersion !== "aiqt-ai-review-v2")
+      && value.promptTemplateVersion !== "aiqt-ai-review-v2"
+      && value.promptTemplateVersion !== "aiqt-ai-review-v3")
     || value.outputSchemaVersion !== "aiqt-ai-review-assessment-v1"
     || typeof value.renderedPrompt !== "string"
     || !isHash(value.renderedPromptHash)

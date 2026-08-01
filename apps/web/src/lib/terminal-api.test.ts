@@ -22817,7 +22817,7 @@ describe("terminal workspace API client", () => {
         requestHash: stage3Hash("c"),
         latencyMs: 12,
         error: {
-          code: "invalid_schema",
+          code: "execution_semantics",
           message: "provider_assessment_contains_execution_semantics"
         }
       }
@@ -22837,7 +22837,7 @@ describe("terminal workspace API client", () => {
       source: "core",
       review: {
         authority: "authoritative",
-        externalAssessment: { status: "failed", error: { code: "invalid_schema" } }
+        externalAssessment: { status: "failed", error: { code: "execution_semantics" } }
       }
     });
   });

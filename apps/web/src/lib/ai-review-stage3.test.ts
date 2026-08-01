@@ -4,6 +4,7 @@ import type { AiReviewDecision, AuthoritativeAiReviewRun } from "./ai-review-sta
 import {
   AI_REVIEW_EXTERNAL_DATA_FIELDS,
   appendAiReviewDecisionAndReadback,
+  aiReviewExternalErrorTranslationKey,
   aiReviewRequestIsCurrent,
   aiReviewRequiresExternalApproval,
   buildAiReviewAssessmentColumns,
@@ -260,7 +261,7 @@ describe("Stage 3 AI review runtime contracts", () => {
         renderedPrompt: "Bounded canonical evidence",
         requestHash: hash("c"),
         latencyMs: 7,
-        error: { code: "timeout", message: "Provider request timed out." }
+        error: { code: "execution_semantics", message: "Provider assessment contains execution semantics." }
       }
     };
     expect(isAuthoritativeAiReviewRun(failed)).toBe(true);
@@ -277,6 +278,21 @@ describe("Stage 3 AI review runtime contracts", () => {
       }
     };
     expect(isAuthoritativeAiReviewRun(completed)).toBe(true);
+  });
+
+  test("classifies current and historical execution-semantics failures consistently", () => {
+    expect(aiReviewExternalErrorTranslationKey({
+      code: "execution_semantics",
+      message: "Provider assessment contains execution semantics."
+    })).toBe("aiReviewStage3.external.error.execution_semantics");
+    expect(aiReviewExternalErrorTranslationKey({
+      code: "invalid_schema",
+      message: "provider_assessment_contains_execution_semantics"
+    })).toBe("aiReviewStage3.external.error.execution_semantics");
+    expect(aiReviewExternalErrorTranslationKey({
+      code: "invalid_schema",
+      message: "provider_assessment_missing"
+    })).toBe("aiReviewStage3.external.error.invalid_schema");
   });
 
   test("rejects unknown assessment enums, hashes, boundaries, array types, and legacy records", () => {
@@ -371,21 +387,29 @@ describe("Stage 3 AI review runtime contracts", () => {
 
   test("accepts current and legacy AI review prompt templates", () => {
     const legacy = sampleAuthoritativeReview();
-    const current = {
+    const previous = {
       ...legacy,
       externalAssessment: {
         ...legacy.externalAssessment,
         promptTemplateVersion: "aiqt-ai-review-v2"
       }
     };
+    const current = {
+      ...legacy,
+      externalAssessment: {
+        ...legacy.externalAssessment,
+        promptTemplateVersion: "aiqt-ai-review-v3"
+      }
+    };
 
     expect(isAuthoritativeAiReviewRun(legacy)).toBe(true);
+    expect(isAuthoritativeAiReviewRun(previous)).toBe(true);
     expect(isAuthoritativeAiReviewRun(current)).toBe(true);
     expect(isAuthoritativeAiReviewRun({
       ...current,
       externalAssessment: {
         ...current.externalAssessment,
-        promptTemplateVersion: "aiqt-ai-review-v3"
+        promptTemplateVersion: "aiqt-ai-review-v4"
       }
     })).toBe(false);
   });

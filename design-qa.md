@@ -1490,3 +1490,13 @@ final result: passed
 - SEC Company Facts 解析会合并收入/利润标签期间，以同期间标签优先级选值；流通股只接受股份标签，并限制相对财务期的时效。官方样本复验中 `GOOGL`、`AAPL` 可用，`FOX` 的陈旧 2019 股数正确降级为估值缺失。上述行为由聚焦与全量门禁覆盖，未新增数据库表、Provider 注册表、研究/策略/交易状态机或订单入口。
 
 final result: passed
+
+## 2026-08-01 AI 评审外部执行语义失败修复复验
+
+- 既有权威记录确认外部 Provider 已成功返回结构化评估，但内容包含买卖、持仓、目标价或订单等执行语义，因此在本地安全复核阶段被拒绝；这不是 Provider 未配置，也不是普通 JSON 格式错误。安全边界继续保持失败关闭，本地确定性评估不受影响。
+- 新请求使用可审计的 `aiqt-ai-review-v3` 提示模板，明确要求只使用证据质量、稳健性、一致性、失效条件、观察指标和证据缺口等研究语言。Provider 输出越界时记录独立 `execution_semantics` 错误，不自动重试、不改写越权内容，也不削弱现有禁止交易语义校验；v1/v2 历史提示仍可规范回放。
+- 前端统一按受保护错误分类显示原因；历史 `invalid_schema + provider_assessment_contains_execution_semantics` 记录也会显示执行语义拒绝说明，但不会展示原始 Provider 文本或修改历史审计哈希。真实 Docker 页面回放 `ai-review-32ca6d65631c410f8faf3c09c19187e9` 后明确显示“外部模型返回了买卖、持仓、目标价或订单等执行语义”，本地基线仍有效。
+- Python 全量 `929 / 929`、Web 全量 `1182 / 1182`、生产构建、API/Web Docker 重建、健康检查和 `git diff --check` 通过，仅保留既知 chunk-size 提示；浏览器控制台 `0 error / 0 warning`。
+- 复验没有重新勾选外发授权、调用外部模型、运行研究、修改生产权限或触发任何订单动作。
+
+final result: passed

@@ -815,7 +815,7 @@ describe("TerminalWorkspaceSurface", () => {
         usage: null,
         error: {
           code: "invalid_schema",
-          message: "raw provider validation detail must not render",
+          message: "provider_assessment_contains_execution_semantics",
         },
       },
     };
@@ -842,9 +842,10 @@ describe("TerminalWorkspaceSurface", () => {
         }}
       />,
     );
+    expect(failed).toContain("外部模型返回了买卖、持仓、目标价或订单等执行语义");
     expect(failed).toContain("本地确定性评估仍有效");
     expect(failed).toContain("证据不完整：1 项必需证据缺失或无效。");
-    expect(failed).not.toContain("raw provider validation detail must not render");
+    expect(failed).not.toContain("provider_assessment_contains_execution_semantics");
     expect(failed).not.toContain("权威 AI 评审失败");
 
     expect(review).toContain("人工研究决策");

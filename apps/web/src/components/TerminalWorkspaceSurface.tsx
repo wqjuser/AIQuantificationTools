@@ -30,6 +30,7 @@ import type {
   PortfolioRiskAssessmentRequest,
 } from "../lib/portfolio-m5";
 import {
+  aiReviewExternalErrorTranslationKey,
   aiReviewRequiresExternalApproval,
   buildComparisonEligibility,
   type AiReviewDecisionStatus,
@@ -4007,13 +4008,9 @@ function AiReviewSurface({
           `aiReviewStage3.external.status.${externalAssessment.status}` as TranslationKey,
         )
       : "待运行";
-  const externalErrorKey = externalAssessment?.error?.code === "ai_review_provider_not_configured"
-    ? "aiReviewStage3.external.error.ai_review_provider_not_configured"
-    : externalAssessment?.error?.code === "timeout"
-      ? "aiReviewStage3.external.error.timeout"
-      : externalAssessment?.error?.code === "invalid_schema"
-        ? "aiReviewStage3.external.error.invalid_schema"
-      : "aiReviewStage3.external.error.generic";
+  const externalErrorKey = aiReviewExternalErrorTranslationKey(
+    externalAssessment?.error ?? null,
+  );
   const externalSummary = externalAssessment?.assessment?.summary
     ? localizedMessage(externalAssessment.assessment.summary, externalAssessment.assessment.summary)
     : externalAssessment?.error

@@ -1,6 +1,7 @@
 import type { createI18n, TranslationKey } from "../lib/i18n";
 import {
   AI_REVIEW_EXTERNAL_DATA_FIELDS,
+  aiReviewExternalErrorTranslationKey,
   aiReviewRequiresExternalApproval,
   buildAiReviewAssessmentColumns,
   buildComparisonEligibility,
@@ -223,7 +224,7 @@ export function AiReviewStage3Section({
             <AssessmentCard
               assessment={columns.external}
               emptyText={columns.externalError
-                ? externalFailureText(i18n, columns.externalError.code)
+                ? externalFailureText(i18n, columns.externalError)
                 : i18n.t(`aiReviewStage3.external.${columns.externalStatus}` as TranslationKey)}
               i18n={i18n}
               titleKey="aiReviewStage3.external"
@@ -434,14 +435,8 @@ function ReviewMetadata({
 
 function externalFailureText(
   i18n: ReturnType<typeof createI18n>,
-  code: string
+  error: NonNullable<AuthoritativeAiReviewRun["externalAssessment"]["error"]>
 ): string {
-  const detail = code === "ai_review_provider_not_configured"
-    ? i18n.t("aiReviewStage3.external.error.ai_review_provider_not_configured")
-    : code === "timeout"
-      ? i18n.t("aiReviewStage3.external.error.timeout")
-      : code === "invalid_schema"
-        ? i18n.t("aiReviewStage3.external.error.invalid_schema")
-    : i18n.t("aiReviewStage3.external.error.generic");
-  return `${i18n.t("aiReviewStage3.external.failed")} ${detail} · ${code}`;
+  const detail = i18n.t(aiReviewExternalErrorTranslationKey(error));
+  return `${i18n.t("aiReviewStage3.external.failed")} ${detail} · ${error.code}`;
 }
