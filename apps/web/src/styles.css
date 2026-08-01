@@ -28425,6 +28425,8 @@ button.ai-review-record {
 }
 
 .surface-ai-review .design-ai-grid {
+  --ai-review-conclusion-height: 343px;
+
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(290px, 22vw, 350px);
   grid-template-rows: auto;
@@ -28537,6 +28539,21 @@ button.ai-review-record {
 .surface-ai-review .design-ai-side {
   grid-column: 2;
   grid-row: 2;
+}
+
+.surface-ai-review .design-ai-review,
+.surface-ai-review .design-ai-side > .design-panel:first-child {
+  height: var(--ai-review-conclusion-height);
+}
+
+.surface-ai-review .design-ai-side > .design-panel:first-child {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.surface-ai-review .design-ai-side > .design-panel:first-child > .design-panel-body {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .surface-ai-review .design-ai-evidence,
@@ -28879,7 +28896,7 @@ button.ai-review-record {
 .surface-ai-review .design-ai-comparison-list {
   display: grid;
   gap: 6px;
-  max-height: 259px;
+  max-height: 100%;
   overflow-y: auto;
   padding-right: 3px;
 }
@@ -28924,6 +28941,11 @@ button.ai-review-record {
 @media (max-width: 760px) {
   .surface-ai-review .design-ai-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .surface-ai-review .design-ai-review,
+  .surface-ai-review .design-ai-side > .design-panel:first-child {
+    height: auto;
   }
 
   .surface-ai-review .design-ai-overview,
@@ -28992,6 +29014,11 @@ button.ai-review-record {
 @media screen and (min-width: 761px) and (max-width: 1100px) {
   .surface-ai-review .design-ai-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .surface-ai-review .design-ai-review,
+  .surface-ai-review .design-ai-side > .design-panel:first-child {
+    height: auto;
   }
 
   .surface-ai-review .design-ai-overview {

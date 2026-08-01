@@ -946,10 +946,24 @@ describe("terminal layout css", () => {
     );
   });
 
-  test("keeps at most five AI review comparison rows visible before scrolling", () => {
+  test("matches the comparison panel height to the AI review conclusion", () => {
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-grid", [
+      "--ai-review-conclusion-height: 343px;",
+    ])).toBe(true);
+    expect(cssBlock(
+      ".surface-ai-review .design-ai-review,\n.surface-ai-review .design-ai-side > .design-panel:first-child"
+    )).toContain("height: var(--ai-review-conclusion-height);");
+    expect(hasCssBlockWith(
+      ".surface-ai-review .design-ai-side > .design-panel:first-child",
+      ["grid-template-rows: auto minmax(0, 1fr);"]
+    )).toBe(true);
     const comparisonList = cssBlock(".surface-ai-review .design-ai-comparison-list");
-    expect(comparisonList).toContain("max-height: 259px;");
+    expect(comparisonList).toContain("max-height: 100%;");
     expect(comparisonList).toContain("overflow-y: auto;");
+    expect(hasCssBlockWith(
+      "  .surface-ai-review .design-ai-review,\n  .surface-ai-review .design-ai-side > .design-panel:first-child",
+      ["height: auto;"]
+    )).toBe(true);
   });
 
   test("owns Stage 3 authority state in App and re-reads the Decision chain after append", () => {
