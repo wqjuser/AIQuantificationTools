@@ -101,7 +101,12 @@ _EVIDENCE_GAP_CONTEXT = re.compile(
     r"(?:仍|尚)?有待(?:补充|验证|覆盖|确认|评估)|需要补充",
     re.IGNORECASE,
 )
-_UNSAFE_EVIDENCE_GAP = re.compile(
+_INVALIDATION_CONTEXT = re.compile(
+    r"若|如果|一旦|当|失效|不再|未能|无法|不足|恶化|反转|偏离|超过|低于|高于|"
+    r"下降|上升|破坏|不成立|重新评估|有待验证",
+    re.IGNORECASE,
+)
+_UNSAFE_RESEARCH_TEXT = re.compile(
     r"(?:建议|推荐|立即|请|应该|应当|可考虑|可以)[^。！？!?]{0,24}"
     r"(?:买入|卖出|下单|建仓|加仓|增持|减仓|减持|清仓|持有|做多|做空|"
     r"开多|开空|平仓|止损|止盈|目标价|仓位)|"
@@ -1474,7 +1479,13 @@ def prohibited_output_field_path(value: Any, path: str = "$") -> str | None:
         if (
             re.fullmatch(r"\$\.evidenceGaps\[\d+\]", path)
             and _EVIDENCE_GAP_CONTEXT.search(normalized_value)
-            and _UNSAFE_EVIDENCE_GAP.search(normalized_value) is None
+            and _UNSAFE_RESEARCH_TEXT.search(normalized_value) is None
+        ):
+            return None
+        if (
+            re.fullmatch(r"\$\.invalidationConditions\[\d+\]", path)
+            and _INVALIDATION_CONTEXT.search(normalized_value)
+            and _UNSAFE_RESEARCH_TEXT.search(normalized_value) is None
         ):
             return None
         for clause in _OUTPUT_CLAUSE_BOUNDARY.split(value):

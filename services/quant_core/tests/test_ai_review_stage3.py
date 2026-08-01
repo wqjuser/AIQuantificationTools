@@ -6230,6 +6230,50 @@ class AiReviewProviderContractTests(unittest.TestCase):
                     lambda: self._assess(unsafe_provider),
                 )
 
+    def test_provider_output_allows_research_only_invalidation_conditions(self) -> None:
+        safe_conditions = (
+            "若买入或卖出信号的样本外表现失效，则当前结论需重新评估。",
+            "若持仓结构、止损规则或目标价相关证据无法验证，则当前结论失效。",
+            "若订单执行数据不足以支持回测假设，则当前结论失效。",
+        )
+        for safe_condition in safe_conditions:
+            with self.subTest(condition=safe_condition):
+                assessment = _provider_assessment()
+                assessment["invalidationConditions"] = [safe_condition]
+                server = self._server(self._compatible_response(assessment))
+                provider = OpenAiCompatibleProvider(
+                    base_url=server.base_url,
+                    api_key="fake-compatible-key",
+                    model="compatible-test",
+                )
+
+                attempt = self._assess(provider)
+
+                self.assertEqual(
+                    attempt.assessment["invalidationConditions"],
+                    [safe_condition],
+                )
+
+        unsafe_conditions = (
+            "若跌破120元，立即卖出。",
+            "若趋势反转，卖出该标的。",
+            "若回撤扩大，仓位降至20%。",
+        )
+        for unsafe_condition in unsafe_conditions:
+            with self.subTest(condition=unsafe_condition):
+                assessment = _provider_assessment()
+                assessment["invalidationConditions"] = [unsafe_condition]
+                server = self._server(self._compatible_response(assessment))
+                provider = OpenAiCompatibleProvider(
+                    base_url=server.base_url,
+                    api_key="fake-compatible-key",
+                    model="compatible-test",
+                )
+                self._assert_provider_error(
+                    "execution_semantics",
+                    lambda: self._assess(provider),
+                )
+
     def test_provider_error_identifies_rejected_response_field(self) -> None:
         assessment = _provider_assessment()
         assessment["risks"][0]["message"] = "建议买入100股"
