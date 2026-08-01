@@ -28518,6 +28518,7 @@ button.ai-review-record {
   background: var(--surface-raised);
   color: var(--text);
   font: inherit;
+  font-size: calc(10.5px * var(--aiqt-text-scale, 1));
   padding: 7px 8px;
 }
 
@@ -28910,14 +28911,27 @@ button.ai-review-record {
   opacity: 0.58;
 }
 
+.surface-ai-review .ai-research-m4-section {
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
 .surface-ai-review .ai-research-m4-section .ai-review-stage3-heading span,
 .surface-ai-review .ai-research-m4-section .ai-review-stage3-card label > span {
   color: var(--muted);
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
 }
 
 .surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong,
 .surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3 {
   color: var(--text);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong {
+  font-size: calc(13.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3 {
+  font-size: calc(10.5px * var(--aiqt-text-scale, 1));
 }
 
 .surface-ai-review .ai-research-m4-section .ai-review-stage3-boundary {
@@ -28936,6 +28950,14 @@ button.ai-review-record {
   border-color: var(--border);
   background: var(--surface-raised);
   color: var(--text);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-actions .design-primary-action {
+  min-height: 38px;
+  border-radius: 5px;
+  font-size: calc(11.5px * var(--aiqt-text-scale, 1));
+  font-weight: 600;
+  padding: 0 16px;
 }
 
 @media (max-width: 760px) {

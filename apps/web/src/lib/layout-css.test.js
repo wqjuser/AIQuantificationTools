@@ -946,6 +946,34 @@ describe("terminal layout css", () => {
     );
   });
 
+  test("aligns AI review decision and M4 typography with the compact page scale", () => {
+    expect(cssBlock(
+      ".surface-ai-review .design-ai-decision-form input,\n.surface-ai-review .design-ai-decision-form select,\n.surface-ai-review .design-ai-decision-form textarea"
+    )).toContain("font-size: calc(10.5px * var(--aiqt-text-scale, 1));");
+    expect(cssBlock(".surface-ai-review .ai-research-m4-section")).toContain(
+      "font-size: calc(10px * var(--aiqt-text-scale, 1));"
+    );
+    expect(cssBlock(
+      ".surface-ai-review .ai-research-m4-section .ai-review-stage3-heading span,\n.surface-ai-review .ai-research-m4-section .ai-review-stage3-card label > span"
+    )).toContain("font-size: calc(9.5px * var(--aiqt-text-scale, 1));");
+    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong")).toContain(
+      "font-size: calc(13.5px * var(--aiqt-text-scale, 1));"
+    );
+    expect(hasCssBlockWith(
+      ".surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3",
+      ["font-size: calc(10.5px * var(--aiqt-text-scale, 1));"]
+    )).toBe(true);
+  });
+
+  test("uses the page primary action treatment for M4 actions", () => {
+    expect(aiResearchM4SectionSource).toContain(
+      'className="design-primary-action"\n              data-testid="ai-research-m4-create"'
+    );
+    expect(cssBlock(
+      ".surface-ai-review .ai-research-m4-section .ai-review-stage3-actions .design-primary-action"
+    )).toContain("font-size: calc(11.5px * var(--aiqt-text-scale, 1));");
+  });
+
   test("matches the comparison panel height to the AI review conclusion", () => {
     expect(hasCssBlockWith(".surface-ai-review .design-ai-grid", [
       "--ai-review-conclusion-height: 343px;",

@@ -1518,4 +1518,12 @@ final result: passed
 
 final result: passed
 
+## 2026-08-01 AI 评审决策与 M4 亮色排版复验
+
+- 源视觉：`/var/folders/pn/mpj6bdfj1b91_cv0s4b5462m0000gn/T/codex-clipboard-3691a463-24c8-4010-bbcf-e66cdc6a8ec7.png`（`2172 × 1668`）；实现截图：`/var/tmp/aiqt-ai-review-typography-implementation.png` 与 `/var/tmp/aiqt-ai-review-m4-implementation.png`（亮色、桌面 `1280 × 720`、DPR `2`）；同图对照：`/var/tmp/aiqt-ai-review-typography-comparison.png`。
+- 人工研究决策控件不再继承浏览器默认 `16px`，现统一为 `10.5px`；生产策略关联的标签、值和说明分别为 `9.5px / 9.5px / 9px`。M4 正文与控件为 `10px`、标签为 `9.5px`、卡片标题为 `10.5px`，保持既有标题层级且与页面紧凑字号一致。
+- “生成 M4 研究证据”及同区动作复用既有 `design-primary-action`。亮色实测为背景 `rgb(225, 241, 236)`、边框 `rgb(101, 168, 153)`、文字 `rgb(8, 117, 99)`、字号 `11.5px`、字重 `600`、高度 `38px`，与页面其它主按钮一致；未新增颜色常量或第二套按钮样式。
+- 全视图与人工决策、生产策略关联、M4 聚焦区域均无裁切、重叠或页面级横向溢出；排版、间距和既有文案未改变。目标区域无图片或图标资产改动；未执行追加决策、生成证据或其它会改变研究/交易状态的动作。
+- Web 全量 `1185 / 1185`、Web 生产构建和 Docker Web 重建通过；API/Web 均 healthy。真实页面控制台 `0 error / 0 warning`。
+
 final result: passed

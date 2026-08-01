@@ -363,7 +363,12 @@ export function AiResearchM4Section({
                     />
                   </div>
                   <div className="ai-review-stage3-actions">
-                    <button data-testid="ai-research-m4-add-financial" onClick={addFinancialFact} type="button">
+                    <button
+                      className="design-primary-action"
+                      data-testid="ai-research-m4-add-financial"
+                      onClick={addFinancialFact}
+                      type="button"
+                    >
                       {copy("添加事实", "Add fact")}
                     </button>
                   </div>
@@ -392,6 +397,7 @@ export function AiResearchM4Section({
           </div>
           <div className="ai-review-stage3-actions">
             <button
+              className="design-primary-action"
               data-testid="ai-research-m4-create"
               disabled={creating || loading}
               onClick={() => void createEvidence()}
@@ -513,6 +519,7 @@ export function AiResearchM4Section({
             ) : null}
             <div className="ai-review-stage3-actions">
               <button
+                className="design-primary-action"
                 disabled={!outcomeRunId || !benchmarkRunId || evaluating}
                 onClick={() => void evaluateOutcome()}
                 type="button"
