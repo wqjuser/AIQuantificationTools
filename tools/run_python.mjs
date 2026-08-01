@@ -2,6 +2,9 @@ import { spawnSync } from "node:child_process";
 
 const args = process.argv.slice(2);
 const candidates = [
+  process.platform === "win32"
+    ? { command: ".venv\\Scripts\\python.exe", prefixArgs: [] }
+    : { command: ".venv/bin/python", prefixArgs: [] },
   { command: "py", prefixArgs: ["-3"] },
   { command: "python3", prefixArgs: [] },
   { command: "python", prefixArgs: [] },

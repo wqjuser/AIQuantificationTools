@@ -12,6 +12,7 @@
     "preview": "npm run preview --workspace @aiqt/web",
     "test": "npm run test:python && npm run test --workspace @aiqt/web",
     "test:python": "node tools/run_python.mjs -m unittest discover -s services/quant_core/tests -t services/quant_core",
+    "test:python:safety": "node tools/run_python.mjs -m unittest discover -s services/quant_core/tests -t services/quant_core -p test_market_ai_selection.py && node tools/run_python.mjs -m unittest discover -s services/quant_core/tests -t services/quant_core -p test_stage10_production_execution.py",
     "desktop:dev": "npm run tauri:dev --workspace @aiqt/web",
     "desktop:build": "npm run tauri:build --workspace @aiqt/web",
     "desktop:release": "node tools/run_python.mjs tools/record_desktop_release.py",

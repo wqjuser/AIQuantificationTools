@@ -71,7 +71,11 @@ describe("docker deployment contract", () => {
     expect(workflow).toContain("actions/setup-python@v6");
     expect(workflow).toContain('python-version: "3.12"');
     expect(workflow).toContain("npm ci");
+    expect(workflow).toContain("python -m pip install -e services/quant_core");
+    expect(workflow).not.toContain('python -m pip install "cryptography>=42"');
+    expect(workflow).toContain("npm run test:python:safety");
     expect(workflow).toContain("npm test");
+    expect(workflow.indexOf("npm run test:python:safety")).toBeLessThan(workflow.indexOf("npm test"));
     expect(workflow).toContain("npm run build");
     expect(workflow).toContain("docker compose config");
     expect(workflow).toContain("docker compose build");
@@ -270,16 +274,28 @@ describe("docker deployment contract", () => {
   test("runs Python entrypoints through a cross-platform launcher", () => {
     const packageJson = JSON.parse(readRepoFile("package.json"));
     const launcher = readRepoFile("tools/run_python.mjs");
+    const pyproject = readRepoFile("services/quant_core/pyproject.toml");
+    const readme = readRepoFile("README.md");
 
     expect(packageJson.scripts["test:python"]).toBe(
       "node tools/run_python.mjs -m unittest discover -s services/quant_core/tests -t services/quant_core",
     );
+    expect(packageJson.scripts["test:python:safety"]).toContain("-p test_market_ai_selection.py");
+    expect(packageJson.scripts["test:python:safety"]).toContain("-p test_stage10_production_execution.py");
     expect(packageJson.scripts.api).toBe("node tools/run_python.mjs tools/run_quant_api.py");
     expect(packageJson.scripts["docker:smoke"]).toBe("node tools/run_python.mjs tools/docker_smoke.py");
     expect(launcher).toContain('"python3"');
     expect(launcher).toContain('"python"');
     expect(launcher).toContain('"py"');
     expect(launcher).toContain('"-3"');
+    expect(launcher).toContain('".venv/bin/python"');
+    expect(launcher).toContain('".venv\\\\Scripts\\\\python.exe"');
+    expect(pyproject).toContain('[tool.setuptools]\npackages = ["quant_core"]');
+    expect(readme).toContain("Python 3.12+");
+    expect(readme).toContain("python3.12 -m venv .venv");
+    expect(readme).toContain("py -3.12 -m venv .venv");
+    expect(readme).toContain(".venv/bin/python -m pip install -e services/quant_core");
+    expect(readme).toContain(".\\.venv\\Scripts\\python.exe -m pip install -e services/quant_core");
   });
 
   test("ships a compose file with web and api services, health checks, and a persisted data volume", () => {

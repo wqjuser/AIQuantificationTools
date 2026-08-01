@@ -31,8 +31,22 @@ Web 与 Tauri 桌面端共用同一套量化终端外壳，默认使用深色模
 
 ## Commands
 
+先使用 Python 3.12+ 创建仓库本地环境；`tools/run_python.mjs` 会优先使用 `.venv`，CI 也从同一份 `services/quant_core/pyproject.toml` 安装依赖：
+
+```shell
+# macOS / Linux
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e services/quant_core
+```
+
 ```powershell
-npm install
+# Windows PowerShell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e services/quant_core
+```
+
+```shell
+npm ci
 npm run test
 npm run build
 npm run api
@@ -478,7 +492,7 @@ docker compose down -v
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` 会在 pull request 和 `main` push 时运行同一套质量门禁：`npm ci`、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，然后通过 `npm run docker:smoke -- --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。feature branch push 不再与 pull request 重复运行完整链路；Nginx `/api/` 的 upstream read timeout 与 smoke helper 的 90 秒请求预算一致，避免 P1 自选行情长刷新先被代理以 504 切断。
+`.github/workflows/ci.yml` 会在 pull request 和 `main` push 时运行同一套质量门禁：`npm ci`、从 `services/quant_core/pyproject.toml` 安装 Python 核心、单独运行 Stage 10 与 AI 选股安全测试、`npm test`、`npm run build`、`docker compose config`、`docker compose build`，然后通过 `npm run docker:smoke -- --no-build --down` 验证容器化部署可以启动并通过 `/health`、`/`、`/api/workspace` 自检。feature branch push 不再与 pull request 重复运行完整链路；Nginx `/api/` 的 upstream read timeout 与 smoke helper 的 90 秒请求预算一致，避免 P1 自选行情长刷新先被代理以 504 切断。
 
 七类验收清单使用原生 Node 24 的 `actions/upload-artifact@v7` 上传，CI 不再设置 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`。P0、P1、Stage 5、Stage 6、Stage 7、Stage 8 和 Stage 9 artifact 都使用稳定名称、路径与 `if: always()` 语义。
 

@@ -8,5 +8,8 @@ dependencies = ["cryptography>=42"]
 [project.optional-dependencies]
 data = ["akshare", "yfinance", "ccxt"]
 
+[tool.setuptools]
+packages = ["quant_core"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]

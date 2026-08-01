@@ -36,7 +36,10 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          python -m pip install "cryptography>=42"
+          python -m pip install -e services/quant_core
+
+      - name: Run Stage 10 and AI selection safety tests
+        run: npm run test:python:safety
 
       - name: Run tests
         run: npm test

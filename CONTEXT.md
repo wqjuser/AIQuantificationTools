@@ -4,6 +4,10 @@
 
 ## Language
 
+**Stage 0 Python 开发环境与关键安全门禁收口**：
+本机和 CI 都从 `services/quant_core/pyproject.toml` 安装同一份 Python 核心及依赖；仓库 `.venv` 是跨平台启动器的首选解释器，`quant_core` 是唯一可安装包，运行时 `data/` 不参与包发现。CI 在全量测试前单独运行 AI 选股与 Stage 10 安全测试，使研究边界和生产权限/订单边界具有独立可见的失败点；全量测试与既有 Docker 验收顺序保持不变。
+_Avoid_: requirements 依赖副本、测试时隐式联网安装、第二套测试运行器、扩大生产交易能力
+
 **Stage 0 CI Artifact Node 24 收口**：
 GitHub Actions 的六类验收清单统一由原生 Node 24 的 `actions/upload-artifact@v7` 上传，不再依赖强制 JavaScript action 运行时变量。artifact 名称、路径、`if: always()` 和产品验收顺序保持不变。
 _Avoid_: action wrapper、额外 job、自托管 runner 兼容层

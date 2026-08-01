@@ -1546,3 +1546,12 @@ final result: passed
 - Web 暂存快照全量 `1094 / 1094`、Web 生产构建、API/Web Docker 重建、健康检查和 `git diff --check` 通过；本轮没有运行研究、AI 评审、保存设置、授权、启停、急停或提交任何订单。
 
 final result: passed
+
+## 2026-08-01 本机 Python 环境与关键安全门禁复验
+
+- 根目录 `npm test` 先前会直接选中系统 Python，但 README 没有安装核心依赖的步骤；CI 同时手写 `cryptography`，与 `pyproject.toml` 形成重复来源。首次按 editable 模式安装还暴露 setuptools 把运行时 SQLite `data/` 误识别为顶级包。现在 `quant_core` 是唯一安装包，本机与 CI 都从同一份 `services/quant_core/pyproject.toml` 安装依赖。
+- 跨平台 Python 启动器优先使用仓库 `.venv`，缺失时才回退到 `py -3 / python3 / python`。真实本机安装后启动器解析为 `.venv/bin/python`，可导入 `cryptography 50.0.0`；没有在测试命令中隐式联网安装，也没有新增 requirements 依赖副本。
+- CI 在全量测试前新增独立 `test:python:safety`：AI 选股 `40 / 40`、Stage 10 `14 / 14`。它们仍会进入后续 Python 全量测试，只增加安全边界的独立失败定位，不改变研究或交易行为。
+- 本机根命令 Python 全量 `939 / 939`、Web 全量 `1096 / 1096`、Web 生产构建、Compose 配置校验和 `git diff --check` 通过，仅保留既知 chunk-size 提示。本轮没有访问外部 AI、运行研究、修改生产授权、恢复急停或触发任何订单动作。
+
+final result: passed
