@@ -4935,6 +4935,10 @@ class AiReviewProviderContractTests(unittest.TestCase):
             server.requests[0]["headers"]["authorization"],
             "Bearer fake-compatible-key",
         )
+        self.assertEqual(
+            server.requests[0]["headers"]["user-agent"],
+            "AIQuantificationTools/0.1",
+        )
 
     def test_configuration_status_and_base_url_sanitization_never_expose_keys(self) -> None:
         environment = {
@@ -5184,6 +5188,7 @@ class AiReviewProviderContractTests(unittest.TestCase):
         self.assertEqual(request["path"], "/v1/chat/completions")
         self.assertEqual(request["headers"]["content-type"], "application/json")
         self.assertEqual(request["headers"]["authorization"], "Bearer fake-compatible-key")
+        self.assertEqual(request["headers"]["user-agent"], "AIQuantificationTools/0.1")
         self.assertEqual(
             request["body"],
             {
@@ -5326,6 +5331,7 @@ class AiReviewProviderContractTests(unittest.TestCase):
         )
         self.assertEqual(len(server.requests), 1)
         self.assertEqual(server.requests[0]["path"], "/v1/chat/completions")
+        self.assertEqual(server.requests[0]["headers"]["user-agent"], "AIQuantificationTools/0.1")
         self.assertIs(server.requests[0]["body"]["stream"], True)
         self.assertEqual(
             server.requests[0]["body"]["response_format"],

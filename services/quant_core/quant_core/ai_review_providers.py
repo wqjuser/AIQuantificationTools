@@ -34,6 +34,7 @@ MAX_MODEL_LIST_RESPONSE_BYTES = 1_048_576
 MAX_STREAM_RESPONSE_BYTES = 524_288
 MAX_OUTPUT_TOKENS = 1_200
 MAX_ERROR_DETAIL_CHARS = 500
+PROVIDER_USER_AGENT = "AIQuantificationTools/0.1"
 
 _ERROR_CODES = {
     "timeout",
@@ -265,7 +266,10 @@ def discover_openai_compatible_models(base_url: str, api_key: str = "") -> tuple
     url = safe_base_url.rstrip("/") + "/models"
     authorization = f"Bearer {api_key.strip()}" if api_key.strip() else None
     sensitive_values = _request_sensitive_values(url, authorization)
-    headers = {"Accept": "application/json"}
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": PROVIDER_USER_AGENT,
+    }
     if authorization is not None:
         headers["Authorization"] = authorization
     request = Request(url, headers=headers, method="GET")
@@ -1087,7 +1091,10 @@ def _open_post_json_response_before_deadline(
     deadline: float,
 ) -> Any:
     sensitive_values = _request_sensitive_values(url, authorization)
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": PROVIDER_USER_AGENT,
+    }
     if authorization is not None:
         headers["Authorization"] = authorization
     request = Request(

@@ -1500,3 +1500,12 @@ final result: passed
 - 复验没有重新勾选外发授权、调用外部模型、运行研究、修改生产权限或触发任何订单动作。
 
 final result: passed
+
+## 2026-08-01 OpenAI 兼容网关客户端签名修复复验
+
+- 新兼容地址已由运行时热加载，但模型发现和评审请求均在鉴权前被 Cloudflare `403 / Error 1010 / browser_signature_banned` 拒绝；相同地址使用非 Python 默认客户端标识时能进入正常鉴权层，因此重启或重复保存配置不能解决该问题。
+- 现有 Provider HTTP 边界统一发送稳定的 `User-Agent: AIQuantificationTools/0.1`：覆盖兼容模型列表 GET，以及 OpenAI、OpenAI-compatible、Ollama 共用的普通 JSON 与流式 POST；鉴权头、请求载荷、超时、结构校验和禁止执行语义安全边界均未改变。
+- API 镜像重建后，真实 `/api/settings/openai-compatible-models` 使用已保存密钥成功返回 `10` 个模型，证明地址、密钥和客户端签名链已打通。当前配置的 `gpt-5.6` 不在网关返回列表中；可用同系列为 `gpt-5.6-sol`、`gpt-5.6-terra` 和 `gpt-5.6-luna`，系统没有静默替换用户选择。
+- Provider/Settings 聚焦测试 `156 / 156`、Python 全量 `929 / 929`、API Docker 重建、API/Web 健康检查和 `git diff --check` 通过。复验只调用只读模型列表，没有运行 AI 评审、生成模型内容、修改研究或交易状态，也没有触发订单。
+
+final result: passed
