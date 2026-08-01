@@ -1584,3 +1584,13 @@ final result: passed
 - AI 选股安全聚焦 `44 / 44`、Stage 10 安全聚焦 `14 / 14`、Python 全量 `943 / 943`、Web 全量 `1096 / 1096`、生产构建、API 数据依赖镜像重建、API/Web 健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。
 
 final result: passed
+
+## 2026-08-01 美股自选池 SEC Company Facts 实网验收
+
+- SEC EDGAR User-Agent 已通过既有平台配置保存为数据库修订 `19`，数据源状态从 `blocked / sec_edgar_user_agent_missing` 变为 `ready / sec_edgar_user_agent_configured`，保存后实时生效且未重启 API。文档不记录联系人原文。
+- 在保留原有 `3` 个自选标的的前提下追加 `AAPL · Apple Inc.`；其权威报价来自 Finnhub，时间为 `2026-07-31T20:00:00+00:00`。官方 `company_tickers.json` 成功映射到 CIK `0000320193`，真实 Company Facts 返回 `503` 项 US-GAAP 财务事实。
+- 本地确定性 Provider 的真实美股选股生成 `selection-v2-593c3d4640140486d7ba`：自选池 `1` 个候选、`1` 个合格候选、`1` 个研究推荐、`0` 个排除。结果仅因“美股首版仅覆盖当前自选池”范围声明标记为 `partial`，没有外发模型、fallback 或错误码。
+- 受保护 `market_ai_selection / aiqt.marketAiSelection` 审计冻结 `180` 根已完成日 K、SEC 当前/上期财务期间、披露时间、营收、净利润、资产、权益及 `64` 位记录/候选哈希；候选无数据缺口。边界保持 `researchOnly=true`、`watchlistModified=false`、`researchStarted=false`、`orderSubmissionAllowed=false`、`routeExecuted=false`。
+- 质量统计新增该样本后为 `7` 次选股、`45 / 601 · 7.49%` 合格候选；数据源降级从 `6 / 6` 变为 `6 / 7 · 85.71%`，证明自选池范围声明没有被误计为数据源降级。现有公开统计测试已覆盖该分类，因此没有重复增加代码、测试、数据库表或状态机。
+
+final result: passed
