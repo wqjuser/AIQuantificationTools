@@ -1463,8 +1463,9 @@ def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
     def fetch_json(url: str, headers: object) -> object:
         if "/exchanges/binance/tickers" in url:
             calls["tickers"] += 1
-            if calls["tickers"] == 2:
+            if calls["tickers"] in {2, 5}:
                 raise RuntimeError("coingecko_rate_limited")
+            page = int(parse_qs(urlparse(url).query)["page"][0])
             mapped = [
                 {
                     "base": f"C{index:02d}",
@@ -1475,9 +1476,31 @@ def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
                     "is_stale": False,
                     "is_anomaly": False,
                 }
-                for index in range(5)
+                for index in (range(5) if page == 1 else range(4, 20))
             ]
-            return {"tickers": [*mapped, *([mapped[0]] * 95)]}
+            if page == 1:
+                return {"tickers": [*mapped, *([mapped[-1]] * 95)]}
+            if calls["tickers"] == 6:
+                return {
+                    "tickers": [
+                        {
+                            **mapped[0],
+                            "base": "C03",
+                            "coin_id": "shifted-page-duplicate",
+                        },
+                        *mapped,
+                    ]
+                }
+            return {
+                "tickers": [
+                    *mapped,
+                    {
+                        **mapped[-1],
+                        "base": "ZZZ",
+                        "coin_id": "zeta",
+                    },
+                ]
+            }
         if "/coins/markets" in url:
             calls["markets"] += 1
             ids = parse_qs(urlparse(url).query)["ids"][0].split(",")
@@ -1495,9 +1518,10 @@ def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
             ]
         raise AssertionError(url)
 
+    discovery = _Discovery(rows)
     service = _service(
         tmp_path,
-        discovery=_Discovery(rows),
+        discovery=discovery,
         fundamental_loaders={},
         fetch_json=fetch_json,
     )
@@ -1522,6 +1546,52 @@ def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
     assert coverage["sampleCount"] == 20
     assert coverage["mappedCount"] == 4
     assert coverage["unresolvedCount"] == 16
+
+    resumed = service.select(
+        _request(market="crypto", discovery={}, profile="balanced")
+    )
+
+    assert resumed["status"] == "partial"
+    assert len(resumed["baselineCandidates"]) == 19
+    assert calls == {"tickers": 3, "markets": 2}
+    resumed_event = service.audit_store.get(resumed["auditEventId"])
+    assert resumed_event is not None
+    resumed_coverage = resumed_event.metadata["artifact"]["marketContext"][
+        "fundamentalSourceCoverage"
+    ]
+    assert resumed_coverage["mappedCount"] == 19
+    assert resumed_coverage["unresolvedCount"] == 1
+
+    assert service.select(
+        _request(market="crypto", discovery={}, profile="balanced")
+    ) == resumed
+    assert calls == {"tickers": 5, "markets": 2}
+
+    with _raises(MarketAiSelectionError) as caught:
+        service.select(
+            _request(market="crypto", discovery={}, profile="balanced")
+        )
+    assert caught.value.code == "market_ai_selection_no_eligible_candidates"
+    assert calls == {"tickers": 6, "markets": 2}
+
+    discovery.rows = [{**rows[0], "symbol": "ZZZ/USDT"}]
+    restarted = service.select(
+        _request(market="crypto", discovery={}, profile="balanced")
+    )
+
+    assert restarted["status"] == "completed"
+    assert [item["symbol"] for item in restarted["baselineCandidates"]] == [
+        "ZZZ/USDT"
+    ]
+    assert calls == {"tickers": 8, "markets": 3}
+
+    discovery.rows = rows
+    restored = service.select(
+        _request(market="crypto", discovery={}, profile="balanced")
+    )
+    assert restored["status"] == "completed"
+    assert len(restored["baselineCandidates"]) == 20
+    assert calls == {"tickers": 8, "markets": 4}
 
 
 def test_crypto_rejects_future_or_stale_coingecko_source_facts(

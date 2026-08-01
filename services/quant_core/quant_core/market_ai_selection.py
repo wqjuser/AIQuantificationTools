@@ -2294,11 +2294,32 @@ class MarketAiSelectionService:
             else _STOCK_FUNDAMENTAL_TTL
         )
         cached = self._cache_get(key, ttl=ttl, now=cutoff)
+        crypto_mapping_matches = True
+        if (
+            market == "crypto"
+            and isinstance(cached, Mapping)
+            and cached.get("source") == "coingecko+binance"
+        ):
+            base, target = _split_crypto_symbol(str(candidate["symbol"]))
+            mapping, _ = self._ensure_coingecko_mapping(
+                {f"{base}/{target}"},
+                cutoff=cutoff,
+                deadline=None,
+            )
+            mapped = mapping.get(f"{base}/{target}")
+            crypto_mapping_matches = (
+                isinstance(mapped, Mapping)
+                and mapped.get("status") == "mapped"
+                and mapped.get("coinId") == cached.get("coinId")
+            )
         if cached is not None and (
             market != "crypto"
             or not isinstance(cached, Mapping)
             or cached.get("source") != "coingecko+binance"
-            or _valid_crypto_fundamental_observation(cached, cutoff=cutoff)
+            or (
+                crypto_mapping_matches
+                and _valid_crypto_fundamental_observation(cached, cutoff=cutoff)
+            )
         ):
             return dict(cached) if isinstance(cached, Mapping) else None
         loader = self.fundamental_loaders.get(market)
@@ -2647,6 +2668,10 @@ class MarketAiSelectionService:
                 _coingecko_mapping_entry_expired(cached.get(pair), cutoff=cutoff)
                 for pair in required_pairs
             )
+            and (
+                deadline is None
+                or not _coingecko_mapping_incomplete(cached, required_pairs)
+            )
         ):
             return cached, _coingecko_mapping_incomplete(cached, required_pairs)
         effective_deadline = (
@@ -2661,6 +2686,8 @@ class MarketAiSelectionService:
                 now=cutoff,
             )
             existing = dict(cached) if isinstance(cached, Mapping) else {}
+            resume_page = existing.pop("_nextPage", 1)
+            resume_boundary = str(existing.pop("_boundaryPair", "") or "")
             expired = {
                 pair
                 for pair in required_pairs
@@ -2671,18 +2698,35 @@ class MarketAiSelectionService:
             }
             for pair in expired:
                 existing.pop(pair, None)
-            missing = required_pairs - set(existing)
+            unresolved = {
+                pair
+                for pair in required_pairs
+                if isinstance(existing.get(pair), Mapping)
+                and existing[pair].get("status") == "unresolved"
+            }
+            missing = (required_pairs - set(existing)) | unresolved
             if not missing:
                 return existing, _coingecko_mapping_incomplete(
                     existing,
                     required_pairs,
                 )
+            for pair in unresolved:
+                existing.pop(pair, None)
+            start_page = (
+                resume_page
+                if type(resume_page) is int and resume_page >= 1
+                else 1
+            )
+            if resume_boundary and min(missing) < resume_boundary:
+                start_page = 1
+                resume_boundary = ""
             ticker_rows: list[Mapping[str, Any]] = []
             invalid_pairs: set[str] = set()
             scan_complete = False
-            last_page_boundary_pair = ""
+            last_page_boundary_pair = resume_boundary
+            last_successful_page = start_page - 1
             last_required_pair = max(missing) if missing else ""
-            for page in range(1, 21):
+            for page in range(start_page, start_page + 20):
                 if self.monotonic() >= effective_deadline:
                     break
                 try:
@@ -2704,17 +2748,6 @@ class MarketAiSelectionService:
                 if not rows:
                     scan_complete = True
                     break
-                for item in rows:
-                    if not isinstance(item, Mapping):
-                        continue
-                    pair = (
-                        f"{str(item.get('base') or '').strip().upper()}/"
-                        f"{str(item.get('target') or '').strip().upper()}"
-                    )
-                    if _valid_coingecko_ticker_observation(item, cutoff=cutoff):
-                        ticker_rows.append(item)
-                    elif pair in missing:
-                        invalid_pairs.add(pair)
                 page_pairs = [
                     f"{str(item.get('base') or '').strip().upper()}/"
                     f"{str(item.get('target') or '').strip().upper()}"
@@ -2723,6 +2756,31 @@ class MarketAiSelectionService:
                     and item.get("base")
                     and item.get("target")
                 ]
+                if (
+                    page == start_page
+                    and resume_boundary
+                    and page_pairs
+                    and min(page_pairs) < resume_boundary
+                ):
+                    existing.clear()
+                    missing = set(required_pairs)
+                    resume_boundary = ""
+                    last_page_boundary_pair = ""
+                    break
+                last_successful_page = page
+                for item in rows:
+                    if not isinstance(item, Mapping):
+                        continue
+                    pair = (
+                        f"{str(item.get('base') or '').strip().upper()}/"
+                        f"{str(item.get('target') or '').strip().upper()}"
+                    )
+                    if pair == resume_boundary:
+                        continue
+                    if _valid_coingecko_ticker_observation(item, cutoff=cutoff):
+                        ticker_rows.append(item)
+                    elif pair in missing:
+                        invalid_pairs.add(pair)
                 if page_pairs:
                     last_page_boundary_pair = max(page_pairs)
                 if (
@@ -2735,7 +2793,9 @@ class MarketAiSelectionService:
                 ):
                     scan_complete = True
                     break
+            unresolved_pairs = {resume_boundary} & missing
             if not scan_complete and last_page_boundary_pair:
+                unresolved_pairs.add(last_page_boundary_pair)
                 ticker_rows = [
                     item
                     for item in ticker_rows
@@ -2745,6 +2805,10 @@ class MarketAiSelectionService:
                     )
                     != last_page_boundary_pair
                 ]
+                existing["_nextPage"] = last_successful_page + 1
+                existing["_boundaryPair"] = last_page_boundary_pair
+                # ponytail: cursor is process-local; persist only if restarts
+                # measurably prevent public-source coverage from progressing.
             discovered = build_coingecko_binance_mapping(ticker_rows)
             for item in discovered.values():
                 if "observedAt" not in item:
@@ -2759,7 +2823,11 @@ class MarketAiSelectionService:
                     }
                     if pair in invalid_pairs
                     else {
-                        "status": "missing" if scan_complete else "unresolved",
+                        "status": (
+                            "unresolved"
+                            if pair in unresolved_pairs or not scan_complete
+                            else "missing"
+                        ),
                         "checkedAt": cutoff.isoformat(),
                     }
                 )
@@ -2776,7 +2844,7 @@ class MarketAiSelectionService:
             ]
             existing["_observedAt"] = max(observed_times or [cutoff]).isoformat()
             self._cache_put(key, existing, now=cutoff)
-            return existing, not scan_complete
+            return existing, _coingecko_mapping_incomplete(existing, required_pairs)
 
     def _load_news(
         self,

@@ -1564,3 +1564,14 @@ final result: passed
 - AI 选股安全聚焦 `43 / 43`、Stage 10 安全聚焦 `14 / 14`、Python 全量 `942 / 942`、Web 全量 `1096 / 1096`、生产构建、API 数据依赖镜像重建、API/Web 健康检查和 `git diff --check` 通过；所有真实选股均使用本地确定性 Provider，边界保持 `researchOnly=true`、`orderSubmissionAllowed=false`、`routeExecuted=false`。
 
 final result: passed
+
+## 2026-08-01 CoinGecko 映射限流续扫复验
+
+- CoinGecko Binance ticker 分页中断后，服务端在既有五分钟进程缓存中保留下一页游标和未闭合边界；同一进程内的下一次显式选股只续扫未完成页。上一页页尾交易对会在后续页继续被跳过并保持 `unresolved`，因此续扫不会绕过跨页歧义校验；新候选落在游标之前时会从第一页重新核验。
+- 公共 API seam 的确定性测试先让第 1 页成功、第 2 页限流，只得到 `4 / 20` 个闭合精确映射；第二次相同选股从第 2 页继续后提升到 `19 / 20`，唯一跨页边界仍未解析。两次市场事实均按已映射 coin id 批量读取，未用代码或名称猜测映射。
+- 复审补充了分页内容在两次请求间发生增删的场景：续扫页最小交易对一旦回退到旧边界之前，本次映射全部保守失效，候选基本面缓存也不得绕过当前映射校验；下一次显式请求从第 1 页重扫后恢复 `20 / 20`。该路径不会把漂移到新页的重复交易对误标为精确映射。
+- 最终 API 镜像使用 `INSTALL_DATA_DEPS=true` 重建并健康。实网 CoinGecko 当前仍返回共享 `429 / Retry-After: 42`，两次 Binance USDT 请求均如实返回 `409 market_ai_selection_no_eligible_candidates`；本轮没有把确定性测试覆盖率冒充实网结果，也没有添加自动等待、后台任务、数据库表或持久化游标。
+- 受保护审计中的最近 A 股候选仍全部为新浪/东方财富双源 `verified`；SEC EDGAR User-Agent 仍为空且美股验收继续阻断。质量统计的已复盘样本仍为 `0`，因此没有推进批量研究、自动观察池或订单连接。
+- AI 选股安全聚焦 `43 / 43`、Stage 10 安全聚焦 `14 / 14`、Python 全量 `942 / 942`、Web 全量 `1096 / 1096`、生产构建、API/Web 健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。
+
+final result: passed
