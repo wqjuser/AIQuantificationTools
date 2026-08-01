@@ -23,8 +23,8 @@ import type {
   PortfolioBacktestRun,
 } from "../lib/terminal-api";
 import type { AutoTradingSnapshot } from "./ExecutionAutoPaperTradingSection";
+import { buildAiReviewProductionPath } from "./AiReviewPanel";
 import {
-  buildAiReviewProductionPath,
   buildAuditLedgerRows,
   hasPlatformSettingsConfigurationChanges,
   TerminalWorkspaceSurface,

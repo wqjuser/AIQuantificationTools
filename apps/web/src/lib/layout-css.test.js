@@ -12,6 +12,10 @@ const marketAiSelectionPanelSource = readFileSync(
   new URL("../components/MarketAiSelectionPanel.tsx", import.meta.url),
   "utf8"
 );
+const aiReviewPanelSource = readFileSync(
+  new URL("../components/AiReviewPanel.tsx", import.meta.url),
+  "utf8"
+);
 const strategyExperimentSectionSource = readFileSync(
   new URL("../components/StrategyExperimentSection.tsx", import.meta.url),
   "utf8"
@@ -799,8 +803,8 @@ describe("terminal layout css", () => {
   test("keeps the M4 research loop inside the real AI review surface without horizontal overflow", () => {
     expect(appSource).toContain('import { AiResearchM4Section } from "./components/AiResearchM4Section";');
     expect(appSource).toContain("researchLoop: (");
-    expect(terminalWorkspaceSurfaceSource).toContain("researchLoop?: ReactNode;");
-    expect(terminalWorkspaceSurfaceSource).toContain("{aiReview.researchLoop}");
+    expect(aiReviewPanelSource).toContain("researchLoop?: ReactNode;");
+    expect(aiReviewPanelSource).toContain("{aiReview.researchLoop}");
     expect(aiResearchM4SectionSource).toContain("researchContextOnly=true");
     expect(aiResearchM4SectionSource).toContain("affectsOrderRouting=false");
     expect(cssBlock("  .surface-ai-review .design-ai-main > .ai-research-m4-section")).toContain(
@@ -2308,7 +2312,7 @@ describe("terminal layout css", () => {
     const backtestSource = sourceBetweenText(
       terminalWorkspaceSurfaceSource,
       "function BacktestSurface",
-      "function AiReviewSurface"
+      "function PortfolioSurface"
     );
     const bindingSource = sourceBetween(
       "const bindStrategyToProduction = useCallback",
@@ -2331,11 +2335,7 @@ describe("terminal layout css", () => {
   });
 
   test("routes AI-reviewed candidates through re-audit or the existing production handoff", () => {
-    const aiReviewSource = sourceBetweenText(
-      terminalWorkspaceSurfaceSource,
-      "function AiReviewSurface",
-      "function PortfolioSurface"
-    );
+    const aiReviewSource = aiReviewPanelSource;
 
     expect(appSource).toContain("const aiReviewStage3PrimaryCandidateAvailable = Boolean(");
     expect(appSource).toContain(
@@ -2351,15 +2351,17 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('activeWorkAreaId !== "backtest" || !handoff');
     expect(appSource).toContain("switchBlockedReasonLabel:");
     expect(aiReviewSource).toContain("人工研究决策");
-    expect(terminalWorkspaceSurfaceSource).toContain("采用已评审候选并重新审计");
-    expect(terminalWorkspaceSurfaceSource).toContain("前往回测完成生产交接");
-    expect(terminalWorkspaceSurfaceSource).toContain("前往动态交易复核");
-    expect(terminalWorkspaceSurfaceSource).toContain(
+    expect(aiReviewSource).toContain("采用已评审候选并重新审计");
+    expect(aiReviewSource).toContain("前往回测完成生产交接");
+    expect(aiReviewSource).toContain("前往动态交易复核");
+    expect(aiReviewSource).toContain(
       "handoff.dataSnapshotHash === reference.snapshotId"
     );
-    expect(terminalWorkspaceSurfaceSource).toContain('binding.status === "ready"');
-    expect(terminalWorkspaceSurfaceSource).toContain('handoff?.status === "active"');
+    expect(aiReviewSource).toContain('binding.status === "ready"');
+    expect(aiReviewSource).toContain('handoff?.status === "active"');
     expect(aiReviewSource).toContain("不等于生产批准");
+    expect(aiReviewSource).not.toMatch(/\bonBind\b/);
+    expect(terminalWorkspaceSurfaceSource).not.toContain("<AiReviewPanel {...props}");
     expect(aiReviewSource).not.toContain("productionStrategyHandoff.onBind");
     expect(aiReviewSource).not.toContain("liveConfirmed:");
     expect(aiReviewSource).not.toContain("enabled:");
