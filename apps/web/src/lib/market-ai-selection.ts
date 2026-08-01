@@ -1,5 +1,11 @@
 import type { AiReviewProviderId } from "./ai-review-stage3";
 import type { Market } from "./terminal-workbench";
+import {
+  buildApiUrl,
+  coreErrorDetail,
+  defaultFetcher,
+  type WorkspaceFetcher
+} from "./terminal-api-http";
 
 type MarketAiSelectionDiscoverySort =
   | "changePct"
@@ -1137,4 +1143,133 @@ function isMarket(value: unknown): value is Market {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function buildMarketAiSelectionsUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/market/ai-selections");
+}
+
+export function buildMarketAiSelectionReviewsUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/market/ai-selection-reviews");
+}
+
+export function buildMarketAiSelectionStatisticsUrl(baseUrl: string): string {
+  return buildApiUrl(baseUrl, "api/market/ai-selection-statistics");
+}
+
+export async function createMarketAiSelection(
+  baseUrl: string,
+  request: MarketAiSelectionRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketAiSelectionLoadResult> {
+  try {
+    const response = await fetcher(buildMarketAiSelectionsUrl(baseUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        market: request.market,
+        universeMode: request.universeMode,
+        discovery: request.discovery,
+        profile: request.profile,
+        horizon: request.horizon,
+        providerId: request.providerId,
+        externalDataApproved: request.externalDataApproved
+      })
+    });
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (!isMarketAiSelectionPayload(payload, request)) {
+      throw new Error("Invalid market AI selection contract");
+    }
+    return {
+      selection: payload,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error ? error.message : "Unknown market AI selection error"
+    };
+  }
+}
+
+export async function createMarketAiSelectionReview(
+  baseUrl: string,
+  request: MarketAiSelectionReviewRequest,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketAiSelectionReviewLoadResult> {
+  try {
+    const response = await fetcher(buildMarketAiSelectionReviewsUrl(baseUrl), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        selectionId: request.selectionId,
+        benchmarkRunId: request.benchmarkRunId
+      })
+    });
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(`HTTP ${response.status ?? "error"}`);
+    }
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (
+      !hasExactAiReviewEnvelopeKeys(payload, ["review"])
+      || !isMarketAiSelectionReviewPayload(payload.review, request)
+    ) {
+      throw new Error("Invalid market AI selection review contract");
+    }
+    return {
+      review: payload.review,
+      source: "core"
+    };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error
+        ? error.message
+        : "Unknown market AI selection review error"
+    };
+  }
+}
+
+export async function loadMarketAiSelectionQualityStatistics(
+  baseUrl: string,
+  fetcher: WorkspaceFetcher = defaultFetcher
+): Promise<MarketAiSelectionQualityStatisticsLoadResult> {
+  try {
+    const response = await fetcher(buildMarketAiSelectionStatisticsUrl(baseUrl));
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    if (
+      !hasExactAiReviewEnvelopeKeys(payload, ["statistics"])
+      || !isMarketAiSelectionQualityStatistics(payload.statistics)
+    ) {
+      throw new Error("Invalid market AI selection statistics contract");
+    }
+    return { statistics: payload.statistics, source: "core" };
+  } catch (error) {
+    return {
+      source: "fallback",
+      error: error instanceof Error
+        ? error.message
+        : "Unknown market AI selection statistics error"
+    };
+  }
 }

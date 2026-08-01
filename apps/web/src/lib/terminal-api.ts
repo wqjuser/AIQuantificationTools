@@ -82,27 +82,27 @@ import {
   type EvaluateAiResearchOutcomeRequest
 } from "./ai-research-m4";
 import {
-  isMarketAiSelectionPayload,
-  isMarketAiSelectionQualityStatistics,
-  isMarketAiSelectionReviewPayload,
-  type MarketAiSelectionCandidate,
-  type MarketAiSelectionDiscovery,
-  type MarketAiSelectionHorizon,
-  type MarketAiSelectionLoadResult,
-  type MarketAiSelectionProfile,
-  type MarketAiSelectionQualityStatistics,
-  type MarketAiSelectionQualityStatisticsLoadResult,
-  type MarketAiSelectionRecommendation,
-  type MarketAiSelectionRequest,
-  type MarketAiSelectionResult,
-  type MarketAiSelectionReview,
-  type MarketAiSelectionReviewCompletedItem,
-  type MarketAiSelectionReviewInsufficientItem,
-  type MarketAiSelectionReviewItem,
-  type MarketAiSelectionReviewLoadResult,
-  type MarketAiSelectionReviewObservingItem,
-  type MarketAiSelectionReviewRequest
-} from "./market-ai-selection-contract";
+  buildApiUrl,
+  coreErrorDetail,
+  defaultFetcher,
+  type WorkspaceFetcher
+} from "./terminal-api-http";
+
+export {
+  buildApiUrl,
+  coreErrorDetail,
+  type WorkspaceFetcher,
+  type WorkspaceResponse
+} from "./terminal-api-http";
+
+export {
+  buildMarketAiSelectionReviewsUrl,
+  buildMarketAiSelectionStatisticsUrl,
+  buildMarketAiSelectionsUrl,
+  createMarketAiSelection,
+  createMarketAiSelectionReview,
+  loadMarketAiSelectionQualityStatistics
+} from "./market-ai-selection";
 
 export type {
   MarketAiSelectionCandidate,
@@ -122,7 +122,7 @@ export type {
   MarketAiSelectionReviewLoadResult,
   MarketAiSelectionReviewObservingItem,
   MarketAiSelectionReviewRequest
-} from "./market-ai-selection-contract";
+} from "./market-ai-selection";
 
 export const defaultQuantCoreBaseUrl = "/";
 export type ResearchTimeframe = Timeframe;
@@ -5012,15 +5012,6 @@ export interface PortfolioBacktestResult {
   error?: string;
 }
 
-export interface WorkspaceResponse {
-  ok: boolean;
-  status?: number;
-  body?: ReadableStream<Uint8Array> | null;
-  json: () => Promise<unknown>;
-}
-
-export type WorkspaceFetcher = (url: string, init?: RequestInit) => Promise<WorkspaceResponse>;
-
 export interface MarketAiSelectionResearchOrigin {
   selectionId: string;
   candidateEvidenceId: string;
@@ -5127,8 +5118,6 @@ export interface HandoffNoteSaveParams {
   sourceWorkspace?: string;
 }
 
-const defaultFetcher: WorkspaceFetcher = async (url, init) => fetch(url, init);
-
 class WorkspaceHttpError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message);
@@ -5163,14 +5152,6 @@ function resolveAiReviewRequestOptions(
 export function resolveQuantCoreBaseUrl(env: { VITE_QUANT_API_BASE?: string }): string {
   const configured = env.VITE_QUANT_API_BASE?.trim();
   return configured ? configured : defaultQuantCoreBaseUrl;
-}
-
-export function buildApiUrl(baseUrl: string, path: string, configure?: (url: URL) => void): string {
-  const trimmedBase = baseUrl.trim();
-  const normalizedBase = trimmedBase && trimmedBase !== "/" ? (trimmedBase.endsWith("/") ? trimmedBase : `${trimmedBase}/`) : "/";
-  const url = new URL(path.replace(/^\/+/, ""), normalizedBase === "/" ? "http://aiqt.local/" : normalizedBase);
-  configure?.(url);
-  return normalizedBase === "/" ? `${url.pathname}${url.search}` : url.toString();
 }
 
 export function buildWorkspaceUrl(baseUrl: string): string {
@@ -5713,18 +5694,6 @@ export function buildMarketDiscoveryUrl(
       );
     }
   });
-}
-
-export function buildMarketAiSelectionsUrl(baseUrl: string): string {
-  return buildApiUrl(baseUrl, "api/market/ai-selections");
-}
-
-export function buildMarketAiSelectionReviewsUrl(baseUrl: string): string {
-  return buildApiUrl(baseUrl, "api/market/ai-selection-reviews");
-}
-
-export function buildMarketAiSelectionStatisticsUrl(baseUrl: string): string {
-  return buildApiUrl(baseUrl, "api/market/ai-selection-statistics");
 }
 
 export function buildMarketInformationUrl(
@@ -8505,20 +8474,6 @@ export async function undoResearchRunImport(
       error: error instanceof Error ? error.message : "Unknown research run import undo error"
     };
   }
-}
-
-export function coreErrorDetail(value: unknown): string | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  if (typeof record.detail === "string" && record.detail.trim()) {
-    return record.detail;
-  }
-  if (typeof record.error === "string" && record.error.trim()) {
-    return record.error;
-  }
-  return null;
 }
 
 export async function loadResearchNote(
@@ -13961,123 +13916,6 @@ export async function loadMarketDiscovery(
       totalMatched: 0,
       items: [],
       error: error instanceof Error ? error.message : "Unknown market discovery error",
-    };
-  }
-}
-
-export async function createMarketAiSelection(
-  baseUrl: string,
-  request: MarketAiSelectionRequest,
-  fetcher: WorkspaceFetcher = defaultFetcher
-): Promise<MarketAiSelectionLoadResult> {
-  try {
-    const response = await fetcher(buildMarketAiSelectionsUrl(baseUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        market: request.market,
-        universeMode: request.universeMode,
-        discovery: request.discovery,
-        profile: request.profile,
-        horizon: request.horizon,
-        providerId: request.providerId,
-        externalDataApproved: request.externalDataApproved
-      })
-    });
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new Error(`HTTP ${response.status ?? "error"}`);
-    }
-    if (!response.ok) {
-      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
-    }
-    if (!isMarketAiSelectionPayload(payload, request)) {
-      throw new Error("Invalid market AI selection contract");
-    }
-    return {
-      selection: payload,
-      source: "core"
-    };
-  } catch (error) {
-    return {
-      source: "fallback",
-      error: error instanceof Error ? error.message : "Unknown market AI selection error"
-    };
-  }
-}
-
-export async function createMarketAiSelectionReview(
-  baseUrl: string,
-  request: MarketAiSelectionReviewRequest,
-  fetcher: WorkspaceFetcher = defaultFetcher
-): Promise<MarketAiSelectionReviewLoadResult> {
-  try {
-    const response = await fetcher(buildMarketAiSelectionReviewsUrl(baseUrl), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        selectionId: request.selectionId,
-        benchmarkRunId: request.benchmarkRunId
-      })
-    });
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new Error(`HTTP ${response.status ?? "error"}`);
-    }
-    if (!response.ok) {
-      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
-    }
-    if (
-      !hasExactAiReviewEnvelopeKeys(payload, ["review"])
-      || !isMarketAiSelectionReviewPayload(payload.review, request)
-    ) {
-      throw new Error("Invalid market AI selection review contract");
-    }
-    return {
-      review: payload.review,
-      source: "core"
-    };
-  } catch (error) {
-    return {
-      source: "fallback",
-      error: error instanceof Error
-        ? error.message
-        : "Unknown market AI selection review error"
-    };
-  }
-}
-
-export async function loadMarketAiSelectionQualityStatistics(
-  baseUrl: string,
-  fetcher: WorkspaceFetcher = defaultFetcher
-): Promise<MarketAiSelectionQualityStatisticsLoadResult> {
-  try {
-    const response = await fetcher(buildMarketAiSelectionStatisticsUrl(baseUrl));
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
-    }
-    if (
-      !hasExactAiReviewEnvelopeKeys(payload, ["statistics"])
-      || !isMarketAiSelectionQualityStatistics(payload.statistics)
-    ) {
-      throw new Error("Invalid market AI selection statistics contract");
-    }
-    return { statistics: payload.statistics, source: "core" };
-  } catch (error) {
-    return {
-      source: "fallback",
-      error: error instanceof Error
-        ? error.message
-        : "Unknown market AI selection statistics error"
     };
   }
 }
