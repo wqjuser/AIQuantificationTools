@@ -2688,6 +2688,7 @@ class MarketAiSelectionService:
             existing = dict(cached) if isinstance(cached, Mapping) else {}
             resume_page = existing.pop("_nextPage", 1)
             resume_boundary = str(existing.pop("_boundaryPair", "") or "")
+            resume_coin_ids = str(existing.pop("_coinIds", "") or "")
             expired = {
                 pair
                 for pair in required_pairs
@@ -2712,11 +2713,64 @@ class MarketAiSelectionService:
                 )
             for pair in unresolved:
                 existing.pop(pair, None)
+            coin_ids = ""
+            coin_index = (
+                self._cache_get(
+                    "source:coingecko-coin-list",
+                    ttl=_CRYPTO_FUNDAMENTAL_TTL,
+                    now=cutoff,
+                )
+                if len(missing) > 1
+                else None
+            )
+            if len(missing) > 1 and not isinstance(coin_index, Mapping):
+                try:
+                    payload = self._read_json(
+                        "https://api.coingecko.com/api/v3/coins/list?"
+                        + urlencode({"include_platform": "false"}),
+                        {"Accept": "application/json"},
+                        deadline=effective_deadline,
+                    )
+                except Exception:
+                    payload = None
+                if isinstance(payload, list):
+                    normalized_index: dict[str, list[str]] = {}
+                    for item in payload:
+                        if not isinstance(item, Mapping):
+                            continue
+                        symbol = str(item.get("symbol") or "").strip().upper()
+                        coin_id = str(item.get("id") or "").strip()
+                        if symbol and coin_id:
+                            normalized_index.setdefault(symbol, []).append(coin_id)
+                    if normalized_index:
+                        coin_index = {
+                            symbol: sorted(set(ids))
+                            for symbol, ids in normalized_index.items()
+                        }
+                        self._cache_put(
+                            "source:coingecko-coin-list",
+                            coin_index,
+                            now=cutoff,
+                        )
+            if len(missing) > 1 and isinstance(coin_index, Mapping):
+                coin_ids = ",".join(
+                    sorted(
+                        {
+                            str(coin_id)
+                            for pair in missing
+                            for coin_id in coin_index.get(pair.split("/", 1)[0], [])
+                            if str(coin_id)
+                        }
+                    )
+                )
             start_page = (
                 resume_page
                 if type(resume_page) is int and resume_page >= 1
                 else 1
             )
+            if coin_ids != resume_coin_ids:
+                start_page = 1
+                resume_boundary = ""
             if resume_boundary and min(missing) < resume_boundary:
                 start_page = 1
                 resume_boundary = ""
@@ -2732,7 +2786,13 @@ class MarketAiSelectionService:
                 try:
                     payload = self._read_json(
                         "https://api.coingecko.com/api/v3/exchanges/binance/tickers?"
-                        + urlencode({"page": page, "order": "base_target"}),
+                        + urlencode(
+                            {
+                                "page": page,
+                                "order": "base_target",
+                                **({"coin_ids": coin_ids} if coin_ids else {}),
+                            }
+                        ),
                         {"Accept": "application/json"},
                         deadline=effective_deadline,
                     )
@@ -2807,6 +2867,8 @@ class MarketAiSelectionService:
                 ]
                 existing["_nextPage"] = last_successful_page + 1
                 existing["_boundaryPair"] = last_page_boundary_pair
+                if coin_ids:
+                    existing["_coinIds"] = coin_ids
                 # ponytail: cursor is process-local; persist only if restarts
                 # measurably prevent public-source coverage from progressing.
             discovered = build_coingecko_binance_mapping(ticker_rows)

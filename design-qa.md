@@ -1603,3 +1603,13 @@ final result: passed
 - 质量统计回放为 `8` 次选股、`46 / 602 · 7.64%` 合格候选，数据源降级为 `6 / 8 · 75%`。已到期复盘样本仍为 `0`，因此不调整评分、不开启批量研究或自动观察池，也不连接订单。公开 CoinGecko 限流下的全量映射仍由现有显式请求续扫承担，本轮不新增后台重试、数据库表或第二套状态机。
 
 final result: passed
+
+## 2026-08-01 Binance USDT 未筛选全链路映射验收
+
+- 实网复现确认 CoinGecko 公开出口持续返回 `429 / Retry-After: 60`，既有 Binance ticker 全量分页在五分钟证据新鲜度内无法稳定完成。根据 CoinGecko 官方 ID Map 和 Exchange Tickers 契约，多个待映射交易对现在先五分钟缓存 `/coins/list` 的完整 symbol→ID 索引，再将同 symbol 的全部 ID 传入 Binance ticker `coin_ids`；单一交易对或 ID 列表不可用时仍使用原全量分页。
+- TDD 用例在修复前第三次显式选股仍返回 `market_ai_selection_no_eligible_candidates`；修复后在“每个限流窗口只有一次上游成功”的条件下第三次完成选股。同 symbol 的多个 ID 全部进入过滤请求，最终仍只根据 Binance ticker 返回的 base、target 和 `coin_id` 生成映射；多 ID 命中同一交易对仍为歧义，没有名称或单一 symbol 猜测。
+- 复用 Compose 现有 `HTTPS_PROXY` 入口重建 API 后，未加任何条件筛选的 Binance USDT 实网请求返回 `201 / completed`，生成 `selection-v2-3366697a5be87749f188`。受保护审计记录 `100` 个初始候选、成交活跃度前 `20` 名的 `20 / 20 · 100%` 精确映射、`17` 个合格证据候选和 `5` 个研究推荐；其余 `3` 个前二十候选仅因已完成日 K 不足被明确排除。
+- 每个合格候选冻结 `180` 根已完成日 K、CoinGecko/Binance 来源和观测时间、精确 `coin_id`、技术因子与候选证据哈希；整体记录哈希为 `8b1c6720...d1f2a1db`。本地确定性 Provider 状态为 `skipped`，边界仍为 `researchOnly=true`、`orderSubmissionAllowed=false`、`routeExecuted=false`。
+- 质量统计回放为 `9` 次选股、`63 / 702 · 8.97%` 合格候选和 `7 / 9 · 77.78%` 数据源降级；已到期复盘样本仍为 `0`，因此不修改评分、不开启批量研究、自动观察池或订单连接。AI 选股安全聚焦 `45 / 45`、Stage 10 安全聚焦 `14 / 14`、Python 全量 `944 / 944`、Web 全量 `1096 / 1096` 与双轴代码复审通过，未新增数据库表、后台任务或第二套状态机。
+
+final result: passed

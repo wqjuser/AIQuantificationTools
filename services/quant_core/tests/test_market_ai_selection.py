@@ -1454,6 +1454,108 @@ def test_crypto_mapping_and_market_facts_are_loaded_once_in_batches(
             )
 
 
+def test_crypto_selection_filters_exchange_tickers_by_coin_ids_under_rate_limit(
+    tmp_path: object,
+) -> None:
+    rows = _rows(20, market="crypto")
+    calls = {"coinList": 0, "filteredTickers": 0, "unfilteredTickers": 0, "markets": 0}
+
+    def fetch_json(url: str, headers: object) -> object:
+        query = parse_qs(urlparse(url).query)
+        if "/coins/list" in url:
+            calls["coinList"] += 1
+            return [
+                {
+                    "id": f"coin-{index}",
+                    "symbol": f"c{index:02d}",
+                    "name": f"Coin {index}",
+                }
+                for index in range(20)
+            ] + [
+                {
+                    "id": "coin-0-alias",
+                    "symbol": "c00",
+                    "name": "Coin 0 Alias",
+                }
+            ]
+        if "/exchanges/binance/tickers" in url:
+            if "coin_ids" not in query:
+                calls["unfilteredTickers"] += 1
+                raise RuntimeError("coingecko_rate_limited")
+            calls["filteredTickers"] += 1
+            if calls["filteredTickers"] == 1:
+                raise RuntimeError("coingecko_rate_limited")
+            assert set(query["coin_ids"][0].split(",")) == {
+                f"coin-{index}" for index in range(20)
+            } | {"coin-0-alias"}
+            return {
+                "tickers": [
+                    {
+                        "base": f"C{index:02d}",
+                        "target": "USDT",
+                        "coin_id": f"coin-{index}",
+                        "bid_ask_spread_percentage": 0.1,
+                        "last_fetch_at": NOW.isoformat(),
+                        "is_stale": False,
+                        "is_anomaly": False,
+                    }
+                    for index in range(20)
+                ]
+            }
+        if "/coins/markets" in url:
+            calls["markets"] += 1
+            if calls["markets"] == 1:
+                raise RuntimeError("coingecko_rate_limited")
+            ids = query["ids"][0].split(",")
+            return [
+                {
+                    "id": coin_id,
+                    "market_cap": 1_000_000 + index,
+                    "circulating_supply": 80_000,
+                    "total_supply": 100_000,
+                    "max_supply": 100_000,
+                    "fully_diluted_valuation": 1_200_000,
+                    "last_updated": NOW.isoformat(),
+                }
+                for index, coin_id in enumerate(ids)
+            ]
+        raise AssertionError(url)
+
+    service = _service(
+        tmp_path,
+        discovery=_Discovery(rows),
+        fundamental_loaders={},
+        fetch_json=fetch_json,
+    )
+    with _raises(MarketAiSelectionError):
+        service.select(_request(market="crypto", discovery={}, profile="balanced"))
+    with _raises(MarketAiSelectionError):
+        service.select(_request(market="crypto", discovery={}, profile="balanced"))
+    result = service.select(
+        _request(market="crypto", discovery={}, profile="balanced")
+    )
+
+    assert result["status"] == "completed"
+    assert len(result["baselineCandidates"]) == 20
+    assert len(result["recommendations"]) == 5
+    assert calls == {
+        "coinList": 1,
+        "filteredTickers": 2,
+        "unfilteredTickers": 0,
+        "markets": 2,
+    }
+    event = service.audit_store.get(result["auditEventId"])
+    assert event is not None
+    assert event.metadata["artifact"]["marketContext"][
+        "fundamentalSourceCoverage"
+    ]["mappedCount"] == 20
+    assert service.quality_statistics()["candidateQualification"] == {
+        "qualifiedCount": 20,
+        "sampleCount": 20,
+        "ratePct": 100.0,
+    }
+
+
 def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
     tmp_path: object,
 ) -> None:
@@ -3592,6 +3694,13 @@ class MarketAiSelectionTests(unittest.TestCase):
 
     def test_crypto_mapping_and_market_facts_are_loaded_once_in_batches(self) -> None:
         self._with_tmp(test_crypto_mapping_and_market_facts_are_loaded_once_in_batches)
+
+    def test_crypto_selection_filters_exchange_tickers_by_coin_ids_under_rate_limit(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_crypto_selection_filters_exchange_tickers_by_coin_ids_under_rate_limit
+        )
 
     def test_crypto_selection_keeps_verified_mapping_when_later_page_fails(
         self,
