@@ -1,4 +1,4 @@
-import type { AiReviewProviderId } from "./ai-review-stage3";
+import { isAiReviewProviderId, type AiReviewProviderId } from "./ai-review-stage3";
 import type { Market } from "./terminal-workbench";
 import {
   buildApiUrl,
@@ -1128,13 +1128,6 @@ function hasExactAiReviewEnvelopeKeys(
     && !Array.isArray(value)
     && Object.keys(value).length === keys.length
     && keys.every((key) => key in value);
-}
-
-function isAiReviewProviderId(value: unknown): value is AiReviewProviderId {
-  return value === "local"
-    || value === "openai"
-    || value === "openai-compatible"
-    || value === "ollama";
 }
 
 function isMarket(value: unknown): value is Market {

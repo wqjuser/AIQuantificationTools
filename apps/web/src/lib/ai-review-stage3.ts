@@ -302,6 +302,10 @@ const decisionIdPattern = /^ai-review-decision-[0-9a-f]{32}$/;
 const openAiBaseUrl = "https://api.openai.com/v1";
 const safeRawPathPattern = /^(?:[A-Za-z0-9/:@\-._~!$&'()*+,;=]|%[0-9a-f]{2})*$/i;
 
+export function isAiReviewProviderId(value: unknown): value is AiReviewProviderId {
+  return typeof value === "string" && providerIds.has(value as AiReviewProviderId);
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -732,7 +736,7 @@ function isExternalAssessment(
     "outputSchemaVersion", "renderedPrompt", "renderedPromptHash", "evidenceHash", "requestHash",
     "responseHash", "assessment", "usage", "latencyMs", "error"
   ]) || (value.status !== "completed" && value.status !== "failed" && value.status !== "skipped")
-    || typeof value.provider !== "string" || !providerIds.has(value.provider as AiReviewProviderId)
+    || !isAiReviewProviderId(value.provider)
     || (value.promptTemplateVersion !== "aiqt-ai-review-v1"
       && value.promptTemplateVersion !== "aiqt-ai-review-v2"
       && value.promptTemplateVersion !== "aiqt-ai-review-v3"
@@ -776,7 +780,7 @@ function isExternalAssessment(
 
 export function isAiReviewProviderStatus(value: unknown): value is AiReviewProviderStatus {
   if (!hasExactKeys(value, ["providerId", "configured", "model", "sanitizedBaseUrl"])
-    || typeof value.providerId !== "string" || !providerIds.has(value.providerId as AiReviewProviderId)
+    || !isAiReviewProviderId(value.providerId)
     || typeof value.configured !== "boolean"
     || (value.model !== null && !isTrimmedText(value.model))
     || !isProviderBaseUrl(value.providerId as AiReviewProviderId, value.sanitizedBaseUrl, true)) {
