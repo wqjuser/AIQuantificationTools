@@ -16,6 +16,14 @@ const researchContextReadinessPanelSource = readFileSync(
   new URL("../components/ResearchContextReadinessPanel.tsx", import.meta.url),
   "utf8"
 );
+const aiReviewAuditBoardsSource = readFileSync(
+  new URL("../components/AiReviewAuditBoards.tsx", import.meta.url),
+  "utf8"
+);
+const aiReviewAuditTrailPanelSource = readFileSync(
+  new URL("../components/AiReviewAuditTrailPanel.tsx", import.meta.url),
+  "utf8"
+);
 const marketAiSelectionPanelSource = readFileSync(
   new URL("../components/MarketAiSelectionPanel.tsx", import.meta.url),
   "utf8"
@@ -1683,10 +1691,10 @@ describe("terminal layout css", () => {
   });
 
   test("renders risk approval references in the AI review audit trail", () => {
-    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
-    const riskReferenceSource = sourceBetween("function AiReviewRiskReferenceBoard", "function AiReviewRecordDriftSummary");
+    const auditPanelSource = sourceBetweenText(aiReviewAuditTrailPanelSource, "function AiReviewAuditTrailPanel", "__END__");
+    const riskReferenceSource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewRiskReferenceBoard", "function AiReviewRecordDriftSummary");
 
-    expect(appSource).toContain("function AiReviewRiskReferenceBoard");
+    expect(aiReviewAuditBoardsSource).toContain("function AiReviewRiskReferenceBoard");
     expect(auditPanelSource).toContain("riskApproval");
     expect(auditPanelSource).toContain("<AiReviewRiskReferenceBoard");
     expect(auditPanelSource).toContain("approval={riskApproval}");
@@ -1702,11 +1710,11 @@ describe("terminal layout css", () => {
   });
 
   test("renders an AI review audit timeline as approval references", () => {
-    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function aiReviewDriftStatusText");
-    const timelineSource = sourceBetween("function AiReviewAuditTimelineBoard", "function AiReviewAuditTrailPanel");
+    const auditPanelSource = sourceBetweenText(aiReviewAuditTrailPanelSource, "function AiReviewAuditTrailPanel", "__END__");
+    const timelineSource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewAuditTimelineBoard", "function AiReviewExportEvidenceIndexBoard");
 
-    expect(appSource).toContain("buildAiReviewAuditTimelineItems");
-    expect(appSource).toContain("function AiReviewAuditTimelineBoard");
+    expect(aiReviewAuditTrailPanelSource).toContain("buildAiReviewAuditTimelineItems");
+    expect(aiReviewAuditBoardsSource).toContain("function AiReviewAuditTimelineBoard");
     expect(auditPanelSource).toContain("const timelineItems = buildAiReviewAuditTimelineItems");
     expect(auditPanelSource).toContain("<AiReviewAuditTimelineBoard");
     expect(timelineSource).toContain("items.map");
@@ -1733,10 +1741,10 @@ describe("terminal layout css", () => {
   });
 
   test("summarizes drift across saved AI review records in the audit trail", () => {
-    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
+    const auditPanelSource = sourceBetweenText(aiReviewAuditTrailPanelSource, "function AiReviewAuditTrailPanel", "__END__");
 
-    expect(appSource).toContain("buildAiReviewRecordDriftRows");
-    expect(appSource).toContain("function AiReviewRecordDriftSummary");
+    expect(aiReviewAuditTrailPanelSource).toContain("buildAiReviewRecordDriftRows");
+    expect(aiReviewAuditBoardsSource).toContain("function AiReviewRecordDriftSummary");
     expect(auditPanelSource).toContain("const driftRows = buildAiReviewRecordDriftRows");
     expect(auditPanelSource).toContain("const totalHistoryRecords = historyPagination?.total ?? records.length;");
     expect(auditPanelSource).toContain("<AiReviewRecordDriftSummary");
@@ -1751,8 +1759,8 @@ describe("terminal layout css", () => {
   });
 
   test("filters saved AI review drift rows from the audit trail", () => {
-    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
-    const driftSummarySource = sourceBetween("function AiReviewRecordDriftSummary", "function AiReviewAuditTrailPanel");
+    const auditPanelSource = sourceBetweenText(aiReviewAuditTrailPanelSource, "function AiReviewAuditTrailPanel", "__END__");
+    const driftSummarySource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewRecordDriftSummary", "function AiReviewAuditTimelineBoard");
 
     expect(auditPanelSource).not.toContain("filterAiReviewRecordDriftRows");
     expect(auditPanelSource).not.toContain('const [driftQuery, setDriftQuery] = useState("");');
@@ -1767,8 +1775,8 @@ describe("terminal layout css", () => {
   });
 
   test("applies the AI review audit search to saved record history", () => {
-    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
-    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+    const auditPanelSource = sourceBetweenText(aiReviewAuditTrailPanelSource, "function AiReviewAuditTrailPanel", "__END__");
+    const recordHistorySource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
 
     expect(auditPanelSource).toContain("records={records}");
     expect(auditPanelSource).toContain("totalRecords={totalHistoryRecords}");
@@ -1780,9 +1788,9 @@ describe("terminal layout css", () => {
   });
 
   test("lets the audit workspace compare against a selected AI review record", () => {
-    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function AgentEvidenceBoard");
-    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
-    const comparisonSource = sourceBetween("function AiReviewAuditComparison", "function AiReviewRecordDriftSummary");
+    const auditPanelSource = sourceBetweenText(aiReviewAuditTrailPanelSource, "function AiReviewAuditTrailPanel", "__END__");
+    const recordHistorySource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+    const comparisonSource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewAuditComparison", "function AiReviewRiskReferenceBoard");
 
     expect(auditPanelSource).toContain('const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);');
     expect(auditPanelSource).toContain("const selectedRecord = records.find((record) => record.aiReviewId === selectedRecordId) ?? latestRecord;");
@@ -1801,7 +1809,7 @@ describe("terminal layout css", () => {
   });
 
   test("passes explicit count and query props to every AI review record history", () => {
-    const recordHistoryUsages = appSource.match(/<AiReviewRunRecordHistory[\s\S]*?\/>/g) ?? [];
+    const recordHistoryUsages = `${appSource}\n${aiReviewAuditTrailPanelSource}`.match(/<AiReviewRunRecordHistory[\s\S]*?\/>/g) ?? [];
 
     expect(recordHistoryUsages).toHaveLength(2);
     recordHistoryUsages.forEach((usage) => {
@@ -1812,8 +1820,8 @@ describe("terminal layout css", () => {
   });
 
   test("wires audit AI review history search to backend pagination", () => {
-    const auditPanelSource = sourceBetween("function AiReviewAuditTrailPanel", "function aiReviewDriftStatusText");
-    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+    const auditPanelSource = sourceBetweenText(aiReviewAuditTrailPanelSource, "function AiReviewAuditTrailPanel", "__END__");
+    const recordHistorySource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
 
     expect(appSource).toContain("const AI_REVIEW_HISTORY_PAGE_SIZE = 5;");
     expect(appSource).toContain("const [aiReviewHistoryPagination, setAiReviewHistoryPagination]");
@@ -1834,7 +1842,7 @@ describe("terminal layout css", () => {
 
   test("keeps saved AI review records read-only outside the audit selector", () => {
     const agentPanelSource = sourceBetween("const renderAgentPanel", "const renderWorkflowNodesPanel");
-    const recordHistorySource = sourceBetween("function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
+    const recordHistorySource = sourceBetweenText(aiReviewAuditBoardsSource, "function AiReviewRunRecordHistory", "function AiReviewAuditComparison");
 
     expect(agentPanelSource).not.toContain("onSelectRecord={() => undefined}");
     expect(recordHistorySource).toContain("const isSelectable = Boolean(onSelectRecord);");
@@ -2570,22 +2578,23 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("exportAiReviewMarkdown");
     expect(appSource).toContain('i18n.t("aiReview.exportMarkdown")');
     expect(appSource).toContain("<AiReviewDossierBoard");
-    expect(appSource).toContain('"benchmark": "基准 Alpha"');
-    expect(appSource).toContain('className="ai-dossier"');
-    expect(appSource).toContain('className="ai-dossier-grid"');
-    expect(appSource).toContain('className={`ai-dossier-card');
+    expect(aiReviewAuditBoardsSource).toContain('"benchmark": "基准 Alpha"');
+    expect(aiReviewAuditBoardsSource).toContain('className="ai-dossier"');
+    expect(aiReviewAuditBoardsSource).toContain('className="ai-dossier-grid"');
+    expect(aiReviewAuditBoardsSource).toContain('className={`ai-dossier-card');
     expect(styles).toContain(".ai-dossier");
     expect(styles).toContain(".ai-dossier-grid");
     expect(styles).toContain(".ai-dossier-card");
   });
 
   test("localizes persisted strategy experiment citations without rewriting opaque evidence", () => {
-    const citationLocalizationSource = sourceBetween(
+    const citationLocalizationSource = sourceBetweenText(
+      aiReviewAuditBoardsSource,
       "function aiCitationLabel",
-      "function paperTradingRowsFromExecutionRecord"
+      "function aiCitationValue"
     );
-    const valueSource = sourceBetween("function aiCitationValue", "function aiCitationDetail");
-    const detailSource = sourceBetween("function aiCitationDetail", "function paperTradingRowsFromExecutionRecord");
+    const valueSource = sourceBetweenText(aiReviewAuditBoardsSource, "function aiCitationValue", "function aiCitationDetail");
+    const detailSource = sourceBetweenText(aiReviewAuditBoardsSource, "function aiCitationDetail", "function formatChartDate");
 
     expect(citationLocalizationSource).toContain('"parameter-scan": "持久化策略实验"');
     expect(valueSource).toContain('if (citation.id === "parameter-scan")');
@@ -2600,7 +2609,7 @@ describe("terminal layout css", () => {
       detailSource.indexOf('.replace("Current parameter row is missing from the locked scan."')
     );
     expect(detailGuardIndex).toBeLessThan(detailSource.indexOf('.replace("candidates"'));
-    expect(appSource).toContain("aiCitationDetail(i18n, citation)");
+    expect(aiReviewAuditTrailPanelSource).toContain("aiCitationDetail(i18n, citation)");
   });
 
   test("renders portfolio paper order approvals as operator actions", () => {
