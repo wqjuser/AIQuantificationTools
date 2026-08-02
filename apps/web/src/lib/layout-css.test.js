@@ -918,7 +918,7 @@ describe("terminal layout css", () => {
   });
 
   test("keeps the M4 research loop inside the real AI review surface without horizontal overflow", () => {
-    expect(appSource).toContain('import { AiResearchM4Section } from "./components/AiResearchM4Section";');
+    expect(appSource).toContain('import { AiResearchM4Section } from "../../components/AiResearchM4Section";');
     expect(appSource).toContain("researchLoop: (");
     expect(aiReviewContractSource).toContain("researchLoop?: ReactNode;");
     expect(aiReviewPanelSource).toContain("{aiReview.researchLoop}");
