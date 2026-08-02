@@ -57,6 +57,22 @@ const portfolioPageSource = readFileSync(new URL("../pages/portfolio/PortfolioPa
 const researchPageSource = readFileSync(new URL("../pages/research/ResearchPage.tsx", import.meta.url), "utf8");
 const settingsPageSource = readFileSync(new URL("../pages/settings/SettingsPage.tsx", import.meta.url), "utf8");
 const settingsPageHelpersSource = readFileSync(new URL("../pages/settings/SettingsPage.helpers.tsx", import.meta.url), "utf8");
+const settingsControllerSource = readFileSync(new URL("../pages/settings/controller/settings-controller.tsx", import.meta.url), "utf8");
+const appShellSelectionControllerSource = readFileSync(new URL("../pages/app-shell/controller/navigation-actions.tsx", import.meta.url), "utf8");
+const appShellWorkflowControllerSource = readFileSync(new URL("../pages/app-shell/controller/workflow-actions.tsx", import.meta.url), "utf8");
+const appShellRefreshControllerSource = readFileSync(new URL("../pages/app-shell/controller/visible-data-actions.tsx", import.meta.url), "utf8");
+const appShellRuntimeEffectsSource = [
+  "../pages/app-shell/controller/workspace-runtime-effects.tsx",
+  "../pages/app-shell/controller/domain-runtime-effects.tsx",
+].map((file) => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
+const aiReviewControllerSource = readFileSync(new URL("../pages/ai-review/controller/review-state-actions.tsx", import.meta.url), "utf8");
+const executionControllerSource = readFileSync(new URL("../pages/execution/controller/adapter-audit-actions.tsx", import.meta.url), "utf8");
+const marketControllerSource = readFileSync(new URL("../pages/market/controller/market-state-actions.tsx", import.meta.url), "utf8");
+const researchControllerSource = readFileSync(new URL("../pages/research/controller/research-workflow-actions.tsx", import.meta.url), "utf8");
+const navigationRailSource = readFileSync(new URL("../pages/app-shell/view/NavigationRail.tsx", import.meta.url), "utf8");
+const terminalTopbarSource = readFileSync(new URL("../pages/app-shell/view/TerminalTopbar.tsx", import.meta.url), "utf8");
+const researchCompletionNoticeSource = readFileSync(new URL("../pages/research/view/ResearchCompletionNotice.tsx", import.meta.url), "utf8");
+const researchPipelinePreflightDialogSource = readFileSync(new URL("../pages/research/view/ResearchPipelinePreflightDialog.tsx", import.meta.url), "utf8");
 const appWorkflowPanelsSource = readFileSync(
   new URL("../components/AppWorkflowPanels.tsx", import.meta.url),
   "utf8"
@@ -270,34 +286,34 @@ describe("terminal layout css", () => {
 
   test("guards unsaved platform settings before leaving the settings workspace", () => {
     const settingsNavigationGuardSource = sourceBetweenText(
-      appSource,
+      settingsControllerSource,
       "const deferSettingsNavigation = useCallback(",
-      "const selectInstrument = useCallback("
+      "const continueEditingSettings = useCallback("
     );
     const workAreaSelectionSource = sourceBetweenText(
-      appSource,
+      appShellSelectionControllerSource,
       "const selectProductWorkArea = useCallback(",
-      "const openResearchPipelinePreflightIssue = useCallback("
+      "const openLiveTradingGate = useCallback("
     );
     const instrumentSelectionSource = sourceBetweenText(
-      appSource,
+      appShellSelectionControllerSource,
       "const selectInstrument = useCallback(",
       "const researchMarketAiSelectionCandidate = useCallback("
     );
     const timeframeSelectionSource = sourceBetweenText(
-      appSource,
+      appShellSelectionControllerSource,
       "const selectTimeframe = useCallback(",
-      "const runAiWorkbenchAction = useCallback("
+      "const selectProductWorkArea = useCallback("
     );
     const adapterWorkflowSource = sourceBetweenText(
-      appSource,
+      executionControllerSource,
       "const openMarketDataAdapterWorkflow = useCallback(",
-      "const openAuditReportLedgerEvidenceLink = useCallback("
+      "const footerLiveTradingAllowed ="
     );
     const automatedWorkflowSource = sourceBetweenText(
-      appSource,
+      appShellWorkflowControllerSource,
       "const runAutomatedTradingWorkflowFromCurrentWorkspace = useCallback(",
-      "useEffect(() => {"
+      "return {"
     );
 
     expect(settingsPageSource).toContain("onSettingsConfigurationDirtyChange");
@@ -569,9 +585,9 @@ describe("terminal layout css", () => {
 
   test("loads market information for its independent market selection and protects the latest request", () => {
     const marketInformationSource = sourceBetweenText(
-      appSource,
+      marketControllerSource,
       "const refreshMarketInformation = useCallback",
-      "const refreshExecutionAdapterHealthProbe = useCallback",
+      "const selectMarketInformationMarket = useCallback",
     );
 
     expect(appSource).toContain(
@@ -583,7 +599,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain(
       "const [marketInformationMarket, setMarketInformationMarket] =",
     );
-    expect(marketInformationSource).toContain('activeWorkAreaId !== "market-information"');
+    expect(appShellRuntimeEffectsSource).toContain('activeWorkAreaId !== "market-information"');
     expect(marketInformationSource).toContain("marketInformationRequestRef.current.begin()");
     expect(marketInformationSource).toContain(
       "marketInformationRequestRef.current.isCurrent(requestToken)",
@@ -604,8 +620,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("onMarketChange: selectMarketInformationMarket,");
     expect(appSource).toContain("onNewsPageChange: (offset, scope) =>");
     expect(marketInformationPageSource).not.toContain("filteredNews.slice(");
-    expect(appSource).toContain(
-      'activeWorkAreaId === "market-information"\n              ? undefined\n              : automatedTradingGuide',
+    expect(appSource).toMatch(
+      /activeWorkAreaId === "market-information"\s*\? undefined\s*: automatedTradingGuide/,
     );
     expect(hasCssBlockWith(".design-market-information-pagination", [
       "display: flex;",
@@ -918,7 +934,7 @@ describe("terminal layout css", () => {
   });
 
   test("keeps the M4 research loop inside the real AI review surface without horizontal overflow", () => {
-    expect(appSource).toContain('import { AiResearchM4Section } from "../../components/AiResearchM4Section";');
+    expect(appSource).toContain('import { AiResearchM4Section } from "../../../components/AiResearchM4Section";');
     expect(appSource).toContain("researchLoop: (");
     expect(aiReviewContractSource).toContain("researchLoop?: ReactNode;");
     expect(aiReviewPanelSource).toContain("{aiReview.researchLoop}");
@@ -993,15 +1009,16 @@ describe("terminal layout css", () => {
   });
 
   test("owns Stage 3 authority state in App and re-reads the Decision chain after append", () => {
-    const appendSource = sourceBetween(
+    const appendSource = sourceBetweenText(
+      aiReviewControllerSource,
       "const appendAiReviewStage3Decision = useCallback",
-      "const strategyExperimentRequestIsCurrent"
+      "const refreshAiReviewRunHistory = useCallback"
     );
     expect(appSource).toContain("aiReviewStage3RequestCoordinatorRef");
     expect(appSource).toContain("createAiReviewRequestCoordinator()");
     expect(appSource).not.toContain(".observeScope(");
     expect(appSource).toContain("useLayoutEffect");
-    expect(appSource).toContain("useLayoutEffect(() => {\n    const coordinator = aiReviewStage3RequestCoordinatorRef.current!;");
+    expect(appShellRuntimeEffectsSource).toContain("useLayoutEffect(() => {\n      const coordinator = aiReviewStage3RequestCoordinatorRef.current!;");
     expect(appSource).toContain("coordinator.beginContext(aiReviewStage3ContextKey)");
     expect(appSource).toContain('coordinator.beginReview("running")');
     expect(appSource).toContain('coordinator.beginReview("appending")');
@@ -1018,22 +1035,24 @@ describe("terminal layout css", () => {
   });
 
   test("restores a URL-bound AI review run without weakening audit deep links or stale-request guards", () => {
-    const refreshWorkspaceSource = sourceBetween(
+    const refreshWorkspaceSource = sourceBetweenText(
+      appShellSelectionControllerSource,
       "const refreshWorkspace = useCallback",
-      "const refreshChart = useCallback"
+      "const selectInstrument = useCallback"
     );
-    const stage3ContextSource = sourceBetween(
-      "useLayoutEffect(() => {\n    const coordinator = aiReviewStage3RequestCoordinatorRef.current!;",
-      "const selectAiReviewStage3Primary = useCallback"
+    const stage3ContextSource = sourceBetweenText(
+      appShellRuntimeEffectsSource,
+      "useLayoutEffect(() => {\n      const coordinator = aiReviewStage3RequestCoordinatorRef.current!;",
+      "useLayoutEffect(() => {\n      const primary = resolveAiReviewPrimaryExperiment("
     );
     expect(appSource).toContain("resolveAiReviewRunIdFromUrl(window.location.search)");
     expect(appSource).toContain("replaceAiReviewRunIdInUrl(");
     expect(appSource).toContain("currentResearchRunId");
     expect(refreshWorkspaceSource).toContain("new AbortController()");
-    expect(refreshWorkspaceSource).toContain("requestedAiReviewRunId,\n        restoreController.signal");
+    expect(refreshWorkspaceSource).toMatch(/requestedAiReviewRunId,\s*restoreController\.signal/);
     expect(refreshWorkspaceSource).toContain("manualSelectionVersionRef.current === startedSelectionVersion");
     expect(refreshWorkspaceSource).toContain('strategyExperimentI18nRef.current.t("aiReviewStage3.error.runRestoreFailed")');
-    expect(appSource).toContain('if (activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "execution") {\n      initialAiReviewRunIdRef.current = null;');
+    expect(appSource).toMatch(/if \(activeWorkAreaId !== "ai-review" && activeWorkAreaId !== "execution"\) \{\s*initialAiReviewRunIdRef\.current = null;/);
     expect(appSource).toContain("aiReviewRunRestoreAbortControllerRef.current?.abort()");
     expect(stage3ContextSource).toContain("loadAiReviewRunArchiveSnapshot(");
     expect(stage3ContextSource).toContain("resolveAiReviewRestoredSelection(");
@@ -1117,10 +1136,11 @@ describe("terminal layout css", () => {
   });
 
   test("only searches while the symbol suggestion popover is open", () => {
-    const selectTimeframeSource = sourceBetween("const selectTimeframe = useCallback(", "const runAiWorkbenchAction");
-    const symbolSearchEffect = sourceBetween(
-      "useEffect(() => {\n    const query = symbolDraft.trim();",
-      "useEffect(() => {\n    if (!isChartExpanded)"
+    const selectTimeframeSource = sourceBetweenText(appShellSelectionControllerSource, "const selectTimeframe = useCallback(", "const selectProductWorkArea");
+    const symbolSearchEffect = sourceBetweenText(
+      appShellRuntimeEffectsSource,
+      "useEffect(() => {\n      const query = symbolDraft.trim();",
+      "useEffect(() => {\n      if (!isChartExpanded)"
     );
 
     expect(selectTimeframeSource).toContain("setSearchSuggestions([]);");
@@ -1308,7 +1328,8 @@ describe("terminal layout css", () => {
     expect(executionReadinessSource).toContain("<ExecutionStage10ProductionExecutionSection");
     expect(executionReadinessSource).toContain("autoTradingSnapshot={autoTradingSnapshot}");
     expect(executionReadinessSource).toContain("onAutoLiveAuthorized={completeLiveTradingGate}");
-    expect((appSource.match(/onSnapshotChange=\{setAutoTradingSnapshot\}/g) ?? [])).toHaveLength(2);
+    expect((appSource.match(/onSnapshotChange=\{setAutoTradingSnapshot\}/g) ?? [])).toHaveLength(1);
+    expect((appSource.match(/onSnapshotChange=\{updateAutoTradingSnapshot\}/g) ?? [])).toHaveLength(1);
     expect(appSource).toContain("const snapshot = await loadAutoTradingSnapshot(quantCoreBaseUrl);");
     expect(executionAutoPaperTradingSource).toContain("commitSnapshot(null);");
     expect(executionPageSource).toContain("自动交易运行状态暂不可用");
@@ -1366,13 +1387,13 @@ describe("terminal layout css", () => {
   });
 
   test("follows system theme changes while keeping a session manual toggle", () => {
-    const leftRailSource = sourceBetween('<aside className="left-rail">', "</aside>");
-    const topbarSource = sourceBetween('<header className="terminal-topbar">', "</header>");
+    const leftRailSource = navigationRailSource;
+    const topbarSource = terminalTopbarSource;
     const chartSource = sourceBetween("function KlineChartCanvas", "function toKlineChartData");
 
     expect(appSource).not.toContain('activeWorkAreaId === "market" ? colorScheme : "dark"');
     expect(appSource).not.toContain("appliedColorScheme");
-    expect(appSource).toContain('data-theme={colorScheme}');
+    expect(appSource).toContain('data-theme={controller.colorScheme}');
     expect(appSource).toContain('window.matchMedia("(prefers-color-scheme: dark)")');
     expect(appSource).toContain('media.addEventListener("change", syncSystemColorScheme)');
     expect(appSource).toContain("setColorSchemePreference(null)");
@@ -1383,7 +1404,8 @@ describe("terminal layout css", () => {
     expect(leftRailSource).not.toContain("data-theme-available");
     expect(topbarSource).toContain('className="panel-icon-button theme-toggle-button"');
     expect(topbarSource).toContain("aria-label={colorSchemeToggleLabel}");
-    expect(topbarSource).toContain('setColorSchemePreference(colorScheme === "dark" ? "light" : "dark")');
+    expect(topbarSource).toContain("onClick={toggleColorScheme}");
+    expect(appSource).toContain('setColorSchemePreference(colorScheme === "dark" ? "light" : "dark")');
     expect(topbarSource).toContain('colorScheme === "dark" ? <Sun size={16} /> : <Moon size={16} />');
     expect(topbarSource).not.toContain('className="terminal-notification"');
     expect(topbarSource).not.toContain('className="terminal-top-avatar"');
@@ -1406,7 +1428,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('document.documentElement.style.setProperty("--aiqt-text-scale", String(textScale))');
     expect(topbarSource).toContain('className="text-scale-control"');
     expect(topbarSource).toContain('type="range"');
-    expect(topbarSource).toContain("onInput={(event) => setTextScale(Number(event.currentTarget.value))}");
+    expect(topbarSource).toContain("onInput={(event) => changeTextScale(Number(event.currentTarget.value))}");
+    expect(appSource).toContain("const changeTextScale = useCallback((scale: number) => setTextScale(scale), [])");
     expect(topbarSource).toContain("MIN_TEXT_SCALE");
     expect(topbarSource).toContain("MAX_TEXT_SCALE");
     expect(topbarSource).toContain('className="text-scale-presets"');
@@ -2006,21 +2029,25 @@ describe("terminal layout css", () => {
   });
 
   test("refreshes time-sensitive data while the page is visible", () => {
-    const calendarRefreshSource = sourceBetween(
+    const calendarRefreshSource = sourceBetweenText(
+      marketControllerSource,
       "const refreshMarketCalendarStatus = useCallback",
-      "useEffect(() => {\n    void refreshMarketCalendarStatus();"
+      "const searchMarketDiscovery = useCallback"
     );
-    const chartRefreshSource = sourceBetween(
+    const chartRefreshSource = sourceBetweenText(
+      marketControllerSource,
       "const refreshChart = useCallback",
-      "const refreshVisiblePageData = useCallback"
+      "const clearMarketDataRefreshOverride = useCallback"
     );
-    const visibleRefreshSource = sourceBetween(
+    const visibleRefreshSource = sourceBetweenText(
+      appShellRefreshControllerSource,
       "const refreshVisiblePageData = useCallback",
-      "useEffect(() => {\n    let refreshInFlight = false;"
+      "const signAuditEvidenceReportEvent = useCallback"
     );
-    const visibleRefreshEffectSource = sourceBetween(
-      "useEffect(() => {\n    let refreshInFlight = false;",
-      "  }, [refreshVisiblePageData]);"
+    const visibleRefreshEffectSource = sourceBetweenText(
+      appShellRuntimeEffectsSource,
+      "useEffect(() => {\n      let refreshInFlight = false;",
+      "    }, [refreshVisiblePageData]);"
     );
 
     expect(appSource).toContain("const VISIBLE_PAGE_REFRESH_INTERVAL_MS = 35_000;");
@@ -2049,7 +2076,7 @@ describe("terminal layout css", () => {
     expect(visibleRefreshEffectSource).toContain("window.clearInterval(intervalId)");
     expect(visibleRefreshEffectSource).toContain('document.removeEventListener("visibilitychange"');
     expect(visibleRefreshEffectSource).toContain('window.removeEventListener("focus"');
-    expect(appSource).toContain("const activeCacheContext =\n    activeReadinessCacheContext ??");
+    expect(appSource).toMatch(/const activeCacheContext =\s*activeReadinessCacheContext \?\?/);
     expect(appSource).toContain('source === "core" ? "行情自动刷新" : "本地快照"');
   });
 
@@ -2197,7 +2224,7 @@ describe("terminal layout css", () => {
   });
 
   test("preflights strategy readiness without navigating away from the research workspace", () => {
-    const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
+    const runPipelineSource = sourceBetweenText(researchControllerSource, "const runPipeline = useCallback", "const copyResearchContextLink = useCallback");
 
     expect(runPipelineSource).toContain("validateStrategySnapshot(quantCoreBaseUrl");
     expect(runPipelineSource).toContain('preflight.validation?.status === "blocked"');
@@ -2210,8 +2237,8 @@ describe("terminal layout css", () => {
   });
 
   test("shows a dismissible completion notice only after the audited research run is fully refreshed", () => {
-    const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
-    const completionNoticeSource = sourceBetween("{researchCompletionNotice ? (", "{isResearchPipelineConfirmationOpen ? (");
+    const runPipelineSource = sourceBetweenText(researchControllerSource, "const runPipeline = useCallback", "const copyResearchContextLink = useCallback");
+    const completionNoticeSource = researchCompletionNoticeSource;
 
     expect(appSource).toContain("const [researchCompletionNotice, setResearchCompletionNotice]");
     expect(appSource).toContain("readbackReady: boolean;");
@@ -2228,7 +2255,8 @@ describe("terminal layout css", () => {
     expect(completionNoticeSource).toContain('className="research-completion-notice"');
     expect(completionNoticeSource).toContain('aria-live="polite"');
     expect(completionNoticeSource).toContain('role="status"');
-    expect(completionNoticeSource).toContain("setResearchCompletionNotice(null)");
+    expect(completionNoticeSource).toContain("onClick={dismissResearchCompletionNotice}");
+    expect(appSource).toContain("const dismissResearchCompletionNotice = useCallback(() => setResearchCompletionNotice(null), [])");
     expect(completionNoticeSource).toContain("审计运行已创建 · 列表回读待恢复");
     expect(cssBlock(".research-completion-notice")).toContain("position: fixed;");
     expect(cssBlock(".research-completion-notice")).toContain("z-index:");
@@ -2252,16 +2280,18 @@ describe("terminal layout css", () => {
   });
 
   test("uses a themed research preflight dialog instead of browser confirmation", () => {
-    const runPipelineSource = sourceBetween("const runPipeline = useCallback", "const replayRun = useCallback");
-    const blockedPreflightSource = sourceBetween(
+    const runPipelineSource = sourceBetweenText(researchControllerSource, "const runPipeline = useCallback", "const copyResearchContextLink = useCallback");
+    const blockedPreflightSource = sourceBetweenText(
+      runPipelineSource,
       "if (!researchPipelinePreflight.canRun) {",
       "if (researchPipelinePreflight.requiresConfirmation"
     );
-    const openPreflightIssueSource = sourceBetween(
+    const openPreflightIssueSource = sourceBetweenText(
+      researchControllerSource,
       "const openResearchPipelinePreflightIssue = useCallback",
-      "const focusExecutionAdapterPaperExecutionAudit"
+      "const openLatestResearchContextReportInAudit"
     );
-    const confirmationDialogSource = sourceBetween("{isResearchPipelineConfirmationOpen ? (", "{isChartExpanded ? (");
+    const confirmationDialogSource = researchPipelinePreflightDialogSource;
     const terminalSurfaceActionSource = sourceBetween(
       "const terminalSurfaceAction:",
       "const automatedTradingTargetWorkspaceId"
@@ -2278,7 +2308,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain('className="research-confirmation-dialog"');
     expect(appSource).toContain('className="research-confirmation-modal"');
     expect(appSource).toContain("!researchPipelineConfirmationDialogRef.current?.open");
-    expect(confirmationDialogSource).toContain("onCancel={() => setIsResearchPipelineConfirmationOpen(false)}");
+    expect(confirmationDialogSource).toContain("onCancel={closeResearchPipelinePreflight}");
+    expect(appSource).toContain("const closeResearchPipelinePreflight = useCallback(");
     expect(confirmationDialogSource).toContain("ref={researchPipelineConfirmationCancelButtonRef}");
     expect(confirmationDialogSource).toContain("researchContextReadinessValue(i18n, issue)");
     expect(confirmationDialogSource).toContain("researchContextReadinessDetail(i18n, issue)");
