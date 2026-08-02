@@ -1922,3 +1922,5 @@ function translateStatusLabel(statuses: Record<string, string>, status: string):
   const translatedPrefix = valueOf(statuses, dynamicStatus[1], undefined);
   return translatedPrefix ? `${translatedPrefix}${dynamicStatus[2]}` : status;
 }
+
+export type AppI18n = ReturnType<typeof createI18n>;

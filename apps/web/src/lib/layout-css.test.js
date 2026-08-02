@@ -8,6 +8,10 @@ const terminalWorkspaceSurfaceSource = readFileSync(
   new URL("../components/TerminalWorkspaceSurface.tsx", import.meta.url),
   "utf8"
 );
+const appWorkflowPanelsSource = readFileSync(
+  new URL("../components/AppWorkflowPanels.tsx", import.meta.url),
+  "utf8"
+);
 const marketAiSelectionPanelSource = readFileSync(
   new URL("../components/MarketAiSelectionPanel.tsx", import.meta.url),
   "utf8"
@@ -1497,7 +1501,7 @@ describe("terminal layout css", () => {
       );
     });
     expect(guideOrderSource).not.toContain('"market-information"');
-    expect(appSource).toContain("function AutomatedTradingWorkflowGuide");
+    expect(appWorkflowPanelsSource).toContain("function AutomatedTradingWorkflowGuide");
     expect(appSource).toContain("const runAutomatedTradingWorkflow = useCallback(");
     expect(appSource).toContain("setIsAutomatedTradingWorkflowRunning(true);");
     expect(appSource).toContain("automatedTradingWorkflowContextRef.current");
