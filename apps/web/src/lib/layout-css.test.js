@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 
 const globalStyles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
@@ -36,7 +36,12 @@ const styles = [
   ].map((file) => readFileSync(new URL(file, import.meta.url), "utf8")),
   strategyStyles,
 ].join("\n");
-const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+const appSource = [
+  readFileSync(new URL("../App.tsx", import.meta.url), "utf8"),
+  ...readdirSync(new URL("../pages", import.meta.url), { recursive: true })
+    .filter((file) => /\.(ts|tsx)$/.test(file) && !file.includes(".test."))
+    .map((file) => readFileSync(new URL(`../pages/${file}`, import.meta.url), "utf8"))
+].join("\n");
 const indexHtmlSource = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 const terminalWorkspaceSurfaceSource = readFileSync(
   new URL("../components/TerminalWorkspaceSurface.tsx", import.meta.url),
