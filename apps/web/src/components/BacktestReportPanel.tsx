@@ -15,7 +15,7 @@ import {
   type BacktestTradeRow
 } from "../lib/terminal-workbench";
 
-export function BacktestReportPanel({
+function BacktestReportPanel({
   assumptionRows,
   className,
   evidenceCards,
@@ -361,21 +361,21 @@ export function BacktestReportPanel({
   );
 }
 
-export function backtestSideLabel(i18n: AppI18n, side: BacktestTradeRow["side"]): string {
+function backtestSideLabel(i18n: AppI18n, side: BacktestTradeRow["side"]): string {
   if (i18n.locale === "en-US") {
     return side;
   }
   return { BUY: "买入", SELL: "卖出", RISK: "风控", HOLD: "持有" }[side];
 }
 
-export function backtestStatusLabel(i18n: AppI18n, status: BacktestTradeRow["status"]): string {
+function backtestStatusLabel(i18n: AppI18n, status: BacktestTradeRow["status"]): string {
   if (i18n.locale === "en-US") {
     return status;
   }
   return { filled: "已成交", open: "观察中", review: "复核", blocked: "已阻断" }[status];
 }
 
-export function backtestRunComparisonBadgeLabel(i18n: AppI18n, badge: BacktestRunComparisonMatrixBadge): string {
+function backtestRunComparisonBadgeLabel(i18n: AppI18n, badge: BacktestRunComparisonMatrixBadge): string {
   if (i18n.locale === "en-US") {
     return badge.replace("_", " ");
   }
@@ -388,7 +388,7 @@ export function backtestRunComparisonBadgeLabel(i18n: AppI18n, badge: BacktestRu
   }[badge];
 }
 
-export function backtestRunComparisonSummaryDetail(
+function backtestRunComparisonSummaryDetail(
   i18n: AppI18n,
   summary: BacktestRunComparisonMatrixSummary
 ): string {
@@ -398,14 +398,14 @@ export function backtestRunComparisonSummaryDetail(
   return `${summary.totalRows} 个同市场、同标的、同周期的已审计运行；只做历史证据对比，不构成投资建议。`;
 }
 
-export function backtestExposureLabel(i18n: AppI18n, exposure: string): string {
+function backtestExposureLabel(i18n: AppI18n, exposure: string): string {
   if (i18n.locale === "en-US") {
     return exposure;
   }
   return exposure.replace("drawdown", "回撤").replace("paper", "模拟");
 }
 
-export function backtestAssumptionLabel(i18n: AppI18n, field: BacktestAssumptionField, fallback: string): string {
+function backtestAssumptionLabel(i18n: AppI18n, field: BacktestAssumptionField, fallback: string): string {
   const key = {
     initialCash: "backtest.initialCash",
     feeBps: "backtest.feeBps",
@@ -414,28 +414,28 @@ export function backtestAssumptionLabel(i18n: AppI18n, field: BacktestAssumption
   return i18n.t(key) || fallback;
 }
 
-export function backtestAssumptionSuffixLabel(i18n: AppI18n, suffix: string): string {
+function backtestAssumptionSuffixLabel(i18n: AppI18n, suffix: string): string {
   if (i18n.locale === "zh-CN") {
     return suffix === "CNY" ? "资金" : "基点";
   }
   return suffix;
 }
 
-export function backtestBenchmarkLabel(i18n: AppI18n, label: string): string {
+function backtestBenchmarkLabel(i18n: AppI18n, label: string): string {
   if (i18n.locale === "en-US") {
     return label;
   }
   return label === "Buy and hold" ? "同标的买入持有" : label;
 }
 
-export function backtestBenchmarkValue(i18n: AppI18n, value: string): string {
+function backtestBenchmarkValue(i18n: AppI18n, value: string): string {
   if (i18n.locale === "en-US" || value !== "Pending snapshot") {
     return value;
   }
   return "等待快照";
 }
 
-export function backtestBenchmarkDetail(i18n: AppI18n, detail: string): string {
+function backtestBenchmarkDetail(i18n: AppI18n, detail: string): string {
   if (i18n.locale === "en-US") {
     return detail;
   }
@@ -449,7 +449,7 @@ export function backtestBenchmarkDetail(i18n: AppI18n, detail: string): string {
   return detail;
 }
 
-export function backtestReportHeadline(i18n: AppI18n, report: BacktestReport): string {
+function backtestReportHeadline(i18n: AppI18n, report: BacktestReport): string {
   if (i18n.locale === "en-US") {
     return report.headline;
   }
@@ -460,7 +460,7 @@ export function backtestReportHeadline(i18n: AppI18n, report: BacktestReport): s
   return bound ? `回测报告已绑定 ${bound[1]}` : report.headline;
 }
 
-export function backtestReportSummary(i18n: AppI18n, report: BacktestReport): string {
+function backtestReportSummary(i18n: AppI18n, report: BacktestReport): string {
   if (i18n.locale === "en-US") {
     return report.summary;
   }
@@ -474,7 +474,7 @@ export function backtestReportSummary(i18n: AppI18n, report: BacktestReport): st
     .replace("AI review blocked", "AI 评审已阻断");
 }
 
-export function backtestEvidenceLabel(i18n: AppI18n, card: BacktestEvidenceCard): string {
+function backtestEvidenceLabel(i18n: AppI18n, card: BacktestEvidenceCard): string {
   if (i18n.locale === "en-US") {
     return card.label;
   }
@@ -488,7 +488,7 @@ export function backtestEvidenceLabel(i18n: AppI18n, card: BacktestEvidenceCard)
   );
 }
 
-export function backtestEvidenceValue(i18n: AppI18n, card: BacktestEvidenceCard): string {
+function backtestEvidenceValue(i18n: AppI18n, card: BacktestEvidenceCard): string {
   if (i18n.locale === "en-US") {
     return card.value;
   }
@@ -501,7 +501,7 @@ export function backtestEvidenceValue(i18n: AppI18n, card: BacktestEvidenceCard)
   return card.value.replace(/checks?/u, "项检查").replaceAll("bps", "基点");
 }
 
-export function backtestEvidenceDetail(i18n: AppI18n, card: BacktestEvidenceCard): string {
+function backtestEvidenceDetail(i18n: AppI18n, card: BacktestEvidenceCard): string {
   if (i18n.locale === "en-US") {
     return card.detail;
   }
@@ -517,7 +517,7 @@ export function backtestEvidenceDetail(i18n: AppI18n, card: BacktestEvidenceCard
     .replace("snapshot", "快照");
 }
 
-export function backtestGateLabel(i18n: AppI18n, gate: BacktestReadinessGate): string {
+function backtestGateLabel(i18n: AppI18n, gate: BacktestReadinessGate): string {
   if (i18n.locale === "en-US") {
     return gate.label;
   }
@@ -531,14 +531,14 @@ export function backtestGateLabel(i18n: AppI18n, gate: BacktestReadinessGate): s
   );
 }
 
-export function backtestGateStatusLabel(i18n: AppI18n, status: BacktestReadinessGate["status"]): string {
+function backtestGateStatusLabel(i18n: AppI18n, status: BacktestReadinessGate["status"]): string {
   if (i18n.locale === "en-US") {
     return status;
   }
   return { passed: "通过", blocked: "阻断", review: "复核" }[status];
 }
 
-export function backtestGateDetail(i18n: AppI18n, detail: string): string {
+function backtestGateDetail(i18n: AppI18n, detail: string): string {
   if (i18n.locale === "en-US") {
     return detail;
   }

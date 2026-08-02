@@ -15,7 +15,7 @@ export type MarketDataRefreshOverrideAuditStatus =
   | { state: "saved"; eventId: string }
   | { state: "failed"; error: string };
 
-export function MarketDataRefreshOverrideControl({
+function MarketDataRefreshOverrideControl({
   auditStatus = { state: "idle" },
   i18n,
   onApplyOverride,
@@ -87,7 +87,7 @@ export function MarketDataRefreshOverrideControl({
   );
 }
 
-export function marketDataRefreshOverrideAuditStatusLabel(
+function marketDataRefreshOverrideAuditStatusLabel(
   i18n: AppI18n,
   status: MarketDataRefreshOverrideAuditStatus
 ): string {
@@ -107,7 +107,7 @@ export function marketDataRefreshOverrideAuditStatusLabel(
   return "";
 }
 
-export function MarketDataReadinessStrip({
+function MarketDataReadinessStrip({
   i18n,
   readinessState
 }: {
@@ -171,14 +171,14 @@ export function MarketDataReadinessStrip({
   );
 }
 
-export function marketDataReadinessStateLabel(i18n: AppI18n, state: "ready" | "stale" | "blocked"): string {
+function marketDataReadinessStateLabel(i18n: AppI18n, state: "ready" | "stale" | "blocked"): string {
   if (i18n.locale === "en-US") {
     return { ready: "Ready", stale: "Stale", blocked: "Blocked" }[state];
   }
   return { ready: "可用", stale: "需刷新", blocked: "阻断" }[state];
 }
 
-export function marketDataReadinessDetail(
+function marketDataReadinessDetail(
   i18n: AppI18n,
   readiness: NonNullable<MarketDataReadinessResult["readiness"]>
 ): string {
@@ -204,7 +204,7 @@ export function marketDataReadinessDetail(
     : `${readiness.symbol} 当前不能进入研究流水线。`;
 }
 
-export function marketDataReadinessCacheLabel(
+function marketDataReadinessCacheLabel(
   i18n: AppI18n,
   cacheState: "fresh" | "stale" | "empty",
   ageHours: number | null
@@ -216,7 +216,7 @@ export function marketDataReadinessCacheLabel(
   return { fresh: "新鲜", stale: "过期", empty: "空" }[cacheState] + age;
 }
 
-export function marketDataReadinessProviderLabel(
+function marketDataReadinessProviderLabel(
   i18n: AppI18n,
   providerHealthState: "healthy" | "degraded"
 ): string {
@@ -226,7 +226,7 @@ export function marketDataReadinessProviderLabel(
   return providerHealthState === "healthy" ? "健康" : "降级";
 }
 
-export function marketDataReadinessRepairLabel(i18n: AppI18n, label: string): string {
+function marketDataReadinessRepairLabel(i18n: AppI18n, label: string): string {
   if (i18n.locale === "en-US") {
     return label;
   }
@@ -235,7 +235,7 @@ export function marketDataReadinessRepairLabel(i18n: AppI18n, label: string): st
     .replace("Review provider health", "检查数据源健康");
 }
 
-export function ResearchContextReadinessPanel({
+function ResearchContextReadinessPanel({
   className,
   i18n,
   isRefreshingCache = false,
@@ -617,7 +617,7 @@ export function runResearchContextReadinessAction(
   onSaveNote?.();
 }
 
-export function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadinessRow): string {
+function researchContextReadinessLabel(i18n: AppI18n, row: ResearchContextReadinessRow): string {
   if (i18n.locale !== "zh-CN") {
     return row.label;
   }
@@ -721,7 +721,7 @@ export function researchContextReadinessValue(
   return row.value;
 }
 
-export function researchContextReadinessStatusLabel(
+function researchContextReadinessStatusLabel(
   i18n: AppI18n,
   status: ResearchContextReadinessRow["status"] | ResearchContextEvidenceRow["status"]
 ): string {
@@ -731,21 +731,21 @@ export function researchContextReadinessStatusLabel(
   return status === "ready" ? "就绪" : status === "review" ? "复核" : "阻断";
 }
 
-export function researchContextEvidenceLabel(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
+function researchContextEvidenceLabel(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
   if (i18n.locale !== "zh-CN") {
     return row.label;
   }
   return "审计运行";
 }
 
-export function researchContextEvidenceValue(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
+function researchContextEvidenceValue(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
   if (i18n.locale !== "zh-CN" || row.value !== "no audited run") {
     return row.value;
   }
   return "无审计运行";
 }
 
-export function researchContextEvidenceDetail(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
+function researchContextEvidenceDetail(i18n: AppI18n, row: ResearchContextEvidenceRow): string {
   if (i18n.locale !== "zh-CN") {
     return row.detail;
   }

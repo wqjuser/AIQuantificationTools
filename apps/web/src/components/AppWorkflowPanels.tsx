@@ -21,35 +21,35 @@ export const stage1P0DailyUseRefreshNextActionElementId = "stage1-p0-daily-use-r
 
 export const stage1P0DailyUseArchiveRecordActionElementId = "stage1-p0-daily-use-archive-record-action";
 
-export type Stage1P0DailyUseClosureRowView = Stage1P0DailyUseClosure["rows"][number];
+type Stage1P0DailyUseClosureRowView = Stage1P0DailyUseClosure["rows"][number];
 
-export function stage1P0DailyUseRowIsSharedFocus(
+function stage1P0DailyUseRowIsSharedFocus(
   state: Stage1P0DailyUseShareDeepLinkState | null | undefined,
   rowId: Stage1P0DailyUseClosure["rows"][number]["id"]
 ): boolean {
   return state?.kind === "daily-use" && state.focus === rowId;
 }
 
-export function stage1P0DailyUsePrimaryIsSharedFocus(
+function stage1P0DailyUsePrimaryIsSharedFocus(
   state: Stage1P0DailyUseShareDeepLinkState | null | undefined
 ): boolean {
   return state?.kind === "daily-use" && state.focus === "primary";
 }
 
-export function stage1P0DailyUseRefreshEntryIsSharedFocus(
+function stage1P0DailyUseRefreshEntryIsSharedFocus(
   state: Stage1P0DailyUseShareDeepLinkState | null | undefined,
   entryId: Stage1P0DailyUseRefreshOutcome["entries"][number]["id"]
 ): boolean {
   return state?.kind === "refresh-receipt" && state.focus === entryId;
 }
 
-export function stage1P0DailyUseRefreshNextIsSharedFocus(
+function stage1P0DailyUseRefreshNextIsSharedFocus(
   state: Stage1P0DailyUseShareDeepLinkState | null | undefined
 ): boolean {
   return state?.kind === "refresh-receipt" && state.focus === "next";
 }
 
-export function stage1P0DailyUseRefreshReceiptIsColdStart(
+function stage1P0DailyUseRefreshReceiptIsColdStart(
   state: Stage1P0DailyUseShareDeepLinkState | null | undefined,
   outcome: Stage1P0DailyUseRefreshOutcome | null | undefined
 ): boolean {
@@ -138,7 +138,7 @@ export function AutomatedTradingWorkflowGuide({
   );
 }
 
-export function P0GoldenPathJourneyPanel({
+function P0GoldenPathJourneyPanel({
   i18n,
   isActionDisabled,
   journey,
@@ -200,7 +200,7 @@ export function P0GoldenPathJourneyPanel({
   );
 }
 
-export function Stage1P0DailyUseClosurePanel({
+function Stage1P0DailyUseClosurePanel({
   archiveReviewReference,
   closure,
   i18n,
@@ -605,7 +605,7 @@ export function Stage1P0DailyUseClosurePanel({
   );
 }
 
-export function stage1P0DailyUseRefreshOutcomeHeadline(
+function stage1P0DailyUseRefreshOutcomeHeadline(
   i18n: AppI18n,
   outcome: Stage1P0DailyUseRefreshOutcome
 ): string {
@@ -621,7 +621,7 @@ export function stage1P0DailyUseRefreshOutcomeHeadline(
   return "日常自检刷新需要处理";
 }
 
-export function stage1P0DailyUseArchiveReviewReferenceLabel(
+function stage1P0DailyUseArchiveReviewReferenceLabel(
   i18n: AppI18n,
   reference: Stage1P0DailyUseArchiveReviewReference
 ): string {
@@ -637,7 +637,7 @@ export function stage1P0DailyUseArchiveReviewReferenceLabel(
   )[reference.status];
 }
 
-export function stage1P0DailyUseArchiveReviewReferenceDetail(
+function stage1P0DailyUseArchiveReviewReferenceDetail(
   i18n: AppI18n,
   reference: Stage1P0DailyUseArchiveReviewReference
 ): string {
@@ -653,7 +653,7 @@ export function stage1P0DailyUseArchiveReviewReferenceDetail(
   return "点击入账归档后，这里会显示可定位的 Stage 1 归档审计事件。";
 }
 
-export function stage1P0DailyUseRefreshOutcomeDetail(
+function stage1P0DailyUseRefreshOutcomeDetail(
   i18n: AppI18n,
   outcome: Stage1P0DailyUseRefreshOutcome
 ): string {
@@ -666,7 +666,7 @@ export function stage1P0DailyUseRefreshOutcomeDetail(
     : `${outcome.readyCount}/${outcome.totalCount} 回执就绪 · ${pending} 项需要处理`;
 }
 
-export function stage1P0DailyUseRefreshOutcomeEntryLabel(
+function stage1P0DailyUseRefreshOutcomeEntryLabel(
   i18n: AppI18n,
   entry: Stage1P0DailyUseRefreshOutcome["entries"][number]
 ): string {
@@ -682,7 +682,7 @@ export function stage1P0DailyUseRefreshOutcomeEntryLabel(
   return "桌面发布";
 }
 
-export function stage1P0DailyUseRefreshOutcomeEntryStatus(
+function stage1P0DailyUseRefreshOutcomeEntryStatus(
   i18n: AppI18n,
   entry: Stage1P0DailyUseRefreshOutcome["entries"][number]
 ): string {
@@ -692,7 +692,7 @@ export function stage1P0DailyUseRefreshOutcomeEntryStatus(
   return entry.status === "ready" ? "就绪" : entry.status === "review" ? "待复核" : "需处理";
 }
 
-export function stage1P0DailyUseRefreshOutcomeSourceLabel(
+function stage1P0DailyUseRefreshOutcomeSourceLabel(
   i18n: AppI18n,
   source: Stage1P0DailyUseRefreshOutcome["entries"][number]["source"]
 ): string {
@@ -702,7 +702,7 @@ export function stage1P0DailyUseRefreshOutcomeSourceLabel(
   return source === "core" ? "本地核心" : "安全 fallback";
 }
 
-export function stage1P0DailyUseClosurePrimaryRow(
+function stage1P0DailyUseClosurePrimaryRow(
   closure: Stage1P0DailyUseClosure
 ): Stage1P0DailyUseClosureRowView {
   return (
@@ -714,7 +714,7 @@ export function stage1P0DailyUseClosurePrimaryRow(
   );
 }
 
-export function stage1P0DailyUseClosureHeadline(
+function stage1P0DailyUseClosureHeadline(
   i18n: AppI18n,
   closure: Stage1P0DailyUseClosure,
   primaryRow: Stage1P0DailyUseClosureRowView
@@ -729,7 +729,7 @@ export function stage1P0DailyUseClosureHeadline(
   return closure.state === "blocked" ? `${rowLabel}阻断` : `${rowLabel}待复核`;
 }
 
-export function stage1P0DailyUseClosureDetail(i18n: AppI18n, closure: Stage1P0DailyUseClosure): string {
+function stage1P0DailyUseClosureDetail(i18n: AppI18n, closure: Stage1P0DailyUseClosure): string {
   if (i18n.locale === "en-US") {
     return closure.detail;
   }
@@ -745,7 +745,7 @@ export function stage1P0DailyUseClosureDetail(i18n: AppI18n, closure: Stage1P0Da
     : `${closure.readyCount}/${closure.totalCount} 就绪 · ${pending} 项需要处理`;
 }
 
-export function stage1P0DailyUseClosureRowLabel(
+function stage1P0DailyUseClosureRowLabel(
   i18n: AppI18n,
   row: Stage1P0DailyUseClosureRowView
 ): string {
@@ -764,7 +764,7 @@ export function stage1P0DailyUseClosureRowLabel(
   return i18n.locale === "zh-CN" ? "桌面发布" : "Desktop release";
 }
 
-export function stage1P0DailyUseClosureRowValue(
+function stage1P0DailyUseClosureRowValue(
   i18n: AppI18n,
   row: Stage1P0DailyUseClosureRowView
 ): string {
@@ -794,7 +794,7 @@ export function stage1P0DailyUseClosureRowValue(
   return row.status === "ready" ? "桌面构建已记录" : "构建清单待完成";
 }
 
-export function stage1P0DailyUseClosureRowDetail(
+function stage1P0DailyUseClosureRowDetail(
   i18n: AppI18n,
   row: Stage1P0DailyUseClosureRowView
 ): string {
@@ -822,7 +822,7 @@ export function stage1P0DailyUseClosureRowDetail(
   return "桌面包仍需本地 Tauri/Cargo 构建检查确认。";
 }
 
-export function stage1P0DailyUseClosureRowStatusLabel(
+function stage1P0DailyUseClosureRowStatusLabel(
   i18n: AppI18n,
   status: Stage1P0DailyUseClosureRowView["status"]
 ): string {
@@ -832,7 +832,7 @@ export function stage1P0DailyUseClosureRowStatusLabel(
   return status === "ready" ? "就绪" : status === "review" ? "复核" : "阻断";
 }
 
-export function stage1P0DailyUseClosureActionLabel(
+function stage1P0DailyUseClosureActionLabel(
   i18n: AppI18n,
   actionId: Stage1P0DailyUseClosureRowView["actionId"],
   fallback: string
@@ -876,7 +876,7 @@ export function stage1P0DailyUseClosureActionLabel(
   return "打开研究入口";
 }
 
-export function p0JourneyStepLabel(i18n: AppI18n, step: P0GoldenPathJourney["steps"][number]): string {
+function p0JourneyStepLabel(i18n: AppI18n, step: P0GoldenPathJourney["steps"][number]): string {
   if (i18n.locale === "en-US") {
     return step.label;
   }
@@ -893,7 +893,7 @@ export function p0JourneyStepLabel(i18n: AppI18n, step: P0GoldenPathJourney["ste
   );
 }
 
-export function p0JourneyStepDetail(i18n: AppI18n, step: P0GoldenPathJourney["steps"][number]): string {
+function p0JourneyStepDetail(i18n: AppI18n, step: P0GoldenPathJourney["steps"][number]): string {
   if (i18n.locale === "en-US") {
     return step.detail;
   }
@@ -910,7 +910,7 @@ export function p0JourneyStepDetail(i18n: AppI18n, step: P0GoldenPathJourney["st
   );
 }
 
-export function p0JourneyStepStateLabel(i18n: AppI18n, state: P0GoldenPathJourney["steps"][number]["state"]): string {
+function p0JourneyStepStateLabel(i18n: AppI18n, state: P0GoldenPathJourney["steps"][number]["state"]): string {
   const stateTranslationKey = {
     done: "p0Journey.done",
     current: "p0Journey.current",
@@ -920,7 +920,7 @@ export function p0JourneyStepStateLabel(i18n: AppI18n, state: P0GoldenPathJourne
   return i18n.t(stateTranslationKey[state]);
 }
 
-export function stage1P0DailyUseShareLinkFocusLabel(
+function stage1P0DailyUseShareLinkFocusLabel(
   i18n: AppI18n,
   state: Stage1P0DailyUseShareDeepLinkState
 ): string {
@@ -932,21 +932,21 @@ export function stage1P0DailyUseShareLinkFocusLabel(
   return i18n.locale === "zh-CN" ? `${focusLabel} -> ${workspace}` : `${focusLabel} -> ${workspace}`;
 }
 
-export function stage1P0DailyUseShareDailyFocusLabel(i18n: AppI18n, focus: string): string {
+function stage1P0DailyUseShareDailyFocusLabel(i18n: AppI18n, focus: string): string {
   if (focus === "primary") {
     return i18n.locale === "zh-CN" ? "主入口" : "Primary action";
   }
   return stage1P0DailyUseShareFocusFallbackLabel(i18n, focus);
 }
 
-export function stage1P0DailyUseShareReceiptFocusLabel(i18n: AppI18n, focus: string): string {
+function stage1P0DailyUseShareReceiptFocusLabel(i18n: AppI18n, focus: string): string {
   if (focus === "next") {
     return i18n.locale === "zh-CN" ? "下一步" : "Next step";
   }
   return stage1P0DailyUseShareFocusFallbackLabel(i18n, focus);
 }
 
-export function stage1P0DailyUseShareFocusFallbackLabel(i18n: AppI18n, focus: string): string {
+function stage1P0DailyUseShareFocusFallbackLabel(i18n: AppI18n, focus: string): string {
   return (
     {
       "bootstrap-preflight": i18n.locale === "zh-CN" ? "开箱预检" : "Bootstrap preflight",

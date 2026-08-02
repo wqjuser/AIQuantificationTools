@@ -3,7 +3,7 @@ import type { AppI18n } from "../lib/i18n";
 import type { HandoffNotesResult, ResearchNoteResult } from "../lib/terminal-api";
 import type { TerminalWorkspace } from "../lib/terminal-workbench";
 
-export function ResearchNotesPanel({
+function ResearchNotesPanel({
   className,
   draft,
   i18n,
@@ -58,7 +58,7 @@ export function ResearchNotesPanel({
   );
 }
 
-export function HandoffNotesPanel({
+function HandoffNotesPanel({
   className,
   draft,
   i18n,
