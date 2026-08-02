@@ -4,6 +4,25 @@ import type {
   Timeframe
 } from "./terminal-workbench";
 
+export interface AuditEventRecord {
+  schemaVersion: 1;
+  eventId: string;
+  eventType: string;
+  runId: string | null;
+  createdAt: string;
+  stage: string;
+  source: string;
+  summary: string;
+  detail: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface PaperExecutionAccount {
+  cash: number;
+  positions: Record<string, number>;
+  equity: number;
+}
+
 export interface MarketKlineBar {
   timestamp: string;
   timestampMs: number;
@@ -73,6 +92,68 @@ export function isMarketKlineBar(value: unknown): value is MarketKlineBar {
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function isAuditEventRecord(value: unknown): value is AuditEventRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const event = value as Partial<AuditEventRecord>;
+  return (
+    event.schemaVersion === 1 &&
+    typeof event.eventId === "string" &&
+    typeof event.eventType === "string" &&
+    (event.runId === null || typeof event.runId === "string") &&
+    typeof event.createdAt === "string" &&
+    typeof event.stage === "string" &&
+    typeof event.source === "string" &&
+    typeof event.summary === "string" &&
+    typeof event.detail === "string" &&
+    isPlainRecord(event.metadata)
+  );
+}
+
+export function isPaperExecutionAccount(value: unknown): value is PaperExecutionAccount {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const account = value as Partial<PaperExecutionAccount>;
+  return (
+    typeof account.cash === "number" &&
+    typeof account.equity === "number" &&
+    Boolean(account.positions) &&
+    typeof account.positions === "object" &&
+    Object.values(account.positions).every((quantity) => typeof quantity === "number")
+  );
+}
+
+export function isSecretFreeRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.entries(value as Record<string, unknown>).every(([key, item]) => {
+    if (isSecretLikeKey(key)) {
+      return item === "[redacted]";
+    }
+    if (item && typeof item === "object") {
+      return Array.isArray(item)
+        ? item.every((entry) => !entry || typeof entry !== "object" || isSecretFreeRecord(entry))
+        : isSecretFreeRecord(item);
+    }
+    return true;
+  });
+}
+
+export function isNumberRecord(value: unknown): value is Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  return Object.values(value).every((item) => typeof item === "number");
+}
+
+function isSecretLikeKey(key: string): boolean {
+  const normalized = key.replace(/[_-]/g, "").toLowerCase();
+  return ["secret", "token", "apikey", "privatekey", "password"].some((marker) => normalized.includes(marker));
 }
 
 export function hasExactObjectKeys(
