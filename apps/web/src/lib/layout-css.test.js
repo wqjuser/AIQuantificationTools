@@ -12,6 +12,10 @@ const appWorkflowPanelsSource = readFileSync(
   new URL("../components/AppWorkflowPanels.tsx", import.meta.url),
   "utf8"
 );
+const researchContextReadinessPanelSource = readFileSync(
+  new URL("../components/ResearchContextReadinessPanel.tsx", import.meta.url),
+  "utf8"
+);
 const marketAiSelectionPanelSource = readFileSync(
   new URL("../components/MarketAiSelectionPanel.tsx", import.meta.url),
   "utf8"
@@ -1874,16 +1878,16 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildMarketDataRefreshGuard(");
     expect(appSource).toContain("settingsStatus.settings?.marketDataAdapters");
     expect(appSource).toContain("marketDataRefreshGuardLabel(i18n, refreshGuard)");
-    expect(appSource).toContain("MarketDataRefreshOverrideControl");
+    expect(researchContextReadinessPanelSource).toContain("MarketDataRefreshOverrideControl");
     expect(appSource).toContain("buildMarketDataRefreshOverrideAuditEvent");
     expect(appSource).toContain("saveAuditEvent(quantCoreBaseUrl, auditEvent)");
     expect(appSource).toContain("marketDataRefreshOverrideAuditStatus");
     expect(appSource).toContain("marketDataRefreshOverride?.market === workspace.selectedInstrument.market");
     expect(appSource).toContain("setMarketDataRefreshOverride");
     expect(appSource).toContain("覆盖审计");
-    expect(appSource).toContain("数据源冷却");
-    expect(appSource).toContain("Provider cooldown");
-    expect(appSource).toContain("Manual override");
+    expect(researchContextReadinessPanelSource).toContain("数据源冷却");
+    expect(researchContextReadinessPanelSource).toContain("Provider cooldown");
+    expect(researchContextReadinessPanelSource).toContain("Manual override");
     expect(cssBlock(".market-refresh-guard-note")).toContain("background:");
     expect(cssBlock(".market-refresh-guard-note")).toContain("margin: 0 0 8px;");
     expect(cssBlock(".market-refresh-override")).toContain("grid-template-columns:");
