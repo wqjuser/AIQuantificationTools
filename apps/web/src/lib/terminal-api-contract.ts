@@ -94,6 +94,14 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+export function isCoreErrorPayload(value: unknown): value is { error: string; detail?: string } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const payload = value as { error?: unknown; detail?: unknown };
+  return typeof payload.error === "string" && (payload.detail === undefined || typeof payload.detail === "string");
+}
+
 export function isAuditEventRecord(value: unknown): value is AuditEventRecord {
   if (!value || typeof value !== "object") {
     return false;
