@@ -100,6 +100,36 @@ export function isTimeframe(value: unknown): value is Timeframe {
   );
 }
 
+export function isOptionalDataQualityContract(value: Record<string, unknown>): boolean {
+  const coverage = value.coverage;
+  const issues = value.issues ?? value.qualityIssues;
+  return (
+    (value.originSource === undefined || value.originSource === null || typeof value.originSource === "string") &&
+    (value.observedAt === undefined || value.observedAt === null || typeof value.observedAt === "string") &&
+    (value.marketTime === undefined || value.marketTime === null || typeof value.marketTime === "string") &&
+    (value.calendarId === undefined || value.calendarId === null || typeof value.calendarId === "string") &&
+    (value.adjustmentMode === undefined || typeof value.adjustmentMode === "string") &&
+    (value.freshness === undefined || typeof value.freshness === "string") &&
+    (value.canonicalHash === undefined || typeof value.canonicalHash === "string") &&
+    (coverage === undefined ||
+      (isPlainRecord(coverage) &&
+        typeof coverage.actualRows === "number" &&
+        typeof coverage.expectedRows === "number" &&
+        typeof coverage.gapCount === "number" &&
+        typeof coverage.ratio === "number")) &&
+    (issues === undefined ||
+      (Array.isArray(issues) &&
+        issues.every(
+          (issue) =>
+            isPlainRecord(issue) &&
+            typeof issue.code === "string" &&
+            typeof issue.severity === "string" &&
+            typeof issue.count === "number" &&
+            typeof issue.message === "string"
+        )))
+  );
+}
+
 function isResearchRunStrategyCondition(value: unknown): boolean {
   return isPlainRecord(value) && typeof value.kind === "string" && isPlainRecord(value.params);
 }
