@@ -45,6 +45,7 @@ const terminalWorkspaceSurfaceSource = readFileSync(
 const auditPageSource = readFileSync(new URL("../pages/audit/AuditPage.tsx", import.meta.url), "utf8");
 const backtestPageSource = readFileSync(new URL("../pages/backtest/BacktestPage.tsx", import.meta.url), "utf8");
 const executionPageSource = readFileSync(new URL("../pages/execution/ExecutionPage.tsx", import.meta.url), "utf8");
+const executionPanelSource = readFileSync(new URL("../pages/execution/ExecutionPanel.tsx", import.meta.url), "utf8");
 const marketInformationPageSource = readFileSync(new URL("../pages/market-information/MarketInformationPage.tsx", import.meta.url), "utf8");
 const marketPageSource = readFileSync(new URL("../pages/market/MarketPage.tsx", import.meta.url), "utf8");
 const portfolioPageSource = readFileSync(new URL("../pages/portfolio/PortfolioPage.tsx", import.meta.url), "utf8");
@@ -2498,10 +2499,10 @@ describe("terminal layout css", () => {
   test("renders a compact portfolio paper ops queue across portfolio and execution workspaces", () => {
     expect(appSource).toContain("buildPortfolioPaperOpsQueueRows");
     expect(appSource).toContain("runPortfolioPaperOpsQueueAction");
-    expect(appSource).toContain("PortfolioPaperOpsQueuePanel");
-    expect(appSource).toContain('className="portfolio-paper-ops-queue"');
+    expect(executionPanelSource).toContain("PortfolioPaperOpsQueuePanel");
+    expect(executionPanelSource).toContain('className="portfolio-paper-ops-queue"');
     expect(appSource).toContain("portfolioPaperOpsQueue={portfolioPaperOpsQueue}");
-    expect(appSource).toContain("portfolioPaperOpsActionLabel");
+    expect(executionPanelSource).toContain("portfolioPaperOpsActionLabel");
     expect(styles).toContain(".portfolio-paper-ops-queue");
     expect(styles).toContain(".portfolio-paper-ops-summary");
     expect(styles).toContain(".portfolio-paper-ops-row");
@@ -2699,8 +2700,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("portfolioPaperOrderApprovalRows");
     expect(appSource).toContain("onApprovePortfolioOrder");
     expect(appSource).toContain("onRejectPortfolioOrder");
-    expect(appSource).toContain('className="portfolio-order-approval"');
-    expect(appSource).toContain('className={`portfolio-order-approval-row');
+    expect(executionPanelSource).toContain('className="portfolio-order-approval"');
+    expect(executionPanelSource).toContain('className={`portfolio-order-approval-row');
     expect(styles).toContain(".portfolio-order-approval");
     expect(styles).toContain(".portfolio-order-approval-actions");
   });
@@ -2711,8 +2712,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("portfolioPaperOrderSimulations");
     expect(appSource).toContain("onSimulatePortfolioOrder");
     expect(appSource).toContain("simulatingPortfolioOrderId");
-    expect(appSource).toContain('className="portfolio-order-simulation"');
-    expect(appSource).toContain('className="portfolio-order-simulation-list"');
+    expect(executionPanelSource).toContain('className="portfolio-order-simulation"');
+    expect(executionPanelSource).toContain('className="portfolio-order-simulation-list"');
     expect(styles).toContain(".portfolio-order-simulation");
     expect(styles).toContain(".portfolio-order-simulation-list");
   });
@@ -2722,7 +2723,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("simulatePortfolioPaperOrderBatch");
     expect(appSource).toContain("isSimulatingPortfolioPaperOrderBatch");
     expect(appSource).toContain("onSimulatePortfolioOrderBatch");
-    expect(appSource).toContain('className="portfolio-simulation-route-batch-action"');
+    expect(executionPanelSource).toContain('className="portfolio-simulation-route-batch-action"');
     expect(styles).toContain(".portfolio-simulation-route-batch-action");
   });
 
@@ -2732,15 +2733,15 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("portfolioPaperOrderReplay");
     expect(appSource).toContain("portfolioPaperOrderStateHistories");
     expect(appSource).toContain("portfolioOrderLatestSimulationSummary");
-    expect(appSource).toContain("setPortfolioOrderFocusedStateId");
-    expect(appSource).toContain("const focusedPortfolioOrderStateRef = useRef<HTMLElement | null>(null);");
-    expect(appSource).toContain('focusedPortfolioOrderStateRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });');
-    expect(appSource).toContain("ref={portfolioOrderFocusedStateId === row.id ? focusedPortfolioOrderStateRef : undefined}");
-    expect(appSource).toContain("onFocusPortfolioOrderStateAuditQuery");
-    expect(appSource).toContain('className="portfolio-order-state-audit-action"');
-    expect(appSource).toContain("onClick={() => onFocusPortfolioOrderStateAuditQuery(row.focusQuery)}");
-    expect(appSource).toContain('className={`portfolio-order-latest-simulation ${portfolioOrderLatestSimulationSummary.tone}`}');
-    expect(appSource).toContain('className={`portfolio-order-state-row ${row.tone}${');
+    expect(executionPanelSource).toContain("setPortfolioOrderFocusedStateId");
+    expect(executionPanelSource).toContain("const focusedPortfolioOrderStateRef = useRef<HTMLElement | null>(null);");
+    expect(executionPanelSource).toContain('focusedPortfolioOrderStateRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });');
+    expect(executionPanelSource).toContain("ref={portfolioOrderFocusedStateId === row.id ? focusedPortfolioOrderStateRef : undefined}");
+    expect(executionPanelSource).toContain("onFocusPortfolioOrderStateAuditQuery");
+    expect(executionPanelSource).toContain('className="portfolio-order-state-audit-action"');
+    expect(executionPanelSource).toContain("onClick={() => onFocusPortfolioOrderStateAuditQuery(row.focusQuery)}");
+    expect(executionPanelSource).toContain('className={`portfolio-order-latest-simulation ${portfolioOrderLatestSimulationSummary.tone}`}');
+    expect(executionPanelSource).toContain('className={`portfolio-order-state-row ${row.tone}${');
     expect(styles).toContain(".portfolio-order-latest-simulation");
     expect(styles).toContain(".portfolio-order-latest-simulation-action");
     expect(styles).toContain(".portfolio-order-state-audit-action");
@@ -2751,10 +2752,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildPortfolioPaperOrderSimulationRouteRows");
     expect(appSource).toContain("portfolioPaperOrderSimulationRouteRows");
     expect(appSource).toContain("portfolioOrderSimulationRouteRows");
-    expect(appSource).toContain('className="portfolio-simulation-route"');
-    expect(appSource).toContain('className={`portfolio-simulation-route-row ${row.tone}${');
-    expect(appSource).toContain("row.stateEventId && portfolioOrderFocusedStateId === row.stateEventId");
-    expect(appSource).toContain("setPortfolioOrderFocusedStateId(row.stateEventId)");
+    expect(executionPanelSource).toContain('className="portfolio-simulation-route"');
+    expect(executionPanelSource).toContain('className={`portfolio-simulation-route-row ${row.tone}${');
+    expect(executionPanelSource).toContain("row.stateEventId && portfolioOrderFocusedStateId === row.stateEventId");
+    expect(executionPanelSource).toContain("setPortfolioOrderFocusedStateId(row.stateEventId)");
     expect(styles).toContain(".portfolio-simulation-route");
     expect(styles).toContain(".portfolio-simulation-route-row");
     expect(styles).toContain(".portfolio-simulation-route-row.focused");
@@ -2766,9 +2767,9 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("buildPortfolioPaperOrderReplayPositionRows(portfolioPaperOrderReplay)");
     expect(appSource).toContain("portfolioOrderReplaySummaryTiles");
     expect(appSource).toContain("portfolioOrderReplayPositionRows");
-    expect(appSource).toContain('className="execution-grid portfolio-replay-grid"');
-    expect(appSource).toContain('className="portfolio-order-replay"');
-    expect(appSource).toContain('className="portfolio-order-replay-table"');
+    expect(executionPanelSource).toContain('className="execution-grid portfolio-replay-grid"');
+    expect(executionPanelSource).toContain('className="portfolio-order-replay"');
+    expect(executionPanelSource).toContain('className="portfolio-order-replay-table"');
     expect(styles).toContain(".portfolio-replay-grid");
     expect(styles).toContain(".portfolio-order-replay");
     expect(styles).toContain(".portfolio-order-replay-row");
@@ -2778,8 +2779,8 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("loadPortfolioPaperOrderStateHistory");
     expect(appSource).toContain("buildPortfolioPaperOrderStateHistoryRows(portfolioPaperOrderStateHistories)");
     expect(appSource).toContain("portfolioOrderStateHistoryRows");
-    expect(appSource).toContain('className="portfolio-order-state-history"');
-    expect(appSource).toContain('className={`portfolio-order-state-row');
+    expect(executionPanelSource).toContain('className="portfolio-order-state-history"');
+    expect(executionPanelSource).toContain('className={`portfolio-order-state-row');
     expect(styles).toContain(".portfolio-order-state-history");
     expect(styles).toContain(".portfolio-order-state-row");
   });
