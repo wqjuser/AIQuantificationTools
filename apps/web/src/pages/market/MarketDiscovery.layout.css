@@ -1,0 +1,579 @@
+/* Market discovery and AI-selection layout. */
+
+
+.design-market-discovery {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.design-market-screener .design-panel-body {
+  display: grid;
+  gap: 8px;
+  padding: 9px 10px 10px;
+}
+
+.design-market-screener-form {
+  display: grid;
+  grid-template-columns:
+    minmax(170px, 1.4fr)
+    repeat(5, minmax(105px, 0.8fr))
+    repeat(2, minmax(110px, 0.75fr))
+    auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.design-market-screener-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.design-market-screener-form label > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.design-market-screener-form input,
+.design-market-screener-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-screener-form input:focus,
+.design-market-screener-form select:focus {
+  border-color: color-mix(in srgb, var(--teal) 65%, var(--border));
+  outline: 2px solid color-mix(in srgb, var(--teal) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.design-market-screener-form .design-primary-action {
+  min-width: 108px;
+  min-height: 32px;
+  padding-inline: 10px;
+}
+
+.design-market-screener-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-screener-warnings {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 7px 10px 7px 26px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--amber) 7%, var(--surface));
+  color: var(--amber);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-screener-state {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  text-align: center;
+}
+
+.design-market-screener-state.risk {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
+  text-align: left;
+}
+
+.design-market-screener-table {
+  max-height: 280px;
+  overflow-x: auto;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.design-market-screener-table .design-table {
+  min-width: 980px;
+}
+
+.design-market-screener-table td:first-child span {
+  color: var(--muted);
+}
+
+.design-market-screener-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.design-market-screener-actions .design-link-button {
+  white-space: nowrap;
+}
+
+.design-market-ai-selection .design-panel-body {
+  display: grid;
+  gap: 9px;
+  padding: 9px 10px 10px;
+}
+
+.design-market-ai-market-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.design-market-ai-market-tabs button {
+  min-height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 4px 11px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font: inherit;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  cursor: pointer;
+}
+
+.design-market-ai-market-tabs button:hover,
+.design-market-ai-market-tabs button.active {
+  border-color: color-mix(in srgb, var(--teal) 65%, var(--border));
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.design-market-ai-controls {
+  display: grid;
+  grid-template-columns:
+    minmax(120px, 0.8fr)
+    minmax(120px, 0.8fr)
+    minmax(170px, 1fr)
+    minmax(280px, 1.7fr)
+    auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.design-market-ai-controls > label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.design-market-ai-controls > label > span {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-controls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-controls select:focus {
+  border-color: color-mix(in srgb, var(--teal) 65%, var(--border));
+  outline: 2px solid color-mix(in srgb, var(--teal) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.design-market-ai-controls .design-market-ai-approval {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  background: var(--surface-soft);
+}
+
+.design-market-ai-approval input {
+  margin: 0 7px 0 0;
+  accent-color: var(--teal);
+}
+
+.design-market-ai-controls .design-primary-action {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.design-market-ai-hint,
+.design-market-ai-state,
+.design-market-ai-boundary {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  line-height: 1.5;
+}
+
+.design-market-ai-state {
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  padding: 9px 10px;
+  background: var(--surface-soft);
+}
+
+.design-market-ai-state.risk {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
+}
+
+.design-market-ai-state.warning {
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  color: var(--amber);
+}
+
+.design-market-ai-result {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+}
+
+.design-market-ai-result.stale .design-market-ai-results {
+  opacity: 0.62;
+}
+
+.design-market-ai-result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.design-market-ai-result-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.design-market-ai-result-header strong {
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-result-header span {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-results {
+  display: grid;
+  gap: 6px;
+}
+
+.design-market-ai-results article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 9px 10px;
+  background: var(--surface-soft);
+}
+
+.design-market-ai-results article > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.design-market-ai-rank {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: var(--teal-dim);
+  color: var(--teal);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 700;
+}
+
+.design-market-ai-results article > header > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.design-market-ai-results article > header > div strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.design-market-ai-results article > header > div span,
+.design-market-ai-results article small {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-score {
+  color: var(--teal);
+  font-size: calc(14px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-pillars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.design-market-ai-pillars span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-pillars strong {
+  color: var(--text);
+}
+
+.design-market-ai-results dl {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.25fr) minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+
+.design-market-ai-results dl > div {
+  display: grid;
+  gap: 2px;
+}
+
+.design-market-ai-results dt {
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-results dd,
+.design-market-ai-results article > p {
+  margin: 0;
+  color: var(--text);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  line-height: 1.5;
+}
+
+.design-market-ai-results article > p.risk {
+  color: var(--danger);
+}
+
+.design-market-ai-results article > p.warning {
+  color: var(--amber);
+}
+
+.design-market-ai-results article > footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 7px;
+}
+
+.design-market-ai-exclusions {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-exclusions summary {
+  padding: 7px 9px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.design-market-ai-exclusions ul {
+  display: grid;
+  gap: 3px;
+  max-height: 150px;
+  margin: 0;
+  padding: 7px 10px 8px 28px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.design-market-ai-review {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+}
+
+.design-market-ai-review-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.design-market-ai-review-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.design-market-ai-review-header strong {
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-header span {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.design-market-ai-review-form label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.design-market-ai-review-form label > span {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-form input {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-form input:focus {
+  border-color: color-mix(in srgb, var(--teal) 65%, var(--border));
+  outline: 2px solid color-mix(in srgb, var(--teal) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.design-market-ai-review-form .design-secondary-action {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.design-market-ai-review-result {
+  display: grid;
+  gap: 8px;
+}
+
+.design-market-ai-review-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.design-market-ai-review-summary span,
+.design-market-ai-review-summary strong {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-ai-review-summary strong {
+  color: var(--text);
+}
+
+.design-market-ai-review-items .design-status {
+  justify-self: end;
+}
+
+@media (max-width: 1500px) {
+  .design-market-screener-form {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .design-market-screener-form .design-primary-action {
+    width: 100%;
+  }
+
+  .design-market-ai-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .design-market-ai-controls .design-primary-action {
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+
+  .design-market-screener-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-market-ai-market-tabs button {
+    flex: 1 1 100%;
+  }
+
+  .design-market-ai-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-market-ai-result-header {
+    display: grid;
+  }
+
+  .design-market-ai-review-header,
+  .design-market-ai-review-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-market-ai-review-form .design-secondary-action {
+    width: 100%;
+  }
+
+  .design-market-ai-results dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,0 +1,774 @@
+/* Page-owned layout; shared controls remain in src/styles.css. */
+
+.dynamic-trading-workspace {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 10px 84px;
+  background: var(--canvas);
+  color: var(--text);
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.dynamic-trading-workspace .automated-trading-guide {
+  margin: 0;
+}
+
+.dynamic-trading-heading {
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 43px;
+  padding: 0 2px;
+}
+
+.dynamic-trading-heading > div:first-child {
+  min-width: 0;
+}
+
+.dynamic-trading-heading span,
+.dynamic-trading-heading h2,
+.dynamic-trading-heading p {
+  margin: 0;
+}
+
+.dynamic-trading-heading > div:first-child > span {
+  display: block;
+  color: var(--teal);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.dynamic-trading-heading h2 {
+  display: inline;
+  font-size: calc(20px * var(--aiqt-text-scale, 1));
+  font-weight: 700;
+}
+
+.dynamic-trading-heading p {
+  display: inline;
+  margin-left: 10px;
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-heading-status {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.dynamic-trading-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dynamic-trading-status.healthy {
+  border-color: color-mix(in srgb, var(--teal) 55%, var(--border));
+  color: var(--teal);
+}
+
+.dynamic-trading-status.warning,
+.dynamic-trading-status.waiting {
+  border-color: color-mix(in srgb, var(--amber) 55%, var(--border));
+  color: var(--amber);
+}
+
+.dynamic-trading-status.danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
+}
+
+.dynamic-trading-terminal {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 300px;
+  gap: 8px;
+  min-width: 0;
+  min-height: 405px;
+}
+
+.dynamic-trading-terminal > * {
+  align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.dynamic-trading-watchlist-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+  padding: 4px;
+}
+
+.dynamic-trading-watchlist-tabs button {
+  min-width: 0;
+  min-height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-watchlist-tabs button.active {
+  background: var(--teal-dim);
+  color: var(--teal);
+  font-weight: 800;
+}
+
+.dynamic-trading-watchlist-rows {
+  min-height: 0;
+  overflow: auto;
+}
+
+.dynamic-trading-watchlist-rows > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 50px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.dynamic-trading-watchlist-rows > button:hover,
+.dynamic-trading-watchlist-rows > button.active {
+  background: color-mix(in srgb, var(--teal) 9%, var(--surface-raised));
+}
+
+.dynamic-trading-watchlist-rows > button.active {
+  box-shadow: inset 2px 0 var(--teal);
+}
+
+.dynamic-trading-watchlist-rows > button > span:last-child {
+  text-align: right;
+}
+
+.dynamic-trading-watchlist-rows strong,
+.dynamic-trading-watchlist-rows small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-trading-watchlist-rows strong {
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-watchlist-rows small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-watchlist > footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 8px 10px;
+}
+
+.dynamic-trading-watchlist > footer span,
+.dynamic-trading-watchlist > footer strong,
+.dynamic-trading-watchlist > footer small {
+  display: block;
+}
+
+.dynamic-trading-watchlist > footer span,
+.dynamic-trading-watchlist > footer small {
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-watchlist > footer strong {
+  margin: 3px 0;
+  color: var(--teal);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chart-panel > header {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 58px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+}
+
+.dynamic-trading-chart-panel > header > div > span {
+  display: block;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chart-panel > header > div > strong {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: calc(18px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chart-panel > header > div > strong em {
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+}
+
+.dynamic-trading-chart-panel > header dl {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 16px;
+  margin: 0;
+}
+
+.dynamic-trading-chart-panel > header dl div {
+  min-width: 0;
+}
+
+.dynamic-trading-chart-panel dt,
+.dynamic-trading-chart-panel dd {
+  margin: 0;
+}
+
+.dynamic-trading-chart-panel dt {
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chart-panel dd {
+  overflow: hidden;
+  max-width: 100px;
+  margin-top: 4px;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-trading-chart {
+  position: relative;
+  display: grid;
+  flex: 1;
+  min-height: 260px;
+  grid-template-rows: minmax(235px, 1fr) auto;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--canvas) 80%, var(--surface));
+}
+
+.dynamic-trading-chart .chart-canvas,
+.dynamic-trading-chart .chart-canvas > div {
+  min-height: 235px;
+  border: 0;
+  border-radius: 0;
+}
+
+.dynamic-trading-chart .chart-data-strip {
+  gap: 4px;
+  border-top: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+.dynamic-trading-chart .chart-data-strip span {
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chart-empty {
+  place-self: center;
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chart-panel > footer {
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 31px;
+  border-top: 1px solid var(--border);
+  padding: 5px 10px;
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chart-panel > footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dynamic-trading-chart-panel > footer i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.dynamic-trading-chart-panel > footer small {
+  overflow: hidden;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-trading-runner-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dynamic-trading-runner-dot.active {
+  background: var(--teal);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--teal) 16%, transparent);
+}
+
+.dynamic-trading-cycle {
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 35px;
+  margin: 4px 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-cycle.active {
+  border-color: color-mix(in srgb, var(--teal) 36%, var(--border));
+  background: color-mix(in srgb, var(--teal) 8%, var(--surface-raised));
+}
+
+.dynamic-trading-cycle > span {
+  display: grid;
+  gap: 2px;
+}
+
+.dynamic-trading-cycle > span:last-child {
+  text-align: right;
+}
+
+.dynamic-trading-cycle strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-cycle.active strong {
+  color: var(--teal);
+}
+
+.dynamic-trading-cycle small {
+  color: var(--muted);
+  font-size: calc(7.5px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-decision-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  margin: 5px 8px 0;
+  border: 1px solid color-mix(in srgb, var(--teal) 36%, var(--border));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--teal) 5%, var(--surface-raised));
+  padding: 3px 7px;
+}
+
+.dynamic-trading-decision-card span,
+.dynamic-trading-decision-card em,
+.dynamic-trading-decision-card p {
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-decision-card strong {
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-decision-card em {
+  align-self: center;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  color: var(--teal);
+  font-style: normal;
+}
+
+.dynamic-trading-decision-card p {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  margin: 2px 0 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-trading-authorization {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 22px;
+  margin: 0 8px 6px;
+  border: 1px solid color-mix(in srgb, var(--amber) 48%, var(--border));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--amber) 9%, var(--surface-raised));
+  padding: 3px 7px;
+  color: var(--amber);
+  font-size: calc(7.5px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-authorization strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: calc(7.5px * var(--aiqt-text-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-trading-authorization.active {
+  border-color: color-mix(in srgb, var(--teal) 42%, var(--border));
+  background: color-mix(in srgb, var(--teal) 8%, var(--surface-raised));
+  color: var(--teal);
+}
+
+.dynamic-trading-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--amber) 50%, var(--border));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--amber) 7%, var(--surface));
+  padding: 6px 10px;
+  color: var(--amber);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-alert.danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+  color: var(--danger);
+}
+
+.dynamic-trading-bottom-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1.15fr 0.9fr 1.05fr 1fr;
+  gap: 8px;
+  min-width: 0;
+  min-height: 220px;
+}
+
+.dynamic-trading-bottom-grid > section {
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.dynamic-trading-bottom-grid > section > header {
+  gap: 6px;
+  min-height: 34px;
+  border-bottom: 1px solid var(--border);
+  padding: 7px 9px;
+  color: var(--text);
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-bottom-grid > section > header svg {
+  color: var(--teal);
+}
+
+.dynamic-trading-order-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 8px;
+  margin: 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  padding: 9px;
+}
+
+.dynamic-trading-order-card span,
+.dynamic-trading-order-card strong {
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-order-card p,
+.dynamic-trading-order-card small {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-order-card .buy {
+  color: var(--teal);
+}
+
+.dynamic-trading-order-card .sell {
+  color: var(--danger);
+}
+
+.dynamic-trading-empty {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 80px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: calc(8.5px * var(--aiqt-text-scale, 1));
+  text-align: center;
+}
+
+.dynamic-trading-link {
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  margin: auto 8px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--teal);
+  cursor: pointer;
+  font-size: calc(8.5px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-trades,
+.dynamic-trading-chain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dynamic-trading-trades li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 31px;
+  border-bottom: 1px solid var(--border);
+  padding: 5px 8px;
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-trades li span {
+  font-weight: 700;
+}
+
+.dynamic-trading-trades li span.buy {
+  color: var(--teal);
+}
+
+.dynamic-trading-trades li span.sell {
+  color: var(--danger);
+}
+
+.dynamic-trading-trades li strong {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-trading-trades li time {
+  color: var(--muted);
+}
+
+.dynamic-trading-chain {
+  display: grid;
+  gap: 0;
+  padding: 6px 9px;
+}
+
+.dynamic-trading-chain li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  min-height: 31px;
+}
+
+.dynamic-trading-chain li:not(:last-child)::after {
+  position: absolute;
+  top: 18px;
+  bottom: 0;
+  left: 8px;
+  width: 1px;
+  background: var(--border);
+  content: "";
+}
+
+.dynamic-trading-chain li > span {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: calc(7px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chain li.complete > span {
+  border-color: var(--teal);
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.dynamic-trading-chain strong,
+.dynamic-trading-chain small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynamic-trading-chain strong {
+  font-size: calc(8.5px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-chain small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: calc(7.5px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-boundary {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: calc(8px * var(--aiqt-text-scale, 1));
+}
+
+.dynamic-trading-boundary span:first-child {
+  color: var(--teal);
+  font-weight: 700;
+}
+
+.dynamic-trading-workspace .positive {
+  color: var(--teal);
+}
+
+.dynamic-trading-workspace .negative {
+  color: var(--danger);
+}
+
+.dynamic-trading-chart-panel > footer i.positive {
+  background: var(--teal);
+}
+
+.dynamic-trading-chart-panel > footer i.negative {
+  background: var(--danger);
+}
+
+.dynamic-trading-chart-panel > footer i.decision {
+  background: var(--amber);
+}
+
+@media screen and (max-width: 1180px) {
+  .dynamic-trading-terminal {
+    grid-template-columns: 220px minmax(430px, 1fr) 300px;
+    overflow-x: auto;
+  }
+
+  .dynamic-trading-bottom-grid {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .dynamic-trading-workspace {
+    padding: 7px 7px 84px;
+  }
+
+  .dynamic-trading-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dynamic-trading-heading p {
+    display: block;
+    margin: 3px 0 0;
+  }
+
+  .dynamic-trading-heading-status {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .dynamic-trading-terminal,
+  .dynamic-trading-bottom-grid {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  .dynamic-trading-bottom-grid > section {
+    min-height: 180px;
+  }
+
+  .dynamic-trading-chart-panel > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dynamic-trading-chart-panel > header dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .dynamic-trading-boundary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 560px) {
+  .execution-auto-runtime-tools,
+  .execution-auto-paper-form,
+  .execution-auto-paper-metrics,
+  .execution-auto-paper-ledger-summary,
+  .execution-auto-paper-trades dl,
+  .execution-auto-server-monitoring > dl,
+  .execution-testnet-safety {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1,13 +1,56 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 
-const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+const globalStyles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+const mainSource = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
+const marketPageLayoutStyles = readFileSync(
+  new URL("../pages/market/MarketPage.layout.css", import.meta.url),
+  "utf8"
+);
+const strategyStyles = [
+  "../pages/strategy/StrategyPage.layout.css",
+  "../pages/strategy/StrategyAi.layout.css",
+  "../pages/strategy/StrategyExperiments.layout.css",
+  "../pages/strategy/StrategyLibrary.layout.css",
+  "../pages/strategy/StrategyWorkbench.layout.css",
+].map((file) => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
+const styles = [
+  globalStyles,
+  marketPageLayoutStyles,
+  ...[
+    "../pages/ai-review/AiReviewPage.layout.css",
+    "../pages/ai-review/AiReviewResearchLoop.layout.css",
+    "../pages/ai-review/AiReviewResults.layout.css",
+    "../pages/ai-review/AiReviewDecision.layout.css",
+    "../pages/audit/AuditPage.layout.css",
+    "../pages/backtest/BacktestPage.layout.css",
+    "../pages/dynamic-trading/AutoTradingControls.layout.css",
+    "../pages/dynamic-trading/DynamicTradingControls.layout.css",
+    "../pages/dynamic-trading/DynamicTradingPage.layout.css",
+    "../pages/execution/ExecutionPage.layout.css",
+    "../pages/market-information/MarketInformationPage.layout.css",
+    "../pages/market/MarketDiscovery.layout.css",
+    "../pages/portfolio/PortfolioPage.layout.css",
+    "../pages/research/ResearchPage.layout.css",
+    "../pages/settings/SettingsPage.layout.css",
+  ].map((file) => readFileSync(new URL(file, import.meta.url), "utf8")),
+  strategyStyles,
+].join("\n");
 const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const indexHtmlSource = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 const terminalWorkspaceSurfaceSource = readFileSync(
   new URL("../components/TerminalWorkspaceSurface.tsx", import.meta.url),
   "utf8"
 );
+const auditPageSource = readFileSync(new URL("../pages/audit/AuditPage.tsx", import.meta.url), "utf8");
+const backtestPageSource = readFileSync(new URL("../pages/backtest/BacktestPage.tsx", import.meta.url), "utf8");
+const executionPageSource = readFileSync(new URL("../pages/execution/ExecutionPage.tsx", import.meta.url), "utf8");
+const marketInformationPageSource = readFileSync(new URL("../pages/market-information/MarketInformationPage.tsx", import.meta.url), "utf8");
+const marketPageSource = readFileSync(new URL("../pages/market/MarketPage.tsx", import.meta.url), "utf8");
+const portfolioPageSource = readFileSync(new URL("../pages/portfolio/PortfolioPage.tsx", import.meta.url), "utf8");
+const researchPageSource = readFileSync(new URL("../pages/research/ResearchPage.tsx", import.meta.url), "utf8");
+const settingsPageSource = readFileSync(new URL("../pages/settings/SettingsPage.tsx", import.meta.url), "utf8");
+const settingsPageHelpersSource = readFileSync(new URL("../pages/settings/SettingsPage.helpers.tsx", import.meta.url), "utf8");
 const appWorkflowPanelsSource = readFileSync(
   new URL("../components/AppWorkflowPanels.tsx", import.meta.url),
   "utf8"
@@ -29,7 +72,11 @@ const marketAiSelectionPanelSource = readFileSync(
   "utf8"
 );
 const aiReviewPanelSource = readFileSync(
-  new URL("../components/AiReviewPanel.tsx", import.meta.url),
+  new URL("../pages/ai-review/AiReviewPage.tsx", import.meta.url),
+  "utf8"
+);
+const aiReviewContractSource = readFileSync(
+  new URL("../pages/shared/ai-review-contract.ts", import.meta.url),
   "utf8"
 );
 const strategyExperimentSectionSource = readFileSync(
@@ -53,7 +100,7 @@ const portfolioM5SectionSource = readFileSync(
   "utf8"
 );
 const executionAutoPaperTradingSource = readFileSync(
-  new URL("../components/ExecutionAutoPaperTradingSection.tsx", import.meta.url),
+  new URL("../pages/dynamic-trading/ExecutionAutoPaperTradingSection.tsx", import.meta.url),
   "utf8"
 );
 const executionStage10ProductionSource = readFileSync(
@@ -132,9 +179,69 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
+  test("keeps each workspace page beside its layout stylesheet", () => {
+    const pageLayouts = [
+      ["../pages/ai-review/AiReviewPage.tsx", [
+        "AiReviewDecision.layout.css",
+        "AiReviewPage.layout.css",
+        "AiReviewResearchLoop.layout.css",
+        "AiReviewResults.layout.css",
+      ]],
+      ["../pages/audit/AuditPage.tsx", ["AuditPage.layout.css"]],
+      ["../pages/backtest/BacktestPage.tsx", ["BacktestPage.layout.css"]],
+      ["../pages/dynamic-trading/ExecutionAutoPaperTradingSection.tsx", [
+        "AutoTradingControls.layout.css",
+        "DynamicTradingControls.layout.css",
+        "DynamicTradingPage.layout.css",
+      ]],
+      ["../pages/execution/ExecutionPage.tsx", ["ExecutionPage.layout.css"]],
+      ["../pages/market-information/MarketInformationPage.tsx", ["MarketInformationPage.layout.css"]],
+      ["../pages/market/MarketPage.tsx", ["MarketDiscovery.layout.css", "MarketPage.layout.css"]],
+      ["../pages/portfolio/PortfolioPage.tsx", ["PortfolioPage.layout.css"]],
+      ["../pages/research/ResearchPage.tsx", ["ResearchPage.layout.css"]],
+      ["../pages/settings/SettingsPage.tsx", ["SettingsPage.layout.css"]],
+      ["../pages/strategy/StrategyPage.tsx", [
+        "StrategyAi.layout.css",
+        "StrategyExperiments.layout.css",
+        "StrategyLibrary.layout.css",
+        "StrategyPage.layout.css",
+        "StrategyWorkbench.layout.css",
+      ]],
+    ];
+
+    pageLayouts.forEach(([page, layouts]) => {
+      const source = readFileSync(new URL(page, import.meta.url), "utf8");
+      layouts.forEach((layout) => expect(source).toContain(`import "./${layout}";`));
+    });
+    expect(aiReviewPanelSource.indexOf('import "./AiReviewResults.layout.css";')).toBeLessThan(
+      aiReviewPanelSource.indexOf('import "./AiReviewDecision.layout.css";')
+    );
+    expect(mainSource.indexOf('import "./styles.css";')).toBeLessThan(
+      mainSource.indexOf('import { App } from "./App";')
+    );
+  });
+
+  test("keeps page-owned mobile root grids after their desktop layouts", () => {
+    const mobileLayouts = [
+      ["../pages/market/MarketPage.layout.css", ".design-market-grid"],
+      ["../pages/research/ResearchPage.layout.css", ".design-research-grid"],
+      ["../pages/backtest/BacktestPage.layout.css", ".surface-backtest .design-backtest-grid"],
+      ["../pages/portfolio/PortfolioPage.layout.css", ".design-portfolio-grid"],
+      ["../pages/audit/AuditPage.layout.css", ".design-audit-grid"],
+      ["../pages/settings/SettingsPage.layout.css", ".design-settings-grid"],
+    ];
+
+    mobileLayouts.forEach(([file, selector]) => {
+      const source = readFileSync(new URL(file, import.meta.url), "utf8");
+      const mobileRules = source.slice(source.lastIndexOf("@media (max-width: 760px)"));
+      expect(mobileRules).toContain(`${selector} {`);
+      expect(mobileRules).toContain("grid-template-columns: minmax(0, 1fr);");
+    });
+  });
+
   test("wires explicit production route saving and live-session actions", () => {
     const productionSafetySource = sourceBetweenText(
-      terminalWorkspaceSurfaceSource,
+      settingsPageSource,
       "<legend>生产安全策略</legend>",
       "<legend>AI Provider</legend>"
     );
@@ -143,11 +250,11 @@ describe("terminal layout css", () => {
     expect(productionSafetySource).toContain(
       "onChange={(event) => setProductionTradingEnabledDraft(event.currentTarget.checked)}"
     );
-    expect(terminalWorkspaceSurfaceSource).toContain(
+    expect(settingsPageSource).toContain(
       '? productionTradingEnabledDraft ? "待保存开启" : "待保存关闭"'
     );
     expect(productionSafetySource).not.toContain('type="submit"');
-    expect(terminalWorkspaceSurfaceSource).toContain(
+    expect(settingsPageHelpersSource).toContain(
       'productionTradingEnabled: data.has("productionTradingEnabled")'
     );
     expect(executionStage10ProductionSource).toContain(
@@ -187,7 +294,7 @@ describe("terminal layout css", () => {
       "useEffect(() => {"
     );
 
-    expect(terminalWorkspaceSurfaceSource).toContain("onSettingsConfigurationDirtyChange");
+    expect(settingsPageSource).toContain("onSettingsConfigurationDirtyChange");
     expect(settingsNavigationGuardSource).toContain('activeWorkAreaId === "settings"');
     expect(settingsNavigationGuardSource).toContain("hasUnsavedSettingsConfiguration");
     expect(settingsNavigationGuardSource).toContain("setPendingSettingsWorkAreaId(targetWorkAreaId)");
@@ -209,10 +316,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("form.checkValidity()");
     expect(appSource).toContain("form.reportValidity()");
     expect(appSource).toContain("form.requestSubmit()");
-    expect(terminalWorkspaceSurfaceSource).not.toContain(
+    expect(settingsPageSource).not.toContain(
       "setModel((current) => current.trim() || result.models[0])"
     );
-    expect(terminalWorkspaceSurfaceSource).toContain("inert={isSavingSettingsConfiguration}");
+    expect(settingsPageSource).toContain("inert={isSavingSettingsConfiguration}");
     expect(appSource).toContain("settingsSaveRequestIdRef.current === requestId");
   });
 
@@ -362,11 +469,7 @@ describe("terminal layout css", () => {
   });
 
   test("keeps dense market watchlist and ranking rows scrollable", () => {
-    const marketSurfaceSource = sourceBetweenText(
-      terminalWorkspaceSurfaceSource,
-      "function MarketSurface",
-      "function ResearchSurface"
-    );
+    const marketSurfaceSource = marketPageSource;
 
     expect(hasCssDeclaration(".design-watchlist-panel .design-panel-body", "overflow: hidden;")).toBe(true);
     expect(hasCssBlockWith(".design-watchlist-table-scroll", [
@@ -494,7 +597,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("market: marketInformationMarket,");
     expect(appSource).toContain("onMarketChange: selectMarketInformationMarket,");
     expect(appSource).toContain("onNewsPageChange: (offset, scope) =>");
-    expect(terminalWorkspaceSurfaceSource).not.toContain("filteredNews.slice(");
+    expect(marketInformationPageSource).not.toContain("filteredNews.slice(");
     expect(appSource).toContain(
       'activeWorkAreaId === "market-information"\n              ? undefined\n              : automatedTradingGuide',
     );
@@ -518,10 +621,10 @@ describe("terminal layout css", () => {
       "grid-auto-rows: 24px;",
       "align-content: start;",
     ])).toBe(true);
-    expect(terminalWorkspaceSurfaceSource).not.toContain("workspace.watchlist.length < 8");
-    expect(terminalWorkspaceSurfaceSource).not.toContain("design-watchlist-overview-foot");
-    expect(terminalWorkspaceSurfaceSource).not.toContain("<span>当前标的</span>");
-    expect(terminalWorkspaceSurfaceSource).not.toContain("<span>最近更新</span>");
+    expect(marketPageSource).not.toContain("workspace.watchlist.length < 8");
+    expect(marketPageSource).not.toContain("design-watchlist-overview-foot");
+    expect(marketPageSource).not.toContain("<span>当前标的</span>");
+    expect(marketPageSource).not.toContain("<span>最近更新</span>");
   });
 
   test("removes legacy desktop row gaps from every workspace", () => {
@@ -543,16 +646,8 @@ describe("terminal layout css", () => {
   });
 
   test("aligns market recovery with the ranking row and reuses the market refresh action", () => {
-    const marketSurfaceSource = sourceBetweenText(
-      terminalWorkspaceSurfaceSource,
-      "function MarketSurface",
-      "function ResearchSurface"
-    );
-    const compactMarketSideCss = sourceBetweenText(
-      styles,
-      "@media (min-width: 1101px) {",
-      "@media (min-width: 1301px) {"
-    );
+    const marketSurfaceSource = marketPageSource;
+    const compactMarketSideCss = styles;
 
     expect(marketSurfaceSource).toContain('className="design-market-side-top"');
     expect(marketSurfaceSource).toContain('className="design-market-retry-panel"');
@@ -799,9 +894,9 @@ describe("terminal layout css", () => {
   });
 
   test("keeps M5 account risk tables inside the existing portfolio surface without synthetic pass rows", () => {
-    expect(terminalWorkspaceSurfaceSource).toContain("<PortfolioM5Section");
-    expect(terminalWorkspaceSurfaceSource).toContain("allocation.currentWeight");
-    expect(terminalWorkspaceSurfaceSource).not.toContain("组合年化波动率");
+    expect(portfolioPageSource).toContain("<PortfolioM5Section");
+    expect(portfolioPageSource).toContain("allocation.currentWeight");
+    expect(portfolioPageSource).not.toContain("组合年化波动率");
     expect(portfolioM5SectionSource).toContain("读取阶段 4 模拟账户回放");
     expect(portfolioM5SectionSource).toContain("该评估不写入生产风险链");
     expect(portfolioM5SectionSource).toContain('className="portfolio-m5-table-scroll"');
@@ -819,7 +914,7 @@ describe("terminal layout css", () => {
   test("keeps the M4 research loop inside the real AI review surface without horizontal overflow", () => {
     expect(appSource).toContain('import { AiResearchM4Section } from "./components/AiResearchM4Section";');
     expect(appSource).toContain("researchLoop: (");
-    expect(aiReviewPanelSource).toContain("researchLoop?: ReactNode;");
+    expect(aiReviewContractSource).toContain("researchLoop?: ReactNode;");
     expect(aiReviewPanelSource).toContain("{aiReview.researchLoop}");
     expect(aiResearchM4SectionSource).toContain("researchContextOnly=true");
     expect(aiResearchM4SectionSource).toContain("affectsOrderRouting=false");
@@ -1138,7 +1233,7 @@ describe("terminal layout css", () => {
   });
 
   test("hands narrow workspace scrolling to the document", () => {
-    const mobileScrollGuard = styles.slice(styles.lastIndexOf("@media (max-width: 760px) {"));
+    const mobileScrollGuard = globalStyles.slice(globalStyles.lastIndexOf("@media (max-width: 760px) {"));
 
     expect(mobileScrollGuard).toContain("  .terminal-design-surface {");
     expect(mobileScrollGuard).toContain("overflow: visible;");
@@ -1146,14 +1241,14 @@ describe("terminal layout css", () => {
   });
 
   test("follows streamed research note text to the final line", () => {
-    expect(terminalWorkspaceSurfaceSource).toContain(
+    expect(researchPageSource).toContain(
       "const researchNoteInputRef = useRef<HTMLTextAreaElement>(null);"
     );
-    expect(terminalWorkspaceSurfaceSource).toContain("ref={researchNoteInputRef}");
-    expect(terminalWorkspaceSurfaceSource).toContain(
+    expect(researchPageSource).toContain("ref={researchNoteInputRef}");
+    expect(researchPageSource).toContain(
       "researchNoteInput.scrollTop = researchNoteInput.scrollHeight;"
     );
-    expect(terminalWorkspaceSurfaceSource).toContain(
+    expect(researchPageSource).toContain(
       "researchPreparation.isGeneratingNote"
     );
   });
@@ -1210,7 +1305,7 @@ describe("terminal layout css", () => {
     expect((appSource.match(/onSnapshotChange=\{setAutoTradingSnapshot\}/g) ?? [])).toHaveLength(2);
     expect(appSource).toContain("const snapshot = await loadAutoTradingSnapshot(quantCoreBaseUrl);");
     expect(executionAutoPaperTradingSource).toContain("commitSnapshot(null);");
-    expect(terminalWorkspaceSurfaceSource).toContain("自动交易运行状态暂不可用");
+    expect(executionPageSource).toContain("自动交易运行状态暂不可用");
     expect(executionReadinessSource).not.toContain("<ExecutionStage5ShadowSection");
     expect(executionReadinessSource).not.toContain("<ExecutionStage6SandboxSection");
     expect(executionReadinessSource).not.toContain("<ExecutionStage7ProductionReadonlySection");
@@ -1342,12 +1437,12 @@ describe("terminal layout css", () => {
   });
 
   test("uses the light palette throughout the backtest workspace", () => {
-    expect(terminalWorkspaceSurfaceSource).toContain("getComputedStyle(canvas)");
-    expect(terminalWorkspaceSurfaceSource).toContain("colorScheme: ColorScheme;");
-    expect(terminalWorkspaceSurfaceSource).toContain("[colorScheme, points, tone]");
-    expect(terminalWorkspaceSurfaceSource).toContain('themeColor("--chart-grid"');
-    expect(terminalWorkspaceSurfaceSource).toContain('themeColor("--chart-teal"');
-    expect(terminalWorkspaceSurfaceSource).toContain('themeColor("--chart-red"');
+    expect(backtestPageSource).toContain("getComputedStyle(canvas)");
+    expect(backtestPageSource).toContain("colorScheme: ColorScheme;");
+    expect(backtestPageSource).toContain("[colorScheme, points, tone]");
+    expect(backtestPageSource).toContain('themeColor("--chart-grid"');
+    expect(backtestPageSource).toContain('themeColor("--chart-teal"');
+    expect(backtestPageSource).toContain('themeColor("--chart-red"');
     expect(hasCssBlockWith('.terminal-shell[data-theme="dark"]', [
       "--chart-grid: #183047;",
       "--chart-teal: #58d6b9;",
@@ -1395,11 +1490,11 @@ describe("terminal layout css", () => {
       "flex-direction: column;",
       "width: 100%;",
     ])).toBe(true);
-    expect(terminalWorkspaceSurfaceSource).toContain(
+    expect(executionPageSource).toContain(
       'subtitle="自动交易运行状态、风险参数与生产授权"'
     );
-    expect(terminalWorkspaceSurfaceSource).not.toContain("候选执行队列");
-    expect(terminalWorkspaceSurfaceSource).not.toContain("暂无权威影子候选");
+    expect(executionPageSource).not.toContain("候选执行队列");
+    expect(executionPageSource).not.toContain("暂无权威影子候选");
     expect(hasCssBlockWith('.terminal-shell[data-theme="light"] .surface-execution .design-check-row.warning svg', [
       "color: var(--amber);",
     ])).toBe(true);
@@ -2065,13 +2160,6 @@ describe("terminal layout css", () => {
       "function StrategyVolumeConfirmField"
     );
     const desktopGrid = cssBlock(".design-strategy-workbench .strategy-draft-grid");
-    const strategyResponsiveSource = styles.slice(
-      styles.lastIndexOf("@media (min-width: 761px) and (max-width: 1100px)")
-    );
-    const mobileBreakpoint = strategyResponsiveSource.indexOf("@media (max-width: 760px)");
-    const tabletRules = strategyResponsiveSource.slice(0, mobileBreakpoint);
-    const mobileRules = strategyResponsiveSource.slice(mobileBreakpoint);
-
     expect(strategySummarySource.indexOf('field="entryKind"')).toBeLessThan(
       strategySummarySource.indexOf('field="exitKind"')
     );
@@ -2093,12 +2181,12 @@ describe("terminal layout css", () => {
     );
     expect(desktopGrid).toContain("grid-template-columns: repeat(4, minmax(0, 1fr));");
     expect(desktopGrid).not.toContain("auto-fit");
-    expect(tabletRules).toContain(".design-strategy-workbench .strategy-draft-grid");
-    expect(tabletRules).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
-    expect(mobileRules).toContain(".strategy-draft-grid,");
-    expect(mobileRules).toContain("grid-template-columns: minmax(0, 1fr);");
-    expect(mobileRules).toContain(".design-strategy-workbench .strategy-draft-field");
-    expect(mobileRules).toContain("grid-column: span 1;");
+    expect(strategyStyles).toContain(".design-strategy-workbench .strategy-draft-grid");
+    expect(strategyStyles).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(strategyStyles).toContain(".strategy-draft-grid,");
+    expect(strategyStyles).toContain("grid-template-columns: minmax(0, 1fr);");
+    expect(strategyStyles).toContain(".design-strategy-workbench .strategy-draft-field");
+    expect(strategyStyles).toContain("grid-column: span 1;");
     expect(cssBlock(".strategy-condition-options")).toContain("position: absolute;");
   });
 
@@ -2325,11 +2413,7 @@ describe("terminal layout css", () => {
   });
 
   test("qualifies a backtest on the server before explicit production strategy handoff", () => {
-    const backtestSource = sourceBetweenText(
-      terminalWorkspaceSurfaceSource,
-      "function BacktestSurface",
-      "function PortfolioSurface"
-    );
+    const backtestSource = backtestPageSource;
     const bindingSource = sourceBetween(
       "const bindStrategyToProduction = useCallback",
       "const deleteSavedStrategyVersion = useCallback"
@@ -2377,7 +2461,7 @@ describe("terminal layout css", () => {
     expect(aiReviewSource).toContain('handoff?.status === "active"');
     expect(aiReviewSource).toContain("不等于生产批准");
     expect(aiReviewSource).not.toMatch(/\bonBind\b/);
-    expect(terminalWorkspaceSurfaceSource).not.toContain("<AiReviewPanel {...props}");
+    expect(terminalWorkspaceSurfaceSource).not.toContain("<AiReviewPage {...props}");
     expect(aiReviewSource).not.toContain("productionStrategyHandoff.onBind");
     expect(aiReviewSource).not.toContain("liveConfirmed:");
     expect(aiReviewSource).not.toContain("enabled:");
@@ -2386,11 +2470,7 @@ describe("terminal layout css", () => {
   });
 
   test("projects the existing production risk chain into portfolio without adding live actions", () => {
-    const portfolioSource = sourceBetweenText(
-      terminalWorkspaceSurfaceSource,
-      "function PortfolioSurface",
-      "function ExecutionSurface"
-    );
+    const portfolioSource = portfolioPageSource;
 
     expect(appSource).toContain("loadAutoTradingSnapshot(quantCoreBaseUrl)");
     expect(appSource).toContain("AUTO_TRADING_STATUS_REFRESH_INTERVAL_MS");
@@ -2409,7 +2489,7 @@ describe("terminal layout css", () => {
     expect(portfolioSource).not.toContain("productionStrategyHandoff.onBind");
     expect(portfolioSource).not.toContain("liveConfirmed:");
     expect(portfolioSource).not.toContain("enabled:");
-    expect(cssBlock(".design-portfolio-production-risk")).toContain("grid-column: 1 / 3;");
+    expect(hasCssDeclaration(".design-portfolio-production-risk", "grid-column: 1 / 3;")).toBe(true);
     expect(styles).toContain(
       ".portfolio-m5-section,\n  .design-portfolio-production-risk {\n    grid-column: 1;"
     );

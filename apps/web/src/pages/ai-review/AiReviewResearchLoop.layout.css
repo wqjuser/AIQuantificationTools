@@ -1,0 +1,347 @@
+/* AI research-loop layout. */
+
+
+.ai-research-m4-section,
+.ai-research-m4-result {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.ai-research-m4-config {
+  align-content: start;
+  gap: 8px;
+}
+
+.ai-research-m4-config input,
+.ai-research-m4-financial input,
+.ai-research-m4-financial select,
+.ai-research-m4-outcome select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  padding: 7px 8px;
+}
+
+.ai-research-m4-config > small,
+.ai-research-m4-outcome > small {
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-financial {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.ai-research-m4-financial summary,
+.ai-research-m4-result details > summary {
+  color: var(--text);
+  cursor: pointer;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.ai-research-m4-financial-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.ai-research-m4-financial-grid label,
+.ai-research-m4-outcome label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+}
+
+.ai-research-m4-fact-list,
+.ai-research-m4-outcomes {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.ai-research-m4-fact-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  padding: 7px 8px;
+}
+
+.ai-research-m4-fact-list strong,
+.ai-research-m4-fact-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-research-m4-fact-list strong {
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-fact-list span {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-fact-list button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.ai-research-m4-score-grid,
+.ai-research-m4-views {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ai-research-m4-score-grid article,
+.ai-research-m4-claims article,
+.ai-research-m4-views article,
+.ai-research-m4-outcomes article {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  padding: 9px;
+}
+
+.ai-research-m4-score-grid span,
+.ai-research-m4-claims span {
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ai-research-m4-score-grid strong,
+.ai-research-m4-views strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-score-grid p,
+.ai-research-m4-claims p,
+.ai-research-m4-views p,
+.ai-research-m4-outcomes p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ai-research-m4-claims {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.ai-research-m4-claims article {
+  border-left: 3px solid var(--teal);
+}
+
+.ai-research-m4-claims article.assumption {
+  border-left-color: var(--amber);
+}
+
+.ai-research-m4-claims article.model_inference {
+  border-left-color: #9d8cff;
+}
+
+.ai-research-m4-claims small,
+.ai-research-m4-views small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  overflow-wrap: anywhere;
+}
+
+.ai-research-m4-views {
+  margin-top: 9px;
+}
+
+.ai-research-m4-views article.bearish {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.ai-research-m4-views article.neutral {
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--border));
+}
+
+.ai-research-m4-table-wrap {
+  margin-top: 9px;
+  overflow-x: auto;
+}
+
+.ai-research-m4-table-wrap table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  color: var(--text);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-table-wrap th,
+.ai-research-m4-table-wrap td {
+  border-bottom: 1px solid var(--border);
+  padding: 7px;
+  text-align: left;
+}
+
+.ai-research-m4-outcome {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px;
+}
+
+.ai-research-m4-outcome h3,
+.ai-research-m4-outcome > p {
+  margin: 0 0 8px;
+}
+
+.ai-research-m4-outcome h3 {
+  color: var(--text);
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-outcome > p {
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-outcomes article header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-outcomes dl {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+  margin: 8px 0 0;
+}
+
+.ai-research-m4-outcomes dl div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px;
+}
+
+.ai-research-m4-outcomes dt,
+.ai-research-m4-outcomes dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-research-m4-outcomes dt {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.ai-research-m4-outcomes dd {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+@media (max-width: 720px) {
+
+  .ai-research-m4-financial-grid,
+  .ai-research-m4-score-grid,
+  .ai-research-m4-claims,
+  .ai-research-m4-views,
+  .ai-research-m4-outcomes dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 761px) {
+
+  .surface-ai-review .design-ai-main > .ai-research-m4-section {
+    grid-column: 1 / 3;
+  }
+}
+
+.surface-ai-review .ai-research-m4-section {
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading span,
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card label > span {
+  color: var(--muted);
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong,
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3 {
+  color: var(--text);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong {
+  font-size: calc(13.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3 {
+  font-size: calc(10.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-boundary {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--amber);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-card {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-research-m4-config select {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.surface-ai-review .ai-research-m4-section .ai-review-stage3-actions .design-primary-action {
+  min-height: 38px;
+  border-radius: 5px;
+  font-size: calc(11.5px * var(--aiqt-text-scale, 1));
+  font-weight: 600;
+  padding: 0 16px;
+}

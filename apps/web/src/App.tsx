@@ -328,7 +328,7 @@ import {
   autoTradingErrorMessage,
   loadAutoTradingSnapshot,
   type AutoTradingSnapshot
-} from "./components/ExecutionAutoPaperTradingSection";
+} from "./pages/dynamic-trading/ExecutionAutoPaperTradingSection";
 import { Panel } from "./components/AppPanel";
 import {
   isResearchContextActionDisabled,

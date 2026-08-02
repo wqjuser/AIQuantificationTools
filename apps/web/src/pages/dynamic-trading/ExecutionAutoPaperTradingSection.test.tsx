@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { WorkspaceFetcher } from "../lib/terminal-api";
+import type { WorkspaceFetcher } from "../../lib/terminal-api";
 import {
   AutoTradingEconomicsSummary,
   AutoTradingLedger,

@@ -1,0 +1,230 @@
+/* Page-owned layout; shared controls remain in src/styles.css. */
+
+
+.design-market-information-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-bottom: 10px;
+}
+
+.design-market-information-overview,
+.design-market-information-news {
+  grid-column: 1 / -1;
+}
+
+.design-market-information-breadth-empty {
+  padding: 10px;
+}
+
+.design-market-information-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  border-top: 1px solid var(--border);
+  padding: 7px 10px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-information-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-information-state.risk {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
+}
+
+.design-market-information-table {
+  overflow-x: auto;
+}
+
+.design-market-information-table .design-table {
+  min-width: 520px;
+}
+
+.design-market-information-table td:first-child span {
+  color: var(--muted);
+}
+
+.design-market-information-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.design-market-information-market-tabs {
+  margin-bottom: 8px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.design-market-information-market-tabs button {
+  min-width: 96px;
+}
+
+.design-market-information-tabs button {
+  min-height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  cursor: pointer;
+}
+
+.design-market-information-tabs button:hover,
+.design-market-information-tabs button.active {
+  border-color: color-mix(in srgb, var(--teal) 60%, var(--border));
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.design-market-information-news .design-panel-body {
+  padding: 0;
+}
+
+.design-market-information-news-list {
+  display: grid;
+}
+
+.design-market-information-news-list article {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.design-market-information-news-list article:last-child {
+  border-bottom: 0;
+}
+
+.design-market-information-news-list article > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-information-news-list article > header time {
+  margin-left: auto;
+}
+
+.design-market-information-news-list article > strong {
+  color: var(--text);
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-information-news-list article > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  line-height: 1.55;
+}
+
+.design-market-information-news-list article > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  color: var(--teal);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  text-decoration: none;
+}
+
+.design-market-information-news-list article > a:hover {
+  text-decoration: underline;
+}
+
+.design-market-information-link-missing {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-information-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-market-information-pagination span {
+  margin-right: auto;
+}
+
+.design-market-information-pagination button {
+  min-height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 3px 10px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.design-market-information-pagination button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.design-market-information-news-warnings {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .design-market-information-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-market-information-overview,
+  .design-market-information-news {
+    grid-column: 1;
+  }
+
+  .design-market-information-tabs {
+    width: 100%;
+  }
+
+  .design-market-information-tabs button {
+    flex: 1;
+  }
+
+  .design-market-information-news-list article > header time {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .design-market-information-pagination span {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .design-market-information-pagination button {
+    flex: 1;
+    min-height: 36px;
+  }
+}

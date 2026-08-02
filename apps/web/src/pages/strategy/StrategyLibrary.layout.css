@@ -1,0 +1,318 @@
+/* Strategy library layout. */
+
+
+.strategy-template-picker {
+  display: grid;
+  gap: 7px;
+}
+
+.strategy-template-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.strategy-template-title span {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.strategy-template-title strong {
+  color: #dce6ee;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.strategy-template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-template-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #111a27;
+  color: #dce6ee;
+  cursor: pointer;
+  font: inherit;
+  padding: 9px;
+  text-align: left;
+}
+
+.strategy-template-card strong {
+  overflow: hidden;
+  color: #dce6ee;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-template-card span {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.strategy-template-card:hover,
+.strategy-template-card.active {
+  border-color: #2b6f62;
+  background: #10251f;
+}
+
+.strategy-template-card:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.strategy-generated-snapshot {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  border-top: 1px solid #27364a;
+  padding-top: 9px;
+}
+
+.strategy-generated-snapshot span {
+  grid-row: span 2;
+  color: #e8be62;
+}
+
+.strategy-generated-snapshot strong,
+.strategy-generated-snapshot small {
+  min-width: 0;
+  color: #dce6ee;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+}
+
+.strategy-generated-snapshot small {
+  grid-column: 2 / -1;
+  color: #8fa0b2;
+}
+
+.strategy-library-actions {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #27364a;
+  padding-top: 9px;
+}
+
+.strategy-library-actions button,
+.strategy-library-card button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #2b6f62;
+  border-radius: 7px;
+  background: #10392f;
+  color: #7df5db;
+  cursor: pointer;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  padding: 6px 10px;
+}
+
+.strategy-library-actions button:disabled,
+.strategy-library-card button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.strategy-library-list {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.strategy-library-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 42px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #7c67ff;
+  border-radius: 7px;
+  background: #0f1723;
+  padding: 8px 10px;
+  color: #dce6ee;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.strategy-library-card.audited {
+  border-left-color: #4cc9ad;
+}
+
+.strategy-library-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.strategy-library-card span {
+  min-width: 0;
+}
+
+.strategy-library-card strong,
+.strategy-library-card em,
+.strategy-library-card small {
+  display: block;
+}
+
+.strategy-library-card em,
+.strategy-library-card small {
+  margin-top: 2px;
+  color: #8fa0b2;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+}
+
+.strategy-library-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-delete-summary {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #3b4b5e;
+  border-radius: 7px;
+  background: #121d2a;
+  padding: 11px 12px;
+}
+
+.strategy-delete-summary span,
+.strategy-delete-summary small {
+  color: #93a3b3;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.strategy-delete-error {
+  color: #ff8579 !important;
+}
+
+.strategy-delete-confirm {
+  min-height: 36px;
+  border: 1px solid #b9534b;
+  border-radius: 7px;
+  background: #4a2223;
+  color: #ffb0a8;
+  cursor: pointer;
+  font: inherit;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  padding: 0 14px;
+}
+
+.strategy-delete-confirm:hover {
+  border-color: #ff7f6d;
+  background: #5b2828;
+}
+
+.strategy-delete-confirm:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.strategy-library-diff {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.strategy-library-empty {
+  margin: 0;
+  color: #8fa0b2;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+@media (max-width: 960px) {
+
+  .strategy-generated-snapshot {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-generated-snapshot span,
+  .strategy-generated-snapshot small {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+.design-strategy-workbench :is(
+    .strategy-template-card:hover,
+    .strategy-template-card.active
+  ) {
+  border-color: var(--teal);
+  background: var(--teal-dim);
+}
+
+.design-strategy-workbench .strategy-library-card .strategy-delete-button,
+.design-strategy-workbench .strategy-delete-confirm {
+  border-color: color-mix(in srgb, var(--danger) 68%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  color: var(--danger);
+}
+
+.design-strategy-workbench .strategy-library-card .strategy-delete-button:hover,
+.design-strategy-workbench .strategy-delete-confirm:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 18%, var(--surface));
+}
+
+.design-strategy-workbench .strategy-delete-summary {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.design-strategy-workbench .strategy-delete-summary :is(span, small) {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+
+  .design-strategy-workbench .strategy-library-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-strategy-workbench .strategy-library-card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .design-strategy-workbench .strategy-library-card-actions button {
+    min-height: 42px;
+  }
+
+  .design-strategy-workbench .strategy-delete-modal .research-confirmation-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .design-strategy-workbench .strategy-delete-modal .research-confirmation-actions button {
+    width: 100%;
+  }
+
+  .design-strategy-workbench .strategy-generated-snapshot span,
+  .design-strategy-workbench .strategy-generated-snapshot small {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}

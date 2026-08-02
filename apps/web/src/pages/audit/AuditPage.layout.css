@@ -1,0 +1,72 @@
+/* Page-owned layout; shared controls remain in src/styles.css. */
+
+
+.design-audit-filters {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin-bottom: 8px;
+  border: 1px solid #20374b;
+  border-radius: 6px;
+  padding: 8px;
+  background: #0a1926;
+}
+
+.design-audit-filters label {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  color: #8295a6;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-audit-filters button {
+  min-height: 29px;
+  padding: 0 18px;
+}
+
+.design-audit-grid {
+  display: grid;
+  grid-template-columns: minmax(700px, 1fr) minmax(210px, 0.3fr);
+  gap: 8px;
+}
+
+.design-audit-ledger {
+  min-height: 405px;
+}
+
+.design-audit-side {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.design-audit-detail {
+  grid-column: 1 / 2;
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-audit-filters {
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-detail-grid article {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-audit .design-detail-grid article > strong {
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  .design-audit-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .design-audit-detail {
+    grid-column: 1;
+  }
+}

@@ -16,7 +16,7 @@ import {
   liveAuthorizationLabel,
   startAutoLiveSession,
   type AutoTradingSnapshot
-} from "./ExecutionAutoPaperTradingSection";
+} from "../pages/shared/auto-trading-contract";
 import { executionEvidenceLabel } from "./execution-readiness-display";
 
 const defaultFetcher: WorkspaceFetcher = (url, init) => fetch(url, init);

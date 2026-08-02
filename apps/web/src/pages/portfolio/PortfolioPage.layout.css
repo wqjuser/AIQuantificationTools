@@ -1,0 +1,256 @@
+/* Page-owned layout; shared controls remain in src/styles.css. */
+
+
+.design-portfolio-steps {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-left: 20px;
+}
+
+.design-portfolio-steps span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.design-portfolio-steps i {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-style: normal;
+}
+
+.design-portfolio-steps .done {
+  color: var(--teal);
+}
+
+.design-portfolio-steps .done i {
+  border-color: var(--teal);
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.design-portfolio-steps .active {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.design-portfolio-steps .active i {
+  border-color: var(--teal);
+  background: var(--teal);
+  color: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 16%, transparent);
+}
+
+.design-portfolio-steps .active.blocked {
+  color: var(--danger);
+}
+
+.design-portfolio-steps .active.blocked i {
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
+.design-portfolio-grid {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.75fr) minmax(520px, 1.6fr) minmax(
+      230px,
+      0.68fr
+    );
+  gap: 10px;
+  align-items: start;
+}
+
+.design-portfolio-action-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 62%, var(--border));
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+  color: var(--danger);
+}
+
+.design-portfolio-action-error > div {
+  display: grid;
+  gap: 3px;
+}
+
+.design-portfolio-action-error strong {
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.design-portfolio-action-error span {
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  line-height: 1.55;
+}
+
+.design-portfolio-positions {
+  align-self: stretch;
+  min-height: 0;
+}
+
+.design-portfolio-summary {
+  align-self: stretch;
+}
+
+.design-portfolio-donut {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 156px;
+  height: 156px;
+  margin: 6px auto 12px;
+}
+
+.design-portfolio-donut svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.design-portfolio-donut-track,
+.design-portfolio-donut-value {
+  fill: none;
+  stroke-width: 9;
+}
+
+.design-portfolio-donut-track {
+  stroke: var(--border);
+}
+
+.design-portfolio-donut-value {
+  stroke: var(--teal);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 180ms ease;
+}
+
+.design-portfolio-donut > span {
+  display: grid;
+  place-items: center;
+  gap: 5px;
+}
+
+.design-portfolio-donut strong {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: calc(24px * var(--aiqt-text-scale, 1));
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.design-portfolio-donut small {
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.design-portfolio-side {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1 / span 3;
+  align-content: start;
+  gap: 10px;
+}
+
+.design-portfolio-approval {
+  grid-column: 1 / 3;
+}
+
+.design-portfolio-production-risk {
+  grid-column: 1 / 3;
+}
+
+.design-portfolio-approval .portfolio-order-approval {
+  margin-top: 0;
+  outline: none;
+}
+
+.design-portfolio-approval .portfolio-order-approval:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--teal) 50%, transparent);
+}
+
+.design-portfolio-approval .portfolio-order-approval-row {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.design-portfolio-approval .portfolio-order-approval-row strong {
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.3;
+}
+
+.design-portfolio-approval .portfolio-order-approval-row > div > span,
+.design-portfolio-approval .portfolio-order-approval-row p,
+.design-portfolio-approval .portfolio-order-approval-row small {
+  color: var(--muted);
+}
+
+.design-portfolio-approval .portfolio-order-approval-meta span {
+  color: var(--text);
+}
+
+.design-portfolio-approval .portfolio-order-approval-actions button {
+  border-color: color-mix(in srgb, var(--teal) 62%, var(--border));
+  background: var(--teal-dim);
+  color: var(--teal);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.design-portfolio-approval .portfolio-order-approval-actions button.reject {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
+}
+
+.terminal-design-surface.surface-portfolio {
+  padding-bottom: 10px;
+}
+
+@media (max-width: 1100px) {
+  .design-portfolio-grid {
+    grid-template-columns: minmax(0, 1fr) 270px;
+  }
+
+  .design-portfolio-side {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .design-portfolio-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .design-portfolio-side,
+  .design-portfolio-approval,
+  .design-portfolio-production-risk {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .design-portfolio-steps {
+    display: none;
+  }
+}
+
+.design-portfolio-positions .design-empty {
+  height: 168px !important;
+}

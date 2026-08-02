@@ -1,0 +1,680 @@
+/* Page-owned layout; shared controls remain in src/styles.css. */
+
+
+.strategy-layout {
+  grid-template-areas:
+    "chart strategy"
+    "workflow strategy"
+    "ai strategy"
+    "decision strategy";
+}
+
+.strategy-panel {
+  align-self: start;
+  grid-area: strategy;
+  grid-template-rows: auto auto;
+  min-height: auto;
+}
+
+.strategy-panel .strategy-workbench {
+  min-height: 0;
+}
+
+.strategy-panel .strategy-rule-row {
+  grid-template-columns: minmax(60px, 0.55fr) minmax(0, 1.2fr) minmax(
+      72px,
+      0.65fr
+    ) minmax(52px, 0.38fr);
+}
+
+.strategy-workbench {
+  display: grid;
+  gap: 10px;
+}
+
+.strategy-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.strategy-editor label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.strategy-editor label:nth-child(2),
+.strategy-editor label:nth-child(3),
+.strategy-editor label:nth-child(5) {
+  grid-column: 1 / -1;
+}
+
+.strategy-editor span {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.strategy-editor input,
+.strategy-editor textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #151f2d;
+  color: #dce6ee;
+  font: inherit;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+  padding: 8px 9px;
+}
+
+.strategy-editor textarea {
+  resize: vertical;
+}
+
+.strategy-editor input:focus,
+.strategy-editor textarea:focus {
+  border-color: #2b6f62;
+  outline: none;
+}
+
+.strategy-structured-editor {
+  display: grid;
+  gap: 9px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.strategy-builder-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.strategy-builder-title strong {
+  color: #4cc9ad;
+}
+
+.strategy-builder-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.strategy-rule-title .strategy-validation-source {
+  margin-left: 8px;
+  border: 1px solid #27364a;
+  border-radius: 999px;
+  background: #0f1723;
+  color: #8fa0b2;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  padding: 2px 6px;
+}
+
+.strategy-structured-editor > label,
+.strategy-draft-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.strategy-structured-editor span,
+.strategy-draft-field span {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.strategy-structured-editor input,
+.strategy-draft-field input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #151f2d;
+  color: #dce6ee;
+  font: inherit;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+  padding: 8px 9px;
+}
+
+.strategy-structured-editor input:focus,
+.strategy-draft-field input:focus {
+  border-color: #2b6f62;
+  outline: none;
+}
+
+.strategy-draft-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strategy-draft-field > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #151f2d;
+}
+
+.strategy-condition-editor.sma {
+  grid-template-columns: minmax(120px, 1.3fr) minmax(58px, 0.55fr) auto;
+}
+
+.strategy-condition-editor.rsi {
+  grid-template-columns: minmax(120px, 1.25fr) minmax(54px, 0.42fr) minmax(
+      60px,
+      0.48fr
+    );
+}
+
+.strategy-condition-editor {
+  overflow: visible !important;
+}
+
+.strategy-condition-menu {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  border-right: 1px solid #27364a;
+}
+
+.strategy-condition-menu > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 100%;
+  color: #dce6ee;
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 10px;
+}
+
+.strategy-condition-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.strategy-condition-menu > summary strong {
+  overflow: hidden;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-condition-menu > summary svg {
+  flex: 0 0 auto;
+  transition: transform 140ms ease;
+}
+
+.strategy-condition-menu[open] > summary svg {
+  transform: rotate(180deg);
+}
+
+.strategy-condition-menu[open] > summary {
+  box-shadow: inset 0 0 0 1px #2b6f62;
+}
+
+.strategy-condition-options {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: -1px;
+  display: grid;
+  gap: 3px;
+  width: max(100%, 190px);
+  border: 1px solid #34465d;
+  border-radius: 7px;
+  background: #111a27;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 35%);
+  padding: 5px;
+}
+
+.strategy-condition-options button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #cbd6df;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px;
+  text-align: left;
+}
+
+.strategy-condition-options button:hover,
+.strategy-condition-options button:focus-visible,
+.strategy-condition-options button.active {
+  background: #17352f;
+  color: #75dec7;
+  outline: none;
+}
+
+.strategy-condition-options button > span {
+  display: grid;
+  color: currentcolor;
+  place-items: center;
+}
+
+.strategy-condition-options button strong {
+  overflow: hidden;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-draft-field > .strategy-volume-toggle {
+  grid-template-columns: auto minmax(58px, 1fr) auto;
+}
+
+.strategy-draft-field > .strategy-rsi-toggle {
+  grid-template-columns: auto minmax(52px, 0.75fr) minmax(52px, 0.75fr) auto;
+}
+
+.strategy-inline-number {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  border-left: 1px solid #27364a;
+}
+
+.strategy-inline-number > small {
+  padding-left: 8px;
+  white-space: nowrap;
+}
+
+.strategy-inline-number > input {
+  padding-left: 6px;
+}
+
+.strategy-volume-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 8px;
+  accent-color: #2fd3b0;
+}
+
+.strategy-rsi-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 8px;
+  accent-color: #2fd3b0;
+}
+
+.strategy-volume-toggle input[type="number"]:disabled {
+  color: #6f7d8e;
+  opacity: 0.7;
+}
+
+.strategy-rsi-toggle input[type="number"]:disabled {
+  color: #6f7d8e;
+  opacity: 0.7;
+}
+
+.strategy-draft-field > div input {
+  border: 0;
+  background: transparent;
+}
+
+.strategy-threshold-field {
+  border-left: 1px solid #27364a !important;
+  border-radius: 0 !important;
+}
+
+.strategy-draft-field em {
+  color: #4cc9ad;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  font-weight: 900;
+  padding-right: 8px;
+}
+
+.strategy-draft-field small {
+  color: #75869a;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  line-height: 1.35;
+}
+
+.strategy-rule-board {
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 10px;
+}
+
+.strategy-diff-chip {
+  border: 1px solid #27364a;
+  border-radius: 999px;
+  background: #111a27;
+  color: #8fa0b2;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.strategy-diff-chip.warning {
+  border-color: #69552a;
+  background: #221c10;
+  color: #e8be62;
+}
+
+.strategy-rule-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.strategy-rule-title strong {
+  color: #dce6ee;
+}
+
+.strategy-rule-grid {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.strategy-rule-row {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.55fr) minmax(160px, 1.4fr) minmax(
+      100px,
+      0.8fr
+    ) minmax(70px, 0.45fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #4cc9ad;
+  border-radius: 7px;
+  background: #0f1723;
+  padding: 8px 10px;
+  color: #dce6ee;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.strategy-rule-row.warning {
+  border-left-color: #e8be62;
+}
+
+.strategy-rule-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.strategy-rule-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.strategy-rule-head {
+  min-height: 30px;
+  border-left-color: #27364a;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.strategy-rule-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.strategy-rule-row strong,
+.strategy-rule-row em {
+  display: block;
+}
+
+.strategy-rule-row em {
+  margin-top: 3px;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+}
+
+.design-strategy-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.62fr) minmax(560px, 1.8fr) minmax(
+      230px,
+      0.68fr
+    );
+  gap: 10px;
+}
+
+.design-strategy-editor,
+.design-strategy-side {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+@media (max-width: 960px) {
+
+  .strategy-layout {
+    grid-template-areas:
+      "chart"
+      "strategy"
+      "workflow"
+      "ai"
+      "decision";
+  }
+}
+
+@media (max-width: 860px) {
+
+  .strategy-layout {
+    grid-template-areas:
+      "chart"
+      "strategy"
+      "workflow"
+      "ai"
+      "decision";
+  }
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-search,
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-group {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-search input {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-search input::placeholder {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card.selected {
+  border-left-color: var(--teal);
+  background: var(--teal-dim);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card strong,
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row strong {
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-list-card span,
+.terminal-shell[data-theme="light"] .surface-strategy .design-big-metric {
+  color: var(--teal);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-group > header {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .surface-strategy .design-rule-row em {
+  color: var(--muted);
+}
+
+.design-strategy-workbench {
+  min-width: 0;
+}
+
+.design-strategy-workbench .strategy-workbench {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.design-strategy-workbench .strategy-draft-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 12px;
+  row-gap: 14px;
+}
+
+.design-strategy-workbench :is(
+    .strategy-condition-field,
+    .strategy-rsi-field,
+    .strategy-volume-field
+  ) {
+  grid-column: span 2;
+}
+
+.design-strategy-workbench :is(
+    .strategy-structured-editor input,
+    .strategy-draft-field input
+  ) {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.design-strategy-workbench .strategy-threshold-field {
+  border-color: var(--border) !important;
+}
+
+.design-strategy-workbench .strategy-condition-menu {
+  border-color: var(--border);
+}
+
+.design-strategy-workbench .strategy-condition-menu > summary {
+  color: var(--text);
+}
+
+.design-strategy-workbench .strategy-condition-menu[open] > summary {
+  box-shadow: inset 0 0 0 1px var(--teal);
+}
+
+.design-strategy-workbench .strategy-condition-options {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  box-shadow: 0 14px 30px rgb(0 0 0 / 24%);
+}
+
+.design-strategy-workbench .strategy-condition-options button {
+  color: var(--text);
+}
+
+.design-strategy-workbench :is(
+    .strategy-condition-options button:hover,
+    .strategy-condition-options button:focus-visible,
+    .strategy-condition-options button.active
+  ) {
+  background: var(--teal-dim);
+  color: var(--teal);
+}
+
+.design-strategy-workbench .strategy-rule-title .strategy-validation-source {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.design-strategy-workbench .strategy-diff-chip.warning {
+  border-color: color-mix(in srgb, var(--amber) 50%, var(--border));
+  background: color-mix(in srgb, var(--amber) 12%, var(--surface));
+  color: var(--amber);
+}
+
+@media (min-width: 761px) {
+  .terminal-design-surface.surface-strategy {
+    padding-bottom: 10px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+
+  .design-strategy-workbench .strategy-draft-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .design-strategy-workbench :is(
+      .strategy-condition-field,
+      .strategy-rsi-field,
+      .strategy-volume-field
+    ) {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 760px) {
+
+  .design-strategy-workbench .strategy-draft-field {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 860px) {
+  .design-strategy-workbench .strategy-rule-row,
+  .design-strategy-workbench .strategy-governance-row,
+  .design-strategy-workbench .strategy-editor,
+  .design-strategy-workbench .strategy-template-grid,
+  .design-strategy-workbench .strategy-generated-snapshot {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 960px) {
+  .design-strategy-workbench .strategy-template-grid,
+  .design-strategy-workbench .strategy-readiness-list,
+  .design-strategy-workbench .strategy-governance-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .design-strategy-workbench .strategy-draft-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -21,17 +21,17 @@ import {
   type AiReviewStance,
   type AppendAiReviewDecisionRequest,
   type AuthoritativeAiReviewRun,
-} from "../lib/ai-review-stage3";
-import { createI18n, type TranslationKey } from "../lib/i18n";
+} from "../../lib/ai-review-stage3";
+import { createI18n, type TranslationKey } from "../../lib/i18n";
 import type {
   ProductionStrategyHandoff,
   ProductionStrategyHandoffResult,
   StrategyProductionBinding,
-} from "../lib/terminal-api";
+} from "../../lib/terminal-api";
 import type {
   StrategyExperimentListItem,
   TerminalWorkspace,
-} from "../lib/terminal-workbench";
+} from "../../lib/terminal-workbench";
 import {
   aiProviderLabels,
   compactRunId,
@@ -40,56 +40,26 @@ import {
   type SurfaceAction,
   Status,
   SurfacePanel,
-} from "./TerminalSurfaceUi";
+} from "../../components/TerminalSurfaceUi";
+import "./AiReviewPage.layout.css";
+import "./AiReviewResearchLoop.layout.css";
+import "./AiReviewResults.layout.css";
+import "./AiReviewDecision.layout.css";
+import type {
+  AiReviewController,
+  AiReviewProductionPath,
+  AiReviewProductionPathAction,
+  AiReviewProductionPathProjection,
+} from "../shared/ai-review-contract";
+export type {
+  AiReviewController,
+  AiReviewProductionPath,
+  AiReviewProductionPathAction,
+  AiReviewProductionPathProjection,
+} from "../shared/ai-review-contract";
 
-export interface AiReviewController {
-  appendingDecision: boolean;
-  busy: boolean;
-  running: boolean;
-  comparisonExperimentIds: string[];
-  currentReview: AuthoritativeAiReviewRun | null;
-  decisionDraft: AppendAiReviewDecisionRequest;
-  decisions: AiReviewDecision[];
-  error: string | null;
-  experiments: StrategyExperimentListItem[];
-  externalDataApproved: boolean;
-  history: AuthoritativeAiReviewRun[];
-  onAppendDecision: () => void;
-  onComparisonToggle: (experimentId: string) => void;
-  onDecisionDraftChange: (draft: AppendAiReviewDecisionRequest) => void;
-  onExternalDataApprovedChange: (approved: boolean) => void;
-  onOpenProductionHandoff: () => void;
-  onProviderChange: (providerId: AiReviewProviderId) => void;
-  onStagePrimaryCandidate: () => void;
-  primaryExperimentId: string | null;
-  primaryCandidateAvailable: boolean;
-  providerId: AiReviewProviderId;
-  providers: AiReviewProviderStatus[];
-  researchLoop?: ReactNode;
-}
-export interface AiReviewProductionPathProjection {
-  binding: StrategyProductionBinding | null;
-  errorLabel: string | null;
-  switchBlockedReasonLabel?: string | null;
-  onOpenDynamicTrading: () => void;
-  result: ProductionStrategyHandoffResult;
-}
 
 const aiReviewZh = createI18n("zh-CN");
-
-export type AiReviewProductionPathAction =
-  | "stage-primary-candidate"
-  | "open-production-handoff"
-  | "open-dynamic-trading"
-  | null;
-
-export interface AiReviewProductionPath {
-  action: AiReviewProductionPathAction;
-  actionLabel: string | null;
-  detail: string;
-  label: string;
-  tone: "neutral" | "positive" | "warning" | "risk";
-}
 
 const aiReviewDecisionStatuses: AiReviewDecisionStatus[] = [
   "accepted_for_research",
@@ -257,7 +227,7 @@ export function buildAiReviewProductionPath({
   };
 }
 
-export function AiReviewPanel({
+export function AiReviewPage({
   action,
   aiReview,
   productionStrategyHandoff,

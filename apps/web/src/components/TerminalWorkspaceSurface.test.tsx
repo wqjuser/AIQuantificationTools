@@ -22,8 +22,8 @@ import type {
   PlatformSettingsConfigurationValues,
   PortfolioBacktestRun,
 } from "../lib/terminal-api";
-import type { AutoTradingSnapshot } from "./ExecutionAutoPaperTradingSection";
-import { buildAiReviewProductionPath } from "./AiReviewPanel";
+import { buildAiReviewProductionPath } from "../pages/ai-review/AiReviewPage";
+import type { AutoTradingSnapshot } from "../pages/shared/auto-trading-contract";
 import {
   buildAuditLedgerRows,
   hasPlatformSettingsConfigurationChanges,

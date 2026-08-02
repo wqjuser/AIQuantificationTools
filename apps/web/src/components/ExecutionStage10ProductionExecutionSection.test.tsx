@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { stage10ConfirmationIds } from "../lib/stage10-production-execution";
-import type { AutoTradingSnapshot } from "./ExecutionAutoPaperTradingSection";
+import type { AutoTradingSnapshot } from "../pages/shared/auto-trading-contract";
 import {
   ExecutionStage10ProductionExecutionSection,
   isAutoLiveSessionRenewalAvailable,

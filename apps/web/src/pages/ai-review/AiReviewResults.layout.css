@@ -1,0 +1,276 @@
+/* AI review result layout. */
+
+
+.design-ai-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.05fr) minmax(410px, 1.08fr) minmax(
+      220px,
+      0.62fr
+    );
+  grid-template-rows: 470px auto;
+  gap: 10px;
+}
+
+.design-ai-evidence,
+.design-ai-review {
+  min-height: 470px;
+}
+
+.design-ai-baseline {
+  margin-top: 8px;
+  border: 1px solid #2b4559;
+  padding: 8px;
+  color: #58d6b9;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+
+  .surface-ai-review .design-ai-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .surface-ai-review .design-ai-overview {
+    grid-column: 1;
+  }
+}
+
+.surface-ai-review .design-ai-grid {
+  --ai-review-conclusion-height: 343px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(290px, 22vw, 350px);
+  grid-template-rows: auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.surface-ai-review .design-ai-overview {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.surface-ai-review .design-ai-overview > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 72px;
+  border-right: 1px solid var(--border);
+  padding: 12px 14px;
+}
+
+.surface-ai-review .design-ai-overview > div:last-child {
+  border-right: 0;
+}
+
+.surface-ai-review .design-ai-overview span,
+.surface-ai-review .design-ai-overview small {
+  color: var(--muted);
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .design-ai-overview strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surface-ai-review .design-ai-main {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.surface-ai-review .design-ai-evidence,
+.surface-ai-review .design-ai-review {
+  min-height: 0;
+}
+
+.surface-ai-review .design-ai-verdicts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.surface-ai-review .design-ai-verdict {
+  display: grid;
+  gap: 9px;
+  min-height: 172px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--teal);
+  border-radius: 5px;
+  padding: 13px 14px;
+  background: var(--surface-raised);
+}
+
+.surface-ai-review .design-ai-verdict.external {
+  border-left-color: var(--danger);
+}
+
+.surface-ai-review .design-ai-verdict header,
+.surface-ai-review .design-ai-verdict footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.surface-ai-review .design-ai-verdict header div {
+  display: grid;
+  gap: 2px;
+}
+
+.surface-ai-review .design-ai-verdict header span {
+  color: var(--text);
+  font-size: calc(11.5px * var(--aiqt-text-scale, 1));
+  font-weight: 650;
+}
+
+.surface-ai-review .design-ai-verdict header small,
+.surface-ai-review .design-ai-verdict footer > span {
+  color: var(--muted);
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .design-ai-verdict.primary :is(> strong, header > svg) {
+  color: var(--teal);
+}
+
+.surface-ai-review .design-ai-verdict.external :is(> strong, header > svg) {
+  color: var(--danger);
+}
+
+.surface-ai-review .design-ai-verdict > strong {
+  font-size: calc(24px * var(--aiqt-text-scale, 1));
+  font-weight: 650;
+}
+
+.surface-ai-review .design-ai-verdict p {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(10.5px * var(--aiqt-text-scale, 1));
+  line-height: 1.65;
+}
+
+.surface-ai-review .design-ai-verdict footer {
+  align-self: end;
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+}
+
+.surface-ai-review .design-ai-baseline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--border));
+  border-radius: 5px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--teal-dim) 70%, var(--surface));
+  color: var(--teal);
+}
+
+.surface-ai-review .design-ai-baseline > div {
+  display: grid;
+  gap: 2px;
+}
+
+.surface-ai-review .design-ai-baseline strong {
+  color: var(--text);
+  font-size: calc(10.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .design-ai-baseline span:not(.design-status) {
+  color: var(--muted);
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .design-ai-evidence .design-panel-body {
+  padding: 0;
+  overflow-x: auto;
+}
+
+.surface-ai-review .design-ai-evidence .design-table th:first-child,
+.surface-ai-review .design-ai-evidence .design-table td:first-child {
+  padding-left: 14px;
+}
+
+.surface-ai-review .design-ai-evidence .design-table th:last-child,
+.surface-ai-review .design-ai-evidence .design-table td:last-child {
+  padding-right: 14px;
+}
+
+.surface-ai-review .design-ai-evidence .design-table tbody tr:hover {
+  background: color-mix(in srgb, var(--teal-dim) 48%, var(--surface));
+}
+
+.surface-ai-review .design-ai-audit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 9px;
+}
+
+.surface-ai-review .design-ai-audit-grid > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.surface-ai-review .design-ai-audit-grid span {
+  color: var(--muted);
+  font-size: calc(8.5px * var(--aiqt-text-scale, 1));
+}
+
+.surface-ai-review .design-ai-audit-grid strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .surface-ai-review .design-ai-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .surface-ai-review .design-ai-overview > div {
+    min-height: 62px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .surface-ai-review .design-ai-overview > div:last-child {
+    border-bottom: 0;
+  }
+
+  .surface-ai-review .design-ai-baseline {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .surface-ai-review .design-ai-baseline .design-status {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+@media screen and (min-width: 761px) and (max-width: 1100px) {
+  .surface-ai-review .design-ai-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .surface-ai-review .design-ai-overview {
+    grid-column: 1;
+  }
+}
