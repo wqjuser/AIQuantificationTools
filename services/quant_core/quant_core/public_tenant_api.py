@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
@@ -14,6 +15,7 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from sqlalchemy.engine import Connection, Engine
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -123,9 +125,25 @@ class PublicTenantApi:
             )
         runtime = self._runtime(tenant)
         body = await request.body()
-        # ponytail: one request per tenant keeps legacy workflow coordination
-        # deterministic; use endpoint-scoped locks if tenant throughput demands it.
-        with runtime.lock:
+        return await run_in_threadpool(
+            self._dispatch_request,
+            runtime,
+            request,
+            tenant,
+            body,
+        )
+
+    def _dispatch_request(
+        self,
+        runtime: _TenantRuntime,
+        request: Request,
+        tenant: TenantContext,
+        body: bytes,
+    ) -> Response:
+        # ponytail: serialize mutations; add endpoint locks only if a legacy GET
+        # starts writing shared report artifacts.
+        request_lock = runtime.lock if request.method != "GET" else nullcontext()
+        with request_lock:
             self._restore_report_files(runtime)
             action = _production_control_action(request, body)
             credentials_changed = _production_credentials_changed(request, body)
@@ -185,11 +203,11 @@ class PublicTenantApi:
                 and credentials_changed
             ):
                 runtime.stores.production_accounts.release_owner(tenant.owner_id)
-        return Response(
-            handler._captured_body,
-            status_code=handler._captured_status,
-            media_type=handler._captured_content_type.split(";", 1)[0],
-        )
+            return Response(
+                handler._captured_body,
+                status_code=handler._captured_status,
+                media_type=handler._captured_content_type.split(";", 1)[0],
+            )
 
     def review_due_selections(
         self,

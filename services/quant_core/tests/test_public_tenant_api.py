@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import socket
+import time
+from threading import RLock
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
 from quant_core.deployment import load_deployment_config
@@ -82,6 +88,76 @@ class PublicTenantApiTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 303)
         return str(client.get("/api/auth/session").json()["csrfToken"])
+
+    def test_slow_get_does_not_block_another_read_for_same_tenant(self) -> None:
+        runtime = SimpleNamespace(handler_type=object, lock=RLock(), stores=SimpleNamespace())
+        tenant = SimpleNamespace(owner_id="owner-1", authenticated_actor="user@example.com")
+
+        class Handler:
+            def __init__(self, path: str):
+                self.path = path
+                self._captured_status = 200
+                self._captured_content_type = "application/json; charset=utf-8"
+                self._captured_body = b'{"ok":true}'
+                self.connection, self._connection_peer = socket.socketpair()
+
+            def _dispatch_get(self, parsed) -> bool:
+                if parsed.path == "/api/slow":
+                    time.sleep(0.4)
+                return True
+
+            _dispatch_post = _dispatch_get
+
+            def _send_json(self, _payload, status: int = 200) -> None:
+                self._captured_status = status
+
+        def request(path: str, method: str) -> Request:
+            async def receive():
+                return {"type": "http.request", "body": b"", "more_body": False}
+
+            return Request(
+                {
+                    "type": "http",
+                    "method": method,
+                    "path": path,
+                    "raw_path": path.encode(),
+                    "query_string": b"",
+                    "headers": [],
+                    "client": ("127.0.0.1", 12345),
+                    "server": ("research.example.com", 443),
+                    "scheme": "https",
+                    "root_path": "",
+                },
+                receive,
+            )
+
+        async def exercise(method: str) -> tuple[int, float]:
+            started_at = time.monotonic()
+            slow = asyncio.create_task(
+                self.tenant_api(request("/api/slow", method), tenant)
+            )
+            await asyncio.sleep(0)
+            fast = await self.tenant_api(request("/api/fast", method), tenant)
+            fast_elapsed = time.monotonic() - started_at
+            await slow
+            return fast.status_code, fast_elapsed
+
+        with (
+            patch.object(self.tenant_api, "_runtime", return_value=runtime),
+            patch.object(
+                self.tenant_api,
+                "_handler",
+                side_effect=lambda _type, current, _body, _tenant: Handler(current.url.path),
+            ),
+            patch.object(self.tenant_api, "_restore_report_files"),
+            patch.object(self.tenant_api, "_persist_report_files"),
+        ):
+            status, elapsed = asyncio.run(exercise("GET"))
+            _mutation_status, mutation_elapsed = asyncio.run(exercise("POST"))
+
+        self.assertEqual(status, 200)
+        self.assertLess(elapsed, 0.25)
+        self.assertGreater(mutation_elapsed, 0.35)
 
     def test_existing_routes_use_postgres_tenant_stores_without_cross_user_leakage(self) -> None:
         first_csrf = self._login(self.first, "first")
