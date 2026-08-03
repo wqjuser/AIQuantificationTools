@@ -250,7 +250,7 @@ def create_public_app(
                 return _error("request_body_must_be_json", 400)
             if _contains_forged_actor(payload, tenant.authenticated_actor):
                 return _error("authenticated_actor_mismatch", 403)
-            if _requires_recent_reauthentication(request.url.path) and not tenant.reauthenticated_recently():
+            if _requires_recent_reauthentication(request.url.path, payload) and not tenant.reauthenticated_recently():
                 return _error("reauthentication_required", 428)
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             blocked = _rate_limit(limiter, "mutation", tenant.owner_id, policies["mutation"])
@@ -370,10 +370,31 @@ def _contains_forged_actor(payload: object, authenticated_actor: str) -> bool:
     )
 
 
-def _requires_recent_reauthentication(path: str) -> bool:
+def _requires_recent_reauthentication(path: str, payload: object) -> bool:
+    if path == "/api/settings/configuration":
+        if not isinstance(payload, dict):
+            return False
+        production_secrets = {
+            "ccxtProductionReadonlyApiKey",
+            "ccxtProductionReadonlySecret",
+            "ccxtProductionTradingApiKey",
+            "ccxtProductionTradingSecret",
+        }
+        configuration = payload.get("configuration")
+        updates = payload.get("secretUpdates")
+        cleared = payload.get("clearSecrets")
+        return (
+            isinstance(configuration, dict)
+            and configuration.get("productionTradingEnabled") is True
+        ) or (
+            isinstance(updates, dict)
+            and bool(production_secrets & set(updates))
+        ) or (
+            isinstance(cleared, list)
+            and bool(production_secrets & {item for item in cleared if isinstance(item, str)})
+        )
     return (
-        path == "/api/settings/configuration"
-        or path == "/api/execution/auto-paper-trading"
+        path == "/api/execution/auto-paper-trading"
         or path.startswith("/api/execution/stage10/")
     )
 

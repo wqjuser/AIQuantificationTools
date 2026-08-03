@@ -188,6 +188,51 @@ class PublicApiSecurityTest(unittest.TestCase):
         self.assertEqual(stale.status_code, 428)
         self.assertEqual(stale.json()["error"], "reauthentication_required")
 
+    def test_stale_session_can_save_non_sensitive_but_not_production_settings(self) -> None:
+        self.client.get("/api/auth/login", follow_redirects=False)
+        state = self.client.cookies.get("aiqt_oidc_state")
+        self.client.get(f"/api/auth/callback?state={state}&code=code", follow_redirects=False)
+        csrf = self.client.get("/api/auth/session").json()["csrfToken"]
+        headers = {"Origin": "https://research.example.com", "X-AIQT-CSRF": csrf}
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(public_sessions).values(
+                    reauthenticated_at=datetime.now(timezone.utc) - timedelta(minutes=6)
+                )
+            )
+
+        ordinary = self.client.put(
+            "/api/settings/configuration",
+            json={
+                "configuration": {"secEdgarUserAgent": "AIQT test@example.com"},
+                "secretUpdates": {},
+                "clearSecrets": [],
+            },
+            headers=headers,
+        )
+        production_secret = self.client.put(
+            "/api/settings/configuration",
+            json={
+                "configuration": {"productionTradingEnabled": False},
+                "secretUpdates": {"ccxtProductionReadonlyApiKey": "secret"},
+                "clearSecrets": [],
+            },
+            headers=headers,
+        )
+        production_enable = self.client.put(
+            "/api/settings/configuration",
+            json={
+                "configuration": {"productionTradingEnabled": True},
+                "secretUpdates": {},
+                "clearSecrets": [],
+            },
+            headers=headers,
+        )
+
+        self.assertEqual(ordinary.status_code, 200)
+        self.assertEqual(production_secret.status_code, 428)
+        self.assertEqual(production_enable.status_code, 428)
+
     def test_mutation_body_is_bounded_before_json_parsing(self) -> None:
         self.client.get("/api/auth/login", follow_redirects=False)
         state = self.client.cookies.get("aiqt_oidc_state")
