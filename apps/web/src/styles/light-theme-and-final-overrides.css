@@ -172,6 +172,30 @@
   padding: 10px 12px;
 }
 
+.design-workflow-guide-disclosure {
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+}
+
+.design-workflow-guide-disclosure > summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 700;
+}
+
+.design-workflow-guide-disclosure[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.design-workflow-guide-disclosure .automated-trading-guide {
+  margin: 0;
+  border: 0;
+}
+
 .automated-trading-guide-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 0.8fr);
@@ -258,7 +282,7 @@
 
 .automated-trading-guide-steps {
   display: grid;
-  grid-template-columns: repeat(11, minmax(0, 1fr));
+  grid-template-columns: repeat(10, minmax(0, 1fr));
   gap: 5px;
   min-width: 0;
 }

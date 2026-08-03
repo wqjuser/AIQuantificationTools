@@ -62,7 +62,7 @@ def check_spot_account_coverage(
         balance,
         base=base,
         quote=quote,
-        account_fingerprint=_exchange_account_fingerprint(exchange),
+        account_fingerprint=_exchange_account_fingerprint(exchange, balance),
     )
     return {
         "accountCovered": (
@@ -173,12 +173,36 @@ def _spot_account_snapshot(
     }
 
 
-def _exchange_account_fingerprint(exchange: Any) -> str | None:
+def _exchange_account_fingerprint(exchange: Any, balance: Any) -> str | None:
+    try:
+        return binance_spot_account_identity_fingerprint(balance)
+    except ValueError:
+        pass
     api_key = getattr(exchange, "apiKey", None)
     if not isinstance(api_key, str) or not api_key.strip():
         return None
+    return binance_spot_account_fingerprint(api_key)
+
+
+def binance_spot_account_fingerprint(api_key: str) -> str:
+    clean_api_key = api_key.strip() if isinstance(api_key, str) else ""
+    if not clean_api_key:
+        raise ValueError("binance_spot_account_identity_unavailable")
     return hashlib.sha256(
-        f"binance-spot:{api_key.strip()}".encode("utf-8")
+        f"binance-spot:{clean_api_key}".encode("utf-8")
+    ).hexdigest()
+
+
+def binance_spot_account_identity_fingerprint(balance: Any) -> str:
+    info = balance.get("info") if isinstance(balance, dict) else None
+    identity = None
+    if isinstance(info, dict):
+        identity = info.get("uid") or info.get("accountId")
+    clean_identity = str(identity).strip() if identity is not None else ""
+    if not clean_identity:
+        raise ValueError("binance_spot_account_identity_unavailable")
+    return hashlib.sha256(
+        f"binance-spot-account:{clean_identity}".encode("utf-8")
     ).hexdigest()
 
 

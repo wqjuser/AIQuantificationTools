@@ -21929,6 +21929,53 @@ describe("terminal workspace API client", () => {
     }]);
     expect(result).toEqual({ statistics, source: "core" });
 
+    const v2: MarketAiSelectionQualityStatistics = {
+      ...statistics,
+      schemaVersion: 2,
+      researchValueCohorts: [{
+        cohortId: "research-value-test",
+        market: "ashare",
+        profile: "balanced",
+        weightsVersion: "market-ai-selection-v1",
+        providerIdentity: { providerId: "local", model: null },
+        providerIdentityHash: "a".repeat(64),
+        benchmarkPolicyVersion: "market-ai-selection-benchmark-v1",
+        benchmarkSymbol: "000300",
+        selectionBatchCount: 1,
+        reviewedBatchCount: 0,
+        qualifiedBatchCount: 0,
+        nonOverlappingSampleCount: 0,
+        overlappingSampleCount: 0,
+        recommendationSampleCount: 0,
+        benchmarkSampleCount: 0,
+        benchmarkCoveragePct: null,
+        relativeHitCount: 0,
+        relativeHitRatePct: null,
+        relativeHitWilsonLowerPct: null,
+        medianBatchAlphaPct: null,
+        calendarMonthCount: 0,
+        status: "insufficient_sample",
+        batches: [{
+          selectionId: "selection-test",
+          generatedAt: "2026-08-01T08:00:00+00:00",
+          reviewed: false,
+          recommendationCount: 5,
+          benchmarkSampleCount: 0,
+          benchmarkCoveragePct: 0,
+          batchAlphaPct: null,
+          referenceAt: null,
+          outcomeAt: null,
+          overlapping: false,
+          status: "observing",
+        }],
+      }],
+    };
+    const v2Result = await loadMarketAiSelectionQualityStatistics(
+      "/",
+      async () => ({ ok: true, status: 200, json: async () => ({ statistics: v2 }) }),
+    );
+    expect(v2Result).toEqual({ statistics: v2, source: "core" });
+
     for (const invalidStatistics of [
       {
         ...statistics,

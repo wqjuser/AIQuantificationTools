@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
 from quant_core.canonical import canonical_sha256
 from quant_core.market_calendar import build_market_calendar_status
+from quant_core.outbound_security import open_user_outbound_request
 
 
 MONITORING_JOB_ID = "server-monitoring"
@@ -534,24 +535,42 @@ def build_webhook_notifier(
     except (TypeError, ValueError):
         timeout = 5
     timeout = max(1, min(timeout, 30))
+    public_mode = (
+        str(source.get("AIQT_DEPLOYMENT_MODE") or "").strip().lower() == "public"
+    )
+    allowed_origins = tuple(
+            value.strip()
+            for value in str(source.get("AIQT_OUTBOUND_ORIGIN_ALLOWLIST") or "").split(",")
+            if value.strip()
+    ) if public_mode else None
 
     def notify(payload: dict[str, Any]) -> None:
+        body = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "AIQuant-Terminal-Monitoring/1",
+        }
         request = Request(
             url,
-            data=json.dumps(
-                payload,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            ).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "AIQuant-Terminal-Monitoring/1",
-            },
+            data=body,
+            headers=headers,
             method="POST",
         )
         try:
-            with urlopen(request, timeout=timeout) as response:
-                status = int(getattr(response, "status", 200))
+            if allowed_origins is not None:
+                with open_user_outbound_request(
+                    request,
+                    allowed_origins,
+                    timeout=timeout,
+                ) as response:
+                    status = int(getattr(response, "status", 200))
+            else:
+                with urlopen(request, timeout=timeout) as response:
+                    status = int(getattr(response, "status", 200))
         except Exception as error:
             raise RuntimeError(
                 f"monitoring_webhook_request_failed:{type(error).__name__}"

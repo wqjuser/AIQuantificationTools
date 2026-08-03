@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 from http.server import ThreadingHTTPServer
+from quant_core.deployment import load_deployment_config
 from quant_core.auto_paper_trading import (
     AutoPaperTradingRunner,
     AutoPaperTradingService,
 )
+from quant_core.ai_review_providers import AiReviewProviderRegistry
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 from quant_core.market_klines import QuantDingerKlineAdapter
 from quant_core.monitoring import MonitoringRunner
@@ -27,6 +29,12 @@ from quant_core.http_api.support.runtime import (
     _handler_execution_environment,
     _handler_platform_environment,
     _runtime_int,
+)
+from quant_core.http_api.support.handler_services import (
+    build_market_ai_selection_service,
+)
+from quant_core.market_ai_selection_core.automatic_review import (
+    MarketAiSelectionReviewRunner,
 )
 from quant_core.http_api.support.p0 import (
     _build_p0_ai_review_record,
@@ -143,7 +151,38 @@ def build_monitoring_runner(
     )
 
 
+def _build_market_ai_selection_review_runner(
+    handler_type: type[QuantApiHandler] = QuantApiHandler,
+) -> MarketAiSelectionReviewRunner:
+    environment = _handler_platform_environment(handler_type)
+    provider_registry = (
+        handler_type.ai_review_provider_registry
+        or AiReviewProviderRegistry.from_environment(environment)
+    )
+    service = build_market_ai_selection_service(
+        handler_type,
+        environment=environment,
+        provider_registry=provider_registry,
+    )
+    interval_seconds = _runtime_int(
+        environment.get("AIQT_MARKET_AI_SELECTION_REVIEW_INTERVAL_SECONDS"),
+        21_600,
+        60,
+        86_400,
+    )
+    return MarketAiSelectionReviewRunner(
+        service.review_due_selections,
+        interval_seconds=interval_seconds,
+    )
+
+
 def run(host: str | None = None, port: int | str | None = None) -> None:
+    deployment = load_deployment_config(os.environ)
+    if deployment.mode == "public":
+        from quant_core.public_api import run_public_api
+
+        run_public_api(deployment, host=host, port=port)
+        return
     if QuantApiHandler.platform_settings_store.apply_to_environment(os.environ):
         QuantApiHandler.quote_adapter = QuantDingerLiveQuoteAdapter()
         QuantApiHandler.kline_adapter = QuantDingerKlineAdapter(
@@ -169,13 +208,16 @@ def run(host: str | None = None, port: int | str | None = None) -> None:
     monitoring_runner = build_monitoring_runner(
         auto_trading_service=auto_trading_runner.service,
     )
+    selection_review_runner = _build_market_ai_selection_review_runner()
     QuantApiHandler.monitoring_service = monitoring_runner.service
     try:
         auto_trading_runner.start()
         monitoring_runner.start()
+        selection_review_runner.start()
         print(f"quant-core API listening on http://{bind_host}:{bind_port}")
         server.serve_forever()
     finally:
+        selection_review_runner.stop()
         monitoring_runner.stop()
         auto_trading_runner.stop()
         QuantApiHandler.auto_paper_trading_service = None

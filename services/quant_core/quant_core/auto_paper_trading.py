@@ -161,6 +161,7 @@ class AutoPaperTradingService:
         self.live_session_ttl_hours = live_session_ttl_hours
         self.strategy_store = strategy_store
         self.run_store = run_store
+        self.execution_guard: Callable[[], bool] | None = None
         self._validated_strategy_key: tuple[str, str, str] | None = None
         self._validated_strategy_production_drawdown: float | None = None
 
@@ -1304,6 +1305,7 @@ class AutoPaperTradingService:
             pending["error"] = "auto_trading_order_request_missing"
             return self._finish(state, status="order_pending", detail=pending["error"])
         try:
+            self._require_execution_guard()
             if mode == "live":
                 if self.production is None:
                     raise ValueError("live_route_unavailable")
@@ -1445,6 +1447,7 @@ class AutoPaperTradingService:
         now: datetime,
     ) -> None:
         mode = str(state["executionMode"])
+        self._require_execution_guard()
         stored, _ = self.store.record_if_absent(_event(
             event_id=trade["tradeId"],
             event_type=(
@@ -1523,6 +1526,7 @@ class AutoPaperTradingService:
                 if side == "buy"
                 else quantity * float(state.get("avgCost") or 0)
             )
+        self._require_execution_guard()
         intent, _ = self.store.record_if_absent(_event(
             event_id=f"auto-{mode}-order-intent-{order['clientOrderId']}",
             event_type=f"auto_{mode}_order_intent",
@@ -1570,6 +1574,7 @@ class AutoPaperTradingService:
             else "lastTestnetOrderIntentId"
         ] = intent.event_id
         try:
+            self._require_execution_guard()
             if mode == "testnet":
                 if self.sandbox is None or state.get("testnetConfirmed") is not True:
                     raise ValueError("testnet_route_not_authorized")
@@ -1904,6 +1909,7 @@ class AutoPaperTradingService:
         })
         if not first_snapshot and not asset_deltas:
             return False
+        self._require_execution_guard()
         self.store.record_if_absent(_event(
             event_id=f"auto-{state['executionMode']}-account-sync-{snapshot_hash[:20]}",
             event_type=f"auto_{state['executionMode']}_account_sync",
@@ -1982,6 +1988,7 @@ class AutoPaperTradingService:
                 f"{mode}:{state['symbol']}:{quantity}:{reference_price}".encode()
             ).hexdigest()
         )
+        self._require_execution_guard()
         recorded, _ = self.store.record_if_absent(_event(
             event_id=f"auto-{mode}-dust-{signal_id}",
             event_type=f"auto_{mode}_dust_disposition",
@@ -2337,6 +2344,7 @@ class AutoPaperTradingService:
         *,
         related_events: list[dict[str, Any]] | None = None,
     ) -> None:
+        self._require_execution_guard()
         state_event = _event(
             event_id=CONTROL_EVENT_ID,
             event_type="auto_paper_trading_state",
@@ -2348,6 +2356,10 @@ class AutoPaperTradingService:
             self.store.record_many([state_event, *related_events])
         else:
             self.store.record(state_event)
+
+    def _require_execution_guard(self) -> None:
+        if self.execution_guard is not None and not self.execution_guard():
+            raise RuntimeError("public_lease_lost")
 
     def _payload(self, state: dict[str, Any]) -> dict[str, Any]:
         providers = [

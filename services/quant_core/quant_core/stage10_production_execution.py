@@ -5,10 +5,11 @@ import hashlib
 import json
 import os
 import sqlite3
-from typing import Any
+from typing import Any, Callable
 
 from quant_core.audit_events import AuditEventStore
 from quant_core.binance_spot_orders import (
+    binance_spot_account_identity_fingerprint,
     check_spot_account_coverage,
     create_spot_market_order,
     fetch_spot_order,
@@ -1064,6 +1065,10 @@ class BinanceSpotProductionTradingRoute:
         self._require_configured()
         return self._exchange_client()
 
+    def account_identity_fingerprint(self) -> str:
+        balance = self._reconciliation_exchange().fetch_balance()
+        return binance_spot_account_identity_fingerprint(balance)
+
     def _exchange_client(self) -> Any:
         if self._exchange is not None:
             return self._exchange
@@ -1266,11 +1271,19 @@ class Stage10ProductionExecutionService:
         audit_store: AuditEventStore,
         adapter: Any = None,
         auto_route: BinanceSpotProductionTradingRoute | None = None,
+        acquire_account_lease: Callable[[str], bool] | None = None,
+        release_account_lease: Callable[[str], None] | None = None,
     ) -> None:
         self.audit_store = audit_store
         self.adapter = adapter or DeterministicProductionExecutionAdapter()
         self.auto_route = auto_route
-        self._init_account_lease()
+        if (acquire_account_lease is None) != (release_account_lease is None):
+            raise ValueError("stage10_account_lease_callbacks_incomplete")
+        self._account_lease_acquire = acquire_account_lease
+        self._account_lease_release = release_account_lease
+        self.execution_guard: Callable[[], bool] | None = None
+        if acquire_account_lease is None:
+            self._init_account_lease()
 
     def record_credential_preflight(self, value: dict[str, Any]) -> dict[str, Any]:
         preflight = validate_production_trading_credential_preflight(value)
@@ -1566,6 +1579,7 @@ class Stage10ProductionExecutionService:
             raise ValueError("stage10_auto_live_order_invalid")
         self._acquire_account_lease(client_order_id)
         try:
+            self._require_execution_guard()
             try:
                 evidence = {
                     **self.auto_route.fetch_order(order),
@@ -1576,6 +1590,7 @@ class Stage10ProductionExecutionService:
                     evidence = _unknown_live_evidence(query_error, "query")
                 else:
                     self.auto_route.verify_current_restrictions()
+                    self._require_execution_guard()
                     self._record_auto_live_transition(
                         order,
                         {
@@ -1586,6 +1601,7 @@ class Stage10ProductionExecutionService:
                         operator=operator,
                     )
                     try:
+                        self._require_execution_guard()
                         evidence = {
                             **self.auto_route.create_market_order(order),
                             "operation": "create",
@@ -1609,6 +1625,7 @@ class Stage10ProductionExecutionService:
                             }
                         except Exception:
                             pass
+            self._require_execution_guard()
             self._record_auto_live_transition(order, evidence, operator=operator)
             return evidence
         finally:
@@ -1631,6 +1648,7 @@ class Stage10ProductionExecutionService:
             raise ValueError("stage10_auto_live_order_invalid")
         self._acquire_account_lease(client_order_id)
         try:
+            self._require_execution_guard()
             try:
                 current = {
                     **self.auto_route.fetch_order_for_reconciliation(
@@ -1641,6 +1659,7 @@ class Stage10ProductionExecutionService:
                 }
             except Exception as error:
                 current = _unknown_live_evidence(error, "query")
+            self._require_execution_guard()
             self._record_auto_live_transition(order, current, operator=operator)
             return current
         finally:
@@ -1653,6 +1672,7 @@ class Stage10ProductionExecutionService:
         *,
         operator: str,
     ) -> None:
+        self._require_execution_guard()
         now = datetime.now(timezone.utc).isoformat()
         identity = _hash(
             {
@@ -1725,6 +1745,10 @@ class Stage10ProductionExecutionService:
             connection.close()
 
     def _acquire_account_lease(self, holder: str) -> None:
+        if self._account_lease_acquire is not None:
+            if not self._account_lease_acquire(holder):
+                raise ValueError("stage10_production_execution_account_lease_active")
+            return
         now = datetime.now(timezone.utc)
         connection = sqlite3.connect(self.audit_store.path, timeout=5)
         try:
@@ -1751,6 +1775,9 @@ class Stage10ProductionExecutionService:
             connection.close()
 
     def _release_account_lease(self, holder: str) -> None:
+        if self._account_lease_release is not None:
+            self._account_lease_release(holder)
+            return
         connection = sqlite3.connect(self.audit_store.path)
         try:
             connection.execute(
@@ -1760,6 +1787,10 @@ class Stage10ProductionExecutionService:
             connection.commit()
         finally:
             connection.close()
+
+    def _require_execution_guard(self) -> None:
+        if self.execution_guard is not None and not self.execution_guard():
+            raise RuntimeError("public_lease_lost")
 
 
 def _production_orders(candidate: dict[str, Any]) -> list[dict[str, Any]]:

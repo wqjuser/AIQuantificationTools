@@ -93,6 +93,13 @@ const reviewReasonLabels: Record<string, string> = {
   review_bar_window_invalid: "到期 K 线窗口校验失败",
 };
 
+const researchValueStatusLabels = {
+  insufficient_sample: "样本不足",
+  collecting: "持续采集中",
+  stable_positive: "已证明稳定研究价值",
+  not_stable: "尚未形成稳定正价值",
+} as const;
+
 function hitRate(hits: number, samples: number, rate: number | null): string {
   return `${hits} / ${samples} · ${rate === null ? "—" : `${rate.toFixed(1)}%`}`;
 }
@@ -699,6 +706,39 @@ export function MarketAiSelectionPanel({
                 </article>
               ))}
             </div>
+            {selection.statistics.result.researchValueCohorts?.length ? (
+              <details className="design-market-ai-exclusions">
+                <summary>
+                  稳定研究价值 · {selection.statistics.result.researchValueCohorts.length} 个独立 cohort
+                </summary>
+                <div className="design-market-ai-results design-market-ai-review-items">
+                  {selection.statistics.result.researchValueCohorts.map((cohort) => (
+                    <article key={cohort.cohortId}>
+                      <header>
+                        <div>
+                          <strong>
+                            {cohort.market === "ashare" ? "A 股" : cohort.market === "us" ? "美股" : "加密资产"}
+                            {" · "}{marketAiSelectionProfileLabels[cohort.profile]}
+                          </strong>
+                          <span>{cohort.weightsVersion} · 基准 {cohort.benchmarkSymbol}</span>
+                        </div>
+                        <Status tone={cohort.status === "stable_positive" ? "positive" : "neutral"}>
+                          {researchValueStatusLabels[cohort.status]}
+                        </Status>
+                      </header>
+                      <dl>
+                        <div><dt>非重叠到期批次</dt><dd>n={cohort.nonOverlappingSampleCount} · 重叠 {cohort.overlappingSampleCount}</dd></div>
+                        <div><dt>固定基准覆盖</dt><dd>{cohort.benchmarkSampleCount} / {cohort.recommendationSampleCount} · {cohort.benchmarkCoveragePct?.toFixed(1) ?? "—"}%</dd></div>
+                        <div><dt>批次相对命中</dt><dd>{hitRate(cohort.relativeHitCount, cohort.nonOverlappingSampleCount, cohort.relativeHitRatePct)}</dd></div>
+                        <div><dt>95% Wilson 下界</dt><dd>{cohort.relativeHitWilsonLowerPct?.toFixed(1) ?? "—"}%</dd></div>
+                        <div><dt>批次中位 alpha</dt><dd>{cohort.medianBatchAlphaPct === null ? "—" : percentage(cohort.medianBatchAlphaPct)}</dd></div>
+                        <div><dt>自然月覆盖</dt><dd>{cohort.calendarMonthCount} 个月</dd></div>
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            ) : null}
             <p className="design-market-ai-boundary">
               仅汇总受保护审计样本；不自动加入观察池、运行研究或连接订单与生产交易。
             </p>

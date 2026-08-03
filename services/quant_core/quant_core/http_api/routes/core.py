@@ -126,6 +126,11 @@ def get_health(self, parsed):
     return
 
 
+def get_local_auth_session(self, parsed):
+    self._send_json({"deploymentMode": "local", "authenticated": False})
+    return
+
+
 def get_demo(self, parsed):
     query = parse_qs(parsed.query)
     payload = self._demo_payload(
@@ -171,9 +176,21 @@ def get_settings_openai_compatible_models(self, parsed):
         [environment.get("OPENAI_COMPATIBLE_BASE_URL", "")],
     )[0].strip()
     try:
-        models = discover_openai_compatible_models(
-            base_url,
-            environment.get("OPENAI_COMPATIBLE_API_KEY", ""),
+        api_key = environment.get("OPENAI_COMPATIBLE_API_KEY", "")
+        allowed_origins = tuple(
+            value.strip()
+            for value in environment.get("AIQT_OUTBOUND_ORIGIN_ALLOWLIST", "").split(",")
+            if value.strip()
+        )
+        models = (
+            discover_openai_compatible_models(
+                base_url,
+                api_key,
+                allowed_origins=allowed_origins,
+            )
+            if environment.get("AIQT_DEPLOYMENT_MODE", "").strip().lower()
+            == "public"
+            else discover_openai_compatible_models(base_url, api_key)
         )
     except AiReviewProviderError as error:
         self._send_json(

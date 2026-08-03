@@ -121,6 +121,8 @@ class ComposedQuantApiHandler(
     data_foundation_environ = None
     stage6_sandbox_route_factory = None
     stage9_production_admission_route_factory = None
+    stage10_account_lease_acquire = None
+    stage10_account_lease_release = None
     p0_acceptance_report_path = DEFAULT_P0_ACCEPTANCE_REPORT_PATH
     p1_acceptance_report_path = DEFAULT_P1_ACCEPTANCE_REPORT_PATH
     p2_pre_live_acceptance_report_path = DEFAULT_P2_PRE_LIVE_ACCEPTANCE_REPORT_PATH

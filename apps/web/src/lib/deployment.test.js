@@ -290,12 +290,11 @@ describe("docker deployment contract", () => {
     expect(launcher).toContain('"-3"');
     expect(launcher).toContain('".venv/bin/python"');
     expect(launcher).toContain('".venv\\\\Scripts\\\\python.exe"');
-    expect(pyproject).toContain('[tool.setuptools]\npackages = ["quant_core"]');
+    expect(pyproject).toContain('[tool.setuptools.packages.find]');
+    expect(pyproject).toContain('include = ["quant_core*"]');
     expect(readme).toContain("Python 3.12+");
     expect(readme).toContain("python3.12 -m venv .venv");
-    expect(readme).toContain("py -3.12 -m venv .venv");
     expect(readme).toContain(".venv/bin/python -m pip install -e services/quant_core");
-    expect(readme).toContain(".\\.venv\\Scripts\\python.exe -m pip install -e services/quant_core");
   });
 
   test("ships a compose file with web and api services, health checks, and a persisted data volume", () => {

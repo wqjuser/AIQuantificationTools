@@ -17,6 +17,7 @@ from urllib.parse import parse_qsl, quote, unquote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 from quant_core.ai_review_stage3 import validate_assessment
+from quant_core.outbound_security import open_user_outbound_request
 
 
 ProviderId = Literal["local", "openai", "openai-compatible", "ollama"]
@@ -293,7 +294,12 @@ class AiReviewProvider(Protocol):
     ) -> Generator[str, None, ProviderAttempt]: ...
 
 
-def discover_openai_compatible_models(base_url: str, api_key: str = "") -> tuple[str, ...]:
+def discover_openai_compatible_models(
+    base_url: str,
+    api_key: str = "",
+    *,
+    allowed_origins: tuple[str, ...] | None = None,
+) -> tuple[str, ...]:
     safe_base_url = validated_provider_base_url(base_url.strip())
     if safe_base_url is None:
         raise ValueError("invalid_openai_compatible_base_url")
@@ -310,7 +316,15 @@ def discover_openai_compatible_models(base_url: str, api_key: str = "") -> tuple
     deadline = time.monotonic() + OVERALL_TIMEOUT_SECONDS
     response: Any | None = None
     try:
-        response = urlopen(request, timeout=min(CONNECT_TIMEOUT_SECONDS, OVERALL_TIMEOUT_SECONDS))
+        response = (
+            open_user_outbound_request(
+                request,
+                allowed_origins,
+                timeout=min(CONNECT_TIMEOUT_SECONDS, OVERALL_TIMEOUT_SECONDS),
+            )
+            if allowed_origins is not None
+            else urlopen(request, timeout=min(CONNECT_TIMEOUT_SECONDS, OVERALL_TIMEOUT_SECONDS))
+        )
     except HTTPError as error:
         detail = _http_error_detail(error, deadline)
         try:
@@ -544,6 +558,7 @@ class OpenAiCompatibleProvider:
     api_key: str = field(repr=False)
     model: str
     reasoning_effort: str | None = None
+    allowed_origins: tuple[str, ...] | None = field(default=None, repr=False)
 
     @property
     def endpoint(self) -> str:
@@ -568,6 +583,7 @@ class OpenAiCompatibleProvider:
                 stream=False,
             ),
             authorization=f"Bearer {self.api_key}",
+            allowed_origins=self.allowed_origins,
         )
         content = _compatible_output_text(response)
         assessment = _validated_assessment(
@@ -630,6 +646,7 @@ class OpenAiCompatibleProvider:
                     framing="sse",
                     cancelled=cancelled,
                     deadline=deadline,
+                    allowed_origins=self.allowed_origins,
                 )
                 for data in events:
                     if data == "[DONE]":
@@ -892,6 +909,15 @@ class AiReviewProviderRegistry:
         compatible_base = configured_environment.get("OPENAI_COMPATIBLE_BASE_URL", "").strip()
         compatible_key = configured_environment.get("OPENAI_COMPATIBLE_API_KEY", "").strip()
         compatible_model = configured_environment.get("OPENAI_COMPATIBLE_MODEL", "").strip()
+        public_mode = (
+            configured_environment.get("AIQT_DEPLOYMENT_MODE", "").strip().lower()
+            == "public"
+        )
+        allowed_origins = tuple(
+            value.strip()
+            for value in configured_environment.get("AIQT_OUTBOUND_ORIGIN_ALLOWLIST", "").split(",")
+            if value.strip()
+        ) if public_mode else None
         ollama_base = configured_environment.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
         ollama_model = configured_environment.get("OLLAMA_MODEL", "").strip()
 
@@ -910,6 +936,7 @@ class AiReviewProviderRegistry:
                 compatible_safe_base or "",
                 compatible_key,
                 compatible_model,
+                allowed_origins=allowed_origins,
             )
         if ollama_configured:
             providers["ollama"] = OllamaChatProvider(
@@ -956,6 +983,7 @@ def _post_json(
     payload: Mapping[str, Any],
     *,
     authorization: str | None = None,
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> Mapping[str, Any]:
     deadline = time.monotonic() + OVERALL_TIMEOUT_SECONDS
     completed = threading.Event()
@@ -969,6 +997,7 @@ def _post_json(
                     payload,
                     authorization=authorization,
                     deadline=deadline,
+                    allowed_origins=allowed_origins,
                 )
             )
         except Exception as error:
@@ -1005,6 +1034,7 @@ def _iter_post_json_data(
     framing: Literal["sse", "ndjson"],
     cancelled: threading.Event | None = None,
     deadline: float | None = None,
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> Iterator[str]:
     effective_deadline = (
         deadline
@@ -1032,6 +1062,7 @@ def _iter_post_json_data(
                 framing=framing,
                 stopped=stopped,
                 on_response=track_response,
+                allowed_origins=allowed_origins,
             ):
                 if stopped.is_set():
                     break
@@ -1084,12 +1115,14 @@ def _post_json_before_deadline(
     *,
     authorization: str | None,
     deadline: float,
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> Mapping[str, Any]:
     response = _open_post_json_response_before_deadline(
         url,
         payload,
         authorization=authorization,
         deadline=deadline,
+        allowed_origins=allowed_origins,
     )
     failure = None
     try:
@@ -1123,6 +1156,7 @@ def _open_post_json_response_before_deadline(
     *,
     authorization: str | None,
     deadline: float,
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> Any:
     sensitive_values = _request_sensitive_values(url, authorization)
     headers = {
@@ -1143,7 +1177,15 @@ def _open_post_json_response_before_deadline(
     response: Any | None = None
     failure: AiReviewProviderError | None = None
     try:
-        response = urlopen(request, timeout=socket_timeout)
+        response = (
+            open_user_outbound_request(
+                request,
+                allowed_origins,
+                timeout=socket_timeout,
+            )
+            if allowed_origins is not None
+            else urlopen(request, timeout=socket_timeout)
+        )
     except HTTPError as error:
         detail = _http_error_detail(error, deadline)
         try:
@@ -1180,12 +1222,14 @@ def _iter_post_json_data_before_deadline(
     framing: Literal["sse", "ndjson"],
     stopped: threading.Event,
     on_response: Callable[[Any | None], None],
+    allowed_origins: tuple[str, ...] | None = None,
 ) -> Iterator[str]:
     response = _open_post_json_response_before_deadline(
         url,
         payload,
         authorization=authorization,
         deadline=deadline,
+        allowed_origins=allowed_origins,
     )
     on_response(response)
     try:

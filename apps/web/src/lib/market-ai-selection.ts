@@ -232,7 +232,7 @@ export interface MarketAiSelectionReviewLoadResult {
 }
 
 export interface MarketAiSelectionQualityStatistics {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   recordType: "aiqt.marketAiSelectionQualityStatistics";
   generatedAt: string;
   selectionCount: number;
@@ -266,7 +266,46 @@ export interface MarketAiSelectionQualityStatistics {
     benchmarkSampleCount: number;
     benchmarkHitRatePct: number | null;
   }>;
+  researchValueCohorts?: MarketAiSelectionResearchValueCohort[];
   boundary: MarketAiSelectionResult["boundary"];
+}
+
+export interface MarketAiSelectionResearchValueCohort {
+  cohortId: string;
+  market: Market;
+  profile: MarketAiSelectionProfile;
+  weightsVersion: string;
+  providerIdentity: Record<string, unknown>;
+  providerIdentityHash: string;
+  benchmarkPolicyVersion: "market-ai-selection-benchmark-v1";
+  benchmarkSymbol: string;
+  selectionBatchCount: number;
+  reviewedBatchCount: number;
+  qualifiedBatchCount: number;
+  nonOverlappingSampleCount: number;
+  overlappingSampleCount: number;
+  recommendationSampleCount: number;
+  benchmarkSampleCount: number;
+  benchmarkCoveragePct: number | null;
+  relativeHitCount: number;
+  relativeHitRatePct: number | null;
+  relativeHitWilsonLowerPct: number | null;
+  medianBatchAlphaPct: number | null;
+  calendarMonthCount: number;
+  status: "insufficient_sample" | "collecting" | "stable_positive" | "not_stable";
+  batches: Array<{
+    selectionId: string;
+    generatedAt: string;
+    reviewed: boolean;
+    recommendationCount: number;
+    benchmarkSampleCount: number;
+    benchmarkCoveragePct: number | null;
+    batchAlphaPct: number | null;
+    referenceAt: string | null;
+    outcomeAt: string | null;
+    overlapping: boolean;
+    status: "observing" | "data_insufficient" | "qualified";
+  }>;
 }
 
 export interface MarketAiSelectionQualityStatisticsLoadResult {
@@ -344,7 +383,10 @@ export function isMarketAiSelectionPayload(
 export function isMarketAiSelectionQualityStatistics(
   value: unknown
 ): value is MarketAiSelectionQualityStatistics {
-  if (!hasExactAiReviewEnvelopeKeys(value, [
+  if (!isPlainRecord(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2)) {
+    return false;
+  }
+  const expectedKeys = [
     "schemaVersion",
     "recordType",
     "generatedAt",
@@ -354,8 +396,10 @@ export function isMarketAiSelectionQualityStatistics(
     "dataSourceDegradation",
     "aiSuccess",
     "stylePerformance",
+    ...(value.schemaVersion === 2 ? ["researchValueCohorts"] : []),
     "boundary"
-  ])) {
+  ];
+  if (!hasExactAiReviewEnvelopeKeys(value, expectedKeys)) {
     return false;
   }
   const qualification = value.candidateQualification;
@@ -363,8 +407,7 @@ export function isMarketAiSelectionQualityStatistics(
   const degradation = value.dataSourceDegradation;
   const aiSuccess = value.aiSuccess;
   if (
-    value.schemaVersion !== 1
-    || value.recordType !== "aiqt.marketAiSelectionQualityStatistics"
+    value.recordType !== "aiqt.marketAiSelectionQualityStatistics"
     || !isOffsetDateTime(value.generatedAt)
     || !isMarketAiSelectionNonNegativeInteger(value.selectionCount)
     || !isMarketAiSelectionQualityRate(
@@ -410,6 +453,10 @@ export function isMarketAiSelectionQualityStatistics(
     || Number(aiSuccess.sampleCount) > value.selectionCount
     || !Array.isArray(value.stylePerformance)
     || value.stylePerformance.length !== 4
+    || (value.schemaVersion === 2 && (
+      !Array.isArray(value.researchValueCohorts)
+      || !value.researchValueCohorts.every(isMarketAiSelectionResearchValueCohort)
+    ))
     || !isMarketAiSelectionBoundary(value.boundary)
   ) {
     return false;
@@ -459,7 +506,108 @@ export function isMarketAiSelectionQualityStatistics(
     profiles.add(item.profile as MarketAiSelectionProfile);
     styleSelectionCount += item.selectionCount;
   }
-  return styleSelectionCount === value.selectionCount;
+  const cohorts = value.researchValueCohorts as MarketAiSelectionResearchValueCohort[] | undefined;
+  return styleSelectionCount === value.selectionCount
+    && (value.schemaVersion === 1 || cohorts!.reduce(
+      (total, cohort) => total + cohort.selectionBatchCount,
+      0,
+    ) === value.selectionCount);
+}
+
+function isMarketAiSelectionResearchValueCohort(
+  value: unknown,
+): value is MarketAiSelectionResearchValueCohort {
+  if (!hasExactAiReviewEnvelopeKeys(value, [
+    "cohortId", "market", "profile", "weightsVersion", "providerIdentity",
+    "providerIdentityHash", "benchmarkPolicyVersion", "benchmarkSymbol",
+    "selectionBatchCount", "reviewedBatchCount", "qualifiedBatchCount",
+    "nonOverlappingSampleCount", "overlappingSampleCount",
+    "recommendationSampleCount", "benchmarkSampleCount", "benchmarkCoveragePct",
+    "relativeHitCount", "relativeHitRatePct", "relativeHitWilsonLowerPct",
+    "medianBatchAlphaPct", "calendarMonthCount", "status", "batches",
+  ])) {
+    return false;
+  }
+  const benchmarkSymbols: Record<string, string> = { ashare: "000300", us: "SPY", crypto: "BTC/USDT" };
+  const expectedBenchmark = benchmarkSymbols[String(value.market)];
+  if (
+    typeof value.cohortId !== "string"
+    || !value.cohortId.startsWith("research-value-")
+    || !["ashare", "us", "crypto"].includes(String(value.market))
+    || !["balanced", "quality_growth", "value", "trend"].includes(String(value.profile))
+    || typeof value.weightsVersion !== "string"
+    || !value.weightsVersion
+    || !isPlainRecord(value.providerIdentity)
+    || typeof value.providerIdentityHash !== "string"
+    || value.providerIdentityHash.length !== 64
+    || value.benchmarkPolicyVersion !== "market-ai-selection-benchmark-v1"
+    || value.benchmarkSymbol !== expectedBenchmark
+    || !["selectionBatchCount", "reviewedBatchCount", "qualifiedBatchCount",
+      "nonOverlappingSampleCount", "overlappingSampleCount", "recommendationSampleCount",
+      "benchmarkSampleCount", "relativeHitCount", "calendarMonthCount"].every(
+      (key) => isMarketAiSelectionNonNegativeInteger(value[key]),
+    )
+    || Number(value.reviewedBatchCount) > Number(value.selectionBatchCount)
+    || Number(value.qualifiedBatchCount) > Number(value.reviewedBatchCount)
+    || Number(value.nonOverlappingSampleCount) + Number(value.overlappingSampleCount) > Number(value.qualifiedBatchCount)
+    || Number(value.benchmarkSampleCount) > Number(value.recommendationSampleCount)
+    || !isMarketAiSelectionReviewHitRate(
+      value.benchmarkCoveragePct,
+      Number(value.benchmarkSampleCount),
+      Number(value.recommendationSampleCount),
+    )
+    || !isMarketAiSelectionReviewHitRate(
+      value.relativeHitRatePct,
+      Number(value.relativeHitCount),
+      Number(value.nonOverlappingSampleCount),
+    )
+    || (value.relativeHitWilsonLowerPct !== null
+      && (typeof value.relativeHitWilsonLowerPct !== "number"
+        || value.relativeHitWilsonLowerPct < 0
+        || value.relativeHitWilsonLowerPct > 100))
+    || (value.medianBatchAlphaPct !== null && typeof value.medianBatchAlphaPct !== "number")
+    || !["insufficient_sample", "collecting", "stable_positive", "not_stable"].includes(String(value.status))
+    || !Array.isArray(value.batches)
+    || value.batches.length !== value.selectionBatchCount
+    || !value.batches.every(isMarketAiSelectionResearchValueBatch)
+  ) {
+    return false;
+  }
+  const nonOverlapping = value.batches.filter(
+    (batch) => batch.status === "qualified" && !batch.overlapping,
+  );
+  return nonOverlapping.length === value.nonOverlappingSampleCount
+    && value.batches.filter((batch) => batch.overlapping).length === value.overlappingSampleCount
+    && nonOverlapping.reduce((total, batch) => total + batch.recommendationCount, 0)
+      === value.recommendationSampleCount
+    && nonOverlapping.reduce((total, batch) => total + batch.benchmarkSampleCount, 0)
+      === value.benchmarkSampleCount;
+}
+
+function isMarketAiSelectionResearchValueBatch(value: unknown): boolean {
+  return hasExactAiReviewEnvelopeKeys(value, [
+    "selectionId", "generatedAt", "reviewed", "recommendationCount",
+    "benchmarkSampleCount", "benchmarkCoveragePct", "batchAlphaPct",
+    "referenceAt", "outcomeAt", "overlapping", "status",
+  ])
+    && typeof value.selectionId === "string"
+    && Boolean(value.selectionId)
+    && isOffsetDateTime(value.generatedAt)
+    && typeof value.reviewed === "boolean"
+    && isMarketAiSelectionNonNegativeInteger(value.recommendationCount)
+    && value.recommendationCount <= 5
+    && isMarketAiSelectionNonNegativeInteger(value.benchmarkSampleCount)
+    && value.benchmarkSampleCount <= value.recommendationCount
+    && isMarketAiSelectionReviewHitRate(
+      value.benchmarkCoveragePct,
+      value.benchmarkSampleCount,
+      value.recommendationCount,
+    )
+    && (value.batchAlphaPct === null || typeof value.batchAlphaPct === "number")
+    && (value.referenceAt === null || isOffsetDateTime(value.referenceAt))
+    && (value.outcomeAt === null || isOffsetDateTime(value.outcomeAt))
+    && typeof value.overlapping === "boolean"
+    && ["observing", "data_insufficient", "qualified"].includes(String(value.status));
 }
 
 function isMarketAiSelectionQualityRate(

@@ -133,33 +133,31 @@ export const researchPipelinePreflightIssueTargets: Record<
 };
 
 export const productWorkAreaGroups: Array<{
+  collapsible: boolean;
   id: string;
   labelEn: string;
   labelZh: string;
   workAreaIds: ProductWorkAreaId[];
 }> = [
   {
-    id: "market-research",
-    labelEn: "Market & Research",
-    labelZh: "市场与研究",
-    workAreaIds: ["market", "market-information", "research"]
+    collapsible: false,
+    id: "research-mainline",
+    labelEn: "Research workflow",
+    labelZh: "研究主线",
+    workAreaIds: ["market", "research", "strategy", "backtest", "ai-review"]
   },
   {
-    id: "decision-validation",
-    labelEn: "Decision & Validation",
-    labelZh: "决策与验证",
-    workAreaIds: ["strategy", "backtest", "ai-review"]
-  },
-  {
-    id: "portfolio-execution",
-    labelEn: "Portfolio & Execution",
-    labelZh: "组合与执行",
+    collapsible: true,
+    id: "advanced-execution",
+    labelEn: "Advanced execution",
+    labelZh: "高级执行",
     workAreaIds: ["portfolio", "execution", "dynamic-trading"]
   },
   {
-    id: "governance-system",
-    labelEn: "Governance & System",
-    labelZh: "治理与系统",
+    collapsible: true,
+    id: "system",
+    labelEn: "System",
+    labelZh: "系统",
     workAreaIds: ["audit", "settings"]
   }
 ];

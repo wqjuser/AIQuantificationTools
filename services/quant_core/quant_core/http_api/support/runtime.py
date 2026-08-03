@@ -84,6 +84,8 @@ def _build_auto_paper_trading_service(
     production = Stage10ProductionExecutionService(
         handler_type.audit_event_store,
         auto_route=production_route,
+        acquire_account_lease=handler_type.stage10_account_lease_acquire,
+        release_account_lease=handler_type.stage10_account_lease_release,
     )
     providers = (
         handler_type.ai_review_provider_registry

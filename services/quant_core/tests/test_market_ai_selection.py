@@ -19,7 +19,11 @@ from quant_core.ai_review_providers import (
     ProviderStatus,
 )
 from quant_core.audit_events import AuditEventStore
-from quant_core.canonical import canonical_sha256
+from quant_core.canonical import (
+    DATA_SNAPSHOT_HASH_VERSION,
+    canonical_sha256,
+    normalize_snapshot_bars,
+)
 from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
 from quant_core.market_ai_selection import (
     MarketAiSelectionError,
@@ -33,6 +37,13 @@ from quant_core.market_ai_selection import (
     validate_market_ai_selection_request,
 )
 from quant_core.market_ai_selection_core import contracts as selection_contracts
+from quant_core.market_ai_selection_core.audit_validation import (
+    _market_ai_selection_benchmark_run_hash,
+    _market_ai_selection_run_hash,
+)
+from quant_core.market_ai_selection_core.automatic_review import (
+    has_fixed_benchmark_attestation,
+)
 from quant_core.runs import (
     ResearchRunAudit,
     ResearchRunStore,
@@ -370,8 +381,10 @@ def _record_review_run(
     run_id: str,
     symbol: str,
     selection_evidence: dict[str, object] | None = None,
+    bars: list[OHLCVBar] | None = None,
 ) -> None:
-    bars = _bars(symbol, "ashare", count=5)
+    bars = bars or _bars(symbol, "ashare", count=5)
+    normalized_bars = normalize_snapshot_bars(bars)
     store.record(
         ResearchRunAudit(
             run_id=run_id,
@@ -390,6 +403,7 @@ def _record_review_run(
                 "isComplete": True,
                 "warnings": [],
                 "rows": len(bars),
+                "adjustmentMode": "qfq",
             },
             data_snapshot={
                 "source": "test-bars",
@@ -398,7 +412,10 @@ def _record_review_run(
                 "rows": len(bars),
                 "start": bars[0].timestamp.isoformat(),
                 "end": bars[-1].timestamp.isoformat(),
-                "bars": [bar.to_record() for bar in bars],
+                "hash": canonical_sha256(normalized_bars),
+                "hashVersion": DATA_SNAPSHOT_HASH_VERSION,
+                "bars": normalized_bars,
+                "adjustmentMode": "qfq",
                 **(
                     {"marketAiSelectionEvidence": selection_evidence}
                     if selection_evidence is not None
@@ -631,8 +648,12 @@ def test_quality_statistics_replay_audited_selection_metrics_and_samples(
     finally:
         selection_contracts._WEIGHTS_VERSION = original_weights_version  # noqa: SLF001
 
+    research_value_cohorts = statistics.pop("researchValueCohorts")
+    assert len(research_value_cohorts) == 4
+    assert all(item["status"] == "insufficient_sample" for item in research_value_cohorts)
+
     assert statistics == {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "recordType": "aiqt.marketAiSelectionQualityStatistics",
         "generatedAt": NOW.isoformat(),
         "selectionCount": 4,
@@ -2823,7 +2844,6 @@ def test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts(
         symbol=selected_symbol["value"],
         selection_evidence=evidence,
     )
-    _record_review_run(run_store, run_id="run-benchmark", symbol="000300")
 
     reference_at = datetime.fromisoformat(str(evidence["referenceAt"]))
     reference_price = float(evidence["referencePrice"])
@@ -2858,6 +2878,12 @@ def test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts(
         ],
         _review_bar("000300", evaluated_at, 900),
     ]
+    _record_review_run(
+        run_store,
+        run_id="run-benchmark",
+        symbol="000300",
+        bars=review_bars["000300"],
+    )
     service.clock = lambda: evaluated_at
 
     review = service.review(
@@ -3184,12 +3210,7 @@ def test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts(
             "benchmarkRunId": "run-benchmark",
         }
     )
-    assert degraded["items"][0]["status"] == "data_insufficient"
-    assert degraded["items"][0]["reason"] == "benchmark_same_period_coverage_missing"
-    assert degraded["items"][0]["returnPct"] == 10.0
-    assert degraded["summary"]["maturedCount"] == 1
-    assert degraded["summary"]["absoluteSampleCount"] == 1
-    assert degraded["summary"]["benchmarkSampleCount"] == 0
+    assert degraded == review
 
     completed_event = service.audit_store.get(review["reviewId"])
     assert completed_event is not None
@@ -3227,6 +3248,256 @@ def test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts(
             }
         )
     assert caught.value.code == "market_ai_selection_review_audit_conflict"
+
+
+def test_automatic_review_uses_fixed_audited_benchmark_without_starting_research(
+    tmp_path: object,
+) -> None:
+    run_store = ResearchRunStore(tmp_path / "runs.db")  # type: ignore[operator]
+    review_bars: dict[str, list[OHLCVBar]] = {}
+    benchmark_loads = {"count": 0}
+
+    def load_klines(
+        request: object,
+        limit: int,
+    ) -> tuple[list[OHLCVBar], DataQuality]:
+        symbol = getattr(request, "symbol")
+        if symbol == "000300":
+            benchmark_loads["count"] += 1
+        bars = review_bars.get(symbol) or _bars(symbol, "ashare")
+        return bars, DataQuality(
+            source="local-cache",
+            origin_source="test-bars",
+            is_complete=True,
+            rows=len(bars),
+            adjustment_mode="qfq",
+        )
+
+    service = _service(
+        tmp_path,
+        run_store=run_store,
+        discovery=_Discovery(_rows(), snapshot_hash="a" * 64),
+        kline_loader=load_klines,
+    )
+    selection = service.select(_request(horizon="short"))
+    references: dict[str, tuple[datetime, float]] = {}
+    for recommendation in selection["recommendations"]:
+        evidence = resolve_market_ai_selection_research_evidence(
+            {
+                "selectionId": selection["selectionId"],
+                "candidateEvidenceId": recommendation["evidenceId"],
+            },
+            audit_store=service.audit_store,
+            market="ashare",
+            symbol=recommendation["symbol"],
+            timeframe="1d",
+        )
+        assert evidence is not None
+        reference_at = datetime.fromisoformat(str(evidence["referenceAt"]))
+        reference_price = float(evidence["referencePrice"])
+        references[str(recommendation["symbol"])] = (reference_at, reference_price)
+        review_bars[str(recommendation["symbol"])] = [
+            _review_bar(str(recommendation["symbol"]), reference_at, reference_price),
+            *[
+                _review_bar(
+                    str(recommendation["symbol"]),
+                    reference_at + timedelta(days=index),
+                    reference_price * (1.05 if index == 5 else 1),
+                )
+                for index in range(1, 6)
+            ],
+        ]
+    reference_at = next(iter(references.values()))[0]
+    review_bars["000300"] = [
+        _review_bar("000300", reference_at, 200),
+        *[
+            _review_bar(
+                "000300",
+                reference_at + timedelta(days=index),
+                202 if index == 5 else 200,
+            )
+            for index in range(1, 6)
+        ],
+    ]
+    service.clock = lambda: reference_at + timedelta(days=7)
+
+    first = service.review_due_selections()
+    second = service.review_due_selections()
+
+    assert first == second
+    assert benchmark_loads["count"] == 2
+    assert first["selectionCount"] == 1
+    assert first["reviewedCount"] == 1
+    assert first["dataInsufficientCount"] == 0
+    assert first["reviews"][0]["benchmarkPolicyVersion"] == (
+        "market-ai-selection-benchmark-v1"
+    )
+    assert first["reviews"][0]["summary"]["benchmarkSampleCount"] == 5
+    assert all(
+        item["status"] == "completed"
+        and "researchRunId" not in item
+        for item in first["reviews"][0]["items"]
+    )
+    assert service.audit_store.count(event_type="market_ai_selection_review") == 1
+    assert service.audit_store.count(
+        event_type="market_ai_selection_benchmark_snapshot"
+    ) == 1
+    cohort = service.quality_statistics()["researchValueCohorts"][0]
+    assert cohort["qualifiedBatchCount"] == 1
+    assert cohort["benchmarkPolicyVersion"] == (
+        "market-ai-selection-benchmark-v1"
+    )
+    current_benchmark = run_store.get(first["reviews"][0]["benchmark"]["runId"])
+    assert current_benchmark is not None
+    assert not has_fixed_benchmark_attestation(
+        service.audit_store,
+        current_benchmark,
+        policy_version="market-ai-selection-benchmark-v0",
+    )
+    benchmark_event = service.audit_store.list_recent(
+        event_type="market_ai_selection_benchmark_snapshot",
+        limit=1,
+    )[0]
+    current_metadata = json.loads(json.dumps(benchmark_event.metadata))
+    legacy_metadata = json.loads(json.dumps(current_metadata))
+    legacy_metadata["benchmark"].pop("auditHashVersion")
+    legacy_metadata["benchmark"]["auditHash"] = _market_ai_selection_run_hash(
+        current_benchmark
+    )
+    connection = sqlite3.connect(service.audit_store.path)
+    try:
+        connection.execute(
+            "update audit_events set metadata_json = ? where event_id = ?",
+            (json.dumps(legacy_metadata), benchmark_event.event_id),
+        )
+        connection.commit()
+        assert has_fixed_benchmark_attestation(
+            service.audit_store,
+            current_benchmark,
+            policy_version="market-ai-selection-benchmark-v1",
+        )
+        connection.execute(
+            "update audit_events set metadata_json = ? where event_id = ?",
+            (json.dumps(current_metadata), benchmark_event.event_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    review_event = service.audit_store.get(first["reviews"][0]["reviewId"])
+    assert review_event is not None
+    historical = json.loads(json.dumps(review_event.metadata["review"]))
+    old_review_id = historical["reviewId"]
+    historical["benchmarkPolicyVersion"] = "market-ai-selection-benchmark-v0"
+    connection = sqlite3.connect(run_store.path)
+    try:
+        connection.execute(
+            "update research_runs set strategy_revision = ? where run_id = ?",
+            (
+                historical["benchmarkPolicyVersion"],
+                historical["benchmark"]["runId"],
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    historical_benchmark = run_store.get(historical["benchmark"]["runId"])
+    assert historical_benchmark is not None
+    historical["benchmark"]["auditHash"] = (
+        _market_ai_selection_benchmark_run_hash(historical_benchmark)
+    )
+    identity = {
+        "selectionId": historical["selectionId"],
+        "selectionRecordHash": historical["selectionRecordHash"],
+        "benchmarkRunId": historical["benchmark"]["runId"],
+        "benchmarkAuditHash": historical["benchmark"]["auditHash"],
+        "items": historical["items"],
+        "summary": historical["summary"],
+        "reviewMode": historical["reviewMode"],
+        "benchmarkPolicyVersion": historical["benchmarkPolicyVersion"],
+    }
+    historical["reviewId"] = (
+        f"market-ai-selection-review-{canonical_sha256(identity)[:32]}"
+    )
+    historical["recordHash"] = canonical_sha256(
+        {key: value for key, value in historical.items() if key != "recordHash"}
+    )
+    benchmark_event = service.audit_store.list_recent(
+        event_type="market_ai_selection_benchmark_snapshot",
+        limit=1,
+    )[0]
+    benchmark_metadata = json.loads(json.dumps(benchmark_event.metadata))
+    benchmark_metadata["benchmark"]["benchmarkPolicyVersion"] = (
+        historical["benchmarkPolicyVersion"]
+    )
+    benchmark_metadata["benchmark"]["auditHash"] = historical["benchmark"][
+        "auditHash"
+    ]
+    connection = sqlite3.connect(service.audit_store.path)
+    try:
+        connection.execute(
+            "update audit_events set event_id = ?, metadata_json = ? where event_id = ?",
+            (
+                historical["reviewId"],
+                json.dumps({"review": historical}),
+                old_review_id,
+            ),
+        )
+        connection.execute(
+            "update audit_events set metadata_json = ? where event_id = ?",
+            (json.dumps(benchmark_metadata), benchmark_event.event_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    historical_cohort = service.quality_statistics()["researchValueCohorts"][0]
+    assert historical_cohort["benchmarkPolicyVersion"] == (
+        "market-ai-selection-benchmark-v0"
+    )
+    assert historical_cohort["qualifiedBatchCount"] == 1
+    assert run_store.list_by_market_ai_selection(selection["selectionId"]) == []
+
+
+def test_automatic_review_records_missing_fixed_benchmark_without_guessing(
+    tmp_path: object,
+) -> None:
+    run_store = ResearchRunStore(tmp_path / "runs.db")  # type: ignore[operator]
+    benchmark_unavailable = {"value": False}
+
+    def load_klines(
+        request: object,
+        limit: int,
+    ) -> tuple[list[OHLCVBar], DataQuality]:
+        symbol = getattr(request, "symbol")
+        if symbol == "000300" and benchmark_unavailable["value"]:
+            raise RuntimeError("benchmark unavailable")
+        bars = _bars(symbol, "ashare")
+        return bars, DataQuality(
+            source="test-bars",
+            is_complete=True,
+            rows=len(bars),
+            adjustment_mode="qfq",
+        )
+
+    service = _service(
+        tmp_path,
+        run_store=run_store,
+        discovery=_Discovery(_rows(), snapshot_hash="a" * 64),
+        kline_loader=load_klines,
+    )
+    service.select(_request(horizon="short"))
+    benchmark_unavailable["value"] = True
+
+    first = service.review_due_selections()
+    second = service.review_due_selections()
+
+    assert first == second
+    assert first["reviewedCount"] == 0
+    assert first["dataInsufficientCount"] == 1
+    assert first["items"][0]["reason"] == "benchmark_bars_unavailable"
+    assert service.audit_store.count(event_type="market_ai_selection_review") == 0
+    assert service.audit_store.count(
+        event_type="market_ai_selection_review_attempt"
+    ) == 1
 
 
 def test_review_blocks_truncated_or_repriced_reference_windows(
@@ -3274,7 +3545,6 @@ def test_review_blocks_truncated_or_repriced_reference_windows(
         symbol=recommendation["symbol"],
         selection_evidence=evidence,
     )
-    _record_review_run(run_store, run_id="run-benchmark", symbol="000300")
 
     reference_at = datetime.fromisoformat(str(evidence["referenceAt"]))
     reference_price = float(evidence["referencePrice"])
@@ -3294,6 +3564,12 @@ def test_review_blocks_truncated_or_repriced_reference_windows(
         _review_bar("000300", reference_at, 200),
         _review_bar("000300", reference_at + timedelta(days=5), 204),
     ]
+    _record_review_run(
+        run_store,
+        run_id="run-benchmark",
+        symbol="000300",
+        bars=review_bars["000300"],
+    )
 
     truncated = service.review(
         {
@@ -3344,11 +3620,17 @@ def test_review_blocks_truncated_or_repriced_reference_windows(
             for index in (1, 2, 6, 7, 8, 9)
         ],
     ]
+    _record_review_run(
+        run_store,
+        run_id="run-benchmark-holiday",
+        symbol="000300",
+        bars=review_bars["000300"],
+    )
     service.clock = lambda: reference_at + timedelta(days=10)
     holiday_window = service.review(
         {
             "selectionId": selection["selectionId"],
-            "benchmarkRunId": "run-benchmark",
+            "benchmarkRunId": "run-benchmark-holiday",
         }
     )["items"][0]
     assert holiday_window["status"] == "completed"
@@ -3363,7 +3645,7 @@ def test_review_blocks_truncated_or_repriced_reference_windows(
     missing_session = service.review(
         {
             "selectionId": selection["selectionId"],
-            "benchmarkRunId": "run-benchmark",
+            "benchmarkRunId": "run-benchmark-holiday",
         }
     )["items"][0]
     assert missing_session["status"] == "data_insufficient"
@@ -3785,6 +4067,20 @@ class MarketAiSelectionTests(unittest.TestCase):
     ) -> None:
         self._with_tmp(
             test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts
+        )
+
+    def test_automatic_review_uses_fixed_audited_benchmark_without_starting_research(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_automatic_review_uses_fixed_audited_benchmark_without_starting_research
+        )
+
+    def test_automatic_review_records_missing_fixed_benchmark_without_guessing(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_automatic_review_records_missing_fixed_benchmark_without_guessing
         )
 
     def test_review_rejects_cross_context_tampering_in_bound_research_evidence(

@@ -13,10 +13,25 @@ jobs:
   quality-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: aiqt_test
+          POSTGRES_USER: aiqt
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aiqt -d aiqt_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     permissions:
       contents: read
     env:
       INSTALL_DATA_DEPS: "true"
+      AIQT_TEST_POSTGRES_URL: postgresql+psycopg://aiqt:ci-only-password@127.0.0.1:5432/aiqt_test
 
     steps:
       - name: Checkout
@@ -37,6 +52,11 @@ jobs:
         run: |
           npm ci
           python -m pip install -e services/quant_core
+
+      - name: Migrate PostgreSQL integration schema
+        env:
+          AIQT_DATABASE_URL: ${{ env.AIQT_TEST_POSTGRES_URL }}
+        run: alembic -c services/quant_core/alembic.ini upgrade head
 
       - name: Run Stage 10 and AI selection safety tests
         run: npm run test:python:safety

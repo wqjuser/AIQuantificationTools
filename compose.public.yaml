@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aiqt
+      POSTGRES_USER: aiqt
+      POSTGRES_PASSWORD: ${AIQT_POSTGRES_PASSWORD:?set AIQT_POSTGRES_PASSWORD}
+    volumes:
+      - quant-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiqt -d aiqt"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIQT_DATABASE_URL: ${AIQT_DATABASE_URL:?set AIQT_DATABASE_URL}
+    command: ["alembic", "-c", "services/quant_core/alembic.ini", "upgrade", "head"]
+
+  api:
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      AIQT_DEPLOYMENT_MODE: public
+      AIQT_DATABASE_URL: ${AIQT_DATABASE_URL:?set AIQT_DATABASE_URL}
+      AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}
+      AIQT_OIDC_ISSUER: ${AIQT_OIDC_ISSUER:?set AIQT_OIDC_ISSUER}
+      AIQT_OIDC_CLIENT_ID: ${AIQT_OIDC_CLIENT_ID:?set AIQT_OIDC_CLIENT_ID}
+      AIQT_OIDC_CLIENT_SECRET: ${AIQT_OIDC_CLIENT_SECRET:?set AIQT_OIDC_CLIENT_SECRET}
+      AIQT_SETTINGS_MASTER_KEY: ${AIQT_SETTINGS_MASTER_KEY:?set AIQT_SETTINGS_MASTER_KEY}
+      AIQT_TRUSTED_PROXY_IPS: "*"
+      OPENAI_API_KEY: ""
+      OPENAI_COMPATIBLE_API_KEY: ""
+      CCXT_SANDBOX_API_KEY: ""
+      CCXT_SANDBOX_SECRET: ""
+      CCXT_PRODUCTION_READONLY_API_KEY: ""
+      CCXT_PRODUCTION_READONLY_SECRET: ""
+      CCXT_PRODUCTION_TRADING_API_KEY: ""
+      CCXT_PRODUCTION_TRADING_SECRET: ""
+      AIQT_ENABLE_PRODUCTION_TRADING: "false"
+
+  web:
+    ports: !reset []
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  quant-postgres:
+  caddy-data:
+  caddy-config:

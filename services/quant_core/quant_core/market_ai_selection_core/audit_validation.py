@@ -36,6 +36,16 @@ def _market_ai_selection_run_hash(run: ResearchRunAudit) -> str:
         }
     )
 
+
+def _market_ai_selection_benchmark_run_hash(run: ResearchRunAudit) -> str:
+    return canonical_sha256(
+        {
+            "runHash": _market_ai_selection_run_hash(run),
+            "strategyName": run.strategy_name,
+            "strategyRevision": run.strategy_revision,
+        }
+    )
+
 def _market_ai_selection_review_summary(
     items: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
@@ -359,6 +369,7 @@ def _valid_statistics_review_item(
     expected_evidence: Mapping[str, Any] | None,
     reviewed_at: datetime,
     schema_version: int,
+    require_research_binding: bool = True,
 ) -> bool:
     base_fields = {
         "candidateEvidenceId",
@@ -480,6 +491,12 @@ def _valid_statistics_review_item(
         and source_run.data_snapshot.get("marketAiSelectionEvidence")
         == expected_evidence
     )
+    unbound_automatic_valid = (
+        not require_research_binding
+        and not has_research
+        and source_run is None
+        and expected_evidence is None
+    )
     reference_at = _parse_datetime(value.get("referenceAt"))
     outcome_at = _parse_datetime(value.get("outcomeAt")) if has_outcome else None
     outcome_price = _finite_or_none(value.get("outcomePrice"))
@@ -599,7 +616,7 @@ def _valid_statistics_review_item(
         return False
     if status == "completed":
         return (
-            research_valid
+            (research_valid or unbound_automatic_valid)
             and has_progress
             and has_outcome
             and has_benchmark
@@ -608,7 +625,7 @@ def _valid_statistics_review_item(
         )
     if status == "observing":
         return (
-            research_valid
+            (research_valid or unbound_automatic_valid)
             and has_progress
             and not has_outcome
             and not has_benchmark
@@ -645,6 +662,8 @@ def _valid_statistics_review_item(
             and source_run is None
             and expected_evidence is None
             or research_valid
+            and reason != "research_evidence_not_bound"
+            or unbound_automatic_valid
             and reason != "research_evidence_not_bound"
         )
     )

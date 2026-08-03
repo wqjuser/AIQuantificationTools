@@ -156,7 +156,10 @@ class ProductionOrderExchange:
         }
 
     def fetch_balance(self):
-        return {"free": {"BTC": 1, "USDT": 100}}
+        return {
+            "free": {"BTC": 1, "USDT": 100},
+            "info": {"uid": "binance-account-42"},
+        }
 
     def fetch_open_orders(self, _symbol):
         return self.open_orders
@@ -230,6 +233,23 @@ def _trading_env() -> dict[str, str]:
         "CCXT_SANDBOX_SECRET": "sandbox-secret",
         "CCXT_DEFAULT_TYPE": "spot",
     }
+
+
+class ProductionAccountIdentityTest(unittest.TestCase):
+    def test_account_identity_uses_binance_uid_instead_of_api_key(self) -> None:
+        fingerprints = []
+        for api_key in ("first-key", "rotated-key"):
+            exchange = ProductionOrderExchange({})
+            route = BinanceSpotProductionTradingRoute(
+                env={
+                    **_trading_env(),
+                    "CCXT_PRODUCTION_TRADING_API_KEY": api_key,
+                },
+                exchange_factory=lambda _exchange_id, _config, exchange=exchange: exchange,
+            )
+            fingerprints.append(route.account_identity_fingerprint())
+
+        self.assertEqual(fingerprints[0], fingerprints[1])
 
 
 def _activate_gate(

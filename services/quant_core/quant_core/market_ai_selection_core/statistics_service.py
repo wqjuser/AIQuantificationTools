@@ -10,6 +10,7 @@ from quant_core.runs import ResearchRunAudit
 
 from .audit_validation import (
     _market_ai_selection_boundary,
+    _market_ai_selection_benchmark_run_hash,
     _market_ai_selection_id_matches_artifact,
     _market_ai_selection_review_boundary,
     _market_ai_selection_review_summary,
@@ -23,6 +24,7 @@ from .audit_validation import (
     _valid_statistics_source_coverage,
 )
 from .candidate_scoring import _prefilter_candidates
+from .automatic_review import has_fixed_benchmark_attestation
 from .common import _as_utc, _market_ai_selection_rate, _parse_datetime
 from .contracts import (
     _AI_TIERS,
@@ -39,6 +41,7 @@ from .contracts import (
     validate_market_ai_selection_request,
 )
 from .research_evidence import resolve_market_ai_selection_research_evidence
+from .research_value import build_research_value_cohorts
 
 class _QualityStatisticsMixin:
     def quality_statistics(self) -> dict[str, Any]:
@@ -111,8 +114,12 @@ class _QualityStatisticsMixin:
                     "benchmarkSampleCount",
                 ):
                     performance[key] += int(summary[key])
+            research_value_cohorts = build_research_value_cohorts(
+                selections,
+                latest_reviews,
+            )
             return {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "recordType": "aiqt.marketAiSelectionQualityStatistics",
                 "generatedAt": computed_at.isoformat(),
                 "selectionCount": len(selections),
@@ -161,6 +168,7 @@ class _QualityStatisticsMixin:
                     }
                     for profile in _QUALITY_STATISTICS_PROFILES
                 ],
+                "researchValueCohorts": research_value_cohorts,
                 "boundary": _market_ai_selection_boundary(),
             }
 
@@ -334,9 +342,12 @@ class _QualityStatisticsMixin:
             return {
                 "selectionId": selection_id,
                 "recordHash": str(record_hash),
+                "generatedAt": _as_utc(record.created_at),
                 "market": market,
                 "profile": profile,
                 "horizon": str(request.get("horizon") or ""),
+                "weightsVersion": str(artifact["weightsVersion"]),
+                "providerIdentity": dict(provider_identity),
                 "evidenceCandidates": list(candidates),
                 "exclusions": list(exclusions),
                 "generation": dict(generation),
@@ -377,6 +388,11 @@ class _QualityStatisticsMixin:
                     else None
                 )
                 review_id = str(review["reviewId"])
+                automatic = (
+                    review.get("reviewMode") == "automatic_fixed_benchmark"
+                    and isinstance(review.get("benchmarkPolicyVersion"), str)
+                    and bool(review["benchmarkPolicyVersion"].strip())
+                )
                 item_ids = [str(item["candidateEvidenceId"]) for item in items]
                 source_runs: dict[str, ResearchRunAudit | None] = {}
                 expected_evidence: dict[str, dict[str, Any] | None] = {}
@@ -410,6 +426,31 @@ class _QualityStatisticsMixin:
                     "benchmarkAuditHash": benchmark["auditHash"],
                     "items": items,
                     "summary": summary,
+                    **(
+                        {
+                            "reviewMode": review["reviewMode"],
+                            "benchmarkPolicyVersion": review[
+                                "benchmarkPolicyVersion"
+                            ],
+                        }
+                        if automatic
+                        else {}
+                    ),
+                }
+                base_review_fields = {
+                    "schemaVersion",
+                    "recordType",
+                    "reviewId",
+                    "selectionId",
+                    "selectionRecordHash",
+                    "createdAt",
+                    "market",
+                    "timeframe",
+                    "benchmark",
+                    "items",
+                    "summary",
+                    "boundary",
+                    "recordHash",
                 }
                 _require_market_ai_selection_statistics(
                     record.event_type == "market_ai_selection_review"
@@ -420,6 +461,13 @@ class _QualityStatisticsMixin:
                     and type(review["schemaVersion"]) is int
                     and review["schemaVersion"] in {1, _REVIEW_SCHEMA_VERSION}
                     and review["recordType"] == "aiqt.marketAiSelectionReview"
+                    and set(review)
+                    == base_review_fields
+                    | (
+                        {"reviewMode", "benchmarkPolicyVersion"}
+                        if automatic
+                        else set()
+                    )
                     and record.event_id == review_id
                     and review["recordHash"] == canonical_sha256(
                         {key: value for key, value in review.items() if key != "recordHash"}
@@ -435,9 +483,24 @@ class _QualityStatisticsMixin:
                     and benchmark_run.market == selection["market"]
                     and benchmark_run.timeframe == "1d"
                     and benchmark_run.symbol == benchmark["symbol"]
-                    and _market_ai_selection_run_hash(benchmark_run)
-                    == benchmark["auditHash"]
+                    and benchmark["auditHash"]
+                    in (
+                        {
+                            _market_ai_selection_benchmark_run_hash(benchmark_run),
+                            _market_ai_selection_run_hash(benchmark_run),
+                        }
+                        if automatic
+                        else {_market_ai_selection_run_hash(benchmark_run)}
+                    )
                     and _as_utc(benchmark_run.created_at) <= _as_utc(record.created_at)
+                    and (
+                        not automatic
+                        or has_fixed_benchmark_attestation(
+                            self.audit_store,
+                            benchmark_run,
+                            policy_version=review["benchmarkPolicyVersion"],
+                        )
+                    )
                     and isinstance(items, list)
                     and 0 < len(items) <= _RECOMMENDATION_LIMIT
                     and all(isinstance(item, Mapping) for item in items)
@@ -456,6 +519,7 @@ class _QualityStatisticsMixin:
                             ],
                             reviewed_at=_as_utc(record.created_at),
                             schema_version=int(review["schemaVersion"]),
+                            require_research_binding=not automatic,
                         )
                         for item in items
                     )
@@ -488,5 +552,17 @@ class _QualityStatisticsMixin:
                 "reviewId": review_id,
                 "selectionId": selection_id,
                 "createdAt": _as_utc(record.created_at),
+                "benchmark": dict(benchmark),
+                "items": list(items),
                 "summary": dict(summary),
+                **(
+                    {
+                        "reviewMode": review["reviewMode"],
+                        "benchmarkPolicyVersion": review[
+                            "benchmarkPolicyVersion"
+                        ],
+                    }
+                    if automatic
+                    else {}
+                ),
             }

@@ -71,6 +71,7 @@ export function MarketPage({
   marketDiscovery,
   marketRefreshIssue,
   onRemoveWatchlistInstrument,
+  onOpenMarketInformation,
   onResearchInstrument,
   onSaveWatchlist,
   onSelectInstrument,
@@ -89,6 +90,7 @@ export function MarketPage({
   | "marketDiscovery"
   | "marketRefreshIssue"
   | "onRemoveWatchlistInstrument"
+  | "onOpenMarketInformation"
   | "onResearchInstrument"
   | "onSaveWatchlist"
   | "onSelectInstrument"
@@ -283,6 +285,11 @@ export function MarketPage({
   return (
     <>
       <PageHeader action={action} title="行情中心" />
+      {onOpenMarketInformation ? (
+        <div className="design-market-secondary-nav">
+          <button className="design-link-button" onClick={onOpenMarketInformation} type="button">查看市场资讯</button>
+        </div>
+      ) : null}
       {marketDiscovery ? (
         <div className="design-market-discovery">
           <section aria-label="市场概览" className="design-market-overview">

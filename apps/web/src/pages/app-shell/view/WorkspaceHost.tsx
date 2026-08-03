@@ -183,6 +183,7 @@ export function WorkspaceHost({ controller }: WorkspaceHostProps) {
               onRemoveWatchlistInstrument={(instrument) => void removeWatchlistInstrument(instrument)}
               onRejectPortfolioOrder={rejectPortfolioPaperOrder}
               onSaveWatchlist={() => void saveCurrentWatchlist()}
+              onOpenMarketInformation={() => selectProductWorkArea("market-information")}
               onScrollPositionChange={rememberActiveWorkspaceScrollPosition}
               onSelectInstrument={(instrument) => selectInstrument(instrument, "market")}
               onResearchInstrument={(instrument) => selectInstrument(instrument, "research")}

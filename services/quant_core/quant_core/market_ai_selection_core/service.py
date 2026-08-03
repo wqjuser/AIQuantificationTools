@@ -11,6 +11,7 @@ from quant_core.audit_events import AuditEventStore
 from quant_core.runs import ResearchRunStore
 
 from .common import _default_fetch_json
+from .automatic_review import _AutomaticReviewMixin
 from .contracts import FundamentalLoader, JsonFetcher, KlineLoader, Monotonic, Sleeper, Clock
 from .fundamental_service import _FundamentalMixin
 from .generation_service import _GenerationMixin
@@ -20,6 +21,7 @@ from .statistics_service import _QualityStatisticsMixin
 
 class MarketAiSelectionService(
     _QualityStatisticsMixin,
+    _AutomaticReviewMixin,
     _ReviewMixin,
     _SelectionMixin,
     _FundamentalMixin,

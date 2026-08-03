@@ -17,6 +17,11 @@
   gap: 6px;
 }
 
+.design-market-secondary-nav {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .design-watchlist-actions .design-link-button {
   min-height: 26px;
   padding: 0 8px;

@@ -1613,3 +1613,14 @@ final result: passed
 - 质量统计回放为 `9` 次选股、`63 / 702 · 8.97%` 合格候选和 `7 / 9 · 77.78%` 数据源降级；已到期复盘样本仍为 `0`，因此不修改评分、不开启批量研究、自动观察池或订单连接。AI 选股安全聚焦 `45 / 45`、Stage 10 安全聚焦 `14 / 14`、Python 全量 `944 / 944`、Web 全量 `1096 / 1096` 与双轴代码复审通过，未新增数据库表、后台任务或第二套状态机。
 
 final result: passed
+
+## 2026-08-03 双模式部署、研究主线与稳定价值复验
+
+- `local` 继续使用合成租户、SQLite 和无登录模式，Web 仅绑定 `127.0.0.1`；`public` 在缺少 PostgreSQL、OIDC、HTTPS Origin 或主密钥时启动失败。隔离验收环境只启动 PostgreSQL、API 与 Web，宿主端口均未公开，Caddy 公网入口保持关闭。
+- 公网 PostgreSQL 迁移到 `0003_rate_limit_expiry_index` 后，真实双用户测试通过相同业务 ID 的研究、策略、AI 评审、审计、组合、设置、lease 和生产账户占用隔离；未认证私有 API 返回 `401 session_invalid`。过期限流窗口在事务内清理并有独立索引；`pg_dump` 恢复到独立测试库后回读 `9` 张 public 表和该索引，随后删除测试恢复库。
+- 真实本地 Docker 页面在东方财富上游断连时，通过既有代理与 AkShare 新浪行情明确降级并加载 `5,534` 只 A 股快照；认证探针、选股统计和市场发现均返回 `200`。桌面 `1280 × 900` 与手机 `390 × 844` 均无页面级横向溢出，控制台 `0 error / 0 warning`。
+- 导航收敛为“行情与选股 → 研究 → 策略 → 回测 → AI 评审”唯一主线，高级执行与系统折叠保留；到期复盘只扫描用户显式创建的选股记录，使用固定版本化基准和非重叠批次 cohort，不自动选股、研究、加入观察池或连接订单。
+- 生产密钥变更现在先暂停 live 会话并撤销 Stage 10 控制，迁移阻断 Stage 6/10 未决订单，审计批量写入与 lease fence 共用一个事务；public 的 OpenAI-compatible 与 Webhook 空白 Origin 白名单按全部阻断处理，local 兼容路径保持不变。
+- Python 全量 `1024 / 1024`（PostgreSQL 专用测试在本机全量中跳过 `2` 项，已在真实 PostgreSQL 中单独 `2 / 2` 通过）、Web 全量 `1115 / 1115`、Web 生产构建、local/public Compose 健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。没有调用真实 OIDC、开放公网入口或提交真实生产订单。
+
+final result: passed

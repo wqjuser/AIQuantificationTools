@@ -425,6 +425,21 @@ class M2MonitoringTests(unittest.TestCase):
         self.assertFalse(channel["configured"])
         self.assertEqual(channel["status"], "invalid")
 
+    def test_public_webhook_with_empty_allowlist_never_uses_raw_urlopen(self):
+        notifier, _channel = build_webhook_notifier({
+            "AIQT_DEPLOYMENT_MODE": "public",
+            "AIQT_MONITORING_WEBHOOK_URL": "https://hooks.example.test/secret",
+        })
+
+        with patch("quant_core.monitoring.urlopen") as raw_urlopen:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^monitoring_webhook_request_failed:OutboundUrlError$",
+            ):
+                assert notifier is not None
+                notifier({"schemaVersion": 1})
+        raw_urlopen.assert_not_called()
+
     def test_read_only_monitoring_api_returns_persisted_job_and_incidents(self):
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")

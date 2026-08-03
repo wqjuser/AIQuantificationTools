@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from .ai_validation import (
     _ai_research_m4_error_detail,
     _ai_research_m4_error_status,
@@ -36,6 +39,41 @@ from quant_core.strategy_experiments import StrategyExperimentRunner
 from quant_core.terminal import build_terminal_workspace
 from quant_core.watchlist import workspace_with_watchlist
 from quant_core.workspace_state import workspace_with_research_workspace_state
+
+
+def build_market_ai_selection_service(
+    handler_type: type[Any],
+    *,
+    environment: Mapping[str, str],
+    provider_registry: AiReviewProviderRegistry,
+) -> MarketAiSelectionService:
+    configured = handler_type.__dict__.get("market_ai_selection_service")
+    if configured is None:
+        configured = MarketAiSelectionService(
+            discovery_service=handler_type.market_discovery_service,
+            market_information_service=handler_type.market_information_service,
+            kline_loader=handler_type.kline_adapter.fetch_ohlcv,
+            watchlist_store=handler_type.watchlist_store,
+            audit_store=handler_type.audit_event_store,
+            provider_registry=provider_registry,
+            run_store=handler_type.run_store,
+            review_kline_loader=lambda request, limit: _fetch_market_klines_with_cache(
+                cache=handler_type.cache,
+                adapter=handler_type.kline_adapter,
+                request=request,
+                limit=limit,
+                require_cache_provenance=True,
+            ),
+            sec_user_agent=environment.get("SEC_EDGAR_USER_AGENT", ""),
+        )
+        handler_type.market_ai_selection_service = configured
+    update_runtime = getattr(configured, "update_runtime", None)
+    if callable(update_runtime):
+        update_runtime(
+            provider_registry=provider_registry,
+            sec_user_agent=environment.get("SEC_EDGAR_USER_AGENT", ""),
+        )
+    return configured
 
 class HandlerServicesMixin:
     def _workspace_with_saved_watchlist(self):
@@ -82,36 +120,13 @@ class HandlerServicesMixin:
 
     def _market_ai_selection_service(self) -> MarketAiSelectionService:
         handler_type = type(self)
-        configured = handler_type.__dict__.get("market_ai_selection_service")
         environment = self._effective_platform_settings_environment()
         provider_registry = self._current_ai_review_provider_registry()
-        sec_user_agent = environment.get("SEC_EDGAR_USER_AGENT", "")
-        if configured is None:
-            configured = MarketAiSelectionService(
-                discovery_service=self.market_discovery_service,
-                market_information_service=self.market_information_service,
-                kline_loader=self.kline_adapter.fetch_ohlcv,
-                watchlist_store=self.watchlist_store,
-                audit_store=self.audit_event_store,
-                provider_registry=provider_registry,
-                run_store=self.run_store,
-                review_kline_loader=lambda request, limit: _fetch_market_klines_with_cache(
-                    cache=self.cache,
-                    adapter=self.kline_adapter,
-                    request=request,
-                    limit=limit,
-                    require_cache_provenance=True,
-                ),
-                sec_user_agent=sec_user_agent,
-            )
-            handler_type.market_ai_selection_service = configured
-        update_runtime = getattr(configured, "update_runtime", None)
-        if callable(update_runtime):
-            update_runtime(
-                provider_registry=provider_registry,
-                sec_user_agent=sec_user_agent,
-            )
-        return configured
+        return build_market_ai_selection_service(
+            handler_type,
+            environment=environment,
+            provider_registry=provider_registry,
+        )
 
     def _portfolio_m5_service(self) -> PortfolioM5Service:
         return PortfolioM5Service(audit_store=self.audit_event_store)
@@ -124,6 +139,8 @@ class HandlerServicesMixin:
     def _current_ai_review_decision_store(self) -> AiReviewDecisionStore:
         decision_store = self.ai_review_decision_store
         review_store = self.ai_review_store
+        if getattr(decision_store, "review_store", None) is review_store:
+            return decision_store
         if (
             decision_store.review_store is review_store
             and decision_store.path.resolve() == review_store.path.resolve()
@@ -178,6 +195,8 @@ class HandlerServicesMixin:
         return Stage10ProductionExecutionService(
             self.audit_event_store,
             auto_route=route,
+            acquire_account_lease=type(self).stage10_account_lease_acquire,
+            release_account_lease=type(self).stage10_account_lease_release,
         )
 
     def _auto_paper_trading_service(self) -> AutoPaperTradingService:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from .transport import _response
 from datetime import (
     datetime,
@@ -13,6 +14,7 @@ from quant_core.domain import (
     RiskRules,
     StrategyConfig,
 )
+from quant_core.deployment import load_deployment_config
 
 class HandlerTransportMixin:
     def _demo_payload(self, market: str, symbol: str, timeframe: str) -> dict[str, object]:
@@ -55,9 +57,7 @@ class HandlerTransportMixin:
         body = _response(payload)
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-AIQT-Install-Intent")
+        self._send_security_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         try:
@@ -74,7 +74,7 @@ class HandlerTransportMixin:
             "Content-Type",
             "application/x-ndjson; charset=utf-8",
         )
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_security_headers()
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Accel-Buffering", "no")
         self.send_header("Connection", "close")
@@ -88,6 +88,23 @@ class HandlerTransportMixin:
         except OSError:
             return False
         return True
+
+    def _send_security_headers(self) -> None:
+        deployment = load_deployment_config(os.environ)
+        request_origin = str(getattr(self, "headers", {}).get("Origin", "")).rstrip("/")
+        if deployment.public_origin and request_origin == deployment.public_origin:
+            self.send_header("Access-Control-Allow-Origin", deployment.public_origin)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-AIQT-CSRF, X-AIQT-Install-Intent",
+        )
+        self.send_header("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if deployment.mode == "public":
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 
     def _read_json_body(self) -> dict[str, object]:
         raw_content_length = self.headers.get("Content-Length")

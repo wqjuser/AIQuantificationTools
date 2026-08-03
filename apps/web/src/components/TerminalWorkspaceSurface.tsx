@@ -81,7 +81,12 @@ export function TerminalWorkspaceSurface(props: TerminalWorkspacePageProps) {
       onScroll={(event) => props.onScrollPositionChange(event.currentTarget.scrollTop)}
       ref={props.surfaceRef}
     >
-      {props.workflowGuide}
+      {props.workflowGuide ? (
+        <details className="design-workflow-guide-disclosure">
+          <summary>完整流程与审计证据</summary>
+          {props.workflowGuide}
+        </details>
+      ) : null}
       {content}
     </section>
   );

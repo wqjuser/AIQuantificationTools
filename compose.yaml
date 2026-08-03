@@ -7,6 +7,7 @@ services:
         INSTALL_DATA_DEPS: ${INSTALL_DATA_DEPS:-false}
     restart: unless-stopped
     environment:
+      AIQT_DEPLOYMENT_MODE: ${AIQT_DEPLOYMENT_MODE:-local}
       QUANT_CORE_HOST: 0.0.0.0
       QUANT_CORE_PORT: "8765"
       AIQT_SETTINGS_MASTER_KEY: ${AIQT_SETTINGS_MASTER_KEY:-}
@@ -55,7 +56,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${AIQT_WEB_PORT:-5173}:80"
+      - "127.0.0.1:${AIQT_WEB_PORT:-5173}:80"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
       interval: 10s

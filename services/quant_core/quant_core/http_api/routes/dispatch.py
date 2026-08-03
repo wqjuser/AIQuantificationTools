@@ -355,6 +355,9 @@ class RouteDispatchMixin:
         if parsed.path == '/health':
             core.get_health(self, parsed)
             return True
+        if parsed.path == '/api/auth/session':
+            core.get_local_auth_session(self, parsed)
+            return True
         ai_research_review_id = _ai_research_evidence_route_id(parsed.path)
         if ai_research_review_id is not None:
             ai_strategy_p0.get_ai_research_evidence(self, parsed, ai_research_review_id)

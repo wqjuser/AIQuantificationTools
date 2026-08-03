@@ -245,7 +245,7 @@ describe("TerminalWorkspaceSurface", () => {
     expect(markup).not.toContain(">filled<");
   });
 
-  it("keeps the shared automated-trading guide visible above every workspace", () => {
+  it("keeps the shared automated-trading guide available but collapsed above every workspace", () => {
     const markup = renderToStaticMarkup(
       <TerminalWorkspaceSurface
         {...baseProps}
@@ -255,6 +255,9 @@ describe("TerminalWorkspaceSurface", () => {
     );
 
     expect(markup).toContain('data-testid="automated-trading-guide"');
+    expect(markup).toContain('class="design-workflow-guide-disclosure"');
+    expect(markup).toContain("完整流程与审计证据");
+    expect(markup).not.toContain('class="design-workflow-guide-disclosure" open=""');
     expect(markup.indexOf('data-testid="automated-trading-guide"')).toBeLessThan(
       markup.indexOf("design-page-header"),
     );

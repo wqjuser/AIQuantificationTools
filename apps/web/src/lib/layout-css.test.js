@@ -1100,11 +1100,11 @@ describe("terminal layout css", () => {
       'resolveInitialWorkAreaId(resolveSavedResearchWorkspaceId(workspace, "market"))'
     );
     expect(appSource).toContain("productWorkAreaGroups.map");
-    expect(leftRailSource).toContain('className={`work-area-button');
-    expect(leftRailSource).toContain("i18n.productWorkAreaLabel");
-    expect(leftRailSource).toContain("i18n.productWorkAreaDescription");
-    expect(leftRailSource).toContain("i18n.productWorkAreaDeliveryStage");
-    expect(leftRailSource).toContain("i18n.productDevelopmentStageStatus");
+    expect(appSource).toContain('className={`work-area-button');
+    expect(appSource).toContain("i18n.productWorkAreaLabel");
+    expect(appSource).not.toContain("i18n.productWorkAreaDescription(area)");
+    expect(appSource).not.toContain("i18n.productWorkAreaDeliveryStage(area)");
+    expect(appSource).not.toContain("i18n.productDevelopmentStageStatus(area.deliveryStageStatus)");
     expect(leftRailSource).not.toContain("workspace.quantLoop.map");
   });
 
@@ -1230,11 +1230,11 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("resolveInitialWorkAreaId");
     expect(appSource).toContain('url.searchParams.set("workspace", activeWorkAreaId)');
     expect(appSource).toContain('url.searchParams.delete("workflow")');
-    expect(leftRailSource).toContain('className="work-area-index"');
-    expect(leftRailSource).toContain('className="work-area-copy"');
-    expect(leftRailSource).toContain('className="work-area-status"');
-    expect(leftRailSource).toContain('className="work-area-stage"');
-    expect(leftRailSource).toContain('activeWorkAreaId === area.id ? "selected active" : ""');
+    expect(appSource).not.toContain('className="work-area-index"');
+    expect(appSource).toContain('className="work-area-copy"');
+    expect(appSource).not.toContain('className="work-area-status"');
+    expect(appSource).not.toContain('className="work-area-stage"');
+    expect(appSource).toContain('activeWorkAreaId === area.id ? "selected active" : ""');
     expect(leftRailSource).not.toContain('i18n.t("section.terminalModules")');
     expect(leftRailSource).not.toContain('className="module-list"');
   });
@@ -1693,9 +1693,10 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("currentWorkAreaId={activeWorkAreaId}");
     expect(appSource).not.toContain("currentWorkAreaId={automatedTradingTargetWorkspaceId}");
     expect(appSource).toContain("workflowGuide={automatedTradingGuide}");
-    expect(terminalWorkspaceSurfaceSource).toContain("{props.workflowGuide}");
+    expect(terminalWorkspaceSurfaceSource).toContain('className="design-workflow-guide-disclosure"');
+    expect(terminalWorkspaceSurfaceSource).toContain("完整流程与审计证据");
     expect(cssBlock(".automated-trading-guide-steps")).toContain(
-      "grid-template-columns: repeat(11, minmax(0, 1fr));"
+      "grid-template-columns: repeat(10, minmax(0, 1fr));"
     );
     expect(cssBlock(".automated-trading-guide-action button")).toContain(
       "background: var(--teal-dim);"
@@ -1711,14 +1712,13 @@ describe("terminal layout css", () => {
     );
   });
 
-  test("documents daily start as a first-class local review coverage next action", () => {
-    expect(readmeSource).toContain("Daily Ops、Daily Start 与个人/小团队缺口");
-    expect(productPlanSource).toContain("Daily Ops、Daily Start 与个人/小团队缺口");
-    expect(productPlanSource).toContain(
-      "`record-daily-ops-review`、`record-daily-start-review` 或 `record-personal-team-review`"
-    );
-    expect(productPlanSource).toContain("Daily Ops / Daily Start / 个人小团队 action token");
-    expect(productPlanSource).toContain("Daily Ops、Daily Start、个人/小团队和 empty 启动链接");
+  test("documents the research mainline and real-sample goal without historical workflow logs", () => {
+    expect(readmeSource).toContain("行情与选股");
+    expect(readmeSource).toContain("研究价值 cohort");
+    expect(productPlanSource).toContain("真实样本积累");
+    expect(productPlanSource).toContain("30 个非重叠到期批次");
+    expect(productPlanSource).toContain("历史阶段、验收过程与具体 hash 由 Git 历史");
+    expect(readmeSource).not.toContain("Daily Ops、Daily Start 与个人/小团队缺口");
   });
 
   test("keeps local review next-action generation tied to the restored research target", () => {

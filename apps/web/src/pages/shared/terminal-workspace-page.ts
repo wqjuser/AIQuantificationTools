@@ -98,6 +98,7 @@ export interface TerminalWorkspacePageProps {
   onRemoveWatchlistInstrument: (instrument: Instrument) => void;
   onRejectPortfolioOrder?: (row: PortfolioPaperOrderApprovalRow) => void;
   onSaveWatchlist: () => void;
+  onOpenMarketInformation?: () => void;
   onScrollPositionChange: (scrollTop: number) => void;
   onSelectInstrument: (instrument: Instrument) => void;
   onResearchInstrument?: (instrument: Instrument) => void;
