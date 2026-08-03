@@ -295,10 +295,10 @@ class Stage8ContinuityTests(unittest.TestCase):
                     connection.close()
 
             with patch(
-                "quant_core.api.load_stage6_exit_acceptance_status",
+                "quant_core.http_api.routes.production_admission.load_stage6_exit_acceptance_status",
                 return_value={"status": "accepted", "exitHash": "a" * 64},
             ), patch(
-                "quant_core.api.execution_adapter_production_route_review_payload_from_audit_event",
+                "quant_core.http_api.routes.production_admission.execution_adapter_production_route_review_payload_from_audit_event",
                 return_value=route_review,
             ):
                 server_thread.start()
@@ -368,7 +368,7 @@ class Stage8ContinuityTests(unittest.TestCase):
             server = HTTPServer(("127.0.0.1", 0), Handler)
             thread = Thread(target=server.serve_forever, daemon=True)
             with patch(
-                "quant_core.api.execution_adapter_production_route_review_payload_from_audit_event",
+                "quant_core.http_api.routes.production_admission.execution_adapter_production_route_review_payload_from_audit_event",
                 return_value=current_review,
             ):
                 thread.start()

@@ -15043,11 +15043,11 @@ class QuantCoreContractTest(unittest.TestCase):
             })
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
-            with patch("quant_core.api.load_stage6_exit_acceptance_status", side_effect=[
+            with patch("quant_core.http_api.routes.production_admission.load_stage6_exit_acceptance_status", side_effect=[
                 {"status": "accepted", "exitHash": "a" * 64},
                 {"status": "accepted", "exitHash": "a" * 64},
                 {"status": "accepted", "exitHash": "b" * 64},
-            ]), patch("quant_core.api.execution_adapter_production_route_review_payload_from_audit_event", return_value={
+            ]), patch("quant_core.http_api.routes.production_admission.execution_adapter_production_route_review_payload_from_audit_event", return_value={
                 "productionRouteReviewId": "production-route-review-1",
                 "adapterId": "ccxt-live",
                 "status": "route_review_recorded",
@@ -21160,7 +21160,7 @@ class QuantCoreContractTest(unittest.TestCase):
             thread.start()
             connection = HTTPConnection(*server.server_address, timeout=5)
             try:
-                with patch("quant_core.api._persist_research_run_import") as persist:
+                with patch("quant_core.http_api.routes.research_import._persist_research_run_import") as persist:
                     for invalid_count in ("1", True, 1.0, -1):
                         with self.subTest(invalid_count=invalid_count):
                             tampered = copy.deepcopy(exported)
@@ -26749,7 +26749,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 from quant_core.market_calendar import build_market_calendar_status
 
                 with patch(
-                    "quant_core.api.build_market_calendar_status",
+                    "quant_core.http_api.routes.audit.build_market_calendar_status",
                     side_effect=lambda market: build_market_calendar_status(
                         market,
                         at="2026-07-21T12:00:00+08:00",
@@ -27547,7 +27547,7 @@ class QuantCoreContractTest(unittest.TestCase):
                     yield {"type": "complete"}
 
                 with patch(
-                    "quant_core.api.iter_generate_research_note_draft_stream_events",
+                    "quant_core.http_api.routes.research.iter_generate_research_note_draft_stream_events",
                     side_effect=delayed_generation,
                 ):
                     connection.request(
@@ -27684,7 +27684,7 @@ class QuantCoreContractTest(unittest.TestCase):
         response = connection.makefile("rb")
         try:
             with patch(
-                "quant_core.api.iter_generate_research_note_draft_stream_events",
+                "quant_core.http_api.routes.research.iter_generate_research_note_draft_stream_events",
                 side_effect=cancellation_aware_generation,
             ):
                 connection.sendall(

@@ -436,7 +436,7 @@ class M3DataFoundationTests(unittest.TestCase):
             connection = HTTPConnection(*server.server_address, timeout=5)
             try:
                 with patch(
-                    "quant_core.api.build_free_stockdb_adapter",
+                    "quant_core.http_api.support.handler_runtime.build_free_stockdb_adapter",
                     return_value=FixedAdapter(daily_bars(1), source="free-stockdb"),
                 ):
                     connection.request("GET", "/api/settings/status?probe=free-stockdb")

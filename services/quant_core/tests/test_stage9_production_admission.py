@@ -494,7 +494,7 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
 
             server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
             thread = Thread(target=server.serve_forever, daemon=True)
-            with patch("quant_core.api._stage8_production_readonly_continuity", return_value=continuity) as continuity_patch:
+            with patch("quant_core.http_api.routes.production_admission._stage8_production_readonly_continuity", return_value=continuity) as continuity_patch:
                 thread.start()
                 body = json.dumps({
                     "authorizationId": authorization["authorizationId"],
@@ -679,7 +679,7 @@ class Stage9ProductionAdmissionTest(unittest.TestCase):
                     protected_review_read_response = connection.getresponse()
                     protected_review_readback = json.loads(protected_review_read_response.read())
                     with patch(
-                        "quant_core.api._stage9_production_admission_reviews",
+                        "quant_core.http_api.routes.production_admission._stage9_production_admission_reviews",
                         side_effect=LookupError("candidate source missing"),
                     ):
                         connection.request(

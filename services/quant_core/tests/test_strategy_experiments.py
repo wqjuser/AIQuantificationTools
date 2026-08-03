@@ -1775,7 +1775,7 @@ class StrategyExperimentHttpTests(unittest.TestCase):
                 self.subTest(route=name),
                 patch.object(StrategyExperimentRunner, "run_new", return_value=detail),
                 patch.object(self.experiment_store, "get", return_value=detail),
-                patch(f"quant_core.api.{codec}", side_effect=RuntimeError(f"secret {name} codec")),
+                patch(f"quant_core.http_api.routes.ai_strategy_p0.{codec}", side_effect=RuntimeError(f"secret {name} codec")),
             ):
                 try:
                     status, response = self.request(method, path, payload)

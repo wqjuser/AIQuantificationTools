@@ -51,6 +51,7 @@ from quant_core.ai_review_stage3 import (
     build_strategy_lineage_key,
     validate_assessment,
 )
+from quant_core.audit_events import AuditEventStore
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
     canonical_data_hash,
@@ -61,7 +62,25 @@ from quant_core.canonical import (
     strategy_config_to_payload,
 )
 from quant_core.domain import Condition, RiskRules, StrategyConfig
+from quant_core.execution import (
+    PaperExecutionStore,
+    PortfolioPaperOrderApprovalStore,
+    PortfolioPaperOrderSimulationStore,
+    PortfolioPaperOrderStore,
+)
+from quant_core.handoff_notes import HandoffNoteStore
+from quant_core.http_api.support.research_import_archive import (
+    _preflight_ai_review_archive,
+    _restore_ai_review_archive_snapshot,
+    _snapshot_ai_review_archive,
+)
+from quant_core.http_api.support.research_import_transaction import (
+    _undo_research_run_import_from_snapshot,
+)
+from quant_core.research_import_undo import ResearchRunImportUndoStore
+from quant_core.research_notes import ResearchNoteStore
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
+from quant_core.strategy_library import StrategyLibraryStore
 from quant_core.strategy_experiment_store import (
     StrategyExperimentCandidateRecord,
     StrategyExperimentRecord,
@@ -2042,7 +2061,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         self.assertNotIn("rawProviderResponse", serialized)
 
         audit = runs_module.research_run_import_to_audit(package)
-        legacy, reviews, decisions = api._preflight_ai_review_archive(
+        legacy, reviews, decisions = _preflight_ai_review_archive(
             package,
             run_id=audit.run_id,
         )
@@ -2076,7 +2095,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 package["integrity"]["hash"] = runs_module._export_package_hash(package)
                 with self.assertRaises(ValueError):
                     audit = runs_module.research_run_import_to_audit(package)
-                    api._preflight_ai_review_archive(package, run_id=audit.run_id)
+                    _preflight_ai_review_archive(package, run_id=audit.run_id)
 
         self.assertEqual(self.review_store.list_all_by_run(self.audit.run_id), [])
 
@@ -2089,14 +2108,14 @@ class AiReviewArchiveTests(unittest.TestCase):
         missing_review["integrity"]["hash"] = runs_module._export_package_hash(missing_review)
         audit = runs_module.research_run_import_to_audit(missing_review)
         with self.assertRaisesRegex(ValueError, "^ai_review_decision_review_missing$"):
-            api._preflight_ai_review_archive(missing_review, run_id=audit.run_id)
+            _preflight_ai_review_archive(missing_review, run_id=audit.run_id)
 
         evidence_tamper = self._package()
         evidence_tamper["aiReviewRunsV2"][0]["record"]["evidenceHash"] = "0" * 64
         evidence_tamper["integrity"]["hash"] = runs_module._export_package_hash(evidence_tamper)
         audit = runs_module.research_run_import_to_audit(evidence_tamper)
         with self.assertRaisesRegex(ValueError, "^ai_review_evidence_hash_mismatch$"):
-            api._preflight_ai_review_archive(evidence_tamper, run_id=audit.run_id)
+            _preflight_ai_review_archive(evidence_tamper, run_id=audit.run_id)
 
         decision_hash_tamper = self._package()
         decision_hash_tamper["aiReviewDecisions"][0]["record"]["recordHash"] = "0" * 64
@@ -2105,7 +2124,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         )
         audit = runs_module.research_run_import_to_audit(decision_hash_tamper)
         with self.assertRaisesRegex(ValueError, "^ai_review_decision_record_hash_mismatch$"):
-            api._preflight_ai_review_archive(decision_hash_tamper, run_id=audit.run_id)
+            _preflight_ai_review_archive(decision_hash_tamper, run_id=audit.run_id)
 
         forked = self._package()
         fork = _decision_record(
@@ -2119,7 +2138,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         forked["integrity"]["hash"] = runs_module._export_package_hash(forked)
         audit = runs_module.research_run_import_to_audit(forked)
         with self.assertRaisesRegex(ValueError, "^decision_conflict$"):
-            api._preflight_ai_review_archive(forked, run_id=audit.run_id)
+            _preflight_ai_review_archive(forked, run_id=audit.run_id)
 
         decision_count = self._package()
         decision_count["manifest"]["artifactCounts"]["aiReviewDecisions"] = 1
@@ -2142,7 +2161,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         )
         audit = runs_module.research_run_import_to_audit(decision_boundary)
         with self.assertRaisesRegex(ValueError, "^ai_review_decision_boundary_invalid$"):
-            api._preflight_ai_review_archive(decision_boundary, run_id=audit.run_id)
+            _preflight_ai_review_archive(decision_boundary, run_id=audit.run_id)
 
         package_boundary = self._package()
         package_boundary["manifest"]["paperOnly"] = False
@@ -2161,7 +2180,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         duplicate_v1["manifest"]["artifactCounts"]["aiReviewRuns"] = 2
         duplicate_v1["integrity"]["hash"] = runs_module._export_package_hash(duplicate_v1)
         with self.assertRaisesRegex(ValueError, "^ai_review_id_duplicate$"):
-            api._preflight_ai_review_archive(
+            _preflight_ai_review_archive(
                 duplicate_v1,
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
@@ -2172,7 +2191,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         self.review_store.record(external_legacy)
         before = self.review_store.get(self.legacy["aiReviewId"])
         with self.assertRaisesRegex(ValueError, "^ai_review_archive_owner_conflict$"):
-            api._preflight_ai_review_archive(
+            _preflight_ai_review_archive(
                 self._package(),
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
@@ -2201,7 +2220,7 @@ class AiReviewArchiveTests(unittest.TestCase):
             audit_event_payloads=[],
             handoff_note_payloads=[],
         )
-        api._undo_research_run_import_from_snapshot(
+        _undo_research_run_import_from_snapshot(
             **stores,
             ai_review_store=self.review_store,
             ai_review_decision_store=self.decision_store,
@@ -2226,7 +2245,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         external_review_store.record_v2(external_review)
         external_decision_store.restore_validated(external_decision)
         with self.assertRaisesRegex(ValueError, "^ai_review_decision_record_conflict$"):
-            api._preflight_ai_review_archive(
+            _preflight_ai_review_archive(
                 self._package(),
                 run_id=self.audit.run_id,
                 review_store=external_review_store,
@@ -2245,7 +2264,7 @@ class AiReviewArchiveTests(unittest.TestCase):
             }
         )
         with self.assertRaisesRegex(ValueError, "^ai_review_archive_owner_conflict$"):
-            api._preflight_ai_review_archive(
+            _preflight_ai_review_archive(
                 self._package(),
                 run_id=self.audit.run_id,
                 review_store=authority_review_store,
@@ -2260,7 +2279,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         idempotent_review_store.record_v2(copy.deepcopy(self.review))
         for decision in self.decisions:
             idempotent_decision_store.restore_validated(copy.deepcopy(decision))
-        legacy, authoritative, decisions = api._preflight_ai_review_archive(
+        legacy, authoritative, decisions = _preflight_ai_review_archive(
             self._package(),
             run_id=self.audit.run_id,
             review_store=idempotent_review_store,
@@ -2332,7 +2351,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         self.review_store.record(copy.deepcopy(self.legacy))
         self.review_store.record_v2(copy.deepcopy(previous_review))
         self.decision_store.restore_validated(copy.deepcopy(previous_decision))
-        snapshot = api._snapshot_ai_review_archive(
+        snapshot = _snapshot_ai_review_archive(
             run_id=self.audit.run_id,
             review_store=self.review_store,
             decision_store=self.decision_store,
@@ -2341,7 +2360,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         self.review_store.record_v2(copy.deepcopy(self.review))
         for decision in self.decisions:
             self.decision_store.restore_validated(copy.deepcopy(decision))
-        api._restore_ai_review_archive_snapshot(
+        _restore_ai_review_archive_snapshot(
             run_id=self.audit.run_id,
             review_store=self.review_store,
             decision_store=self.decision_store,
@@ -2349,7 +2368,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            api._snapshot_ai_review_archive(
+            _snapshot_ai_review_archive(
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
                 decision_store=self.decision_store,
@@ -2362,7 +2381,7 @@ class AiReviewArchiveTests(unittest.TestCase):
 
         self.review_store.record_v2(copy.deepcopy(self.review))
         self.decision_store.restore_validated(copy.deepcopy(self.decisions[0]))
-        before = api._snapshot_ai_review_archive(
+        before = _snapshot_ai_review_archive(
             run_id=self.audit.run_id,
             review_store=self.review_store,
             decision_store=self.decision_store,
@@ -2373,14 +2392,14 @@ class AiReviewArchiveTests(unittest.TestCase):
         _rehash_decision(decision)
 
         with self.assertRaisesRegex(ValueError, "^ai_review_decision_review_hash_mismatch$"):
-            api._restore_ai_review_archive_snapshot(
+            _restore_ai_review_archive_snapshot(
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
                 decision_store=self.decision_store,
                 snapshot=tampered,
             )
         self.assertEqual(
-            api._snapshot_ai_review_archive(
+            _snapshot_ai_review_archive(
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
                 decision_store=self.decision_store,
@@ -2394,7 +2413,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         self.review_store.record(copy.deepcopy(self.legacy))
         self.review_store.record_v2(copy.deepcopy(self.review))
         self.decision_store.restore_validated(copy.deepcopy(self.decisions[0]))
-        before = api._snapshot_ai_review_archive(
+        before = _snapshot_ai_review_archive(
             run_id=self.audit.run_id,
             review_store=self.review_store,
             decision_store=self.decision_store,
@@ -2439,14 +2458,14 @@ class AiReviewArchiveTests(unittest.TestCase):
                 tampered = copy.deepcopy(before)
                 mutate(tampered)
                 with self.assertRaises(ValueError):
-                    api._restore_ai_review_archive_snapshot(
+                    _restore_ai_review_archive_snapshot(
                         run_id=self.audit.run_id,
                         review_store=self.review_store,
                         decision_store=self.decision_store,
                         snapshot=tampered,
                     )
                 self.assertEqual(
-                    api._snapshot_ai_review_archive(
+                    _snapshot_ai_review_archive(
                         run_id=self.audit.run_id,
                         review_store=self.review_store,
                         decision_store=self.decision_store,
@@ -2457,18 +2476,18 @@ class AiReviewArchiveTests(unittest.TestCase):
     def _import_stores(self, api: Any, prefix: str = "import") -> dict[str, Any]:
         return {
             "run_store": ResearchRunStore(self.root / f"{prefix}-runs.sqlite3"),
-            "note_store": api.ResearchNoteStore(self.root / f"{prefix}-notes.sqlite3"),
-            "strategy_store": api.StrategyLibraryStore(self.root / f"{prefix}-strategies.sqlite3"),
-            "paper_execution_store": api.PaperExecutionStore(self.root / f"{prefix}-paper.sqlite3"),
-            "portfolio_paper_order_store": api.PortfolioPaperOrderStore(self.root / f"{prefix}-orders.sqlite3"),
-            "portfolio_paper_order_approval_store": api.PortfolioPaperOrderApprovalStore(
+            "note_store": ResearchNoteStore(self.root / f"{prefix}-notes.sqlite3"),
+            "strategy_store": StrategyLibraryStore(self.root / f"{prefix}-strategies.sqlite3"),
+            "paper_execution_store": PaperExecutionStore(self.root / f"{prefix}-paper.sqlite3"),
+            "portfolio_paper_order_store": PortfolioPaperOrderStore(self.root / f"{prefix}-orders.sqlite3"),
+            "portfolio_paper_order_approval_store": PortfolioPaperOrderApprovalStore(
                 self.root / f"{prefix}-approvals.sqlite3"
             ),
-            "portfolio_paper_order_simulation_store": api.PortfolioPaperOrderSimulationStore(
+            "portfolio_paper_order_simulation_store": PortfolioPaperOrderSimulationStore(
                 self.root / f"{prefix}-simulations.sqlite3"
             ),
-            "audit_event_store": api.AuditEventStore(self.root / f"{prefix}-audit.sqlite3"),
-            "handoff_note_store": api.HandoffNoteStore(self.root / f"{prefix}-handoff.sqlite3"),
+            "audit_event_store": AuditEventStore(self.root / f"{prefix}-audit.sqlite3"),
+            "handoff_note_store": HandoffNoteStore(self.root / f"{prefix}-handoff.sqlite3"),
         }
 
     def test_atomic_archive_apply_and_replace_survive_persistent_sqlite_abort_without_one_to_zero(self) -> None:
@@ -2483,7 +2502,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         self.review_store.record(copy.deepcopy(self.legacy))
         self.review_store.record_v2(copy.deepcopy(previous_review))
         self.decision_store.restore_validated(copy.deepcopy(previous_decision))
-        before = api._snapshot_ai_review_archive(
+        before = _snapshot_ai_review_archive(
             run_id=self.audit.run_id,
             review_store=self.review_store,
             decision_store=self.decision_store,
@@ -2508,7 +2527,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 decision_records=copy.deepcopy(self.decisions),
             )
         self.assertEqual(
-            api._snapshot_ai_review_archive(
+            _snapshot_ai_review_archive(
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
                 decision_store=self.decision_store,
@@ -2547,7 +2566,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 handoff_note_payloads=[],
             )
         self.assertEqual(
-            api._snapshot_ai_review_archive(
+            _snapshot_ai_review_archive(
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
                 decision_store=self.decision_store,
@@ -2577,7 +2596,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 preserve_existing_decisions=False,
             )
         self.assertEqual(
-            api._snapshot_ai_review_archive(
+            _snapshot_ai_review_archive(
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
                 decision_store=self.decision_store,
@@ -2589,7 +2608,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         from quant_core import api
 
         self.review_store.record(copy.deepcopy(self.legacy))
-        before = api._snapshot_ai_review_archive(
+        before = _snapshot_ai_review_archive(
             run_id=self.audit.run_id,
             review_store=self.review_store,
             decision_store=self.decision_store,
@@ -2611,14 +2630,14 @@ class AiReviewArchiveTests(unittest.TestCase):
             audit_event_payloads=[],
             handoff_note_payloads=[],
         )
-        api._undo_research_run_import_from_snapshot(
+        _undo_research_run_import_from_snapshot(
             **stores,
             ai_review_store=self.review_store,
             ai_review_decision_store=self.decision_store,
             snapshot=undo,
         )
         self.assertEqual(
-            api._snapshot_ai_review_archive(
+            _snapshot_ai_review_archive(
                 run_id=self.audit.run_id,
                 review_store=self.review_store,
                 decision_store=self.decision_store,
@@ -2637,7 +2656,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         legacy_package["manifest"]["artifactCounts"].pop("aiReviewDecisions")
         legacy_package["integrity"]["hash"] = runs_module._export_package_hash(legacy_package)
         legacy_audit = runs_module.research_run_import_to_audit(legacy_package)
-        legacy, v2, decisions = api._preflight_ai_review_archive(
+        legacy, v2, decisions = _preflight_ai_review_archive(
             legacy_package,
             run_id=legacy_audit.run_id,
         )
@@ -2732,7 +2751,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                     self.audit.run_id,
                     limit=200,
                 ),
-                "ai": api._snapshot_ai_review_archive(
+                "ai": _snapshot_ai_review_archive(
                     run_id=self.audit.run_id,
                     review_store=review_store,
                     decision_store=decision_store,
@@ -2763,7 +2782,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 tampered = copy.deepcopy(undo)
                 mutate(tampered)
                 with self.assertRaises(ValueError):
-                    api._undo_research_run_import_from_snapshot(
+                    _undo_research_run_import_from_snapshot(
                         **stores,
                         ai_review_store=review_store,
                         ai_review_decision_store=decision_store,
@@ -2775,7 +2794,7 @@ class AiReviewArchiveTests(unittest.TestCase):
         before = current_state(stores, review_store, decision_store)
         old_undo["previous"].pop("aiReviewDecisions")
         with self.assertRaisesRegex(ValueError, "^ai_review_decision_review_missing$"):
-            api._undo_research_run_import_from_snapshot(
+            _undo_research_run_import_from_snapshot(
                 **stores,
                 ai_review_store=review_store,
                 ai_review_decision_store=decision_store,
@@ -2823,14 +2842,14 @@ class AiReviewArchiveTests(unittest.TestCase):
             old_undo["previous"].pop("aiReviewRunsV2")
         )
         old_undo["previous"].pop("aiReviewDecisions")
-        api._undo_research_run_import_from_snapshot(
+        _undo_research_run_import_from_snapshot(
             **stores,
             ai_review_store=self.review_store,
             ai_review_decision_store=self.decision_store,
             snapshot=old_undo,
         )
 
-        restored = api._snapshot_ai_review_archive(
+        restored = _snapshot_ai_review_archive(
             run_id=self.audit.run_id,
             review_store=self.review_store,
             decision_store=self.decision_store,
@@ -2866,7 +2885,7 @@ class AiReviewArchiveTests(unittest.TestCase):
                 setattr(Handler, attribute, store)
             Handler.ai_review_store = review_store
             Handler.ai_review_decision_store = decision_store
-            Handler.import_undo_store = api.ResearchRunImportUndoStore(
+            Handler.import_undo_store = ResearchRunImportUndoStore(
                 self.root / f"{name}-undo.sqlite3"
             )
             Handler.strategy_experiment_store = None

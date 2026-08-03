@@ -97,7 +97,7 @@ class PlatformSettingsTests(unittest.TestCase):
             return response.status, json.loads(response.read().decode("utf-8"))
 
         try:
-            with patch("quant_core.api.install_optional_data_dependency", return_value=True) as installer:
+            with patch("quant_core.http_api.routes.core.install_optional_data_dependency", return_value=True) as installer:
                 missing_intent = post(
                     "/api/settings/dependencies/akshare/install",
                     {key: value for key, value in install_headers.items() if key != "X-AIQT-Install-Intent"},
@@ -768,7 +768,7 @@ class PlatformSettingsTests(unittest.TestCase):
             connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
             try:
                 with patch(
-                    "quant_core.api.discover_openai_compatible_models",
+                    "quant_core.http_api.routes.core.discover_openai_compatible_models",
                     return_value=("model-a", "model-b"),
                 ) as discover:
                     connection.request(
