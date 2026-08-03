@@ -15,7 +15,7 @@ with warnings.catch_warnings():
     from authlib.jose import jwt
     from authlib.jose.errors import JoseError
 import httpx
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.engine import Engine
 
 from quant_core.deployment import DeploymentConfig
@@ -116,7 +116,7 @@ class OidcTransactionStore:
             )
         return transaction
 
-    def read(self, state: str, *, now: datetime) -> _OidcTransaction:
+    def read(self, state: str, *, now: datetime) -> _OidcTransaction | AuthCompletion:
         state_hash = _hash(state)
         with self.engine.connect() as connection:
             row = connection.execute(
@@ -128,7 +128,7 @@ class OidcTransactionStore:
                 raise AuthenticationError("oidc_state_invalid")
         return self._decode(state, state_hash, row, now=now)
 
-    def consume(self, state: str, *, now: datetime) -> _OidcTransaction:
+    def consume(self, state: str, *, now: datetime) -> _OidcTransaction | AuthCompletion:
         state_hash = _hash(state)
         with self.engine.begin() as connection:
             row = connection.execute(
@@ -140,7 +140,50 @@ class OidcTransactionStore:
                 raise AuthenticationError("oidc_state_invalid")
         return self._decode(state, state_hash, row, now=now)
 
-    def _decode(self, state: str, state_hash: bytes, row, *, now: datetime) -> _OidcTransaction:
+    def complete(
+        self,
+        state: str,
+        completion: AuthCompletion,
+        *,
+        now: datetime,
+    ) -> AuthCompletion:
+        state_hash = _hash(state)
+        encrypted = self.cipher.encrypt(
+            "oidc",
+            state_hash.hex(),
+            json.dumps(
+                {
+                    "completed": True,
+                    "returnTo": completion.return_to,
+                    "sessionToken": completion.session.session_token,
+                    "csrfToken": completion.session.csrf_token,
+                    "absoluteExpiresAt": completion.session.absolute_expires_at.isoformat(),
+                },
+                separators=(",", ":"),
+            ),
+            key_version=1,
+        )
+        with self.engine.begin() as connection:
+            changed = connection.execute(
+                update(oidc_transactions)
+                .where(
+                    oidc_transactions.c.state_hash == state_hash,
+                    oidc_transactions.c.expires_at > now,
+                )
+                .values(encrypted_payload=encrypted)
+            ).rowcount
+        if changed != 1:
+            raise AuthenticationError("oidc_state_invalid")
+        return completion
+
+    def _decode(
+        self,
+        state: str,
+        state_hash: bytes,
+        row,
+        *,
+        now: datetime,
+    ) -> _OidcTransaction | AuthCompletion:
         if now > _aware(row["expires_at"]):
             raise AuthenticationError("oidc_state_expired")
         try:
@@ -154,6 +197,20 @@ class OidcTransactionStore:
             )
         except (ValueError, JoseError) as error:
             raise AuthenticationError("oidc_state_invalid") from error
+        if payload.get("completed") is True:
+            try:
+                return AuthCompletion(
+                    session=SessionCredentials(
+                        session_token=str(payload["sessionToken"]),
+                        csrf_token=str(payload["csrfToken"]),
+                        absolute_expires_at=datetime.fromisoformat(
+                            str(payload["absoluteExpiresAt"])
+                        ),
+                    ),
+                    return_to=str(payload["returnTo"]),
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise AuthenticationError("oidc_state_invalid") from error
         if payload.get("state") != state:
             raise AuthenticationError("oidc_state_invalid")
         return _OidcTransaction(**payload)
@@ -322,6 +379,8 @@ class PublicAuthService:
             raise AuthenticationError("oidc_state_mismatch")
         timestamp = now or datetime.now(timezone.utc)
         transaction = self.transactions.read(state, now=timestamp)
+        if isinstance(transaction, AuthCompletion):
+            return transaction
         identity = self.provider.exchange_code(
             code=code,
             code_verifier=transaction.code_verifier,
@@ -329,7 +388,6 @@ class PublicAuthService:
             nonce=transaction.nonce,
             now=timestamp,
         )
-        transaction = self.transactions.consume(state, now=timestamp)
         user = self.identities.register_login(
             issuer=identity.issuer,
             subject=identity.subject,
@@ -347,7 +405,11 @@ class PublicAuthService:
             )
         else:
             session = self.sessions.create(user.owner_id, now=timestamp)
-        return AuthCompletion(session=session, return_to=transaction.return_to)
+        return self.transactions.complete(
+            state,
+            AuthCompletion(session=session, return_to=transaction.return_to),
+            now=timestamp,
+        )
 
 
 def _safe_return_to(value: str) -> str:

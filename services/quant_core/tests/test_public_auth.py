@@ -109,13 +109,15 @@ class PublicAuthServiceTest(unittest.TestCase):
         self.assertEqual(completed.return_to, "/research")
         self.assertTrue(completed.session.session_token)
 
-        with self.assertRaisesRegex(AuthenticationError, "oidc_state_invalid"):
-            self.service.complete_callback(
-                state=query["state"][0],
-                state_cookie=login.state_cookie,
-                code="authorization-code",
-                now=self.now + timedelta(seconds=6),
-            )
+        replayed = self.service.complete_callback(
+            state=query["state"][0],
+            state_cookie=login.state_cookie,
+            code="authorization-code",
+            now=self.now + timedelta(seconds=6),
+        )
+
+        self.assertEqual(replayed, completed)
+        self.assertEqual(len(self.provider.exchanges), 1)
 
     def test_callback_is_bound_to_browser_state_cookie(self) -> None:
         login = self.service.begin_login(return_to="https://evil.example", now=self.now)
