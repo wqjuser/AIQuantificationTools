@@ -271,6 +271,17 @@ class PublicTenantApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
         raw_urlopen.assert_not_called()
 
+    def test_new_tenant_settings_status_uses_writable_contract(self) -> None:
+        self._login(self.first, "first")
+
+        response = self.first.get("/api/settings/status")
+
+        self.assertEqual(response.status_code, 200)
+        configuration = response.json()["settings"]["configuration"]
+        self.assertEqual(configuration["source"], "environment")
+        self.assertEqual(configuration["revision"], 0)
+        self.assertFalse(configuration["secrets"]["openaiApiKey"]["configured"])
+
     def test_same_binance_account_cannot_be_claimed_with_rotated_api_key(self) -> None:
         first_csrf = self._login(self.first, "first")
         second_csrf = self._login(self.second, "second")

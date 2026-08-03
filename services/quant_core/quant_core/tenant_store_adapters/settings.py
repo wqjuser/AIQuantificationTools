@@ -66,7 +66,7 @@ class TenantPlatformSettingsAdapter:
             env_key: "" for env_key in _SECRET_SETTING_SPECS.values()
         }
         return {
-            "source": "database" if record else "defaults",
+            "source": "database" if record else "environment",
             "revision": record.revision if record else 0,
             "updatedAt": record.updated_at if record else None,
             "restartRequired": restart_required,
