@@ -116,6 +116,18 @@ class OidcTransactionStore:
             )
         return transaction
 
+    def read(self, state: str, *, now: datetime) -> _OidcTransaction:
+        state_hash = _hash(state)
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(oidc_transactions).where(
+                    oidc_transactions.c.state_hash == state_hash
+                )
+            ).mappings().one_or_none()
+            if row is None:
+                raise AuthenticationError("oidc_state_invalid")
+        return self._decode(state, state_hash, row, now=now)
+
     def consume(self, state: str, *, now: datetime) -> _OidcTransaction:
         state_hash = _hash(state)
         with self.engine.begin() as connection:
@@ -126,6 +138,9 @@ class OidcTransactionStore:
             ).mappings().one_or_none()
             if row is None:
                 raise AuthenticationError("oidc_state_invalid")
+        return self._decode(state, state_hash, row, now=now)
+
+    def _decode(self, state: str, state_hash: bytes, row, *, now: datetime) -> _OidcTransaction:
         if now > _aware(row["expires_at"]):
             raise AuthenticationError("oidc_state_expired")
         try:
@@ -306,7 +321,7 @@ class PublicAuthService:
         if not state or not state_cookie or not secrets.compare_digest(state, state_cookie):
             raise AuthenticationError("oidc_state_mismatch")
         timestamp = now or datetime.now(timezone.utc)
-        transaction = self.transactions.consume(state, now=timestamp)
+        transaction = self.transactions.read(state, now=timestamp)
         identity = self.provider.exchange_code(
             code=code,
             code_verifier=transaction.code_verifier,
@@ -314,6 +329,7 @@ class PublicAuthService:
             nonce=transaction.nonce,
             now=timestamp,
         )
+        transaction = self.transactions.consume(state, now=timestamp)
         user = self.identities.register_login(
             issuer=identity.issuer,
             subject=identity.subject,

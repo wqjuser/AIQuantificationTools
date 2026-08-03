@@ -127,6 +127,36 @@ class PublicAuthServiceTest(unittest.TestCase):
                 now=self.now + timedelta(seconds=5),
             )
 
+    def test_callback_can_retry_after_provider_failure(self) -> None:
+        login = self.service.begin_login(return_to="/research", now=self.now)
+        original_exchange = self.provider.exchange_code
+        failures = iter([AuthenticationError("oidc_response_invalid"), None])
+
+        def exchange_code(**parameters):
+            failure = next(failures)
+            if failure is not None:
+                raise failure
+            return original_exchange(**parameters)
+
+        self.provider.exchange_code = exchange_code
+        with self.assertRaisesRegex(AuthenticationError, "oidc_response_invalid"):
+            self.service.complete_callback(
+                state=login.state_cookie,
+                state_cookie=login.state_cookie,
+                code="authorization-code",
+                now=self.now + timedelta(seconds=5),
+            )
+
+        completed = self.service.complete_callback(
+            state=login.state_cookie,
+            state_cookie=login.state_cookie,
+            code="authorization-code",
+            now=self.now + timedelta(seconds=6),
+        )
+
+        self.assertEqual(completed.return_to, "/research")
+        self.assertTrue(completed.session.session_token)
+
     def test_pending_oidc_transactions_are_bounded(self) -> None:
         self.service.transactions.max_pending = 1
         self.service.begin_login(now=self.now)
