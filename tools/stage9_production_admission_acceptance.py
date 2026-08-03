@@ -197,7 +197,10 @@ def _container_exercise() -> dict[str, Any]:
 
     no_credential_server = HTTPServer(("127.0.0.1", 0), NoCredentialHandler)
     no_credential_thread = Thread(target=no_credential_server.serve_forever, daemon=True)
-    with patch("quant_core.api._stage8_production_readonly_continuity", return_value=continuity):
+    with patch(
+        "quant_core.http_api.routes.production_admission._stage8_production_readonly_continuity",
+        return_value=continuity,
+    ):
         no_credential_thread.start()
         no_credential_connection = HTTPConnection(*no_credential_server.server_address, timeout=10)
         try:
@@ -318,7 +321,10 @@ def _container_exercise() -> dict[str, Any]:
         "reason": "Docker acceptance reviewed the immutable read-only admission evidence.",
         "confirmations": {item: True for item in PRODUCTION_ADMISSION_REVIEW_SCOPE_IDS},
     }
-    with patch("quant_core.api._stage8_production_readonly_continuity", return_value=continuity) as continuity_patch:
+    with patch(
+        "quant_core.http_api.routes.production_admission._stage8_production_readonly_continuity",
+        return_value=continuity,
+    ) as continuity_patch:
         thread.start()
         connection = HTTPConnection(*server.server_address, timeout=10)
         try:
