@@ -129,10 +129,11 @@ const portfolioM5SectionSource = readFileSync(
   new URL("../components/PortfolioM5Section.tsx", import.meta.url),
   "utf8"
 );
-const executionAutoPaperTradingSource = readFileSync(
-  new URL("../pages/dynamic-trading/ExecutionAutoPaperTradingSection.tsx", import.meta.url),
-  "utf8"
-);
+const executionAutoPaperTradingSource = [
+  "../pages/dynamic-trading/ExecutionAutoPaperTradingSection.tsx",
+  "../pages/dynamic-trading/AutoTradingOverviewPanels.tsx",
+  "../pages/dynamic-trading/auto-trading-model.ts",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
 const executionStage10ProductionSource = readFileSync(
   new URL("../components/ExecutionStage10ProductionExecutionSection.tsx", import.meta.url),
   "utf8"
