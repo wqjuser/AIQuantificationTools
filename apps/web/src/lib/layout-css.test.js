@@ -134,6 +134,10 @@ const executionAcceptanceAuditPanelSource = readFileSync(
   "utf8"
 );
 const terminalWorkbenchSource = readFileSync(new URL("./terminal-workbench.ts", import.meta.url), "utf8");
+const terminalWorkbenchLocalReviewSource = [
+  "./terminal-workbench/audit/deep-link-queries.ts",
+  "./terminal-workbench/audit/local-review-bundle.ts",
+].map((file) => readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
 const readmeSource = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
 const productPlanSource = readFileSync(new URL("../../../../docs/product-plan.md", import.meta.url), "utf8");
 const portfolioPaperOrderAuditPanelSource = readFileSync(
@@ -1710,12 +1714,12 @@ describe("terminal layout css", () => {
 
   test("keeps local review next-action generation tied to the restored research target", () => {
     const coverageSource = sourceBetweenText(
-      terminalWorkbenchSource,
+      terminalWorkbenchLocalReviewSource,
       "function auditReportLedgerLocalReviewBundleCoverage",
       "function auditReportLedgerDeduplicatedQueryText"
     );
 
-    expect(terminalWorkbenchSource).toContain(
+    expect(terminalWorkbenchLocalReviewSource).toContain(
       'const LOCAL_REVIEW_COVERAGE_NEXT_ACTION_TARGET_WORKSPACE_ID: ProductWorkAreaId = "research";'
     );
     expect(coverageSource).toContain(
