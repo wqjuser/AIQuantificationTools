@@ -32,6 +32,7 @@ from quant_core.market_ai_selection import (
     validate_market_ai_selection_output,
     validate_market_ai_selection_request,
 )
+from quant_core.market_ai_selection_core import contracts as selection_contracts
 from quant_core.runs import (
     ResearchRunAudit,
     ResearchRunStore,
@@ -623,12 +624,12 @@ def test_quality_statistics_replay_audited_selection_metrics_and_samples(
     )
     degraded_service.select(_request(profile="quality_growth"))
 
-    original_weights_version = market_ai_selection_module._WEIGHTS_VERSION  # noqa: SLF001
-    market_ai_selection_module._WEIGHTS_VERSION = "market-ai-selection-v2"  # noqa: SLF001
+    original_weights_version = selection_contracts._WEIGHTS_VERSION  # noqa: SLF001
+    selection_contracts._WEIGHTS_VERSION = "market-ai-selection-v2"  # noqa: SLF001
     try:
         statistics = degraded_service.quality_statistics()
     finally:
-        market_ai_selection_module._WEIGHTS_VERSION = original_weights_version  # noqa: SLF001
+        selection_contracts._WEIGHTS_VERSION = original_weights_version  # noqa: SLF001
 
     assert statistics == {
         "schemaVersion": 1,
