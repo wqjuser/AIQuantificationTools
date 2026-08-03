@@ -1,0 +1,754 @@
+
+.workflow-export-browser-panel {
+  align-self: start;
+  grid-area: package;
+}
+
+.workflow-report-ledger-panel {
+  align-self: start;
+  grid-area: reports;
+}
+
+.workflow-market-refresh-overrides-panel {
+  align-self: start;
+  grid-area: refresh-overrides;
+}
+
+.workflow-portfolio-paper-order-audit-panel {
+  align-self: start;
+  grid-area: portfolio-orders;
+}
+
+.workflow-adapter-paper-execution-audit-panel {
+  align-self: start;
+  grid-area: adapter-paper-executions;
+}
+
+.workflow-p0-acceptance-panel {
+  align-self: start;
+  grid-area: acceptance;
+}
+
+.workflow-p2-pre-live-acceptance-panel {
+  align-self: start;
+  grid-area: p2-acceptance;
+}
+
+.workflow-p2-paper-replay-panel {
+  align-self: start;
+  grid-area: replay-manifest;
+}
+
+.workflow-p2-evidence-coverage-panel {
+  align-self: start;
+  grid-area: p2-coverage;
+}
+
+.workflow-p2-readiness-acceptance-panel {
+  align-self: start;
+  grid-area: p2-readiness;
+}
+
+.workflow-p2-chain-preflight-panel {
+  align-self: start;
+  grid-area: p2-chain;
+}
+
+.workflow-p2-pre-live-acceptance-audit-panel {
+  align-self: start;
+  grid-area: p2-acceptance;
+}
+
+.workflow-p2-chain-preflight-review-panel {
+  align-self: start;
+  grid-area: p2-chain-preflight-review;
+}
+
+.workflow-p2-readiness-acceptance-audit-panel {
+  align-self: start;
+  grid-area: p2-readiness-review;
+}
+
+.workflow-p2-evidence-coverage-review-panel {
+  align-self: start;
+  grid-area: p2-coverage-review;
+}
+
+.workflow-operator-runbook-panel {
+  align-self: start;
+  grid-area: operator-runbook;
+}
+
+.workflow-signing-keys-panel {
+  align-self: start;
+  grid-area: signing-keys;
+}
+
+.workflow-import-diff-panel {
+  align-self: start;
+  grid-area: import-diff;
+}
+
+.workflow-import-events-panel {
+  align-self: start;
+  grid-area: import-events;
+}
+
+.workflow-export-index-panel {
+  align-self: start;
+  grid-area: index;
+}
+
+.evidence-package-control-room {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.evidence-package-control-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+.evidence-package-control-summary span {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #25354a;
+  border-radius: 7px;
+  background: #101927;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  padding: 7px 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-package-control-summary strong {
+  margin-left: 4px;
+  color: #dce6ee;
+  font-size: calc(13px * var(--aiqt-text-scale, 1));
+}
+
+.evidence-package-control-list {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.evidence-package-control-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.35fr) auto;
+  gap: 9px;
+  align-items: center;
+  min-width: 0;
+  min-height: 54px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 8px 10px;
+}
+
+.evidence-package-control-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.evidence-package-control-row.warning {
+  border-left-color: #e8be62;
+}
+
+.evidence-package-control-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.evidence-package-control-main,
+.evidence-package-control-gates {
+  min-width: 0;
+}
+
+.evidence-package-control-main span,
+.evidence-package-control-main strong,
+.evidence-package-control-main p,
+.evidence-package-control-gates span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.evidence-package-control-main span {
+  display: block;
+  color: #8fa0b2;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.evidence-package-control-main strong {
+  display: block;
+  margin-top: 2px;
+  color: #dce6ee;
+  font-size: calc(13px * var(--aiqt-text-scale, 1));
+  white-space: nowrap;
+}
+
+.evidence-package-control-main p {
+  margin: 2px 0 0;
+  color: #9ab7d4;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.evidence-package-control-gates {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.evidence-package-control-gates span {
+  border: 1px solid rgba(83, 107, 139, 0.62);
+  border-radius: 6px;
+  background: #0c1420;
+  color: #b5c6d8;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 850;
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+.evidence-package-control-row button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: 1px solid #2b6f62;
+  border-radius: 7px;
+  background: #10392f;
+  color: #7df5db;
+  cursor: pointer;
+  font: inherit;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.evidence-package-control-row.empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.research-export-preview {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.research-export-browser {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.market-refresh-audit {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.audit-report-ledger {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.audit-signing-keys {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.audit-signing-key-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.audit-signing-key-summary {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.84);
+  border-left: 3px solid #6d5dfc;
+  border-radius: 7px;
+  background: rgba(16, 27, 43, 0.76);
+  padding: 8px 10px;
+}
+
+.audit-signing-key-summary.positive {
+  border-left-color: #4cc9ad;
+}
+
+.audit-signing-key-summary.warning {
+  border-left-color: #e8be62;
+}
+
+.audit-signing-key-summary.risk {
+  border-left-color: #ff7f6d;
+}
+
+.audit-signing-key-summary span,
+.audit-signing-key-summary strong,
+.audit-signing-key-summary p {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-summary span {
+  color: #9ab7d4;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 850;
+}
+
+.audit-signing-key-summary strong {
+  color: var(--text);
+  font-size: calc(13px * var(--aiqt-text-scale, 1));
+}
+
+.audit-signing-key-summary p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 760;
+}
+
+.audit-signing-key-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.audit-signing-key-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.22fr) minmax(150px, 0.42fr) minmax(
+      126px,
+      0.32fr
+    ) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.74);
+  border-left: 3px solid #6d5dfc;
+  border-radius: 7px;
+  background: rgba(11, 18, 30, 0.62);
+  padding: 7px 9px;
+}
+
+.audit-signing-key-row.active {
+  border-left-color: #4cc9ad;
+}
+
+.audit-signing-key-row.retired {
+  border-left-color: #e8be62;
+}
+
+.audit-signing-key-row.revoked {
+  border-left-color: #ff7f6d;
+}
+
+.audit-signing-key-row.empty {
+  border-style: dashed;
+}
+
+.audit-signing-key-row > span,
+.audit-signing-key-row > strong,
+.audit-signing-key-row > em,
+.audit-signing-key-row > small,
+.audit-signing-key-row > b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-row > span {
+  color: #9ab7d4;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 850;
+}
+
+.audit-signing-key-row > strong {
+  color: var(--text);
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.audit-signing-key-row > em,
+.audit-signing-key-row > small {
+  color: var(--muted-strong);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  font-weight: 740;
+}
+
+.audit-signing-key-row > b {
+  justify-self: end;
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  border-radius: 999px;
+  color: #83e6ce;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  padding: 3px 7px;
+}
+
+.audit-signing-key-row.revoked > b {
+  border-color: rgba(255, 127, 109, 0.36);
+  color: #ffb0a2;
+}
+
+.audit-signing-key-error {
+  margin: 0;
+  color: #ffb0a2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 760;
+}
+
+.audit-signing-key-rotation-history {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.audit-signing-key-rotation-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  color: #9ab7d4;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 850;
+}
+
+.audit-signing-key-rotation-history-head strong {
+  color: #dce6ee;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.audit-signing-key-rotation-history-row {
+  display: grid;
+  grid-template-columns: minmax(118px, 0.26fr) minmax(150px, 0.36fr) minmax(
+      88px,
+      0.2fr
+    ) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.72);
+  border-left: 3px solid #e8be62;
+  border-radius: 6px;
+  background: rgba(11, 18, 30, 0.56);
+  padding: 6px 8px;
+}
+
+.audit-signing-key-rotation-history-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.audit-signing-key-rotation-history-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.audit-signing-key-rotation-history-row.positive > span,
+.audit-signing-key-rotation-history-row.positive > b {
+  color: #7cf0d2;
+}
+
+.audit-signing-key-rotation-history-row.positive > b {
+  border-color: rgba(76, 201, 173, 0.3);
+}
+
+.audit-signing-key-rotation-history-row.empty {
+  border-style: dashed;
+}
+
+.audit-signing-key-rotation-history-row > span,
+.audit-signing-key-rotation-history-row > strong,
+.audit-signing-key-rotation-history-row > em,
+.audit-signing-key-rotation-history-row > small,
+.audit-signing-key-rotation-history-row > b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-rotation-history-row > span {
+  color: #f4d38a;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.audit-signing-key-rotation-history-row > strong {
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.audit-signing-key-rotation-history-row > em,
+.audit-signing-key-rotation-history-row > small {
+  color: var(--muted-strong);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  font-weight: 740;
+}
+
+.audit-signing-key-rotation-history-row > b {
+  justify-self: end;
+  border: 1px solid rgba(232, 190, 98, 0.28);
+  border-radius: 999px;
+  color: #f4d38a;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  padding: 3px 7px;
+}
+
+.compact-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid rgba(45, 212, 191, 0.36);
+  border-radius: 7px;
+  background: rgba(45, 212, 191, 0.1);
+  color: #83e6ce;
+  cursor: pointer;
+  font: inherit;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 850;
+  padding: 6px 9px;
+}
+
+.compact-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.audit-signing-key-rotation-plan {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(232, 190, 98, 0.28);
+  border-left: 3px solid #e8be62;
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.07);
+  padding: 8px;
+}
+
+.audit-signing-key-rotation-ledger {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.7);
+  border-radius: 6px;
+  background: rgba(11, 18, 30, 0.56);
+  color: var(--muted-strong);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 780;
+  padding: 6px 8px;
+}
+
+.audit-signing-key-rotation-ledger.saved {
+  border-color: rgba(45, 212, 191, 0.26);
+  color: #83e6ce;
+}
+
+.audit-signing-key-rotation-ledger.failed {
+  border-color: rgba(255, 127, 109, 0.3);
+  color: #ffb3a7;
+}
+
+.audit-signing-key-rotation-ledger span,
+.audit-signing-key-rotation-ledger strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-rotation-ledger span {
+  flex: 0 0 auto;
+}
+
+.audit-signing-key-rotation-ledger strong {
+  color: inherit;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.audit-signing-key-rotation-chain {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.72);
+  border-radius: 7px;
+  background: rgba(11, 18, 30, 0.48);
+  padding: 8px;
+}
+
+.audit-signing-key-rotation-chain.complete {
+  border-color: rgba(45, 212, 191, 0.26);
+}
+
+.audit-signing-key-rotation-chain.blocked {
+  border-color: rgba(255, 127, 109, 0.3);
+}
+
+.audit-signing-key-rotation-chain-head {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.22fr) minmax(150px, 0.28fr) minmax(
+      0,
+      1fr
+    );
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.audit-signing-key-rotation-chain-head span,
+.audit-signing-key-rotation-chain-head strong,
+.audit-signing-key-rotation-chain-head p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-rotation-chain-head span {
+  color: var(--muted-strong);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 820;
+}
+
+.audit-signing-key-rotation-chain-head strong {
+  color: var(--text);
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.audit-signing-key-rotation-chain.complete
+  .audit-signing-key-rotation-chain-head
+  strong {
+  color: #83e6ce;
+}
+
+.audit-signing-key-rotation-chain.blocked
+  .audit-signing-key-rotation-chain-head
+  strong {
+  color: #ffb3a7;
+}
+
+.audit-signing-key-rotation-chain-head p {
+  color: var(--muted-strong);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 760;
+}
+
+.audit-signing-key-rotation-chain-stages {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.audit-signing-key-rotation-chain-stage {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid rgba(48, 70, 96, 0.72);
+  border-left: 3px solid #8ea0b8;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.62);
+  padding: 6px 7px;
+}
+
+.audit-signing-key-rotation-chain-stage.complete {
+  border-left-color: #4cc9ad;
+}
+
+.audit-signing-key-rotation-chain-stage.blocked {
+  border-left-color: #ff7f6d;
+}
+
+.audit-signing-key-rotation-chain-stage span,
+.audit-signing-key-rotation-chain-stage strong,
+.audit-signing-key-rotation-chain-stage small,
+.audit-signing-key-rotation-chain-stage b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-rotation-chain-stage span {
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-weight: 820;
+}
+
+.audit-signing-key-rotation-chain-stage strong {
+  color: var(--text);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 880;
+}
+
+.audit-signing-key-rotation-chain-stage small,
+.audit-signing-key-rotation-chain-stage b {
+  color: var(--muted-strong);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-weight: 720;
+}
+
+.audit-signing-key-rotation-head {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.3fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.audit-signing-key-rotation-head span,
+.audit-signing-key-rotation-head strong,
+.audit-signing-key-rotation-head small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-signing-key-rotation-head span {
+  color: #f4d38a;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.audit-signing-key-rotation-head strong {
+  color: var(--text);
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.audit-signing-key-rotation-head small {
+  color: var(--muted-strong);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 760;
+}
+
+.audit-signing-key-env-list,
+.audit-signing-key-rotation-steps {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}

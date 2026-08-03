@@ -1,0 +1,758 @@
+
+.adapter-ledger-row strong,
+.adapter-ledger-row span,
+.adapter-ledger-row p,
+.adapter-ledger-row em,
+.adapter-certification-row strong,
+.adapter-certification-row span,
+.adapter-certification-row p,
+.adapter-certification-row em,
+.adapter-health-probe-row strong,
+.adapter-health-probe-row span,
+.adapter-health-probe-row p,
+.adapter-health-probe-row em,
+.adapter-certification-apply-row strong,
+.adapter-certification-apply-row span,
+.adapter-certification-apply-row p,
+.adapter-certification-apply-row em {
+  min-width: 0;
+}
+
+.adapter-ledger-row strong,
+.adapter-certification-row strong,
+.adapter-health-probe-row strong,
+.adapter-certification-apply-row strong {
+  color: #e8f0f8;
+  font-size: calc(13px * var(--aiqt-text-scale, 1));
+}
+
+.adapter-ledger-row span,
+.adapter-ledger-row em,
+.adapter-certification-row span,
+.adapter-certification-row em,
+.adapter-health-probe-row span,
+.adapter-health-probe-row em,
+.adapter-certification-apply-row span,
+.adapter-certification-apply-row em {
+  color: #9fb0c3;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.adapter-ledger-row p,
+.adapter-certification-row p,
+.adapter-health-probe-row p,
+.adapter-certification-apply-row p {
+  color: #c9d7e7;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+  margin: 7px 0 0;
+}
+
+.adapter-ledger-row em,
+.adapter-certification-row em,
+.adapter-health-probe-row em,
+.adapter-certification-apply-row em {
+  display: block;
+  font-style: normal;
+  margin-top: 5px;
+}
+
+.adapter-health-probe-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.adapter-health-probe-check {
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  color: #9fb0c3;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  padding: 4px 7px;
+}
+
+.adapter-health-probe-check.passed {
+  border-color: rgba(76, 201, 173, 0.45);
+  color: #7ce4d0;
+}
+
+.adapter-health-probe-check.review,
+.adapter-health-probe-check.skipped {
+  border-color: rgba(232, 190, 98, 0.45);
+  color: #f0cf83;
+}
+
+.adapter-health-probe-check.blocked {
+  border-color: rgba(255, 127, 109, 0.45);
+  color: #ffab9e;
+}
+
+.settings-source-row,
+.settings-cache-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
+.settings-source-row.ready,
+.settings-source-row.paper_ready,
+.settings-cache-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.settings-source-row.degraded,
+.settings-source-row.config_required,
+.settings-cache-row.warning {
+  border-left-color: #e8be62;
+}
+
+.settings-source-row.blocked {
+  border-left-color: #ff7f6d;
+}
+
+.settings-source-row span,
+.settings-cache-row span {
+  color: #8fa0b2;
+  display: block;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.settings-source-row strong,
+.settings-cache-row strong {
+  color: #dce6ee;
+  display: block;
+  font-size: calc(14px * var(--aiqt-text-scale, 1));
+  margin-top: 5px;
+}
+
+.settings-source-row p,
+.settings-cache-row p {
+  color: #a8b7c7;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.35;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-source-row small {
+  color: #8fa0b2;
+  display: block;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  line-height: 1.35;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.provider-health-trend {
+  border: 1px solid #25344a;
+  border-radius: 7px;
+  background: rgba(7, 13, 22, 0.32);
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.provider-health-trend.positive {
+  border-color: rgba(76, 201, 173, 0.35);
+}
+
+.provider-health-trend.warning {
+  border-color: rgba(232, 190, 98, 0.35);
+}
+
+.provider-health-trend.risk {
+  border-color: rgba(255, 127, 109, 0.42);
+}
+
+.provider-health-trend-summary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.provider-health-trend-summary span,
+.provider-health-trend-summary em {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  font-weight: 800;
+  min-width: 0;
+}
+
+.provider-health-trend-summary strong {
+  color: #dce6ee;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  min-width: 0;
+}
+
+.provider-health-trend-bars {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.provider-health-trend-window {
+  border: 1px solid #25344a;
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+}
+
+.provider-health-trend-window.positive {
+  border-color: rgba(76, 201, 173, 0.28);
+}
+
+.provider-health-trend-window.warning {
+  border-color: rgba(232, 190, 98, 0.32);
+}
+
+.provider-health-trend-window.risk {
+  border-color: rgba(255, 127, 109, 0.38);
+}
+
+.provider-health-trend-window span,
+.provider-health-trend-window em {
+  color: #8fa0b2;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  font-weight: 850;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-health-trend-window strong {
+  color: #dce6ee;
+  font-size: calc(14px * var(--aiqt-text-scale, 1));
+  min-width: 0;
+}
+
+.provider-health-trend-track {
+  background: #0a111c;
+  border-radius: 999px;
+  display: block;
+  height: 5px;
+  overflow: hidden;
+}
+
+.provider-health-trend-fill {
+  background: #4cc9ad;
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  width: 0%;
+}
+
+.provider-health-trend-window.level-1 .provider-health-trend-fill {
+  width: 25%;
+}
+
+.provider-health-trend-window.level-2 .provider-health-trend-fill {
+  width: 50%;
+  background: #e8be62;
+}
+
+.provider-health-trend-window.level-3 .provider-health-trend-fill {
+  width: 75%;
+  background: #ff9f6d;
+}
+
+.provider-health-trend-window.level-4 .provider-health-trend-fill {
+  width: 100%;
+  background: #ff7f6d;
+}
+
+.adapter-certification-button {
+  align-items: center;
+  border: 1px solid #295a52;
+  border-radius: 6px;
+  background: #0c2523;
+  color: #7df5db;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  margin-top: 8px;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.adapter-certification-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.adapter-certification-apply-confirmations {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.adapter-certification-apply-confirmation {
+  align-items: flex-start;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #0d1724;
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.adapter-certification-apply-confirmation.positive {
+  border-color: #2e6b5d;
+  background: #0d211f;
+}
+
+.adapter-certification-apply-confirmation input {
+  accent-color: #4cc9ad;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.adapter-certification-apply-confirmation span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.adapter-certification-apply-confirmation strong {
+  color: #dce6ee;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.adapter-certification-apply-confirmation em {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.adapter-certification-apply-button {
+  align-items: center;
+  border: 1px solid #51492b;
+  border-radius: 6px;
+  background: #2a2412;
+  color: #f2d27a;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  margin-top: 8px;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.adapter-certification-apply-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.adapter-orchestration-dry-run-list,
+.adapter-orchestration-execution-list,
+.adapter-human-confirmation-list,
+.adapter-sandbox-order-schema-dry-run-list,
+.adapter-paper-order-lifecycle-list,
+.adapter-paper-route-runbook-list,
+.adapter-ops-state-list,
+.adapter-production-route-review-list,
+.adapter-sandbox-probe-execution-list,
+.adapter-sandbox-probe-plan-list,
+.adapter-sandbox-probe-review-list,
+.adapter-runtime-reload-acceptance-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.adapter-orchestration-dry-run-row,
+.adapter-orchestration-execution-row,
+.adapter-human-confirmation-row,
+.adapter-sandbox-order-schema-dry-run-row,
+.adapter-paper-order-lifecycle-row,
+.adapter-paper-route-runbook-row,
+.adapter-ops-state-row,
+.adapter-production-route-review-row,
+.adapter-sandbox-probe-execution-row,
+.adapter-sandbox-probe-plan-row,
+.adapter-sandbox-probe-review-row,
+.adapter-runtime-reload-acceptance-row {
+  min-width: 0;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #101927;
+  padding: 10px;
+}
+
+.adapter-orchestration-dry-run-row.positive,
+.adapter-orchestration-execution-row.positive,
+.adapter-human-confirmation-row.positive,
+.adapter-sandbox-order-schema-dry-run-row.positive,
+.adapter-paper-order-lifecycle-row.positive,
+.adapter-paper-route-runbook-row.positive,
+.adapter-ops-state-row.positive,
+.adapter-production-route-review-row.positive,
+.adapter-sandbox-probe-execution-row.positive,
+.adapter-sandbox-probe-plan-row.positive,
+.adapter-sandbox-probe-review-row.positive,
+.adapter-runtime-reload-acceptance-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.adapter-orchestration-dry-run-row.warning,
+.adapter-orchestration-execution-row.warning,
+.adapter-human-confirmation-row.warning,
+.adapter-sandbox-order-schema-dry-run-row.warning,
+.adapter-paper-order-lifecycle-row.warning,
+.adapter-paper-route-runbook-row.warning,
+.adapter-ops-state-row.warning,
+.adapter-production-route-review-row.warning,
+.adapter-sandbox-probe-execution-row.warning,
+.adapter-sandbox-probe-plan-row.warning,
+.adapter-sandbox-probe-review-row.warning,
+.adapter-runtime-reload-acceptance-row.warning {
+  border-left-color: #e8be62;
+}
+
+.adapter-orchestration-dry-run-row.risk,
+.adapter-orchestration-execution-row.risk,
+.adapter-human-confirmation-row.risk,
+.adapter-sandbox-order-schema-dry-run-row.risk,
+.adapter-paper-order-lifecycle-row.risk,
+.adapter-paper-route-runbook-row.risk,
+.adapter-ops-state-row.risk,
+.adapter-production-route-review-row.risk,
+.adapter-sandbox-probe-execution-row.risk,
+.adapter-sandbox-probe-plan-row.risk,
+.adapter-sandbox-probe-review-row.risk,
+.adapter-runtime-reload-acceptance-row.risk {
+  border-left-color: #ff7f6d;
+}
+
+.adapter-ops-state-row.focused {
+  border-color: #35c9b6;
+  box-shadow:
+    0 0 0 1px rgba(53, 201, 182, 0.48),
+    0 12px 30px rgba(14, 184, 166, 0.12);
+}
+
+.adapter-orchestration-dry-run-row > div:first-child,
+.adapter-orchestration-execution-row > div:first-child,
+.adapter-human-confirmation-row > div:first-child,
+.adapter-sandbox-order-schema-dry-run-row > div:first-child,
+.adapter-paper-order-lifecycle-row > div:first-child,
+.adapter-paper-route-runbook-row > div:first-child,
+.adapter-ops-state-row > div:first-child,
+.adapter-production-route-review-row > div:first-child,
+.adapter-sandbox-probe-execution-row > div:first-child,
+.adapter-sandbox-probe-plan-row > div:first-child,
+.adapter-sandbox-probe-review-row > div:first-child,
+.adapter-runtime-reload-acceptance-row > div:first-child {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.adapter-orchestration-dry-run-row strong,
+.adapter-orchestration-dry-run-row span,
+.adapter-orchestration-dry-run-row p,
+.adapter-orchestration-dry-run-row em,
+.adapter-orchestration-execution-row strong,
+.adapter-orchestration-execution-row span,
+.adapter-orchestration-execution-row p,
+.adapter-orchestration-execution-row em,
+.adapter-human-confirmation-row strong,
+.adapter-human-confirmation-row span,
+.adapter-human-confirmation-row p,
+.adapter-human-confirmation-row em,
+.adapter-sandbox-order-schema-dry-run-row strong,
+.adapter-sandbox-order-schema-dry-run-row span,
+.adapter-sandbox-order-schema-dry-run-row p,
+.adapter-sandbox-order-schema-dry-run-row em,
+.adapter-paper-order-lifecycle-row strong,
+.adapter-paper-order-lifecycle-row span,
+.adapter-paper-order-lifecycle-row p,
+.adapter-paper-order-lifecycle-row em,
+.adapter-paper-route-runbook-row strong,
+.adapter-paper-route-runbook-row span,
+.adapter-paper-route-runbook-row p,
+.adapter-paper-route-runbook-row em,
+.adapter-ops-state-row strong,
+.adapter-ops-state-row span,
+.adapter-ops-state-row p,
+.adapter-ops-state-row em,
+.adapter-production-route-review-row strong,
+.adapter-production-route-review-row span,
+.adapter-production-route-review-row p,
+.adapter-production-route-review-row em,
+.adapter-sandbox-probe-execution-row strong,
+.adapter-sandbox-probe-execution-row span,
+.adapter-sandbox-probe-execution-row p,
+.adapter-sandbox-probe-execution-row em,
+.adapter-sandbox-probe-plan-row strong,
+.adapter-sandbox-probe-plan-row span,
+.adapter-sandbox-probe-plan-row p,
+.adapter-sandbox-probe-plan-row em,
+.adapter-sandbox-probe-review-row strong,
+.adapter-sandbox-probe-review-row span,
+.adapter-sandbox-probe-review-row p,
+.adapter-sandbox-probe-review-row em,
+.adapter-runtime-reload-acceptance-row strong,
+.adapter-runtime-reload-acceptance-row span,
+.adapter-runtime-reload-acceptance-row p,
+.adapter-runtime-reload-acceptance-row em {
+  min-width: 0;
+}
+
+.adapter-orchestration-dry-run-row strong,
+.adapter-orchestration-execution-row strong,
+.adapter-human-confirmation-row strong,
+.adapter-sandbox-order-schema-dry-run-row strong,
+.adapter-paper-order-lifecycle-row strong,
+.adapter-paper-route-runbook-row strong,
+.adapter-ops-state-row strong,
+.adapter-production-route-review-row strong,
+.adapter-sandbox-probe-execution-row strong,
+.adapter-sandbox-probe-plan-row strong,
+.adapter-sandbox-probe-review-row strong,
+.adapter-runtime-reload-acceptance-row strong {
+  color: #e8f0f8;
+  font-size: calc(13px * var(--aiqt-text-scale, 1));
+}
+
+.adapter-orchestration-dry-run-row span,
+.adapter-orchestration-dry-run-row em,
+.adapter-orchestration-execution-row span,
+.adapter-orchestration-execution-row em,
+.adapter-human-confirmation-row span,
+.adapter-human-confirmation-row em,
+.adapter-sandbox-order-schema-dry-run-row span,
+.adapter-sandbox-order-schema-dry-run-row em,
+.adapter-paper-order-lifecycle-row span,
+.adapter-paper-order-lifecycle-row em,
+.adapter-paper-route-runbook-row span,
+.adapter-paper-route-runbook-row em,
+.adapter-ops-state-row span,
+.adapter-ops-state-row em,
+.adapter-production-route-review-row span,
+.adapter-production-route-review-row em,
+.adapter-sandbox-probe-execution-row span,
+.adapter-sandbox-probe-execution-row em,
+.adapter-sandbox-probe-plan-row span,
+.adapter-sandbox-probe-plan-row em,
+.adapter-sandbox-probe-review-row span,
+.adapter-sandbox-probe-review-row em,
+.adapter-runtime-reload-acceptance-row span,
+.adapter-runtime-reload-acceptance-row em {
+  color: #9fb0c3;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.adapter-orchestration-dry-run-row p,
+.adapter-orchestration-execution-row p,
+.adapter-human-confirmation-row p,
+.adapter-sandbox-order-schema-dry-run-row p,
+.adapter-paper-order-lifecycle-row p,
+.adapter-paper-route-runbook-row p,
+.adapter-ops-state-row p,
+.adapter-production-route-review-row p,
+.adapter-sandbox-probe-execution-row p,
+.adapter-sandbox-probe-plan-row p,
+.adapter-sandbox-probe-review-row p,
+.adapter-runtime-reload-acceptance-row p {
+  color: #c9d7e7;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+  margin: 7px 0 0;
+}
+
+.adapter-orchestration-dry-run-row em,
+.adapter-orchestration-execution-row em,
+.adapter-human-confirmation-row em,
+.adapter-sandbox-order-schema-dry-run-row em,
+.adapter-paper-order-lifecycle-row em,
+.adapter-paper-route-runbook-row em,
+.adapter-ops-state-row em,
+.adapter-production-route-review-row em,
+.adapter-sandbox-probe-execution-row em,
+.adapter-sandbox-probe-plan-row em,
+.adapter-sandbox-probe-review-row em,
+.adapter-runtime-reload-acceptance-row em {
+  display: block;
+  font-style: normal;
+  margin-top: 5px;
+}
+
+.adapter-orchestration-dry-run-confirmations,
+.adapter-orchestration-execution-confirmations,
+.adapter-human-confirmation-confirmations,
+.adapter-ops-state-confirmations,
+.adapter-production-route-review-confirmations,
+.adapter-sandbox-probe-execution-confirmations,
+.adapter-sandbox-probe-plan-confirmations,
+.adapter-sandbox-probe-review-confirmations,
+.adapter-runtime-reload-acceptance-confirmations {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
+.adapter-orchestration-dry-run-confirmation,
+.adapter-orchestration-execution-confirmation,
+.adapter-human-confirmation-confirmation,
+.adapter-ops-state-confirmation,
+.adapter-production-route-review-confirmation,
+.adapter-sandbox-probe-execution-confirmation,
+.adapter-sandbox-probe-plan-confirmation,
+.adapter-sandbox-probe-review-confirmation,
+.adapter-runtime-reload-acceptance-confirmation {
+  align-items: center;
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  background: #0d1724;
+  cursor: pointer;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.adapter-orchestration-dry-run-confirmation.positive,
+.adapter-orchestration-execution-confirmation.positive,
+.adapter-human-confirmation-confirmation.positive,
+.adapter-ops-state-confirmation.positive,
+.adapter-production-route-review-confirmation.positive,
+.adapter-sandbox-probe-execution-confirmation.positive,
+.adapter-sandbox-probe-plan-confirmation.positive,
+.adapter-sandbox-probe-review-confirmation.positive,
+.adapter-runtime-reload-acceptance-confirmation.positive {
+  border-color: #2e6b5d;
+  background: #0d211f;
+}
+
+.adapter-orchestration-dry-run-confirmation input,
+.adapter-orchestration-execution-confirmation input,
+.adapter-human-confirmation-confirmation input,
+.adapter-ops-state-confirmation input,
+.adapter-production-route-review-confirmation input,
+.adapter-sandbox-probe-execution-confirmation input,
+.adapter-sandbox-probe-plan-confirmation input,
+.adapter-sandbox-probe-review-confirmation input,
+.adapter-runtime-reload-acceptance-confirmation input {
+  accent-color: #4cc9ad;
+  flex: 0 0 auto;
+}
+
+.adapter-orchestration-dry-run-confirmation span,
+.adapter-orchestration-execution-confirmation span,
+.adapter-human-confirmation-confirmation span,
+.adapter-ops-state-confirmation span,
+.adapter-production-route-review-confirmation span,
+.adapter-sandbox-probe-execution-confirmation span,
+.adapter-sandbox-probe-plan-confirmation span,
+.adapter-sandbox-probe-review-confirmation span,
+.adapter-runtime-reload-acceptance-confirmation span {
+  overflow-wrap: anywhere;
+}
+
+.adapter-orchestration-dry-run-result,
+.adapter-orchestration-execution-result,
+.adapter-human-confirmation-result,
+.adapter-ops-state-result,
+.adapter-production-route-review-result,
+.adapter-sandbox-probe-execution-result,
+.adapter-sandbox-probe-plan-result,
+.adapter-sandbox-probe-review-result,
+.adapter-runtime-reload-acceptance-result {
+  border: 1px solid #27364a;
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px;
+}
+
+.adapter-orchestration-dry-run-result.positive,
+.adapter-orchestration-execution-result.positive,
+.adapter-human-confirmation-result.positive,
+.adapter-ops-state-result.positive,
+.adapter-production-route-review-result.positive,
+.adapter-sandbox-probe-execution-result.positive,
+.adapter-sandbox-probe-plan-result.positive,
+.adapter-sandbox-probe-review-result.positive,
+.adapter-runtime-reload-acceptance-result.positive {
+  border-color: #2e6b5d;
+  background: #0d211f;
+}
+
+.adapter-ops-state-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adapter-ops-state-result-actions button {
+  align-items: center;
+  background: #101c2b;
+  border: 1px solid #2b3b50;
+  border-radius: 6px;
+  color: #dce6ee;
+  display: inline-flex;
+  gap: 5px;
+  justify-content: center;
+  min-height: 28px;
+  padding: 5px 8px;
+}
+
+.adapter-ops-state-result-actions button:hover:not(:disabled) {
+  border-color: #35c9b6;
+  color: #7ee4d2;
+}
+
+.adapter-ops-state-result-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-cache-row .settings-cache-stats {
+  color: #7ee4d2;
+  font-weight: 900;
+}
+
+.settings-cache-row .settings-cache-health {
+  color: #dce6ee;
+  font-weight: 900;
+}
+
+.settings-cache-contexts {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.settings-cache-contexts > span {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}

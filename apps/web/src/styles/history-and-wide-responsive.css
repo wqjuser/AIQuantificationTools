@@ -1,0 +1,625 @@
+
+.history-comparison-row {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.9fr) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border: 1px solid #27364a;
+  border-left: 3px solid #2a3b51;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 7px 8px;
+  color: #dce6ee;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  line-height: 1.35;
+}
+
+.history-comparison-row.positive {
+  border-left-color: #4cc9ad;
+}
+
+.history-comparison-row.warning {
+  border-left-color: #e8be62;
+}
+
+.history-comparison-row.neutral {
+  border-left-color: #2a3b51;
+}
+
+.history-comparison-row span,
+.history-comparison-row strong,
+.history-comparison-row em {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-comparison-head {
+  min-height: 28px;
+  background: #0f1722;
+  color: #8fa0b2;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.history-comparison-row em {
+  margin-top: 2px;
+  color: #71dfc5;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  font-weight: 900;
+}
+
+.history-comparison-row.warning em {
+  color: #e8be62;
+}
+
+.history-row {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #2a3b51;
+  border-radius: 7px;
+  background: #151f2d;
+  color: #dce6ee;
+  cursor: default;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.history-row-main {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.history-row strong,
+.history-row span,
+.history-row small {
+  display: block;
+}
+
+.history-row strong {
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.35;
+}
+
+.history-row span,
+.history-row small,
+.empty-state {
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.history-row small {
+  justify-self: start;
+  border: 1px solid #2a3b51;
+  border-radius: 6px;
+  padding: 4px 7px;
+  color: #71dfc5;
+  font-weight: 900;
+}
+
+.history-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.history-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid #2a3b51;
+  border-radius: 6px;
+  background: #101927;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  padding: 4px 7px;
+}
+
+.history-row-actions button:hover {
+  border-color: #2b6f62;
+  background: #122b27;
+}
+
+.history-row-actions small {
+  border: 0;
+  padding: 0;
+}
+
+.history-row:hover,
+.history-row.active {
+  border-color: #2b6f62;
+  background: #122b27;
+}
+
+.ai-actions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-color: #403968;
+  background: #191d32;
+  color: #d9d1ff;
+  text-align: left;
+}
+
+.safety-footer {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid #614e20;
+  border-radius: 8px;
+  background: #2a2315;
+  color: #e8be62;
+  padding: 10px;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+}
+
+.terminal-status-bar {
+  position: fixed;
+  z-index: 60;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(205px, 0.9fr);
+  gap: 0;
+  min-height: 62px;
+  border-top: 1px solid #27394d;
+  background: rgb(9 15 23 / 96%);
+  box-shadow: 0 -16px 40px rgb(0 0 0 / 25%);
+  padding: 7px 10px;
+  backdrop-filter: blur(14px);
+}
+
+.terminal-status-item,
+.terminal-live-block {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  border: 1px solid #213246;
+  border-right: 0;
+  background: #0e1925;
+  padding: 7px 14px;
+}
+
+.terminal-status-item:first-child {
+  border-radius: 5px 0 0 5px;
+}
+
+.terminal-status-item > span,
+.terminal-live-block > span {
+  color: #cdd8e2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+}
+
+.terminal-status-item strong,
+.terminal-live-block strong {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--teal);
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-status-item.paper strong {
+  color: var(--amber);
+}
+
+.terminal-status-item.live strong {
+  color: var(--teal);
+}
+
+.terminal-status-item.blocked strong {
+  color: var(--danger);
+}
+
+.status-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #61d8b8;
+  box-shadow: 0 0 10px rgb(97 216 184 / 35%);
+}
+
+.terminal-live-block {
+  border: 1px solid #8b2d2d;
+  border-radius: 5px;
+  background: #2a1519;
+}
+
+.terminal-live-block strong {
+  color: #ff6d62;
+}
+
+.terminal-live-block small {
+  margin-top: 2px;
+  color: #c79999;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+@media (max-width: 960px) {
+  .terminal-shell {
+    grid-template-columns: 68px minmax(0, 1fr);
+    height: auto;
+    overflow: visible;
+  }
+
+  .left-rail {
+    position: sticky;
+    height: 100vh;
+    border-width: 0 1px 0 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 7px;
+  }
+
+  .brand {
+    justify-content: center;
+    gap: 0;
+  }
+
+  .brand > div {
+    display: none;
+  }
+
+  .work-area-group-label,
+  .rail-profile {
+    display: none;
+  }
+
+  .work-area-group + .work-area-group {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .terminal-main {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .loop-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .loop-step {
+    grid-template-columns: 1fr;
+    place-items: center;
+    min-height: 50px;
+    padding: 7px 5px;
+    text-align: center;
+  }
+
+  .work-area-button {
+    grid-template-columns: 1fr;
+    place-items: center;
+    min-height: 50px;
+    padding: 7px 5px;
+    text-align: center;
+  }
+
+  .loop-step .workflow-step-index,
+  .work-area-index {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    display: grid;
+    place-items: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 5px;
+    background: #243449;
+    color: #94a8bb;
+    font-size: calc(10px * var(--aiqt-text-scale, 1));
+    font-weight: 800;
+  }
+
+  .loop-step-copy,
+  .work-area-copy,
+  .work-area-stage,
+  .work-area-status,
+  .workflow-next-action,
+  .left-rail .workspace-card {
+    display: none;
+  }
+
+  .terminal-main {
+    gap: 10px;
+  }
+
+  .terminal-overview-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  }
+
+  .terminal-overview-grid .module-focus-card,
+  .terminal-overview-grid .watchlist-strip {
+    grid-column: 1;
+  }
+
+  .terminal-overview-grid .watchlist-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .terminal-overview-grid .metrics-row {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .terminal-topbar {
+    min-height: auto;
+    padding: 8px 10px;
+  }
+
+  .terminal-topbar .status-pill {
+    display: none;
+  }
+
+  h1 {
+    font-size: calc(18px * var(--aiqt-text-scale, 1));
+  }
+
+  .ticker,
+  .metric-card {
+    min-height: 52px;
+    padding: 8px;
+  }
+
+  .ticker strong {
+    margin: 2px 0;
+    font-size: calc(13px * var(--aiqt-text-scale, 1));
+  }
+
+  .module-focus-card {
+    min-height: 0;
+    padding: 8px 10px;
+  }
+
+  .module-focus-card p {
+    margin-top: 3px;
+  }
+
+  .p0-golden-path-steps {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .metric-card strong {
+    margin-top: 4px;
+    font-size: calc(18px * var(--aiqt-text-scale, 1));
+  }
+
+  .center-grid,
+  .workflow-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .watchlist-layout {
+    grid-template-areas:
+      "chart"
+      "strategy"
+      "backtest"
+      "workflow"
+      "ai"
+      "decision"
+      "execution"
+      "history";
+  }
+
+  .research-layout {
+    grid-template-areas:
+      "chart"
+      "scanner"
+      "note"
+      "handoff"
+      "workflow"
+      "decision";
+  }
+
+  .market-layout {
+    grid-template-areas:
+      "research-ops"
+      "data"
+      "scanner"
+      "calendar"
+      "workflow";
+  }
+
+  .backtest-layout {
+    grid-template-areas:
+      "backtest"
+      "workflow"
+      "history"
+      "ai";
+  }
+
+  .agent-review-layout {
+    grid-template-areas:
+      "ai"
+      "workflow"
+      "decision"
+      "history";
+  }
+
+  .paper-layout {
+    grid-template-areas:
+      "execution"
+      "portfolio"
+      "broker";
+  }
+
+  .portfolio-layout {
+    grid-template-areas:
+      "stage4"
+      "portfolio"
+      "execution"
+      "decision";
+  }
+
+  .execution-layout {
+    grid-template-areas:
+      "stage5"
+      "execution"
+      "replay-gate"
+      "replay-manifest"
+      "promotion"
+      "adapter-chain"
+      "p2-acceptance"
+      "p2-readiness"
+      "p2-chain"
+      "p2-coverage"
+      "operator-runbook"
+      "pre-live"
+      "broker";
+  }
+
+  .audit-layout {
+    grid-template-areas:
+      "evidence-control"
+      "runbook"
+      "history"
+      "export"
+      "workflow"
+      "decision"
+      "package"
+      "refresh-overrides"
+      "portfolio-orders"
+      "adapter-paper-executions"
+      "p2-acceptance"
+      "p2-chain-preflight-review"
+      "p2-readiness-review"
+      "p2-coverage-review"
+      "acceptance"
+      "reports"
+      "signing-keys"
+      "import-diff"
+      "import-events"
+      "index"
+      "ai";
+  }
+
+  .settings-layout {
+    grid-template-areas:
+      "settings"
+      "broker";
+  }
+
+  .workflow-agent-panel .agent-panel-body,
+  .audit-signing-key-row,
+  .audit-signing-key-rotation-history-row,
+  .audit-signing-key-rotation-apply-checks,
+  .audit-signing-key-rotation-apply-result,
+  .audit-signing-key-rotation-head,
+  .audit-signing-key-env-row,
+  .audit-signing-key-step,
+  .audit-ai-trail-grid,
+  .research-export-preview-toolbar,
+  .research-export-browser-toolbar,
+  .market-refresh-audit-toolbar,
+  .audit-report-ledger-toolbar,
+  .research-import-diff-toolbar,
+  .research-import-events-toolbar,
+  .research-export-index-toolbar,
+  .workflow-history-panel .history-panel-body {
+    grid-template-columns: 1fr;
+  }
+
+  .market-refresh-audit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-paper-order-audit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .research-export-preview-row {
+    grid-template-columns: 1fr;
+  }
+
+  .research-import-diff-actions {
+    justify-content: flex-start;
+  }
+
+  .research-import-diff-actions span {
+    max-width: 100%;
+  }
+
+  .health-grid,
+  .strategy-draft-grid,
+  .strategy-template-grid,
+  .strategy-readiness-list,
+  .strategy-governance-summary,
+  .settings-source-list,
+  .settings-source-list.adapters,
+  .settings-cache-contexts > div,
+  .paper-replay-gate-metrics,
+  .paper-replay-gate-items,
+  .p2-pre-live-acceptance-meta,
+  .p2-paper-replay-meta,
+  .p2-chain-preflight-command,
+  .p2-chain-preflight-stages,
+  .p2-chain-preflight-stage,
+  .p2-manifest-chain-preflight-review-meta,
+  .p2-manifest-chain-preflight-review-stages,
+  .p2-manifest-chain-preflight-review-stage,
+  .p2-evidence-coverage-grid,
+  .p2-evidence-coverage-row,
+  .p2-readiness-evidence-coverage-review-meta,
+  .p2-readiness-evidence-coverage-review-rows,
+  .p2-readiness-evidence-coverage-review-row,
+  .p2-readiness-acceptance-review-meta,
+  .p2-readiness-acceptance-review-manifests,
+  .p2-readiness-acceptance-review-criteria,
+  .p2-readiness-acceptance-readback,
+  .p2-readiness-acceptance-grid,
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .backtest-benchmark-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-backtest-content {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-backtest-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .risk-approval-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .promotion-stage-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .safety-footer {
+    min-height: 100%;
+  }
+}

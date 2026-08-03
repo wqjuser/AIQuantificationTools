@@ -1,7 +1,15 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 
-const globalStyles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+function readImportedStyles(entryUrl) {
+  const entry = readFileSync(entryUrl, "utf8");
+  const imports = [...entry.matchAll(/^@import "([^"]+)";$/gm)].map(([, path]) => path);
+  return imports.length === 0
+    ? entry
+    : imports.map((path) => readFileSync(new URL(path, entryUrl), "utf8")).join("");
+}
+
+const globalStyles = readImportedStyles(new URL("../styles.css", import.meta.url));
 const mainSource = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
 const marketPageLayoutStyles = readFileSync(
   new URL("../pages/market/MarketPage.layout.css", import.meta.url),

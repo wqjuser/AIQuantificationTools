@@ -1,0 +1,759 @@
+
+@media (max-width: 860px) {
+
+  .terminal-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .p0-golden-path-head,
+  .p0-golden-path-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .p0-golden-path-head em,
+  .p0-golden-path-primary-action,
+  .p0-golden-path-complete {
+    width: 100%;
+  }
+
+  .p0-golden-path-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-share-deep-link {
+    grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-share-deep-link-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stage1-p0-share-deep-link-actions button {
+    width: 100%;
+  }
+
+  .stage1-p0-daily-use-head,
+  .stage1-p0-daily-use-footer {
+    align-items: stretch;
+  }
+
+  .stage1-p0-daily-use-rows {
+    grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-daily-use-refresh-outcome-entries {
+    grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-daily-use-refresh-outcome-actions {
+    flex-direction: column;
+  }
+
+  .stage1-p0-daily-use-refresh-outcome-actions button {
+    width: 100%;
+  }
+
+  .stage1-p0-daily-use-archive-reference,
+  .stage1-p0-daily-use-archive-reference > div:last-child {
+    grid-template-columns: 1fr;
+  }
+
+  .stage1-p0-daily-use-archive-reference button {
+    width: 100%;
+  }
+
+  .stage1-p0-daily-use-footer {
+    flex-direction: column;
+  }
+
+  .stage1-p0-daily-use-footer small {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+
+  .stage1-p0-daily-use-footer-actions {
+    align-items: stretch;
+    flex: 0 1 auto;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .stage1-p0-daily-use-footer button {
+    width: 100%;
+  }
+
+  .market-data-readiness-strip,
+  .market-data-readiness-strip dl {
+    grid-template-columns: 1fr;
+  }
+
+  .left-rail {
+    position: sticky;
+    z-index: 70;
+    top: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 8px;
+    height: auto;
+    overflow: visible;
+    border-width: 0 0 1px;
+    background: rgb(13 23 34 / 97%);
+    padding: 7px;
+    backdrop-filter: blur(14px);
+  }
+
+  .left-rail .brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .left-rail .rail-section,
+  .left-rail .work-area-nav,
+  .left-rail .work-area-group-items {
+    min-width: 0;
+  }
+
+  .left-rail .work-area-nav {
+    display: flex;
+    gap: 3px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .left-rail .work-area-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .left-rail .work-area-group,
+  .left-rail .work-area-group-items {
+    display: flex;
+    gap: 3px;
+  }
+
+  .left-rail .work-area-button {
+    flex: 0 0 42px;
+    min-height: 36px;
+  }
+
+  .terminal-main {
+    padding-inline: 7px;
+  }
+
+  .terminal-status-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 68px;
+    overflow: auto;
+    padding: 5px 7px;
+  }
+
+  .terminal-live-block {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .workspace-command-center-body {
+    position: fixed;
+    top: 62px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-height: calc(100vh - 142px);
+  }
+
+  .loop-nav,
+  .module-list,
+  .terminal-overview-grid .watchlist-strip,
+  .terminal-overview-grid .metrics-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .watchlist-strip,
+  .metrics-row,
+  .assistant-command-strip,
+  .center-grid,
+  .module-workspace-grid,
+  .node-row,
+  .evidence-package-control-summary,
+  .evidence-package-control-row,
+  .evidence-package-control-gates,
+  .execution-grid,
+  .gate-list,
+  .risk-approval-grid,
+  .promotion-stage-list,
+  .paper-blotter-row,
+  .portfolio-order-replay-row,
+  .risk-ledger,
+  .portfolio-backtest-content,
+  .portfolio-backtest-leg-row,
+  .paper-position-row,
+  .broker-adapter-row,
+  .event-stream,
+  .strategy-rule-row,
+  .strategy-governance-row,
+  .strategy-editor,
+  .strategy-draft-grid,
+  .strategy-template-grid,
+  .strategy-generated-snapshot,
+  .ai-dossier-grid,
+  .audit-ai-risk-gate,
+  .audit-ai-drift-row,
+  .research-export-browser-row,
+  .research-import-diff-row,
+  .research-import-event-row,
+  .audit-report-ledger-row,
+  .research-export-index-row,
+  .watchlist-refresh-item-row,
+  .backtest-evidence-grid,
+  .backtest-readiness-list,
+  .backtest-benchmark-strip,
+  .backtest-benchmark-strip dl,
+  .backtest-diagnostic-strip,
+  .backtest-row,
+  .workflow-artifact-grid,
+  .workflow-canvas-large {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-blotter-row.portfolio-order-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-order-approval,
+  .portfolio-order-approval-list,
+  .portfolio-order-simulation,
+  .portfolio-order-simulation-list,
+  .portfolio-paper-ops-queue,
+  .portfolio-paper-ops-table {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .portfolio-order-approval-row,
+  .portfolio-order-simulation-row,
+  .portfolio-paper-ops-summary,
+  .portfolio-paper-ops-row {
+    grid-template-columns: 1fr;
+  }
+
+  .promotion-queue [class*="-evidence-row"] {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-ai-drift-row {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-ai-risk-gate {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-ai-drift-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .watchlist-refresh-item-row p {
+    text-align: left;
+  }
+
+  .daily-start-brief-actions {
+    justify-content: stretch;
+  }
+
+  .daily-start-brief-actions button {
+    flex: 1 1 150px;
+    justify-content: center;
+  }
+
+  .daily-start-brief-review-reference {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-start-brief-review-reference-actions {
+    justify-content: stretch;
+  }
+
+  .daily-start-brief-review-reference-actions button {
+    flex: 1 1 150px;
+    justify-content: center;
+  }
+
+  .daily-start-brief-checkpoints {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .watchlist-layout {
+    grid-template-areas:
+      "chart"
+      "strategy"
+      "backtest"
+      "workflow"
+      "ai"
+      "decision"
+      "execution"
+      "history";
+  }
+
+  .research-layout {
+    grid-template-areas:
+      "chart"
+      "scanner"
+      "note"
+      "handoff"
+      "workflow"
+      "decision";
+  }
+
+  .market-layout {
+    grid-template-areas:
+      "research-ops"
+      "data"
+      "scanner"
+      "calendar"
+      "workflow";
+  }
+
+  .backtest-layout {
+    grid-template-areas:
+      "backtest"
+      "workflow"
+      "history"
+      "ai";
+  }
+
+  .agent-review-layout {
+    grid-template-areas:
+      "ai"
+      "workflow"
+      "decision"
+      "history";
+  }
+
+  .paper-layout {
+    grid-template-areas:
+      "execution"
+      "portfolio"
+      "broker";
+  }
+
+  .portfolio-layout {
+    grid-template-areas:
+      "stage4"
+      "portfolio"
+      "execution"
+      "decision";
+  }
+
+  .execution-layout {
+    grid-template-areas:
+      "stage5"
+      "execution"
+      "replay-gate"
+      "replay-manifest"
+      "promotion"
+      "adapter-chain"
+      "p2-acceptance"
+      "p2-readiness"
+      "p2-chain"
+      "p2-coverage"
+      "operator-runbook"
+      "pre-live"
+      "broker";
+  }
+
+  .audit-layout {
+    grid-template-areas:
+      "runbook"
+      "history"
+      "export"
+      "workflow"
+      "decision"
+      "package"
+      "refresh-overrides"
+      "portfolio-orders"
+      "adapter-paper-executions"
+      "p2-acceptance"
+      "p2-chain-preflight-review"
+      "p2-readiness-review"
+      "p2-coverage-review"
+      "acceptance"
+      "reports"
+      "signing-keys"
+      "import-diff"
+      "import-events"
+      "index"
+      "ai";
+  }
+
+  .settings-layout {
+    grid-template-areas:
+      "settings"
+      "broker";
+  }
+
+  .watchlist-ai-panel .agent-panel-body,
+  .audit-signing-key-row,
+  .audit-signing-key-rotation-history-row,
+  .audit-signing-key-rotation-apply-checks,
+  .audit-signing-key-rotation-apply-result,
+  .audit-signing-key-rotation-head,
+  .audit-signing-key-env-row,
+  .audit-signing-key-step,
+  .audit-ai-trail-grid,
+  .research-export-preview-toolbar,
+  .research-export-browser-toolbar,
+  .market-refresh-audit-toolbar,
+  .audit-report-ledger-toolbar,
+  .research-import-diff-toolbar,
+  .research-import-events-toolbar,
+  .research-export-index-toolbar,
+  .assistant-command-strip .agent-grid,
+  .assistant-command-strip .ai-actions,
+  .watchlist-history-panel .history-panel-body,
+  .watchlist-history-panel .run-history {
+    grid-template-columns: 1fr;
+  }
+
+  .research-import-diff-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .module-workspace-panel,
+  .workflow-workspace {
+    grid-column: auto;
+  }
+
+  .scanner-row {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .symbol-switcher {
+    display: grid;
+    grid-template-columns: 94px minmax(0, 1fr) auto;
+    width: 100%;
+  }
+
+  .symbol-switcher select,
+  .symbol-field,
+  .symbol-field input {
+    width: 100%;
+  }
+
+  .symbol-suggestions {
+    width: 100%;
+  }
+
+  .terminal-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-overview-grid .module-focus-card,
+  .terminal-overview-grid .watchlist-strip,
+  .terminal-overview-grid .metrics-row {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .module-focus-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .health-grid,
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-modal-backdrop {
+    padding: 4px;
+  }
+
+  .chart-modal {
+    width: calc(100vw - 8px);
+    height: calc(100vh - 8px);
+    padding: 8px;
+  }
+
+  .chart-modal-body {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .chart-modal .chart-canvas,
+  .chart-modal .chart-canvas > div {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .portfolio-stage4-header,
+  .portfolio-stage4-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portfolio-stage4-boundary {
+    max-width: none;
+  }
+
+  .portfolio-stage4-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-stage4-primary {
+    width: 100%;
+  }
+
+  .daily-start-brief-checkpoints {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .terminal-shell {
+    display: block;
+    overflow-x: hidden;
+  }
+
+  .left-rail {
+    position: fixed;
+    z-index: 100;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 58px;
+    min-height: 0;
+    padding: 4px;
+  }
+
+  .left-rail .brand,
+  .left-rail .rail-profile,
+  .left-rail .work-area-group-label {
+    display: none;
+  }
+
+  .left-rail .rail-section,
+  .left-rail .work-area-group,
+  .left-rail .work-area-group-items {
+    display: contents;
+  }
+
+  .left-rail .work-area-nav {
+    display: flex;
+    gap: 3px;
+    overflow-x: auto;
+  }
+
+  .left-rail .work-area-button {
+    display: grid;
+    flex: 0 0 56px;
+    grid-template-columns: 1fr;
+    place-items: center;
+    min-height: 48px;
+    padding: 5px;
+  }
+
+  .left-rail .work-area-button .work-area-copy {
+    display: none;
+  }
+
+  .terminal-main {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+    padding: 42px 0 118px;
+    overflow: visible;
+  }
+
+  .terminal-design-surface {
+    width: 100%;
+    height: auto;
+    min-height: calc(100vh - 160px);
+    padding: 10px 8px 80px;
+  }
+
+  .design-market-grid,
+  .design-research-grid,
+  .design-strategy-grid,
+  .design-backtest-grid,
+  .design-ai-grid,
+  .design-portfolio-grid,
+  .design-execution-grid,
+  .design-audit-grid,
+  .design-settings-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .design-market-side,
+  .design-market-bottom,
+  .design-research-side,
+  .design-research-runs,
+  .design-risk-ledger,
+  .design-ai-side,
+  .design-ai-decisions,
+  .design-portfolio-side,
+  .design-execution-side,
+  .design-execution-timeline,
+  .design-audit-side,
+  .design-audit-detail,
+  .design-settings-side {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .design-market-bottom,
+  .design-review-columns,
+  .design-detail-grid,
+  .design-settings-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .terminal-status-bar {
+    position: fixed;
+    right: 0;
+    bottom: 58px;
+    left: 0;
+    height: 54px;
+    min-height: 54px;
+  }
+}
+
+/* Terminal layout detail pass: improve hierarchy and legibility without changing workflow data. */
+.terminal-shell {
+  background: #06131f;
+}
+
+.left-rail,
+.terminal-main {
+  height: calc(100vh - 62px);
+}
+
+.terminal-main {
+  grid-template-rows: minmax(0, 1fr);
+  align-content: stretch;
+}
+
+.left-rail .work-area-button {
+  border-color: transparent;
+  border-radius: 5px;
+}
+
+.left-rail .work-area-button:hover {
+  border-color: #2a4154;
+  background: #102433;
+}
+
+.left-rail .work-area-button.selected,
+.left-rail .work-area-button.active {
+  border-color: #2d6a5e;
+  border-left-color: #58d6b9;
+  background: #123632;
+}
+
+.terminal-global-tape {
+  gap: 28px;
+  font-size: calc(10.5px * var(--aiqt-text-scale, 1));
+}
+
+.symbol-field input {
+  width: 240px;
+  height: 32px;
+  padding-inline: 12px;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.terminal-paper-badge,
+.terminal-live-badge {
+  min-height: 32px;
+  padding-inline: 11px;
+}
+
+.terminal-design-surface {
+  padding: 12px 14px 0;
+  overscroll-behavior-y: none;
+}
+
+.design-page-header {
+  min-height: 50px;
+  margin-bottom: 8px;
+}
+
+.design-page-header h2 {
+  font-size: calc(23px * var(--aiqt-text-scale, 1));
+  letter-spacing: 0.025em;
+}
+
+.design-page-header > div > span,
+.design-meta-line,
+.design-inline-quote,
+.design-header-actions {
+  font-size: calc(10.5px * var(--aiqt-text-scale, 1));
+}
+
+.design-primary-action {
+  min-height: 38px;
+  border-radius: 5px;
+  font-size: calc(11.5px * var(--aiqt-text-scale, 1));
+}
+
+.design-panel {
+  border-color: #243b4f;
+  border-radius: 6px;
+  background: #0a1926;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%);
+}
+
+.design-panel-head {
+  min-height: 40px;
+  border-bottom-color: #20374a;
+  padding: 9px 12px;
+}
+
+.design-panel-head h3 {
+  font-size: calc(13.5px * var(--aiqt-text-scale, 1));
+  letter-spacing: 0.015em;
+}
+
+.design-panel-head span {
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+}
+
+.design-panel-body {
+  padding: 10px 12px;
+}
+
+.design-table {
+  color: #a9b8c5;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+}
+
+.design-table th,
+.design-table td {
+  height: 32px;
+  border-bottom-color: #1c3346;
+  padding: 6px 9px;
+}
+
+.design-table th {
+  background: rgb(7 20 31 / 46%);
+  color: #8da0b1;
+  font-size: calc(9.5px * var(--aiqt-text-scale, 1));
+}

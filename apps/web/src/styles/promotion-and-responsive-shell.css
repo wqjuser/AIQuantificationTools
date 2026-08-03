@@ -1,0 +1,761 @@
+
+.promotion-adapter-ops-state-evidence-row strong,
+.promotion-adapter-ops-state-evidence-row p,
+.promotion-adapter-ops-state-evidence-row em,
+.promotion-adapter-paper-execution-evidence-row strong,
+.promotion-adapter-paper-execution-evidence-row p,
+.promotion-adapter-paper-execution-evidence-row em,
+.promotion-certification-evidence-row strong,
+.promotion-certification-evidence-row p,
+.promotion-certification-evidence-row em,
+.promotion-certification-apply-evidence-row strong,
+.promotion-certification-apply-evidence-row p,
+.promotion-certification-apply-evidence-row em,
+.promotion-controlled-restart-evidence-row strong,
+.promotion-controlled-restart-evidence-row p,
+.promotion-controlled-restart-evidence-row em,
+.promotion-environment-binding-evidence-row strong,
+.promotion-environment-binding-evidence-row p,
+.promotion-environment-binding-evidence-row em,
+.promotion-human-confirmation-evidence-row strong,
+.promotion-human-confirmation-evidence-row p,
+.promotion-human-confirmation-evidence-row em,
+.promotion-orchestration-dry-run-evidence-row strong,
+.promotion-orchestration-dry-run-evidence-row p,
+.promotion-orchestration-dry-run-evidence-row em,
+.promotion-orchestration-execution-evidence-row strong,
+.promotion-orchestration-execution-evidence-row p,
+.promotion-orchestration-execution-evidence-row em,
+.promotion-paper-order-lifecycle-evidence-row strong,
+.promotion-paper-order-lifecycle-evidence-row p,
+.promotion-paper-order-lifecycle-evidence-row em,
+.promotion-paper-route-runbook-evidence-row strong,
+.promotion-paper-route-runbook-evidence-row p,
+.promotion-paper-route-runbook-evidence-row em,
+.promotion-production-route-review-evidence-row strong,
+.promotion-production-route-review-evidence-row p,
+.promotion-production-route-review-evidence-row em,
+.promotion-restart-acceptance-row strong,
+.promotion-restart-acceptance-row p,
+.promotion-restart-acceptance-row em,
+.promotion-runtime-reload-acceptance-evidence-row strong,
+.promotion-runtime-reload-acceptance-evidence-row p,
+.promotion-runtime-reload-acceptance-evidence-row em,
+.promotion-runtime-reload-execution-evidence-row strong,
+.promotion-runtime-reload-execution-evidence-row p,
+.promotion-runtime-reload-execution-evidence-row em,
+.promotion-runtime-reload-plan-evidence-row strong,
+.promotion-runtime-reload-plan-evidence-row p,
+.promotion-runtime-reload-plan-evidence-row em,
+.promotion-sandbox-order-schema-dry-run-evidence-row strong,
+.promotion-sandbox-order-schema-dry-run-evidence-row p,
+.promotion-sandbox-order-schema-dry-run-evidence-row em,
+.promotion-sandbox-probe-execution-evidence-row strong,
+.promotion-sandbox-probe-execution-evidence-row p,
+.promotion-sandbox-probe-execution-evidence-row em,
+.promotion-sandbox-probe-plan-evidence-row strong,
+.promotion-sandbox-probe-plan-evidence-row p,
+.promotion-sandbox-probe-plan-evidence-row em,
+.promotion-sandbox-probe-review-evidence-row strong,
+.promotion-sandbox-probe-review-evidence-row p,
+.promotion-sandbox-probe-review-evidence-row em,
+.promotion-secret-materialization-evidence-row strong,
+.promotion-secret-materialization-evidence-row p,
+.promotion-secret-materialization-evidence-row em,
+.promotion-secret-reference-evidence-row strong,
+.promotion-secret-reference-evidence-row p,
+.promotion-secret-reference-evidence-row em {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.promotion-adapter-ops-state-evidence-row strong,
+.promotion-adapter-paper-execution-evidence-row strong,
+.promotion-certification-evidence-row strong,
+.promotion-certification-apply-evidence-row strong,
+.promotion-controlled-restart-evidence-row strong,
+.promotion-environment-binding-evidence-row strong,
+.promotion-human-confirmation-evidence-row strong,
+.promotion-orchestration-dry-run-evidence-row strong,
+.promotion-orchestration-execution-evidence-row strong,
+.promotion-paper-order-lifecycle-evidence-row strong,
+.promotion-paper-route-runbook-evidence-row strong,
+.promotion-production-route-review-evidence-row strong,
+.promotion-restart-acceptance-row strong,
+.promotion-runtime-reload-acceptance-evidence-row strong,
+.promotion-runtime-reload-execution-evidence-row strong,
+.promotion-runtime-reload-plan-evidence-row strong,
+.promotion-sandbox-order-schema-dry-run-evidence-row strong,
+.promotion-sandbox-probe-execution-evidence-row strong,
+.promotion-sandbox-probe-plan-evidence-row strong,
+.promotion-sandbox-probe-review-evidence-row strong,
+.promotion-secret-materialization-evidence-row strong,
+.promotion-secret-reference-evidence-row strong {
+  color: #e8f0f8;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.promotion-adapter-ops-state-evidence-row p,
+.promotion-adapter-ops-state-evidence-row em,
+.promotion-adapter-paper-execution-evidence-row p,
+.promotion-adapter-paper-execution-evidence-row em,
+.promotion-certification-evidence-row p,
+.promotion-certification-evidence-row em,
+.promotion-certification-apply-evidence-row p,
+.promotion-certification-apply-evidence-row em,
+.promotion-controlled-restart-evidence-row p,
+.promotion-controlled-restart-evidence-row em,
+.promotion-environment-binding-evidence-row p,
+.promotion-environment-binding-evidence-row em,
+.promotion-human-confirmation-evidence-row p,
+.promotion-human-confirmation-evidence-row em,
+.promotion-orchestration-dry-run-evidence-row p,
+.promotion-orchestration-dry-run-evidence-row em,
+.promotion-orchestration-execution-evidence-row p,
+.promotion-orchestration-execution-evidence-row em,
+.promotion-paper-order-lifecycle-evidence-row p,
+.promotion-paper-order-lifecycle-evidence-row em,
+.promotion-paper-route-runbook-evidence-row p,
+.promotion-paper-route-runbook-evidence-row em,
+.promotion-production-route-review-evidence-row p,
+.promotion-production-route-review-evidence-row em,
+.promotion-restart-acceptance-row p,
+.promotion-restart-acceptance-row em,
+.promotion-runtime-reload-acceptance-evidence-row p,
+.promotion-runtime-reload-acceptance-evidence-row em,
+.promotion-runtime-reload-execution-evidence-row p,
+.promotion-runtime-reload-execution-evidence-row em,
+.promotion-runtime-reload-plan-evidence-row p,
+.promotion-runtime-reload-plan-evidence-row em,
+.promotion-sandbox-order-schema-dry-run-evidence-row p,
+.promotion-sandbox-order-schema-dry-run-evidence-row em,
+.promotion-sandbox-probe-execution-evidence-row p,
+.promotion-sandbox-probe-execution-evidence-row em,
+.promotion-sandbox-probe-plan-evidence-row p,
+.promotion-sandbox-probe-plan-evidence-row em,
+.promotion-sandbox-probe-review-evidence-row p,
+.promotion-sandbox-probe-review-evidence-row em,
+.promotion-secret-materialization-evidence-row p,
+.promotion-secret-materialization-evidence-row em,
+.promotion-secret-reference-evidence-row p,
+.promotion-secret-reference-evidence-row em {
+  color: #9fb0c3;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.module-workspace-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.45fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.module-workspace-panel {
+  grid-column: span 2;
+}
+
+.module-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #0f1722;
+  color: #8fa0b2;
+  padding: 8px 10px;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 800;
+}
+
+.module-toolbar strong {
+  color: #71dfc5;
+}
+
+.research-ops-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #0f1722;
+  color: #8fa0b2;
+  padding: 9px 10px;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.research-ops-summary strong {
+  color: #dce6ee;
+  font-size: calc(13px * var(--aiqt-text-scale, 1));
+}
+
+.research-ops-summary.positive {
+  border-color: #287263;
+}
+
+.research-ops-summary.warning {
+  border-color: #7c6424;
+}
+
+.research-ops-summary.risk {
+  border-color: #7b3a34;
+}
+
+.research-ops-table {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.research-ops-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(120px, 0.75fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 50px;
+  border: 1px solid #27364a;
+  border-left-width: 3px;
+  border-radius: 7px;
+  background: #121b29;
+  color: #dce6ee;
+  padding: 8px 10px;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.research-ops-row.warning {
+  border-left-color: #f6c85f;
+}
+
+.research-ops-row.risk {
+  border-left-color: #ff6b5f;
+}
+
+.research-ops-row.positive {
+  border-left-color: #41d3b0;
+}
+
+.research-ops-row.selected {
+  background: #102a25;
+}
+
+.research-ops-row strong,
+.research-ops-row b,
+.research-ops-row em {
+  display: block;
+}
+
+.research-ops-row em {
+  margin-top: 3px;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-style: normal;
+}
+
+.research-ops-head {
+  min-height: 34px;
+  border-left-width: 1px;
+  background: #0f1722;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.research-ops-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #2b6f62;
+  border-radius: 7px;
+  background: #122b27;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
+.research-ops-row button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.scanner-table,
+.broker-adapter-table,
+.risk-ledger,
+.event-stream,
+.workflow-output {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  min-height: 0;
+}
+
+.scanner-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(80px, 0.6fr) minmax(
+      130px,
+      1fr
+    ) minmax(72px, 0.5fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 50px;
+  border: 1px solid #27364a;
+  border-radius: 7px;
+  background: #121b29;
+  padding: 8px 10px;
+  color: #dce6ee;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.scanner-head {
+  min-height: 34px;
+  background: #0f1722;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.scanner-row strong,
+.scanner-row em,
+.scanner-row b {
+  display: block;
+}
+
+.scanner-row em {
+  margin-top: 3px;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+}
+
+.scanner-row b {
+  margin-bottom: 5px;
+  color: #ffffff;
+}
+
+.scanner-row i {
+  display: block;
+  height: 5px;
+  max-width: 100%;
+  border-radius: 999px;
+  background: #4cc9ad;
+}
+
+.scanner-row button,
+.run-button.compact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border: 1px solid #2b6f62;
+  border-radius: 7px;
+  background: #122b27;
+  color: #71dfc5;
+  cursor: pointer;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  padding: 6px 9px;
+}
+
+.risk-chip {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+}
+
+.risk-chip.low,
+.risk-ledger-row.positive {
+  border: 1px solid #2b6f62;
+  background: #122b27;
+  color: #71dfc5;
+}
+
+.risk-chip.medium,
+.risk-ledger-row.warning {
+  border: 1px solid #614e20;
+  background: #2a2315;
+  color: #e8be62;
+}
+
+.risk-chip.high,
+.risk-ledger-row.risk {
+  border: 1px solid #7a3a32;
+  background: #2b1d22;
+  color: #ff9c8e;
+}
+
+.risk-ledger {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.paper-position-ledger {
+  margin-top: 12px;
+}
+
+.paper-position-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8fa0b2;
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.paper-position-title strong {
+  color: #dce6ee;
+}
+
+@media (max-width: 920px) {
+  .portfolio-order-latest-simulation {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-route-risk-template {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .portfolio-simulation-route-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portfolio-order-latest-simulation em {
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .execution-stage5-shadow > header {
+    flex-direction: column;
+  }
+  .execution-stage5-shadow header > strong {
+    max-width: none;
+  }
+  .execution-stage5-shadow dl {
+    grid-template-columns: 1fr;
+  }
+  .execution-stage5-shadow > button {
+    width: 100%;
+  }
+  .execution-stage5-shadow > button + button {
+    margin-left: 0;
+  }
+
+  .portfolio-route-risk-template {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Final responsive guard for the Figma terminal surfaces. */
+
+/* Shared by the research and AI review provider controls. */
+.design-research-ai-controls {
+  align-content: start !important;
+  gap: 7px !important;
+  padding: 9px;
+  border: 1px solid #243b50;
+  border-radius: 5px;
+  background: #0d1d2a;
+}
+
+.design-research-ai-controls > label:first-child {
+  display: grid;
+  gap: 5px;
+}
+
+.design-research-ai-controls select {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid #2a4056;
+  border-radius: 4px;
+  background: #101b28;
+  color: #dce6ee;
+  font: inherit;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  padding: 0 8px;
+}
+
+.design-research-provider-meta,
+.design-research-ai-controls p,
+.design-research-generation-message {
+  margin: 0;
+  color: #8fa0b2;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.design-research-external-approval {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.design-research-external-approval input {
+  margin: 1px 0 0;
+  accent-color: #55b59f;
+}
+
+.design-research-generation-message.error {
+  color: #f07c70;
+}
+
+.terminal-shell[data-theme="light"] .design-research-ai-controls {
+  border-color: var(--border);
+  background: #f6f9fb;
+}
+
+.terminal-shell[data-theme="light"] .design-research-ai-controls select {
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.terminal-shell[data-theme="light"] .design-research-provider-meta,
+.terminal-shell[data-theme="light"] .design-research-ai-controls p,
+.terminal-shell[data-theme="light"] .design-research-generation-message {
+  color: var(--muted);
+}
+
+.terminal-shell[data-theme="light"] .design-research-generation-message.error {
+  color: #b23c35;
+}
+
+.design-ai-side .design-chain-row {
+  min-height: 29px;
+}
+@media (max-width: 760px) {
+  .terminal-shell {
+    display: block;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .left-rail {
+    position: fixed;
+    z-index: 100;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 58px;
+    min-height: 0;
+    border-width: 1px 0 0;
+    padding: 4px;
+  }
+
+  .left-rail .brand,
+  .left-rail .rail-profile,
+  .left-rail .work-area-group-label {
+    display: none;
+  }
+
+  .left-rail .rail-section,
+  .left-rail .work-area-group,
+  .left-rail .work-area-group-items {
+    display: contents;
+  }
+
+  .left-rail .work-area-nav {
+    display: flex;
+    gap: 3px;
+    overflow-x: auto;
+  }
+
+  .left-rail .work-area-button {
+    display: grid;
+    flex: 0 0 56px;
+    grid-template-columns: 1fr;
+    place-items: center;
+    min-height: 48px;
+    padding: 5px;
+  }
+
+  .left-rail .work-area-button .work-area-copy {
+    display: none;
+  }
+
+  .terminal-main {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+    padding: 42px 0 118px;
+    overflow: visible;
+  }
+
+  .terminal-design-surface {
+    width: 100%;
+    height: auto;
+    min-height: calc(100vh - 160px);
+    padding: 10px 8px 80px;
+  }
+
+  .design-market-grid,
+  .design-research-grid,
+  .design-strategy-grid,
+  .design-backtest-grid,
+  .design-ai-grid,
+  .design-portfolio-grid,
+  .design-execution-grid,
+  .design-audit-grid,
+  .design-settings-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .design-market-side,
+  .design-market-bottom,
+  .design-research-side,
+  .design-research-runs,
+  .design-risk-ledger,
+  .design-ai-side,
+  .design-ai-decisions,
+  .design-portfolio-side,
+  .design-execution-side,
+  .design-execution-timeline,
+  .design-audit-side,
+  .design-audit-detail,
+  .design-settings-side {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .design-market-bottom,
+  .design-review-columns,
+  .design-detail-grid,
+  .design-settings-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .terminal-status-bar {
+    position: fixed;
+    right: 0;
+    bottom: 58px;
+    left: 0;
+    height: 54px;
+    min-height: 54px;
+  }
+}
+
+/* Figma terminal surfaces */
+.terminal-shell {
+  min-height: 720px;
+  overflow: hidden;
+}
+
+.left-rail {
+  height: calc(100vh - 70px);
+  min-height: 650px;
+  padding: 10px 10px 14px;
+  background: #0b1722;
+}
+
+.brand {
+  min-height: 42px;
+  border-bottom: 1px solid #1d3042;
+  padding-bottom: 9px;
+}
+
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+}
+
+.brand strong {
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+}
+
+.brand span {
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
+
+.work-area-nav {
+  gap: 10px;
+}
+
+.work-area-group {
+  gap: 4px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #1d3042;
+}
+
+.work-area-group:last-child {
+  border-bottom: 0;
+}
+
+.work-area-group-label {
+  margin: 0 4px 2px;
+  color: #718396;
+  font-size: calc(10px * var(--aiqt-text-scale, 1));
+  font-weight: 600;
+}
+
+.work-area-group-items {
+  gap: 3px;
+}
+
+.work-area-button {
+  min-height: 34px;
+  border-color: transparent;
+  border-radius: 3px;
+  background: transparent;
+  padding: 7px 10px;
+}
+
+.work-area-button .work-area-index,
+.work-area-button .work-area-copy small,
+.work-area-button .work-area-stage,
+.work-area-button .work-area-status {
+  display: none;
+}
+
+.work-area-button svg {
+  color: #aebbc6;
+}
+
+.work-area-button .work-area-copy strong {
+  color: #b9c5cf;
+  font-size: calc(12px * var(--aiqt-text-scale, 1));
+  font-weight: 500;
+}
+
+.work-area-button.selected,
+.work-area-button.active {
+  border-left: 3px solid #58d6b9;
+  background: #133b3b;
+}
+
+.work-area-button.selected svg,
+.work-area-button.selected .work-area-copy strong {
+  color: #58d6b9;
+}
+
+.rail-profile {
+  min-height: 64px;
+  border: 1px solid #1f3447;
+  border-radius: 5px;
+  padding: 10px;
+  background: #0d1a27;
+}
+
+.rail-profile time {
+  grid-column: 1 / 3;
+  width: 100%;
+  color: #718598;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+}
