@@ -177,11 +177,15 @@ export function translateGoldenPathDetail(i18n: AppI18n, detail: string): string
     return detail;
   }
   const localizedAiReviewDetail = ({
+    "Run the research pipeline to bind data, strategy, backtest, and AI evidence.": "运行研究流水线，以绑定行情数据、策略、回测和 AI 证据。",
+    "Backtest evidence is unavailable until an audited research run exists.": "在审计研究运行生成前，回测证据不可用。",
     "AI review waits for audited backtest evidence.": "AI 评审等待已审计的回测证据。",
     "The latest audited run does not include an AI evidence summary.": "最新审计运行缺少 AI 证据摘要。",
     "The audited run is ready for the local evidence review required by paper simulation.": "审计运行已就绪，等待完成模拟执行所需的本地证据评审。",
     "AI review evidence is bound to the audited run.": "AI 评审证据已绑定到当前审计运行。",
+    "Paper execution requires an audited research run first.": "模拟执行需要先完成一次审计研究运行。",
     "Audited AI evidence is ready, but no filled paper execution is bound.": "AI 评审证据已就绪，但尚未绑定已成交的模拟执行记录。",
+    "Live routing remains blocked until adapter certification, risk approval, and human confirmation pass.": "在执行适配器认证、风控审批和人工确认全部通过前，实盘路由保持阻断。",
   } as Record<string, string>)[detail];
   if (localizedAiReviewDetail) {
     return localizedAiReviewDetail;
