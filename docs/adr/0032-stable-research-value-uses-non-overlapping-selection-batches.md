@@ -14,6 +14,8 @@ Accepted
 
 cohort 由 `market + profile + weightsVersion + providerIdentity + benchmarkPolicyVersion` 唯一确定。按时间顺序只把持有窗口不重叠的到期批次计入稳定性；重叠结果继续展示但不增加独立样本。
 
+2026-08-04 补充：持有周期会改变收益观察窗口，不能在同一 cohort 中比较。因此 cohort 身份增加 `horizon`，完整身份为 `market + profile + horizon + weightsVersion + providerIdentity + benchmarkPolicyVersion`；历史审计记录保持不变，统计回放按其原始请求周期重新分组。
+
 状态固定为 `insufficient_sample / collecting / stable_positive / not_stable`。只有同一 cohort 同时满足以下条件才显示“已证明稳定研究价值”：
 
 - 至少 30 个非重叠到期批次；

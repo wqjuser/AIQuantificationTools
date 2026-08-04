@@ -720,7 +720,10 @@ export function MarketAiSelectionPanel({
                             {cohort.market === "ashare" ? "A 股" : cohort.market === "us" ? "美股" : "加密资产"}
                             {" · "}{marketAiSelectionProfileLabels[cohort.profile]}
                           </strong>
-                          <span>{cohort.weightsVersion} · 基准 {cohort.benchmarkSymbol}</span>
+                          <span>
+                            {marketAiSelectionHorizonLabels[cohort.horizon]}
+                            {" · "}{cohort.weightsVersion} · 基准 {cohort.benchmarkSymbol}
+                          </span>
                         </div>
                         <Status tone={cohort.status === "stable_positive" ? "positive" : "neutral"}>
                           {researchValueStatusLabels[cohort.status]}

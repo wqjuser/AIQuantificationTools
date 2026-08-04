@@ -23,8 +23,8 @@ def build_research_value_cohorts(
     selections: list[Mapping[str, Any]],
     reviews: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    grouped: dict[tuple[str, str, str, str, str], list[Mapping[str, Any]]] = defaultdict(list)
-    provider_identities: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
+    grouped: dict[tuple[str, str, str, str, str, str], list[Mapping[str, Any]]] = defaultdict(list)
+    provider_identities: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
     for selection in selections:
         provider_identity = dict(selection.get("providerIdentity") or {})
         review = reviews.get(str(selection.get("selectionId") or ""))
@@ -37,6 +37,7 @@ def build_research_value_cohorts(
         key = (
             str(selection.get("market") or ""),
             str(selection.get("profile") or ""),
+            str(selection.get("horizon") or ""),
             str(selection.get("weightsVersion") or ""),
             canonical_sha256(provider_identity),
             policy_version,
@@ -50,12 +51,12 @@ def build_research_value_cohorts(
 
 
 def _cohort(
-    key: tuple[str, str, str, str, str],
+    key: tuple[str, str, str, str, str, str],
     selections: list[Mapping[str, Any]],
     reviews: Mapping[str, Mapping[str, Any]],
     provider_identity: dict[str, Any],
 ) -> dict[str, Any]:
-    market, profile, weights_version, provider_hash, policy_version = key
+    market, profile, horizon, weights_version, provider_hash, policy_version = key
     benchmark_symbol = next(
         (
             str(review.get("benchmark", {}).get("symbol") or "")
@@ -124,6 +125,7 @@ def _cohort(
     cohort_identity = {
         "market": market,
         "profile": profile,
+        "horizon": horizon,
         "weightsVersion": weights_version,
         "providerIdentity": provider_identity,
         "benchmarkPolicyVersion": policy_version,

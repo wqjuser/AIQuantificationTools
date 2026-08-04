@@ -78,7 +78,7 @@ A 股使用 `000300`，美股使用 `SPY`，加密资产使用 `BTC/USDT`。基�
 一次受保护 AI 选股记录是一个统计样本。同批最多 5 个推荐不能伪装成 5 个独立样本；批次 alpha 是可用推荐相对收益的等权平均，至少 4/5 推荐有完整同周期基准才合格。
 
 **稳定研究价值 cohort**
-由 `market + profile + weightsVersion + providerIdentity + benchmarkPolicyVersion` 唯一确定。权重、Provider 身份或基准政策变化必须开启新 cohort，旧样本不能混入。
+由 `market + profile + horizon + weightsVersion + providerIdentity + benchmarkPolicyVersion` 唯一确定。持有周期、权重、Provider 身份或基准政策变化必须开启新 cohort，旧样本不能混入。
 
 **非重叠到期批次**
 按参考时间排序后，持有窗口不与上一个已纳入批次重叠的样本。重叠批次仍展示结果，但不进入稳定性判定。

@@ -274,6 +274,7 @@ export interface MarketAiSelectionResearchValueCohort {
   cohortId: string;
   market: Market;
   profile: MarketAiSelectionProfile;
+  horizon: MarketAiSelectionHorizon;
   weightsVersion: string;
   providerIdentity: Record<string, unknown>;
   providerIdentityHash: string;
@@ -518,7 +519,7 @@ function isMarketAiSelectionResearchValueCohort(
   value: unknown,
 ): value is MarketAiSelectionResearchValueCohort {
   if (!hasExactAiReviewEnvelopeKeys(value, [
-    "cohortId", "market", "profile", "weightsVersion", "providerIdentity",
+    "cohortId", "market", "profile", "horizon", "weightsVersion", "providerIdentity",
     "providerIdentityHash", "benchmarkPolicyVersion", "benchmarkSymbol",
     "selectionBatchCount", "reviewedBatchCount", "qualifiedBatchCount",
     "nonOverlappingSampleCount", "overlappingSampleCount",
@@ -535,6 +536,7 @@ function isMarketAiSelectionResearchValueCohort(
     || !value.cohortId.startsWith("research-value-")
     || !["ashare", "us", "crypto"].includes(String(value.market))
     || !["balanced", "quality_growth", "value", "trend"].includes(String(value.profile))
+    || !["short", "medium", "long"].includes(String(value.horizon))
     || typeof value.weightsVersion !== "string"
     || !value.weightsVersion
     || !isPlainRecord(value.providerIdentity)

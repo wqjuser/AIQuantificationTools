@@ -9,13 +9,20 @@ from quant_core.market_ai_selection_core.research_value import build_research_va
 UTC = timezone.utc
 
 
-def selection(index: int, *, weights: str = "weights-v1", provider: str = "provider-a") -> dict[str, object]:
+def selection(
+    index: int,
+    *,
+    weights: str = "weights-v1",
+    provider: str = "provider-a",
+    horizon: str = "short",
+) -> dict[str, object]:
     started = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index * 4)
     return {
         "selectionId": f"selection-{index}",
         "generatedAt": started,
         "market": "ashare",
         "profile": "balanced",
+        "horizon": horizon,
         "weightsVersion": weights,
         "providerIdentity": {"providerId": provider, "model": "model-a"},
         "recommendations": [{"evidenceId": f"evidence-{index}-{item}"} for item in range(5)],
@@ -137,6 +144,16 @@ class ResearchValueCohortTest(unittest.TestCase):
         )
         self.assertEqual(historical["benchmarkSymbol"], "000905")
         self.assertEqual(historical["reviewedBatchCount"], 1)
+
+    def test_holding_horizons_remain_separate_cohorts(self) -> None:
+        cohorts = build_research_value_cohorts(
+            [selection(0, horizon="short"), selection(1, horizon="medium")],
+            {"selection-0": review(0), "selection-1": review(1)},
+        )
+
+        self.assertEqual(len(cohorts), 2)
+        self.assertEqual({cohort["horizon"] for cohort in cohorts}, {"short", "medium"})
+        self.assertEqual({cohort["selectionBatchCount"] for cohort in cohorts}, {1})
 
 
 if __name__ == "__main__":

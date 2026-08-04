@@ -21936,6 +21936,7 @@ describe("terminal workspace API client", () => {
         cohortId: "research-value-test",
         market: "ashare",
         profile: "balanced",
+        horizon: "short",
         weightsVersion: "market-ai-selection-v1",
         providerIdentity: { providerId: "local", model: null },
         providerIdentityHash: "a".repeat(64),

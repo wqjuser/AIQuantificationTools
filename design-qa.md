@@ -1633,3 +1633,12 @@ final result: passed
 - A 股固定基准在安装数据依赖并按仓库规则启用代理后仍因上游已完成 K 线不足而保持阻断，未将降级数据伪装为到期收益。
 - 聚焦测试 `48 / 48`、Python `1033 / 1033`（另跳过 PostgreSQL 专用 `2` 项）、Web `1118 / 1118`、生产构建、Compose API/Web 健康检查和 `git diff --check` 通过。
 - 复盘任务仍只扫描用户显式创建的选股记录，不自动选股、运行研究、加入观察池或连接交易。
+
+## 2026-08-04 稳定价值 cohort 持有周期隔离复验
+
+- 修复稳定价值 cohort 身份遗漏 `horizon`：相同市场、风格、权重、Provider 和基准政策下，短期、中期和长期选股现在分别统计，历史审计事件不改写。
+- TDD 先复现短期与中期被合并为 `1` 个 cohort，修复后形成 `2` 个独立 cohort；Web 严格契约同步校验并显示周期。
+- Python 全量 `1034 / 1034`（另跳过 PostgreSQL 专用 `2` 项）、Web 全量 `1118 / 1118`、生产构建、Compose API/Web 健康检查和 `git diff --check` 通过。
+- 真实 Docker 行情页回放既有 `9` 次受保护选股，显示 A 股、加密资产和美股的中期 cohort，页面宽度 `1680 / 1680`，控制台 `0 error / 0 warning`；没有运行选股、调用外部 AI 或触发交易。
+
+final result: passed
