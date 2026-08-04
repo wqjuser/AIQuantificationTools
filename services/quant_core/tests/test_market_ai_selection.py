@@ -2797,6 +2797,27 @@ def test_review_keeps_unreached_recommendations_observing_and_reports_sample_siz
     assert review["boundary"]["orderSubmissionAllowed"] is False
 
 
+def test_quality_statistics_keep_automatic_unmatured_batch_observing(
+    tmp_path: object,
+) -> None:
+    service = _service(
+        tmp_path,
+        run_store=ResearchRunStore(tmp_path / "runs.db"),  # type: ignore[operator]
+        discovery=_Discovery(_rows(), snapshot_hash="a" * 64),
+    )
+    service.select(_request(horizon="short"))
+
+    automatic_review = service.review_due_selections()
+
+    assert automatic_review["observingCount"] == 1
+    cohort = service.quality_statistics()["researchValueCohorts"][0]
+    batch = cohort["batches"][0]
+    assert batch["reviewed"] is True
+    assert batch["status"] == "observing"
+    assert cohort["qualifiedBatchCount"] == 0
+    assert cohort["nonOverlappingSampleCount"] == 0
+
+
 def test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts(
     tmp_path: object,
 ) -> None:
@@ -4060,6 +4081,13 @@ class MarketAiSelectionTests(unittest.TestCase):
     ) -> None:
         self._with_tmp(
             test_review_keeps_unreached_recommendations_observing_and_reports_sample_sizes
+        )
+
+    def test_quality_statistics_keep_automatic_unmatured_batch_observing(
+        self,
+    ) -> None:
+        self._with_tmp(
+            test_quality_statistics_keep_automatic_unmatured_batch_observing
         )
 
     def test_review_calculates_expiry_idempotently_and_rejects_audit_conflicts(

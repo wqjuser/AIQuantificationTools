@@ -197,6 +197,10 @@ def _batch(
     valid_outcomes = [value for value in outcomes if value is not None]
     coverage = _market_ai_selection_rate(len(relative_returns), recommendation_count)
     qualified = recommendation_count == 5 and len(relative_returns) >= 4 and valid_references and valid_outcomes
+    observing = any(
+        isinstance(item, Mapping) and item.get("status") == "observing"
+        for item in items
+    )
     return {
         **base,
         "benchmarkSampleCount": len(relative_returns),
@@ -204,7 +208,7 @@ def _batch(
         "batchAlphaPct": round(sum(relative_returns) / len(relative_returns), 6) if relative_returns else None,
         "referenceAt": min(valid_references).isoformat() if valid_references else None,
         "outcomeAt": max(valid_outcomes).isoformat() if valid_outcomes else None,
-        "status": "qualified" if qualified else "data_insufficient",
+        "status": "qualified" if qualified else "observing" if observing else "data_insufficient",
     }
 
 

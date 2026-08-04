@@ -1624,3 +1624,12 @@ final result: passed
 - Python 全量 `1024 / 1024`（PostgreSQL 专用测试在本机全量中跳过 `2` 项，已在真实 PostgreSQL 中单独 `2 / 2` 通过）、Web 全量 `1115 / 1115`、Web 生产构建、local/public Compose 健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。没有调用真实 OIDC、开放公网入口或提交真实生产订单。
 
 final result: passed
+
+## 2026-08-04 AI 选股未到期复盘状态与样本起点复验
+
+- 修复固定基准自动复盘仍有 `observing` 推荐时，批次被误标为 `data_insufficient`：满足 `4 / 5` 完整同周期基准时仍为 `qualified`，否则只要仍有未到期推荐就保持 `observing`。
+- 通过 `MarketAiSelectionService.quality_statistics()` 公共服务边界补充回归测试；未改变 API、审计结构、基准政策、样本资格或订单边界。
+- 运行时复验显示加密资产和美股未到期批次均为 `observing`、稳定性样本量仍为 `0`；选定 `crypto + balanced + medium + local + benchmark-v1` 作为首个固定 cohort，避免在同一持有窗口重复创建重叠样本。
+- A 股固定基准在安装数据依赖并按仓库规则启用代理后仍因上游已完成 K 线不足而保持阻断，未将降级数据伪装为到期收益。
+- 聚焦测试 `48 / 48`、Python `1033 / 1033`（另跳过 PostgreSQL 专用 `2` 项）、Web `1118 / 1118`、生产构建、Compose API/Web 健康检查和 `git diff --check` 通过。
+- 复盘任务仍只扫描用户显式创建的选股记录，不自动选股、运行研究、加入观察池或连接交易。
