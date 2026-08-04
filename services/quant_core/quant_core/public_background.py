@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import os
 from threading import Event, Thread
 import time
+import traceback
 from typing import Callable, Mapping
 from uuid import uuid4
 
@@ -13,6 +15,9 @@ from quant_core.public_coordination import PublicLeaseStore
 from quant_core.public_identity import PublicIdentityStore, PublicUser
 from quant_core.public_tenant_api import PublicTenantApi
 from quant_core.tenancy import TenantContext
+
+
+LOGGER = logging.getLogger("uvicorn.error")
 
 
 class PublicBackgroundRunner:
@@ -69,12 +74,17 @@ class PublicBackgroundRunner:
             self._thread = None
 
     def run_selection_reviews_once(self) -> int:
-        return self._run_for_active_tenants(
+        completed = self._run_for_active_tenants(
             "market-ai-selection-review",
             lambda tenant, guard, fence: self.tenant_api.review_due_selections(
                 tenant, lease_guard=guard, lease_fence=fence
             ),
         )
+        LOGGER.info(
+            "public background selection review cycle completed tenant_count=%d",
+            completed,
+        )
+        return completed
 
     def run_auto_trading_once(self) -> int:
         return self._run_for_active_tenants(
@@ -118,8 +128,13 @@ class PublicBackgroundRunner:
                     ),
                 )
                 completed += 1
-            except Exception:
-                pass
+            except Exception as error:
+                _log_task_failure(
+                    task_key,
+                    error,
+                    scope="tenant",
+                    owner_id=user.owner_id,
+                )
             finally:
                 renew_stop.set()
                 renewer.join(timeout=1)
@@ -135,7 +150,18 @@ class PublicBackgroundRunner:
     ) -> None:
         interval = max(0.01, self.leases.ttl.total_seconds() / 3)
         while not stopped.wait(interval):
-            if not self.leases.renew(owner_id, task_key, self.holder_id):
+            try:
+                renewed = self.leases.renew(owner_id, task_key, self.holder_id)
+            except Exception as error:
+                lost.set()
+                _log_task_failure(
+                    task_key,
+                    error,
+                    scope="lease-renewal",
+                    owner_id=owner_id,
+                )
+                return
+            if not renewed:
                 lost.set()
                 return
 
@@ -145,10 +171,20 @@ class PublicBackgroundRunner:
         while not self._stopped.is_set():
             now = time.monotonic()
             if now >= next_selection:
-                self.run_selection_reviews_once()
+                try:
+                    self.run_selection_reviews_once()
+                except Exception as error:
+                    _log_task_failure(
+                        "market-ai-selection-review",
+                        error,
+                        scope="scheduler",
+                    )
                 next_selection = time.monotonic() + self.selection_interval
             if now >= next_auto:
-                self.run_auto_trading_once()
+                try:
+                    self.run_auto_trading_once()
+                except Exception as error:
+                    _log_task_failure("auto-trading", error, scope="scheduler")
                 next_auto = time.monotonic() + self.auto_interval
             self._stopped.wait(max(0.1, min(next_selection, next_auto) - time.monotonic()))
 
@@ -161,6 +197,28 @@ def _tenant_context(user: PublicUser) -> TenantContext:
         email=user.email,
         # Background reconciliation is intentionally independent of a browser session.
         reauthenticated_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _log_task_failure(
+    task_key: str,
+    error: Exception,
+    *,
+    scope: str,
+    owner_id: str = "-",
+) -> None:
+    stack = " > ".join(
+        f"{os.path.basename(frame.filename)}:{frame.lineno}:{frame.name}"
+        for frame in traceback.extract_tb(error.__traceback__)
+    )
+    LOGGER.error(
+        "public background task failed task=%s scope=%s owner_id=%s "
+        "error_type=%s stack=%s",
+        task_key,
+        scope,
+        owner_id,
+        type(error).__name__,
+        stack or "unavailable",
     )
 
 

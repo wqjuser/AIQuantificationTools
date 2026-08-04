@@ -65,6 +65,91 @@ class PublicBackgroundRunnerTest(unittest.TestCase):
         self.assertEqual({item.email for item in api.reviews}, {"a@example.com", "b@example.com"})
         self.assertTrue(all(not item.reauthenticated_recently() for item in api.trading))
 
+    def test_selection_review_cycle_reports_successes_and_failures(self):
+        class PartiallyFailingTenantApi(FakeTenantApi):
+            def review_due_selections(self, tenant, *, lease_guard=None, lease_fence=None):
+                super().review_due_selections(
+                    tenant,
+                    lease_guard=lease_guard,
+                    lease_fence=lease_fence,
+                )
+                if len(self.reviews) == 2:
+                    raise RuntimeError("secret=example-key symbol=BTC/USDT")
+
+        runner = PublicBackgroundRunner(self.engine, PartiallyFailingTenantApi())
+
+        with self.assertLogs("uvicorn.error", level="INFO") as captured:
+            completed = runner.run_selection_reviews_once()
+
+        self.assertEqual(completed, 1)
+        output = "\n".join(captured.output)
+        self.assertIn("task=market-ai-selection-review", output)
+        self.assertIn("error_type=RuntimeError", output)
+        self.assertIn("review_due_selections", output)
+        self.assertNotIn("example-key", output)
+        self.assertNotIn("BTC/USDT", output)
+        self.assertIn("selection review cycle completed tenant_count=1", output)
+
+    def test_scheduler_survives_transient_identity_store_failure(self):
+        api = FakeTenantApi()
+        runner = PublicBackgroundRunner(self.engine, api)
+        identities = runner.identities
+
+        class FlakyIdentities:
+            attempts = 0
+
+            def list_active(self):
+                self.attempts += 1
+                if self.attempts == 1:
+                    raise RuntimeError("secret=example-key symbol=BTC/USDT")
+                return identities.list_active()
+
+        runner.identities = FlakyIdentities()
+        runner.selection_interval = 0.01
+        runner.auto_interval = 3_600
+
+        with self.assertLogs("uvicorn.error", level="ERROR") as captured:
+            runner.start()
+            deadline = time.monotonic() + 1
+            while len(api.reviews) < 2 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            still_running = runner.running
+            runner.stop()
+
+        output = "\n".join(captured.output)
+        self.assertTrue(still_running)
+        self.assertEqual(len(api.reviews), 2)
+        self.assertIn("scope=scheduler", output)
+        self.assertNotIn("example-key", output)
+        self.assertNotIn("BTC/USDT", output)
+
+    def test_renew_failure_marks_lease_lost_without_logging_sensitive_details(self):
+        runner = PublicBackgroundRunner(self.engine, FakeTenantApi())
+        runner.leases.ttl = timedelta(milliseconds=30)
+
+        def fail_renew(*_args, **_kwargs):
+            raise RuntimeError("secret=example-key symbol=BTC/USDT")
+
+        runner.leases.renew = fail_renew
+        stopped = Event()
+        lost = Event()
+
+        with self.assertLogs("uvicorn.error", level="ERROR") as captured:
+            thread = Thread(
+                target=runner._renew_lease,
+                args=(stopped, lost, "owner-test", "task-test"),
+            )
+            thread.start()
+            self.assertTrue(lost.wait(1))
+            stopped.set()
+            thread.join(1)
+
+        output = "\n".join(captured.output)
+        self.assertIn("scope=lease-renewal", output)
+        self.assertIn("owner_id=owner-test", output)
+        self.assertNotIn("example-key", output)
+        self.assertNotIn("BTC/USDT", output)
+
     def test_expired_worker_cannot_commit_after_another_runner_takes_the_lease(self):
         with tempfile.TemporaryDirectory() as tmp:
             engine = create_engine(f"sqlite+pysqlite:///{Path(tmp) / 'public.sqlite'}")
@@ -96,14 +181,15 @@ class PublicBackgroundRunnerTest(unittest.TestCase):
                     old._run_for_active_tenants("task", slow_operation)
                 )
             )
-            thread.start()
-            self.assertTrue(started.wait(1))
-            time.sleep(0.08)
-            new_result = new._run_for_active_tenants(
-                "task",
-                lambda _tenant, guard, _fence: committed.append("new") if guard() else None,
-            )
-            thread.join(1)
+            with self.assertLogs("uvicorn.error", level="ERROR"):
+                thread.start()
+                self.assertTrue(started.wait(1))
+                time.sleep(0.08)
+                new_result = new._run_for_active_tenants(
+                    "task",
+                    lambda _tenant, guard, _fence: committed.append("new") if guard() else None,
+                )
+                thread.join(1)
             engine.dispose()
 
         self.assertEqual(old_result, [0])

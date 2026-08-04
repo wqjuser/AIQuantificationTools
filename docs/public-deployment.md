@@ -130,24 +130,56 @@ node tools/run_python.mjs tools/manage_public_user.py disable \
 每日执行逻辑备份并将主密钥单独保存在密钥管理系统：
 
 ```shell
+set -eu
+backup_dir="${AIQT_BACKUP_DIR:-/opt/aiquantificationtools/backups}"
+install -d -m 700 "$backup_dir"
+backup_path="$backup_dir/aiqt-$(date -u +%Y%m%dT%H%M%SZ).dump"
+partial_path="$backup_path.partial"
+trap 'rm -f -- "$partial_path"' EXIT
+umask 077
 docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
-  pg_dump -U aiqt -d aiqt -Fc > aiqt-$(date +%F).dump
+  pg_dump -U aiqt -d aiqt -Fc > "$partial_path"
+chmod 600 "$partial_path"
+mv "$partial_path" "$backup_path"
+trap - EXIT
+sha256sum "$backup_path"
 ```
 
-恢复演练应在新卷完成：
+恢复演练必须使用独立临时数据库，不停止或覆盖生产库：
 
 ```shell
-docker compose -f compose.yaml -f compose.public.yaml stop api caddy
+restore_backup_path="/secure/aiqt-backups/aiqt-YYYYmmddTHHMMSSZ.dump"
 docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
-  dropdb -U aiqt --if-exists aiqt
+  createdb -U aiqt aiqt_restore_verify
 docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
-  createdb -U aiqt aiqt
+  pg_restore -U aiqt -d aiqt_restore_verify --exit-on-error < "$restore_backup_path"
 docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
-  pg_restore -U aiqt -d aiqt --clean --if-exists < aiqt-backup.dump
-docker compose -f compose.yaml -f compose.public.yaml up -d --no-build migrate api
+  psql -U aiqt -d aiqt_restore_verify -c 'select version_num from alembic_version'
+docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
+  psql -U aiqt -d aiqt -c "select 'public_users' as item, count(*) from public_users union all select 'tenant_records', count(*) from tenant_records union all select 'tenant_settings', count(*) from tenant_settings union all select 'public_sessions', count(*) from public_sessions order by item"
+docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
+  psql -U aiqt -d aiqt_restore_verify -c "select 'public_users' as item, count(*) from public_users union all select 'tenant_records', count(*) from tenant_records union all select 'tenant_settings', count(*) from tenant_settings union all select 'public_sessions', count(*) from public_sessions order by item"
+docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
+  psql -U aiqt -d aiqt -c "select owner_id, record_kind, record_id, canonical_hash from tenant_records where canonical_hash is not null order by owner_id, record_kind, record_id limit 10"
+docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
+  psql -U aiqt -d aiqt_restore_verify -c "select owner_id, record_kind, record_id, canonical_hash from tenant_records where canonical_hash is not null order by owner_id, record_kind, record_id limit 10"
 ```
 
-恢复后校验 Alembic head、用户/记录数量、抽样 canonical hash、会话失效策略和生产暂停状态，再恢复 Caddy。丢失 `AIQT_SETTINGS_MASTER_KEY` 时租户密钥不可恢复；数据库备份不能替代主密钥备份。
+人工确认两组数量、租户归属、hash 与 Alembic revision 一致后，再单独删除临时库：
+
+```shell
+docker compose -f compose.yaml -f compose.public.yaml exec -T postgres \
+  dropdb -U aiqt aiqt_restore_verify
+```
+
+删除临时库前校验 Alembic head、用户/记录数量和抽样 canonical hash；真正灾难恢复时还要验证会话失效策略和生产暂停状态。丢失 `AIQT_SETTINGS_MASTER_KEY` 时租户密钥不可恢复；数据库备份不能替代主密钥备份。
+
+每次 API 启动会立即运行一次到期复盘，随后按六小时间隔执行。成功周期和失败详情可从 API 日志检查：
+
+```shell
+docker compose -f compose.yaml -f compose.public.yaml logs api \
+  | rg 'public background selection review cycle|public background task failed'
+```
 
 ## 回滚
 

@@ -1642,3 +1642,12 @@ final result: passed
 - 真实 Docker 行情页回放既有 `9` 次受保护选股，显示 A 股、加密资产和美股的中期 cohort，页面宽度 `1680 / 1680`，控制台 `0 error / 0 warning`；没有运行选股、调用外部 AI 或触发交易。
 
 final result: passed
+## 2026-08-04 公网备份恢复、租户隔离与复盘监控复验
+
+- 生产 PostgreSQL 逻辑备份以 custom format 写入服务器受限目录，权限为 `600`；备份 SHA-256 为 `614ffd8ed9566b04bc22885f1c8cf4e97f61a3488d19ad75757e241c843ce09f`。
+- 备份恢复到独立临时数据库后，生产库与恢复库的用户、租户记录、租户设置、会话、Alembic revision 和规范记录聚合 hash 完全一致；真实 PostgreSQL 双用户相同 ID、加密设置、租约、账户指纹和 HTTP 研究上下文隔离 `2 / 2` 通过。测试数据清理后恢复库仍与生产备份一致，随后仅删除明确命名的临时库，生产库未停止或覆盖。
+- 公网后台到期复盘不再静默吞错：每轮记录完成租户数，租户操作或调度基础设施失败只记录任务、范围、owner ID、异常类型和脱敏堆栈位置，不输出异常值；一次性身份存储故障后守护线程继续运行。仍复用现有 PostgreSQL lease、六小时间隔与受保护审计，不新增表、状态机或页面。
+- 公网租户显式创建首个固定 `crypto + balanced + short + openai-compatible + benchmark-v1` cohort，兼容模型 `1 / 1` 成功且未 fallback；`selection-v2-de0865320e7a1297d850` 的 `5` 个推荐均保持 `observing`，稳定价值样本量为 `0`。自动复盘未调用 AI、未创建选股、未运行研究、未修改自选或触发交易。
+- Python 全量 `1037 / 1037`（另跳过 PostgreSQL 专用 `2` 项，已在真实恢复库 `2 / 2` 通过）、Web 全量 `1118 / 1118`、生产构建、local/public Compose 健康检查、公网 `/health`、后台周期日志、双轴代码复审和 `git diff --check` 通过；Chrome 扩展连接超时，因此没有宣称完成公网 UI 回放。
+
+final result: passed
