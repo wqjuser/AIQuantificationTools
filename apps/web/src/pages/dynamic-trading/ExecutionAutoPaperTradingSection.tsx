@@ -331,7 +331,12 @@ export function ExecutionAutoPaperTradingSection({
 
     return (
       <section className="dynamic-trading-workspace" aria-labelledby="dynamic-trading-title">
-        {workflowGuide}
+        {workflowGuide ? (
+          <details className="design-workflow-guide-disclosure">
+            <summary>完整流程与审计证据</summary>
+            {workflowGuide}
+          </details>
+        ) : null}
         <header className="dynamic-trading-heading">
           <div>
             <span>自动交易控制台</span>

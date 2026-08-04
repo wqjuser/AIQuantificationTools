@@ -282,6 +282,9 @@ describe("ExecutionAutoPaperTradingSection", () => {
     );
 
     expect(html).toContain("动态交易");
+    expect(html).toContain('class="design-workflow-guide-disclosure"');
+    expect(html).toContain("完整流程与审计证据");
+    expect(html).not.toContain('class="design-workflow-guide-disclosure" open=""');
     expect(html).toContain("完整进程");
     expect(html).toContain("真实行情图");
     expect(html).toContain("BTC/USDT");
