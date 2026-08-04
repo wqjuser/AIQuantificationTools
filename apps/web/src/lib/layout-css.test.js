@@ -669,10 +669,10 @@ describe("terminal layout css", () => {
     ])).toBe(true);
   });
 
-  test("reserves desktop market rows for the workflow guide, header, and content", () => {
+  test("keeps desktop market discovery content-sized before the market grid", () => {
     expect(hasCssBlockWith("  .terminal-design-surface.surface-market", [
       "display: grid;",
-      "grid-template-rows: auto auto auto minmax(0, 1fr);",
+      "grid-template-rows: auto auto auto auto;",
       "padding-bottom: 10px;",
     ])).toBe(true);
     expect(hasCssBlockWith("  .surface-market .design-market-grid", [
