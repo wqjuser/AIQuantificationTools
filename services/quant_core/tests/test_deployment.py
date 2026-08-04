@@ -136,6 +136,10 @@ class DeploymentConfigurationTest(unittest.TestCase):
         caddyfile = (root / "deploy" / "Caddyfile").read_text()
 
         self.assertIn("AIQT_DEPLOYMENT_MODE: public", overlay)
+        self.assertIn(
+            "AIQT_OUTBOUND_ORIGIN_ALLOWLIST: ${AIQT_OUTBOUND_ORIGIN_ALLOWLIST:-}",
+            overlay,
+        )
         self.assertIn("postgres:", overlay)
         self.assertIn("service_completed_successfully", overlay)
         self.assertIn('"80:80"', overlay)
