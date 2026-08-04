@@ -1669,3 +1669,11 @@ final result: passed
 - 聚焦测试 `31 / 31`、Web 生产构建、Compose Web 健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。
 
 final result: passed
+
+## 2026-08-05 动态交易放大文字动作区复验
+
+- 修复动态交易风险参数底部的确认项与操作按钮在放大文字后挤在同一行的问题；复用现有动作区，仅以 CSS Grid 让确认项独占一行、两个按钮等宽排列并禁止按钮文字换行，没有修改保存、评估或交易逻辑。
+- 真实 Docker 页面在 `390 × 844`、最大 `150%` 文字倍率和纸面模拟重置草稿下复验：动作区为两列 `176.5px / 176.5px`，确认项宽 `358px`，两个按钮均为 `25px` 高且 `scrollWidth = clientWidth`，没有文字竖排、溢出或横向滚动。
+- 聚焦测试 `31 / 31`、Web 生产构建、Compose Web/API 健康检查和 `git diff --check` 通过；浏览器控制台 `0 error / 0 warning`，未保存配置、确认重置或触发交易。
+
+final result: passed

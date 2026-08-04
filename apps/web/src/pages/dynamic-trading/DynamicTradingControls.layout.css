@@ -224,18 +224,25 @@
 }
 
 .dynamic-trading-control-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
   margin-top: auto;
   border-top: 1px solid var(--border);
   padding: 3px 8px;
 }
 
+.dynamic-trading-control-actions > .dynamic-trading-confirmation {
+  grid-column: 1 / -1;
+  margin: 3px 0;
+}
+
 .dynamic-trading-control-actions button {
   display: inline-flex;
-  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   gap: 4px;
+  min-width: 0;
   min-height: 25px;
   border: 1px solid color-mix(in srgb, var(--teal) 55%, var(--border));
   border-radius: 4px;
@@ -244,6 +251,7 @@
   cursor: pointer;
   font-size: calc(8.5px * var(--aiqt-text-scale, 1));
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .dynamic-trading-control-actions button.danger {
