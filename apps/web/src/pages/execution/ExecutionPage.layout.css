@@ -5,10 +5,6 @@
   margin-bottom: 8px;
 }
 
-.terminal-design-surface.surface-execution {
-  padding-bottom: 16px;
-}
-
 .design-execution-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -51,10 +47,6 @@
 
 .design-execution-stats article .warning {
   color: #e9b946;
-}
-
-.design-execution-readiness {
-  margin-bottom: 10px;
 }
 
 .design-execution-grid {

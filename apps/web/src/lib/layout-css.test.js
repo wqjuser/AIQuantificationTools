@@ -391,7 +391,15 @@ describe("terminal layout css", () => {
     expect(portfolioActionSource).not.toContain("runActiveWorkflowAction");
     expect(hasCssDeclaration(".terminal-design-surface.surface-portfolio", "padding-bottom: 10px;")).toBe(true);
     expect(cssBlock(".design-portfolio-grid")).toContain("align-items: start;");
-    expect(cssBlock(".design-portfolio-side")).toContain("grid-row: 1 / span 3;");
+    expect(cssBlock(".design-portfolio-side")).toContain("grid-row: 1;");
+    expect(hasCssDeclaration(
+      ".design-portfolio-grid:has(> :is(.design-portfolio-production-risk, .portfolio-m5-section)) .design-portfolio-side",
+      "grid-row: 1 / span 2;"
+    )).toBe(true);
+    expect(hasCssDeclaration(
+      ".design-portfolio-grid:has(> .design-portfolio-production-risk):has(> .portfolio-m5-section) .design-portfolio-side",
+      "grid-row: 1 / span 3;"
+    )).toBe(true);
     expect(hasCssDeclaration(".design-portfolio-summary", "align-self: stretch;")).toBe(true);
     expect(hasCssDeclaration(".design-portfolio-positions", "align-self: stretch;")).toBe(true);
     expect(cssBlock(".design-portfolio-positions")).toContain("min-height: 0;");
@@ -427,14 +435,12 @@ describe("terminal layout css", () => {
     expect(executionConsoleSource).toContain('selectProductWorkArea("dynamic-trading");');
     expect(executionActionSource).not.toContain("stage6SandboxAuthorization");
     expect(executionActionSource).not.toContain("runStage9ProductionAdmissionCandidateAction");
+    expect(hasCssDeclaration(".terminal-design-surface", "padding: 12px 14px 10px;")).toBe(true);
     expect(hasCssDeclaration(
       ".terminal-design-surface.surface-execution",
       "padding-bottom: 16px;"
-    )).toBe(true);
-    expect(hasCssDeclaration(
-      ".design-execution-readiness",
-      "margin-bottom: 10px;"
-    )).toBe(true);
+    )).toBe(false);
+    expect(hasCssDeclaration(".design-execution-readiness", "margin-bottom: 10px;")).toBe(false);
   });
 
   test("keeps the dynamic trading side panels faithful and compact", () => {
@@ -451,6 +457,7 @@ describe("terminal layout css", () => {
       "grid-template-columns: repeat(6, minmax(0, 1fr));"
     );
     expect(cssBlock(".dynamic-trading-workspace")).toContain("grid-auto-rows: max-content;");
+    expect(cssBlock(".dynamic-trading-workspace")).toContain("padding: 10px;");
     expect(styles).toContain(
       ".dynamic-trading-economics > dl {\n    grid-template-columns: repeat(2, minmax(0, 1fr));"
     );
@@ -1254,7 +1261,7 @@ describe("terminal layout css", () => {
     expect(hasCssDeclaration(".terminal-main", "align-content: stretch;")).toBe(true);
     expect(hasCssDeclaration(".terminal-design-surface", "overflow: auto;")).toBe(true);
     expect(hasCssDeclaration(".terminal-design-surface", "overscroll-behavior-y: none;")).toBe(true);
-    expect(hasCssDeclaration(".terminal-design-surface", "padding: 12px 14px 0;")).toBe(true);
+    expect(hasCssDeclaration(".terminal-design-surface", "padding: 12px 14px 10px;")).toBe(true);
     expect(appSource).toContain("workspaceScrollPositionsRef");
     expect(appSource).toContain("activeWorkAreaIdRef");
     expect(appSource).toContain("activeWorkspaceSurfaceRef");

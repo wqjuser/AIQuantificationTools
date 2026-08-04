@@ -162,9 +162,17 @@
 .design-portfolio-side {
   display: grid;
   grid-column: 3;
-  grid-row: 1 / span 3;
+  grid-row: 1;
   align-content: start;
   gap: 10px;
+}
+
+.design-portfolio-grid:has(> :is(.design-portfolio-production-risk, .portfolio-m5-section)) .design-portfolio-side {
+  grid-row: 1 / span 2;
+}
+
+.design-portfolio-grid:has(> .design-portfolio-production-risk):has(> .portfolio-m5-section) .design-portfolio-side {
+  grid-row: 1 / span 3;
 }
 
 .design-portfolio-approval {

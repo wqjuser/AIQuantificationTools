@@ -686,7 +686,7 @@
 }
 
 .terminal-design-surface {
-  padding: 12px 14px 0;
+  padding: 12px 14px 10px;
   overscroll-behavior-y: none;
 }
 
