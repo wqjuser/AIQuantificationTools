@@ -733,6 +733,47 @@ class MarketDiscoveryTest(unittest.TestCase):
 
         self.assertEqual(payload["overview"]["universeCount"], 3)
 
+    def test_ashare_discovery_retries_the_complete_snapshot_on_the_fallback_host(self):
+        from quant_core.market_discovery import (
+            AshareMarketDiscoveryService,
+            MarketDiscoveryQuery,
+        )
+
+        requested_urls = []
+
+        def fake_fetch_text(url: str, _encoding: str = "utf-8") -> str:
+            requested_urls.append(url)
+            page = int(parse_qs(urlparse(url).query)["pn"][0])
+            if "push2.eastmoney.com" in url and page > 1:
+                raise OSError("primary host dropped a later page")
+            return json.dumps({
+                "data": {
+                    "total": 101,
+                    "diff": [{
+                        "f12": f"60000{page}",
+                        "f14": f"测试股票 {page}",
+                        "f2": 10,
+                        "f3": page,
+                        "f5": 10,
+                        "f6": 100,
+                        "f8": 1,
+                        "f9": 5,
+                        "f20": 1_000,
+                        "f23": 1,
+                    }],
+                }
+            })
+
+        payload = AshareMarketDiscoveryService(
+            fetch_text=fake_fetch_text,
+            fetch_akshare_spot=lambda: (_ for _ in ()).throw(
+                AssertionError("complete fallback retry must avoid AkShare")
+            ),
+        ).discover(MarketDiscoveryQuery())
+
+        self.assertEqual(payload["overview"]["universeCount"], 2)
+        self.assertTrue(any("push2delay.eastmoney.com" in url for url in requested_urls))
+
     def test_expired_akshare_snapshot_is_refreshed_before_stale_fallback(self):
         from quant_core.market_discovery import (
             AshareMarketDiscoveryService,

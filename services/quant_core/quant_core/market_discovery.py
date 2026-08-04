@@ -243,22 +243,27 @@ class AshareMarketDiscoveryService:
             return snapshot, "fresh", list(snapshot.warnings)
 
     def _fetch_snapshot_rows(self) -> list[AshareMarketSnapshotRow]:
-        base_url = EASTMONEY_ASHARE_LIST_URL
-        try:
-            first_payload = json.loads(
-                self.fetch_text(
-                    _eastmoney_ashare_list_url(page=1, base_url=base_url),
-                    "utf-8",
-                )
+        error: Exception | None = None
+        for base_url in (
+            EASTMONEY_ASHARE_LIST_URL,
+            EASTMONEY_ASHARE_FALLBACK_LIST_URL,
+        ):
+            try:
+                return self._fetch_snapshot_rows_from(base_url)
+            except Exception as current_error:
+                error = current_error
+        raise ValueError("eastmoney_market_snapshot_unavailable") from error
+
+    def _fetch_snapshot_rows_from(
+        self,
+        base_url: str,
+    ) -> list[AshareMarketSnapshotRow]:
+        first_payload = json.loads(
+            self.fetch_text(
+                _eastmoney_ashare_list_url(page=1, base_url=base_url),
+                "utf-8",
             )
-        except Exception:
-            base_url = EASTMONEY_ASHARE_FALLBACK_LIST_URL
-            first_payload = json.loads(
-                self.fetch_text(
-                    _eastmoney_ashare_list_url(page=1, base_url=base_url),
-                    "utf-8",
-                )
-            )
+        )
         rows = eastmoney_ashare_list_payload_to_rows(first_payload)
         total = _eastmoney_total(first_payload)
         if total <= 0 or not rows:
