@@ -566,7 +566,9 @@ export function ExecutionAutoPaperTradingSection({
                 ) : null}
               </div>
               {paperMode ? (
-                <small>修改后需确认新建模拟账户并清零当期持仓与账本；历史审计记录会保留。</small>
+                <small className="dynamic-trading-paper-reset-note">
+                  修改后需确认新建模拟账户并清零当期持仓与账本；历史审计记录会保留。
+                </small>
               ) : null}
               <dl className="dynamic-trading-control-kpis">
                 <div><dt>亏损回撤</dt><dd>{lossDrawdown.toFixed(2)}%</dd></div>
@@ -880,7 +882,9 @@ export function ExecutionAutoPaperTradingSection({
       </div>
 
       {paperMode ? (
-        <small>修改后需确认新建模拟账户并清零当期持仓与账本；历史审计记录会保留。</small>
+        <small className="dynamic-trading-paper-reset-note">
+          修改后需确认新建模拟账户并清零当期持仓与账本；历史审计记录会保留。
+        </small>
       ) : null}
       {paperAccountResetRequired ? (
         <label className="execution-auto-paper-confirmation">

@@ -228,6 +228,7 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("保存并开启");
     expect(html).toContain("触发涨跌幅 %（0.05–20）");
     expect(html).toContain("模拟账户初始资金 USDT");
+    expect(html).toContain("dynamic-trading-paper-reset-note");
     expect(html).toContain("单笔模拟上限 USDT");
     expect(html).toContain("新建模拟账户并清零当期持仓与账本");
     expect(html).toContain("生产实盘会使用真实资金");

@@ -1661,3 +1661,11 @@ final result: passed
 - 自动交易聚焦 `81 / 81`、Python 全量 `1087 / 1087`（另跳过 PostgreSQL 专用 `2` 项，`817` 个 subtests 通过）、Web 全量 `1119 / 1119`、生产构建、Compose API/Web 重建、健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。
 
 final result: passed
+
+## 2026-08-05 模拟账户重置提示移动端排版复验
+
+- 修复动态交易风险参数中模拟账户重置提示继承面板正文大字号且内联外边距无效的问题；两种现有布局复用同一个局部样式，没有新增组件或布局状态。
+- 真实 Docker 页面在 `390 × 844` 的纸面模拟草稿状态下显示为 `8px / 11.2px`，上间距 `2px`、下间距 `7px`；页面宽度 `390 / 390`，控制台 `0 error / 0 warning`，未保存配置或触发交易。
+- 聚焦测试 `31 / 31`、Web 生产构建、Compose Web 健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。
+
+final result: passed
