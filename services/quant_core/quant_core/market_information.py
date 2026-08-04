@@ -46,6 +46,17 @@ class MarketInformationQuery:
     scope: str = "all"
 
 
+@dataclass(frozen=True)
+class _AshareNewsWindow:
+    observed_at: datetime
+    general: list[dict[str, object]]
+    instrument: list[dict[str, object]]
+    warnings: list[str]
+    available: bool
+    general_has_more: bool
+    instrument_has_more: bool
+
+
 class MarketInformationUnavailable(RuntimeError):
     pass
 
@@ -138,6 +149,10 @@ class MarketInformationService:
         self._retry_after: dict[
             tuple[str, str, str, int, int, str, str],
             datetime,
+        ] = {}
+        self._ashare_news_windows: dict[
+            tuple[str, str, str],
+            _AshareNewsWindow,
         ] = {}
         # ponytail: one lock keeps this low-volume read cache coherent; split per key if contention appears.
         self._cache_lock = Lock()
@@ -324,6 +339,31 @@ class MarketInformationService:
         at: datetime,
     ) -> tuple[list[dict[str, object]], list[str], bool, bool]:
         target = query.offset + query.limit + 1
+        cache_key = (query.symbol, query.name, query.scope)
+        cached = self._ashare_news_windows.get(cache_key)
+        if cached is not None and at - cached.observed_at < MARKET_INFORMATION_CACHE_TTL:
+            general_covered = (
+                query.scope not in {"all", "market"}
+                or len(cached.general) >= target
+                or not cached.general_has_more
+            )
+            instrument_covered = (
+                query.scope not in {"all", "instrument"}
+                or not query.symbol
+                or len(cached.instrument) >= target
+                or not cached.instrument_has_more
+            )
+            if general_covered and instrument_covered:
+                page, has_more = _news_page(
+                    cached.general,
+                    cached.instrument,
+                    query,
+                    market_has_more=cached.general_has_more,
+                    instrument_has_more=cached.instrument_has_more,
+                )
+                return page, list(cached.warnings), cached.available, has_more
+
+        fetch_target = max(target, 100)
         general: list[dict[str, object]] = []
         instrument: list[dict[str, object]] = []
         warnings: list[str] = []
@@ -333,7 +373,7 @@ class MarketInformationService:
         if query.scope in {"all", "market"}:
             try:
                 general, general_has_more = self._eastmoney_fast_news_window(
-                    target,
+                    fetch_target,
                     at=at,
                 )
                 available = True
@@ -343,7 +383,7 @@ class MarketInformationService:
             if query.symbol:
                 try:
                     instrument, instrument_has_more = (
-                        self._eastmoney_search_news_window(query, target)
+                        self._eastmoney_search_news_window(query, fetch_target)
                     )
                     available = True
                 except Exception:
@@ -351,6 +391,15 @@ class MarketInformationService:
             elif query.scope == "instrument":
                 warnings.append("当前市场未选择标的，暂无标的资讯。")
                 available = True
+        self._ashare_news_windows[cache_key] = _AshareNewsWindow(
+            observed_at=at,
+            general=general,
+            instrument=instrument,
+            warnings=warnings,
+            available=available,
+            general_has_more=general_has_more,
+            instrument_has_more=instrument_has_more,
+        )
         page, has_more = _news_page(
             general,
             instrument,

@@ -337,8 +337,58 @@ class MarketInformationTest(unittest.TestCase):
             "hasMore": True,
             "scope": "market",
         })
-        self.assertIn("pageSize=5", requested_urls[0])
+        self.assertIn("pageSize=100", requested_urls[0])
         self.assertNotIn("search/jsonp", requested_urls[0])
+
+    def test_ashare_news_reuses_a_fresh_provider_window_for_the_next_page(self):
+        from quant_core.market_information import (
+            MarketInformationQuery,
+            MarketInformationService,
+        )
+
+        requested_urls = []
+
+        def fake_fetch_text(url: str, _encoding: str = "utf-8") -> str:
+            requested_urls.append(url)
+            return json.dumps({
+                "data": {
+                    "sortEnd": "",
+                    "total": 100,
+                    "fastNewsList": [
+                        {
+                            "code": f"news-{index}",
+                            "title": f"市场快讯 {index}",
+                            "summary": "",
+                            "showTime": f"2026-07-31 09:{index % 60:02d}:00",
+                        }
+                        for index in range(100)
+                    ],
+                }
+            })
+
+        service = MarketInformationService(
+            fetch_text=fake_fetch_text,
+            clock=lambda: datetime(2026, 7, 31, 1, 5, tzinfo=timezone.utc),
+        )
+        first = service.read(MarketInformationQuery(
+            market="ashare",
+            limit=20,
+            offset=0,
+            section="news",
+            scope="market",
+        ))
+        second = service.read(MarketInformationQuery(
+            market="ashare",
+            limit=20,
+            offset=20,
+            section="news",
+            scope="market",
+        ))
+
+        self.assertEqual(len(first["news"]), 20)
+        self.assertEqual(len(second["news"]), 20)
+        self.assertEqual(len(requested_urls), 1)
+        self.assertIn("pageSize=100", requested_urls[0])
 
     def test_instrument_scope_is_filtered_before_backend_pagination(self):
         from quant_core.market_information import (

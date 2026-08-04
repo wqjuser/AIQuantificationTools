@@ -670,6 +670,7 @@ describe("terminal layout css", () => {
   });
 
   test("keeps desktop market discovery content-sized before the market grid", () => {
+    expect(hasCssDeclaration(".design-market-secondary-nav", "margin-bottom: 10px;")).toBe(true);
     expect(hasCssBlockWith("  .terminal-design-surface.surface-market", [
       "display: grid;",
       "grid-template-rows: auto auto auto auto;",

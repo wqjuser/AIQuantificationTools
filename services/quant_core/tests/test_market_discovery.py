@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 from http.server import HTTPServer
-from threading import Thread
+from threading import Barrier, Thread
 from urllib.parse import parse_qs, urlparse
 
 
@@ -650,6 +650,88 @@ class MarketDiscoveryTest(unittest.TestCase):
             stale["warnings"],
             ["市场快照刷新失败，已使用最近一次成功快照。"],
         )
+
+    def test_ashare_discovery_uses_the_reachable_eastmoney_host_before_akshare(self):
+        from quant_core.market_discovery import (
+            AshareMarketDiscoveryService,
+            MarketDiscoveryQuery,
+        )
+
+        requested_urls = []
+
+        def fake_fetch_text(url: str, _encoding: str = "utf-8") -> str:
+            requested_urls.append(url)
+            if "push2.eastmoney.com" in url:
+                raise OSError("primary host unavailable")
+            return json.dumps({
+                "data": {
+                    "total": 1,
+                    "diff": [{
+                        "f12": "600000",
+                        "f14": "浦发银行",
+                        "f2": 10,
+                        "f3": 1,
+                        "f5": 10,
+                        "f6": 100,
+                        "f8": 1,
+                        "f9": 5,
+                        "f20": 1_000,
+                        "f23": 1,
+                    }],
+                }
+            })
+
+        payload = AshareMarketDiscoveryService(
+            fetch_text=fake_fetch_text,
+            fetch_akshare_spot=lambda: (_ for _ in ()).throw(
+                AssertionError("reachable Eastmoney fallback must avoid AkShare")
+            ),
+        ).discover(MarketDiscoveryQuery())
+
+        self.assertEqual(payload["source"], "eastmoney")
+        self.assertEqual(payload["overview"]["universeCount"], 1)
+        self.assertEqual(len(requested_urls), 2)
+        self.assertIn("push2.eastmoney.com", requested_urls[0])
+        self.assertIn("push2delay.eastmoney.com", requested_urls[1])
+
+    def test_ashare_discovery_fetches_snapshot_pages_concurrently(self):
+        from quant_core.market_discovery import (
+            AshareMarketDiscoveryService,
+            MarketDiscoveryQuery,
+        )
+
+        page_barrier = Barrier(2)
+
+        def fake_fetch_text(url: str, _encoding: str = "utf-8") -> str:
+            page = int(parse_qs(urlparse(url).query)["pn"][0])
+            if page > 1:
+                page_barrier.wait(timeout=0.5)
+            return json.dumps({
+                "data": {
+                    "total": 201,
+                    "diff": [{
+                        "f12": f"60000{page}",
+                        "f14": f"测试股票 {page}",
+                        "f2": 10,
+                        "f3": page,
+                        "f5": 10,
+                        "f6": 100,
+                        "f8": 1,
+                        "f9": 5,
+                        "f20": 1_000,
+                        "f23": 1,
+                    }],
+                }
+            })
+
+        payload = AshareMarketDiscoveryService(
+            fetch_text=fake_fetch_text,
+            fetch_akshare_spot=lambda: (_ for _ in ()).throw(
+                AssertionError("concurrent Eastmoney paging must avoid AkShare")
+            ),
+        ).discover(MarketDiscoveryQuery())
+
+        self.assertEqual(payload["overview"]["universeCount"], 3)
 
     def test_expired_akshare_snapshot_is_refreshed_before_stale_fallback(self):
         from quant_core.market_discovery import (

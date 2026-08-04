@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import Lock
@@ -16,6 +17,9 @@ Clock = Callable[[], datetime]
 FetchAkshareSpot = Callable[[], object]
 
 EASTMONEY_ASHARE_LIST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
+EASTMONEY_ASHARE_FALLBACK_LIST_URL = (
+    "https://push2delay.eastmoney.com/api/qt/clist/get"
+)
 BINANCE_MARKET_DATA_BASE_URL = "https://data-api.binance.vision"
 BINANCE_EXCHANGE_INFO_URL = (
     f"{BINANCE_MARKET_DATA_BASE_URL}/api/v3/exchangeInfo"
@@ -239,9 +243,22 @@ class AshareMarketDiscoveryService:
             return snapshot, "fresh", list(snapshot.warnings)
 
     def _fetch_snapshot_rows(self) -> list[AshareMarketSnapshotRow]:
-        first_payload = json.loads(
-            self.fetch_text(_eastmoney_ashare_list_url(page=1), "utf-8")
-        )
+        base_url = EASTMONEY_ASHARE_LIST_URL
+        try:
+            first_payload = json.loads(
+                self.fetch_text(
+                    _eastmoney_ashare_list_url(page=1, base_url=base_url),
+                    "utf-8",
+                )
+            )
+        except Exception:
+            base_url = EASTMONEY_ASHARE_FALLBACK_LIST_URL
+            first_payload = json.loads(
+                self.fetch_text(
+                    _eastmoney_ashare_list_url(page=1, base_url=base_url),
+                    "utf-8",
+                )
+            )
         rows = eastmoney_ashare_list_payload_to_rows(first_payload)
         total = _eastmoney_total(first_payload)
         if total <= 0 or not rows:
@@ -252,14 +269,23 @@ class AshareMarketDiscoveryService:
             max(1, (total + EASTMONEY_PAGE_SIZE - 1) // EASTMONEY_PAGE_SIZE),
             EASTMONEY_MAX_PAGES,
         )
-        for page in range(2, page_count + 1):
+        def fetch_page(page: int) -> list[AshareMarketSnapshotRow]:
             payload = json.loads(
-                self.fetch_text(_eastmoney_ashare_list_url(page=page), "utf-8")
+                self.fetch_text(
+                    _eastmoney_ashare_list_url(page=page, base_url=base_url),
+                    "utf-8",
+                )
             )
             page_rows = eastmoney_ashare_list_payload_to_rows(payload)
             if not page_rows:
                 raise ValueError("incomplete_eastmoney_market_snapshot")
-            rows.extend(page_rows)
+            return page_rows
+
+        pages = range(2, page_count + 1)
+        if page_count > 1:
+            with ThreadPoolExecutor(max_workers=min(8, page_count - 1)) as executor:
+                for page_rows in executor.map(fetch_page, pages):
+                    rows.extend(page_rows)
         return list({row.symbol: row for row in rows}.values())
 
 
@@ -722,7 +748,11 @@ def _eastmoney_total(payload: dict[str, object]) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
-def _eastmoney_ashare_list_url(*, page: int) -> str:
+def _eastmoney_ashare_list_url(
+    *,
+    page: int,
+    base_url: str = EASTMONEY_ASHARE_LIST_URL,
+) -> str:
     params = urlencode(
         {
             "pn": page,
@@ -736,12 +766,15 @@ def _eastmoney_ashare_list_url(*, page: int) -> str:
             "fields": "f2,f3,f5,f6,f8,f9,f12,f14,f20,f23",
         }
     )
-    return f"{EASTMONEY_ASHARE_LIST_URL}?{params}"
+    return f"{base_url}?{params}"
 
 
 def default_fetch_text(url: str, encoding: str = "utf-8") -> str:
     headers = {"User-Agent": "Mozilla/5.0 AIQuantificationTools/0.1"}
-    if url.startswith(EASTMONEY_ASHARE_LIST_URL):
+    if url.startswith((
+        EASTMONEY_ASHARE_LIST_URL,
+        EASTMONEY_ASHARE_FALLBACK_LIST_URL,
+    )):
         headers["Referer"] = "https://quote.eastmoney.com/"
     request = Request(
         url,

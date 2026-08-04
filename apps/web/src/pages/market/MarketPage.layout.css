@@ -20,6 +20,7 @@
 .design-market-secondary-nav {
   display: flex;
   justify-content: flex-end;
+  margin-bottom: 10px;
 }
 
 .design-watchlist-actions .design-link-button {
