@@ -52,27 +52,36 @@
   min-width: 0;
 }
 
-.portfolio-m5-header {
-  display: flex;
-  gap: 18px;
-  align-items: flex-start;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 10px;
+.portfolio-m5-disclosure {
+  min-width: 0;
 }
 
-.portfolio-m5-header h2,
+.portfolio-m5-disclosure > summary {
+  cursor: pointer;
+  color: var(--text);
+  font-size: calc(11px * var(--aiqt-text-scale, 1));
+  font-weight: 700;
+}
+
+.portfolio-m5-disclosure > summary small {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-weight: 500;
+}
+
+.portfolio-m5-content {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 12px;
+}
+
 .portfolio-m5-table-block h3 {
   margin: 0;
   color: var(--text);
 }
 
-.portfolio-m5-header h2 {
-  margin-top: 3px;
-  font-size: calc(15px * var(--aiqt-text-scale, 1));
-}
-
-.portfolio-m5-header p,
 .portfolio-m5-classifications p,
 .portfolio-m5-empty {
   margin: 4px 0 0;
@@ -81,15 +90,6 @@
   line-height: 1.55;
 }
 
-.portfolio-m5-kicker {
-  color: var(--teal);
-  font-size: calc(9px * var(--aiqt-text-scale, 1));
-  font-weight: 750;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.portfolio-m5-status,
 .portfolio-m5-check-status {
   display: inline-flex;
   gap: 5px;
@@ -103,21 +103,18 @@
   white-space: nowrap;
 }
 
-.portfolio-m5-status.ready,
 .portfolio-m5-check-status.passed {
   border-color: color-mix(in srgb, var(--teal) 50%, var(--border));
   background: var(--teal-dim);
   color: var(--teal);
 }
 
-.portfolio-m5-status.reduced,
 .portfolio-m5-check-status.reduced {
   border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
   background: color-mix(in srgb, var(--warning) 10%, var(--surface));
   color: var(--warning);
 }
 
-.portfolio-m5-status.blocked,
 .portfolio-m5-check-status.blocked {
   border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
   background: color-mix(in srgb, var(--danger) 9%, var(--surface));
@@ -315,7 +312,6 @@
     grid-column: 1;
   }
 
-  .portfolio-m5-header,
   .portfolio-m5-classification-row,
   .portfolio-m5-observations {
     display: grid;

@@ -311,6 +311,26 @@ export function PortfolioPage({
                     : "可继续推进"}
               </Status>
             </div>
+            <div className="design-kv-row">
+              <span>高级组合风险评估</span>
+              <Status
+                tone={
+                  portfolioRiskAssessment?.batch.status === "blocked"
+                    ? "risk"
+                    : portfolioStage4Workflow || portfolioRiskAssessment
+                      ? "positive"
+                      : "warning"
+                }
+              >
+                {portfolioRiskAssessment?.batch.status === "blocked"
+                  ? "最近评估已阻断"
+                  : portfolioRiskAssessment
+                    ? "已有可审计评估"
+                    : portfolioStage4Workflow
+                      ? "Stage 4 已就绪"
+                      : "等待 Stage 4 账户回放"}
+              </Status>
+            </div>
           </SurfacePanel>
           <SurfacePanel title="审批状态">
             <div className="design-kv-row">
@@ -614,13 +634,15 @@ export function PortfolioPage({
             </div>
           </SurfacePanel>
         ) : null}
-        <PortfolioM5Section
-          assessment={portfolioRiskAssessment ?? null}
-          busy={isRunningPortfolioRiskAssessment ?? false}
-          error={portfolioActionError}
-          onAssess={onRunPortfolioRiskAssessment}
-          workflow={portfolioStage4Workflow ?? null}
-        />
+        {portfolioStage4Workflow || portfolioRiskAssessment ? (
+          <PortfolioM5Section
+            assessment={portfolioRiskAssessment ?? null}
+            busy={isRunningPortfolioRiskAssessment ?? false}
+            error={portfolioActionError}
+            onAssess={onRunPortfolioRiskAssessment}
+            workflow={portfolioStage4Workflow ?? null}
+          />
+        ) : null}
       </div>
     </>
   );

@@ -12,6 +12,7 @@ import {
 } from "../lib/terminal-workbench";
 import type { AuthoritativeAiReviewRun } from "../lib/ai-review-stage3";
 import type { PortfolioRiskAssessment } from "../lib/portfolio-m5";
+import type { Stage4PortfolioWorkflow } from "../lib/portfolio-stage4";
 import type {
   MarketDiscoveryResult,
   MarketAiSelectionQualityStatistics,
@@ -2157,6 +2158,45 @@ describe("TerminalWorkspaceSurface", () => {
     expect(portfolio).not.toContain("design-portfolio-donut-value");
   });
 
+  it("keeps unavailable M5 controls out of the portfolio page", () => {
+    const portfolio = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="portfolio"
+      />,
+    );
+
+    expect(portfolio).toContain("高级组合风险评估");
+    expect(portfolio).toContain("等待 Stage 4 账户回放");
+    expect(portfolio).not.toContain("账户、目标与批次风险");
+    expect(portfolio).not.toContain("运行组合风险评估");
+    expect(portfolio).not.toContain("当日损失（%）");
+  });
+
+  it("reveals the collapsed M5 form only after Stage 4 is ready", () => {
+    const workflow = {
+      workflowId: "stage4-workflow-1",
+      portfolioRequest: {
+        legs: [
+          { symbol: "600000", market: "ashare", timeframe: "1d", runId: "run-a", targetWeight: 0.55 },
+        ],
+      },
+      replay: { generatedAt: "2026-07-20T10:00:00+00:00", orders: [] },
+    } as unknown as Stage4PortfolioWorkflow;
+    const portfolio = renderToStaticMarkup(
+      <TerminalWorkspaceSurface
+        {...baseProps}
+        activeWorkAreaId="portfolio"
+        portfolioStage4Workflow={workflow}
+      />,
+    );
+
+    expect(portfolio).toContain("Stage 4 已就绪");
+    expect(portfolio).toContain('<details class="portfolio-m5-disclosure">');
+    expect(portfolio).toContain("运行组合风险评估");
+    expect(portfolio).toContain("当日损失（%）");
+  });
+
   it("shows audited M5 current weights and authoritative portfolio checks instead of synthetic passes", () => {
     const portfolioRun = {
       name: "M5 组合",
@@ -2331,9 +2371,14 @@ describe("TerminalWorkspaceSurface", () => {
     );
 
     expect(portfolio).toContain("<td>55.00%</td><td>10.00%</td>");
+    expect(portfolio).toContain('class="design-panel portfolio-m5-section"');
+    expect(portfolio).toContain('<details class="portfolio-m5-disclosure">');
+    expect(portfolio).toContain("高级组合风险评估");
     expect(portfolio).toContain("账户、目标与批次风险");
     expect(portfolio).toContain("账户 / 本地组合匹配");
     expect(portfolio).toContain("行业 / 市场 / 币种暴露");
+    expect(portfolio).not.toContain("当日损失（%）");
+    expect(portfolio).not.toContain("M5 · 组合研究风险");
     expect(portfolio).not.toContain("组合年化波动率");
     expect(portfolio).not.toContain("权威组合回测结果");
   });
@@ -2429,8 +2474,10 @@ describe("TerminalWorkspaceSurface", () => {
     expect(portfolio).toContain("生产授权：永久有效");
     expect(portfolio).toContain("刷新生产风险");
     expect(portfolio).toContain("前往动态交易复核");
-    expect(portfolio).toContain("M5 · 组合研究风险");
-    expect(portfolio).toContain("该评估不写入生产风险链");
+    expect(portfolio).toContain("高级组合风险评估");
+    expect(portfolio).toContain("等待 Stage 4 账户回放");
+    expect(portfolio).toContain("下方组合研究评估仍为模拟链");
+    expect(portfolio).not.toContain("运行组合风险评估");
     expect(portfolio).not.toContain("模拟成交状态");
     expect(portfolio).not.toContain("回放精确性");
     expect(portfolio).not.toContain("交接为生产自动策略");

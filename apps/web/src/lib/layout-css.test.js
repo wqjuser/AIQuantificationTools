@@ -933,10 +933,15 @@ describe("terminal layout css", () => {
     expect(portfolioPageSource).toContain("<PortfolioM5Section");
     expect(portfolioPageSource).toContain("allocation.currentWeight");
     expect(portfolioPageSource).not.toContain("组合年化波动率");
+    expect(portfolioM5SectionSource).toContain("<SurfacePanel");
+    expect(portfolioM5SectionSource).toContain('className="portfolio-m5-disclosure"');
+    expect(portfolioM5SectionSource).not.toContain("design-surface-panel");
     expect(portfolioM5SectionSource).toContain("读取阶段 4 模拟账户回放");
     expect(portfolioM5SectionSource).toContain("该评估不写入生产风险链");
     expect(portfolioM5SectionSource).toContain('className="portfolio-m5-table-scroll"');
     expect(cssBlock(".portfolio-m5-section")).toContain("min-width: 0;");
+    expect(cssBlock(".portfolio-m5-disclosure > summary")).toContain("cursor: pointer;");
+    expect(cssBlock(".portfolio-m5-content")).toContain("display: grid;");
     expect(cssBlock(".portfolio-m5-table-scroll")).toContain("overflow-x: auto;");
     expect(cssBlock(".portfolio-m5-two-column")).toContain(
       "grid-template-columns: minmax(420px, 0.85fr) minmax(560px, 1.15fr);"
