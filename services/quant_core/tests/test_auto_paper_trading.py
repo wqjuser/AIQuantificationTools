@@ -22,7 +22,11 @@ from quant_core.ai_review_providers import (
     ProviderStatus,
 )
 from quant_core.audit_events import AuditEventStore
-from quant_core.auto_paper_trading import AutoPaperTradingRunner, AutoPaperTradingService
+from quant_core.auto_paper_trading import (
+    CONTROL_EVENT_ID,
+    AutoPaperTradingRunner,
+    AutoPaperTradingService,
+)
 from quant_core.backtest import BacktestEngine
 from quant_core.api import (
     QuantApiHandler,
@@ -602,6 +606,31 @@ def bars(prices: list[float], *, start: datetime | None = None) -> list[OHLCVBar
     ]
 
 
+def evaluate_and_settle_paper(
+    service: AutoPaperTradingService,
+    signal_bars: list[OHLCVBar],
+    *,
+    data_source: str = "test",
+    fill_open: float | None = None,
+) -> dict:
+    signaled = service.evaluate(signal_bars, data_source=data_source)
+    if signaled["state"]["status"] != "order_pending":
+        return signaled
+    price = float(fill_open if fill_open is not None else signal_bars[-1].close)
+    fill_bar = OHLCVBar(
+        symbol=signal_bars[-1].symbol,
+        market=signal_bars[-1].market,
+        timeframe=signal_bars[-1].timeframe,
+        timestamp=signal_bars[-1].timestamp + timedelta(minutes=1),
+        open=price,
+        high=price,
+        low=price,
+        close=price,
+        volume=signal_bars[-1].volume,
+    )
+    return service.evaluate([*signal_bars, fill_bar], data_source=data_source)
+
+
 def audited_strategy_stores(
     directory: str,
     *,
@@ -697,6 +726,359 @@ def audited_strategy_stores(
 
 
 class AutoPaperTradingTests(unittest.TestCase):
+    def test_legacy_paper_session_identity_is_stable_across_read_only_snapshots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+            )
+            service.configure({"enabled": False})
+            current = store.get(CONTROL_EVENT_ID)
+            assert current is not None
+            legacy_state = dict(current.metadata["state"])
+            legacy_state.pop("paperSessionId")
+            legacy_state.pop("paperSessionStartedAt")
+            store.record({
+                "schemaVersion": 1,
+                "eventId": CONTROL_EVENT_ID,
+                "eventType": "auto_paper_trading_state",
+                "runId": None,
+                "createdAt": current.created_at.isoformat(),
+                "stage": "auto-paper-trading",
+                "source": "auto-paper-trading",
+                "summary": "legacy",
+                "detail": "legacy",
+                "metadata": {"state": legacy_state},
+            })
+
+            first = service.snapshot()["state"]
+            second = service.snapshot()["state"]
+
+            self.assertEqual(first["paperSessionId"], second["paperSessionId"])
+            self.assertEqual(
+                first["paperSessionStartedAt"],
+                second["paperSessionStartedAt"],
+            )
+
+    def test_paper_account_initial_cash_requires_an_audited_session_reset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+            )
+
+            initial = service.snapshot()["state"]
+            self.assertEqual(initial["initialCash"], 100.0)
+            self.assertEqual(initial["cash"], 100.0)
+            self.assertEqual(initial["equity"], 100.0)
+            self.assertTrue(initial["paperSessionId"])
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "paper_account_reset_confirmation_required",
+            ):
+                service.configure({"initialCash": 25_000})
+            with self.assertRaisesRegex(ValueError, "orderNotional_out_of_range"):
+                service.configure({"executionMode": "testnet", "orderNotional": 11})
+
+            started = service.configure(
+                {
+                    "initialCash": 25_000,
+                    "orderNotional": 5_000,
+                    "paperAccountResetConfirmed": True,
+                    "enabled": True,
+                }
+            )
+            state = started["state"]
+            self.assertTrue(state["enabled"])
+            self.assertEqual(state["executionMode"], "paper")
+            self.assertEqual(state["initialCash"], 25_000)
+            self.assertEqual(state["orderNotional"], 5_000)
+            self.assertEqual(state["cash"], 25_000)
+            self.assertEqual(state["availableCash"], 25_000)
+            self.assertEqual(state["equity"], 25_000)
+            self.assertEqual(state["dailyStartEquity"], 25_000)
+            self.assertEqual(state["dailyPeakEquity"], 25_000)
+            self.assertNotEqual(state["paperSessionId"], initial["paperSessionId"])
+            self.assertTrue(state["paperSessionStartedAt"])
+            self.assertFalse(started["liveTradingAllowed"])
+            self.assertFalse(started["orderSubmissionEnabled"])
+            self.assertFalse(started["routeExecuted"])
+
+            repeated = service.configure(
+                {
+                    "initialCash": 25_000,
+                    "orderNotional": 5_000,
+                    "paperAccountResetConfirmed": True,
+                    "enabled": True,
+                }
+            )
+            self.assertEqual(repeated["state"]["paperSessionId"], state["paperSessionId"])
+            self.assertEqual(
+                store.count(event_type="auto_paper_account_session_reset"),
+                1,
+            )
+
+            reset_event = store.list_recent(
+                event_type="auto_paper_account_session_reset",
+                limit=1,
+            )[0]
+            self.assertEqual(
+                reset_event.metadata["paperSessionId"],
+                state["paperSessionId"],
+            )
+            self.assertEqual(reset_event.metadata["initialCash"], 25_000)
+            self.assertEqual(
+                reset_event.metadata["previousSession"]["paperSessionId"],
+                initial["paperSessionId"],
+            )
+            self.assertEqual(
+                reset_event.metadata["previousSession"]["finalEquity"],
+                100.0,
+            )
+            self.assertTrue(reset_event.metadata["paperOnly"])
+            self.assertFalse(reset_event.metadata["orderSubmissionAllowed"])
+            self.assertFalse(reset_event.metadata["routeExecuted"])
+
+            restarted = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+            ).snapshot()["state"]
+            self.assertEqual(restarted["paperSessionId"], state["paperSessionId"])
+            self.assertEqual(restarted["initialCash"], 25_000)
+            self.assertEqual(restarted["cash"], 25_000)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "paper_account_must_be_paused_before_reset",
+            ):
+                service.configure(
+                    {
+                        "initialCash": 50_000,
+                        "paperAccountResetConfirmed": True,
+                    }
+                )
+
+            service.configure({"enabled": False})
+            with self.assertRaisesRegex(ValueError, "orderNotional_out_of_range"):
+                service.configure({"executionMode": "testnet"})
+
+            service.configure({"orderNotional": 10})
+            testnet = service.configure({"executionMode": "testnet"})
+            self.assertEqual(testnet["state"]["initialCash"], 25_000)
+            returned = service.configure({"executionMode": "paper"})
+            self.assertEqual(returned["state"]["initialCash"], 25_000)
+            self.assertEqual(returned["state"]["cash"], 25_000)
+            self.assertNotEqual(returned["state"]["paperSessionId"], state["paperSessionId"])
+            self.assertEqual(
+                store.count(event_type="auto_paper_account_session_reset"),
+                2,
+            )
+            closed = next(
+                event.metadata["closedPaperSession"]
+                for event in store.list_recent(
+                    event_type="auto_paper_trading_control_change",
+                    limit=10,
+                )
+                if event.metadata.get("closedPaperSession")
+            )
+            self.assertEqual(closed["paperSessionId"], state["paperSessionId"])
+
+    def test_paper_signal_settles_at_the_next_completed_bar_open(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+            )
+            service.configure({
+                "enabled": True,
+                "triggerPct": 0.3,
+                "dailyLossLimitPct": 0.5,
+            })
+            signal_bars = bars([100, 100, 100, 100, 100, 101])
+
+            signaled = service.evaluate(signal_bars, data_source="test")
+            approved_notional = signaled["state"]["pendingPaperOrder"]["orderIntent"]["notionalValue"]
+            service.configure({"orderNotional": 1})
+
+            self.assertEqual(signaled["state"]["status"], "order_pending")
+            self.assertEqual(signaled["state"]["tradeCount"], 0)
+            self.assertEqual(
+                signaled["state"]["pendingPaperOrder"]["signalBarAt"],
+                signal_bars[-1].timestamp.isoformat(),
+            )
+            self.assertFalse(signaled["orderSubmissionEnabled"])
+            self.assertFalse(signaled["routeExecuted"])
+
+            fill_bar = OHLCVBar(
+                symbol="BTC/USDT",
+                market="crypto",
+                timeframe="1m",
+                timestamp=signal_bars[-1].timestamp + timedelta(minutes=1),
+                open=103,
+                high=105,
+                low=89,
+                close=90,
+                volume=2,
+            )
+            later_bar = OHLCVBar(
+                symbol="BTC/USDT",
+                market="crypto",
+                timeframe="1m",
+                timestamp=fill_bar.timestamp + timedelta(minutes=1),
+                open=110,
+                high=111,
+                low=109,
+                close=110,
+                volume=3,
+            )
+            restarted = AutoPaperTradingService(store, service.providers)
+            missing_signal = restarted.evaluate(
+                [*signal_bars[:-1], fill_bar],
+                data_source="test",
+            )
+            self.assertEqual(missing_signal["state"]["status"], "data_blocked")
+            self.assertEqual(missing_signal["state"]["tradeCount"], 0)
+            self.assertIsNotNone(missing_signal["state"]["pendingPaperOrder"])
+
+            missing_minute = restarted.evaluate(
+                [*signal_bars, later_bar],
+                data_source="test",
+            )
+            self.assertEqual(missing_minute["state"]["status"], "data_blocked")
+            self.assertEqual(missing_minute["state"]["tradeCount"], 0)
+
+            with patch.object(
+                restarted,
+                "_save",
+                side_effect=RuntimeError("simulated_state_save_crash"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "simulated_state_save_crash"):
+                    restarted.evaluate(
+                        [*signal_bars, fill_bar, later_bar],
+                        data_source="test",
+                    )
+            self.assertEqual(store.count(event_type="auto_paper_trade"), 1)
+            restarted = AutoPaperTradingService(store, service.providers)
+            filled = restarted.evaluate(
+                [*signal_bars, fill_bar, later_bar],
+                data_source="test",
+            )
+
+            self.assertEqual(filled["state"]["status"], "risk_paused")
+            self.assertEqual(filled["state"]["tradeCount"], 1)
+            self.assertEqual(filled["state"]["lastTrade"]["price"], 103)
+            self.assertLessEqual(
+                filled["state"]["lastTrade"]["notional"],
+                approved_notional,
+            )
+            self.assertGreater(filled["state"]["lastTrade"]["notional"], 1)
+            self.assertEqual(
+                filled["state"]["lastBarTimestamp"],
+                fill_bar.timestamp.isoformat(),
+            )
+            self.assertGreater(filled["state"]["dailyLossDrawdownPct"], 0)
+            self.assertEqual(
+                filled["state"]["dailyRiskHaltReason"],
+                "已达到当日亏损回撤上限。",
+            )
+            self.assertEqual(
+                filled["state"]["lastOrderResult"]["averagePrice"],
+                103,
+            )
+            self.assertEqual(
+                filled["state"]["lastOrderResult"]["state"],
+                "canceled",
+            )
+            self.assertGreater(
+                filled["state"]["lastOrderResult"]["remainingQuantity"],
+                0,
+            )
+            self.assertEqual(
+                filled["state"]["lastOrderResult"]["error"],
+                "paper_budget_remainder_canceled",
+            )
+            self.assertIsNone(filled["state"]["pendingPaperOrder"])
+            self.assertFalse(filled["orderSubmissionEnabled"])
+            self.assertFalse(filled["routeExecuted"])
+            trade_event = store.list_recent(event_type="auto_paper_trade", limit=1)[0]
+            self.assertEqual(
+                trade_event.metadata["fillPriceSource"],
+                "next_completed_bar_open",
+            )
+            self.assertEqual(
+                trade_event.metadata["paperSessionId"],
+                filled["state"]["paperSessionId"],
+            )
+
+            duplicate = restarted.evaluate(
+                [*signal_bars, fill_bar, later_bar],
+                data_source="test",
+            )
+            self.assertEqual(duplicate["state"]["tradeCount"], 1)
+            self.assertEqual(store.count(event_type="auto_paper_trade"), 1)
+
+    def test_pausing_cancels_an_unfilled_paper_signal_with_control_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (
+                        ProviderStatus("local", True, None, None),
+                        ProviderStatus(
+                            "openai-compatible",
+                            True,
+                            "fake",
+                            "https://example.invalid",
+                        ),
+                    ),
+                    {"openai-compatible": FakeProvider()},
+                ),
+            )
+            service.configure({"enabled": True, "triggerPct": 0.3})
+            signaled = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            intent_id = signaled["state"]["pendingPaperOrder"]["orderIntent"]["orderIntentId"]
+
+            paused = service.configure({"enabled": False})
+
+            self.assertIsNone(paused["state"]["pendingPaperOrder"])
+            control = next(
+                event
+                for event in store.list_recent(
+                    event_type="auto_paper_trading_control_change",
+                    limit=5,
+                )
+                if event.metadata.get("cancelledPaperOrderIntentId") == intent_id
+            )
+            self.assertEqual(control.metadata["cancelledPaperOrderIntentId"], intent_id)
+
     def test_audited_strategy_binding_stays_paused_and_drives_the_next_rule_evaluation(self):
         with tempfile.TemporaryDirectory() as directory:
             strategy, strategy_store, run_store = audited_strategy_stores(directory)
@@ -757,9 +1139,9 @@ class AutoPaperTradingTests(unittest.TestCase):
                     "dailyProfitDrawdownLimitPct": 20,
                 }
             )
-            evaluated = service.evaluate(
+            evaluated = evaluate_and_settle_paper(
+                service,
                 bars([100, 100, 101, 102, 103, 104]),
-                data_source="test",
             )
 
             self.assertEqual(evaluated["state"]["lastDecision"]["action"], "buy")
@@ -922,9 +1304,9 @@ class AutoPaperTradingTests(unittest.TestCase):
                 )
             )
             service.configure({"enabled": True})
-            evaluated = service.evaluate(
+            evaluated = evaluate_and_settle_paper(
+                service,
                 bars([100, 100, 101, 102, 103, 104]),
-                data_source="test",
             )
             trade = store.list_recent(
                 event_type="auto_paper_trade",
@@ -1126,9 +1508,9 @@ class AutoPaperTradingTests(unittest.TestCase):
             position_service.configure(
                 {"enabled": True, "triggerPct": 0.3}
             )
-            bought = position_service.evaluate(
+            bought = evaluate_and_settle_paper(
+                position_service,
                 bars([100, 100, 100, 100, 100, 101]),
-                data_source="test",
             )
             self.assertGreater(bought["state"]["position"], 0)
             position_service.configure({"enabled": False})
@@ -1206,16 +1588,16 @@ class AutoPaperTradingTests(unittest.TestCase):
                     "dailyLossLimitPct": 0.1,
                 }
             )
-            service.evaluate(
+            evaluate_and_settle_paper(
+                service,
                 bars([100, 100, 100, 100, 100, 101]),
-                data_source="test",
             )
-            exited = service.evaluate(
+            exited = evaluate_and_settle_paper(
+                service,
                 bars(
                     [101, 101, 101, 101, 101, 99],
                     start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
                 ),
-                data_source="test",
             )
             self.assertEqual(exited["state"]["position"], 0)
             self.assertTrue(exited["state"]["dailyRiskHaltReason"])
@@ -1339,9 +1721,9 @@ class AutoPaperTradingTests(unittest.TestCase):
                     "dailyProfitDrawdownLimitPct": 20,
                 }
             )
-            bought = service.evaluate(
+            bought = evaluate_and_settle_paper(
+                service,
                 bars([100 + index for index in range(20)]),
-                data_source="test",
             )
             self.assertGreater(bought["state"]["position"], 0)
 
@@ -1360,12 +1742,12 @@ class AutoPaperTradingTests(unittest.TestCase):
             )
 
             self.assertEqual(service.required_bar_count(), 20)
-            exited = service.evaluate(
+            exited = evaluate_and_settle_paper(
+                service,
                 bars(
                     [119] * 19 + [118.5],
                     start=datetime(2026, 7, 27, tzinfo=timezone.utc),
                 ),
-                data_source="test",
             )
             self.assertEqual(exited["state"]["position"], 0)
             self.assertEqual(exited["state"]["lastDecision"]["action"], "sell")
@@ -1539,7 +1921,8 @@ class AutoPaperTradingTests(unittest.TestCase):
                 adapter=CurrentKlineAdapter(),
             )
 
-            self.assertEqual(result["state"]["status"], "traded")
+            self.assertEqual(result["state"]["status"], "order_pending")
+            self.assertIsNotNone(result["state"]["pendingPaperOrder"])
             self.assertEqual(result["state"]["lastPrice"], 101)
             self.assertEqual(
                 result["state"]["lastBarTimestamp"],
@@ -1673,7 +2056,8 @@ class AutoPaperTradingTests(unittest.TestCase):
 
             state = service.snapshot()["state"]
             self.assertEqual(state["dataSource"], "backend-runner")
-            self.assertEqual(state["tradeCount"], 1)
+            self.assertEqual(state["tradeCount"], 0)
+            self.assertIsNotNone(state["pendingPaperOrder"])
             self.assertFalse(runner.running)
 
     def test_backend_runner_exposes_running_and_stopped_states(self):
@@ -1861,7 +2245,8 @@ class AutoPaperTradingTests(unittest.TestCase):
             finally:
                 runner.stop()
 
-            self.assertEqual(state["tradeCount"], 1)
+            self.assertEqual(state["tradeCount"], 0)
+            self.assertIsNotNone(state["pendingPaperOrder"])
 
     def test_api_runner_reads_interval_from_platform_settings(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -2020,7 +2405,12 @@ class AutoPaperTradingTests(unittest.TestCase):
             runner.stop()
 
             state = service.snapshot()["state"]
-            self.assertEqual(state["tradeCount"], 1)
+            filled = evaluate_and_settle_paper(
+                service,
+                rising,
+                data_source="manual",
+            )
+            self.assertEqual(filled["state"]["tradeCount"], 1)
             self.assertEqual(store.count(event_type="auto_paper_trade"), 1)
 
     def test_live_mode_requires_confirmation_and_routes_through_stage10_control(self):
@@ -3188,7 +3578,7 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertFalse(state["liveTradingAllowed"])
 
             rising = bars([100, 100, 100, 100, 100, 101])
-            bought = service.evaluate(rising, data_source="test")
+            bought = evaluate_and_settle_paper(service, rising)
             self.assertEqual(bought["state"]["lastDecision"]["action"], "buy")
             self.assertEqual(bought["state"]["lastDecision"]["confidence"], 0.01)
             self.assertGreater(bought["state"]["position"], 0)
@@ -3247,7 +3637,7 @@ class AutoPaperTradingTests(unittest.TestCase):
                 [101, 101, 101, 101, 101, 98],
                 start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
             )
-            sold = service.evaluate(falling, data_source="test")
+            sold = evaluate_and_settle_paper(service, falling, fill_open=200)
             self.assertEqual(sold["state"]["lastDecision"]["action"], "sell")
             self.assertEqual(sold["state"]["lastDecision"]["providerId"], "risk")
             self.assertEqual(sold["state"]["position"], 0)
@@ -3439,6 +3829,7 @@ class AutoPaperTradingTests(unittest.TestCase):
 
             evaluated = service.evaluate(rising, data_source="test")
             duplicate = service.evaluate(rising, data_source="test")
+            filled = evaluate_and_settle_paper(service, rising)
 
             contract = evaluated["state"]["lastDecisionContract"]
             intent = contract["orderIntent"]
@@ -3493,7 +3884,7 @@ class AutoPaperTradingTests(unittest.TestCase):
                 intent["riskAdjustedTargetId"],
                 contract["riskAdjustedTarget"]["riskAdjustedTargetId"],
             )
-            result = evaluated["state"]["lastOrderResult"]
+            result = filled["state"]["lastOrderResult"]
             self.assertEqual(result["executionMode"], "paper")
             self.assertEqual(result["state"], "filled")
             self.assertEqual(result["orderIntentId"], intent["orderIntentId"])
@@ -3508,7 +3899,8 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertTrue(result["feeEstimated"])
             self.assertEqual(result["clientOrderId"], "")
             self.assertEqual(duplicate["state"]["lastDecisionContract"], contract)
-            self.assertEqual(duplicate["state"]["lastOrderResult"], result)
+            self.assertIsNone(duplicate["state"]["lastOrderResult"])
+            self.assertEqual(filled["state"]["lastDecisionContract"], contract)
             replayed = replay_decision_proposal(
                 proposal,
                 bars=rising,
@@ -3556,18 +3948,18 @@ class AutoPaperTradingTests(unittest.TestCase):
                 "triggerPct": 0.3,
                 "maxTradesPerHour": 1,
             })
-            bought = service.evaluate(
+            bought = evaluate_and_settle_paper(
+                service,
                 bars([100, 100, 100, 100, 100, 101]),
-                data_source="test",
             )
             self.assertGreater(bought["state"]["position"], 0)
 
-            exited = service.evaluate(
+            exited = evaluate_and_settle_paper(
+                service,
                 bars(
                     [101, 101, 101, 101, 101, 98],
                     start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
                 ),
-                data_source="test",
             )
 
             self.assertEqual(exited["state"]["status"], "traded")
@@ -3629,9 +4021,9 @@ class AutoPaperTradingTests(unittest.TestCase):
             })
             self.assertEqual(configured["state"]["dailyProfitDrawdownLimitPct"], 0.5)
 
-            bought = service.evaluate(
+            bought = evaluate_and_settle_paper(
+                service,
                 bars([100, 100, 100, 100, 100, 101]),
-                data_source="test",
             )
             peaked = service.evaluate(
                 bars(
@@ -3647,12 +4039,12 @@ class AutoPaperTradingTests(unittest.TestCase):
                 ),
                 data_source="test",
             )
-            exited = service.evaluate(
+            exited = evaluate_and_settle_paper(
+                service,
                 bars(
                     [98, 98, 98, 98, 98, 98],
                     start=datetime(2026, 7, 26, 3, tzinfo=timezone.utc),
                 ),
-                data_source="test",
             )
             blocked = service.evaluate(
                 bars(
@@ -3670,7 +4062,7 @@ class AutoPaperTradingTests(unittest.TestCase):
                 pulled_back["state"]["dailyRiskHaltReason"],
                 "已达到当日盈利回撤上限。",
             )
-            self.assertEqual(exited["state"]["status"], "traded")
+            self.assertEqual(exited["state"]["status"], "risk_paused")
             self.assertEqual(exited["state"]["position"], 0)
             self.assertEqual(blocked["state"]["status"], "risk_paused")
             self.assertEqual(blocked["state"]["position"], 0)
@@ -3704,19 +4096,19 @@ class AutoPaperTradingTests(unittest.TestCase):
                 "dailyProfitDrawdownLimitPct": 20,
                 "maxTradesPerHour": 60,
             })
-            service.evaluate(
+            evaluate_and_settle_paper(
+                service,
                 bars([100, 100, 100, 100, 100, 101]),
-                data_source="test",
             )
-            exited = service.evaluate(
+            exited = evaluate_and_settle_paper(
+                service,
                 bars(
                     [98, 98, 98, 98, 98, 98],
                     start=datetime(2026, 7, 26, 1, tzinfo=timezone.utc),
                 ),
-                data_source="test",
             )
 
-            self.assertEqual(exited["state"]["status"], "traded")
+            self.assertEqual(exited["state"]["status"], "risk_paused")
             self.assertEqual(exited["state"]["position"], 0)
             self.assertGreater(exited["state"]["dailyLossDrawdownPct"], 0.2)
             self.assertEqual(exited["state"]["dailyProfitDrawdownPct"], 0)
@@ -3727,18 +4119,19 @@ class AutoPaperTradingTests(unittest.TestCase):
 
             tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
             with patch("quant_core.auto_paper_trading._now", return_value=tomorrow):
-                resumed = service.evaluate(
+                resumed = evaluate_and_settle_paper(
+                    service,
                     bars(
                         [99, 99, 99, 99, 99, 100],
                         start=datetime(2026, 7, 26, 2, tzinfo=timezone.utc),
                     ),
-                    data_source="test",
                 )
 
             self.assertEqual(resumed["state"]["status"], "traded")
             self.assertGreater(resumed["state"]["position"], 0)
             self.assertIsNone(resumed["state"]["dailyRiskHaltReason"])
-            self.assertEqual(resumed["state"]["dailyLossDrawdownPct"], 0)
+            self.assertGreater(resumed["state"]["dailyLossDrawdownPct"], 0)
+            self.assertLess(resumed["state"]["dailyLossDrawdownPct"], 0.2)
             self.assertEqual(resumed["state"]["dailyProfitDrawdownPct"], 0)
 
     def test_risk_adjustment_can_reduce_or_zero_but_never_amplify_a_target(self):

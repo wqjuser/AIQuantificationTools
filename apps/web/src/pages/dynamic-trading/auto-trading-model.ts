@@ -53,6 +53,7 @@ export function isAutoTradingSnapshot(payload: unknown): payload is AutoTradingS
     "dailyLossLimitPct",
     "dailyProfitDrawdownLimitPct",
     "maxTradesPerHour",
+    "initialCash",
     "cash",
     "equity",
     "position",
@@ -72,6 +73,8 @@ export function isAutoTradingSnapshot(payload: unknown): payload is AutoTradingS
     && typeof stateRecord.symbol === "string"
     && typeof stateRecord.timeframe === "string"
     && typeof stateRecord.providerId === "string"
+    && typeof stateRecord.paperSessionId === "string"
+    && typeof stateRecord.paperSessionStartedAt === "string"
     && Array.isArray(stateRecord.tradeTimestamps)
     && numericStateFields.every((field) =>
       typeof stateRecord[field] === "number" && Number.isFinite(stateRecord[field])
@@ -280,7 +283,7 @@ export type Draft = Pick<
   AutoTradingState,
   "triggerPct" | "orderNotional" | "stopLossPct" | "takeProfitPct" | "dailyLossLimitPct"
   | "dailyProfitDrawdownLimitPct" | "maxTradesPerHour" | "providerId" | "executionMode"
-  | "liveOperator"
+  | "liveOperator" | "initialCash"
 >;
 
 export const defaultDraft: Draft = {
@@ -291,10 +294,42 @@ export const defaultDraft: Draft = {
   dailyLossLimitPct: 2,
   dailyProfitDrawdownLimitPct: 2,
   maxTradesPerHour: 3,
+  initialCash: 100,
   providerId: "auto",
   executionMode: "paper",
   liveOperator: ""
 };
+
+export function autoTradingDraftForExecutionMode(
+  draft: Draft,
+  executionMode: Draft["executionMode"]
+): Draft {
+  return {
+    ...draft,
+    executionMode,
+    orderNotional: executionMode === "paper"
+      ? draft.orderNotional
+      : Math.min(draft.orderNotional, 10)
+  };
+}
+
+export function autoTradingConfigurationPayload(
+  draft: Draft,
+  enabled: boolean,
+  testnetConfirmed: boolean,
+  liveConfirmed: boolean,
+  paperAccountResetConfirmed: boolean
+) {
+  const { initialCash, ...configuration } = draft;
+  return {
+    ...configuration,
+    ...(draft.executionMode === "paper" ? { initialCash } : {}),
+    enabled,
+    testnetConfirmed,
+    liveConfirmed,
+    paperAccountResetConfirmed
+  };
+}
 
 export type SystemNotificationPermission = NotificationPermission | "unsupported";
 
@@ -617,6 +652,11 @@ export function autoTradingErrorMessage(error: unknown) {
     stage10_production_execution_control_evidence_stale: "生产权限证据已过期，请重新核验",
     stage10_production_trading_permissions_or_ip_invalid: "生产交易权限、危险权限或 IP 白名单不符合要求",
     stage10_auto_live_order_notional_exceeded: "上一轮生产订单风险预算超过 10 USDT 上限",
+    paper_account_reset_confirmation_required: "修改模拟账户初始资金前，请确认新建模拟账户",
+    paper_account_must_be_paused_before_reset: "请先暂停自动监控，再新建模拟账户",
+    paper_account_mode_required: "仅纸面模拟模式可以新建模拟账户",
+    initialCash_out_of_range: "模拟账户初始资金必须在 1 到 10 亿 USDT 之间",
+    orderNotional_out_of_range: "单笔金额超出当前执行模式允许范围",
     triggerPct_out_of_range: "触发涨跌幅必须在 0.05% 到 20% 之间",
     dailyLossLimitPct_out_of_range: "亏损回撤上限必须在 0.1% 到 20% 之间",
     dailyProfitDrawdownLimitPct_out_of_range: "盈利回撤上限必须在 0.1% 到 20% 之间",

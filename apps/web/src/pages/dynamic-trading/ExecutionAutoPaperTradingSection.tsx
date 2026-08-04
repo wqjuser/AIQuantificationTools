@@ -12,6 +12,7 @@ import {
 } from "../shared/auto-trading-contract";
 import {
   AUTO_TRADING_STATUS_REFRESH_INTERVAL_MS, autoTradingActionPath, autoTradingAttention,
+  autoTradingConfigurationPayload, autoTradingDraftForExecutionMode,
   autoTradingCycleCountdown, autoTradingDailyDrawdown, autoTradingErrorMessage,
   autoTradingNotification, autoTradingProfitDrawdown, autoTradingRuntimeHealth,
   decisionLabel, defaultDraft, defaultFetcher, executionModeLabel, formatFeeBreakdown, formatNumber,
@@ -81,6 +82,7 @@ export function ExecutionAutoPaperTradingSection({
   const [monitoringReadError, setMonitoringReadError] = useState<string | null>(null);
   const [testnetConfirmed, setTestnetConfirmed] = useState(false);
   const [liveConfirmed, setLiveConfirmed] = useState(false);
+  const [paperAccountResetConfirmed, setPaperAccountResetConfirmed] = useState(false);
   const [instrumentFilter, setInstrumentFilter] = useState<"all" | "crypto" | "other">("all");
   const [controlTab, setControlTab] = useState<"runtime" | "risk" | "authorization">("runtime");
   const [evaluating, setEvaluating] = useState(false);
@@ -94,6 +96,13 @@ export function ExecutionAutoPaperTradingSection({
   const monitoringReadRequestIdRef = useRef(0);
   const requestInFlight = useRef(false);
   const lastNotificationKey = useRef<string | null>(null);
+  const state = snapshot?.state;
+  const testnetMode = draft.executionMode === "testnet";
+  const liveMode = draft.executionMode === "live";
+  const paperMode = draft.executionMode === "paper";
+  const paperAccountResetRequired = paperMode
+    && state !== undefined
+    && draft.initialCash !== state.initialCash;
   const commitSnapshot = useCallback((next: AutoTradingSnapshot | null) => {
     if (!mountedRef.current) return;
     setSnapshot(next);
@@ -130,8 +139,10 @@ export function ExecutionAutoPaperTradingSection({
         maxTradesPerHour: next.state.maxTradesPerHour,
         providerId: next.state.providerId,
         executionMode: next.state.executionMode,
-        liveOperator: next.state.liveOperator
+        liveOperator: next.state.liveOperator,
+        initialCash: next.state.initialCash
       });
+      setPaperAccountResetConfirmed(false);
       setTestnetConfirmed(next.state.testnetConfirmed);
       setLiveConfirmed(next.state.liveConfirmed);
       setError(null);
@@ -221,12 +232,20 @@ export function ExecutionAutoPaperTradingSection({
       const next = await request<AutoTradingSnapshot>("api/execution/auto-paper-trading", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, enabled, testnetConfirmed, liveConfirmed })
+        body: JSON.stringify(autoTradingConfigurationPayload(
+          draft,
+          enabled,
+          testnetConfirmed,
+          liveConfirmed,
+          paperAccountResetRequired && paperAccountResetConfirmed
+        ))
       });
       if (!mountedRef.current) return;
       commitSnapshot(next);
       setTestnetConfirmed(next.state.testnetConfirmed);
       setLiveConfirmed(next.state.liveConfirmed);
+      setDraft((current) => ({ ...current, initialCash: next.state.initialCash }));
+      setPaperAccountResetConfirmed(false);
       setError(null);
       setStatusReadError(null);
     } catch (saveError) {
@@ -236,7 +255,8 @@ export function ExecutionAutoPaperTradingSection({
       if (mountedRef.current) setBusy(false);
       requestInFlight.current = false;
     }
-  }, [commitSnapshot, draft, liveConfirmed, request, testnetConfirmed]);
+  }, [commitSnapshot, draft, liveConfirmed, paperAccountResetConfirmed,
+    paperAccountResetRequired, request, testnetConfirmed]);
 
   useEffect(() => {
     if (snapshot) onSafetyChange?.(snapshot.state.executionMode, snapshot.liveTradingAllowed);
@@ -263,7 +283,6 @@ export function ExecutionAutoPaperTradingSection({
     return () => window.clearInterval(intervalId);
   }, [snapshot?.state.enabled]);
 
-  const state = snapshot?.state;
   const notification = autoTradingNotification(state, Date.now(), statusReadError);
   useEffect(() => {
     if (notificationPermission !== "granted" || typeof Notification === "undefined") return;
@@ -293,8 +312,6 @@ export function ExecutionAutoPaperTradingSection({
   };
   const hasUnresolvedOrder = hasUnresolvedAutoOrder(state);
   const attention = autoTradingAttention(state);
-  const testnetMode = draft.executionMode === "testnet";
-  const liveMode = draft.executionMode === "live";
   const modeLabel = liveMode ? "币安现货生产实盘"
     : testnetMode ? "币安现货测试网" : "模拟账户";
   const updateNumber = (key: keyof Draft, value: string) => {
@@ -502,7 +519,8 @@ export function ExecutionAutoPaperTradingSection({
                 <label>执行模式
                   <select value={draft.executionMode} onChange={(event) => {
                     const executionMode = event.target.value as Draft["executionMode"];
-                    setDraft((current) => ({ ...current, executionMode }));
+                    setDraft((current) => autoTradingDraftForExecutionMode(current, executionMode));
+                    setPaperAccountResetConfirmed(false);
                     if (executionMode === "paper") setTestnetConfirmed(false);
                     if (executionMode !== "live") setLiveConfirmed(false);
                   }}>
@@ -524,7 +542,8 @@ export function ExecutionAutoPaperTradingSection({
                 </label>
                 <NumberField label="触发涨跌幅 %（0.05–20）" min={0.05} max={20} step={0.05}
                   value={draft.triggerPct} onChange={(value) => updateNumber("triggerPct", value)} />
-                <NumberField label="单笔上限 USDT" min={1} max={10} step={1}
+                <NumberField label={paperMode ? "单笔模拟上限 USDT" : "单笔上限 USDT"}
+                  min={1} max={paperMode ? draft.initialCash : 10} step={1}
                   value={draft.orderNotional} onChange={(value) => updateNumber("orderNotional", value)} />
                 <NumberField label="止损 %" min={0.1} max={20} step={0.1}
                   value={draft.stopLossPct} onChange={(value) => updateNumber("stopLossPct", value)} />
@@ -537,7 +556,18 @@ export function ExecutionAutoPaperTradingSection({
                   onChange={(value) => updateNumber("dailyProfitDrawdownLimitPct", value)} />
                 <NumberField label="每小时最多成交" min={1} max={60} step={1}
                   value={draft.maxTradesPerHour} onChange={(value) => updateNumber("maxTradesPerHour", value)} />
+                {paperMode ? (
+                  <NumberField disabled={state?.enabled} label="模拟账户初始资金 USDT"
+                    min={1} max={1_000_000_000} step={100}
+                    value={draft.initialCash} onChange={(value) => {
+                      updateNumber("initialCash", value);
+                      setPaperAccountResetConfirmed(false);
+                    }} />
+                ) : null}
               </div>
+              {paperMode ? (
+                <small>修改后需确认新建模拟账户并清零当期持仓与账本；历史审计记录会保留。</small>
+              ) : null}
               <dl className="dynamic-trading-control-kpis">
                 <div><dt>亏损回撤</dt><dd>{lossDrawdown.toFixed(2)}%</dd></div>
                 <div><dt>盈利回撤</dt><dd>{profitDrawdown.toFixed(2)}%</dd></div>
@@ -584,9 +614,17 @@ export function ExecutionAutoPaperTradingSection({
             </div>
 
             <div className="dynamic-trading-control-actions">
+              {paperAccountResetRequired ? (
+                <label className="dynamic-trading-confirmation">
+                  <input checked={paperAccountResetConfirmed} disabled={state?.enabled}
+                    onChange={(event) => setPaperAccountResetConfirmed(event.target.checked)} type="checkbox" />
+                  确认新建模拟账户
+                </label>
+              ) : null}
               <button disabled={
                 busy
                 || evaluating
+                || (paperAccountResetRequired && !paperAccountResetConfirmed)
                 || (testnetMode && !testnetConfirmed)
                 || (liveMode && (!liveConfirmed || !draft.liveOperator.trim()))
               } onClick={() => void save(true)} type="button">
@@ -786,7 +824,8 @@ export function ExecutionAutoPaperTradingSection({
         <label>执行模式
           <select value={draft.executionMode} onChange={(event) => {
             const executionMode = event.target.value as Draft["executionMode"];
-            setDraft((current) => ({ ...current, executionMode }));
+            setDraft((current) => autoTradingDraftForExecutionMode(current, executionMode));
+            setPaperAccountResetConfirmed(false);
             if (executionMode === "paper") {
               setTestnetConfirmed(false);
             }
@@ -816,7 +855,8 @@ export function ExecutionAutoPaperTradingSection({
               value={draft.triggerPct} onChange={(value) => updateNumber("triggerPct", value)} />
           </>
         ) : null}
-        <NumberField label="单笔上限 USDT" min={1} max={10} step={1}
+        <NumberField label={paperMode ? "单笔模拟上限 USDT" : "单笔上限 USDT"}
+          min={1} max={paperMode ? draft.initialCash : 10} step={1}
           value={draft.orderNotional} onChange={(value) => updateNumber("orderNotional", value)} />
         <NumberField label="止损 %" min={0.1} max={20} step={0.1}
           value={draft.stopLossPct} onChange={(value) => updateNumber("stopLossPct", value)} />
@@ -829,7 +869,26 @@ export function ExecutionAutoPaperTradingSection({
           onChange={(value) => updateNumber("dailyProfitDrawdownLimitPct", value)} />
         <NumberField label="每小时最多成交" min={1} max={60} step={1}
           value={draft.maxTradesPerHour} onChange={(value) => updateNumber("maxTradesPerHour", value)} />
+        {paperMode ? (
+          <NumberField disabled={state?.enabled} label="模拟账户初始资金 USDT"
+            min={1} max={1_000_000_000} step={100}
+            value={draft.initialCash} onChange={(value) => {
+              updateNumber("initialCash", value);
+              setPaperAccountResetConfirmed(false);
+            }} />
+        ) : null}
       </div>
+
+      {paperMode ? (
+        <small>修改后需确认新建模拟账户并清零当期持仓与账本；历史审计记录会保留。</small>
+      ) : null}
+      {paperAccountResetRequired ? (
+        <label className="execution-auto-paper-confirmation">
+          <input checked={paperAccountResetConfirmed} disabled={state?.enabled}
+            onChange={(event) => setPaperAccountResetConfirmed(event.target.checked)} type="checkbox" />
+          确认新建模拟账户
+        </label>
+      ) : null}
 
       {testnetMode ? (
         <label className="execution-auto-paper-confirmation">
@@ -860,6 +919,7 @@ export function ExecutionAutoPaperTradingSection({
         <button disabled={
           busy
           || strategyBindingBlocked
+          || (paperAccountResetRequired && !paperAccountResetConfirmed)
           || (testnetMode && !testnetConfirmed)
           || (liveMode && (!liveConfirmed || !draft.liveOperator.trim()))
         } onClick={() => void save(true)} type="button">
@@ -894,6 +954,7 @@ export function ExecutionAutoPaperTradingSection({
 }
 
 function NumberField({
+  disabled,
   label,
   max,
   min,
@@ -901,6 +962,7 @@ function NumberField({
   step,
   value
 }: {
+  disabled?: boolean;
   label: string;
   max: number;
   min: number;
@@ -910,7 +972,7 @@ function NumberField({
 }) {
   return (
     <label>{label}
-      <input max={max} min={min} onChange={(event) => onChange(event.target.value)}
+      <input disabled={disabled} max={max} min={min} onChange={(event) => onChange(event.target.value)}
         step={step} type="number" value={value} />
     </label>
   );

@@ -1651,3 +1651,13 @@ final result: passed
 - Python 全量 `1037 / 1037`（另跳过 PostgreSQL 专用 `2` 项，已在真实恢复库 `2 / 2` 通过）、Web 全量 `1118 / 1118`、生产构建、local/public Compose 健康检查、公网 `/health`、后台周期日志、双轴代码复审和 `git diff --check` 通过；Chrome 扩展连接超时，因此没有宣称完成公网 UI 回放。
 
 final result: passed
+
+## 2026-08-05 自定义模拟账户与下一根 K 线成交复验
+
+- 动态交易页继续复用既有 `AutoPaperTradingService` 与同一自动交易状态，只增加模拟账户初始资金、单笔模拟上限和显式重置确认。运行中的账户不能修改本金；暂停后修改本金会新建 `paperSessionId`，清零当前持仓与当期账本，并以受保护 `auto_paper_account_session_reset` 事件保留上一会话摘要和完整历史成交。
+- 纸面模式的单笔上限可以随模拟本金配置；买入跳空时按已锁定名义预算缩量并明确取消余量，卖出仍完整退出已批准数量。Testnet 和生产实盘严格保持 `10 USDT` 上限。重置、纸面信号和成交响应始终为 `orderSubmissionEnabled=false / routeExecuted=false`，没有调用 AI 选股、Testnet 或生产订单路由，也没有新增数据库表、页面或第二套交易状态机。
+- 纸面买卖不再在信号 K 线收盘价上立即成交。信号及订单意图先进入受保护当前状态，只有相邻的下一根已完成 K 线到达后才按其开盘价结算；成交审计记录信号 K 线、成交 K 线、`next_completed_bar_open` 价格来源和所属模拟会话。相同或倒序 K 线不会重复成交，状态保存中断后仍以确定性成交 ID 恢复且不重复记账；离开纸面模式会封存会话摘要，重新进入时自动创建新会话，交易所账户同步不会污染模拟本金。
+- 真实 Docker 行情接口回读 `BTC/USDT · 1m` 的 `10` 根 Binance 已完成 K 线，`quality.isComplete=true`。页面只读验收未保存或切换服务端模式：桌面 `1280px` 和手机 `390px` 均无横向溢出；修改初始资金后保存按钮保持禁用，勾选“确认新建模拟账户”才恢复，控制台 `0 error / 0 warning`。
+- 自动交易聚焦 `81 / 81`、Python 全量 `1087 / 1087`（另跳过 PostgreSQL 专用 `2` 项，`817` 个 subtests 通过）、Web 全量 `1119 / 1119`、生产构建、Compose API/Web 重建、健康检查和 `git diff --check` 通过；仅保留既知 chunk-size 提示。
+
+final result: passed

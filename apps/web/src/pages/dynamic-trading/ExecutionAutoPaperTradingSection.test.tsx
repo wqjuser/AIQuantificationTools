@@ -25,6 +25,11 @@ import {
   type MonitoringSnapshot,
   type AutoTradingSnapshot
 } from "./ExecutionAutoPaperTradingSection";
+import {
+  autoTradingConfigurationPayload,
+  autoTradingDraftForExecutionMode,
+  defaultDraft
+} from "./auto-trading-model";
 
 function productionSnapshot(): AutoTradingSnapshot {
   const lastCycleAt = new Date(Date.now() - 1_000).toISOString();
@@ -56,6 +61,9 @@ function productionSnapshot(): AutoTradingSnapshot {
       dailyProfitDrawdownLimitPct: 2,
       maxTradesPerHour: 20,
       providerId: "rules",
+      initialCash: 100,
+      paperSessionId: "paper-session-test",
+      paperSessionStartedAt: lastCycleAt,
       cash: 94,
       availableCash: 14.74,
       position: 0.00001,
@@ -186,6 +194,16 @@ function healthyMonitoringSnapshot(snapshot: AutoTradingSnapshot): MonitoringSna
 }
 
 describe("ExecutionAutoPaperTradingSection", () => {
+  it("keeps paper cash out of external-mode requests and clamps their order budget", () => {
+    const paper = { ...defaultDraft, initialCash: 25_000, orderNotional: 5_000 };
+    const testnet = autoTradingDraftForExecutionMode(paper, "testnet");
+    const payload = autoTradingConfigurationPayload(testnet, false, false, false, false);
+
+    expect(testnet.orderNotional).toBe(10);
+    expect(payload).not.toHaveProperty("initialCash");
+    expect(payload.paperAccountResetConfirmed).toBe(false);
+  });
+
   it("counts down only while automatic monitoring is enabled", () => {
     const state = productionSnapshot().state;
     state.lastRunnerCycleAt = "2026-07-30T00:00:00.000Z";
@@ -209,6 +227,9 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("币安现货生产实盘");
     expect(html).toContain("保存并开启");
     expect(html).toContain("触发涨跌幅 %（0.05–20）");
+    expect(html).toContain("模拟账户初始资金 USDT");
+    expect(html).toContain("单笔模拟上限 USDT");
+    expect(html).toContain("新建模拟账户并清零当期持仓与账本");
     expect(html).toContain("生产实盘会使用真实资金");
     expect(html).toContain("自动交易运行与委托控制");
     expect(html).toContain("正在读取已保存的运行上下文");
@@ -1111,5 +1132,9 @@ describe("ExecutionAutoPaperTradingSection", () => {
       .toBe("服务端监控响应不完整，请稍后刷新或检查 API。");
     expect(autoTradingErrorMessage(new Error("stage10_auto_live_order_notional_exceeded")))
       .toBe("上一轮生产订单风险预算超过 10 USDT 上限");
+    expect(autoTradingErrorMessage(new Error("paper_account_reset_confirmation_required")))
+      .toBe("修改模拟账户初始资金前，请确认新建模拟账户");
+    expect(autoTradingErrorMessage(new Error("paper_account_must_be_paused_before_reset")))
+      .toBe("请先暂停自动监控，再新建模拟账户");
   });
 });

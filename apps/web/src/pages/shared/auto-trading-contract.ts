@@ -37,6 +37,9 @@ export interface AutoTradingState {
   dailyProfitDrawdownLimitPct: number;
   maxTradesPerHour: number;
   providerId: string;
+  initialCash: number;
+  paperSessionId: string;
+  paperSessionStartedAt: string;
   cash: number;
   availableCash?: number;
   position: number;

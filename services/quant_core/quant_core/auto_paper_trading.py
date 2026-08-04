@@ -350,6 +350,40 @@ class AutoPaperTradingService:
         with _LOCK:
             state = self._load()
             next_state = dict(state)
+            reset_confirmed = payload.get("paperAccountResetConfirmed", False)
+            if not isinstance(reset_confirmed, bool):
+                raise ValueError("paper_account_reset_confirmation_must_be_boolean")
+            requested_initial_cash = (
+                _bounded_number(payload["initialCash"], "initialCash", 1.0, 1_000_000_000.0)
+                if "initialCash" in payload
+                else float(state["initialCash"])
+            )
+            requested_execution_mode = str(
+                payload.get("executionMode", state["executionMode"]) or ""
+            ).strip()
+            if requested_execution_mode not in {"paper", "testnet", "live"}:
+                raise ValueError("execution_mode_invalid")
+            initial_cash_changed = not math.isclose(
+                requested_initial_cash,
+                float(state["initialCash"]),
+                rel_tol=0,
+                abs_tol=0.0001,
+            )
+            if initial_cash_changed and not reset_confirmed:
+                raise ValueError("paper_account_reset_confirmation_required")
+            entering_paper = (
+                state["executionMode"] != "paper"
+                and requested_execution_mode == "paper"
+            )
+            leaving_paper = (
+                state["executionMode"] == "paper"
+                and requested_execution_mode != "paper"
+            )
+            paper_session_event = None
+            cancelled_paper_order = None
+            closed_paper_session = _paper_session_summary(state) if leaving_paper else None
+            if closed_paper_session is not None:
+                next_state["lastPaperSessionSummary"] = closed_paper_session
             strategy_binding_event = (
                 self._prepare_strategy_binding(state, next_state, payload)
                 if "strategyRevision" in payload
@@ -359,7 +393,6 @@ class AutoPaperTradingService:
                 return self._payload(state)
             for key, minimum, maximum in (
                 ("triggerPct", 0.05, 20.0),
-                ("orderNotional", 1.0, 10.0),
                 ("stopLossPct", 0.1, 20.0),
                 ("takeProfitPct", 0.1, 50.0),
                 ("dailyLossLimitPct", 0.1, 20.0),
@@ -379,10 +412,71 @@ class AutoPaperTradingService:
                     raise ValueError("provider_id_invalid")
                 next_state["providerId"] = provider_id
             if "executionMode" in payload:
-                execution_mode = str(payload["executionMode"] or "").strip()
-                if execution_mode not in {"paper", "testnet", "live"}:
-                    raise ValueError("execution_mode_invalid")
-                next_state["executionMode"] = execution_mode
+                next_state["executionMode"] = requested_execution_mode
+            if "orderNotional" in payload:
+                next_state["orderNotional"] = _bounded_number(
+                    payload["orderNotional"],
+                    "orderNotional",
+                    1.0,
+                    requested_initial_cash
+                    if requested_execution_mode == "paper"
+                    else 10.0,
+                )
+            if (
+                requested_execution_mode in {"testnet", "live"}
+                and float(next_state["orderNotional"]) > 10.0
+            ):
+                raise ValueError("orderNotional_out_of_range")
+            if initial_cash_changed:
+                if state["enabled"]:
+                    raise ValueError("paper_account_must_be_paused_before_reset")
+                if (
+                    state["executionMode"] != "paper"
+                    or next_state["executionMode"] != "paper"
+                ):
+                    raise ValueError("paper_account_mode_required")
+            if initial_cash_changed or entering_paper:
+                previous_session = (
+                    _paper_session_summary(state)
+                    if initial_cash_changed
+                    else state.get("lastPaperSessionSummary")
+                    or _paper_session_summary(state)
+                )
+                next_state["initialCash"] = requested_initial_cash
+                next_state["paperSessionId"] = f"paper-session-{uuid4().hex}"
+                next_state["paperSessionStartedAt"] = _now().isoformat()
+                _reset_strategy_ledger(next_state)
+                paper_session_event = _event(
+                    event_id=(
+                        "auto-paper-account-session-"
+                        f"{next_state['paperSessionId'].removeprefix('paper-session-')}"
+                    ),
+                    event_type="auto_paper_account_session_reset",
+                    summary="模拟账户已新建",
+                    detail=f"初始资金 {requested_initial_cash:.4f} USDT。",
+                    metadata={
+                        "paperSessionId": next_state["paperSessionId"],
+                        "paperSessionStartedAt": next_state["paperSessionStartedAt"],
+                        "initialCash": requested_initial_cash,
+                        "previousSession": previous_session,
+                        "paperOnly": True,
+                        "affectsRisk": False,
+                        "affectsAuthorization": False,
+                        "orderSubmissionAllowed": False,
+                        "routeExecuted": False,
+                    },
+                )
+            if (
+                state["executionMode"] == "paper"
+                and isinstance(state.get("pendingPaperOrder"), dict)
+                and (
+                    next_state["enabled"] is False
+                    or next_state["executionMode"] != "paper"
+                    or initial_cash_changed
+                )
+            ):
+                cancelled_paper_order = state["pendingPaperOrder"]
+                next_state["pendingPaperOrder"] = None
             if next_state["executionMode"] != state["executionMode"]:
                 previous_mode = str(state["executionMode"])
                 previous_order = state.get(
@@ -469,6 +563,18 @@ class AutoPaperTradingService:
                     "orderSubmissionEnabled": live,
                     "routeExecuted": False,
                     "liveBlockedBoundary": not live,
+                    "cancelledPaperOrderIntentId": (
+                        cancelled_paper_order["orderIntent"].get("orderIntentId")
+                        if cancelled_paper_order is not None
+                        and isinstance(cancelled_paper_order.get("orderIntent"), Mapping)
+                        else None
+                    ),
+                    "cancelledPaperSignalBarAt": (
+                        cancelled_paper_order.get("signalBarAt")
+                        if cancelled_paper_order is not None
+                        else None
+                    ),
+                    "closedPaperSession": closed_paper_session,
                     **_strategy_evidence(next_state),
                 },
             )
@@ -476,6 +582,7 @@ class AutoPaperTradingService:
                 next_state,
                 related_events=[
                     *([strategy_binding_event] if strategy_binding_event is not None else []),
+                    *([paper_session_event] if paper_session_event is not None else []),
                     control_event,
                 ],
             )
@@ -851,13 +958,70 @@ class AutoPaperTradingService:
                 )
 
             ordered = sorted(bars, key=lambda bar: bar.timestamp)
+            if (
+                state["executionMode"] == "paper"
+                and isinstance(state.get("pendingPaperOrder"), dict)
+            ):
+                try:
+                    signal_bar_at = _parse_time(
+                        str(state["pendingPaperOrder"].get("signalBarAt") or "")
+                    )
+                except ValueError:
+                    state["pendingPaperOrder"] = None
+                    return self._finish(
+                        state,
+                        status="evaluation_error",
+                        detail="待成交纸面订单的信号 K 线时间无效。",
+                    )
+                signal_bar_index = next(
+                    (
+                        index
+                        for index, bar in enumerate(ordered)
+                        if bar.timestamp == signal_bar_at
+                    ),
+                    None,
+                )
+                if signal_bar_index is None:
+                    return self._finish(
+                        state,
+                        status="data_blocked",
+                        detail="缺少信号后的连续 K 线，纸面订单尚未成交。",
+                    )
+                minute_span = {
+                    "1m": 1,
+                    "5m": 5,
+                    "15m": 15,
+                    "30m": 30,
+                    "60m": 60,
+                }.get(str(state["timeframe"]))
+                if (
+                    minute_span is not None
+                    and signal_bar_index + 1 < len(ordered)
+                    and ordered[signal_bar_index + 1].timestamp
+                    != signal_bar_at + timedelta(minutes=minute_span)
+                ):
+                    return self._finish(
+                        state,
+                        status="data_blocked",
+                        detail="信号后的分钟 K 线不连续，纸面订单尚未成交。",
+                    )
+                ordered = ordered[:signal_bar_index + 2]
             latest = ordered[-1]
             price = float(latest.close)
             if price <= 0:
                 return self._finish(state, status="data_blocked", detail="最新成交价无效。")
             bar_timestamp = latest.timestamp.isoformat()
-            if state.get("lastBarTimestamp") == bar_timestamp:
-                return self._payload(state)
+            last_bar_timestamp = state.get("lastBarTimestamp")
+            if last_bar_timestamp:
+                try:
+                    if latest.timestamp <= _parse_time(str(last_bar_timestamp)):
+                        return self._payload(state)
+                except ValueError:
+                    return self._finish(
+                        state,
+                        status="data_blocked",
+                        detail="已保存的 K 线时间证据无效。",
+                    )
 
             one_bar_change = _pct_change(ordered[-2].close, price)
             window_change = _pct_change(ordered[-6].close, price)
@@ -889,20 +1053,6 @@ class AutoPaperTradingService:
                 if _parse_time(value) >= now - timedelta(hours=1)
             ]
             state["tradeTimestamps"] = recent_trades
-            released_dust = (
-                0.0
-                if state.get("accountAuthority") == "binance_spot"
-                else float(state["dailyReleasedDustNotional"])
-            )
-            daily_start = max(
-                float(state["dailyStartEquity"])
-                - released_dust,
-                0.00000001,
-            )
-            state["dailyPeakEquity"] = max(
-                float(state["dailyPeakEquity"]),
-                equity + released_dust,
-            )
             effective_loss_limit_pct = min(
                 float(state["dailyLossLimitPct"]),
                 (
@@ -921,23 +1071,25 @@ class AutoPaperTradingService:
                     else float(state["dailyProfitDrawdownLimitPct"])
                 ),
             )
-            daily_peak = max(
-                float(state["dailyPeakEquity"]) - released_dust,
-                daily_start,
+            loss_drawdown_pct, profit_drawdown_pct = _update_daily_drawdown(
+                state,
+                equity,
+                loss_limit_pct=effective_loss_limit_pct,
+                profit_drawdown_limit_pct=effective_profit_drawdown_limit_pct,
             )
-            loss_drawdown_pct = max(0.0, (daily_start - equity) / daily_start * 100)
-            profit_drawdown_pct = (
-                max(0.0, (daily_peak - equity) / daily_peak * 100)
-                if daily_peak > daily_start
-                else 0.0
-            )
-            state["dailyLossDrawdownPct"] = round(loss_drawdown_pct, 4)
-            state["dailyProfitDrawdownPct"] = round(profit_drawdown_pct, 4)
-            if not state.get("dailyRiskHaltReason"):
-                if loss_drawdown_pct >= effective_loss_limit_pct:
-                    state["dailyRiskHaltReason"] = "已达到当日亏损回撤上限。"
-                elif profit_drawdown_pct >= effective_profit_drawdown_limit_pct:
-                    state["dailyRiskHaltReason"] = "已达到当日盈利回撤上限。"
+
+            if (
+                state["executionMode"] == "paper"
+                and isinstance(state.get("pendingPaperOrder"), dict)
+            ):
+                return self._settle_pending_paper_order(
+                    state,
+                    latest,
+                    recent_trades,
+                    now,
+                    loss_limit_pct=effective_loss_limit_pct,
+                    profit_drawdown_limit_pct=effective_profit_drawdown_limit_pct,
+                )
 
             action = "hold"
             confidence = 1.0
@@ -1100,6 +1252,19 @@ class AutoPaperTradingService:
 
             adjusted_target = decision_contract["riskAdjustedTarget"]
             order_intent = decision_contract["orderIntent"]
+            if state["executionMode"] == "paper" and isinstance(order_intent, dict):
+                state["pendingPaperOrder"] = {
+                    "orderIntent": order_intent,
+                    "signalBarAt": bar_timestamp,
+                    "reason": reason,
+                    "providerId": provider_id,
+                    "confidence": confidence,
+                }
+                return self._finish(
+                    state,
+                    status="order_pending",
+                    detail="信号已锁定，将在下一根已完成 K 线开盘价模拟成交。",
+                )
             if (
                 state["executionMode"] in {"testnet", "live"}
                 and isinstance(order_intent, dict)
@@ -1285,6 +1450,160 @@ class AutoPaperTradingService:
                 ),
                 detail=str(state.get("dailyRiskHaltReason") or reason),
             )
+
+    def _settle_pending_paper_order(
+        self,
+        state: dict[str, Any],
+        fill_bar: OHLCVBar,
+        recent_trades: list[str],
+        now: datetime,
+        *,
+        loss_limit_pct: float,
+        profit_drawdown_limit_pct: float,
+    ) -> dict[str, Any]:
+        pending = state["pendingPaperOrder"]
+        order_intent = pending.get("orderIntent")
+        if not isinstance(order_intent, dict):
+            state["pendingPaperOrder"] = None
+            return self._finish(
+                state,
+                status="evaluation_error",
+                detail="待成交纸面订单证据无效。",
+            )
+        price = float(fill_bar.open)
+        if not math.isfinite(price) or price <= 0:
+            return self._finish(
+                state,
+                status="data_blocked",
+                detail="下一根已完成 K 线开盘价无效。",
+            )
+        side = str(order_intent["side"])
+        quantity = float(order_intent["quantity"])
+        if side == "buy":
+            quantity = min(quantity, float(order_intent["notionalValue"]) / price)
+        notional = quantity * price
+        fee, fee_estimated, cash_fee, base_fee = _fee_accounting(
+            None,
+            str(state["symbol"]),
+            price,
+            notional,
+        )
+        error = None
+        if side == "buy":
+            if notional + cash_fee > float(state["cash"]) + 1e-12:
+                error = "paper_account_cash_insufficient_at_next_bar_open"
+            else:
+                acquired = quantity - base_fee
+                state["cash"] = round(float(state["cash"]) - notional - cash_fee, 8)
+                state["position"] = round(float(state["position"]) + acquired, 12)
+                state["avgCost"] = round(
+                    (
+                        float(state["avgCost"]) * (float(state["position"]) - acquired)
+                        + notional
+                        + cash_fee
+                    )
+                    / float(state["position"]),
+                    8,
+                )
+        elif side == "sell":
+            if not _settle_sell_fill(
+                state,
+                quantity=quantity,
+                notional=notional,
+                cash_fee=cash_fee,
+                base_fee=base_fee,
+            ):
+                error = "paper_account_position_insufficient_at_next_bar_open"
+        else:
+            error = "paper_order_side_invalid"
+
+        state["pendingPaperOrder"] = None
+        if error:
+            state["lastOrderResult"] = build_order_result(
+                order_intent,
+                execution_mode="paper",
+                evidence={
+                    "state": "rejected",
+                    "filledQuantity": 0,
+                    "remainingQuantity": quantity,
+                    "error": error,
+                },
+            )
+            return self._finish(state, status="order_rejected", detail=error)
+
+        trade = _trade(
+            side,
+            quantity,
+            price,
+            notional,
+            fee,
+            str(pending.get("reason") or "纸面订单成交。"),
+            str(pending.get("providerId") or "rules"),
+            float(pending.get("confidence") or 0),
+            fee_estimated=fee_estimated,
+            execution_mode="paper",
+            testnet_order=None,
+            live_order=None,
+            paper_identity=(
+                f"{order_intent['orderIntentId']}:{fill_bar.timestamp.isoformat()}"
+            ),
+        )
+        trade.update(
+            {
+                "signalBarAt": pending.get("signalBarAt"),
+                "fillBarAt": fill_bar.timestamp.isoformat(),
+                "fillPriceSource": "next_completed_bar_open",
+            }
+        )
+        state["lastOrderResult"] = build_order_result(
+            order_intent,
+            execution_mode="paper",
+            evidence={
+                "state": (
+                    "filled"
+                    if math.isclose(quantity, float(order_intent["quantity"]), abs_tol=1e-12)
+                    else "canceled"
+                ),
+                "filledQuantity": quantity,
+                "remainingQuantity": max(
+                    0.0,
+                    float(order_intent["quantity"]) - quantity,
+                ),
+                "averagePrice": price,
+                "filledNotional": notional,
+                "error": (
+                    ""
+                    if math.isclose(quantity, float(order_intent["quantity"]), abs_tol=1e-12)
+                    else "paper_budget_remainder_canceled"
+                ),
+                **_order_result_fee_evidence(
+                    None,
+                    symbol=str(state["symbol"]),
+                    price=price,
+                    notional=notional,
+                ),
+            },
+        )
+        state["lastPrice"] = float(fill_bar.close)
+        state["equity"] = round(
+            float(state["cash"]) + float(state["position"]) * float(fill_bar.close),
+            8,
+        )
+        _update_daily_drawdown(
+            state,
+            float(state["equity"]),
+            loss_limit_pct=loss_limit_pct,
+            profit_drawdown_limit_pct=profit_drawdown_limit_pct,
+        )
+        self._record_trade(state, trade, recent_trades, now)
+        return self._finish(
+            state,
+            status="risk_paused" if state.get("dailyRiskHaltReason") else "traded",
+            detail=str(
+                state.get("dailyRiskHaltReason")
+                or "纸面信号已按下一根已完成 K 线开盘价成交。"
+            ),
+        )
 
     def _reconcile_pending_order(
         self,
@@ -1477,6 +1796,13 @@ class AutoPaperTradingService:
                 "orderSubmissionEnabled": mode == "live",
                 "routeExecuted": mode == "live",
                 "liveBlockedBoundary": mode != "live",
+                "paperSessionId": state.get("paperSessionId") if mode == "paper" else None,
+                "paperSessionStartedAt": (
+                    state.get("paperSessionStartedAt") if mode == "paper" else None
+                ),
+                "paperAccountInitialCash": (
+                    state.get("initialCash") if mode == "paper" else None
+                ),
                 **_strategy_evidence(state),
             },
         ))
@@ -1505,6 +1831,12 @@ class AutoPaperTradingService:
         mode = str(state["executionMode"])
         if mode == "paper":
             return None
+        if float(order_intent["notionalValue"]) > 10.0 + 1e-12:
+            raise ValueError(
+                "stage10_auto_live_order_notional_exceeded"
+                if mode == "live"
+                else "testnet_auto_order_notional_exceeded"
+            )
         side = str(order_intent["side"])
         quantity = float(order_intent["quantity"])
         price = float(order_intent["referencePrice"])
@@ -1875,12 +2207,6 @@ class AutoPaperTradingService:
             )
         )
         state.update({
-            "initialCash": round(
-                float(total_equity)
-                if first_snapshot
-                else max(0.0, float(state["initialCash"]) + external_flow),
-                8,
-            ),
             "cash": round(quote["total"], 8),
             "availableCash": round(quote["free"], 8),
             "position": round(managed_base_total, 12),
@@ -2170,6 +2496,19 @@ class AutoPaperTradingService:
         event = self.store.get(CONTROL_EVENT_ID)
         stored = event.metadata.get("state") if event else None
         state = {**_default_state(), **stored} if isinstance(stored, dict) else _default_state()
+        if isinstance(stored, dict) and "paperSessionStartedAt" not in stored:
+            started_at = str(
+                stored.get("updatedAt")
+                or (event.created_at.isoformat() if event is not None else _now().isoformat())
+            )
+            state["paperSessionStartedAt"] = started_at
+            state["paperSessionId"] = (
+                "paper-session-legacy-"
+                + canonical_sha256({
+                    "startedAt": started_at,
+                    "initialCash": float(state["initialCash"]),
+                })[:16]
+            )
         if isinstance(stored, dict) and "dailyPeakEquity" not in stored:
             state["dailyPeakEquity"] = float(state["dailyStartEquity"])
         if isinstance(stored, dict) and "aiUsage" not in stored:
@@ -2835,9 +3174,56 @@ def _reset_strategy_ledger(state: dict[str, Any]) -> None:
             "lastAccountCheck": None,
             "lastDecisionContract": None,
             "lastOrderResult": None,
+            "pendingPaperOrder": None,
             "lastDustDisposition": None,
         }
     )
+
+
+def _update_daily_drawdown(
+    state: dict[str, Any],
+    equity: float,
+    *,
+    loss_limit_pct: float,
+    profit_drawdown_limit_pct: float,
+) -> tuple[float, float]:
+    released_dust = (
+        0.0
+        if state.get("accountAuthority") == "binance_spot"
+        else float(state["dailyReleasedDustNotional"])
+    )
+    daily_start = max(float(state["dailyStartEquity"]) - released_dust, 0.00000001)
+    state["dailyPeakEquity"] = max(
+        float(state["dailyPeakEquity"]),
+        equity + released_dust,
+    )
+    daily_peak = max(float(state["dailyPeakEquity"]) - released_dust, daily_start)
+    loss_drawdown_pct = max(0.0, (daily_start - equity) / daily_start * 100)
+    profit_drawdown_pct = (
+        max(0.0, (daily_peak - equity) / daily_peak * 100)
+        if daily_peak > daily_start
+        else 0.0
+    )
+    state["dailyLossDrawdownPct"] = round(loss_drawdown_pct, 4)
+    state["dailyProfitDrawdownPct"] = round(profit_drawdown_pct, 4)
+    if not state.get("dailyRiskHaltReason"):
+        if loss_drawdown_pct >= loss_limit_pct:
+            state["dailyRiskHaltReason"] = "已达到当日亏损回撤上限。"
+        elif profit_drawdown_pct >= profit_drawdown_limit_pct:
+            state["dailyRiskHaltReason"] = "已达到当日盈利回撤上限。"
+    return loss_drawdown_pct, profit_drawdown_pct
+
+
+def _paper_session_summary(state: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "paperSessionId": str(state.get("paperSessionId") or "paper-session-initial"),
+        "paperSessionStartedAt": state.get("paperSessionStartedAt"),
+        "initialCash": round(float(state.get("initialCash") or 100.0), 4),
+        "finalCash": round(float(state.get("cash") or 0.0), 8),
+        "finalEquity": round(float(state.get("equity") or 0.0), 8),
+        "realizedPnl": round(float(state.get("realizedPnl") or 0.0), 8),
+        "tradeCount": max(0, int(state.get("tradeCount") or 0)),
+    }
 
 
 def _reset_strategy_decision_context(state: dict[str, Any]) -> None:
@@ -2849,6 +3235,7 @@ def _reset_strategy_decision_context(state: dict[str, Any]) -> None:
             "dataSource": None,
             "lastDecision": None,
             "lastDecisionContract": None,
+            "pendingPaperOrder": None,
         }
     )
 
@@ -2895,6 +3282,9 @@ def _default_state() -> dict[str, Any]:
         "maxTradesPerHour": 3,
         "providerId": "auto",
         "initialCash": 100.0,
+        "paperSessionId": "paper-session-initial",
+        "paperSessionStartedAt": now.isoformat(),
+        "lastPaperSessionSummary": None,
         "cash": 100.0,
         "availableCash": 100.0,
         "position": 0.0,
@@ -2940,6 +3330,7 @@ def _default_state() -> dict[str, Any]:
         "aiUsageEvidenceComplete": True,
         "lastDecisionContract": None,
         "lastOrderResult": None,
+        "pendingPaperOrder": None,
         "lastTrade": None,
         "lastTestnetOrder": None,
         "lastLiveOrder": None,
@@ -3078,6 +3469,7 @@ def _trade(
     execution_mode: str,
     testnet_order: dict[str, Any] | None,
     live_order: dict[str, Any] | None,
+    paper_identity: str | None = None,
 ) -> dict[str, Any]:
     routed = live_order or testnet_order or {}
     reported_fees = routed.get("fees")
@@ -3088,13 +3480,16 @@ def _trade(
         or request.get("clientOrderId")
         or ""
     )
-    trade_suffix = (
-        hashlib.sha256(
+    if execution_mode == "paper" and paper_identity:
+        trade_suffix = hashlib.sha256(
+            f"paper:{paper_identity}".encode()
+        ).hexdigest()[:20]
+    elif execution_mode in {"testnet", "live"} and client_order_id:
+        trade_suffix = hashlib.sha256(
             f"{execution_mode}:{client_order_id}".encode()
         ).hexdigest()[:20]
-        if execution_mode in {"testnet", "live"} and client_order_id
-        else uuid4().hex[:12]
-    )
+    else:
+        trade_suffix = uuid4().hex[:12]
     return {
         "tradeId": f"auto-{execution_mode}-trade-{trade_suffix}",
         "executionMode": execution_mode,
