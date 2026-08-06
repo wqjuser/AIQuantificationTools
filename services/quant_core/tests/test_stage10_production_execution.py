@@ -281,6 +281,34 @@ def _activate_gate(
 
 
 class Stage10ProductionExecutionTest(unittest.TestCase):
+    def test_permission_verification_reports_binance_region_restriction(self) -> None:
+        checked_at = datetime.now(timezone.utc)
+        preflight = build_production_trading_credential_preflight(
+            environ=_trading_env(),
+            operator="wenqingjie",
+            checked_at=checked_at.isoformat(),
+        )
+
+        class RestrictedLocationError(RuntimeError):
+            http_status = 451
+
+        class RestrictedLocationExchange(SafeTradingPermissionExchange):
+            def load_markets(self):
+                raise RestrictedLocationError("Service unavailable from a restricted location")
+
+        verification = build_production_trading_permission_verification(
+            preflight,
+            environ=_trading_env(),
+            operator="wenqingjie",
+            exchange_factory=lambda _exchange_id, config: RestrictedLocationExchange(config),
+            verified_at=(checked_at + timedelta(seconds=1)).isoformat(),
+        )
+
+        self.assertEqual(
+            verification["blockedReasons"],
+            ["stage10_production_binance_region_restricted"],
+        )
+
     def test_permission_verification_distinguishes_failed_call_from_missing_endpoint(self) -> None:
         checked_at = datetime.now(timezone.utc)
         preflight = build_production_trading_credential_preflight(

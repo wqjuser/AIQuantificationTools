@@ -530,7 +530,14 @@ def probe_ccxt_production_readonly(
             blocked_reasons.append("production_readonly_markets_empty")
     except Exception as error:
         market_count = 0
-        blocked_reasons.append("production_readonly_load_markets_failed")
+        blocked_reasons.append(
+            "production_readonly_binance_region_restricted"
+            if (
+                getattr(error, "http_status", None) == 451
+                or ("451" in str(error) and "restricted location" in str(error).lower())
+            )
+            else "production_readonly_load_markets_failed"
+        )
         checks.append(
             ExecutionAdapterHealthCheck(
                 check_id="production-markets-loaded",

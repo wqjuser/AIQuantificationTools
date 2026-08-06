@@ -335,6 +335,10 @@ def build_production_trading_permission_verification(
     blockers = []
     if "production_readonly_permission_check_failed" in probe.blocked_reasons:
         blockers.append("stage10_production_trading_permission_check_failed")
+    elif "production_readonly_binance_region_restricted" in probe.blocked_reasons:
+        blockers.append("stage10_production_binance_region_restricted")
+    elif "production_readonly_load_markets_failed" in probe.blocked_reasons:
+        blockers.append("stage10_production_market_access_failed")
     elif not probe.capabilities.get("apiRestrictions"):
         blockers.append("stage10_production_trading_permission_endpoint_unavailable")
     elif not authoritative:
