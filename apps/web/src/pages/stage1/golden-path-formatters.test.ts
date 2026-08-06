@@ -34,4 +34,17 @@ describe("translateGoldenPathDetail", () => {
       "模拟执行交接被阻断：策略风控参数不完整。"
     ]);
   });
+
+  it("localizes cache readiness when market calendar review is appended", () => {
+    const i18n = createI18n("zh-CN");
+
+    expect(
+      translateGoldenPathDetail(
+        i18n,
+        "1003 fresh cached K-line rows are available. Matching watchlist cache refresh evidence cache-refresh-ready includes the non-blocking quality note: Expected bar intervals are missing. Research may continue with this review note. Market calendar review: closed/after_hours · next open 2026-08-07T09:30:00+08:00 · Static session template only; exchange holiday calendar is not configured."
+      )
+    ).toBe(
+      "1003 根新鲜 K 线缓存可用，自选刷新证据 cache-refresh-ready 包含非阻断质量提示：存在缺失的 K 线时间间隔；研究可继续。交易日历复核：休市 · 盘后 · 下一次开盘 2026-08-07T09:30:00+08:00 · 仅静态时段模板；未配置交易所节假日历。"
+    );
+  });
 });

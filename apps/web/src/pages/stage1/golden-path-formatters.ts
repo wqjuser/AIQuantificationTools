@@ -1,6 +1,7 @@
 import { type AppI18n } from "../../lib/i18n";
 import { GoldenPathStatus } from "../../lib/terminal-api";
 import { GoldenPathRunbookPreviewItem, GoldenPathWorkspaceContext, P0PlatformBacklogItem, ResearchPipelinePreflight } from "../../lib/terminal-workbench";
+import { researchContextReadinessDetail, researchContextReadinessValue } from "../../components/ResearchContextReadinessPanel";
 import { goldenPathActionPreflightHint } from "../research/ResearchPipelineFormatters";
 import { goldenPathStatusLabel } from "./platform-overview-formatters";
 
@@ -175,6 +176,24 @@ export function goldenPathRunbookDetail(i18n: AppI18n, item: GoldenPathRunbookPr
 export function translateGoldenPathDetail(i18n: AppI18n, detail: string): string {
   if (i18n.locale === "en-US") {
     return detail;
+  }
+  const calendarReviewSeparator = " Market calendar review: ";
+  const calendarReviewIndex = detail.indexOf(calendarReviewSeparator);
+  if (calendarReviewIndex >= 0) {
+    const calendarReview = detail.slice(calendarReviewIndex + calendarReviewSeparator.length);
+    const [calendarState, ...calendarDetailParts] = calendarReview.split(" · ");
+    const localizedCalendarState = researchContextReadinessValue(i18n, {
+      id: "calendar",
+      value: calendarState.split("/").join(" · ")
+    });
+    const localizedCalendarDetail = researchContextReadinessDetail(i18n, {
+      id: "calendar",
+      detail: calendarDetailParts.join(" · ")
+    });
+    return `${translateGoldenPathDetail(i18n, detail.slice(0, calendarReviewIndex))}交易日历复核：${[
+      localizedCalendarState,
+      localizedCalendarDetail
+    ].filter(Boolean).join(" · ")}`;
   }
   const localizedAiReviewDetail = ({
     "Run the research pipeline to bind data, strategy, backtest, and AI evidence.": "运行研究流水线，以绑定行情数据、策略、回测和 AI 证据。",
