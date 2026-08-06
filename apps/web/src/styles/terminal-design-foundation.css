@@ -1,8 +1,47 @@
 
+.rail-profile {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  column-gap: 8px;
+  row-gap: 4px;
+  min-height: 0;
+  padding: 8px;
+}
+
+.rail-profile > span:not(.rail-avatar) {
+  min-width: 0;
+}
+
+.rail-profile strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rail-profile time {
-  padding-top: 3px;
-  line-height: 1.6;
-  text-align: center;
+  grid-column: 2 / 4;
+  width: auto;
+  padding-top: 0;
+  overflow: hidden;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.rail-profile .rail-logout {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  justify-self: end;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 5px;
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  white-space: nowrap;
+}
+
+.rail-profile .rail-logout:hover {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
 }
 
 .terminal-main {

@@ -1677,3 +1677,11 @@ final result: passed
 - 聚焦测试 `31 / 31`、Web 生产构建、Compose Web/API 健康检查和 `git diff --check` 通过；浏览器控制台 `0 error / 0 warning`，未保存配置、确认重置或触发交易。
 
 final result: passed
+
+## 2026-08-06 侧栏账户卡片紧凑布局复验
+
+- 将桌面侧栏账户区从“账号、时间、退出”三层堆叠收敛为两行：头像与账号同排，退出操作固定在右侧，运行时间在账号下方左对齐；公开会话和退出登录逻辑均未改动。
+- 真实 Docker 页面按参考截图的 `1680 × 962` 视口复验，账户卡片高度约 `78px`，账号超长时单行省略，侧栏和页面均无横向溢出。
+- Web 布局聚焦测试 `117 / 117`、生产构建、Compose Web/API 健康检查和 `git diff --check` 通过；浏览器控制台 `0 error / 0 warning`。
+
+final result: passed
