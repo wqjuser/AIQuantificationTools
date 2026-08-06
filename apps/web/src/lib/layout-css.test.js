@@ -11,6 +11,7 @@ function readImportedStyles(entryUrl) {
 
 const globalStyles = readImportedStyles(new URL("../styles.css", import.meta.url));
 const mainSource = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
+const authGateSource = readFileSync(new URL("../AuthGate.tsx", import.meta.url), "utf8");
 const marketPageLayoutStyles = readFileSync(
   new URL("../pages/market/MarketPage.layout.css", import.meta.url),
   "utf8"
@@ -214,6 +215,12 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
+  test("presents the public identity provider in user-facing language", () => {
+    expect(authGateSource).toContain("使用 Google 账号继续");
+    expect(authGateSource).toContain('href="/privacy.html"');
+    expect(authGateSource).not.toContain("使用 OIDC 登录");
+  });
+
   test("keeps each workspace page beside its layout stylesheet", () => {
     const pageLayouts = [
       ["../pages/ai-review/AiReviewPage.tsx", [

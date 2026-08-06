@@ -21,6 +21,16 @@
 
 Issuer 必须提供 discovery 和 JWKS。用户首次登录时必须返回稳定 `iss + sub`、邮箱和 `email_verified=true`。
 
+当前公网实例使用 Google 作为 OIDC 身份提供方。准备开放注册时，在 Google Auth Platform 中完成以下配置：
+
+- Audience 选择 External；Testing 阶段只允许测试用户登录。
+- Branding 的主页设为 `https://myqt.zxai.fun/`，隐私政策设为 `https://myqt.zxai.fun/privacy.html`，Authorized domain 使用 `zxai.fun`。
+- Data Access 只保留 `openid email profile`，不要为登录增加 Google API 敏感权限。
+- Clients 的回调地址保持为 `https://myqt.zxai.fun/api/auth/callback`。
+- 上述内容核对无误后，在 Audience 页面选择 Publish app；状态显示 In production 后，任意 Google 账号才可首次登录并自动创建独立研究空间。
+
+Google Cloud 的 Testing/In production 是 OAuth 应用发布状态，不是本项目环境变量。切换后无需修改后端 OIDC 协议实现。
+
 ## 2. 配置环境
 
 复制 `.env.example` 为服务器专用 `.env`，至少填写：
