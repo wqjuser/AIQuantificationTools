@@ -8,6 +8,7 @@
 }
 
 .rail-profile > span:not(.rail-avatar) {
+  grid-column: 2 / 4;
   min-width: 0;
 }
 
@@ -18,7 +19,8 @@
 }
 
 .rail-profile time {
-  grid-column: 2 / 4;
+  grid-column: 2;
+  grid-row: 2;
   width: auto;
   padding-top: 0;
   overflow: hidden;
@@ -28,8 +30,8 @@
 
 .rail-profile .rail-logout {
   grid-column: 3;
-  grid-row: 1;
-  align-self: center;
+  grid-row: 2;
+  align-self: end;
   justify-self: end;
   border: 1px solid var(--border);
   border-radius: 4px;

@@ -1685,3 +1685,11 @@ final result: passed
 - Web 布局聚焦测试 `117 / 117`、生产构建、Compose Web/API 健康检查和 `git diff --check` 通过；浏览器控制台 `0 error / 0 warning`。
 
 final result: passed
+
+## 2026-08-06 侧栏退出操作右下角复验
+
+- 保留紧凑账户卡片和现有退出逻辑，仅将“退出登录”从右上角移到第二行右侧；账号信息继续占完整首行，长邮箱不会被按钮提前挤压。
+- 真实 Docker 页面按 `1680 × 962` 复验，运行时样式为 `grid-area: 2 / 3`、`place-self: end`，运行时间位于第二行左侧；卡片仍约 `78px` 高，页面宽度 `1680 / 1680`。
+- Web 布局聚焦测试 `117 / 117`、生产构建、Compose Web/API 健康检查和 `git diff --check` 通过；浏览器控制台 `0 error / 0 warning`。
+
+final result: passed
