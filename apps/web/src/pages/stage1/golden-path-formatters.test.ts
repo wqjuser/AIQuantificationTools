@@ -20,4 +20,18 @@ describe("translateGoldenPathDetail", () => {
       "在执行适配器认证、风控审批和人工确认全部通过前，实盘路由保持阻断。"
     ]);
   });
+
+  it("localizes structured paper handoff blockers in Chinese", () => {
+    const i18n = createI18n("zh-CN");
+
+    expect(
+      [
+        "Paper handoff is blocked by paper_execution_data_quality_incomplete.",
+        "Paper handoff is blocked by paper_execution_strategy_risk_incomplete."
+      ].map((detail) => translateGoldenPathDetail(i18n, detail))
+    ).toEqual([
+      "模拟执行交接被阻断：行情数据质量证据不完整。",
+      "模拟执行交接被阻断：策略风控参数不完整。"
+    ]);
+  });
 });

@@ -190,6 +190,15 @@ export function translateGoldenPathDetail(i18n: AppI18n, detail: string): string
   if (localizedAiReviewDetail) {
     return localizedAiReviewDetail;
   }
+  const paperHandoffBlocker = detail.match(/^Paper handoff is blocked by ([^.]+)\.$/);
+  if (paperHandoffBlocker) {
+    const reason =
+      ({
+        paper_execution_data_quality_incomplete: "行情数据质量证据不完整",
+        paper_execution_strategy_risk_incomplete: "策略风控参数不完整"
+      } as Record<string, string>)[paperHandoffBlocker[1]] ?? "执行交接校验未通过";
+    return `模拟执行交接被阻断：${reason}。`;
+  }
   const freshCache = detail.match(/^(\d+) fresh cached K-line rows are available for audited research\.$/);
   if (freshCache) {
     return `${freshCache[1]} 根新鲜 K 线缓存可支撑审计研究。`;

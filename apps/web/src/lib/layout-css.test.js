@@ -435,6 +435,8 @@ describe("terminal layout css", () => {
     expect(executionConsoleSource).toContain('selectProductWorkArea("dynamic-trading");');
     expect(executionActionSource).not.toContain("stage6SandboxAuthorization");
     expect(executionActionSource).not.toContain("runStage9ProductionAdmissionCandidateAction");
+    expect(hasCssDeclaration(".design-primary-action", "flex: 0 0 auto;")).toBe(true);
+    expect(hasCssDeclaration(".design-primary-action", "white-space: nowrap;")).toBe(true);
     expect(hasCssDeclaration(".terminal-design-surface", "padding: 12px 14px 10px;")).toBe(true);
     expect(hasCssDeclaration(
       ".terminal-design-surface.surface-execution",

@@ -257,9 +257,11 @@
 }
 
 .design-primary-action {
+  flex: 0 0 auto;
   min-width: 150px;
   min-height: 36px;
   padding: 0 16px;
+  white-space: nowrap;
 }
 
 .design-primary-action.warning {

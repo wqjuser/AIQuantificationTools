@@ -1693,3 +1693,11 @@ final result: passed
 - Web 布局聚焦测试 `117 / 117`、生产构建、Compose Web/API 健康检查和 `git diff --check` 通过；浏览器控制台 `0 error / 0 warning`。
 
 final result: passed
+
+## 2026-08-06 执行中心阻断文案与主按钮复验
+
+- 修复黄金路径动态模拟交接错误直接显示英文：中文界面现在将 `paper_execution_data_quality_incomplete` 和 `paper_execution_strategy_risk_incomplete` 分别解释为行情数据质量证据不完整与策略风控参数不完整，未知交接错误也使用中文兜底；后端规范错误码保持不变。
+- 顶部主按钮复用现有样式，仅增加禁止收缩和禁止换行；`2048 × 856` 下按钮为 `159.5 × 38px`，`390 × 844` 下为 `147.5 × 36px`，两种视口均为单行且页面无横向溢出。
+- TDD 聚焦测试 `119 / 119`、生产构建、Compose Web/API 健康检查和 `git diff --check` 通过；真实 Docker 执行中心控制台 `0 error / 0 warning`。
+
+final result: passed
