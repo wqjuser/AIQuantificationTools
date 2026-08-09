@@ -1831,13 +1831,13 @@ class AutoPaperTradingService:
         mode = str(state["executionMode"])
         if mode == "paper":
             return None
-        if float(order_intent["notionalValue"]) > 10.0 + 1e-12:
+        side = str(order_intent["side"])
+        if side == "buy" and float(order_intent["notionalValue"]) > 10.0 + 1e-12:
             raise ValueError(
                 "stage10_auto_live_order_notional_exceeded"
                 if mode == "live"
                 else "testnet_auto_order_notional_exceeded"
             )
-        side = str(order_intent["side"])
         quantity = float(order_intent["quantity"])
         price = float(order_intent["referencePrice"])
         notional = float(order_intent["notionalValue"])

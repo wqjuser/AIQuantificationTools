@@ -2506,6 +2506,69 @@ class AutoPaperTradingTests(unittest.TestCase):
             ):
                 service.configure({"enabled": False, "executionMode": "paper"})
 
+    def test_live_exit_can_sell_managed_position_above_buy_notional_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            registry = AiReviewProviderRegistry(
+                (
+                    ProviderStatus("local", True, None, None),
+                    ProviderStatus(
+                        "openai-compatible",
+                        True,
+                        "fake",
+                        "https://example.invalid",
+                    ),
+                ),
+                {"openai-compatible": FakeProvider()},
+            )
+            production = FakeProductionService()
+            service = AutoPaperTradingService(
+                store,
+                registry,
+                production=production,  # type: ignore[arg-type]
+            )
+            service.configure({
+                "initialCash": 10,
+                "paperAccountResetConfirmed": True,
+                "orderNotional": 10,
+            })
+            service.configure({
+                "enabled": True,
+                "executionMode": "live",
+                "liveConfirmed": True,
+                "liveOperator": "wenqingjie",
+                "triggerPct": 0.3,
+                "takeProfitPct": 2,
+            })
+
+            entered = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+            self.assertEqual(entered["state"]["tradeCount"], 1)
+            self.assertEqual(production.orders[0]["side"], "buy")
+            self.assertLessEqual(production.orders[0]["notionalValue"], 10)
+            entered_position = entered["state"]["position"]
+
+            exited = service.evaluate(
+                bars(
+                    [104, 104, 104, 104, 104, 104],
+                    start=datetime(2026, 7, 26, 0, 6, tzinfo=timezone.utc),
+                ),
+                data_source="test",
+            )
+
+            self.assertEqual(len(production.orders), 2)
+            self.assertEqual(production.orders[1]["side"], "sell")
+            self.assertEqual(production.orders[1]["quantity"], entered_position)
+            self.assertGreater(production.orders[1]["notionalValue"], 10)
+            self.assertLessEqual(production.orders[1]["riskBudgetNotional"], 10)
+            self.assertEqual(exited["state"]["status"], "traded")
+            self.assertEqual(exited["state"]["tradeCount"], 2)
+            self.assertEqual(exited["state"]["position"], 0)
+            self.assertEqual(exited["state"]["lastTrade"]["side"], "sell")
+            self.assertEqual(store.count(event_type="auto_live_trade"), 2)
+
     def test_live_session_expires_after_eight_hours_and_blocks_new_orders(self):
         with tempfile.TemporaryDirectory() as directory:
             production = FakeProductionService()
