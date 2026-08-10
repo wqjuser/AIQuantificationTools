@@ -53,6 +53,28 @@ services:
   web:
     ports: !reset []
 
+  mcp:
+    profiles: !reset []
+    depends_on:
+      api:
+        condition: service_healthy
+    environment: !override
+      AIQT_DEPLOYMENT_MODE: public
+      AIQT_DATABASE_URL: ${AIQT_DATABASE_URL:?set AIQT_DATABASE_URL}
+      AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}
+      AIQT_OIDC_ISSUER: ${AIQT_OIDC_ISSUER:?set AIQT_OIDC_ISSUER}
+      AIQT_MCP_TRANSPORT: streamable-http
+      AIQT_MCP_HOST: 0.0.0.0
+      AIQT_MCP_ALLOW_NON_LOOPBACK_HTTP: "true"
+      AIQT_MCP_PORT: "8766"
+      AIQT_MCP_PUBLIC_RESOURCE_URL: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}/mcp
+      AIQT_MCP_ENABLE_RESEARCH_WRITES: "false"
+      AIQT_MCP_RATE_LIMIT_REQUESTS_1M: ${AIQT_MCP_RATE_LIMIT_REQUESTS_1M:-120}
+      AIQT_MCP_REQUEST_TIMEOUT_SECONDS: ${AIQT_MCP_REQUEST_TIMEOUT_SECONDS:-600}
+    ports: !reset []
+    expose:
+      - "8766"
+
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
@@ -60,6 +82,8 @@ services:
       api:
         condition: service_healthy
       web:
+        condition: service_healthy
+      mcp:
         condition: service_healthy
     environment:
       AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}

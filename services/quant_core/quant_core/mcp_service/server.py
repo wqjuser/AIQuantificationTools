@@ -3,10 +3,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 import json
 import re
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from mcp import types
 from mcp.server import MCPServer
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
+from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ResourceError, ToolError
 
 from .api_client import QuantApiClient, QuantApiError
@@ -32,6 +35,11 @@ def create_mcp_server(
     *,
     settings: McpServiceSettings,
     api: QuantApiClient | None = None,
+    token_verifier: TokenVerifier | None = None,
+    auth: AuthSettings | None = None,
+    closeables: Sequence[object] = (),
+    expose_research_write_tools: bool = True,
+    middleware: Sequence[ServerMiddleware[Any]] = (),
 ) -> MCPServer:
     gateway = api or QuantApiClient(settings)
 
@@ -41,6 +49,10 @@ def create_mcp_server(
             yield None
         finally:
             await gateway.aclose()
+            for closeable in closeables:
+                aclose = getattr(closeable, "aclose", None)
+                if callable(aclose):
+                    await aclose()
 
     server = MCPServer(
         name="ai-quantification-tools",
@@ -53,6 +65,9 @@ def create_mcp_server(
             "submit Testnet or Live orders. Research write tools may be disabled by the operator."
         ),
         lifespan=lifespan,
+        token_verifier=token_verifier,
+        auth=auth,
+        middleware=middleware,
     )
 
     read_annotations = types.ToolAnnotations(
@@ -501,6 +516,16 @@ def create_mcp_server(
             return _json(_completed(await gateway.get_ai_review(review_id)))
         except QuantApiError as error:
             raise ResourceError(_error_json(error)) from error
+
+    if not expose_research_write_tools:
+        for tool_name in (
+            "aiqt_select_research_candidates",
+            "aiqt_create_registered_research",
+            "aiqt_propose_strategy_research",
+            "aiqt_launch_strategy_research",
+            "aiqt_create_ai_review",
+        ):
+            server.remove_tool(tool_name)
 
     return server
 

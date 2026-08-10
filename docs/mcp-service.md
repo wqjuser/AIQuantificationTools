@@ -63,7 +63,7 @@ MCP Host 配置示例：
 
 这个进程外开关是对该 MCP 进程生命周期内研究写入的授权；工具 schema 不接受模型上传的 `confirmed`、`operator`、`ownerId` 或外发批准。只有在受监督的研究会话中才应打开。MCP v1 固定使用服务端本地 Provider，不允许模型自行批准把证据发送给 OpenAI、Ollama 或其他外部 Provider；需要逐次外发授权时继续使用现有网页流程。该开关不会增加 promotion、执行或下单工具。formal launch 会永久消费唯一 holdout，因此 MCP 将它标记为有不可逆副作用。
 
-## Streamable HTTP：Docker 或本机远程进程
+## Streamable HTTP：本机 Docker
 
 ```shell
 docker compose --profile mcp up -d --build mcp
@@ -81,7 +81,31 @@ http://127.0.0.1:8766/mcp
 npx -y @modelcontextprotocol/inspector
 ```
 
-然后连接上面的 URL。Compose 只把端口发布到宿主 loopback；服务还显式校验 loopback `Host`/`Origin`，拒绝 DNS-rebinding 请求，并且 `deploy/Caddyfile` 不转发 `/mcp`。当前 public 认证是浏览器 OIDC Cookie/CSRF，不是远程 MCP OAuth；在专用 MCP OAuth 与 TenantContext 绑定完成前，禁止把这个 HTTP 端点直接暴露到公网。
+然后连接上面的 URL。默认 Compose 只把端口发布到宿主 loopback，并显式校验 loopback `Host`/`Origin`；这个入口没有公网 OAuth，禁止直接转发。
+
+## Streamable HTTP：公网 OAuth
+
+public Compose 会启动独立的只读 MCP Resource Server：
+
+```text
+https://<domain>/mcp
+https://<domain>/.well-known/oauth-protected-resource/mcp
+```
+
+Caddy 是唯一公网入口；MCP 容器没有宿主端口。公网 Streamable HTTP 使用无状态模式，不保留可无限增长的客户端 session。未携带 Bearer 的 `/mcp` 请求返回 401 和 `resource_metadata` challenge；metadata 声明 canonical resource、Authorization Server 和 `aiqt:research:read` scope。
+
+公网 token 必须由与网页登录相同规范身份的 Authorization Server 签发，并满足：
+
+- 支持 OAuth 2.1、PKCE 和 RFC 8707 resource indicator；
+- access token 的 audience 精确包含 `https://<domain>/mcp`；
+- JWT 由固定 issuer discovery/JWKS 验签，包含稳定 `sub`、`client_id` 或 `azp`、`iat`、`exp` 和 `aiqt:research:read`；
+- `(issuer, subject)` 已通过网页登录或管理员迁移存在于 `public_users` 且状态为 active。
+
+服务端忽略 token 中的 `ownerId`、email 和 operator；不会按 email 自动创建或合并租户。Bearer 也不会被转发到 Quant API。验证后的身份只在当前请求内映射为 `TenantContext`，A/B 两个用户即使使用相同 run ID，也只读取各自 PostgreSQL 记录。进程内 gateway 只允许预注册的研究 GET 路径；公网 MCP 不接收 `AIQT_SETTINGS_MASTER_KEY`，Paper 状态固定投影为不可用，因此普通读取不会解密租户交易凭据。
+
+公网首版只发现八个只读工具：系统/Paper 状态、标的搜索、市场上下文、研究运行列表/详情、策略研发详情和研究审计查询。AI 选股、P0、proposal、formal launch 与 AI Review 创建工具不会注册；环境中即使误设研究写开关也不能扩大能力。
+
+当前文档中的 Google 直接网页登录通常不能为自定义 MCP resource 签发 audience-bound access token。要启用公网 MCP，需迁移到/配置一个同时承载网页登录和 MCP resource 的 Authorization Server（例如正确配置的 Auth0、Keycloak 或同等实现），保持同一稳定 `iss + sub`。不得把 Google ID token 当 access token，也不得把 audience 放宽为 Web client ID。
 
 ## 关键环境变量
 
@@ -93,6 +117,8 @@ npx -y @modelcontextprotocol/inspector
 | `AIQT_MCP_ALLOW_NON_LOOPBACK_HTTP` | `false` | 仅受控容器网络可显式设为 `true`；非 loopback 否则拒绝启动 |
 | `AIQT_MCP_PORT` | `8766` | HTTP 监听端口 |
 | `AIQT_MCP_REQUEST_TIMEOUT_SECONDS` | `600` | API 超时，范围 1–3600 秒；覆盖较重的密封 P0 物化 |
+| `AIQT_MCP_PUBLIC_RESOURCE_URL` | `${AIQT_PUBLIC_ORIGIN}/mcp` | 公网 canonical OAuth resource；必须与 public Origin 同源且路径精确为 `/mcp` |
+| `AIQT_MCP_RATE_LIMIT_REQUESTS_1M` | `120` | 公网每租户每分钟 initialize/tool/resource 请求上限；只能收紧 |
 | `AIQT_MCP_ENABLE_RESEARCH_WRITES` | `false` | 进程外授权该 MCP 会话执行研究型副作用；不要在无人监督或公网进程开启 |
 | `AIQT_MCP_OPERATOR` | 空 | formal launch 的服务端操作者；不允许模型上传 |
 | `AIQT_MCP_API_COOKIE` | 空 | 已认证 API Cookie；只适用于受控进程配置 |
@@ -100,6 +126,8 @@ npx -y @modelcontextprotocol/inspector
 | `AIQT_MCP_API_ORIGIN` | 空 | public mutation 的 HTTPS Origin |
 
 Cookie、CSRF、API 密钥和任何交易凭据都不得写进 AI prompt、MCP 参数、Git、日志或工具返回值。
+
+`AIQT_MCP_OPERATOR`、API Cookie/CSRF、研究写开关和 `AIQT_SETTINGS_MASTER_KEY` 只属于本机或完整 Public API；public MCP 进程不接收浏览器 OIDC client secret、设置主密钥，也不使用这些字段。
 
 ## 推荐调用顺序
 

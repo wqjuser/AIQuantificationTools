@@ -5,6 +5,7 @@
 公网模式面向个人多租户，不提供团队、RBAC、计费或 KYC。只有下列门禁全部通过后才可把域名解析到服务器：
 
 - 固定 OIDC Issuer 可用，callback 精确配置为 `https://<domain>/api/auth/callback`。
+- 若启用公网 MCP，同一 issuer 必须能为 `https://<domain>/mcp` 签发 audience-bound access token，并支持 `aiqt:research:read`。
 - PostgreSQL migration、备份恢复和双用户隔离测试通过。
 - Caddy 是唯一公网入口；API 和 PostgreSQL 没有宿主公网端口。
 - public 模式的用户 AI、Sandbox 和生产凭据只保存在租户加密设置中。
@@ -31,6 +32,8 @@ Issuer 必须提供 discovery 和 JWKS。用户首次登录时必须返回稳定
 
 Google Cloud 的 Testing/In production 是 OAuth 应用发布状态，不是本项目环境变量。切换后无需修改后端 OIDC 协议实现。
 
+上述 Google 配置只覆盖浏览器登录。Google 直接登录通常不能为本站自定义 `/mcp` resource 签发符合 RFC 8707 的 audience-bound access token，因此不能单独满足公网 MCP。启用 MCP 前应把网页登录与 MCP Authorization Server 迁移到同一个支持自定义 API resource 的 issuer，并保持用户稳定 `iss + sub`；项目不会按 email 合并两个 issuer 的身份。
+
 ## 2. 配置环境
 
 复制 `.env.example` 为服务器专用 `.env`，至少填写：
@@ -45,6 +48,8 @@ AIQT_OIDC_CLIENT_ID=aiqt
 AIQT_OIDC_CLIENT_SECRET=replace-with-oidc-secret
 AIQT_SETTINGS_MASTER_KEY=replace-with-urlsafe-base64-32-byte-key
 AIQT_OUTBOUND_ORIGIN_ALLOWLIST=https://api.openai.com,https://approved-provider.example
+AIQT_MCP_PUBLIC_RESOURCE_URL=https://research.example.com/mcp
+AIQT_MCP_RATE_LIMIT_REQUESTS_1M=120
 ```
 
 生成主密钥：
@@ -60,11 +65,11 @@ python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_
 ```shell
 docker compose -f compose.yaml -f compose.public.yaml config
 docker compose -f compose.yaml -f compose.public.yaml build
-docker compose -f compose.yaml -f compose.public.yaml up -d --no-build postgres migrate api web
+docker compose -f compose.yaml -f compose.public.yaml up -d --no-build postgres migrate api web mcp
 docker compose -f compose.yaml -f compose.public.yaml ps
 ```
 
-`migrate` 必须成功退出，API 和 Web 必须 healthy。此时先用隔离网络或 hosts 文件验收；不要提前开放防火墙 80/443。
+`migrate` 必须成功退出，API、Web 和 MCP 必须 healthy。MCP 不发布宿主端口；此时先用隔离网络或 hosts 文件验收，不要提前开放防火墙 80/443。
 
 ## 4. 迁移本机数据
 
@@ -109,6 +114,9 @@ git diff --check
 - 未登录 API 为 401，跨站 Origin、伪造 Host、缺 CSRF 和非 JSON 修改请求被拒绝。
 - 登录 state/nonce/PKCE、退出、禁用用户、12 小时绝对和 30 分钟空闲会话有效。
 - 两个用户创建相同 run/event ID 后仍只能看到自己的记录。
+- 公网 MCP 无 token、坏签名、错 issuer/audience、过期 token 为 401；缺 read scope 为 403；Protected Resource Metadata 无需认证。
+- 两个 MCP token 并发读取相同 run ID 仍严格隔离；发现结果只有八个只读工具，且没有任何写入、promotion、绑定或交易工具。
+- MCP 伪造 Host 返回 421、伪造 Origin 返回 403；token 中的 owner/email/operator 不影响租户映射。
 - 设置、研究包、AI、审计、组合、生产密钥、Stage 10 和后台任务全部隔离。
 - 生产敏感动作缺最近 5 分钟重认证时返回 428，并能恢复到原页面。
 - 桌面和 390px 页面无横向溢出，浏览器控制台无 error/warning。
@@ -119,9 +127,22 @@ git diff --check
 docker compose -f compose.yaml -f compose.public.yaml up -d --no-build caddy
 ```
 
+开放后先验证 OAuth challenge 和 metadata：
+
+```shell
+curl -i https://research.example.com/.well-known/oauth-protected-resource/mcp
+curl -i -X POST https://research.example.com/mcp \
+  -H 'Content-Type: application/json' \
+  --data '{}'
+```
+
+第一条必须返回 resource=`https://research.example.com/mcp`、正确 issuer 和 `aiqt:research:read`；第二条必须返回 401 且 `WWW-Authenticate` 带同一 metadata URL。随后再用支持 OAuth 的官方 MCP Client 完成授权并读取工具列表；不要把 access token 写入命令历史或日志。
+
 ## 限流
 
 默认值：登录/回调每 IP 每 15 分钟 10 次；普通修改每用户每分钟 60 次；AI/选股每用户每小时 10 次；研究包导入每用户每小时 5 次。
+
+公网 MCP 的 `initialize` / `tools/call` / `resources/read` 默认每租户每分钟合计 120 次，通过 `AIQT_MCP_RATE_LIMIT_REQUESTS_1M` 只能收紧；工具与 Resource 发现不消耗该额度。公网使用无状态 HTTP，不累积 SDK session。
 
 可用 `AIQT_RATE_LIMIT_LOGIN_15M`、`AIQT_RATE_LIMIT_MUTATIONS_1M`、`AIQT_RATE_LIMIT_AI_1H`、`AIQT_RATE_LIMIT_IMPORT_1H` 收紧。值不能放宽默认值，登录限流不能关闭。
 

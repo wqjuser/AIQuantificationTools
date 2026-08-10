@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,6 +9,7 @@ from io import BytesIO
 import json
 import os
 from pathlib import Path
+import secrets
 import socket
 import tempfile
 from threading import RLock
@@ -32,6 +34,7 @@ from quant_core.market_discovery import MarketDiscoveryService
 from quant_core.market_information import MarketInformationService
 from quant_core.market_klines import QuantDingerKlineAdapter
 from quant_core.strategy_experiments import StrategyExperimentRunner
+from quant_core.strategy_research import AiStrategyResearchOrchestrator
 from quant_core.tenant_crypto import TenantSecretCipher
 from quant_core.tenant_store_adapters import PublicTenantStores
 from quant_core.tenant_storage import ProductionAccountClaimError
@@ -87,6 +90,24 @@ class PublicBridgeHandler(ComposedQuantApiHandler):
             ),
         )
 
+    def _strategy_research_orchestrator(self) -> AiStrategyResearchOrchestrator:
+        if not getattr(type(self), "research_only", False):
+            return super()._strategy_research_orchestrator()
+        return AiStrategyResearchOrchestrator(
+            run_store=self.run_store,
+            provider_registry=AiReviewProviderRegistry.from_environment(
+                {"AIQT_DEPLOYMENT_MODE": "public"}
+            ),
+            audit_store=self.audit_event_store,
+            experiment_runner=self._strategy_experiment_runner(),
+            experiment_store=self.strategy_experiment_store,
+            review_store=self.ai_review_store,
+            strategy_store=self.strategy_store,
+            auto_snapshot_loader=None,
+            sealed_bar_source=getattr(self, "sealed_dataset_store", None),
+            capability_registry=self._strategy_research_capability_registry(),
+        )
+
     def _read_json_body(self) -> dict[str, object]:
         payload = super()._read_json_body()
         actor = str(self.authenticated_actor)
@@ -117,12 +138,22 @@ class PublicBridgeHandler(ComposedQuantApiHandler):
 
 
 class PublicTenantApi:
-    def __init__(self, config: DeploymentConfig, engine: Engine):
-        if not config.settings_master_key:
+    def __init__(
+        self,
+        config: DeploymentConfig,
+        engine: Engine,
+        *,
+        research_only: bool = False,
+    ):
+        if not config.settings_master_key and not research_only:
             raise ValueError("public tenant API requires settings master key")
         self.config = config
         self.engine = engine
-        self.cipher = TenantSecretCipher(config.settings_master_key)
+        self.research_only = research_only
+        cipher_key = config.settings_master_key or base64.urlsafe_b64encode(
+            secrets.token_bytes(32)
+        ).decode()
+        self.cipher = TenantSecretCipher(cipher_key)
         self.allowed_outbound_origins = tuple(
             value.strip()
             for value in os.environ.get("AIQT_OUTBOUND_ORIGIN_ALLOWLIST", "").split(",")
@@ -163,7 +194,8 @@ class PublicTenantApi:
         # starts writing shared report artifacts.
         request_lock = runtime.lock if request.method != "GET" else nullcontext()
         with request_lock:
-            self._restore_report_files(runtime)
+            if not self.research_only:
+                self._restore_report_files(runtime)
             action = _production_control_action(request, body)
             credentials_changed = _production_credentials_changed(request, body)
             fingerprint = None
@@ -210,7 +242,8 @@ class PublicTenantApi:
             except Exception:
                 handler._send_json({"error": "public_tenant_route_failed"}, status=500)
             finally:
-                self._persist_report_files(runtime)
+                if not self.research_only:
+                    self._persist_report_files(runtime)
                 handler.connection.close()
                 handler._connection_peer.close()
             if handler._captured_status >= 400 and claim_created and fingerprint:
@@ -382,6 +415,7 @@ class PublicTenantApi:
                 (PublicBridgeHandler,),
                 {
                     "deployment_mode": "public",
+                    "research_only": self.research_only,
                     "tenant_owner_id": tenant.owner_id,
                     "run_store": stores.run_store,
                     "paper_execution_store": stores.paper_execution_store,

@@ -40,16 +40,51 @@ def load_deployment_config(environment: Mapping[str, str]) -> DeploymentConfig:
     if mode == "local":
         return DeploymentConfig(mode="local")
 
+    return _load_public_config(
+        environment,
+        require_oidc_client=True,
+        require_settings_master_key=True,
+    )
+
+
+def load_public_resource_config(environment: Mapping[str, str]) -> DeploymentConfig:
+    mode = str(environment.get("AIQT_DEPLOYMENT_MODE", "")).strip().lower()
+    if mode != "public":
+        raise DeploymentConfigurationError("AIQT_DEPLOYMENT_MODE must be public")
+    for forbidden_secret in (
+        "AIQT_OIDC_CLIENT_SECRET",
+        "AIQT_SETTINGS_MASTER_KEY",
+    ):
+        if str(environment.get(forbidden_secret, "")).strip():
+            raise DeploymentConfigurationError(
+                f"{forbidden_secret} must not be set in the public MCP process"
+            )
+    return _load_public_config(
+        environment,
+        require_oidc_client=False,
+        require_settings_master_key=False,
+    )
+
+
+def _load_public_config(
+    environment: Mapping[str, str],
+    *,
+    require_oidc_client: bool,
+    require_settings_master_key: bool,
+) -> DeploymentConfig:
+    names = [
+        "AIQT_DATABASE_URL",
+        "AIQT_PUBLIC_ORIGIN",
+        "AIQT_OIDC_ISSUER",
+    ]
+    if require_oidc_client:
+        names.extend(("AIQT_OIDC_CLIENT_ID", "AIQT_OIDC_CLIENT_SECRET"))
+    if require_settings_master_key:
+        names.append("AIQT_SETTINGS_MASTER_KEY")
+
     values = {
         name: str(environment.get(name, "")).strip()
-        for name in (
-            "AIQT_DATABASE_URL",
-            "AIQT_PUBLIC_ORIGIN",
-            "AIQT_OIDC_ISSUER",
-            "AIQT_OIDC_CLIENT_ID",
-            "AIQT_OIDC_CLIENT_SECRET",
-            "AIQT_SETTINGS_MASTER_KEY",
-        )
+        for name in names
     }
     for name, value in values.items():
         if not value:
@@ -60,15 +95,17 @@ def load_deployment_config(environment: Mapping[str, str]) -> DeploymentConfig:
         raise DeploymentConfigurationError("AIQT_DATABASE_URL must use PostgreSQL")
     public_origin = _https_url(values["AIQT_PUBLIC_ORIGIN"], "AIQT_PUBLIC_ORIGIN", origin=True)
     oidc_issuer = _https_url(values["AIQT_OIDC_ISSUER"], "AIQT_OIDC_ISSUER").rstrip("/")
-    _validate_master_key(values["AIQT_SETTINGS_MASTER_KEY"])
+    settings_master_key = values.get("AIQT_SETTINGS_MASTER_KEY")
+    if settings_master_key:
+        _validate_master_key(settings_master_key)
     return DeploymentConfig(
-        mode=mode,
+        mode="public",
         database_url=database_url,
         public_origin=public_origin,
         oidc_issuer=oidc_issuer,
-        oidc_client_id=values["AIQT_OIDC_CLIENT_ID"],
-        oidc_client_secret=values["AIQT_OIDC_CLIENT_SECRET"],
-        settings_master_key=values["AIQT_SETTINGS_MASTER_KEY"],
+        oidc_client_id=values.get("AIQT_OIDC_CLIENT_ID"),
+        oidc_client_secret=values.get("AIQT_OIDC_CLIENT_SECRET"),
+        settings_master_key=settings_master_key,
     )
 
 

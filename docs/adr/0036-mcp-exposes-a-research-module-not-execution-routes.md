@@ -16,11 +16,11 @@ MCP v1 可以读取市场上下文、研究运行、策略研发聚合、AI Revi
 
 MCP v1 不包含 promotion、任意策略上传/保存/删除、策略绑定、自动交易控制、Paper 立即评估/对账、Testnet、Live、委托、密钥、通用审计写入或 Stage 6–10。注册模板 P0 复用既有 pipeline，可能持久化服务端生成的 draft；调用方不能提供策略正文，也不能晋级、绑定或启动该 draft。结果统一携带 `researchOnly` 边界，不能解释为收益保证或交易授权。
 
-本机使用 stdio；可选 Streamable HTTP 只发布到宿主 loopback，并显式校验允许的 loopback `Host`/`Origin` 以阻断 DNS rebinding。容器内可以监听受控 Compose 网络，但不能因此关闭传输安全。现有 public OIDC Cookie/CSRF 不能代替远程 MCP OAuth。在 token verifier 把远程身份确定性映射到 `TenantContext` 之前，Caddy 不暴露 `/mcp`，不得把 local MCP 直接发布到公网。
+本机使用 stdio；可选 Streamable HTTP 只发布到宿主 loopback，并显式校验允许的 loopback `Host`/`Origin` 以阻断 DNS rebinding。容器内可以监听受控 Compose 网络，但不能因此关闭传输安全。现有 public OIDC Cookie/CSRF 不能代替远程 MCP OAuth。公网只读 MCP 的 OAuth Resource Server、`TenantContext` 映射和 Caddy 边界由 ADR-0037 补充；local MCP 仍不得直接发布到公网。
 
 ## 结果
 
 - 外部 AI 学习的是稳定研究动作，而不是内部 HTTP 路由全集。
 - 删除 MCP 层后，客户端将重新承担窗口推导、策略正文隔离、脱敏、错误模型和执行禁区，因此该模块具有实际深度。
 - Quant Core 继续是唯一 source of truth；MCP 不新增数据库表、行情算法、回测引擎或交易状态机。
-- 未来公网 MCP 必须先补标准 OAuth/bearer、租户上下文、限流和审计，再单独修改本决定。
+- 公网 MCP 只能沿 ADR-0037 的标准 OAuth/bearer、租户上下文、限流和只读工具面发布。

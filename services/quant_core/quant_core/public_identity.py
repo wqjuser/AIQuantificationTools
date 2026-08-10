@@ -89,6 +89,24 @@ class PublicIdentityStore:
                 row = {**row, "email": normalized_email, "updated_at": timestamp}
         return _user(row)
 
+    def require_active_identity(self, *, issuer: str, subject: str) -> PublicUser:
+        normalized_issuer = str(issuer or "").strip().rstrip("/")
+        normalized_subject = str(subject or "").strip()
+        if not normalized_issuer or not normalized_subject:
+            raise AuthenticationError("oidc_identity_invalid")
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(public_users).where(
+                    public_users.c.issuer == normalized_issuer,
+                    public_users.c.subject == normalized_subject,
+                )
+            ).mappings().one_or_none()
+        if row is None:
+            raise AuthenticationError("user_not_found")
+        if row["status"] != "active":
+            raise AuthenticationError("user_disabled")
+        return _user(row)
+
     def disable(self, owner_id: str, *, now: datetime | None = None) -> None:
         with self.engine.begin() as connection:
             changed = connection.execute(

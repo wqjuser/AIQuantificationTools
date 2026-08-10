@@ -20,6 +20,17 @@
     }
   }
 
+  @mcp path /mcp /.well-known/oauth-protected-resource/mcp
+  handle @mcp {
+    reverse_proxy mcp:8766 {
+      flush_interval -1
+      header_up Host {hostport}
+      header_up X-Forwarded-Host {hostport}
+      header_up X-Forwarded-Proto https
+      header_up X-Forwarded-For {remote_host}
+    }
+  }
+
   handle {
     reverse_proxy web:80 {
       header_up Host {host}

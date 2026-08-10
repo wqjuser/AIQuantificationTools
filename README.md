@@ -67,6 +67,8 @@ docker compose --profile mcp up -d --build mcp
 
 AI 客户端连接 `http://127.0.0.1:8766/mcp`。MCP 默认只读，不包含 promotion、策略绑定、自动交易控制、Testnet、Live 或下单工具；完整接入方式见 [MCP 服务](docs/mcp-service.md)。
 
+public Compose 还提供受 OAuth Bearer 保护的 `https://<domain>/mcp`：它按已存在的 OIDC 身份绑定租户，只发现八个只读研究工具，并仅由 Caddy 暴露。Authorization Server 必须能为该 canonical resource 签发 audience-bound token；部署前置与验收见 [公网部署](docs/public-deployment.md)。
+
 公网模式需要先完成 [公网部署手册](docs/public-deployment.md)，再运行：
 
 ```shell
