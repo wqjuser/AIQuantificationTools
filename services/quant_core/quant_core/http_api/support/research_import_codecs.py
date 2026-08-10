@@ -60,6 +60,7 @@ def _research_note_from_payload(payload: dict[str, object]) -> ResearchNote:
 
 def _strategy_record_from_payload(payload: dict[str, object]) -> StrategyLibraryRecord:
     strategy_config = payload.get("strategyConfig")
+    promotion_evidence = payload.get("promotionEvidence")
     return StrategyLibraryRecord(
         strategy_id=str(payload.get("strategyId") or f"strategy-{payload.get('revision') or ''}"),
         created_at=_parse_iso_datetime(str(payload.get("createdAt") or "")),
@@ -72,6 +73,11 @@ def _strategy_record_from_payload(payload: dict[str, object]) -> StrategyLibrary
         status=str(payload.get("status") or "draft"),
         audit_run_id=str(payload.get("auditRunId") or "").strip() or None,
         strategy_config=dict(strategy_config) if isinstance(strategy_config, dict) else {},
+        promotion_evidence=(
+            dict(promotion_evidence)
+            if isinstance(promotion_evidence, dict)
+            else None
+        ),
     )
 
 

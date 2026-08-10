@@ -36,6 +36,38 @@ class TenantModelRepository:
         )
         return _model(stored), created
 
+    def compare_and_swap_field(
+        self,
+        record_id: str,
+        *,
+        field: str,
+        expected: str | None,
+        value: Any,
+    ) -> bool:
+        return self.records.compare_and_swap_payload_field(
+            self.kind,
+            record_id,
+            {"model": encode_tenant_model(value)},
+            path=("model", "fields", field),
+            expected=expected,
+        )
+
+    def compare_and_swap_model_field(
+        self,
+        record_id: str,
+        *,
+        path: tuple[str, ...],
+        expected: str | None,
+        value: Any,
+    ) -> bool:
+        return self.records.compare_and_swap_payload_field(
+            self.kind,
+            record_id,
+            {"model": encode_tenant_model(value)},
+            path=("model", "fields", *path),
+            expected=expected,
+        )
+
     def get(self, record_id: str) -> Any | None:
         payload = self.records.get(self.kind, record_id)
         return _model(payload) if payload is not None else None

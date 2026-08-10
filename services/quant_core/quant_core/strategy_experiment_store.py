@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -29,7 +29,7 @@ class StrategyExperimentSnapshot:
 class StrategyExperimentRecord:
     experiment_id: str
     created_at: datetime
-    status: Literal["completed", "failed"]
+    status: Literal["pending", "completed", "failed"]
     definition_hash: str
     holdout_key: str
     strategy_revision: str
@@ -45,6 +45,12 @@ class StrategyExperimentRecord:
     result_hash: str | None = None
     error_code: str | None = None
     error_detail: str | None = None
+    profitability_gate_passed: bool = False
+    promotion_run_id: str | None = None
+    promoted_strategy_revision: str | None = None
+    promotion_lineage_hash: str | None = None
+    promoted_at: datetime | None = None
+    promotion_operator: str | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,7 @@ class StrategyExperimentCandidateRecord:
     walk_forward: dict[str, Any]
     eligible: bool
     rank: int | None
+    gate_evaluation: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -101,7 +108,7 @@ class StrategyExperimentStore:
                 create table if not exists strategy_experiments (
                   experiment_id text primary key,
                   created_at text not null,
-                  status text not null check (status in ('completed', 'failed')),
+                  status text not null check (status in ('pending', 'completed', 'failed')),
                   definition_hash text not null,
                   holdout_key text not null,
                   strategy_revision text not null,
@@ -116,7 +123,14 @@ class StrategyExperimentStore:
                   completion_reason text,
                   result_hash text,
                   error_code text,
-                  error_detail text
+                  error_detail text,
+                  profitability_gate_passed integer not null default 0
+                    check (profitability_gate_passed in (0, 1)),
+                  promotion_run_id text,
+                  promoted_strategy_revision text,
+                  promotion_lineage_hash text,
+                  promoted_at text,
+                  promotion_operator text
                 );
 
                 create table if not exists strategy_experiment_candidates (
@@ -130,6 +144,7 @@ class StrategyExperimentStore:
                   walk_forward_json text not null,
                   eligible integer not null,
                   rank integer,
+                  gate_evaluation_json text not null default '{}',
                   primary key (experiment_id, candidate_id)
                 );
 
@@ -141,7 +156,60 @@ class StrategyExperimentStore:
                 on strategy_experiments(holdout_key);
                 """
             )
+            connection.execute("BEGIN IMMEDIATE")
+            experiment_columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "pragma table_info(strategy_experiments)"
+                ).fetchall()
+            }
+            if "profitability_gate_passed" not in experiment_columns:
+                connection.execute(
+                    "alter table strategy_experiments "
+                    "add column profitability_gate_passed integer not null default 0 "
+                    "check (profitability_gate_passed in (0, 1))"
+                )
+            for column, declaration in (
+                ("promotion_run_id", "text"),
+                ("promoted_strategy_revision", "text"),
+                ("promotion_lineage_hash", "text"),
+                ("promoted_at", "text"),
+                ("promotion_operator", "text"),
+            ):
+                if column not in experiment_columns:
+                    connection.execute(
+                        f"alter table strategy_experiments add column {column} {declaration}"
+                    )
+            candidate_columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "pragma table_info(strategy_experiment_candidates)"
+                ).fetchall()
+            }
+            if "gate_evaluation_json" not in candidate_columns:
+                connection.execute(
+                    "alter table strategy_experiment_candidates "
+                    "add column gate_evaluation_json text not null default '{}'"
+                )
+            table_sql = str(
+                connection.execute(
+                    "select sql from sqlite_master "
+                    "where type = 'table' and name = 'strategy_experiments'"
+                ).fetchone()[0]
+            )
+            if "'pending'" not in table_sql:
+                _rebuild_experiment_table_for_pending_status(connection)
             connection.commit()
+            connection.executescript(
+                """
+                create index if not exists idx_strategy_experiments_strategy_revision_created_at
+                on strategy_experiments(strategy_revision, created_at);
+                create index if not exists idx_strategy_experiments_source_run_id_created_at
+                on strategy_experiments(source_run_id, created_at);
+                create index if not exists idx_strategy_experiments_holdout_key
+                on strategy_experiments(holdout_key);
+                """
+            )
         finally:
             connection.close()
 
@@ -271,12 +339,23 @@ class StrategyExperimentStore:
         experiment: StrategyExperimentRecord,
         candidates: list[StrategyExperimentCandidateRecord],
     ) -> None:
+        if experiment.status != "completed":
+            raise ValueError("strategy_experiment_status_invalid")
         if any(candidate.experiment_id != experiment.experiment_id for candidate in candidates):
             raise ValueError("strategy_experiment_candidate_mismatch")
         connection = self._connect()
         try:
-            connection.execute("BEGIN")
-            _insert_experiment(connection, experiment)
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "select status from strategy_experiments where experiment_id = ?",
+                (experiment.experiment_id,),
+            ).fetchone()
+            if existing is None:
+                _insert_experiment(connection, experiment)
+            elif existing[0] == "pending":
+                _replace_pending_experiment(connection, experiment)
+            else:
+                raise ValueError("strategy_experiment_conflict")
             for candidate in candidates:
                 _insert_candidate(connection, candidate)
             connection.commit()
@@ -286,7 +365,9 @@ class StrategyExperimentStore:
         finally:
             connection.close()
 
-    def record_failed(self, experiment: StrategyExperimentRecord) -> None:
+    def record_pending(self, experiment: StrategyExperimentRecord) -> None:
+        if experiment.status != "pending":
+            raise ValueError("strategy_experiment_status_invalid")
         connection = self._connect()
         try:
             _insert_experiment(connection, experiment)
@@ -296,6 +377,101 @@ class StrategyExperimentStore:
             raise
         finally:
             connection.close()
+
+    def record_failed(self, experiment: StrategyExperimentRecord) -> None:
+        if experiment.status != "failed":
+            raise ValueError("strategy_experiment_status_invalid")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "select status from strategy_experiments where experiment_id = ?",
+                (experiment.experiment_id,),
+            ).fetchone()
+            if existing is None:
+                _insert_experiment(connection, experiment)
+            elif existing[0] == "pending":
+                _replace_pending_experiment(connection, experiment)
+            else:
+                raise ValueError("strategy_experiment_conflict")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def mark_promoted(
+        self,
+        *,
+        experiment_id: str,
+        expected_result_hash: str,
+        promotion_run_id: str,
+        promoted_strategy_revision: str,
+        promotion_lineage_hash: str,
+        promoted_at: datetime,
+        promotion_operator: str,
+    ) -> StrategyExperimentDetail:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                select status, result_hash, profitability_gate_passed,
+                       promotion_run_id, promoted_strategy_revision,
+                       promotion_lineage_hash, promotion_operator
+                from strategy_experiments
+                where experiment_id = ?
+                """,
+                (experiment_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("strategy_experiment_not_found")
+            if row[0] != "completed" or row[1] != expected_result_hash or not bool(row[2]):
+                raise ValueError("strategy_experiment_not_promotable")
+            existing_lineage = row[5]
+            if existing_lineage is not None:
+                if (
+                    row[3] == promotion_run_id
+                    and row[4] == promoted_strategy_revision
+                    and existing_lineage == promotion_lineage_hash
+                    and row[6] == promotion_operator
+                ):
+                    connection.commit()
+                else:
+                    raise ValueError("strategy_experiment_already_promoted")
+            else:
+                updated = connection.execute(
+                    """
+                    update strategy_experiments
+                    set promotion_run_id = ?, promoted_strategy_revision = ?,
+                        promotion_lineage_hash = ?, promoted_at = ?, promotion_operator = ?
+                    where experiment_id = ? and promotion_lineage_hash is null
+                      and status = 'completed' and result_hash = ?
+                      and profitability_gate_passed = 1
+                    """,
+                    (
+                        promotion_run_id,
+                        promoted_strategy_revision,
+                        promotion_lineage_hash,
+                        _datetime_text(promoted_at),
+                        promotion_operator,
+                        experiment_id,
+                        expected_result_hash,
+                    ),
+                )
+                if updated.rowcount != 1:
+                    raise ValueError("strategy_experiment_already_promoted")
+                connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        detail = self.get(experiment_id)
+        if detail is None:
+            raise RuntimeError("strategy_experiment_promotion_readback_failed")
+        return detail
 
     def get(self, experiment_id: str) -> StrategyExperimentDetail | None:
         connection = self._connect()
@@ -321,6 +497,12 @@ class StrategyExperimentStore:
                     experiment.result_hash,
                     experiment.error_code,
                     experiment.error_detail,
+                    experiment.profitability_gate_passed,
+                    experiment.promotion_run_id,
+                    experiment.promoted_strategy_revision,
+                    experiment.promotion_lineage_hash,
+                    experiment.promoted_at,
+                    experiment.promotion_operator,
                     snapshot.snapshot_id,
                     snapshot.created_at,
                     snapshot.market,
@@ -355,7 +537,8 @@ class StrategyExperimentStore:
                     test_metrics_json,
                     walk_forward_json,
                     eligible,
-                    rank
+                    rank,
+                    gate_evaluation_json
                 from strategy_experiment_candidates
                 where experiment_id = ?
                 order by candidate_id
@@ -365,8 +548,8 @@ class StrategyExperimentStore:
         finally:
             connection.close()
         return StrategyExperimentDetail(
-            experiment=_row_to_experiment(row[:18]),
-            snapshot=_row_to_snapshot(row[18:]),
+            experiment=_row_to_experiment(row[:24]),
+            snapshot=_row_to_snapshot(row[24:]),
             candidates=[_row_to_candidate(candidate_row) for candidate_row in candidate_rows],
         )
 
@@ -410,7 +593,13 @@ class StrategyExperimentStore:
                     completion_reason,
                     result_hash,
                     error_code,
-                    error_detail
+                    error_detail,
+                    profitability_gate_passed,
+                    promotion_run_id,
+                    promoted_strategy_revision,
+                    promotion_lineage_hash,
+                    promoted_at,
+                    promotion_operator
                 from strategy_experiments
                 {where}
                 order by created_at desc, rowid desc
@@ -459,9 +648,15 @@ def _insert_experiment(connection: sqlite3.Connection, experiment: StrategyExper
             completion_reason,
             result_hash,
             error_code,
-            error_detail
+            error_detail,
+            profitability_gate_passed,
+            promotion_run_id,
+            promoted_strategy_revision,
+            promotion_lineage_hash,
+            promoted_at,
+            promotion_operator
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             experiment.experiment_id,
@@ -482,8 +677,45 @@ def _insert_experiment(connection: sqlite3.Connection, experiment: StrategyExper
             experiment.result_hash,
             experiment.error_code,
             experiment.error_detail,
+            int(experiment.profitability_gate_passed),
+            experiment.promotion_run_id,
+            experiment.promoted_strategy_revision,
+            experiment.promotion_lineage_hash,
+            _optional_datetime_text(experiment.promoted_at),
+            experiment.promotion_operator,
         ),
     )
+
+
+def _replace_pending_experiment(
+    connection: sqlite3.Connection,
+    experiment: StrategyExperimentRecord,
+) -> None:
+    updated = connection.execute(
+        """
+        update strategy_experiments
+        set status = ?, evaluation_count = ?, selected_candidate_id = ?,
+            completion_reason = ?, result_hash = ?, error_code = ?, error_detail = ?,
+            profitability_gate_passed = ?
+        where experiment_id = ? and status = 'pending'
+          and definition_hash = ? and snapshot_id = ?
+        """,
+        (
+            experiment.status,
+            experiment.evaluation_count,
+            experiment.selected_candidate_id,
+            experiment.completion_reason,
+            experiment.result_hash,
+            experiment.error_code,
+            experiment.error_detail,
+            int(experiment.profitability_gate_passed),
+            experiment.experiment_id,
+            experiment.definition_hash,
+            experiment.snapshot_id,
+        ),
+    )
+    if updated.rowcount != 1:
+        raise ValueError("strategy_experiment_conflict")
 
 
 def _insert_candidate(
@@ -502,9 +734,10 @@ def _insert_candidate(
             test_metrics_json,
             walk_forward_json,
             eligible,
-            rank
+            rank,
+            gate_evaluation_json
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             candidate.experiment_id,
@@ -517,6 +750,7 @@ def _insert_candidate(
             _dump_json(candidate.walk_forward),
             int(candidate.eligible),
             candidate.rank,
+            _dump_json(candidate.gate_evaluation),
         ),
     )
 
@@ -543,7 +777,7 @@ def _row_to_experiment(row: tuple[Any, ...]) -> StrategyExperimentRecord:
     return StrategyExperimentRecord(
         experiment_id=str(row[0]),
         created_at=_parse_datetime(str(row[1])),
-        status=cast(Literal["completed", "failed"], str(row[2])),
+        status=cast(Literal["pending", "completed", "failed"], str(row[2])),
         definition_hash=str(row[3]),
         holdout_key=str(row[4]),
         strategy_revision=str(row[5]),
@@ -559,6 +793,12 @@ def _row_to_experiment(row: tuple[Any, ...]) -> StrategyExperimentRecord:
         result_hash=str(row[15]) if row[15] is not None else None,
         error_code=str(row[16]) if row[16] is not None else None,
         error_detail=str(row[17]) if row[17] is not None else None,
+        profitability_gate_passed=bool(row[18]),
+        promotion_run_id=str(row[19]) if row[19] is not None else None,
+        promoted_strategy_revision=str(row[20]) if row[20] is not None else None,
+        promotion_lineage_hash=str(row[21]) if row[21] is not None else None,
+        promoted_at=_parse_datetime(str(row[22])) if row[22] is not None else None,
+        promotion_operator=str(row[23]) if row[23] is not None else None,
     )
 
 
@@ -574,7 +814,64 @@ def _row_to_candidate(row: tuple[Any, ...]) -> StrategyExperimentCandidateRecord
         walk_forward=cast(dict[str, Any], json.loads(row[7])),
         eligible=bool(row[8]),
         rank=int(row[9]) if row[9] is not None else None,
+        gate_evaluation=cast(dict[str, Any], json.loads(row[10])),
     )
+
+
+def _rebuild_experiment_table_for_pending_status(connection: sqlite3.Connection) -> None:
+    connection.execute("alter table strategy_experiments rename to strategy_experiments_legacy")
+    connection.execute(
+        """
+        create table strategy_experiments (
+          experiment_id text primary key,
+          created_at text not null,
+          status text not null check (status in ('pending', 'completed', 'failed')),
+          definition_hash text not null,
+          holdout_key text not null,
+          strategy_revision text not null,
+          source_run_id text not null,
+          snapshot_id text not null,
+          market text not null,
+          symbol text not null,
+          timeframe text not null,
+          definition_json text not null,
+          evaluation_count integer not null,
+          selected_candidate_id text,
+          completion_reason text,
+          result_hash text,
+          error_code text,
+          error_detail text,
+          profitability_gate_passed integer not null default 0
+            check (profitability_gate_passed in (0, 1)),
+          promotion_run_id text,
+          promoted_strategy_revision text,
+          promotion_lineage_hash text,
+          promoted_at text,
+          promotion_operator text
+        )
+        """
+    )
+    connection.execute(
+        """
+        insert into strategy_experiments (
+          experiment_id, created_at, status, definition_hash, holdout_key,
+          strategy_revision, source_run_id, snapshot_id, market, symbol, timeframe,
+          definition_json, evaluation_count, selected_candidate_id, completion_reason,
+          result_hash, error_code, error_detail, profitability_gate_passed,
+          promotion_run_id, promoted_strategy_revision, promotion_lineage_hash,
+          promoted_at, promotion_operator
+        )
+        select
+          experiment_id, created_at, status, definition_hash, holdout_key,
+          strategy_revision, source_run_id, snapshot_id, market, symbol, timeframe,
+          definition_json, evaluation_count, selected_candidate_id, completion_reason,
+          result_hash, error_code, error_detail, profitability_gate_passed,
+          promotion_run_id, promoted_strategy_revision, promotion_lineage_hash,
+          promoted_at, promotion_operator
+        from strategy_experiments_legacy
+        """
+    )
+    connection.execute("drop table strategy_experiments_legacy")
 
 
 def _dump_json(value: Any) -> str:

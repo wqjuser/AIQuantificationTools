@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import base64
+from datetime import datetime, timezone
 import json
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -23,6 +25,12 @@ from quant_core.public_schema import (
 from quant_core.public_schema import create_public_schema
 from quant_core.public_api import _require_public_schema
 from quant_core.settings import PlatformSettingsStore
+from quant_core.strategy_experiment_store import (
+    StrategyExperimentCandidateRecord,
+    StrategyExperimentRecord,
+    StrategyExperimentSnapshot,
+    StrategyExperimentStore,
+)
 from quant_core.tenant_crypto import TenantSecretCipher
 from quant_core.tenant_model_codec import decode_tenant_model
 from quant_core.tenant_storage import TenantRecordStore
@@ -96,6 +104,106 @@ class PublicMigrationTest(unittest.TestCase):
             self.assertTrue(Path(applied["backupPath"]).joinpath("audit_events.sqlite").is_file())
             self.assertTrue(repeated["alreadyApplied"])
             self.assertEqual(decode_tenant_model(record["model"]).event_id, "event-1")
+            engine.dispose()
+
+    def test_strategy_experiment_gate_evidence_survives_local_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / "data"
+            store = StrategyExperimentStore(data / "strategy_experiments.sqlite")
+            now = datetime(2026, 8, 9, tzinfo=timezone.utc)
+            snapshot = StrategyExperimentSnapshot(
+                snapshot_id="snapshot-gate",
+                created_at=now,
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                canonical_data_hash="data-hash",
+                rows=1,
+                start_at=now.isoformat(),
+                end_at=now.isoformat(),
+                bars=[{"timestamp": now.isoformat(), "close": 100.0}],
+            )
+            experiment = StrategyExperimentRecord(
+                experiment_id="experiment-gate",
+                created_at=now,
+                status="completed",
+                definition_hash="definition-hash",
+                holdout_key="holdout-key",
+                strategy_revision="strategy-revision",
+                source_run_id="run-gate",
+                snapshot_id=snapshot.snapshot_id,
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                definition={"resultSchemaVersion": 2},
+                evaluation_count=3,
+                selected_candidate_id="candidate-gate",
+                completion_reason="selected",
+                result_hash="result-hash",
+                profitability_gate_passed=True,
+            )
+            candidate = StrategyExperimentCandidateRecord(
+                experiment_id=experiment.experiment_id,
+                candidate_id="candidate-gate",
+                candidate_revision="candidate-revision",
+                parameters=[{"policyPath": "breakout.lookbackBars", "value": 20}],
+                train_metrics={"roundTripCount": 24},
+                validation_metrics={"roundTripCount": 7},
+                test_metrics={"totalReturnPct": 1.0},
+                walk_forward={"positiveReturnCount": 4, "validationWindowCount": 6},
+                eligible=True,
+                rank=1,
+                gate_evaluation={"developmentPassed": True, "testPassed": True},
+            )
+            store.put_snapshot(snapshot)
+            store.record_completed(experiment, [candidate])
+            engine = create_engine(
+                "sqlite+pysqlite:///:memory:",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+            create_public_schema(engine)
+            migrator = LocalDataMigrator(
+                engine,
+                TenantSecretCipher(base64.urlsafe_b64encode(b"m" * 32).decode()),
+                data,
+                issuer="https://identity.example.com",
+                subject="owner",
+                email="owner@example.com",
+            )
+
+            record = next(
+                item
+                for item in migrator.inventory().records
+                if item.kind == "strategy_experiment"
+            )
+            detail = decode_tenant_model(record.payload["model"])
+
+            self.assertTrue(detail.experiment.profitability_gate_passed)
+            self.assertEqual(detail.candidates[0].gate_evaluation, candidate.gate_evaluation)
+
+            connection = sqlite3.connect(store.path)
+            try:
+                connection.execute(
+                    "alter table strategy_experiment_candidates "
+                    "drop column gate_evaluation_json"
+                )
+                connection.execute(
+                    "alter table strategy_experiments "
+                    "drop column profitability_gate_passed"
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            legacy_record = next(
+                item
+                for item in migrator.inventory().records
+                if item.kind == "strategy_experiment"
+            )
+            legacy_detail = decode_tenant_model(legacy_record.payload["model"])
+
+            self.assertFalse(legacy_detail.experiment.profitability_gate_passed)
+            self.assertEqual(legacy_detail.candidates[0].gate_evaluation, {})
             engine.dispose()
 
     def test_active_live_state_blocks_migration(self) -> None:

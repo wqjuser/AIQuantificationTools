@@ -19,6 +19,7 @@ from . import (
     shadow_sandbox,
     stage1,
     stage10,
+    strategy_experiment_promotions,
 )
 from ..support.ai_validation import (
     _ai_research_evidence_route_id,
@@ -94,6 +95,16 @@ class RouteDispatchMixin:
             return True
         if parsed.path == '/api/strategy-experiments':
             ai_strategy_p0.post_strategy_experiments(self, parsed)
+            return True
+        promotion_experiment_id = strategy_experiment_promotions.promotion_experiment_id(
+            parsed.path
+        )
+        if promotion_experiment_id is not None:
+            strategy_experiment_promotions.post_strategy_experiment_promotion(
+                self,
+                parsed,
+                promotion_experiment_id,
+            )
             return True
         if parsed.path == '/api/stage1/daily-use':
             stage1.post_stage1_daily_use(self, parsed)

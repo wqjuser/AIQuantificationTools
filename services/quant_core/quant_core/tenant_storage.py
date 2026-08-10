@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import json
 from typing import Callable
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Connection, Engine
@@ -145,6 +145,41 @@ class TenantRecordStore:
         if stored is None:
             raise RuntimeError("tenant_record_insert_conflict_without_record")
         return stored, created
+
+    def compare_and_swap_payload_field(
+        self,
+        record_kind: str,
+        record_id: str,
+        payload: dict[str, object],
+        *,
+        path: tuple[str, ...],
+        expected: str | None,
+        now: datetime | None = None,
+    ) -> bool:
+        if not path or any(not isinstance(part, str) or not part for part in path):
+            raise ValueError("tenant_record_payload_path_invalid")
+        timestamp = now or datetime.now(timezone.utc)
+        clean_payload = json.loads(json.dumps(payload, ensure_ascii=False))
+        field = tenant_records.c.payload
+        for part in path:
+            field = field[part]
+        if expected is None:
+            matches_expected = field.as_string().is_(None)
+        else:
+            matches_expected = field.as_string() == expected
+        statement = (
+            update(tenant_records)
+            .where(
+                tenant_records.c.owner_id == self.owner_id,
+                tenant_records.c.record_kind == record_kind,
+                tenant_records.c.record_id == record_id,
+                matches_expected,
+            )
+            .values(payload=clean_payload, updated_at=timestamp)
+        )
+        with self.engine.begin() as connection:
+            self.require_write_fence(connection)
+            return connection.execute(statement).rowcount == 1
 
     def get(self, record_kind: str, record_id: str) -> dict[str, object] | None:
         with self.engine.connect() as connection:

@@ -685,6 +685,139 @@ class StrategyExperimentStoreTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual((experiment_count, candidate_count), (1, 2))
 
+    def test_record_completed_round_trips_profitability_gate_evidence(self):
+        snapshot = experiment_snapshot()
+        experiment = replace(
+            experiment_record(),
+            profitability_gate_passed=True,
+        )
+        candidate = replace(
+            candidate_record(),
+            gate_evaluation={
+                "developmentPassed": True,
+                "testPassed": True,
+                "roundTrips": {"trainValidation": 31, "validation": 7},
+            },
+        )
+        self.store.put_snapshot(snapshot)
+
+        self.store.record_completed(experiment, [candidate])
+
+        detail = self.store.get(experiment.experiment_id)
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertTrue(detail.experiment.profitability_gate_passed)
+        self.assertEqual(detail.candidates[0].gate_evaluation, candidate.gate_evaluation)
+
+    def test_pending_formal_job_is_durable_and_completes_in_place(self):
+        snapshot = experiment_snapshot()
+        pending = replace(
+            experiment_record(),
+            status="pending",
+            evaluation_count=0,
+            selected_candidate_id=None,
+            completion_reason=None,
+            result_hash=None,
+        )
+        completed = replace(
+            pending,
+            status="completed",
+            evaluation_count=7,
+            selected_candidate_id="candidate-a",
+            completion_reason="profitability_gate_passed",
+            result_hash="result-completed",
+            profitability_gate_passed=True,
+        )
+        candidate = candidate_record()
+        self.store.put_snapshot(snapshot)
+
+        self.store.record_pending(pending)
+        pending_readback = self.store.get(pending.experiment_id)
+        self.assertIsNotNone(pending_readback)
+        assert pending_readback is not None
+        self.assertEqual(pending_readback.experiment.status, "pending")
+        self.assertEqual(pending_readback.candidates, [])
+
+        self.store.record_completed(completed, [candidate])
+
+        final = self.store.get(completed.experiment_id)
+        self.assertIsNotNone(final)
+        assert final is not None
+        self.assertEqual(final.experiment, completed)
+        self.assertEqual(final.candidates, [candidate])
+
+    def test_promotion_lineage_is_write_once_and_exact_replay_is_idempotent(self):
+        snapshot = experiment_snapshot()
+        completed = replace(
+            experiment_record(),
+            profitability_gate_passed=True,
+            result_hash="result-profitable",
+        )
+        self.store.put_snapshot(snapshot)
+        self.store.record_completed(completed, [candidate_record()])
+        promoted_at = datetime(2026, 7, 11, tzinfo=timezone.utc)
+
+        promoted = self.store.mark_promoted(
+            experiment_id=completed.experiment_id,
+            expected_result_hash="result-profitable",
+            promotion_run_id="fresh-p0-run",
+            promoted_strategy_revision="winner-revision",
+            promotion_lineage_hash="lineage-a",
+            promoted_at=promoted_at,
+            promotion_operator="operator@example.com",
+        )
+        replayed = self.store.mark_promoted(
+            experiment_id=completed.experiment_id,
+            expected_result_hash="result-profitable",
+            promotion_run_id="fresh-p0-run",
+            promoted_strategy_revision="winner-revision",
+            promotion_lineage_hash="lineage-a",
+            promoted_at=promoted_at + timedelta(hours=1),
+            promotion_operator="operator@example.com",
+        )
+
+        self.assertEqual(promoted, replayed)
+        self.assertEqual(promoted.experiment.promotion_run_id, "fresh-p0-run")
+        self.assertEqual(
+            promoted.experiment.promoted_strategy_revision,
+            "winner-revision",
+        )
+        self.assertEqual(promoted.experiment.promotion_lineage_hash, "lineage-a")
+        self.assertEqual(promoted.experiment.promoted_at, promoted_at)
+        self.assertEqual(promoted.experiment.promotion_operator, "operator@example.com")
+        with self.assertRaisesRegex(ValueError, "^strategy_experiment_already_promoted$"):
+            self.store.mark_promoted(
+                experiment_id=completed.experiment_id,
+                expected_result_hash="result-profitable",
+                promotion_run_id="different-run",
+                promoted_strategy_revision="winner-revision",
+                promotion_lineage_hash="lineage-b",
+                promoted_at=promoted_at,
+                promotion_operator="operator@example.com",
+            )
+
+    def test_init_migrates_legacy_gate_columns_without_losing_records(self):
+        snapshot = experiment_snapshot()
+        experiment = experiment_record()
+        candidate = candidate_record()
+        self.store.put_snapshot(snapshot)
+        self.store.record_completed(experiment, [candidate])
+        with closing(sqlite3.connect(self.database_path)) as connection, connection:
+            connection.execute(
+                "alter table strategy_experiment_candidates drop column gate_evaluation_json"
+            )
+            connection.execute(
+                "alter table strategy_experiments drop column profitability_gate_passed"
+            )
+
+        migrated = StrategyExperimentStore(self.database_path)
+
+        detail = migrated.get(experiment.experiment_id)
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertFalse(detail.experiment.profitability_gate_passed)
+        self.assertEqual(detail.candidates[0].gate_evaluation, {})
+
     def test_record_completed_rolls_back_experiment_when_candidate_insert_fails(self):
         snapshot = experiment_snapshot()
         experiment = experiment_record()
@@ -1420,8 +1553,9 @@ class StrategyExperimentRunnerTests(unittest.TestCase):
         self.assertEqual(replay.experiment.definition_hash, original.experiment.definition_hash)
         self.assertEqual(replay.experiment.result_hash, original.experiment.result_hash)
         self.assertEqual(replay.experiment.definition, original.experiment.definition)
+        self.assertEqual(replay.experiment.evaluation_count, 0)
         self.assertEqual(replay.snapshot.bars, original.snapshot.bars)
-        self.assertEqual(len([call for call in RecordingBacktestEngine.calls if call["endIndex"] == 99]), 1)
+        self.assertEqual(RecordingBacktestEngine.calls, [])
 
     def test_payload_codecs_include_detail_evidence_and_keep_list_rows_compact(self):
         with patch("quant_core.strategy_experiments.BacktestEngine", RecordingBacktestEngine):

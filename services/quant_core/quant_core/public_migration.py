@@ -407,7 +407,7 @@ def _collect_records(data_dir: Path) -> Iterable[MigrationRecord]:
     for row in _rows(data_dir / "handoff_notes.sqlite", "select note_id, subject_type, subject_id, body, author, source_workspace, updated_at, audit_event_id from handoff_notes"):
         value = _row_to_handoff_note(row)
         yield _record("handoff_note", value.note_id, value)
-    for row in _rows(data_dir / "strategies.sqlite", "select revision, created_at, name, market, symbol, timeframe, version, status, audit_run_id, strategy_config_json from strategy_versions"):
+    for row in _strategy_library_rows(data_dir / "strategies.sqlite"):
         value = _row_to_record(row)
         yield _record("strategy", value.revision, value)
     for row in _rows(data_dir / "ai_review_runs.sqlite", "select ai_review_id, run_id, created_at, record_json, schema_version, primary_experiment_id, evidence_hash, record_hash, authority from ai_review_runs"):
@@ -435,11 +435,56 @@ def _experiment_records(path: Path) -> Iterable[MigrationRecord]:
     snapshots = {str(row[0]): _row_to_snapshot(row) for row in _rows(path, "select snapshot_id, created_at, market, symbol, timeframe, canonical_data_hash, rows, start_at, end_at, bars_json, test_definition_hash, test_owner_experiment_id, test_consumed_at from strategy_experiment_snapshots")}
     for snapshot in snapshots.values():
         yield _record("strategy_experiment_snapshot", snapshot.snapshot_id, snapshot)
+    candidate_columns = {
+        str(row[1])
+        for row in _rows(
+            path,
+            "pragma table_info(strategy_experiment_candidates)",
+        )
+    }
+    gate_evaluation_projection = (
+        "gate_evaluation_json"
+        if "gate_evaluation_json" in candidate_columns
+        else "'{}'"
+    )
+    candidate_query = (
+        "select experiment_id, candidate_id, candidate_revision, parameters_json, "
+        "train_metrics_json, validation_metrics_json, test_metrics_json, "
+        "walk_forward_json, eligible, rank, "
+        f"{gate_evaluation_projection} from strategy_experiment_candidates"
+    )
     candidates: dict[str, list[Any]] = {}
-    for row in _rows(path, "select experiment_id, candidate_id, candidate_revision, parameters_json, train_metrics_json, validation_metrics_json, test_metrics_json, walk_forward_json, eligible, rank from strategy_experiment_candidates"):
+    for row in _rows(path, candidate_query):
         value = _row_to_candidate(row)
         candidates.setdefault(value.experiment_id, []).append(value)
-    for row in _rows(path, "select experiment_id, created_at, status, definition_hash, holdout_key, strategy_revision, source_run_id, snapshot_id, market, symbol, timeframe, definition_json, evaluation_count, selected_candidate_id, completion_reason, result_hash, error_code, error_detail from strategy_experiments"):
+    experiment_columns = {
+        str(row[1])
+        for row in _rows(path, "pragma table_info(strategy_experiments)")
+    }
+    profitability_projection = (
+        "profitability_gate_passed"
+        if "profitability_gate_passed" in experiment_columns
+        else "0"
+    )
+    promotion_projections = [
+        column if column in experiment_columns else "null"
+        for column in (
+            "promotion_run_id",
+            "promoted_strategy_revision",
+            "promotion_lineage_hash",
+            "promoted_at",
+            "promotion_operator",
+        )
+    ]
+    experiment_query = (
+        "select experiment_id, created_at, status, definition_hash, holdout_key, "
+        "strategy_revision, source_run_id, snapshot_id, market, symbol, timeframe, "
+        "definition_json, evaluation_count, selected_candidate_id, completion_reason, "
+        f"result_hash, error_code, error_detail, {profitability_projection}, "
+        f"{', '.join(promotion_projections)} "
+        "from strategy_experiments"
+    )
+    for row in _rows(path, experiment_query):
         experiment = _row_to_experiment(row)
         snapshot = snapshots[experiment.snapshot_id]
         yield _record("strategy_experiment", experiment.experiment_id, StrategyExperimentDetail(experiment, snapshot, candidates.get(experiment.experiment_id, [])))
@@ -544,6 +589,36 @@ def _rows(path: Path, query: str) -> list[tuple[Any, ...]]:
     try:
         with closing(sqlite3.connect(uri, uri=True)) as connection:
             return connection.execute(query).fetchall()
+    except sqlite3.OperationalError as error:
+        if "no such table" in str(error):
+            return []
+        raise
+
+
+def _strategy_library_rows(path: Path) -> list[tuple[Any, ...]]:
+    if not path.is_file():
+        return []
+    uri = f"file:{quote(str(path))}?mode=ro"
+    try:
+        with closing(sqlite3.connect(uri, uri=True)) as connection:
+            columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "pragma table_info(strategy_versions)"
+                ).fetchall()
+            }
+            if not columns:
+                return []
+            optional = (
+                ", promotion_evidence_json"
+                if "promotion_evidence_json" in columns
+                else ", null as promotion_evidence_json"
+            )
+            return connection.execute(
+                "select revision, created_at, name, market, symbol, timeframe, "
+                "version, status, audit_run_id, strategy_config_json"
+                f"{optional} from strategy_versions"
+            ).fetchall()
     except sqlite3.OperationalError as error:
         if "no such table" in str(error):
             return []

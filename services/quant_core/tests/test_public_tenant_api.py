@@ -4,7 +4,7 @@ import asyncio
 import base64
 import socket
 import time
-from threading import RLock
+from threading import Event, RLock
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -92,6 +92,7 @@ class PublicTenantApiTest(unittest.TestCase):
     def test_slow_get_does_not_block_another_read_for_same_tenant(self) -> None:
         runtime = SimpleNamespace(handler_type=object, lock=RLock(), stores=SimpleNamespace())
         tenant = SimpleNamespace(owner_id="owner-1", authenticated_actor="user@example.com")
+        slow_dispatch_started = Event()
 
         class Handler:
             def __init__(self, path: str):
@@ -103,6 +104,7 @@ class PublicTenantApiTest(unittest.TestCase):
 
             def _dispatch_get(self, parsed) -> bool:
                 if parsed.path == "/api/slow":
+                    slow_dispatch_started.set()
                     time.sleep(0.4)
                 return True
 
@@ -132,11 +134,13 @@ class PublicTenantApiTest(unittest.TestCase):
             )
 
         async def exercise(method: str) -> tuple[int, float]:
+            slow_dispatch_started.clear()
             started_at = time.monotonic()
             slow = asyncio.create_task(
                 self.tenant_api(request("/api/slow", method), tenant)
             )
-            await asyncio.sleep(0)
+            slow_started = await asyncio.to_thread(slow_dispatch_started.wait, 1.0)
+            self.assertTrue(slow_started)
             fast = await self.tenant_api(request("/api/fast", method), tenant)
             fast_elapsed = time.monotonic() - started_at
             await slow

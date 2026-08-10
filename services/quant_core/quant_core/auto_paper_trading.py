@@ -17,6 +17,8 @@ from quant_core.canonical import (
     canonical_data_hash,
     canonical_sha256,
     canonical_snapshot_id,
+    flatten_chunked_data_snapshot,
+    normalize_snapshot_bar_chunks,
     normalize_snapshot_bars,
     snapshot_bars_to_ohlcv,
     strategy_config_from_payload,
@@ -27,12 +29,38 @@ from quant_core.decision_contract import (
     build_order_intent,
     build_order_result,
     build_risk_adjusted_target,
+    normalize_strategy_evaluation_identity,
+    strategy_evaluation_evidence_references,
+    validate_order_intent_identity,
 )
 from quant_core.domain import OHLCVBar, StrategyConfig
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
+from quant_core.sealed_datasets import (
+    SEALED_DATASET_HASH_VERSION,
+    SealedDatasetIntegrity,
+    SealedDatasetStore,
+    normalize_sealed_research_snapshot,
+)
 from quant_core.stage6_sandbox import Stage6SandboxExecutionService
 from quant_core.stage10_production_execution import Stage10ProductionExecutionService
+from quant_core.strategy_evaluator import (
+    PositionSnapshot,
+    StrategyEvaluation,
+    apply_fill,
+    build_market_context,
+    evaluate_strategy,
+    runtime_state_from_payload,
+    runtime_state_to_payload,
+    size_entry,
+    strategy_evaluation_from_payload,
+    strategy_evaluation_to_payload,
+)
+from quant_core.strategy_experiments import (
+    StrategyExperimentError,
+    fresh_p0_profitability_evaluation,
+)
 from quant_core.strategy_library import StrategyLibraryRecord, StrategyLibraryStore
+from quant_core.strategy_experiment_store import StrategyExperimentStore
 
 
 CONTROL_EVENT_ID = "auto-paper-trading-current-state"
@@ -151,6 +179,8 @@ class AutoPaperTradingService:
         live_session_ttl_hours: int = 8,
         strategy_store: StrategyLibraryStore | None = None,
         run_store: ResearchRunStore | None = None,
+        strategy_experiment_store: StrategyExperimentStore | None = None,
+        sealed_dataset_store: SealedDatasetStore | None = None,
     ) -> None:
         if not 0 <= live_session_ttl_hours <= 8_760:
             raise ValueError("live_session_ttl_hours_out_of_range")
@@ -161,9 +191,13 @@ class AutoPaperTradingService:
         self.live_session_ttl_hours = live_session_ttl_hours
         self.strategy_store = strategy_store
         self.run_store = run_store
+        self.strategy_experiment_store = strategy_experiment_store
+        self.sealed_dataset_store = sealed_dataset_store
         self.execution_guard: Callable[[], bool] | None = None
         self._validated_strategy_key: tuple[str, str, str] | None = None
         self._validated_strategy_production_drawdown: float | None = None
+        self._validated_strategy_sealed_integrity: SealedDatasetIntegrity | None = None
+        self._validated_strategy_promotion_key: tuple[str, str, str, str] | None = None
 
     def reload_runtime(
         self,
@@ -283,6 +317,18 @@ class AutoPaperTradingService:
                 return 6
         return max(6, strategy_required_bars(strategy)) if strategy else 6
 
+    def required_fetch_bar_count(self) -> int:
+        state = self._load()
+        try:
+            strategy = self._active_strategy(state)
+        except ValueError:
+            try:
+                strategy = self._frozen_active_strategy(state)
+            except ValueError:
+                return 6
+        required = max(6, strategy_required_bars(strategy)) if strategy else 6
+        return required + 59 if strategy is not None and strategy.policy is not None else required
+
     def reconcile_pending_order(self) -> dict[str, Any] | None:
         with _LOCK:
             return self._reconcile_pending_order(self._load())
@@ -391,6 +437,13 @@ class AutoPaperTradingService:
             )
             if "strategyRevision" in payload and strategy_binding_event is None:
                 return self._payload(state)
+            active_strategy_config = next_state.get("activeStrategyConfig")
+            if (
+                isinstance(active_strategy_config, dict)
+                and isinstance(active_strategy_config.get("policy"), dict)
+                and requested_execution_mode != "paper"
+            ):
+                raise ValueError("strategy_policy_paper_only")
             for key, minimum, maximum in (
                 ("triggerPct", 0.05, 20.0),
                 ("stopLossPct", 0.1, 20.0),
@@ -628,7 +681,10 @@ class AutoPaperTradingService:
             record, strategy, audit = self._load_audited_strategy(revision)
             if requested_audit_run_id != record.audit_run_id:
                 raise ValueError("strategy_binding_audit_run_mismatch")
+            if strategy.version == 2 and state.get("executionMode") != "paper":
+                raise ValueError("strategy_policy_paper_only")
             audit_hash = _strategy_audit_hash(audit)
+            promotion_evidence = record.promotion_evidence
             strategy_snapshot = strategy_config_to_payload(strategy)
             next_state.update(
                 {
@@ -645,6 +701,7 @@ class AutoPaperTradingService:
             detail = f"已将审计策略 {record.name} 交接给自动交易；自动交易保持暂停。"
             metadata = {
                 "bindingId": binding_id,
+                "bindingKind": "library",
                 "operator": operator,
                 "strategyId": record.strategy_id,
                 "strategyRevision": record.revision,
@@ -659,7 +716,22 @@ class AutoPaperTradingService:
                     or audit.data_snapshot.get("hash")
                     or ""
                 ),
-                "paperOnly": False,
+                "profitabilityStatus": (
+                    promotion_evidence.get("profitabilityStatus")
+                    if isinstance(promotion_evidence, dict)
+                    else None
+                ),
+                "experimentId": (
+                    promotion_evidence.get("experimentId")
+                    if isinstance(promotion_evidence, dict)
+                    else None
+                ),
+                "resultHash": (
+                    promotion_evidence.get("resultHash")
+                    if isinstance(promotion_evidence, dict)
+                    else None
+                ),
+                "paperOnly": strategy.version == 2,
                 "liveTradingAllowed": False,
                 "orderSubmissionEnabled": False,
                 "routeExecuted": False,
@@ -703,7 +775,7 @@ class AutoPaperTradingService:
         return _event(
             event_id=binding_id,
             event_type="auto_trading_strategy_binding",
-            summary="自动交易生产策略已更新",
+            summary="自动交易审计策略已更新",
             detail=detail,
             metadata=metadata,
             run_id=run_id,
@@ -724,31 +796,8 @@ class AutoPaperTradingService:
         if record.status != "audited" or not record.audit_run_id:
             raise ValueError("strategy_binding_audit_required")
         strategy = strategy_config_from_payload(record.strategy_config)
-        if strategy.revision != record.revision:
-            raise ValueError("strategy_binding_revision_mismatch")
-        if (
-            record.market != strategy.market
-            or record.symbol != strategy.symbols[0]
-            or record.timeframe != strategy.timeframe
-        ):
-            raise ValueError("strategy_binding_context_mismatch")
-        if (
-            strategy.market != "crypto"
-            or strategy.symbols != ["BTC/USDT"]
-            or strategy.timeframe != "1m"
-        ):
-            raise ValueError("strategy_binding_context_unsupported")
+        _validate_library_strategy_record(record, strategy)
         risk = strategy.risk
-        if (
-            not 0 < risk.position_pct <= 1
-            or risk.stop_loss_pct is None
-            or not 0 < risk.stop_loss_pct <= 1
-            or risk.take_profit_pct is None
-            or not 0 < risk.take_profit_pct <= 5
-            or risk.max_drawdown_pct is None
-            or not 0 < risk.max_drawdown_pct <= 1
-        ):
-            raise ValueError("strategy_binding_risk_invalid")
 
         audit_run_id = expected_audit_run_id or record.audit_run_id
         audit = self.run_store.get(audit_run_id)
@@ -793,38 +842,61 @@ class AutoPaperTradingService:
             or audit.data_rows < strategy_required_bars(strategy)
         ):
             raise ValueError("strategy_binding_audit_data_incomplete")
-        snapshot_bars = audit.data_snapshot.get("bars")
-        if not isinstance(snapshot_bars, list) or len(snapshot_bars) != audit.data_rows:
-            raise ValueError("strategy_binding_audit_data_incomplete")
-        normalized_bars = normalize_snapshot_bars(snapshot_bars)
-        data_hash = canonical_data_hash(normalized_bars)
-        snapshot_hash = canonical_snapshot_id(
-            market=audit.market,
-            symbol=audit.symbol,
-            timeframe=audit.timeframe,
-            canonical_data_hash=data_hash,
-        )
-        if (
-            audit.data_snapshot.get("hash") != data_hash
-            or audit.data_snapshot.get("snapshotHash") != snapshot_hash
-            or audit.data_quality.get("canonicalHash") != data_hash
-        ):
-            raise ValueError("strategy_binding_audit_snapshot_mismatch")
         validation_key = (record.revision, audit.run_id, audit_hash)
-        if (
+        sealed_audit = (
+            audit.data_snapshot.get("hashVersion") == SEALED_DATASET_HASH_VERSION
+        )
+        validation_cached = (
             validation_key == self._validated_strategy_key
             and self._validated_strategy_production_drawdown is not None
+            and (
+                not sealed_audit
+                or self._validated_strategy_sealed_integrity is not None
+            )
+        )
+        replay_bars, snapshot_identity, sealed_integrity = self._validated_audit_replay_bars(
+            audit,
+            read_sealed_bars=not validation_cached,
+        )
+        if (
+            validation_cached
+            and sealed_audit
+            and sealed_integrity != self._validated_strategy_sealed_integrity
         ):
+            raise ValueError("strategy_binding_sealed_dataset_content_changed")
+        if validation_cached:
             production_drawdown = self._validated_strategy_production_drawdown
         else:
+            if replay_bars is None:
+                raise ValueError("strategy_binding_audit_data_incomplete")
             production_replay = _validate_strategy_backtest_evidence(
                 audit,
                 strategy,
-                normalized_bars,
+                replay_bars,
             )
             production_drawdown = production_replay.metrics.max_drawdown_pct
+        promotion_key = (
+            record.revision,
+            audit.run_id,
+            audit_hash,
+            canonical_sha256(record.promotion_evidence),
+        ) if isinstance(record.promotion_evidence, dict) else None
+        if strategy.version == 2:
+            if (
+                not validation_cached
+                or promotion_key != self._validated_strategy_promotion_key
+            ):
+                self._validate_formal_promotion_evidence(
+                    record,
+                    strategy,
+                    audit,
+                    fresh_snapshot_hash=snapshot_identity,
+                )
+                self._validated_strategy_promotion_key = promotion_key
+        if not validation_cached:
             self._validated_strategy_key = validation_key
             self._validated_strategy_production_drawdown = production_drawdown
+            self._validated_strategy_sealed_integrity = sealed_integrity
         observed_drawdown_value = audit.metrics.get("max_drawdown_pct")
         if (
             isinstance(observed_drawdown_value, bool)
@@ -840,6 +912,273 @@ class AutoPaperTradingService:
         ):
             raise ValueError("strategy_binding_drawdown_limit_exceeded")
         return record, strategy, audit
+
+    def _validated_audit_replay_bars(
+        self,
+        audit: ResearchRunAudit,
+        *,
+        read_sealed_bars: bool,
+    ) -> tuple[list[OHLCVBar] | None, str, SealedDatasetIntegrity | None]:
+        if audit.data_snapshot.get("hashVersion") == SEALED_DATASET_HASH_VERSION:
+            return self._validated_sealed_audit_replay_bars(
+                audit,
+                read_bars=read_sealed_bars,
+            )
+        snapshot_bars = audit.data_snapshot.get("bars")
+        if not isinstance(snapshot_bars, list) or len(snapshot_bars) != audit.data_rows:
+            raise ValueError("strategy_binding_audit_data_incomplete")
+        try:
+            normalized_bars = normalize_snapshot_bars(snapshot_bars)
+            bars = snapshot_bars_to_ohlcv(
+                normalized_bars,
+                market=audit.market,
+                symbol=audit.symbol,
+                timeframe=audit.timeframe,
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError("strategy_binding_audit_snapshot_mismatch") from error
+        data_hash = canonical_data_hash(normalized_bars)
+        snapshot_hash = canonical_snapshot_id(
+            market=audit.market,
+            symbol=audit.symbol,
+            timeframe=audit.timeframe,
+            canonical_data_hash=data_hash,
+        )
+        if (
+            audit.data_snapshot.get("hash") != data_hash
+            or audit.data_snapshot.get("snapshotHash") != snapshot_hash
+            or audit.data_quality.get("canonicalHash") != data_hash
+        ):
+            raise ValueError("strategy_binding_audit_snapshot_mismatch")
+        return bars, snapshot_hash, None
+
+    def _validated_sealed_audit_replay_bars(
+        self,
+        audit: ResearchRunAudit,
+        *,
+        read_bars: bool,
+    ) -> tuple[list[OHLCVBar] | None, str, SealedDatasetIntegrity]:
+        store = self.sealed_dataset_store
+        if store is None:
+            raise ValueError("strategy_binding_sealed_dataset_store_unavailable")
+        try:
+            snapshot = normalize_sealed_research_snapshot(
+                audit.data_snapshot,
+                market=audit.market,
+                symbol=audit.symbol,
+                timeframe=audit.timeframe,
+            )
+            sealed_payload = snapshot["sealedDataset"]
+            dataset_id = str(sealed_payload["datasetId"])
+            summary = store.get_summary(dataset_id)
+            if summary is None or summary.to_payload() != sealed_payload:
+                raise ValueError("sealed_dataset_manifest_mismatch")
+            integrity = store.get_integrity(dataset_id)
+            if (
+                integrity is None
+                or integrity.dataset_id != summary.dataset_id
+                or integrity.manifest_token != summary.dataset_hash
+            ):
+                raise ValueError("sealed_dataset_integrity_mismatch")
+            coverage = audit.data_quality.get("coverage")
+            issues = audit.data_quality.get("issues")
+            if (
+                snapshot.get("isComplete") is not True
+                or audit.data_rows != summary.development_rows
+                or audit.data_quality.get("isComplete") is not True
+                or audit.data_quality.get("rows") != summary.development_rows
+                or audit.data_quality.get("canonicalHash") != summary.development_hash
+                or audit.data_quality.get("source") != summary.source
+                or audit.data_quality.get("adjustmentMode")
+                != summary.adjustment_mode
+                or not isinstance(coverage, dict)
+                or coverage.get("actualRows") != summary.development_rows
+                or coverage.get("expectedRows") != summary.development_rows
+                or coverage.get("gapCount") != 0
+                or float(coverage.get("ratio", -1)) != 1.0
+                or not isinstance(issues, list)
+                or any(
+                    isinstance(issue, dict)
+                    and issue.get("severity") == "blocked"
+                    for issue in issues
+                )
+                or summary.development_end_exclusive > audit.created_at
+            ):
+                raise ValueError("sealed_audit_quality_mismatch")
+            if not read_bars:
+                return None, str(snapshot["snapshotHash"]), integrity
+            bars = store.read_development_bars(dataset_id)
+            chunked = normalize_snapshot_bar_chunks(
+                [bars[index : index + 500] for index in range(0, len(bars), 500)],
+                market=audit.market,
+                symbol=audit.symbol,
+                timeframe=audit.timeframe,
+            )
+            flattened = flatten_chunked_data_snapshot(
+                chunked,
+                market=audit.market,
+                symbol=audit.symbol,
+                timeframe=audit.timeframe,
+            )
+            if (
+                len(bars) != summary.development_rows
+                or len(flattened) != summary.development_rows
+                or chunked.get("hash") != summary.development_hash
+                or chunked.get("start") != summary.start.isoformat()
+                or chunked.get("endExclusive")
+                != summary.development_end_exclusive.isoformat()
+            ):
+                raise ValueError("sealed_development_partition_mismatch")
+            verified_integrity = store.get_integrity(dataset_id)
+            if verified_integrity != integrity:
+                raise ValueError("sealed_dataset_content_changed_during_read")
+            return bars, str(snapshot["snapshotHash"]), integrity
+        except (AttributeError, KeyError, TypeError, ValueError) as error:
+            raise ValueError("strategy_binding_audit_snapshot_mismatch") from error
+
+    def _validate_formal_promotion_evidence(
+        self,
+        record: StrategyLibraryRecord,
+        strategy: StrategyConfig,
+        audit: ResearchRunAudit,
+        *,
+        fresh_snapshot_hash: str,
+    ) -> None:
+        evidence = record.promotion_evidence
+        required = {
+            "experimentId",
+            "definitionHash",
+            "resultHash",
+            "candidateId",
+            "candidateRevision",
+            "freshSourceRunId",
+            "freshSnapshotHash",
+            "priorDataRange",
+            "freshDataRange",
+            "freshSnapshotDistinct",
+            "freshDataRangeDistinct",
+            "freshGateEvaluation",
+            "freshGateHash",
+            "strategyRevision",
+            "operator",
+            "profitabilityStatus",
+            "paperOnly",
+            "bindingBlocked",
+            "lineageHash",
+        }
+        if not isinstance(evidence, dict):
+            raise ValueError("strategy_binding_promotion_evidence_required")
+        if set(evidence) != required:
+            raise ValueError("strategy_binding_promotion_evidence_invalid")
+        lineage = {key: value for key, value in evidence.items() if key != "lineageHash"}
+        string_fields = required - {
+            "paperOnly",
+            "bindingBlocked",
+            "freshSnapshotDistinct",
+            "freshDataRangeDistinct",
+            "priorDataRange",
+            "freshDataRange",
+            "freshGateEvaluation",
+        }
+        if (
+            any(
+                not isinstance(evidence.get(key), str) or not evidence.get(key)
+                for key in string_fields
+            )
+            or evidence.get("paperOnly") is not True
+            or evidence.get("bindingBlocked") is not False
+            or evidence.get("freshSnapshotDistinct") is not True
+            or evidence.get("freshDataRangeDistinct") is not True
+            or not isinstance(evidence.get("priorDataRange"), dict)
+            or set(evidence["priorDataRange"]) != {"start", "endExclusive"}
+            or not isinstance(evidence.get("freshDataRange"), dict)
+            or set(evidence["freshDataRange"]) != {"start", "endExclusive"}
+            or evidence.get("freshDataRange") == evidence.get("priorDataRange")
+            or not isinstance(evidence.get("freshGateEvaluation"), dict)
+            or evidence.get("profitabilityStatus")
+            != "formal_gate_passed"
+            or evidence.get("freshSourceRunId") != audit.run_id
+            or evidence.get("freshSnapshotHash") != fresh_snapshot_hash
+            or evidence.get("strategyRevision") != strategy.revision
+            or evidence.get("candidateRevision") != strategy.revision
+            or canonical_sha256(lineage) != evidence.get("lineageHash")
+        ):
+            raise ValueError("strategy_binding_promotion_evidence_invalid")
+        experiment_store = self.strategy_experiment_store
+        if experiment_store is None:
+            raise ValueError("strategy_binding_experiment_store_unavailable")
+        detail = experiment_store.get(str(evidence["experimentId"]))
+        if detail is None:
+            raise ValueError("strategy_binding_promotion_experiment_not_found")
+        experiment = detail.experiment
+        sealed_definition = experiment.definition.get("sealedDataset")
+        sealed_audit = audit.data_snapshot.get("sealedDataset")
+        expected_prior_range = {
+            "start": detail.snapshot.start_at,
+            "endExclusive": detail.snapshot.end_at,
+        }
+        expected_fresh_range = (
+            {
+                "start": sealed_audit.get("start"),
+                "endExclusive": sealed_audit.get("developmentEndExclusive"),
+            }
+            if isinstance(sealed_audit, dict)
+            else None
+        )
+        try:
+            fresh_gate_evaluation = fresh_p0_profitability_evaluation(audit.metrics)
+        except StrategyExperimentError as error:
+            raise ValueError("strategy_binding_fresh_profitability_gate_failed") from error
+        if (
+            not isinstance(sealed_definition, dict)
+            or evidence.get("priorDataRange") != expected_prior_range
+            or evidence.get("freshDataRange") != expected_fresh_range
+            or evidence.get("freshSnapshotHash") == detail.snapshot.snapshot_id
+            or evidence.get("freshSnapshotHash") == detail.snapshot.canonical_data_hash
+            or evidence.get("freshGateEvaluation") != fresh_gate_evaluation
+            or evidence.get("freshGateHash")
+            != canonical_sha256(fresh_gate_evaluation)
+        ):
+            raise ValueError("strategy_binding_promotion_evidence_invalid")
+        matching_candidates = [
+            candidate
+            for candidate in detail.candidates
+            if candidate.candidate_id == evidence["candidateId"]
+        ]
+        candidate = matching_candidates[0] if len(matching_candidates) == 1 else None
+        gate_evaluation = candidate.gate_evaluation if candidate is not None else None
+        if (
+            experiment.status != "completed"
+            or experiment.profitability_gate_passed is not True
+            or experiment.completion_reason != "profitability_gate_passed"
+            or experiment.definition_hash != evidence["definitionHash"]
+            or canonical_sha256(experiment.definition) != experiment.definition_hash
+            or experiment.result_hash != evidence["resultHash"]
+            or experiment.selected_candidate_id != evidence["candidateId"]
+            or experiment.promotion_run_id != audit.run_id
+            or experiment.promoted_strategy_revision != strategy.revision
+            or experiment.promotion_lineage_hash != evidence["lineageHash"]
+            or experiment.promotion_operator != evidence["operator"]
+            or experiment.definition.get("resultSchemaVersion") != 2
+            or experiment.definition.get("engineVersion") != "backtest-v2"
+            or experiment.definition.get("evaluatorVersion")
+            != "strategy-evaluator-v2"
+            or not isinstance(experiment.definition.get("sealedDataset"), dict)
+            or detail.snapshot.test_definition_hash != experiment.definition_hash
+            or detail.snapshot.test_owner_experiment_id != experiment.experiment_id
+            or detail.snapshot.test_consumed_at is None
+            or candidate is None
+            or candidate.candidate_revision != strategy.revision
+            or candidate.eligible is not True
+            or candidate.rank != 1
+            or not isinstance(candidate.test_metrics, dict)
+            or not isinstance(gate_evaluation, dict)
+            or not isinstance(gate_evaluation.get("pretest"), dict)
+            or gate_evaluation["pretest"].get("passed") is not True
+            or not isinstance(gate_evaluation.get("test"), dict)
+            or gate_evaluation["test"].get("passed") is not True
+        ):
+            raise ValueError("strategy_binding_promotion_experiment_changed")
 
     def _active_strategy(self, state: Mapping[str, Any]) -> StrategyConfig | None:
         revision = str(state.get("activeStrategyRevision") or "").strip()
@@ -883,9 +1222,22 @@ class AutoPaperTradingService:
     def evaluate(self, bars: list[OHLCVBar], *, data_source: str) -> dict[str, Any]:
         with _LOCK:
             state = self._load()
+            # Already-submitted external orders must still be reconciled read-only;
+            # the policy gate below blocks every new non-paper evaluation.
             reconciled = self._reconcile_pending_order(state)
             if reconciled is not None:
                 return reconciled
+            active_strategy_config = state.get("activeStrategyConfig")
+            if (
+                state["executionMode"] != "paper"
+                and isinstance(active_strategy_config, dict)
+                and isinstance(active_strategy_config.get("policy"), dict)
+            ):
+                return self._finish(
+                    state,
+                    status="risk_paused",
+                    detail="strategy_policy_paper_only",
+                )
             if not state["enabled"]:
                 return self._payload(state)
             if (
@@ -945,6 +1297,16 @@ class AutoPaperTradingService:
                         status="risk_paused",
                         detail=_strategy_binding_error_detail(str(snapshot_error)),
                     )
+            if (
+                active_strategy is not None
+                and active_strategy.policy is not None
+                and state["executionMode"] != "paper"
+            ):
+                return self._finish(
+                    state,
+                    status="risk_paused",
+                    detail="strategy_policy_paper_only",
+                )
             required_bars = (
                 max(6, strategy_required_bars(active_strategy))
                 if active_strategy
@@ -1048,11 +1410,22 @@ class AutoPaperTradingService:
             state["windowChangePct"] = round(window_change, 4)
             state["dataSource"] = data_source
 
+            risk_window_at = (
+                latest.timestamp + timedelta(minutes=1)
+                if active_strategy is not None and active_strategy.policy is not None
+                else now
+            )
             recent_trades = [
                 value for value in state["tradeTimestamps"]
                 if _parse_time(value) >= now - timedelta(hours=1)
             ]
             state["tradeTimestamps"] = recent_trades
+            recent_entry_groups = [
+                value
+                for value in state.get("entryTradeTimestamps", [])
+                if _parse_time(value) > risk_window_at - timedelta(hours=1)
+            ]
+            state["entryTradeTimestamps"] = recent_entry_groups
             effective_loss_limit_pct = min(
                 float(state["dailyLossLimitPct"]),
                 (
@@ -1061,6 +1434,26 @@ class AutoPaperTradingService:
                     and active_strategy.risk.max_drawdown_pct is not None
                     else float(state["dailyLossLimitPct"])
                 ),
+                (
+                    float(active_strategy.risk.daily_loss_limit_pct) * 100
+                    if active_strategy
+                    and active_strategy.risk.daily_loss_limit_pct is not None
+                    else float(state["dailyLossLimitPct"])
+                ),
+            )
+            effective_max_trade_groups = (
+                min(
+                    int(state["maxTradesPerHour"]),
+                    int(active_strategy.risk.max_trade_groups_per_hour),
+                )
+                if active_strategy
+                and active_strategy.risk.max_trade_groups_per_hour is not None
+                else int(state["maxTradesPerHour"])
+            )
+            recent_frequency_events = (
+                recent_entry_groups
+                if active_strategy is not None and active_strategy.policy is not None
+                else recent_trades
             )
             effective_profit_drawdown_limit_pct = min(
                 float(state["dailyProfitDrawdownLimitPct"]),
@@ -1077,6 +1470,8 @@ class AutoPaperTradingService:
                 loss_limit_pct=effective_loss_limit_pct,
                 profit_drawdown_limit_pct=effective_profit_drawdown_limit_pct,
             )
+            if active_strategy is not None:
+                _update_strategy_drawdown(state, equity, active_strategy)
 
             if (
                 state["executionMode"] == "paper"
@@ -1087,6 +1482,7 @@ class AutoPaperTradingService:
                     latest,
                     recent_trades,
                     now,
+                    active_strategy,
                     loss_limit_pct=effective_loss_limit_pct,
                     profit_drawdown_limit_pct=effective_profit_drawdown_limit_pct,
                 )
@@ -1096,45 +1492,68 @@ class AutoPaperTradingService:
             reason = "涨跌幅尚未达到 AI 评估触发线。"
             provider_id = "rules"
             proposal_metadata: Mapping[str, Any] | None = None
+            policy_evaluation = None
             try:
                 if active_strategy is not None:
-                    closes = [float(bar.close) for bar in ordered]
-                    volumes = [float(bar.volume) for bar in ordered]
-                    index = len(ordered) - 1
-                    effective_stop_loss_pct = min(
-                        float(state["stopLossPct"]),
-                        float(active_strategy.risk.stop_loss_pct) * 100,
-                    )
-                    effective_take_profit_pct = min(
-                        float(state["takeProfitPct"]),
-                        float(active_strategy.risk.take_profit_pct) * 100,
-                    )
-                    if position > 0 and avg_cost > 0:
-                        position_return = _pct_change(avg_cost, price)
-                        if position_return <= -effective_stop_loss_pct:
-                            action, reason, provider_id = "sell", "触发生产策略止损。", "risk"
-                        elif position_return >= effective_take_profit_pct:
-                            action, reason, provider_id = "sell", "触发生产策略止盈。", "risk"
-                        elif strategy_conditions_met(
-                            active_strategy.exit_conditions,
+                    if active_strategy.policy is not None:
+                        runtime_state = runtime_state_from_payload(
+                            active_strategy,
+                            state.get("strategyRuntimeState"),
+                        )
+                        policy_evaluation = evaluate_strategy(
+                            active_strategy,
+                            build_market_context(active_strategy, ordered),
+                            PositionSnapshot(quantity=position, entry_price=avg_cost),
+                            runtime_state,
+                        )
+                        state["strategyRuntimeState"] = runtime_state_to_payload(
+                            policy_evaluation.state_after
+                        )
+                        action = policy_evaluation.action
+                        reason = policy_evaluation.reason
+                        proposal_metadata = {
+                            "strategyEvaluation": strategy_evaluation_to_payload(
+                                policy_evaluation
+                            )
+                        }
+                    else:
+                        closes = [float(bar.close) for bar in ordered]
+                        volumes = [float(bar.volume) for bar in ordered]
+                        index = len(ordered) - 1
+                        effective_stop_loss_pct = min(
+                            float(state["stopLossPct"]),
+                            float(active_strategy.risk.stop_loss_pct) * 100,
+                        )
+                        effective_take_profit_pct = min(
+                            float(state["takeProfitPct"]),
+                            float(active_strategy.risk.take_profit_pct) * 100,
+                        )
+                        if position > 0 and avg_cost > 0:
+                            position_return = _pct_change(avg_cost, price)
+                            if position_return <= -effective_stop_loss_pct:
+                                action, reason, provider_id = "sell", "触发生产策略止损。", "risk"
+                            elif position_return >= effective_take_profit_pct:
+                                action, reason, provider_id = "sell", "触发生产策略止盈。", "risk"
+                            elif strategy_conditions_met(
+                                active_strategy.exit_conditions,
+                                closes,
+                                volumes,
+                                index,
+                            ):
+                                action, reason = "sell", "生产策略退出条件已满足。"
+                        elif strategy_binding_error is None and strategy_conditions_met(
+                            active_strategy.entry_conditions,
                             closes,
                             volumes,
                             index,
                         ):
-                            action, reason = "sell", "生产策略退出条件已满足。"
-                    elif strategy_binding_error is None and strategy_conditions_met(
-                        active_strategy.entry_conditions,
-                        closes,
-                        volumes,
-                        index,
-                    ):
-                        action, reason = "buy", "生产策略入场条件已满足。"
-                    else:
-                        reason = (
-                            "生产策略审计证据失效；已禁止开新仓，现有持仓仅按固定策略快照退出。"
-                            if strategy_binding_error
-                            else "生产策略条件尚未满足。"
-                        )
+                            action, reason = "buy", "生产策略入场条件已满足。"
+                        else:
+                            reason = (
+                                "生产策略审计证据失效；已禁止开新仓，现有持仓仅按固定策略快照退出。"
+                                if strategy_binding_error
+                                else "生产策略条件尚未满足。"
+                            )
                 elif position > 0 and avg_cost > 0:
                     position_return = _pct_change(avg_cost, price)
                     if position_return <= -float(state["stopLossPct"]):
@@ -1164,6 +1583,33 @@ class AutoPaperTradingService:
             proposal_reason = reason
             effective_order_notional = float(state["orderNotional"])
             if active_strategy is not None and action == "buy":
+                if policy_evaluation is not None:
+                    policy_sizing = size_entry(
+                        active_strategy,
+                        equity=equity,
+                        available_cash=(
+                            float(state.get("availableCash") or 0)
+                            if state["executionMode"] in {"testnet", "live"}
+                            and state.get("accountAuthority") == "binance_spot"
+                            else cash
+                        ),
+                        execution_price=price,
+                        atr_value=policy_evaluation.atr or 0.0,
+                        fee_rate=FEE_RATE,
+                        slippage_rate=(
+                            0.0
+                            if state["executionMode"] == "paper"
+                            else PRODUCTION_REPLAY_SLIPPAGE_RATE
+                        ),
+                    )
+                    effective_order_notional = (
+                        policy_sizing.notional
+                        if active_strategy.risk.max_entry_notional_quote is None
+                        else min(effective_order_notional, policy_sizing.notional)
+                    )
+                    if policy_sizing.quantity <= 0:
+                        proposal_action = "hold"
+                        proposal_reason = policy_sizing.reason
                 remaining_strategy_notional = max(
                     0.0,
                     equity * float(active_strategy.risk.position_pct)
@@ -1176,8 +1622,12 @@ class AutoPaperTradingService:
                 if effective_order_notional <= 0:
                     proposal_action = "hold"
                     proposal_reason = "已达到生产策略仓位上限。"
+                elif policy_evaluation is not None and proposal_action == "buy":
+                    # The shared v1 contract accepts a fee-inclusive cash budget;
+                    # policy sizing returns the already cash-bounded trade notional.
+                    effective_order_notional *= 1 + FEE_RATE
             decision_contract = build_decision_contract(
-                bars=ordered[-required_bars:],
+                bars=ordered[-min(required_bars, 500):],
                 market=str(state["market"]),
                 symbol=str(state["symbol"]),
                 timeframe=str(state["timeframe"]),
@@ -1200,8 +1650,8 @@ class AutoPaperTradingService:
                 fee_rate=FEE_RATE,
                 daily_drawdown_pct=loss_drawdown_pct,
                 daily_loss_limit_pct=effective_loss_limit_pct,
-                recent_trade_count=len(recent_trades),
-                max_trades_per_hour=int(state["maxTradesPerHour"]),
+                recent_trade_count=len(recent_frequency_events),
+                max_trades_per_hour=effective_max_trade_groups,
                 generated_at=now,
                 profit_drawdown_pct=profit_drawdown_pct,
                 profit_drawdown_limit_pct=effective_profit_drawdown_limit_pct,
@@ -1211,6 +1661,11 @@ class AutoPaperTradingService:
                     else None
                 ),
                 proposal_metadata=proposal_metadata,
+                strategy_evaluation_identity=(
+                    _strategy_evaluation_identity(policy_evaluation)
+                    if policy_evaluation is not None
+                    else None
+                ),
             )
             signal = decision_contract["signal"]
             action = str(signal["action"])
@@ -1224,13 +1679,24 @@ class AutoPaperTradingService:
                 "evaluatedAt": now.isoformat(),
             }
             state["lastDecisionContract"] = decision_contract
+            if policy_evaluation is not None:
+                decision_contract["strategyEvaluation"] = strategy_evaluation_to_payload(
+                    policy_evaluation
+                )
             portfolio_target = decision_contract["portfolioTarget"]
             increases_risk = float(portfolio_target["targetQuantity"]) > position + 1e-12
             risk_reason = (
-                str(state["dailyRiskHaltReason"])
-                if increases_risk and state.get("dailyRiskHaltReason")
-                else "已达到每小时成交次数上限。"
-                if increases_risk and len(recent_trades) >= int(state["maxTradesPerHour"])
+                str(
+                    state.get("strategyRiskHaltReason")
+                    or state.get("dailyRiskHaltReason")
+                )
+                if increases_risk
+                and (
+                    state.get("strategyRiskHaltReason")
+                    or state.get("dailyRiskHaltReason")
+                )
+                else "已达到每小时交易组数上限。"
+                if increases_risk and len(recent_frequency_events) >= effective_max_trade_groups
                 else None
             )
             if risk_reason is not None:
@@ -1260,6 +1726,10 @@ class AutoPaperTradingService:
                     "providerId": provider_id,
                     "confidence": confidence,
                 }
+                if policy_evaluation is not None:
+                    state["pendingPaperOrder"]["strategyEvaluation"] = (
+                        strategy_evaluation_to_payload(policy_evaluation)
+                    )
                 return self._finish(
                     state,
                     status="order_pending",
@@ -1284,6 +1754,9 @@ class AutoPaperTradingService:
                         account_check=decision_contract["accountCheck"],
                         fee_rate=FEE_RATE,
                         execution_preparation=execution_preparation,
+                        strategy_evaluation_identity=order_intent.get(
+                            "strategyEvaluationIdentity"
+                        ),
                     )
                     decision_contract["orderIntent"] = order_intent
                 except (LookupError, RuntimeError, ValueError) as error:
@@ -1445,7 +1918,9 @@ class AutoPaperTradingService:
                     "traded"
                     if trade
                     else "risk_paused"
-                    if state.get("dailyRiskHaltReason") or strategy_binding_error
+                    if state.get("strategyRiskHaltReason")
+                    or state.get("dailyRiskHaltReason")
+                    or strategy_binding_error
                     else "monitoring"
                 ),
                 detail=str(state.get("dailyRiskHaltReason") or reason),
@@ -1457,6 +1932,7 @@ class AutoPaperTradingService:
         fill_bar: OHLCVBar,
         recent_trades: list[str],
         now: datetime,
+        active_strategy: StrategyConfig | None,
         *,
         loss_limit_pct: float,
         profit_drawdown_limit_pct: float,
@@ -1470,6 +1946,101 @@ class AutoPaperTradingService:
                 status="evaluation_error",
                 detail="待成交纸面订单证据无效。",
             )
+        try:
+            validate_order_intent_identity(order_intent)
+        except ValueError as error:
+            return self._finish(
+                state,
+                status="evaluation_error",
+                detail=str(error),
+            )
+        active_strategy_config = state.get("activeStrategyConfig")
+        requires_policy_evaluation = (
+            (
+                active_strategy is not None
+                and active_strategy.policy is not None
+            )
+            or (
+                isinstance(active_strategy_config, dict)
+                and isinstance(active_strategy_config.get("policy"), dict)
+            )
+            or "strategyEvaluation" in pending
+            or "strategyEvaluationIdentity" in order_intent
+            or "evidenceReferences" in order_intent
+        )
+        if requires_policy_evaluation and not isinstance(
+            pending.get("strategyEvaluation"),
+            dict,
+        ):
+            return self._finish(
+                state,
+                status="evaluation_error",
+                detail="strategy_evaluation_required",
+            )
+        policy_strategy = None
+        policy_evaluation = None
+        if isinstance(pending.get("strategyEvaluation"), dict):
+            try:
+                policy_strategy = self._frozen_active_strategy(state)
+                if policy_strategy is None or policy_strategy.policy is None:
+                    raise ValueError("strategy_policy_required")
+                policy_evaluation = strategy_evaluation_from_payload(
+                    policy_strategy,
+                    pending["strategyEvaluation"],
+                )
+                runtime_state = runtime_state_from_payload(
+                    policy_strategy,
+                    state.get("strategyRuntimeState"),
+                )
+                if runtime_state.state_hash != policy_evaluation.state_after_hash:
+                    raise ValueError("strategy_runtime_pending_state_mismatch")
+                evaluation_payload = strategy_evaluation_to_payload(
+                    policy_evaluation
+                )
+                expected_identity = _strategy_evaluation_identity(policy_evaluation)
+                expected_evidence_references = (
+                    strategy_evaluation_evidence_references(
+                        str(order_intent.get("marketSnapshotHash") or ""),
+                        expected_identity,
+                    )
+                )
+                if (
+                    order_intent.get("strategyEvaluationIdentity")
+                    != expected_identity
+                    or order_intent.get("evidenceReferences")
+                    != expected_evidence_references
+                ):
+                    raise ValueError("strategy_evaluation_order_evidence_mismatch")
+                recorded_contract = state.get("lastDecisionContract")
+                recorded_order_intent = (
+                    recorded_contract.get("orderIntent")
+                    if isinstance(recorded_contract, dict)
+                    else None
+                )
+                if not isinstance(recorded_order_intent, dict):
+                    raise ValueError("strategy_evaluation_contract_evidence_mismatch")
+                validate_order_intent_identity(recorded_order_intent)
+                if (
+                    recorded_contract.get("contractVersion") != "aiqt-decision-v2"
+                    or recorded_contract.get("strategyEvaluation")
+                    != evaluation_payload
+                    or recorded_order_intent.get("orderIntentId")
+                    != order_intent.get("orderIntentId")
+                ):
+                    raise ValueError("strategy_evaluation_contract_evidence_mismatch")
+            except ValueError as error:
+                return self._finish(
+                    state,
+                    status="evaluation_error",
+                    detail=str(error),
+                )
+        side = str(order_intent["side"])
+        if policy_evaluation is not None and side != policy_evaluation.action:
+            return self._finish(
+                state,
+                status="evaluation_error",
+                detail="strategy_evaluation_order_side_mismatch",
+            )
         price = float(fill_bar.open)
         if not math.isfinite(price) or price <= 0:
             return self._finish(
@@ -1477,20 +2048,47 @@ class AutoPaperTradingService:
                 status="data_blocked",
                 detail="下一根已完成 K 线开盘价无效。",
             )
-        side = str(order_intent["side"])
         quantity = float(order_intent["quantity"])
-        if side == "buy":
+        sizing_error = None
+        if policy_strategy is not None and policy_evaluation is not None and side == "buy":
+            sizing = size_entry(
+                policy_strategy,
+                equity=float(state["equity"]),
+                available_cash=float(state["cash"]),
+                execution_price=price,
+                atr_value=policy_evaluation.atr or 0.0,
+                fee_rate=FEE_RATE,
+                slippage_rate=0.0,
+            )
+            quantity = math.floor(
+                (min(sizing.quantity, float(order_intent["quantity"])) + 1e-12)
+                / 0.00001
+            ) * 0.00001
+            if quantity <= 0:
+                sizing_error = sizing.reason
+        elif policy_strategy is not None and side == "sell":
+            quantity = float(state["position"])
+        elif side == "buy":
             quantity = min(quantity, float(order_intent["notionalValue"]) / price)
         notional = quantity * price
+        if (
+            policy_strategy is not None
+            and side == "buy"
+            and sizing_error is None
+            and notional + 1e-12 < 5.0
+        ):
+            sizing_error = "venue_minimum_notional"
         fee, fee_estimated, cash_fee, base_fee = _fee_accounting(
             None,
             str(state["symbol"]),
             price,
             notional,
         )
-        error = None
+        error = sizing_error
         if side == "buy":
-            if notional + cash_fee > float(state["cash"]) + 1e-12:
+            if error is not None:
+                pass
+            elif notional + cash_fee > float(state["cash"]) + 1e-12:
                 error = "paper_account_cash_insufficient_at_next_bar_open"
             else:
                 acquired = quantity - base_fee
@@ -1530,6 +2128,17 @@ class AutoPaperTradingService:
                 },
             )
             return self._finish(state, status="order_rejected", detail=error)
+
+        if policy_strategy is not None and policy_evaluation is not None:
+            state["strategyRuntimeState"] = runtime_state_to_payload(
+                apply_fill(
+                    policy_strategy,
+                    policy_evaluation,
+                    side=side,
+                    price=price,
+                    filled_at=fill_bar.timestamp,
+                )
+            )
 
         trade = _trade(
             side,
@@ -1595,12 +2204,24 @@ class AutoPaperTradingService:
             loss_limit_pct=loss_limit_pct,
             profit_drawdown_limit_pct=profit_drawdown_limit_pct,
         )
+        if policy_strategy is not None:
+            _update_strategy_drawdown(
+                state,
+                float(state["equity"]),
+                policy_strategy,
+            )
         self._record_trade(state, trade, recent_trades, now)
         return self._finish(
             state,
-            status="risk_paused" if state.get("dailyRiskHaltReason") else "traded",
+            status=(
+                "risk_paused"
+                if state.get("strategyRiskHaltReason")
+                or state.get("dailyRiskHaltReason")
+                else "traded"
+            ),
             detail=str(
-                state.get("dailyRiskHaltReason")
+                state.get("strategyRiskHaltReason")
+                or state.get("dailyRiskHaltReason")
                 or "纸面信号已按下一根已完成 K 线开盘价成交。"
             ),
         )
@@ -1820,6 +2441,15 @@ class AutoPaperTradingService:
         )
         state["feeEvidenceComplete"] = state.get("feeEvidenceComplete") is True
         state["tradeTimestamps"] = [*recent_trades, created_at]
+        if trade["side"] == "buy":
+            entry_at = str(trade.get("fillBarAt") or created_at)
+            parsed_entry_at = _parse_time(entry_at)
+            recent_entries = [
+                value
+                for value in state.get("entryTradeTimestamps", [])
+                if _parse_time(value) > parsed_entry_at - timedelta(hours=1)
+            ]
+            state["entryTradeTimestamps"] = [*recent_entries, entry_at]
         state["lastTrade"] = trade
 
     def _route_order(
@@ -2206,6 +2836,20 @@ class AutoPaperTradingService:
                 float(state["dailyPeakEquity"]) + external_flow,
             )
         )
+        adjusted_strategy_peak = (
+            float(total_equity)
+            if first_snapshot
+            else max(
+                float(total_equity),
+                float(state.get("strategyPeakEquity") or 0.0) + external_flow,
+            )
+        )
+        strategy_drawdown_pct = max(
+            0.0,
+            (adjusted_strategy_peak - float(total_equity))
+            / max(adjusted_strategy_peak, 0.00000001)
+            * 100,
+        )
         state.update({
             "cash": round(quote["total"], 8),
             "availableCash": round(quote["free"], 8),
@@ -2220,6 +2864,8 @@ class AutoPaperTradingService:
             "dailyLossDrawdownPct": 0.0,
             "dailyProfitDrawdownPct": 0.0,
             "dailyRiskHaltReason": None,
+            "strategyPeakEquity": round(adjusted_strategy_peak, 8),
+            "strategyDrawdownPct": round(strategy_drawdown_pct, 4),
             "accountAuthority": "binance_spot",
             "accountFingerprint": account_fingerprint or previous_fingerprint,
             "accountAssets": validated_assets,
@@ -2872,6 +3518,13 @@ class AutoPaperTradingService:
                     or ""
                 ),
             }
+        profitability_status = None
+        experiment_id = None
+        result_hash = None
+        paper_only = bool(
+            isinstance(state.get("activeStrategyConfig"), dict)
+            and isinstance(state["activeStrategyConfig"].get("policy"), dict)
+        )
         try:
             expected_audit_run_id = str(
                 state.get("activeStrategyAuditRunId") or ""
@@ -2886,11 +3539,27 @@ class AutoPaperTradingService:
                 expected_audit_run_id=expected_audit_run_id,
                 expected_audit_hash=expected_audit_hash,
             )
-            status = "ready"
-            detail = "当前自动交易将使用该审计策略的入场、退出与更严格风控。"
+            paper_only = strategy.version == 2
+            status = (
+                "ready"
+                if not paper_only or state.get("executionMode") == "paper"
+                else "blocked"
+            )
+            detail = (
+                "当前自动交易将在 Paper 模式使用该正式晋级策略的入场、退出与更严格风控。"
+                if paper_only and status == "ready"
+                else "正式晋级的版本 2 策略只能在 Paper 模式运行。"
+                if paper_only
+                else "当前自动交易将使用该审计策略的入场、退出与更严格风控。"
+            )
+            audit_run_id = expected_audit_run_id
+            promotion_evidence = record.promotion_evidence
+            if isinstance(promotion_evidence, dict):
+                profitability_status = promotion_evidence.get("profitabilityStatus")
+                experiment_id = promotion_evidence.get("experimentId")
+                result_hash = promotion_evidence.get("resultHash")
             strategy_id = record.strategy_id
             name = record.name
-            audit_run_id = expected_audit_run_id
             market = strategy.market
             symbol = strategy.symbols[0]
             timeframe = strategy.timeframe
@@ -2910,6 +3579,10 @@ class AutoPaperTradingService:
             "revision": revision,
             "name": name,
             "auditRunId": audit_run_id,
+            "profitabilityStatus": profitability_status,
+            "experimentId": experiment_id,
+            "resultHash": result_hash,
+            "paperOnly": paper_only,
             "market": market,
             "symbol": symbol,
             "timeframe": timeframe,
@@ -2944,10 +3617,56 @@ def _strategy_audit_hash(audit: ResearchRunAudit) -> str:
     )
 
 
+def _validate_library_strategy_record(
+    record: StrategyLibraryRecord,
+    strategy: StrategyConfig,
+) -> None:
+    if strategy.revision != record.revision:
+        raise ValueError("strategy_binding_revision_mismatch")
+    if (
+        record.market != strategy.market
+        or record.symbol != strategy.symbols[0]
+        or record.timeframe != strategy.timeframe
+    ):
+        raise ValueError("strategy_binding_context_mismatch")
+    if (
+        strategy.market != "crypto"
+        or strategy.symbols != ["BTC/USDT"]
+        or strategy.timeframe != "1m"
+    ):
+        raise ValueError("strategy_binding_context_unsupported")
+    risk = strategy.risk
+    v1_risk_invalid = strategy.policy is None and (
+        risk.stop_loss_pct is None
+        or not 0 < risk.stop_loss_pct <= 1
+        or risk.take_profit_pct is None
+        or not 0 < risk.take_profit_pct <= 5
+    )
+    v2_risk_invalid = strategy.policy is not None and (
+        risk.stop_loss_pct is not None
+        or risk.take_profit_pct is not None
+        or risk.risk_budget_pct is None
+        or not 0 < risk.risk_budget_pct <= 1
+        or (
+            risk.max_entry_notional_quote is not None
+            and risk.max_entry_notional_quote <= 0
+        )
+        or risk.exit_notional_cap_quote is not None
+    )
+    if (
+        not 0 < risk.position_pct <= 1
+        or risk.max_drawdown_pct is None
+        or not 0 < risk.max_drawdown_pct <= 1
+        or v1_risk_invalid
+        or v2_risk_invalid
+    ):
+        raise ValueError("strategy_binding_risk_invalid")
+
+
 def _validate_strategy_backtest_evidence(
     audit: ResearchRunAudit,
     strategy: StrategyConfig,
-    normalized_bars: list[dict[str, Any]],
+    bars: list[OHLCVBar],
 ) -> Any:
     assumptions = audit.backtest_assumptions
     if not isinstance(assumptions, dict):
@@ -2970,12 +3689,6 @@ def _validate_strategy_backtest_evidence(
         or not 0 <= slippage_bps <= 1_000
     ):
         raise ValueError("strategy_binding_backtest_assumptions_invalid")
-    bars = snapshot_bars_to_ohlcv(
-        normalized_bars,
-        market=audit.market,
-        symbol=audit.symbol,
-        timeframe=audit.timeframe,
-    )
     replay = BacktestEngine(
         initial_cash=initial_cash,
         fee_rate=fee_bps / 10_000,
@@ -2984,6 +3697,8 @@ def _validate_strategy_backtest_evidence(
     replay_metrics = asdict(replay.metrics)
     for key, expected in replay_metrics.items():
         observed = audit.metrics.get(key)
+        if key == "round_trip_count" and strategy.version == 1 and observed is None:
+            continue
         if (
             isinstance(observed, bool)
             or not isinstance(observed, (int, float))
@@ -3147,11 +3862,15 @@ def _reset_strategy_ledger(state: dict[str, Any]) -> None:
             "dailyLossDrawdownPct": 0.0,
             "dailyProfitDrawdownPct": 0.0,
             "dailyRiskHaltReason": None,
+            "strategyPeakEquity": float(state.get("initialCash") or 100.0),
+            "strategyDrawdownPct": 0.0,
+            "strategyRiskHaltReason": None,
             "tradeCount": 0,
             "exchangeFeeTotal": 0.0,
             "estimatedFeeCount": 0,
             "feeEvidenceComplete": True,
             "tradeTimestamps": [],
+            "entryTradeTimestamps": [],
             "lastBarTimestamp": None,
             "lastPrice": None,
             "oneBarChangePct": None,
@@ -3175,6 +3894,7 @@ def _reset_strategy_ledger(state: dict[str, Any]) -> None:
             "lastDecisionContract": None,
             "lastOrderResult": None,
             "pendingPaperOrder": None,
+            "strategyRuntimeState": None,
             "lastDustDisposition": None,
         }
     )
@@ -3214,6 +3934,25 @@ def _update_daily_drawdown(
     return loss_drawdown_pct, profit_drawdown_pct
 
 
+def _update_strategy_drawdown(
+    state: dict[str, Any],
+    equity: float,
+    strategy: StrategyConfig,
+) -> float:
+    if strategy.policy is None or strategy.risk.max_drawdown_pct is None:
+        return 0.0
+    peak = max(float(state.get("strategyPeakEquity") or equity), equity, 0.00000001)
+    state["strategyPeakEquity"] = round(peak, 8)
+    drawdown_pct = max(0.0, (peak - equity) / peak * 100)
+    state["strategyDrawdownPct"] = round(drawdown_pct, 4)
+    if (
+        not state.get("strategyRiskHaltReason")
+        and drawdown_pct >= strategy.risk.max_drawdown_pct * 100
+    ):
+        state["strategyRiskHaltReason"] = "已达到策略累计最大回撤上限。"
+    return drawdown_pct
+
+
 def _paper_session_summary(state: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "paperSessionId": str(state.get("paperSessionId") or "paper-session-initial"),
@@ -3236,6 +3975,10 @@ def _reset_strategy_decision_context(state: dict[str, Any]) -> None:
             "lastDecision": None,
             "lastDecisionContract": None,
             "pendingPaperOrder": None,
+            "strategyRuntimeState": None,
+            "strategyPeakEquity": float(state.get("equity") or 0.0),
+            "strategyDrawdownPct": 0.0,
+            "strategyRiskHaltReason": None,
         }
     )
 
@@ -3307,11 +4050,15 @@ def _default_state() -> dict[str, Any]:
         "dailyLossDrawdownPct": 0.0,
         "dailyProfitDrawdownPct": 0.0,
         "dailyRiskHaltReason": None,
+        "strategyPeakEquity": 100.0,
+        "strategyDrawdownPct": 0.0,
+        "strategyRiskHaltReason": None,
         "tradeCount": 0,
         "exchangeFeeTotal": 0.0,
         "estimatedFeeCount": 0,
         "feeEvidenceComplete": True,
         "tradeTimestamps": [],
+        "entryTradeTimestamps": [],
         "lastBarTimestamp": None,
         "lastPrice": None,
         "oneBarChangePct": None,
@@ -3331,6 +4078,7 @@ def _default_state() -> dict[str, Any]:
         "lastDecisionContract": None,
         "lastOrderResult": None,
         "pendingPaperOrder": None,
+        "strategyRuntimeState": None,
         "lastTrade": None,
         "lastTestnetOrder": None,
         "lastLiveOrder": None,
@@ -3386,11 +4134,31 @@ def _strategy_evidence(state: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _strategy_evaluation_identity(
+    evaluation: StrategyEvaluation,
+) -> dict[str, str]:
+    identity = normalize_strategy_evaluation_identity(
+        {
+            "contextHash": evaluation.context_hash,
+            "evaluationId": evaluation.evaluation_id,
+            "stateBeforeHash": evaluation.state_before_hash,
+            "evaluationHash": canonical_sha256(
+                strategy_evaluation_to_payload(evaluation)
+            ),
+        }
+    )
+    if identity is None:
+        raise ValueError("strategy_evaluation_identity_invalid")
+    return identity
+
+
 def _strategy_switch_blocker(state: Mapping[str, Any]) -> str | None:
     if state.get("enabled") is True:
         return "strategy_switch_requires_paused_monitoring"
     if float(state.get("position") or 0) > 1e-12:
         return "strategy_switch_requires_flat_position"
+    if isinstance(state.get("pendingPaperOrder"), dict):
+        return "strategy_switch_requires_reconciled_orders"
     for key in ("lastTestnetOrder", "lastLiveOrder"):
         order = state.get(key)
         if isinstance(order, dict) and order.get("state") in _UNRESOLVED_ORDER_STATES:
@@ -3403,6 +4171,8 @@ def _strategy_binding_error_detail(code: str) -> str:
         "strategy_binding_audit_run_changed": "绑定的审计运行已变更",
         "strategy_binding_audit_evidence_changed": "绑定的审计证据已变更",
         "strategy_binding_audit_identity_missing": "缺少绑定的审计身份",
+        "strategy_binding_sealed_dataset_content_changed": "绑定的封存数据完整性版本已变更",
+        "strategy_binding_fresh_profitability_gate_failed": "绑定策略的新鲜复审不再满足盈利门槛",
         "strategy_binding_snapshot_missing": "缺少绑定时固定的策略快照",
         "strategy_binding_snapshot_changed": "绑定时固定的策略快照校验失败",
         "strategy_binding_snapshot_revision_mismatch": "固定策略快照与绑定版本不一致",

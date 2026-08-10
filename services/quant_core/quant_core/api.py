@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from quant_core.deployment import load_deployment_config
 from quant_core.auto_paper_trading import (
     AutoPaperTradingRunner,
@@ -11,6 +12,7 @@ from quant_core.ai_review_providers import AiReviewProviderRegistry
 from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 from quant_core.market_klines import QuantDingerKlineAdapter
 from quant_core.monitoring import MonitoringRunner
+from quant_core.sealed_datasets import SealedDatasetStore
 from quant_core.stage6_sandbox import (
     BinanceSpotTestnetRoute,
     Stage6SandboxExecutionService,
@@ -191,6 +193,9 @@ def run(host: str | None = None, port: int | str | None = None) -> None:
         QuantApiHandler.market_information_service.update_finnhub_api_key(
             os.environ.get("FINNHUB_API_KEY", "")
         )
+    QuantApiHandler.sealed_dataset_store = SealedDatasetStore(
+        Path("data/sealed_datasets.sqlite")
+    )
     bind_host, bind_port = resolve_api_bind(host=host, port=port)
     factory = QuantApiHandler.stage6_sandbox_route_factory
     route = (

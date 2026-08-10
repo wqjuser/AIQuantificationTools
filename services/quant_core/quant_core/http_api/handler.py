@@ -46,6 +46,10 @@ from quant_core.p2_readiness_acceptance import DEFAULT_P2_READINESS_ACCEPTANCE_R
 from quant_core.research_import_undo import ResearchRunImportUndoStore
 from quant_core.research_notes import ResearchNoteStore
 from quant_core.runs import ResearchRunStore
+from quant_core.sealed_datasets import (
+    FORMAL_MINIMUM_BTC_1M_ROWS,
+    SealedDatasetStore,
+)
 from quant_core.settings import PlatformSettingsStore
 from quant_core.stage1_bootstrap_preflight import DEFAULT_STAGE1_BOOTSTRAP_PREFLIGHT_REPORT_PATH
 from quant_core.stage1_daily_use import DEFAULT_STAGE1_DAILY_USE_REPORT_PATH
@@ -75,6 +79,8 @@ class ComposedQuantApiHandler(
     assistant = LocalResearchAssistant()
     engine = BacktestEngine()
     run_store = ResearchRunStore(Path("data/research_runs.sqlite"))
+    sealed_dataset_store: SealedDatasetStore | None = None
+    sealed_dataset_minimum_rows = FORMAL_MINIMUM_BTC_1M_ROWS
     paper_execution_store = PaperExecutionStore(Path("data/paper_executions.sqlite"))
     portfolio_paper_order_store = PortfolioPaperOrderStore(Path("data/portfolio_paper_orders.sqlite"))
     portfolio_paper_order_approval_store = PortfolioPaperOrderApprovalStore(Path("data/portfolio_paper_order_approvals.sqlite"))

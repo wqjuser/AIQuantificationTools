@@ -21,8 +21,17 @@ from quant_core.adapters import FreeStockDbMarketDataAdapter
 from quant_core.ai import LocalResearchAssistant
 from quant_core.api import QuantApiHandler, _adapter_error_message, _adapter_error_target
 from quant_core.cache import MarketDataCache
-from quant_core.canonical import canonical_data_hash, canonical_sha256, normalize_snapshot_bars
+from quant_core.canonical import (
+    CHUNKED_DATA_SNAPSHOT_HASH_VERSION,
+    canonical_data_hash,
+    canonical_sha256,
+    flatten_chunked_data_snapshot,
+    normalize_snapshot_bar_chunks,
+    normalize_snapshot_bars,
+    verify_chunked_data_snapshot,
+)
 from quant_core.data_foundation import (
+    assess_chunked_market_data_quality,
     assess_market_data_quality,
     build_cross_source_difference_report,
     normalize_cross_source_difference_report,
@@ -58,6 +67,27 @@ def daily_bars(
     return bars
 
 
+def minute_bars(
+    count: int,
+    *,
+    start: datetime = datetime(2026, 5, 1, tzinfo=timezone.utc),
+) -> list[OHLCVBar]:
+    return [
+        OHLCVBar(
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            timestamp=start + timedelta(minutes=index),
+            open=100 + index / 100,
+            high=101 + index / 100,
+            low=99 + index / 100,
+            close=100.5 + index / 100,
+            volume=1_000 + index,
+        )
+        for index in range(count)
+    ]
+
+
 class FixedAdapter:
     def __init__(self, bars, source="tencent"):
         self.bars = bars
@@ -89,6 +119,257 @@ class CountingAssistant:
 
 
 class M3DataFoundationTests(unittest.TestCase):
+    def test_cache_half_open_window_and_provenance_exclude_end_boundary(self):
+        values = minute_bars(6)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "market.sqlite"
+            cache = MarketDataCache(path)
+            cache.upsert_bars(
+                values[:4],
+                source="binance",
+                adjustment_mode="none",
+                snapshot_id="snapshot-binance",
+            )
+            cache.upsert_bars(
+                values[4:],
+                source="coinbase",
+                adjustment_mode="none",
+                snapshot_id="snapshot-coinbase",
+            )
+            cache = MarketDataCache(path)
+
+            selected = cache.read_bars_half_open(
+                "crypto",
+                "BTC/USDT",
+                "1m",
+                start=values[1].timestamp.astimezone(timezone(timedelta(hours=8))),
+                end_exclusive=values[4].timestamp.astimezone(timezone(timedelta(hours=8))),
+            )
+            mixed_provenance = cache.read_provenance_half_open(
+                "crypto",
+                "BTC/USDT",
+                "1m",
+                start=values[1].timestamp,
+                end_exclusive=values[5].timestamp,
+            )
+            provenance = cache.read_provenance_half_open(
+                "crypto",
+                "BTC/USDT",
+                "1m",
+                start=values[1].timestamp.astimezone(timezone(timedelta(hours=8))),
+                end_exclusive=values[4].timestamp.astimezone(timezone(timedelta(hours=8))),
+            )
+
+        self.assertEqual(selected, values[1:4])
+        self.assertEqual(
+            provenance,
+            {
+                "source": "binance",
+                "adjustmentMode": "none",
+                "snapshotId": "snapshot-binance",
+            },
+        )
+        self.assertIsNone(mixed_provenance)
+
+    def test_chunked_canonical_snapshot_hash_matches_flat_hash_and_not_chunk_size(self):
+        values = minute_bars(6)
+        snapshots = [
+            normalize_snapshot_bar_chunks(
+                [values[index : index + chunk_rows] for index in range(0, len(values), chunk_rows)],
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+            )
+            for chunk_rows in (2, 3)
+        ]
+        expected = normalize_snapshot_bars(values)
+
+        self.assertTrue(all(snapshot["hashVersion"] == CHUNKED_DATA_SNAPSHOT_HASH_VERSION for snapshot in snapshots))
+        self.assertEqual(snapshots[0]["hash"], canonical_data_hash(expected))
+        self.assertEqual(snapshots[0]["hash"], snapshots[1]["hash"])
+        self.assertEqual(
+            flatten_chunked_data_snapshot(
+                snapshots[0],
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+            ),
+            expected,
+        )
+        self.assertEqual(
+            verify_chunked_data_snapshot(
+                snapshots[0],
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+            ),
+            snapshots[0],
+        )
+        self.assertTrue(all(len(chunk["bars"]) <= 500 for chunk in snapshots[0]["chunks"]))
+        self.assertTrue(all(chunk["hash"] == canonical_data_hash(chunk["bars"]) for chunk in snapshots[0]["chunks"]))
+
+    def test_chunked_canonical_snapshot_rejects_boundaries_context_and_invalid_data(self):
+        values = minute_bars(502)
+        cases = {
+            "oversized": ([values[:501], values[501:]], "data_snapshot_chunk_too_many_bars"),
+            "duplicate": ([values[:2], values[1:3]], "data_snapshot_duplicate_timestamp"),
+            "gap": ([values[:2], values[3:5]], "data_snapshot_missing_bar_gap"),
+            "disorder": ([[values[1], values[0]], values[2:4]], "data_snapshot_timestamp_disorder"),
+            "context": (
+                [values[:2], [replace(values[2], symbol="ETH/USDT"), values[3]]],
+                "data_snapshot_context_mismatch",
+            ),
+            "invalid": (
+                [[replace(values[0], high=values[0].close - 1), values[1]]],
+                "data_snapshot_ohlc_relationship_invalid",
+            ),
+        }
+
+        for name, (chunks, error) in cases.items():
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, error):
+                normalize_snapshot_bar_chunks(
+                    chunks,
+                    market="crypto",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                )
+
+    def test_chunked_canonical_snapshot_detects_tampered_chunk_and_manifest(self):
+        values = minute_bars(6)
+        snapshot = normalize_snapshot_bar_chunks(
+            [values[:3], values[3:]],
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+        )
+        tampered_chunk = json.loads(json.dumps(snapshot))
+        tampered_chunk["chunks"][0]["bars"][0]["close"] = 999
+        tampered_index = json.loads(json.dumps(snapshot))
+        tampered_index["chunks"][0]["index"] = False
+        missing_chunk = {**snapshot, "chunks": snapshot["chunks"][:1]}
+        tampered_hash = {**snapshot, "hash": "0" * 64}
+
+        for name, payload, error in (
+            ("chunk", tampered_chunk, "data_snapshot_chunk_hash_mismatch"),
+            ("index", tampered_index, "data_snapshot_chunk_index_invalid"),
+            ("missing", missing_chunk, "data_snapshot_rows_mismatch"),
+            ("manifest", tampered_hash, "data_snapshot_hash_mismatch"),
+        ):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, error):
+                verify_chunked_data_snapshot(
+                    payload,
+                    market="crypto",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                )
+
+    def test_chunked_quality_reuses_full_contract_and_rejects_mixed_incomplete_or_demo_sources(self):
+        values = minute_bars(600)
+        chunks = [values[:500], values[500:]]
+        request = MarketDataRequest(
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            start=values[0].timestamp,
+            end=values[-1].timestamp + timedelta(minutes=1),
+        )
+        observed_at = values[-1].timestamp + timedelta(minutes=2)
+        complete = assess_chunked_market_data_quality(
+            request,
+            chunks,
+            [
+                DataQuality(source="binance", origin_source="binance", is_complete=True, rows=500),
+                DataQuality(source="binance", origin_source="binance", is_complete=True, rows=100),
+            ],
+            observed_at=observed_at,
+        )
+
+        self.assertTrue(complete.is_complete)
+        self.assertEqual(complete.rows, 600)
+        self.assertEqual(complete.origin_source, "binance")
+        self.assertEqual(complete.coverage, {"actualRows": 600, "expectedRows": 600, "gapCount": 0, "ratio": 1.0})
+        expected_bars = normalize_snapshot_bars(values[:500]) + normalize_snapshot_bars(values[500:])
+        self.assertEqual(complete.canonical_hash, canonical_data_hash(expected_bars))
+        self.assertIsNotNone(complete.observed_at)
+        self.assertIsNotNone(complete.market_time)
+        self.assertIsNotNone(complete.calendar_id)
+
+        shortened = assess_chunked_market_data_quality(
+            request,
+            [values[:500], values[500:599]],
+            [
+                DataQuality(source="binance", is_complete=True, rows=500),
+                DataQuality(source="binance", is_complete=True, rows=99),
+            ],
+            observed_at=observed_at,
+        )
+        self.assertFalse(shortened.is_complete)
+        self.assertEqual(shortened.coverage["actualRows"], 599)
+        self.assertEqual(shortened.coverage["expectedRows"], 600)
+        self.assertIn(
+            "requested_window_boundary_mismatch",
+            {issue["code"] for issue in shortened.issues},
+        )
+        self.assertIn(
+            "requested_window_rows_mismatch",
+            {issue["code"] for issue in shortened.issues},
+        )
+
+        invalid_qualities = {
+            "mixed": [
+                DataQuality(source="binance", is_complete=True, rows=500),
+                DataQuality(source="coinbase", is_complete=True, rows=100),
+            ],
+            "incomplete": [
+                DataQuality(source="binance", is_complete=True, rows=500),
+                DataQuality(source="binance", is_complete=False, rows=100),
+            ],
+            "demo": [
+                DataQuality(source="demo", is_complete=True, rows=500),
+                DataQuality(source="demo", is_complete=True, rows=100),
+            ],
+            "page_issue": [
+                DataQuality(
+                    source="binance",
+                    is_complete=True,
+                    rows=500,
+                    issues=[{
+                        "code": "upstream_page_blocked",
+                        "severity": "blocked",
+                        "count": 1,
+                        "message": "A source page failed validation.",
+                    }],
+                ),
+                DataQuality(source="binance", is_complete=True, rows=100),
+            ],
+            "hash": [
+                DataQuality(
+                    source="binance",
+                    is_complete=True,
+                    rows=500,
+                    canonical_hash="0" * 64,
+                ),
+                DataQuality(source="binance", is_complete=True, rows=100),
+            ],
+        }
+        expected_codes = {
+            "mixed": "mixed_source",
+            "incomplete": "upstream_incomplete",
+            "demo": "demo_source",
+            "page_issue": "upstream_page_blocked",
+            "hash": "page_canonical_hash_mismatch",
+        }
+        for name, qualities in invalid_qualities.items():
+            with self.subTest(name=name):
+                assessed = assess_chunked_market_data_quality(
+                    request,
+                    chunks,
+                    qualities,
+                    observed_at=observed_at,
+                )
+                self.assertFalse(assessed.is_complete)
+                self.assertIn(expected_codes[name], {issue["code"] for issue in assessed.issues})
+
     def test_quality_contract_detects_structure_gaps_freshness_and_identity(self):
         request = MarketDataRequest(
             market="crypto",

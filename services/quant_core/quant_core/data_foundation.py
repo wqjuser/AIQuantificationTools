@@ -4,7 +4,13 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from quant_core.canonical import canonical_data_hash, canonical_sha256, normalize_snapshot_bars
+from quant_core.canonical import (
+    canonical_data_hash,
+    canonical_sha256,
+    flatten_chunked_data_snapshot,
+    normalize_snapshot_bar_chunks,
+    normalize_snapshot_bars,
+)
 from quant_core.domain import DataQuality, MarketDataRequest, OHLCVBar
 from quant_core.market_calendar import build_market_calendar_status
 
@@ -27,6 +33,23 @@ def assess_market_data_quality(
     *,
     observed_at: datetime | None = None,
 ) -> DataQuality:
+    return _assess_market_data_quality(
+        request,
+        bars,
+        quality,
+        observed_at=observed_at,
+        normalized_bars=None,
+    )
+
+
+def _assess_market_data_quality(
+    request: MarketDataRequest,
+    bars: list[OHLCVBar],
+    quality: DataQuality,
+    *,
+    observed_at: datetime | None,
+    normalized_bars: list[dict[str, Any]] | None,
+) -> DataQuality:
     observed = _aware(observed_at or datetime.now(timezone.utc))
     calendar = build_market_calendar_status(request.market, at=observed)
     issues: list[dict[str, Any]] = []
@@ -45,7 +68,9 @@ def assess_market_data_quality(
         _add_issue(issues, "timestamp_disorder", "blocked", disorder_count, "Bars are not ordered by timestamp.")
 
     normalized: list[dict[str, Any]] = []
-    if bars and not duplicate_count:
+    if normalized_bars is not None:
+        normalized = normalized_bars
+    elif bars and not duplicate_count:
         try:
             normalized = normalize_snapshot_bars(bars)
         except ValueError as error:
@@ -93,6 +118,214 @@ def assess_market_data_quality(
         canonical_hash=canonical_data_hash(normalized) if normalized else "",
         issues=issues,
         origin_source=quality.origin_source or quality.source,
+    )
+
+
+def assess_chunked_market_data_quality(
+    request: MarketDataRequest,
+    chunks: list[list[OHLCVBar]],
+    page_qualities: list[DataQuality],
+    *,
+    observed_at: datetime | None = None,
+) -> DataQuality:
+    bars = [bar for chunk in chunks if isinstance(chunk, list) for bar in chunk]
+    issues: list[dict[str, Any]] = []
+    warnings = [warning for quality in page_qualities for warning in quality.warnings]
+    for quality in page_qualities:
+        for issue in quality.issues:
+            _add_issue(
+                issues,
+                str(issue.get("code") or "upstream_page_issue"),
+                "warning" if issue.get("severity") == "warning" else "blocked",
+                _int(issue.get("count")),
+                str(issue.get("message") or "A source page failed validation."),
+            )
+    expected_rows: int | None = None
+    if request.start is None or request.end is None:
+        _add_issue(
+            issues,
+            "requested_window_required",
+            "blocked",
+            1,
+            "Chunked datasets require an explicit half-open request window.",
+        )
+    else:
+        requested_start = _aware(request.start)
+        requested_end_exclusive = _aware(request.end)
+        step = timedelta(seconds=_TIMEFRAME_SECONDS[request.timeframe])
+        duration = requested_end_exclusive - requested_start
+        if duration <= timedelta(0) or duration % step:
+            _add_issue(
+                issues,
+                "requested_window_invalid",
+                "blocked",
+                1,
+                "The half-open request window must contain whole timeframes.",
+            )
+        else:
+            expected_rows = duration // step
+            boundary_matches = (
+                bool(bars)
+                and _aware(bars[0].timestamp) == requested_start
+                and _aware(bars[-1].timestamp) + step == requested_end_exclusive
+            )
+            if not boundary_matches:
+                _add_issue(
+                    issues,
+                    "requested_window_boundary_mismatch",
+                    "blocked",
+                    1,
+                    "Chunk boundaries do not match the requested half-open window.",
+                )
+            if len(bars) != expected_rows:
+                _add_issue(
+                    issues,
+                    "requested_window_rows_mismatch",
+                    "blocked",
+                    abs(len(bars) - expected_rows) or 1,
+                    "The row count does not fill the requested half-open window.",
+                )
+    source_values = {quality.source for quality in page_qualities if quality.source}
+    origin_values = {
+        quality.origin_source or quality.source
+        for quality in page_qualities
+        if quality.origin_source or quality.source
+    }
+    adjustment_values = {
+        quality.adjustment_mode
+        for quality in page_qualities
+        if quality.adjustment_mode
+    }
+
+    page_count_matches = len(page_qualities) == len(chunks)
+    if not page_count_matches:
+        _add_issue(
+            issues,
+            "page_quality_count_mismatch",
+            "blocked",
+            abs(len(page_qualities) - len(chunks)) or 1,
+            "Each data chunk must carry one quality record.",
+        )
+    page_row_counts_match = page_count_matches and all(
+        quality.rows == len(chunk)
+        for chunk, quality in zip(chunks, page_qualities)
+    )
+    if not page_row_counts_match:
+        _add_issue(
+            issues,
+            "page_quality_rows_mismatch",
+            "blocked",
+            1,
+            "A chunk row count does not match its quality record.",
+        )
+    if len(source_values) != 1 or len(origin_values) != 1:
+        _add_issue(
+            issues,
+            "mixed_source",
+            "blocked",
+            max(len(source_values), len(origin_values), 1),
+            "All chunks must have the same data source and origin source.",
+        )
+    if len(adjustment_values) != 1:
+        _add_issue(
+            issues,
+            "mixed_adjustment_mode",
+            "blocked",
+            max(len(adjustment_values), 1),
+            "All chunks must have the same adjustment mode.",
+        )
+
+    provenance_values = {*source_values, *origin_values}
+    if any("demo" in source.lower() for source in provenance_values):
+        _add_issue(
+            issues,
+            "demo_source",
+            "blocked",
+            1,
+            "Demo market data cannot be used for a sealed dataset.",
+        )
+
+    normalized: list[dict[str, Any]] = []
+    snapshot: dict[str, Any] | None = None
+    try:
+        snapshot = normalize_snapshot_bar_chunks(
+            chunks,
+            market=request.market,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+        )
+        normalized = flatten_chunked_data_snapshot(
+            snapshot,
+            market=request.market,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+        )
+    except ValueError as error:
+        code = str(error)
+        _add_issue(issues, code, "blocked", 1, _canonical_error_message(code))
+    if snapshot is not None:
+        for index, quality in enumerate(page_qualities[:len(chunks)]):
+            if (
+                quality.canonical_hash
+                and quality.canonical_hash != snapshot["chunks"][index]["hash"]
+            ):
+                _add_issue(
+                    issues,
+                    "page_canonical_hash_mismatch",
+                    "blocked",
+                    1,
+                    "A page canonical hash does not match its chunk contents.",
+                )
+
+    upstream_complete = (
+        bool(page_qualities)
+        and page_count_matches
+        and page_row_counts_match
+        and all(quality.is_complete for quality in page_qualities)
+    )
+    source = next(iter(source_values)) if len(source_values) == 1 else "mixed"
+    origin_source = next(iter(origin_values)) if len(origin_values) == 1 else None
+    adjustment_mode = (
+        next(iter(adjustment_values)) if len(adjustment_values) == 1 else "mixed"
+    )
+    assessed = _assess_market_data_quality(
+        request,
+        bars,
+        DataQuality(
+            source=source,
+            origin_source=origin_source,
+            is_complete=upstream_complete,
+            warnings=list(dict.fromkeys(warnings)),
+            rows=len(bars),
+            adjustment_mode=adjustment_mode,
+        ),
+        observed_at=observed_at,
+        normalized_bars=normalized,
+    )
+    combined_issues = [*assessed.issues, *issues]
+    combined_warnings = list(dict.fromkeys([
+        *assessed.warnings,
+        *(str(issue["message"]) for issue in issues),
+    ]))
+    blocking = any(issue["severity"] == "blocked" for issue in combined_issues)
+    coverage = assessed.coverage
+    if expected_rows is not None:
+        gap_count = max(
+            int(assessed.coverage.get("gapCount", 0)),
+            max(0, expected_rows - len(bars)),
+        )
+        coverage = {
+            "actualRows": len(bars),
+            "expectedRows": expected_rows,
+            "gapCount": gap_count,
+            "ratio": round(len(bars) / expected_rows, 6) if expected_rows else 0.0,
+        }
+    return replace(
+        assessed,
+        is_complete=assessed.is_complete and not blocking,
+        warnings=combined_warnings,
+        coverage=coverage,
+        issues=combined_issues,
     )
 
 

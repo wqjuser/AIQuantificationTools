@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from quant_core.canonical import strategy_config_to_payload
+from quant_core.canonical import strategy_config_from_payload, strategy_config_to_payload
 from quant_core.domain import StrategyConfig
 
 
@@ -24,6 +24,7 @@ class StrategyLibraryRecord:
     status: str
     audit_run_id: str | None
     strategy_config: dict[str, Any]
+    promotion_evidence: dict[str, Any] | None = None
 
 
 class StrategyLibraryStore:
@@ -38,114 +39,170 @@ class StrategyLibraryStore:
         strategy: StrategyConfig,
         *,
         audit_run_id: str | None = None,
+        promotion_evidence: dict[str, Any] | None = None,
         created_at: datetime | None = None,
     ) -> StrategyLibraryRecord:
-        timestamp = created_at or datetime.now(timezone.utc)
-        strategy_config = strategy_config_to_payload(strategy)
-        existing = self.get(strategy.revision)
-        final_audit_run_id = audit_run_id or (existing.audit_run_id if existing else None)
-        status = "audited" if final_audit_run_id else "draft"
-        created_value = existing.created_at if existing else timestamp
-        connection = self._connect()
-        try:
-            connection.execute(
-                """
-                insert into strategy_versions (
-                    revision,
-                    created_at,
-                    name,
-                    market,
-                    symbol,
-                    timeframe,
-                    version,
-                    status,
-                    audit_run_id,
-                    strategy_config_json
-                )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict(revision) do update set
-                    status = excluded.status,
-                    audit_run_id = excluded.audit_run_id
-                """,
-                (
-                    strategy.revision,
-                    created_value.isoformat(),
-                    strategy.name,
-                    strategy.market,
-                    strategy.symbols[0] if strategy.symbols else "",
-                    strategy.timeframe,
-                    strategy.version,
-                    status,
-                    final_audit_run_id,
-                    json.dumps(strategy_config, ensure_ascii=False, sort_keys=True),
-                ),
-            )
-            connection.commit()
-        finally:
-            connection.close()
-        saved = self.get(strategy.revision)
-        if saved is None:
-            raise RuntimeError("strategy_library_save_failed")
-        return saved
+        return self._save_config(
+            strategy_config_to_payload(strategy),
+            audit_run_id=audit_run_id,
+            promotion_evidence=promotion_evidence,
+            created_at=created_at,
+        )
 
     def save_payload(
         self,
         strategy_config: dict[str, Any],
         *,
         audit_run_id: str | None = None,
+        promotion_evidence: dict[str, Any] | None = None,
         created_at: datetime | None = None,
     ) -> StrategyLibraryRecord:
         config = _normalize_strategy_config_payload(strategy_config)
+        return self._save_config(
+            config,
+            audit_run_id=audit_run_id,
+            promotion_evidence=promotion_evidence,
+            created_at=created_at,
+        )
+
+    def _save_config(
+        self,
+        config: dict[str, Any],
+        *,
+        audit_run_id: str | None,
+        promotion_evidence: dict[str, Any] | None,
+        created_at: datetime | None,
+    ) -> StrategyLibraryRecord:
         revision = str(config.get("revision") or "").strip()
         if not revision:
             raise ValueError("strategy_revision_required")
+        requested_audit_run_id = str(audit_run_id or "").strip() or None
+        requested_promotion = (
+            _canonical_object(
+                promotion_evidence,
+                "strategy_library_promotion_evidence_invalid",
+            )
+            if promotion_evidence is not None
+            else None
+        )
+        if requested_promotion is not None and requested_audit_run_id is None:
+            raise ValueError("strategy_library_promotion_requires_audit_run")
+        if requested_promotion is not None and (
+            requested_promotion.get("freshSourceRunId") != requested_audit_run_id
+            or requested_promotion.get("strategyRevision") != revision
+        ):
+            raise ValueError("strategy_library_promotion_evidence_invalid")
         timestamp = created_at or datetime.now(timezone.utc)
-        existing = self.get(revision)
-        final_audit_run_id = audit_run_id or (existing.audit_run_id if existing else None)
-        status = "audited" if final_audit_run_id else "draft"
-        created_value = existing.created_at if existing else timestamp
-        symbols = config.get("symbols") if isinstance(config.get("symbols"), list) else []
+        symbols = (
+            config.get("symbols")
+            if isinstance(config.get("symbols"), list)
+            else []
+        )
         connection = self._connect()
         try:
-            connection.execute(
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
                 """
-                insert into strategy_versions (
-                    revision,
-                    created_at,
-                    name,
-                    market,
-                    symbol,
-                    timeframe,
-                    version,
-                    status,
-                    audit_run_id,
-                    strategy_config_json
-                )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict(revision) do update set
-                    status = excluded.status,
-                    audit_run_id = excluded.audit_run_id
+                select revision, created_at, name, market, symbol, timeframe,
+                       version, status, audit_run_id, strategy_config_json,
+                       promotion_evidence_json
+                from strategy_versions
+                where revision = ?
                 """,
-                (
-                    revision,
-                    created_value.isoformat(),
-                    str(config.get("name") or "Imported strategy"),
-                    str(config.get("market") or "ashare"),
-                    str(symbols[0] if symbols else ""),
-                    str(config.get("timeframe") or "1d"),
-                    int(_number_or_default(config.get("version"), 1)),
-                    status,
-                    final_audit_run_id,
-                    json.dumps(config, ensure_ascii=False, sort_keys=True),
-                ),
+                (revision,),
+            ).fetchone()
+            existing = _row_to_record(row) if row is not None else None
+            if existing is not None and existing.strategy_config != config:
+                raise ValueError("strategy_library_revision_conflict")
+            if (
+                existing is not None
+                and existing.promotion_evidence is not None
+                and requested_promotion is not None
+                and (
+                    existing.audit_run_id == requested_audit_run_id
+                    or existing.promotion_evidence.get("experimentId")
+                    == requested_promotion.get("experimentId")
+                )
+                and existing.promotion_evidence != requested_promotion
+            ):
+                raise ValueError("strategy_library_promotion_evidence_conflict")
+
+            prior_audit_run_id = (
+                existing.audit_run_id if existing is not None else None
             )
+            if (
+                requested_audit_run_id is not None
+                and requested_audit_run_id != prior_audit_run_id
+            ):
+                final_audit_run_id = requested_audit_run_id
+                final_promotion = requested_promotion
+            else:
+                final_audit_run_id = prior_audit_run_id or requested_audit_run_id
+                final_promotion = (
+                    existing.promotion_evidence if existing is not None else None
+                ) or requested_promotion
+            if final_promotion is not None and final_audit_run_id is None:
+                raise ValueError("strategy_library_promotion_requires_audit_run")
+            status = "audited" if final_audit_run_id else "draft"
+            created_value = existing.created_at if existing else timestamp
+            values = (
+                revision,
+                created_value.isoformat(),
+                str(config.get("name") or "Imported strategy"),
+                str(config.get("market") or "ashare"),
+                str(symbols[0] if symbols else ""),
+                str(config.get("timeframe") or "1d"),
+                int(_number_or_default(config.get("version"), 1)),
+                status,
+                final_audit_run_id,
+                json.dumps(config, ensure_ascii=False, sort_keys=True),
+                _dump_optional_json(final_promotion),
+            )
+            if existing is None:
+                connection.execute(
+                    """
+                    insert into strategy_versions (
+                        revision, created_at, name, market, symbol, timeframe,
+                        version, status, audit_run_id, strategy_config_json,
+                        promotion_evidence_json
+                    )
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+            else:
+                connection.execute(
+                    """
+                    update strategy_versions
+                    set status = ?, audit_run_id = ?, promotion_evidence_json = ?
+                    where revision = ?
+                    """,
+                    (
+                        status,
+                        final_audit_run_id,
+                        _dump_optional_json(final_promotion),
+                        revision,
+                    ),
+                )
+            saved_row = connection.execute(
+                """
+                select revision, created_at, name, market, symbol, timeframe,
+                       version, status, audit_run_id, strategy_config_json,
+                       promotion_evidence_json
+                from strategy_versions
+                where revision = ?
+                """,
+                (revision,),
+            ).fetchone()
+            if saved_row is None:
+                raise RuntimeError("strategy_library_save_failed")
             connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
-        saved = self.get(revision)
-        if saved is None:
-            raise RuntimeError("strategy_library_save_failed")
-        return saved
+        return _row_to_record(saved_row)
 
     def list_recent(
         self,
@@ -168,7 +225,9 @@ class StrategyLibraryStore:
         try:
             rows = connection.execute(
                 f"""
-                select revision, created_at, name, market, symbol, timeframe, version, status, audit_run_id, strategy_config_json
+                select revision, created_at, name, market, symbol, timeframe, version,
+                       status, audit_run_id, strategy_config_json,
+                       promotion_evidence_json
                 from strategy_versions
                 {where}
                 order by created_at desc, rowid desc
@@ -188,7 +247,9 @@ class StrategyLibraryStore:
         try:
             row = connection.execute(
                 """
-                select revision, created_at, name, market, symbol, timeframe, version, status, audit_run_id, strategy_config_json
+                select revision, created_at, name, market, symbol, timeframe, version,
+                       status, audit_run_id, strategy_config_json,
+                       promotion_evidence_json
                 from strategy_versions
                 where revision = ?
                 """,
@@ -213,9 +274,10 @@ class StrategyLibraryStore:
                     version,
                     status,
                     audit_run_id,
-                    strategy_config_json
+                    strategy_config_json,
+                    promotion_evidence_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(revision) do update set
                     created_at = excluded.created_at,
                     name = excluded.name,
@@ -225,7 +287,8 @@ class StrategyLibraryStore:
                     version = excluded.version,
                     status = excluded.status,
                     audit_run_id = excluded.audit_run_id,
-                    strategy_config_json = excluded.strategy_config_json
+                    strategy_config_json = excluded.strategy_config_json,
+                    promotion_evidence_json = excluded.promotion_evidence_json
                 """,
                 (
                     record.revision,
@@ -238,6 +301,7 @@ class StrategyLibraryStore:
                     record.status,
                     record.audit_run_id,
                     json.dumps(record.strategy_config, ensure_ascii=False, sort_keys=True),
+                    _dump_optional_json(record.promotion_evidence),
                 ),
             )
             connection.commit()
@@ -277,10 +341,21 @@ class StrategyLibraryStore:
                     version integer not null,
                     status text not null,
                     audit_run_id text,
-                    strategy_config_json text not null
+                    strategy_config_json text not null,
+                    promotion_evidence_json text
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "pragma table_info(strategy_versions)"
+                ).fetchall()
+            }
+            if "promotion_evidence_json" not in columns:
+                connection.execute(
+                    "alter table strategy_versions add column promotion_evidence_json text"
+                )
             connection.execute(
                 "create index if not exists idx_strategy_versions_context on strategy_versions(market, symbol, created_at)"
             )
@@ -303,6 +378,7 @@ def strategy_library_record_to_payload(record: StrategyLibraryRecord | None) -> 
         "version": record.version,
         "status": record.status,
         "auditRunId": record.audit_run_id,
+        "promotionEvidence": record.promotion_evidence,
         "strategyConfig": record.strategy_config,
         "strategySnapshot": strategy_snapshot_from_config_payload(record.strategy_config),
     }
@@ -313,6 +389,34 @@ def strategy_library_records_to_payload(records: list[StrategyLibraryRecord]) ->
 
 
 def strategy_snapshot_from_config_payload(config: dict[str, Any]) -> dict[str, str]:
+    if int(_number_or_default(config.get("version"), 1)) == 2 and isinstance(config.get("policy"), dict):
+        policy = config["policy"]
+        regime = policy.get("regime") if isinstance(policy.get("regime"), dict) else {}
+        breakout = policy.get("breakout") if isinstance(policy.get("breakout"), dict) else {}
+        volume = policy.get("volume") if isinstance(policy.get("volume"), dict) else {}
+        atr = policy.get("atr") if isinstance(policy.get("atr"), dict) else {}
+        holding = policy.get("holding") if isinstance(policy.get("holding"), dict) else {}
+        cooldown = policy.get("cooldown") if isinstance(policy.get("cooldown"), dict) else {}
+        risk = config.get("risk") if isinstance(config.get("risk"), dict) else {}
+        return {
+            "name": str(config.get("name") or "BTC Regime Breakout v2"),
+            "entry": (
+                f"{regime.get('timeframe', '60m')} Close > SMA{regime.get('closeAboveSmaWindow', 200)} rising; "
+                f"5m prior-high breakout {breakout.get('lookbackBars', 20)}; "
+                f"volume >= prior SMA{volume.get('smaWindow', 20)} x {volume.get('multiplier', 1.5)}"
+            ),
+            "exit": (
+                f"ATR{atr.get('window', 14)} initial {atr.get('initialMultiple', 1)}x, "
+                f"trail {atr.get('trailingMultiple', 2)}x; holding {holding.get('maxBars', 48)} bars; "
+                f"cooldown {cooldown.get('bars', 12)} bars"
+            ),
+            "position": f"{_format_percent(_number_or_default(risk.get('positionPct'), 0.6))} cap per instrument",
+            "risk": (
+                f"Risk budget {_format_percent(_number_or_default(risk.get('riskBudgetPct'), 0.005))}, "
+                f"drawdown guard {_format_percent(_number_or_default(risk.get('maxDrawdownPct'), 0.03))}, "
+                "ATR exits, paper only"
+            ),
+        }
     risk = config.get("risk") if isinstance(config.get("risk"), dict) else {}
     entry_conditions = config.get("entryConditions") if isinstance(config.get("entryConditions"), list) else []
     exit_conditions = config.get("exitConditions") if isinstance(config.get("exitConditions"), list) else []
@@ -335,6 +439,13 @@ def strategy_snapshot_from_config_payload(config: dict[str, Any]) -> dict[str, s
 def _normalize_strategy_config_payload(value: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("strategy_config_must_be_object")
+    version = int(_number_or_default(value.get("version"), 1))
+    if version == 2:
+        canonical = strategy_config_to_payload(strategy_config_from_payload(value))
+        supplied_revision = str(value.get("revision") or "").strip()
+        if supplied_revision and supplied_revision != canonical["revision"]:
+            raise ValueError("strategy_revision_mismatch")
+        return canonical
     symbols = value.get("symbols") if isinstance(value.get("symbols"), list) else []
     entry_conditions = value.get("entryConditions", value.get("entry_conditions", []))
     exit_conditions = value.get("exitConditions", value.get("exit_conditions", []))
@@ -345,7 +456,7 @@ def _normalize_strategy_config_payload(value: dict[str, Any]) -> dict[str, Any]:
         "market": str(value.get("market") or "ashare"),
         "symbols": [str(symbol) for symbol in symbols],
         "timeframe": str(value.get("timeframe") or "1d"),
-        "version": int(_number_or_default(value.get("version"), 1)),
+        "version": version,
         "entryConditions": [
             _normalize_strategy_condition(condition) for condition in entry_conditions if isinstance(condition, dict)
         ],
@@ -374,6 +485,9 @@ def _row_to_record(row: tuple[Any, ...]) -> StrategyLibraryRecord:
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
     strategy_config = json.loads(row[9])
+    promotion_evidence = (
+        json.loads(row[10]) if len(row) > 10 and row[10] is not None else None
+    )
     return StrategyLibraryRecord(
         strategy_id=f"strategy-{row[0]}",
         created_at=created_at,
@@ -386,6 +500,41 @@ def _row_to_record(row: tuple[Any, ...]) -> StrategyLibraryRecord:
         status=row[7],
         audit_run_id=row[8],
         strategy_config=strategy_config if isinstance(strategy_config, dict) else {},
+        promotion_evidence=(
+            promotion_evidence if isinstance(promotion_evidence, dict) else None
+        ),
+    )
+
+
+def _canonical_object(value: Any, error: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(error)
+    try:
+        normalized = json.loads(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(error) from exc
+    if not isinstance(normalized, dict):
+        raise ValueError(error)
+    return normalized
+
+
+def _dump_optional_json(value: dict[str, Any] | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
     )
 
 

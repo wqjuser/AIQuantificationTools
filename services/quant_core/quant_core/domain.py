@@ -101,11 +101,77 @@ class Condition:
 
 
 @dataclass(frozen=True)
+class RegimeFilter:
+    timeframe: Timeframe
+    close_above_sma_window: int
+    sma_slope_lookback_bars: int
+
+
+@dataclass(frozen=True)
+class BreakoutRule:
+    lookback_bars: int
+    exclude_signal_bar: bool
+    one_shot_per_event: bool
+
+
+@dataclass(frozen=True)
+class VolumeConfirmationRule:
+    sma_window: int
+    multiplier: float
+    exclude_signal_bar: bool
+
+
+@dataclass(frozen=True)
+class AtrExitRule:
+    window: int
+    smoothing: str
+    initial_multiple: float
+    trailing_multiple: float
+    trailing_starts_after_profit: bool
+    trailing_activation: str
+    anchor: str
+    never_loosen: bool
+
+
+@dataclass(frozen=True)
+class HoldingRule:
+    max_bars: int
+    exit_only_without_positive_progress: bool
+    progress_definition: str
+
+
+@dataclass(frozen=True)
+class CooldownRule:
+    bars: int
+    starts_after: str
+    requires_new_breakout_event: bool
+
+
+@dataclass(frozen=True)
+class RegimeBreakoutPolicy:
+    decision_timeframe: Timeframe
+    completed_bars_only: bool
+    fill_timing: str
+    regime: RegimeFilter
+    breakout: BreakoutRule
+    volume: VolumeConfirmationRule
+    atr: AtrExitRule
+    holding: HoldingRule
+    cooldown: CooldownRule
+    kind: str = "regime_breakout_v2"
+
+
+@dataclass(frozen=True)
 class RiskRules:
     position_pct: float = 1.0
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
     max_drawdown_pct: float | None = None
+    risk_budget_pct: float | None = None
+    daily_loss_limit_pct: float | None = None
+    max_trade_groups_per_hour: int | None = None
+    max_entry_notional_quote: float | None = None
+    exit_notional_cap_quote: float | None = None
 
 
 @dataclass(frozen=True)
@@ -118,22 +184,45 @@ class StrategyConfig:
     exit_conditions: list[Condition]
     risk: RiskRules = field(default_factory=RiskRules)
     version: int = 1
+    policy: RegimeBreakoutPolicy | None = None
     revision: str = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "revision", self._revision())
 
     def _payload(self) -> dict[str, Any]:
-        return {
+        risk_payload: dict[str, Any] = {
+            "position_pct": self.risk.position_pct,
+            "stop_loss_pct": self.risk.stop_loss_pct,
+            "take_profit_pct": self.risk.take_profit_pct,
+            "max_drawdown_pct": self.risk.max_drawdown_pct,
+        }
+        for key in (
+            "risk_budget_pct",
+            "daily_loss_limit_pct",
+            "max_trade_groups_per_hour",
+            "max_entry_notional_quote",
+            "exit_notional_cap_quote",
+        ):
+            value = getattr(self.risk, key)
+            if value is not None or (
+                self.version == 2
+                and key in {"max_entry_notional_quote", "exit_notional_cap_quote"}
+            ):
+                risk_payload[key] = value
+        payload = {
             "name": self.name,
             "market": self.market,
             "symbols": self.symbols,
             "timeframe": self.timeframe,
             "entry_conditions": [_encode(condition) for condition in self.entry_conditions],
             "exit_conditions": [_encode(condition) for condition in self.exit_conditions],
-            "risk": _encode(self.risk),
+            "risk": risk_payload,
             "version": self.version,
         }
+        if self.policy is not None:
+            payload["policy"] = _encode(self.policy)
+        return payload
 
     def _revision(self) -> str:
         return hashlib.sha256(_canonical_json(self._payload()).encode("utf-8")).hexdigest()[:12]
@@ -150,6 +239,20 @@ class StrategyConfig:
         payload["entry_conditions"] = [Condition(**condition) for condition in payload["entry_conditions"]]
         payload["exit_conditions"] = [Condition(**condition) for condition in payload["exit_conditions"]]
         payload["risk"] = RiskRules(**payload["risk"])
+        policy = payload.get("policy")
+        if isinstance(policy, dict):
+            payload["policy"] = RegimeBreakoutPolicy(
+                decision_timeframe=policy["decision_timeframe"],
+                completed_bars_only=policy["completed_bars_only"],
+                fill_timing=policy["fill_timing"],
+                regime=RegimeFilter(**policy["regime"]),
+                breakout=BreakoutRule(**policy["breakout"]),
+                volume=VolumeConfirmationRule(**policy["volume"]),
+                atr=AtrExitRule(**policy["atr"]),
+                holding=HoldingRule(**policy["holding"]),
+                cooldown=CooldownRule(**policy["cooldown"]),
+                kind=policy.get("kind", "regime_breakout_v2"),
+            )
         return cls(**payload)
 
 
@@ -181,6 +284,7 @@ class BacktestMetrics:
     win_rate_pct: float
     profit_factor: float
     trade_count: int
+    round_trip_count: int = 0
 
 
 @dataclass(frozen=True)

@@ -25,6 +25,10 @@ from quant_core.data_foundation import (
     offline_replay_evidence,
 )
 from quant_core.handoff_notes import normalize_handoff_note_payloads
+from quant_core.sealed_datasets import (
+    SEALED_DATASET_HASH_VERSION,
+    normalize_sealed_research_snapshot,
+)
 from quant_core.execution import (
     execution_adapter_sandbox_probe_execution_payload_from_audit_event,
     execution_adapter_sandbox_probe_review_payload_from_audit_event,
@@ -2484,6 +2488,13 @@ def _normalize_data_snapshot(
     timeframe: str = "",
 ) -> dict[str, Any]:
     snapshot = value or {}
+    if str(snapshot.get("hashVersion") or "").strip() == SEALED_DATASET_HASH_VERSION:
+        return normalize_sealed_research_snapshot(
+            snapshot,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+        )
     bars = snapshot.get("bars")
     if not isinstance(bars, list):
         bars = []
@@ -2826,17 +2837,24 @@ def _normalize_strategy_config(
     timeframe = config.get("timeframe") or (audit.timeframe if audit else fields.get("timeframe")) or "1d"
     entry_conditions = config.get("entryConditions", config.get("entry_conditions", []))
     exit_conditions = config.get("exitConditions", config.get("exit_conditions", []))
-    return {
+    version = int(_number_or_default(config.get("version"), 1))
+    normalized = {
         "name": str(name),
         "revision": str(revision),
         "market": str(market),
         "symbols": [str(item) for item in symbols],
         "timeframe": str(timeframe),
-        "version": int(_number_or_default(config.get("version"), 1)),
+        "version": version,
         "entryConditions": [_normalize_condition(condition) for condition in entry_conditions if isinstance(condition, dict)],
         "exitConditions": [_normalize_condition(condition) for condition in exit_conditions if isinstance(condition, dict)],
-        "risk": _normalize_strategy_risk(config.get("risk") if isinstance(config.get("risk"), dict) else {}),
+        "risk": _normalize_strategy_risk(
+            config.get("risk") if isinstance(config.get("risk"), dict) else {},
+            version=version,
+        ),
     }
+    if version == 2 and isinstance(config.get("policy"), dict):
+        normalized["policy"] = json.loads(json.dumps(config["policy"]))
+    return normalized
 
 
 def _normalize_condition(value: dict[str, Any]) -> dict[str, Any]:
@@ -2847,13 +2865,25 @@ def _normalize_condition(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_strategy_risk(value: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _normalize_strategy_risk(value: dict[str, Any], *, version: int = 1) -> dict[str, Any]:
+    normalized = {
         "positionPct": _nullable_number(value.get("positionPct", value.get("position_pct"))),
         "stopLossPct": _nullable_number(value.get("stopLossPct", value.get("stop_loss_pct"))),
         "takeProfitPct": _nullable_number(value.get("takeProfitPct", value.get("take_profit_pct"))),
         "maxDrawdownPct": _nullable_number(value.get("maxDrawdownPct", value.get("max_drawdown_pct"))),
     }
+    optional_fields = {
+        "riskBudgetPct": ("riskBudgetPct", "risk_budget_pct"),
+        "dailyLossLimitPct": ("dailyLossLimitPct", "daily_loss_limit_pct"),
+        "maxTradeGroupsPerHour": ("maxTradeGroupsPerHour", "max_trade_groups_per_hour"),
+        "maxEntryNotionalQuote": ("maxEntryNotionalQuote", "max_entry_notional_quote"),
+        "exitNotionalCapQuote": ("exitNotionalCapQuote", "exit_notional_cap_quote"),
+    }
+    for target, aliases in optional_fields.items():
+        source = aliases[0] if aliases[0] in value else aliases[1]
+        if source in value or (version == 2 and target == "exitNotionalCapQuote"):
+            normalized[target] = _nullable_number(value.get(source))
+    return normalized
 
 
 def _normalize_backtest_assumptions(value: dict[str, Any] | None) -> dict[str, Any]:

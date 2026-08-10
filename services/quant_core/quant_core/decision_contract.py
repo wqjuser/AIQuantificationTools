@@ -43,10 +43,18 @@ def build_decision_proposal(
     provider_id: str,
     proposed_at: datetime,
     proposal_metadata: Mapping[str, Any] | None = None,
+    strategy_evaluation_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not math.isfinite(proposal_confidence) or not 0 <= proposal_confidence <= 1:
         raise ValueError("decision_proposal_confidence_invalid")
     metadata = proposal_metadata or {}
+    normalized_evaluation_identity = normalize_strategy_evaluation_identity(
+        strategy_evaluation_identity
+    )
+    evidence_references = strategy_evaluation_evidence_references(
+        snapshot_hash,
+        normalized_evaluation_identity,
+    )
     payload = {
         "snapshotHash": snapshot_hash,
         "strategyRevision": strategy_revision,
@@ -57,11 +65,13 @@ def build_decision_proposal(
         "outputSchemaVersion": metadata.get("outputSchemaVersion"),
         "usage": metadata.get("usage"),
         "latencyMs": int(metadata.get("latencyMs") or 0),
-        "evidenceReferences": [snapshot_hash],
+        "evidenceReferences": evidence_references,
         "action": proposal_action,
         "confidence": round(proposal_confidence, 4),
         "reason": proposal_reason,
     }
+    if normalized_evaluation_identity is not None:
+        payload["strategyEvaluationIdentity"] = normalized_evaluation_identity
     return {
         "proposalId": canonical_sha256(payload),
         **payload,
@@ -107,6 +117,9 @@ def build_standard_signal(
         proposal_reason=reason,
         current_quantity=current_quantity,
     )
+    evaluation_identity = normalize_strategy_evaluation_identity(
+        decision_proposal.get("strategyEvaluationIdentity")
+    )
     payload = {
         "proposalId": str(decision_proposal.get("proposalId") or ""),
         "snapshotHash": str(decision_proposal.get("snapshotHash") or ""),
@@ -119,6 +132,15 @@ def build_standard_signal(
         "confidence": round(float(confidence), 4),
         "reason": signal_reason,
     }
+    if evaluation_identity is not None:
+        evidence_references = strategy_evaluation_evidence_references(
+            str(decision_proposal.get("snapshotHash") or ""),
+            evaluation_identity,
+        )
+        if decision_proposal.get("evidenceReferences") != evidence_references:
+            raise ValueError("strategy_evaluation_evidence_mismatch")
+        payload["strategyEvaluationIdentity"] = evaluation_identity
+        payload["evidenceReferences"] = evidence_references
     if not payload["proposalId"] or not payload["snapshotHash"] or not payload["strategyRevision"]:
         raise ValueError("decision_proposal_identity_missing")
     return {
@@ -156,6 +178,7 @@ def build_decision_contract(
     account_check: Mapping[str, Any] | None = None,
     proposal_metadata: Mapping[str, Any] | None = None,
     execution_preparation: Mapping[str, Any] | None = None,
+    strategy_evaluation_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_bars = normalize_snapshot_bars(bars)
     data_hash = canonical_data_hash(normalized_bars)
@@ -205,6 +228,7 @@ def build_decision_contract(
         provider_id=provider_id,
         proposed_at=generated_at,
         proposal_metadata=proposal_metadata,
+        strategy_evaluation_identity=strategy_evaluation_identity,
     )
     proposal_id = proposal["proposalId"]
     signal = build_standard_signal(
@@ -251,9 +275,14 @@ def build_decision_contract(
         account_check=normalized_account_check,
         fee_rate=fee_rate,
         execution_preparation=execution_preparation,
+        strategy_evaluation_identity=strategy_evaluation_identity,
     )
     return {
-        "contractVersion": "aiqt-decision-v1",
+        "contractVersion": (
+            "aiqt-decision-v2"
+            if proposal.get("strategyEvaluationIdentity") is not None
+            else "aiqt-decision-v1"
+        ),
         "strategyRevision": strategy_revision,
         "marketSnapshot": {
             "snapshotHash": snapshot_hash,
@@ -316,6 +345,17 @@ def replay_decision_proposal(
             "reason",
         )
     }
+    strategy_evaluation_identity = normalize_strategy_evaluation_identity(
+        recorded_proposal.get("strategyEvaluationIdentity")
+    )
+    if strategy_evaluation_identity is not None:
+        proposal_payload["strategyEvaluationIdentity"] = strategy_evaluation_identity
+        expected_references = strategy_evaluation_evidence_references(
+            str(proposal_payload["snapshotHash"] or ""),
+            strategy_evaluation_identity,
+        )
+        if proposal_payload["evidenceReferences"] != expected_references:
+            raise ValueError("recorded_proposal_identity_mismatch")
     proposal_id = str(recorded_proposal.get("proposalId") or "")
     if not proposal_id or canonical_sha256(proposal_payload) != proposal_id:
         raise ValueError("recorded_proposal_identity_mismatch")
@@ -376,6 +416,7 @@ def replay_decision_proposal(
             "latencyMs": proposal_payload["latencyMs"],
         },
         execution_preparation=execution_preparation,
+        strategy_evaluation_identity=strategy_evaluation_identity,
     )
     if contract["decisionProposal"]["proposalId"] != proposal_id:
         raise ValueError("recorded_proposal_context_mismatch")
@@ -475,6 +516,7 @@ def build_order_intent(
     account_check: Mapping[str, Any],
     fee_rate: float,
     execution_preparation: Mapping[str, Any] | None = None,
+    strategy_evaluation_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     delta = float(risk_adjusted_target["approvedDeltaQuantity"])
     if not math.isfinite(delta):
@@ -560,7 +602,85 @@ def build_order_intent(
         "marketRules": market_rules,
         "executionAssumptions": execution_assumptions,
     }
+    normalized_evaluation_identity = normalize_strategy_evaluation_identity(
+        strategy_evaluation_identity
+    )
+    if normalized_evaluation_identity is not None:
+        payload["strategyEvaluationIdentity"] = normalized_evaluation_identity
+        payload["evidenceReferences"] = strategy_evaluation_evidence_references(
+            market_snapshot_hash,
+            normalized_evaluation_identity,
+        )
     return {"orderIntentId": canonical_sha256(payload), **payload}
+
+
+def normalize_strategy_evaluation_identity(
+    value: Mapping[str, Any] | None,
+) -> dict[str, str] | None:
+    if value is None:
+        return None
+    expected_lengths = {
+        "contextHash": 64,
+        "evaluationId": 24,
+        "stateBeforeHash": 64,
+        "evaluationHash": 64,
+    }
+    if not isinstance(value, Mapping) or set(value) != set(expected_lengths):
+        raise ValueError("strategy_evaluation_identity_invalid")
+    normalized: dict[str, str] = {}
+    for field, length in expected_lengths.items():
+        text = value.get(field)
+        if (
+            not isinstance(text, str)
+            or len(text) != length
+            or text != text.lower()
+            or any(character not in "0123456789abcdef" for character in text)
+        ):
+            raise ValueError("strategy_evaluation_identity_invalid")
+        normalized[field] = text
+    return normalized
+
+
+def strategy_evaluation_evidence_references(
+    snapshot_hash: str,
+    identity: Mapping[str, str] | None,
+) -> list[str]:
+    references = [snapshot_hash]
+    if identity is not None:
+        references.extend(
+            identity[field]
+            for field in (
+                "contextHash",
+                "evaluationId",
+                "stateBeforeHash",
+                "evaluationHash",
+            )
+        )
+    return references
+
+
+def validate_order_intent_identity(value: Mapping[str, Any]) -> None:
+    payload = dict(value)
+    order_intent_id = payload.pop("orderIntentId", None)
+    if (
+        not isinstance(order_intent_id, str)
+        or canonical_sha256(payload) != order_intent_id
+    ):
+        raise ValueError("order_intent_identity_mismatch")
+    raw_evaluation_identity = value.get("strategyEvaluationIdentity")
+    if raw_evaluation_identity is None:
+        if "strategyEvaluationIdentity" in value or "evidenceReferences" in value:
+            raise ValueError("strategy_evaluation_identity_invalid")
+        return
+    evaluation_identity = normalize_strategy_evaluation_identity(
+        raw_evaluation_identity
+    )
+    expected_references = strategy_evaluation_evidence_references(
+        str(value.get("marketSnapshotHash") or ""),
+        evaluation_identity,
+    )
+    if value.get("evidenceReferences") != expected_references:
+        raise ValueError("strategy_evaluation_evidence_mismatch")
 
 
 def _normalize_market_rules(value: Any) -> dict[str, Any]:

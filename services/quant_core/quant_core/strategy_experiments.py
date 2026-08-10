@@ -8,24 +8,31 @@ import statistics
 import time
 import uuid
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
-from typing import Any, Callable, Literal, Sequence, cast
+from datetime import datetime, timedelta, timezone
+from threading import Thread
+from typing import Any, Callable, Literal, Protocol, Sequence, cast
 
 from quant_core.ai_review_stage3 import build_strategy_lineage_key_from_parts
-from quant_core.backtest import BacktestEngine
+from quant_core.backtest import BacktestEngine, strategy_required_bars
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
     canonical_data_hash,
     canonical_json,
     canonical_sha256,
     canonical_snapshot_id,
+    flatten_chunked_data_snapshot,
+    normalize_snapshot_bar_chunks,
     normalize_snapshot_bars,
     snapshot_bars_to_ohlcv,
     strategy_config_from_payload,
     strategy_config_to_payload,
 )
-from quant_core.domain import BacktestMetrics, BacktestRun, StrategyConfig
+from quant_core.domain import BacktestMetrics, BacktestRun, OHLCVBar, StrategyConfig
 from quant_core.runs import ResearchRunStore
+from quant_core.sealed_datasets import (
+    SEALED_DATASET_HASH_VERSION,
+    normalize_sealed_research_snapshot,
+)
 from quant_core.strategy_experiment_store import (
     StrategyExperimentCandidateRecord,
     StrategyExperimentDetail,
@@ -41,8 +48,15 @@ MAX_CANDIDATES = 81
 MAX_WALK_FORWARD_WINDOWS = 12
 MAX_EVALUATIONS = 512
 DEADLINE_SECONDS = 15.0
+MIN_FORMAL_SOURCE_BARS = 90 * 24 * 60
+FORMAL_TRAIN_SCORING_BARS = 54 * 24 * 60
+FORMAL_DEVELOPMENT_SCORING_BARS = 72 * 24 * 60
+FORMAL_TEST_SCORING_BARS = 18 * 24 * 60
 ENGINE_VERSION = "backtest-v1"
 RESULT_SCHEMA_VERSION = 1
+POLICY_ENGINE_VERSION = "backtest-v2"
+POLICY_EVALUATOR_VERSION = "strategy-evaluator-v2"
+POLICY_RESULT_SCHEMA_VERSION = 2
 
 _SUPPORTED_PARAMETERS = {
     "close_above_sma": {"window"},
@@ -51,6 +65,57 @@ _SUPPORTED_PARAMETERS = {
     "rsi_below": {"window", "threshold"},
     "rsi_above": {"window", "threshold"},
 }
+_SUPPORTED_POLICY_PATHS = {
+    "regime.closeAboveSmaWindow": "window",
+    "regime.smaSlopeLookbackBars": "slope",
+    "breakout.lookbackBars": "window",
+    "volume.smaWindow": "window",
+    "volume.multiplier": "multiple",
+    "atr.window": "window",
+    "atr.initialMultiple": "multiple",
+    "atr.trailingMultiple": "multiple",
+    "holding.maxBars": "bars",
+    "cooldown.bars": "cooldown",
+}
+FORMAL_PROFITABILITY_GUARDRAILS = {
+    "development": {"minimumRoundTripCount": 30},
+    "validation": {
+        "requirePositiveReturn": True,
+        "minimumProfitFactor": 1.2,
+        "maximumDrawdownPct": 3,
+        "minimumRoundTripCount": 6,
+    },
+    "test": {
+        "requirePositiveReturn": True,
+        "minimumProfitFactor": 1.2,
+        "maximumDrawdownPct": 3,
+        "minimumRoundTripCount": 6,
+    },
+    "rolling": {"requiredWindowCount": 7, "minimumPositiveWindowCount": 5},
+    "stability": {"requirePositiveAdjacentCandidates": True},
+}
+FORMAL_BACKTEST_ASSUMPTIONS = {"initialCash": 10, "feeBps": 10, "slippageBps": 10}
+
+
+class SealedBarSource(Protocol):
+    def get_summary(self, dataset_id: str) -> Any | None: ...
+
+    def read_development_bars(self, dataset_id: str) -> list[OHLCVBar]: ...
+
+    def claim_test_partition(
+        self,
+        dataset_id: str,
+        *,
+        claimant_id: str,
+        expected_dataset_hash: str,
+    ) -> Any: ...
+
+    def read_claimed_test_bars(
+        self,
+        dataset_id: str,
+        *,
+        claim_token: str,
+    ) -> list[OHLCVBar]: ...
 
 
 @dataclass(frozen=True)
@@ -58,6 +123,12 @@ class ParameterDimension:
     side: Literal["entry", "exit"]
     condition_index: int
     parameter: Literal["window", "threshold"]
+    values: tuple[int | float, ...]
+
+
+@dataclass(frozen=True)
+class PolicyParameterDimension:
+    policy_path: str
     values: tuple[int | float, ...]
 
 
@@ -80,6 +151,9 @@ class _ExperimentDefinition:
     train_end: int
     validation_end: int
     walk_forward_windows: tuple[tuple[int, int, int], ...]
+    score_start_index: int = 0
+    sealed_dataset_id: str | None = None
+    sealed_dataset_hash: str | None = None
 
 
 class _ExperimentTimeout(RuntimeError):
@@ -104,7 +178,7 @@ class StrategyExperimentError(ValueError):
 
 def expand_candidates(
     base_strategy: StrategyConfig,
-    dimensions: Sequence[ParameterDimension],
+    dimensions: Sequence[ParameterDimension | PolicyParameterDimension],
 ) -> tuple[ExpandedCandidate, ...]:
     normalized = _normalize_dimensions(base_strategy, dimensions)
     candidate_count = math.prod(len(dimension.values) for dimension in normalized)
@@ -112,23 +186,34 @@ def expand_candidates(
         raise _invalid("Strategy experiments require between 1 and 81 canonical candidates.")
     candidates: list[ExpandedCandidate] = []
     for values in itertools.product(*(dimension.values for dimension in normalized)):
-        parameters = [
-            {
-                "conditionSide": dimension.side,
-                "conditionIndex": dimension.condition_index,
-                "parameter": dimension.parameter,
-                "value": value,
-            }
-            for dimension, value in zip(normalized, values, strict=True)
-        ]
+        parameters = []
+        for dimension, value in zip(normalized, values, strict=True):
+            if isinstance(dimension, PolicyParameterDimension):
+                parameters.append({"policyPath": dimension.policy_path, "value": value})
+            else:
+                parameters.append(
+                    {
+                        "conditionSide": dimension.side,
+                        "conditionIndex": dimension.condition_index,
+                        "parameter": dimension.parameter,
+                        "value": value,
+                    }
+                )
         payload = copy.deepcopy(strategy_config_to_payload(base_strategy))
         for parameter in parameters:
-            conditions = payload[
-                "entryConditions" if parameter["conditionSide"] == "entry" else "exitConditions"
-            ]
-            cast(list[dict[str, Any]], conditions)[parameter["conditionIndex"]]["params"][parameter["parameter"]] = (
-                parameter["value"]
-            )
+            if "policyPath" in parameter:
+                target = cast(dict[str, Any], payload["policy"])
+                segments = str(parameter["policyPath"]).split(".")
+                for segment in segments[:-1]:
+                    target = cast(dict[str, Any], target[segment])
+                target[segments[-1]] = parameter["value"]
+            else:
+                conditions = payload[
+                    "entryConditions" if parameter["conditionSide"] == "entry" else "exitConditions"
+                ]
+                cast(list[dict[str, Any]], conditions)[parameter["conditionIndex"]]["params"][parameter["parameter"]] = (
+                    parameter["value"]
+                )
         candidates.append(
             ExpandedCandidate(
                 candidate_id=canonical_sha256(parameters)[:12],
@@ -147,15 +232,22 @@ class StrategyExperimentRunner:
         run_store: ResearchRunStore,
         experiment_store: StrategyExperimentStore,
         monotonic: Callable[[], float] = time.monotonic,
+        sealed_bar_source: SealedBarSource | None = None,
+        job_launcher: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
         self.strategy_store = strategy_store
         self.run_store = run_store
         self.experiment_store = experiment_store
         self.monotonic = monotonic
+        self.sealed_bar_source = sealed_bar_source
+        self.job_launcher = job_launcher or _launch_background_job
         self._evaluation_count = 0
 
     def run_new(self, payload: dict[str, Any]) -> StrategyExperimentDetail:
-        return self._run(self._definition_from_source(payload))
+        definition = self._definition_from_source(payload)
+        if definition.sealed_dataset_id is None:
+            return self._run(definition)
+        return self._queue_formal(definition)
 
     def replay(self, experiment_id: str) -> StrategyExperimentDetail:
         prior = self.experiment_store.get(experiment_id)
@@ -165,7 +257,252 @@ class StrategyExperimentRunner:
                 error="strategy_experiment_not_found",
                 detail=f"Strategy experiment {experiment_id} was not found.",
             )
-        return self._run(self._definition_from_record(prior))
+        self._definition_from_record(prior)
+        replay_id = f"experiment-{uuid.uuid4().hex}"
+        replay = replace(
+            prior.experiment,
+            experiment_id=replay_id,
+            created_at=datetime.now(timezone.utc),
+            evaluation_count=0,
+            promotion_run_id=None,
+            promoted_strategy_revision=None,
+            promotion_lineage_hash=None,
+            promoted_at=None,
+            promotion_operator=None,
+        )
+        candidates = [
+            replace(candidate, experiment_id=replay_id) for candidate in prior.candidates
+        ]
+        self.experiment_store.record_completed(replay, candidates)
+        stored = self.experiment_store.get(replay_id)
+        if stored is None:
+            raise RuntimeError("strategy_experiment_replay_readback_failed")
+        return stored
+
+    def promote_winner(
+        self,
+        experiment_id: str,
+        *,
+        fresh_source_run_id: str,
+        operator: str,
+        confirmed: bool,
+    ) -> dict[str, Any]:
+        normalized_experiment_id = _required_string(experiment_id)
+        normalized_run_id = _required_string(fresh_source_run_id)
+        normalized_operator = _required_string(operator)
+        if confirmed is not True:
+            raise StrategyExperimentError(
+                status=400,
+                error="strategy_experiment_promotion_confirmation_required",
+                detail="Explicit promotion confirmation is required.",
+            )
+        detail = self.experiment_store.get(normalized_experiment_id)
+        if detail is None:
+            raise StrategyExperimentError(
+                status=404,
+                error="strategy_experiment_not_found",
+                detail=f"Strategy experiment {normalized_experiment_id} was not found.",
+            )
+        selected = _promotable_selected_candidate(detail)
+        winner = _winner_strategy(detail, selected)
+        fresh_run = self.run_store.get(normalized_run_id)
+        if fresh_run is None:
+            raise StrategyExperimentError(
+                status=404,
+                error="research_run_not_found",
+                detail=f"Research run {normalized_run_id} was not found.",
+            )
+        (
+            fresh_snapshot_hash,
+            fresh_data_range,
+            fresh_gate_evaluation,
+        ) = _validate_fresh_p0_run(
+            fresh_run,
+            winner=winner,
+            prior_snapshot_hash=detail.snapshot.canonical_data_hash,
+            after=detail.snapshot.test_consumed_at,
+            sealed_bar_source=self.sealed_bar_source,
+        )
+        prior_data_range = _experiment_snapshot_data_range(detail)
+        if fresh_data_range == prior_data_range:
+            raise StrategyExperimentError(
+                status=409,
+                error="fresh_p0_snapshot_invalid",
+                detail="The promotion run must use a different data range from the formal experiment.",
+            )
+        result_hash = detail.experiment.result_hash
+        if not result_hash:
+            raise _conflict("The profitable experiment result hash is missing.")
+        lineage = {
+            "experimentId": detail.experiment.experiment_id,
+            "definitionHash": detail.experiment.definition_hash,
+            "resultHash": result_hash,
+            "candidateId": selected.candidate_id,
+            "candidateRevision": selected.candidate_revision,
+            "freshSourceRunId": normalized_run_id,
+            "freshSnapshotHash": fresh_snapshot_hash,
+            "priorDataRange": prior_data_range,
+            "freshDataRange": fresh_data_range,
+            "freshSnapshotDistinct": True,
+            "freshDataRangeDistinct": True,
+            "freshGateEvaluation": fresh_gate_evaluation,
+            "freshGateHash": canonical_sha256(fresh_gate_evaluation),
+            "strategyRevision": winner.revision,
+            "operator": normalized_operator,
+            "profitabilityStatus": "formal_gate_passed",
+            "paperOnly": True,
+            "bindingBlocked": False,
+        }
+        lineage_hash = canonical_sha256(lineage)
+        promotion_evidence = {**lineage, "lineageHash": lineage_hash}
+        if detail.experiment.promotion_lineage_hash is not None and not (
+            detail.experiment.promotion_run_id == normalized_run_id
+            and detail.experiment.promoted_strategy_revision == winner.revision
+            and detail.experiment.promotion_lineage_hash == lineage_hash
+            and detail.experiment.promotion_operator == normalized_operator
+        ):
+            raise StrategyExperimentError(
+                status=409,
+                error="strategy_experiment_already_promoted",
+                detail="The experiment is already bound to different promotion evidence.",
+            )
+        previous = self.strategy_store.get(winner.revision)
+        if previous is not None and canonical_json(previous.strategy_config) != canonical_json(
+            strategy_config_to_payload(winner)
+        ):
+            raise _conflict("The winner revision conflicts with the strategy library.")
+        try:
+            # These stores cannot share one transaction. The library's
+            # same-experiment write-once rule elects one lineage first; exact
+            # retries then converge the experiment marker after interruptions.
+            self.strategy_store.save(
+                winner,
+                audit_run_id=normalized_run_id,
+                promotion_evidence=promotion_evidence,
+            )
+            promoted = self.experiment_store.mark_promoted(
+                experiment_id=detail.experiment.experiment_id,
+                expected_result_hash=result_hash,
+                promotion_run_id=normalized_run_id,
+                promoted_strategy_revision=winner.revision,
+                promotion_lineage_hash=lineage_hash,
+                promoted_at=datetime.now(timezone.utc),
+                promotion_operator=normalized_operator,
+            )
+        except Exception as error:
+            if isinstance(error, ValueError) and str(error).startswith(
+                "strategy_library_"
+            ):
+                raise StrategyExperimentError(
+                    status=409,
+                    error=str(error),
+                    detail="The promoted strategy evidence conflicts with the strategy library.",
+                ) from None
+            if isinstance(error, ValueError) and str(error) in {
+                "strategy_experiment_already_promoted",
+                "strategy_experiment_not_promotable",
+            }:
+                raise StrategyExperimentError(
+                    status=409,
+                    error=str(error),
+                    detail="The experiment promotion state changed before it could be recorded.",
+                ) from None
+            raise
+        return {
+            **lineage,
+            "lineageHash": lineage_hash,
+            "promotedAt": (
+                promoted.experiment.promoted_at.isoformat()
+                if promoted.experiment.promoted_at
+                else None
+            ),
+            "libraryStatus": "audited",
+            "auditRunId": normalized_run_id,
+        }
+
+    def _queue_formal(self, definition: _ExperimentDefinition) -> StrategyExperimentDetail:
+        if self.experiment_store.claimed_definition(definition.snapshot.snapshot_id) is not None:
+            raise StrategyExperimentError(
+                status=409,
+                error="test_holdout_consumed",
+                detail="The test holdout is already bound to a different experiment definition.",
+            )
+        experiment_id = f"experiment-{uuid.uuid4().hex}"
+        created_at = datetime.now(timezone.utc)
+        self._evaluation_count = 0
+        pending = self._record(
+            definition,
+            experiment_id=experiment_id,
+            created_at=created_at,
+            status="pending",
+        )
+        self.experiment_store.record_pending(pending)
+        self.job_launcher(
+            lambda: self._execute_formal_job(
+                definition,
+                experiment_id=experiment_id,
+                created_at=created_at,
+            )
+        )
+        stored = self.experiment_store.get(experiment_id)
+        if stored is None:
+            raise RuntimeError("strategy_experiment_pending_readback_failed")
+        return stored
+
+    def _execute_formal_job(
+        self,
+        definition: _ExperimentDefinition,
+        *,
+        experiment_id: str,
+        created_at: datetime,
+    ) -> None:
+        self._evaluation_count = 0
+        try:
+            (
+                candidate_records,
+                selected_candidate_id,
+                completion_reason,
+                profitability_gate_passed,
+            ) = self._evaluate_candidates(
+                definition,
+                experiment_id=experiment_id,
+                deadline=None,
+            )
+            result_hash = _result_hash(
+                definition.definition_hash,
+                candidate_records,
+                selected_candidate_id=selected_candidate_id,
+                completion_reason=completion_reason,
+                profitability_gate_passed=profitability_gate_passed,
+                result_schema_version=int(definition.definition["resultSchemaVersion"]),
+            )
+            completed = self._record(
+                definition,
+                experiment_id=experiment_id,
+                created_at=created_at,
+                status="completed",
+                selected_candidate_id=selected_candidate_id,
+                completion_reason=completion_reason,
+                result_hash=result_hash,
+                profitability_gate_passed=profitability_gate_passed,
+            )
+            self.experiment_store.record_completed(completed, candidate_records)
+        except StrategyExperimentError as error:
+            self._persist_failure(
+                definition,
+                experiment_id=experiment_id,
+                created_at=created_at,
+                error_code=error.error,
+                detail=error.detail,
+            )
+        except Exception:
+            self._persist_failure(
+                definition,
+                experiment_id=experiment_id,
+                created_at=created_at,
+                error_code="strategy_experiment_failed",
+                detail="Strategy experiment execution failed.",
+            )
 
     def _run(self, definition: _ExperimentDefinition) -> StrategyExperimentDetail:
         experiment_id = f"experiment-{uuid.uuid4().hex}"
@@ -173,14 +510,19 @@ class StrategyExperimentRunner:
         self._evaluation_count = 0
         try:
             claimed = self.experiment_store.claimed_definition(definition.snapshot.snapshot_id)
-            if claimed is not None and claimed != definition.definition_hash:
+            if claimed is not None:
                 raise StrategyExperimentError(
                     status=409,
                     error="test_holdout_consumed",
                     detail="The test holdout is already bound to a different experiment definition.",
                 )
             deadline = self.monotonic() + DEADLINE_SECONDS
-            candidate_records, selected_candidate_id, completion_reason = self._evaluate_candidates(
+            (
+                candidate_records,
+                selected_candidate_id,
+                completion_reason,
+                profitability_gate_passed,
+            ) = self._evaluate_candidates(
                 definition,
                 experiment_id=experiment_id,
                 deadline=deadline,
@@ -190,6 +532,8 @@ class StrategyExperimentRunner:
                 candidate_records,
                 selected_candidate_id=selected_candidate_id,
                 completion_reason=completion_reason,
+                profitability_gate_passed=profitability_gate_passed,
+                result_schema_version=int(definition.definition["resultSchemaVersion"]),
             )
             experiment = self._record(
                 definition,
@@ -199,6 +543,7 @@ class StrategyExperimentRunner:
                 selected_candidate_id=selected_candidate_id,
                 completion_reason=completion_reason,
                 result_hash=result_hash,
+                profitability_gate_passed=profitability_gate_passed,
             )
             self.experiment_store.record_completed(experiment, candidate_records)
             stored = self.experiment_store.get(experiment_id)
@@ -300,6 +645,16 @@ class StrategyExperimentRunner:
         ):
             raise _conflict("Stored strategy and research run context do not match.")
 
+        if library_strategy.policy is not None:
+            return self._definition_from_sealed_source(
+                payload,
+                strategy=library_strategy,
+                strategy_revision=strategy_revision,
+                source_run_id=source_run_id,
+                source_run=source_run,
+                library_payload=library_payload,
+            )
+
         snapshot_payload = source_run.data_snapshot
         if str(snapshot_payload.get("hashVersion") or "") != DATA_SNAPSHOT_HASH_VERSION:
             raise StrategyExperimentError(
@@ -349,7 +704,10 @@ class StrategyExperimentRunner:
             bars=normalized_bars,
         )
         assumptions = _normalize_assumptions(payload.get("assumptions"))
-        guardrails = _normalize_guardrails(payload.get("guardrails"))
+        guardrails = _normalize_guardrails(
+            payload.get("guardrails"),
+            formal=library_strategy.policy is not None,
+        )
         dimensions = _dimensions_from_payload(payload.get("dimensions"))
         candidates = expand_candidates(library_strategy, dimensions)
         train_end, validation_end = _split_boundaries(rows)
@@ -359,6 +717,7 @@ class StrategyExperimentRunner:
             raise _invalid("Strategy experiment evaluation budget exceeds 512 engine calls.")
         _validate_warmup_capacity(candidates, train_end, walk_forward)
 
+        is_policy = library_strategy.policy is not None
         definition = {
             "baseStrategy": library_payload,
             "strategyRevision": strategy_revision,
@@ -374,9 +733,11 @@ class StrategyExperimentRunner:
             "guardrails": guardrails,
             "walkForward": walk_forward,
             "evaluationBudget": evaluation_budget,
-            "engineVersion": ENGINE_VERSION,
-            "resultSchemaVersion": RESULT_SCHEMA_VERSION,
+            "engineVersion": POLICY_ENGINE_VERSION if is_policy else ENGINE_VERSION,
+            "resultSchemaVersion": POLICY_RESULT_SCHEMA_VERSION if is_policy else RESULT_SCHEMA_VERSION,
         }
+        if is_policy:
+            definition["evaluatorVersion"] = POLICY_EVALUATOR_VERSION
         try:
             snapshot = self.experiment_store.put_snapshot(snapshot)
         except ValueError as error:
@@ -391,40 +752,328 @@ class StrategyExperimentRunner:
             windows=windows,
         )
 
+    def _definition_from_sealed_source(
+        self,
+        payload: dict[str, Any],
+        *,
+        strategy: StrategyConfig,
+        strategy_revision: str,
+        source_run_id: str,
+        source_run: Any,
+        library_payload: dict[str, Any],
+    ) -> _ExperimentDefinition:
+        source = self.sealed_bar_source
+        snapshot_payload = source_run.data_snapshot
+        sealed_payload = snapshot_payload.get("sealedDataset")
+        if (
+            source is None
+            or snapshot_payload.get("hashVersion") != "aiqt-sealed-v1"
+            or not isinstance(sealed_payload, dict)
+            or "bars" in snapshot_payload
+        ):
+            raise StrategyExperimentError(
+                status=409,
+                error="sealed_dataset_required",
+                detail="Version 2 formal experiments require a sealed dataset source.",
+            )
+        dataset_id = _required_string(sealed_payload.get("datasetId"))
+        summary = source.get_summary(dataset_id)
+        if summary is None:
+            raise StrategyExperimentError(
+                status=404,
+                error="sealed_dataset_not_found",
+                detail=f"Sealed dataset {dataset_id} was not found.",
+            )
+        expected_summary = _sealed_summary_payload(summary)
+        if sealed_payload != expected_summary:
+            raise _conflict("The source run sealed dataset summary does not match its source.")
+        if (
+            expected_summary.get("market") != strategy.market
+            or expected_summary.get("symbol") != strategy.symbols[0]
+            or expected_summary.get("timeframe") != strategy.timeframe
+            or strategy.timeframe != "1m"
+            or snapshot_payload.get("source") != expected_summary.get("source")
+            or snapshot_payload.get("adjustmentMode")
+            != expected_summary.get("adjustmentMode")
+        ):
+            raise _conflict("The sealed dataset context does not match the formal strategy.")
+        total_rows = _exact_int(expected_summary.get("rows"))
+        if total_rows is None or total_rows < MIN_FORMAL_SOURCE_BARS:
+            raise _invalid("Formal experiments require at least 90 days of continuous 1m data.")
+        try:
+            pre_roll_rows, train_end, validation_end, score_start_at = (
+                _formal_scoring_boundaries(expected_summary)
+            )
+        except ValueError as error:
+            raise _conflict(
+                "The sealed dataset does not match the frozen 90-day scoring window."
+            ) from error
+        development_rows = validation_end
+        if (
+            source_run.data_rows != development_rows
+            or _exact_int(source_run.data_quality.get("rows")) != development_rows
+            or not bool(source_run.data_quality.get("isComplete"))
+            or not bool(snapshot_payload.get("isComplete"))
+            or _exact_int(snapshot_payload.get("rows")) != development_rows
+            or snapshot_payload.get("hash") != expected_summary["developmentHash"]
+            or source_run.data_quality.get("canonicalHash")
+            != expected_summary["developmentHash"]
+        ):
+            raise _conflict("The source run does not match the sealed development partition.")
+        assumptions = _normalize_assumptions(payload.get("assumptions"), formal=True)
+        guardrails = _normalize_guardrails(payload.get("guardrails"), formal=True)
+        dimensions = _dimensions_from_payload(payload.get("dimensions"))
+        candidates = expand_candidates(strategy, dimensions)
+        required_pre_roll = max(_warmup_bars(candidate.strategy) for candidate in candidates)
+        required_pre_roll += _formal_alignment_rows(score_start_at)
+        if pre_roll_rows < required_pre_roll:
+            raise _invalid(
+                "The sealed dataset does not include enough server-derived indicator pre-roll."
+            )
+        walk_forward, relative_windows = _normalize_walk_forward(
+            payload.get("walkForward"),
+            FORMAL_DEVELOPMENT_SCORING_BARS,
+        )
+        windows = tuple(
+            (
+                pre_roll_rows + start,
+                pre_roll_rows + window_train_end,
+                pre_roll_rows + window_validation_end,
+            )
+            for start, window_train_end, window_validation_end in relative_windows
+        )
+        if (
+            walk_forward is None
+            or len(windows) != 7
+            or walk_forward["stepBars"] < walk_forward["validationBars"]
+        ):
+            raise _invalid(
+                "Version 2 experiments require exactly seven non-overlapping rolling validation windows."
+            )
+        evaluation_budget = 2 * len(candidates) + 2 * len(candidates) * len(windows) + 1
+        if evaluation_budget > MAX_EVALUATIONS:
+            raise _invalid("Strategy experiment evaluation budget exceeds 512 engine calls.")
+        _validate_warmup_capacity(candidates, FORMAL_TRAIN_SCORING_BARS, walk_forward)
+        development_bars = source.read_development_bars(dataset_id)
+        if len(development_bars) != development_rows:
+            raise _conflict("The sealed development partition row count is invalid.")
+        try:
+            chunked, normalized_bars = _normalize_large_ohlcv_bars(
+                development_bars,
+                market=strategy.market,
+                symbol=strategy.symbols[0],
+                timeframe=strategy.timeframe,
+            )
+        except (TypeError, ValueError) as error:
+            raise _conflict("The sealed development partition bars are invalid.") from error
+        if (
+            chunked["hash"] != expected_summary["developmentHash"]
+            or chunked["start"] != expected_summary["start"]
+            or chunked["endExclusive"] != expected_summary["developmentEndExclusive"]
+        ):
+            raise _conflict("The sealed development partition hash or range is invalid.")
+
+        snapshot = StrategyExperimentSnapshot(
+            snapshot_id=dataset_id,
+            created_at=source_run.created_at,
+            market=strategy.market,
+            symbol=strategy.symbols[0],
+            timeframe=strategy.timeframe,
+            canonical_data_hash=str(expected_summary["datasetHash"]),
+            rows=total_rows,
+            start_at=str(expected_summary["start"]),
+            end_at=str(expected_summary["endExclusive"]),
+            bars=normalized_bars,
+        )
+        definition = {
+            "baseStrategy": library_payload,
+            "strategyRevision": strategy_revision,
+            "sourceRunId": source_run_id,
+            "snapshotId": dataset_id,
+            "canonicalDataHash": expected_summary["datasetHash"],
+            "developmentDataHash": expected_summary["developmentHash"],
+            "sealedDataset": expected_summary,
+            "market": strategy.market,
+            "symbol": strategy.symbols[0],
+            "timeframe": strategy.timeframe,
+            "assumptions": assumptions,
+            "costModel": {
+                "feeBpsPerSide": 10,
+                "slippageBpsPerSide": 10,
+                "estimatedRoundTripBps": 40,
+            },
+            "scoringWindow": {
+                "start": score_start_at.isoformat(),
+                "endExclusive": expected_summary["endExclusive"],
+                "rows": MIN_FORMAL_SOURCE_BARS,
+                "preRollRows": pre_roll_rows,
+            },
+            "split": {"trainPct": 60, "validationPct": 20, "testPct": 20},
+            "dimensions": [
+                _dimension_to_payload(dimension)
+                for dimension in _normalize_dimensions(strategy, dimensions)
+            ],
+            "guardrails": guardrails,
+            "walkForward": walk_forward,
+            "evaluationBudget": evaluation_budget,
+            "engineVersion": POLICY_ENGINE_VERSION,
+            "evaluatorVersion": POLICY_EVALUATOR_VERSION,
+            "resultSchemaVersion": POLICY_RESULT_SCHEMA_VERSION,
+        }
+        try:
+            snapshot = self.experiment_store.put_snapshot(snapshot)
+        except ValueError as error:
+            raise _conflict("The persisted experiment snapshot conflicts with the sealed dataset.") from error
+        return self._finish_definition(
+            definition,
+            snapshot=snapshot,
+            strategy=strategy,
+            candidates=candidates,
+            train_end=train_end,
+            validation_end=validation_end,
+            windows=windows,
+            score_start_index=pre_roll_rows,
+            sealed_dataset_id=dataset_id,
+            sealed_dataset_hash=str(expected_summary["datasetHash"]),
+        )
+
     def _definition_from_record(self, prior: StrategyExperimentDetail) -> _ExperimentDefinition:
         definition = cast(dict[str, Any], _canonical_copy(prior.experiment.definition))
         if canonical_sha256(definition) != prior.experiment.definition_hash:
             raise _conflict("Stored experiment definition hash is invalid.")
-        if (
-            definition.get("engineVersion") != ENGINE_VERSION
-            or definition.get("resultSchemaVersion") != RESULT_SCHEMA_VERSION
-        ):
-            raise _conflict("Stored experiment definition version is unsupported.")
         try:
             strategy = strategy_config_from_payload(cast(dict[str, Any], definition["baseStrategy"]))
             dimensions = _dimensions_from_payload(definition["dimensions"])
             candidates = expand_candidates(strategy, dimensions)
-            normalized_bars = normalize_snapshot_bars(prior.snapshot.bars)
+            if strategy.policy is None:
+                normalized_bars = normalize_snapshot_bars(prior.snapshot.bars)
+                total_rows = len(normalized_bars)
+                score_start_index = 0
+                sealed_dataset_id = None
+                sealed_dataset_hash = None
+            else:
+                stored_bars = _large_snapshot_records_to_ohlcv(
+                    prior.snapshot.bars,
+                    market=prior.snapshot.market,
+                    symbol=prior.snapshot.symbol,
+                    timeframe=prior.snapshot.timeframe,
+                )
+                chunked, normalized_bars = _normalize_large_ohlcv_bars(
+                    stored_bars,
+                    market=prior.snapshot.market,
+                    symbol=prior.snapshot.symbol,
+                    timeframe=prior.snapshot.timeframe,
+                )
+                total_rows = prior.snapshot.rows
+                sealed_summary = cast(dict[str, Any], definition["sealedDataset"])
+                sealed_dataset_id = str(sealed_summary["datasetId"])
+                sealed_dataset_hash = str(sealed_summary["datasetHash"])
+                (
+                    score_start_index,
+                    train_end,
+                    validation_end,
+                    score_start_at,
+                ) = _formal_scoring_boundaries(sealed_summary)
+                expected_scoring_window = {
+                    "start": score_start_at.isoformat(),
+                    "endExclusive": sealed_summary["endExclusive"],
+                    "rows": MIN_FORMAL_SOURCE_BARS,
+                    "preRollRows": score_start_index,
+                }
+                required_pre_roll = max(
+                    _warmup_bars(candidate.strategy) for candidate in candidates
+                ) + _formal_alignment_rows(score_start_at)
+                if (
+                    len(normalized_bars) != _exact_int(sealed_summary.get("developmentRows"))
+                    or prior.snapshot.rows != _exact_int(sealed_summary.get("rows"))
+                    or prior.snapshot.start_at != sealed_summary.get("start")
+                    or prior.snapshot.end_at != sealed_summary.get("endExclusive")
+                    or chunked["start"] != sealed_summary.get("start")
+                    or chunked["endExclusive"]
+                    != sealed_summary.get("developmentEndExclusive")
+                    or chunked["hash"] != sealed_summary.get("developmentHash")
+                    or definition.get("developmentDataHash")
+                    != sealed_summary.get("developmentHash")
+                    or validation_end != len(normalized_bars)
+                    or definition.get("scoringWindow") != expected_scoring_window
+                    or score_start_index < required_pre_roll
+                ):
+                    raise ValueError("sealed_development_snapshot_invalid")
         except (KeyError, TypeError, ValueError) as error:
             raise _conflict("Stored experiment definition is invalid.") from error
+        if strategy.policy is None:
+            supported_version = (
+                definition.get("engineVersion") == ENGINE_VERSION
+                and definition.get("resultSchemaVersion") == RESULT_SCHEMA_VERSION
+                and "evaluatorVersion" not in definition
+            )
+        else:
+            supported_version = (
+                definition.get("engineVersion") == POLICY_ENGINE_VERSION
+                and definition.get("evaluatorVersion") == POLICY_EVALUATOR_VERSION
+                and definition.get("resultSchemaVersion") == POLICY_RESULT_SCHEMA_VERSION
+            )
+        if not supported_version:
+            raise _conflict("Stored experiment definition version is unsupported.")
         if (
             strategy.revision != prior.experiment.strategy_revision
             or definition.get("strategyRevision") != prior.experiment.strategy_revision
             or definition.get("sourceRunId") != prior.experiment.source_run_id
             or definition.get("snapshotId") != prior.snapshot.snapshot_id
             or definition.get("canonicalDataHash") != prior.snapshot.canonical_data_hash
-            or canonical_data_hash(normalized_bars) != prior.snapshot.canonical_data_hash
-            or prior.snapshot.rows != len(normalized_bars)
+            or (
+                strategy.policy is None
+                and canonical_data_hash(normalized_bars) != prior.snapshot.canonical_data_hash
+            )
+            or (
+                strategy.policy is None
+                and prior.snapshot.rows != len(normalized_bars)
+            )
         ):
             raise _conflict("Stored experiment definition and snapshot do not match.")
-        train_end, validation_end = _split_boundaries(len(normalized_bars))
-        walk_forward, windows = _normalize_walk_forward(definition.get("walkForward"), validation_end)
+        if strategy.policy is None:
+            train_end, validation_end = _split_boundaries(total_rows)
+            walk_forward, windows = _normalize_walk_forward(
+                definition.get("walkForward"), validation_end
+            )
+        else:
+            walk_forward, relative_windows = _normalize_walk_forward(
+                definition.get("walkForward"),
+                FORMAL_DEVELOPMENT_SCORING_BARS,
+            )
+            windows = tuple(
+                (
+                    score_start_index + start,
+                    score_start_index + window_train_end,
+                    score_start_index + window_validation_end,
+                )
+                for start, window_train_end, window_validation_end in relative_windows
+            )
+        if strategy.policy is not None and (
+            definition.get("costModel")
+            != {
+                "feeBpsPerSide": 10,
+                "slippageBpsPerSide": 10,
+                "estimatedRoundTripBps": 40,
+            }
+            or walk_forward is None
+            or len(windows) != 7
+            or walk_forward["stepBars"] < walk_forward["validationBars"]
+        ):
+            raise _conflict("Stored formal experiment policy is invalid.")
         evaluation_budget = 2 * len(candidates) + 2 * len(candidates) * len(windows) + 1
         if definition.get("evaluationBudget") != evaluation_budget or evaluation_budget > MAX_EVALUATIONS:
             raise _conflict("Stored experiment evaluation budget is invalid.")
-        _normalize_assumptions(definition.get("assumptions"))
-        _normalize_guardrails(definition.get("guardrails"))
-        _validate_warmup_capacity(candidates, train_end, walk_forward)
+        _normalize_assumptions(
+            definition.get("assumptions"),
+            formal=strategy.policy is not None,
+        )
+        _normalize_guardrails(definition.get("guardrails"), formal=strategy.policy is not None)
+        _validate_warmup_capacity(
+            candidates,
+            FORMAL_TRAIN_SCORING_BARS if strategy.policy is not None else train_end,
+            walk_forward,
+        )
         finished = self._finish_definition(
             definition,
             snapshot=prior.snapshot,
@@ -433,6 +1082,9 @@ class StrategyExperimentRunner:
             train_end=train_end,
             validation_end=validation_end,
             windows=windows,
+            score_start_index=score_start_index,
+            sealed_dataset_id=sealed_dataset_id,
+            sealed_dataset_hash=sealed_dataset_hash,
         )
         if finished.holdout_key != prior.experiment.holdout_key:
             raise _conflict("Stored experiment holdout key is invalid.")
@@ -448,17 +1100,29 @@ class StrategyExperimentRunner:
         train_end: int,
         validation_end: int,
         windows: tuple[tuple[int, int, int], ...],
+        score_start_index: int = 0,
+        sealed_dataset_id: str | None = None,
+        sealed_dataset_hash: str | None = None,
     ) -> _ExperimentDefinition:
         canonical_definition = cast(dict[str, Any], _canonical_copy(definition))
         definition_hash = canonical_sha256(canonical_definition)
         holdout_key = canonical_sha256(
             {"snapshotId": snapshot.snapshot_id, "validationEndIndex": validation_end}
         )
-        bars = snapshot_bars_to_ohlcv(
-            snapshot.bars,
-            market=snapshot.market,
-            symbol=snapshot.symbol,
-            timeframe=snapshot.timeframe,
+        bars = (
+            _large_snapshot_records_to_ohlcv(
+                snapshot.bars,
+                market=snapshot.market,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe,
+            )
+            if sealed_dataset_id is not None
+            else snapshot_bars_to_ohlcv(
+                snapshot.bars,
+                market=snapshot.market,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe,
+            )
         )
         return _ExperimentDefinition(
             definition=canonical_definition,
@@ -471,6 +1135,9 @@ class StrategyExperimentRunner:
             train_end=train_end,
             validation_end=validation_end,
             walk_forward_windows=windows,
+            score_start_index=score_start_index,
+            sealed_dataset_id=sealed_dataset_id,
+            sealed_dataset_hash=sealed_dataset_hash,
         )
 
     def _evaluate_candidates(
@@ -478,45 +1145,84 @@ class StrategyExperimentRunner:
         definition: _ExperimentDefinition,
         *,
         experiment_id: str,
-        deadline: float,
-    ) -> tuple[list[StrategyExperimentCandidateRecord], str | None, str]:
+        deadline: float | None,
+    ) -> tuple[list[StrategyExperimentCandidateRecord], str | None, str, bool]:
         records: list[StrategyExperimentCandidateRecord] = []
         guardrails = definition.definition["guardrails"]
+        result_schema_version = int(definition.definition["resultSchemaVersion"])
+        formal = result_schema_version == POLICY_RESULT_SCHEMA_VERSION
         for candidate in definition.candidates:
             warmup = _warmup_bars(candidate.strategy)
+            train_evaluation_start = (
+                definition.score_start_index if formal else warmup
+            )
+            validation_pre_roll = (
+                _formal_evaluation_pre_roll(
+                    candidate.strategy,
+                    definition.bars[definition.train_end],
+                )
+                if formal
+                else warmup
+            )
             train = self._run_engine(
                 candidate.strategy,
                 list(definition.bars[: definition.train_end]),
-                evaluation_start_index=warmup,
+                evaluation_start_index=train_evaluation_start,
                 definition=definition,
                 deadline=deadline,
             )
             validation = self._run_engine(
                 candidate.strategy,
-                list(definition.bars[definition.train_end - warmup : definition.validation_end]),
-                evaluation_start_index=warmup,
+                list(
+                    definition.bars[
+                        definition.train_end - validation_pre_roll : definition.validation_end
+                    ]
+                ),
+                evaluation_start_index=validation_pre_roll,
                 definition=definition,
                 deadline=deadline,
             )
-            validation_metrics = metrics_to_payload(validation.metrics)
-            maximum_drawdown = guardrails["maximumDrawdownPct"]
-            eligible = validation.metrics.trade_count >= guardrails["minimumTradeCount"] and (
-                maximum_drawdown is None or validation.metrics.max_drawdown_pct <= maximum_drawdown
+            train_metrics = metrics_to_payload(
+                train.metrics,
+                result_schema_version=result_schema_version,
             )
+            validation_metrics = metrics_to_payload(
+                validation.metrics,
+                result_schema_version=result_schema_version,
+            )
+            walk_forward = self._walk_forward(candidate.strategy, definition, deadline=deadline)
+            if formal:
+                gate_evaluation = _formal_pretest_gate_evaluation(
+                    train_metrics=train_metrics,
+                    validation_metrics=validation_metrics,
+                    walk_forward=walk_forward,
+                    guardrails=guardrails,
+                )
+                eligible = bool(gate_evaluation["pretest"]["passed"])
+            else:
+                maximum_drawdown = guardrails["maximumDrawdownPct"]
+                eligible = validation.metrics.trade_count >= guardrails["minimumTradeCount"] and (
+                    maximum_drawdown is None or validation.metrics.max_drawdown_pct <= maximum_drawdown
+                )
+                gate_evaluation = {}
             records.append(
                 StrategyExperimentCandidateRecord(
                     experiment_id=experiment_id,
                     candidate_id=candidate.candidate_id,
                     candidate_revision=candidate.strategy.revision,
                     parameters=candidate.parameters,
-                    train_metrics=metrics_to_payload(train.metrics),
+                    train_metrics=train_metrics,
                     validation_metrics=validation_metrics,
                     test_metrics=None,
-                    walk_forward=self._walk_forward(candidate.strategy, definition, deadline=deadline),
+                    walk_forward=walk_forward,
+                    gate_evaluation=gate_evaluation,
                     eligible=eligible,
                     rank=None,
                 )
             )
+
+        if formal and guardrails["stability"]["requirePositiveAdjacentCandidates"]:
+            records = _apply_adjacent_candidate_gate(records, definition.definition["dimensions"])
 
         ranked_indexes = sorted(
             (index for index, record in enumerate(records) if record.eligible),
@@ -530,7 +1236,8 @@ class StrategyExperimentRunner:
         for rank, index in enumerate(ranked_indexes, start=1):
             records[index] = replace(records[index], rank=rank)
         if not ranked_indexes:
-            return records, None, "no_eligible_candidate"
+            reason = "no_validation_candidate" if formal else "no_eligible_candidate"
+            return records, None, reason, False
 
         selected_index = ranked_indexes[0]
         selected = definition.candidates[
@@ -540,60 +1247,168 @@ class StrategyExperimentRunner:
                 if candidate.candidate_id == records[selected_index].candidate_id
             )
         ]
+        warmup = _warmup_bars(selected.strategy)
+        if formal and definition.sealed_dataset_id is not None:
+            test_bars = self._claim_and_read_sealed_test(
+                definition,
+                experiment_id=experiment_id,
+            )
+            test_pre_roll = _formal_evaluation_pre_roll(selected.strategy, test_bars[0])
+            evaluation_bars = [*definition.bars[-test_pre_roll:], *test_bars]
+            test_evaluation_start = test_pre_roll
+        else:
+            try:
+                self.experiment_store.claim_test_holdout(
+                    snapshot_id=definition.snapshot.snapshot_id,
+                    definition_hash=definition.definition_hash,
+                    experiment_id=experiment_id,
+                    consumed_at=datetime.now(timezone.utc),
+                )
+            except ValueError as error:
+                if str(error) == "test_holdout_consumed":
+                    raise StrategyExperimentError(
+                        status=409,
+                        error="test_holdout_consumed",
+                        detail="The test holdout is already bound to a different experiment definition.",
+                    ) from None
+                raise
+            evaluation_bars = list(definition.bars[definition.validation_end - warmup :])
+            test_evaluation_start = warmup
+        test = self._run_engine(
+            selected.strategy,
+            evaluation_bars,
+            evaluation_start_index=test_evaluation_start,
+            definition=definition,
+            deadline=deadline,
+        )
+        test_metrics = metrics_to_payload(
+            test.metrics,
+            result_schema_version=result_schema_version,
+        )
+        if formal:
+            test_gate = _formal_test_gate_evaluation(test_metrics, guardrails["test"])
+            gate_evaluation = copy.deepcopy(records[selected_index].gate_evaluation)
+            gate_evaluation["test"] = test_gate
+            profitability_gate_passed = bool(test_gate["passed"])
+            completion_reason = (
+                "profitability_gate_passed" if profitability_gate_passed else "test_gate_failed"
+            )
+        else:
+            gate_evaluation = records[selected_index].gate_evaluation
+            profitability_gate_passed = False
+            completion_reason = "selected"
+        records[selected_index] = replace(
+            records[selected_index],
+            test_metrics=test_metrics,
+            gate_evaluation=gate_evaluation,
+        )
+        return (
+            records,
+            records[selected_index].candidate_id,
+            completion_reason,
+            profitability_gate_passed,
+        )
+
+    def _claim_and_read_sealed_test(
+        self,
+        definition: _ExperimentDefinition,
+        *,
+        experiment_id: str,
+    ) -> list[OHLCVBar]:
+        source = self.sealed_bar_source
+        dataset_id = definition.sealed_dataset_id
+        dataset_hash = definition.sealed_dataset_hash
+        if source is None or dataset_id is None or dataset_hash is None:
+            raise StrategyExperimentError(
+                status=409,
+                error="sealed_dataset_unavailable",
+                detail="The sealed dataset source is unavailable.",
+            )
         try:
+            claim = source.claim_test_partition(
+                dataset_id,
+                claimant_id=experiment_id,
+                expected_dataset_hash=dataset_hash,
+            )
+            consumed_at = getattr(claim, "claimed_at", datetime.now(timezone.utc))
             self.experiment_store.claim_test_holdout(
                 snapshot_id=definition.snapshot.snapshot_id,
                 definition_hash=definition.definition_hash,
                 experiment_id=experiment_id,
-                consumed_at=datetime.now(timezone.utc),
+                consumed_at=consumed_at,
             )
+            claim_token = str(getattr(claim, "claim_token", ""))
+            if not claim_token:
+                raise ValueError("sealed_test_claim_invalid")
+            bars = source.read_claimed_test_bars(dataset_id, claim_token=claim_token)
+            _validate_claimed_test_bars(definition, bars)
+            return bars
         except ValueError as error:
-            if str(error) == "test_holdout_consumed":
+            if str(error) in {
+                "sealed_test_partition_consumed",
+                "test_holdout_consumed",
+            }:
                 raise StrategyExperimentError(
                     status=409,
                     error="test_holdout_consumed",
                     detail="The test holdout is already bound to a different experiment definition.",
                 ) from None
             raise
-        warmup = _warmup_bars(selected.strategy)
-        test = self._run_engine(
-            selected.strategy,
-            list(definition.bars[definition.validation_end - warmup :]),
-            evaluation_start_index=warmup,
-            definition=definition,
-            deadline=deadline,
-        )
-        records[selected_index] = replace(records[selected_index], test_metrics=metrics_to_payload(test.metrics))
-        return records, records[selected_index].candidate_id, "selected"
 
     def _walk_forward(
         self,
         strategy: StrategyConfig,
         definition: _ExperimentDefinition,
         *,
-        deadline: float,
+        deadline: float | None,
     ) -> dict[str, Any]:
         windows: list[dict[str, Any]] = []
         validation_returns: list[float] = []
         validation_drawdowns: list[float] = []
         warmup = _warmup_bars(strategy)
+        formal = definition.sealed_dataset_id is not None
         for index, (start, train_end, validation_end) in enumerate(definition.walk_forward_windows):
+            train_pre_roll = (
+                _formal_evaluation_pre_roll(strategy, definition.bars[start])
+                if formal
+                else warmup
+            )
+            validation_pre_roll = (
+                _formal_evaluation_pre_roll(strategy, definition.bars[train_end])
+                if formal
+                else warmup
+            )
             train = self._run_engine(
                 strategy,
-                list(definition.bars[start:train_end]),
-                evaluation_start_index=warmup,
+                list(
+                    definition.bars[
+                        start - train_pre_roll if formal else start : train_end
+                    ]
+                ),
+                evaluation_start_index=train_pre_roll,
                 definition=definition,
                 deadline=deadline,
             )
             validation = self._run_engine(
                 strategy,
-                list(definition.bars[train_end - warmup : validation_end]),
-                evaluation_start_index=warmup,
+                list(
+                    definition.bars[
+                        train_end - validation_pre_roll : validation_end
+                    ]
+                ),
+                evaluation_start_index=validation_pre_roll,
                 definition=definition,
                 deadline=deadline,
             )
-            train_metrics = metrics_to_payload(train.metrics)
-            validation_metrics = metrics_to_payload(validation.metrics)
+            result_schema_version = int(definition.definition["resultSchemaVersion"])
+            train_metrics = metrics_to_payload(
+                train.metrics,
+                result_schema_version=result_schema_version,
+            )
+            validation_metrics = metrics_to_payload(
+                validation.metrics,
+                result_schema_version=result_schema_version,
+            )
             validation_returns.append(float(validation_metrics["totalReturnPct"]))
             validation_drawdowns.append(float(validation_metrics["maxDrawdownPct"]))
             windows.append(
@@ -622,9 +1437,9 @@ class StrategyExperimentRunner:
         *,
         evaluation_start_index: int,
         definition: _ExperimentDefinition,
-        deadline: float,
+        deadline: float | None,
     ) -> BacktestRun:
-        if self.monotonic() >= deadline:
+        if deadline is not None and self.monotonic() >= deadline:
             raise _ExperimentTimeout()
         self._evaluation_count += 1
         assumptions = definition.definition["assumptions"]
@@ -640,10 +1455,11 @@ class StrategyExperimentRunner:
         *,
         experiment_id: str,
         created_at: datetime,
-        status: Literal["completed", "failed"],
+        status: Literal["pending", "completed", "failed"],
         selected_candidate_id: str | None = None,
         completion_reason: str | None = None,
         result_hash: str | None = None,
+        profitability_gate_passed: bool = False,
         error_code: str | None = None,
         error_detail: str | None = None,
     ) -> StrategyExperimentRecord:
@@ -664,6 +1480,7 @@ class StrategyExperimentRunner:
             selected_candidate_id=selected_candidate_id,
             completion_reason=completion_reason,
             result_hash=result_hash,
+            profitability_gate_passed=profitability_gate_passed,
             error_code=error_code,
             error_detail=error_detail,
         )
@@ -691,8 +1508,12 @@ class StrategyExperimentRunner:
             pass
 
 
-def metrics_to_payload(metrics: BacktestMetrics) -> dict[str, int | float]:
-    return {
+def metrics_to_payload(
+    metrics: BacktestMetrics,
+    *,
+    result_schema_version: int = RESULT_SCHEMA_VERSION,
+) -> dict[str, int | float | bool]:
+    payload: dict[str, int | float | bool] = {
         "totalReturnPct": metrics.total_return_pct,
         "annualReturnPct": metrics.annual_return_pct,
         "maxDrawdownPct": metrics.max_drawdown_pct,
@@ -700,6 +1521,14 @@ def metrics_to_payload(metrics: BacktestMetrics) -> dict[str, int | float]:
         "profitFactor": metrics.profit_factor,
         "tradeCount": metrics.trade_count,
     }
+    if result_schema_version >= POLICY_RESULT_SCHEMA_VERSION:
+        payload["roundTripCount"] = metrics.round_trip_count
+        payload["profitFactorInfinite"] = bool(
+            metrics.round_trip_count > 0
+            and metrics.win_rate_pct == 100
+            and metrics.total_return_pct > 0
+        )
+    return payload
 
 
 def strategy_experiment_detail_to_payload(detail: StrategyExperimentDetail) -> dict[str, Any]:
@@ -711,7 +1540,7 @@ def strategy_experiment_detail_to_payload(detail: StrategyExperimentDetail) -> d
         if detail.snapshot.test_definition_hash == detail.experiment.definition_hash
         else "consumed_by_other_definition"
     )
-    payload["snapshot"] = {
+    snapshot_payload = {
         "snapshotId": detail.snapshot.snapshot_id,
         "createdAt": detail.snapshot.created_at.isoformat(),
         "market": detail.snapshot.market,
@@ -721,13 +1550,17 @@ def strategy_experiment_detail_to_payload(detail: StrategyExperimentDetail) -> d
         "rows": detail.snapshot.rows,
         "startAt": detail.snapshot.start_at,
         "endAt": detail.snapshot.end_at,
-        "bars": detail.snapshot.bars,
         "testDefinitionHash": detail.snapshot.test_definition_hash,
         "testOwnerExperimentId": detail.snapshot.test_owner_experiment_id,
         "testConsumedAt": (
             detail.snapshot.test_consumed_at.isoformat() if detail.snapshot.test_consumed_at else None
         ),
     }
+    if int(detail.experiment.definition.get("resultSchemaVersion") or 1) >= POLICY_RESULT_SCHEMA_VERSION:
+        snapshot_payload["sealedDataset"] = detail.experiment.definition.get("sealedDataset")
+    else:
+        snapshot_payload["bars"] = detail.snapshot.bars
+    payload["snapshot"] = snapshot_payload
     payload["candidates"] = [
         {
             "candidateId": candidate.candidate_id,
@@ -737,6 +1570,7 @@ def strategy_experiment_detail_to_payload(detail: StrategyExperimentDetail) -> d
             "validationMetrics": candidate.validation_metrics,
             "testMetrics": candidate.test_metrics,
             "walkForward": candidate.walk_forward,
+            "gateEvaluation": candidate.gate_evaluation,
             "eligible": candidate.eligible,
             "rank": candidate.rank,
         }
@@ -776,6 +1610,26 @@ def _record_to_payload(record: StrategyExperimentRecord) -> dict[str, Any]:
         "selectedCandidateId": record.selected_candidate_id,
         "completionReason": record.completion_reason,
         "resultHash": record.result_hash,
+        "profitabilityGatePassed": record.profitability_gate_passed,
+        "profitabilityStatus": (
+            "formal_gate_passed"
+            if record.profitability_gate_passed
+            else "not_admissible"
+        ),
+        "promotion": (
+            {
+                "freshSourceRunId": record.promotion_run_id,
+                "strategyRevision": record.promoted_strategy_revision,
+                "lineageHash": record.promotion_lineage_hash,
+                "promotedAt": record.promoted_at.isoformat() if record.promoted_at else None,
+                "operator": record.promotion_operator,
+                "profitabilityStatus": "formal_gate_passed",
+                "paperOnly": True,
+                "bindingBlocked": False,
+            }
+            if record.promotion_lineage_hash
+            else None
+        ),
         "errorCode": record.error_code,
         "errorDetail": record.error_detail,
     }
@@ -783,10 +1637,12 @@ def _record_to_payload(record: StrategyExperimentRecord) -> dict[str, Any]:
 
 def _normalize_dimensions(
     strategy: StrategyConfig,
-    dimensions: Sequence[ParameterDimension],
-) -> tuple[ParameterDimension, ...]:
+    dimensions: Sequence[ParameterDimension | PolicyParameterDimension],
+) -> tuple[ParameterDimension | PolicyParameterDimension, ...]:
     if not isinstance(dimensions, (list, tuple)) or not dimensions:
         raise _invalid("At least one parameter dimension is required.")
+    if strategy.policy is not None:
+        return _normalize_policy_dimensions(dimensions)
     normalized: list[ParameterDimension] = []
     targets: set[tuple[str, int, str]] = set()
     for dimension in dimensions:
@@ -827,11 +1683,47 @@ def _normalize_dimensions(
     return tuple(sorted(normalized, key=lambda value: (value.side, value.condition_index, value.parameter)))
 
 
-def _dimensions_from_payload(value: Any) -> tuple[ParameterDimension, ...]:
+def _normalize_policy_dimensions(
+    dimensions: Sequence[ParameterDimension | PolicyParameterDimension],
+) -> tuple[PolicyParameterDimension, ...]:
+    normalized: list[PolicyParameterDimension] = []
+    targets: set[str] = set()
+    for dimension in dimensions:
+        if not isinstance(dimension, PolicyParameterDimension):
+            raise _invalid("Version 2 strategies require policy parameter dimensions.")
+        kind = _SUPPORTED_POLICY_PATHS.get(dimension.policy_path)
+        if kind is None or dimension.policy_path in targets:
+            raise _invalid("Policy parameter dimension is unsupported or duplicated.")
+        if not dimension.values:
+            raise _invalid("Policy parameter dimension values are required.")
+        values = tuple(
+            sorted({_policy_parameter_value(kind, value) for value in dimension.values})
+        )
+        targets.add(dimension.policy_path)
+        normalized.append(
+            PolicyParameterDimension(policy_path=dimension.policy_path, values=values)
+        )
+    return tuple(sorted(normalized, key=lambda value: value.policy_path))
+
+
+def _dimensions_from_payload(
+    value: Any,
+) -> tuple[ParameterDimension | PolicyParameterDimension, ...]:
     if not isinstance(value, list) or not value:
         raise _invalid("At least one parameter dimension is required.")
-    dimensions: list[ParameterDimension] = []
+    dimensions: list[ParameterDimension | PolicyParameterDimension] = []
     for item in value:
+        if isinstance(item, dict) and set(item) == {"policyPath", "values"}:
+            values = item.get("values")
+            if not isinstance(values, list):
+                raise _invalid("Policy parameter dimension values are invalid.")
+            dimensions.append(
+                PolicyParameterDimension(
+                    policy_path=str(item.get("policyPath") or ""),
+                    values=tuple(values),
+                )
+            )
+            continue
         if not isinstance(item, dict) or set(item) != {
             "conditionSide",
             "conditionIndex",
@@ -853,7 +1745,11 @@ def _dimensions_from_payload(value: Any) -> tuple[ParameterDimension, ...]:
     return tuple(dimensions)
 
 
-def _dimension_to_payload(dimension: ParameterDimension) -> dict[str, Any]:
+def _dimension_to_payload(
+    dimension: ParameterDimension | PolicyParameterDimension,
+) -> dict[str, Any]:
+    if isinstance(dimension, PolicyParameterDimension):
+        return {"policyPath": dimension.policy_path, "values": list(dimension.values)}
     return {
         "conditionSide": dimension.side,
         "conditionIndex": dimension.condition_index,
@@ -875,7 +1771,24 @@ def _parameter_value(parameter: str, value: Any) -> int | float:
     raise _invalid("Parameter dimension is unsupported.")
 
 
-def _normalize_assumptions(value: Any) -> dict[str, int | float]:
+def _policy_parameter_value(kind: str, value: Any) -> int | float:
+    number = _finite_number(value, "Policy parameter values must be finite numbers.")
+    if kind in {"window", "bars", "slope", "cooldown"}:
+        minimum = 0 if kind == "cooldown" else 1 if kind in {"bars", "slope"} else 2
+        maximum = 10_000 if kind in {"bars", "cooldown"} else 500 if kind == "window" else 50
+        if not number.is_integer() or not minimum <= number <= maximum:
+            raise _invalid("Policy integer parameter is outside supported bounds.")
+        return int(number)
+    if kind == "multiple" and 0 < number <= 20:
+        return _canonical_number(number)
+    raise _invalid("Policy parameter is outside supported bounds.")
+
+
+def _normalize_assumptions(
+    value: Any,
+    *,
+    formal: bool = False,
+) -> dict[str, int | float]:
     if not isinstance(value, dict) or set(value) != {"initialCash", "feeBps", "slippageBps"}:
         raise _invalid("Backtest assumptions are invalid.")
     initial_cash = _finite_number(value.get("initialCash"), "Initial cash must be finite and positive.")
@@ -883,14 +1796,23 @@ def _normalize_assumptions(value: Any) -> dict[str, int | float]:
     slippage_bps = _finite_number(value.get("slippageBps"), "Slippage basis points must be finite.")
     if initial_cash <= 0 or not 0 <= fee_bps <= 1_000 or not 0 <= slippage_bps <= 1_000:
         raise _invalid("Backtest assumptions are outside supported bounds.")
-    return {
+    normalized = {
         "initialCash": _canonical_number(initial_cash),
         "feeBps": _canonical_number(fee_bps),
         "slippageBps": _canonical_number(slippage_bps),
     }
+    if formal and normalized != FORMAL_BACKTEST_ASSUMPTIONS:
+        raise _invalid("Version 2 assumptions must match the frozen 10 USDT and 10 bps policy.")
+    return normalized
 
 
-def _normalize_guardrails(value: Any) -> dict[str, int | float | None]:
+def _normalize_guardrails(
+    value: Any,
+    *,
+    formal: bool = False,
+) -> dict[str, Any]:
+    if formal:
+        return _normalize_formal_guardrails(value)
     if not isinstance(value, dict) or set(value) != {"minimumTradeCount", "maximumDrawdownPct"}:
         raise _invalid("Strategy experiment guardrails are invalid.")
     minimum = value.get("minimumTradeCount")
@@ -903,6 +1825,127 @@ def _normalize_guardrails(value: Any) -> dict[str, int | float | None]:
             raise _invalid("Maximum drawdown must be between 0 and 100.")
         maximum = _canonical_number(maximum_number)
     return {"minimumTradeCount": minimum, "maximumDrawdownPct": maximum}
+
+
+def _normalize_formal_guardrails(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "development",
+        "validation",
+        "test",
+        "rolling",
+        "stability",
+    }:
+        raise _invalid("Strategy experiment guardrails are invalid.")
+    development = value.get("development")
+    validation = value.get("validation")
+    test = value.get("test")
+    rolling = value.get("rolling")
+    stability = value.get("stability")
+    if not isinstance(development, dict) or set(development) != {"minimumRoundTripCount"}:
+        raise _invalid("Development profitability guardrails are invalid.")
+    if not isinstance(validation, dict) or set(validation) != {
+        "requirePositiveReturn",
+        "minimumProfitFactor",
+        "maximumDrawdownPct",
+        "minimumRoundTripCount",
+    }:
+        raise _invalid("Validation profitability guardrails are invalid.")
+    if not isinstance(test, dict) or set(test) != {
+        "requirePositiveReturn",
+        "minimumProfitFactor",
+        "maximumDrawdownPct",
+        "minimumRoundTripCount",
+    }:
+        raise _invalid("Test profitability guardrails are invalid.")
+    if not isinstance(rolling, dict) or set(rolling) != {
+        "requiredWindowCount",
+        "minimumPositiveWindowCount",
+    }:
+        raise _invalid("Rolling profitability guardrails are invalid.")
+    if not isinstance(stability, dict) or set(stability) != {
+        "requirePositiveAdjacentCandidates"
+    }:
+        raise _invalid("Stability profitability guardrails are invalid.")
+
+    development_round_trips = _non_negative_int(
+        development.get("minimumRoundTripCount"),
+        "Development round-trip count must be a non-negative integer.",
+    )
+    validation_round_trips = _non_negative_int(
+        validation.get("minimumRoundTripCount"),
+        "Validation round-trip count must be a non-negative integer.",
+    )
+    test_round_trips = _non_negative_int(
+        test.get("minimumRoundTripCount"),
+        "Test round-trip count must be a non-negative integer.",
+    )
+    validation_positive = _required_bool(
+        validation.get("requirePositiveReturn"),
+        "Validation positive-return guardrail must be boolean.",
+    )
+    test_positive = _required_bool(
+        test.get("requirePositiveReturn"),
+        "Test positive-return guardrail must be boolean.",
+    )
+    adjacent_positive = _required_bool(
+        stability.get("requirePositiveAdjacentCandidates"),
+        "Adjacent-candidate guardrail must be boolean.",
+    )
+    validation_profit_factor = _bounded_number(
+        validation.get("minimumProfitFactor"),
+        minimum=0,
+        maximum=1_000,
+        detail="Validation profit factor is outside supported bounds.",
+    )
+    test_profit_factor = _bounded_number(
+        test.get("minimumProfitFactor"),
+        minimum=0,
+        maximum=1_000,
+        detail="Test profit factor is outside supported bounds.",
+    )
+    validation_drawdown = _bounded_number(
+        validation.get("maximumDrawdownPct"),
+        minimum=0,
+        maximum=100,
+        detail="Validation drawdown is outside supported bounds.",
+    )
+    test_drawdown = _bounded_number(
+        test.get("maximumDrawdownPct"),
+        minimum=0,
+        maximum=100,
+        detail="Test drawdown is outside supported bounds.",
+    )
+    required_window_count = _non_negative_int(
+        rolling.get("requiredWindowCount"),
+        "Rolling required window count must be a non-negative integer.",
+    )
+    minimum_positive_windows = _non_negative_int(
+        rolling.get("minimumPositiveWindowCount"),
+        "Rolling positive window count must be a non-negative integer.",
+    )
+    normalized = {
+        "development": {"minimumRoundTripCount": development_round_trips},
+        "validation": {
+            "requirePositiveReturn": validation_positive,
+            "minimumProfitFactor": validation_profit_factor,
+            "maximumDrawdownPct": validation_drawdown,
+            "minimumRoundTripCount": validation_round_trips,
+        },
+        "test": {
+            "requirePositiveReturn": test_positive,
+            "minimumProfitFactor": test_profit_factor,
+            "maximumDrawdownPct": test_drawdown,
+            "minimumRoundTripCount": test_round_trips,
+        },
+        "rolling": {
+            "requiredWindowCount": required_window_count,
+            "minimumPositiveWindowCount": minimum_positive_windows,
+        },
+        "stability": {"requirePositiveAdjacentCandidates": adjacent_positive},
+    }
+    if normalized != FORMAL_PROFITABILITY_GUARDRAILS:
+        raise _invalid("Version 2 profitability guardrails must match the frozen formal policy.")
+    return normalized
 
 
 def _normalize_walk_forward(
@@ -939,6 +1982,64 @@ def _split_boundaries(rows: int) -> tuple[int, int]:
     return train_end, validation_end
 
 
+def _formal_scoring_boundaries(
+    sealed_summary: dict[str, Any],
+) -> tuple[int, int, int, datetime]:
+    total_rows = _exact_int(sealed_summary.get("rows"))
+    development_rows = _exact_int(sealed_summary.get("developmentRows"))
+    withheld_rows = _exact_int(sealed_summary.get("withheldRows"))
+    if (
+        total_rows is None
+        or development_rows is None
+        or withheld_rows is None
+        or total_rows < MIN_FORMAL_SOURCE_BARS
+    ):
+        raise ValueError("formal_scoring_rows_invalid")
+    try:
+        start_at = datetime.fromisoformat(str(sealed_summary["start"]))
+        development_end_at = datetime.fromisoformat(
+            str(sealed_summary["developmentEndExclusive"])
+        )
+        end_at = datetime.fromisoformat(str(sealed_summary["endExclusive"]))
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("formal_scoring_range_invalid") from error
+    if any(value.tzinfo is None or value.utcoffset() is None for value in (start_at, development_end_at, end_at)):
+        raise ValueError("formal_scoring_range_invalid")
+    start_at = start_at.astimezone(timezone.utc)
+    development_end_at = development_end_at.astimezone(timezone.utc)
+    end_at = end_at.astimezone(timezone.utc)
+    if any(value.second or value.microsecond for value in (start_at, development_end_at, end_at)):
+        raise ValueError("formal_scoring_range_invalid")
+
+    pre_roll_rows = total_rows - MIN_FORMAL_SOURCE_BARS
+    score_start_at = end_at - timedelta(minutes=MIN_FORMAL_SOURCE_BARS)
+    train_end = pre_roll_rows + FORMAL_TRAIN_SCORING_BARS
+    validation_end = pre_roll_rows + FORMAL_DEVELOPMENT_SCORING_BARS
+    if (
+        start_at + timedelta(minutes=total_rows) != end_at
+        or development_end_at
+        != score_start_at + timedelta(minutes=FORMAL_DEVELOPMENT_SCORING_BARS)
+        or development_rows != validation_end
+        or withheld_rows != FORMAL_TEST_SCORING_BARS
+    ):
+        raise ValueError("formal_scoring_partition_invalid")
+    return pre_roll_rows, train_end, validation_end, score_start_at
+
+
+def _formal_alignment_rows(value: datetime) -> int:
+    normalized = value.astimezone(timezone.utc)
+    if normalized.second or normalized.microsecond:
+        raise ValueError("formal_scoring_range_invalid")
+    return normalized.minute
+
+
+def _formal_evaluation_pre_roll(strategy: StrategyConfig, boundary: Any) -> int:
+    timestamp = getattr(boundary, "timestamp", None)
+    if not isinstance(timestamp, datetime) or timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise ValueError("formal_evaluation_boundary_invalid")
+    return _warmup_bars(strategy) + _formal_alignment_rows(timestamp)
+
+
 def _validate_warmup_capacity(
     candidates: tuple[ExpandedCandidate, ...],
     train_end: int,
@@ -952,6 +2053,8 @@ def _validate_warmup_capacity(
 
 
 def _warmup_bars(strategy: StrategyConfig) -> int:
+    if strategy.policy is not None:
+        return strategy_required_bars(strategy)
     windows = [
         int(condition.params["window"])
         for condition in (*strategy.entry_conditions, *strategy.exit_conditions)
@@ -960,20 +2063,188 @@ def _warmup_bars(strategy: StrategyConfig) -> int:
     return max(windows, default=0) + 1
 
 
+def _formal_pretest_gate_evaluation(
+    *,
+    train_metrics: dict[str, Any],
+    validation_metrics: dict[str, Any],
+    walk_forward: dict[str, Any],
+    guardrails: dict[str, Any],
+) -> dict[str, Any]:
+    development_actual = int(train_metrics["roundTripCount"]) + int(
+        validation_metrics["roundTripCount"]
+    )
+    development_minimum = int(guardrails["development"]["minimumRoundTripCount"])
+    development_passed = development_actual >= development_minimum
+
+    validation_rules = guardrails["validation"]
+    validation_failures: list[str] = []
+    if validation_rules["requirePositiveReturn"] and float(
+        validation_metrics["totalReturnPct"]
+    ) <= 0:
+        validation_failures.append("non_positive_return")
+    if not _profit_factor_passes(
+        validation_metrics,
+        float(validation_rules["minimumProfitFactor"]),
+    ):
+        validation_failures.append("profit_factor_below_minimum")
+    if float(validation_metrics["maxDrawdownPct"]) > float(
+        validation_rules["maximumDrawdownPct"]
+    ):
+        validation_failures.append("drawdown_above_maximum")
+    if int(validation_metrics["roundTripCount"]) < int(
+        validation_rules["minimumRoundTripCount"]
+    ):
+        validation_failures.append("round_trip_count_below_minimum")
+    validation_passed = not validation_failures
+
+    window_count = int(walk_forward["validationWindowCount"])
+    positive_count = int(walk_forward["positiveReturnCount"])
+    actual_positive_pct = positive_count / window_count * 100 if window_count else 0.0
+    required_window_count = int(guardrails["rolling"]["requiredWindowCount"])
+    minimum_positive_windows = int(
+        guardrails["rolling"]["minimumPositiveWindowCount"]
+    )
+    rolling_passed = (
+        window_count == required_window_count
+        and positive_count >= minimum_positive_windows
+    )
+    base_passed = development_passed and validation_passed and rolling_passed
+    return {
+        "development": {
+            "passed": development_passed,
+            "actualRoundTripCount": development_actual,
+            "minimumRoundTripCount": development_minimum,
+        },
+        "validation": {
+            "passed": validation_passed,
+            "failures": validation_failures,
+            "metrics": validation_metrics,
+            "guardrails": validation_rules,
+        },
+        "rolling": {
+            "passed": rolling_passed,
+            "positiveReturnCount": positive_count,
+            "validationWindowCount": window_count,
+            "actualPositiveReturnPct": round(actual_positive_pct, 4),
+            "requiredWindowCount": required_window_count,
+            "minimumPositiveWindowCount": minimum_positive_windows,
+        },
+        "stability": {"passed": False, "pending": True, "neighbors": []},
+        "pretest": {"passed": base_passed},
+    }
+
+
+def _formal_test_gate_evaluation(
+    test_metrics: dict[str, Any],
+    guardrails: dict[str, Any],
+) -> dict[str, Any]:
+    failures: list[str] = []
+    if guardrails["requirePositiveReturn"] and float(test_metrics["totalReturnPct"]) <= 0:
+        failures.append("non_positive_return")
+    if not _profit_factor_passes(test_metrics, float(guardrails["minimumProfitFactor"])):
+        failures.append("profit_factor_below_minimum")
+    if float(test_metrics["maxDrawdownPct"]) > float(guardrails["maximumDrawdownPct"]):
+        failures.append("drawdown_above_maximum")
+    if int(test_metrics["roundTripCount"]) < int(guardrails["minimumRoundTripCount"]):
+        failures.append("round_trip_count_below_minimum")
+    return {
+        "passed": not failures,
+        "failures": failures,
+        "metrics": test_metrics,
+        "guardrails": guardrails,
+    }
+
+
+def _profit_factor_passes(metrics: dict[str, Any], minimum: float) -> bool:
+    return bool(metrics.get("profitFactorInfinite")) or float(metrics["profitFactor"]) >= minimum
+
+
+def _apply_adjacent_candidate_gate(
+    records: list[StrategyExperimentCandidateRecord],
+    dimensions: list[dict[str, Any]],
+) -> list[StrategyExperimentCandidateRecord]:
+    paths = [str(dimension["policyPath"]) for dimension in dimensions]
+    values_by_path = {
+        str(dimension["policyPath"]): list(dimension["values"]) for dimension in dimensions
+    }
+
+    def coordinates(record: StrategyExperimentCandidateRecord) -> tuple[int | float, ...]:
+        parameters = {str(item["policyPath"]): item["value"] for item in record.parameters}
+        return tuple(cast(int | float, parameters[path]) for path in paths)
+
+    records_by_coordinates = {coordinates(record): record for record in records}
+    updated: list[StrategyExperimentCandidateRecord] = []
+    for record in records:
+        coordinate = coordinates(record)
+        neighbor_coordinates: list[tuple[int | float, ...]] = []
+        complete_neighborhood = True
+        for dimension_index, path in enumerate(paths):
+            values = values_by_path[path]
+            try:
+                value_index = values.index(coordinate[dimension_index])
+            except ValueError:
+                complete_neighborhood = False
+                continue
+            if value_index == 0 or value_index == len(values) - 1:
+                complete_neighborhood = False
+                continue
+            for adjacent_index in (value_index - 1, value_index + 1):
+                neighbor = list(coordinate)
+                neighbor[dimension_index] = values[adjacent_index]
+                neighbor_coordinates.append(tuple(neighbor))
+
+        neighbors: list[dict[str, Any]] = []
+        positive_neighbors = complete_neighborhood
+        for neighbor_coordinate in neighbor_coordinates:
+            neighbor_record = records_by_coordinates.get(neighbor_coordinate)
+            if neighbor_record is None:
+                positive_neighbors = False
+                continue
+            neighbor_return = float(neighbor_record.validation_metrics["totalReturnPct"])
+            positive = neighbor_return > 0
+            positive_neighbors = positive_neighbors and positive
+            neighbors.append(
+                {
+                    "candidateId": neighbor_record.candidate_id,
+                    "validationReturnPct": neighbor_return,
+                    "positive": positive,
+                }
+            )
+        gate_evaluation = copy.deepcopy(record.gate_evaluation)
+        gate_evaluation["stability"] = {
+            "passed": positive_neighbors,
+            "pending": False,
+            "completeNeighborhood": complete_neighborhood,
+            "neighbors": sorted(neighbors, key=lambda item: item["candidateId"]),
+        }
+        gate_evaluation["pretest"]["passed"] = bool(
+            gate_evaluation["pretest"]["passed"] and positive_neighbors
+        )
+        updated.append(
+            replace(
+                record,
+                gate_evaluation=gate_evaluation,
+                eligible=bool(record.eligible and positive_neighbors),
+            )
+        )
+    return updated
+
+
 def _result_hash(
     _definition_hash: str,
     candidates: list[StrategyExperimentCandidateRecord],
     *,
     selected_candidate_id: str | None,
     completion_reason: str,
+    profitability_gate_passed: bool = False,
+    result_schema_version: int = RESULT_SCHEMA_VERSION,
 ) -> str:
     ordered = sorted(candidates, key=lambda candidate: canonical_json(candidate.parameters))
     selected = next(
         (candidate for candidate in ordered if candidate.candidate_id == selected_candidate_id),
         None,
     )
-    return canonical_sha256(
-        {
+    payload: dict[str, Any] = {
             "candidates": [
                 {
                     "parameters": candidate.parameters,
@@ -989,9 +2260,551 @@ def _result_hash(
                 else None
             ),
             "completionReason": completion_reason,
-            "schemaVersion": RESULT_SCHEMA_VERSION,
-        }
+            "schemaVersion": result_schema_version,
+    }
+    if result_schema_version >= POLICY_RESULT_SCHEMA_VERSION:
+        payload["candidates"] = [
+            {
+                "parameters": candidate.parameters,
+                "trainMetrics": candidate.train_metrics,
+                "validationMetrics": candidate.validation_metrics,
+                "walkForward": candidate.walk_forward,
+                "gateEvaluation": candidate.gate_evaluation,
+            }
+            for candidate in ordered
+        ]
+        payload["profitabilityGatePassed"] = profitability_gate_passed
+    return canonical_sha256(payload)
+
+
+def _sealed_summary_payload(summary: Any) -> dict[str, Any]:
+    to_payload = getattr(summary, "to_payload", None)
+    if callable(to_payload):
+        payload = to_payload()
+        if not isinstance(payload, dict):
+            raise _conflict("The sealed dataset summary is invalid.")
+        return cast(dict[str, Any], _canonical_copy(payload))
+    return {
+        "datasetId": _required_string(getattr(summary, "dataset_id", None)),
+        "market": _required_string(getattr(summary, "market", None)),
+        "symbol": _required_string(getattr(summary, "symbol", None)),
+        "timeframe": _required_string(getattr(summary, "timeframe", None)),
+        "source": _required_string(getattr(summary, "source", None)),
+        "adjustmentMode": str(getattr(summary, "adjustment_mode", "none") or "none"),
+        "start": _datetime_or_string(getattr(summary, "start", None)),
+        "developmentEndExclusive": _datetime_or_string(
+            getattr(summary, "development_end_exclusive", None)
+        ),
+        "endExclusive": _datetime_or_string(getattr(summary, "end_exclusive", None)),
+        "rows": _required_exact_int(getattr(summary, "rows", None)),
+        "developmentRows": _required_exact_int(
+            getattr(summary, "development_rows", None)
+        ),
+        "withheldRows": _required_exact_int(getattr(summary, "withheld_rows", None)),
+        "datasetHash": _required_string(getattr(summary, "dataset_hash", None)),
+        "developmentHash": _required_string(
+            getattr(summary, "development_hash", None)
+        ),
+    }
+
+
+def _promotable_selected_candidate(
+    detail: StrategyExperimentDetail,
+) -> StrategyExperimentCandidateRecord:
+    experiment = detail.experiment
+    if (
+        experiment.status != "completed"
+        or not experiment.profitability_gate_passed
+        or experiment.completion_reason != "profitability_gate_passed"
+        or not experiment.result_hash
+        or not experiment.selected_candidate_id
+        or detail.snapshot.test_definition_hash != experiment.definition_hash
+        or detail.snapshot.test_owner_experiment_id != experiment.experiment_id
+        or detail.snapshot.test_consumed_at is None
+    ):
+        raise StrategyExperimentError(
+            status=409,
+            error="strategy_experiment_not_promotable",
+            detail="Only the uniquely tested profitable winner can be promoted.",
+        )
+    selected = next(
+        (
+            candidate
+            for candidate in detail.candidates
+            if candidate.candidate_id == experiment.selected_candidate_id
+        ),
+        None,
     )
+    rank_one = [candidate for candidate in detail.candidates if candidate.rank == 1]
+    if (
+        selected is None
+        or rank_one != [selected]
+        or selected.test_metrics is None
+        or not selected.eligible
+        or not bool(selected.gate_evaluation.get("pretest", {}).get("passed"))
+        or not bool(selected.gate_evaluation.get("test", {}).get("passed"))
+    ):
+        raise StrategyExperimentError(
+            status=409,
+            error="strategy_experiment_not_promotable",
+            detail="Only the uniquely tested profitable winner can be promoted.",
+        )
+    return selected
+
+
+def _winner_strategy(
+    detail: StrategyExperimentDetail,
+    selected: StrategyExperimentCandidateRecord,
+) -> StrategyConfig:
+    definition = detail.experiment.definition
+    if canonical_sha256(definition) != detail.experiment.definition_hash:
+        raise _conflict("The stored experiment definition hash is invalid.")
+    try:
+        base = strategy_config_from_payload(cast(dict[str, Any], definition["baseStrategy"]))
+        dimensions = _dimensions_from_payload(definition["dimensions"])
+        candidates = expand_candidates(base, dimensions)
+    except (KeyError, TypeError, ValueError) as error:
+        raise _conflict("The stored experiment definition is invalid.") from error
+    winner = next(
+        (candidate for candidate in candidates if candidate.candidate_id == selected.candidate_id),
+        None,
+    )
+    if (
+        winner is None
+        or winner.strategy.revision != selected.candidate_revision
+        or winner.parameters != selected.parameters
+    ):
+        raise _conflict("The stored experiment winner lineage is invalid.")
+    return winner.strategy
+
+
+def _validate_fresh_p0_run(
+    run: Any,
+    *,
+    winner: StrategyConfig,
+    prior_snapshot_hash: str,
+    after: datetime | None,
+    sealed_bar_source: SealedBarSource | None = None,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    try:
+        run_strategy = strategy_config_from_payload(run.strategy_config or {})
+    except (TypeError, ValueError) as error:
+        raise _conflict("The fresh P0 run strategy is invalid.") from error
+    expected_payload = strategy_config_to_payload(winner)
+    if (
+        run.execution_mode != "paper_only"
+        or run.strategy_revision != winner.revision
+        or run.strategy_name != winner.name
+        or run.market != winner.market
+        or run.symbol != winner.symbols[0]
+        or run.timeframe != winner.timeframe
+        or run_strategy.revision != winner.revision
+        or canonical_json(strategy_config_to_payload(run_strategy))
+        != canonical_json(expected_payload)
+        or run.backtest_assumptions != FORMAL_BACKTEST_ASSUMPTIONS
+        or after is None
+        or run.created_at <= after
+    ):
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_run_mismatch",
+            detail="The fresh P0 run does not exactly match the selected winner.",
+        )
+    snapshot = run.data_snapshot
+    if snapshot.get("hashVersion") == SEALED_DATASET_HASH_VERSION:
+        snapshot_hash, data_range = _validate_fresh_sealed_p0_run(
+            run,
+            winner=winner,
+            prior_snapshot_hash=prior_snapshot_hash,
+            sealed_bar_source=sealed_bar_source,
+        )
+        fresh_gate_evaluation = fresh_p0_profitability_evaluation(run.metrics)
+        return snapshot_hash, data_range, fresh_gate_evaluation
+    raw_bars = snapshot.get("bars")
+    if (
+        snapshot.get("hashVersion") != DATA_SNAPSHOT_HASH_VERSION
+        or not isinstance(raw_bars, list)
+        or not raw_bars
+        or not bool(snapshot.get("isComplete"))
+        or not bool(run.data_quality.get("isComplete"))
+    ):
+        raise _conflict("The fresh P0 run requires a complete canonical snapshot.")
+    try:
+        normalized = normalize_snapshot_bars(raw_bars)
+    except (TypeError, ValueError) as error:
+        raise _conflict("The fresh P0 run snapshot bars are invalid.") from error
+    try:
+        last_bar_at = datetime.fromisoformat(
+            str(normalized[-1]["timestamp"]).replace("Z", "+00:00")
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_snapshot_invalid",
+            detail="The promotion run must use a distinct, complete fresh snapshot.",
+        ) from error
+    if (
+        last_bar_at.tzinfo is None
+        or last_bar_at.utcoffset() is None
+        or run.created_at.tzinfo is None
+        or run.created_at.utcoffset() is None
+        or last_bar_at.astimezone(timezone.utc) + timedelta(minutes=1)
+        > run.created_at.astimezone(timezone.utc)
+    ):
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_snapshot_invalid",
+            detail="The promotion run must contain completed bars only.",
+        )
+    digest = canonical_data_hash(normalized)
+    quality_issues = [
+        *(
+            run.data_quality.get("issues")
+            if isinstance(run.data_quality.get("issues"), list)
+            else []
+        ),
+        *(
+            snapshot.get("qualityIssues")
+            if isinstance(snapshot.get("qualityIssues"), list)
+            else []
+        ),
+    ]
+    incomplete_codes = {"forming_bar", "future_bar", "timestamp_disorder", "duplicate_timestamp"}
+    if any(
+        isinstance(issue, dict) and str(issue.get("code") or "") in incomplete_codes
+        for issue in quality_issues
+    ):
+        raise _conflict("The fresh P0 run contains bars that were not completed.")
+    if (
+        digest == prior_snapshot_hash
+        or str(snapshot.get("hash") or "") != digest
+        or run.data_rows != len(normalized)
+        or _exact_int(snapshot.get("rows")) != len(normalized)
+        or _exact_int(run.data_quality.get("rows")) != len(normalized)
+        or snapshot.get("start") != normalized[0]["timestamp"]
+        or snapshot.get("end") != normalized[-1]["timestamp"]
+        or (
+            run.data_quality.get("canonicalHash")
+            and run.data_quality.get("canonicalHash") != digest
+        )
+    ):
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_snapshot_invalid",
+            detail="The promotion run must use a distinct, complete fresh snapshot.",
+        )
+    fresh_gate_evaluation = fresh_p0_profitability_evaluation(run.metrics)
+    return (
+        digest,
+        {
+            "start": normalized[0]["timestamp"],
+            "endExclusive": (
+                last_bar_at.astimezone(timezone.utc)
+                + _timeframe_duration(winner.timeframe)
+            ).isoformat(),
+        },
+        fresh_gate_evaluation,
+    )
+
+
+def fresh_p0_profitability_evaluation(metrics: Any) -> dict[str, Any]:
+    try:
+        if not isinstance(metrics, dict):
+            raise ValueError("metrics_not_object")
+
+        def finite_number(key: str) -> float:
+            value = metrics.get(key)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+            ):
+                raise ValueError(f"invalid_{key}")
+            return float(value)
+
+        total_return = finite_number("total_return_pct")
+        maximum_drawdown = finite_number("max_drawdown_pct")
+        win_rate = finite_number("win_rate_pct")
+        profit_factor = finite_number("profit_factor")
+        round_trips = metrics.get("round_trip_count")
+        if (
+            isinstance(round_trips, bool)
+            or not isinstance(round_trips, int)
+            or round_trips < 0
+            or maximum_drawdown < 0
+            or not 0 <= win_rate <= 100
+            or profit_factor < 0
+        ):
+            raise ValueError("invalid_metric_domain")
+    except (OverflowError, TypeError, ValueError) as error:
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_profitability_gate_failed",
+            detail="The fresh P0 run has invalid_metrics and cannot be promoted.",
+        ) from error
+
+    normalized = {
+        "totalReturnPct": total_return,
+        "maxDrawdownPct": maximum_drawdown,
+        "profitFactor": profit_factor,
+        "profitFactorInfinite": bool(
+            round_trips > 0 and win_rate == 100 and total_return > 0
+        ),
+        "roundTripCount": round_trips,
+    }
+    evaluation = _formal_test_gate_evaluation(
+        normalized,
+        FORMAL_PROFITABILITY_GUARDRAILS["test"],
+    )
+    if not evaluation["passed"]:
+        failures = ",".join(str(item) for item in evaluation["failures"])
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_profitability_gate_failed",
+            detail=f"The fresh P0 run failed the formal test gate: {failures}.",
+        )
+    return evaluation
+
+
+def _validate_fresh_sealed_p0_run(
+    run: Any,
+    *,
+    winner: StrategyConfig,
+    prior_snapshot_hash: str,
+    sealed_bar_source: SealedBarSource | None,
+) -> tuple[str, dict[str, Any]]:
+    if sealed_bar_source is None:
+        raise StrategyExperimentError(
+            status=409,
+            error="sealed_dataset_unavailable",
+            detail="The fresh sealed P0 dataset is unavailable.",
+        )
+    try:
+        snapshot = normalize_sealed_research_snapshot(
+            run.data_snapshot,
+            market=winner.market,
+            symbol=winner.symbols[0],
+            timeframe=winner.timeframe,
+        )
+        sealed_payload = cast(dict[str, Any], snapshot["sealedDataset"])
+        dataset_id = _required_string(sealed_payload.get("datasetId"))
+        summary = sealed_bar_source.get_summary(dataset_id)
+        if summary is None:
+            raise ValueError("sealed_dataset_not_found")
+        expected_summary = _sealed_summary_payload(summary)
+        development_rows = _exact_int(expected_summary.get("developmentRows"))
+        coverage = run.data_quality.get("coverage")
+        issues = run.data_quality.get("issues")
+        if (
+            sealed_payload != expected_summary
+            or expected_summary.get("market") != winner.market
+            or expected_summary.get("symbol") != winner.symbols[0]
+            or expected_summary.get("timeframe") != winner.timeframe
+            or expected_summary.get("datasetHash") == prior_snapshot_hash
+            or snapshot.get("isComplete") is not True
+            or snapshot.get("source") != expected_summary.get("source")
+            or snapshot.get("adjustmentMode")
+            != expected_summary.get("adjustmentMode")
+            or development_rows is None
+            or run.data_rows != development_rows
+            or run.data_quality.get("isComplete") is not True
+            or _exact_int(run.data_quality.get("rows")) != development_rows
+            or run.data_quality.get("canonicalHash")
+            != expected_summary.get("developmentHash")
+            or run.data_quality.get("source") != expected_summary.get("source")
+            or run.data_quality.get("adjustmentMode")
+            != expected_summary.get("adjustmentMode")
+            or not isinstance(coverage, dict)
+            or _exact_int(coverage.get("actualRows")) != development_rows
+            or _exact_int(coverage.get("expectedRows")) != development_rows
+            or _exact_int(coverage.get("gapCount")) != 0
+            or float(coverage.get("ratio", -1)) != 1.0
+            or not isinstance(issues, list)
+            or any(
+                isinstance(issue, dict)
+                and (
+                    issue.get("severity") == "blocked"
+                    or str(issue.get("code") or "")
+                    in {
+                        "forming_bar",
+                        "future_bar",
+                        "timestamp_disorder",
+                        "duplicate_timestamp",
+                    }
+                )
+                for issue in issues
+            )
+        ):
+            raise ValueError("fresh_sealed_snapshot_metadata_invalid")
+        development_end = datetime.fromisoformat(
+            str(expected_summary["developmentEndExclusive"]).replace("Z", "+00:00")
+        )
+        if (
+            development_end.tzinfo is None
+            or run.created_at.tzinfo is None
+            or development_end.astimezone(timezone.utc)
+            > run.created_at.astimezone(timezone.utc)
+        ):
+            raise ValueError("fresh_sealed_snapshot_forming_bar")
+        development_bars = sealed_bar_source.read_development_bars(dataset_id)
+        chunked, normalized = _normalize_large_ohlcv_bars(
+            development_bars,
+            market=winner.market,
+            symbol=winner.symbols[0],
+            timeframe=winner.timeframe,
+        )
+        if (
+            len(normalized) != development_rows
+            or chunked.get("hash") != expected_summary.get("developmentHash")
+            or chunked.get("start") != expected_summary.get("start")
+            or chunked.get("endExclusive")
+            != expected_summary.get("developmentEndExclusive")
+        ):
+            raise ValueError("fresh_sealed_snapshot_content_invalid")
+        snapshot_identity = _required_string(snapshot.get("snapshotHash"))
+    except StrategyExperimentError:
+        raise
+    except (KeyError, TypeError, ValueError) as error:
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_snapshot_invalid",
+            detail="The promotion run must use a distinct, complete fresh sealed snapshot.",
+        ) from error
+    return snapshot_identity, {
+        "start": expected_summary["start"],
+        "endExclusive": expected_summary["developmentEndExclusive"],
+    }
+
+
+def _experiment_snapshot_data_range(
+    detail: StrategyExperimentDetail,
+) -> dict[str, str]:
+    end_exclusive = detail.snapshot.end_at
+    if not isinstance(detail.experiment.definition.get("sealedDataset"), dict):
+        try:
+            inclusive_end = datetime.fromisoformat(
+                detail.snapshot.end_at.replace("Z", "+00:00")
+            )
+            if inclusive_end.tzinfo is None or inclusive_end.utcoffset() is None:
+                raise ValueError("snapshot_end_timezone_required")
+            end_exclusive = (
+                inclusive_end.astimezone(timezone.utc)
+                + _timeframe_duration(detail.snapshot.timeframe)
+            ).isoformat()
+        except (TypeError, ValueError) as error:
+            raise _conflict("The formal experiment data range is invalid.") from error
+    return {
+        "start": detail.snapshot.start_at,
+        "endExclusive": end_exclusive,
+    }
+
+
+def _timeframe_duration(timeframe: str) -> timedelta:
+    steps = {
+        "1m": timedelta(minutes=1),
+        "5m": timedelta(minutes=5),
+        "15m": timedelta(minutes=15),
+        "30m": timedelta(minutes=30),
+        "60m": timedelta(minutes=60),
+        "1d": timedelta(days=1),
+        "1w": timedelta(weeks=1),
+    }
+    try:
+        return steps[timeframe]
+    except KeyError as error:
+        raise ValueError("unsupported_timeframe") from error
+
+
+def _normalize_large_ohlcv_bars(
+    bars: list[OHLCVBar],
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if not bars:
+        raise ValueError("sealed_dataset_empty")
+    chunked = normalize_snapshot_bar_chunks(
+        [bars[index : index + 500] for index in range(0, len(bars), 500)],
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    normalized = flatten_chunked_data_snapshot(
+        chunked,
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    return chunked, normalized
+
+
+def _large_snapshot_records_to_ohlcv(
+    bars: list[dict[str, Any]],
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> list[OHLCVBar]:
+    converted = [
+        OHLCVBar(
+            market=cast(Any, market),
+            symbol=symbol,
+            timeframe=cast(Any, timeframe),
+            timestamp=datetime.fromisoformat(str(bar["timestamp"])),
+            open=float(bar["open"]),
+            high=float(bar["high"]),
+            low=float(bar["low"]),
+            close=float(bar["close"]),
+            volume=float(bar["volume"]),
+        )
+        for bar in bars
+    ]
+    return converted
+
+
+def _validate_claimed_test_bars(
+    definition: _ExperimentDefinition,
+    bars: list[OHLCVBar],
+) -> None:
+    sealed = definition.definition.get("sealedDataset")
+    if not isinstance(sealed, dict):
+        raise ValueError("sealed_dataset_summary_invalid")
+    expected_rows = _exact_int(sealed.get("withheldRows"))
+    if expected_rows is None or len(bars) != expected_rows:
+        raise ValueError("sealed_test_partition_rows_mismatch")
+    chunked, normalized = _normalize_large_ohlcv_bars(
+        bars,
+        market=definition.snapshot.market,
+        symbol=definition.snapshot.symbol,
+        timeframe=definition.snapshot.timeframe,
+    )
+    if (
+        chunked["start"] != sealed.get("developmentEndExclusive")
+        or chunked["endExclusive"] != sealed.get("endExclusive")
+        or canonical_data_hash(definition.snapshot.bars)
+        != sealed.get("developmentHash")
+    ):
+        raise ValueError("sealed_test_partition_integrity_invalid")
+
+
+def _datetime_or_string(value: Any) -> str:
+    if isinstance(value, datetime):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise _conflict("The sealed dataset range must be timezone-aware.")
+        return value.astimezone(timezone.utc).isoformat()
+    return _required_string(value)
+
+
+def _required_exact_int(value: Any) -> int:
+    normalized = _exact_int(value)
+    if normalized is None or normalized < 0:
+        raise _conflict("The sealed dataset row metadata is invalid.")
+    return normalized
+
+
+def _launch_background_job(job: Callable[[], None]) -> None:
+    Thread(target=job, daemon=True, name="strategy-experiment").start()
 
 
 def _required_string(value: Any) -> str:
@@ -1002,6 +2815,25 @@ def _required_string(value: Any) -> str:
 
 def _exact_int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _non_negative_int(value: Any, detail: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise _invalid(detail)
+    return value
+
+
+def _required_bool(value: Any, detail: str) -> bool:
+    if not isinstance(value, bool):
+        raise _invalid(detail)
+    return value
+
+
+def _bounded_number(value: Any, *, minimum: float, maximum: float, detail: str) -> int | float:
+    number = _finite_number(value, detail)
+    if not minimum <= number <= maximum:
+        raise _invalid(detail)
+    return _canonical_number(number)
 
 
 def _finite_number(value: Any, detail: str) -> float:

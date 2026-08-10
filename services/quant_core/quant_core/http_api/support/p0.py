@@ -9,6 +9,7 @@ from datetime import (
     datetime,
     timezone,
 )
+import math
 from quant_core.ai_review_runs import (
     AiReviewRunRecord,
     AiReviewRunStore,
@@ -16,12 +17,14 @@ from quant_core.ai_review_runs import (
 )
 from quant_core.audit_events import audit_event_record_to_payload
 from quant_core.backtest import BacktestEngine
+from quant_core.canonical import strategy_config_from_payload
 from quant_core.data_foundation import data_quality_from_payload
 from quant_core.domain import (
     BacktestMetrics,
     BacktestRun,
     DataQuality,
     EquityPoint,
+    StrategyConfig,
 )
 from quant_core.execution import (
     PaperExecutionRecord,
@@ -163,6 +166,34 @@ def _strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
 def _p0_strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
     if not isinstance(value, dict):
         raise ValueError("strategy_config_required")
+    if value.get("version") == 2:
+        policy = value.get("policy") if isinstance(value.get("policy"), dict) else {}
+        regime = policy.get("regime") if isinstance(policy.get("regime"), dict) else {}
+        breakout = policy.get("breakout") if isinstance(policy.get("breakout"), dict) else {}
+        volume = policy.get("volume") if isinstance(policy.get("volume"), dict) else {}
+        atr = policy.get("atr") if isinstance(policy.get("atr"), dict) else {}
+        holding = policy.get("holding") if isinstance(policy.get("holding"), dict) else {}
+        cooldown = policy.get("cooldown") if isinstance(policy.get("cooldown"), dict) else {}
+        position = value.get("position") if isinstance(value.get("position"), dict) else {}
+        risk = value.get("risk") if isinstance(value.get("risk"), dict) else {}
+        return StrategySnapshot(
+            name=str(value.get("name") or "BTC Regime Breakout v2").strip() or "BTC Regime Breakout v2",
+            entry=(
+                f"{regime.get('timeframe', '60m')} Close > SMA{regime.get('closeAboveSmaWindow', 200)} rising; "
+                f"{policy.get('decisionTimeframe', '5m')} prior-high breakout {breakout.get('lookbackBars', 20)}; "
+                f"volume >= SMA{volume.get('smaWindow', 20)} x {volume.get('multiplier', 1.5)}"
+            ),
+            exit=(
+                f"ATR{atr.get('window', 14)} initial {atr.get('initialMultiple', 1)}x, "
+                f"trail {atr.get('trailingMultiple', 2)}x, holding guard {holding.get('maxBars', 48)} bars, "
+                f"cooldown {cooldown.get('bars', 12)} bars"
+            ),
+            position=f"{position.get('maxPositionPct', 60)}% cap per instrument",
+            risk=(
+                f"Risk budget {risk.get('riskBudgetPct', 0.5)}%, drawdown guard "
+                f"{risk.get('maxDrawdownPct', 3)}%, daily loss {risk.get('dailyLossLimitPct', 2)}%, paper only"
+            ),
+        )
     name = str(value.get("name") or "SMA trend").strip() or "SMA trend"
     return StrategySnapshot(
         name=name,
@@ -171,6 +202,92 @@ def _p0_strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
         position=_p0_position_text(value.get("position")),
         risk=_p0_risk_text(value.get("risk")),
     )
+
+
+def _p0_strategy_config_from_payload(
+    value: object,
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> StrategyConfig | None:
+    if not isinstance(value, dict):
+        raise ValueError("strategy_config_required")
+    version = value.get("version", 1)
+    if version != 2:
+        if "policy" in value:
+            raise ValueError("strategy_policy_requires_version_2")
+        return None
+    if set(value) != {"name", "version", "policy", "position", "risk"}:
+        raise ValueError("regime_breakout_v2_strategy_fields_invalid")
+    position = value.get("position")
+    risk = value.get("risk")
+    if not isinstance(position, dict) or set(position) != {"maxPositionPct"}:
+        raise ValueError("regime_breakout_v2_position_invalid")
+    if not isinstance(risk, dict) or set(risk) != {
+        "riskBudgetPct",
+        "maxDrawdownPct",
+        "dailyLossLimitPct",
+        "maxTradeGroupsPerHour",
+        "maxEntryNotionalQuote",
+        "exitNotionalCapQuote",
+    }:
+        raise ValueError("regime_breakout_v2_risk_fields_invalid")
+    max_trade_groups = _p0_required_float(
+        risk.get("maxTradeGroupsPerHour"), minimum=1, maximum=1_000,
+        error_code="regime_breakout_v2_trade_groups_invalid",
+    )
+    if not max_trade_groups.is_integer():
+        raise ValueError("regime_breakout_v2_trade_groups_invalid")
+    if risk.get("exitNotionalCapQuote") is not None:
+        raise ValueError("regime_breakout_v2_exit_cap_forbidden")
+    canonical = {
+        "name": str(value.get("name") or "").strip(),
+        "market": market,
+        "symbols": [symbol],
+        "timeframe": timeframe,
+        "version": 2,
+        "entryConditions": [],
+        "exitConditions": [],
+        "policy": value.get("policy"),
+        "risk": {
+            "positionPct": _p0_required_float(
+                position.get("maxPositionPct"), minimum=0.000001, maximum=100,
+                error_code="regime_breakout_v2_position_invalid",
+            )
+            / 100,
+            "riskBudgetPct": _p0_required_float(
+                risk.get("riskBudgetPct"), minimum=0.000001, maximum=100,
+                error_code="regime_breakout_v2_risk_invalid",
+            )
+            / 100,
+            "stopLossPct": None,
+            "takeProfitPct": None,
+            "maxDrawdownPct": _p0_required_float(
+                risk.get("maxDrawdownPct"), minimum=0.000001, maximum=100,
+                error_code="regime_breakout_v2_risk_invalid",
+            )
+            / 100,
+            "dailyLossLimitPct": _p0_required_float(
+                risk.get("dailyLossLimitPct"), minimum=0.000001, maximum=100,
+                error_code="regime_breakout_v2_risk_invalid",
+            )
+            / 100,
+            "maxTradeGroupsPerHour": int(max_trade_groups),
+            "maxEntryNotionalQuote": (
+                None
+                if risk.get("maxEntryNotionalQuote") is None
+                else _p0_required_float(
+                    risk.get("maxEntryNotionalQuote"),
+                    minimum=0.000001,
+                    maximum=1_000_000_000,
+                    error_code="regime_breakout_v2_risk_invalid",
+                )
+            ),
+            "exitNotionalCapQuote": None,
+        },
+    }
+    return strategy_config_from_payload(canonical)
 
 
 def _p0_condition_text(value: object, *, role: str) -> str:
@@ -256,10 +373,22 @@ def _p0_float(value: object, *, default: float, minimum: float, maximum: float) 
     return number
 
 
+def _p0_required_float(value: object, *, minimum: float, maximum: float, error_code: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(error_code)
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(error_code) from error
+    if not math.isfinite(number) or not minimum <= number <= maximum:
+        raise ValueError(error_code)
+    return number
+
+
 def _p0_pipeline_response_payload(audit: ResearchRunAudit) -> dict[str, object]:
     snapshot_hash = str(audit.data_snapshot.get("hash") or "").strip()
     data_snapshot_id = f"data-{(snapshot_hash or audit.run_id.removeprefix('run-'))[:12]}"
-    return {
+    payload: dict[str, object] = {
         "status": "audited_run_created",
         "runId": audit.run_id,
         "strategyRevisionId": f"strategy-{audit.strategy_revision}",
@@ -275,6 +404,13 @@ def _p0_pipeline_response_payload(audit: ResearchRunAudit) -> dict[str, object]:
         "liveOrderSubmitted": False,
         "routeExecuted": False,
     }
+    sealed_dataset = audit.data_snapshot.get("sealedDataset")
+    if isinstance(sealed_dataset, dict):
+        dataset_id = str(sealed_dataset.get("datasetId") or "").strip()
+        if dataset_id:
+            payload["sealedDatasetId"] = dataset_id
+            payload["sealedDataset"] = dict(sealed_dataset)
+    return payload
 
 
 def _p0_metric_value(metrics: dict[str, object], key: str) -> float:

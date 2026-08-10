@@ -103,6 +103,38 @@ class TenantStorageTest(unittest.TestCase):
             )
         self.assertIsNone(records.get("audit_event", "event-c"))
 
+    def test_payload_field_compare_and_swap_is_owner_scoped(self) -> None:
+        records_a = TenantRecordStore(self.engine, self.owner_a)
+        records_b = TenantRecordStore(self.engine, self.owner_b)
+        initial = {"model": {"fields": {"claim": None, "owner": None}}}
+        records_a.put("snapshot", "shared", initial)
+        records_b.put("snapshot", "shared", initial)
+
+        self.assertTrue(
+            records_a.compare_and_swap_payload_field(
+                "snapshot",
+                "shared",
+                {"model": {"fields": {"claim": "definition-a", "owner": "a"}}},
+                path=("model", "fields", "claim"),
+                expected=None,
+            )
+        )
+        self.assertFalse(
+            records_a.compare_and_swap_payload_field(
+                "snapshot",
+                "shared",
+                {"model": {"fields": {"claim": "definition-b", "owner": "b"}}},
+                path=("model", "fields", "claim"),
+                expected=None,
+            )
+        )
+
+        self.assertEqual(
+            records_a.get("snapshot", "shared")["model"]["fields"],
+            {"claim": "definition-a", "owner": "a"},
+        )
+        self.assertEqual(records_b.get("snapshot", "shared"), initial)
+
     def test_active_production_account_fingerprint_is_globally_unique(self) -> None:
         claims = ProductionAccountClaimStore(self.engine)
         claims.claim(self.owner_a, "binance:fingerprint-1")

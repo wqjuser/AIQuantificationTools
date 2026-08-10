@@ -28218,6 +28218,194 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(latest[0].execution_mode, "paper_only")
         self.assertTrue(latest[0].data_snapshot["hash"])
 
+    def test_p0_pipeline_persists_regime_breakout_v2_canonical_strategy(self):
+        import json
+        from http.client import HTTPConnection
+        from http.server import HTTPServer
+        from threading import Thread
+
+        from quant_core.adapters import DemoMarketDataAdapter
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        request_payload = {
+            "market": "crypto",
+            "symbol": "BTC/USDT",
+            "timeframe": "1m",
+            "limit": 500,
+            "strategyConfig": {
+                "name": "BTC Regime Breakout v2",
+                "version": 2,
+                "policy": {
+                    "kind": "regime_breakout_v2",
+                    "decisionTimeframe": "5m",
+                    "completedBarsOnly": True,
+                    "fillTiming": "next_completed_bar_open",
+                    "regime": {
+                        "timeframe": "60m",
+                        "closeAboveSmaWindow": 200,
+                        "smaSlopeLookbackBars": 1,
+                    },
+                    "breakout": {
+                        "lookbackBars": 20,
+                        "excludeSignalBar": True,
+                        "oneShotPerEvent": True,
+                    },
+                    "volume": {
+                        "smaWindow": 20,
+                        "multiplier": 1.5,
+                        "excludeSignalBar": True,
+                    },
+                    "atr": {
+                        "window": 14,
+                        "smoothing": "wilder",
+                        "initialMultiple": 1,
+                        "trailingMultiple": 2,
+                        "trailingStartsAfterProfit": True,
+                        "trailingActivation": "positive_close",
+                        "anchor": "highest_high_since_entry",
+                        "neverLoosen": True,
+                    },
+                    "holding": {
+                        "maxBars": 48,
+                        "exitOnlyWithoutPositiveProgress": True,
+                        "progressDefinition": "highest_close_above_entry",
+                    },
+                    "cooldown": {
+                        "bars": 12,
+                        "startsAfter": "filled_exit",
+                        "requiresNewBreakoutEvent": True,
+                    },
+                },
+                "position": {"maxPositionPct": 60},
+                "risk": {
+                    "riskBudgetPct": 0.5,
+                    "maxDrawdownPct": 3,
+                    "dailyLossLimitPct": 2,
+                    "maxTradeGroupsPerHour": 1,
+                    "maxEntryNotionalQuote": 10,
+                    "exitNotionalCapQuote": None,
+                },
+            },
+            "assumptions": {"initialCash": 10, "feeBps": 10, "slippageBps": 10},
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            class TestHandler(QuantApiHandler):
+                pass
+
+            TestHandler.run_store = ResearchRunStore(f"{tmp}/runs.sqlite")
+            TestHandler.cache = MarketDataCache(f"{tmp}/market.sqlite")
+            TestHandler.strategy_store = StrategyLibraryStore(f"{tmp}/strategies.sqlite")
+            TestHandler.kline_adapter = DemoMarketDataAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
+            body = json.dumps(request_payload).encode("utf-8")
+            try:
+                connection.request(
+                    "POST",
+                    "/api/p0/pipeline",
+                    body=body,
+                    headers={"Content-Type": "application/json", "Content-Length": str(len(body))},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                connection.request("GET", f"/api/research/runs/{payload['runId']}")
+                detail_response = connection.getresponse()
+                detail_payload = json.loads(detail_response.read().decode("utf-8"))
+                stored_strategy = TestHandler.strategy_store.get(
+                    detail_payload["run"]["strategyConfig"]["revision"]
+                )
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(response.status, 200, payload)
+        self.assertEqual(detail_response.status, 200, detail_payload)
+        self.assertIsNotNone(stored_strategy)
+        self.assertEqual(stored_strategy.status, "draft")
+        self.assertIsNone(stored_strategy.audit_run_id)
+        strategy_config = detail_payload["run"]["strategyConfig"]
+        self.assertEqual(
+            {key: value for key, value in strategy_config.items() if key != "revision"},
+            {
+                "name": "BTC Regime Breakout v2",
+                "market": "crypto",
+                "symbols": ["BTC/USDT"],
+                "timeframe": "1m",
+                "version": 2,
+                "entryConditions": [],
+                "exitConditions": [],
+                "policy": {
+                    "kind": "regime_breakout_v2",
+                    "decisionTimeframe": "5m",
+                    "completedBarsOnly": True,
+                    "fillTiming": "next_completed_bar_open",
+                    "regime": {
+                        "timeframe": "60m",
+                        "closeAboveSmaWindow": 200,
+                        "smaSlopeLookbackBars": 1,
+                    },
+                    "breakout": {
+                        "lookbackBars": 20,
+                        "excludeSignalBar": True,
+                        "oneShotPerEvent": True,
+                    },
+                    "volume": {
+                        "smaWindow": 20,
+                        "multiplier": 1.5,
+                        "excludeSignalBar": True,
+                    },
+                    "atr": {
+                        "window": 14,
+                        "smoothing": "wilder",
+                        "initialMultiple": 1,
+                        "trailingMultiple": 2,
+                        "trailingStartsAfterProfit": True,
+                        "trailingActivation": "positive_close",
+                        "anchor": "highest_high_since_entry",
+                        "neverLoosen": True,
+                    },
+                    "holding": {
+                        "maxBars": 48,
+                        "exitOnlyWithoutPositiveProgress": True,
+                        "progressDefinition": "highest_close_above_entry",
+                    },
+                    "cooldown": {
+                        "bars": 12,
+                        "startsAfter": "filled_exit",
+                        "requiresNewBreakoutEvent": True,
+                    },
+                },
+                "risk": {
+                    "positionPct": 0.6,
+                    "riskBudgetPct": 0.005,
+                    "stopLossPct": None,
+                    "takeProfitPct": None,
+                    "maxDrawdownPct": 0.03,
+                    "dailyLossLimitPct": 0.02,
+                    "maxTradeGroupsPerHour": 1,
+                    "maxEntryNotionalQuote": 10,
+                    "exitNotionalCapQuote": None,
+                },
+            },
+        )
+        self.assertRegex(strategy_config["revision"], r"^[0-9a-f]{12}$")
+        self.assertEqual(payload["strategyRevisionId"], f"strategy-{strategy_config['revision']}")
+        self.assertEqual(
+            detail_payload["run"]["backtestAssumptions"],
+            {"initialCash": 10, "feeBps": 10, "slippageBps": 10},
+        )
+        self.assertTrue(payload["paperOnly"])
+        self.assertFalse(payload["liveTradingAllowed"])
+
     def test_p0_pipeline_binds_audited_market_ai_selection_candidate(self):
         import json
         from http.client import HTTPConnection

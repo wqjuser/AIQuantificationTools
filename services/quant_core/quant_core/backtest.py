@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
+from typing import Any
 
 from quant_core.domain import (
     BacktestMetrics,
@@ -22,12 +24,28 @@ from quant_core.decision_contract import (
     build_standard_signal,
 )
 from quant_core.indicators import max_drawdown_pct, rsi, sma
+from quant_core.strategy_evaluator import (
+    PolicyMarketContextSession,
+    PositionSnapshot,
+    StrategyEvaluation,
+    apply_fill,
+    evaluate_strategy,
+    initial_runtime_state,
+    size_entry,
+)
 
 
 @dataclass
 class _Position:
     quantity: float = 0.0
     entry_price: float = 0.0
+
+
+@dataclass
+class _PendingPolicyDecision:
+    evaluation: StrategyEvaluation
+    signal: dict[str, Any]
+    maximum_entry_quantity: float | None = None
 
 
 def strategy_conditions_met(
@@ -97,6 +115,14 @@ def strategy_exit_reason(
 
 
 def strategy_required_bars(strategy: StrategyConfig) -> int:
+    if strategy.policy is not None:
+        policy = strategy.policy
+        return max(
+            (policy.regime.close_above_sma_window + policy.regime.sma_slope_lookback_bars) * 60,
+            (policy.breakout.lookback_bars + 1) * 5,
+            (policy.volume.sma_window + 1) * 5,
+            policy.atr.window * 5,
+        )
     return max(
         1,
         *(
@@ -125,6 +151,12 @@ class BacktestEngine:
             raise ValueError("backtest requires at least one OHLCV bar")
         if not 0 <= evaluation_start_index < len(ordered_bars):
             raise ValueError("invalid_evaluation_start_index")
+        if strategy.policy is not None:
+            return self._run_policy_strategy(
+                strategy,
+                ordered_bars,
+                evaluation_start_index=evaluation_start_index,
+            )
 
         closes = [bar.close for bar in ordered_bars]
         volumes = [bar.volume for bar in ordered_bars]
@@ -270,6 +302,239 @@ class BacktestEngine:
             data_quality=DataQuality(source="local-cache", is_complete=True, rows=evaluation_rows),
         )
 
+    def _run_policy_strategy(
+        self,
+        strategy: StrategyConfig,
+        ordered_bars: list[OHLCVBar],
+        *,
+        evaluation_start_index: int,
+    ) -> BacktestRun:
+        symbol = strategy.symbols[0]
+        strategy_id = f"strategy-{strategy.revision}"
+        cash = self.initial_cash
+        position = _Position()
+        state = initial_runtime_state(strategy)
+        pending: _PendingPolicyDecision | None = None
+        trades: list[Trade] = []
+        equity_curve: list[EquityPoint] = []
+        context_session = PolicyMarketContextSession(strategy)
+        current_day = None
+        daily_start_equity = self.initial_cash
+        daily_loss_halted = False
+        strategy_peak_equity = self.initial_cash
+        strategy_drawdown_halted = False
+        entry_group_times = []
+
+        for index, bar in enumerate(ordered_bars):
+            context = context_session.ingest(bar)
+            if pending is not None and bar.timestamp > pending.evaluation.evaluated_at:
+                if pending.signal["action"] == "buy" and position.quantity <= 0:
+                    execution_price = bar.open * (1 + self.slippage_rate)
+                    sizing = size_entry(
+                        strategy,
+                        equity=cash,
+                        available_cash=cash,
+                        execution_price=execution_price,
+                        atr_value=pending.evaluation.atr or 0.0,
+                        fee_rate=self.fee_rate,
+                        slippage_rate=self.slippage_rate,
+                    )
+                    quantity = min(
+                        sizing.quantity,
+                        (
+                            pending.maximum_entry_quantity
+                            if pending.maximum_entry_quantity is not None
+                            else sizing.quantity
+                        ),
+                    )
+                    notional = quantity * execution_price
+                    if notional + 1e-12 < 5.0:
+                        quantity = 0.0
+                        notional = 0.0
+                    if quantity > 0:
+                        fee = notional * self.fee_rate
+                        cash -= notional + fee
+                        position = _Position(quantity=quantity, entry_price=execution_price)
+                        state = apply_fill(
+                            strategy,
+                            pending.evaluation,
+                            side="buy",
+                            price=execution_price,
+                            filled_at=bar.timestamp,
+                        )
+                        trades.append(
+                            Trade(
+                                symbol=symbol,
+                                side="buy",
+                                timestamp=bar.timestamp,
+                                price=execution_price,
+                                quantity=quantity,
+                                fee=fee,
+                                reason=str(pending.signal["reason"]),
+                                proposal_id=str(pending.signal["proposalId"]),
+                                signal_id=str(pending.signal["signalId"]),
+                                snapshot_hash=str(pending.signal["snapshotHash"]),
+                            )
+                        )
+                        entry_group_times.append(bar.timestamp)
+                elif pending.signal["action"] == "sell" and position.quantity > 0:
+                    execution_price = bar.open * (1 - self.slippage_rate)
+                    gross = position.quantity * execution_price
+                    fee = gross * self.fee_rate
+                    cash += gross - fee
+                    trades.append(
+                        Trade(
+                            symbol=symbol,
+                            side="sell",
+                            timestamp=bar.timestamp,
+                            price=execution_price,
+                            quantity=position.quantity,
+                            fee=fee,
+                            reason=str(pending.signal["reason"]),
+                            proposal_id=str(pending.signal["proposalId"]),
+                            signal_id=str(pending.signal["signalId"]),
+                            snapshot_hash=str(pending.signal["snapshotHash"]),
+                        )
+                    )
+                    state = apply_fill(
+                        strategy,
+                        pending.evaluation,
+                        side="sell",
+                        price=execution_price,
+                        filled_at=bar.timestamp,
+                    )
+                    position = _Position()
+                pending = None
+
+            marked_equity = cash + position.quantity * bar.close
+            bar_day = bar.timestamp.date()
+            if current_day != bar_day:
+                current_day = bar_day
+                daily_start_equity = marked_equity
+                daily_loss_halted = False
+            if (
+                strategy.risk.daily_loss_limit_pct is not None
+                and marked_equity
+                <= daily_start_equity * (1 - strategy.risk.daily_loss_limit_pct)
+            ):
+                daily_loss_halted = True
+            if index >= evaluation_start_index:
+                strategy_peak_equity = max(strategy_peak_equity, marked_equity)
+                if (
+                    strategy.risk.max_drawdown_pct is not None
+                    and marked_equity
+                    <= strategy_peak_equity * (1 - strategy.risk.max_drawdown_pct)
+                ):
+                    strategy_drawdown_halted = True
+
+            if context is not None:
+                evaluation = evaluate_strategy(
+                    strategy,
+                    context,
+                    PositionSnapshot(quantity=position.quantity, entry_price=position.entry_price),
+                    state,
+                )
+                state = evaluation.state_after
+                expected_fill_at = evaluation.evaluated_at + timedelta(minutes=1)
+                recent_entry_groups = [
+                    value
+                    for value in entry_group_times
+                    if value > expected_fill_at - timedelta(hours=1)
+                ]
+                entry_group_times = recent_entry_groups
+                entry_blocked = evaluation.action == "buy" and (
+                    daily_loss_halted
+                    or strategy_drawdown_halted
+                    or (
+                        strategy.risk.max_trade_groups_per_hour is not None
+                        and len(recent_entry_groups)
+                        >= strategy.risk.max_trade_groups_per_hour
+                    )
+                )
+                if (
+                    index >= evaluation_start_index
+                    and evaluation.action != "hold"
+                    and not entry_blocked
+                ):
+                    proposal = build_decision_proposal(
+                        snapshot_hash=evaluation.context_hash,
+                        strategy_revision=strategy.revision,
+                        proposal_action=evaluation.action,
+                        proposal_confidence=1,
+                        proposal_reason=evaluation.reason,
+                        provider_id="rules",
+                        proposed_at=evaluation.evaluated_at,
+                    )
+                    signal = build_standard_signal(
+                        proposal,
+                        strategy_id=strategy_id,
+                        timeframe=strategy.policy.decision_timeframe,
+                        evaluated_bar_at=evaluation.decision_bar_at.isoformat(),
+                        generated_at=evaluation.evaluated_at,
+                        current_quantity=position.quantity,
+                    )
+                    maximum_entry_quantity = None
+                    if evaluation.action == "buy":
+                        signal_sizing = size_entry(
+                            strategy,
+                            equity=cash,
+                            available_cash=cash,
+                            execution_price=bar.close,
+                            atr_value=evaluation.atr or 0.0,
+                            fee_rate=self.fee_rate,
+                            slippage_rate=self.slippage_rate,
+                        )
+                        maximum_entry_quantity = signal_sizing.quantity
+                    pending = _PendingPolicyDecision(
+                        evaluation=evaluation,
+                        signal=signal,
+                        maximum_entry_quantity=maximum_entry_quantity,
+                    )
+
+            if index >= evaluation_start_index:
+                equity_curve.append(
+                    EquityPoint(timestamp=bar.timestamp, equity=cash + position.quantity * bar.close)
+                )
+
+        if position.quantity > 0:
+            last_bar = ordered_bars[-1]
+            execution_price = last_bar.close * (1 - self.slippage_rate)
+            gross = position.quantity * execution_price
+            fee = gross * self.fee_rate
+            cash += gross - fee
+            trades.append(
+                Trade(
+                    symbol=symbol,
+                    side="sell",
+                    timestamp=last_bar.timestamp,
+                    price=execution_price,
+                    quantity=position.quantity,
+                    fee=fee,
+                    reason="end_of_backtest",
+                )
+            )
+            if equity_curve:
+                equity_curve[-1] = EquityPoint(timestamp=last_bar.timestamp, equity=cash)
+
+        evaluation_rows = len(ordered_bars) - evaluation_start_index
+        metrics = self._metrics(
+            trades,
+            [point.equity for point in equity_curve],
+            evaluation_rows,
+            strategy.timeframe,
+        )
+        return BacktestRun(
+            strategy_name=strategy.name,
+            strategy_revision=strategy.revision,
+            symbol=symbol,
+            market=strategy.market,
+            timeframe=strategy.timeframe,
+            metrics=metrics,
+            trades=trades,
+            equity_curve=equity_curve,
+            data_quality=DataQuality(source="local-cache", is_complete=True, rows=evaluation_rows),
+        )
+
     def _metrics(self, trades: list[Trade], equity_values: list[float], bar_count: int, timeframe: str) -> BacktestMetrics:
         ending_equity = equity_values[-1] if equity_values else self.initial_cash
         total_return = (ending_equity / self.initial_cash - 1) * 100
@@ -303,4 +568,10 @@ class BacktestEngine:
             win_rate_pct=round((wins / closed_trades * 100) if closed_trades else 0.0, 4),
             profit_factor=round(profit_factor, 4),
             trade_count=len(trades),
+            round_trip_count=closed_trades,
         )
+
+
+def _is_complete_five_minute_boundary(bar: OHLCVBar) -> bool:
+    timestamp = bar.timestamp
+    return timestamp.second == 0 and timestamp.microsecond == 0 and timestamp.minute % 5 == 4

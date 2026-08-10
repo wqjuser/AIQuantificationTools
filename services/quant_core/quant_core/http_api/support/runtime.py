@@ -104,6 +104,8 @@ def _build_auto_paper_trading_service(
         ),
         strategy_store=handler_type.strategy_store,
         run_store=handler_type.run_store,
+        strategy_experiment_store=handler_type.strategy_experiment_store,
+        sealed_dataset_store=handler_type.sealed_dataset_store,
     )
 
 

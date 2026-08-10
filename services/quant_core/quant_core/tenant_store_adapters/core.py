@@ -37,6 +37,7 @@ from quant_core.runs import (
 )
 from quant_core.strategy_library import (
     StrategyLibraryRecord,
+    _canonical_object,
     _normalize_strategy_config_payload,
 )
 from quant_core.terminal import Instrument
@@ -395,11 +396,13 @@ class TenantStrategyStore:
         strategy: StrategyConfig,
         *,
         audit_run_id: str | None = None,
+        promotion_evidence: dict[str, Any] | None = None,
         created_at: datetime | None = None,
     ) -> StrategyLibraryRecord:
         return self.save_payload(
             strategy_config_to_payload(strategy),
             audit_run_id=audit_run_id,
+            promotion_evidence=promotion_evidence,
             created_at=created_at,
         )
 
@@ -408,29 +411,111 @@ class TenantStrategyStore:
         strategy_config: dict[str, Any],
         *,
         audit_run_id: str | None = None,
+        promotion_evidence: dict[str, Any] | None = None,
         created_at: datetime | None = None,
     ) -> StrategyLibraryRecord:
         config = _normalize_strategy_config_payload(strategy_config)
         revision = str(config.get("revision") or "").strip()
         if not revision:
             raise ValueError("strategy_revision_required")
-        existing = self.get(revision)
-        final_run_id = audit_run_id or (existing.audit_run_id if existing else None)
-        symbols = config.get("symbols") if isinstance(config.get("symbols"), list) else []
-        record = StrategyLibraryRecord(
-            strategy_id=f"strategy-{revision}",
-            created_at=existing.created_at if existing else created_at or datetime.now(timezone.utc),
-            name=str(config.get("name") or "Imported strategy"),
-            revision=revision,
-            market=str(config.get("market") or "ashare"),
-            symbol=str(symbols[0] if symbols else ""),
-            timeframe=str(config.get("timeframe") or "1d"),
-            version=int(config.get("version") or 1),
-            status="audited" if final_run_id else "draft",
-            audit_run_id=final_run_id,
-            strategy_config=config,
+        requested_audit_run_id = str(audit_run_id or "").strip() or None
+        requested_promotion = (
+            _canonical_object(
+                promotion_evidence,
+                "strategy_library_promotion_evidence_invalid",
+            )
+            if promotion_evidence is not None
+            else None
         )
-        return self.repository.put(revision, record)
+        if requested_promotion is not None and requested_audit_run_id is None:
+            raise ValueError("strategy_library_promotion_requires_audit_run")
+        if requested_promotion is not None and (
+            requested_promotion.get("freshSourceRunId") != requested_audit_run_id
+            or requested_promotion.get("strategyRevision") != revision
+        ):
+            raise ValueError("strategy_library_promotion_evidence_invalid")
+        symbols = (
+            config.get("symbols")
+            if isinstance(config.get("symbols"), list)
+            else []
+        )
+        timestamp = created_at or datetime.now(timezone.utc)
+        existing = self.get(revision)
+        while True:
+            if existing is not None and existing.strategy_config != config:
+                raise ValueError("strategy_library_revision_conflict")
+            if (
+                existing is not None
+                and existing.promotion_evidence is not None
+                and requested_promotion is not None
+                and (
+                    existing.audit_run_id == requested_audit_run_id
+                    or existing.promotion_evidence.get("experimentId")
+                    == requested_promotion.get("experimentId")
+                )
+                and existing.promotion_evidence != requested_promotion
+            ):
+                raise ValueError("strategy_library_promotion_evidence_conflict")
+
+            prior_run_id = existing.audit_run_id if existing is not None else None
+            if (
+                requested_audit_run_id is not None
+                and requested_audit_run_id != prior_run_id
+            ):
+                final_run_id = requested_audit_run_id
+                final_promotion = requested_promotion
+            else:
+                final_run_id = prior_run_id or requested_audit_run_id
+                final_promotion = (
+                    existing.promotion_evidence if existing is not None else None
+                ) or requested_promotion
+            if final_promotion is not None and final_run_id is None:
+                raise ValueError("strategy_library_promotion_requires_audit_run")
+            status = "audited" if final_run_id else "draft"
+            record = StrategyLibraryRecord(
+                strategy_id=f"strategy-{revision}",
+                created_at=existing.created_at if existing else timestamp,
+                name=str(config.get("name") or "Imported strategy"),
+                revision=revision,
+                market=str(config.get("market") or "ashare"),
+                symbol=str(symbols[0] if symbols else ""),
+                timeframe=str(config.get("timeframe") or "1d"),
+                version=int(config.get("version") or 1),
+                status=status,
+                audit_run_id=final_run_id,
+                strategy_config=config,
+                promotion_evidence=final_promotion,
+            )
+            if existing is None:
+                stored, created = self.repository.put_if_absent(revision, record)
+                if created:
+                    return record
+                existing = stored
+                continue
+            if record == existing:
+                return existing
+            if existing.audit_run_id != final_run_id:
+                cas_field = "audit_run_id"
+                expected = existing.audit_run_id
+            elif (
+                existing.promotion_evidence is None
+                and final_promotion is not None
+            ):
+                cas_field = "promotion_evidence"
+                expected = None
+            else:
+                cas_field = "status"
+                expected = existing.status
+            if self.repository.compare_and_swap_field(
+                revision,
+                field=cas_field,
+                expected=expected,
+                value=record,
+            ):
+                return record
+            existing = self.get(revision)
+            if existing is None:
+                raise RuntimeError("strategy_library_cas_record_missing")
 
     def list_recent(
         self,

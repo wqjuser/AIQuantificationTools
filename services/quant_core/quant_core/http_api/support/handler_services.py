@@ -98,6 +98,7 @@ class HandlerServicesMixin:
             strategy_store=self.strategy_store,
             run_store=self.run_store,
             experiment_store=self.strategy_experiment_store,
+            sealed_bar_source=getattr(self, "sealed_dataset_store", None),
         )
 
     def _ai_review_stage3_service(self) -> AiReviewStage3Service:

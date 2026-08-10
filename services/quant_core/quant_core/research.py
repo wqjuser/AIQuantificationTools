@@ -40,6 +40,10 @@ from quant_core.domain import (
 )
 from quant_core.market_calendar import build_market_calendar_status
 from quant_core.runs import ResearchRunAudit, ResearchRunStore, build_p0_package_completeness
+from quant_core.sealed_datasets import (
+    SealedDatasetStore,
+    sealed_research_snapshot_payload,
+)
 from quant_core.terminal import (
     BacktestAssumptions,
     BacktestDiagnostic,
@@ -68,10 +72,13 @@ def run_terminal_research(
     data_limit: int = 500,
     data_end: datetime | None = None,
     strategy_snapshot: StrategySnapshot | None = None,
+    strategy_config: StrategyConfig | None = None,
     research_note: dict[str, Any] | None = None,
     data_preparation_evidence: dict[str, Any] | None = None,
     market_ai_selection_evidence: dict[str, Any] | None = None,
     comparison_adapter: MarketDataAdapter | None = None,
+    sealed_bar_source: SealedDatasetStore | None = None,
+    sealed_dataset_id: str | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -80,9 +87,49 @@ def run_terminal_research(
     audit_store = run_store or ResearchRunStore(Path("data/research_runs.sqlite"))
     created_at = datetime.now(timezone.utc)
 
-    request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=data_end or created_at)
-    bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit, cache=market_cache)
-    quality = assess_market_data_quality(request, bars, quality, observed_at=created_at)
+    sealed_summary = None
+    if sealed_bar_source is not None or sealed_dataset_id is not None:
+        if sealed_bar_source is None or not str(sealed_dataset_id or "").strip():
+            raise ValueError("sealed_research_bar_source_incomplete")
+        sealed_summary = sealed_bar_source.get_summary(str(sealed_dataset_id))
+        if sealed_summary is None:
+            raise ValueError("sealed_dataset_not_found")
+        if (
+            sealed_summary.market,
+            sealed_summary.symbol,
+            sealed_summary.timeframe,
+        ) != (market, symbol, timeframe):
+            raise ValueError("sealed_research_context_mismatch")
+        bars = sealed_bar_source.read_development_bars(sealed_summary.dataset_id)
+        request = MarketDataRequest(
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            start=sealed_summary.start,
+            end=sealed_summary.development_end_exclusive,
+        )
+        quality = DataQuality(
+            source=sealed_summary.source,
+            origin_source=sealed_summary.source,
+            is_complete=True,
+            warnings=[],
+            rows=sealed_summary.development_rows,
+            observed_at=created_at,
+            market_time=bars[-1].timestamp if bars else None,
+            adjustment_mode=sealed_summary.adjustment_mode,
+            freshness="sealed",
+            coverage={
+                "actualRows": sealed_summary.development_rows,
+                "expectedRows": sealed_summary.development_rows,
+                "gapCount": 0,
+                "ratio": 1.0,
+            },
+            canonical_hash=sealed_summary.development_hash,
+        )
+    else:
+        request = MarketDataRequest(market=market, symbol=symbol, timeframe=timeframe, end=data_end or created_at)
+        bars, quality = _fetch_research_bars(data_adapter, request, data_limit=data_limit, cache=market_cache)
+        quality = assess_market_data_quality(request, bars, quality, observed_at=created_at)
     if not quality.is_complete:
         codes = ",".join(str(issue.get("code") or "unknown") for issue in quality.issues)
         raise ValueError(f"research_data_quality_blocked:{codes}")
@@ -100,11 +147,20 @@ def run_terminal_research(
             quality,
             warnings=[*quality.warnings, "Cross-source differences require review."],
         )
-    if _should_cache_research_bars(quality):
+    if sealed_summary is None and _should_cache_research_bars(quality):
         market_cache.upsert_bars(bars)
 
     snapshot = strategy_snapshot or _default_strategy_snapshot()
-    strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
+    if strategy_config is not None:
+        if (
+            strategy_config.market != market
+            or strategy_config.symbols != [symbol]
+            or strategy_config.timeframe != timeframe
+        ):
+            raise ValueError("research_strategy_context_mismatch")
+        strategy = strategy_config
+    else:
+        strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
     backtest = backtest_engine.run(strategy, bars)
     report = research_assistant.analyze(
         AiResearchRequest(
@@ -130,13 +186,16 @@ def run_terminal_research(
     backtest_equity_curve = _backtest_equity_curve_rows(backtest)
     backtest_diagnostics = _backtest_diagnostics(backtest, data_rows=quality.rows)
     market_calendar = build_market_calendar_status(market, at=created_at)
-    data_snapshot = _data_snapshot_payload(
-        bars,
-        quality,
-        preparation_evidence=data_preparation_evidence,
-        market_calendar=market_calendar,
-        source_comparison=source_comparison,
-    )
+    if sealed_summary is None:
+        data_snapshot = _data_snapshot_payload(
+            bars,
+            quality,
+            preparation_evidence=data_preparation_evidence,
+            market_calendar=market_calendar,
+            source_comparison=source_comparison,
+        )
+    else:
+        data_snapshot = sealed_research_snapshot_payload(sealed_summary)
     if market_ai_selection_evidence:
         data_snapshot["marketAiSelectionEvidence"] = dict(market_ai_selection_evidence)
     audit = ResearchRunAudit(

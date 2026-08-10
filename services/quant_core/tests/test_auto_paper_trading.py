@@ -34,10 +34,13 @@ from quant_core.api import (
     evaluate_auto_paper_trading_once,
 )
 from quant_core.decision_contract import (
+    build_decision_contract,
     build_order_intent,
     build_order_result,
     build_risk_adjusted_target,
+    normalize_strategy_evaluation_identity,
     replay_decision_proposal,
+    validate_order_intent_identity,
 )
 from quant_core.binance_spot_orders import (
     check_spot_account_coverage,
@@ -48,21 +51,40 @@ from quant_core.cache import MarketDataCache
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
     canonical_data_hash,
+    canonical_sha256,
     canonical_snapshot_id,
     normalize_snapshot_bars,
+    strategy_config_from_payload,
     strategy_config_to_payload,
 )
 from quant_core.domain import (
     Condition,
     DataQuality,
+    MarketDataRequest,
     OHLCVBar,
     RiskRules,
     StrategyConfig,
 )
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
+from quant_core.sealed_datasets import (
+    SealedDatasetStore,
+    sealed_research_snapshot_payload,
+)
 from quant_core.settings import PlatformSettingsStore
 from quant_core.stage6_sandbox import BinanceSpotTestnetRoute
+from quant_core.strategy_experiment_store import StrategyExperimentStore
+from quant_core.strategy_experiments import (
+    StrategyExperimentError,
+    StrategyExperimentRunner,
+)
 from quant_core.strategy_library import StrategyLibraryStore
+from services.quant_core.tests.test_regime_breakout_v2 import (
+    _expand_to_one_minute as regime_one_minute_bars,
+    _five_minute_fixture as regime_five_minute_fixture,
+    _profitable_fresh_reaudit_bars,
+    _seed_promotable_experiment,
+    _strategy as regime_breakout_strategy,
+)
 
 
 class FakeProvider:
@@ -606,6 +628,44 @@ def bars(prices: list[float], *, start: datetime | None = None) -> list[OHLCVBar
     ]
 
 
+def small_account_policy_bars() -> list[OHLCVBar]:
+    """Keep the signal and next open equal while making 0.00008 BTC the risk-sized lot."""
+    scale = 610.0
+
+    def scaled(value: float) -> float:
+        return 65_000.0 + (value - 102.0) * scale
+
+    return [
+        replace(
+            bar,
+            open=scaled(bar.open),
+            high=scaled(bar.high),
+            low=scaled(bar.low),
+            close=scaled(bar.close),
+        )
+        for bar in regime_one_minute_bars(regime_five_minute_fixture())
+    ]
+
+
+def low_atr_dynamic_entry_policy_bars() -> list[OHLCVBar]:
+    """Keep venue-scale prices while making the 60% equity cap bind sizing."""
+    scale = 0.01
+
+    def scaled(value: float) -> float:
+        return 66_000.0 + (value - 102.0) * scale
+
+    return [
+        replace(
+            bar,
+            open=scaled(bar.open),
+            high=scaled(bar.high),
+            low=scaled(bar.low),
+            close=scaled(bar.close),
+        )
+        for bar in regime_one_minute_bars(regime_five_minute_fixture())
+    ]
+
+
 def evaluate_and_settle_paper(
     service: AutoPaperTradingService,
     signal_bars: list[OHLCVBar],
@@ -631,12 +691,35 @@ def evaluate_and_settle_paper(
     return service.evaluate([*signal_bars, fill_bar], data_source=data_source)
 
 
+def rewrite_auto_state(store: AuditEventStore, mutate) -> None:
+    current = store.get(CONTROL_EVENT_ID)
+    assert current is not None
+    state = json.loads(json.dumps(current.metadata["state"]))
+    mutate(state)
+    store.record(
+        {
+            "schemaVersion": 1,
+            "eventId": CONTROL_EVENT_ID,
+            "eventType": "auto_paper_trading_state",
+            "runId": None,
+            "createdAt": current.created_at.isoformat(),
+            "stage": "auto-paper-trading",
+            "source": "auto-paper-trading",
+            "summary": "tampered pending paper fixture",
+            "detail": "tampered pending paper fixture",
+            "metadata": {"state": state},
+        }
+    )
+
+
 def audited_strategy_stores(
     directory: str,
     *,
     entry_window: int = 3,
+    strategy: StrategyConfig | None = None,
+    audit_bars: list[OHLCVBar] | None = None,
 ) -> tuple[StrategyConfig, StrategyLibraryStore, ResearchRunStore]:
-    strategy = StrategyConfig(
+    strategy = strategy or StrategyConfig(
         name="BTC 一分钟均线策略",
         market="crypto",
         symbols=["BTC/USDT"],
@@ -654,7 +737,7 @@ def audited_strategy_stores(
             max_drawdown_pct=0.05,
         ),
     )
-    audit_bars = bars([100 + index for index in range(max(6, entry_window))])
+    audit_bars = audit_bars or bars([100 + index for index in range(max(6, entry_window))])
     backtest = BacktestEngine().run(strategy, audit_bars)
     normalized = normalize_snapshot_bars(audit_bars)
     data_hash = canonical_data_hash(normalized)
@@ -725,7 +808,1147 @@ def audited_strategy_stores(
     return strategy, strategy_store, run_store
 
 
+def promoted_sealed_strategy_stores(
+    directory: str,
+    *,
+    promote: bool = True,
+    audit_bars: list[OHLCVBar] | None = None,
+    base_strategy: StrategyConfig | None = None,
+) -> tuple[
+    StrategyConfig,
+    StrategyLibraryStore,
+    ResearchRunStore,
+    StrategyExperimentStore,
+    SealedDatasetStore,
+    dict | None,
+]:
+    strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
+    run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+    experiment_store = StrategyExperimentStore(Path(directory) / "experiments.sqlite")
+    sealed_store = SealedDatasetStore(Path(directory) / "sealed.sqlite")
+    base_strategy = base_strategy or regime_breakout_strategy()
+    strategy_store.save(base_strategy)
+    winner, experiment = _seed_promotable_experiment(
+        experiment_store,
+        base_strategy=base_strategy,
+    )
+
+    development = audit_bars or _profitable_fresh_reaudit_bars()
+    withheld = replace(
+        development[-1],
+        timestamp=development[-1].timestamp + timedelta(minutes=1),
+    )
+    complete_dataset = [*development, withheld]
+    request = MarketDataRequest(
+        market="crypto",
+        symbol="BTC/USDT",
+        timeframe="1m",
+        start=complete_dataset[0].timestamp,
+        end=withheld.timestamp + timedelta(minutes=1),
+    )
+    summary = sealed_store.seal_dataset(
+        request,
+        [
+            complete_dataset[index : index + 500]
+            for index in range(0, len(complete_dataset), 500)
+        ],
+        [
+            DataQuality(
+                source="fresh-sealed-fixture",
+                origin_source="fresh-sealed-fixture",
+                is_complete=True,
+                rows=len(chunk),
+                adjustment_mode="none",
+                canonical_hash=canonical_data_hash(
+                    normalize_snapshot_bars(chunk)
+                ),
+            )
+            for chunk in [
+                complete_dataset[index : index + 500]
+                for index in range(0, len(complete_dataset), 500)
+            ]
+        ],
+        development_end_exclusive=withheld.timestamp,
+        observed_at=datetime(2026, 8, 11, tzinfo=timezone.utc),
+    )
+    backtest = BacktestEngine(
+        initial_cash=10,
+        fee_rate=0.001,
+        slippage_rate=0.001,
+    ).run(winner.strategy, development)
+    run_store.record(
+        ResearchRunAudit(
+            run_id="fresh-sealed-p0-run",
+            created_at=datetime(2026, 8, 11, tzinfo=timezone.utc),
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            strategy_name=winner.strategy.name,
+            strategy_revision=winner.strategy.revision,
+            data_rows=len(development),
+            metrics=asdict(backtest.metrics),
+            decisions=[],
+            execution_mode="paper_only",
+            data_quality={
+                "source": summary.source,
+                "originSource": summary.source,
+                "isComplete": True,
+                "warnings": [],
+                "rows": summary.development_rows,
+                "adjustmentMode": summary.adjustment_mode,
+                "coverage": {
+                    "actualRows": summary.development_rows,
+                    "expectedRows": summary.development_rows,
+                    "gapCount": 0,
+                    "ratio": 1.0,
+                },
+                "canonicalHash": summary.development_hash,
+                "issues": [],
+            },
+            data_snapshot=sealed_research_snapshot_payload(summary),
+            strategy_config=strategy_config_to_payload(winner.strategy),
+            backtest_assumptions={
+                "initialCash": 10,
+                "feeBps": 10,
+                "slippageBps": 10,
+            },
+            backtest_trades=[
+                {
+                    "timestamp": trade.timestamp.isoformat(),
+                    "side": trade.side,
+                    "status": "filled",
+                    "price": trade.price,
+                    "quantity": trade.quantity,
+                }
+                for trade in backtest.trades
+            ],
+            backtest_equity_curve=[
+                {
+                    "timestamp": point.timestamp.isoformat(),
+                    "equity": round(point.equity, 4),
+                }
+                for point in backtest.equity_curve
+            ],
+        )
+    )
+    class DevelopmentOnlySealedSource:
+        def get_summary(self, dataset_id):
+            return sealed_store.get_summary(dataset_id)
+
+        def read_development_bars(self, dataset_id):
+            return sealed_store.read_development_bars(dataset_id)
+
+        def claim_test_partition(self, *_args, **_kwargs):
+            raise AssertionError("fresh promotion must not claim the test partition")
+
+        def read_claimed_test_bars(self, *_args, **_kwargs):
+            raise AssertionError("fresh promotion must not read the test partition")
+
+    promotion = (
+        StrategyExperimentRunner(
+            strategy_store=strategy_store,
+            run_store=run_store,
+            experiment_store=experiment_store,
+            sealed_bar_source=DevelopmentOnlySealedSource(),
+        ).promote_winner(
+            experiment.experiment_id,
+            fresh_source_run_id="fresh-sealed-p0-run",
+            operator="operator@example.com",
+            confirmed=True,
+        )
+        if promote
+        else None
+    )
+    if not promote:
+        strategy_store.save(
+            winner.strategy,
+            audit_run_id="fresh-sealed-p0-run",
+        )
+    return (
+        winner.strategy,
+        strategy_store,
+        run_store,
+        experiment_store,
+        sealed_store,
+        promotion,
+    )
+
+
 class AutoPaperTradingTests(unittest.TestCase):
+    def test_v1_decision_contract_identity_remains_compatible(self):
+        fixture_bars = [
+            OHLCVBar(
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                timestamp=datetime(2026, 8, 1, tzinfo=timezone.utc)
+                + timedelta(minutes=index),
+                open=100 + index,
+                high=101 + index,
+                low=99 + index,
+                close=100.5 + index,
+                volume=10 + index,
+            )
+            for index in range(6)
+        ]
+
+        contract = build_decision_contract(
+            bars=fixture_bars,
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            data_source="test",
+            strategy_id="auto-pct-v1",
+            strategy_revision="revision-v1",
+            proposal_action="buy",
+            proposal_confidence=1,
+            proposal_reason="fixture-buy",
+            provider_id="rules",
+            current_quantity=0,
+            reference_price=105.5,
+            available_cash=100,
+            order_notional=10,
+            fee_rate=0.001,
+            daily_drawdown_pct=0,
+            daily_loss_limit_pct=2,
+            profit_drawdown_pct=0,
+            profit_drawdown_limit_pct=2,
+            recent_trade_count=0,
+            max_trades_per_hour=3,
+            generated_at=datetime(2026, 8, 1, 0, 6, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(
+            contract["marketSnapshot"]["snapshotHash"],
+            "6714085f4a60e7b882bf533acd74491f894d9df0c6edcbfc9d6f985b1d18065e",
+        )
+        self.assertEqual(
+            contract["decisionProposal"]["proposalId"],
+            "6eef7bb9d6def2bfb918ffd4d56a3a7c9a5a33e1ab7f07020f14e2c3fd62f5b4",
+        )
+        self.assertEqual(
+            contract["signal"]["signalId"],
+            "4dd634bb97235787ad6d69c94fa203fc53e415538965b7b5a6d2ea5d32335675",
+        )
+        self.assertEqual(
+            contract["orderIntent"]["orderIntentId"],
+            "588145cff82f180e090c128e796c0cb2c27ed9e42a322af4eba3822314ea65da",
+        )
+        self.assertEqual(
+            contract["decisionProposal"]["evidenceReferences"],
+            [contract["marketSnapshot"]["snapshotHash"]],
+        )
+        self.assertEqual(contract["contractVersion"], "aiqt-decision-v1")
+        validate_order_intent_identity(contract["orderIntent"])
+
+    def test_policy_evaluation_evidence_changes_every_downstream_identity(self):
+        fixture_bars = bars([100, 101, 102, 103, 104, 105])
+        identities = [
+            {
+                "contextHash": "1" * 64,
+                "evaluationId": "2" * 24,
+                "stateBeforeHash": "3" * 64,
+                "evaluationHash": "7" * 64,
+            },
+            {
+                "contextHash": "4" * 64,
+                "evaluationId": "2" * 24,
+                "stateBeforeHash": "3" * 64,
+                "evaluationHash": "7" * 64,
+            },
+            {
+                "contextHash": "1" * 64,
+                "evaluationId": "5" * 24,
+                "stateBeforeHash": "3" * 64,
+                "evaluationHash": "7" * 64,
+            },
+            {
+                "contextHash": "1" * 64,
+                "evaluationId": "2" * 24,
+                "stateBeforeHash": "6" * 64,
+                "evaluationHash": "7" * 64,
+            },
+            {
+                "contextHash": "1" * 64,
+                "evaluationId": "2" * 24,
+                "stateBeforeHash": "3" * 64,
+                "evaluationHash": "8" * 64,
+            },
+        ]
+
+        contracts = [
+            build_decision_contract(
+                bars=fixture_bars,
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                data_source="test",
+                strategy_id="regime-breakout-v2",
+                strategy_revision="revision-v2",
+                proposal_action="buy",
+                proposal_confidence=1,
+                proposal_reason="regime_breakout",
+                provider_id="rules",
+                current_quantity=0,
+                reference_price=105,
+                available_cash=10,
+                order_notional=5,
+                fee_rate=0.001,
+                daily_drawdown_pct=0,
+                daily_loss_limit_pct=2,
+                profit_drawdown_pct=0,
+                profit_drawdown_limit_pct=2,
+                recent_trade_count=0,
+                max_trades_per_hour=1,
+                generated_at=datetime(2026, 8, 1, 0, 6, tzinfo=timezone.utc),
+                strategy_evaluation_identity=identity,
+            )
+            for identity in identities
+        ]
+
+        self.assertEqual(
+            {contract["marketSnapshot"]["snapshotHash"] for contract in contracts},
+            {contracts[0]["marketSnapshot"]["snapshotHash"]},
+        )
+        for field, identity_field in (
+            ("decisionProposal", "proposalId"),
+            ("signal", "signalId"),
+            ("orderIntent", "orderIntentId"),
+        ):
+            self.assertEqual(
+                len({contract[field][identity_field] for contract in contracts}),
+                len(identities),
+            )
+        expected_references = [
+            contracts[0]["marketSnapshot"]["snapshotHash"],
+            identities[0]["contextHash"],
+            identities[0]["evaluationId"],
+            identities[0]["stateBeforeHash"],
+            identities[0]["evaluationHash"],
+        ]
+        for field in ("decisionProposal", "signal", "orderIntent"):
+            self.assertEqual(
+                contracts[0][field]["strategyEvaluationIdentity"],
+                identities[0],
+            )
+            self.assertEqual(
+                contracts[0][field]["evidenceReferences"],
+                expected_references,
+            )
+        self.assertEqual(contracts[0]["contractVersion"], "aiqt-decision-v2")
+        self.assertEqual(
+            normalize_strategy_evaluation_identity(identities[0]),
+            identities[0],
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "strategy_evaluation_identity_invalid",
+        ):
+            normalize_strategy_evaluation_identity(
+                {**identities[0], "contextHash": "not-a-64-byte-hash"}
+            )
+        validate_order_intent_identity(contracts[0]["orderIntent"])
+        replayed = replay_decision_proposal(
+            contracts[0]["decisionProposal"],
+            bars=fixture_bars,
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            data_source="test",
+            strategy_id="regime-breakout-v2",
+            current_quantity=0,
+            reference_price=105,
+            available_cash=10,
+            order_notional=5,
+            fee_rate=0.001,
+            daily_drawdown_pct=0,
+            daily_loss_limit_pct=2,
+            profit_drawdown_pct=0,
+            profit_drawdown_limit_pct=2,
+            recent_trade_count=0,
+            max_trades_per_hour=1,
+            generated_at=datetime(2026, 8, 1, 0, 6, tzinfo=timezone.utc),
+        )
+        self.assertEqual(replayed, contracts[0])
+
+    def test_background_evaluation_paginates_policy_warmup_beyond_500_bars(self):
+        current_minute = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        history = bars(
+            [100.0] * 700,
+            start=current_minute - timedelta(minutes=700),
+        )
+
+        class PaginatedAdapter:
+            def __init__(self):
+                self.calls = []
+
+            def fetch_ohlcv(self, request, *, limit):
+                self.calls.append({"end": request.end, "limit": limit})
+                eligible = [
+                    bar for bar in history if request.end is None or bar.timestamp <= request.end
+                ]
+                page = eligible[-limit:]
+                return page, DataQuality(
+                    source="binance",
+                    origin_source="binance",
+                    is_complete=True,
+                    rows=len(page),
+                )
+
+        class RecordingService:
+            evaluated = None
+
+            def snapshot(self):
+                return {
+                    "state": {
+                        "market": "crypto",
+                        "symbol": "BTC/USDT",
+                        "timeframe": "1m",
+                    }
+                }
+
+            def required_bar_count(self):
+                return 541
+
+            def required_fetch_bar_count(self):
+                return 600
+
+            def evaluate(self, values, *, data_source):
+                self.evaluated = (values, data_source)
+                return {"state": {"status": "monitoring"}}
+
+            def record_data_blocked(self, detail):
+                return {"state": {"status": "data_blocked", "detail": detail}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            service = RecordingService()
+            adapter = PaginatedAdapter()
+            result, quality = evaluate_auto_paper_trading_once(
+                service,
+                cache=MarketDataCache(Path(directory) / "market.sqlite"),
+                adapter=adapter,
+            )
+
+        self.assertEqual(result["state"]["status"], "monitoring")
+        self.assertTrue(quality.is_complete)
+        self.assertEqual([call["limit"] for call in adapter.calls], [500, 101])
+        self.assertIsNotNone(service.evaluated)
+        evaluated, source = service.evaluated
+        self.assertEqual(len(evaluated), 600)
+        self.assertEqual(source, "binance")
+        self.assertEqual(evaluated[-1].timestamp, current_minute - timedelta(minutes=1))
+
+    def test_regime_breakout_policy_persists_across_restart_and_matches_backtest_timing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = regime_breakout_strategy()
+            frozen_bars = regime_one_minute_bars(regime_five_minute_fixture())
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(directory)
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            registry = AiReviewProviderRegistry(
+                (ProviderStatus("local", True, None, None),),
+                {},
+            )
+            service = AutoPaperTradingService(
+                store,
+                registry,
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            with self.assertRaisesRegex(ValueError, "strategy_policy_paper_only"):
+                service.configure({"executionMode": "testnet"})
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+
+            signaled = service.evaluate(frozen_bars[: 38 * 5], data_source="test")
+
+            self.assertEqual(signaled["state"]["status"], "order_pending")
+            self.assertEqual(signaled["state"]["lastDecision"]["action"], "buy")
+            self.assertEqual(
+                signaled["state"]["pendingPaperOrder"]["signalBarAt"],
+                datetime(2026, 8, 1, 3, 9, tzinfo=timezone.utc).isoformat(),
+            )
+            self.assertEqual(
+                signaled["state"]["pendingPaperOrder"]["strategyEvaluation"]["reason"],
+                "regime_breakout",
+            )
+            strategy_evaluation = signaled["state"]["pendingPaperOrder"][
+                "strategyEvaluation"
+            ]
+            strategy_evaluation_identity = {
+                "contextHash": strategy_evaluation["contextHash"],
+                "evaluationId": strategy_evaluation["evaluationId"],
+                "stateBeforeHash": strategy_evaluation["stateBeforeHash"],
+                "evaluationHash": canonical_sha256(strategy_evaluation),
+            }
+            decision_contract = signaled["state"]["lastDecisionContract"]
+            evidence_references = [
+                decision_contract["marketSnapshot"]["snapshotHash"],
+                strategy_evaluation_identity["contextHash"],
+                strategy_evaluation_identity["evaluationId"],
+                strategy_evaluation_identity["stateBeforeHash"],
+                strategy_evaluation_identity["evaluationHash"],
+            ]
+            for field in ("decisionProposal", "signal", "orderIntent"):
+                self.assertEqual(
+                    decision_contract[field]["strategyEvaluationIdentity"],
+                    strategy_evaluation_identity,
+                )
+                self.assertEqual(
+                    decision_contract[field]["evidenceReferences"],
+                    evidence_references,
+                )
+
+            restarted = AutoPaperTradingService(
+                store,
+                registry,
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            bought = restarted.evaluate(frozen_bars[: 38 * 5 + 1], data_source="test")
+            self.assertEqual(bought["state"]["status"], "traded")
+            self.assertGreater(bought["state"]["position"], 0)
+            self.assertEqual(bought["state"]["lastTrade"]["price"], 103.0)
+            self.assertEqual(
+                bought["state"]["strategyRuntimeState"]["entryFilledAt"],
+                datetime(2026, 8, 1, 3, 10, tzinfo=timezone.utc).isoformat(),
+            )
+
+            exit_signal = restarted.evaluate(frozen_bars[: 40 * 5], data_source="test")
+            self.assertEqual(exit_signal["state"]["lastDecision"]["action"], "sell")
+            sold = restarted.evaluate(frozen_bars[: 40 * 5 + 1], data_source="test")
+            self.assertEqual(sold["state"]["position"], 0)
+
+            restarted = AutoPaperTradingService(
+                store,
+                registry,
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            cooldown = restarted.evaluate(frozen_bars[: 43 * 5], data_source="test")
+            self.assertIsNone(cooldown["state"]["pendingPaperOrder"])
+            second_signal = restarted.evaluate(frozen_bars[: 50 * 5], data_source="test")
+            self.assertEqual(second_signal["state"]["lastDecision"]["action"], "buy")
+            self.assertEqual(second_signal["state"]["status"], "order_pending")
+            duplicate = AutoPaperTradingService(
+                store,
+                registry,
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            ).evaluate(frozen_bars[: 50 * 5], data_source="test")
+            self.assertEqual(duplicate["state"]["tradeCount"], 2)
+            self.assertEqual(
+                duplicate["state"]["pendingPaperOrder"]["strategyEvaluation"]["evaluationId"],
+                second_signal["state"]["pendingPaperOrder"]["strategyEvaluation"]["evaluationId"],
+            )
+
+    def test_small_account_same_open_fill_matches_backtest_risk_sized_quantity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = regime_breakout_strategy()
+            frozen_bars = small_account_policy_bars()
+            signal_index = 38 * 5
+            self.assertEqual(frozen_bars[signal_index - 1].close, 65_610.0)
+            self.assertEqual(frozen_bars[signal_index].open, 65_610.0)
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(
+                directory,
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry((ProviderStatus("local", True, None, None),), {}),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure({"initialCash": 10, "paperAccountResetConfirmed": True})
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+
+            signaled = service.evaluate(frozen_bars[:signal_index], data_source="test")
+            bought = service.evaluate(frozen_bars[: signal_index + 1], data_source="test")
+            replay = BacktestEngine(
+                initial_cash=10,
+                fee_rate=0.001,
+                slippage_rate=0.001,
+            ).run(strategy, frozen_bars[: signal_index + 1])
+
+            self.assertEqual(signaled["state"]["status"], "order_pending")
+            self.assertEqual(
+                signaled["state"]["pendingPaperOrder"]["orderIntent"]["quantity"],
+                0.00008,
+            )
+            self.assertEqual(bought["state"]["status"], "traded")
+            self.assertEqual(bought["state"]["lastTrade"]["quantity"], 0.00008)
+            self.assertEqual(bought["state"]["lastTrade"]["price"], 65_610.0)
+            self.assertEqual(
+                [(trade.side, trade.quantity) for trade in replay.trades],
+                [("buy", 0.00008), ("sell", 0.00008)],
+            )
+
+    def test_dynamic_entry_cap_uses_grown_equity_above_legacy_ten_quote_limit_with_backtest_paper_parity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dynamic_payload = strategy_config_to_payload(regime_breakout_strategy())
+            dynamic_payload["risk"]["maxEntryNotionalQuote"] = None
+            dynamic_strategy = strategy_config_from_payload(dynamic_payload)
+            frozen_bars = low_atr_dynamic_entry_policy_bars()
+            signal_index = 38 * 5
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(
+                directory,
+                base_strategy=dynamic_strategy,
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure(
+                {"initialCash": 100, "paperAccountResetConfirmed": True}
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+
+            signaled = service.evaluate(
+                frozen_bars[:signal_index],
+                data_source="test",
+            )
+            bought = service.evaluate(
+                frozen_bars[: signal_index + 1],
+                data_source="test",
+            )
+            grown_replay = BacktestEngine(
+                initial_cash=100,
+                fee_rate=0.001,
+                slippage_rate=0.001,
+            ).run(strategy, frozen_bars[: signal_index + 1])
+            initial_replay = BacktestEngine(
+                initial_cash=10,
+                fee_rate=0.001,
+                slippage_rate=0.001,
+            ).run(strategy, frozen_bars[: signal_index + 1])
+
+            order_intent = signaled["state"]["pendingPaperOrder"]["orderIntent"]
+            paper_trade = bought["state"]["lastTrade"]
+            backtest_buy = grown_replay.trades[0]
+            initial_buy = initial_replay.trades[0]
+            self.assertGreater(float(order_intent["notionalValue"]), 10)
+            self.assertGreater(
+                float(paper_trade["quantity"]) * float(paper_trade["price"]),
+                10,
+            )
+            self.assertGreater(backtest_buy.quantity * backtest_buy.price, 10)
+            self.assertGreaterEqual(
+                float(order_intent["quantity"]),
+                float(paper_trade["quantity"]),
+            )
+            self.assertEqual(float(paper_trade["quantity"]), 0.0009)
+            self.assertAlmostEqual(backtest_buy.quantity, 0.0009)
+            self.assertLessEqual(initial_buy.quantity * initial_buy.price, 10)
+
+    def test_policy_pending_paper_order_requires_strategy_evaluation_before_fill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = regime_breakout_strategy()
+            frozen_bars = regime_one_minute_bars(regime_five_minute_fixture())
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(
+                directory,
+            )
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+            signal_index = 38 * 5
+            signaled = service.evaluate(
+                frozen_bars[:signal_index],
+                data_source="test",
+            )
+            self.assertEqual(signaled["state"]["status"], "order_pending")
+            cash_before = signaled["state"]["cash"]
+            base_state = json.loads(json.dumps(signaled["state"]))
+
+            rewrite_auto_state(
+                store,
+                lambda state: state["pendingPaperOrder"].pop("strategyEvaluation"),
+            )
+            blocked = service.evaluate(
+                frozen_bars[: signal_index + 1],
+                data_source="test",
+            )
+
+            self.assertEqual(blocked["state"]["status"], "evaluation_error")
+            self.assertEqual(blocked["state"]["cash"], cash_before)
+            self.assertEqual(blocked["state"]["position"], 0)
+            self.assertEqual(blocked["state"]["tradeCount"], 0)
+            self.assertIsInstance(blocked["state"]["pendingPaperOrder"], dict)
+
+            def hide_all_policy_markers(state):
+                state.clear()
+                state.update(json.loads(json.dumps(base_state)))
+                state["activeStrategyConfig"]["policy"] = None
+                state["activeStrategyConfigHash"] = canonical_sha256(
+                    state["activeStrategyConfig"]
+                )
+                state["pendingPaperOrder"].pop("strategyEvaluation")
+                state["pendingPaperOrder"]["orderIntent"].pop(
+                    "strategyEvaluationIdentity"
+                )
+                state["pendingPaperOrder"]["orderIntent"].pop(
+                    "evidenceReferences"
+                )
+
+            rewrite_auto_state(store, hide_all_policy_markers)
+            blocked = service.evaluate(
+                frozen_bars[: signal_index + 1],
+                data_source="test",
+            )
+
+            self.assertEqual(blocked["state"]["status"], "evaluation_error")
+            self.assertEqual(blocked["state"]["cash"], cash_before)
+            self.assertEqual(blocked["state"]["position"], 0)
+            self.assertEqual(blocked["state"]["tradeCount"], 0)
+            self.assertIsInstance(blocked["state"]["pendingPaperOrder"], dict)
+
+    def test_policy_pending_paper_order_rejects_mismatched_policy_evidence_before_fill(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = regime_breakout_strategy()
+            frozen_bars = regime_one_minute_bars(regime_five_minute_fixture())
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(
+                directory,
+            )
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+            signal_index = 38 * 5
+            signaled = service.evaluate(
+                frozen_bars[:signal_index],
+                data_source="test",
+            )
+            self.assertEqual(signaled["state"]["status"], "order_pending")
+            cash_before = signaled["state"]["cash"]
+            base_state = json.loads(json.dumps(signaled["state"]))
+
+            def flip_first_gate(pending):
+                gates = pending["strategyEvaluation"]["gates"]
+                field = next(iter(gates))
+                gates[field] = not gates[field]
+
+            def rehash_intent(intent):
+                intent_payload = dict(intent)
+                intent_payload.pop("orderIntentId")
+                intent["orderIntentId"] = canonical_sha256(intent_payload)
+
+            def synchronize_intent_identity(
+                pending,
+                field,
+                length,
+                evidence_index,
+            ):
+                intent = pending["orderIntent"]
+                replacement = "f" * length
+                intent["strategyEvaluationIdentity"][field] = replacement
+                intent["evidenceReferences"][evidence_index] = replacement
+                rehash_intent(intent)
+
+            def change_intent_evidence(pending, index):
+                intent = pending["orderIntent"]
+                intent["evidenceReferences"][index] = "f" * len(
+                    intent["evidenceReferences"][index]
+                )
+                rehash_intent(intent)
+
+            def synchronize_changed_atr(pending):
+                evaluation = pending["strategyEvaluation"]
+                evaluation["atr"] = float(evaluation["atr"] or 0) + 1
+                identity = {
+                    "contextHash": evaluation["contextHash"],
+                    "evaluationId": evaluation["evaluationId"],
+                    "stateBeforeHash": evaluation["stateBeforeHash"],
+                    "evaluationHash": canonical_sha256(evaluation),
+                }
+                intent = pending["orderIntent"]
+                intent["strategyEvaluationIdentity"] = identity
+                intent["evidenceReferences"] = [
+                    intent["marketSnapshotHash"],
+                    identity["contextHash"],
+                    identity["evaluationId"],
+                    identity["stateBeforeHash"],
+                    identity["evaluationHash"],
+                ]
+                rehash_intent(intent)
+
+            mutations = [
+                (
+                    "identity-missing",
+                    lambda pending: pending["orderIntent"].pop(
+                        "strategyEvaluationIdentity"
+                    ),
+                ),
+                (
+                    "evidence-missing",
+                    lambda pending: pending["orderIntent"].pop(
+                        "evidenceReferences"
+                    ),
+                ),
+                (
+                    "evaluation-action",
+                    lambda pending: pending["strategyEvaluation"].__setitem__(
+                        "action", "sell"
+                    ),
+                ),
+                (
+                    "evaluation-atr",
+                    lambda pending: pending["strategyEvaluation"].__setitem__(
+                        "atr",
+                        float(pending["strategyEvaluation"]["atr"] or 0) + 1,
+                    ),
+                ),
+                (
+                    "evaluation-gates",
+                    flip_first_gate,
+                ),
+                (
+                    "evaluation-state-after-hash",
+                    lambda pending: pending["strategyEvaluation"].__setitem__(
+                        "stateAfterHash", "f" * 64
+                    ),
+                ),
+                (
+                    "evaluation-atr-synchronized",
+                    synchronize_changed_atr,
+                ),
+            ]
+            for field, length, evidence_index in (
+                ("contextHash", 64, 1),
+                ("evaluationId", 24, 2),
+                ("stateBeforeHash", 64, 3),
+                ("evaluationHash", 64, 4),
+            ):
+                mutations.append(
+                    (
+                        f"identity-{field}",
+                        lambda pending,
+                        field=field,
+                        length=length,
+                        evidence_index=evidence_index: synchronize_intent_identity(
+                            pending,
+                            field,
+                            length,
+                            evidence_index,
+                        ),
+                    )
+                )
+            for index in range(5):
+                mutations.append(
+                    (
+                        f"evidence-{index}",
+                        lambda pending, index=index: change_intent_evidence(
+                            pending,
+                            index,
+                        ),
+                    )
+                )
+
+            for label, mutate_pending in mutations:
+                with self.subTest(label=label):
+                    def install_tampered_pending(state):
+                        state.clear()
+                        state.update(json.loads(json.dumps(base_state)))
+                        mutate_pending(state["pendingPaperOrder"])
+
+                    rewrite_auto_state(store, install_tampered_pending)
+                    blocked = service.evaluate(
+                        frozen_bars[: signal_index + 1],
+                        data_source="test",
+                    )
+
+                    self.assertEqual(blocked["state"]["status"], "evaluation_error")
+                    self.assertEqual(blocked["state"]["cash"], cash_before)
+                    self.assertEqual(blocked["state"]["position"], 0)
+                    self.assertEqual(blocked["state"]["tradeCount"], 0)
+                    self.assertIsInstance(
+                        blocked["state"]["pendingPaperOrder"],
+                        dict,
+                    )
+
+    def test_active_policy_runtime_rejects_non_paper_mode_before_preparation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = regime_breakout_strategy()
+            frozen_bars = regime_one_minute_bars(regime_five_minute_fixture())
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(
+                directory,
+            )
+            store = AuditEventStore(Path(directory) / "audit.sqlite")
+            sandbox = FakeSandboxService()
+            service = AutoPaperTradingService(
+                store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                sandbox,  # type: ignore[arg-type]
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            configured = service.configure({"enabled": True})
+            base_state = json.loads(json.dumps(configured["state"]))
+
+            def force_testnet_policy(state):
+                state["executionMode"] = "testnet"
+                state["testnetConfirmed"] = True
+
+            rewrite_auto_state(store, force_testnet_policy)
+            blocked = service.evaluate(
+                frozen_bars[: 38 * 5],
+                data_source="test",
+            )
+
+            self.assertEqual(blocked["state"]["status"], "risk_paused")
+            self.assertEqual(blocked["state"]["detail"], "strategy_policy_paper_only")
+            self.assertEqual(blocked["state"]["position"], 0)
+            self.assertEqual(blocked["state"]["tradeCount"], 0)
+            self.assertEqual(sandbox.preparations, [])
+            self.assertEqual(sandbox.orders, [])
+
+            def hide_policy_in_frozen_snapshot(state):
+                state.clear()
+                state.update(json.loads(json.dumps(base_state)))
+                state["executionMode"] = "testnet"
+                state["testnetConfirmed"] = True
+                state["activeStrategyConfig"]["policy"] = None
+                state["activeStrategyConfigHash"] = canonical_sha256(
+                    state["activeStrategyConfig"]
+                )
+
+            rewrite_auto_state(store, hide_policy_in_frozen_snapshot)
+            blocked = service.evaluate(
+                frozen_bars[: 38 * 5],
+                data_source="test",
+            )
+
+            self.assertEqual(blocked["state"]["status"], "risk_paused")
+            self.assertEqual(blocked["state"]["detail"], "strategy_policy_paper_only")
+            self.assertEqual(blocked["state"]["position"], 0)
+            self.assertEqual(blocked["state"]["tradeCount"], 0)
+            self.assertEqual(sandbox.preparations, [])
+            self.assertEqual(sandbox.orders, [])
+
+    def test_regime_breakout_gap_down_rejects_signal_quantity_below_venue_minimum(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = regime_breakout_strategy()
+            frozen_bars = regime_one_minute_bars(regime_five_minute_fixture())
+            fill_index = 38 * 5
+            fill_bar = frozen_bars[fill_index]
+            frozen_bars[fill_index] = replace(
+                fill_bar,
+                open=90.0,
+                low=89.9,
+            )
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(directory)
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry((ProviderStatus("local", True, None, None),), {}),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure(
+                {"initialCash": 10, "paperAccountResetConfirmed": True}
+            )
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+            service.configure(
+                {
+                    "enabled": True,
+                    "dailyLossLimitPct": 20,
+                    "dailyProfitDrawdownLimitPct": 20,
+                }
+            )
+
+            signaled = service.evaluate(frozen_bars[:fill_index], data_source="test")
+            intended_notional = float(
+                signaled["state"]["pendingPaperOrder"]["orderIntent"]["notionalValue"]
+            )
+            filled = service.evaluate(frozen_bars[: fill_index + 1], data_source="test")
+            replay = BacktestEngine(
+                initial_cash=10,
+                fee_rate=0.001,
+                slippage_rate=0.001,
+            ).run(strategy, frozen_bars[: fill_index + 1])
+
+            self.assertGreaterEqual(intended_notional, 5)
+            self.assertEqual(filled["state"]["status"], "order_rejected")
+            self.assertEqual(filled["state"]["cash"], 10)
+            self.assertEqual(filled["state"]["position"], 0)
+            self.assertEqual(filled["state"]["tradeCount"], 0)
+            self.assertEqual(
+                filled["state"]["lastOrderResult"]["error"],
+                "venue_minimum_notional",
+            )
+            self.assertEqual(replay.trades, [])
+
     def test_legacy_paper_session_identity_is_stable_across_read_only_snapshots(self):
         with tempfile.TemporaryDirectory() as directory:
             store = AuditEventStore(Path(directory) / "audit.sqlite")
@@ -1162,6 +2385,434 @@ class AutoPaperTradingTests(unittest.TestCase):
             ]["evidence"]
             self.assertEqual(risk_evidence["dailyLossLimitPct"], 5)
             self.assertEqual(risk_evidence["dailyProfitDrawdownLimitPct"], 5)
+
+    def test_formally_promoted_sealed_strategy_preflights_and_binds_paper_without_starting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                promotion,
+            ) = promoted_sealed_strategy_stores(directory)
+            self.assertIsNotNone(promotion)
+            production = FakeProductionService()
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                production=production,  # type: ignore[arg-type]
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+
+            preflight = service.preflight_strategy_binding("fresh-sealed-p0-run")
+            bound = service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+
+            self.assertEqual(preflight["status"], "ready")
+            self.assertTrue(preflight["switchAllowed"])
+            self.assertEqual(preflight["strategyRevision"], strategy.revision)
+            self.assertEqual(bound["state"]["executionMode"], "paper")
+            self.assertEqual(bound["state"]["status"], "paused")
+            self.assertFalse(bound["state"]["enabled"])
+            self.assertEqual(bound["state"]["position"], 0)
+            self.assertIsNone(bound["state"]["pendingPaperOrder"])
+            self.assertTrue(bound["strategyBinding"]["paperOnly"])
+            self.assertFalse(bound["orderSubmissionEnabled"])
+            self.assertFalse(bound["routeExecuted"])
+            self.assertEqual(production.authorization_calls, 0)
+            self.assertEqual(production.account_checks, 0)
+            self.assertEqual(production.preparations, [])
+            self.assertEqual(production.orders, [])
+            self.assertEqual(audit_store.count(event_type="auto_paper_trade"), 0)
+            self.assertEqual(audit_store.count(event_type="auto_live_trade"), 0)
+
+    def test_cached_sealed_binding_rechecks_persistent_integrity_without_rereading_bars(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(directory)
+
+            class CountingSealedDatasetStore(SealedDatasetStore):
+                def __init__(self, path):
+                    super().__init__(path)
+                    self.integrity_reads = 0
+                    self.development_reads = 0
+
+                def get_integrity(self, dataset_id):
+                    self.integrity_reads += 1
+                    return super().get_integrity(dataset_id)
+
+                def read_development_bars(self, dataset_id):
+                    self.development_reads += 1
+                    return super().read_development_bars(dataset_id)
+
+            class CountingExperimentStore(StrategyExperimentStore):
+                def __init__(self, path):
+                    super().__init__(path)
+                    self.detail_reads = 0
+
+                def get(self, experiment_id):
+                    self.detail_reads += 1
+                    return super().get(experiment_id)
+
+            counting_store = CountingSealedDatasetStore(sealed_store.path)
+            counting_experiments = CountingExperimentStore(experiment_store.path)
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=counting_experiments,
+                sealed_dataset_store=counting_store,
+            )
+
+            service.preflight_strategy_binding("fresh-sealed-p0-run")
+            service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+            for _ in range(3):
+                payload = service.snapshot()
+                self.assertEqual(payload["strategyBinding"]["status"], "ready")
+
+            self.assertEqual(counting_store.development_reads, 1)
+            self.assertGreaterEqual(counting_store.integrity_reads, 4)
+            self.assertEqual(counting_experiments.detail_reads, 1)
+
+            dataset_id = str(
+                run_store.get("fresh-sealed-p0-run").data_snapshot["sealedDataset"][
+                    "datasetId"
+                ]
+            )
+            connection = sqlite3.connect(counting_store.path)
+            try:
+                timestamp = str(
+                    connection.execute(
+                        """
+                        select timestamp from sealed_dataset_bars
+                        where dataset_id = ? and partition_name = 'development'
+                        order by timestamp asc limit 1
+                        """,
+                        (dataset_id,),
+                    ).fetchone()[0]
+                )
+                connection.execute(
+                    """
+                    update sealed_dataset_bars set close = close + 1
+                    where dataset_id = ? and timestamp = ?
+                    """,
+                    (dataset_id, timestamp),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            blocked = service.snapshot()
+            self.assertEqual(blocked["strategyBinding"]["status"], "blocked")
+            self.assertIn("完整性", blocked["strategyBinding"]["detail"])
+            self.assertEqual(counting_store.development_reads, 1)
+
+    def test_sealed_binding_recomputes_fresh_profitability_gate_from_replayed_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (
+                _strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(directory)
+            record = strategy_store.get(
+                run_store.get("fresh-sealed-p0-run").strategy_revision
+            )
+            self.assertIsNotNone(record)
+            forged = json.loads(json.dumps(record.promotion_evidence))
+            forged["freshGateEvaluation"]["metrics"]["totalReturnPct"] = 99
+            forged["freshGateHash"] = canonical_sha256(
+                forged["freshGateEvaluation"]
+            )
+            forged["lineageHash"] = canonical_sha256(
+                {key: value for key, value in forged.items() if key != "lineageHash"}
+            )
+            connection = sqlite3.connect(strategy_store.path)
+            try:
+                connection.execute(
+                    """
+                    update strategy_versions set promotion_evidence_json = ?
+                    where revision = ?
+                    """,
+                    (json.dumps(forged, sort_keys=True), record.revision),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            connection = sqlite3.connect(experiment_store.path)
+            try:
+                connection.execute(
+                    """
+                    update strategy_experiments set promotion_lineage_hash = ?
+                    where experiment_id = ?
+                    """,
+                    (forged["lineageHash"], forged["experimentId"]),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_promotion_evidence_invalid",
+            ):
+                service.preflight_strategy_binding("fresh-sealed-p0-run")
+
+    def test_formally_promoted_dynamic_entry_cap_binds_paper_without_starting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dynamic_payload = strategy_config_to_payload(regime_breakout_strategy())
+            dynamic_payload["risk"]["maxEntryNotionalQuote"] = None
+            dynamic_strategy = strategy_config_from_payload(dynamic_payload)
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(
+                directory,
+                base_strategy=dynamic_strategy,
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+
+            preflight = service.preflight_strategy_binding("fresh-sealed-p0-run")
+            bound = service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+
+            self.assertEqual(preflight["status"], "ready")
+            self.assertIsNone(
+                bound["state"]["activeStrategyConfig"]["risk"][
+                    "maxEntryNotionalQuote"
+                ]
+            )
+            self.assertEqual(bound["state"]["status"], "paused")
+            self.assertFalse(bound["state"]["enabled"])
+            self.assertFalse(bound["orderSubmissionEnabled"])
+            self.assertFalse(bound["routeExecuted"])
+
+    def test_sealed_strategy_binding_fails_closed_for_snapshot_quality_or_store_drift(self):
+        mutation_cases = {
+            "dataset": lambda audit: replace(
+                audit,
+                data_snapshot={
+                    **audit.data_snapshot,
+                    "sealedDataset": {
+                        **audit.data_snapshot["sealedDataset"],
+                        "datasetHash": "f" * 64,
+                    },
+                },
+            ),
+            "context": lambda audit: replace(
+                audit,
+                data_snapshot={
+                    **audit.data_snapshot,
+                    "sealedDataset": {
+                        **audit.data_snapshot["sealedDataset"],
+                        "symbol": "ETH/USDT",
+                    },
+                },
+            ),
+            "development_hash": lambda audit: replace(
+                audit,
+                data_snapshot={**audit.data_snapshot, "hash": "e" * 64},
+            ),
+            "data_quality": lambda audit: replace(
+                audit,
+                data_quality={
+                    **audit.data_quality,
+                    "canonicalHash": "d" * 64,
+                },
+            ),
+        }
+        for label, mutate in mutation_cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                (
+                    _strategy,
+                    strategy_store,
+                    run_store,
+                    experiment_store,
+                    sealed_store,
+                    _promotion,
+                ) = promoted_sealed_strategy_stores(directory)
+                audit = run_store.get("fresh-sealed-p0-run")
+                self.assertIsNotNone(audit)
+                tampered_audit = mutate(audit)
+
+                class TamperedRunStore:
+                    def get(self, run_id):
+                        return tampered_audit if run_id == "fresh-sealed-p0-run" else None
+
+                production = FakeProductionService()
+                service = AutoPaperTradingService(
+                    AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                    production=production,  # type: ignore[arg-type]
+                    strategy_store=strategy_store,
+                    run_store=TamperedRunStore(),  # type: ignore[arg-type]
+                    strategy_experiment_store=experiment_store,
+                    sealed_dataset_store=sealed_store,
+                )
+
+                with self.assertRaisesRegex(ValueError, "strategy_binding_"):
+                    service.preflight_strategy_binding("fresh-sealed-p0-run")
+
+                self.assertEqual(production.authorization_calls, 0)
+                self.assertEqual(production.orders, [])
+
+        for missing_dependency in ("sealed", "experiment"):
+            with self.subTest(missing=missing_dependency), tempfile.TemporaryDirectory() as directory:
+                (
+                    _strategy,
+                    strategy_store,
+                    run_store,
+                    experiment_store,
+                    sealed_store,
+                    _promotion,
+                ) = promoted_sealed_strategy_stores(directory)
+                service = AutoPaperTradingService(
+                    AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                    strategy_store=strategy_store,
+                    run_store=run_store,
+                    strategy_experiment_store=(
+                        None if missing_dependency == "experiment" else experiment_store
+                    ),
+                    sealed_dataset_store=(
+                        None if missing_dependency == "sealed" else sealed_store
+                    ),
+                )
+
+                with self.assertRaisesRegex(ValueError, "strategy_binding_"):
+                    service.preflight_strategy_binding("fresh-sealed-p0-run")
+
+    def test_version_two_audited_save_without_formal_promotion_cannot_bind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (
+                _strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                sealed_store,
+                promotion,
+            ) = promoted_sealed_strategy_stores(directory, promote=False)
+            self.assertIsNone(promotion)
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                strategy_experiment_store=experiment_store,
+                sealed_dataset_store=sealed_store,
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_promotion_evidence_required",
+            ):
+                service.preflight_strategy_binding("fresh-sealed-p0-run")
+
+    def test_fresh_sealed_promotion_fails_closed_without_the_dataset_store(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (
+                strategy,
+                strategy_store,
+                run_store,
+                experiment_store,
+                _sealed_store,
+                _promotion,
+            ) = promoted_sealed_strategy_stores(directory, promote=False)
+            runner = StrategyExperimentRunner(
+                strategy_store=strategy_store,
+                run_store=run_store,
+                experiment_store=experiment_store,
+            )
+
+            with self.assertRaises(StrategyExperimentError) as raised:
+                runner.promote_winner(
+                    "experiment-promotable",
+                    fresh_source_run_id="fresh-sealed-p0-run",
+                    operator="operator@example.com",
+                    confirmed=True,
+                )
+
+            self.assertEqual(raised.exception.error, "sealed_dataset_unavailable")
+            saved = strategy_store.get(strategy.revision)
+            self.assertIsNotNone(saved)
+            self.assertIsNone(saved.promotion_evidence)
+            detail = experiment_store.get("experiment-promotable")
+            self.assertIsNotNone(detail)
+            self.assertIsNone(detail.experiment.promotion_run_id)
 
     def test_strategy_binding_preflight_is_read_only_and_reports_production_replay(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1799,6 +3450,35 @@ class AutoPaperTradingTests(unittest.TestCase):
                     }
                 )
 
+    def test_strategy_binding_accepts_legacy_v1_metrics_without_round_trip_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store = audited_strategy_stores(directory)
+            audit = run_store.get("run-live-strategy")
+            self.assertIsNotNone(audit)
+            metrics = dict(audit.metrics)
+            metrics.pop("round_trip_count", None)
+            run_store.record(replace(audit, metrics=metrics))
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+            )
+
+            result = service.configure(
+                {
+                    "strategyRevision": strategy.revision,
+                    "auditRunId": "run-live-strategy",
+                    "operator": "wenqingjie",
+                    "confirmed": True,
+                }
+            )
+
+        self.assertEqual(result["strategyBinding"]["status"], "ready")
+
     def test_strategy_binding_compares_full_strategy_payload_not_only_short_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             strategy, strategy_store, run_store = audited_strategy_stores(directory)
@@ -2259,6 +3939,12 @@ class AutoPaperTradingTests(unittest.TestCase):
                     Path(directory) / "settings.sqlite",
                     Path(directory) / "settings.key",
                 )
+                strategy_experiment_store = StrategyExperimentStore(
+                    Path(directory) / "experiments.sqlite"
+                )
+                sealed_dataset_store = SealedDatasetStore(
+                    Path(directory) / "sealed.sqlite"
+                )
                 execution_adapter_health_environ = {}
                 execution_adapter_health_exchange_factory = None
                 stage6_sandbox_route_factory = None
@@ -2266,6 +3952,14 @@ class AutoPaperTradingTests(unittest.TestCase):
             runner = build_auto_paper_trading_runner(Handler)
 
             self.assertEqual(runner.interval_seconds, 17)
+            self.assertIs(
+                runner.service.strategy_experiment_store,
+                Handler.strategy_experiment_store,
+            )
+            self.assertIs(
+                runner.service.sealed_dataset_store,
+                Handler.sealed_dataset_store,
+            )
 
     def test_manual_reconciliation_api_returns_snapshot_without_evaluating_market_data(self):
         class ReconciliationService:

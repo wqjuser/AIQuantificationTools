@@ -164,6 +164,39 @@ class MarketDataCache:
             for row in rows
         ]
 
+    def read_bars_half_open(
+        self,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        *,
+        start: datetime,
+        end_exclusive: datetime,
+    ) -> list[OHLCVBar]:
+        _validate_half_open_range(start, end_exclusive)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select market, symbol, timeframe, timestamp, open, high, low, close, volume
+                from ohlcv
+                where market = ? and symbol = ? and timeframe = ?
+                  and julianday(timestamp) >= julianday(?)
+                  and julianday(timestamp) < julianday(?)
+                order by julianday(timestamp) asc
+                """,
+                (
+                    market,
+                    symbol,
+                    timeframe,
+                    start.isoformat(),
+                    end_exclusive.isoformat(),
+                ),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [_row_to_bar(row) for row in rows]
+
     def read_provenance(
         self,
         market: str,
@@ -188,6 +221,47 @@ class MarketDataCache:
                     timeframe,
                     start.isoformat(),
                     end.isoformat(),
+                ),
+            ).fetchall()
+        finally:
+            connection.close()
+        if (
+            len(rows) != 1
+            or not all(isinstance(value, str) and value for value in rows[0])
+        ):
+            return None
+        return {
+            "source": rows[0][0],
+            "adjustmentMode": rows[0][1],
+            "snapshotId": rows[0][2],
+        }
+
+    def read_provenance_half_open(
+        self,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        *,
+        start: datetime,
+        end_exclusive: datetime,
+    ) -> dict[str, str] | None:
+        _validate_half_open_range(start, end_exclusive)
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                select distinct source, adjustment_mode, snapshot_id
+                from ohlcv
+                where market = ? and symbol = ? and timeframe = ?
+                  and julianday(timestamp) >= julianday(?)
+                  and julianday(timestamp) < julianday(?)
+                """,
+                (
+                    market,
+                    symbol,
+                    timeframe,
+                    start.isoformat(),
+                    end_exclusive.isoformat(),
                 ),
             ).fetchall()
         finally:
@@ -282,3 +356,28 @@ class MarketDataCache:
             "start_timestamp": row[4],
             "end_timestamp": row[5],
         }
+
+
+def _validate_half_open_range(start: datetime, end_exclusive: datetime) -> None:
+    if (
+        not isinstance(start, datetime)
+        or not isinstance(end_exclusive, datetime)
+        or start.tzinfo is None
+        or end_exclusive.tzinfo is None
+        or end_exclusive <= start
+    ):
+        raise ValueError("market_data_cache_half_open_range_invalid")
+
+
+def _row_to_bar(row: tuple[object, ...]) -> OHLCVBar:
+    return OHLCVBar(
+        market=row[0],
+        symbol=row[1],
+        timeframe=row[2],
+        timestamp=datetime.fromisoformat(str(row[3])),
+        open=float(row[4]),
+        high=float(row[5]),
+        low=float(row[6]),
+        close=float(row[7]),
+        volume=float(row[8]),
+    )

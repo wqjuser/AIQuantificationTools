@@ -113,7 +113,7 @@ export interface AutoTradingState {
     evaluatedAt?: string;
   } | null;
   lastDecisionContract?: {
-    contractVersion: "aiqt-decision-v1";
+    contractVersion: "aiqt-decision-v1" | "aiqt-decision-v2";
     strategyRevision: string;
     marketSnapshot: {
       snapshotHash: string;

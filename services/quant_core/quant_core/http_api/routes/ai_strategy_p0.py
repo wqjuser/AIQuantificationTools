@@ -17,6 +17,7 @@ from ..support.p0 import (
     _p0_paper_simulation_audit_event_payload,
     _p0_paper_simulation_response_payload,
     _p0_pipeline_response_payload,
+    _p0_strategy_config_from_payload,
     _p0_strategy_snapshot_from_payload,
     _strategy_snapshot_from_payload,
 )
@@ -24,6 +25,8 @@ from ..support.stage5 import (
     _parse_limit,
     _watchlist_refresh_preparation_evidence,
 )
+from datetime import datetime, timezone
+import os
 from pathlib import Path
 from quant_core.ai_review_runs import (
     AuthoritativeAiReviewRunRecord,
@@ -40,9 +43,14 @@ from quant_core.market_ai_selection import (
     resolve_market_ai_selection_research_evidence,
 )
 from quant_core.p0_acceptance import load_p0_acceptance_status
+from quant_core.domain import MarketDataRequest
 from quant_core.research import (
     run_terminal_research,
     strategy_config_from_snapshot,
+)
+from quant_core.sealed_datasets import (
+    SealedDevelopmentBarSource,
+    sealed_dataset_window_from_payload,
 )
 from quant_core.strategy_ai_drafts import (
     StrategyAiDraftError,
@@ -235,23 +243,31 @@ def post_p0_pipeline(self, parsed):
         symbol = str(payload.get("symbol") or "600000").strip() or "600000"
         timeframe = str(payload.get("timeframe") or "1d").strip() or "1d"
         watchlist_refresh_run_id = str(payload.get("watchlistRefreshRunId") or "").strip()
-        strategy_snapshot = _p0_strategy_snapshot_from_payload(payload.get("strategyConfig"))
-        validation = validate_strategy_snapshot(
-            strategy_snapshot,
+        strategy_payload = payload.get("strategyConfig")
+        strategy = _p0_strategy_config_from_payload(
+            strategy_payload,
             market=market,
             symbol=symbol,
             timeframe=timeframe,
         )
-        if validation.status == "blocked":
-            self._send_json(
-                {
-                    "error": "strategy_not_ready",
-                    "detail": "strategy_preflight_blocked",
-                    "validation": strategy_validation_to_payload(validation),
-                },
-                status=400,
+        strategy_snapshot = _p0_strategy_snapshot_from_payload(strategy_payload)
+        if strategy is None:
+            validation = validate_strategy_snapshot(
+                strategy_snapshot,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
             )
-            return
+            if validation.status == "blocked":
+                self._send_json(
+                    {
+                        "error": "strategy_not_ready",
+                        "detail": "strategy_preflight_blocked",
+                        "validation": strategy_validation_to_payload(validation),
+                    },
+                    status=400,
+                )
+                return
         data_preparation_evidence = _watchlist_refresh_preparation_evidence(
             self.watchlist_cache_refresh_store.get(watchlist_refresh_run_id),
             market=market,
@@ -265,6 +281,34 @@ def post_p0_pipeline(self, parsed):
             symbol=symbol,
             timeframe=timeframe,
         )
+        sealed_dataset_id = None
+        sealed_store = None
+        sealed_window = sealed_dataset_window_from_payload(payload.get("sealedDataset"))
+        if sealed_window is not None:
+            if strategy is None or strategy.version != 2:
+                raise ValueError("sealed_dataset_requires_version_2_strategy")
+            if os.environ.get("AIQT_DEPLOYMENT_MODE", "local").strip().lower() != "local":
+                raise ValueError("sealed_dataset_local_only")
+            sealed_store = self.sealed_dataset_store
+            if sealed_store is None:
+                raise ValueError("sealed_dataset_store_unavailable")
+            start, development_end_exclusive, end_exclusive = sealed_window
+            sealed_summary = SealedDevelopmentBarSource(
+                store=sealed_store,
+                adapter=self.kline_adapter,
+                minimum_rows=self.sealed_dataset_minimum_rows,
+            ).seal(
+                MarketDataRequest(
+                    market=market,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start=start,
+                    end=end_exclusive,
+                ),
+                development_end_exclusive=development_end_exclusive,
+                observed_at=datetime.now(timezone.utc),
+            )
+            sealed_dataset_id = sealed_summary.dataset_id
         workspace = run_terminal_research(
             market=market,
             symbol=symbol,
@@ -276,19 +320,26 @@ def post_p0_pipeline(self, parsed):
             run_store=self.run_store,
             data_limit=_p0_data_limit_from_payload(payload),
             strategy_snapshot=strategy_snapshot,
+            strategy_config=strategy,
             data_preparation_evidence=data_preparation_evidence,
             market_ai_selection_evidence=selection_evidence,
             comparison_adapter=self._comparison_market_data_adapter(market, timeframe),
+            sealed_bar_source=(sealed_store if sealed_dataset_id else None),
+            sealed_dataset_id=sealed_dataset_id,
         )
         if not workspace.research_run:
             raise ValueError("p0_pipeline_run_missing")
-        strategy = strategy_config_from_snapshot(
-            workspace.strategy,
-            market=workspace.selected_instrument.market,
-            symbol=workspace.selected_instrument.symbol,
-            timeframe=workspace.selected_timeframe,
+        if strategy is None:
+            strategy = strategy_config_from_snapshot(
+                workspace.strategy,
+                market=workspace.selected_instrument.market,
+                symbol=workspace.selected_instrument.symbol,
+                timeframe=workspace.selected_timeframe,
+            )
+        self.strategy_store.save(
+            strategy,
+            audit_run_id=(workspace.research_run.run_id if strategy.version == 1 else None),
         )
-        self.strategy_store.save(strategy, audit_run_id=workspace.research_run.run_id)
         audit = self.run_store.get(workspace.research_run.run_id)
         if audit is None:
             raise ValueError("p0_pipeline_audit_missing")
