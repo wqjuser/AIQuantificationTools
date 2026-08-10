@@ -20,6 +20,7 @@ from quant_core.backtest import BacktestEngine
 from quant_core.canonical import strategy_config_from_payload
 from quant_core.data_foundation import data_quality_from_payload
 from quant_core.domain import (
+    COST_AWARE_RANGE_REVERSION_POLICY_KINDS,
     BacktestMetrics,
     BacktestRun,
     DataQuality,
@@ -168,6 +169,79 @@ def _p0_strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
         raise ValueError("strategy_config_required")
     if value.get("version") == 2:
         policy = value.get("policy") if isinstance(value.get("policy"), dict) else {}
+        if policy.get("kind") in COST_AWARE_RANGE_REVERSION_POLICY_KINDS:
+            default_anchor_bars = (
+                139
+                if policy.get("kind") == "cost_aware_range_reversion_v1_1"
+                else 42
+            )
+            default_name = (
+                "BTC Cost-Aware Range Reversion v1.1"
+                if policy.get("kind") == "cost_aware_range_reversion_v1_1"
+                else "BTC Cost-Aware Range Reversion v1"
+            )
+            range_regime = (
+                policy.get("rangeRegime")
+                if isinstance(policy.get("rangeRegime"), dict)
+                else {}
+            )
+            reversion = (
+                policy.get("reversion")
+                if isinstance(policy.get("reversion"), dict)
+                else {}
+            )
+            atr = policy.get("atr") if isinstance(policy.get("atr"), dict) else {}
+            exit_rule = (
+                policy.get("exit") if isinstance(policy.get("exit"), dict) else {}
+            )
+            holding = (
+                policy.get("holding")
+                if isinstance(policy.get("holding"), dict)
+                else {}
+            )
+            cooldown = (
+                policy.get("cooldown")
+                if isinstance(policy.get("cooldown"), dict)
+                else {}
+            )
+            position = (
+                value.get("position")
+                if isinstance(value.get("position"), dict)
+                else {}
+            )
+            risk = value.get("risk") if isinstance(value.get("risk"), dict) else {}
+            return StrategySnapshot(
+                name=(
+                    str(value.get("name") or default_name).strip()
+                    or default_name
+                ),
+                entry=(
+                    f"{policy.get('decisionTimeframe', '4h')} "
+                    f"{range_regime.get('indicatorAnchorBars', default_anchor_bars)}-bar indicator anchor; range "
+                    f"|EMA{range_regime.get('fastEmaWindow', 6)}/"
+                    f"EMA{range_regime.get('slowEmaWindow', 42)}-1| <= "
+                    f"{_p0_number_text(float(range_regime.get('maximumSeparationPct', 0.01)) * 100)}%; "
+                    f"Z{reversion.get('zScoreWindow', 24)} <= "
+                    f"{_p0_number_text(reversion.get('entryZThreshold', -2))}; "
+                    f"recover within {reversion.get('recoveryWindowBars', 3)} bars; "
+                    f"mean distance >= "
+                    f"{_p0_number_text(float(reversion.get('minimumExpectedDistancePct', 0.012)) * 100)}%"
+                ),
+                exit=(
+                    f"Z{reversion.get('zScoreWindow', 24)} >= "
+                    f"{_p0_number_text(exit_rule.get('zScoreThreshold', 0))}, "
+                    f"ATR{atr.get('window', 14)} fixed "
+                    f"{_p0_number_text(atr.get('initialMultiple', 2.5))}x, "
+                    f"range close, max hold {holding.get('maxBars', 18)} bars, "
+                    f"cooldown {cooldown.get('bars', 6)} bars"
+                ),
+                position=f"{_p0_number_text(position.get('maxPositionPct', 60))}% cap per instrument",
+                risk=(
+                    f"Risk budget {_p0_number_text(risk.get('riskBudgetPct', 1.5))}%, "
+                    f"drawdown guard {_p0_number_text(risk.get('maxDrawdownPct', 3))}%, "
+                    f"daily loss {_p0_number_text(risk.get('dailyLossLimitPct', 2))}%, paper only"
+                ),
+            )
         regime = policy.get("regime") if isinstance(policy.get("regime"), dict) else {}
         breakout = policy.get("breakout") if isinstance(policy.get("breakout"), dict) else {}
         volume = policy.get("volume") if isinstance(policy.get("volume"), dict) else {}
@@ -202,6 +276,13 @@ def _p0_strategy_snapshot_from_payload(value: object) -> StrategySnapshot:
         position=_p0_position_text(value.get("position")),
         risk=_p0_risk_text(value.get("risk")),
     )
+
+
+def _p0_number_text(value: object) -> str:
+    try:
+        return f"{float(value):g}"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _p0_strategy_config_from_payload(

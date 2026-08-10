@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from quant_core.canonical import strategy_config_from_payload, strategy_config_to_payload
-from quant_core.domain import StrategyConfig
+from quant_core.domain import (
+    COST_AWARE_RANGE_REVERSION_POLICY_KINDS,
+    StrategyConfig,
+)
 
 
 @dataclass(frozen=True)
@@ -391,6 +394,75 @@ def strategy_library_records_to_payload(records: list[StrategyLibraryRecord]) ->
 def strategy_snapshot_from_config_payload(config: dict[str, Any]) -> dict[str, str]:
     if int(_number_or_default(config.get("version"), 1)) == 2 and isinstance(config.get("policy"), dict):
         policy = config["policy"]
+        if policy.get("kind") in COST_AWARE_RANGE_REVERSION_POLICY_KINDS:
+            default_anchor_bars = (
+                139
+                if policy.get("kind") == "cost_aware_range_reversion_v1_1"
+                else 42
+            )
+            default_name = (
+                "BTC Cost-Aware Range Reversion v1.1"
+                if policy.get("kind") == "cost_aware_range_reversion_v1_1"
+                else "BTC Cost-Aware Range Reversion v1"
+            )
+            range_regime = (
+                policy.get("rangeRegime")
+                if isinstance(policy.get("rangeRegime"), dict)
+                else {}
+            )
+            reversion = (
+                policy.get("reversion")
+                if isinstance(policy.get("reversion"), dict)
+                else {}
+            )
+            atr = policy.get("atr") if isinstance(policy.get("atr"), dict) else {}
+            exit_rule = (
+                policy.get("exit") if isinstance(policy.get("exit"), dict) else {}
+            )
+            holding = (
+                policy.get("holding")
+                if isinstance(policy.get("holding"), dict)
+                else {}
+            )
+            cooldown = (
+                policy.get("cooldown")
+                if isinstance(policy.get("cooldown"), dict)
+                else {}
+            )
+            risk = config.get("risk") if isinstance(config.get("risk"), dict) else {}
+            return {
+                "name": str(config.get("name") or default_name),
+                "entry": (
+                    f"{policy.get('decisionTimeframe', '4h')} "
+                    f"{range_regime.get('indicatorAnchorBars', default_anchor_bars)}-bar indicator anchor; range "
+                    f"|EMA{range_regime.get('fastEmaWindow', 6)}/"
+                    f"EMA{range_regime.get('slowEmaWindow', 42)}-1| <= "
+                    f"{_format_percent(_number_or_default(range_regime.get('maximumSeparationPct'), 0.01))}; "
+                    f"Z{reversion.get('zScoreWindow', 24)} <= "
+                    f"{_number_or_default(reversion.get('entryZThreshold'), -2):g}; "
+                    f"recover within {reversion.get('recoveryWindowBars', 3)} bars; "
+                    f"mean distance >= "
+                    f"{_format_percent(_number_or_default(reversion.get('minimumExpectedDistancePct'), 0.012))}"
+                ),
+                "exit": (
+                    f"Z{reversion.get('zScoreWindow', 24)} >= "
+                    f"{_number_or_default(exit_rule.get('zScoreThreshold'), 0):g}, "
+                    f"ATR{atr.get('window', 14)} fixed "
+                    f"{_number_or_default(atr.get('initialMultiple'), 2.5):g}x, "
+                    f"range close, max hold {holding.get('maxBars', 18)} bars, "
+                    f"cooldown {cooldown.get('bars', 6)} bars"
+                ),
+                "position": (
+                    f"{_format_percent(_number_or_default(risk.get('positionPct'), 0.6))} "
+                    "cap per instrument"
+                ),
+                "risk": (
+                    f"Risk budget {_format_percent(_number_or_default(risk.get('riskBudgetPct'), 0.015))}, "
+                    f"drawdown guard {_format_percent(_number_or_default(risk.get('maxDrawdownPct'), 0.03))}, "
+                    f"daily loss {_format_percent(_number_or_default(risk.get('dailyLossLimitPct'), 0.02))}, "
+                    "paper only"
+                ),
+            }
         regime = policy.get("regime") if isinstance(policy.get("regime"), dict) else {}
         breakout = policy.get("breakout") if isinstance(policy.get("breakout"), dict) else {}
         volume = policy.get("volume") if isinstance(policy.get("volume"), dict) else {}

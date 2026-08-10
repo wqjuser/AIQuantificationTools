@@ -20867,6 +20867,137 @@ describe("terminal workspace API client", () => {
     expect(result.strategies[0]?.strategySnapshot.entry).toBe("Close > SMA8");
   });
 
+  test("reads an unverified paper forward-trial binding without treating it as audited", async () => {
+    const payload = {
+      strategyBinding: {
+        kind: "forward_trial",
+        bindingId: "forward-trial-binding-123",
+        strategyId: "strategy-forward-trial-123",
+        revision: "forward-trial-revision-123",
+        name: "BTC Cost-Aware Range Reversion v1",
+        auditRunId: null,
+        sourceRunId: "run-sealed-development-123",
+        profitabilityStatus: "unverified_forward_trial",
+        developmentEvidence: {
+          sourceRunId: "run-sealed-development-123",
+          dataSnapshotHash: "snapshot-hash-123",
+          totalReturnPct: 1.5332,
+          maxDrawdownPct: 0.4018,
+          roundTripCount: 1,
+          naturalRoundTripCount: 1,
+          profitFactor: 5.2,
+          profitFactorInfinite: false,
+          passed: true
+        },
+        formalGatePassed: false,
+        paperOnly: true,
+        market: "crypto",
+        symbol: "BTC/USDT",
+        timeframe: "1m",
+        status: "ready",
+        detail: "Unverified Paper forward trial only.",
+        switchAllowed: true,
+        switchBlockedReason: null,
+        operator: "wenqingjie"
+      }
+    } as const;
+    const fetcher = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => payload
+    });
+
+    const result = await loadStrategyProductionBinding("http://127.0.0.1:8765", fetcher);
+
+    expect(result.source).toBe("core");
+    expect(result.binding?.kind).toBe("forward_trial");
+    expect(result.binding?.auditRunId).toBeNull();
+  });
+
+  test("rejects forward-trial bindings whose paper-only evidence contract is forged", async () => {
+    const developmentEvidence = {
+      sourceRunId: "run-sealed-development-123",
+      dataSnapshotHash: "snapshot-hash-123",
+      totalReturnPct: 1.5332,
+      maxDrawdownPct: 0.4018,
+      roundTripCount: 1,
+      naturalRoundTripCount: 1,
+      profitFactor: 5.2,
+      profitFactorInfinite: false,
+      passed: true
+    } as const;
+    const binding = {
+      kind: "forward_trial",
+      bindingId: "forward-trial-binding-123",
+      strategyId: "strategy-forward-trial-123",
+      revision: "forward-trial-revision-123",
+      name: "BTC Cost-Aware Range Reversion v1",
+      auditRunId: null,
+      sourceRunId: developmentEvidence.sourceRunId,
+      profitabilityStatus: "unverified_forward_trial",
+      developmentEvidence,
+      formalGatePassed: false,
+      paperOnly: true,
+      market: "crypto",
+      symbol: "BTC/USDT",
+      timeframe: "1m",
+      status: "ready",
+      detail: "Unverified Paper forward trial only.",
+      switchAllowed: true,
+      switchBlockedReason: null,
+      operator: "wenqingjie"
+    } as const;
+    const invalidBindings = [
+      { ...binding, auditRunId: "forged-audit-run" },
+      { ...binding, sourceRunId: "" },
+      { ...binding, profitabilityStatus: "audited" },
+      { ...binding, developmentEvidence: null },
+      {
+        ...binding,
+        developmentEvidence: { ...developmentEvidence, sourceRunId: "different-source-run" }
+      },
+      {
+        ...binding,
+        developmentEvidence: { ...developmentEvidence, unexpectedMetric: 1 }
+      },
+      {
+        ...binding,
+        developmentEvidence: {
+          ...developmentEvidence,
+          profitFactor: Number.POSITIVE_INFINITY
+        }
+      },
+      {
+        ...binding,
+        developmentEvidence: {
+          ...developmentEvidence,
+          profitFactor: null,
+          profitFactorInfinite: false
+        }
+      },
+      {
+        ...binding,
+        developmentEvidence: { ...developmentEvidence, profitFactorInfinite: true }
+      },
+      { ...binding, formalGatePassed: true },
+      { ...binding, paperOnly: false }
+    ];
+
+    for (const invalidBinding of invalidBindings) {
+      const result = await loadStrategyProductionBinding(
+        "http://127.0.0.1:8765",
+        async () => ({
+          ok: true,
+          status: 200,
+          json: async () => ({ strategyBinding: invalidBinding })
+        })
+      );
+
+      expect(result.source).toBe("fallback");
+      expect(result.binding).toBeUndefined();
+    }
+  });
+
   test("reads and updates the audited production strategy binding", async () => {
     const payload = {
       strategyBinding: {

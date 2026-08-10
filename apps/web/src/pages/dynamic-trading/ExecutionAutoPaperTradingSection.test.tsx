@@ -158,6 +158,54 @@ function productionSnapshot(): AutoTradingSnapshot {
   };
 }
 
+function paperForwardTrialSnapshot(): AutoTradingSnapshot {
+  const payload = productionSnapshot();
+  payload.state.executionMode = "paper";
+  payload.state.testnetConfirmed = false;
+  payload.state.liveConfirmed = false;
+  payload.economics.executionMode = "paper";
+  payload.paperOnly = true;
+  payload.sandboxOnly = false;
+  payload.sandboxOrderSubmissionEnabled = false;
+  payload.sandboxRouteExecuted = false;
+  payload.liveTradingAllowed = false;
+  payload.orderSubmissionEnabled = false;
+  payload.routeExecuted = false;
+  payload.liveBlockedBoundary = true;
+  payload.strategyBinding = {
+    kind: "forward_trial",
+    bindingId: "forward-trial-binding-123",
+    strategyId: "strategy-forward-trial-123",
+    revision: "forward-trial-revision-123",
+    name: "BTC Cost-Aware Range Reversion v1",
+    auditRunId: null,
+    sourceRunId: "run-sealed-development-123",
+    profitabilityStatus: "unverified_forward_trial",
+    developmentEvidence: {
+      sourceRunId: "run-sealed-development-123",
+      dataSnapshotHash: "snapshot-hash-123",
+      totalReturnPct: 1.5332,
+      maxDrawdownPct: 0.4018,
+      roundTripCount: 1,
+      naturalRoundTripCount: 1,
+      profitFactor: null,
+      profitFactorInfinite: true,
+      passed: true
+    },
+    formalGatePassed: false,
+    paperOnly: true,
+    market: "crypto",
+    symbol: "BTC/USDT",
+    timeframe: "1m",
+    status: "ready",
+    detail: "Unverified Paper forward trial only.",
+    switchAllowed: false,
+    switchBlockedReason: "strategy_switch_requires_paused_monitoring",
+    operator: "wenqingjie"
+  };
+  return payload;
+}
+
 function healthyMonitoringSnapshot(snapshot: AutoTradingSnapshot): MonitoringSnapshot {
   return {
     schemaVersion: 1,
@@ -286,6 +334,60 @@ describe("ExecutionAutoPaperTradingSection", () => {
     expect(html).toContain("不会改写策略");
     expect(html).not.toContain("BTC/USDT");
     expect(html).not.toContain("35 秒");
+  });
+
+  it("labels a forward trial as unverified paper evidence rather than an audited strategy", () => {
+    const html = renderToStaticMarkup(
+      <AutoTradingProductionStrategyOverview
+        snapshot={{
+          state: {
+            executionMode: "paper",
+            runnerIntervalSeconds: 35,
+            symbol: "BTC/USDT",
+            timeframe: "1m"
+          },
+          strategyBinding: {
+            kind: "forward_trial",
+            bindingId: "forward-trial-binding-123",
+            strategyId: "strategy-forward-trial-123",
+            revision: "forward-trial-revision-123",
+            name: "BTC Cost-Aware Range Reversion v1",
+            auditRunId: null,
+            sourceRunId: "run-sealed-development-123",
+            profitabilityStatus: "unverified_forward_trial",
+            developmentEvidence: {
+              sourceRunId: "run-sealed-development-123",
+              dataSnapshotHash: "snapshot-hash-123",
+              totalReturnPct: 1.5332,
+              maxDrawdownPct: 0.4018,
+              roundTripCount: 1,
+              naturalRoundTripCount: 1,
+              profitFactor: null,
+              profitFactorInfinite: true,
+              passed: true
+            },
+            formalGatePassed: false,
+            paperOnly: true,
+            market: "crypto",
+            symbol: "BTC/USDT",
+            timeframe: "1m",
+            status: "ready",
+            detail: "Only unverified Paper forward evidence is active.",
+            switchAllowed: false,
+            switchBlockedReason: "strategy_switch_requires_paused_monitoring",
+            operator: "wenqingjie"
+          }
+        }}
+      />
+    );
+
+    expect(html).toContain("未验证 Paper 前向试跑");
+    expect(html).toContain("Paper 前向试跑策略概览");
+    expect(html).toContain("run-sealed-development-123");
+    expect(html).toContain("不授予 Testnet、Live 或盈利认证资格");
+    expect(html).not.toContain("已审计策略");
+    expect(html).not.toContain("内置规则");
+    expect(html).not.toContain("生产策略概览");
   });
 
   it("renders the separate dynamic-trading workspace from the same auto-trading controls", () => {
@@ -464,6 +566,64 @@ describe("ExecutionAutoPaperTradingSection", () => {
     };
 
     expect(await loadAutoTradingSnapshot("http://127.0.0.1:8765", fetcher)).toBe(payload);
+  });
+
+  it("loads a paper forward-trial snapshot and hides built-in signal controls", async () => {
+    const payload = paperForwardTrialSnapshot();
+    const fetcher: WorkspaceFetcher = async () => ({
+      json: async () => payload,
+      ok: true
+    } as Response);
+
+    const loaded = await loadAutoTradingSnapshot("http://127.0.0.1:8765", fetcher);
+
+    expect(loaded.strategyBinding?.kind).toBe("forward_trial");
+    expect(showBuiltInAutoTradingSignalControls(loaded.strategyBinding)).toBe(false);
+  });
+
+  it("rejects a forward-trial snapshot when any external-execution boundary is forged", async () => {
+    const mutations: Array<[string, (payload: AutoTradingSnapshot) => void]> = [
+      ["executionMode", (payload) => { payload.state.executionMode = "live"; }],
+      ["economics.executionMode", (payload) => {
+        payload.economics.executionMode = "live";
+      }],
+      ["testnetConfirmed", (payload) => { payload.state.testnetConfirmed = true; }],
+      ["liveConfirmed", (payload) => { payload.state.liveConfirmed = true; }],
+      ["paperOnly", (payload) => { payload.paperOnly = false; }],
+      ["sandboxOnly", (payload) => { payload.sandboxOnly = true; }],
+      ["sandboxOnly missing", (payload) => { delete payload.sandboxOnly; }],
+      ["sandboxOrderSubmissionEnabled", (payload) => {
+        payload.sandboxOrderSubmissionEnabled = true;
+      }],
+      ["sandboxOrderSubmissionEnabled missing", (payload) => {
+        delete payload.sandboxOrderSubmissionEnabled;
+      }],
+      ["sandboxRouteExecuted", (payload) => { payload.sandboxRouteExecuted = true; }],
+      ["sandboxRouteExecuted missing", (payload) => { delete payload.sandboxRouteExecuted; }],
+      ["liveTradingAllowed", (payload) => { payload.liveTradingAllowed = true; }],
+      ["orderSubmissionEnabled", (payload) => { payload.orderSubmissionEnabled = true; }],
+      ["routeExecuted", (payload) => { payload.routeExecuted = true; }],
+      ["liveBlockedBoundary", (payload) => { payload.liveBlockedBoundary = false; }]
+    ];
+
+    for (const [field, mutate] of mutations) {
+      const payload = paperForwardTrialSnapshot();
+      mutate(payload);
+      const fetcher: WorkspaceFetcher = async () => ({
+        json: async () => payload,
+        ok: true
+      } as Response);
+
+      let error: unknown;
+      try {
+        await loadAutoTradingSnapshot("http://127.0.0.1:8765", fetcher);
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error, field).toBeInstanceOf(Error);
+      expect((error as Error).message, field).toBe("auto_trading_snapshot_invalid");
+    }
   });
 
   it("rejects an incomplete auto-trading status response before rendering it", async () => {

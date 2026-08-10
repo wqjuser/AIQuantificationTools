@@ -10,6 +10,7 @@ import type {
   Timeframe
 } from "./terminal-workbench";
 import {
+  hasExactObjectKeys,
   isBacktestAssumptions,
   isMarket,
   isMarketKlineBar,
@@ -110,13 +111,11 @@ export interface StrategyDeleteResult {
   error?: string;
 }
 
-export interface StrategyProductionBinding {
-  kind: "builtin" | "library";
+interface StrategyProductionBindingBase {
   bindingId: string | null;
   strategyId: string;
   revision: string;
   name: string;
-  auditRunId: string | null;
   market: Market;
   symbol: string;
   timeframe: ResearchTimeframe;
@@ -126,6 +125,43 @@ export interface StrategyProductionBinding {
   switchBlockedReason: string | null;
   operator: string;
 }
+
+export interface StrategyBuiltInProductionBinding extends StrategyProductionBindingBase {
+  kind: "builtin";
+  auditRunId: null;
+}
+
+export interface StrategyLibraryProductionBinding extends StrategyProductionBindingBase {
+  kind: "library";
+  auditRunId: string | null;
+}
+
+export interface StrategyForwardTrialDevelopmentEvidence {
+  sourceRunId: string;
+  dataSnapshotHash: string;
+  totalReturnPct: number;
+  maxDrawdownPct: number;
+  roundTripCount: number;
+  naturalRoundTripCount: number;
+  profitFactor: number | null;
+  profitFactorInfinite: boolean;
+  passed: true;
+}
+
+export interface StrategyForwardTrialBinding extends StrategyProductionBindingBase {
+  kind: "forward_trial";
+  auditRunId: null;
+  sourceRunId: string;
+  profitabilityStatus: "unverified_forward_trial";
+  developmentEvidence: StrategyForwardTrialDevelopmentEvidence;
+  formalGatePassed: false;
+  paperOnly: true;
+}
+
+export type StrategyProductionBinding =
+  | StrategyBuiltInProductionBinding
+  | StrategyLibraryProductionBinding
+  | StrategyForwardTrialBinding;
 
 export interface StrategyProductionBindingResult {
   binding?: StrategyProductionBinding;
@@ -571,13 +607,11 @@ export function isStrategyProductionBindingPayload(
     return false;
   }
   const binding = value.strategyBinding;
-  return (
-    (binding.kind === "builtin" || binding.kind === "library") &&
+  const commonContract = (
     (binding.bindingId === null || typeof binding.bindingId === "string") &&
     typeof binding.strategyId === "string" &&
     typeof binding.revision === "string" &&
     typeof binding.name === "string" &&
-    (binding.auditRunId === null || typeof binding.auditRunId === "string") &&
     isMarket(binding.market) &&
     typeof binding.symbol === "string" &&
     isTimeframe(binding.timeframe) &&
@@ -587,6 +621,72 @@ export function isStrategyProductionBindingPayload(
     (binding.switchBlockedReason === null || typeof binding.switchBlockedReason === "string") &&
     typeof binding.operator === "string"
   );
+  if (!commonContract) {
+    return false;
+  }
+  if (binding.kind === "forward_trial") {
+    return binding.auditRunId === null
+      && typeof binding.sourceRunId === "string"
+      && binding.sourceRunId.trim().length > 0
+      && binding.profitabilityStatus === "unverified_forward_trial"
+      && isStrategyForwardTrialDevelopmentEvidence(
+        binding.developmentEvidence,
+        binding.sourceRunId
+      )
+      && binding.formalGatePassed === false
+      && binding.paperOnly === true;
+  }
+  if (binding.kind === "builtin") {
+    return binding.auditRunId === null;
+  }
+  return binding.kind === "library"
+    && (binding.auditRunId === null || typeof binding.auditRunId === "string");
+}
+
+function isStrategyForwardTrialDevelopmentEvidence(
+  value: unknown,
+  sourceRunId: string
+): value is StrategyForwardTrialDevelopmentEvidence {
+  if (!hasExactObjectKeys(value, [
+    "sourceRunId",
+    "dataSnapshotHash",
+    "totalReturnPct",
+    "maxDrawdownPct",
+    "roundTripCount",
+    "naturalRoundTripCount",
+    "profitFactor",
+    "profitFactorInfinite",
+    "passed"
+  ])) {
+    return false;
+  }
+  return value.sourceRunId === sourceRunId
+    && typeof value.dataSnapshotHash === "string"
+    && value.dataSnapshotHash.trim().length > 0
+    && typeof value.totalReturnPct === "number"
+    && Number.isFinite(value.totalReturnPct)
+    && value.totalReturnPct > 0
+    && typeof value.maxDrawdownPct === "number"
+    && Number.isFinite(value.maxDrawdownPct)
+    && value.maxDrawdownPct >= 0
+    && value.maxDrawdownPct <= 3
+    && typeof value.roundTripCount === "number"
+    && Number.isInteger(value.roundTripCount)
+    && value.roundTripCount >= 1
+    && typeof value.naturalRoundTripCount === "number"
+    && Number.isInteger(value.naturalRoundTripCount)
+    && value.naturalRoundTripCount >= 1
+    && value.naturalRoundTripCount <= value.roundTripCount
+    && (
+      (
+        typeof value.profitFactor === "number"
+        && Number.isFinite(value.profitFactor)
+        && value.profitFactor > 0
+        && value.profitFactorInfinite === false
+      )
+      || (value.profitFactor === null && value.profitFactorInfinite === true)
+    )
+    && value.passed === true;
 }
 
 export function isProductionStrategyHandoffPayload(

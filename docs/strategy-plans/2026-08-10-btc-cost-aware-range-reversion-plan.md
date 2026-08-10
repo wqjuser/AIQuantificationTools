@@ -1,8 +1,10 @@
-# BTC Cost-Aware Range Reversion v1 预注册
+# BTC Cost-Aware Range Reversion v1.1 预注册
 
 ## 决策
 
 本策略是新的待证伪研究草案，不是已证明盈利的策略。它与 `regime_breakout_v2` 不同：不追涨突破，只在可复现的区间状态中等待异常下跌后的向上恢复。研究、Backtest 和 Paper 必须继续复用同一个策略评估器、撮合账本和风险 sizing；当前实现保持 Paper-only，不触碰 Testnet、Live 或 Stage 10。
+
+旧 `cost_aware_range_reversion_v1` 已经以 42 根 4h 锚点形成持久化 draft，因此保留原 canonical 语义和 revision 只供历史回读，不能原地改写。当前候选使用新的判别 kind `cost_aware_range_reversion_v1_1` 和显示名 `BTC Cost-Aware Range Reversion v1.1`；除下面的有限指标锚点修正外，信号、退出、1.5% 风险预算、成本和其它参数全部不变。
 
 现有 sealed test 分区仍未读取或申领。本文件在任何新策略回测前冻结规则、参数空间、成本与失败门槛；后续不得因为结果不理想扩大搜索。
 
@@ -21,6 +23,8 @@
 - 市场：Binance Spot `BTC/USDT`，long/flat，无杠杆。
 - 原始证据：连续、已完成的 1m K 线。
 - 决策周期：完整 4h K 线，UTC 固定桶聚合。
+- v1.1 每个决策点以最近 139 根完整 4h K 线作为可重启的有限指标锚点；未满 139 根时所有相关指标保持 warmup，不得生成交易决策。EMA6/EMA42 分别以锚点内首个完整窗口 SMA 为种子后递推；ATR14 以前 14 个 TR 均值为种子后按 Wilder 递推。连续运行与重启重建必须逐字段相同。
+- 139 是独立于收益结果的初始化约束：EMA42 的递归种子差异按 `(41/43)^k` 衰减，`42 + ceil(log(0.01) / log(41/43)) = 139`，使锚点起点的未知种子差异在当前值中的剩余权重低于 1%。旧 v1 的 42 根实现没有 EMA42 递推步，实际等于 SMA42，因此不得把旧回放冒充 v1.1 证据。
 - 信号在 4h 收盘后生成；Paper 在下一根已完成 1m K 线开盘结算。
 
 ### 区间状态
@@ -83,7 +87,7 @@
 
 ## 数据与盈利门
 
-4h 策略不能用 75 天开发区和 18 天 test 冒充足够样本。工程实现允许开发/滚动诊断，但在取得足够长、未见的新鲜 test 前不得保存为 `audited` 或绑定。
+4h 策略不能用 75 天开发区和 18 天 test 冒充足够样本。工程实现允许开发/滚动诊断，但在取得足够长、未见的新鲜 test 前不得保存为 `audited`，也不得进入 ADR-0028 的正式生产策略绑定。ADR-0034 定义的 `forward_trial` 是独立的、未验证且仅限 Paper 的观察性绑定，不改变这一正式结论。
 
 门槛保持：
 
@@ -105,15 +109,19 @@
 3. Formal Experiment：policy 专属参数白名单、固定成本、滚动/邻域/唯一 test、跨 dataset test-range CAS。
 4. Auto Paper：与 Backtest action/reason/bar/price/quantity 一致，武装、pending、持仓三个重启点可恢复；Testnet/Live fail closed。
 
+本次 ADR-0034 前向试跑只实现并验收第 1、2、4 项；第 3 项有意延期到事件样本足够、重新预注册正式实验时完成。当前代码不得为本次试跑扩展参数搜索或读取唯一 test，也不能把这项延期解释为已获得正式盈利资格。
+
 ## 停止条件
 
-开发门未通过时立即停止，不读取 test、不 promotion、不绑定、不启动。历史探索即使为正，也只能说明假设值得 forward test；不能构成收益保证。
+开发门未通过时立即停止，不读取 test、不 promotion，也不进行正式审计或生产策略绑定。历史探索即使为正，也只能说明假设值得 forward test；不能构成收益保证。只有操作者另行确认 ADR-0034 的未验证 Paper 前向试跑时，才可走该独立路径，而且仍不得读取 test、promotion、Testnet 或 Live。
 
-## 固定开发回放结果（2026-08-10）
+## 早期递归指标开发诊断（2026-08-10）
 
 在 1% 风险预算下，三个候选全部因最小名义额与数量步长产生 0 成交，因此没有经济结果可见。按上文预先记录的唯一机械修正改为 1.5% 后，只回放冻结的三个阈值；没有修改信号、退出或其它参数。
 
-40 bps 正式成本下的 sealed development 结果：
+以下 40 bps sealed development 表格来自有限锚点修正前、沿开发数据流连续递推 EMA/ATR 的早期诊断，只保留为历史研究记录。它既不等于后来持久化的旧 v1/42 根锚点，也不等于 v1.1/139 根锚点；在新的精确 P0 development 回放完成前，这些数字不能用于任何 forward trial 绑定或收益陈述。
+
+早期诊断结果：
 
 | Z 阈值 | 收益 | PF | 最大回撤 | 完整往返 |
 |---:|---:|---:|---:|---:|
@@ -131,4 +139,29 @@
 
 这些正数不满足可信盈利证据：development 要求至少 30 次往返，实际为 `0/1/1`；validation 要求至少 6 次，实际最多 1 次；7 个滚动窗仅 1 个为正；中心候选的左邻没有成交。`PF=∞` 只是唯一一笔交易盈利且没有亏损样本，不代表稳定优势。更早三年也只有 4–5 笔，说明事件稀少是策略结构问题，不只是 75 天窗口过短。
 
-本轮因此终止于开发门。sealed withheld 保持 `unclaimed/unread`；没有实现新 policy、创建 P0/experiment、promotion、绑定或启动。策略规则保留为研究草案，只有未来获得足够的新鲜事件样本后才值得重新预注册。
+本轮正式研究因此终止于开发门。sealed withheld 保持 `unclaimed/unread`；没有创建 formal experiment、promotion、审计绑定或生产启动。随后增加的实现与启用仅属于下节所述 ADR-0034 本地 Paper 前向试跑，不应回写成正式盈利证据。
+
+## 操作者要求的 Paper 前向试跑（2026-08-10）
+
+上述正式结论不变：本策略没有通过盈利门，不能保存为 `audited`，也不能称为已证明盈利。其后操作者明确要求“完成新策略后启用”，因此按 ADR-0034 增加一个与正式 promotion 分离的研究动作：实现冻结规则，并把 v1.1 中心参数 `entryZThreshold=-2.0` 作为 `unverified_forward_trial` 在本地 Paper 账户中前向观察一周。旧 v1 不具备这条绑定能力。
+
+v1.1 的权威 P0 development 运行于 2026-08-10 完成：
+
+- strategy revision：`d24a37e2e199`
+- source run：`run-3b5ccef0dd25`
+- sealed dataset：`sealed-0e2c733a4984999b7122e8dc`
+- development：108,540 根 Binance 1m K 线，0 缺口；withheld 25,920 根保持未申领、未读取
+- 假设：initial cash 10 USDT，单边手续费 10 bps，单边滑点 10 bps
+- development 收益：`+1.5332%`
+- 最大回撤：`0.4018%`
+- 完整/自然往返：`1 / 1`
+- 入场：2026-07-14 04:00 UTC，`0.00008 BTC @ 62635.45`，原因 `range_reversion_recovery`
+- 出场：2026-07-14 16:00 UTC，`0.00008 BTC @ 64679.26`，原因 `z_score_mean_reached`
+
+这一次自然往返只满足 ADR-0034 的 development 弱门，不满足至少 30 次 development 往返、滚动窗口、邻域稳定性或唯一 test 门槛。策略库记录因此保持 `draft`、`auditRunId=null`，绑定投影保持 `profitabilityStatus=unverified_forward_trial`、`formalGatePassed=false`。
+
+该试跑只允许引用完全匹配的 `draft` revision 和完整 sealed development source run；不读取或 claim withheld，不创建正式 experiment/promotion，不获得 Testnet、Live 或 Stage 10 能力。绑定完成后仍暂停，另以独立 `{"enabled":true}` 启动。初始资金为 10 USDT，买入额度随权益增长但继续受现金、60% 仓位、1.5% 风险预算和交易所离散约束限制；退出卖出完整管理仓位。
+
+绑定时服务端还要以同一 BacktestEngine 精确重放 development：收益必须仍大于 0、最大回撤不超过 3%，并且至少存在 1 次非 `end_of_backtest` 的自然完整往返。该门只允许收集 Paper 前向证据，`formalGatePassed` 仍为 `false`。
+
+一周结果按权益盯市收益报告，并同时列出已实现盈亏、未实现盈亏、费用、成交和持仓。该结果只是新鲜 Paper 证据，不能回填或替代正式 holdout 门槛。

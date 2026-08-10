@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 from http.server import HTTPServer
 import json
+import math
 from pathlib import Path
 import sqlite3
 import sys
@@ -84,6 +85,12 @@ from services.quant_core.tests.test_regime_breakout_v2 import (
     _profitable_fresh_reaudit_bars,
     _seed_promotable_experiment,
     _strategy as regime_breakout_strategy,
+)
+from services.quant_core.tests.test_cost_aware_range_reversion_backtest import (
+    INDICATOR_ANCHOR_BARS as COST_AWARE_INDICATOR_ANCHOR_BARS,
+    LEGACY_INDICATOR_ANCHOR_BARS as LEGACY_COST_AWARE_INDICATOR_ANCHOR_BARS,
+    _one_minute_bars as cost_aware_one_minute_bars,
+    _strategy as cost_aware_range_reversion_strategy,
 )
 
 
@@ -712,6 +719,18 @@ def rewrite_auto_state(store: AuditEventStore, mutate) -> None:
     )
 
 
+def reset_clean_ten_usdt_paper_ledger(
+    service: AutoPaperTradingService,
+) -> None:
+    service.configure(
+        {
+            "enabled": False,
+            "initialCash": 10,
+            "paperAccountResetConfirmed": True,
+        }
+    )
+
+
 def audited_strategy_stores(
     directory: str,
     *,
@@ -974,7 +993,190 @@ def promoted_sealed_strategy_stores(
     )
 
 
+def forward_trial_strategy_stores(
+    directory: str,
+    *,
+    audit_bars: list[OHLCVBar] | None = None,
+    initial_cash: float = 10,
+    fee_bps: float = 10,
+    slippage_bps: float = 10,
+) -> tuple[
+    StrategyConfig,
+    StrategyLibraryStore,
+    ResearchRunStore,
+    SealedDatasetStore,
+]:
+    strategy = cost_aware_range_reversion_strategy()
+    development = audit_bars or cost_aware_one_minute_bars(
+        [
+            *[100.0] * COST_AWARE_INDICATOR_ANCHOR_BARS,
+            98.0,
+            98.6,
+            100.5,
+        ],
+        following_open=101.0,
+    )
+    return draft_sealed_forward_trial_strategy_stores(
+        directory,
+        strategy=strategy,
+        development=development,
+        initial_cash=initial_cash,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
+    )
+
+
+def draft_sealed_forward_trial_strategy_stores(
+    directory: str,
+    *,
+    strategy: StrategyConfig,
+    development: list[OHLCVBar],
+    initial_cash: float = 10,
+    fee_bps: float = 10,
+    slippage_bps: float = 10,
+) -> tuple[
+    StrategyConfig,
+    StrategyLibraryStore,
+    ResearchRunStore,
+    SealedDatasetStore,
+]:
+    withheld = replace(
+        development[-1],
+        timestamp=development[-1].timestamp + timedelta(minutes=1),
+    )
+    complete_dataset = [*development, withheld]
+    request = MarketDataRequest(
+        market="crypto",
+        symbol="BTC/USDT",
+        timeframe="1m",
+        start=complete_dataset[0].timestamp,
+        end=withheld.timestamp + timedelta(minutes=1),
+    )
+    sealed_store = SealedDatasetStore(Path(directory) / "sealed.sqlite")
+    chunks = [
+        complete_dataset[index : index + 500]
+        for index in range(0, len(complete_dataset), 500)
+    ]
+    summary = sealed_store.seal_dataset(
+        request,
+        chunks,
+        [
+            DataQuality(
+                source="forward-trial-fixture",
+                origin_source="forward-trial-fixture",
+                is_complete=True,
+                rows=len(chunk),
+                adjustment_mode="none",
+                canonical_hash=canonical_data_hash(normalize_snapshot_bars(chunk)),
+            )
+            for chunk in chunks
+        ],
+        development_end_exclusive=withheld.timestamp,
+        observed_at=datetime(2026, 8, 11, tzinfo=timezone.utc),
+    )
+    backtest = BacktestEngine(
+        initial_cash=initial_cash,
+        fee_rate=fee_bps / 10_000,
+        slippage_rate=slippage_bps / 10_000,
+    ).run(strategy, development)
+    run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+    run_store.record(
+        ResearchRunAudit(
+            run_id="fresh-sealed-p0-run",
+            created_at=datetime(2026, 8, 11, tzinfo=timezone.utc),
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            strategy_name=strategy.name,
+            strategy_revision=strategy.revision,
+            data_rows=len(development),
+            metrics=asdict(backtest.metrics),
+            decisions=[],
+            execution_mode="paper_only",
+            data_quality={
+                "source": summary.source,
+                "originSource": summary.source,
+                "isComplete": True,
+                "warnings": [],
+                "rows": summary.development_rows,
+                "adjustmentMode": summary.adjustment_mode,
+                "coverage": {
+                    "actualRows": summary.development_rows,
+                    "expectedRows": summary.development_rows,
+                    "gapCount": 0,
+                    "ratio": 1.0,
+                },
+                "canonicalHash": summary.development_hash,
+                "issues": [],
+            },
+            data_snapshot=sealed_research_snapshot_payload(summary),
+            strategy_config=strategy_config_to_payload(strategy),
+            backtest_assumptions={
+                "initialCash": initial_cash,
+                "feeBps": fee_bps,
+                "slippageBps": slippage_bps,
+            },
+            backtest_trades=[
+                {
+                    "timestamp": trade.timestamp.isoformat(),
+                    "side": trade.side,
+                    "status": "filled",
+                    "price": trade.price,
+                    "quantity": trade.quantity,
+                }
+                for trade in backtest.trades
+            ],
+            backtest_equity_curve=[
+                {
+                    "timestamp": point.timestamp.isoformat(),
+                    "equity": round(point.equity, 4),
+                }
+                for point in backtest.equity_curve
+            ],
+        )
+    )
+    strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
+    strategy_store.save(strategy)
+    return strategy, strategy_store, run_store, sealed_store
+
+
 class AutoPaperTradingTests(unittest.TestCase):
+    def test_forward_trial_binding_api_requires_an_exact_object_body(self):
+        service = AutoPaperTradingService(
+            AuditEventStore(":memory:"),
+            AiReviewProviderRegistry(
+                (ProviderStatus("local", True, None, None),),
+                {},
+            ),
+        )
+
+        class Handler(QuantApiHandler):
+            def _auto_paper_trading_service(self):
+                return service
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        connection = HTTPConnection(*server.server_address, timeout=5)
+        try:
+            connection.request(
+                "POST",
+                "/api/execution/auto-paper-trading/forward-trial-bindings",
+                body=json.dumps([{"strategyRevision": "not-an-object"}]),
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read())
+        finally:
+            connection.close()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(payload["error"], "invalid_forward_trial_binding")
+        self.assertEqual(payload["detail"], "request_body_must_be_object")
+
     def test_v1_decision_contract_identity_remains_compatible(self):
         fixture_bars = [
             OHLCVBar(
@@ -1170,6 +1372,66 @@ class AutoPaperTradingTests(unittest.TestCase):
             generated_at=datetime(2026, 8, 1, 0, 6, tzinfo=timezone.utc),
         )
         self.assertEqual(replayed, contracts[0])
+
+    def test_four_hour_decision_contract_replay_preserves_signal_identity(self):
+        fixture_bars = bars([100, 100, 100, 98, 98.6, 100.5])
+        generated_at = datetime(2026, 8, 1, 0, 6, tzinfo=timezone.utc)
+        evaluated_bar_at = fixture_bars[-2].timestamp.isoformat()
+        contract = build_decision_contract(
+            bars=fixture_bars,
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            data_source="test",
+            strategy_id="cost-aware-range-reversion-v1",
+            strategy_revision="cost-aware-revision",
+            proposal_action="buy",
+            proposal_confidence=1,
+            proposal_reason="range_reversion_recovery",
+            provider_id="rules",
+            current_quantity=0,
+            reference_price=100.5,
+            available_cash=10,
+            order_notional=5,
+            fee_rate=0.001,
+            daily_drawdown_pct=0,
+            daily_loss_limit_pct=2,
+            profit_drawdown_pct=0,
+            profit_drawdown_limit_pct=2,
+            recent_trade_count=0,
+            max_trades_per_hour=1,
+            generated_at=generated_at,
+            signal_timeframe="4h",
+            evaluated_bar_at=evaluated_bar_at,
+        )
+
+        replayed = replay_decision_proposal(
+            contract["decisionProposal"],
+            bars=fixture_bars,
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            data_source="test",
+            strategy_id="cost-aware-range-reversion-v1",
+            current_quantity=0,
+            reference_price=100.5,
+            available_cash=10,
+            order_notional=5,
+            fee_rate=0.001,
+            daily_drawdown_pct=0,
+            daily_loss_limit_pct=2,
+            profit_drawdown_pct=0,
+            profit_drawdown_limit_pct=2,
+            recent_trade_count=0,
+            max_trades_per_hour=1,
+            generated_at=generated_at,
+            signal_timeframe="4h",
+            evaluated_bar_at=evaluated_bar_at,
+        )
+
+        self.assertEqual(replayed, contract)
+        self.assertEqual(replayed["signal"]["horizon"], "4h")
+        self.assertEqual(replayed["signal"]["evaluatedBarAt"], evaluated_bar_at)
 
     def test_background_evaluation_paginates_policy_warmup_beyond_500_bars(self):
         current_minute = datetime.now(timezone.utc).replace(second=0, microsecond=0)
@@ -2439,6 +2701,1131 @@ class AutoPaperTradingTests(unittest.TestCase):
             self.assertEqual(production.orders, [])
             self.assertEqual(audit_store.count(event_type="auto_paper_trade"), 0)
             self.assertEqual(audit_store.count(event_type="auto_live_trade"), 0)
+
+    def test_forward_trial_binding_api_binds_a_draft_v2_sealed_run_without_starting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            production = FakeProductionService()
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                production=production,  # type: ignore[arg-type]
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+
+            class Handler(QuantApiHandler):
+                def _auto_paper_trading_service(self):
+                    return service
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=30)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/execution/auto-paper-trading/forward-trial-bindings",
+                    body=json.dumps(
+                        {
+                            "strategyRevision": strategy.revision,
+                            "sourceRunId": "fresh-sealed-p0-run",
+                            "operator": "operator@example.com",
+                            "confirmed": True,
+                        }
+                    ),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+            self.assertEqual(response.status, 201)
+            self.assertEqual(payload["state"]["executionMode"], "paper")
+            self.assertEqual(payload["state"]["status"], "paused")
+            self.assertFalse(payload["state"]["enabled"])
+            self.assertEqual(payload["state"]["position"], 0)
+            self.assertIsNone(payload["state"]["pendingPaperOrder"])
+            self.assertIsNone(payload["state"]["activeStrategyAuditRunId"])
+            self.assertIsNone(payload["state"]["activeStrategyAuditHash"])
+            self.assertEqual(payload["strategyBinding"]["kind"], "forward_trial")
+            self.assertEqual(
+                payload["strategyBinding"]["profitabilityStatus"],
+                "unverified_forward_trial",
+            )
+            self.assertEqual(
+                payload["strategyBinding"]["sourceRunId"],
+                "fresh-sealed-p0-run",
+            )
+            self.assertTrue(payload["strategyBinding"]["developmentEvidence"]["passed"])
+            self.assertGreater(
+                payload["strategyBinding"]["developmentEvidence"]["totalReturnPct"],
+                0,
+            )
+            self.assertGreaterEqual(
+                payload["strategyBinding"]["developmentEvidence"]["roundTripCount"],
+                1,
+            )
+            self.assertGreaterEqual(
+                payload["strategyBinding"]["developmentEvidence"][
+                    "naturalRoundTripCount"
+                ],
+                1,
+            )
+            self.assertFalse(
+                payload["strategyBinding"]["developmentEvidence"][
+                    "profitFactorInfinite"
+                ]
+            )
+            self.assertTrue(
+                math.isfinite(
+                    payload["strategyBinding"]["developmentEvidence"][
+                        "profitFactor"
+                    ]
+                )
+            )
+            json.dumps(payload, allow_nan=False)
+            self.assertFalse(payload["strategyBinding"]["formalGatePassed"])
+            self.assertTrue(payload["strategyBinding"]["paperOnly"])
+            self.assertFalse(payload["sandboxOrderSubmissionEnabled"])
+            self.assertFalse(payload["liveTradingAllowed"])
+            self.assertFalse(payload["orderSubmissionEnabled"])
+            self.assertFalse(payload["routeExecuted"])
+            self.assertEqual(production.authorization_calls, 0)
+            self.assertEqual(production.account_checks, 0)
+            self.assertEqual(production.preparations, [])
+            self.assertEqual(production.orders, [])
+            self.assertEqual(audit_store.count(event_type="auto_live_order_intent"), 0)
+            self.assertEqual(audit_store.count(event_type="auto_live_trade"), 0)
+            binding = audit_store.list_recent(
+                event_type="auto_trading_strategy_binding",
+                limit=1,
+            )[0]
+            self.assertIsNone(binding.run_id)
+            self.assertEqual(binding.metadata["bindingKind"], "forward_trial")
+            self.assertEqual(
+                binding.metadata["profitabilityStatus"],
+                "unverified_forward_trial",
+            )
+            self.assertTrue(binding.metadata["paperOnly"])
+            self.assertFalse(binding.metadata["routeExecuted"])
+
+    def test_forward_trial_binding_rejects_forged_source_run_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            source_run = run_store.get("fresh-sealed-p0-run")
+            self.assertIsNotNone(source_run)
+            forged_metrics = dict(source_run.metrics)
+            forged_metrics["total_return_pct"] = (
+                float(forged_metrics["total_return_pct"]) + 1
+            )
+            connection = sqlite3.connect(run_store.path)
+            try:
+                connection.execute(
+                    "update research_runs set metrics_json = ? where run_id = ?",
+                    (
+                        json.dumps(forged_metrics, sort_keys=True),
+                        "fresh-sealed-p0-run",
+                    ),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "strategy_binding_backtest_replay_mismatch",
+            ):
+                service.bind_forward_trial(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "sourceRunId": "fresh-sealed-p0-run",
+                        "operator": "operator@example.com",
+                        "confirmed": True,
+                    }
+                )
+
+    def test_forward_trial_binding_requires_the_exact_ten_dollar_cost_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(
+                    directory,
+                    initial_cash=100,
+                    fee_bps=0,
+                    slippage_bps=0,
+                )
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "forward_trial_backtest_assumptions_required",
+            ):
+                service.bind_forward_trial(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "sourceRunId": "fresh-sealed-p0-run",
+                        "operator": "operator@example.com",
+                        "confirmed": True,
+                    }
+                )
+
+    def test_forward_trial_binding_requires_a_clean_ten_usdt_paper_ledger(self):
+        for dirty_state in (
+            None,
+            {"realizedPnl": 0.1},
+            {"tradeCount": 1},
+        ):
+            with (
+                self.subTest(dirty_state=dirty_state),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+                service = AutoPaperTradingService(
+                    audit_store,
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                )
+                if dirty_state is not None:
+                    service.configure(
+                        {
+                            "enabled": False,
+                            "initialCash": 10,
+                            "paperAccountResetConfirmed": True,
+                        }
+                    )
+                    rewrite_auto_state(
+                        audit_store,
+                        lambda state: state.update(dirty_state),
+                    )
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "forward_trial_binding_requires_clean_ten_usdt_ledger",
+                ):
+                    service.bind_forward_trial(
+                        {
+                            "strategyRevision": "draft-strategy",
+                            "sourceRunId": "sealed-source",
+                            "operator": "operator@example.com",
+                            "confirmed": True,
+                        }
+                    )
+
+    def test_forward_trial_binding_rejects_profit_created_only_by_end_of_backtest_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            forced_exit_only_bars = cost_aware_one_minute_bars(
+                [
+                    *[100.0] * COST_AWARE_INDICATOR_ANCHOR_BARS,
+                    98.0,
+                    98.6,
+                    100.5,
+                ]
+            )
+            forced_exit_only_bars[-1] = replace(
+                forced_exit_only_bars[-1],
+                open=102.0,
+                high=102.1,
+                low=101.9,
+                close=102.0,
+            )
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(
+                    directory,
+                    audit_bars=forced_exit_only_bars,
+                )
+            )
+            source_run = run_store.get("fresh-sealed-p0-run")
+            self.assertIsNotNone(source_run)
+            self.assertGreater(float(source_run.metrics["total_return_pct"]), 0)
+            self.assertEqual(int(source_run.metrics["round_trip_count"]), 1)
+            self.assertEqual(
+                [trade["side"] for trade in source_run.backtest_trades],
+                ["buy", "sell"],
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "forward_trial_development_evidence_failed",
+            ):
+                service.bind_forward_trial(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "sourceRunId": "fresh-sealed-p0-run",
+                        "operator": "operator@example.com",
+                        "confirmed": True,
+                    }
+                )
+
+    def test_forward_trial_binding_rejects_legacy_regime_breakout_draft(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                draft_sealed_forward_trial_strategy_stores(
+                    directory,
+                    strategy=regime_breakout_strategy(),
+                    development=_profitable_fresh_reaudit_bars(),
+                )
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "forward_trial_cost_aware_policy_required",
+            ):
+                service.bind_forward_trial(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "sourceRunId": "fresh-sealed-p0-run",
+                        "operator": "operator@example.com",
+                        "confirmed": True,
+                    }
+                )
+
+    def test_forward_trial_binding_rejects_the_persisted_v1_anchor_profile(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                draft_sealed_forward_trial_strategy_stores(
+                    directory,
+                    strategy=cost_aware_range_reversion_strategy(
+                        policy_kind="cost_aware_range_reversion_v1",
+                        indicator_anchor_bars=(
+                            LEGACY_COST_AWARE_INDICATOR_ANCHOR_BARS
+                        ),
+                    ),
+                    development=cost_aware_one_minute_bars(
+                        [
+                            *[100.0] * LEGACY_COST_AWARE_INDICATOR_ANCHOR_BARS,
+                            98.0,
+                            98.6,
+                            100.5,
+                        ],
+                        following_open=101.0,
+                    ),
+                )
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "^forward_trial_v11_policy_required$",
+            ):
+                service.bind_forward_trial(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "sourceRunId": "fresh-sealed-p0-run",
+                        "operator": "operator@example.com",
+                        "confirmed": True,
+                    }
+                )
+
+    def test_forward_trial_binding_rejects_neighbor_entry_threshold_revisions(self):
+        development = cost_aware_one_minute_bars(
+            [
+                *[100.0] * COST_AWARE_INDICATOR_ANCHOR_BARS,
+                98.0,
+                98.6,
+                100.5,
+            ],
+            following_open=101.0,
+        )
+        for threshold in (-2.5, -1.5):
+            with (
+                self.subTest(threshold=threshold),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                strategy, strategy_store, run_store, sealed_store = (
+                    draft_sealed_forward_trial_strategy_stores(
+                        directory,
+                        strategy=cost_aware_range_reversion_strategy(
+                            entry_z_threshold=threshold
+                        ),
+                        development=development,
+                    )
+                )
+                service = AutoPaperTradingService(
+                    AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                    strategy_store=strategy_store,
+                    run_store=run_store,
+                    sealed_dataset_store=sealed_store,
+                )
+                reset_clean_ten_usdt_paper_ledger(service)
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "forward_trial_fixed_profile_required",
+                ):
+                    service.bind_forward_trial(
+                        {
+                            "strategyRevision": strategy.revision,
+                            "sourceRunId": "fresh-sealed-p0-run",
+                            "operator": "operator@example.com",
+                            "confirmed": True,
+                        }
+                    )
+
+    def test_forward_trial_start_blocks_source_run_and_strategy_record_drift(self):
+        for drift, expected in (
+            ("source_run", "forward_trial_source_run_changed"),
+            ("strategy_record", "forward_trial_strategy_record_changed"),
+        ):
+            with self.subTest(drift=drift), tempfile.TemporaryDirectory() as directory:
+                strategy, strategy_store, run_store, sealed_store = (
+                    forward_trial_strategy_stores(directory)
+                )
+                service = AutoPaperTradingService(
+                    AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                    strategy_store=strategy_store,
+                    run_store=run_store,
+                    sealed_dataset_store=sealed_store,
+                )
+                reset_clean_ten_usdt_paper_ledger(service)
+                service.bind_forward_trial(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "sourceRunId": "fresh-sealed-p0-run",
+                        "operator": "operator@example.com",
+                        "confirmed": True,
+                    }
+                )
+                if drift == "source_run":
+                    connection = sqlite3.connect(run_store.path)
+                    statement = (
+                        "update research_runs set research_note_json = ? "
+                        "where run_id = ?"
+                    )
+                    values = (
+                        json.dumps(
+                            {
+                                "market": "crypto",
+                                "symbol": "BTC/USDT",
+                                "timeframe": "1m",
+                                "body": "drift",
+                                "updatedAt": "2026-08-10T00:00:00+00:00",
+                            },
+                            sort_keys=True,
+                        ),
+                        "fresh-sealed-p0-run",
+                    )
+                else:
+                    connection = sqlite3.connect(strategy_store.path)
+                    statement = (
+                        "update strategy_versions set name = name || ' drift' "
+                        "where revision = ?"
+                    )
+                    values = (strategy.revision,)
+                try:
+                    connection.execute(statement, values)
+                    connection.commit()
+                finally:
+                    connection.close()
+
+                blocked_binding = service.snapshot()["strategyBinding"]
+                self.assertEqual(blocked_binding["status"], "blocked")
+                self.assertIn("Paper forward trial", blocked_binding["detail"])
+                self.assertNotIn("生产策略", blocked_binding["detail"])
+                with self.assertRaisesRegex(ValueError, expected):
+                    service.configure({"enabled": True})
+
+    def test_forward_trial_binding_api_fails_closed_for_corrupt_pending_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure({"enabled": False})
+            rewrite_auto_state(
+                audit_store,
+                lambda state: state.update({"pendingPaperOrder": "corrupt"}),
+            )
+
+            class Handler(QuantApiHandler):
+                def _auto_paper_trading_service(self):
+                    return service
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=30)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/execution/auto-paper-trading/forward-trial-bindings",
+                    body=json.dumps(
+                        {
+                            "strategyRevision": strategy.revision,
+                            "sourceRunId": "fresh-sealed-p0-run",
+                            "operator": "operator@example.com",
+                            "confirmed": True,
+                        }
+                    ),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+            self.assertEqual(response.status, 409)
+            self.assertEqual(
+                payload["detail"],
+                "forward_trial_binding_requires_no_pending_order",
+            )
+            self.assertEqual(
+                audit_store.count(event_type="auto_trading_strategy_binding"),
+                0,
+            )
+
+    def test_forward_trial_start_api_must_be_a_separate_exact_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+            service.bind_forward_trial(
+                {
+                    "strategyRevision": strategy.revision,
+                    "sourceRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+
+            class Handler(QuantApiHandler):
+                def _auto_paper_trading_service(self):
+                    return service
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/execution/auto-paper-trading",
+                    body=json.dumps({"enabled": True, "triggerPct": 0.5}),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+            self.assertEqual(response.status, 400)
+            self.assertEqual(
+                payload["detail"],
+                "forward_trial_start_request_must_be_separate",
+            )
+            snapshot = service.snapshot()
+            self.assertFalse(snapshot["state"]["enabled"])
+            self.assertEqual(snapshot["state"]["status"], "paused")
+
+    def test_forward_trial_start_rechecks_the_clean_ten_usdt_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+            service.bind_forward_trial(
+                {
+                    "strategyRevision": strategy.revision,
+                    "sourceRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+            service.configure(
+                {
+                    "enabled": False,
+                    "initialCash": 100,
+                    "paperAccountResetConfirmed": True,
+                }
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "forward_trial_binding_requires_clean_ten_usdt_ledger",
+            ):
+                service.configure({"enabled": True})
+
+    def test_forward_trial_start_rejects_same_session_ledger_drift(self):
+        cases = (
+            (
+                {"cash": 9.0, "availableCash": 9.0, "equity": 9.0},
+                "forward_trial_binding_requires_clean_ten_usdt_ledger",
+            ),
+            (
+                {"position": 0.00008},
+                "forward_trial_binding_requires_flat_position",
+            ),
+            (
+                {"pendingPaperOrder": {"side": "buy"}},
+                "forward_trial_binding_requires_no_pending_order",
+            ),
+        )
+        for dirty_state, expected in cases:
+            with (
+                self.subTest(dirty_state=dirty_state),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                strategy, strategy_store, run_store, sealed_store = (
+                    forward_trial_strategy_stores(directory)
+                )
+                audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+                service = AutoPaperTradingService(
+                    audit_store,
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                    strategy_store=strategy_store,
+                    run_store=run_store,
+                    sealed_dataset_store=sealed_store,
+                )
+                reset_clean_ten_usdt_paper_ledger(service)
+                service.bind_forward_trial(
+                    {
+                        "strategyRevision": strategy.revision,
+                        "sourceRunId": "fresh-sealed-p0-run",
+                        "operator": "operator@example.com",
+                        "confirmed": True,
+                    }
+                )
+                rewrite_auto_state(
+                    audit_store,
+                    lambda state: state.update(dirty_state),
+                )
+
+                with self.assertRaisesRegex(ValueError, expected):
+                    service.configure({"enabled": True})
+
+    def test_forward_trial_start_api_rechecks_sealed_evidence_before_enabling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+            service.bind_forward_trial(
+                {
+                    "strategyRevision": strategy.revision,
+                    "sourceRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+            source_run = run_store.get("fresh-sealed-p0-run")
+            self.assertIsNotNone(source_run)
+            dataset_id = source_run.data_snapshot["sealedDataset"]["datasetId"]
+            connection = sqlite3.connect(sealed_store.path)
+            try:
+                connection.execute(
+                    """
+                    update sealed_dataset_bars set close = close + 1
+                    where dataset_id = ? and partition_name = 'development'
+                      and timestamp = (
+                        select min(timestamp) from sealed_dataset_bars
+                        where dataset_id = ? and partition_name = 'development'
+                      )
+                    """,
+                    (dataset_id, dataset_id),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            class Handler(QuantApiHandler):
+                def _auto_paper_trading_service(self):
+                    return service
+
+            server = HTTPServer(("127.0.0.1", 0), Handler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=5)
+            try:
+                connection.request(
+                    "POST",
+                    "/api/execution/auto-paper-trading",
+                    body=json.dumps({"enabled": True}),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read())
+            finally:
+                connection.close()
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+            self.assertEqual(response.status, 400)
+            self.assertEqual(payload["detail"], "forward_trial_sealed_evidence_changed")
+            snapshot = service.snapshot()
+            self.assertFalse(snapshot["state"]["enabled"])
+            self.assertEqual(snapshot["state"]["status"], "paused")
+            self.assertEqual(snapshot["strategyBinding"]["status"], "blocked")
+
+    def test_forward_trial_evaluation_blocks_tampered_live_state_before_account_or_route_calls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            production = FakeProductionService()
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                production=production,  # type: ignore[arg-type]
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+            service.bind_forward_trial(
+                {
+                    "strategyRevision": strategy.revision,
+                    "sourceRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+            rewrite_auto_state(
+                audit_store,
+                lambda state: state.update(
+                    {
+                        "executionMode": "live",
+                        "enabled": True,
+                        "status": "monitoring",
+                        "liveConfirmed": True,
+                        "liveIpRestricted": True,
+                        "liveControlId": production.control_id,
+                        "liveOperator": "operator@example.com",
+                        "liveAuthorizedUntil": (
+                            datetime.now(timezone.utc) + timedelta(hours=1)
+                        ).isoformat(),
+                        "activeStrategyConfig": {},
+                    }
+                ),
+            )
+
+            result = service.evaluate(
+                bars([100, 100, 100, 100, 100, 101]),
+                data_source="test",
+            )
+
+            self.assertEqual(result["state"]["status"], "risk_paused")
+            self.assertEqual(
+                result["state"]["detail"],
+                "forward_trial_binding_paper_only",
+            )
+            self.assertEqual(production.account_checks, 0)
+            self.assertEqual(production.preparations, [])
+            self.assertEqual(production.orders, [])
+
+    def test_forward_trial_binding_rejects_nonfinite_and_negative_position_state(self):
+        for position in (-0.1, float("nan"), float("inf")):
+            with self.subTest(position=position), tempfile.TemporaryDirectory() as directory:
+                audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+                service = AutoPaperTradingService(
+                    audit_store,
+                    AiReviewProviderRegistry(
+                        (ProviderStatus("local", True, None, None),),
+                        {},
+                    ),
+                )
+                service.configure({"enabled": False})
+                rewrite_auto_state(
+                    audit_store,
+                    lambda state: state.update({"position": position}),
+                )
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "forward_trial_binding_requires_flat_position",
+                ):
+                    service.bind_forward_trial(
+                        {
+                            "strategyRevision": "draft-strategy",
+                            "sourceRunId": "sealed-source",
+                            "operator": "operator@example.com",
+                            "confirmed": True,
+                        }
+                    )
+
+    def test_forward_trial_binding_rejects_unknown_or_corrupt_external_order_state(self):
+        for key in ("lastTestnetOrder", "lastLiveOrder"):
+            for order in ({}, {"state": "unknown"}, "corrupt"):
+                with (
+                    self.subTest(key=key, order=order),
+                    tempfile.TemporaryDirectory() as directory,
+                ):
+                    audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+                    service = AutoPaperTradingService(
+                        audit_store,
+                        AiReviewProviderRegistry(
+                            (ProviderStatus("local", True, None, None),),
+                            {},
+                        ),
+                    )
+                    service.configure({"enabled": False})
+                    rewrite_auto_state(
+                        audit_store,
+                        lambda state: state.update({key: order}),
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "forward_trial_binding_requires_no_pending_order",
+                    ):
+                        service.bind_forward_trial(
+                            {
+                                "strategyRevision": "draft-strategy",
+                                "sourceRunId": "sealed-source",
+                                "operator": "operator@example.com",
+                                "confirmed": True,
+                            }
+                        )
+
+    def test_forward_trial_snapshot_never_advertises_testnet_or_live_order_capability(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                sandbox=FakeSandboxService(),  # type: ignore[arg-type]
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            reset_clean_ten_usdt_paper_ledger(service)
+            service.bind_forward_trial(
+                {
+                    "strategyRevision": strategy.revision,
+                    "sourceRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+            rewrite_auto_state(
+                audit_store,
+                lambda state: state.update(
+                    {
+                        "executionMode": "testnet",
+                        "enabled": True,
+                        "status": "monitoring",
+                        "testnetConfirmed": True,
+                        "activeStrategyConfig": {},
+                    }
+                ),
+            )
+
+            snapshot = service.snapshot()
+
+            self.assertEqual(snapshot["strategyBinding"]["kind"], "forward_trial")
+            self.assertEqual(snapshot["strategyBinding"]["status"], "blocked")
+            self.assertFalse(snapshot["sandboxOrderSubmissionEnabled"])
+            self.assertFalse(snapshot["sandboxRouteExecuted"])
+            self.assertFalse(snapshot["liveTradingAllowed"])
+            self.assertFalse(snapshot["orderSubmissionEnabled"])
+            self.assertFalse(snapshot["routeExecuted"])
+
+    def test_auto_fetch_window_covers_slow_ema_from_a_non_aligned_minute(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = cost_aware_range_reversion_strategy()
+            audit_store = AuditEventStore(Path(directory) / "auto-audit.sqlite")
+            service = AutoPaperTradingService(
+                audit_store,
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+            )
+            service.configure({"enabled": False})
+            strategy_snapshot = strategy_config_to_payload(strategy)
+            rewrite_auto_state(
+                audit_store,
+                lambda state: state.update(
+                    {
+                        "activeStrategyBindingKind": "forward_trial",
+                        "activeStrategyRevision": strategy.revision,
+                        "activeStrategyConfig": strategy_snapshot,
+                        "activeStrategyConfigHash": canonical_sha256(
+                            strategy_snapshot
+                        ),
+                    }
+                ),
+            )
+
+            fetch_bars = service.required_fetch_bar_count()
+            start = datetime(2026, 8, 1, 0, 37, tzinfo=timezone.utc)
+            bucket_counts: dict[datetime, int] = {}
+            for index in range(fetch_bars):
+                timestamp = start + timedelta(minutes=index)
+                bucket = timestamp.replace(
+                    hour=(timestamp.hour // 4) * 4,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                )
+                bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+
+            self.assertEqual(
+                fetch_bars,
+                COST_AWARE_INDICATOR_ANCHOR_BARS * 240 + 239,
+            )
+            self.assertGreaterEqual(
+                sum(count == 240 for count in bucket_counts.values()),
+                COST_AWARE_INDICATOR_ANCHOR_BARS,
+            )
+
+    def test_cost_aware_forward_trial_signal_matches_backtest_four_hour_bar_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy, strategy_store, run_store, sealed_store = (
+                forward_trial_strategy_stores(directory)
+            )
+            service = AutoPaperTradingService(
+                AuditEventStore(Path(directory) / "auto-audit.sqlite"),
+                AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                ),
+                strategy_store=strategy_store,
+                run_store=run_store,
+                sealed_dataset_store=sealed_store,
+            )
+            service.configure(
+                {
+                    "enabled": False,
+                    "initialCash": 10,
+                    "paperAccountResetConfirmed": True,
+                }
+            )
+            service.bind_forward_trial(
+                {
+                    "strategyRevision": strategy.revision,
+                    "sourceRunId": "fresh-sealed-p0-run",
+                    "operator": "operator@example.com",
+                    "confirmed": True,
+                }
+            )
+            service.configure({"enabled": True})
+            source_bars = cost_aware_one_minute_bars(
+                [
+                    *[100.0] * COST_AWARE_INDICATOR_ANCHOR_BARS,
+                    98.0,
+                    98.6,
+                    100.5,
+                ],
+                following_open=101.0,
+            )
+            evaluation_bars = source_bars[
+                : (COST_AWARE_INDICATOR_ANCHOR_BARS + 2) * 240
+            ]
+
+            service.evaluate(
+                source_bars[
+                    : (COST_AWARE_INDICATOR_ANCHOR_BARS + 1) * 240
+                ],
+                data_source="test",
+            )
+            evaluated = service.evaluate(evaluation_bars, data_source="test")
+            backtest = BacktestEngine(
+                initial_cash=10,
+                fee_rate=0.001,
+                slippage_rate=0.001,
+            ).run(strategy, source_bars)
+            buy = next(trade for trade in backtest.trades if trade.side == "buy")
+            sell = next(trade for trade in backtest.trades if trade.side == "sell")
+            contract = evaluated["state"]["lastDecisionContract"]
+
+            self.assertEqual(evaluated["state"]["status"], "order_pending")
+            self.assertEqual(contract["marketSnapshot"]["timeframe"], "1m")
+            self.assertEqual(contract["signal"]["horizon"], "4h")
+            self.assertEqual(
+                contract["signal"]["evaluatedBarAt"],
+                (buy.timestamp - timedelta(hours=4)).isoformat(),
+            )
+            self.assertEqual(
+                contract["signal"]["evaluatedBarAt"],
+                contract["strategyEvaluation"]["decisionBarAt"],
+            )
+            self.assertEqual(
+                datetime.fromisoformat(contract["signal"]["expiresAt"]),
+                datetime.fromisoformat(contract["signal"]["generatedAt"])
+                + timedelta(hours=4),
+            )
+
+            bought = service.evaluate(
+                source_bars[
+                    : (COST_AWARE_INDICATOR_ANCHOR_BARS + 2) * 240 + 1
+                ],
+                data_source="test",
+            )
+            sell_signaled = service.evaluate(
+                source_bars[
+                    : (COST_AWARE_INDICATOR_ANCHOR_BARS + 3) * 240
+                ],
+                data_source="test",
+            )
+            sold = service.evaluate(source_bars, data_source="test")
+
+            self.assertEqual(bought["state"]["lastTrade"]["side"], "buy")
+            self.assertAlmostEqual(
+                bought["state"]["lastTrade"]["price"],
+                buy.price,
+                places=8,
+            )
+            self.assertAlmostEqual(
+                bought["state"]["lastTrade"]["quantity"],
+                buy.quantity,
+                places=12,
+            )
+            self.assertEqual(sell_signaled["state"]["status"], "order_pending")
+            self.assertEqual(sold["state"]["lastTrade"]["side"], "sell")
+            self.assertAlmostEqual(
+                sold["state"]["lastTrade"]["price"],
+                sell.price,
+                places=8,
+            )
+            self.assertAlmostEqual(
+                sold["state"]["lastTrade"]["quantity"],
+                sell.quantity,
+                places=12,
+            )
+            self.assertEqual(
+                sold["state"]["lastTrade"]["fillPriceSource"],
+                "next_completed_bar_open_with_10bps_slippage",
+            )
 
     def test_cached_sealed_binding_rechecks_persistent_integrity_without_rereading_bars(self):
         with tempfile.TemporaryDirectory() as directory:

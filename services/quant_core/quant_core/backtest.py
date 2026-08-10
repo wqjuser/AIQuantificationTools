@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 from quant_core.domain import (
+    COST_AWARE_RANGE_REVERSION_POLICY_KINDS,
     BacktestMetrics,
     BacktestRun,
     Condition,
@@ -117,6 +118,12 @@ def strategy_exit_reason(
 def strategy_required_bars(strategy: StrategyConfig) -> int:
     if strategy.policy is not None:
         policy = strategy.policy
+        if policy.kind in COST_AWARE_RANGE_REVERSION_POLICY_KINDS:
+            return max(
+                policy.range_regime.indicator_anchor_bars,
+                policy.reversion.z_score_window,
+                policy.atr.window,
+            ) * 240
         return max(
             (policy.regime.close_above_sma_window + policy.regime.sma_slope_lookback_bars) * 60,
             (policy.breakout.lookback_bars + 1) * 5,
@@ -131,6 +138,18 @@ def strategy_required_bars(strategy: StrategyConfig) -> int:
             for condition in (*strategy.entry_conditions, *strategy.exit_conditions)
         ),
     )
+
+
+def strategy_required_fetch_bars(strategy: StrategyConfig) -> int:
+    required = strategy_required_bars(strategy)
+    if strategy.policy is None:
+        return required
+    completion_buffer = (
+        239
+        if strategy.policy.kind in COST_AWARE_RANGE_REVERSION_POLICY_KINDS
+        else 59
+    )
+    return required + completion_buffer
 
 
 class BacktestEngine:

@@ -96,6 +96,7 @@ def build_standard_signal(
         "15m": timedelta(minutes=15),
         "30m": timedelta(minutes=30),
         "60m": timedelta(minutes=60),
+        "4h": timedelta(hours=4),
         "1d": timedelta(days=1),
         "1w": timedelta(weeks=1),
     }.get(timeframe)
@@ -179,6 +180,8 @@ def build_decision_contract(
     proposal_metadata: Mapping[str, Any] | None = None,
     execution_preparation: Mapping[str, Any] | None = None,
     strategy_evaluation_identity: Mapping[str, Any] | None = None,
+    signal_timeframe: str | None = None,
+    evaluated_bar_at: str | None = None,
 ) -> dict[str, Any]:
     normalized_bars = normalize_snapshot_bars(bars)
     data_hash = canonical_data_hash(normalized_bars)
@@ -234,8 +237,8 @@ def build_decision_contract(
     signal = build_standard_signal(
         proposal,
         strategy_id=strategy_id,
-        timeframe=timeframe,
-        evaluated_bar_at=normalized_bars[-1]["timestamp"],
+        timeframe=signal_timeframe or timeframe,
+        evaluated_bar_at=evaluated_bar_at or normalized_bars[-1]["timestamp"],
         generated_at=generated_at,
         current_quantity=current_quantity,
     )
@@ -326,6 +329,8 @@ def replay_decision_proposal(
     generated_at: datetime,
     account_check: Mapping[str, Any] | None = None,
     execution_preparation: Mapping[str, Any] | None = None,
+    signal_timeframe: str | None = None,
+    evaluated_bar_at: str | None = None,
 ) -> dict[str, Any]:
     proposal_payload = {
         key: recorded_proposal.get(key)
@@ -417,6 +422,8 @@ def replay_decision_proposal(
         },
         execution_preparation=execution_preparation,
         strategy_evaluation_identity=strategy_evaluation_identity,
+        signal_timeframe=signal_timeframe,
+        evaluated_bar_at=evaluated_bar_at,
     )
     if contract["decisionProposal"]["proposalId"] != proposal_id:
         raise ValueError("recorded_proposal_context_mismatch")

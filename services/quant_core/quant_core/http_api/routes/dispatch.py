@@ -10,6 +10,7 @@ from . import (
     ai_strategy_p0,
     audit,
     core,
+    forward_trial_bindings,
     market,
     operations,
     portfolio,
@@ -243,6 +244,9 @@ class RouteDispatchMixin:
             return True
         if parsed.path == '/api/execution/auto-paper-trading':
             operations.post_execution_auto_paper_trading(self, parsed)
+            return True
+        if parsed.path == '/api/execution/auto-paper-trading/forward-trial-bindings':
+            forward_trial_bindings.post_forward_trial_binding(self, parsed)
             return True
         if parsed.path == '/api/execution/auto-paper-trading/reconciliations':
             operations.post_execution_auto_paper_trading_reconciliations(self, parsed)

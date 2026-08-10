@@ -8,7 +8,18 @@ from typing import Any, Literal
 
 Market = Literal["ashare", "us", "crypto"]
 Timeframe = Literal["1d", "1w", "1m", "5m", "15m", "30m", "60m"]
+DecisionTimeframe = Literal["5m", "4h"]
 OrderSide = Literal["buy", "sell"]
+CostAwareRangeReversionKind = Literal[
+    "cost_aware_range_reversion_v1",
+    "cost_aware_range_reversion_v1_1",
+]
+COST_AWARE_RANGE_REVERSION_POLICY_KINDS = frozenset(
+    {
+        "cost_aware_range_reversion_v1",
+        "cost_aware_range_reversion_v1_1",
+    }
+)
 
 
 def _canonical_json(payload: dict[str, Any]) -> str:
@@ -149,7 +160,7 @@ class CooldownRule:
 
 @dataclass(frozen=True)
 class RegimeBreakoutPolicy:
-    decision_timeframe: Timeframe
+    decision_timeframe: DecisionTimeframe
     completed_bars_only: bool
     fill_timing: str
     regime: RegimeFilter
@@ -159,6 +170,79 @@ class RegimeBreakoutPolicy:
     holding: HoldingRule
     cooldown: CooldownRule
     kind: str = "regime_breakout_v2"
+
+
+@dataclass(frozen=True)
+class RangeRegimeRule:
+    fast_ema_window: int
+    slow_ema_window: int
+    indicator_anchor_bars: int
+    maximum_separation_pct: float
+    ema_seed: str
+    ema_alpha: str
+
+
+@dataclass(frozen=True)
+class ReversionEntryRule:
+    z_score_window: int
+    standard_deviation: str
+    entry_z_threshold: float
+    recovery_window_bars: int
+    minimum_expected_distance_pct: float
+    require_close_rising: bool
+    require_z_score_rising: bool
+    require_negative_z_score: bool
+    one_shot_per_event: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "entry_z_threshold", float(self.entry_z_threshold))
+
+
+@dataclass(frozen=True)
+class FixedAtrStopRule:
+    window: int
+    smoothing: str
+    initial_multiple: float
+    fixed_from_entry: bool
+    never_loosen: bool
+
+
+@dataclass(frozen=True)
+class ReversionExitRule:
+    z_score_threshold: float
+    exit_on_range_close: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "z_score_threshold", float(self.z_score_threshold))
+
+
+@dataclass(frozen=True)
+class MaximumHoldingRule:
+    max_bars: int
+
+
+@dataclass(frozen=True)
+class ReversionCooldownRule:
+    bars: int
+    starts_after: str
+    requires_new_reversion_event: bool
+
+
+@dataclass(frozen=True)
+class CostAwareRangeReversionPolicy:
+    decision_timeframe: DecisionTimeframe
+    completed_bars_only: bool
+    fill_timing: str
+    range_regime: RangeRegimeRule
+    reversion: ReversionEntryRule
+    atr: FixedAtrStopRule
+    exit: ReversionExitRule
+    holding: MaximumHoldingRule
+    cooldown: ReversionCooldownRule
+    kind: CostAwareRangeReversionKind = "cost_aware_range_reversion_v1"
+
+
+StrategyPolicy = RegimeBreakoutPolicy | CostAwareRangeReversionPolicy
 
 
 @dataclass(frozen=True)
@@ -184,7 +268,7 @@ class StrategyConfig:
     exit_conditions: list[Condition]
     risk: RiskRules = field(default_factory=RiskRules)
     version: int = 1
-    policy: RegimeBreakoutPolicy | None = None
+    policy: StrategyPolicy | None = None
     revision: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -241,18 +325,32 @@ class StrategyConfig:
         payload["risk"] = RiskRules(**payload["risk"])
         policy = payload.get("policy")
         if isinstance(policy, dict):
-            payload["policy"] = RegimeBreakoutPolicy(
-                decision_timeframe=policy["decision_timeframe"],
-                completed_bars_only=policy["completed_bars_only"],
-                fill_timing=policy["fill_timing"],
-                regime=RegimeFilter(**policy["regime"]),
-                breakout=BreakoutRule(**policy["breakout"]),
-                volume=VolumeConfirmationRule(**policy["volume"]),
-                atr=AtrExitRule(**policy["atr"]),
-                holding=HoldingRule(**policy["holding"]),
-                cooldown=CooldownRule(**policy["cooldown"]),
-                kind=policy.get("kind", "regime_breakout_v2"),
-            )
+            if policy.get("kind") in COST_AWARE_RANGE_REVERSION_POLICY_KINDS:
+                payload["policy"] = CostAwareRangeReversionPolicy(
+                    decision_timeframe=policy["decision_timeframe"],
+                    completed_bars_only=policy["completed_bars_only"],
+                    fill_timing=policy["fill_timing"],
+                    range_regime=RangeRegimeRule(**policy["range_regime"]),
+                    reversion=ReversionEntryRule(**policy["reversion"]),
+                    atr=FixedAtrStopRule(**policy["atr"]),
+                    exit=ReversionExitRule(**policy["exit"]),
+                    holding=MaximumHoldingRule(**policy["holding"]),
+                    cooldown=ReversionCooldownRule(**policy["cooldown"]),
+                    kind=policy["kind"],
+                )
+            else:
+                payload["policy"] = RegimeBreakoutPolicy(
+                    decision_timeframe=policy["decision_timeframe"],
+                    completed_bars_only=policy["completed_bars_only"],
+                    fill_timing=policy["fill_timing"],
+                    regime=RegimeFilter(**policy["regime"]),
+                    breakout=BreakoutRule(**policy["breakout"]),
+                    volume=VolumeConfirmationRule(**policy["volume"]),
+                    atr=AtrExitRule(**policy["atr"]),
+                    holding=HoldingRule(**policy["holding"]),
+                    cooldown=CooldownRule(**policy["cooldown"]),
+                    kind=policy.get("kind", "regime_breakout_v2"),
+                )
         return cls(**payload)
 
 

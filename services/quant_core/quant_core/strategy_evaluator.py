@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from statistics import fmean
 from typing import Any, Literal, cast
 
 from quant_core.canonical import canonical_sha256
-from quant_core.domain import OHLCVBar, StrategyConfig, Timeframe
+from quant_core.domain import (
+    CostAwareRangeReversionPolicy,
+    OHLCVBar,
+    StrategyConfig,
+    Timeframe,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,30 @@ class StrategyRuntimeState:
 
 
 @dataclass(frozen=True)
+class CostAwareRangeReversionRuntimeState:
+    version: int
+    strategy_revision: str
+    last_decision_4h_bar_at: datetime | None = None
+    decision_count: int = 0
+    reversion_condition_active: bool = False
+    armed_reversion_event_id: str | None = None
+    armed_at_decision_count: int | None = None
+    entry_filled_at: datetime | None = None
+    entry_decision_count: int | None = None
+    entry_price: float = 0.0
+    atr_at_entry: float | None = None
+    active_stop: float | None = None
+    cooldown_until_decision_count: int = 0
+
+    @property
+    def state_hash(self) -> str:
+        return canonical_sha256(_runtime_state_payload(self))
+
+
+RuntimeState = StrategyRuntimeState | CostAwareRangeReversionRuntimeState
+
+
+@dataclass(frozen=True)
 class MarketContext:
     base_bars: tuple[OHLCVBar, ...]
     decision_bars: tuple[OHLCVBar, ...]
@@ -47,6 +76,10 @@ class MarketContext:
     atr_value: float | None = None
     decision_bar_count: int = 0
     regime_bar_count: int = 0
+    fast_ema_value: float | None = None
+    slow_ema_value: float | None = None
+    z_score_value: float | None = None
+    z_score_mean_value: float | None = None
 
 
 class PolicyMarketContextSession:
@@ -62,6 +95,8 @@ class PolicyMarketContextSession:
         self._five_rows: list[OHLCVBar] = []
         self._sixty_start: datetime | None = None
         self._sixty_rows: list[OHLCVBar] = []
+        self._four_hour_start: datetime | None = None
+        self._four_hour_rows: list[OHLCVBar] = []
         self._decision_bars: list[OHLCVBar] = []
         self._regime_bars: list[OHLCVBar] = []
         self._decision_bar_count = 0
@@ -69,6 +104,10 @@ class PolicyMarketContextSession:
         self._previous_decision_close: float | None = None
         self._atr_seed: list[float] = []
         self._atr_value: float | None = None
+        self._fast_ema_value: float | None = None
+        self._slow_ema_value: float | None = None
+        self._z_score_value: float | None = None
+        self._z_score_mean_value: float | None = None
 
     def ingest(self, bar: OHLCVBar) -> MarketContext | None:
         if (
@@ -80,11 +119,22 @@ class PolicyMarketContextSession:
         timestamp = _utc(bar.timestamp)
         if self._latest_timestamp is not None and timestamp <= self._latest_timestamp:
             raise ValueError("strategy_market_context_not_strictly_ordered")
+        if (
+            isinstance(self.strategy.policy, CostAwareRangeReversionPolicy)
+            and self._latest_timestamp is not None
+            and timestamp != self._latest_timestamp + timedelta(minutes=1)
+        ):
+            raise ValueError("strategy_market_context_not_contiguous")
         self._latest_timestamp = timestamp
         self._latest_base_bar = bar
 
-        decision_bar = self._ingest_five_minute(bar)
-        regime_bar = self._ingest_sixty_minute(bar)
+        policy = self.strategy.policy
+        if isinstance(policy, CostAwareRangeReversionPolicy):
+            decision_bar = self._ingest_four_hour(bar)
+            regime_bar = None
+        else:
+            decision_bar = self._ingest_five_minute(bar)
+            regime_bar = self._ingest_sixty_minute(bar)
         if regime_bar is not None:
             self._regime_bar_count += 1
             self._regime_bars.append(regime_bar)
@@ -96,29 +146,54 @@ class PolicyMarketContextSession:
         if decision_bar is None:
             return None
 
-        self._decision_bar_count += 1
-        self._update_atr(decision_bar)
-        self._decision_bars.append(decision_bar)
-        keep = max(
-            self.strategy.policy.breakout.lookback_bars + 2,
-            self.strategy.policy.volume.sma_window + 1,
-            self.strategy.policy.atr.window + 1,
-        )
-        self._decision_bars = self._decision_bars[-keep:]
+        if isinstance(policy, CostAwareRangeReversionPolicy):
+            self._decision_bar_count = _utc_four_hour_bar_number(decision_bar.timestamp)
+            keep = max(
+                policy.range_regime.indicator_anchor_bars,
+                policy.reversion.z_score_window + 1,
+                policy.atr.window,
+            )
+            self._decision_bars.append(decision_bar)
+            self._decision_bars = self._decision_bars[-keep:]
+            self._update_range_reversion_indicators(policy)
+        else:
+            self._decision_bar_count += 1
+            self._update_atr(decision_bar)
+            self._decision_bars.append(decision_bar)
+            keep = max(
+                policy.breakout.lookback_bars + 2,
+                policy.volume.sma_window + 1,
+                policy.atr.window + 1,
+            )
+            self._decision_bars = self._decision_bars[-keep:]
         return self.latest_context()
 
     def latest_context(self) -> MarketContext:
         if self._latest_base_bar is None:
             raise ValueError("strategy_market_context_incomplete")
-        evidence = {
-            "aggregationVersion": "ohlcv-utc-v1",
-            "baseLatest": _bar_payload(self._latest_base_bar),
-            "decision": [_bar_payload(bar) for bar in self._decision_bars],
-            "regime": [_bar_payload(bar) for bar in self._regime_bars],
-            "atr": self._atr_value,
-            "decisionBarCount": self._decision_bar_count,
-            "regimeBarCount": self._regime_bar_count,
-        }
+        policy = self.strategy.policy
+        if isinstance(policy, CostAwareRangeReversionPolicy):
+            evidence = {
+                "aggregationVersion": "ohlcv-utc-v1",
+                "baseLatest": _bar_payload(self._latest_base_bar),
+                "decision": [_bar_payload(bar) for bar in self._decision_bars],
+                "atr": self._atr_value,
+                "fastEma": self._fast_ema_value,
+                "slowEma": self._slow_ema_value,
+                "zScore": self._z_score_value,
+                "zScoreMean": self._z_score_mean_value,
+                "decisionBarCount": self._decision_bar_count,
+            }
+        else:
+            evidence = {
+                "aggregationVersion": "ohlcv-utc-v1",
+                "baseLatest": _bar_payload(self._latest_base_bar),
+                "decision": [_bar_payload(bar) for bar in self._decision_bars],
+                "regime": [_bar_payload(bar) for bar in self._regime_bars],
+                "atr": self._atr_value,
+                "decisionBarCount": self._decision_bar_count,
+                "regimeBarCount": self._regime_bar_count,
+            }
         return MarketContext(
             base_bars=(self._latest_base_bar,),
             decision_bars=tuple(self._decision_bars),
@@ -127,6 +202,10 @@ class PolicyMarketContextSession:
             atr_value=self._atr_value,
             decision_bar_count=self._decision_bar_count,
             regime_bar_count=self._regime_bar_count,
+            fast_ema_value=self._fast_ema_value,
+            slow_ema_value=self._slow_ema_value,
+            z_score_value=self._z_score_value,
+            z_score_mean_value=self._z_score_mean_value,
         )
 
     def _ingest_five_minute(self, bar: OHLCVBar) -> OHLCVBar | None:
@@ -144,6 +223,14 @@ class PolicyMarketContextSession:
             self._sixty_rows = []
         self._sixty_rows.append(bar)
         return _completed_bucket(self._sixty_rows, start=start, minutes=60, timeframe="60m")
+
+    def _ingest_four_hour(self, bar: OHLCVBar) -> OHLCVBar | None:
+        start = _bucket_start(bar.timestamp, 240)
+        if start != self._four_hour_start:
+            self._four_hour_start = start
+            self._four_hour_rows = []
+        self._four_hour_rows.append(bar)
+        return _completed_bucket(self._four_hour_rows, start=start, minutes=240, timeframe="4h")
 
     def _update_atr(self, bar: OHLCVBar) -> None:
         previous_close = self._previous_decision_close
@@ -165,6 +252,38 @@ class PolicyMarketContextSession:
             return
         self._atr_value = ((self._atr_value * (window - 1)) + true_range) / window
 
+    def _update_range_reversion_indicators(
+        self,
+        policy: CostAwareRangeReversionPolicy,
+    ) -> None:
+        anchor_bars = self._decision_bars[-policy.range_regime.indicator_anchor_bars :]
+        if (
+            policy.kind == "cost_aware_range_reversion_v1_1"
+            and len(anchor_bars) < policy.range_regime.indicator_anchor_bars
+        ):
+            self._fast_ema_value = None
+            self._slow_ema_value = None
+            self._atr_value = None
+            self._z_score_value = None
+            self._z_score_mean_value = None
+            return
+        closes = [bar.close for bar in anchor_bars]
+        self._fast_ema_value = _seeded_ema(
+            closes,
+            policy.range_regime.fast_ema_window,
+        )
+        self._slow_ema_value = _seeded_ema(
+            closes,
+            policy.range_regime.slow_ema_window,
+        )
+        self._atr_value = _wilder_atr(anchor_bars, policy.atr.window)
+        score = _population_z_score(closes, policy.reversion.z_score_window)
+        if score is None:
+            self._z_score_mean_value = None
+            self._z_score_value = None
+        else:
+            self._z_score_mean_value, self._z_score_value = score
+
 
 @dataclass(frozen=True)
 class StrategyEvaluation:
@@ -179,7 +298,7 @@ class StrategyEvaluation:
     active_stop: float | None
     gates: dict[str, bool]
     state_before_hash: str
-    state_after: StrategyRuntimeState
+    state_after: RuntimeState
 
     @property
     def state_after_hash(self) -> str:
@@ -193,11 +312,33 @@ class EntrySizing:
     reason: str
 
 
-def initial_runtime_state(strategy: StrategyConfig) -> StrategyRuntimeState:
+def initial_runtime_state(strategy: StrategyConfig) -> RuntimeState:
+    if isinstance(strategy.policy, CostAwareRangeReversionPolicy):
+        return CostAwareRangeReversionRuntimeState(
+            version=1,
+            strategy_revision=strategy.revision,
+        )
     return StrategyRuntimeState(version=1, strategy_revision=strategy.revision)
 
 
-def runtime_state_to_payload(state: StrategyRuntimeState) -> dict[str, Any]:
+def runtime_state_to_payload(state: RuntimeState) -> dict[str, Any]:
+    if isinstance(state, CostAwareRangeReversionRuntimeState):
+        return {
+            "version": state.version,
+            "strategyRevision": state.strategy_revision,
+            "lastDecision4hBarAt": _optional_time_text(state.last_decision_4h_bar_at),
+            "decisionCount": state.decision_count,
+            "reversionConditionActive": state.reversion_condition_active,
+            "armedReversionEventId": state.armed_reversion_event_id,
+            "armedAtDecisionCount": state.armed_at_decision_count,
+            "entryFilledAt": _optional_time_text(state.entry_filled_at),
+            "entryDecisionCount": state.entry_decision_count,
+            "entryPrice": state.entry_price,
+            "atrAtEntry": state.atr_at_entry,
+            "activeStop": state.active_stop,
+            "cooldownUntilDecisionCount": state.cooldown_until_decision_count,
+            "stateHash": state.state_hash,
+        }
     return {
         "version": state.version,
         "strategyRevision": state.strategy_revision,
@@ -217,9 +358,11 @@ def runtime_state_to_payload(state: StrategyRuntimeState) -> dict[str, Any]:
     }
 
 
-def runtime_state_from_payload(strategy: StrategyConfig, value: Any) -> StrategyRuntimeState:
+def runtime_state_from_payload(strategy: StrategyConfig, value: Any) -> RuntimeState:
     if value is None:
         return initial_runtime_state(strategy)
+    if isinstance(strategy.policy, CostAwareRangeReversionPolicy):
+        return _range_reversion_runtime_state_from_payload(strategy, value)
     expected_keys = {
         "version",
         "strategyRevision",
@@ -273,6 +416,76 @@ def runtime_state_from_payload(strategy: StrategyConfig, value: Any) -> Strategy
             state.entry_decision_count is not None
             and not 0 <= state.entry_decision_count <= state.decision_count
         )
+    ):
+        raise ValueError("strategy_runtime_state_invalid")
+    supplied_hash = str(value.get("stateHash") or "")
+    if supplied_hash != state.state_hash:
+        raise ValueError("strategy_runtime_state_hash_mismatch")
+    return state
+
+
+def _range_reversion_runtime_state_from_payload(
+    strategy: StrategyConfig,
+    value: Any,
+) -> CostAwareRangeReversionRuntimeState:
+    expected_keys = {
+        "version",
+        "strategyRevision",
+        "lastDecision4hBarAt",
+        "decisionCount",
+        "reversionConditionActive",
+        "armedReversionEventId",
+        "armedAtDecisionCount",
+        "entryFilledAt",
+        "entryDecisionCount",
+        "entryPrice",
+        "atrAtEntry",
+        "activeStop",
+        "cooldownUntilDecisionCount",
+        "stateHash",
+    }
+    if not isinstance(value, dict) or set(value) != expected_keys:
+        raise ValueError("strategy_runtime_state_invalid")
+    if value.get("version") != 1:
+        raise ValueError("strategy_runtime_state_version_invalid")
+    state = CostAwareRangeReversionRuntimeState(
+        version=1,
+        strategy_revision=str(value.get("strategyRevision") or ""),
+        last_decision_4h_bar_at=_optional_time(value.get("lastDecision4hBarAt")),
+        decision_count=int(value.get("decisionCount") or 0),
+        reversion_condition_active=value.get("reversionConditionActive") is True,
+        armed_reversion_event_id=_optional_text(value.get("armedReversionEventId")),
+        armed_at_decision_count=(
+            int(value["armedAtDecisionCount"])
+            if value.get("armedAtDecisionCount") is not None
+            else None
+        ),
+        entry_filled_at=_optional_time(value.get("entryFilledAt")),
+        entry_decision_count=(
+            int(value["entryDecisionCount"])
+            if value.get("entryDecisionCount") is not None
+            else None
+        ),
+        entry_price=float(value.get("entryPrice") or 0),
+        atr_at_entry=_optional_number(value.get("atrAtEntry")),
+        active_stop=_optional_number(value.get("activeStop")),
+        cooldown_until_decision_count=int(value.get("cooldownUntilDecisionCount") or 0),
+    )
+    if state.strategy_revision != strategy.revision:
+        raise ValueError("strategy_runtime_revision_mismatch")
+    if (
+        state.decision_count < 0
+        or state.cooldown_until_decision_count < 0
+        or state.entry_price < 0
+        or (
+            state.armed_at_decision_count is not None
+            and not 0 <= state.armed_at_decision_count <= state.decision_count
+        )
+        or (
+            state.entry_decision_count is not None
+            and not 0 <= state.entry_decision_count <= state.decision_count
+        )
+        or ((state.armed_reversion_event_id is None) != (state.armed_at_decision_count is None))
     ):
         raise ValueError("strategy_runtime_state_invalid")
     supplied_hash = str(value.get("stateHash") or "")
@@ -342,7 +555,7 @@ def strategy_evaluation_from_payload(strategy: StrategyConfig, value: Any) -> St
     )
     expected_id = canonical_sha256(
         {
-            "evaluatorVersion": "strategy-evaluator-v2",
+            "evaluatorVersion": _evaluator_version(strategy),
             "strategyRevision": strategy.revision,
             "contextHash": evaluation.context_hash,
             "stateBeforeHash": evaluation.state_before_hash,
@@ -381,7 +594,7 @@ def aggregate_complete_bars(
     grouped: dict[datetime, list[OHLCVBar]] = {}
     for bar in sorted(bars, key=lambda item: item.timestamp):
         timestamp = _utc(bar.timestamp).replace(second=0, microsecond=0)
-        bucket_start = timestamp.replace(minute=(timestamp.minute // minutes) * minutes)
+        bucket_start = _bucket_start(timestamp, minutes)
         grouped.setdefault(bucket_start, []).append(bar)
 
     aggregated: list[OHLCVBar] = []
@@ -409,7 +622,13 @@ def aggregate_complete_bars(
 
 def _bucket_start(value: datetime, minutes: int) -> datetime:
     timestamp = _utc(value).replace(second=0, microsecond=0)
-    return timestamp.replace(minute=(timestamp.minute // minutes) * minutes)
+    minute_of_day = timestamp.hour * 60 + timestamp.minute
+    bucket_minute = (minute_of_day // minutes) * minutes
+    return timestamp.replace(hour=bucket_minute // 60, minute=bucket_minute % 60)
+
+
+def _utc_four_hour_bar_number(value: datetime) -> int:
+    return int(_utc(value).timestamp() // (4 * 60 * 60)) + 1
 
 
 def _completed_bucket(
@@ -455,11 +674,23 @@ def evaluate_strategy(
     strategy: StrategyConfig,
     context: MarketContext,
     position: PositionSnapshot,
-    state: StrategyRuntimeState,
+    state: RuntimeState,
 ) -> StrategyEvaluation:
     policy = strategy.policy
+    if isinstance(policy, CostAwareRangeReversionPolicy):
+        if not isinstance(state, CostAwareRangeReversionRuntimeState):
+            raise ValueError("strategy_runtime_policy_mismatch")
+        return _evaluate_cost_aware_range_reversion(
+            strategy,
+            policy,
+            context,
+            position,
+            state,
+        )
     if policy is None or policy.kind != "regime_breakout_v2":
         raise ValueError("strategy_policy_unsupported")
+    if not isinstance(state, StrategyRuntimeState):
+        raise ValueError("strategy_runtime_policy_mismatch")
     if state.strategy_revision != strategy.revision:
         raise ValueError("strategy_runtime_revision_mismatch")
     if not context.decision_bars or not context.base_bars:
@@ -641,6 +872,241 @@ def evaluate_strategy(
     )
 
 
+def _evaluate_cost_aware_range_reversion(
+    strategy: StrategyConfig,
+    policy: CostAwareRangeReversionPolicy,
+    context: MarketContext,
+    position: PositionSnapshot,
+    state: CostAwareRangeReversionRuntimeState,
+) -> StrategyEvaluation:
+    if state.strategy_revision != strategy.revision:
+        raise ValueError("strategy_runtime_revision_mismatch")
+    if not context.decision_bars or not context.base_bars:
+        raise ValueError("strategy_market_context_incomplete")
+    if position.quantity > 0:
+        if (
+            state.entry_filled_at is None
+            or state.entry_decision_count is None
+            or state.entry_price <= 0
+            or state.atr_at_entry is None
+            or state.active_stop is None
+        ):
+            raise ValueError("strategy_runtime_position_state_mismatch")
+    elif any(
+        value is not None
+        for value in (
+            state.entry_filled_at,
+            state.entry_decision_count,
+            state.atr_at_entry,
+            state.active_stop,
+        )
+    ) or state.entry_price != 0:
+        raise ValueError("strategy_runtime_position_state_mismatch")
+
+    decision_bar = context.decision_bars[-1]
+    evaluated_at = context.base_bars[-1].timestamp
+    if (
+        state.last_decision_4h_bar_at is not None
+        and decision_bar.timestamp <= state.last_decision_4h_bar_at
+    ):
+        return _evaluation(
+            strategy=strategy,
+            context=context,
+            state_before=state,
+            state_after=state,
+            action="hold",
+            reason="no_new_complete_decision_bar",
+            decision_bar=decision_bar,
+            evaluated_at=evaluated_at,
+            breakout_event_id=state.armed_reversion_event_id,
+            atr_value=None,
+            active_stop=state.active_stop,
+            gates={},
+        )
+
+    elapsed_decisions = 1
+    if state.last_decision_4h_bar_at is not None:
+        elapsed_decisions = max(
+            1,
+            int(
+                (decision_bar.timestamp - state.last_decision_4h_bar_at).total_seconds()
+                // (4 * 60 * 60)
+            ),
+        )
+    next_count = state.decision_count + elapsed_decisions
+    closes = [bar.close for bar in context.decision_bars]
+    previous_score = _population_z_score(
+        closes[:-1],
+        policy.reversion.z_score_window,
+    )
+    previous_z = previous_score[1] if previous_score is not None else None
+    z_score = context.z_score_value
+    z_mean = context.z_score_mean_value
+    range_ready = context.fast_ema_value is not None and context.slow_ema_value is not None
+    range_open = bool(
+        range_ready
+        and context.slow_ema_value
+        and abs(context.fast_ema_value / context.slow_ema_value - 1)
+        <= policy.range_regime.maximum_separation_pct
+    )
+    atr_value = (
+        context.atr_value
+        if context.atr_value is not None
+        else _wilder_atr(list(context.decision_bars), policy.atr.window)
+    )
+    atr_ready = atr_value is not None
+    z_score_ready = z_score is not None and z_mean is not None and previous_z is not None
+    below_threshold = z_score is not None and z_score <= policy.reversion.entry_z_threshold
+    prior_below_threshold = state.reversion_condition_active
+    if elapsed_decisions > 1:
+        prior_below_threshold = (
+            previous_z is not None
+            and previous_z <= policy.reversion.entry_z_threshold
+        )
+    breach_event = below_threshold and not prior_below_threshold
+    breach_event_id = (
+        canonical_sha256(
+            {
+                "strategyRevision": strategy.revision,
+                "decisionBarAt": decision_bar.timestamp.isoformat(),
+                "zScore": z_score,
+                "entryZThreshold": policy.reversion.entry_z_threshold,
+            }
+        )[:20]
+        if breach_event
+        else None
+    )
+    cooldown_complete = next_count >= state.cooldown_until_decision_count
+    armed_event_id = state.armed_reversion_event_id
+    armed_at = state.armed_at_decision_count
+    if armed_event_id is not None and armed_at is not None:
+        event_age = next_count - armed_at
+        if not range_open or event_age > policy.reversion.recovery_window_bars:
+            armed_event_id = None
+            armed_at = None
+    else:
+        event_age = None
+    expiring_event_id = (
+        armed_event_id
+        if event_age is not None
+        and event_age >= policy.reversion.recovery_window_bars
+        else None
+    )
+
+    state_after = replace(
+        state,
+        last_decision_4h_bar_at=decision_bar.timestamp,
+        decision_count=next_count,
+        reversion_condition_active=below_threshold,
+        armed_reversion_event_id=armed_event_id,
+        armed_at_decision_count=armed_at,
+    )
+    action: Literal["hold", "buy", "sell"] = "hold"
+    reason = "conditions_not_met"
+    expected_distance = (
+        (z_mean - decision_bar.close) / decision_bar.close
+        if z_mean is not None and decision_bar.close > 0
+        else None
+    )
+    close_rising = len(closes) > 1 and decision_bar.close > closes[-2]
+    z_score_rising = z_score is not None and previous_z is not None and z_score > previous_z
+    negative_z_score = z_score is not None and z_score < 0
+    expected_distance_ready = (
+        expected_distance is not None
+        and expected_distance >= policy.reversion.minimum_expected_distance_pct
+    )
+    recovery = bool(
+        armed_event_id is not None
+        and event_age is not None
+        and 1 <= event_age <= policy.reversion.recovery_window_bars
+        and close_rising
+        and z_score_rising
+        and negative_z_score
+        and expected_distance_ready
+        and range_open
+    )
+
+    if position.quantity > 0:
+        bars_held = (
+            next_count - state.entry_decision_count
+            if state.entry_decision_count is not None
+            else 0
+        )
+        if state.active_stop is not None and decision_bar.low <= state.active_stop:
+            action = "sell"
+            reason = "atr_stop"
+        elif z_score is not None and z_score >= policy.exit.z_score_threshold:
+            action = "sell"
+            reason = "z_score_mean_reached"
+        elif policy.exit.exit_on_range_close and not range_open:
+            action = "sell"
+            reason = "range_regime_closed"
+        elif bars_held >= policy.holding.max_bars:
+            action = "sell"
+            reason = "maximum_holding_bars"
+        else:
+            reason = "position_open"
+    elif not all((range_ready, z_score_ready, atr_ready)):
+        reason = "indicator_warmup"
+    elif recovery and cooldown_complete:
+        action = "buy"
+        reason = "range_reversion_recovery"
+    elif breach_event and range_open:
+        armed_event_id = breach_event_id
+        armed_at = next_count
+        state_after = replace(
+            state_after,
+            armed_reversion_event_id=armed_event_id,
+            armed_at_decision_count=armed_at,
+        )
+        reason = "reversion_event_armed"
+    elif not cooldown_complete:
+        reason = "cooldown_active"
+
+    if (
+        action != "buy"
+        and armed_event_id == expiring_event_id
+        and armed_event_id is not None
+        and event_age is not None
+        and event_age >= policy.reversion.recovery_window_bars
+    ):
+        armed_event_id = None
+        armed_at = None
+        state_after = replace(
+            state_after,
+            armed_reversion_event_id=None,
+            armed_at_decision_count=None,
+        )
+
+    gates = {
+        "rangeReady": range_ready,
+        "rangeOpen": range_open,
+        "zScoreReady": z_score_ready,
+        "atrReady": atr_ready,
+        "breachEvent": breach_event,
+        "recovery": recovery,
+        "closeRising": close_rising,
+        "zScoreRising": z_score_rising,
+        "negativeZScore": negative_z_score,
+        "expectedDistanceReady": expected_distance_ready,
+        "cooldownComplete": cooldown_complete,
+    }
+    return _evaluation(
+        strategy=strategy,
+        context=context,
+        state_before=state,
+        state_after=state_after,
+        action=action,
+        reason=reason,
+        decision_bar=decision_bar,
+        evaluated_at=evaluated_at,
+        breakout_event_id=armed_event_id or breach_event_id,
+        atr_value=atr_value,
+        active_stop=state.active_stop,
+        gates=gates,
+    )
+
+
 def apply_fill(
     strategy: StrategyConfig,
     evaluation: StrategyEvaluation,
@@ -648,11 +1114,38 @@ def apply_fill(
     side: Literal["buy", "sell"],
     price: float,
     filled_at: datetime,
-) -> StrategyRuntimeState:
+) -> RuntimeState:
     policy = strategy.policy
     if policy is None:
         raise ValueError("strategy_policy_required")
     state = evaluation.state_after
+    if isinstance(policy, CostAwareRangeReversionPolicy):
+        if not isinstance(state, CostAwareRangeReversionRuntimeState):
+            raise ValueError("strategy_runtime_policy_mismatch")
+        if side == "buy":
+            if evaluation.atr is None:
+                raise ValueError("strategy_entry_atr_required")
+            return replace(
+                state,
+                armed_reversion_event_id=None,
+                armed_at_decision_count=None,
+                entry_filled_at=filled_at,
+                entry_decision_count=state.decision_count,
+                entry_price=price,
+                atr_at_entry=evaluation.atr,
+                active_stop=price - policy.atr.initial_multiple * evaluation.atr,
+            )
+        return replace(
+            state,
+            entry_filled_at=None,
+            entry_decision_count=None,
+            entry_price=0.0,
+            atr_at_entry=None,
+            active_stop=None,
+            cooldown_until_decision_count=state.decision_count + policy.cooldown.bars,
+        )
+    if not isinstance(state, StrategyRuntimeState):
+        raise ValueError("strategy_runtime_policy_mismatch")
     if side == "buy":
         if evaluation.atr is None:
             raise ValueError("strategy_entry_atr_required")
@@ -741,6 +1234,31 @@ def _sma_at(values: list[float], window: int, index: int) -> float | None:
     return fmean(values[start : index + 1])
 
 
+def _seeded_ema(
+    values: list[float],
+    window: int,
+) -> float | None:
+    if len(values) < window:
+        return None
+    current = fmean(values[:window])
+    alpha = 2 / (window + 1)
+    for value in values[window:]:
+        current = alpha * value + (1 - alpha) * current
+    return current
+
+
+def _population_z_score(
+    values: list[float],
+    window: int,
+) -> tuple[float, float] | None:
+    if len(values) < window:
+        return None
+    sample = values[-window:]
+    mean = fmean(sample)
+    variance = fmean((value - mean) ** 2 for value in sample)
+    return mean, ((sample[-1] - mean) / math.sqrt(variance) if variance > 0 else 0.0)
+
+
 def _prior_high(bars: list[OHLCVBar], index: int, lookback: int) -> float | None:
     start = index - lookback
     if start < 0 or index <= 0 or index >= len(bars):
@@ -774,8 +1292,8 @@ def _evaluation(
     *,
     strategy: StrategyConfig,
     context: MarketContext,
-    state_before: StrategyRuntimeState,
-    state_after: StrategyRuntimeState,
+    state_before: RuntimeState,
+    state_after: RuntimeState,
     action: Literal["hold", "buy", "sell"],
     reason: str,
     decision_bar: OHLCVBar,
@@ -787,7 +1305,7 @@ def _evaluation(
 ) -> StrategyEvaluation:
     evaluation_id = canonical_sha256(
         {
-            "evaluatorVersion": "strategy-evaluator-v2",
+            "evaluatorVersion": _evaluator_version(strategy),
             "strategyRevision": strategy.revision,
             "contextHash": context.context_hash,
             "stateBeforeHash": state_before.state_hash,
@@ -810,9 +1328,24 @@ def _evaluation(
     )
 
 
-def _runtime_state_payload(state: StrategyRuntimeState) -> dict[str, Any]:
+def _evaluator_version(strategy: StrategyConfig) -> str:
+    if isinstance(strategy.policy, CostAwareRangeReversionPolicy):
+        return (
+            "cost-aware-range-reversion-evaluator-v1.1"
+            if strategy.policy.kind == "cost_aware_range_reversion_v1_1"
+            else "cost-aware-range-reversion-evaluator-v1"
+        )
+    return "strategy-evaluator-v2"
+
+
+def _runtime_state_payload(state: RuntimeState) -> dict[str, Any]:
     payload = asdict(state)
-    for key in ("last_decision_5m_bar_at", "entry_filled_at"):
+    timestamp_keys = (
+        ("last_decision_4h_bar_at", "entry_filled_at")
+        if isinstance(state, CostAwareRangeReversionRuntimeState)
+        else ("last_decision_5m_bar_at", "entry_filled_at")
+    )
+    for key in timestamp_keys:
         value = payload[key]
         payload[key] = value.isoformat() if isinstance(value, datetime) else None
     return payload

@@ -12,7 +12,12 @@ from uuid import uuid4
 
 from quant_core.ai_review_providers import AiReviewProviderRegistry
 from quant_core.audit_events import AuditEventStore, audit_event_record_to_payload
-from quant_core.backtest import BacktestEngine, strategy_conditions_met, strategy_required_bars
+from quant_core.backtest import (
+    BacktestEngine,
+    strategy_conditions_met,
+    strategy_required_bars,
+    strategy_required_fetch_bars,
+)
 from quant_core.canonical import (
     canonical_data_hash,
     canonical_sha256,
@@ -33,7 +38,7 @@ from quant_core.decision_contract import (
     strategy_evaluation_evidence_references,
     validate_order_intent_identity,
 )
-from quant_core.domain import OHLCVBar, StrategyConfig
+from quant_core.domain import CostAwareRangeReversionPolicy, OHLCVBar, StrategyConfig
 from quant_core.runs import ResearchRunAudit, ResearchRunStore
 from quant_core.sealed_datasets import (
     SEALED_DATASET_HASH_VERSION,
@@ -72,6 +77,7 @@ _UNRESOLVED_ORDER_STATES = {
     "partially_filled",
     "reconciliation_required",
 }
+_TERMINAL_ORDER_STATES = {"filled", "canceled", "expired", "rejected"}
 _LOCK = Lock()
 AUTO_STRATEGY_ID = "auto-pct-v1"
 AUTO_DECISION_PROMPT_TEMPLATE_VERSION = "aiqt-auto-decision-v1"
@@ -198,6 +204,8 @@ class AutoPaperTradingService:
         self._validated_strategy_production_drawdown: float | None = None
         self._validated_strategy_sealed_integrity: SealedDatasetIntegrity | None = None
         self._validated_strategy_promotion_key: tuple[str, str, str, str] | None = None
+        self._validated_forward_trial_key: str | None = None
+        self._validated_forward_trial_development_evidence: dict[str, Any] | None = None
 
     def reload_runtime(
         self,
@@ -306,6 +314,251 @@ class AutoPaperTradingService:
                 },
             }
 
+    def bind_forward_trial(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        required = {"strategyRevision", "sourceRunId", "operator", "confirmed"}
+        if set(payload) != required:
+            raise ValueError("forward_trial_binding_request_invalid")
+        revision = _required_forward_trial_text(
+            payload.get("strategyRevision"),
+            "forward_trial_strategy_revision_required",
+        )
+        source_run_id = _required_forward_trial_text(
+            payload.get("sourceRunId"),
+            "forward_trial_source_run_required",
+        )
+        operator = _required_forward_trial_text(
+            payload.get("operator"),
+            "forward_trial_operator_required",
+            maximum=80,
+        )
+        if payload.get("confirmed") is not True:
+            raise ValueError("forward_trial_confirmation_required")
+        with _LOCK:
+            state = self._load()
+            blocker = _forward_trial_binding_blocker(state)
+            if blocker is not None:
+                raise ValueError(blocker)
+            (
+                record,
+                strategy,
+                source_run,
+                sealed_integrity,
+                development_evidence,
+            ) = (
+                self._load_forward_trial_strategy(
+                    revision,
+                    source_run_id,
+                    read_sealed_bars=True,
+                )
+            )
+            binding_id = f"strategy-binding-{uuid4().hex[:12]}"
+            source_run_hash = _forward_trial_source_run_hash(source_run)
+            record_hash = _forward_trial_record_hash(record)
+            strategy_snapshot = strategy_config_to_payload(strategy)
+            next_state = dict(state)
+            next_state.update(
+                {
+                    "activeStrategyBindingId": binding_id,
+                    "activeStrategyBindingKind": "forward_trial",
+                    "activeStrategyRevision": record.revision,
+                    "activeStrategyName": record.name,
+                    "activeStrategyAuditRunId": None,
+                    "activeStrategyAuditHash": None,
+                    "activeStrategySourceRunId": source_run.run_id,
+                    "activeStrategySourceRunHash": source_run_hash,
+                    "activeStrategyRecordHash": record_hash,
+                    "activeStrategySealedIntegrity": _sealed_integrity_payload(
+                        sealed_integrity
+                    ),
+                    "activeStrategyDevelopmentEvidence": development_evidence,
+                    "activeStrategyPaperSessionId": state.get("paperSessionId"),
+                    "activeStrategyConfig": strategy_snapshot,
+                    "activeStrategyConfigHash": canonical_sha256(strategy_snapshot),
+                    "activeStrategyOperator": operator,
+                    "enabled": False,
+                    "executionMode": "paper",
+                    "status": "paused",
+                    "detail": (
+                        f"已绑定未验证 forward trial 策略 {record.name}；"
+                        "保持 Paper 暂停，需单独启动。"
+                    ),
+                }
+            )
+            _reset_strategy_decision_context(next_state)
+            sealed_dataset = source_run.data_snapshot.get("sealedDataset")
+            event = _event(
+                event_id=binding_id,
+                event_type="auto_trading_strategy_binding",
+                summary="Paper forward trial 策略已绑定",
+                detail=str(next_state["detail"]),
+                metadata={
+                    "bindingId": binding_id,
+                    "bindingKind": "forward_trial",
+                    "operator": operator,
+                    "strategyId": record.strategy_id,
+                    "strategyRevision": record.revision,
+                    "strategyName": record.name,
+                    "sourceRunId": source_run.run_id,
+                    "sourceRunHash": source_run_hash,
+                    "recordHash": record_hash,
+                    "sealedDatasetId": (
+                        sealed_dataset.get("datasetId")
+                        if isinstance(sealed_dataset, dict)
+                        else None
+                    ),
+                    "paperSessionId": state.get("paperSessionId"),
+                    "profitabilityStatus": "unverified_forward_trial",
+                    "developmentEvidence": development_evidence,
+                    "formalGatePassed": False,
+                    "paperOnly": True,
+                    "liveTradingAllowed": False,
+                    "orderSubmissionEnabled": False,
+                    "routeExecuted": False,
+                    "liveBlockedBoundary": True,
+                },
+            )
+            self._save(next_state, related_events=[event])
+            return self._payload(next_state)
+
+    def _load_forward_trial_strategy(
+        self,
+        revision: str,
+        source_run_id: str,
+        *,
+        expected_source_run_hash: str | None = None,
+        expected_record_hash: str | None = None,
+        expected_sealed_integrity: SealedDatasetIntegrity | None = None,
+        read_sealed_bars: bool,
+    ) -> tuple[
+        StrategyLibraryRecord,
+        StrategyConfig,
+        ResearchRunAudit,
+        SealedDatasetIntegrity,
+        dict[str, Any],
+    ]:
+        if (
+            self.strategy_store is None
+            or self.run_store is None
+            or self.sealed_dataset_store is None
+        ):
+            raise ValueError("forward_trial_binding_store_unavailable")
+        record = self.strategy_store.get(revision)
+        if record is None:
+            raise ValueError("forward_trial_strategy_not_found")
+        record_hash = _forward_trial_record_hash(record)
+        if expected_record_hash and record_hash != expected_record_hash:
+            raise ValueError("forward_trial_strategy_record_changed")
+        if (
+            record.status != "draft"
+            or record.audit_run_id is not None
+            or record.promotion_evidence is not None
+        ):
+            raise ValueError("forward_trial_strategy_must_be_draft")
+        strategy = strategy_config_from_payload(record.strategy_config)
+        _validate_library_strategy_record(record, strategy)
+        if (
+            strategy.version != 2
+            or not isinstance(strategy.policy, CostAwareRangeReversionPolicy)
+        ):
+            raise ValueError("forward_trial_cost_aware_policy_required")
+        if strategy.policy.kind != "cost_aware_range_reversion_v1_1":
+            raise ValueError("forward_trial_v11_policy_required")
+        # Canonical parsing already fixes every other cost-aware v1.1 parameter;
+        # ADR-0034 permits only the preregistered center candidate for this trial.
+        if strategy.policy.reversion.entry_z_threshold != -2.0:
+            raise ValueError("forward_trial_fixed_profile_required")
+        source_run = self.run_store.get(source_run_id)
+        if source_run is None:
+            raise ValueError("forward_trial_source_run_not_found")
+        if not _forward_trial_assumptions_are_exact(
+            source_run.backtest_assumptions
+        ):
+            raise ValueError("forward_trial_backtest_assumptions_required")
+        source_run_hash = _forward_trial_source_run_hash(source_run)
+        if expected_source_run_hash and source_run_hash != expected_source_run_hash:
+            raise ValueError("forward_trial_source_run_changed")
+        if (
+            source_run.market != record.market
+            or source_run.symbol != record.symbol
+            or source_run.timeframe != record.timeframe
+            or source_run.strategy_revision != record.revision
+            or source_run.execution_mode != "paper_only"
+            or not isinstance(source_run.strategy_config, dict)
+        ):
+            raise ValueError("forward_trial_source_run_mismatch")
+        source_strategy = strategy_config_from_payload(source_run.strategy_config)
+        if (
+            source_strategy.revision != record.revision
+            or canonical_sha256(strategy_config_to_payload(source_strategy))
+            != canonical_sha256(strategy_config_to_payload(strategy))
+        ):
+            raise ValueError("forward_trial_source_run_mismatch")
+        if (
+            source_run.data_quality.get("isComplete") is not True
+            or source_run.data_snapshot.get("isComplete") is not True
+            or source_run.data_snapshot.get("hashVersion")
+            != SEALED_DATASET_HASH_VERSION
+            or source_run.data_rows < strategy_required_bars(strategy)
+        ):
+            raise ValueError("forward_trial_source_run_incomplete")
+        _bars, snapshot_hash, sealed_integrity = (
+            self._validated_sealed_audit_replay_bars(
+                source_run,
+                read_bars=False,
+            )
+        )
+        if (
+            expected_sealed_integrity is not None
+            and sealed_integrity != expected_sealed_integrity
+        ):
+            raise ValueError("forward_trial_sealed_evidence_changed")
+        validation_key = canonical_sha256(
+            {
+                "strategyRevision": record.revision,
+                "recordHash": record_hash,
+                "sourceRunId": source_run.run_id,
+                "sourceRunHash": source_run_hash,
+                "sealedIntegrity": _sealed_integrity_payload(sealed_integrity),
+            }
+        )
+        development_evidence = self._validated_forward_trial_development_evidence
+        if (
+            read_sealed_bars
+            or self._validated_forward_trial_key != validation_key
+            or not isinstance(development_evidence, dict)
+        ):
+            replay_bars, verified_snapshot_hash, verified_integrity = (
+                self._validated_sealed_audit_replay_bars(
+                    source_run,
+                    read_bars=True,
+                )
+            )
+            if (
+                replay_bars is None
+                or verified_snapshot_hash != snapshot_hash
+                or verified_integrity != sealed_integrity
+            ):
+                raise ValueError("forward_trial_sealed_evidence_changed")
+            replay = _validate_strategy_backtest_evidence(
+                source_run,
+                strategy,
+                replay_bars,
+            )
+            development_evidence = _forward_trial_development_evidence(
+                source_run,
+                replay,
+                snapshot_hash=snapshot_hash,
+            )
+            self._validated_forward_trial_key = validation_key
+            self._validated_forward_trial_development_evidence = development_evidence
+        return (
+            record,
+            strategy,
+            source_run,
+            sealed_integrity,
+            development_evidence,
+        )
+
     def required_bar_count(self) -> int:
         state = self._load()
         try:
@@ -326,8 +579,7 @@ class AutoPaperTradingService:
                 strategy = self._frozen_active_strategy(state)
             except ValueError:
                 return 6
-        required = max(6, strategy_required_bars(strategy)) if strategy else 6
-        return required + 59 if strategy is not None and strategy.policy is not None else required
+        return max(6, strategy_required_fetch_bars(strategy)) if strategy else 6
 
     def reconcile_pending_order(self) -> dict[str, Any] | None:
         with _LOCK:
@@ -395,6 +647,21 @@ class AutoPaperTradingService:
     def configure(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         with _LOCK:
             state = self._load()
+            if (
+                state.get("activeStrategyBindingKind") == "forward_trial"
+                and payload.get("enabled") is True
+                and set(payload) != {"enabled"}
+            ):
+                raise ValueError("forward_trial_start_request_must_be_separate")
+            if state.get("activeStrategyBindingKind") == "forward_trial":
+                requested_mode = payload.get("executionMode", state["executionMode"])
+                if state["executionMode"] != "paper" or requested_mode != "paper":
+                    raise ValueError("forward_trial_binding_paper_only")
+                self._active_forward_trial_strategy(state)
+                if payload.get("enabled") is True and state.get("enabled") is not True:
+                    blocker = _forward_trial_binding_blocker(state)
+                    if blocker is not None:
+                        raise ValueError(blocker)
             next_state = dict(state)
             reset_confirmed = payload.get("paperAccountResetConfirmed", False)
             if not isinstance(reset_confirmed, bool):
@@ -689,10 +956,17 @@ class AutoPaperTradingService:
             next_state.update(
                 {
                     "activeStrategyBindingId": binding_id,
+                    "activeStrategyBindingKind": "library",
                     "activeStrategyRevision": record.revision,
                     "activeStrategyName": record.name,
                     "activeStrategyAuditRunId": record.audit_run_id,
                     "activeStrategyAuditHash": audit_hash,
+                    "activeStrategySourceRunId": None,
+                    "activeStrategySourceRunHash": None,
+                    "activeStrategyRecordHash": None,
+                    "activeStrategySealedIntegrity": None,
+                    "activeStrategyDevelopmentEvidence": None,
+                    "activeStrategyPaperSessionId": None,
                     "activeStrategyConfig": strategy_snapshot,
                     "activeStrategyConfigHash": canonical_sha256(strategy_snapshot),
                     "activeStrategyOperator": operator,
@@ -742,10 +1016,17 @@ class AutoPaperTradingService:
             next_state.update(
                 {
                     "activeStrategyBindingId": None,
+                    "activeStrategyBindingKind": None,
                     "activeStrategyRevision": None,
                     "activeStrategyName": None,
                     "activeStrategyAuditRunId": None,
                     "activeStrategyAuditHash": None,
+                    "activeStrategySourceRunId": None,
+                    "activeStrategySourceRunHash": None,
+                    "activeStrategyRecordHash": None,
+                    "activeStrategySealedIntegrity": None,
+                    "activeStrategyDevelopmentEvidence": None,
+                    "activeStrategyPaperSessionId": None,
                     "activeStrategyConfig": None,
                     "activeStrategyConfigHash": None,
                     "activeStrategyOperator": operator,
@@ -1184,6 +1465,8 @@ class AutoPaperTradingService:
         revision = str(state.get("activeStrategyRevision") or "").strip()
         if not revision:
             return None
+        if state.get("activeStrategyBindingKind") == "forward_trial":
+            return self._active_forward_trial_strategy(state)
         audit_run_id = str(state.get("activeStrategyAuditRunId") or "").strip()
         audit_hash = str(state.get("activeStrategyAuditHash") or "").strip()
         if not audit_run_id or not audit_hash:
@@ -1193,6 +1476,51 @@ class AutoPaperTradingService:
             expected_audit_run_id=audit_run_id,
             expected_audit_hash=audit_hash,
         )
+        return strategy
+
+    def _active_forward_trial_strategy(
+        self,
+        state: Mapping[str, Any],
+    ) -> StrategyConfig:
+        if (
+            not isinstance(state.get("activeStrategyPaperSessionId"), str)
+            or state.get("activeStrategyPaperSessionId")
+            != state.get("paperSessionId")
+        ):
+            raise ValueError(
+                "forward_trial_binding_requires_clean_ten_usdt_ledger"
+            )
+        revision = _required_forward_trial_text(
+            state.get("activeStrategyRevision"),
+            "forward_trial_binding_identity_missing",
+        )
+        source_run_id = _required_forward_trial_text(
+            state.get("activeStrategySourceRunId"),
+            "forward_trial_binding_identity_missing",
+        )
+        source_run_hash = _required_forward_trial_text(
+            state.get("activeStrategySourceRunHash"),
+            "forward_trial_binding_identity_missing",
+        )
+        record_hash = _required_forward_trial_text(
+            state.get("activeStrategyRecordHash"),
+            "forward_trial_binding_identity_missing",
+        )
+        sealed_integrity = _sealed_integrity_from_payload(
+            state.get("activeStrategySealedIntegrity")
+        )
+        _record, strategy, _source_run, _integrity, development_evidence = (
+            self._load_forward_trial_strategy(
+                revision,
+                source_run_id,
+                expected_source_run_hash=source_run_hash,
+                expected_record_hash=record_hash,
+                expected_sealed_integrity=sealed_integrity,
+                read_sealed_bars=False,
+            )
+        )
+        if development_evidence != state.get("activeStrategyDevelopmentEvidence"):
+            raise ValueError("forward_trial_development_evidence_changed")
         return strategy
 
     def _frozen_active_strategy(
@@ -1227,6 +1555,15 @@ class AutoPaperTradingService:
             reconciled = self._reconcile_pending_order(state)
             if reconciled is not None:
                 return reconciled
+            if (
+                state.get("activeStrategyBindingKind") == "forward_trial"
+                and state["executionMode"] != "paper"
+            ):
+                return self._finish(
+                    state,
+                    status="risk_paused",
+                    detail="forward_trial_binding_paper_only",
+                )
             active_strategy_config = state.get("activeStrategyConfig")
             if (
                 state["executionMode"] != "paper"
@@ -1597,9 +1934,13 @@ class AutoPaperTradingService:
                         atr_value=policy_evaluation.atr or 0.0,
                         fee_rate=FEE_RATE,
                         slippage_rate=(
-                            0.0
-                            if state["executionMode"] == "paper"
-                            else PRODUCTION_REPLAY_SLIPPAGE_RATE
+                            PRODUCTION_REPLAY_SLIPPAGE_RATE
+                            if state["executionMode"] != "paper"
+                            or isinstance(
+                                active_strategy.policy,
+                                CostAwareRangeReversionPolicy,
+                            )
+                            else 0.0
                         ),
                     )
                     effective_order_notional = (
@@ -1664,6 +2005,25 @@ class AutoPaperTradingService:
                 strategy_evaluation_identity=(
                     _strategy_evaluation_identity(policy_evaluation)
                     if policy_evaluation is not None
+                    else None
+                ),
+                signal_timeframe=(
+                    active_strategy.policy.decision_timeframe
+                    if active_strategy is not None
+                    and isinstance(
+                        active_strategy.policy,
+                        CostAwareRangeReversionPolicy,
+                    )
+                    else None
+                ),
+                evaluated_bar_at=(
+                    policy_evaluation.decision_bar_at.isoformat()
+                    if policy_evaluation is not None
+                    and active_strategy is not None
+                    and isinstance(
+                        active_strategy.policy,
+                        CostAwareRangeReversionPolicy,
+                    )
                     else None
                 ),
             )
@@ -2041,13 +2401,29 @@ class AutoPaperTradingService:
                 status="evaluation_error",
                 detail="strategy_evaluation_order_side_mismatch",
             )
-        price = float(fill_bar.open)
-        if not math.isfinite(price) or price <= 0:
+        raw_open_price = float(fill_bar.open)
+        if not math.isfinite(raw_open_price) or raw_open_price <= 0:
             return self._finish(
                 state,
                 status="data_blocked",
                 detail="下一根已完成 K 线开盘价无效。",
             )
+        paper_slippage_rate = (
+            PRODUCTION_REPLAY_SLIPPAGE_RATE
+            if policy_strategy is not None
+            and isinstance(
+                policy_strategy.policy,
+                CostAwareRangeReversionPolicy,
+            )
+            else 0.0
+        )
+        price = raw_open_price * (
+            1 + paper_slippage_rate
+            if side == "buy"
+            else 1 - paper_slippage_rate
+            if side == "sell"
+            else 1
+        )
         quantity = float(order_intent["quantity"])
         sizing_error = None
         if policy_strategy is not None and policy_evaluation is not None and side == "buy":
@@ -2058,7 +2434,7 @@ class AutoPaperTradingService:
                 execution_price=price,
                 atr_value=policy_evaluation.atr or 0.0,
                 fee_rate=FEE_RATE,
-                slippage_rate=0.0,
+                slippage_rate=paper_slippage_rate,
             )
             quantity = math.floor(
                 (min(sizing.quantity, float(order_intent["quantity"])) + 1e-12)
@@ -2161,7 +2537,11 @@ class AutoPaperTradingService:
             {
                 "signalBarAt": pending.get("signalBarAt"),
                 "fillBarAt": fill_bar.timestamp.isoformat(),
-                "fillPriceSource": "next_completed_bar_open",
+                "fillPriceSource": (
+                    "next_completed_bar_open_with_10bps_slippage"
+                    if paper_slippage_rate
+                    else "next_completed_bar_open"
+                ),
             }
         )
         state["lastOrderResult"] = build_order_result(
@@ -2459,6 +2839,11 @@ class AutoPaperTradingService:
         trade_intent: dict[str, Any],
     ) -> dict[str, Any] | None:
         mode = str(state["executionMode"])
+        if (
+            state.get("activeStrategyBindingKind") == "forward_trial"
+            and mode != "paper"
+        ):
+            raise ValueError("forward_trial_binding_paper_only")
         if mode == "paper":
             return None
         side = str(order_intent["side"])
@@ -2574,6 +2959,8 @@ class AutoPaperTradingService:
         order_intent: dict[str, Any],
     ) -> dict[str, Any]:
         mode = str(state["executionMode"])
+        if state.get("activeStrategyBindingKind") == "forward_trial":
+            raise ValueError("forward_trial_binding_paper_only")
         order = {
             "symbol": order_intent["symbol"],
             "side": order_intent["side"],
@@ -3368,6 +3755,7 @@ class AutoPaperTradingService:
         mode = str(state["executionMode"])
         testnet = mode == "testnet"
         live = mode == "live"
+        forward_trial = state.get("activeStrategyBindingKind") == "forward_trial"
         kill_switch = self.sandbox.kill_switch() if self.sandbox is not None else None
         try:
             live_status = (
@@ -3390,7 +3778,8 @@ class AutoPaperTradingService:
                 "triggered": True,
             }
         live_allowed = bool(
-            live
+            not forward_trial
+            and live
             and state["enabled"]
             and state.get("liveConfirmed") is True
             and state.get("liveIpRestricted") is True
@@ -3411,9 +3800,12 @@ class AutoPaperTradingService:
             "history": history,
             "paperOnly": mode == "paper",
             "sandboxOnly": testnet,
-            "sandboxOrderSubmissionEnabled": testnet and state["enabled"],
+            "sandboxOrderSubmissionEnabled": (
+                not forward_trial and testnet and state["enabled"]
+            ),
             "sandboxRouteExecuted": bool(
-                testnet
+                not forward_trial
+                and testnet
                 and isinstance(state.get("lastTrade"), dict)
                 and state["lastTrade"].get("executionMode") == "testnet"
             ),
@@ -3497,6 +3889,12 @@ class AutoPaperTradingService:
     def _strategy_binding_payload(self, state: Mapping[str, Any]) -> dict[str, Any]:
         blocker = _strategy_switch_blocker(state)
         revision = str(state.get("activeStrategyRevision") or "").strip()
+        if state.get("activeStrategyBindingKind") == "forward_trial":
+            return self._forward_trial_binding_payload(
+                state,
+                revision=revision,
+                blocker=blocker,
+            )
         if not revision:
             return {
                 "kind": "builtin",
@@ -3597,6 +3995,97 @@ class AutoPaperTradingService:
             ),
         }
 
+    def _forward_trial_binding_payload(
+        self,
+        state: Mapping[str, Any],
+        *,
+        revision: str,
+        blocker: str | None,
+    ) -> dict[str, Any]:
+        source_run_id = str(state.get("activeStrategySourceRunId") or "").strip()
+        development_evidence = state.get("activeStrategyDevelopmentEvidence")
+        try:
+            if not revision or not source_run_id:
+                raise ValueError("forward_trial_binding_identity_missing")
+            source_run_hash = _required_forward_trial_text(
+                state.get("activeStrategySourceRunHash"),
+                "forward_trial_binding_identity_missing",
+            )
+            record_hash = _required_forward_trial_text(
+                state.get("activeStrategyRecordHash"),
+                "forward_trial_binding_identity_missing",
+            )
+            sealed_integrity = _sealed_integrity_from_payload(
+                state.get("activeStrategySealedIntegrity")
+            )
+            record, strategy, _source_run, _integrity, verified_evidence = (
+                self._load_forward_trial_strategy(
+                    revision,
+                    source_run_id,
+                    expected_source_run_hash=source_run_hash,
+                    expected_record_hash=record_hash,
+                    expected_sealed_integrity=sealed_integrity,
+                    read_sealed_bars=False,
+                )
+            )
+            if verified_evidence != development_evidence:
+                raise ValueError("forward_trial_development_evidence_changed")
+            development_evidence = verified_evidence
+            if (
+                not isinstance(state.get("activeStrategyPaperSessionId"), str)
+                or state.get("activeStrategyPaperSessionId")
+                != state.get("paperSessionId")
+            ):
+                raise ValueError(
+                    "forward_trial_binding_requires_clean_ten_usdt_ledger"
+                )
+            if state.get("executionMode") != "paper":
+                raise ValueError("forward_trial_binding_paper_only")
+            status = "ready"
+            detail = (
+                "当前策略仅用于未验证 Paper forward trial；"
+                "它不具备 Testnet、Live 或盈利认证资格。"
+            )
+            strategy_id = record.strategy_id
+            name = record.name
+            market = strategy.market
+            symbol = strategy.symbols[0]
+            timeframe = strategy.timeframe
+        except ValueError as error:
+            status = "blocked"
+            detail = _strategy_binding_error_detail(str(error))
+            strategy_id = f"strategy-{revision}" if revision else ""
+            name = str(state.get("activeStrategyName") or revision)
+            market = state["market"]
+            symbol = state["symbol"]
+            timeframe = state["timeframe"]
+        return {
+            "kind": "forward_trial",
+            "bindingId": state.get("activeStrategyBindingId"),
+            "strategyId": strategy_id,
+            "revision": revision,
+            "name": name,
+            "auditRunId": None,
+            "sourceRunId": source_run_id or None,
+            "profitabilityStatus": "unverified_forward_trial",
+            "developmentEvidence": (
+                development_evidence
+                if isinstance(development_evidence, dict)
+                else None
+            ),
+            "formalGatePassed": False,
+            "paperOnly": True,
+            "paperSessionId": state.get("activeStrategyPaperSessionId"),
+            "market": market,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "status": status,
+            "detail": detail,
+            "switchAllowed": blocker is None,
+            "switchBlockedReason": blocker,
+            "operator": str(state.get("activeStrategyOperator") or ""),
+        }
+
 
 def _strategy_audit_hash(audit: ResearchRunAudit) -> str:
     return canonical_sha256(
@@ -3615,6 +4104,154 @@ def _strategy_audit_hash(audit: ResearchRunAudit) -> str:
             "backtestEquityCurve": audit.backtest_equity_curve,
         }
     )
+
+
+def _forward_trial_record_hash(record: StrategyLibraryRecord) -> str:
+    return canonical_sha256(
+        {
+            "strategyId": record.strategy_id,
+            "createdAt": record.created_at.isoformat(),
+            "name": record.name,
+            "revision": record.revision,
+            "market": record.market,
+            "symbol": record.symbol,
+            "timeframe": record.timeframe,
+            "version": record.version,
+            "status": record.status,
+            "auditRunId": record.audit_run_id,
+            "strategyConfig": record.strategy_config,
+            "promotionEvidence": record.promotion_evidence,
+        }
+    )
+
+
+def _forward_trial_source_run_hash(source_run: ResearchRunAudit) -> str:
+    return canonical_sha256(
+        {
+            "auditHash": _strategy_audit_hash(source_run),
+            "strategyName": source_run.strategy_name,
+            "dataRows": source_run.data_rows,
+            "decisions": source_run.decisions,
+            "executionMode": source_run.execution_mode,
+            "aiReport": source_run.ai_report,
+            "dataQuality": source_run.data_quality,
+            "dataSnapshot": source_run.data_snapshot,
+            "backtestDiagnostics": source_run.backtest_diagnostics,
+            "researchNote": source_run.research_note,
+        }
+    )
+
+
+def _forward_trial_development_evidence(
+    source_run: ResearchRunAudit,
+    replay: Any,
+    *,
+    snapshot_hash: str,
+) -> dict[str, Any]:
+    metrics = replay.metrics
+    total_return_pct = float(metrics.total_return_pct)
+    maximum_drawdown_pct = float(metrics.max_drawdown_pct)
+    round_trip_count = int(metrics.round_trip_count)
+    profit_factor = float(metrics.profit_factor)
+    natural_round_trip_count = 0
+    entry_open = False
+    for trade in replay.trades:
+        if trade.side == "buy":
+            entry_open = True
+        elif trade.side == "sell" and entry_open:
+            if trade.reason != "end_of_backtest":
+                natural_round_trip_count += 1
+            entry_open = False
+    if (
+        not math.isfinite(total_return_pct)
+        or not math.isfinite(maximum_drawdown_pct)
+        or math.isnan(profit_factor)
+        or total_return_pct <= 0
+        or round_trip_count < 1
+        or natural_round_trip_count < 1
+        or maximum_drawdown_pct > 3
+    ):
+        raise ValueError("forward_trial_development_evidence_failed")
+    return {
+        "sourceRunId": source_run.run_id,
+        "dataSnapshotHash": snapshot_hash,
+        "totalReturnPct": total_return_pct,
+        "maxDrawdownPct": maximum_drawdown_pct,
+        "roundTripCount": round_trip_count,
+        "naturalRoundTripCount": natural_round_trip_count,
+        "profitFactor": None if math.isinf(profit_factor) else profit_factor,
+        "profitFactorInfinite": math.isinf(profit_factor),
+        "passed": True,
+    }
+
+
+def _forward_trial_assumptions_are_exact(value: Any) -> bool:
+    expected = {
+        "initialCash": 10.0,
+        "feeBps": 10.0,
+        "slippageBps": 10.0,
+    }
+    if not isinstance(value, Mapping) or set(value) != set(expected):
+        return False
+    for key, expected_value in expected.items():
+        observed = value.get(key)
+        if (
+            isinstance(observed, bool)
+            or not isinstance(observed, (int, float))
+            or not math.isfinite(float(observed))
+            or float(observed) != expected_value
+        ):
+            return False
+    return True
+
+
+def _sealed_integrity_payload(
+    integrity: SealedDatasetIntegrity,
+) -> dict[str, Any]:
+    return {
+        "datasetId": integrity.dataset_id,
+        "manifestToken": integrity.manifest_token,
+        "contentVersion": integrity.content_version,
+    }
+
+
+def _sealed_integrity_from_payload(value: Any) -> SealedDatasetIntegrity:
+    if not isinstance(value, Mapping) or set(value) != {
+        "datasetId",
+        "manifestToken",
+        "contentVersion",
+    }:
+        raise ValueError("forward_trial_sealed_evidence_missing")
+    content_version = value.get("contentVersion")
+    if (
+        not isinstance(value.get("datasetId"), str)
+        or not str(value["datasetId"]).strip()
+        or not isinstance(value.get("manifestToken"), str)
+        or not str(value["manifestToken"]).strip()
+        or isinstance(content_version, bool)
+        or not isinstance(content_version, int)
+        or content_version < 1
+    ):
+        raise ValueError("forward_trial_sealed_evidence_missing")
+    return SealedDatasetIntegrity(
+        dataset_id=str(value["datasetId"]),
+        manifest_token=str(value["manifestToken"]),
+        content_version=content_version,
+    )
+
+
+def _required_forward_trial_text(
+    value: Any,
+    error: str,
+    *,
+    maximum: int = 200,
+) -> str:
+    if not isinstance(value, str):
+        raise ValueError(error)
+    normalized = value.strip()
+    if not normalized or len(normalized) > maximum:
+        raise ValueError(error)
+    return normalized
 
 
 def _validate_library_strategy_record(
@@ -4009,10 +4646,17 @@ def _default_state() -> dict[str, Any]:
         "symbol": "BTC/USDT",
         "timeframe": "1m",
         "activeStrategyBindingId": None,
+        "activeStrategyBindingKind": None,
         "activeStrategyRevision": None,
         "activeStrategyName": None,
         "activeStrategyAuditRunId": None,
         "activeStrategyAuditHash": None,
+        "activeStrategySourceRunId": None,
+        "activeStrategySourceRunHash": None,
+        "activeStrategyRecordHash": None,
+        "activeStrategySealedIntegrity": None,
+        "activeStrategyDevelopmentEvidence": None,
+        "activeStrategyPaperSessionId": None,
         "activeStrategyConfig": None,
         "activeStrategyConfigHash": None,
         "activeStrategyOperator": "",
@@ -4125,13 +4769,22 @@ def _strategy_id(state: Mapping[str, Any]) -> str:
 
 
 def _strategy_evidence(state: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    evidence = {
         "strategyBindingId": state.get("activeStrategyBindingId"),
         "strategyId": _strategy_id(state),
         "strategyRevision": _strategy_revision(state),
         "auditRunId": state.get("activeStrategyAuditRunId"),
         "auditHash": state.get("activeStrategyAuditHash"),
     }
+    if state.get("activeStrategyBindingKind") == "forward_trial":
+        evidence.update(
+            {
+                "strategyBindingKind": "forward_trial",
+                "sourceRunId": state.get("activeStrategySourceRunId"),
+                "sourceRunHash": state.get("activeStrategySourceRunHash"),
+            }
+        )
+    return evidence
 
 
 def _strategy_evaluation_identity(
@@ -4166,7 +4819,65 @@ def _strategy_switch_blocker(state: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _forward_trial_binding_blocker(state: Mapping[str, Any]) -> str | None:
+    if state.get("executionMode") != "paper":
+        return "forward_trial_binding_requires_paper_mode"
+    if state.get("enabled") is True or state.get("status") != "paused":
+        return "forward_trial_binding_requires_paused_state"
+    position = state.get("position")
+    if isinstance(position, bool) or not isinstance(position, (int, float)):
+        return "forward_trial_binding_requires_flat_position"
+    if not math.isfinite(float(position)) or abs(float(position)) > 1e-12:
+        return "forward_trial_binding_requires_flat_position"
+    if state.get("pendingPaperOrder") is not None:
+        return "forward_trial_binding_requires_no_pending_order"
+    for key in ("lastTestnetOrder", "lastLiveOrder"):
+        order = state.get(key)
+        if order is not None and (
+            not isinstance(order, Mapping)
+            or order.get("state") not in _TERMINAL_ORDER_STATES
+        ):
+            return "forward_trial_binding_requires_no_pending_order"
+    for key in ("initialCash", "cash", "availableCash", "equity"):
+        value = state.get(key)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or not math.isclose(float(value), 10.0, rel_tol=0, abs_tol=1e-8)
+        ):
+            return "forward_trial_binding_requires_clean_ten_usdt_ledger"
+    realized_pnl = state.get("realizedPnl")
+    trade_count = state.get("tradeCount")
+    if (
+        isinstance(realized_pnl, bool)
+        or not isinstance(realized_pnl, (int, float))
+        or not math.isfinite(float(realized_pnl))
+        or not math.isclose(float(realized_pnl), 0.0, rel_tol=0, abs_tol=1e-8)
+        or isinstance(trade_count, bool)
+        or not isinstance(trade_count, int)
+        or trade_count != 0
+    ):
+        return "forward_trial_binding_requires_clean_ten_usdt_ledger"
+    return None
+
+
 def _strategy_binding_error_detail(code: str) -> str:
+    if code.startswith("forward_trial_"):
+        reason = {
+            "forward_trial_source_run_changed": "来源运行已变更",
+            "forward_trial_strategy_record_changed": "策略记录已变更",
+            "forward_trial_sealed_evidence_changed": "封存开发证据已变更",
+            "forward_trial_development_evidence_changed": "开发回放证据已变更",
+            "forward_trial_binding_requires_clean_ten_usdt_ledger": (
+                "绑定的 10 USDT Paper 账户会话已变更"
+            ),
+            "forward_trial_binding_paper_only": "运行模式不再是 Paper",
+        }.get(code, "绑定或证据校验失败")
+        return (
+            f"Paper forward trial {reason}；已阻断该试跑，"
+            "未授权任何 Testnet 或 Live 交易。"
+        )
     reason = {
         "strategy_binding_audit_run_changed": "绑定的审计运行已变更",
         "strategy_binding_audit_evidence_changed": "绑定的审计证据已变更",

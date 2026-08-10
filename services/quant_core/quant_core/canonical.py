@@ -7,15 +7,25 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
 from quant_core.domain import (
+    COST_AWARE_RANGE_REVERSION_POLICY_KINDS,
     AtrExitRule,
     BreakoutRule,
     Condition,
+    CostAwareRangeReversionKind,
+    CostAwareRangeReversionPolicy,
     CooldownRule,
+    DecisionTimeframe,
+    FixedAtrStopRule,
     HoldingRule,
     Market,
+    MaximumHoldingRule,
     OHLCVBar,
+    RangeRegimeRule,
     RegimeBreakoutPolicy,
     RegimeFilter,
+    ReversionCooldownRule,
+    ReversionEntryRule,
+    ReversionExitRule,
     RiskRules,
     StrategyConfig,
     Timeframe,
@@ -389,7 +399,11 @@ def strategy_config_to_payload(strategy: StrategyConfig) -> dict[str, object]:
         "risk": risk,
     }
     if strategy.policy is not None:
-        payload["policy"] = _regime_breakout_policy_payload(strategy.policy)
+        payload["policy"] = (
+            _cost_aware_range_reversion_policy_payload(strategy.policy)
+            if isinstance(strategy.policy, CostAwareRangeReversionPolicy)
+            else _regime_breakout_policy_payload(strategy.policy)
+        )
     return payload
 
 
@@ -457,7 +471,13 @@ def strategy_config_from_payload(payload: dict[str, Any]) -> StrategyConfig:
     else:
         entry_conditions = _empty_conditions(payload.get("entryConditions", payload.get("entry_conditions", [])))
         exit_conditions = _empty_conditions(payload.get("exitConditions", payload.get("exit_conditions", [])))
-        policy = _regime_breakout_policy_from_payload(payload.get("policy"))
+        policy_payload = payload.get("policy")
+        policy = (
+            _cost_aware_range_reversion_policy_from_payload(policy_payload)
+            if isinstance(policy_payload, dict)
+            and policy_payload.get("kind") in COST_AWARE_RANGE_REVERSION_POLICY_KINDS
+            else _regime_breakout_policy_from_payload(policy_payload)
+        )
 
     strategy = StrategyConfig(
         name=str(payload.get("name") or "Imported strategy"),
@@ -489,7 +509,10 @@ def strategy_config_from_payload(payload: dict[str, Any]) -> StrategyConfig:
         policy=policy,
     )
     if version == 2:
-        _validate_regime_breakout_strategy(strategy)
+        if isinstance(strategy.policy, CostAwareRangeReversionPolicy):
+            _validate_cost_aware_range_reversion_strategy(strategy)
+        else:
+            _validate_regime_breakout_strategy(strategy)
     return strategy
 
 
@@ -535,6 +558,247 @@ def _regime_breakout_policy_payload(policy: RegimeBreakoutPolicy) -> dict[str, o
             "requiresNewBreakoutEvent": policy.cooldown.requires_new_breakout_event,
         },
     }
+
+
+def _cost_aware_range_reversion_policy_payload(
+    policy: CostAwareRangeReversionPolicy,
+) -> dict[str, object]:
+    return {
+        "kind": policy.kind,
+        "decisionTimeframe": policy.decision_timeframe,
+        "completedBarsOnly": policy.completed_bars_only,
+        "fillTiming": policy.fill_timing,
+        "rangeRegime": {
+            "fastEmaWindow": policy.range_regime.fast_ema_window,
+            "slowEmaWindow": policy.range_regime.slow_ema_window,
+            "indicatorAnchorBars": policy.range_regime.indicator_anchor_bars,
+            "maximumSeparationPct": policy.range_regime.maximum_separation_pct,
+            "emaSeed": policy.range_regime.ema_seed,
+            "emaAlpha": policy.range_regime.ema_alpha,
+        },
+        "reversion": {
+            "zScoreWindow": policy.reversion.z_score_window,
+            "standardDeviation": policy.reversion.standard_deviation,
+            "entryZThreshold": policy.reversion.entry_z_threshold,
+            "recoveryWindowBars": policy.reversion.recovery_window_bars,
+            "minimumExpectedDistancePct": policy.reversion.minimum_expected_distance_pct,
+            "requireCloseRising": policy.reversion.require_close_rising,
+            "requireZScoreRising": policy.reversion.require_z_score_rising,
+            "requireNegativeZScore": policy.reversion.require_negative_z_score,
+            "oneShotPerEvent": policy.reversion.one_shot_per_event,
+        },
+        "atr": {
+            "window": policy.atr.window,
+            "smoothing": policy.atr.smoothing,
+            "initialMultiple": policy.atr.initial_multiple,
+            "fixedFromEntry": policy.atr.fixed_from_entry,
+            "neverLoosen": policy.atr.never_loosen,
+        },
+        "exit": {
+            "zScoreThreshold": policy.exit.z_score_threshold,
+            "exitOnRangeClose": policy.exit.exit_on_range_close,
+        },
+        "holding": {"maxBars": policy.holding.max_bars},
+        "cooldown": {
+            "bars": policy.cooldown.bars,
+            "startsAfter": policy.cooldown.starts_after,
+            "requiresNewReversionEvent": policy.cooldown.requires_new_reversion_event,
+        },
+    }
+
+
+def _cost_aware_range_reversion_policy_from_payload(
+    value: Any,
+) -> CostAwareRangeReversionPolicy:
+    policy = _object_with_keys(
+        value,
+        "cost_aware_range_reversion_v1_policy_invalid",
+        {
+            "kind",
+            "decisionTimeframe",
+            "completedBarsOnly",
+            "fillTiming",
+            "rangeRegime",
+            "reversion",
+            "atr",
+            "exit",
+            "holding",
+            "cooldown",
+        },
+    )
+    range_regime = _object_with_keys(
+        policy["rangeRegime"],
+        "cost_aware_range_reversion_v1_range_regime_invalid",
+        {
+            "fastEmaWindow",
+            "slowEmaWindow",
+            "indicatorAnchorBars",
+            "maximumSeparationPct",
+            "emaSeed",
+            "emaAlpha",
+        },
+    )
+    reversion = _object_with_keys(
+        policy["reversion"],
+        "cost_aware_range_reversion_v1_reversion_invalid",
+        {
+            "zScoreWindow",
+            "standardDeviation",
+            "entryZThreshold",
+            "recoveryWindowBars",
+            "minimumExpectedDistancePct",
+            "requireCloseRising",
+            "requireZScoreRising",
+            "requireNegativeZScore",
+            "oneShotPerEvent",
+        },
+    )
+    atr = _object_with_keys(
+        policy["atr"],
+        "cost_aware_range_reversion_v1_atr_invalid",
+        {"window", "smoothing", "initialMultiple", "fixedFromEntry", "neverLoosen"},
+    )
+    exit_rule = _object_with_keys(
+        policy["exit"],
+        "cost_aware_range_reversion_v1_exit_invalid",
+        {"zScoreThreshold", "exitOnRangeClose"},
+    )
+    holding = _object_with_keys(
+        policy["holding"],
+        "cost_aware_range_reversion_v1_holding_invalid",
+        {"maxBars"},
+    )
+    cooldown = _object_with_keys(
+        policy["cooldown"],
+        "cost_aware_range_reversion_v1_cooldown_invalid",
+        {"bars", "startsAfter", "requiresNewReversionEvent"},
+    )
+    return CostAwareRangeReversionPolicy(
+        kind=cast(CostAwareRangeReversionKind, str(policy["kind"])),
+        decision_timeframe=cast(DecisionTimeframe, str(policy["decisionTimeframe"])),
+        completed_bars_only=_strict_bool(
+            policy["completedBarsOnly"],
+            "cost_aware_range_reversion_v1_policy_invalid",
+        ),
+        fill_timing=str(policy["fillTiming"]),
+        range_regime=RangeRegimeRule(
+            fast_ema_window=_bounded_int(
+                range_regime["fastEmaWindow"],
+                minimum=2,
+                maximum=500,
+                error_code="cost_aware_range_reversion_v1_range_regime_invalid",
+            ),
+            slow_ema_window=_bounded_int(
+                range_regime["slowEmaWindow"],
+                minimum=2,
+                maximum=500,
+                error_code="cost_aware_range_reversion_v1_range_regime_invalid",
+            ),
+            indicator_anchor_bars=_bounded_int(
+                range_regime["indicatorAnchorBars"],
+                minimum=2,
+                maximum=10_000,
+                error_code="cost_aware_range_reversion_v1_range_regime_invalid",
+            ),
+            maximum_separation_pct=_positive_float(
+                range_regime["maximumSeparationPct"],
+                "cost_aware_range_reversion_v1_range_regime_invalid",
+            ),
+            ema_seed=str(range_regime["emaSeed"]),
+            ema_alpha=str(range_regime["emaAlpha"]),
+        ),
+        reversion=ReversionEntryRule(
+            z_score_window=_bounded_int(
+                reversion["zScoreWindow"],
+                minimum=2,
+                maximum=500,
+                error_code="cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+            standard_deviation=str(reversion["standardDeviation"]),
+            entry_z_threshold=_finite_number(
+                reversion["entryZThreshold"],
+                "cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+            recovery_window_bars=_bounded_int(
+                reversion["recoveryWindowBars"],
+                minimum=1,
+                maximum=10_000,
+                error_code="cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+            minimum_expected_distance_pct=_positive_float(
+                reversion["minimumExpectedDistancePct"],
+                "cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+            require_close_rising=_strict_bool(
+                reversion["requireCloseRising"],
+                "cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+            require_z_score_rising=_strict_bool(
+                reversion["requireZScoreRising"],
+                "cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+            require_negative_z_score=_strict_bool(
+                reversion["requireNegativeZScore"],
+                "cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+            one_shot_per_event=_strict_bool(
+                reversion["oneShotPerEvent"],
+                "cost_aware_range_reversion_v1_reversion_invalid",
+            ),
+        ),
+        atr=FixedAtrStopRule(
+            window=_bounded_int(
+                atr["window"],
+                minimum=2,
+                maximum=500,
+                error_code="cost_aware_range_reversion_v1_atr_invalid",
+            ),
+            smoothing=str(atr["smoothing"]),
+            initial_multiple=_positive_float(
+                atr["initialMultiple"],
+                "cost_aware_range_reversion_v1_atr_invalid",
+            ),
+            fixed_from_entry=_strict_bool(
+                atr["fixedFromEntry"],
+                "cost_aware_range_reversion_v1_atr_invalid",
+            ),
+            never_loosen=_strict_bool(
+                atr["neverLoosen"],
+                "cost_aware_range_reversion_v1_atr_invalid",
+            ),
+        ),
+        exit=ReversionExitRule(
+            z_score_threshold=_finite_number(
+                exit_rule["zScoreThreshold"],
+                "cost_aware_range_reversion_v1_exit_invalid",
+            ),
+            exit_on_range_close=_strict_bool(
+                exit_rule["exitOnRangeClose"],
+                "cost_aware_range_reversion_v1_exit_invalid",
+            ),
+        ),
+        holding=MaximumHoldingRule(
+            max_bars=_bounded_int(
+                holding["maxBars"],
+                minimum=1,
+                maximum=10_000,
+                error_code="cost_aware_range_reversion_v1_holding_invalid",
+            )
+        ),
+        cooldown=ReversionCooldownRule(
+            bars=_bounded_int(
+                cooldown["bars"],
+                minimum=0,
+                maximum=10_000,
+                error_code="cost_aware_range_reversion_v1_cooldown_invalid",
+            ),
+            starts_after=str(cooldown["startsAfter"]),
+            requires_new_reversion_event=_strict_bool(
+                cooldown["requiresNewReversionEvent"],
+                "cost_aware_range_reversion_v1_cooldown_invalid",
+            ),
+        ),
+    )
 
 
 def _regime_breakout_policy_from_payload(value: Any) -> RegimeBreakoutPolicy:
@@ -705,6 +969,85 @@ def _validate_regime_breakout_strategy(strategy: StrategyConfig) -> None:
         raise ValueError("regime_breakout_v2_risk_invalid")
     if risk.exit_notional_cap_quote is not None:
         raise ValueError("regime_breakout_v2_exit_cap_forbidden")
+
+
+def _validate_cost_aware_range_reversion_strategy(strategy: StrategyConfig) -> None:
+    policy = strategy.policy
+    if not isinstance(policy, CostAwareRangeReversionPolicy):
+        raise ValueError("cost_aware_range_reversion_v1_policy_required")
+    if (
+        strategy.market != "crypto"
+        or strategy.symbols != ["BTC/USDT"]
+        or strategy.timeframe != "1m"
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_context_unsupported")
+    if policy.kind not in COST_AWARE_RANGE_REVERSION_POLICY_KINDS:
+        raise ValueError("strategy_policy_kind_unsupported")
+    if (
+        policy.decision_timeframe != "4h"
+        or not policy.completed_bars_only
+        or policy.fill_timing != "next_completed_bar_open"
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_timing_invalid")
+    expected_anchor_bars = (
+        139 if policy.kind == "cost_aware_range_reversion_v1_1" else 42
+    )
+    if policy.range_regime != RangeRegimeRule(
+        fast_ema_window=6,
+        slow_ema_window=42,
+        indicator_anchor_bars=expected_anchor_bars,
+        maximum_separation_pct=0.01,
+        ema_seed="first_complete_window_sma",
+        ema_alpha="2/(window+1)",
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_range_regime_invalid")
+    reversion = policy.reversion
+    if (
+        reversion.z_score_window != 24
+        or reversion.standard_deviation != "population"
+        or reversion.entry_z_threshold not in {-2.5, -2.0, -1.5}
+        or reversion.recovery_window_bars != 3
+        or reversion.minimum_expected_distance_pct != 0.012
+        or not reversion.require_close_rising
+        or not reversion.require_z_score_rising
+        or not reversion.require_negative_z_score
+        or not reversion.one_shot_per_event
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_reversion_invalid")
+    if policy.atr != FixedAtrStopRule(
+        window=14,
+        smoothing="wilder",
+        initial_multiple=2.5,
+        fixed_from_entry=True,
+        never_loosen=True,
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_atr_invalid")
+    if policy.exit != ReversionExitRule(
+        z_score_threshold=0.0,
+        exit_on_range_close=True,
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_exit_invalid")
+    if policy.holding != MaximumHoldingRule(max_bars=18):
+        raise ValueError("cost_aware_range_reversion_v1_holding_invalid")
+    if policy.cooldown != ReversionCooldownRule(
+        bars=6,
+        starts_after="filled_exit",
+        requires_new_reversion_event=True,
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_cooldown_invalid")
+    risk = strategy.risk
+    if risk != RiskRules(
+        position_pct=0.6,
+        risk_budget_pct=0.015,
+        stop_loss_pct=None,
+        take_profit_pct=None,
+        max_drawdown_pct=0.03,
+        daily_loss_limit_pct=0.02,
+        max_trade_groups_per_hour=1,
+        max_entry_notional_quote=None,
+        exit_notional_cap_quote=None,
+    ):
+        raise ValueError("cost_aware_range_reversion_v1_risk_invalid")
 
 
 def _snapshot_timestamp(value: Any) -> datetime:

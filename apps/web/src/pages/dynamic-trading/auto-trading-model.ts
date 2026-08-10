@@ -29,7 +29,7 @@ export function autoTradingCycleCountdown(
 export function showBuiltInAutoTradingSignalControls(
   binding?: Pick<StrategyProductionBinding, "kind"> | null
 ) {
-  return binding?.kind !== "library";
+  return !binding || binding.kind === "builtin";
 }
 
 export function isAutoTradingSnapshot(payload: unknown): payload is AutoTradingSnapshot {
@@ -42,6 +42,9 @@ export function isAutoTradingSnapshot(payload: unknown): payload is AutoTradingS
   if (binding !== undefined && binding !== null && typeof binding !== "object") return false;
   if (!isAutoTradingEconomics(economics)) return false;
   const stateRecord = state as Record<string, unknown>;
+  const forwardTrial = binding !== undefined
+    && binding !== null
+    && (binding as Record<string, unknown>).kind === "forward_trial";
   const numericStateFields = [
     "runnerIntervalSeconds",
     "runnerCycleCount",
@@ -83,6 +86,23 @@ export function isAutoTradingSnapshot(payload: unknown): payload is AutoTradingS
       binding === undefined
       || binding === null
       || isStrategyProductionBindingPayload({ strategyBinding: binding })
+    )
+    && (
+      !forwardTrial
+      || (
+        stateRecord.executionMode === "paper"
+        && economics.executionMode === "paper"
+        && stateRecord.testnetConfirmed === false
+        && stateRecord.liveConfirmed === false
+        && snapshot.paperOnly === true
+        && snapshot.sandboxOnly === false
+        && snapshot.sandboxOrderSubmissionEnabled === false
+        && snapshot.sandboxRouteExecuted === false
+        && snapshot.liveTradingAllowed === false
+        && snapshot.orderSubmissionEnabled === false
+        && snapshot.routeExecuted === false
+        && snapshot.liveBlockedBoundary === true
+      )
     )
     && typeof snapshot.liveTradingAllowed === "boolean"
     && typeof snapshot.orderSubmissionEnabled === "boolean"

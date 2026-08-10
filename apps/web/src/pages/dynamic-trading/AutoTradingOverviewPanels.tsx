@@ -23,7 +23,6 @@ import {
   percentRate,
   providerLabel,
   riskDecisionLabel,
-  showBuiltInAutoTradingSignalControls,
   signedLedgerMoney,
   signedMoney,
   stringValue,
@@ -37,23 +36,25 @@ export function AutoTradingProductionStrategyOverview({
 }) {
   const binding = snapshot?.strategyBinding;
   const state = snapshot?.state;
-  const libraryStrategy = !showBuiltInAutoTradingSignalControls(binding);
+  const forwardTrial = binding?.kind === "forward_trial";
+  const libraryStrategy = binding?.kind === "library";
   const bindingBlocked = binding?.status === "blocked";
   const bindingUnavailable = Boolean(snapshot && !binding);
+  const overviewTitle = forwardTrial ? "Paper 前向试跑策略概览" : "生产策略概览";
   return (
     <section
-      aria-label="生产策略概览"
+      aria-label={overviewTitle}
       className={`execution-auto-paper-risk execution-auto-production-strategy${
         bindingBlocked ? " blocked" : bindingUnavailable ? " unavailable" : ""
       }`}
     >
       <header>
-        <strong>生产策略概览</strong>
+        <strong>{overviewTitle}</strong>
         <span>
           {bindingBlocked
             ? "策略证据阻断"
             : binding
-              ? libraryStrategy ? "已审计策略" : "内置策略"
+              ? forwardTrial ? "未验证 Paper 前向试跑" : libraryStrategy ? "已审计策略" : "内置策略"
               : snapshot ? "绑定证据未提供" : "正在读取"}
         </span>
       </header>
@@ -75,8 +76,10 @@ export function AutoTradingProductionStrategyOverview({
           <dd>{state ? `每 ${state.runnerIntervalSeconds} 秒` : "—"}</dd>
         </div>
         <div>
-          <dt>审计证据</dt>
-          <dd>{binding?.auditRunId ?? (binding ? "内置规则" : "—")}</dd>
+          <dt>{forwardTrial ? "开发证据" : "审计证据"}</dt>
+          <dd>{forwardTrial
+            ? binding.sourceRunId
+            : binding?.auditRunId ?? (binding ? "内置规则" : "—")}</dd>
         </div>
       </dl>
       <small>
@@ -86,7 +89,9 @@ export function AutoTradingProductionStrategyOverview({
       </small>
       <small>
         {!binding
-          ? "读取到绑定证据后，本页会区分已审计策略与内置策略的可配置边界。"
+          ? "读取到绑定证据后，本页会区分已审计策略、未验证前向试跑与内置策略的可配置边界。"
+          : forwardTrial
+          ? "该策略仅用于未验证 Paper 前向试跑；信号由绑定版本固定，不授予 Testnet、Live 或盈利认证资格。"
           : libraryStrategy
           ? "已审计策略的信号与触发条件由绑定版本固定；本页只配置执行模式、委托额度与账户级风控，不会改写策略。"
           : "内置策略使用涨跌幅阈值与已配置的智能决策服务；切换生产策略需先暂停监控并完成审计交接。"}
