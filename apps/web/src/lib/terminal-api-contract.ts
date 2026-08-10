@@ -38,6 +38,12 @@ export interface MarketAiSelectionResearchOrigin {
   candidateEvidenceId: string;
 }
 
+export interface FormalSealedDatasetWindow {
+  start: string;
+  developmentEndExclusive: string;
+  endExclusive: string;
+}
+
 export interface TerminalResearchParams {
   market: Market;
   symbol: string;
@@ -46,6 +52,8 @@ export interface TerminalResearchParams {
   end?: string;
   watchlistRefreshRunId?: string | null;
   selectionOrigin?: MarketAiSelectionResearchOrigin | null;
+  sealedDataset?: FormalSealedDatasetWindow | null;
+  registeredTemplateId?: string | null;
 }
 
 export function isResearchRunStrategyConfig(value: unknown): boolean {

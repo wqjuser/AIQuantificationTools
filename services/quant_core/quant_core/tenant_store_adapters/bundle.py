@@ -34,6 +34,7 @@ from .execution import (
     TenantPortfolioSimulationStore,
 )
 from .settings import TenantPlatformSettingsAdapter
+from .sealed_datasets import TenantSealedDatasetStore
 from .strategy_experiments import TenantStrategyExperimentStore
 
 
@@ -52,6 +53,7 @@ class PublicTenantStores:
     audit_event_store: TenantAuditEventStore
     import_undo_store: TenantImportUndoStore
     strategy_store: TenantStrategyStore
+    sealed_dataset_store: TenantSealedDatasetStore
     strategy_experiment_store: TenantStrategyExperimentStore
     note_store: TenantResearchNoteStore
     handoff_note_store: TenantHandoffNoteStore
@@ -109,6 +111,11 @@ class PublicTenantStores:
             audit_event_store=TenantAuditEventStore(repository("audit_event")),
             import_undo_store=TenantImportUndoStore(repository("research_import_undo")),
             strategy_store=TenantStrategyStore(repository("strategy")),
+            sealed_dataset_store=TenantSealedDatasetStore(
+                repository("sealed_dataset_manifest"),
+                repository("sealed_dataset_chunk"),
+                repository("sealed_dataset_test_claim"),
+            ),
             strategy_experiment_store=TenantStrategyExperimentStore(
                 repository("strategy_experiment_snapshot"),
                 repository("strategy_experiment"),

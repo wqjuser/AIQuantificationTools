@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from quant_core.canonical import canonical_sha256
 from quant_core.tenant_model_codec import decode_tenant_model, encode_tenant_model
-from quant_core.tenant_storage import TenantRecordStore
+from quant_core.tenant_storage import TenantRecordStore, TenantRecordVersion
 
 
 class TenantModelRepository:
@@ -12,29 +13,55 @@ class TenantModelRepository:
         self.kind = kind
 
     def put(self, record_id: str, value: Any) -> Any:
+        payload = _payload(value)
         self.records.put(
             self.kind,
             record_id,
-            {"model": encode_tenant_model(value)},
+            payload,
+            canonical_hash=_payload_hash(payload),
         )
         return value
 
     def put_many(self, records: list[tuple[str, Any]]) -> list[Any]:
+        payloads = [_payload(value) for _record_id, value in records]
         self.records.put_many(
             [
-                (self.kind, record_id, {"model": encode_tenant_model(value)})
-                for record_id, value in records
-            ]
+                (self.kind, record_id, payload)
+                for (record_id, _value), payload in zip(
+                    records,
+                    payloads,
+                    strict=True,
+                )
+            ],
+            canonical_hashes=[_payload_hash(payload) for payload in payloads],
         )
         return [value for _record_id, value in records]
 
     def put_if_absent(self, record_id: str, value: Any) -> tuple[Any, bool]:
+        payload = _payload(value)
         stored, created = self.records.put_if_absent(
             self.kind,
             record_id,
-            {"model": encode_tenant_model(value)},
+            payload,
+            canonical_hash=_payload_hash(payload),
         )
         return _model(stored), created
+
+    def compare_and_swap_model(
+        self,
+        record_id: str,
+        *,
+        expected_version: TenantRecordVersion,
+        value: Any,
+    ) -> bool:
+        payload = _payload(value)
+        return self.records.compare_and_swap_payload_version(
+            self.kind,
+            record_id,
+            payload,
+            expected_version=expected_version,
+            canonical_hash=_payload_hash(payload),
+        )
 
     def compare_and_swap_field(
         self,
@@ -44,12 +71,14 @@ class TenantModelRepository:
         expected: str | None,
         value: Any,
     ) -> bool:
+        payload = _payload(value)
         return self.records.compare_and_swap_payload_field(
             self.kind,
             record_id,
-            {"model": encode_tenant_model(value)},
+            payload,
             path=("model", "fields", field),
             expected=expected,
+            canonical_hash=_payload_hash(payload),
         )
 
     def compare_and_swap_model_field(
@@ -60,17 +89,26 @@ class TenantModelRepository:
         expected: str | None,
         value: Any,
     ) -> bool:
+        payload = _payload(value)
         return self.records.compare_and_swap_payload_field(
             self.kind,
             record_id,
-            {"model": encode_tenant_model(value)},
+            payload,
             path=("model", "fields", *path),
             expected=expected,
+            canonical_hash=_payload_hash(payload),
         )
 
     def get(self, record_id: str) -> Any | None:
         payload = self.records.get(self.kind, record_id)
         return _model(payload) if payload is not None else None
+
+    def get_versioned(
+        self,
+        record_id: str,
+    ) -> tuple[Any, TenantRecordVersion] | None:
+        stored = self.records.get_versioned(self.kind, record_id)
+        return (_model(stored[0]), stored[1]) if stored is not None else None
 
     def all(self) -> list[Any]:
         return [_model(payload) for payload in self.records.list(self.kind, limit=100_000)]
@@ -88,6 +126,14 @@ def _model(payload: dict[str, object]) -> Any:
     if set(payload) != {"model"}:
         raise ValueError("tenant_model_record_invalid")
     return decode_tenant_model(payload["model"])
+
+
+def _payload(value: Any) -> dict[str, object]:
+    return {"model": encode_tenant_model(value)}
+
+
+def _payload_hash(payload: dict[str, object]) -> str:
+    return canonical_sha256(payload)
 
 
 def _record_id(value: Any) -> str:

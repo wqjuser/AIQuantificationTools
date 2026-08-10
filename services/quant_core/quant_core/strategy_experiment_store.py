@@ -354,6 +354,10 @@ class StrategyExperimentStore:
                 _insert_experiment(connection, experiment)
             elif existing[0] == "pending":
                 _replace_pending_experiment(connection, experiment)
+                connection.execute(
+                    "delete from strategy_experiment_candidates where experiment_id = ?",
+                    (experiment.experiment_id,),
+                )
             else:
                 raise ValueError("strategy_experiment_conflict")
             for candidate in candidates:
@@ -371,6 +375,54 @@ class StrategyExperimentStore:
         connection = self._connect()
         try:
             _insert_experiment(connection, experiment)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def record_development_checkpoint(
+        self,
+        experiment: StrategyExperimentRecord,
+        candidates: list[StrategyExperimentCandidateRecord],
+    ) -> None:
+        if (
+            experiment.status != "pending"
+            or experiment.completion_reason != "development_completed"
+            or not experiment.selected_candidate_id
+            or not candidates
+            or any(
+                candidate.experiment_id != experiment.experiment_id
+                or candidate.test_metrics is not None
+                for candidate in candidates
+            )
+        ):
+            raise ValueError("strategy_experiment_development_checkpoint_invalid")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            updated = connection.execute(
+                """
+                update strategy_experiments
+                set evaluation_count = ?, selected_candidate_id = ?,
+                    completion_reason = 'development_completed'
+                where experiment_id = ? and status = 'pending'
+                  and definition_hash = ? and snapshot_id = ?
+                  and completion_reason is null
+                """,
+                (
+                    experiment.evaluation_count,
+                    experiment.selected_candidate_id,
+                    experiment.experiment_id,
+                    experiment.definition_hash,
+                    experiment.snapshot_id,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("strategy_experiment_conflict")
+            for candidate in candidates:
+                _insert_candidate(connection, candidate)
             connection.commit()
         except Exception:
             connection.rollback()

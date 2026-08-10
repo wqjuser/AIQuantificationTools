@@ -21,8 +21,17 @@ from quant_core.tenant_crypto import TenantSecretCipher
 from quant_core.tenancy import TenantContext
 
 
+_CANONICAL_HASH_UNCHANGED = object()
+
+
 class ProductionAccountClaimError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class TenantRecordVersion:
+    updated_at: datetime
+    canonical_hash: str | None
 
 
 class TenantRecordStore:
@@ -61,12 +70,27 @@ class TenantRecordStore:
         self,
         records: list[tuple[str, str, dict[str, object]]],
         *,
+        canonical_hashes: list[str | None] | None = None,
         now: datetime | None = None,
     ) -> list[dict[str, object]]:
         timestamp = now or datetime.now(timezone.utc)
+        if canonical_hashes is None:
+            canonical_hashes = [None] * len(records)
+        if len(canonical_hashes) != len(records):
+            raise ValueError("tenant_record_canonical_hash_count_invalid")
         prepared = [
-            self._put_statement(kind, record_id, payload, timestamp=timestamp)
-            for kind, record_id, payload in records
+            self._put_statement(
+                kind,
+                record_id,
+                payload,
+                canonical_hash=canonical_hash,
+                timestamp=timestamp,
+            )
+            for (kind, record_id, payload), canonical_hash in zip(
+                records,
+                canonical_hashes,
+                strict=True,
+            )
         ]
         with self.engine.begin() as connection:
             self.require_write_fence(connection)
@@ -154,6 +178,7 @@ class TenantRecordStore:
         *,
         path: tuple[str, ...],
         expected: str | None,
+        canonical_hash: str | None | object = _CANONICAL_HASH_UNCHANGED,
         now: datetime | None = None,
     ) -> bool:
         if not path or any(not isinstance(part, str) or not part for part in path):
@@ -167,6 +192,12 @@ class TenantRecordStore:
             matches_expected = field.as_string().is_(None)
         else:
             matches_expected = field.as_string() == expected
+        replacement: dict[str, object] = {
+            "payload": clean_payload,
+            "updated_at": timestamp,
+        }
+        if canonical_hash is not _CANONICAL_HASH_UNCHANGED:
+            replacement["canonical_hash"] = canonical_hash
         statement = (
             update(tenant_records)
             .where(
@@ -175,22 +206,82 @@ class TenantRecordStore:
                 tenant_records.c.record_id == record_id,
                 matches_expected,
             )
-            .values(payload=clean_payload, updated_at=timestamp)
+            .values(**replacement)
+        )
+        with self.engine.begin() as connection:
+            self.require_write_fence(connection)
+            return connection.execute(statement).rowcount == 1
+
+    def compare_and_swap_payload_version(
+        self,
+        record_kind: str,
+        record_id: str,
+        payload: dict[str, object],
+        *,
+        expected_version: TenantRecordVersion,
+        canonical_hash: str | None = None,
+        now: datetime | None = None,
+    ) -> bool:
+        timestamp = now or datetime.now(timezone.utc)
+        clean_payload = json.loads(json.dumps(payload, ensure_ascii=False))
+        expected_hash = (
+            tenant_records.c.canonical_hash.is_(None)
+            if expected_version.canonical_hash is None
+            else tenant_records.c.canonical_hash == expected_version.canonical_hash
+        )
+        statement = (
+            update(tenant_records)
+            .where(
+                tenant_records.c.owner_id == self.owner_id,
+                tenant_records.c.record_kind == record_kind,
+                tenant_records.c.record_id == record_id,
+                tenant_records.c.updated_at == expected_version.updated_at,
+                expected_hash,
+            )
+            .values(
+                payload=clean_payload,
+                canonical_hash=canonical_hash,
+                updated_at=timestamp,
+            )
         )
         with self.engine.begin() as connection:
             self.require_write_fence(connection)
             return connection.execute(statement).rowcount == 1
 
     def get(self, record_kind: str, record_id: str) -> dict[str, object] | None:
+        versioned = self.get_versioned(record_kind, record_id)
+        return versioned[0] if versioned is not None else None
+
+    def get_versioned(
+        self,
+        record_kind: str,
+        record_id: str,
+    ) -> tuple[dict[str, object], TenantRecordVersion] | None:
         with self.engine.connect() as connection:
-            payload = connection.execute(
-                select(tenant_records.c.payload).where(
+            row = connection.execute(
+                select(
+                    tenant_records.c.payload,
+                    tenant_records.c.updated_at,
+                    tenant_records.c.canonical_hash,
+                ).where(
                     tenant_records.c.owner_id == self.owner_id,
                     tenant_records.c.record_kind == record_kind,
                     tenant_records.c.record_id == record_id,
                 )
-            ).scalar_one_or_none()
-        return json.loads(json.dumps(payload, ensure_ascii=False)) if payload is not None else None
+            ).one_or_none()
+        if row is None:
+            return None
+        return (
+            json.loads(json.dumps(row.payload, ensure_ascii=False)),
+            TenantRecordVersion(
+                updated_at=row.updated_at,
+                canonical_hash=(
+                    str(row.canonical_hash)
+                    if row.canonical_hash is not None
+                    else None
+                ),
+            ),
+        )
 
     def list(self, record_kind: str, *, limit: int = 100) -> list[dict[str, object]]:
         with self.engine.connect() as connection:

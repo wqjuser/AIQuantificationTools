@@ -14902,7 +14902,7 @@ describe("terminal workspace API client", () => {
     expect(result.run?.aiReport?.disclaimer).toBe("No investment advice");
     expect(result.run?.dataSnapshot?.hash).toBe("snapshot-detail");
     expect(result.run?.dataSnapshot?.snapshotHash).toBe("decision-snapshot-detail");
-    expect(result.run?.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
+    expect(result.run?.dataSnapshot?.bars?.at(-1)?.close).toBe(9.3);
     expect(result.run?.dataQuality).toEqual({ source: "tencent", isComplete: true, warnings: [], rows: 120 });
     expect(result.run?.strategyConfig?.entryConditions[0].params).toEqual({ window: 20 });
     expect(result.run?.strategyConfig?.risk.positionPct).toBe(0.8);
@@ -15293,7 +15293,7 @@ describe("terminal workspace API client", () => {
     expect(result.exportPackage?.manifest.artifactCounts.researchNotes).toBe(1);
     expect(result.exportPackage?.manifest.artifactCounts.aiReviewRuns).toBe(1);
     expect(result.exportPackage?.researchRun.researchNote?.body).toBe("关注银行板块相对强度，等待放量确认。");
-    expect(result.exportPackage?.researchRun.dataSnapshot?.bars.at(-1)?.close).toBe(9.3);
+    expect(result.exportPackage?.researchRun.dataSnapshot?.bars?.at(-1)?.close).toBe(9.3);
     expect(result.exportPackage?.executionHandoff.liveTradingAllowed).toBe(false);
     expect(result.exportPackage?.paperExecutions?.[0]?.executionId).toBe("paper-exported");
     expect(result.exportPackage?.adapterPaperExecutions?.[0]?.adapterPaperExecutionId).toBe(

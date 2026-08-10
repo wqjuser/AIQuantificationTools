@@ -214,6 +214,9 @@ export interface AppControllerBindingsPart3 {
   researchContextEvidenceRows: import("../../../lib/terminal-workbench").ResearchContextEvidenceRow[];
   researchPipelinePreflight: import("../../../lib/terminal-workbench").ResearchPipelinePreflight;
   researchPipelinePreparationEvidenceRunId: string | null;
+  researchP0Capabilities: import("../../../lib/strategy-research").StrategyResearchCapability[];
+  researchP0CapabilitiesLoading: boolean;
+  selectedResearchP0TemplateId: string;
   goldenPathCurrentStep: import("../../../lib/golden-path-transport").GoldenPathStep | undefined;
   goldenPathRunbookPreview: import("../../../lib/terminal-workbench").GoldenPathRunbookPreviewItem[];
   activeWorkspaceContext: import("../../../lib/terminal-workbench").GoldenPathWorkspaceContext | null;

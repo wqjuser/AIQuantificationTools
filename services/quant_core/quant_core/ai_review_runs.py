@@ -118,6 +118,20 @@ _METRIC_FIELDS = {
     "winRatePct",
     "profitFactor",
     "tradeCount",
+    "roundTripCount",
+    "profitFactorInfinite",
+}
+_FORMAL_GATE_FAILURES = {
+    "non_positive_return",
+    "profit_factor_below_minimum",
+    "drawdown_above_maximum",
+    "round_trip_count_below_minimum",
+}
+_FORMAL_GATE_GUARDRAIL_FIELDS = {
+    "requirePositiveReturn",
+    "minimumProfitFactor",
+    "maximumDrawdownPct",
+    "minimumRoundTripCount",
 }
 _SUPPORTED_PROMPT_TEMPLATE_VERSIONS = {
     "aiqt-ai-review-v1",
@@ -977,7 +991,7 @@ def _validate_strategy_evidence(value: Any) -> None:
         "exitConditions",
         "risk",
     }
-    _require_object_fields(value, required=fields)
+    _require_object_fields(value, required=fields, optional={"policy"})
     try:
         canonical = strategy_config_to_payload(strategy_config_from_payload(value))
         if canonical_json(canonical) != canonical_json(value):
@@ -1061,7 +1075,16 @@ def _validate_candidate_evidence(value: Any) -> None:
         "rank",
         "selected",
     }
-    _require_object_fields(value, required=required, optional={"testMetrics"})
+    _require_object_fields(
+        value,
+        required=required,
+        optional={
+            "testMetrics",
+            "gateEvaluation",
+            "completionReason",
+            "profitabilityGatePassed",
+        },
+    )
     for field in ("candidateId", "candidateRevision"):
         _required_string(value, field, "ai_review_evidence_items_invalid")
     if type(value.get("eligible")) is not bool or type(value.get("selected")) is not bool:
@@ -1073,6 +1096,15 @@ def _validate_candidate_evidence(value: Any) -> None:
     if not isinstance(parameters, list):
         raise ValueError("ai_review_evidence_items_invalid")
     for parameter in parameters:
+        if isinstance(parameter, dict) and set(parameter) == {"policyPath", "value"}:
+            path = parameter.get("policyPath")
+            if (
+                not isinstance(path, str)
+                or not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)+", path)
+            ):
+                raise ValueError("ai_review_evidence_items_invalid")
+            _validate_finite_number(parameter.get("value"))
+            continue
         _require_object_fields(
             parameter,
             required={"conditionSide", "conditionIndex", "parameter", "value"},
@@ -1101,15 +1133,170 @@ def _validate_candidate_evidence(value: Any) -> None:
     elif "testMetrics" in value:
         raise ValueError("ai_review_evidence_items_invalid")
     _validate_walk_forward(value.get("walkForward"))
+    if "gateEvaluation" in value:
+        _validate_gate_evaluation(
+            value["gateEvaluation"],
+            selected=value["selected"],
+        )
+        gate = value["gateEvaluation"]
+        if canonical_json(gate["validation"]["metrics"]) != canonical_json(
+            value["validationMetrics"]
+        ):
+            raise ValueError("ai_review_evidence_items_invalid")
+        if value["selected"]:
+            if (
+                type(value.get("profitabilityGatePassed")) is not bool
+                or value.get("completionReason")
+                not in {"profitability_gate_passed", "test_gate_failed"}
+                or canonical_json(gate["test"]["metrics"])
+                != canonical_json(value["testMetrics"])
+                or gate["test"]["passed"]
+                is not value["profitabilityGatePassed"]
+                or value["completionReason"]
+                != (
+                    "profitability_gate_passed"
+                    if value["profitabilityGatePassed"]
+                    else "test_gate_failed"
+                )
+            ):
+                raise ValueError("ai_review_evidence_items_invalid")
+        elif (
+            "completionReason" in value
+            or "profitabilityGatePassed" in value
+        ):
+            raise ValueError("ai_review_evidence_items_invalid")
+    elif (
+        "completionReason" in value
+        or "profitabilityGatePassed" in value
+    ):
+        raise ValueError("ai_review_evidence_items_invalid")
 
 
 def _validate_metrics(value: Any) -> None:
     _require_object_fields(value, required=set(), optional=_METRIC_FIELDS)
     for field, item in value.items():
-        if field == "tradeCount":
+        if field in {"tradeCount", "roundTripCount"}:
             _validate_strict_int(item, minimum=0)
+        elif field == "profitFactorInfinite":
+            if type(item) is not bool:
+                raise ValueError("ai_review_evidence_items_invalid")
         else:
             _validate_finite_number(item)
+
+
+def _validate_gate_evaluation(value: Any, *, selected: bool) -> None:
+    required = {
+        "development",
+        "validation",
+        "rolling",
+        "stability",
+        "pretest",
+    }
+    if selected:
+        required.add("test")
+    _require_object_fields(value, required=required)
+
+    development = value["development"]
+    _require_object_fields(
+        development,
+        required={"passed", "actualRoundTripCount", "minimumRoundTripCount"},
+    )
+    _validate_exact_bool(development["passed"])
+    _validate_strict_int(development["actualRoundTripCount"], minimum=0)
+    _validate_strict_int(development["minimumRoundTripCount"], minimum=0)
+
+    _validate_formal_metric_gate(value["validation"])
+
+    rolling = value["rolling"]
+    _require_object_fields(
+        rolling,
+        required={
+            "passed",
+            "positiveReturnCount",
+            "validationWindowCount",
+            "actualPositiveReturnPct",
+            "requiredWindowCount",
+            "minimumPositiveWindowCount",
+        },
+    )
+    _validate_exact_bool(rolling["passed"])
+    for field in (
+        "positiveReturnCount",
+        "validationWindowCount",
+        "requiredWindowCount",
+        "minimumPositiveWindowCount",
+    ):
+        _validate_strict_int(rolling[field], minimum=0)
+    _validate_finite_number(rolling["actualPositiveReturnPct"])
+
+    stability = value["stability"]
+    _require_object_fields(
+        stability,
+        required={
+            "passed",
+            "pending",
+            "completeNeighborhood",
+            "neighbors",
+        },
+    )
+    for field in ("passed", "pending", "completeNeighborhood"):
+        _validate_exact_bool(stability[field])
+    neighbors = stability["neighbors"]
+    if not isinstance(neighbors, list) or len(neighbors) > 1_000:
+        raise ValueError("ai_review_evidence_items_invalid")
+    for neighbor in neighbors:
+        _require_object_fields(
+            neighbor,
+            required={"candidateId", "validationReturnPct", "positive"},
+        )
+        _required_string(
+            neighbor,
+            "candidateId",
+            "ai_review_evidence_items_invalid",
+        )
+        _validate_finite_number(neighbor["validationReturnPct"])
+        _validate_exact_bool(neighbor["positive"])
+
+    pretest = value["pretest"]
+    _require_object_fields(pretest, required={"passed"})
+    _validate_exact_bool(pretest["passed"])
+    if selected:
+        _validate_formal_metric_gate(value["test"])
+
+
+def _validate_formal_metric_gate(value: Any) -> None:
+    _require_object_fields(
+        value,
+        required={"passed", "failures", "metrics", "guardrails"},
+    )
+    _validate_exact_bool(value["passed"])
+    failures = value["failures"]
+    if (
+        not isinstance(failures, list)
+        or any(
+            not isinstance(item, str) or item not in _FORMAL_GATE_FAILURES
+            for item in failures
+        )
+        or len(failures) != len(set(failures))
+    ):
+        raise ValueError("ai_review_evidence_items_invalid")
+    metrics = value["metrics"]
+    _require_object_fields(metrics, required=_METRIC_FIELDS)
+    _validate_metrics(metrics)
+    guardrails = value["guardrails"]
+    _require_object_fields(
+        guardrails,
+        required=_FORMAL_GATE_GUARDRAIL_FIELDS,
+    )
+    _validate_exact_bool(guardrails["requirePositiveReturn"])
+    _validate_finite_number(guardrails["minimumProfitFactor"])
+    _validate_finite_number(guardrails["maximumDrawdownPct"])
+    _validate_strict_int(guardrails["minimumRoundTripCount"], minimum=0)
+
+
+def _validate_exact_bool(value: Any) -> None:
+    if type(value) is not bool:
+        raise ValueError("ai_review_evidence_items_invalid")
 
 
 def _validate_walk_forward(value: Any) -> None:

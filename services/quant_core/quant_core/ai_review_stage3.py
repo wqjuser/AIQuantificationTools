@@ -15,6 +15,8 @@ from quant_core.canonical import (
     canonical_json,
     canonical_sha256,
     canonical_snapshot_id,
+    flatten_chunked_data_snapshot,
+    normalize_snapshot_bar_chunks,
     normalize_snapshot_bars,
     strategy_config_from_payload,
     strategy_config_to_payload,
@@ -22,6 +24,10 @@ from quant_core.canonical import (
 from quant_core.data_foundation import completed_market_bars
 from quant_core.domain import MarketDataRequest, OHLCVBar
 from quant_core.runs import ResearchRunStore
+from quant_core.sealed_datasets import (
+    SealedDatasetSummary,
+    normalize_sealed_research_snapshot,
+)
 from quant_core.strategy_experiment_store import (
     StrategyExperimentCandidateRecord,
     StrategyExperimentDetail,
@@ -280,6 +286,64 @@ class DeterministicAiReviewEngine:
                     f"{experiment_id} selected candidate reference, evidence id, and value conflict."
                 )
                 continue
+            formal_fields = (
+                "gateEvaluation",
+                "completionReason",
+                "profitabilityGatePassed",
+            )
+            if any(field in candidate for field in formal_fields):
+                gate = candidate.get("gateEvaluation")
+                completion_reason = candidate.get("completionReason")
+                profitability_gate_passed = candidate.get(
+                    "profitabilityGatePassed"
+                )
+                pretest_passed = (
+                    gate.get("pretest", {}).get("passed")
+                    if isinstance(gate, Mapping)
+                    and isinstance(gate.get("pretest"), Mapping)
+                    else None
+                )
+                test_passed = (
+                    gate.get("test", {}).get("passed")
+                    if isinstance(gate, Mapping)
+                    and isinstance(gate.get("test"), Mapping)
+                    else None
+                )
+                expected_completion = (
+                    "profitability_gate_passed"
+                    if test_passed is True
+                    else "test_gate_failed"
+                    if test_passed is False
+                    else None
+                )
+                if (
+                    type(pretest_passed) is not bool
+                    or type(test_passed) is not bool
+                    or type(profitability_gate_passed) is not bool
+                    or completion_reason not in {
+                        "profitability_gate_passed",
+                        "test_gate_failed",
+                    }
+                    or profitability_gate_passed is not test_passed
+                    or completion_reason != expected_completion
+                ):
+                    blocked = True
+                    risks.append(
+                        _assessment_risk(
+                            "critical",
+                            "Formal gate, completion reason, and profitability evidence conflict.",
+                            candidate_id,
+                        )
+                    )
+                elif not pretest_passed or not profitability_gate_passed:
+                    blocked = True
+                    risks.append(
+                        _assessment_risk(
+                            "critical",
+                            "The formal profitability gate failed; this experiment cannot be supported.",
+                            candidate_id,
+                        )
+                    )
             validation = _complete_metrics(candidate.get("validationMetrics"))
             test = _complete_metrics(candidate.get("testMetrics"))
             walk_forward_returns = _walk_forward_returns(candidate.get("walkForward"))
@@ -535,6 +599,9 @@ def build_strategy_lineage_key_from_parts(
         "entryConditions": _condition_shapes(strategy["entryConditions"]),
         "exitConditions": _condition_shapes(strategy["exitConditions"]),
     }
+    policy = strategy.get("policy")
+    if isinstance(policy, Mapping):
+        body["policyKind"] = _normalize_token(policy.get("kind"))
     return canonical_sha256(body)
 
 
@@ -553,9 +620,11 @@ class AiReviewEvidenceAssembler:
         self,
         experiment_store: StrategyExperimentStore,
         run_store: ResearchRunStore,
+        sealed_bar_source: Any | None = None,
     ) -> None:
         self.experiment_store = experiment_store
         self.run_store = run_store
+        self.sealed_bar_source = sealed_bar_source
 
     def assemble(
         self,
@@ -650,6 +719,16 @@ class AiReviewEvidenceAssembler:
             or snapshot.test_consumed_at is None
         ):
             raise _evidence_conflict(experiment.experiment_id, "experiment definition and snapshot bindings differ")
+
+        if (
+            definition.get("resultSchemaVersion") == 2
+            and isinstance(definition.get("sealedDataset"), Mapping)
+        ):
+            return self._validate_sealed_detail(
+                detail,
+                strategy=strategy,
+                context=context,
+            )
 
         try:
             bars = normalize_snapshot_bars(snapshot.bars)
@@ -806,6 +885,192 @@ class AiReviewEvidenceAssembler:
                     },
                 },
                 *[_candidate_evidence(prefix, candidate, selected.candidate_id) for candidate in detail.candidates],
+            ],
+        }
+
+    def _validate_sealed_detail(
+        self,
+        detail: StrategyExperimentDetail,
+        *,
+        strategy: dict[str, Any],
+        context: tuple[str, str, str],
+    ) -> dict[str, Any]:
+        experiment = detail.experiment
+        snapshot = detail.snapshot
+        definition = experiment.definition
+        sealed_source = self.sealed_bar_source
+        if sealed_source is None:
+            raise _evidence_conflict(
+                experiment.experiment_id,
+                "sealed dataset source is unavailable",
+            )
+        try:
+            declared_summary = SealedDatasetSummary.from_payload(
+                definition["sealedDataset"]
+            )
+            stored_summary = sealed_source.get_summary(declared_summary.dataset_id)
+            if stored_summary is None:
+                raise ValueError("sealed_dataset_not_found")
+            stored_payload = stored_summary.to_payload()
+            if canonical_json(stored_payload) != canonical_json(
+                declared_summary.to_payload()
+            ):
+                raise ValueError("sealed_dataset_summary_mismatch")
+            integrity = sealed_source.get_integrity(declared_summary.dataset_id)
+            if (
+                integrity is None
+                or integrity.dataset_id != declared_summary.dataset_id
+                or integrity.manifest_token != declared_summary.dataset_hash
+                or type(integrity.content_version) is not int
+                or integrity.content_version != 1
+            ):
+                raise ValueError("sealed_dataset_integrity_invalid")
+            development_source_bars = sealed_source.read_development_bars(
+                declared_summary.dataset_id
+            )
+            development_bars = _normalize_large_ohlcv_bars(
+                development_source_bars,
+                market=experiment.market,
+                symbol=experiment.symbol,
+                timeframe=experiment.timeframe,
+            )
+            source_run = self.run_store.get(experiment.source_run_id)
+            if source_run is None:
+                raise ValueError("source_run_not_found")
+            source_snapshot = normalize_sealed_research_snapshot(
+                source_run.data_snapshot,
+                market=experiment.market,
+                symbol=experiment.symbol,
+                timeframe=experiment.timeframe,
+            )
+        except (AttributeError, KeyError, TypeError, ValueError) as error:
+            raise _evidence_conflict(
+                experiment.experiment_id,
+                "sealed dataset evidence is invalid",
+            ) from error
+
+        development_hash = declared_summary.development_hash
+        safe_snapshot_id = canonical_snapshot_id(
+            market=experiment.market,
+            symbol=experiment.symbol,
+            timeframe=experiment.timeframe,
+            canonical_data_hash=development_hash,
+        )
+        if (
+            (declared_summary.market, declared_summary.symbol, declared_summary.timeframe)
+            != context
+            or definition.get("developmentDataHash") != development_hash
+            or snapshot.test_owner_experiment_id != experiment.experiment_id
+            or snapshot.rows != declared_summary.rows
+            or snapshot.start_at != declared_summary.start.isoformat()
+            or snapshot.end_at != declared_summary.end_exclusive.isoformat()
+            or len(snapshot.bars) != declared_summary.development_rows
+            or canonical_json(snapshot.bars) != canonical_json(development_bars)
+            or canonical_data_hash(development_bars) != development_hash
+            or source_snapshot.get("snapshotHash") != safe_snapshot_id
+            or canonical_json(source_snapshot.get("sealedDataset"))
+            != canonical_json(stored_payload)
+            or (source_run.market, source_run.symbol, source_run.timeframe) != context
+            or source_run.strategy_revision != experiment.strategy_revision
+            or source_run.strategy_name != strategy["name"]
+            or canonical_json(source_run.strategy_config or {}) != canonical_json(strategy)
+            or source_run.data_rows != declared_summary.development_rows
+            or source_run.data_quality.get("source") != declared_summary.source
+            or source_run.data_quality.get("isComplete") is not True
+            or source_run.data_quality.get("rows") != declared_summary.development_rows
+            or source_run.data_quality.get("canonicalHash") != development_hash
+        ):
+            raise _evidence_conflict(
+                experiment.experiment_id,
+                "sealed experiment, source run, and development partition differ",
+            )
+
+        selected = _validated_selected_candidate(detail, formal=True)
+        result_hash = _result_hash(
+            detail.candidates,
+            selected,
+            experiment.completion_reason,
+            result_schema_version=2,
+            profitability_gate_passed=experiment.profitability_gate_passed,
+            pre_roll_version=definition.get("preRollVersion"),
+        )
+        if result_hash != experiment.result_hash:
+            raise _evidence_conflict(
+                experiment.experiment_id,
+                "result hash does not match",
+            )
+        test_passed = selected.gate_evaluation.get("test", {}).get("passed") is True
+        if (
+            selected.gate_evaluation.get("pretest", {}).get("passed") is not True
+            or experiment.profitability_gate_passed is not test_passed
+            or experiment.completion_reason
+            != ("profitability_gate_passed" if test_passed else "test_gate_failed")
+        ):
+            raise _evidence_conflict(
+                experiment.experiment_id,
+                "formal winner and profitability gate differ",
+            )
+
+        start_at = declared_summary.start.isoformat()
+        end_at = declared_summary.development_end_exclusive.isoformat()
+        reference = {
+            "experimentId": experiment.experiment_id,
+            "sourceRunId": experiment.source_run_id,
+            "strategyRevision": experiment.strategy_revision,
+            "snapshotId": safe_snapshot_id,
+            "definitionHash": experiment.definition_hash,
+            "resultHash": experiment.result_hash,
+            "selectedCandidateId": selected.candidate_id,
+            "candidateRevision": selected.candidate_revision,
+            "canonicalDataHash": development_hash,
+            "dataRange": {"startAt": start_at, "endAt": end_at},
+        }
+        prefix = f"experiment:{experiment.experiment_id}"
+        return {
+            "market": experiment.market,
+            "symbol": experiment.symbol,
+            "timeframe": experiment.timeframe,
+            "strategy": strategy,
+            "reference": reference,
+            "evidenceItems": [
+                {
+                    "id": f"{prefix}:context",
+                    "kind": "experiment_context",
+                    "value": {
+                        "market": experiment.market,
+                        "symbol": experiment.symbol,
+                        "timeframe": experiment.timeframe,
+                    },
+                },
+                {
+                    "id": f"{prefix}:strategy",
+                    "kind": "strategy_definition",
+                    "value": strategy,
+                },
+                {
+                    "id": f"{prefix}:data-quality",
+                    "kind": "data_quality",
+                    "value": {
+                        **_selected_fields(
+                            source_run.data_quality,
+                            ("source", "isComplete", "warnings", "rows", "tradeCount"),
+                        ),
+                        "canonicalDataHash": development_hash,
+                        "startAt": start_at,
+                        "endAt": end_at,
+                    },
+                },
+                *[
+                    _candidate_evidence(
+                        prefix,
+                        candidate,
+                        selected.candidate_id,
+                        include_gate_evaluation=True,
+                        completion_reason=experiment.completion_reason,
+                        profitability_gate_passed=experiment.profitability_gate_passed,
+                    )
+                    for candidate in detail.candidates
+                ],
             ],
         }
 
@@ -1301,13 +1566,36 @@ def _project_strategy(value: Mapping[str, Any]) -> dict[str, Any]:
 def _project_candidate(value: Mapping[str, Any]) -> dict[str, Any]:
     projected = _selected_fields(
         value,
-        ("candidateId", "candidateRevision", "eligible", "rank", "selected"),
+        (
+            "candidateId",
+            "candidateRevision",
+            "eligible",
+            "rank",
+            "selected",
+            "completionReason",
+            "profitabilityGatePassed",
+        ),
     )
     parameters = value.get("parameters")
     if isinstance(parameters, list):
         projected_parameters = []
         for item in parameters:
             if not isinstance(item, Mapping):
+                continue
+            if set(item) == {"policyPath", "value"}:
+                policy_path = item.get("policyPath")
+                if (
+                    not isinstance(policy_path, str)
+                    or not re.fullmatch(
+                        r"[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)+",
+                        policy_path,
+                    )
+                    or not _is_safe_external_number(item.get("value"))
+                ):
+                    _raise_forbidden_external_evidence()
+                projected_parameters.append(
+                    _selected_fields(item, ("policyPath", "value"))
+                )
                 continue
             parameter = item.get("parameter")
             if (
@@ -1330,6 +1618,85 @@ def _project_candidate(value: Mapping[str, Any]) -> dict[str, Any]:
     walk_forward = value.get("walkForward")
     if isinstance(walk_forward, Mapping):
         projected["walkForward"] = _project_walk_forward(walk_forward)
+    gate_evaluation = value.get("gateEvaluation")
+    if isinstance(gate_evaluation, Mapping):
+        projected["gateEvaluation"] = _project_formal_gate_evaluation(
+            gate_evaluation,
+            selected=value.get("selected") is True,
+        )
+    return projected
+
+
+def _project_formal_gate_evaluation(
+    value: Mapping[str, Any],
+    *,
+    selected: bool,
+) -> dict[str, Any]:
+    projected: dict[str, Any] = {}
+    development = value.get("development")
+    if isinstance(development, Mapping):
+        projected["development"] = _selected_fields(
+            development,
+            ("passed", "actualRoundTripCount", "minimumRoundTripCount"),
+        )
+    validation = value.get("validation")
+    if isinstance(validation, Mapping):
+        projected["validation"] = _project_formal_metric_gate(validation)
+    rolling = value.get("rolling")
+    if isinstance(rolling, Mapping):
+        projected["rolling"] = _selected_fields(
+            rolling,
+            (
+                "passed",
+                "positiveReturnCount",
+                "validationWindowCount",
+                "actualPositiveReturnPct",
+                "requiredWindowCount",
+                "minimumPositiveWindowCount",
+            ),
+        )
+    stability = value.get("stability")
+    if isinstance(stability, Mapping):
+        projected_stability = _selected_fields(
+            stability,
+            ("passed", "pending", "completeNeighborhood"),
+        )
+        neighbors = stability.get("neighbors")
+        if isinstance(neighbors, list):
+            projected_stability["neighbors"] = [
+                _selected_fields(
+                    neighbor,
+                    ("candidateId", "validationReturnPct", "positive"),
+                )
+                for neighbor in neighbors
+                if isinstance(neighbor, Mapping)
+            ]
+        projected["stability"] = projected_stability
+    pretest = value.get("pretest")
+    if isinstance(pretest, Mapping):
+        projected["pretest"] = _selected_fields(pretest, ("passed",))
+    test = value.get("test")
+    if selected and isinstance(test, Mapping):
+        projected["test"] = _project_formal_metric_gate(test)
+    return projected
+
+
+def _project_formal_metric_gate(value: Mapping[str, Any]) -> dict[str, Any]:
+    projected = _selected_fields(value, ("passed", "failures"))
+    metrics = value.get("metrics")
+    if isinstance(metrics, Mapping):
+        projected["metrics"] = _project_metrics(metrics)
+    guardrails = value.get("guardrails")
+    if isinstance(guardrails, Mapping):
+        projected["guardrails"] = _selected_fields(
+            guardrails,
+            (
+                "requirePositiveReturn",
+                "minimumProfitFactor",
+                "maximumDrawdownPct",
+                "minimumRoundTripCount",
+            ),
+        )
     return projected
 
 
@@ -1343,6 +1710,8 @@ def _project_metrics(value: Mapping[str, Any]) -> dict[str, Any]:
             "winRatePct",
             "profitFactor",
             "tradeCount",
+            "roundTripCount",
+            "profitFactorInfinite",
         ),
     )
 
@@ -1535,33 +1904,54 @@ def _result_hash(
     candidates: list[StrategyExperimentCandidateRecord],
     selected: StrategyExperimentCandidateRecord,
     completion_reason: str | None,
+    *,
+    result_schema_version: int = 1,
+    profitability_gate_passed: bool = False,
+    pre_roll_version: str | None = None,
 ) -> str:
     ordered = sorted(candidates, key=lambda candidate: canonical_json(candidate.parameters))
-    return canonical_sha256(
-        {
-            "candidates": [
-                {
-                    "parameters": candidate.parameters,
-                    "trainMetrics": candidate.train_metrics,
-                    "validationMetrics": candidate.validation_metrics,
-                    "walkForward": candidate.walk_forward,
-                }
-                for candidate in ordered
-            ],
-            "selection": {
-                "parameters": selected.parameters,
-                "testMetrics": selected.test_metrics,
-            },
-            "completionReason": completion_reason,
-            "schemaVersion": 1,
-        }
-    )
+    payload: dict[str, Any] = {
+        "candidates": [
+            {
+                "parameters": candidate.parameters,
+                "trainMetrics": candidate.train_metrics,
+                "validationMetrics": candidate.validation_metrics,
+                "walkForward": candidate.walk_forward,
+            }
+            for candidate in ordered
+        ],
+        "selection": {
+            "parameters": selected.parameters,
+            "testMetrics": selected.test_metrics,
+        },
+        "completionReason": completion_reason,
+        "schemaVersion": result_schema_version,
+    }
+    if result_schema_version >= 2:
+        payload["candidates"] = [
+            {
+                "parameters": candidate.parameters,
+                "trainMetrics": candidate.train_metrics,
+                "validationMetrics": candidate.validation_metrics,
+                "walkForward": candidate.walk_forward,
+                "gateEvaluation": candidate.gate_evaluation,
+            }
+            for candidate in ordered
+        ]
+        payload["profitabilityGatePassed"] = profitability_gate_passed
+        if pre_roll_version is not None:
+            payload["preRollVersion"] = pre_roll_version
+    return canonical_sha256(payload)
 
 
 def _candidate_evidence(
     prefix: str,
     candidate: StrategyExperimentCandidateRecord,
     selected_candidate_id: str,
+    *,
+    include_gate_evaluation: bool = False,
+    completion_reason: str | None = None,
+    profitability_gate_passed: bool | None = None,
 ) -> dict[str, Any]:
     selected = candidate.candidate_id == selected_candidate_id
     value = {
@@ -1577,11 +1967,85 @@ def _candidate_evidence(
     }
     if selected:
         value["testMetrics"] = candidate.test_metrics
+    if include_gate_evaluation:
+        value["gateEvaluation"] = _project_formal_gate_evaluation(
+            candidate.gate_evaluation,
+            selected=selected,
+        )
+        if selected:
+            value["completionReason"] = completion_reason
+            value["profitabilityGatePassed"] = profitability_gate_passed
     return {
         "id": f"{prefix}:candidate:{candidate.candidate_id}",
         "kind": "candidate_metrics",
         "value": value,
     }
+
+
+def _validated_selected_candidate(
+    detail: StrategyExperimentDetail,
+    *,
+    formal: bool,
+) -> StrategyExperimentCandidateRecord:
+    experiment = detail.experiment
+    selected = next(
+        (
+            candidate
+            for candidate in detail.candidates
+            if candidate.candidate_id == experiment.selected_candidate_id
+        ),
+        None,
+    )
+    if selected is None or selected.test_metrics is None:
+        raise _evidence_conflict(
+            experiment.experiment_id,
+            "selected candidate or test metrics were not found",
+        )
+    if any(
+        candidate.test_metrics is not None
+        for candidate in detail.candidates
+        if candidate.candidate_id != selected.candidate_id
+    ):
+        raise _evidence_conflict(
+            experiment.experiment_id,
+            "unselected candidate contains test metrics",
+        )
+    if formal:
+        rank_one = [candidate for candidate in detail.candidates if candidate.rank == 1]
+        if (
+            rank_one != [selected]
+            or not selected.eligible
+            or any(candidate.experiment_id != experiment.experiment_id for candidate in detail.candidates)
+        ):
+            raise _evidence_conflict(
+                experiment.experiment_id,
+                "formal winner identity is invalid",
+            )
+    return selected
+
+
+def _normalize_large_ohlcv_bars(
+    bars: Any,
+    *,
+    market: str,
+    symbol: str,
+    timeframe: str,
+) -> list[dict[str, Any]]:
+    if not isinstance(bars, list) or not bars:
+        raise ValueError("sealed_development_bars_invalid")
+    chunks = [bars[index : index + 500] for index in range(0, len(bars), 500)]
+    snapshot = normalize_snapshot_bar_chunks(
+        chunks,
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
+    return flatten_chunked_data_snapshot(
+        snapshot,
+        market=market,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
 
 
 def _condition_shapes(value: Any) -> list[dict[str, Any]]:

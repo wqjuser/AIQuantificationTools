@@ -21,6 +21,7 @@ from . import (
     stage1,
     stage10,
     strategy_experiment_promotions,
+    strategy_research,
 )
 from ..support.ai_validation import (
     _ai_research_evidence_route_id,
@@ -96,6 +97,12 @@ class RouteDispatchMixin:
             return True
         if parsed.path == '/api/strategy-experiments':
             ai_strategy_p0.post_strategy_experiments(self, parsed)
+            return True
+        if parsed.path == '/api/strategy-research/proposals':
+            strategy_research.post_strategy_research_proposals(self, parsed)
+            return True
+        if parsed.path == '/api/strategy-research/launches':
+            strategy_research.post_strategy_research_launches(self, parsed)
             return True
         promotion_experiment_id = strategy_experiment_promotions.promotion_experiment_id(
             parsed.path
@@ -398,6 +405,12 @@ class RouteDispatchMixin:
             return True
         if parsed.path.startswith('/api/strategy-experiments/'):
             ai_strategy_p0.get_strategy_experiment_detail(self, parsed)
+            return True
+        if parsed.path == '/api/strategy-research/capabilities':
+            strategy_research.get_strategy_research_capabilities(self, parsed)
+            return True
+        if parsed.path.startswith('/api/strategy-research/experiments/'):
+            strategy_research.get_strategy_research_experiment(self, parsed)
             return True
         if parsed.path == '/api/demo':
             core.get_demo(self, parsed)

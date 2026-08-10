@@ -36,9 +36,18 @@ PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPES = frozenset({
     "market_ai_selection_benchmark_snapshot",
     "market_ai_selection_review",
     "market_ai_selection_review_attempt",
+    "strategy_research_proposal",
+    "strategy_research_launch",
 })
 
+PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPE_PREFIXES = (
+    "auto_",
+    "stage10_auto_",
+)
+
 PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES = (
+    "auto-",
+    "auto-paper-trading-",
     "stage4-portfolio-workflow-",
     "stage5-shadow-",
     "stage5-sandbox-readiness-",
@@ -49,14 +58,20 @@ PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES = (
     "stage6-transition-",
     "execution-adapter-sandbox-probe-execution-",
     "execution-adapter-sandbox-probe-review-",
+    "probe-execution-",
+    "probe-review-",
     "execution-adapter-production-route-review-",
     "stage7-production-readonly-",
     "stage8-production-readonly-",
     "stage9-production-admission-",
+    "stage10-auto-",
     "stage10-production-execution-",
+    "strategy-binding-",
     "market-ai-selection-",
     "market-ai-selection-benchmark-",
     "market-ai-selection-review-attempt-",
+    "strategy-research-proposal-",
+    "strategy-research-launch-",
 )
 
 
@@ -65,6 +80,9 @@ def is_protected_production_authority_audit_event(event_type: Any, event_id: Any
     normalized_id = str(event_id or "").strip()
     return (
         normalized_type in PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPES
+        or normalized_type.startswith(
+            PROTECTED_PRODUCTION_AUTHORITY_EVENT_TYPE_PREFIXES
+        )
         or normalized_id.startswith(PROTECTED_PRODUCTION_AUTHORITY_EVENT_ID_PREFIXES)
     )
 

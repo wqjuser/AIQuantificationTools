@@ -7,6 +7,7 @@ export {
 
 export type {
   AuditEventRecord,
+  FormalSealedDatasetWindow,
   MarketAiSelectionResearchOrigin,
   MarketKlineBar,
   PaperExecutionAccount,
@@ -224,6 +225,9 @@ export type {
 } from "./execution-adapter-paper-validation-transport";
 
 export * from "./ai-review-transport";
+
+export * from "./strategy-research";
+export * from "./research-p0-template-selection";
 
 export * from "./research-ai-transport";
 

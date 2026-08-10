@@ -25,15 +25,16 @@ class TenantStrategyExperimentStore:
         self.experiments = experiments
 
     def put_snapshot(self, snapshot: StrategyExperimentSnapshot) -> StrategyExperimentSnapshot:
-        existing = self.snapshots.get(snapshot.snapshot_id)
-        if existing is not None:
-            if (
-                _snapshot_immutable_values(existing)
-                != _snapshot_immutable_values(snapshot)
-            ):
-                raise ValueError("strategy_experiment_conflict")
-            return existing
-        return self.snapshots.put(snapshot.snapshot_id, snapshot)
+        stored, _created = self.snapshots.put_if_absent(
+            snapshot.snapshot_id,
+            snapshot,
+        )
+        if (
+            _snapshot_immutable_values(stored)
+            != _snapshot_immutable_values(snapshot)
+        ):
+            raise ValueError("strategy_experiment_conflict")
+        return stored
 
     def claimed_definition(self, snapshot_id: str) -> str | None:
         snapshot = self.snapshots.get(snapshot_id)
@@ -88,7 +89,57 @@ class TenantStrategyExperimentStore:
     def record_pending(self, experiment: StrategyExperimentRecord) -> None:
         if experiment.status != "pending":
             raise ValueError("strategy_experiment_status_invalid")
-        self._record_detail(experiment, [])
+        snapshot = self.snapshots.get(experiment.snapshot_id)
+        if snapshot is None:
+            raise ValueError("strategy_experiment_snapshot_not_found")
+        detail = StrategyExperimentDetail(experiment, snapshot, [])
+        stored, _created = self.experiments.put_if_absent(
+            experiment.experiment_id,
+            detail,
+        )
+        if stored != detail:
+            raise ValueError("strategy_experiment_conflict")
+
+    def record_development_checkpoint(
+        self,
+        experiment: StrategyExperimentRecord,
+        candidates: list[StrategyExperimentCandidateRecord],
+    ) -> None:
+        if (
+            experiment.status != "pending"
+            or experiment.completion_reason != "development_completed"
+            or not experiment.selected_candidate_id
+            or not candidates
+            or any(
+                candidate.experiment_id != experiment.experiment_id
+                or candidate.test_metrics is not None
+                for candidate in candidates
+            )
+        ):
+            raise ValueError("strategy_experiment_development_checkpoint_invalid")
+        versioned = self.experiments.get_versioned(experiment.experiment_id)
+        existing = versioned[0] if versioned is not None else None
+        if (
+            existing is None
+            or existing.experiment.status != "pending"
+            or existing.experiment.definition_hash != experiment.definition_hash
+            or existing.experiment.snapshot_id != experiment.snapshot_id
+            or existing.experiment.completion_reason is not None
+            or existing.candidates
+        ):
+            raise ValueError("strategy_experiment_conflict")
+        checkpoint = StrategyExperimentDetail(
+            experiment,
+            existing.snapshot,
+            list(candidates),
+        )
+        assert versioned is not None
+        if not self.experiments.compare_and_swap_model(
+            experiment.experiment_id,
+            expected_version=versioned[1],
+            value=checkpoint,
+        ):
+            raise ValueError("strategy_experiment_conflict")
 
     def record_failed(self, experiment: StrategyExperimentRecord) -> None:
         if experiment.status != "failed":
@@ -104,17 +155,36 @@ class TenantStrategyExperimentStore:
         if snapshot is None:
             raise ValueError("strategy_experiment_snapshot_not_found")
         detail = StrategyExperimentDetail(experiment, snapshot, list(candidates))
-        existing = self.experiments.get(experiment.experiment_id)
-        if existing is not None and existing != detail:
-            if not (
-                existing.experiment.status == "pending"
-                and experiment.status in {"completed", "failed"}
-                and existing.experiment.definition_hash == experiment.definition_hash
-                and existing.experiment.snapshot_id == experiment.snapshot_id
-                and existing.candidates == []
-            ):
+        versioned = self.experiments.get_versioned(experiment.experiment_id)
+        if versioned is None:
+            _stored, created = self.experiments.put_if_absent(
+                experiment.experiment_id,
+                detail,
+            )
+            if created:
+                return
+            versioned = self.experiments.get_versioned(experiment.experiment_id)
+            if versioned is None:
                 raise ValueError("strategy_experiment_conflict")
-        self.experiments.put(experiment.experiment_id, detail)
+        existing, expected_version = versioned
+        if existing == detail:
+            return
+        if not (
+            existing.experiment.status == "pending"
+            and experiment.status in {"completed", "failed"}
+            and existing.experiment.definition_hash == experiment.definition_hash
+            and existing.experiment.snapshot_id == experiment.snapshot_id
+        ):
+            raise ValueError("strategy_experiment_conflict")
+        if self.experiments.compare_and_swap_model(
+            experiment.experiment_id,
+            expected_version=expected_version,
+            value=detail,
+        ):
+            return
+        if self.experiments.get(experiment.experiment_id) == detail:
+            return
+        raise ValueError("strategy_experiment_conflict")
 
     def mark_promoted(
         self,
@@ -198,3 +268,25 @@ class TenantStrategyExperimentStore:
         ]
         records.sort(key=lambda record: record.created_at, reverse=True)
         return records[: max(1, min(int(limit), 50))]
+
+    def list_pending(
+        self,
+        *,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> list[StrategyExperimentRecord]:
+        records = sorted(
+            (
+                detail.experiment
+                for detail in self.experiments.all()
+                if detail.experiment.status == "pending"
+            ),
+            key=lambda record: (record.created_at, record.experiment_id),
+        )
+        if after is not None:
+            records = [
+                record
+                for record in records
+                if (record.created_at, record.experiment_id) > after
+            ]
+        return records[: max(1, min(int(limit), 200))]

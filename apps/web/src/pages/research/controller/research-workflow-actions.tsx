@@ -1,5 +1,5 @@
 import { runResearchContextReadinessAction } from "../../../components/ResearchContextReadinessPanel";
-import { buildResearchContextReadinessReportAuditEvent, runP0Pipeline, saveAuditEvent, validateStrategySnapshot } from "../../../lib/terminal-api";
+import { buildFormalSealedDatasetWindow, buildResearchContextReadinessReportAuditEvent, loadStrategyResearchCapabilities, matchingResearchP0Capabilities, resolveResearchP0TemplateSelection, runP0Pipeline, saveAuditEvent, validateStrategySnapshot, type StrategyResearchCapability } from "../../../lib/terminal-api";
 import { buildResearchContextDeepLink, buildResearchContextReadinessReportArchive, buildResearchContextReadinessRows, buildResearchPipelinePreflight, researchPipelineDataSnapshotLogLabel, ResearchPipelinePreflight, researchRunEvidenceLogLabel, resolveResearchPipelinePreparationEvidenceRunId, WorkflowRunLogEntry } from "../../../lib/terminal-workbench";
 import { AUDIT_REPORT_EVENTS_PAGE_SIZE, quantCoreBaseUrl } from "../../app-shell/initial-state";
 import { researchPipelinePreflightIssueTargets } from "../../app-shell/navigation";
@@ -8,11 +8,11 @@ import { createWorkflowLogEntry, waitForWorkflowStep } from "../../app-shell/wor
 import { mergeAuditEvidenceReportEvent } from "../../audit/event-merges";
 import { chartKlineLimit } from "../ChartComponents";
 import { researchPipelinePreflightIssueDetail, researchPipelinePreflightStatusLabel } from "../ResearchPipelineFormatters";
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppControllerBindings } from "../../app-shell/controller/bindings";
 
 type Dependencies = Pick<AppControllerBindings, "activeCacheContext" | "activeLoopStepId" | "activeWorkAreaId" | "activeWorkflowStageId" | "auditEvidenceReportEvents" | "auditEvidenceReportOffset" | "auditEvidenceReportQuery" | "automatedTradingWorkflowActionErrorRef" | "copiedResearchContextLink" | "copiedResearchContextReadinessReport" | "error" | "hasUnsavedWatchlistChanges" | "i18n" | "isResearchPipelineConfirmationOpen" | "isRunning" | "klinesState" | "latestOtherResearchContextReadinessReport" | "latestResearchContextReadinessReport" | "marketCalendarState" | "marketDataRefreshGuard" | "openAuditReportLedgerResearchContextLink" | "paperExecutionRecord" | "pendingMarketAiSelectionResearchOrigin" | "promotionCandidateRecord" | "refreshRunHistory" | "refreshSelectedMarketCache" | "refreshStrategyLibrary" | "refreshWatchlistMarketCache" | "researchCompletionNotice" | "researchContextEvidenceRows" | "researchContextLinkCopyResetTimerRef" | "researchContextReadinessReportCopyResetTimerRef" | "researchNoteDraft" | "researchNoteState" | "resetAiReviewHistoryState" | "selectProductWorkArea" | "selectedWatchlistCacheRefreshRunId" | "selectedWatchlistRefreshEvidenceRunId" | "setActiveLoopStepId" | "setActiveWorkAreaId" | "setActiveWorkflowStageId" | "setAuditEvidenceReportEvents" | "setAuditEvidenceReportOffset" | "setAuditEvidenceReportQuery" | "setCopiedResearchContextLink" | "setCopiedResearchContextReadinessReport" | "setHasUnsavedWatchlistChanges" | "setIsResearchPipelineConfirmationOpen" | "setIsRunning" | "setKlinesState" | "setMarketCalendarState" | "setPaperExecutionRecord" | "setPendingMarketAiSelectionResearchOrigin" | "setPromotionCandidateRecord" | "setResearchCompletionNotice" | "setResearchNoteDraft" | "setResearchNoteState" | "setSelectedWatchlistCacheRefreshRunId" | "setStrategyValidationState" | "setWatchlistCacheRefreshHistory" | "setWorkflowRunState" | "setWorkspaceState" | "source" | "statusLabel" | "strategyValidationState" | "watchlistCacheRefreshHistory" | "workflowRunIdRef" | "workflowRunState" | "workspace">;
-type Result = Pick<AppControllerBindings, "researchContextReadinessRows" | "researchPipelinePreflight" | "researchPipelinePreparationEvidenceRunId" | "runPipeline" | "copyResearchContextLink" | "buildCurrentResearchContextReadinessReport" | "copyResearchContextReadinessReport" | "downloadResearchContextReadinessReport" | "recordResearchContextReadinessReport" | "openResearchPipelinePreflightIssue" | "openLatestResearchContextReportInAudit" | "openLatestOtherResearchContextReportInAudit" | "openLatestResearchContextReportContext" | "openSelectedRefreshCoverageInResearch">;
+type Result = Pick<AppControllerBindings, "researchContextReadinessRows" | "researchPipelinePreflight" | "researchPipelinePreparationEvidenceRunId" | "researchP0Capabilities" | "researchP0CapabilitiesLoading" | "selectedResearchP0TemplateId" | "selectResearchP0Template" | "runPipeline" | "copyResearchContextLink" | "buildCurrentResearchContextReadinessReport" | "copyResearchContextReadinessReport" | "downloadResearchContextReadinessReport" | "recordResearchContextReadinessReport" | "openResearchPipelinePreflightIssue" | "openLatestResearchContextReportInAudit" | "openLatestOtherResearchContextReportInAudit" | "openLatestResearchContextReportContext" | "openSelectedRefreshCoverageInResearch">;
 
 export function useResearchWorkflowActions(controller: Dependencies): Result {
   const {
@@ -29,6 +29,59 @@ export function useResearchWorkflowActions(controller: Dependencies): Result {
     setWorkflowRunState, setWorkspaceState, source, statusLabel, strategyValidationState, watchlistCacheRefreshHistory,
     workflowRunIdRef, workflowRunState, workspace
   } = controller;
+  const [loadedResearchP0Capabilities, setLoadedResearchP0Capabilities] = useState<StrategyResearchCapability[]>([]);
+  const [researchP0CapabilitiesLoading, setResearchP0CapabilitiesLoading] = useState(true);
+  const [selectedResearchP0TemplateId, setSelectedResearchP0TemplateId] = useState("");
+  const researchP0Context = useMemo(() => ({
+    market: workspace.selectedInstrument.market,
+    symbol: workspace.selectedInstrument.symbol,
+    timeframe: workspace.selectedTimeframe,
+  }), [
+    workspace.selectedInstrument.market,
+    workspace.selectedInstrument.symbol,
+    workspace.selectedTimeframe,
+  ]);
+  const researchP0Capabilities = useMemo(
+    () => matchingResearchP0Capabilities(loadedResearchP0Capabilities, researchP0Context),
+    [loadedResearchP0Capabilities, researchP0Context],
+  );
+  const selectResearchP0Template = useCallback((templateId: string) => {
+    try {
+      const selection = resolveResearchP0TemplateSelection(
+        loadedResearchP0Capabilities,
+        templateId,
+        researchP0Context,
+      );
+      setSelectedResearchP0TemplateId(
+        selection.mode === "registered" ? selection.capability.templateId : "",
+      );
+    } catch {
+      setSelectedResearchP0TemplateId("");
+    }
+  }, [loadedResearchP0Capabilities, researchP0Context]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setResearchP0CapabilitiesLoading(true);
+    void loadStrategyResearchCapabilities(quantCoreBaseUrl, controller.signal).then((result) => {
+      if (!active) {
+        return;
+      }
+      setLoadedResearchP0Capabilities(
+        result.source === "core" && result.capabilities ? result.capabilities : [],
+      );
+      setResearchP0CapabilitiesLoading(false);
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedResearchP0TemplateId("");
+  }, [researchP0Context]);
   const researchContextReadinessRows = buildResearchContextReadinessRows({
       workspace,
       barCount: klinesState.bars.length,
@@ -116,38 +169,97 @@ export function useResearchWorkflowActions(controller: Dependencies): Result {
       setPaperExecutionRecord(null);
       setPromotionCandidateRecord(null);
       resetAiReviewHistoryState();
-      appendLog("factor", "info", "Strategy preflight sent to local core");
       publishStage("factor", []);
-      const preflight = await validateStrategySnapshot(quantCoreBaseUrl, {
-        market: workspace.selectedInstrument.market,
-        symbol: workspace.selectedInstrument.symbol,
-        timeframe: workspace.selectedTimeframe,
-        auditRunId: workspace.researchRun?.runId ?? null,
-        strategy: workspace.strategy
-      });
-      if (workflowRunIdRef.current !== runId) {
-        return false;
+      let formalCapability: StrategyResearchCapability | null = null;
+      let formalSealedDataset: ReturnType<typeof buildFormalSealedDatasetWindow> | undefined;
+      if (selectedResearchP0TemplateId) {
+        appendLog("factor", "info", "Selected registered strategy capability requested from local core");
+        const capabilityReadback = await loadStrategyResearchCapabilities(quantCoreBaseUrl);
+        if (workflowRunIdRef.current !== runId) {
+          return false;
+        }
+        if (capabilityReadback.source !== "core" || !capabilityReadback.capabilities) {
+          const capabilityError = capabilityReadback.error ?? "Registered strategy capabilities unavailable";
+          automatedTradingWorkflowActionErrorRef.current = capabilityError;
+          appendLog("factor", "error", `Registered strategy capability read failed: ${capabilityError}`);
+          publishStage("factor", [], "factor");
+          setIsRunning(false);
+          return false;
+        }
+        try {
+          const selection = resolveResearchP0TemplateSelection(
+            capabilityReadback.capabilities,
+            selectedResearchP0TemplateId,
+            researchP0Context,
+          );
+          if (selection.mode !== "registered") {
+            throw new TypeError("An explicit registered template selection is required");
+          }
+          formalCapability = selection.capability;
+          if (
+            klinesState.market !== workspace.selectedInstrument.market
+            || klinesState.symbol !== workspace.selectedInstrument.symbol
+            || klinesState.timeframe !== workspace.selectedTimeframe
+          ) {
+            throw new TypeError("Current chart context does not match the formal P0 capability");
+          }
+          const latestBoundary = klinesState.bars.at(-1)?.timestamp;
+          if (!latestBoundary) {
+            throw new TypeError("A completed chart bar is required for the formal P0 window");
+          }
+          formalSealedDataset = buildFormalSealedDatasetWindow(
+            formalCapability.sealedData,
+            latestBoundary,
+          );
+        } catch (formalWindowError) {
+          const detail = formalWindowError instanceof Error
+            ? formalWindowError.message
+            : "Formal sealed P0 window unavailable";
+          automatedTradingWorkflowActionErrorRef.current = detail;
+          appendLog("factor", "error", detail);
+          publishStage("factor", [], "factor");
+          setIsRunning(false);
+          return false;
+        }
+        setStrategyValidationState({ source: "core" });
+        appendLog(
+          "factor",
+          "success",
+          `Registered strategy capability ready: ${formalCapability.templateId}`,
+        );
+      } else {
+        appendLog("factor", "info", "Strategy preflight sent to local core");
+        const preflight = await validateStrategySnapshot(quantCoreBaseUrl, {
+          market: workspace.selectedInstrument.market,
+          symbol: workspace.selectedInstrument.symbol,
+          timeframe: workspace.selectedTimeframe,
+          auditRunId: workspace.researchRun?.runId ?? null,
+          strategy: workspace.strategy
+        });
+        if (workflowRunIdRef.current !== runId) {
+          return false;
+        }
+        setStrategyValidationState(preflight);
+        if (preflight.validation?.status === "blocked") {
+          const blockedGates = preflight.validation.gates
+            .filter((gate) => gate.status === "blocked")
+            .map((gate) => gate.id)
+            .join(", ");
+          automatedTradingWorkflowActionErrorRef.current =
+            `Strategy preflight blocked: ${blockedGates || "readiness gate"}`;
+          appendLog("factor", "error", `Strategy preflight blocked: ${blockedGates || "readiness gate"}`);
+          publishStage("factor", [], "factor");
+          setIsRunning(false);
+          return false;
+        }
+        appendLog(
+          "factor",
+          preflight.source === "core" ? "success" : "warning",
+          preflight.source === "core"
+            ? `Strategy preflight passed: ${preflight.validation?.status ?? "review"}`
+            : `Strategy preflight used local fallback: ${preflight.error ?? "core unavailable"}`
+        );
       }
-      setStrategyValidationState(preflight);
-      if (preflight.validation?.status === "blocked") {
-        const blockedGates = preflight.validation.gates
-          .filter((gate) => gate.status === "blocked")
-          .map((gate) => gate.id)
-          .join(", ");
-        automatedTradingWorkflowActionErrorRef.current =
-          `Strategy preflight blocked: ${blockedGates || "readiness gate"}`;
-        appendLog("factor", "error", `Strategy preflight blocked: ${blockedGates || "readiness gate"}`);
-        publishStage("factor", [], "factor");
-        setIsRunning(false);
-        return false;
-      }
-      appendLog(
-        "factor",
-        preflight.source === "core" ? "success" : "warning",
-        preflight.source === "core"
-          ? `Strategy preflight passed: ${preflight.validation?.status ?? "review"}`
-          : `Strategy preflight used local fallback: ${preflight.error ?? "core unavailable"}`
-      );
 
       appendLog("data", "info", researchPipelineDataSnapshotLogLabel(selectedContext, researchPipelinePreflight));
       publishStage("data", []);
@@ -155,7 +267,13 @@ export function useResearchWorkflowActions(controller: Dependencies): Result {
       if (workflowRunIdRef.current !== runId) {
         return false;
       }
-      appendLog("factor", "success", "Factor set staged: SMA / RSI / volume");
+      appendLog(
+        "factor",
+        "success",
+        formalCapability
+          ? `Registered formal strategy staged: ${formalCapability.templateId}`
+          : "Factor set staged: SMA / RSI / volume",
+      );
       publishStage("factor", ["data"]);
       await waitForWorkflowStep();
       if (workflowRunIdRef.current !== runId) {
@@ -172,6 +290,10 @@ export function useResearchWorkflowActions(controller: Dependencies): Result {
           timeframe: workspace.selectedTimeframe,
           limit: chartKlineLimit,
           watchlistRefreshRunId: researchPipelinePreparationEvidenceRunId,
+          ...(formalCapability && formalSealedDataset ? {
+            registeredTemplateId: formalCapability.templateId,
+            sealedDataset: formalSealedDataset,
+          } : {}),
           selectionOrigin:
             pendingMarketAiSelectionResearchOrigin
             && pendingMarketAiSelectionResearchOrigin.market === workspace.selectedInstrument.market
@@ -237,6 +359,7 @@ export function useResearchWorkflowActions(controller: Dependencies): Result {
     }, [
       chartKlineLimit,
       i18n,
+      klinesState,
       pendingMarketAiSelectionResearchOrigin,
       quantCoreBaseUrl,
       refreshRunHistory,
@@ -244,6 +367,8 @@ export function useResearchWorkflowActions(controller: Dependencies): Result {
       researchPipelinePreparationEvidenceRunId,
       researchPipelinePreflight,
       resetAiReviewHistoryState,
+      researchP0Context,
+      selectedResearchP0TemplateId,
       workspace
     ]);
   const copyResearchContextLink = useCallback(async () => {
@@ -467,7 +592,8 @@ export function useResearchWorkflowActions(controller: Dependencies): Result {
       selectProductWorkArea("research");
     }, [selectProductWorkArea]);
   return {
-    researchContextReadinessRows, researchPipelinePreflight, researchPipelinePreparationEvidenceRunId, runPipeline, copyResearchContextLink, buildCurrentResearchContextReadinessReport,
+    researchContextReadinessRows, researchPipelinePreflight, researchPipelinePreparationEvidenceRunId, researchP0Capabilities, researchP0CapabilitiesLoading,
+    selectedResearchP0TemplateId, selectResearchP0Template, runPipeline, copyResearchContextLink, buildCurrentResearchContextReadinessReport,
     copyResearchContextReadinessReport, downloadResearchContextReadinessReport, recordResearchContextReadinessReport, openResearchPipelinePreflightIssue, openLatestResearchContextReportInAudit, openLatestOtherResearchContextReportInAudit,
     openLatestResearchContextReportContext, openSelectedRefreshCoverageInResearch
   };

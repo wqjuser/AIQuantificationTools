@@ -17,6 +17,7 @@ import {
   type WorkspaceFetcher
 } from "./terminal-api-http";
 import {
+  hasExactObjectKeys,
   isBacktestAssumptions,
   isMarket,
   isMarketKlineBar,
@@ -252,7 +253,11 @@ async function hydrateResearchRunSnapshotIfNeeded(
 ): Promise<TerminalWorkspace> {
   const runId = workspace.researchRun?.runId;
   const snapshot = workspace.researchRun?.dataSnapshot;
-  if (!runId || (snapshot && snapshot.bars.length > 0)) {
+  if (
+    !runId
+    || snapshot?.hashVersion === "aiqt-sealed-v1"
+    || Boolean(snapshot?.bars?.length)
+  ) {
     return workspace;
   }
 
@@ -262,7 +267,14 @@ async function hydrateResearchRunSnapshotIfNeeded(
       return workspace;
     }
     const payload = await response.json();
-    if (!isResearchRunDetailPayload(payload) || !payload.run.dataSnapshot?.bars.length) {
+    if (
+      !isResearchRunDetailPayload(payload)
+      || !payload.run.dataSnapshot
+      || (
+        payload.run.dataSnapshot.hashVersion !== "aiqt-sealed-v1"
+        && !payload.run.dataSnapshot.bars?.length
+      )
+    ) {
       return workspace;
     }
     return workspaceWithPrimaryWorkflows(workspaceFromResearchRunAudit(workspace, payload.run));
@@ -306,7 +318,10 @@ export function isResearchRunAudit(value: unknown): value is ResearchRunAudit {
     Boolean(run.executionMode) &&
     (run.aiReport === undefined || isResearchRunAiReport(run.aiReport)) &&
     (run.dataQuality === undefined || isResearchRunDataQuality(run.dataQuality)) &&
-    (run.dataSnapshot === undefined || isResearchRunDataSnapshot(run.dataSnapshot)) &&
+    (run.dataSnapshot === undefined || (
+      isResearchRunDataSnapshot(run.dataSnapshot)
+      && sealedSnapshotMatchesRun(run.dataSnapshot, run)
+    )) &&
     (run.researchNote === undefined || isResearchRunNote(run.researchNote)) &&
     (run.strategyConfig === undefined || isResearchRunStrategyConfig(run.strategyConfig)) &&
     (run.backtestAssumptions === undefined || isBacktestAssumptions(run.backtestAssumptions)) &&
@@ -338,6 +353,9 @@ function isResearchRunDataSnapshot(value: unknown): boolean {
     return false;
   }
   const snapshot = value as Record<string, unknown>;
+  if (snapshot.hashVersion === "aiqt-sealed-v1") {
+    return isFormalSealedResearchSnapshot(snapshot);
+  }
   return (
     (snapshot.hashVersion === undefined || snapshot.hashVersion === "aiqt-data-v2") &&
     typeof snapshot.source === "string" &&
@@ -359,6 +377,189 @@ function isResearchRunDataSnapshot(value: unknown): boolean {
     (snapshot.marketAiSelectionEvidence === undefined ||
       isResearchRunMarketAiSelectionEvidence(snapshot.marketAiSelectionEvidence))
   );
+}
+
+const formalSealedSnapshotFields = [
+  "source",
+  "isComplete",
+  "warnings",
+  "rows",
+  "start",
+  "endExclusive",
+  "hashVersion",
+  "hash",
+  "snapshotHash",
+  "adjustmentMode",
+  "coverage",
+  "qualityIssues",
+  "sealedDataset",
+] as const;
+
+const formalSealedScoringSnapshotFields = [
+  ...formalSealedSnapshotFields,
+  "preRollVersion",
+  "scoringWindow",
+] as const;
+
+const formalScoringWindowFields = [
+  "start",
+  "endExclusive",
+  "rows",
+  "preRollRows",
+] as const;
+
+const formalSealedSummaryFields = [
+  "datasetId",
+  "market",
+  "symbol",
+  "timeframe",
+  "source",
+  "adjustmentMode",
+  "start",
+  "developmentEndExclusive",
+  "endExclusive",
+  "rows",
+  "developmentRows",
+  "withheldRows",
+  "datasetHash",
+  "developmentHash",
+] as const;
+
+function isFormalSealedResearchSnapshot(snapshot: Record<string, unknown>): boolean {
+  const hasScoringIdentity = "preRollVersion" in snapshot || "scoringWindow" in snapshot;
+  if (!hasExactObjectKeys(
+    snapshot,
+    hasScoringIdentity ? formalSealedScoringSnapshotFields : formalSealedSnapshotFields,
+  )) {
+    return false;
+  }
+  const summary = snapshot.sealedDataset;
+  if (!hasExactObjectKeys(summary, formalSealedSummaryFields)) {
+    return false;
+  }
+  const start = parseFiniteTimestamp(snapshot.start);
+  const developmentEnd = parseFiniteTimestamp(snapshot.endExclusive);
+  const sealedEnd = parseFiniteTimestamp(summary.endExclusive);
+  return snapshot.hashVersion === "aiqt-sealed-v1"
+    && snapshot.isComplete === true
+    && Array.isArray(snapshot.warnings)
+    && snapshot.warnings.every((warning) => typeof warning === "string")
+    && Number.isInteger(snapshot.rows)
+    && Number(snapshot.rows) > 0
+    && typeof snapshot.start === "string"
+    && typeof snapshot.endExclusive === "string"
+    && isSha256(snapshot.hash)
+    && typeof snapshot.snapshotHash === "string"
+    && Boolean(snapshot.snapshotHash)
+    && typeof snapshot.source === "string"
+    && typeof snapshot.adjustmentMode === "string"
+    && isOptionalDataQualityContract(snapshot)
+    && typeof summary.datasetId === "string"
+    && Boolean(summary.datasetId)
+    && isMarket(summary.market)
+    && typeof summary.symbol === "string"
+    && isTimeframe(summary.timeframe)
+    && typeof summary.source === "string"
+    && typeof summary.adjustmentMode === "string"
+    && typeof summary.start === "string"
+    && typeof summary.developmentEndExclusive === "string"
+    && typeof summary.endExclusive === "string"
+    && Number.isInteger(summary.rows)
+    && Number.isInteger(summary.developmentRows)
+    && Number.isInteger(summary.withheldRows)
+    && Number(summary.rows) === Number(summary.developmentRows) + Number(summary.withheldRows)
+    && Number(summary.developmentRows) === Number(snapshot.rows)
+    && Number(summary.withheldRows) > 0
+    && isSha256(summary.datasetHash)
+    && isSha256(summary.developmentHash)
+    && summary.datasetId === `sealed-${summary.datasetHash.slice(0, 24)}`
+    && summary.developmentHash === snapshot.hash
+    && isSha256(snapshot.snapshotHash)
+    && summary.source === snapshot.source
+    && summary.adjustmentMode === snapshot.adjustmentMode
+    && summary.start === snapshot.start
+    && summary.developmentEndExclusive === snapshot.endExclusive
+    && (!hasScoringIdentity || isFormalSealedScoringIdentity(snapshot, summary))
+    && start !== null
+    && developmentEnd !== null
+    && sealedEnd !== null
+    && start < developmentEnd
+    && developmentEnd < sealedEnd;
+}
+
+function isFormalSealedScoringIdentity(
+  snapshot: Record<string, unknown>,
+  summary: Record<string, unknown>,
+): boolean {
+  const scoringWindow = snapshot.scoringWindow;
+  if (
+    snapshot.preRollVersion !== "formal-pre-roll-v2"
+    || !hasExactObjectKeys(scoringWindow, formalScoringWindowFields)
+    || summary.timeframe !== "1m"
+    || !Number.isInteger(scoringWindow.rows)
+    || Number(scoringWindow.rows) <= 0
+    || !Number.isInteger(scoringWindow.preRollRows)
+    || Number(scoringWindow.preRollRows) <= 0
+  ) {
+    return false;
+  }
+  const sealedStart = parseFiniteTimestamp(summary.start);
+  const developmentEnd = parseFiniteTimestamp(summary.developmentEndExclusive);
+  const sealedEnd = parseFiniteTimestamp(summary.endExclusive);
+  const scoringStart = parseFiniteTimestamp(scoringWindow.start);
+  const scoringEnd = parseFiniteTimestamp(scoringWindow.endExclusive);
+  if (
+    sealedStart === null
+    || developmentEnd === null
+    || sealedEnd === null
+    || scoringStart === null
+    || scoringEnd === null
+  ) {
+    return false;
+  }
+  const totalRows = Number(summary.rows);
+  const developmentRows = Number(summary.developmentRows);
+  const scoringRows = Number(scoringWindow.rows);
+  const preRollRows = Number(scoringWindow.preRollRows);
+  const developmentScoringRows = developmentRows - preRollRows;
+  return scoringWindow.endExclusive === summary.endExclusive
+    && scoringEnd === sealedEnd
+    && scoringRows + preRollRows === totalRows
+    && developmentScoringRows > 0
+    && scoringStart - sealedStart === preRollRows * 60_000
+    && scoringEnd - scoringStart === scoringRows * 60_000
+    && developmentEnd - scoringStart === developmentScoringRows * 60_000;
+}
+
+function sealedSnapshotMatchesRun(
+  snapshotValue: unknown,
+  run: Partial<ResearchRunAudit>,
+): boolean {
+  if (!isPlainRecord(snapshotValue)) {
+    return false;
+  }
+  const snapshot = snapshotValue;
+  if (snapshot.hashVersion !== "aiqt-sealed-v1") {
+    return true;
+  }
+  const summary = snapshot.sealedDataset;
+  return isPlainRecord(summary)
+    && summary.market === run.market
+    && summary.symbol === run.symbol
+    && summary.timeframe === run.timeframe
+    && snapshot.rows === run.dataRows;
+}
+
+function isSha256(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+}
+
+function parseFiniteTimestamp(value: unknown): number | null {
+  if (typeof value !== "string" || !value || value !== value.trim()) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function isResearchRunMarketAiSelectionEvidence(value: unknown): boolean {

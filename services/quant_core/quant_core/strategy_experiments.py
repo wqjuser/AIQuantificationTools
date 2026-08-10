@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import copy
+from hashlib import sha256
 import itertools
 import json
 import math
 import statistics
 import time
 import uuid
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from threading import Thread
-from typing import Any, Callable, Literal, Protocol, Sequence, cast
+from typing import Any, Callable, Literal, Mapping, Protocol, Sequence, cast
 
 from quant_core.ai_review_stage3 import build_strategy_lineage_key_from_parts
 from quant_core.backtest import BacktestEngine, strategy_required_bars
@@ -28,6 +29,11 @@ from quant_core.canonical import (
     strategy_config_to_payload,
 )
 from quant_core.domain import BacktestMetrics, BacktestRun, OHLCVBar, StrategyConfig
+from quant_core.research import (
+    _backtest_equity_curve_rows,
+    _backtest_trade_replay_payload,
+    _backtest_trade_replay_rows,
+)
 from quant_core.runs import ResearchRunStore
 from quant_core.sealed_datasets import (
     SEALED_DATASET_HASH_VERSION,
@@ -57,6 +63,8 @@ RESULT_SCHEMA_VERSION = 1
 POLICY_ENGINE_VERSION = "backtest-v2"
 POLICY_EVALUATOR_VERSION = "strategy-evaluator-v2"
 POLICY_RESULT_SCHEMA_VERSION = 2
+FORMAL_PRE_ROLL_VERSION_V1 = "formal-pre-roll-v1"
+FORMAL_PRE_ROLL_VERSION = "formal-pre-roll-v2"
 
 _SUPPORTED_PARAMETERS = {
     "close_above_sma": {"window"},
@@ -66,6 +74,7 @@ _SUPPORTED_PARAMETERS = {
     "rsi_above": {"window", "threshold"},
 }
 _SUPPORTED_POLICY_PATHS = {
+    "reversion.entryZThreshold": "signed_threshold",
     "regime.closeAboveSmaWindow": "window",
     "regime.smaSlopeLookbackBars": "slope",
     "breakout.lookbackBars": "window",
@@ -76,6 +85,13 @@ _SUPPORTED_POLICY_PATHS = {
     "atr.trailingMultiple": "multiple",
     "holding.maxBars": "bars",
     "cooldown.bars": "cooldown",
+}
+_SUPPORTED_POLICY_PATHS_BY_KIND = {
+    "regime_breakout_v2": frozenset(
+        path for path in _SUPPORTED_POLICY_PATHS if path != "reversion.entryZThreshold"
+    ),
+    "cost_aware_range_reversion_v1": frozenset({"reversion.entryZThreshold"}),
+    "cost_aware_range_reversion_v1_1": frozenset({"reversion.entryZThreshold"}),
 }
 FORMAL_PROFITABILITY_GUARDRAILS = {
     "development": {"minimumRoundTripCount": 30},
@@ -214,10 +230,14 @@ def expand_candidates(
                 cast(list[dict[str, Any]], conditions)[parameter["conditionIndex"]]["params"][parameter["parameter"]] = (
                     parameter["value"]
                 )
+        try:
+            candidate_strategy = strategy_config_from_payload(payload)
+        except ValueError as error:
+            raise _invalid("Candidate strategy is outside canonical policy bounds.") from error
         candidates.append(
             ExpandedCandidate(
                 candidate_id=canonical_sha256(parameters)[:12],
-                strategy=strategy_config_from_payload(payload),
+                strategy=candidate_strategy,
                 parameters=parameters,
             )
         )
@@ -234,6 +254,7 @@ class StrategyExperimentRunner:
         monotonic: Callable[[], float] = time.monotonic,
         sealed_bar_source: SealedBarSource | None = None,
         job_launcher: Callable[[Callable[[], None]], None] | None = None,
+        launch_evidence_loader: Callable[[str], Any] | None = None,
     ) -> None:
         self.strategy_store = strategy_store
         self.run_store = run_store
@@ -241,13 +262,36 @@ class StrategyExperimentRunner:
         self.monotonic = monotonic
         self.sealed_bar_source = sealed_bar_source
         self.job_launcher = job_launcher or _launch_background_job
+        self.launch_evidence_loader = launch_evidence_loader
         self._evaluation_count = 0
 
-    def run_new(self, payload: dict[str, Any]) -> StrategyExperimentDetail:
-        definition = self._definition_from_source(payload)
+    def run_new(
+        self,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str | None = None,
+        launch_intent: Mapping[str, Any] | None = None,
+    ) -> StrategyExperimentDetail:
+        definition = (
+            self._definition_from_source(payload)
+            if launch_intent is None
+            else self._definition_from_source(
+                payload,
+                launch_intent=launch_intent,
+            )
+        )
         if definition.sealed_dataset_id is None:
+            if idempotency_key is not None:
+                raise StrategyExperimentError(
+                    status=400,
+                    error="strategy_experiment_idempotency_requires_formal",
+                    detail="Idempotent launch keys are only supported for formal experiments.",
+                )
             return self._run(definition)
-        return self._queue_formal(definition)
+        return self._queue_formal(
+            definition,
+            idempotency_key=idempotency_key,
+        )
 
     def replay(self, experiment_id: str) -> StrategyExperimentDetail:
         prior = self.experiment_store.get(experiment_id)
@@ -257,7 +301,21 @@ class StrategyExperimentRunner:
                 error="strategy_experiment_not_found",
                 detail=f"Strategy experiment {experiment_id} was not found.",
             )
-        self._definition_from_record(prior)
+        definition = self._definition_from_record(prior)
+        if prior.experiment.status == "completed":
+            expected_result_hash = _result_hash(
+                definition.definition_hash,
+                prior.candidates,
+                selected_candidate_id=prior.experiment.selected_candidate_id,
+                completion_reason=str(prior.experiment.completion_reason or ""),
+                profitability_gate_passed=prior.experiment.profitability_gate_passed,
+                result_schema_version=int(
+                    definition.definition["resultSchemaVersion"]
+                ),
+                pre_roll_version=definition.definition.get("preRollVersion"),
+            )
+            if prior.experiment.result_hash != expected_result_hash:
+                raise _conflict("Stored experiment result hash is invalid.")
         replay_id = f"experiment-{uuid.uuid4().hex}"
         replay = replace(
             prior.experiment,
@@ -277,6 +335,75 @@ class StrategyExperimentRunner:
         stored = self.experiment_store.get(replay_id)
         if stored is None:
             raise RuntimeError("strategy_experiment_replay_readback_failed")
+        return stored
+
+    def resume_pending(self, experiment_id: str) -> StrategyExperimentDetail:
+        prior = self.experiment_store.get(_required_string(experiment_id))
+        if prior is None:
+            raise StrategyExperimentError(
+                status=404,
+                error="strategy_experiment_not_found",
+                detail=f"Strategy experiment {experiment_id} was not found.",
+            )
+        if prior.experiment.status != "pending":
+            return prior
+        try:
+            self._require_strategy_research_launch_evidence(prior.experiment)
+        except StrategyExperimentError as error:
+            failed = replace(
+                prior.experiment,
+                status="failed",
+                selected_candidate_id=None,
+                completion_reason=None,
+                result_hash=None,
+                profitability_gate_passed=False,
+                error_code=error.error,
+                error_detail=error.detail,
+            )
+            self.experiment_store.record_failed(failed)
+            stored = self.experiment_store.get(prior.experiment.experiment_id)
+            if stored is None:
+                raise RuntimeError("strategy_experiment_recovery_readback_failed")
+            return stored
+        if self.experiment_store.claimed_definition(prior.snapshot.snapshot_id) is not None:
+            failed = replace(
+                prior.experiment,
+                status="failed",
+                selected_candidate_id=None,
+                completion_reason=None,
+                result_hash=None,
+                profitability_gate_passed=False,
+                error_code="test_holdout_consumed_before_recovery",
+                error_detail=(
+                    "The sealed test holdout was already consumed before the pending "
+                    "experiment could be recovered."
+                ),
+            )
+            self.experiment_store.record_failed(failed)
+        else:
+            try:
+                definition = self._definition_from_record(prior)
+            except StrategyExperimentError:
+                failed = replace(
+                    prior.experiment,
+                    status="failed",
+                    selected_candidate_id=None,
+                    completion_reason=None,
+                    result_hash=None,
+                    profitability_gate_passed=False,
+                    error_code="strategy_experiment_recovery_invalid",
+                    error_detail="The pending experiment could not be safely recovered.",
+                )
+                self.experiment_store.record_failed(failed)
+            else:
+                self._execute_formal_job(
+                    definition,
+                    experiment_id=prior.experiment.experiment_id,
+                    created_at=prior.experiment.created_at,
+                )
+        stored = self.experiment_store.get(prior.experiment.experiment_id)
+        if stored is None:
+            raise RuntimeError("strategy_experiment_recovery_readback_failed")
         return stored
 
     def promote_winner(
@@ -305,6 +432,7 @@ class StrategyExperimentRunner:
             )
         selected = _promotable_selected_candidate(detail)
         winner = _winner_strategy(detail, selected)
+        formal_identity_required = _fresh_p0_formal_identity_required(detail)
         fresh_run = self.run_store.get(normalized_run_id)
         if fresh_run is None:
             raise StrategyExperimentError(
@@ -322,6 +450,7 @@ class StrategyExperimentRunner:
             prior_snapshot_hash=detail.snapshot.canonical_data_hash,
             after=detail.snapshot.test_consumed_at,
             sealed_bar_source=self.sealed_bar_source,
+            formal_identity_required=formal_identity_required,
         )
         prior_data_range = _experiment_snapshot_data_range(detail)
         if fresh_data_range == prior_data_range:
@@ -420,14 +549,31 @@ class StrategyExperimentRunner:
             "auditRunId": normalized_run_id,
         }
 
-    def _queue_formal(self, definition: _ExperimentDefinition) -> StrategyExperimentDetail:
+    def _queue_formal(
+        self,
+        definition: _ExperimentDefinition,
+        *,
+        idempotency_key: str | None = None,
+    ) -> StrategyExperimentDetail:
+        experiment_id = (
+            f"experiment-{uuid.uuid4().hex}"
+            if idempotency_key is None
+            else _idempotent_experiment_id(idempotency_key)
+        )
+        self._require_strategy_research_launch_evidence_for_definition(
+            definition.definition,
+            experiment_id=experiment_id,
+        )
+        if idempotency_key is not None:
+            existing = self.experiment_store.get(experiment_id)
+            if existing is not None:
+                return _validated_idempotent_experiment(existing, definition)
         if self.experiment_store.claimed_definition(definition.snapshot.snapshot_id) is not None:
             raise StrategyExperimentError(
                 status=409,
                 error="test_holdout_consumed",
                 detail="The test holdout is already bound to a different experiment definition.",
             )
-        experiment_id = f"experiment-{uuid.uuid4().hex}"
         created_at = datetime.now(timezone.utc)
         self._evaluation_count = 0
         pending = self._record(
@@ -436,7 +582,14 @@ class StrategyExperimentRunner:
             created_at=created_at,
             status="pending",
         )
-        self.experiment_store.record_pending(pending)
+        try:
+            self.experiment_store.record_pending(pending)
+        except Exception:
+            if idempotency_key is not None:
+                winner = self.experiment_store.get(experiment_id)
+                if winner is not None:
+                    return _validated_idempotent_experiment(winner, definition)
+            raise
         self.job_launcher(
             lambda: self._execute_formal_job(
                 definition,
@@ -456,8 +609,23 @@ class StrategyExperimentRunner:
         experiment_id: str,
         created_at: datetime,
     ) -> None:
-        self._evaluation_count = 0
+        existing = self.experiment_store.get(experiment_id)
+        development_checkpoint = None
+        if (
+            existing is not None
+            and existing.experiment.status == "pending"
+            and existing.experiment.completion_reason == "development_completed"
+            and existing.candidates
+        ):
+            development_checkpoint = existing.candidates
+            self._evaluation_count = existing.experiment.evaluation_count
+        else:
+            self._evaluation_count = 0
         try:
+            self._require_strategy_research_launch_evidence_for_definition(
+                definition.definition,
+                experiment_id=experiment_id,
+            )
             (
                 candidate_records,
                 selected_candidate_id,
@@ -467,6 +635,7 @@ class StrategyExperimentRunner:
                 definition,
                 experiment_id=experiment_id,
                 deadline=None,
+                development_checkpoint=development_checkpoint,
             )
             result_hash = _result_hash(
                 definition.definition_hash,
@@ -475,6 +644,7 @@ class StrategyExperimentRunner:
                 completion_reason=completion_reason,
                 profitability_gate_passed=profitability_gate_passed,
                 result_schema_version=int(definition.definition["resultSchemaVersion"]),
+                pre_roll_version=definition.definition.get("preRollVersion"),
             )
             completed = self._record(
                 definition,
@@ -534,6 +704,7 @@ class StrategyExperimentRunner:
                 completion_reason=completion_reason,
                 profitability_gate_passed=profitability_gate_passed,
                 result_schema_version=int(definition.definition["resultSchemaVersion"]),
+                pre_roll_version=definition.definition.get("preRollVersion"),
             )
             experiment = self._record(
                 definition,
@@ -581,7 +752,12 @@ class StrategyExperimentRunner:
                 experiment_id=experiment_id,
             ) from None
 
-    def _definition_from_source(self, payload: dict[str, Any]) -> _ExperimentDefinition:
+    def _definition_from_source(
+        self,
+        payload: dict[str, Any],
+        *,
+        launch_intent: Mapping[str, Any] | None = None,
+    ) -> _ExperimentDefinition:
         if not isinstance(payload, dict) or set(payload) != {
             "strategyRevision",
             "sourceRunId",
@@ -653,6 +829,7 @@ class StrategyExperimentRunner:
                 source_run_id=source_run_id,
                 source_run=source_run,
                 library_payload=library_payload,
+                launch_intent=launch_intent,
             )
 
         snapshot_payload = source_run.data_snapshot
@@ -761,6 +938,7 @@ class StrategyExperimentRunner:
         source_run_id: str,
         source_run: Any,
         library_payload: dict[str, Any],
+        launch_intent: Mapping[str, Any] | None = None,
     ) -> _ExperimentDefinition:
         source = self.sealed_bar_source
         snapshot_payload = source_run.data_snapshot
@@ -808,6 +986,15 @@ class StrategyExperimentRunner:
             raise _conflict(
                 "The sealed dataset does not match the frozen 90-day scoring window."
             ) from error
+        if "preRollVersion" in snapshot_payload or "scoringWindow" in snapshot_payload:
+            expected_source_scoring = formal_scoring_metadata(expected_summary)
+            if {
+                "preRollVersion": snapshot_payload.get("preRollVersion"),
+                "scoringWindow": snapshot_payload.get("scoringWindow"),
+            } != expected_source_scoring:
+                raise _conflict(
+                    "The source run formal scoring identity does not match its sealed dataset."
+                )
         development_rows = validation_end
         if (
             source_run.data_rows != development_rows
@@ -824,8 +1011,10 @@ class StrategyExperimentRunner:
         guardrails = _normalize_guardrails(payload.get("guardrails"), formal=True)
         dimensions = _dimensions_from_payload(payload.get("dimensions"))
         candidates = expand_candidates(strategy, dimensions)
-        required_pre_roll = max(_warmup_bars(candidate.strategy) for candidate in candidates)
-        required_pre_roll += _formal_alignment_rows(score_start_at)
+        required_pre_roll = max(
+            formal_strategy_required_pre_roll(candidate.strategy, score_start_at)
+            for candidate in candidates
+        )
         if pre_roll_rows < required_pre_roll:
             raise _invalid(
                 "The sealed dataset does not include enough server-derived indicator pre-roll."
@@ -918,8 +1107,15 @@ class StrategyExperimentRunner:
             "evaluationBudget": evaluation_budget,
             "engineVersion": POLICY_ENGINE_VERSION,
             "evaluatorVersion": POLICY_EVALUATOR_VERSION,
+            "preRollVersion": FORMAL_PRE_ROLL_VERSION,
             "resultSchemaVersion": POLICY_RESULT_SCHEMA_VERSION,
         }
+        if launch_intent is not None:
+            normalized_launch_intent = _normalize_strategy_research_launch_intent(
+                launch_intent,
+                definition=definition,
+            )
+            definition["strategyResearchLaunch"] = normalized_launch_intent
         try:
             snapshot = self.experiment_store.put_snapshot(snapshot)
         except ValueError as error:
@@ -936,6 +1132,72 @@ class StrategyExperimentRunner:
             sealed_dataset_id=dataset_id,
             sealed_dataset_hash=str(expected_summary["datasetHash"]),
         )
+
+    def _require_strategy_research_launch_evidence(
+        self,
+        experiment: StrategyExperimentRecord,
+    ) -> None:
+        self._require_strategy_research_launch_evidence_for_definition(
+            experiment.definition,
+            experiment_id=experiment.experiment_id,
+        )
+
+    def _require_strategy_research_launch_evidence_for_definition(
+        self,
+        definition: Mapping[str, Any],
+        *,
+        experiment_id: str,
+    ) -> None:
+        launch = definition.get("strategyResearchLaunch")
+        if launch is None:
+            return
+        try:
+            normalized = _normalize_strategy_research_launch_intent(
+                launch,
+                definition=definition,
+            )
+            if normalized["experimentId"] != experiment_id:
+                raise ValueError("strategy_research_launch_experiment_mismatch")
+            loader = self.launch_evidence_loader
+            if not callable(loader):
+                raise ValueError("strategy_research_launch_store_unavailable")
+            record = loader(normalized["eventId"])
+            metadata = getattr(record, "metadata", None)
+            if (
+                record is None
+                or getattr(record, "event_id", None) != normalized["eventId"]
+                or getattr(record, "event_type", None) != "strategy_research_launch"
+                or getattr(record, "run_id", None) != definition.get("sourceRunId")
+                or getattr(record, "stage", None) != "strategy_research"
+                or getattr(record, "source", None)
+                != "ai_strategy_research_orchestrator"
+                or not isinstance(metadata, dict)
+                or set(metadata)
+                != {
+                    "proposalId",
+                    "experimentId",
+                    "definitionIdentityHash",
+                    "operator",
+                    "confirmed",
+                }
+                or metadata.get("proposalId") != normalized["proposalId"]
+                or metadata.get("experimentId") != experiment_id
+                or metadata.get("definitionIdentityHash")
+                != normalized["definitionIdentityHash"]
+                or not isinstance(metadata.get("operator"), str)
+                or not str(metadata["operator"]).strip()
+                or metadata.get("confirmed") is not True
+            ):
+                raise ValueError("strategy_research_launch_evidence_mismatch")
+        except (AttributeError, KeyError, TypeError, ValueError) as error:
+            raise StrategyExperimentError(
+                status=409,
+                error="strategy_research_launch_evidence_invalid",
+                detail=(
+                    "The pending strategy research experiment does not have exact "
+                    "protected launch evidence."
+                ),
+            ) from error
 
     def _definition_from_record(self, prior: StrategyExperimentDetail) -> _ExperimentDefinition:
         definition = cast(dict[str, Any], _canonical_copy(prior.experiment.definition))
@@ -980,9 +1242,21 @@ class StrategyExperimentRunner:
                     "rows": MIN_FORMAL_SOURCE_BARS,
                     "preRollRows": score_start_index,
                 }
-                required_pre_roll = max(
-                    _warmup_bars(candidate.strategy) for candidate in candidates
-                ) + _formal_alignment_rows(score_start_at)
+                pre_roll_version = definition.get("preRollVersion")
+                if pre_roll_version in (None, FORMAL_PRE_ROLL_VERSION_V1):
+                    required_pre_roll = max(
+                        _warmup_bars(candidate.strategy) for candidate in candidates
+                    ) + _legacy_formal_alignment_rows(score_start_at)
+                elif pre_roll_version == FORMAL_PRE_ROLL_VERSION:
+                    required_pre_roll = max(
+                        formal_strategy_required_pre_roll(
+                            candidate.strategy,
+                            score_start_at,
+                        )
+                        for candidate in candidates
+                    )
+                else:
+                    raise ValueError("formal_pre_roll_version_invalid")
                 if (
                     len(normalized_bars) != _exact_int(sealed_summary.get("developmentRows"))
                     or prior.snapshot.rows != _exact_int(sealed_summary.get("rows"))
@@ -1011,6 +1285,8 @@ class StrategyExperimentRunner:
             supported_version = (
                 definition.get("engineVersion") == POLICY_ENGINE_VERSION
                 and definition.get("evaluatorVersion") == POLICY_EVALUATOR_VERSION
+                and definition.get("preRollVersion")
+                in (None, FORMAL_PRE_ROLL_VERSION_V1, FORMAL_PRE_ROLL_VERSION)
                 and definition.get("resultSchemaVersion") == POLICY_RESULT_SCHEMA_VERSION
             )
         if not supported_version:
@@ -1146,95 +1422,35 @@ class StrategyExperimentRunner:
         *,
         experiment_id: str,
         deadline: float | None,
+        development_checkpoint: Sequence[StrategyExperimentCandidateRecord] | None = None,
     ) -> tuple[list[StrategyExperimentCandidateRecord], str | None, str, bool]:
-        records: list[StrategyExperimentCandidateRecord] = []
         guardrails = definition.definition["guardrails"]
         result_schema_version = int(definition.definition["resultSchemaVersion"])
         formal = result_schema_version == POLICY_RESULT_SCHEMA_VERSION
-        for candidate in definition.candidates:
-            warmup = _warmup_bars(candidate.strategy)
-            train_evaluation_start = (
-                definition.score_start_index if formal else warmup
-            )
-            validation_pre_roll = (
-                _formal_evaluation_pre_roll(
-                    candidate.strategy,
-                    definition.bars[definition.train_end],
-                )
-                if formal
-                else warmup
-            )
-            train = self._run_engine(
-                candidate.strategy,
-                list(definition.bars[: definition.train_end]),
-                evaluation_start_index=train_evaluation_start,
-                definition=definition,
+        if development_checkpoint is None:
+            records = self._evaluate_development_candidates(
+                definition,
+                experiment_id=experiment_id,
                 deadline=deadline,
-            )
-            validation = self._run_engine(
-                candidate.strategy,
-                list(
-                    definition.bars[
-                        definition.train_end - validation_pre_roll : definition.validation_end
-                    ]
-                ),
-                evaluation_start_index=validation_pre_roll,
-                definition=definition,
-                deadline=deadline,
-            )
-            train_metrics = metrics_to_payload(
-                train.metrics,
+                guardrails=guardrails,
                 result_schema_version=result_schema_version,
+                formal=formal,
             )
-            validation_metrics = metrics_to_payload(
-                validation.metrics,
-                result_schema_version=result_schema_version,
+        else:
+            if not formal:
+                raise _conflict("Only formal experiments may resume development evidence.")
+            records = _validate_development_checkpoint(
+                definition,
+                experiment_id=experiment_id,
+                records=development_checkpoint,
+                guardrails=guardrails,
             )
-            walk_forward = self._walk_forward(candidate.strategy, definition, deadline=deadline)
-            if formal:
-                gate_evaluation = _formal_pretest_gate_evaluation(
-                    train_metrics=train_metrics,
-                    validation_metrics=validation_metrics,
-                    walk_forward=walk_forward,
-                    guardrails=guardrails,
-                )
-                eligible = bool(gate_evaluation["pretest"]["passed"])
-            else:
-                maximum_drawdown = guardrails["maximumDrawdownPct"]
-                eligible = validation.metrics.trade_count >= guardrails["minimumTradeCount"] and (
-                    maximum_drawdown is None or validation.metrics.max_drawdown_pct <= maximum_drawdown
-                )
-                gate_evaluation = {}
-            records.append(
-                StrategyExperimentCandidateRecord(
-                    experiment_id=experiment_id,
-                    candidate_id=candidate.candidate_id,
-                    candidate_revision=candidate.strategy.revision,
-                    parameters=candidate.parameters,
-                    train_metrics=train_metrics,
-                    validation_metrics=validation_metrics,
-                    test_metrics=None,
-                    walk_forward=walk_forward,
-                    gate_evaluation=gate_evaluation,
-                    eligible=eligible,
-                    rank=None,
-                )
-            )
-
-        if formal and guardrails["stability"]["requirePositiveAdjacentCandidates"]:
-            records = _apply_adjacent_candidate_gate(records, definition.definition["dimensions"])
-
-        ranked_indexes = sorted(
-            (index for index, record in enumerate(records) if record.eligible),
-            key=lambda index: (
-                -records[index].validation_metrics["totalReturnPct"],
-                records[index].validation_metrics["maxDrawdownPct"],
-                -records[index].validation_metrics["profitFactor"],
-                records[index].candidate_id,
-            ),
-        )
-        for rank, index in enumerate(ranked_indexes, start=1):
-            records[index] = replace(records[index], rank=rank)
+        ranked_indexes = [
+            index
+            for index, record in enumerate(records)
+            if record.rank is not None
+        ]
+        ranked_indexes.sort(key=lambda index: int(records[index].rank or 0))
         if not ranked_indexes:
             reason = "no_validation_candidate" if formal else "no_eligible_candidate"
             return records, None, reason, False
@@ -1249,6 +1465,25 @@ class StrategyExperimentRunner:
         ]
         warmup = _warmup_bars(selected.strategy)
         if formal and definition.sealed_dataset_id is not None:
+            if development_checkpoint is None:
+                pending = self.experiment_store.get(experiment_id)
+                if pending is not None:
+                    if (
+                        pending.experiment.status != "pending"
+                        or pending.candidates
+                        or pending.experiment.completion_reason is not None
+                    ):
+                        raise _conflict("The formal experiment pending state is invalid.")
+                    checkpoint = replace(
+                        pending.experiment,
+                        evaluation_count=self._evaluation_count,
+                        selected_candidate_id=records[selected_index].candidate_id,
+                        completion_reason="development_completed",
+                    )
+                    self.experiment_store.record_development_checkpoint(
+                        checkpoint,
+                        records,
+                    )
             test_bars = self._claim_and_read_sealed_test(
                 definition,
                 experiment_id=experiment_id,
@@ -1309,6 +1544,111 @@ class StrategyExperimentRunner:
             profitability_gate_passed,
         )
 
+    def _evaluate_development_candidates(
+        self,
+        definition: _ExperimentDefinition,
+        *,
+        experiment_id: str,
+        deadline: float | None,
+        guardrails: Mapping[str, Any],
+        result_schema_version: int,
+        formal: bool,
+    ) -> list[StrategyExperimentCandidateRecord]:
+        records: list[StrategyExperimentCandidateRecord] = []
+        for candidate in definition.candidates:
+            warmup = _warmup_bars(candidate.strategy)
+            train_evaluation_start = definition.score_start_index if formal else warmup
+            validation_pre_roll = (
+                _formal_evaluation_pre_roll(
+                    candidate.strategy,
+                    definition.bars[definition.train_end],
+                )
+                if formal
+                else warmup
+            )
+            train = self._run_engine(
+                candidate.strategy,
+                list(definition.bars[: definition.train_end]),
+                evaluation_start_index=train_evaluation_start,
+                definition=definition,
+                deadline=deadline,
+            )
+            validation = self._run_engine(
+                candidate.strategy,
+                list(
+                    definition.bars[
+                        definition.train_end - validation_pre_roll : definition.validation_end
+                    ]
+                ),
+                evaluation_start_index=validation_pre_roll,
+                definition=definition,
+                deadline=deadline,
+            )
+            train_metrics = metrics_to_payload(
+                train.metrics,
+                result_schema_version=result_schema_version,
+            )
+            validation_metrics = metrics_to_payload(
+                validation.metrics,
+                result_schema_version=result_schema_version,
+            )
+            walk_forward = self._walk_forward(
+                candidate.strategy,
+                definition,
+                deadline=deadline,
+            )
+            if formal:
+                gate_evaluation = _formal_pretest_gate_evaluation(
+                    train_metrics=train_metrics,
+                    validation_metrics=validation_metrics,
+                    walk_forward=walk_forward,
+                    guardrails=guardrails,
+                )
+                eligible = bool(gate_evaluation["pretest"]["passed"])
+            else:
+                maximum_drawdown = guardrails["maximumDrawdownPct"]
+                eligible = (
+                    validation.metrics.trade_count >= guardrails["minimumTradeCount"]
+                    and (
+                        maximum_drawdown is None
+                        or validation.metrics.max_drawdown_pct <= maximum_drawdown
+                    )
+                )
+                gate_evaluation = {}
+            records.append(
+                StrategyExperimentCandidateRecord(
+                    experiment_id=experiment_id,
+                    candidate_id=candidate.candidate_id,
+                    candidate_revision=candidate.strategy.revision,
+                    parameters=candidate.parameters,
+                    train_metrics=train_metrics,
+                    validation_metrics=validation_metrics,
+                    test_metrics=None,
+                    walk_forward=walk_forward,
+                    gate_evaluation=gate_evaluation,
+                    eligible=eligible,
+                    rank=None,
+                )
+            )
+
+        if formal and guardrails["stability"]["requirePositiveAdjacentCandidates"]:
+            records = _apply_adjacent_candidate_gate(
+                records,
+                definition.definition["dimensions"],
+            )
+        ranked_indexes = sorted(
+            (index for index, record in enumerate(records) if record.eligible),
+            key=lambda index: (
+                -records[index].validation_metrics["totalReturnPct"],
+                records[index].validation_metrics["maxDrawdownPct"],
+                -records[index].validation_metrics["profitFactor"],
+                records[index].candidate_id,
+            ),
+        )
+        for rank, index in enumerate(ranked_indexes, start=1):
+            records[index] = replace(records[index], rank=rank)
+        return records
+
     def _claim_and_read_sealed_test(
         self,
         definition: _ExperimentDefinition,
@@ -1325,17 +1665,19 @@ class StrategyExperimentRunner:
                 detail="The sealed dataset source is unavailable.",
             )
         try:
-            claim = source.claim_test_partition(
-                dataset_id,
-                claimant_id=experiment_id,
-                expected_dataset_hash=dataset_hash,
-            )
-            consumed_at = getattr(claim, "claimed_at", datetime.now(timezone.utc))
+            # Reserve the canonical experiment holdout first. If the process
+            # dies after this point, recovery sees the durable reservation and
+            # fails closed without attempting another external claim or read.
             self.experiment_store.claim_test_holdout(
                 snapshot_id=definition.snapshot.snapshot_id,
                 definition_hash=definition.definition_hash,
                 experiment_id=experiment_id,
-                consumed_at=consumed_at,
+                consumed_at=datetime.now(timezone.utc),
+            )
+            claim = source.claim_test_partition(
+                dataset_id,
+                claimant_id=experiment_id,
+                expected_dataset_hash=dataset_hash,
             )
             claim_token = str(getattr(claim, "claim_token", ""))
             if not claim_token:
@@ -1508,6 +1850,74 @@ class StrategyExperimentRunner:
             pass
 
 
+def _validate_development_checkpoint(
+    definition: _ExperimentDefinition,
+    *,
+    experiment_id: str,
+    records: Sequence[StrategyExperimentCandidateRecord],
+    guardrails: Mapping[str, Any],
+) -> list[StrategyExperimentCandidateRecord]:
+    expected_candidates = {
+        candidate.candidate_id: candidate for candidate in definition.candidates
+    }
+    stored = {record.candidate_id: record for record in records}
+    if len(stored) != len(records) or set(stored) != set(expected_candidates):
+        raise _conflict("The development checkpoint candidate identity is invalid.")
+    ordered: list[StrategyExperimentCandidateRecord] = []
+    try:
+        for candidate in definition.candidates:
+            record = stored[candidate.candidate_id]
+            if (
+                record.experiment_id != experiment_id
+                or record.candidate_revision != candidate.strategy.revision
+                or record.parameters != candidate.parameters
+                or record.test_metrics is not None
+                or "test" in record.gate_evaluation
+            ):
+                raise ValueError("strategy_experiment_development_checkpoint_invalid")
+            gate_evaluation = _formal_pretest_gate_evaluation(
+                train_metrics=record.train_metrics,
+                validation_metrics=record.validation_metrics,
+                walk_forward=record.walk_forward,
+                guardrails=guardrails,
+            )
+            ordered.append(
+                replace(
+                    record,
+                    gate_evaluation=gate_evaluation,
+                    eligible=bool(gate_evaluation["pretest"]["passed"]),
+                    rank=None,
+                )
+            )
+        if guardrails["stability"]["requirePositiveAdjacentCandidates"]:
+            ordered = _apply_adjacent_candidate_gate(
+                ordered,
+                definition.definition["dimensions"],
+            )
+        ranked_indexes = sorted(
+            (index for index, record in enumerate(ordered) if record.eligible),
+            key=lambda index: (
+                -ordered[index].validation_metrics["totalReturnPct"],
+                ordered[index].validation_metrics["maxDrawdownPct"],
+                -ordered[index].validation_metrics["profitFactor"],
+                ordered[index].candidate_id,
+            ),
+        )
+        for rank, index in enumerate(ranked_indexes, start=1):
+            ordered[index] = replace(ordered[index], rank=rank)
+    except (KeyError, TypeError, ValueError) as error:
+        raise _conflict("The development checkpoint evidence is invalid.") from error
+
+    if any(
+        stored[record.candidate_id].eligible != record.eligible
+        or stored[record.candidate_id].rank != record.rank
+        or stored[record.candidate_id].gate_evaluation != record.gate_evaluation
+        for record in ordered
+    ):
+        raise _conflict("The development checkpoint ranking evidence is invalid.")
+    return [stored[record.candidate_id] for record in ordered]
+
+
 def metrics_to_payload(
     metrics: BacktestMetrics,
     *,
@@ -1642,7 +2052,7 @@ def _normalize_dimensions(
     if not isinstance(dimensions, (list, tuple)) or not dimensions:
         raise _invalid("At least one parameter dimension is required.")
     if strategy.policy is not None:
-        return _normalize_policy_dimensions(dimensions)
+        return _normalize_policy_dimensions(strategy, dimensions)
     normalized: list[ParameterDimension] = []
     targets: set[tuple[str, int, str]] = set()
     for dimension in dimensions:
@@ -1684,15 +2094,21 @@ def _normalize_dimensions(
 
 
 def _normalize_policy_dimensions(
+    strategy: StrategyConfig,
     dimensions: Sequence[ParameterDimension | PolicyParameterDimension],
 ) -> tuple[PolicyParameterDimension, ...]:
     normalized: list[PolicyParameterDimension] = []
     targets: set[str] = set()
+    supported_paths = _SUPPORTED_POLICY_PATHS_BY_KIND.get(strategy.policy.kind, frozenset())
     for dimension in dimensions:
         if not isinstance(dimension, PolicyParameterDimension):
             raise _invalid("Version 2 strategies require policy parameter dimensions.")
         kind = _SUPPORTED_POLICY_PATHS.get(dimension.policy_path)
-        if kind is None or dimension.policy_path in targets:
+        if (
+            kind is None
+            or dimension.policy_path not in supported_paths
+            or dimension.policy_path in targets
+        ):
             raise _invalid("Policy parameter dimension is unsupported or duplicated.")
         if not dimension.values:
             raise _invalid("Policy parameter dimension values are required.")
@@ -1780,6 +2196,8 @@ def _policy_parameter_value(kind: str, value: Any) -> int | float:
             raise _invalid("Policy integer parameter is outside supported bounds.")
         return int(number)
     if kind == "multiple" and 0 < number <= 20:
+        return _canonical_number(number)
+    if kind == "signed_threshold" and -100 <= number <= 100:
         return _canonical_number(number)
     raise _invalid("Policy parameter is outside supported bounds.")
 
@@ -2026,18 +2444,111 @@ def _formal_scoring_boundaries(
     return pre_roll_rows, train_end, validation_end, score_start_at
 
 
-def _formal_alignment_rows(value: datetime) -> int:
+def formal_scoring_metadata(sealed_summary: Any) -> dict[str, Any]:
+    payload = (
+        sealed_summary.to_payload()
+        if callable(getattr(sealed_summary, "to_payload", None))
+        else sealed_summary
+    )
+    if not isinstance(payload, dict):
+        raise ValueError("formal_scoring_summary_invalid")
+    pre_roll_rows, _train_end, _validation_end, score_start_at = (
+        _formal_scoring_boundaries(payload)
+    )
+    return {
+        "preRollVersion": FORMAL_PRE_ROLL_VERSION,
+        "scoringWindow": {
+            "start": score_start_at.isoformat(),
+            "endExclusive": payload["endExclusive"],
+            "rows": MIN_FORMAL_SOURCE_BARS,
+            "preRollRows": pre_roll_rows,
+        },
+    }
+
+
+def formal_source_backtest_facts(
+    strategy: StrategyConfig,
+    bars: list[OHLCVBar],
+    *,
+    evaluation_start_index: int,
+) -> dict[str, Any]:
+    engine = BacktestEngine(
+        initial_cash=float(FORMAL_BACKTEST_ASSUMPTIONS["initialCash"]),
+        fee_rate=float(FORMAL_BACKTEST_ASSUMPTIONS["feeBps"]) / 10_000,
+        slippage_rate=float(FORMAL_BACKTEST_ASSUMPTIONS["slippageBps"]) / 10_000,
+    )
+    replay = engine.run(
+        strategy,
+        bars,
+        evaluation_start_index=evaluation_start_index,
+    )
+    return {
+        "metrics": asdict(replay.metrics),
+        "trades": [
+            _backtest_trade_replay_payload(row)
+            for row in _backtest_trade_replay_rows(
+                replay,
+                initial_cash=engine.initial_cash,
+            )
+        ],
+        "equity": [asdict(row) for row in _backtest_equity_curve_rows(replay)],
+    }
+
+
+def _legacy_formal_alignment_rows(value: datetime) -> int:
     normalized = value.astimezone(timezone.utc)
     if normalized.second or normalized.microsecond:
         raise ValueError("formal_scoring_range_invalid")
     return normalized.minute
 
 
+def _formal_policy_completion_minutes(strategy: StrategyConfig) -> int:
+    policy = strategy.policy
+    if policy is None:
+        return 1
+    timeframes = [policy.decision_timeframe]
+    regime = getattr(policy, "regime", None)
+    if regime is not None:
+        timeframes.append(regime.timeframe)
+    intervals: list[int] = []
+    for timeframe in timeframes:
+        if timeframe.endswith("m"):
+            interval = int(timeframe[:-1])
+        elif timeframe.endswith("h"):
+            interval = int(timeframe[:-1]) * 60
+        else:
+            raise ValueError("formal_policy_timeframe_invalid")
+        if interval <= 0:
+            raise ValueError("formal_policy_timeframe_invalid")
+        intervals.append(interval)
+    return max(intervals)
+
+
+def formal_strategy_required_pre_roll(
+    strategy: StrategyConfig,
+    boundary: datetime | None = None,
+) -> int:
+    """Return versioned policy warmup plus UTC completion alignment rows."""
+
+    completion_minutes = _formal_policy_completion_minutes(strategy)
+    if boundary is None:
+        alignment_rows = completion_minutes - 1
+    else:
+        if boundary.tzinfo is None or boundary.utcoffset() is None:
+            raise ValueError("formal_scoring_range_invalid")
+        normalized = boundary.astimezone(timezone.utc)
+        if normalized.second or normalized.microsecond:
+            raise ValueError("formal_scoring_range_invalid")
+        epoch_minutes = int(normalized.timestamp()) // 60
+        alignment_rows = epoch_minutes % completion_minutes
+    return _warmup_bars(strategy) + alignment_rows
+
+
 def _formal_evaluation_pre_roll(strategy: StrategyConfig, boundary: Any) -> int:
     timestamp = getattr(boundary, "timestamp", None)
     if not isinstance(timestamp, datetime) or timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise ValueError("formal_evaluation_boundary_invalid")
-    return _warmup_bars(strategy) + _formal_alignment_rows(timestamp)
+    return formal_strategy_required_pre_roll(strategy, timestamp)
 
 
 def _validate_warmup_capacity(
@@ -2238,6 +2749,7 @@ def _result_hash(
     completion_reason: str,
     profitability_gate_passed: bool = False,
     result_schema_version: int = RESULT_SCHEMA_VERSION,
+    pre_roll_version: str | None = None,
 ) -> str:
     ordered = sorted(candidates, key=lambda candidate: canonical_json(candidate.parameters))
     selected = next(
@@ -2274,6 +2786,8 @@ def _result_hash(
             for candidate in ordered
         ]
         payload["profitabilityGatePassed"] = profitability_gate_passed
+        if pre_roll_version is not None:
+            payload["preRollVersion"] = pre_roll_version
     return canonical_sha256(payload)
 
 
@@ -2378,6 +2892,17 @@ def _winner_strategy(
     return winner.strategy
 
 
+def _fresh_p0_formal_identity_required(
+    detail: StrategyExperimentDetail,
+) -> bool:
+    version = detail.experiment.definition.get("preRollVersion")
+    if version in (None, FORMAL_PRE_ROLL_VERSION_V1):
+        return False
+    if version == FORMAL_PRE_ROLL_VERSION:
+        return True
+    raise _conflict("The stored experiment formal pre-roll version is unsupported.")
+
+
 def _validate_fresh_p0_run(
     run: Any,
     *,
@@ -2385,6 +2910,7 @@ def _validate_fresh_p0_run(
     prior_snapshot_hash: str,
     after: datetime | None,
     sealed_bar_source: SealedBarSource | None = None,
+    formal_identity_required: bool = False,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     try:
         run_strategy = strategy_config_from_payload(run.strategy_config or {})
@@ -2411,12 +2937,25 @@ def _validate_fresh_p0_run(
             detail="The fresh P0 run does not exactly match the selected winner.",
         )
     snapshot = run.data_snapshot
+    if (
+        formal_identity_required
+        and snapshot.get("hashVersion") != SEALED_DATASET_HASH_VERSION
+    ):
+        raise StrategyExperimentError(
+            status=409,
+            error="fresh_p0_snapshot_invalid",
+            detail=(
+                "The promotion run must use a complete formal-pre-roll-v2 "
+                "sealed snapshot."
+            ),
+        )
     if snapshot.get("hashVersion") == SEALED_DATASET_HASH_VERSION:
         snapshot_hash, data_range = _validate_fresh_sealed_p0_run(
             run,
             winner=winner,
             prior_snapshot_hash=prior_snapshot_hash,
             sealed_bar_source=sealed_bar_source,
+            formal_identity_required=formal_identity_required,
         )
         fresh_gate_evaluation = fresh_p0_profitability_evaluation(run.metrics)
         return snapshot_hash, data_range, fresh_gate_evaluation
@@ -2572,6 +3111,7 @@ def _validate_fresh_sealed_p0_run(
     winner: StrategyConfig,
     prior_snapshot_hash: str,
     sealed_bar_source: SealedBarSource | None,
+    formal_identity_required: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     if sealed_bar_source is None:
         raise StrategyExperimentError(
@@ -2593,6 +3133,27 @@ def _validate_fresh_sealed_p0_run(
             raise ValueError("sealed_dataset_not_found")
         expected_summary = _sealed_summary_payload(summary)
         development_rows = _exact_int(expected_summary.get("developmentRows"))
+        supplied_scoring = None
+        if "preRollVersion" in snapshot or "scoringWindow" in snapshot:
+            expected_scoring = formal_scoring_metadata(expected_summary)
+            supplied_scoring = {
+                "preRollVersion": snapshot.get("preRollVersion"),
+                "scoringWindow": snapshot.get("scoringWindow"),
+            }
+            if supplied_scoring != expected_scoring:
+                raise ValueError("fresh_sealed_snapshot_scoring_invalid")
+        if formal_identity_required and supplied_scoring is None:
+            raise ValueError("fresh_sealed_snapshot_scoring_required")
+        if formal_identity_required:
+            scoring_window = cast(dict[str, Any], supplied_scoring["scoringWindow"])
+            score_start = datetime.fromisoformat(str(scoring_window["start"]))
+            pre_roll_rows = _exact_int(scoring_window.get("preRollRows"))
+            if (
+                pre_roll_rows is None
+                or pre_roll_rows
+                < formal_strategy_required_pre_roll(winner, score_start)
+            ):
+                raise ValueError("fresh_sealed_snapshot_pre_roll_insufficient")
         coverage = run.data_quality.get("coverage")
         issues = run.data_quality.get("issues")
         if (
@@ -2661,6 +3222,20 @@ def _validate_fresh_sealed_p0_run(
             != expected_summary.get("developmentEndExclusive")
         ):
             raise ValueError("fresh_sealed_snapshot_content_invalid")
+        if supplied_scoring is not None:
+            expected_facts = formal_source_backtest_facts(
+                winner,
+                development_bars,
+                evaluation_start_index=int(
+                    supplied_scoring["scoringWindow"]["preRollRows"]
+                ),
+            )
+            if {
+                "metrics": run.metrics,
+                "trades": run.backtest_trades,
+                "equity": run.backtest_equity_curve,
+            } != expected_facts:
+                raise ValueError("fresh_sealed_snapshot_replay_mismatch")
         snapshot_identity = _required_string(snapshot.get("snapshotHash"))
     except StrategyExperimentError:
         raise
@@ -2805,6 +3380,99 @@ def _required_exact_int(value: Any) -> int:
 
 def _launch_background_job(job: Callable[[], None]) -> None:
     Thread(target=job, daemon=True, name="strategy-experiment").start()
+
+
+_STRATEGY_RESEARCH_LAUNCH_DEFINITION_FIELDS = (
+    "strategyRevision",
+    "sourceRunId",
+    "assumptions",
+    "dimensions",
+    "guardrails",
+    "walkForward",
+)
+
+
+def strategy_research_launch_definition_identity(value: Mapping[str, Any]) -> str:
+    if not isinstance(value, Mapping) or any(
+        field not in value for field in _STRATEGY_RESEARCH_LAUNCH_DEFINITION_FIELDS
+    ):
+        raise ValueError("strategy_research_launch_definition_invalid")
+    return canonical_sha256(
+        {
+            field: value[field]
+            for field in _STRATEGY_RESEARCH_LAUNCH_DEFINITION_FIELDS
+        }
+    )
+
+
+def strategy_experiment_id_from_idempotency_key(value: Any) -> str:
+    return _idempotent_experiment_id(value)
+
+
+def _normalize_strategy_research_launch_intent(
+    value: Mapping[str, Any],
+    *,
+    definition: Mapping[str, Any],
+) -> dict[str, str]:
+    if not isinstance(value, Mapping) or set(value) != {
+        "proposalId",
+        "experimentId",
+        "eventId",
+        "definitionIdentityHash",
+    }:
+        raise ValueError("strategy_research_launch_intent_invalid")
+    proposal_id = str(value.get("proposalId") or "").strip()
+    experiment_id = str(value.get("experimentId") or "").strip()
+    event_id = str(value.get("eventId") or "").strip()
+    definition_identity_hash = str(
+        value.get("definitionIdentityHash") or ""
+    ).strip()
+    if (
+        not proposal_id.startswith("strategy-research-proposal-")
+        or experiment_id != strategy_experiment_id_from_idempotency_key(proposal_id)
+        or event_id != f"strategy-research-launch-{experiment_id}"
+        or len(definition_identity_hash) != 64
+        or any(character not in "0123456789abcdef" for character in definition_identity_hash)
+        or definition_identity_hash
+        != strategy_research_launch_definition_identity(definition)
+    ):
+        raise ValueError("strategy_research_launch_intent_invalid")
+    return {
+        "proposalId": proposal_id,
+        "experimentId": experiment_id,
+        "eventId": event_id,
+        "definitionIdentityHash": definition_identity_hash,
+    }
+
+
+def _idempotent_experiment_id(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > 512:
+        raise StrategyExperimentError(
+            status=400,
+            error="invalid_strategy_experiment_idempotency_key",
+            detail="The internal experiment idempotency key is invalid.",
+        )
+    digest = sha256(f"strategy-experiment:{value.strip()}".encode("utf-8")).hexdigest()
+    return f"experiment-{digest[:24]}"
+
+
+def _validated_idempotent_experiment(
+    existing: StrategyExperimentDetail,
+    definition: _ExperimentDefinition,
+) -> StrategyExperimentDetail:
+    record = existing.experiment
+    if (
+        record.definition_hash != definition.definition_hash
+        or record.snapshot_id != definition.snapshot.snapshot_id
+        or record.strategy_revision != definition.strategy.revision
+        or record.source_run_id != str(definition.definition["sourceRunId"])
+    ):
+        raise StrategyExperimentError(
+            status=409,
+            error="strategy_experiment_idempotency_conflict",
+            detail="The idempotency key is already bound to a different experiment definition.",
+        )
+    return existing
 
 
 def _required_string(value: Any) -> str:

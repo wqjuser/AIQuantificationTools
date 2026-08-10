@@ -970,7 +970,10 @@ describe("terminal layout css", () => {
 
   test("keeps the M4 research loop inside the real AI review surface without horizontal overflow", () => {
     expect(appSource).toContain('import { AiResearchM4Section } from "../../../components/AiResearchM4Section";');
+    expect(appSource).toContain('import { StrategyResearchSection } from "../../../components/StrategyResearchSection";');
     expect(appSource).toContain("researchLoop: (");
+    expect(appSource).toContain("<StrategyResearchSection");
+    expect(appSource).toContain("sourceRunId={currentResearchRunId ?? null}");
     expect(aiReviewContractSource).toContain("researchLoop?: ReactNode;");
     expect(aiReviewPanelSource).toContain("{aiReview.researchLoop}");
     expect(aiResearchM4SectionSource).toContain("researchContextOnly=true");
@@ -992,6 +995,13 @@ describe("terminal layout css", () => {
     );
     expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-research-m4-config select")).toContain(
       "background: var(--surface-raised);"
+    );
+  });
+
+  test("keeps the registered research template selector reachable in the real topbar", () => {
+    expect(terminalTopbarSource).toContain("research-template-control");
+    expect(globalStyles).toMatch(
+      /\.topbar-actions\s+\.research-template-control\s*\{[^}]*display:\s*inline-flex;/s,
     );
   });
 

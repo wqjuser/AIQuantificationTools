@@ -28,6 +28,7 @@ from ..support.stage5 import (
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+from quant_core.canonical import strategy_config_to_payload
 from quant_core.ai_review_runs import (
     AuthoritativeAiReviewRunRecord,
     ai_review_run_record_to_payload,
@@ -57,7 +58,10 @@ from quant_core.strategy_ai_drafts import (
     generate_strategy_ai_draft,
 )
 from quant_core.strategy_experiments import (
+    FORMAL_BACKTEST_ASSUMPTIONS,
+    MIN_FORMAL_SOURCE_BARS,
     StrategyExperimentError,
+    formal_scoring_metadata,
     strategy_experiment_detail_to_payload,
     strategy_experiment_records_to_payload,
 )
@@ -243,13 +247,48 @@ def post_p0_pipeline(self, parsed):
         symbol = str(payload.get("symbol") or "600000").strip() or "600000"
         timeframe = str(payload.get("timeframe") or "1d").strip() or "1d"
         watchlist_refresh_run_id = str(payload.get("watchlistRefreshRunId") or "").strip()
-        strategy_payload = payload.get("strategyConfig")
-        strategy = _p0_strategy_config_from_payload(
-            strategy_payload,
-            market=market,
-            symbol=symbol,
-            timeframe=timeframe,
-        )
+        has_strategy_config = "strategyConfig" in payload
+        has_registered_template = "registeredTemplateId" in payload
+        if has_strategy_config == has_registered_template:
+            raise ValueError("p0_strategy_source_conflict")
+        registered_template = None
+        if has_registered_template:
+            if any(key in payload for key in ("policy", "position", "risk")):
+                raise ValueError("registered_template_strategy_fields_forbidden")
+            registered_template_id = payload.get("registeredTemplateId")
+            if (
+                not isinstance(registered_template_id, str)
+                or not registered_template_id
+                or registered_template_id.strip() != registered_template_id
+            ):
+                raise ValueError("registered_template_id_invalid")
+            registry = self._strategy_research_capability_registry()
+            strategy = registry.resolve_base_strategy(
+                registered_template_id,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+            )
+            registered_template = registry.get(registered_template_id)
+            if registered_template is None:
+                raise ValueError("strategy_research_template_unknown")
+            strategy_payload = _registered_p0_strategy_payload(strategy)
+            supplied_assumptions = payload.get("assumptions")
+            if (
+                "assumptions" in payload
+                and supplied_assumptions != FORMAL_BACKTEST_ASSUMPTIONS
+            ):
+                raise ValueError("registered_template_assumptions_invalid")
+            assumptions_payload = dict(FORMAL_BACKTEST_ASSUMPTIONS)
+        else:
+            strategy_payload = payload.get("strategyConfig")
+            strategy = _p0_strategy_config_from_payload(
+                strategy_payload,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+            )
+            assumptions_payload = payload.get("assumptions")
         strategy_snapshot = _p0_strategy_snapshot_from_payload(strategy_payload)
         if strategy is None:
             validation = validate_strategy_snapshot(
@@ -283,15 +322,18 @@ def post_p0_pipeline(self, parsed):
         )
         sealed_dataset_id = None
         sealed_store = None
+        formal_scoring = None
+        backtest_evaluation_start_index = 0
         sealed_window = sealed_dataset_window_from_payload(payload.get("sealedDataset"))
+        if registered_template is not None:
+            _validate_registered_template_sealed_window(
+                registered_template,
+                sealed_window,
+            )
         if sealed_window is not None:
             if strategy is None or strategy.version != 2:
                 raise ValueError("sealed_dataset_requires_version_2_strategy")
-            if os.environ.get("AIQT_DEPLOYMENT_MODE", "local").strip().lower() != "local":
-                raise ValueError("sealed_dataset_local_only")
-            sealed_store = self.sealed_dataset_store
-            if sealed_store is None:
-                raise ValueError("sealed_dataset_store_unavailable")
+            sealed_store = _p0_sealed_dataset_store(self)
             start, development_end_exclusive, end_exclusive = sealed_window
             sealed_summary = SealedDevelopmentBarSource(
                 store=sealed_store,
@@ -309,13 +351,22 @@ def post_p0_pipeline(self, parsed):
                 observed_at=datetime.now(timezone.utc),
             )
             sealed_dataset_id = sealed_summary.dataset_id
+            try:
+                formal_scoring = formal_scoring_metadata(sealed_summary)
+            except ValueError:
+                if registered_template is not None:
+                    raise
+            if formal_scoring is not None:
+                backtest_evaluation_start_index = int(
+                    formal_scoring["scoringWindow"]["preRollRows"]
+                )
         workspace = run_terminal_research(
             market=market,
             symbol=symbol,
             timeframe=timeframe,
             adapter=self.kline_adapter,
             assistant=self.assistant,
-            engine=_p0_backtest_engine_from_payload(payload.get("assumptions")),
+            engine=_p0_backtest_engine_from_payload(assumptions_payload),
             cache=self.cache,
             run_store=self.run_store,
             data_limit=_p0_data_limit_from_payload(payload),
@@ -326,6 +377,8 @@ def post_p0_pipeline(self, parsed):
             comparison_adapter=self._comparison_market_data_adapter(market, timeframe),
             sealed_bar_source=(sealed_store if sealed_dataset_id else None),
             sealed_dataset_id=sealed_dataset_id,
+            backtest_evaluation_start_index=backtest_evaluation_start_index,
+            formal_scoring=formal_scoring,
         )
         if not workspace.research_run:
             raise ValueError("p0_pipeline_run_missing")
@@ -354,6 +407,77 @@ def post_p0_pipeline(self, parsed):
         return
     self._send_json(_p0_pipeline_response_payload(audit))
     return
+
+
+def _registered_p0_strategy_payload(strategy):
+    canonical = strategy_config_to_payload(strategy)
+    risk = canonical["risk"]
+    return {
+        "name": canonical["name"],
+        "version": 2,
+        "policy": canonical["policy"],
+        "position": {"maxPositionPct": float(risk["positionPct"]) * 100},
+        "risk": {
+            "riskBudgetPct": float(risk["riskBudgetPct"]) * 100,
+            "maxDrawdownPct": float(risk["maxDrawdownPct"]) * 100,
+            "dailyLossLimitPct": float(risk["dailyLossLimitPct"]) * 100,
+            "maxTradeGroupsPerHour": risk["maxTradeGroupsPerHour"],
+            "maxEntryNotionalQuote": risk["maxEntryNotionalQuote"],
+            "exitNotionalCapQuote": risk["exitNotionalCapQuote"],
+        },
+    }
+
+
+def _validate_registered_template_sealed_window(template, sealed_window) -> None:
+    if sealed_window is None:
+        raise ValueError("registered_template_sealed_dataset_required")
+    start, development_end_exclusive, end_exclusive = sealed_window
+    total_seconds = (end_exclusive - start).total_seconds()
+    development_seconds = (development_end_exclusive - start).total_seconds()
+    if (
+        total_seconds % 60
+        or development_seconds % 60
+        or start.second
+        or start.microsecond
+        or development_end_exclusive.second
+        or development_end_exclusive.microsecond
+        or end_exclusive.second
+        or end_exclusive.microsecond
+    ):
+        raise ValueError("registered_template_sealed_window_invalid")
+    total_rows = int(total_seconds // 60)
+    development_rows = int(development_seconds // 60)
+    sealed = template.sealed_data
+    if (
+        total_rows < sealed.minimum_rows
+        or total_rows - MIN_FORMAL_SOURCE_BARS < sealed.minimum_pre_roll_rows
+        or total_rows - development_rows != sealed.withheld_rows
+        or development_rows
+        != total_rows - sealed.withheld_rows
+    ):
+        raise ValueError("registered_template_sealed_window_insufficient")
+
+
+def _p0_sealed_dataset_store(handler):
+    mode = str(
+        getattr(handler, "deployment_mode", "")
+        or os.environ.get("AIQT_DEPLOYMENT_MODE", "local")
+    ).strip().lower()
+    store = getattr(handler, "sealed_dataset_store", None)
+    if mode == "local":
+        if store is None:
+            raise ValueError("sealed_dataset_store_unavailable")
+        return store
+    if mode != "public":
+        raise ValueError("sealed_dataset_deployment_mode_invalid")
+    owner_id = str(getattr(handler, "tenant_owner_id", "") or "").strip()
+    if (
+        not owner_id
+        or store is None
+        or str(getattr(store, "owner_id", "") or "").strip() != owner_id
+    ):
+        raise ValueError("sealed_dataset_tenant_store_unavailable")
+    return store
 
 
 def post_p0_ai_reviews(self, parsed):

@@ -1,4 +1,5 @@
 import { AiResearchM4Section } from "../../../components/AiResearchM4Section";
+import { StrategyResearchSection } from "../../../components/StrategyResearchSection";
 import { TerminalWorkspaceSurface } from "../../../components/TerminalWorkspaceSurface";
 import { portfolioBacktestSummary } from "../../portfolio/PortfolioFormatters";
 import { ChartDataStrip, KlineChartCanvas } from "../../research/ChartComponents";
@@ -42,6 +43,9 @@ export function WorkspaceHost({ controller }: WorkspaceHostProps) {
     testSettingsMonitoringWebhook, toggleAiReviewStage3Comparison, updateAiReviewStage3DecisionDraft, updateSettingsConfigurationDirty, visibleStrategyExperimentActive, visibleStrategyExperimentHistory,
     workspace
   } = controller;
+  const strategyResearchSource = workspace.researchRun?.runId === currentResearchRunId
+    ? workspace.researchRun
+    : null;
   return (
     activeWorkAreaId === "dynamic-trading" || !terminalSurfaceDisplayAction ? null : (
             <TerminalWorkspaceSurface
@@ -98,14 +102,37 @@ export function WorkspaceHost({ controller }: WorkspaceHostProps) {
                 providerId: aiReviewStage3ProviderId,
                 providers: aiReviewStage3Providers,
                 researchLoop: (
-                  <AiResearchM4Section
-                    baseUrl={quantCoreBaseUrl}
-                    currentReview={isRunningAiReviewStage3 || isStrategyExperimentRunning
-                      ? null
-                      : aiReviewStage3CurrentReview}
-                    i18n={i18n}
-                    runHistory={runHistory}
-                  />
+                  <>
+                    <StrategyResearchSection
+                      baseUrl={quantCoreBaseUrl}
+                      providers={aiReviewStage3Providers}
+                      sourceMetadata={strategyResearchSource ? {
+                        runId: strategyResearchSource.runId,
+                        market: strategyResearchSource.market ?? null,
+                        symbol: strategyResearchSource.symbol ?? null,
+                        timeframe: strategyResearchSource.timeframe ?? null,
+                        executionMode: strategyResearchSource.executionMode ?? null,
+                        snapshotHashVersion: strategyResearchSource.dataSnapshot?.hashVersion ?? null,
+                        snapshotComplete: strategyResearchSource.dataSnapshot?.isComplete === true,
+                        snapshotBarsExposed: Boolean(
+                          strategyResearchSource.dataSnapshot
+                          && Object.prototype.hasOwnProperty.call(
+                            strategyResearchSource.dataSnapshot,
+                            "bars",
+                          )
+                        ),
+                      } : null}
+                      sourceRunId={currentResearchRunId ?? null}
+                    />
+                    <AiResearchM4Section
+                      baseUrl={quantCoreBaseUrl}
+                      currentReview={isRunningAiReviewStage3 || isStrategyExperimentRunning
+                        ? null
+                        : aiReviewStage3CurrentReview}
+                      i18n={i18n}
+                      runHistory={runHistory}
+                    />
+                  </>
                 )
               }}
               chart={

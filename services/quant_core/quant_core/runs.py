@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from quant_core.ai_review_runs import validate_ai_review_run_record
+from quant_core.audit_events import is_protected_production_authority_audit_event
 
 from quant_core.canonical import (
     DATA_SNAPSHOT_HASH_VERSION,
@@ -75,6 +76,47 @@ EXPORT_PACKAGE_INTEGRITY_METADATA_KEYS = {
     "auditEvidenceSummary",
     "auditReport",
     "backtestReport",
+}
+_RESEARCH_IMPORTABLE_PROTECTED_AUDIT_EVENT_PREFIXES = {
+    "stage4_portfolio_workflow": (
+        "stage4-workflow-",
+        "stage4-portfolio-workflow-",
+    ),
+    "stage5_shadow_execution_session": ("stage5-shadow-",),
+    "stage5_sandbox_readiness_decision": ("stage5-sandbox-readiness-",),
+    "stage5_sandbox_authorization_preflight": (
+        "stage5-sandbox-authorization-preflight-",
+    ),
+    "stage5_sandbox_authorization_review": (
+        "stage5-sandbox-authorization-review-",
+    ),
+    "stage6_sandbox_batch_authorization": ("stage6-sandbox-auth-",),
+    "stage6_sandbox_kill_switch": ("stage6-kill-switch-",),
+    "stage6_sandbox_order_transition": ("stage6-transition-",),
+    "execution_adapter_sandbox_probe_execution": (
+        "execution-adapter-sandbox-probe-execution-",
+    ),
+    "execution_adapter_sandbox_probe_review": (
+        "execution-adapter-sandbox-probe-review-",
+    ),
+    "stage9_production_order_admission_candidate": (
+        "stage9-production-admission-",
+    ),
+    "stage9_production_order_admission_review": (
+        "stage9-production-admission-review-",
+    ),
+}
+_RESEARCH_IMPORTABLE_LEGACY_PROBE_IDENTITIES = {
+    "execution_adapter_sandbox_probe_execution": (
+        "probe-execution-",
+        "sandboxProbeExecutionId",
+        "execution-adapter-sandbox-probe-execution",
+    ),
+    "execution_adapter_sandbox_probe_review": (
+        "probe-review-",
+        "sandboxProbeReviewId",
+        "execution-adapter-sandbox-probe-review",
+    ),
 }
 
 
@@ -921,30 +963,44 @@ def research_run_import_audit_events(payload: dict[str, Any], *, run_id: str | N
         adapter_paper_executions=adapter_paper_executions,
     )
     if any(
-        event["eventType"].startswith(("auto_", "stage10_auto_"))
-        or event["eventId"].startswith((
-            "auto-",
-            "auto-paper-trading-",
-            "stage10-auto-",
-            "strategy-binding-",
-        ))
-        or event["eventType"] in {
-            "execution_adapter_production_route_review",
-            "stage7_production_readonly_probe",
-            "stage8_production_readonly_access_control",
-            "market_ai_selection",
-            "market_ai_selection_review",
-        }
-        or event["eventId"].startswith((
-            "execution-adapter-production-route-review-",
-            "stage7-production-readonly-",
-            "stage8-production-readonly-",
-            "market-ai-selection-",
-        ))
+        _research_import_protected_event_forbidden(
+            event,
+            expected_run_id=run_id,
+        )
         for event in events
     ):
         raise ValueError("production_authority_audit_event_import_forbidden")
     return events
+
+
+def _research_import_protected_event_forbidden(
+    event: dict[str, Any],
+    *,
+    expected_run_id: str | None,
+) -> bool:
+    event_type = str(event.get("eventType") or "")
+    event_id = str(event.get("eventId") or "")
+    if not is_protected_production_authority_audit_event(event_type, event_id):
+        return False
+    legacy_identity = _RESEARCH_IMPORTABLE_LEGACY_PROBE_IDENTITIES.get(event_type)
+    if legacy_identity is not None and event_id.startswith(legacy_identity[0]):
+        metadata = event.get("metadata")
+        normalized_expected_run_id = str(expected_run_id or "").strip()
+        return not (
+            event.get("schemaVersion") == 1
+            and bool(normalized_expected_run_id)
+            and str(event.get("runId") or "").strip() == normalized_expected_run_id
+            and isinstance(metadata, dict)
+            and str(metadata.get(legacy_identity[1]) or "").strip() == event_id
+            and event.get("stage") == legacy_identity[2]
+            and event.get("source") == "execution-adapter-ledger"
+            and metadata.get("paperOnly") is True
+            and metadata.get("liveTradingAllowed") is False
+        )
+    allowed_prefixes = _RESEARCH_IMPORTABLE_PROTECTED_AUDIT_EVENT_PREFIXES.get(
+        event_type
+    )
+    return allowed_prefixes is None or not event_id.startswith(allowed_prefixes)
 
 
 def research_run_import_handoff_notes(payload: dict[str, Any], *, run_id: str | None = None) -> list[dict[str, Any]]:
@@ -1682,10 +1738,19 @@ def _normalize_audit_event_payloads(
                 ):
                     raise ValueError("stage9_production_admission_review_audit_binding_mismatch")
         metadata = _dict_or_empty(item.get("metadata"))
-        if strict and event_type in {
-            "stage6_sandbox_batch_authorization", "stage6_sandbox_order_transition", "stage6_sandbox_kill_switch",
-            "stage9_production_order_admission_candidate", "stage9_production_order_admission_review",
-        }:
+        legacy_probe_identity = _RESEARCH_IMPORTABLE_LEGACY_PROBE_IDENTITIES.get(
+            event_type
+        )
+        if strict and (
+            event_type in {
+                "stage6_sandbox_batch_authorization", "stage6_sandbox_order_transition", "stage6_sandbox_kill_switch",
+                "stage9_production_order_admission_candidate", "stage9_production_order_admission_review",
+            }
+            or (
+                legacy_probe_identity is not None
+                and event_id.startswith(legacy_probe_identity[0])
+            )
+        ):
             metadata = {**metadata, "detached": True}
         normalized.append(
             {

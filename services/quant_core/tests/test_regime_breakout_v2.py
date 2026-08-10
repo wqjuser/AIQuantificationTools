@@ -32,12 +32,14 @@ from quant_core.strategy_experiment_store import (
 )
 from quant_core.strategy_experiments import (
     FORMAL_BACKTEST_ASSUMPTIONS,
+    FORMAL_PRE_ROLL_VERSION,
     FORMAL_PROFITABILITY_GUARDRAILS,
     PolicyParameterDimension,
     StrategyExperimentError,
     StrategyExperimentRunner,
     _ExperimentDefinition,
     expand_candidates,
+    formal_scoring_metadata,
     strategy_experiment_detail_to_payload,
 )
 from quant_core.strategy_library import StrategyLibraryStore
@@ -538,6 +540,7 @@ def _seed_promotable_experiment(
     *,
     base_strategy,
     experiment_id: str = "experiment-promotable",
+    formal_pre_roll_version: str | None = None,
 ):
     winner = expand_candidates(
         base_strategy,
@@ -549,6 +552,13 @@ def _seed_promotable_experiment(
         ),
     )[0]
     now = datetime(2026, 8, 10, tzinfo=timezone.utc)
+    prior_start = "2026-05-01T00:00:00+00:00"
+    prior_rows = 129_600
+    prior_development_rows = 103_680
+    if formal_pre_roll_version is not None:
+        prior_start = "2026-04-30T20:01:00+00:00"
+        prior_rows += 239
+        prior_development_rows += 239
     definition = {
         "baseStrategy": strategy_config_to_payload(base_strategy),
         "strategyRevision": base_strategy.revision,
@@ -563,11 +573,11 @@ def _seed_promotable_experiment(
             "timeframe": "1m",
             "source": "fixture",
             "adjustmentMode": "none",
-            "start": "2026-05-01T00:00:00+00:00",
+            "start": prior_start,
             "developmentEndExclusive": "2026-07-12T00:00:00+00:00",
             "endExclusive": "2026-07-30T00:00:00+00:00",
-            "rows": 129_600,
-            "developmentRows": 103_680,
+            "rows": prior_rows,
+            "developmentRows": prior_development_rows,
             "withheldRows": 25_920,
             "datasetHash": "a" * 64,
             "developmentHash": "b" * 64,
@@ -609,6 +619,18 @@ def _seed_promotable_experiment(
         "evaluatorVersion": "strategy-evaluator-v2",
         "resultSchemaVersion": 2,
     }
+    if formal_pre_roll_version is not None:
+        definition.update(
+            {
+                "preRollVersion": formal_pre_roll_version,
+                "scoringWindow": {
+                    "start": "2026-05-01T00:00:00+00:00",
+                    "endExclusive": "2026-07-30T00:00:00+00:00",
+                    "rows": 129_600,
+                    "preRollRows": 239,
+                },
+            }
+        )
     definition_hash = canonical_sha256(definition)
     snapshot = StrategyExperimentSnapshot(
         snapshot_id="sealed-original",
@@ -617,8 +639,8 @@ def _seed_promotable_experiment(
         symbol="BTC/USDT",
         timeframe="1m",
         canonical_data_hash="a" * 64,
-        rows=129_600,
-        start_at="2026-05-01T00:00:00+00:00",
+        rows=prior_rows,
+        start_at=prior_start,
         end_at="2026-07-30T00:00:00+00:00",
         bars=[],
         test_definition_hash=definition_hash,
@@ -663,6 +685,92 @@ def _seed_promotable_experiment(
     store.put_snapshot(snapshot)
     store.record_completed(record, [candidate])
     return winner, record
+
+
+class _FreshSealedDevelopmentSource:
+    def __init__(
+        self,
+        summary: SealedDatasetSummary,
+        development: list[OHLCVBar],
+        *,
+        fail_on_development_read: bool = False,
+    ) -> None:
+        self.summary = summary
+        self.development = development
+        self.fail_on_development_read = fail_on_development_read
+
+    def get_summary(self, dataset_id: str):
+        return self.summary if dataset_id == self.summary.dataset_id else None
+
+    def read_development_bars(self, dataset_id: str):
+        if dataset_id != self.summary.dataset_id:
+            raise ValueError("sealed_dataset_not_found")
+        if self.fail_on_development_read:
+            raise AssertionError("insufficient pre-roll must fail before bar replay")
+        return list(self.development)
+
+    def claim_test_partition(self, *_args, **_kwargs):
+        raise AssertionError("fresh promotion must not claim the test partition")
+
+    def read_claimed_test_bars(self, *_args, **_kwargs):
+        raise AssertionError("fresh promotion must not read the test partition")
+
+
+def _record_fresh_sealed_p0_run(
+    run_store: ResearchRunStore,
+    winner,
+    *,
+    development: list[OHLCVBar],
+    summary: SealedDatasetSummary,
+    formal_scoring: dict[str, object] | None = None,
+) -> None:
+    snapshot = sealed_research_snapshot_payload(summary)
+    if formal_scoring is not None:
+        snapshot.update(formal_scoring)
+    run_store.record(
+        ResearchRunAudit(
+            run_id="fresh-sealed-p0-run",
+            created_at=datetime(2026, 8, 12, tzinfo=timezone.utc),
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+            strategy_name=winner.name,
+            strategy_revision=winner.revision,
+            data_rows=summary.development_rows,
+            metrics={
+                "total_return_pct": 1.0,
+                "annual_return_pct": 1.0,
+                "max_drawdown_pct": 1.0,
+                "win_rate_pct": 60.0,
+                "profit_factor": 1.5,
+                "trade_count": 12,
+                "round_trip_count": 6,
+            },
+            decisions=[],
+            execution_mode="paper_only",
+            data_quality={
+                "source": summary.source,
+                "originSource": summary.source,
+                "isComplete": True,
+                "warnings": [],
+                "rows": summary.development_rows,
+                "adjustmentMode": summary.adjustment_mode,
+                "coverage": {
+                    "actualRows": summary.development_rows,
+                    "expectedRows": summary.development_rows,
+                    "gapCount": 0,
+                    "ratio": 1.0,
+                },
+                "canonicalHash": summary.development_hash,
+                "issues": [],
+            },
+            data_snapshot=snapshot,
+            strategy_config=strategy_config_to_payload(winner),
+            backtest_assumptions=FORMAL_BACKTEST_ASSUMPTIONS,
+            backtest_trades=[],
+            backtest_equity_curve=[],
+        )
+    )
 
 
 def _record_fresh_p0_run(
@@ -728,6 +836,78 @@ def _record_fresh_p0_run(
 
 
 class RegimeBreakoutBacktestContractTests(unittest.TestCase):
+    def test_sealed_builder_receives_legacy_none_and_research_launch_intent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy = _strategy()
+            strategy_store = StrategyLibraryStore(
+                Path(directory) / "strategies.sqlite"
+            )
+            run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+            experiment_store = StrategyExperimentStore(
+                Path(directory) / "experiments.sqlite"
+            )
+            strategy_store.save(strategy)
+            run_store.record(
+                ResearchRunAudit(
+                    run_id="run-launch-intent-forwarding",
+                    created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                    market=strategy.market,
+                    symbol=strategy.symbols[0],
+                    timeframe=strategy.timeframe,
+                    strategy_name=strategy.name,
+                    strategy_revision=strategy.revision,
+                    data_rows=0,
+                    metrics={},
+                    decisions=[],
+                    execution_mode="paper_only",
+                    data_quality={},
+                    data_snapshot={},
+                    strategy_config=strategy_config_to_payload(strategy),
+                    backtest_assumptions=FORMAL_BACKTEST_ASSUMPTIONS,
+                )
+            )
+            runner = StrategyExperimentRunner(
+                strategy_store=strategy_store,
+                run_store=run_store,
+                experiment_store=experiment_store,
+            )
+            payload = {
+                "strategyRevision": strategy.revision,
+                "sourceRunId": "run-launch-intent-forwarding",
+                "assumptions": FORMAL_BACKTEST_ASSUMPTIONS,
+                "dimensions": [],
+                "guardrails": FORMAL_PROFITABILITY_GUARDRAILS,
+                "walkForward": None,
+            }
+            sentinel = object()
+            launch_intent = {
+                "proposalId": "strategy-research-proposal-forwarding",
+                "experimentId": "experiment-forwarding",
+                "eventId": "strategy-research-launch-experiment-forwarding",
+                "definitionIdentityHash": "a" * 64,
+            }
+
+            with patch.object(
+                runner,
+                "_definition_from_sealed_source",
+                return_value=sentinel,
+            ) as sealed_builder:
+                self.assertIs(runner._definition_from_source(payload), sentinel)
+                self.assertIsNone(sealed_builder.call_args.kwargs["launch_intent"])
+
+                sealed_builder.reset_mock()
+                self.assertIs(
+                    runner._definition_from_source(
+                        payload,
+                        launch_intent=launch_intent,
+                    ),
+                    sentinel,
+                )
+                self.assertEqual(
+                    sealed_builder.call_args.kwargs["launch_intent"],
+                    launch_intent,
+                )
+
     def test_formal_policy_requires_candidate_warmup_and_utc_alignment_before_bar_read(self):
         with tempfile.TemporaryDirectory() as directory:
             strategy = _strategy()
@@ -1099,9 +1279,43 @@ class RegimeBreakoutBacktestContractTests(unittest.TestCase):
                 detail = experiment_store.get(pending.experiment.experiment_id)
                 assert detail is not None
                 replay = runner.replay(detail.experiment.experiment_id)
+                drifted_definition = {
+                    **detail.experiment.definition,
+                    "preRollVersion": "formal-pre-roll-drifted",
+                }
+                drifted = replace(
+                    detail,
+                    experiment=replace(
+                        detail.experiment,
+                        definition=drifted_definition,
+                        definition_hash=canonical_sha256(drifted_definition),
+                    ),
+                )
+                with self.assertRaises(StrategyExperimentError):
+                    runner._definition_from_record(drifted)
+                legacy_definition = dict(detail.experiment.definition)
+                legacy_definition.pop("preRollVersion")
+                legacy = replace(
+                    detail,
+                    experiment=replace(
+                        detail.experiment,
+                        definition=legacy_definition,
+                        definition_hash=canonical_sha256(legacy_definition),
+                    ),
+                )
+                self.assertEqual(
+                    runner._definition_from_record(legacy).definition.get(
+                        "preRollVersion"
+                    ),
+                    None,
+                )
 
         self.assertTrue(detail.experiment.profitability_gate_passed)
         self.assertEqual(detail.experiment.completion_reason, "profitability_gate_passed")
+        self.assertEqual(
+            detail.experiment.definition["preRollVersion"],
+            "formal-pre-roll-v2",
+        )
         selected = next(
             candidate
             for candidate in detail.candidates
@@ -1427,6 +1641,256 @@ class RegimeBreakoutBacktestContractTests(unittest.TestCase):
                 promoted.experiment.promoted_strategy_revision,
                 winner.strategy.revision,
             )
+
+    def test_v2_promotion_rejects_fresh_sealed_run_without_formal_scoring_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
+            run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+            experiment_store = StrategyExperimentStore(Path(directory) / "experiments.sqlite")
+            base = _strategy()
+            strategy_store.save(base)
+            winner, experiment = _seed_promotable_experiment(
+                experiment_store,
+                base_strategy=base,
+                formal_pre_roll_version=FORMAL_PRE_ROLL_VERSION,
+            )
+            development = _experiment_bars(
+                500,
+                started=datetime(2026, 8, 1, tzinfo=timezone.utc),
+            )
+            development_hash = canonical_data_hash(normalize_snapshot_bars(development))
+            summary = SealedDatasetSummary(
+                dataset_id=f"sealed-{'c' * 24}",
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                source="fresh-sealed-fixture",
+                adjustment_mode="none",
+                start=development[0].timestamp,
+                development_end_exclusive=development[-1].timestamp
+                + timedelta(minutes=1),
+                end_exclusive=development[-1].timestamp + timedelta(minutes=2),
+                rows=501,
+                development_rows=500,
+                withheld_rows=1,
+                dataset_hash="c" * 64,
+                development_hash=development_hash,
+            )
+            _record_fresh_sealed_p0_run(
+                run_store,
+                winner.strategy,
+                development=development,
+                summary=summary,
+            )
+            runner = StrategyExperimentRunner(
+                strategy_store=strategy_store,
+                run_store=run_store,
+                experiment_store=experiment_store,
+                sealed_bar_source=_FreshSealedDevelopmentSource(summary, development),
+            )
+
+            with self.assertRaises(StrategyExperimentError) as raised:
+                runner.promote_winner(
+                    experiment.experiment_id,
+                    fresh_source_run_id="fresh-sealed-p0-run",
+                    operator="operator@example.com",
+                    confirmed=True,
+                )
+
+            self.assertEqual(raised.exception.error, "fresh_p0_snapshot_invalid")
+            self.assertIsNone(strategy_store.get(winner.strategy.revision))
+            stored = experiment_store.get(experiment.experiment_id)
+            assert stored is not None
+            self.assertIsNone(stored.experiment.promotion_run_id)
+
+    def test_v2_promotion_rejects_formal_identity_without_required_pre_roll(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
+            run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+            experiment_store = StrategyExperimentStore(Path(directory) / "experiments.sqlite")
+            base = _strategy()
+            strategy_store.save(base)
+            winner, experiment = _seed_promotable_experiment(
+                experiment_store,
+                base_strategy=base,
+                formal_pre_roll_version=FORMAL_PRE_ROLL_VERSION,
+            )
+            start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+            development_end = start + timedelta(days=72)
+            end_exclusive = start + timedelta(days=90)
+            summary = SealedDatasetSummary(
+                dataset_id=f"sealed-{'d' * 24}",
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                source="fresh-sealed-fixture",
+                adjustment_mode="none",
+                start=start,
+                development_end_exclusive=development_end,
+                end_exclusive=end_exclusive,
+                rows=129_600,
+                development_rows=103_680,
+                withheld_rows=25_920,
+                dataset_hash="d" * 64,
+                development_hash="e" * 64,
+            )
+            _record_fresh_sealed_p0_run(
+                run_store,
+                winner.strategy,
+                development=[],
+                summary=summary,
+                formal_scoring=formal_scoring_metadata(summary),
+            )
+            runner = StrategyExperimentRunner(
+                strategy_store=strategy_store,
+                run_store=run_store,
+                experiment_store=experiment_store,
+                sealed_bar_source=_FreshSealedDevelopmentSource(
+                    summary,
+                    [],
+                    fail_on_development_read=True,
+                ),
+            )
+
+            with self.assertRaises(StrategyExperimentError) as raised:
+                runner.promote_winner(
+                    experiment.experiment_id,
+                    fresh_source_run_id="fresh-sealed-p0-run",
+                    operator="operator@example.com",
+                    confirmed=True,
+                )
+
+            self.assertEqual(raised.exception.error, "fresh_p0_snapshot_invalid")
+            self.assertIsNone(strategy_store.get(winner.strategy.revision))
+
+    def test_v2_promotion_rejects_drifted_fresh_formal_scoring_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
+            run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+            experiment_store = StrategyExperimentStore(Path(directory) / "experiments.sqlite")
+            base = _strategy()
+            strategy_store.save(base)
+            winner, experiment = _seed_promotable_experiment(
+                experiment_store,
+                base_strategy=base,
+                formal_pre_roll_version=FORMAL_PRE_ROLL_VERSION,
+            )
+            score_start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+            summary = SealedDatasetSummary(
+                dataset_id=f"sealed-{'f' * 24}",
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                source="fresh-sealed-fixture",
+                adjustment_mode="none",
+                start=score_start - timedelta(minutes=180),
+                development_end_exclusive=score_start + timedelta(days=72),
+                end_exclusive=score_start + timedelta(days=90),
+                rows=129_780,
+                development_rows=103_860,
+                withheld_rows=25_920,
+                dataset_hash="f" * 64,
+                development_hash="1" * 64,
+            )
+            drifted_scoring = formal_scoring_metadata(summary)
+            drifted_scoring["preRollVersion"] = "formal-pre-roll-drifted"
+            _record_fresh_sealed_p0_run(
+                run_store,
+                winner.strategy,
+                development=[],
+                summary=summary,
+                formal_scoring=drifted_scoring,
+            )
+            runner = StrategyExperimentRunner(
+                strategy_store=strategy_store,
+                run_store=run_store,
+                experiment_store=experiment_store,
+                sealed_bar_source=_FreshSealedDevelopmentSource(
+                    summary,
+                    [],
+                    fail_on_development_read=True,
+                ),
+            )
+
+            with self.assertRaises(StrategyExperimentError) as raised:
+                runner.promote_winner(
+                    experiment.experiment_id,
+                    fresh_source_run_id="fresh-sealed-p0-run",
+                    operator="operator@example.com",
+                    confirmed=True,
+                )
+
+            self.assertEqual(raised.exception.error, "fresh_p0_snapshot_invalid")
+            self.assertIsNone(strategy_store.get(winner.strategy.revision))
+
+    def test_v2_promotion_rejects_fresh_facts_that_do_not_match_formal_replay(self):
+        with tempfile.TemporaryDirectory() as directory:
+            strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
+            run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+            experiment_store = StrategyExperimentStore(Path(directory) / "experiments.sqlite")
+            base = _strategy()
+            strategy_store.save(base)
+            winner, experiment = _seed_promotable_experiment(
+                experiment_store,
+                base_strategy=base,
+                formal_pre_roll_version=FORMAL_PRE_ROLL_VERSION,
+            )
+            score_start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+            development = _experiment_bars(
+                103_860,
+                started=score_start - timedelta(minutes=180),
+            )
+            development_hash = str(
+                normalize_snapshot_bar_chunks(
+                    [
+                        development[index : index + 500]
+                        for index in range(0, len(development), 500)
+                    ],
+                    market="crypto",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                )["hash"]
+            )
+            summary = SealedDatasetSummary(
+                dataset_id=f"sealed-{'2' * 24}",
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                source="fresh-sealed-fixture",
+                adjustment_mode="none",
+                start=development[0].timestamp,
+                development_end_exclusive=score_start + timedelta(days=72),
+                end_exclusive=score_start + timedelta(days=90),
+                rows=129_780,
+                development_rows=103_860,
+                withheld_rows=25_920,
+                dataset_hash="2" * 64,
+                development_hash=development_hash,
+            )
+            _record_fresh_sealed_p0_run(
+                run_store,
+                winner.strategy,
+                development=development,
+                summary=summary,
+                formal_scoring=formal_scoring_metadata(summary),
+            )
+            runner = StrategyExperimentRunner(
+                strategy_store=strategy_store,
+                run_store=run_store,
+                experiment_store=experiment_store,
+                sealed_bar_source=_FreshSealedDevelopmentSource(summary, development),
+            )
+
+            with self.assertRaises(StrategyExperimentError) as raised:
+                runner.promote_winner(
+                    experiment.experiment_id,
+                    fresh_source_run_id="fresh-sealed-p0-run",
+                    operator="operator@example.com",
+                    confirmed=True,
+                )
+
+            self.assertEqual(raised.exception.error, "fresh_p0_snapshot_invalid")
+            self.assertIsNone(strategy_store.get(winner.strategy.revision))
 
     def test_strategy_library_save_failure_does_not_partially_mark_experiment_promoted(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -111,6 +111,10 @@
   display: none;
 }
 
+.topbar-actions .research-template-control {
+  display: inline-flex;
+}
+
 .symbol-switcher {
   display: block;
 }

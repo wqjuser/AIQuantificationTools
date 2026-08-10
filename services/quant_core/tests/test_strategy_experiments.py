@@ -45,6 +45,7 @@ from quant_core.strategy_experiment_store import (
 )
 from quant_core.strategy_experiments import (
     DEADLINE_SECONDS,
+    FORMAL_PRE_ROLL_VERSION,
     MAX_CANDIDATES,
     MAX_EVALUATIONS,
     MAX_SOURCE_BARS,
@@ -1165,6 +1166,36 @@ class StrategyExperimentDefinitionTests(unittest.TestCase):
             {"parameters", "trainMetrics", "validationMetrics", "walkForward"},
         )
         self.assertEqual(set(payload["selection"]), {"parameters", "testMetrics"})
+
+    def test_policy_result_hash_commits_the_formal_pre_roll_version(self):
+        selected = candidate_record()
+
+        with patch(
+            "quant_core.strategy_experiments.canonical_sha256",
+            side_effect=canonical_sha256,
+        ) as digest:
+            first = _result_hash(
+                "definition-a",
+                [selected],
+                selected_candidate_id=selected.candidate_id,
+                completion_reason="selected",
+                result_schema_version=2,
+                pre_roll_version=FORMAL_PRE_ROLL_VERSION,
+            )
+        second = _result_hash(
+            "definition-a",
+            [selected],
+            selected_candidate_id=selected.candidate_id,
+            completion_reason="selected",
+            result_schema_version=2,
+            pre_roll_version="formal-pre-roll-v1",
+        )
+
+        self.assertEqual(
+            digest.call_args.args[0]["preRollVersion"],
+            FORMAL_PRE_ROLL_VERSION,
+        )
+        self.assertNotEqual(first, second)
 
 
 class StrategyExperimentRunnerTests(unittest.TestCase):

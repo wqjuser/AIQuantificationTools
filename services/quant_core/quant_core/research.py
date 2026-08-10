@@ -79,6 +79,8 @@ def run_terminal_research(
     comparison_adapter: MarketDataAdapter | None = None,
     sealed_bar_source: SealedDatasetStore | None = None,
     sealed_dataset_id: str | None = None,
+    backtest_evaluation_start_index: int = 0,
+    formal_scoring: dict[str, Any] | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -161,7 +163,36 @@ def run_terminal_research(
         strategy = strategy_config
     else:
         strategy = strategy_config_from_snapshot(snapshot, market=market, symbol=symbol, timeframe=timeframe)
-    backtest = backtest_engine.run(strategy, bars)
+    if (
+        isinstance(backtest_evaluation_start_index, bool)
+        or not isinstance(backtest_evaluation_start_index, int)
+        or backtest_evaluation_start_index < 0
+    ):
+        raise ValueError("research_backtest_evaluation_start_invalid")
+    if formal_scoring is None:
+        if backtest_evaluation_start_index != 0:
+            raise ValueError("research_formal_scoring_required")
+    else:
+        scoring_window = formal_scoring.get("scoringWindow")
+        if (
+            sealed_summary is None
+            or set(formal_scoring) != {"preRollVersion", "scoringWindow"}
+            or not isinstance(formal_scoring.get("preRollVersion"), str)
+            or not isinstance(scoring_window, dict)
+            or set(scoring_window)
+            != {"start", "endExclusive", "rows", "preRollRows"}
+            or scoring_window.get("preRollRows") != backtest_evaluation_start_index
+        ):
+            raise ValueError("research_formal_scoring_invalid")
+    backtest = (
+        backtest_engine.run(
+            strategy,
+            bars,
+            evaluation_start_index=backtest_evaluation_start_index,
+        )
+        if backtest_evaluation_start_index
+        else backtest_engine.run(strategy, bars)
+    )
     report = research_assistant.analyze(
         AiResearchRequest(
             strategy_name=backtest.strategy_name,
@@ -184,7 +215,11 @@ def run_terminal_research(
     run_id = f"run-{uuid4().hex[:12]}"
     backtest_trade_rows = _backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash)
     backtest_equity_curve = _backtest_equity_curve_rows(backtest)
-    backtest_diagnostics = _backtest_diagnostics(backtest, data_rows=quality.rows)
+    backtest_diagnostics = _backtest_diagnostics(
+        backtest,
+        data_rows=quality.rows,
+        evaluation_rows=quality.rows - backtest_evaluation_start_index,
+    )
     market_calendar = build_market_calendar_status(market, at=created_at)
     if sealed_summary is None:
         data_snapshot = _data_snapshot_payload(
@@ -196,6 +231,13 @@ def run_terminal_research(
         )
     else:
         data_snapshot = sealed_research_snapshot_payload(sealed_summary)
+        if formal_scoring is not None:
+            data_snapshot.update(
+                {
+                    "preRollVersion": formal_scoring["preRollVersion"],
+                    "scoringWindow": dict(formal_scoring["scoringWindow"]),
+                }
+            )
     if market_ai_selection_evidence:
         data_snapshot["marketAiSelectionEvidence"] = dict(market_ai_selection_evidence)
     audit = ResearchRunAudit(
@@ -375,14 +417,20 @@ def _backtest_equity_curve_rows(backtest: BacktestRun) -> list[BacktestEquityPoi
     ]
 
 
-def _backtest_diagnostics(backtest: BacktestRun, *, data_rows: int) -> list[BacktestDiagnostic]:
+def _backtest_diagnostics(
+    backtest: BacktestRun,
+    *,
+    data_rows: int,
+    evaluation_rows: int | None = None,
+) -> list[BacktestDiagnostic]:
     metrics = backtest.metrics
+    scored_rows = data_rows if evaluation_rows is None else evaluation_rows
     return [
         BacktestDiagnostic(
             id="return-profile",
             label="Return profile",
             value=_format_signed_pct(metrics.total_return_pct),
-            detail=f"Total return over {data_rows} bars",
+            detail=f"Total return over {scored_rows} bars",
             tone="positive" if metrics.total_return_pct >= 0 else "warning",
         ),
         BacktestDiagnostic(

@@ -273,7 +273,7 @@ export function buildBacktestReportMarkdown(
         ["Rows", String(snapshot?.rows ?? run.dataRows)],
         ["Content hash", snapshot?.hash ?? ""],
         ["Snapshot identity", snapshot?.snapshotHash ?? snapshot?.hash ?? ""],
-        ["Window", `${snapshot?.start ?? "unknown"} -> ${snapshot?.end ?? "unknown"}`],
+        ["Window", `${snapshot?.start ?? "unknown"} -> ${snapshot?.end ?? snapshot?.endExclusive ?? "unknown"}`],
         ["Observed / market time", `${snapshot?.observedAt ?? "unknown"} / ${snapshot?.marketTime ?? "unknown"}`],
         ["Calendar identity", snapshot?.calendarId ?? "not attached"],
         ["Adjustment / freshness", `${snapshot?.adjustmentMode ?? "none"} / ${snapshot?.freshness ?? "unknown"}`],
@@ -386,7 +386,7 @@ export function buildBacktestBenchmark(workspace: TerminalWorkspace): BacktestBe
   const contextBinding = buildResearchRunContextBinding(workspace);
   const run = workspace.researchRun;
   const snapshot = run?.dataSnapshot;
-  const bars = snapshot?.bars.filter((bar) => Number.isFinite(bar.close) && bar.close > 0) ?? [];
+  const bars = snapshot?.bars?.filter((bar) => Number.isFinite(bar.close) && bar.close > 0) ?? [];
   const strategyReturn = parsePercentMetric(metricValue(workspace, "Return", "N/A"));
   const formattedStrategyReturn = strategyReturn === null ? "N/A" : formatSignedPct(strategyReturn);
 

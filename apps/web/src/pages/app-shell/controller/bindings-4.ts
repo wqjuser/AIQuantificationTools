@@ -27,6 +27,7 @@ export interface AppControllerBindingsPart4 {
   refreshWatchlistMarketCache: () => Promise<boolean>;
   loadHistoricalKlines: (beforeTimestampMs: number) => Promise<import("../../../lib/terminal-api-contract").MarketKlineBar[]>;
   runPipeline: (confirmation?: "accepted" | undefined) => Promise<boolean>;
+  selectResearchP0Template: (templateId: string) => void;
   preparePortfolioPeerAudits: () => Promise<{ history: import("../../../lib/research-run-transport").ResearchRunHistoryResult | null; error: string; } | null>;
   runPortfolioBacktestDraft: () => Promise<void>;
   recordPortfolioPaperOrders: () => Promise<void>;

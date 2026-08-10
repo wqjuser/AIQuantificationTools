@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import unittest
 import json
@@ -13,11 +14,18 @@ from pathlib import Path
 from threading import Thread
 from unittest.mock import patch
 
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+from starlette.requests import Request
+
 from quant_core.canonical import (
     canonical_data_hash,
     canonical_snapshot_id,
     normalize_snapshot_bars,
+    strategy_config_to_payload,
 )
+from quant_core.ai_review_providers import AiReviewProviderRegistry, ProviderStatus
+from quant_core.audit_events import AuditEventStore
 from quant_core.domain import (
     BacktestMetrics,
     BacktestRun,
@@ -25,7 +33,12 @@ from quant_core.domain import (
     MarketDataRequest,
     OHLCVBar,
 )
+from quant_core.deployment import load_deployment_config
+from quant_core.public_schema import create_public_schema
+from quant_core.public_tenant_api import PublicTenantApi
 from quant_core.sealed_datasets import SealedDatasetStore, SealedDevelopmentBarSource
+from quant_core.strategy_research import StrategyResearchCapabilityRegistry
+from quant_core.tenancy import TenantContext
 
 
 def _bars(start: datetime, rows: int) -> list[OHLCVBar]:
@@ -351,6 +364,155 @@ class SealedDatasetStoreTests(unittest.TestCase):
 
 
 class SealedP0HttpTests(unittest.TestCase):
+    def test_registered_template_bootstraps_a_canonical_p0_that_can_propose(self):
+        from quant_core.api import QuantApiHandler
+        from quant_core.cache import MarketDataCache
+        from quant_core.runs import ResearchRunStore
+        from quant_core.strategy_library import StrategyLibraryStore
+
+        start = datetime(2026, 3, 1, tzinfo=timezone.utc)
+        total_rows = 142_919
+        withheld_rows = 25_920
+        end_exclusive = start + timedelta(minutes=total_rows)
+        development_end = end_exclusive - timedelta(minutes=withheld_rows)
+
+        class FixtureAdapter:
+            def fetch_ohlcv(self, request, limit=500):
+                page_start = request.start or start
+                page_end = request.end or end_exclusive - timedelta(minutes=1)
+                rows = min(
+                    limit,
+                    int((page_end - page_start) // timedelta(minutes=1)) + 1,
+                )
+                page = _bars(page_start, rows)
+                return page, DataQuality(
+                    source="binance",
+                    origin_source="binance",
+                    is_complete=True,
+                    rows=len(page),
+                    adjustment_mode="none",
+                    canonical_hash=canonical_data_hash(normalize_snapshot_bars(page)),
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            class TestHandler(QuantApiHandler):
+                ai_review_provider_registry = AiReviewProviderRegistry(
+                    (ProviderStatus("local", True, None, None),),
+                    {},
+                )
+
+                def log_message(self, format, *args):
+                    del format, args
+
+            TestHandler.run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
+            TestHandler.cache = MarketDataCache(Path(directory) / "market.sqlite")
+            TestHandler.strategy_store = StrategyLibraryStore(
+                Path(directory) / "strategies.sqlite"
+            )
+            TestHandler.sealed_dataset_store = SealedDatasetStore(
+                Path(directory) / "sealed.sqlite"
+            )
+            TestHandler.sealed_dataset_minimum_rows = total_rows
+            TestHandler.audit_event_store = AuditEventStore(
+                Path(directory) / "audit.sqlite"
+            )
+            TestHandler.kline_adapter = FixtureAdapter()
+
+            server = HTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            connection = HTTPConnection(*server.server_address, timeout=180)
+            p0_request = {
+                "market": "crypto",
+                "symbol": "BTC/USDT",
+                "timeframe": "1m",
+                "registeredTemplateId": "regime-breakout-v2",
+                "sealedDataset": {
+                    "start": start.isoformat(),
+                    "developmentEndExclusive": development_end.isoformat(),
+                    "endExclusive": end_exclusive.isoformat(),
+                },
+            }
+            p0_body = json.dumps(p0_request).encode("utf-8")
+            try:
+                with patch.dict(os.environ, {"AIQT_DEPLOYMENT_MODE": "local"}):
+                    connection.request(
+                        "POST",
+                        "/api/p0/pipeline",
+                        body=p0_body,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Content-Length": str(len(p0_body)),
+                        },
+                    )
+                    p0_response = connection.getresponse()
+                    p0_payload = json.loads(p0_response.read().decode("utf-8"))
+                    proposal_request = {
+                        "sourceRunId": p0_payload.get("runId"),
+                        "goal": "使用服务端注册能力启动可审计的正式策略研发",
+                        "providerId": "local",
+                        "externalDataApproved": False,
+                    }
+                    proposal_body = json.dumps(proposal_request).encode("utf-8")
+                    connection.request(
+                        "POST",
+                        "/api/strategy-research/proposals",
+                        body=proposal_body,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Content-Length": str(len(proposal_body)),
+                        },
+                    )
+                    proposal_response = connection.getresponse()
+                    proposal_payload = json.loads(
+                        proposal_response.read().decode("utf-8")
+                    )
+            finally:
+                connection.close()
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+            audit = TestHandler.run_store.get(str(p0_payload.get("runId") or ""))
+
+        expected_strategy = StrategyResearchCapabilityRegistry().resolve_base_strategy(
+            "regime-breakout-v2",
+            market="crypto",
+            symbol="BTC/USDT",
+            timeframe="1m",
+        )
+        self.assertEqual(p0_response.status, 200, p0_payload)
+        self.assertIsNotNone(audit)
+        self.assertEqual(
+            audit.strategy_config,
+            strategy_config_to_payload(expected_strategy),
+        )
+        self.assertEqual(
+            audit.backtest_assumptions,
+            {"initialCash": 10, "feeBps": 10, "slippageBps": 10},
+        )
+        scoring_start = start + timedelta(minutes=13_319)
+        self.assertEqual(audit.data_snapshot.get("preRollVersion"), "formal-pre-roll-v2")
+        self.assertEqual(
+            audit.data_snapshot.get("scoringWindow"),
+            {
+                "start": scoring_start.isoformat(),
+                "endExclusive": end_exclusive.isoformat(),
+                "rows": 90 * 24 * 60,
+                "preRollRows": 13_319,
+            },
+        )
+        self.assertEqual(len(audit.backtest_equity_curve), 72 * 24 * 60)
+        self.assertEqual(
+            audit.backtest_equity_curve[0]["timestamp"],
+            scoring_start.isoformat(),
+        )
+        self.assertEqual(proposal_response.status, 200, proposal_payload)
+        self.assertEqual(
+            proposal_payload["proposal"]["template"]["templateId"],
+            "regime-breakout-v2",
+        )
+
     def test_p0_backtests_only_development_and_research_detail_redacts_dataset_bars(self):
         from quant_core.api import QuantApiHandler
         from quant_core.cache import MarketDataCache
@@ -500,15 +662,197 @@ class SealedP0HttpTests(unittest.TestCase):
         )
         self.assertNotEqual(snapshot["hash"], snapshot["sealedDataset"]["datasetHash"])
 
-    def test_public_p0_rejects_sealed_dataset_before_store_or_adapter_access(self):
+    def test_public_p0_seals_only_for_current_owner_and_returns_safe_summary(self):
+        start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+        development_end = start + timedelta(minutes=1_000)
+        end_exclusive = start + timedelta(minutes=1_500)
+
+        class FixtureAdapter:
+            def fetch_ohlcv(self, request, limit=500):
+                page_start = request.start or start
+                page_end = request.end or end_exclusive - timedelta(minutes=1)
+                rows = min(limit, int((page_end - page_start) // timedelta(minutes=1)) + 1)
+                page = _bars(page_start, rows)
+                return page, DataQuality(
+                    source="binance",
+                    origin_source="binance",
+                    is_complete=True,
+                    rows=len(page),
+                    adjustment_mode="none",
+                    canonical_hash=canonical_data_hash(normalize_snapshot_bars(page)),
+                )
+
+        class RecordingEngine:
+            def __init__(self) -> None:
+                self.initial_cash = 10.0
+                self.fee_rate = 0.001
+                self.slippage_rate = 0.001
+                self.seen: list[OHLCVBar] = []
+
+            def run(self, strategy, bars):
+                self.seen = list(bars)
+                return BacktestRun(
+                    strategy_name=strategy.name,
+                    strategy_revision=strategy.revision,
+                    symbol=strategy.symbols[0],
+                    market=strategy.market,
+                    timeframe=strategy.timeframe,
+                    metrics=BacktestMetrics(
+                        total_return_pct=1,
+                        annual_return_pct=1,
+                        max_drawdown_pct=1,
+                        win_rate_pct=50,
+                        profit_factor=1.2,
+                        trade_count=0,
+                    ),
+                    trades=[],
+                    equity_curve=[],
+                    data_quality=DataQuality(
+                        source="binance",
+                        is_complete=True,
+                        rows=len(bars),
+                    ),
+                )
+
+        request_payload = {
+            "market": "crypto",
+            "symbol": "BTC/USDT",
+            "timeframe": "1m",
+            "strategyConfig": _v2_strategy_payload(),
+            "assumptions": {"initialCash": 10, "feeBps": 10, "slippageBps": 10},
+            "sealedDataset": {
+                "start": start.isoformat(),
+                "developmentEndExclusive": development_end.isoformat(),
+                "endExclusive": end_exclusive.isoformat(),
+            },
+        }
+        request_payload["strategyConfig"]["risk"]["maxEntryNotionalQuote"] = None
+        public_environment = {
+            "AIQT_DEPLOYMENT_MODE": "public",
+            "AIQT_DATABASE_URL": "postgresql://example.invalid/aiqt",
+            "AIQT_PUBLIC_ORIGIN": "https://myqt.example",
+            "AIQT_OIDC_ISSUER": "https://issuer.example",
+            "AIQT_OIDC_CLIENT_ID": "client",
+            "AIQT_OIDC_CLIENT_SECRET": "secret",
+            "AIQT_SETTINGS_MASTER_KEY": base64.urlsafe_b64encode(b"m" * 32).decode(),
+        }
+        config = load_deployment_config(public_environment)
+        engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        create_public_schema(engine)
+        self.addCleanup(engine.dispose)
+        tenant_api = PublicTenantApi(config, engine)
+        tenant_a = TenantContext(
+            owner_id="owner-a",
+            issuer="https://issuer.example",
+            subject="subject-a",
+            email="a@example.com",
+            reauthenticated_at=start,
+        )
+        tenant_b = TenantContext(
+            owner_id="owner-b",
+            issuer="https://issuer.example",
+            subject="subject-b",
+            email="b@example.com",
+            reauthenticated_at=start,
+        )
+        runtime_a = tenant_api._runtime(tenant_a)
+        runtime_b = tenant_api._runtime(tenant_b)
+        runtime_a.handler_type.kline_adapter = FixtureAdapter()
+        runtime_a.handler_type.sealed_dataset_minimum_rows = 1_500
+        backtest_engine = RecordingEngine()
+
+        async def send(method: str, path: str, tenant: TenantContext, payload=None):
+            body = json.dumps(payload).encode("utf-8") if payload is not None else b""
+            delivered = False
+
+            async def receive():
+                nonlocal delivered
+                if delivered:
+                    return {"type": "http.disconnect"}
+                delivered = True
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            request = Request(
+                {
+                    "type": "http",
+                    "method": method,
+                    "path": path,
+                    "raw_path": path.encode(),
+                    "query_string": b"",
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode()),
+                    ],
+                    "client": ("127.0.0.1", 12345),
+                    "server": ("myqt.example", 443),
+                    "scheme": "https",
+                    "root_path": "",
+                },
+                receive,
+            )
+            return await tenant_api(request, tenant)
+
+        with patch.dict(os.environ, public_environment), patch(
+            "quant_core.http_api.routes.ai_strategy_p0._p0_backtest_engine_from_payload",
+            return_value=backtest_engine,
+        ):
+            response = asyncio.run(
+                send("POST", "/api/p0/pipeline", tenant_a, request_payload)
+            )
+            response_payload = json.loads(response.body.decode("utf-8"))
+            run_id = str(response_payload.get("runId") or "")
+            owner_detail = asyncio.run(
+                send("GET", f"/api/research/runs/{run_id}", tenant_a)
+            )
+            other_detail = asyncio.run(
+                send("GET", f"/api/research/runs/{run_id}", tenant_b)
+            )
+
+        self.assertEqual(response.status_code, 200, response_payload)
+        self.assertEqual(owner_detail.status_code, 200, owner_detail.body)
+        self.assertEqual(other_detail.status_code, 404, other_detail.body)
+        self.assertEqual(len(backtest_engine.seen), 1_000)
+        dataset_id = response_payload["sealedDatasetId"]
+        self.assertIsNotNone(runtime_a.stores.sealed_dataset_store.get_summary(dataset_id))
+        self.assertIsNone(runtime_b.stores.sealed_dataset_store.get_summary(dataset_id))
+        owner_payload = json.loads(owner_detail.body.decode("utf-8"))
+        response_summary = response_payload["sealedDataset"]
+        run_snapshot = owner_payload["run"]["dataSnapshot"]
+        expected_safe_fields = {
+            "datasetId",
+            "market",
+            "symbol",
+            "timeframe",
+            "source",
+            "adjustmentMode",
+            "start",
+            "developmentEndExclusive",
+            "endExclusive",
+            "rows",
+            "developmentRows",
+            "withheldRows",
+            "datasetHash",
+            "developmentHash",
+        }
+        self.assertEqual(set(response_summary), expected_safe_fields)
+        self.assertEqual(set(run_snapshot["sealedDataset"]), expected_safe_fields)
+        self.assertNotIn("bars", run_snapshot)
+        self.assertNotIn("testHash", json.dumps(response_payload))
+        self.assertNotIn("testHash", json.dumps(owner_payload))
+
+    def test_public_p0_does_not_fall_back_to_a_local_sealed_store(self):
         from quant_core.api import QuantApiHandler
         from quant_core.cache import MarketDataCache
         from quant_core.runs import ResearchRunStore
         from quant_core.strategy_library import StrategyLibraryStore
 
-        class ForbiddenDependency:
-            def __getattr__(self, _name):
-                raise AssertionError("public sealed P0 must fail before dependency access")
+        class ForbiddenAdapter:
+            def fetch_ohlcv(self, *_args, **_kwargs):
+                raise AssertionError("public sealed P0 must fail before market access")
 
         start = datetime(2026, 7, 1, tzinfo=timezone.utc)
         request_payload = {
@@ -522,43 +866,39 @@ class SealedP0HttpTests(unittest.TestCase):
                 "endExclusive": (start + timedelta(minutes=1_500)).isoformat(),
             },
         }
-        public_environment = {
-            "AIQT_DEPLOYMENT_MODE": "public",
-            "AIQT_DATABASE_URL": "postgresql://example.invalid/aiqt",
-            "AIQT_PUBLIC_ORIGIN": "https://myqt.example",
-            "AIQT_OIDC_ISSUER": "https://issuer.example",
-            "AIQT_OIDC_CLIENT_ID": "client",
-            "AIQT_OIDC_CLIENT_SECRET": "secret",
-            "AIQT_SETTINGS_MASTER_KEY": base64.urlsafe_b64encode(b"m" * 32).decode(),
-        }
 
         with tempfile.TemporaryDirectory() as directory:
             class TestHandler(QuantApiHandler):
                 pass
 
+            TestHandler.deployment_mode = "public"
+            TestHandler.tenant_owner_id = "owner-a"
             TestHandler.run_store = ResearchRunStore(Path(directory) / "runs.sqlite")
             TestHandler.cache = MarketDataCache(Path(directory) / "market.sqlite")
-            TestHandler.strategy_store = StrategyLibraryStore(Path(directory) / "strategies.sqlite")
-            TestHandler.sealed_dataset_store = ForbiddenDependency()
-            TestHandler.kline_adapter = ForbiddenDependency()
+            TestHandler.strategy_store = StrategyLibraryStore(
+                Path(directory) / "strategies.sqlite"
+            )
+            TestHandler.sealed_dataset_store = SealedDatasetStore(
+                Path(directory) / "local-sealed.sqlite"
+            )
+            TestHandler.kline_adapter = ForbiddenAdapter()
             server = HTTPServer(("127.0.0.1", 0), TestHandler)
             thread = Thread(target=server.serve_forever, daemon=True)
             thread.start()
             connection = HTTPConnection(*server.server_address, timeout=5)
             body = json.dumps(request_payload).encode("utf-8")
             try:
-                with patch.dict(os.environ, public_environment):
-                    connection.request(
-                        "POST",
-                        "/api/p0/pipeline",
-                        body=body,
-                        headers={
-                            "Content-Type": "application/json",
-                            "Content-Length": str(len(body)),
-                        },
-                    )
-                    response = connection.getresponse()
-                    payload = json.loads(response.read().decode("utf-8"))
+                connection.request(
+                    "POST",
+                    "/api/p0/pipeline",
+                    body=body,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(body)),
+                    },
+                )
+                response = connection.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
             finally:
                 connection.close()
                 server.shutdown()
@@ -567,7 +907,7 @@ class SealedP0HttpTests(unittest.TestCase):
 
         self.assertEqual(response.status, 400, payload)
         self.assertEqual(payload["error"], "invalid_p0_pipeline")
-        self.assertEqual(payload["detail"], "sealed_dataset_local_only")
+        self.assertEqual(payload["detail"], "sealed_dataset_tenant_store_unavailable")
 
 
 if __name__ == "__main__":

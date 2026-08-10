@@ -88,6 +88,21 @@ A 股使用 `000300`，美股使用 `SPY`，加密资产使用 `BTC/USDT`。基�
 
 ## 策略、回测与 AI 评审
 
+**注册策略模板（Registered Strategy Template）**
+由服务端登记、已经实现并测试、具有版本化策略类型、canonical base StrategyConfig、冻结参数网格和可启动 sealed 数据要求的可执行策略能力。浏览器通过 capability read 获取服务端投影，但不能上传模板集合、policy 或 risk；服务端按源研究运行语义以注册顺序导出完整兼容集合，AI 只能在该集合内选择并解释，不能改写参数网格、生成任意代码或创造未注册交易语义。
+
+**注册模板 P0 启动（Registered Template P0 Bootstrap）**
+复用既有 P0 pipeline 创建首个 formal sealed 源运行的服务端入口，不是新的研究状态机。请求中 `registeredTemplateId` 与旧 `strategyConfig` 严格二选一；注册路径由服务端展开 canonical v2 策略、推导 warmup/72 天开发评分/18 天留出窗口并固定 10/10/10 成本，浏览器不能重传 policy、position、risk 或漂移 assumptions。
+
+**策略研发提案（Strategy Research Proposal）**
+AI 基于服务端权威 formal sealed P0 证据形成的“兼容注册策略模板 + 服务端冻结参数网格”候选。它只是待人工确认的研究草稿，不启动正式策略实验，也不构成 promotion、策略绑定或交易启动。
+
+**密封策略数据集（Sealed Strategy Dataset）**
+一次性固定来源、区间、开发/测试分区和内容承诺的不可变研究制品。候选只能使用开发分区，唯一 rank-1 仅能一次性读取测试分区；public 中该制品及 claim 必须归属当前租户。
+
+**正式策略实验（Formal Strategy Experiment）**
+人工确认后，使用密封策略数据集完成开发候选比较和唯一 holdout 验证的持久化研究运行。新 policy experiment 的 definition 与 result hash 必须共同承诺 `formal-pre-roll-v2`，使 warmup 和 5m/60m/4h 已完成 K 线对齐语义可审计。实验结果是研究证据，不是收益保证、promotion、策略绑定、运行启动或生产授权。
+
 **策略版本**
 绑定市场、标的、周期、规则和 canonical hash 的人工可追溯修订。AI 只生成候选；必须人工采用并重新保存/审计，不能自动覆盖当前策略。
 
@@ -125,6 +140,6 @@ PostgreSQL 中按租户/任务或账户唯一持有的短期租约。多 API 实
 
 ## 自动化边界
 
-当前允许的后台自动化只有：已启用自动交易状态的既有对账/评估，以及用户显式选股的到期复盘。二者都使用 PostgreSQL lease。
+当前允许的后台自动化只有：已启用自动交易状态的既有对账/评估、用户显式选股的到期复盘，以及用户显式确认并 launch 后的正式策略实验恢复执行。三者都使用 PostgreSQL lease；正式策略实验 worker 只能推进已持久化的 pending experiment，不能自动 propose、promotion、绑定或启动。
 
 在稳定价值 cohort 达到严格门槛前，不考虑批量研究或自动观察池。即使达到门槛，AI 选股仍不得直接连接订单或生产交易。

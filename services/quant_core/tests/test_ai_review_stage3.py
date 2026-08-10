@@ -3514,6 +3514,10 @@ class AiReviewEvidenceAssemblerTests(_AiReviewStage3Fixture, unittest.TestCase):
             bundle["evidenceHash"],
             canonical_sha256({key: value for key, value in bundle.items() if key != "evidenceHash"}),
         )
+        self.assertEqual(
+            bundle["evidenceHash"],
+            "678a183cac7460e3a3346427dc2a63dd778e368a801c105c481ea31913ec84cd",
+        )
 
     def test_completed_kline_evidence_excludes_forming_and_future_rows(self) -> None:
         bars = [
@@ -4791,6 +4795,40 @@ class DeterministicAiReviewEngineTests(unittest.TestCase):
                 assessment = self.engine.evaluate(_review_evidence_bundle([spec]))
                 self.assertEqual(assessment["stance"], "caution")
                 self.assertTrue(assessment["risks"])
+
+    def test_failed_formal_profitability_gate_is_a_critical_blocker(self) -> None:
+        bundle = _review_evidence_bundle()
+        candidate_item = next(
+            item
+            for item in bundle["evidenceItems"]
+            if item["kind"] == "candidate_metrics"
+        )
+        candidate_item["value"].update(
+            {
+                "gateEvaluation": {
+                    "pretest": {"passed": True},
+                    "test": {
+                        "passed": False,
+                        "failures": ["non_positive_return"],
+                    },
+                },
+                "completionReason": "test_gate_failed",
+                "profitabilityGatePassed": False,
+            }
+        )
+        _rehash_bundle(bundle)
+
+        assessment = self.engine.evaluate(bundle)
+
+        self.assertEqual(assessment["stance"], "blocked")
+        self.assertTrue(
+            any(
+                risk["severity"] == "critical"
+                and "profitability gate failed" in risk["message"].lower()
+                and risk["evidenceReferences"] == [candidate_item["id"]]
+                for risk in assessment["risks"]
+            )
+        )
 
     def test_stance_priority_is_blocked_then_insufficient_then_caution(self) -> None:
         blocked = _review_evidence_bundle([{"testReturnPct": -1.0}])

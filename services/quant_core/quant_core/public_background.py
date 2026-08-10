@@ -46,6 +46,12 @@ class PublicBackgroundRunner:
             5,
             3_600,
         )
+        self.strategy_experiment_interval = _interval(
+            source.get("AIQT_STRATEGY_EXPERIMENT_INTERVAL_SECONDS"),
+            5,
+            1,
+            3_600,
+        )
         self._stopped = Event()
         self._thread: Thread | None = None
 
@@ -90,6 +96,14 @@ class PublicBackgroundRunner:
         return self._run_for_active_tenants(
             "auto-trading",
             lambda tenant, guard, fence: self.tenant_api.process_auto_trading_once(
+                tenant, lease_guard=guard, lease_fence=fence
+            ),
+        )
+
+    def run_strategy_experiments_once(self) -> int:
+        return self._run_for_active_tenants(
+            "strategy-experiment-jobs",
+            lambda tenant, guard, fence: self.tenant_api.process_strategy_experiment_jobs(
                 tenant, lease_guard=guard, lease_fence=fence
             ),
         )
@@ -168,6 +182,7 @@ class PublicBackgroundRunner:
     def _run(self) -> None:
         next_selection = 0.0
         next_auto = 0.0
+        next_strategy_experiment = 0.0
         while not self._stopped.is_set():
             now = time.monotonic()
             if now >= next_selection:
@@ -186,7 +201,25 @@ class PublicBackgroundRunner:
                 except Exception as error:
                     _log_task_failure("auto-trading", error, scope="scheduler")
                 next_auto = time.monotonic() + self.auto_interval
-            self._stopped.wait(max(0.1, min(next_selection, next_auto) - time.monotonic()))
+            if now >= next_strategy_experiment:
+                try:
+                    self.run_strategy_experiments_once()
+                except Exception as error:
+                    _log_task_failure(
+                        "strategy-experiment-jobs",
+                        error,
+                        scope="scheduler",
+                    )
+                next_strategy_experiment = (
+                    time.monotonic() + self.strategy_experiment_interval
+                )
+            self._stopped.wait(
+                max(
+                    0.1,
+                    min(next_selection, next_auto, next_strategy_experiment)
+                    - time.monotonic(),
+                )
+            )
 
 
 def _tenant_context(user: PublicUser) -> TenantContext:

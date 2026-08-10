@@ -36,6 +36,10 @@ from quant_core.stage6_sandbox import (
 )
 from quant_core.stage9_production_admission import BinanceSpotProductionAdmissionRoute
 from quant_core.strategy_experiments import StrategyExperimentRunner
+from quant_core.strategy_research import (
+    AiStrategyResearchOrchestrator,
+    StrategyResearchCapabilityRegistry,
+)
 from quant_core.terminal import build_terminal_workspace
 from quant_core.watchlist import workspace_with_watchlist
 from quant_core.workspace_state import workspace_with_research_workspace_state
@@ -94,18 +98,53 @@ class HandlerServicesMixin:
         )
 
     def _strategy_experiment_runner(self) -> StrategyExperimentRunner:
+        audit_store = getattr(self, "audit_event_store", None)
         return StrategyExperimentRunner(
             strategy_store=self.strategy_store,
             run_store=self.run_store,
             experiment_store=self.strategy_experiment_store,
             sealed_bar_source=getattr(self, "sealed_dataset_store", None),
+            launch_evidence_loader=(
+                audit_store.get
+                if callable(getattr(audit_store, "get", None))
+                else None
+            ),
         )
+
+    def _strategy_research_orchestrator(self) -> AiStrategyResearchOrchestrator:
+        return AiStrategyResearchOrchestrator(
+            run_store=self.run_store,
+            provider_registry=self._current_ai_review_provider_registry(),
+            audit_store=self.audit_event_store,
+            experiment_runner=self._strategy_experiment_runner(),
+            experiment_store=self.strategy_experiment_store,
+            review_store=self.ai_review_store,
+            strategy_store=self.strategy_store,
+            auto_snapshot_loader=lambda: self._auto_paper_trading_service().snapshot(),
+            sealed_bar_source=getattr(self, "sealed_dataset_store", None),
+            capability_registry=self._strategy_research_capability_registry(),
+        )
+
+    def _strategy_research_capability_registry(
+        self,
+    ) -> StrategyResearchCapabilityRegistry:
+        configured = getattr(
+            type(self),
+            "strategy_research_capability_registry",
+            None,
+        )
+        if configured is not None:
+            if not isinstance(configured, StrategyResearchCapabilityRegistry):
+                raise TypeError("strategy_research_capability_registry_invalid")
+            return configured
+        return StrategyResearchCapabilityRegistry()
 
     def _ai_review_stage3_service(self) -> AiReviewStage3Service:
         return AiReviewStage3Service(
             evidence_assembler=AiReviewEvidenceAssembler(
                 experiment_store=self.strategy_experiment_store,
                 run_store=self.run_store,
+                sealed_bar_source=getattr(self, "sealed_dataset_store", None),
             ),
             deterministic_engine=DeterministicAiReviewEngine(),
             provider_registry=self._current_ai_review_provider_registry(),

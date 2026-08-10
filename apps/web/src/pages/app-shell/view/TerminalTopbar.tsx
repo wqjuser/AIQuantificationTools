@@ -1,4 +1,5 @@
 import { Locale, supportedLocales } from "../../../lib/i18n";
+import type { StrategyResearchCapability } from "../../../lib/strategy-research";
 import { Market } from "../../../lib/terminal-workbench";
 import { DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE } from "../../../lib/theme";
 import { researchPipelineLockedEvidenceLabel, researchPipelineLockedEvidenceTitle, researchPipelinePreflightStatusLabel } from "../../research/ResearchPipelineFormatters";
@@ -8,7 +9,7 @@ import { Activity, Copy, Database, Languages, Moon, Play, RefreshCw, Search, Sun
 import type { AppControllerBindings } from "../controller/bindings";
 
 export type TerminalTopbarViewModel = Pick<AppControllerBindings,
-    "activeWorkArea" | "changeLocale" | "changeMarketDraft" | "changeSymbolDraft" | "changeTextScale" | "colorScheme" | "colorSchemeToggleLabel" | "copiedResearchContextLink" | "copyResearchContextLink" | "currentExecutionModeLabel" | "currentExecutionTone" | "currentLiveBadgeLabel" | "error" | "footerLiveTradingAllowed" | "i18n" | "isRefreshing" | "isRunning" | "isSearchOpen" | "isSymbolSearching" | "locale" | "marketDraft" | "openSymbolSearch" | "refreshSearchSuggestionCache" | "refreshingCacheKey" | "researchPipelinePreflight" | "runPipeline" | "searchSuggestions" | "selectSearchSuggestion" | "selectTimeframe" | "source" | "statusLabel" | "submitSymbol" | "symbolDraft" | "textScale" | "textScalePercent" | "toggleColorScheme" | "workspace"
+    "activeWorkArea" | "changeLocale" | "changeMarketDraft" | "changeSymbolDraft" | "changeTextScale" | "colorScheme" | "colorSchemeToggleLabel" | "copiedResearchContextLink" | "copyResearchContextLink" | "currentExecutionModeLabel" | "currentExecutionTone" | "currentLiveBadgeLabel" | "error" | "footerLiveTradingAllowed" | "i18n" | "isRefreshing" | "isRunning" | "isSearchOpen" | "isSymbolSearching" | "locale" | "marketDraft" | "openSymbolSearch" | "refreshSearchSuggestionCache" | "refreshingCacheKey" | "researchP0Capabilities" | "researchP0CapabilitiesLoading" | "researchPipelinePreflight" | "runPipeline" | "searchSuggestions" | "selectResearchP0Template" | "selectedResearchP0TemplateId" | "selectSearchSuggestion" | "selectTimeframe" | "source" | "statusLabel" | "submitSymbol" | "symbolDraft" | "textScale" | "textScalePercent" | "toggleColorScheme" | "workspace"
   >;
 
 type TerminalTopbarProps = { controller: TerminalTopbarViewModel };
@@ -20,7 +21,8 @@ export function TerminalTopbar({ controller }: TerminalTopbarProps) {
     currentExecutionModeLabel, currentExecutionTone, currentLiveBadgeLabel, error, footerLiveTradingAllowed,
     i18n, isRefreshing, isRunning, isSearchOpen, isSymbolSearching,
     locale, marketDraft, openSymbolSearch, refreshSearchSuggestionCache, refreshingCacheKey, researchPipelinePreflight,
-    runPipeline, searchSuggestions, selectSearchSuggestion, selectTimeframe,
+    researchP0Capabilities, researchP0CapabilitiesLoading, runPipeline, searchSuggestions,
+    selectedResearchP0TemplateId, selectResearchP0Template, selectSearchSuggestion, selectTimeframe,
     source, statusLabel, submitSymbol, symbolDraft, textScale,
     textScalePercent, toggleColorScheme, workspace
   } = controller;
@@ -209,6 +211,12 @@ export function TerminalTopbar({ controller }: TerminalTopbarProps) {
                   {isRefreshing || isRunning ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
                   {i18n.t("action.runPipeline")}
                 </button>
+                <ResearchP0TemplateSelector
+                  capabilities={researchP0Capabilities}
+                  disabled={isRefreshing || isRunning || researchP0CapabilitiesLoading}
+                  onSelect={selectResearchP0Template}
+                  selectedTemplateId={selectedResearchP0TemplateId}
+                />
                 <details className="text-scale-control">
                   <summary
                     aria-label={i18n.locale === "zh-CN" ? "调整文字大小" : "Adjust text size"}
@@ -265,5 +273,37 @@ export function TerminalTopbar({ controller }: TerminalTopbarProps) {
                 </button>
               </div>
             </header>
+  );
+}
+
+export function ResearchP0TemplateSelector({
+  capabilities,
+  disabled,
+  onSelect,
+  selectedTemplateId,
+}: {
+  capabilities: readonly StrategyResearchCapability[];
+  disabled: boolean;
+  onSelect: (templateId: string) => void;
+  selectedTemplateId: string;
+}) {
+  return (
+    <label className="locale-control research-template-control" title="只有明确选择后，P0 才使用服务端注册模板">
+      <span>研究策略</span>
+      <select
+        aria-label="P0 研究策略"
+        data-testid="research-p0-template-select"
+        disabled={disabled}
+        onChange={(event) => onSelect(event.currentTarget.value)}
+        value={selectedTemplateId}
+      >
+        <option value="">当前工作区策略（默认）</option>
+        {capabilities.map((capability) => (
+          <option key={capability.templateId} value={capability.templateId}>
+            {capability.templateId}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

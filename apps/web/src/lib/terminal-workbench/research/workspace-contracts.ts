@@ -436,6 +436,30 @@ export interface ResearchRunDataSnapshotBar {
   volume: number;
 }
 
+export interface ResearchRunSealedDatasetSummary {
+  datasetId: string;
+  market: Market;
+  symbol: string;
+  timeframe: Timeframe;
+  source: string;
+  adjustmentMode: string;
+  start: string;
+  developmentEndExclusive: string;
+  endExclusive: string;
+  rows: number;
+  developmentRows: number;
+  withheldRows: number;
+  datasetHash: string;
+  developmentHash: string;
+}
+
+export interface ResearchRunFormalScoringWindow {
+  start: string;
+  endExclusive: string;
+  rows: number;
+  preRollRows: number;
+}
+
 export interface ResearchRunDataPreparationEvidence {
   kind: "watchlist_cache_refresh";
   runId: string;
@@ -475,16 +499,20 @@ export interface ResearchRunMarketAiSelectionEvidence {
 }
 
 export interface ResearchRunDataSnapshot {
-  hashVersion?: "aiqt-data-v2";
+  hashVersion?: "aiqt-data-v2" | "aiqt-sealed-v1";
   source: string;
   isComplete: boolean;
   warnings: string[];
   rows: number;
   start: string | null;
-  end: string | null;
+  end?: string | null;
+  endExclusive?: string;
   hash: string;
   snapshotHash?: string;
-  bars: ResearchRunDataSnapshotBar[];
+  bars?: ResearchRunDataSnapshotBar[];
+  sealedDataset?: ResearchRunSealedDatasetSummary;
+  preRollVersion?: "formal-pre-roll-v2";
+  scoringWindow?: ResearchRunFormalScoringWindow;
   observedAt?: string | null;
   marketTime?: string | null;
   calendarId?: string | null;

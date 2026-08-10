@@ -17,6 +17,13 @@ from quant_core.http_api.support.p0 import (
     _p0_strategy_config_from_payload,
     _p0_strategy_snapshot_from_payload,
 )
+from quant_core.strategy_experiment_store import StrategyExperimentCandidateRecord
+from quant_core.strategy_experiments import (
+    PolicyParameterDimension,
+    StrategyExperimentError,
+    _apply_adjacent_candidate_gate,
+    expand_candidates,
+)
 from quant_core.strategy_library import (
     StrategyLibraryStore,
     strategy_library_record_to_payload,
@@ -342,6 +349,159 @@ class CostAwareRangeReversionCanonicalTests(unittest.TestCase):
                 self.assertIsInstance(strategy.policy, CostAwareRangeReversionPolicy)
                 assert isinstance(strategy.policy, CostAwareRangeReversionPolicy)
                 self.assertEqual(strategy.policy.reversion.entry_z_threshold, threshold)
+
+
+class CostAwareRangeReversionFormalCandidateTests(unittest.TestCase):
+    def test_expands_only_the_registered_signed_threshold_grid_as_canonical_candidates(
+        self,
+    ) -> None:
+        strategy = strategy_config_from_payload(canonical_range_reversion_v11_payload())
+
+        candidates = expand_candidates(
+            strategy,
+            (
+                PolicyParameterDimension(
+                    policy_path="reversion.entryZThreshold",
+                    values=(-1.5, -2, -2.0, -2.5),
+                ),
+            ),
+        )
+
+        self.assertEqual(
+            [candidate.parameters for candidate in candidates],
+            [
+                [{"policyPath": "reversion.entryZThreshold", "value": -2.5}],
+                [{"policyPath": "reversion.entryZThreshold", "value": -2}],
+                [{"policyPath": "reversion.entryZThreshold", "value": -1.5}],
+            ],
+        )
+        self.assertEqual(
+            [candidate.candidate_id for candidate in candidates],
+            ["2ce86c2f281d", "9483e5caceab", "2667242f4ff0"],
+        )
+        self.assertEqual(
+            [candidate.strategy.revision for candidate in candidates],
+            ["08cd1403253b", "d24a37e2e199", "ab7f274daaa6"],
+        )
+        baseline = strategy_config_to_payload(strategy)
+        for candidate in candidates:
+            payload = strategy_config_to_payload(candidate.strategy)
+            self.assertEqual(payload["policy"]["kind"], "cost_aware_range_reversion_v1_1")
+            self.assertEqual(payload["timeframe"], "1m")
+            self.assertEqual(payload["risk"], baseline["risk"])
+        self.assertEqual(strategy.revision, "d24a37e2e199")
+
+    def test_rejects_policy_kind_timeframe_risk_and_safety_dimensions(self) -> None:
+        strategy = strategy_config_from_payload(canonical_range_reversion_v11_payload())
+
+        for policy_path in (
+            "kind",
+            "decisionTimeframe",
+            "completedBarsOnly",
+            "risk.positionPct",
+            "reversion.requireNegativeZScore",
+        ):
+            with self.subTest(policy_path=policy_path), self.assertRaises(
+                StrategyExperimentError
+            ):
+                expand_candidates(
+                    strategy,
+                    (PolicyParameterDimension(policy_path=policy_path, values=(1,)),),
+                )
+        with self.assertRaises(StrategyExperimentError):
+            expand_candidates(
+                strategy,
+                (
+                    PolicyParameterDimension(
+                        policy_path="breakout.lookbackBars",
+                        values=(18,),
+                    ),
+                ),
+            )
+
+    def test_rejects_non_finite_out_of_bounds_or_noncanonical_signed_thresholds(
+        self,
+    ) -> None:
+        strategy = strategy_config_from_payload(canonical_range_reversion_v11_payload())
+
+        for values in ((-101,), (101,), (-2.25,), (True,), ("-2",), (float("inf"),)):
+            with self.subTest(values=values), self.assertRaises(StrategyExperimentError):
+                expand_candidates(
+                    strategy,
+                    (
+                        PolicyParameterDimension(
+                            policy_path="reversion.entryZThreshold",
+                            values=values,
+                        ),
+                    ),
+                )
+
+    def test_center_threshold_has_two_direct_neighbors_for_the_formal_stability_gate(
+        self,
+    ) -> None:
+        strategy = strategy_config_from_payload(canonical_range_reversion_v11_payload())
+        candidates = expand_candidates(
+            strategy,
+            (
+                PolicyParameterDimension(
+                    policy_path="reversion.entryZThreshold",
+                    values=(-2.5, -2.0, -1.5),
+                ),
+            ),
+        )
+        records = [
+            StrategyExperimentCandidateRecord(
+                experiment_id="experiment-range-reversion",
+                candidate_id=candidate.candidate_id,
+                candidate_revision=candidate.strategy.revision,
+                parameters=candidate.parameters,
+                train_metrics={"totalReturnPct": 1},
+                validation_metrics={"totalReturnPct": 1},
+                test_metrics=None,
+                walk_forward={},
+                eligible=True,
+                rank=None,
+                gate_evaluation={"pretest": {"passed": True}},
+            )
+            for candidate in candidates
+        ]
+
+        gated = _apply_adjacent_candidate_gate(
+            records,
+            [
+                {
+                    "policyPath": "reversion.entryZThreshold",
+                    "values": [-2.5, -2, -1.5],
+                }
+            ],
+        )
+
+        center = next(
+            record for record in gated if record.parameters[0]["value"] == -2
+        )
+        edges = [record for record in gated if record is not center]
+        self.assertTrue(center.eligible)
+        self.assertEqual(
+            center.gate_evaluation["stability"],
+            {
+                "passed": True,
+                "pending": False,
+                "completeNeighborhood": True,
+                "neighbors": [
+                    {
+                        "candidateId": "2667242f4ff0",
+                        "validationReturnPct": 1.0,
+                        "positive": True,
+                    },
+                    {
+                        "candidateId": "2ce86c2f281d",
+                        "validationReturnPct": 1.0,
+                        "positive": True,
+                    },
+                ],
+            },
+        )
+        self.assertTrue(all(not record.eligible for record in edges))
 
 
 class CostAwareRangeReversionP0SchemaTests(unittest.TestCase):

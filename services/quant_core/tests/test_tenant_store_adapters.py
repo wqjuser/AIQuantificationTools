@@ -4,9 +4,10 @@ import base64
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import create_engine
@@ -336,10 +337,30 @@ class TenantStoreAdaptersTest(unittest.TestCase):
             rank=1,
             gate_evaluation={"pretest": {"passed": True}, "test": {"passed": True}},
         )
+        development_candidate = replace(
+            candidate,
+            test_metrics=None,
+            gate_evaluation={"pretest": {"passed": True}},
+        )
+        development_checkpoint = replace(
+            pending,
+            evaluation_count=2,
+            selected_candidate_id=candidate.candidate_id,
+            completion_reason="development_completed",
+        )
         store = self.first.strategy_experiment_store
         store.put_snapshot(snapshot)
 
         store.record_pending(pending)
+        store.record_development_checkpoint(
+            development_checkpoint,
+            [development_candidate],
+        )
+        checkpoint = store.get(pending.experiment_id)
+        self.assertIsNotNone(checkpoint)
+        assert checkpoint is not None
+        self.assertEqual(checkpoint.experiment, development_checkpoint)
+        self.assertEqual(checkpoint.candidates, [development_candidate])
         store.record_completed(completed, [candidate])
         promoted = store.mark_promoted(
             experiment_id=completed.experiment_id,
@@ -357,6 +378,560 @@ class TenantStoreAdaptersTest(unittest.TestCase):
             store.get(completed.experiment_id).experiment.promotion_lineage_hash,
             "lineage-hash",
         )
+
+    def test_stale_public_development_checkpoint_cannot_revive_failed_experiment(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = create_engine(
+                f"sqlite+pysqlite:///{Path(tmp) / 'public.sqlite'}",
+                connect_args={"check_same_thread": False},
+                future=True,
+            )
+            public_metadata.create_all(engine)
+            key = base64.urlsafe_b64encode(
+                AESGCM.generate_key(bit_length=256)
+            ).decode()
+            cipher = TenantSecretCipher(key)
+            tenant = context(
+                "owner-checkpoint-terminal-race",
+                "checkpoint-terminal-race@example.com",
+            )
+            stores = [
+                PublicTenantStores.create(engine, tenant, cipher),
+                PublicTenantStores.create(engine, tenant, cipher),
+            ]
+            now = datetime(2026, 8, 10, tzinfo=timezone.utc)
+            snapshot = StrategyExperimentSnapshot(
+                snapshot_id="snapshot-checkpoint-terminal-race",
+                created_at=now,
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                canonical_data_hash="data-hash",
+                rows=1,
+                start_at=now.isoformat(),
+                end_at=(now + timedelta(minutes=1)).isoformat(),
+                bars=[{"timestamp": now.isoformat(), "close": 100.0}],
+            )
+            pending = StrategyExperimentRecord(
+                experiment_id="experiment-checkpoint-terminal-race",
+                created_at=now,
+                status="pending",
+                definition_hash="definition-hash",
+                holdout_key="holdout-key",
+                strategy_revision="strategy-revision",
+                source_run_id="source-run",
+                snapshot_id=snapshot.snapshot_id,
+                market=snapshot.market,
+                symbol=snapshot.symbol,
+                timeframe=snapshot.timeframe,
+                definition={"resultSchemaVersion": 2},
+                evaluation_count=0,
+            )
+            development_candidate = StrategyExperimentCandidateRecord(
+                experiment_id=pending.experiment_id,
+                candidate_id="candidate-development-winner",
+                candidate_revision="candidate-revision",
+                parameters=[],
+                train_metrics={"totalReturnPct": 1.0},
+                validation_metrics={"totalReturnPct": 0.5},
+                test_metrics=None,
+                walk_forward={"positiveReturnCount": 1},
+                eligible=True,
+                rank=1,
+                gate_evaluation={"pretest": {"passed": True}},
+            )
+            checkpoint = replace(
+                pending,
+                evaluation_count=1,
+                selected_candidate_id=development_candidate.candidate_id,
+                completion_reason="development_completed",
+            )
+            failed = replace(
+                pending,
+                status="failed",
+                error_code="forced_failure",
+                error_detail="terminal writer won",
+            )
+            stores[0].strategy_experiment_store.put_snapshot(snapshot)
+            stores[0].strategy_experiment_store.record_pending(pending)
+
+            checkpoint_write_started = Event()
+            terminal_committed = Event()
+
+            def pause_stale_checkpoint(_connection) -> bool:
+                checkpoint_write_started.set()
+                if not terminal_committed.wait(timeout=5):
+                    raise RuntimeError("terminal writer did not commit")
+                return True
+
+            stores[0].records.write_fence = pause_stale_checkpoint
+
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        stores[0].strategy_experiment_store.record_development_checkpoint,
+                        checkpoint,
+                        [development_candidate],
+                    )
+                    self.assertTrue(checkpoint_write_started.wait(timeout=5))
+                    stores[1].strategy_experiment_store.record_failed(failed)
+                    terminal_committed.set()
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "strategy_experiment_conflict",
+                    ):
+                        future.result(timeout=5)
+
+                stored = stores[1].strategy_experiment_store.get(
+                    pending.experiment_id
+                )
+                self.assertIsNotNone(stored)
+                assert stored is not None
+                self.assertEqual(stored.experiment, failed)
+                self.assertEqual(stored.candidates, [])
+            finally:
+                terminal_committed.set()
+                engine.dispose()
+
+    def test_first_public_terminal_transition_cannot_be_overwritten_by_stale_writer(
+        self,
+    ) -> None:
+        for winner_status in ("completed", "failed"):
+            with (
+                self.subTest(winner_status=winner_status),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                engine = create_engine(
+                    f"sqlite+pysqlite:///{Path(tmp) / 'public.sqlite'}",
+                    connect_args={"check_same_thread": False},
+                    future=True,
+                )
+                public_metadata.create_all(engine)
+                key = base64.urlsafe_b64encode(
+                    AESGCM.generate_key(bit_length=256)
+                ).decode()
+                cipher = TenantSecretCipher(key)
+                tenant = context(
+                    f"owner-terminal-race-{winner_status}",
+                    f"terminal-race-{winner_status}@example.com",
+                )
+                stores = [
+                    PublicTenantStores.create(engine, tenant, cipher),
+                    PublicTenantStores.create(engine, tenant, cipher),
+                ]
+                now = datetime(2026, 8, 10, tzinfo=timezone.utc)
+                snapshot = StrategyExperimentSnapshot(
+                    snapshot_id=f"snapshot-terminal-race-{winner_status}",
+                    created_at=now,
+                    market="crypto",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                    canonical_data_hash="data-hash",
+                    rows=1,
+                    start_at=now.isoformat(),
+                    end_at=(now + timedelta(minutes=1)).isoformat(),
+                    bars=[{"timestamp": now.isoformat(), "close": 100.0}],
+                )
+                pending = StrategyExperimentRecord(
+                    experiment_id=f"experiment-terminal-race-{winner_status}",
+                    created_at=now,
+                    status="pending",
+                    definition_hash="definition-hash",
+                    holdout_key="holdout-key",
+                    strategy_revision="strategy-revision",
+                    source_run_id="source-run",
+                    snapshot_id=snapshot.snapshot_id,
+                    market=snapshot.market,
+                    symbol=snapshot.symbol,
+                    timeframe=snapshot.timeframe,
+                    definition={"resultSchemaVersion": 2},
+                    evaluation_count=0,
+                )
+                candidate = StrategyExperimentCandidateRecord(
+                    experiment_id=pending.experiment_id,
+                    candidate_id="candidate-terminal-winner",
+                    candidate_revision="candidate-revision",
+                    parameters=[],
+                    train_metrics={"totalReturnPct": 1.0},
+                    validation_metrics={"totalReturnPct": 0.5},
+                    test_metrics={"totalReturnPct": 0.25},
+                    walk_forward={"positiveReturnCount": 1},
+                    eligible=True,
+                    rank=1,
+                    gate_evaluation={
+                        "pretest": {"passed": True},
+                        "test": {"passed": True},
+                    },
+                )
+                completed = replace(
+                    pending,
+                    status="completed",
+                    evaluation_count=1,
+                    selected_candidate_id=candidate.candidate_id,
+                    completion_reason="profitability_gate_passed",
+                    result_hash="result-hash",
+                    profitability_gate_passed=True,
+                )
+                failed = replace(
+                    pending,
+                    status="failed",
+                    error_code="forced_failure",
+                    error_detail="terminal writer won",
+                )
+                stores[0].strategy_experiment_store.put_snapshot(snapshot)
+                stores[0].strategy_experiment_store.record_pending(pending)
+
+                stale_write_started = Event()
+                winner_committed = Event()
+
+                def pause_stale_terminal(_connection) -> bool:
+                    stale_write_started.set()
+                    if not winner_committed.wait(timeout=5):
+                        raise RuntimeError("winning terminal writer did not commit")
+                    return True
+
+                def persist_terminal(index: int, status: str) -> None:
+                    store = stores[index].strategy_experiment_store
+                    if status == "completed":
+                        store.record_completed(completed, [candidate])
+                    else:
+                        store.record_failed(failed)
+
+                stale_status = (
+                    "failed" if winner_status == "completed" else "completed"
+                )
+                stores[0].records.write_fence = pause_stale_terminal
+
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(persist_terminal, 0, stale_status)
+                        self.assertTrue(stale_write_started.wait(timeout=5))
+                        persist_terminal(1, winner_status)
+                        winner_committed.set()
+                        with self.assertRaisesRegex(
+                            ValueError,
+                            "strategy_experiment_conflict",
+                        ):
+                            future.result(timeout=5)
+
+                    stored = stores[1].strategy_experiment_store.get(
+                        pending.experiment_id
+                    )
+                    self.assertIsNotNone(stored)
+                    assert stored is not None
+                    expected_experiment = (
+                        completed if winner_status == "completed" else failed
+                    )
+                    expected_candidates = (
+                        [candidate] if winner_status == "completed" else []
+                    )
+                    self.assertEqual(stored.experiment, expected_experiment)
+                    self.assertEqual(stored.candidates, expected_candidates)
+                finally:
+                    winner_committed.set()
+                    engine.dispose()
+
+    def test_racing_public_snapshot_definitions_cannot_overwrite_the_atomic_winner(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = create_engine(
+                f"sqlite+pysqlite:///{Path(tmp) / 'public.sqlite'}",
+                connect_args={"check_same_thread": False},
+                future=True,
+            )
+            public_metadata.create_all(engine)
+            key = base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=256)).decode()
+            cipher = TenantSecretCipher(key)
+            tenant = context("owner-snapshot-race", "snapshot-race@example.com")
+            stores = [
+                PublicTenantStores.create(engine, tenant, cipher),
+                PublicTenantStores.create(engine, tenant, cipher),
+            ]
+            now = datetime(2026, 8, 10, tzinfo=timezone.utc)
+            snapshots = [
+                StrategyExperimentSnapshot(
+                    snapshot_id="snapshot-create-race",
+                    created_at=now,
+                    market="crypto",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                    canonical_data_hash=f"data-hash-{index}",
+                    rows=1,
+                    start_at=now.isoformat(),
+                    end_at=(now + timedelta(minutes=1)).isoformat(),
+                    bars=[
+                        {
+                            "timestamp": now.isoformat(),
+                            "close": 100.0 + index,
+                        }
+                    ],
+                )
+                for index in range(2)
+            ]
+            write_barrier = Barrier(2)
+
+            def synchronize_writes(_connection) -> bool:
+                write_barrier.wait()
+                return True
+
+            for store in stores:
+                store.records.write_fence = synchronize_writes
+
+            def put(index: int) -> tuple[StrategyExperimentSnapshot, str]:
+                try:
+                    stores[index].strategy_experiment_store.put_snapshot(
+                        snapshots[index]
+                    )
+                    outcome = "stored"
+                except ValueError as error:
+                    outcome = str(error)
+                return snapshots[index], outcome
+
+            try:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(put, range(2)))
+
+                self.assertCountEqual(
+                    [outcome for _snapshot, outcome in outcomes],
+                    ["stored", "strategy_experiment_conflict"],
+                )
+                winner = next(
+                    snapshot
+                    for snapshot, outcome in outcomes
+                    if outcome == "stored"
+                )
+                self.assertEqual(
+                    stores[0].strategy_experiment_store.snapshots.get(
+                        winner.snapshot_id
+                    ),
+                    winner,
+                )
+                self.assertEqual(
+                    stores[1].strategy_experiment_store.snapshots.get(
+                        winner.snapshot_id
+                    ),
+                    winner,
+                )
+            finally:
+                engine.dispose()
+
+    def test_racing_public_pending_replays_converge_on_one_definition_winner(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = create_engine(
+                f"sqlite+pysqlite:///{Path(tmp) / 'public.sqlite'}",
+                connect_args={"check_same_thread": False},
+                future=True,
+            )
+            public_metadata.create_all(engine)
+            key = base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=256)).decode()
+            cipher = TenantSecretCipher(key)
+            tenant = context("owner-pending-race", "pending-race@example.com")
+            stores = [
+                PublicTenantStores.create(engine, tenant, cipher),
+                PublicTenantStores.create(engine, tenant, cipher),
+            ]
+            now = datetime(2026, 8, 10, tzinfo=timezone.utc)
+            snapshot = StrategyExperimentSnapshot(
+                snapshot_id="snapshot-pending-race",
+                created_at=now,
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                canonical_data_hash="data-hash",
+                rows=1,
+                start_at=now.isoformat(),
+                end_at=(now + timedelta(minutes=1)).isoformat(),
+                bars=[{"timestamp": now.isoformat(), "close": 100.0}],
+            )
+            stores[0].strategy_experiment_store.put_snapshot(snapshot)
+            pending_records = [
+                StrategyExperimentRecord(
+                    experiment_id="experiment-idempotency-race",
+                    created_at=now + timedelta(microseconds=index),
+                    status="pending",
+                    definition_hash="shared-definition-hash",
+                    holdout_key="shared-holdout-key",
+                    strategy_revision="strategy-revision",
+                    source_run_id="source-run",
+                    snapshot_id=snapshot.snapshot_id,
+                    market=snapshot.market,
+                    symbol=snapshot.symbol,
+                    timeframe=snapshot.timeframe,
+                    definition={"resultSchemaVersion": 2},
+                    evaluation_count=0,
+                )
+                for index in range(2)
+            ]
+            write_barrier = Barrier(2)
+
+            def synchronize_writes(_connection) -> bool:
+                write_barrier.wait()
+                return True
+
+            for store in stores:
+                store.records.write_fence = synchronize_writes
+
+            def record(index: int) -> tuple[StrategyExperimentRecord, str]:
+                try:
+                    stores[index].strategy_experiment_store.record_pending(
+                        pending_records[index]
+                    )
+                    outcome = "recorded"
+                except ValueError as error:
+                    outcome = str(error)
+                return pending_records[index], outcome
+
+            try:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(record, range(2)))
+
+                self.assertCountEqual(
+                    [outcome for _record, outcome in outcomes],
+                    ["recorded", "strategy_experiment_conflict"],
+                )
+                winner = next(
+                    record
+                    for record, outcome in outcomes
+                    if outcome == "recorded"
+                )
+                first_readback = stores[0].strategy_experiment_store.get(
+                    winner.experiment_id
+                )
+                second_readback = stores[1].strategy_experiment_store.get(
+                    winner.experiment_id
+                )
+                self.assertIsNotNone(first_readback)
+                self.assertEqual(first_readback, second_readback)
+                assert first_readback is not None
+                self.assertEqual(first_readback.experiment, winner)
+                self.assertEqual(
+                    first_readback.experiment.definition_hash,
+                    "shared-definition-hash",
+                )
+
+                for store in stores:
+                    store.records.write_fence = None
+                stores[1].strategy_experiment_store.record_pending(winner)
+                self.assertEqual(
+                    stores[1].strategy_experiment_store.get(winner.experiment_id),
+                    first_readback,
+                )
+            finally:
+                engine.dispose()
+
+    def test_racing_public_pending_different_definitions_cannot_overwrite_winner(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = create_engine(
+                f"sqlite+pysqlite:///{Path(tmp) / 'public.sqlite'}",
+                connect_args={"check_same_thread": False},
+                future=True,
+            )
+            public_metadata.create_all(engine)
+            key = base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=256)).decode()
+            cipher = TenantSecretCipher(key)
+            tenant = context(
+                "owner-pending-conflict-race",
+                "pending-conflict-race@example.com",
+            )
+            stores = [
+                PublicTenantStores.create(engine, tenant, cipher),
+                PublicTenantStores.create(engine, tenant, cipher),
+            ]
+            now = datetime(2026, 8, 10, tzinfo=timezone.utc)
+            snapshot = StrategyExperimentSnapshot(
+                snapshot_id="snapshot-pending-conflict-race",
+                created_at=now,
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                canonical_data_hash="data-hash",
+                rows=1,
+                start_at=now.isoformat(),
+                end_at=(now + timedelta(minutes=1)).isoformat(),
+                bars=[{"timestamp": now.isoformat(), "close": 100.0}],
+            )
+            stores[0].strategy_experiment_store.put_snapshot(snapshot)
+            pending_records = [
+                StrategyExperimentRecord(
+                    experiment_id="experiment-definition-race",
+                    created_at=now,
+                    status="pending",
+                    definition_hash=f"definition-hash-{index}",
+                    holdout_key=f"holdout-key-{index}",
+                    strategy_revision="strategy-revision",
+                    source_run_id="source-run",
+                    snapshot_id=snapshot.snapshot_id,
+                    market=snapshot.market,
+                    symbol=snapshot.symbol,
+                    timeframe=snapshot.timeframe,
+                    definition={
+                        "resultSchemaVersion": 2,
+                        "candidateSet": index,
+                    },
+                    evaluation_count=0,
+                )
+                for index in range(2)
+            ]
+            write_barrier = Barrier(2)
+
+            def synchronize_writes(_connection) -> bool:
+                write_barrier.wait()
+                return True
+
+            for store in stores:
+                store.records.write_fence = synchronize_writes
+
+            def record(index: int) -> tuple[StrategyExperimentRecord, str]:
+                try:
+                    stores[index].strategy_experiment_store.record_pending(
+                        pending_records[index]
+                    )
+                    outcome = "recorded"
+                except ValueError as error:
+                    outcome = str(error)
+                return pending_records[index], outcome
+
+            try:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    outcomes = list(executor.map(record, range(2)))
+
+                self.assertCountEqual(
+                    [outcome for _record, outcome in outcomes],
+                    ["recorded", "strategy_experiment_conflict"],
+                )
+                winner = next(
+                    record
+                    for record, outcome in outcomes
+                    if outcome == "recorded"
+                )
+                loser = next(
+                    record
+                    for record, outcome in outcomes
+                    if outcome == "strategy_experiment_conflict"
+                )
+                stored = stores[0].strategy_experiment_store.get(
+                    winner.experiment_id
+                )
+                self.assertIsNotNone(stored)
+                assert stored is not None
+                self.assertEqual(stored.experiment, winner)
+                self.assertNotEqual(
+                    stored.experiment.definition_hash,
+                    loser.definition_hash,
+                )
+                self.assertEqual(
+                    stores[1].strategy_experiment_store.get(winner.experiment_id),
+                    stored,
+                )
+            finally:
+                engine.dispose()
 
     def test_racing_public_holdout_definitions_have_one_atomic_winner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

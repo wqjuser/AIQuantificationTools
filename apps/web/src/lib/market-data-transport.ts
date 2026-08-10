@@ -511,7 +511,7 @@ export async function loadMarketCalendarStatus(
 
 export function marketKlinesFromResearchRunAudit(run: ResearchRunAudit): MarketKlinesResult | null {
   const snapshot = run.dataSnapshot;
-  if (!snapshot || !snapshot.bars.length) {
+  if (!snapshot?.bars?.length) {
     return null;
   }
   return {

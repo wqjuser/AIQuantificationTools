@@ -2,15 +2,20 @@
 
 ## 决策
 
-正式的长周期策略实验继续复用既有行情适配器、`OHLCVBar`、质量检查、规范化与内容哈希，不新增行情融合算法或执行状态机。它额外保存一个本地、不可变的 sealed dataset artifact：同一份连续 K 线在写入时一次性固定开发分区与测试分区，研究运行和候选排序只能读取开发分区；只有服务端选出的唯一 rank-1 候选可以通过一次性 CAS claim 读取测试分区。
+正式的长周期策略实验继续复用既有行情适配器、`OHLCVBar`、质量检查、规范化与内容哈希，不新增行情融合算法或执行状态机。它额外保存一个不可变的 sealed dataset artifact：同一份连续 K 线在写入时一次性固定开发分区与测试分区，研究运行和候选排序只能读取开发分区；只有服务端选出的唯一 rank-1 候选可以通过一次性 CAS claim 读取测试分区。
 
 这个决定只适用于需要未见 holdout 的正式实验，有限的普通研究运行仍遵循 ADR-0024，把完整规范 K 线嵌入研究快照。它有意扩展 ADR-0024 的“不开新行情仓库”边界，因为现有 `MarketDataCache` 会按时间戳覆盖记录，不能充当不可变证据；把完整 90 天数据嵌入源研究运行又会在候选冻结前暴露测试分区。sealed store 不是新的行情 source of truth：它不能刷新、合并或选择行情，只能从一次明确的适配器半开区间读取中物化、重验和回放。
 
 研究快照继续区分两种哈希：`hash` 是实际可见开发 K 线的规范内容哈希，`snapshotHash` 由市场、标的、周期与该内容哈希派生；sealed dataset 的 manifest hash 单独位于 `sealedDataset.datasetHash`，承诺来源、区间、分区行数以及开发/测试/全量内容哈希，不能冒充 K 线内容哈希。
 
+## ADR-0035 修订
+
+ADR-0035 明确修订本 ADR 的“首版只在本地部署启用”限制：formal sealed dataset 可以进入 public，但前提是 proposal、dataset、manifest、test claim 与 experiment 全部通过当前 `TenantContext` 进入租户隔离的 PostgreSQL Store，后台执行具备 PostgreSQL lease 与 pending experiment 重启恢复。public 缺少任一隔离或恢复能力时仍失败关闭，不能回退到共享 SQLite、本地 sealed store 或进程内任务事实。本修订不改变一次性 holdout、哈希承诺、唯一 winner 和独立 promotion/绑定/启动边界。
+
 ## 安全边界
 
-- 首版只在本地部署启用；公网 tenant 没有隔离 store 时失败关闭。
+- local 继续使用本地不可变 sealed store；public 只能使用以 `(owner_id, 原业务 ID)` 隔离的租户 sealed store 和原子 claim，不能跨租户读取、消费或恢复。
+- public pending experiment 必须先持久化再调度，并由租户级 PostgreSQL lease 独占推进；重启只从已持久化阶段恢复，不能重新生成候选、重复消费 test token 或改测第二名。阶段身份不明确时失败关闭。
 - API 的 safe summary 不返回测试 K 线或测试内容哈希，研究详情也不嵌入测试分区。
 - test claim 是按 dataset 唯一的原子写；读取 token 只能消费一次。失败的 winner 不再测试第二名，同定义 replay 只回读已持久化结果。
 - P0、Experiment、Promotion、策略绑定、监控启动、立即评估与订单提交仍是独立操作。物化或读取数据不会绑定、启用、授权或下单。

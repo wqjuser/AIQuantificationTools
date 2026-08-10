@@ -183,7 +183,7 @@ def sealed_research_snapshot_payload(
     *,
     warnings: list[str] | None = None,
 ) -> dict[str, object]:
-    return {
+    normalized: dict[str, Any] = {
         "source": summary.source,
         "isComplete": True,
         "warnings": list(warnings or []),
@@ -208,6 +208,7 @@ def sealed_research_snapshot_payload(
         "qualityIssues": [],
         "sealedDataset": summary.to_payload(),
     }
+    return normalized
 
 
 def normalize_sealed_research_snapshot(
@@ -250,7 +251,7 @@ def normalize_sealed_research_snapshot(
     warnings = value.get("warnings")
     coverage = value.get("coverage")
     issues = value.get("qualityIssues")
-    return {
+    normalized: dict[str, Any] = {
         "source": summary.source,
         "isComplete": bool(value.get("isComplete", True)),
         "warnings": [str(item) for item in warnings] if isinstance(warnings, list) else [],
@@ -267,6 +268,21 @@ def normalize_sealed_research_snapshot(
         else [],
         "sealedDataset": summary.to_payload(),
     }
+    has_pre_roll_version = "preRollVersion" in value
+    has_scoring_window = "scoringWindow" in value
+    if has_pre_roll_version or has_scoring_window:
+        pre_roll_version = value.get("preRollVersion")
+        scoring_window = value.get("scoringWindow")
+        if (
+            not has_pre_roll_version
+            or not has_scoring_window
+            or not isinstance(pre_roll_version, str)
+            or not isinstance(scoring_window, dict)
+        ):
+            raise ValueError("sealed_research_snapshot_scoring_invalid")
+        normalized["preRollVersion"] = pre_roll_version
+        normalized["scoringWindow"] = dict(scoring_window)
+    return normalized
 
 
 class SealedDevelopmentBarSource:

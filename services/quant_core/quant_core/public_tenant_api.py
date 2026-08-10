@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha256
 from io import BytesIO
 import json
@@ -30,6 +31,7 @@ from quant_core.live_quotes import QuantDingerLiveQuoteAdapter
 from quant_core.market_discovery import MarketDiscoveryService
 from quant_core.market_information import MarketInformationService
 from quant_core.market_klines import QuantDingerKlineAdapter
+from quant_core.strategy_experiments import StrategyExperimentRunner
 from quant_core.tenant_crypto import TenantSecretCipher
 from quant_core.tenant_store_adapters import PublicTenantStores
 from quant_core.tenant_storage import ProductionAccountClaimError
@@ -68,6 +70,23 @@ class _TenantRuntime:
 
 
 class PublicBridgeHandler(ComposedQuantApiHandler):
+    def _strategy_experiment_runner(self) -> StrategyExperimentRunner:
+        audit_store = getattr(self, "audit_event_store", None)
+        return StrategyExperimentRunner(
+            strategy_store=self.strategy_store,
+            run_store=self.run_store,
+            experiment_store=self.strategy_experiment_store,
+            sealed_bar_source=getattr(self, "sealed_dataset_store", None),
+            # Public formal jobs are durable records. Only the leased tenant
+            # background runner may execute them; request threads never do.
+            job_launcher=lambda _job: None,
+            launch_evidence_loader=(
+                audit_store.get
+                if callable(getattr(audit_store, "get", None))
+                else None
+            ),
+        )
+
     def _read_json_body(self) -> dict[str, object]:
         payload = super()._read_json_body()
         actor = str(self.authenticated_actor)
@@ -266,6 +285,58 @@ class PublicTenantApi:
                 if service.production is not None:
                     service.production.execution_guard = None
 
+    def process_strategy_experiment_jobs(
+        self,
+        tenant: TenantContext,
+        *,
+        lease_guard: Callable[[], bool] | None = None,
+        lease_fence: Callable[[Connection], bool] | None = None,
+    ) -> dict[str, int]:
+        runtime = self._runtime(tenant)
+        with runtime.lock:
+            _require_lease(lease_guard)
+            runtime.stores.records.write_fence = lease_fence
+            try:
+                runner = StrategyExperimentRunner(
+                    strategy_store=runtime.stores.strategy_store,
+                    run_store=runtime.stores.run_store,
+                    experiment_store=runtime.stores.strategy_experiment_store,
+                    sealed_bar_source=getattr(
+                        runtime.stores,
+                        "sealed_dataset_store",
+                        None,
+                    ),
+                    job_launcher=lambda _job: None,
+                    launch_evidence_loader=runtime.stores.audit_event_store.get,
+                )
+                outcomes = []
+                after: tuple[datetime, str] | None = None
+                while True:
+                    pending = runtime.stores.strategy_experiment_store.list_pending(
+                        after=after,
+                        limit=50,
+                    )
+                    if not pending:
+                        break
+                    after = (pending[-1].created_at, pending[-1].experiment_id)
+                    for record in pending:
+                        _require_lease(lease_guard)
+                        outcomes.append(runner.resume_pending(record.experiment_id))
+                return {
+                    "processed": len(outcomes),
+                    "completed": sum(
+                        detail.experiment.status == "completed" for detail in outcomes
+                    ),
+                    "failed": sum(
+                        detail.experiment.status == "failed" for detail in outcomes
+                    ),
+                    "pending": sum(
+                        detail.experiment.status == "pending" for detail in outcomes
+                    ),
+                }
+            finally:
+                runtime.stores.records.write_fence = None
+
     def _runtime(self, tenant: TenantContext) -> _TenantRuntime:
         with self._runtime_lock:
             existing = self._runtimes.get(tenant.owner_id)
@@ -310,6 +381,8 @@ class PublicTenantApi:
                 f"PublicTenantHandler_{tenant_hash}",
                 (PublicBridgeHandler,),
                 {
+                    "deployment_mode": "public",
+                    "tenant_owner_id": tenant.owner_id,
                     "run_store": stores.run_store,
                     "paper_execution_store": stores.paper_execution_store,
                     "portfolio_paper_order_store": stores.portfolio_paper_order_store,
@@ -324,6 +397,11 @@ class PublicTenantApi:
                     "import_undo_store": stores.import_undo_store,
                     "strategy_store": stores.strategy_store,
                     "strategy_experiment_store": stores.strategy_experiment_store,
+                    "sealed_dataset_store": getattr(
+                        stores,
+                        "sealed_dataset_store",
+                        None,
+                    ),
                     "note_store": stores.note_store,
                     "handoff_note_store": stores.handoff_note_store,
                     "watchlist_store": stores.watchlist_store,

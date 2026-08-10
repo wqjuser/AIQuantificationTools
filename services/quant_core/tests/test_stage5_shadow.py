@@ -592,7 +592,11 @@ class Stage5ShadowSessionTest(unittest.TestCase):
             execution_adapter_sandbox_probe_execution_payload_from_audit_event,
             execution_adapter_sandbox_probe_review_payload_from_audit_event,
         )
-        from quant_core.runs import research_run_export_to_payload, research_run_import_to_audit
+        from quant_core.runs import (
+            research_run_export_to_payload,
+            research_run_import_audit_events,
+            research_run_import_to_audit,
+        )
 
         workflow, executions = stage4_workflow_with_adapter_evidence(
             market="crypto", adapter_id="ccxt-live"
@@ -668,6 +672,34 @@ class Stage5ShadowSessionTest(unittest.TestCase):
             exported["manifest"]["artifactCounts"]["stage5SandboxAuthorizationReviews"], 1
         )
         research_run_import_to_audit(exported)
+        imported_events = research_run_import_audit_events(
+            exported,
+            run_id=workflow["baseRunId"],
+        )
+        imported_probe_events = [
+            event
+            for event in imported_events
+            if event["eventType"] in {
+                "execution_adapter_sandbox_probe_execution",
+                "execution_adapter_sandbox_probe_review",
+            }
+        ]
+        self.assertEqual(len(imported_probe_events), 2)
+        self.assertTrue(
+            all(event["metadata"]["detached"] for event in imported_probe_events)
+        )
+
+        mismatched_legacy_run = copy.deepcopy(exported)
+        mismatched_legacy_run.pop("integrity")
+        next(
+            event for event in mismatched_legacy_run["auditEvents"]
+            if event["eventType"] == "execution_adapter_sandbox_probe_review"
+        )["runId"] = "different-run"
+        with self.assertRaisesRegex(ValueError, "audit_event_run_id_mismatch"):
+            research_run_import_audit_events(
+                mismatched_legacy_run,
+                run_id=workflow["baseRunId"],
+            )
 
         missing_review = copy.deepcopy(exported)
         missing_review.pop("integrity")

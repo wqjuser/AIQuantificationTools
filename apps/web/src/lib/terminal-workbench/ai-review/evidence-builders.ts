@@ -141,7 +141,7 @@ export function buildAiReviewAuditTimelineItems({
           detail: `${dataSnapshot.source} · ${dataSnapshot.hash} · ${formatWarningCount(dataSnapshot.warnings.length)}`,
           reference: dataSnapshot.hash,
           exportAnchor: `data:${dataSnapshot.hash}`,
-          createdAt: dataSnapshot.end,
+          createdAt: dataSnapshot.end ?? dataSnapshot.endExclusive ?? null,
           targetWorkspaceId: "backtest" as const,
           targetRecordId: null,
           actionLabel: "Open data snapshot",

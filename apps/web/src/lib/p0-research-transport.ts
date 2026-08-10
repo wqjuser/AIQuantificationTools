@@ -12,6 +12,7 @@ import {
   isAuditEventRecord,
   isCoreErrorPayload,
   type AuditEventRecord,
+  type FormalSealedDatasetWindow,
   type MarketAiSelectionResearchOrigin,
   type TerminalResearchParams
 } from "./terminal-api-contract";
@@ -24,6 +25,7 @@ import {
 } from "./paper-execution-transport";
 import { isAiReviewRunRecordEnvelope, type AiReviewRunRecordEnvelope } from "./ai-review-run-transport";
 import { loadResearchRunDetail } from "./research-run-transport";
+import type { StrategyResearchSealedDataCapability } from "./strategy-research";
 
 export interface P0AiReviewRunParams {
   runId: string;
@@ -129,16 +131,26 @@ export interface P0PaperSimulationRunResult {
   liveRouteBlockedReason?: string;
 }
 
-export interface P0PipelineRequest {
+interface P0PipelineRequestBase {
   market: Market;
   symbol: string;
   timeframe: ResearchTimeframe;
   limit: number;
   watchlistRefreshRunId?: string;
   selectionOrigin?: MarketAiSelectionResearchOrigin;
-  strategyConfig: StrategySnapshot;
-  assumptions: BacktestAssumptions;
 }
+
+export type P0PipelineRequest = P0PipelineRequestBase & ({
+  strategyConfig: StrategySnapshot;
+  registeredTemplateId?: never;
+  sealedDataset?: FormalSealedDatasetWindow;
+  assumptions: BacktestAssumptions;
+} | {
+  strategyConfig?: never;
+  registeredTemplateId: string;
+  sealedDataset: FormalSealedDatasetWindow;
+  assumptions?: never;
+});
 
 export interface P0PipelineResponse {
   status: "audited_run_created";
@@ -265,16 +277,106 @@ export function buildP0PipelineRequest(
   params: TerminalResearchParams,
   currentWorkspace: TerminalWorkspace
 ): P0PipelineRequest {
-  return {
+  const sealedDataset = normalizeFormalSealedDatasetWindow(params.sealedDataset);
+  const common = {
     market: params.market,
     symbol: params.symbol,
     timeframe: params.timeframe,
     limit: Math.max(1, Math.min(params.limit ?? 500, 500)),
     watchlistRefreshRunId: params.watchlistRefreshRunId?.trim() || undefined,
     selectionOrigin: params.selectionOrigin ?? undefined,
-    strategyConfig: { ...currentWorkspace.strategy },
-    assumptions: resolveBacktestAssumptions(currentWorkspace)
   };
+  if (params.registeredTemplateId != null) {
+    const registeredTemplateId = normalizedRegisteredTemplateId(params.registeredTemplateId);
+    if (!sealedDataset) {
+      throw new TypeError("Registered P0 strategy requires a formal sealed dataset window");
+    }
+    return { ...common, registeredTemplateId, sealedDataset };
+  }
+  return {
+    ...common,
+    strategyConfig: { ...currentWorkspace.strategy },
+    assumptions: resolveBacktestAssumptions(currentWorkspace),
+    ...(sealedDataset ? { sealedDataset } : {})
+  };
+}
+
+export function buildFormalSealedDatasetWindow(
+  capability: StrategyResearchSealedDataCapability,
+  endExclusiveValue: string,
+): FormalSealedDatasetWindow {
+  const rows = [
+    capability.minimumRows,
+    capability.minimumPreRollRows,
+    capability.developmentScoringRows,
+    capability.withheldRows,
+  ];
+  if (
+    capability.hashVersion !== "aiqt-sealed-v1"
+    || rows.some((value) => !Number.isInteger(value) || value <= 0)
+    || capability.minimumRows !== capability.minimumPreRollRows
+      + capability.developmentScoringRows
+      + capability.withheldRows
+  ) {
+    throw new TypeError("Invalid registered formal sealed data capability");
+  }
+  const endExclusiveMs = Date.parse(endExclusiveValue);
+  if (
+    typeof endExclusiveValue !== "string"
+    || !endExclusiveValue
+    || endExclusiveValue !== endExclusiveValue.trim()
+    || !Number.isFinite(endExclusiveMs)
+    || endExclusiveMs % 60_000 !== 0
+  ) {
+    throw new TypeError("Invalid formal sealed dataset end boundary");
+  }
+  return {
+    start: new Date(endExclusiveMs - capability.minimumRows * 60_000).toISOString(),
+    developmentEndExclusive: new Date(
+      endExclusiveMs - capability.withheldRows * 60_000,
+    ).toISOString(),
+    endExclusive: new Date(endExclusiveMs).toISOString(),
+  };
+}
+
+function normalizedRegisteredTemplateId(value: unknown): string {
+  if (
+    typeof value !== "string"
+    || !value
+    || value !== value.trim()
+    || value.length > 320
+  ) {
+    throw new TypeError("Invalid registered P0 strategy template ID");
+  }
+  return value;
+}
+
+function normalizeFormalSealedDatasetWindow(
+  value: FormalSealedDatasetWindow | null | undefined,
+): FormalSealedDatasetWindow | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  const start = normalizedWindowTimestamp(value.start);
+  const developmentEndExclusive = normalizedWindowTimestamp(value.developmentEndExclusive);
+  const endExclusive = normalizedWindowTimestamp(value.endExclusive);
+  if (
+    Date.parse(start) >= Date.parse(developmentEndExclusive)
+    || Date.parse(developmentEndExclusive) >= Date.parse(endExclusive)
+  ) {
+    throw new TypeError("Invalid formal sealed dataset window");
+  }
+  return { start, developmentEndExclusive, endExclusive };
+}
+
+function normalizedWindowTimestamp(value: unknown): string {
+  if (typeof value !== "string" || !value || value !== value.trim()) {
+    throw new TypeError("Invalid formal sealed dataset timestamp");
+  }
+  if (!Number.isFinite(Date.parse(value))) {
+    throw new TypeError("Invalid formal sealed dataset timestamp");
+  }
+  return value;
 }
 
 export async function runP0Pipeline(
