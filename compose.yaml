@@ -64,5 +64,35 @@ services:
       retries: 5
       start_period: 10s
 
+  mcp:
+    profiles: ["mcp"]
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        INSTALL_DATA_DEPS: ${INSTALL_DATA_DEPS:-false}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["python", "tools/run_quant_mcp.py"]
+    environment:
+      AIQT_MCP_TRANSPORT: streamable-http
+      AIQT_MCP_HOST: 0.0.0.0
+      AIQT_MCP_ALLOW_NON_LOOPBACK_HTTP: "true"
+      AIQT_MCP_PORT: "8766"
+      AIQT_MCP_API_BASE_URL: http://api:8765
+      AIQT_MCP_OPERATOR: ${AIQT_MCP_OPERATOR:-}
+      AIQT_MCP_ENABLE_RESEARCH_WRITES: ${AIQT_MCP_ENABLE_RESEARCH_WRITES:-false}
+      AIQT_MCP_REQUEST_TIMEOUT_SECONDS: ${AIQT_MCP_REQUEST_TIMEOUT_SECONDS:-600}
+    ports:
+      - "127.0.0.1:${AIQT_MCP_HOST_PORT:-8766}:8766"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; connection=socket.create_connection(('127.0.0.1', 8766), 3); connection.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   quant-data:

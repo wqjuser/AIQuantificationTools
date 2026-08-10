@@ -26,6 +26,7 @@
     "stage1:prepare:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode full --dry-run",
     "stage1:prepare:quick:plan": "node tools/run_python.mjs tools/stage1_prepare.py --mode quick --dry-run",
     "api": "node tools/run_python.mjs tools/run_quant_api.py",
+    "mcp": "node tools/run_python.mjs tools/run_quant_mcp.py",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "docker:smoke": "node tools/run_python.mjs tools/docker_smoke.py",

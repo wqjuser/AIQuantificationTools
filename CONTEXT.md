@@ -16,6 +16,9 @@
 **公开部署 Origin**
 `AIQT_PUBLIC_ORIGIN` 指向 Caddy 对外提供的唯一 HTTPS Origin。浏览器、Cookie、CORS、Origin/Host 校验和 OIDC callback 都以它为准；API 不独立暴露宿主端口。
 
+**研究型 MCP 服务**
+把既有 Quant Core 研究主线投影给兼容 AI Host 的受控协议层。它只拥有固定研究 tools/resources，不是通用 HTTP proxy，也不新增行情、回测或交易状态机。研究写入默认关闭；进程外开关只授权受监督 MCP 会话的研究副作用，模型不能上传确认、操作者、租户或外发批准，MCP v1 也不调用外部 AI Provider。即使开启也不提供 promotion、绑定、监控控制、Testnet、Live、下单、密钥或 Stage 6–10 能力。stdio 与显式 Host/Origin 防 DNS-rebinding 的 loopback Streamable HTTP 是当前受支持入口；远程公网 MCP 必须先建立 MCP OAuth 与 `TenantContext` 绑定，不能复用无租户 local 服务。
+
 **租户上下文（TenantContext）**
 由服务端认证会话创建，至少包含 `owner_id + issuer + subject + verified email`。public 私有 Store、密钥、授权、任务和订单只能通过该上下文访问，浏览器不能提供或覆盖 `owner_id`。
 

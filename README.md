@@ -12,6 +12,7 @@ AIQuantificationTools 是一个面向个人研究者的量化研究工作台。�
 - 到期收益、固定基准、命中率和研究价值 cohort 复盘。
 - 组合风控、Paper/Testnet 执行和受控 Binance Spot 生产链。
 - 规范哈希、不可变审计、导入回读和跨上下文校验。
+- 可接入 Claude、Cursor、Codex 等 AI Host 的研究型 MCP 服务。
 
 ## 运行模式
 
@@ -57,6 +58,14 @@ docker compose up -d --no-build
 ```
 
 默认页面为 `http://127.0.0.1:5173`；API 只在 Compose 网络内暴露。
+
+可选启动本机 Streamable HTTP MCP：
+
+```shell
+docker compose --profile mcp up -d --build mcp
+```
+
+AI 客户端连接 `http://127.0.0.1:8766/mcp`。MCP 默认只读，不包含 promotion、策略绑定、自动交易控制、Testnet、Live 或下单工具；完整接入方式见 [MCP 服务](docs/mcp-service.md)。
 
 公网模式需要先完成 [公网部署手册](docs/public-deployment.md)，再运行：
 
@@ -112,4 +121,5 @@ git diff --check
 - [公网部署、迁移与恢复](docs/public-deployment.md)
 - [Stage 10 公网实盘](docs/public-stage10-operations.md)
 - [AI 选股样本与稳定价值](docs/market-ai-selection-research-value.md)
+- [MCP 服务与 AI 客户端接入](docs/mcp-service.md)
 - [设计验收记录](design-qa.md)

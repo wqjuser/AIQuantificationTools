@@ -8,6 +8,7 @@ dependencies = [
   "authlib>=1.3,<2",
   "cryptography>=42",
   "httpx>=0.27,<1",
+  "mcp==2.0.0",
   "psycopg[binary]>=3.2,<4",
   "sqlalchemy>=2.0,<3",
   "starlette>=0.41,<1",
@@ -16,6 +17,9 @@ dependencies = [
 
 [project.optional-dependencies]
 data = ["akshare", "yfinance", "ccxt"]
+
+[project.scripts]
+aiqt-mcp = "quant_core.mcp_service.cli:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
