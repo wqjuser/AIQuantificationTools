@@ -38,6 +38,8 @@ AIQT_SETTINGS_MASTER_KEY=replace-with-urlsafe-base64-32-byte-key
 AIQT_OUTBOUND_ORIGIN_ALLOWLIST=https://api.openai.com,https://approved-provider.example
 AIQT_MCP_PUBLIC_RESOURCE_URL=https://research.example.com/mcp
 AIQT_MCP_RATE_LIMIT_REQUESTS_1M=120
+# 保持 false，直到第 3 节 CIMD 迁移与检查完成。
+AIQT_CLAUDE_CONNECT_ENABLED=false
 ```
 
 生成主密钥：
@@ -142,32 +144,20 @@ docker compose -f compose.yaml -f compose.public.yaml up -d \
 
 永久管理员只持有 `aiqt-realm` 的用户、客户端和 realm 管理角色，不持有 master 全局 `admin`；它已通过实机命令验证能创建业务用户、更新 `aiqt-mcp` client 和维护 `aiqt` realm 安全策略。永久管理员凭据只进入独立密钥管理系统，不保留在 Compose 环境；临时 bootstrap 管理员不得继续存在。业务用户首次登录必须更换临时密码。任何密码都不得写入 Git、命令历史、Compose 文件或工单。realm import 只用于新数据库 bootstrap；已有 realm 的安全策略和 client secret 变更必须通过受控管理命令应用并备份。
 
-`aiqt-mcp` 的 bootstrap redirect URI 刻意为空：项目不知道你要接入哪一个 AI，不能提交通配 HTTPS callback。接入前先从目标 AI 平台取得精确 OAuth callback，再由管理员更新这个预注册 public client：
+Claude 接入不再要求管理员逐用户登记 callback。稳态 Keycloak 以固定 `--features=cimd` 启动；fresh realm import 会创建只信任 `https://claude.ai/...` metadata 的 Client Policy，并继续强制 public client、Authorization Code、PKCE S256、用户同意、禁用 Implicit/ROPC 与 full scope。Claude hosted callback 和 Claude Code 临时 loopback callback 都必须由该受信任 metadata 声明。预注册 `aiqt-mcp` 只保留 Claude hosted 的精确 HTTPS callback 作为兼容路径，不使用通配 URI。
 
-```shell
-docker compose -f compose.yaml -f compose.public.yaml exec keycloak \
-  /opt/keycloak/bin/kcadm.sh config credentials \
-  --config /tmp/aiqt-ops-kcadm.config \
-  --server http://127.0.0.1:8080 --realm master --user aiqt-admin-ops
+CIMD 不调用 Dynamic Client Registration endpoint；Caddy 必须继续对 `/realms/aiqt/clients-registrations*` 返回 404。当前 Keycloak 把 CIMD 标记为 experimental，因此固定镜像升级前必须重新执行真实 metadata、redirect、PKCE、scope 和 audience 负向测试，不能只依赖静态 realm JSON。
 
-docker compose -f compose.yaml -f compose.public.yaml exec keycloak \
-  /opt/keycloak/bin/kcadm.sh get clients -r aiqt -q clientId=aiqt-mcp \
-  --config /tmp/aiqt-ops-kcadm.config --fields id,clientId,redirectUris
+realm import 对已有数据库采用 `IGNORE_EXISTING`，不会替正在运行的 realm 更新 Client Policy。已有 public 部署必须先备份 Keycloak 数据库，并在维护窗口执行第 3 节的版本化迁移工具；不得靠手抄 JSON、重建 realm 或开放匿名 DCR 绕过迁移，因为重建会改变用户 `sub`。
 
-docker compose -f compose.yaml -f compose.public.yaml exec keycloak \
-  /opt/keycloak/bin/kcadm.sh update clients/<internal-client-uuid> -r aiqt \
-  --config /tmp/aiqt-ops-kcadm.config \
-  -s 'redirectUris=["https://ai-platform.example/exact/oauth/callback"]'
-
-docker compose -f compose.yaml -f compose.public.yaml exec keycloak \
-  rm -f /tmp/aiqt-ops-kcadm.config
-```
-
-桌面/CLI 客户端若使用 loopback callback，也必须登记它实际要求的 URI；不要以 `*` 代替未知域名或开启匿名 Dynamic Client Registration。
+以上都是平台管理员的一次性部署职责。终端用户只需登录 `https://<domain>/connect/claude` 并点击“连接到 Claude”，不得要求其接触 Keycloak、Client ID、Secret、callback 或 CLI。
 
 ## 3. 构建内部服务，暂不启动公网入口
 
 ```shell
+# 已有部署先进入维护窗口；新部署中该命令是安全的 no-op。
+docker compose -f compose.yaml -f compose.public.yaml stop caddy
+
 docker compose -f compose.yaml -f compose.public.yaml config --quiet
 docker compose -f compose.yaml -f compose.public.yaml build
 docker compose -f compose.yaml -f compose.public.yaml up -d --no-build \
@@ -176,6 +166,27 @@ docker compose -f compose.yaml -f compose.public.yaml ps
 ```
 
 `migrate` 必须成功退出，Keycloak、API、Web 和 MCP 必须 healthy。Keycloak、API、Web、MCP 与两个 PostgreSQL 都不发布宿主公网端口。此阶段只能完成容器内健康与离线测试；OIDC issuer 和 MCP resource 都是 HTTPS 公网 Origin，完整浏览器/OAuth 验收必须等第 5 节启动 Caddy 后进行，不能在这里声称已经验收。
+
+随后用永久 realm 管理员把 fresh/existing realm 收敛到版本库冻结的 Claude CIMD 配置。密码只输入到交互提示，不写入命令参数、环境变量或日志：
+
+```shell
+docker compose -f compose.yaml -f compose.public.yaml run --rm --no-deps api \
+  python tools/apply_keycloak_claude_cimd.py \
+  --apply --username aiqt-admin-ops
+
+docker compose -f compose.yaml -f compose.public.yaml run --rm --no-deps api \
+  python tools/apply_keycloak_claude_cimd.py \
+  --check --username aiqt-admin-ops
+```
+
+第一条只更新 `clientProfiles`、`clientPolicies`、realm default scopes、`basic`/`aiqt:research:read` scope 及其冻结 mapper，以及 `aiqt-mcp` 的冻结安全字段；其它 realm/user/client 数据保持不变。工具会把 Audience mapper 精确校验为 `${AIQT_PUBLIC_ORIGIN}/mcp`，任何缺失、额外 mapper 或 audience 漂移都会失败关闭并在 `--apply` 时收敛。重复执行应返回 `ready`，检查漂移时必须非零退出。只有两条均成功后，才把 `.env` 中 `AIQT_CLAUDE_CONNECT_ENABLED` 改为 `true` 并重建 API：
+
+```shell
+docker compose -f compose.yaml -f compose.public.yaml up -d \
+  --no-deps --force-recreate api
+```
+
+该服务端 readiness 默认为 false；未迁移的现有 realm 即使 Web 已升级，侧栏入口和安装按钮也必须保持不可用。第 5 节真实 Claude 验收失败时，立即改回 false、重建 API 并保持 Caddy 停止。
 
 ## 4. 迁移本机数据
 
@@ -269,12 +280,15 @@ docker compose -f compose.yaml -f compose.public.yaml ps
 
 ```shell
 curl -i https://research.example.com/.well-known/oauth-protected-resource/mcp
+curl -fsS https://auth.example.com/realms/aiqt/.well-known/openid-configuration
 curl -i -X POST https://research.example.com/mcp \
   -H 'Content-Type: application/json' \
   --data '{}'
 ```
 
-第一条必须返回 resource=`https://research.example.com/mcp`、正确 issuer 和 `aiqt:research:read`；第二条必须返回 401 且 `WWW-Authenticate` 带同一 metadata URL。随后再用支持 OAuth 的官方 MCP Client 完成授权并读取工具列表；不要把 access token 写入命令历史或日志。
+第一条必须返回 resource=`https://research.example.com/mcp`、正确 issuer 和 `aiqt:research:read`；Authorization Server metadata 必须声明 `client_id_metadata_document_supported=true`、`token_endpoint_auth_methods_supported` 包含 `none`、`code_challenge_methods_supported` 包含 `S256`，且 Claude Client Policy 必须拒绝缺失或非 S256 的 PKCE；未认证 MCP 请求必须返回 401 且 `WWW-Authenticate` 带同一 metadata URL。
+
+最后以真实业务账号登录 `https://research.example.com/connect/claude`，确认页面只有一个“连接到 Claude”安装动作，并在 Claude 中完成确认、OAuth 同意和工具发现。结果必须恰好只有八个只读工具；用户全程不得填写 Client ID、Secret、callback 或 Keycloak 地址。再用 Claude Code 的临时 localhost callback 复测一次。不要把 access token 写入命令历史或日志。
 
 ## 限流
 

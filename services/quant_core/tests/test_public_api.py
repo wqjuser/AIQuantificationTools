@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import unittest
 
@@ -146,6 +147,34 @@ class PublicApiSecurityTest(unittest.TestCase):
             },
         )
         self.assertEqual(self.client.get("/api/auth/session").json(), {"authenticated": False})
+
+    def test_authenticated_session_projects_the_server_claude_connection_gate(self) -> None:
+        def authenticate(client: TestClient) -> dict[str, object]:
+            login = client.get("/api/auth/login", follow_redirects=False)
+            self.assertEqual(login.status_code, 307)
+            state = client.cookies.get("aiqt_oidc_state")
+            self.assertTrue(state)
+            callback = client.get(
+                f"/api/auth/callback?state={state}&code=code",
+                follow_redirects=False,
+            )
+            self.assertEqual(callback.status_code, 303)
+            return client.get("/api/auth/session").json()
+
+        self.assertIs(authenticate(self.client)["claudeConnectEnabled"], False)
+
+        enabled_config = replace(self.config, claude_connect_enabled=True)
+        enabled_auth = PublicAuthService(
+            enabled_config,
+            self.engine,
+            provider=self.provider,
+            cipher=TenantSecretCipher(enabled_config.settings_master_key or ""),
+        )
+        with TestClient(
+            create_public_app(enabled_config, self.engine, auth_service=enabled_auth),
+            base_url="https://research.example.com",
+        ) as enabled_client:
+            self.assertIs(authenticate(enabled_client)["claudeConnectEnabled"], True)
 
     def test_logout_revokes_the_local_session_when_keycloak_is_unavailable(self) -> None:
         login = self.client.get("/api/auth/login", follow_redirects=False)

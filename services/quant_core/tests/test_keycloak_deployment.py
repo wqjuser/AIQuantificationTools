@@ -32,7 +32,10 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         self.assertNotIn("KC_BOOTSTRAP_ADMIN_PASSWORD", overlay)
         self.assertIn("AIQT_KEYCLOAK_WEB_CLIENT_SECRET", overlay)
         self.assertIn("./deploy/keycloak/realm-aiqt.json:/opt/keycloak/data/import/aiqt-realm.json:ro", overlay)
-        self.assertIn('command: ["start", "--import-realm"]', overlay)
+        self.assertIn(
+            'command: ["start", "--features=cimd", "--import-realm"]',
+            overlay,
+        )
         self.assertIn(
             "AIQT_OIDC_ISSUER: ${AIQT_AUTH_ORIGIN:?set AIQT_AUTH_ORIGIN}/realms/aiqt",
             overlay,
@@ -53,6 +56,30 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         self.assertIn(
             "KC_BOOTSTRAP_ADMIN_PASSWORD: ${AIQT_KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD:?set AIQT_KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD}",
             bootstrap,
+        )
+
+    def test_public_keycloak_enables_cimd_without_enabling_dynamic_registration(self) -> None:
+        overlay = (self.root / "compose.public.yaml").read_text()
+        caddy = (self.root / "deploy" / "Caddyfile").read_text()
+        api_dockerfile = (self.root / "Dockerfile.api").read_text()
+
+        self.assertIn(
+            'command: ["start", "--features=cimd", "--import-realm"]',
+            overlay,
+        )
+        self.assertIn(
+            "@keycloakRegistration path /realms/aiqt/clients-registrations "
+            "/realms/aiqt/clients-registrations/*",
+            caddy,
+        )
+        registration_handler = caddy.split("@keycloakRegistration", 1)[1].split(
+            "@keycloakPublic", 1
+        )[0]
+        self.assertIn("respond 404", registration_handler)
+        self.assertNotIn("reverse_proxy", registration_handler)
+        self.assertIn(
+            "COPY deploy/keycloak/realm-aiqt.json deploy/keycloak/realm-aiqt.json",
+            api_dockerfile,
         )
 
     def test_imported_realm_pre_registers_only_pkce_authorization_code_clients(self) -> None:
@@ -93,7 +120,13 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         mcp = clients["aiqt-mcp"]
         self.assertTrue(mcp["publicClient"])
         self.assertNotIn("secret", mcp)
-        self.assertEqual(mcp["redirectUris"], [])
+        self.assertEqual(
+            mcp["redirectUris"],
+            [
+                "https://claude.ai/api/mcp/auth_callback",
+            ],
+        )
+        self.assertNotIn("*", "".join(mcp["redirectUris"]))
         self.assertIn("aiqt:research:read", mcp["optionalClientScopes"])
 
         for client in (web, mcp):
@@ -124,6 +157,117 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         )
         self.assertEqual(mapper["config"]["access.token.claim"], "true")
         self.assertEqual(mapper["config"]["id.token.claim"], "false")
+
+    def test_realm_allows_only_restricted_claude_cimd_clients(self) -> None:
+        realm = json.loads(
+            (self.root / "deploy" / "keycloak" / "realm-aiqt.json").read_text()
+        )
+
+        self.assertFalse(realm["registrationAllowed"])
+        self.assertEqual(realm["defaultDefaultClientScopes"], ["basic"])
+        self.assertEqual(
+            realm["defaultOptionalClientScopes"],
+            ["aiqt:research:read"],
+        )
+
+        profiles = {
+            profile["name"]: profile
+            for profile in realm["clientProfiles"]["profiles"]
+        }
+        self.assertEqual(
+            set(profiles),
+            {"claude-cimd-profile", "reject-non-public-cimd-profile"},
+        )
+        executors = {
+            executor["executor"]: executor.get("configuration", {})
+            for executor in profiles["claude-cimd-profile"]["executors"]
+        }
+        self.assertEqual(
+            set(executors),
+            {
+                "client-id-metadata-document",
+                "pkce-enforcer",
+                "reject-implicit-grant",
+                "reject-ropc-grant",
+                "full-scope-disabled",
+                "consent-required",
+            },
+        )
+        metadata = executors["client-id-metadata-document"]
+        self.assertFalse(metadata["cimd-allow-http-scheme"])
+        self.assertEqual(
+            metadata["cimd-allow-permitted-domains"],
+            ["claude.ai", "localhost", "127.0.0.1"],
+        )
+        self.assertFalse(metadata["cimd-restrict-same-domain"])
+        self.assertFalse(metadata["only-allow-confidential-client"])
+        self.assertEqual(
+            metadata["cimd-required-properties"],
+            [
+                "client_name",
+                "redirect_uris",
+                "grant_types",
+                "response_types",
+                "token_endpoint_auth_method",
+            ],
+        )
+        self.assertNotIn("secure-redirect-uris-enforcer", executors)
+        self.assertEqual(executors["pkce-enforcer"]["auto-configure"], "true")
+        self.assertEqual(
+            executors["reject-implicit-grant"]["auto-configure"],
+            "true",
+        )
+        self.assertEqual(executors["reject-ropc-grant"]["auto-configure"], "true")
+        self.assertEqual(executors["full-scope-disabled"]["auto-configure"], "true")
+        self.assertEqual(executors["consent-required"]["auto-configure"], "true")
+        self.assertEqual(
+            profiles["reject-non-public-cimd-profile"]["executors"],
+            [{"executor": "reject-request", "configuration": {}}],
+        )
+
+        policies = {
+            policy["name"]: policy
+            for policy in realm["clientPolicies"]["policies"]
+        }
+        self.assertEqual(
+            set(policies),
+            {
+                "allow-official-claude-cimd",
+                "reject-confidential-claude-cimd",
+                "reject-bearer-only-claude-cimd",
+            },
+        )
+        for policy in policies.values():
+            self.assertTrue(policy["enabled"])
+            self.assertEqual(policy["mode"], "STRICT")
+            client_id_condition = policy["conditions"][0]
+            self.assertEqual(client_id_condition["condition"], "client-id-uri")
+            self.assertEqual(
+                client_id_condition["configuration"],
+                {
+                    "client-id-uri-scheme": ["https"],
+                    "client-id-uri-allow-permitted-domains": ["claude.ai"],
+                },
+            )
+        self.assertEqual(
+            policies["allow-official-claude-cimd"]["profiles"],
+            ["claude-cimd-profile"],
+        )
+        for access_type, policy_name in (
+            ("confidential", "reject-confidential-claude-cimd"),
+            ("bearer-only", "reject-bearer-only-claude-cimd"),
+        ):
+            self.assertEqual(
+                policies[policy_name]["conditions"][1],
+                {
+                    "condition": "client-access-type",
+                    "configuration": {"type": [access_type]},
+                },
+            )
+            self.assertEqual(
+                policies[policy_name]["profiles"],
+                ["reject-non-public-cimd-profile"],
+            )
 
     def test_realm_defines_the_identity_scopes_used_by_web_login_and_mcp(self) -> None:
         realm = json.loads(

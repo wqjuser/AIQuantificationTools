@@ -19,6 +19,7 @@ class DeploymentConfig:
     oidc_client_id: str | None = None
     oidc_client_secret: str | None = None
     settings_master_key: str | None = None
+    claude_connect_enabled: bool = False
 
     @property
     def tenant_id(self) -> str | None:
@@ -106,6 +107,7 @@ def _load_public_config(
         oidc_client_id=values.get("AIQT_OIDC_CLIENT_ID"),
         oidc_client_secret=values.get("AIQT_OIDC_CLIENT_SECRET"),
         settings_master_key=settings_master_key,
+        claude_connect_enabled=environment.get("AIQT_CLAUDE_CONNECT_ENABLED") == "true",
     )
 
 

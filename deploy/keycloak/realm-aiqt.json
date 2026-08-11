@@ -21,6 +21,12 @@
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 43200,
   "passwordPolicy": "hashAlgorithm(argon2) and length(15) and notUsername and notEmail and passwordHistory(5)",
+  "defaultDefaultClientScopes": [
+    "basic"
+  ],
+  "defaultOptionalClientScopes": [
+    "aiqt:research:read"
+  ],
   "clients": [
     {
       "clientId": "admin-cli",
@@ -89,7 +95,9 @@
       "serviceAccountsEnabled": false,
       "consentRequired": true,
       "fullScopeAllowed": false,
-      "redirectUris": [],
+      "redirectUris": [
+        "https://claude.ai/api/mcp/auth_callback"
+      ],
       "webOrigins": [],
       "attributes": {
         "pkce.code.challenge.method": "S256"
@@ -102,6 +110,162 @@
       ]
     }
   ],
+  "clientProfiles": {
+    "profiles": [
+      {
+        "name": "claude-cimd-profile",
+        "description": "Allow the official Claude public MCP clients with OAuth 2.1 controls",
+        "executors": [
+          {
+            "executor": "client-id-metadata-document",
+            "configuration": {
+              "cimd-allow-http-scheme": false,
+              "cimd-allow-permitted-domains": [
+                "claude.ai",
+                "localhost",
+                "127.0.0.1"
+              ],
+              "cimd-restrict-same-domain": false,
+              "cimd-required-properties": [
+                "client_name",
+                "redirect_uris",
+                "grant_types",
+                "response_types",
+                "token_endpoint_auth_method"
+              ],
+              "only-allow-confidential-client": false
+            }
+          },
+          {
+            "executor": "pkce-enforcer",
+            "configuration": {
+              "auto-configure": "true"
+            }
+          },
+          {
+            "executor": "reject-implicit-grant",
+            "configuration": {
+              "auto-configure": "true"
+            }
+          },
+          {
+            "executor": "reject-ropc-grant",
+            "configuration": {
+              "auto-configure": "true"
+            }
+          },
+          {
+            "executor": "full-scope-disabled",
+            "configuration": {
+              "auto-configure": "true"
+            }
+          },
+          {
+            "executor": "consent-required",
+            "configuration": {
+              "auto-configure": "true"
+            }
+          }
+        ]
+      },
+      {
+        "name": "reject-non-public-cimd-profile",
+        "description": "Reject Claude CIMD metadata that does not describe a public client",
+        "executors": [
+          {
+            "executor": "reject-request",
+            "configuration": {}
+          }
+        ]
+      }
+    ]
+  },
+  "clientPolicies": {
+    "policies": [
+      {
+        "name": "allow-official-claude-cimd",
+        "description": "Fetch client metadata only from the official Claude HTTPS domain",
+        "enabled": true,
+        "mode": "STRICT",
+        "conditions": [
+          {
+            "condition": "client-id-uri",
+            "configuration": {
+              "client-id-uri-scheme": [
+                "https"
+              ],
+              "client-id-uri-allow-permitted-domains": [
+                "claude.ai"
+              ]
+            }
+          }
+        ],
+        "profiles": [
+          "claude-cimd-profile"
+        ]
+      },
+      {
+        "name": "reject-confidential-claude-cimd",
+        "description": "Reject confidential clients presented through Claude CIMD",
+        "enabled": true,
+        "mode": "STRICT",
+        "conditions": [
+          {
+            "condition": "client-id-uri",
+            "configuration": {
+              "client-id-uri-scheme": [
+                "https"
+              ],
+              "client-id-uri-allow-permitted-domains": [
+                "claude.ai"
+              ]
+            }
+          },
+          {
+            "condition": "client-access-type",
+            "configuration": {
+              "type": [
+                "confidential"
+              ]
+            }
+          }
+        ],
+        "profiles": [
+          "reject-non-public-cimd-profile"
+        ]
+      },
+      {
+        "name": "reject-bearer-only-claude-cimd",
+        "description": "Reject bearer-only clients presented through Claude CIMD",
+        "enabled": true,
+        "mode": "STRICT",
+        "conditions": [
+          {
+            "condition": "client-id-uri",
+            "configuration": {
+              "client-id-uri-scheme": [
+                "https"
+              ],
+              "client-id-uri-allow-permitted-domains": [
+                "claude.ai"
+              ]
+            }
+          },
+          {
+            "condition": "client-access-type",
+            "configuration": {
+              "type": [
+                "bearer-only"
+              ]
+            }
+          }
+        ],
+        "profiles": [
+          "reject-non-public-cimd-profile"
+        ]
+      }
+    ]
+  },
   "clientScopes": [
     {
       "name": "basic",
@@ -133,6 +297,7 @@
             "jsonType.label": "long",
             "id.token.claim": "true",
             "access.token.claim": "true",
+            "userinfo.token.claim": "true",
             "introspection.token.claim": "true"
           }
         }
@@ -224,6 +389,7 @@
             "included.custom.audience": "${AIQT_PUBLIC_ORIGIN}/mcp",
             "id.token.claim": "false",
             "access.token.claim": "true",
+            "userinfo.token.claim": "false",
             "introspection.token.claim": "true"
           }
         }

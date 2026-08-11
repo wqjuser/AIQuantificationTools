@@ -67,7 +67,7 @@ docker compose --profile mcp up -d --build mcp
 
 AI 客户端连接 `http://127.0.0.1:8766/mcp`。MCP 默认只读，不包含 promotion、策略绑定、自动交易控制、Testnet、Live 或下单工具；完整接入方式见 [MCP 服务](docs/mcp-service.md)。
 
-public Compose 还提供受 OAuth Bearer 保护的 `https://<domain>/mcp`：它按已存在的本站 Keycloak 身份绑定租户，只发现八个只读研究工具，并仅由 Caddy 暴露。自托管认证服务通过固定 MCP scope/Audience mapper 签发精确绑定 canonical resource 的 token；部署前置与兼容边界见 [公网部署](docs/public-deployment.md)。
+public Compose 还提供受 OAuth Bearer 保护的 `https://<domain>/mcp`：它按已存在的本站 Keycloak 身份绑定租户，只发现八个只读研究工具，并仅由 Caddy 暴露。管理员完成 CIMD 迁移/验收并开启 readiness 后，普通 Claude 用户登录并打开 `https://<domain>/connect/claude`，点击一次即可进入已预填名称和地址的 Claude 安装页；不需要配置 Client ID、Secret、callback、Keycloak 或 CLI。自托管认证服务通过受限 CIMD、PKCE 与固定 MCP scope/Audience mapper 签发精确绑定 canonical resource 的 token；部署前置与兼容边界见 [MCP 服务](docs/mcp-service.md) 和 [公网部署](docs/public-deployment.md)。
 
 公网模式需要先完成 [公网部署手册](docs/public-deployment.md)，再运行：
 

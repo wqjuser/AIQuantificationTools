@@ -85,6 +85,32 @@ class DeploymentConfigurationTest(unittest.TestCase):
         with self.assertRaisesRegex(DeploymentConfigurationError, "AIQT_DEPLOYMENT_MODE"):
             load_deployment_config({"AIQT_DEPLOYMENT_MODE": "staging"})
 
+    def test_claude_connection_gate_is_public_only_and_accepts_only_exact_true(self) -> None:
+        public_environment = {
+            "AIQT_DEPLOYMENT_MODE": "public",
+            "AIQT_DATABASE_URL": "postgresql+psycopg://aiqt:secret@postgres/aiqt",
+            "AIQT_PUBLIC_ORIGIN": "https://research.example.com",
+            "AIQT_OIDC_ISSUER": "https://identity.example.com",
+            "AIQT_OIDC_CLIENT_ID": "aiqt",
+            "AIQT_OIDC_CLIENT_SECRET": "oidc-secret",
+            "AIQT_SETTINGS_MASTER_KEY": base64.urlsafe_b64encode(b"x" * 32).decode(),
+        }
+
+        self.assertFalse(load_deployment_config(public_environment).claude_connect_enabled)
+        self.assertTrue(load_deployment_config({
+            **public_environment,
+            "AIQT_CLAUDE_CONNECT_ENABLED": "true",
+        }).claude_connect_enabled)
+        for disabled_value in ("True", "TRUE", " true", "true ", "1"):
+            with self.subTest(disabled_value=disabled_value):
+                self.assertFalse(load_deployment_config({
+                    **public_environment,
+                    "AIQT_CLAUDE_CONNECT_ENABLED": disabled_value,
+                }).claude_connect_enabled)
+        self.assertFalse(load_deployment_config({
+            "AIQT_CLAUDE_CONNECT_ENABLED": "true",
+        }).claude_connect_enabled)
+
     def test_local_http_responses_do_not_emit_wildcard_cors(self) -> None:
         class Handler(HandlerTransportMixin, BaseHTTPRequestHandler):
             def do_GET(self) -> None:
@@ -139,6 +165,14 @@ class DeploymentConfigurationTest(unittest.TestCase):
         self.assertIn(
             "AIQT_OUTBOUND_ORIGIN_ALLOWLIST: ${AIQT_OUTBOUND_ORIGIN_ALLOWLIST:-}",
             overlay,
+        )
+        self.assertIn(
+            "AIQT_CLAUDE_CONNECT_ENABLED: ${AIQT_CLAUDE_CONNECT_ENABLED:-false}",
+            overlay,
+        )
+        self.assertIn(
+            "AIQT_CLAUDE_CONNECT_ENABLED=false",
+            (root / ".env.example").read_text(),
         )
         self.assertIn("postgres:", overlay)
         self.assertIn("service_completed_successfully", overlay)

@@ -6,6 +6,7 @@ export type PublicAuthSession =
       email: string;
       csrfToken: string;
       reauthenticationRequired: boolean;
+      claudeConnectEnabled: boolean;
     };
 
 export type DeploymentSession = PublicAuthSession | { deploymentMode: "local" };
@@ -23,6 +24,7 @@ export function parseAuthSession(value: unknown): PublicAuthSession {
     || typeof record.email !== "string"
     || typeof record.csrfToken !== "string"
     || typeof record.reauthenticationRequired !== "boolean"
+    || typeof record.claudeConnectEnabled !== "boolean"
   ) throw new Error("invalid_auth_session");
   return {
     authenticated: true,
@@ -30,6 +32,7 @@ export function parseAuthSession(value: unknown): PublicAuthSession {
     email: record.email,
     csrfToken: record.csrfToken,
     reauthenticationRequired: record.reauthenticationRequired,
+    claudeConnectEnabled: record.claudeConnectEnabled,
   };
 }
 
@@ -68,6 +71,10 @@ export function authenticatedActor(): string {
 
 export function hasPublicSession(): boolean {
   return activeSession !== null;
+}
+
+export function isClaudeConnectEnabled(): boolean {
+  return activeSession?.claudeConnectEnabled === true;
 }
 
 export function prepareAuthenticatedRequest(

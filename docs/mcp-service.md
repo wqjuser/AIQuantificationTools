@@ -18,6 +18,20 @@ MCP v1 提供：
 
 MCP v1 **没有** promotion、任意策略上传/保存/删除、策略绑定、监控启停、Paper 立即评估/对账、Testnet、Live、委托、密钥、通用审计写入或 Stage 6–10 工具。注册模板 P0 会沿用现有 pipeline 持久化服务端生成的 draft，但调用方不能提供策略正文，也不能把 draft 晋级、绑定或启动。工具输出只表示研究证据，不构成投资建议或收益保证。
 
+## Claude：一键连接
+
+公网终端用户不需要理解或填写 OAuth 配置：
+
+1. 打开 `https://<domain>/connect/claude`；
+2. 使用本站账号登录；
+3. 点击“连接到 Claude”，在已经预填名称与 MCP 地址的 Claude 页面确认连接。
+
+完成后 Claude 只能读取当前账号的八个研究工具。页面不会索取 Client ID、Client Secret、callback、Keycloak 地址或 CLI 命令。本机 HTTP/localhost 不会生成安装链接，因为 Claude 远程连接器只能访问公网 HTTPS 服务。
+
+该入口使用 Claude 官方 custom connector 安装深链。Keycloak 通过受限 Client ID Metadata Document（CIMD）识别由 `claude.ai` 托管的 public client，并强制 Authorization Code、PKCE S256、用户同意、精确 `aiqt:research:read` scope 与 `/mcp` audience。匿名 Dynamic Client Registration（DCR）继续由 Caddy 阻断。已有 `(issuer, subject)` 身份仍是硬门槛；连接页先经过现有 AuthGate，确保本站登录完成后才展示安装动作。
+
+公网部署还必须显式设置 `AIQT_CLAUDE_CONNECT_ENABLED=true`。该开关默认关闭，只能在管理员执行版本库内的 Keycloak CIMD 幂等迁移与只读检查后，于受控维护窗口开启真实协议验收；验收失败必须立即关闭，验收通过后才可向普通用户发布。否则侧栏入口和安装动作保持隐藏。它不是 OAuth 授权替代品，只是防止已有 realm 在尚未迁移时向用户暴露一条必然失败的安装链。
+
 ## 安装
 
 ```shell
@@ -105,9 +119,9 @@ Caddy 是唯一公网入口；MCP 容器没有宿主端口。公网 Streamable H
 
 公网首版只发现八个只读工具：系统/Paper 状态、标的搜索、市场上下文、研究运行列表/详情、策略研发详情和研究审计查询。AI 选股、P0、proposal、formal launch 与 AI Review 创建工具不会注册；环境中即使误设研究写开关也不能扩大能力。
 
-public Compose 使用本站自托管 Keycloak 同时承载网页登录与 MCP token 签发，不依赖 Google。`aiqt-mcp` public client 必须使用 Authorization Code + PKCE S256 并请求 `aiqt:research:read`；该 optional client scope 的 Audience mapper 固定加入 `aud=https://<domain>/mcp`。不得使用用户名密码授权、把 ID token 当 access token，或把 audience 放宽为 Web client ID。
+public Compose 使用本站自托管 Keycloak 同时承载网页登录与 MCP token 签发，不依赖 Google。Keycloak 固定启用 CIMD feature，并用 Client Policy 把 URL 型 client ID 限制到 `https://claude.ai/...`；CIMD public client 必须使用 Authorization Code + PKCE S256 并请求 `aiqt:research:read`。该 optional client scope 的 Audience mapper 固定加入 `aud=https://<domain>/mcp`。`aiqt-mcp` 预注册 public client只保留精确的 Claude hosted callback 作为受控兼容路径，不使用通配 redirect。不得使用用户名密码授权、匿名 DCR、把 ID token 当 access token，或把 audience 放宽为 Web client ID。
 
-Keycloak 当前不能完整处理 RFC 8707 `resource` 参数，所以上述配置是单一 MCP resource 的固定 audience 兼容模式：它能产生本站 verifier 要求的精确 `aud`，但不能宣称支持任意多个 resource。预注册客户端默认没有 redirect URI，因此尚不能完成授权；桌面客户端需要登记其精确 loopback callback，接入托管 AI 时则登记该平台的精确 HTTPS callback。不能使用通配 HTTPS redirect，也不能开启无约束匿名 DCR。
+Keycloak 当前不能完整处理 RFC 8707 `resource` 参数，所以上述配置是单一 MCP resource 的固定 audience 兼容模式：它能产生本站 verifier 要求的精确 `aud`，但不能宣称支持任意多个 resource。CIMD 在当前固定 Keycloak 版本中仍标记为 experimental，升级 Keycloak 前必须重新执行真实 Claude metadata、loopback callback、hosted callback、PKCE、scope 与 audience 验收。不能使用通配 HTTPS redirect，也不能开启无约束匿名 DCR。
 
 ## 关键环境变量
 
@@ -121,6 +135,7 @@ Keycloak 当前不能完整处理 RFC 8707 `resource` 参数，所以上述配�
 | `AIQT_MCP_REQUEST_TIMEOUT_SECONDS` | `600` | API 超时，范围 1–3600 秒；覆盖较重的密封 P0 物化 |
 | `AIQT_MCP_PUBLIC_RESOURCE_URL` | `${AIQT_PUBLIC_ORIGIN}/mcp` | 公网 canonical OAuth resource；必须与 public Origin 同源且路径精确为 `/mcp` |
 | `AIQT_MCP_RATE_LIMIT_REQUESTS_1M` | `120` | 公网每租户每分钟 initialize/tool/resource 请求上限；只能收紧 |
+| `AIQT_CLAUDE_CONNECT_ENABLED` | `false` | 公网 Claude 入口 readiness；仅在 Keycloak 迁移与真实协议验收后开启 |
 | `AIQT_MCP_ENABLE_RESEARCH_WRITES` | `false` | 进程外授权该 MCP 会话执行研究型副作用；不要在无人监督或公网进程开启 |
 | `AIQT_MCP_OPERATOR` | 空 | formal launch 的服务端操作者；不允许模型上传 |
 | `AIQT_MCP_API_COOKIE` | 空 | 已认证 API Cookie；只适用于受控进程配置 |

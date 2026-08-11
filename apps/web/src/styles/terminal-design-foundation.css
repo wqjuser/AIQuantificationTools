@@ -30,7 +30,7 @@
 
 .rail-profile .rail-logout {
   grid-column: 3;
-  grid-row: 2;
+  grid-row: 3;
   align-self: end;
   justify-self: end;
   border: 1px solid var(--border);
@@ -38,6 +38,26 @@
   padding: 3px 5px;
   font-size: calc(9px * var(--aiqt-text-scale, 1));
   white-space: nowrap;
+}
+
+.rail-profile .rail-connect-claude {
+  grid-column: 2;
+  grid-row: 3;
+  align-self: end;
+  justify-self: start;
+  border: 1px solid color-mix(in srgb, var(--teal) 45%, var(--border));
+  border-radius: 4px;
+  padding: 3px 5px;
+  color: var(--teal);
+  font-size: calc(9px * var(--aiqt-text-scale, 1));
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.rail-profile .rail-connect-claude:hover {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 8%, transparent);
 }
 
 .rail-profile .rail-logout:hover {

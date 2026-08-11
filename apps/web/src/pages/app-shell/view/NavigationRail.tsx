@@ -1,7 +1,12 @@
 import { productWorkAreaGroups, workAreaIcons } from "../navigation";
 import { Radar } from "lucide-react";
 import type { AppControllerBindings } from "../controller/bindings";
-import { authenticatedActor, hasPublicSession, logoutPublicSession } from "../../../lib/public-auth";
+import {
+  authenticatedActor,
+  hasPublicSession,
+  isClaudeConnectEnabled,
+  logoutPublicSession,
+} from "../../../lib/public-auth";
 
 export type NavigationRailViewModel = Pick<AppControllerBindings,
     "activeWorkAreaId" | "i18n" | "productWorkAreas" | "selectProductWorkArea" | "workspace"
@@ -14,6 +19,8 @@ export function NavigationRail({ controller }: NavigationRailProps) {
     activeWorkAreaId, i18n, productWorkAreas, selectProductWorkArea, workspace
   } = controller;
   const actor = authenticatedActor();
+  const publicSession = hasPublicSession();
+  const claudeConnectEnabled = isClaudeConnectEnabled();
   const renderItems = (workAreaIds: typeof productWorkAreaGroups[number]["workAreaIds"]) => (
     <div className="work-area-group-items">
       {workAreaIds.map((workAreaId) => {
@@ -80,7 +87,8 @@ export function NavigationRail({ controller }: NavigationRailProps) {
                     : "Waiting for first run"}
                 <br />{i18n.strategyText("Asia/Shanghai")}
               </time>
-              {hasPublicSession() ? <button className="rail-logout" onClick={() => void logoutPublicSession()} type="button">退出登录</button> : null}
+              {claudeConnectEnabled ? <a className="rail-connect-claude" href="/connect/claude">连接 Claude</a> : null}
+              {publicSession ? <button className="rail-logout" onClick={() => void logoutPublicSession()} type="button">退出登录</button> : null}
             </section>
           </aside>
   );

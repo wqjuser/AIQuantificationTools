@@ -16,6 +16,8 @@ public Compose 部署固定版本的自托管 Keycloak 与独立 PostgreSQL。Ke
 
 公网 MCP 继续是独立只读 Resource Server。Keycloak 的 `aiqt:research:read` optional client scope 通过 Audience mapper 把 `aud` 精确设为 `${AIQT_PUBLIC_ORIGIN}/mcp`；MCP verifier 仍验证签名、精确 issuer/audience、scope、时间和已存在 active identity。Keycloak 当前没有完整消费 RFC 8707 `resource` 参数，因此这是单 resource 的固定 audience 兼容方案，不能宣称 Authorization Server 已完整实现 RFC 8707，也不能放宽 MCP audience 校验。
 
+Claude 的终端用户接入由 [ADR-0039](0039-claude-connectors-use-restricted-cimd.md) 收口：匿名动态客户端注册仍关闭，只为受信任的 Claude HTTPS Client ID Metadata 启用受限 CIMD，并由站内一键安装页隐藏客户端注册细节。
+
 Google 与 Keycloak 的 `issuer + subject` 不同。已有租户必须在维护窗口先创建 Keycloak 用户，再以当前 `owner_id` 原子重绑新身份并撤销旧应用会话；不得按邮箱静默合并，也不得先让新账号登录后再搬数据。
 
 ## 结果

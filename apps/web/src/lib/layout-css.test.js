@@ -249,6 +249,7 @@ describe("terminal layout css", () => {
       ["../pages/execution/ExecutionPage.tsx", ["ExecutionPage.layout.css"]],
       ["../pages/market-information/MarketInformationPage.tsx", ["MarketInformationPage.layout.css"]],
       ["../pages/market/MarketPage.tsx", ["MarketDiscovery.layout.css", "MarketPage.layout.css"]],
+      ["../pages/mcp-connect/McpConnectPage.tsx", ["McpConnectPage.layout.css"]],
       ["../pages/portfolio/PortfolioPage.tsx", ["PortfolioPage.layout.css"]],
       ["../pages/research/ResearchPage.tsx", ["ResearchPage.layout.css"]],
       ["../pages/settings/SettingsPage.tsx", ["SettingsPage.layout.css"]],
@@ -269,7 +270,7 @@ describe("terminal layout css", () => {
       aiReviewPanelSource.indexOf('import "./AiReviewDecision.layout.css";')
     );
     expect(mainSource.indexOf('import "./styles.css";')).toBeLessThan(
-      mainSource.indexOf('import { App } from "./App";')
+      mainSource.indexOf('import { RootApp } from "./RootApp";')
     );
   });
 

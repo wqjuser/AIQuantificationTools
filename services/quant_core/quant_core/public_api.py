@@ -111,6 +111,7 @@ def create_public_app(
                 "email": context.email,
                 "csrfToken": csrf_token,
                 "reauthenticationRequired": not context.reauthenticated_recently(),
+                "claudeConnectEnabled": config.claude_connect_enabled,
             }
         )
         if request.cookies.get(CSRF_COOKIE) != csrf_token:

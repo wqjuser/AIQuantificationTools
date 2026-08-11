@@ -20,7 +20,7 @@
 `AIQT_AUTH_ORIGIN` 指向同一服务器上由 Caddy 暴露的 Keycloak HTTPS Origin。公网只代理 `aiqt` realm 与静态资源，不代理管理 API、master realm 或管理端口。账号默认由管理员创建，不开放匿名注册或密码直授 token。所有网页登录都要求 `prompt=login + max_age=0` 并验证新鲜 `auth_time`；退出必须先撤销应用会话，再在 Keycloak 可用时进入 RP-Initiated Logout。认证服务临时不可用只能降级回本站，不能阻止本地撤销，之后也不能靠旧 SSO Cookie 静默恢复账号。
 
 **研究型 MCP 服务**
-把既有 Quant Core 研究主线投影给兼容 AI Host 的受控协议层。它只拥有固定研究 tools/resources，不是通用 HTTP proxy，也不新增行情、回测或交易状态机。本机 stdio/loopback 研究写入默认关闭，进程外开关只授权受监督 MCP 会话的研究副作用；模型不能上传确认、操作者、租户或外发批准。公网 Streamable HTTP 是独立 OAuth Resource Server：Bearer 必须精确绑定 canonical `/mcp` resource，服务端用已验证且已存在的 `(issuer, subject)` 映射 `TenantContext`，再进入当前租户 Store；公网使用无状态 HTTP，只注册只读研究工具，按租户限流，不接收设置主密钥，并在进程内网关拒绝非研究 GET 路径。两种入口都不提供 promotion、绑定、监控控制、Testnet、Live、下单、密钥或 Stage 6–10 能力。
+把既有 Quant Core 研究主线投影给兼容 AI Host 的受控协议层。它只拥有固定研究 tools/resources，不是通用 HTTP proxy，也不新增行情、回测或交易状态机。本机 stdio/loopback 研究写入默认关闭，进程外开关只授权受监督 MCP 会话的研究副作用；模型不能上传确认、操作者、租户或外发批准。公网 Streamable HTTP 是独立 OAuth Resource Server：Bearer 必须精确绑定 canonical `/mcp` resource，服务端用已验证且已存在的 `(issuer, subject)` 映射 `TenantContext`，再进入当前租户 Store；公网使用无状态 HTTP，只注册只读研究工具，按租户限流，不接收设置主密钥，并在进程内网关拒绝非研究 GET 路径。Claude 用户通过 AuthGate 保护的 `/connect/claude` 安装页进入官方预填连接流程；Keycloak 只接受受信任 Claude HTTPS Client ID Metadata，匿名 Dynamic Client Registration 继续关闭。该入口的服务端 readiness 默认关闭；版本化 realm 迁移与只读检查通过后只能在受控窗口开启协议验收，验收失败立即关闭，通过后才向普通用户发布。两种入口都不提供 promotion、绑定、监控控制、Testnet、Live、下单、密钥或 Stage 6–10 能力。
 
 **租户上下文（TenantContext）**
 由服务端认证会话创建，至少包含 `owner_id + issuer + subject + verified email`。public 私有 Store、密钥、授权、任务和订单只能通过该上下文访问，浏览器不能提供或覆盖 `owner_id`。

@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   authenticatedActor,
   bindPublicSession,
+  isClaudeConnectEnabled,
   parseAuthSession,
   parseDeploymentSession,
   parsePublicLogoutRedirect,
@@ -34,7 +35,27 @@ describe("public authentication transport", () => {
       email: "user@example.com",
       csrfToken: "csrf-a",
       reauthenticationRequired: false,
-    })).toMatchObject({ ownerId: "owner-a", email: "user@example.com" });
+      claudeConnectEnabled: true,
+    })).toMatchObject({
+      ownerId: "owner-a",
+      email: "user@example.com",
+      claudeConnectEnabled: true,
+    });
+    expect(() => parseAuthSession({
+      authenticated: true,
+      ownerId: "owner-a",
+      email: "user@example.com",
+      csrfToken: "csrf-a",
+      reauthenticationRequired: false,
+    })).toThrow("invalid_auth_session");
+    expect(() => parseAuthSession({
+      authenticated: true,
+      ownerId: "owner-a",
+      email: "user@example.com",
+      csrfToken: "csrf-a",
+      reauthenticationRequired: false,
+      claudeConnectEnabled: "true",
+    })).toThrow("invalid_auth_session");
     expect(() => parseAuthSession({ authenticated: true })).toThrow("invalid_auth_session");
   });
 
@@ -45,6 +66,7 @@ describe("public authentication transport", () => {
       email: "user@example.com",
       csrfToken: "csrf-a",
       reauthenticationRequired: false,
+      claudeConnectEnabled: true,
     });
 
     const request = prepareAuthenticatedRequest(
@@ -66,6 +88,7 @@ describe("public authentication transport", () => {
       artifact: { author: "historical-author@example.com" },
     });
     expect(authenticatedActor()).toBe("user@example.com");
+    expect(isClaudeConnectEnabled()).toBe(true);
   });
 
   test("does not attach tenant credentials to another origin", () => {
