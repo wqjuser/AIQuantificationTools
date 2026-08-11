@@ -11,7 +11,7 @@ from quant_core.public_schema import public_metadata
 
 config = context.config
 if config.config_file_name:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 if os.environ.get("AIQT_DATABASE_URL"):
     config.set_main_option("sqlalchemy.url", os.environ["AIQT_DATABASE_URL"])
 target_metadata = public_metadata

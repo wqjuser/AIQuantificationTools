@@ -10,7 +10,7 @@ from sqlalchemy import delete, insert, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
-from quant_core.public_schema import public_sessions, public_users
+from quant_core.public_schema import oidc_transactions, public_sessions, public_users
 from quant_core.tenancy import TenantContext, _aware
 
 
@@ -116,6 +116,91 @@ class PublicIdentityStore:
             ).rowcount
         if changed != 1:
             raise AuthenticationError("user_not_found")
+
+    def rebind_identity(
+        self,
+        *,
+        owner_id: str,
+        expected_issuer: str,
+        expected_subject: str,
+        issuer: str,
+        subject: str,
+        email: str,
+        now: datetime | None = None,
+    ) -> PublicUser:
+        normalized_expected_issuer = str(expected_issuer or "").strip().rstrip("/")
+        normalized_expected_subject = str(expected_subject or "").strip()
+        normalized_issuer = str(issuer or "").strip().rstrip("/")
+        normalized_subject = str(subject or "").strip()
+        normalized_email = str(email or "").strip().lower()
+        if (
+            not owner_id
+            or not normalized_expected_issuer
+            or not normalized_expected_subject
+            or not normalized_issuer
+            or not normalized_subject
+            or "@" not in normalized_email
+        ):
+            raise AuthenticationError("identity_migration_invalid")
+        timestamp = now or datetime.now(timezone.utc)
+        try:
+            with self.engine.begin() as connection:
+                row = connection.execute(
+                    select(public_users)
+                    .where(public_users.c.owner_id == owner_id)
+                    .with_for_update()
+                ).mappings().one_or_none()
+                if row is None:
+                    raise AuthenticationError("identity_migration_conflict")
+                exact_replay = (
+                    row["issuer"] == normalized_issuer
+                    and row["subject"] == normalized_subject
+                    and row["email"] == normalized_email
+                )
+                if not exact_replay and (
+                    row["issuer"] != normalized_expected_issuer
+                    or row["subject"] != normalized_expected_subject
+                ):
+                    raise AuthenticationError("identity_migration_conflict")
+                collision = connection.execute(
+                    select(public_users.c.owner_id).where(
+                        public_users.c.issuer == normalized_issuer,
+                        public_users.c.subject == normalized_subject,
+                        public_users.c.owner_id != owner_id,
+                    )
+                ).scalar_one_or_none()
+                if collision is not None:
+                    raise AuthenticationError("identity_migration_conflict")
+                if not exact_replay:
+                    connection.execute(
+                        update(public_users)
+                        .where(public_users.c.owner_id == owner_id)
+                        .values(
+                            issuer=normalized_issuer,
+                            subject=normalized_subject,
+                            email=normalized_email,
+                            updated_at=timestamp,
+                        )
+                    )
+                    # Identity migration is an explicit maintenance operation.
+                    # Drop pre-migration OIDC transactions so an old-provider
+                    # callback cannot recreate the previous identity as a new
+                    # tenant. An exact retry must not delete newer login flows.
+                    connection.execute(delete(oidc_transactions))
+                connection.execute(
+                    update(public_sessions)
+                    .where(
+                        public_sessions.c.owner_id == owner_id,
+                        public_sessions.c.revoked_at.is_(None),
+                    )
+                    .values(revoked_at=timestamp)
+                )
+                updated = connection.execute(
+                    select(public_users).where(public_users.c.owner_id == owner_id)
+                ).mappings().one()
+        except IntegrityError as error:
+            raise AuthenticationError("identity_migration_conflict") from error
+        return _user(updated)
 
     def list_active(self) -> list[PublicUser]:
         with self.engine.connect() as connection:

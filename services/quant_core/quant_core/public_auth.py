@@ -58,6 +58,7 @@ class _OidcTransaction:
     return_to: str
     purpose: str = "login"
     owner_id: str | None = None
+    initiated_at: str | None = None
 
 
 class OidcTransactionStore:
@@ -83,6 +84,7 @@ class OidcTransactionStore:
             return_to=_safe_return_to(return_to),
             purpose=purpose,
             owner_id=owner_id,
+            initiated_at=now.isoformat(),
         )
         state_hash = _hash(transaction.state)
         encrypted = self.cipher.encrypt(
@@ -235,6 +237,13 @@ class OidcProvider:
         discovery = self._discover()
         return f"{discovery['authorization_endpoint']}?{urlencode(parameters)}"
 
+    def logout_url(self, *, post_logout_redirect_uri: str) -> str:
+        discovery = self._discover()
+        return f"{discovery['end_session_endpoint']}?{urlencode({
+            'client_id': self.client_id,
+            'post_logout_redirect_uri': post_logout_redirect_uri,
+        })}"
+
     def exchange_code(
         self,
         *,
@@ -243,6 +252,7 @@ class OidcProvider:
         redirect_uri: str,
         nonce: str,
         now: datetime,
+        minimum_auth_time: datetime | None = None,
     ) -> OidcIdentity:
         discovery = self._discover()
         try:
@@ -276,7 +286,28 @@ class OidcProvider:
                 },
             )
             claims.validate(now=int(now.timestamp()), leeway=30)
-        except (httpx.HTTPError, JoseError, KeyError, TypeError, ValueError) as error:
+            if minimum_auth_time is not None:
+                auth_time_value = claims.get("auth_time")
+                if isinstance(auth_time_value, bool) or not isinstance(
+                    auth_time_value,
+                    (int, float),
+                ):
+                    raise ValueError("oidc_auth_time_missing")
+                authenticated_at = datetime.fromtimestamp(
+                    int(auth_time_value),
+                    tz=timezone.utc,
+                )
+                if authenticated_at + timedelta(seconds=30) < minimum_auth_time:
+                    raise ValueError("oidc_auth_time_stale")
+        except (
+            httpx.HTTPError,
+            JoseError,
+            KeyError,
+            OSError,
+            OverflowError,
+            TypeError,
+            ValueError,
+        ) as error:
             raise AuthenticationError("oidc_response_invalid") from error
         return OidcIdentity(
             issuer=str(claims["iss"]),
@@ -297,7 +328,12 @@ class OidcProvider:
             discovery = response.json()
             if discovery.get("issuer", "").rstrip("/") != self.issuer:
                 raise AuthenticationError("oidc_issuer_mismatch")
-            for name in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
+            for name in (
+                "authorization_endpoint",
+                "token_endpoint",
+                "jwks_uri",
+                "end_session_endpoint",
+            ):
                 if urlparse(str(discovery.get(name, ""))).scheme != "https":
                     raise AuthenticationError("oidc_endpoint_invalid")
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as error:
@@ -352,17 +388,19 @@ class PublicAuthService:
 
     def _authorization(self, transaction: _OidcTransaction) -> AuthLogin:
         challenge = base64.urlsafe_b64encode(hashlib.sha256(transaction.code_verifier.encode()).digest()).decode().rstrip("=")
+        parameters = {
+            "response_type": "code",
+            "client_id": self.config.oidc_client_id or "",
+            "redirect_uri": self.config.oidc_callback_url or "",
+            "scope": "openid email profile",
+            "state": transaction.state,
+            "nonce": transaction.nonce,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
+        parameters.update({"prompt": "login", "max_age": "0"})
         return AuthLogin(
-            authorization_url=self.provider.authorization_url(
-                response_type="code",
-                client_id=self.config.oidc_client_id or "",
-                redirect_uri=self.config.oidc_callback_url or "",
-                scope="openid email profile",
-                state=transaction.state,
-                nonce=transaction.nonce,
-                code_challenge=challenge,
-                code_challenge_method="S256",
-            ),
+            authorization_url=self.provider.authorization_url(**parameters),
             state_cookie=transaction.state,
         )
 
@@ -387,6 +425,7 @@ class PublicAuthService:
             redirect_uri=self.config.oidc_callback_url or "",
             nonce=transaction.nonce,
             now=timestamp,
+            minimum_auth_time=_transaction_initiated_at(transaction),
         )
         user = self.identities.register_login(
             issuer=identity.issuer,
@@ -411,6 +450,11 @@ class PublicAuthService:
             now=timestamp,
         )
 
+    def logout_url(self) -> str:
+        return self.provider.logout_url(
+            post_logout_redirect_uri=self.config.public_origin,
+        )
+
 
 def _safe_return_to(value: str) -> str:
     return value if value.startswith("/") and not value.startswith("//") else "/"
@@ -418,3 +462,15 @@ def _safe_return_to(value: str) -> str:
 
 def _hash(value: str) -> bytes:
     return hashlib.sha256(value.encode()).digest()
+
+
+def _transaction_initiated_at(transaction: _OidcTransaction) -> datetime:
+    if not transaction.initiated_at:
+        raise AuthenticationError("oidc_reauthentication_time_missing")
+    try:
+        initiated_at = datetime.fromisoformat(transaction.initiated_at)
+    except ValueError as error:
+        raise AuthenticationError("oidc_reauthentication_time_invalid") from error
+    if initiated_at.tzinfo is None:
+        raise AuthenticationError("oidc_reauthentication_time_invalid")
+    return initiated_at.astimezone(timezone.utc)

@@ -25,7 +25,7 @@ AIQuantificationTools 只有一套领域实现、API 路径和前端工作区，
 
 - `AIQT_DEPLOYMENT_MODE=public`。
 - PostgreSQL 保存用户、会话、私有领域记录、设置、审计、授权和后台协调。
-- Starlette/Uvicorn 提供应用内 OIDC 与租户入口；`quant_core.api.run` 仍是兼容启动 seam。
+- Starlette/Uvicorn 提供应用内 OIDC Client 与租户入口；自托管 Keycloak 是独立 Authorization Server，`quant_core.api.run` 仍是兼容启动 seam。
 - Caddy 是唯一公网入口，提供 TLS 和静态页面/API 反向代理；API 没有宿主端口。
 - PostgreSQL、OIDC Issuer/Client、HTTPS Origin 或主密钥缺失时启动失败。
 
@@ -42,7 +42,7 @@ Browser
   → PostgreSQL
 ```
 
-认证使用固定单一 OIDC Issuer 的 Authorization Code + PKCE S256。服务端校验 state、nonce、issuer、audience、expiry 和 JWKS 签名；首次成功登录且邮箱已验证时自动创建个人用户。用户只有 `active/disabled` 两种状态。
+认证使用自托管 Keycloak 的固定单一 OIDC Issuer 与 Authorization Code + PKCE S256。服务端校验 state、nonce、issuer、audience、expiry 和 JWKS 签名；管理员创建且邮箱已验证的账号首次成功登录时创建个人用户。Quant API 不接收或存储密码，用户只有 `active/disabled` 两种应用状态。
 
 会话令牌与 CSRF 令牌在数据库中只保存不可逆哈希。Cookie 使用 `Secure`、`HttpOnly`（会话）、`SameSite=Lax`；会话绝对有效期 12 小时、空闲有效期 30 分钟。修改请求必须满足同源 Origin、JSON Content-Type、会话绑定 CSRF 和限流。登录/回调按 IP 限制，普通修改、AI/选股和研究包导入按租户分别限制。
 
@@ -62,7 +62,7 @@ public 模式禁止回退到进程环境中的用户 OpenAI、OpenAI-compatible�
 
 React/Vite Web 与 Tauri 桌面端复用同一应用。`App.tsx` 是兼容入口，应用外壳、页面视图和页面控制器按目录隔离；`TerminalWorkspaceSurface` 继续装配现有工作区 props。
 
-public 页面由 `AuthGate` 在渲染应用前读取 `/api/auth/session`。local API 明确返回 `deploymentMode=local` 并直接进入本机模式；任意 404 不会被误判为 local。统一 fetch 边界只对同源 `/api` 修改请求附加 CSRF 和认证操作者，绝不向外部 Provider Origin 泄露租户凭据。401 回到登录门，428 进入 OIDC 重新认证并保留当前 URL。
+public 页面由 `AuthGate` 在渲染应用前读取 `/api/auth/session`。local API 明确返回 `deploymentMode=local` 并直接进入本机模式；任意 404 不会被误判为 local。统一 fetch 边界只对同源 `/api` 修改请求附加 CSRF 和认证操作者，绝不向外部 Provider Origin 泄露租户凭据。401 回到登录门；普通登录和 428 重新认证都强制 `prompt=login + max_age=0` 并验证 `auth_time`，后者保留当前 URL。退出先撤销应用 session，再重定向到受信任 discovery 的 `end_session_endpoint` 结束 Keycloak SSO；若认证服务临时不可用，则安全回到本站，且本地撤销仍不可回滚。
 
 URL 中的 `workspace` ID 保持兼容。侧栏只展示名称与选中状态；研究主线常显，高级执行与系统使用原生折叠。每页保留一个主动作和一个下一步，详细 manifest、hash 与验收证据默认折叠但仍可审计。
 

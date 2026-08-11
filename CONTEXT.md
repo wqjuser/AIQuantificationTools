@@ -11,10 +11,13 @@
 默认部署模式。使用现有 SQLite/JSON、合成租户 `local`、无需登录，只监听本机。它不是可直接暴露到公网的单用户服务器。
 
 **public 模式**
-使用 PostgreSQL、OIDC、HTTPS 和严格租户隔离的个人多租户模式。缺少数据库、Issuer/Client、公开 HTTPS Origin 或主密钥时必须拒绝启动。全部迁移和安全验收完成前不得开放公网入口。
+使用 PostgreSQL、本站自托管 Keycloak、OIDC、HTTPS 和严格租户隔离的个人多租户模式。Keycloak 负责本地账号、密码、登录与 OAuth/JWKS；Quant API 只负责应用会话和租户映射，不保存密码。缺少数据库、Issuer/Client、公开 HTTPS Origin 或主密钥时必须拒绝启动。全部迁移和安全验收完成前不得开放公网入口。
 
 **公开部署 Origin**
 `AIQT_PUBLIC_ORIGIN` 指向 Caddy 对外提供的唯一 HTTPS Origin。浏览器、Cookie、CORS、Origin/Host 校验和 OIDC callback 都以它为准；API 不独立暴露宿主端口。
+
+**自托管认证 Origin**
+`AIQT_AUTH_ORIGIN` 指向同一服务器上由 Caddy 暴露的 Keycloak HTTPS Origin。公网只代理 `aiqt` realm 与静态资源，不代理管理 API、master realm 或管理端口。账号默认由管理员创建，不开放匿名注册或密码直授 token。所有网页登录都要求 `prompt=login + max_age=0` 并验证新鲜 `auth_time`；退出必须先撤销应用会话，再在 Keycloak 可用时进入 RP-Initiated Logout。认证服务临时不可用只能降级回本站，不能阻止本地撤销，之后也不能靠旧 SSO Cookie 静默恢复账号。
 
 **研究型 MCP 服务**
 把既有 Quant Core 研究主线投影给兼容 AI Host 的受控协议层。它只拥有固定研究 tools/resources，不是通用 HTTP proxy，也不新增行情、回测或交易状态机。本机 stdio/loopback 研究写入默认关闭，进程外开关只授权受监督 MCP 会话的研究副作用；模型不能上传确认、操作者、租户或外发批准。公网 Streamable HTTP 是独立 OAuth Resource Server：Bearer 必须精确绑定 canonical `/mcp` resource，服务端用已验证且已存在的 `(issuer, subject)` 映射 `TenantContext`，再进入当前租户 Store；公网使用无状态 HTTP，只注册只读研究工具，按租户限流，不接收设置主密钥，并在进程内网关拒绝非研究 GET 路径。两种入口都不提供 promotion、绑定、监控控制、Testnet、Live、下单、密钥或 Stage 6–10 能力。
@@ -25,11 +28,11 @@
 **认证操作者**
 当前 OIDC 会话中的已验证邮箱。public 模式下浏览器顶层操作者字段必须等于该身份；它证明 OIDC 账户身份，不宣称法律实名、KYC 或金融合规身份。
 
-**开放注册**
-固定 Issuer 下首次成功登录、具有稳定 subject 和已验证邮箱的用户会自动创建个人账户。首版没有团队、角色、邀请、计费或管理后台；用户状态只有 `active/disabled`。
+**后台账号**
+管理员先在自托管 Keycloak 创建账号并标记邮箱已验证。固定 Issuer 下首次成功登录、具有稳定 subject 和已验证邮箱的用户会创建个人账户。首版不开放自助注册、匿名动态客户端注册、团队、角色、邀请、计费或产品内账号管理；应用用户状态只有 `active/disabled`。
 
 **近期重新认证**
-最近 5 分钟内完成 OIDC 重新认证。修改生产密钥、开启/续期实盘和恢复 Stage 10 控制必须同时具备该证据；普通登录会话不足以替代。
+最近 5 分钟内完成 OIDC 重新认证。重新认证必须向自托管认证服务发送 `prompt=login + max_age=0`，并验证 ID token 的新鲜 `auth_time`；已有 SSO Cookie 不能静默替代。修改生产密钥、开启/续期实盘和恢复 Stage 10 控制必须同时具备该证据；普通登录会话不足以替代。
 
 ## 存储、安全与可移植性
 

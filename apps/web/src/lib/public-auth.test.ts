@@ -5,10 +5,24 @@ import {
   bindPublicSession,
   parseAuthSession,
   parseDeploymentSession,
+  parsePublicLogoutRedirect,
   prepareAuthenticatedRequest,
 } from "./public-auth";
 
 describe("public authentication transport", () => {
+  test("accepts only an HTTPS identity-provider logout redirect", () => {
+    expect(parsePublicLogoutRedirect({
+      loggedOut: true,
+      logoutUrl: "https://auth.example.com/realms/aiqt/protocol/openid-connect/logout",
+    })).toBe("https://auth.example.com/realms/aiqt/protocol/openid-connect/logout");
+    expect(() => parsePublicLogoutRedirect({ loggedOut: true, logoutUrl: "/" }))
+      .toThrow("invalid_public_logout");
+    expect(() => parsePublicLogoutRedirect({
+      loggedOut: true,
+      logoutUrl: "http://auth.example.com/logout",
+    })).toThrow("invalid_public_logout");
+  });
+
   test("parses only a complete authenticated session", () => {
     expect(parseDeploymentSession({ deploymentMode: "local", authenticated: false })).toEqual({
       deploymentMode: "local",

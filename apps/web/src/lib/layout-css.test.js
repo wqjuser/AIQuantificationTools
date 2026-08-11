@@ -12,6 +12,7 @@ function readImportedStyles(entryUrl) {
 const globalStyles = readImportedStyles(new URL("../styles.css", import.meta.url));
 const mainSource = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
 const authGateSource = readFileSync(new URL("../AuthGate.tsx", import.meta.url), "utf8");
+const privacyPolicySource = readFileSync(new URL("../../public/privacy.html", import.meta.url), "utf8");
 const marketPageLayoutStyles = readFileSync(
   new URL("../pages/market/MarketPage.layout.css", import.meta.url),
   "utf8"
@@ -215,10 +216,19 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
-  test("presents the public identity provider in user-facing language", () => {
-    expect(authGateSource).toContain("使用 Google 账号继续");
+  test("presents the self-hosted account service in user-facing language", () => {
+    expect(authGateSource).toContain("使用本站账号登录");
+    expect(authGateSource).toContain("账号由管理员创建");
+    expect(authGateSource).toContain("认证服务由本站托管");
     expect(authGateSource).toContain('href="/privacy.html"');
-    expect(authGateSource).not.toContain("使用 OIDC 登录");
+    expect(authGateSource).not.toContain("Google");
+  });
+
+  test("describes self-hosted account and session handling in the privacy policy", () => {
+    expect(privacyPolicySource).toContain("本站自托管的账号与身份认证服务");
+    expect(privacyPolicySource).toContain("账号标识、已验证邮箱和登录会话安全信息");
+    expect(privacyPolicySource).toContain("登录凭据由本站自托管的认证服务处理");
+    expect(privacyPolicySource).not.toContain("Google");
   });
 
   test("keeps each workspace page beside its layout stylesheet", () => {

@@ -42,6 +42,22 @@ export function parseDeploymentSession(value: unknown): DeploymentSession {
   return parseAuthSession(value);
 }
 
+export function parsePublicLogoutRedirect(value: unknown): string {
+  if (!value || typeof value !== "object") throw new Error("invalid_public_logout");
+  const record = value as Record<string, unknown>;
+  if (record.loggedOut !== true || typeof record.logoutUrl !== "string") {
+    throw new Error("invalid_public_logout");
+  }
+  let logoutUrl: URL;
+  try {
+    logoutUrl = new URL(record.logoutUrl);
+  } catch {
+    throw new Error("invalid_public_logout");
+  }
+  if (logoutUrl.protocol !== "https:") throw new Error("invalid_public_logout");
+  return logoutUrl.toString();
+}
+
 export function bindPublicSession(session: PublicAuthSession): void {
   activeSession = session.authenticated ? session : null;
 }
@@ -111,7 +127,8 @@ export async function logoutPublicSession(): Promise<void> {
     body: "{}",
   });
   if (response.ok) {
+    const logoutUrl = parsePublicLogoutRedirect(await response.json());
     bindPublicSession({ authenticated: false });
-    location.assign("/");
+    location.assign(logoutUrl);
   }
 }

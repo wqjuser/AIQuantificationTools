@@ -555,8 +555,8 @@ class PublicMcpServiceTest(unittest.IsolatedAsyncioTestCase):
             claims: dict[str, object] = {
                 "iss": ISSUER_URL,
                 "sub": "subject-a",
-                "aud": RESOURCE_URL,
-                "client_id": "mcp-client",
+                "aud": [RESOURCE_URL, "account"],
+                "azp": "aiqt-mcp",
                 "iat": int(now.timestamp()),
                 "exp": int((now + timedelta(minutes=5)).timestamp()),
                 "scope": READ_SCOPE,

@@ -55,9 +55,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
           {state === "unauthenticated" ? (
             <>
               <a className="primary auth-gate-action" href={`/api/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}>
-                使用 Google 账号继续
+                使用本站账号登录
               </a>
-              <p className="auth-gate-note">首次登录会自动创建研究空间。登录不会授权实盘，也不会自动提交订单。</p>
+              <p className="auth-gate-note">账号由管理员创建。认证服务由本站托管；登录不会授权实盘，也不会自动提交订单。</p>
             </>
           ) : state === "error" ? (
             <>
@@ -68,7 +68,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </div>
 
         <footer className="auth-gate-footer">
-          <span>Google 账号仅用于身份验证与数据隔离</span>
+          <span>本站账号仅用于身份验证与数据隔离</span>
           <a href="/privacy.html">隐私政策</a>
         </footer>
       </section>

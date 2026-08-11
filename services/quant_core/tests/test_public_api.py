@@ -12,12 +12,15 @@ from starlette.testclient import TestClient
 from quant_core.deployment import load_deployment_config
 from quant_core.public_api import create_public_app
 from quant_core.public_auth import OidcIdentity, PublicAuthService
+from quant_core.public_identity import AuthenticationError
 from quant_core.public_schema import create_public_schema
 from quant_core.public_schema import public_sessions
 from quant_core.tenant_crypto import TenantSecretCipher
 
 
 class FakeProvider:
+    fail_logout = False
+
     def authorization_url(self, **parameters) -> str:
         from urllib.parse import urlencode
 
@@ -30,6 +33,12 @@ class FakeProvider:
             email="user@example.com",
             email_verified=True,
         )
+
+    def logout_url(self, *, post_logout_redirect_uri: str) -> str:
+        if self.fail_logout:
+            raise AuthenticationError("oidc_discovery_invalid")
+        self.post_logout_redirect_uri = post_logout_redirect_uri
+        return "https://identity.example.com/logout?client_id=aiqt"
 
 
 class PublicApiSecurityTest(unittest.TestCase):
@@ -51,10 +60,11 @@ class PublicApiSecurityTest(unittest.TestCase):
                 "AIQT_SETTINGS_MASTER_KEY": base64.urlsafe_b64encode(b"m" * 32).decode(),
             }
         )
+        self.provider = FakeProvider()
         auth = PublicAuthService(
             self.config,
             self.engine,
-            provider=FakeProvider(),
+            provider=self.provider,
             cipher=TenantSecretCipher(self.config.settings_master_key or ""),
         )
 
@@ -128,6 +138,39 @@ class PublicApiSecurityTest(unittest.TestCase):
         self.assertEqual(missing_json.status_code, 415)
         self.assertEqual(wrong_csrf.status_code, 403)
         self.assertEqual(logout.status_code, 200)
+        self.assertEqual(
+            logout.json(),
+            {
+                "loggedOut": True,
+                "logoutUrl": "https://identity.example.com/logout?client_id=aiqt",
+            },
+        )
+        self.assertEqual(self.client.get("/api/auth/session").json(), {"authenticated": False})
+
+    def test_logout_revokes_the_local_session_when_keycloak_is_unavailable(self) -> None:
+        login = self.client.get("/api/auth/login", follow_redirects=False)
+        state = self.client.cookies.get("aiqt_oidc_state")
+        self.assertTrue(state)
+        callback = self.client.get(
+            f"/api/auth/callback?state={state}&code=code",
+            follow_redirects=False,
+        )
+        self.assertEqual(login.status_code, 307)
+        self.assertEqual(callback.status_code, 303)
+        csrf = self.client.get("/api/auth/session").json()["csrfToken"]
+        self.provider.fail_logout = True
+
+        logout = self.client.post(
+            "/api/auth/logout",
+            json={},
+            headers={"Origin": "https://research.example.com", "X-AIQT-CSRF": csrf},
+        )
+
+        self.assertEqual(logout.status_code, 200)
+        self.assertEqual(
+            logout.json(),
+            {"loggedOut": True, "logoutUrl": "https://research.example.com"},
+        )
         self.assertEqual(self.client.get("/api/auth/session").json(), {"authenticated": False})
 
     def test_security_headers_host_and_health_are_minimal(self) -> None:

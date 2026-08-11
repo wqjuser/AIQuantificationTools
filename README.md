@@ -19,9 +19,9 @@ AIQuantificationTools 是一个面向个人研究者的量化研究工作台。�
 | 模式 | 存储与身份 | 网络边界 |
 | --- | --- | --- |
 | `local`（默认） | SQLite、合成租户 `local`、无需登录 | Web 只监听 `127.0.0.1` |
-| `public` | PostgreSQL 多租户、OIDC 登录 | 只由 Caddy 暴露 HTTPS 80/443 |
+| `public` | PostgreSQL 多租户、自托管 Keycloak 账号登录 | 只由 Caddy 暴露 HTTPS 80/443 |
 
-`public` 模式缺少 PostgreSQL、OIDC、HTTPS Origin 或 32 字节主密钥时会拒绝启动。公网部署必须先完成迁移、双用户隔离和实盘安全验收，不能直接把 local 服务端口暴露到公网。
+`public` 模式缺少 PostgreSQL、自托管认证 Origin、OIDC、HTTPS Origin 或 32 字节主密钥时会拒绝启动。公网部署必须先完成身份迁移、双用户隔离和实盘安全验收，不能直接把 local 服务端口暴露到公网。
 
 ## 本地快速启动
 
@@ -67,7 +67,7 @@ docker compose --profile mcp up -d --build mcp
 
 AI 客户端连接 `http://127.0.0.1:8766/mcp`。MCP 默认只读，不包含 promotion、策略绑定、自动交易控制、Testnet、Live 或下单工具；完整接入方式见 [MCP 服务](docs/mcp-service.md)。
 
-public Compose 还提供受 OAuth Bearer 保护的 `https://<domain>/mcp`：它按已存在的 OIDC 身份绑定租户，只发现八个只读研究工具，并仅由 Caddy 暴露。Authorization Server 必须能为该 canonical resource 签发 audience-bound token；部署前置与验收见 [公网部署](docs/public-deployment.md)。
+public Compose 还提供受 OAuth Bearer 保护的 `https://<domain>/mcp`：它按已存在的本站 Keycloak 身份绑定租户，只发现八个只读研究工具，并仅由 Caddy 暴露。自托管认证服务通过固定 MCP scope/Audience mapper 签发精确绑定 canonical resource 的 token；部署前置与兼容边界见 [公网部署](docs/public-deployment.md)。
 
 公网模式需要先完成 [公网部署手册](docs/public-deployment.md)，再运行：
 

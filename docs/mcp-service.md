@@ -96,7 +96,7 @@ Caddy 是唯一公网入口；MCP 容器没有宿主端口。公网 Streamable H
 
 公网 token 必须由与网页登录相同规范身份的 Authorization Server 签发，并满足：
 
-- 支持 OAuth 2.1、PKCE 和 RFC 8707 resource indicator；
+- 支持 OAuth 2.1 Authorization Code + PKCE，并能为本站固定 MCP resource 签出专用 audience；
 - access token 的 audience 精确包含 `https://<domain>/mcp`；
 - JWT 由固定 issuer discovery/JWKS 验签，包含稳定 `sub`、`client_id` 或 `azp`、`iat`、`exp` 和 `aiqt:research:read`；
 - `(issuer, subject)` 已通过网页登录或管理员迁移存在于 `public_users` 且状态为 active。
@@ -105,7 +105,9 @@ Caddy 是唯一公网入口；MCP 容器没有宿主端口。公网 Streamable H
 
 公网首版只发现八个只读工具：系统/Paper 状态、标的搜索、市场上下文、研究运行列表/详情、策略研发详情和研究审计查询。AI 选股、P0、proposal、formal launch 与 AI Review 创建工具不会注册；环境中即使误设研究写开关也不能扩大能力。
 
-当前文档中的 Google 直接网页登录通常不能为自定义 MCP resource 签发 audience-bound access token。要启用公网 MCP，需迁移到/配置一个同时承载网页登录和 MCP resource 的 Authorization Server（例如正确配置的 Auth0、Keycloak 或同等实现），保持同一稳定 `iss + sub`。不得把 Google ID token 当 access token，也不得把 audience 放宽为 Web client ID。
+public Compose 使用本站自托管 Keycloak 同时承载网页登录与 MCP token 签发，不依赖 Google。`aiqt-mcp` public client 必须使用 Authorization Code + PKCE S256 并请求 `aiqt:research:read`；该 optional client scope 的 Audience mapper 固定加入 `aud=https://<domain>/mcp`。不得使用用户名密码授权、把 ID token 当 access token，或把 audience 放宽为 Web client ID。
+
+Keycloak 当前不能完整处理 RFC 8707 `resource` 参数，所以上述配置是单一 MCP resource 的固定 audience 兼容模式：它能产生本站 verifier 要求的精确 `aud`，但不能宣称支持任意多个 resource。预注册客户端默认没有 redirect URI，因此尚不能完成授权；桌面客户端需要登记其精确 loopback callback，接入托管 AI 时则登记该平台的精确 HTTPS callback。不能使用通配 HTTPS redirect，也不能开启无约束匿名 DCR。
 
 ## 关键环境变量
 

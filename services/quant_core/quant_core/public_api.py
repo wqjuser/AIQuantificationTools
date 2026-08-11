@@ -214,7 +214,11 @@ def create_public_app(
         if blocked:
             return blocked
         auth.sessions.revoke(session_token)
-        response = JSONResponse({"loggedOut": True})
+        try:
+            logout_url = auth.logout_url()
+        except AuthenticationError:
+            logout_url = config.public_origin
+        response = JSONResponse({"loggedOut": True, "logoutUrl": logout_url})
         _clear_auth_cookies(response)
         return response
 

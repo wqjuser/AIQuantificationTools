@@ -51,6 +51,12 @@ class FakeOidcProvider:
             email_verified=True,
         )
 
+    def logout_url(self, *, post_logout_redirect_uri: str) -> str:
+        return (
+            "https://identity.example.com/logout?client_id=aiqt&"
+            f"post_logout_redirect_uri={post_logout_redirect_uri}"
+        )
+
 
 class PublicAuthServiceTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -91,6 +97,8 @@ class PublicAuthServiceTest(unittest.TestCase):
         self.assertEqual(query["client_id"], ["aiqt"])
         self.assertEqual(query["redirect_uri"], ["https://research.example.com/api/auth/callback"])
         self.assertEqual(query["code_challenge_method"], ["S256"])
+        self.assertEqual(query["prompt"], ["login"])
+        self.assertEqual(query["max_age"], ["0"])
         self.assertEqual(query["state"], [login.state_cookie])
         self.assertTrue(query["nonce"][0])
 
@@ -106,6 +114,7 @@ class PublicAuthServiceTest(unittest.TestCase):
         ).decode().rstrip("=")
         self.assertEqual(query["code_challenge"], [expected_challenge])
         self.assertEqual(exchanged["nonce"], query["nonce"][0])
+        self.assertEqual(exchanged["minimum_auth_time"], self.now)
         self.assertEqual(completed.return_to, "/research")
         self.assertTrue(completed.session.session_token)
 
@@ -118,6 +127,13 @@ class PublicAuthServiceTest(unittest.TestCase):
 
         self.assertEqual(replayed, completed)
         self.assertEqual(len(self.provider.exchanges), 1)
+
+    def test_logout_uses_the_exact_registered_public_origin(self) -> None:
+        self.assertEqual(
+            self.service.logout_url(),
+            "https://identity.example.com/logout?client_id=aiqt&"
+            "post_logout_redirect_uri=https://research.example.com",
+        )
 
     def test_callback_is_bound_to_browser_state_cookie(self) -> None:
         login = self.service.begin_login(return_to="https://evil.example", now=self.now)
@@ -169,6 +185,25 @@ class PublicAuthServiceTest(unittest.TestCase):
         ):
             self.service.begin_login(now=self.now)
 
+    def test_reauthentication_forces_a_fresh_identity_provider_login(self) -> None:
+        login = self.service.begin_login(now=self.now)
+        completed = self.service.complete_callback(
+            state=login.state_cookie,
+            state_cookie=login.state_cookie,
+            code="authorization-code",
+            now=self.now + timedelta(seconds=1),
+        )
+
+        reauthentication = self.service.begin_reauthentication(
+            completed.session.session_token,
+            return_to="/execution",
+            now=self.now + timedelta(minutes=6),
+        )
+        query = parse_qs(urlparse(reauthentication.authorization_url).query)
+
+        self.assertEqual(query["prompt"], ["login"])
+        self.assertEqual(query["max_age"], ["0"])
+
     def test_oidc_state_is_consumed_atomically_across_connections(self) -> None:
         with TemporaryDirectory() as directory:
             engine = create_engine(
@@ -218,6 +253,7 @@ class OidcProviderValidationTest(unittest.TestCase):
                 "sub": "subject-1",
                 "aud": "aiqt",
                 "iat": int(now.timestamp()),
+                "auth_time": int(now.timestamp()),
                 "exp": int((now + timedelta(minutes=5)).timestamp()),
                 "nonce": "expected-nonce",
                 "email": "user@example.com",
@@ -225,6 +261,8 @@ class OidcProviderValidationTest(unittest.TestCase):
             },
             private_pem,
         ).decode()
+
+        token_response = {"id_token": token}
 
         def respond(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/.well-known/openid-configuration":
@@ -235,10 +273,18 @@ class OidcProviderValidationTest(unittest.TestCase):
                         "authorization_endpoint": "https://identity.example.com/authorize",
                         "token_endpoint": "https://identity.example.com/token",
                         "jwks_uri": "https://identity.example.com/jwks",
+                        "end_session_endpoint": "https://identity.example.com/logout",
                     },
                 )
             if request.url.path == "/token":
-                return httpx.Response(200, json={"id_token": token, "access_token": "access", "token_type": "Bearer"})
+                return httpx.Response(
+                    200,
+                    json={
+                        "id_token": token_response["id_token"],
+                        "access_token": "access",
+                        "token_type": "Bearer",
+                    },
+                )
             if request.url.path == "/jwks":
                 return httpx.Response(200, json={"keys": [public_jwk]})
             return httpx.Response(404)
@@ -257,8 +303,25 @@ class OidcProviderValidationTest(unittest.TestCase):
                 redirect_uri="https://research.example.com/api/auth/callback",
                 nonce="expected-nonce",
                 now=now,
+                minimum_auth_time=now - timedelta(seconds=1),
             )
             self.assertEqual(identity.subject, "subject-1")
+            self.assertEqual(
+                provider.logout_url(
+                    post_logout_redirect_uri="https://research.example.com/"
+                ),
+                "https://identity.example.com/logout?client_id=aiqt&"
+                "post_logout_redirect_uri=https%3A%2F%2Fresearch.example.com%2F",
+            )
+            with self.assertRaises(AuthenticationError):
+                provider.exchange_code(
+                    code="code",
+                    code_verifier="verifier",
+                    redirect_uri="https://research.example.com/api/auth/callback",
+                    nonce="expected-nonce",
+                    now=now,
+                    minimum_auth_time=now + timedelta(minutes=1),
+                )
             with self.assertRaises(AuthenticationError):
                 provider.exchange_code(
                     code="code",
@@ -266,6 +329,30 @@ class OidcProviderValidationTest(unittest.TestCase):
                     redirect_uri="https://research.example.com/api/auth/callback",
                     nonce="wrong-nonce",
                     now=now,
+                )
+            token_response["id_token"] = jwt.encode(
+                {"alg": "RS256", "kid": "test-key"},
+                {
+                    "iss": "https://identity.example.com",
+                    "sub": "subject-1",
+                    "aud": "aiqt",
+                    "iat": int(now.timestamp()),
+                    "auth_time": 10**100,
+                    "exp": int((now + timedelta(minutes=5)).timestamp()),
+                    "nonce": "expected-nonce",
+                    "email": "user@example.com",
+                    "email_verified": True,
+                },
+                private_pem,
+            ).decode()
+            with self.assertRaises(AuthenticationError):
+                provider.exchange_code(
+                    code="code",
+                    code_verifier="verifier",
+                    redirect_uri="https://research.example.com/api/auth/callback",
+                    nonce="expected-nonce",
+                    now=now,
+                    minimum_auth_time=now,
                 )
         finally:
             client.close()

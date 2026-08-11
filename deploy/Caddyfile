@@ -40,3 +40,40 @@
     }
   }
 }
+
+{$AIQT_AUTH_ORIGIN} {
+  encode zstd gzip
+
+  header {
+    -Server
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "no-referrer"
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  }
+
+  @keycloakAdmin path /admin /admin/* /realms/master /realms/master/*
+  handle @keycloakAdmin {
+    respond 404
+  }
+
+  @keycloakRegistration path /realms/aiqt/clients-registrations /realms/aiqt/clients-registrations/*
+  handle @keycloakRegistration {
+    respond 404
+  }
+
+  @keycloakPublic path /.well-known /.well-known/* /realms/aiqt /realms/aiqt/* /resources /resources/*
+  handle @keycloakPublic {
+    reverse_proxy keycloak:8080 {
+      header_up Host {host}
+      header_up X-Forwarded-Host {host}
+      header_up X-Forwarded-Proto https
+      header_up X-Forwarded-Port 443
+      header_up X-Forwarded-For {remote_host}
+    }
+  }
+
+  handle {
+    respond 404
+  }
+}

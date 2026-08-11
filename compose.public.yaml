@@ -14,6 +14,69 @@ services:
       timeout: 5s
       retries: 10
 
+  keycloak-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${AIQT_KEYCLOAK_DATABASE_PASSWORD:?set AIQT_KEYCLOAK_DATABASE_PASSWORD}
+    volumes:
+      - keycloak-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  keycloak-schema:
+    image: postgres:17-alpine
+    restart: "no"
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${AIQT_KEYCLOAK_DATABASE_PASSWORD:?set AIQT_KEYCLOAK_DATABASE_PASSWORD}
+    command:
+      - psql
+      - --host=keycloak-postgres
+      - --username=keycloak
+      - --dbname=keycloak
+      - --set=ON_ERROR_STOP=1
+      - --command=CREATE SCHEMA IF NOT EXISTS keycloak AUTHORIZATION keycloak
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:0f198be292568439d700cdbfb893e69a6009bb43a94a06a945b1d3d506c76b13
+    restart: unless-stopped
+    depends_on:
+      keycloak-schema:
+        condition: service_completed_successfully
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/keycloak
+      KC_DB_SCHEMA: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${AIQT_KEYCLOAK_DATABASE_PASSWORD:?set AIQT_KEYCLOAK_DATABASE_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      KC_HOSTNAME: ${AIQT_AUTH_ORIGIN:?set AIQT_AUTH_ORIGIN}
+      KC_HOSTNAME_STRICT: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}
+      AIQT_KEYCLOAK_WEB_CLIENT_SECRET: ${AIQT_KEYCLOAK_WEB_CLIENT_SECRET:?set AIQT_KEYCLOAK_WEB_CLIENT_SECRET}
+    command: ["start", "--import-realm"]
+    expose:
+      - "8080"
+    volumes:
+      - ./deploy/keycloak/realm-aiqt.json:/opt/keycloak/data/import/aiqt-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "{ printf 'HEAD /health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
   migrate:
     build:
       context: .
@@ -34,9 +97,9 @@ services:
       AIQT_DEPLOYMENT_MODE: public
       AIQT_DATABASE_URL: ${AIQT_DATABASE_URL:?set AIQT_DATABASE_URL}
       AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}
-      AIQT_OIDC_ISSUER: ${AIQT_OIDC_ISSUER:?set AIQT_OIDC_ISSUER}
-      AIQT_OIDC_CLIENT_ID: ${AIQT_OIDC_CLIENT_ID:?set AIQT_OIDC_CLIENT_ID}
-      AIQT_OIDC_CLIENT_SECRET: ${AIQT_OIDC_CLIENT_SECRET:?set AIQT_OIDC_CLIENT_SECRET}
+      AIQT_OIDC_ISSUER: ${AIQT_AUTH_ORIGIN:?set AIQT_AUTH_ORIGIN}/realms/aiqt
+      AIQT_OIDC_CLIENT_ID: aiqt-web
+      AIQT_OIDC_CLIENT_SECRET: ${AIQT_KEYCLOAK_WEB_CLIENT_SECRET:?set AIQT_KEYCLOAK_WEB_CLIENT_SECRET}
       AIQT_SETTINGS_MASTER_KEY: ${AIQT_SETTINGS_MASTER_KEY:?set AIQT_SETTINGS_MASTER_KEY}
       AIQT_OUTBOUND_ORIGIN_ALLOWLIST: ${AIQT_OUTBOUND_ORIGIN_ALLOWLIST:-}
       AIQT_TRUSTED_PROXY_IPS: "*"
@@ -62,7 +125,7 @@ services:
       AIQT_DEPLOYMENT_MODE: public
       AIQT_DATABASE_URL: ${AIQT_DATABASE_URL:?set AIQT_DATABASE_URL}
       AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}
-      AIQT_OIDC_ISSUER: ${AIQT_OIDC_ISSUER:?set AIQT_OIDC_ISSUER}
+      AIQT_OIDC_ISSUER: ${AIQT_AUTH_ORIGIN:?set AIQT_AUTH_ORIGIN}/realms/aiqt
       AIQT_MCP_TRANSPORT: streamable-http
       AIQT_MCP_HOST: 0.0.0.0
       AIQT_MCP_ALLOW_NON_LOOPBACK_HTTP: "true"
@@ -85,8 +148,11 @@ services:
         condition: service_healthy
       mcp:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
     environment:
       AIQT_PUBLIC_ORIGIN: ${AIQT_PUBLIC_ORIGIN:?set AIQT_PUBLIC_ORIGIN}
+      AIQT_AUTH_ORIGIN: ${AIQT_AUTH_ORIGIN:?set AIQT_AUTH_ORIGIN}
     ports:
       - "80:80"
       - "443:443"
@@ -97,5 +163,6 @@ services:
 
 volumes:
   quant-postgres:
+  keycloak-postgres:
   caddy-data:
   caddy-config:

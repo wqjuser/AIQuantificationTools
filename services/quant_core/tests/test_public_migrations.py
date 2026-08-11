@@ -4,6 +4,7 @@ from pathlib import Path
 import base64
 from datetime import datetime, timezone
 import json
+import logging
 import sqlite3
 import tempfile
 import unittest
@@ -46,6 +47,7 @@ class PublicMigrationTest(unittest.TestCase):
 
             command.upgrade(config, "head")
             command.upgrade(config, "head")
+            self.assertFalse(logging.getLogger("uvicorn.error").disabled)
 
             engine = create_engine(database_url)
             try:
