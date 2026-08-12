@@ -82,8 +82,8 @@
       "optionalClientScopes": []
     },
     {
-      "clientId": "aiqt-mcp",
-      "name": "AI Quantification Tools MCP",
+      "clientId": "https://claude.ai/oauth/mcp-oauth-client-metadata",
+      "name": "Claude Hosted for AI Quantification Tools MCP",
       "enabled": true,
       "protocol": "openid-connect",
       "clientAuthenticatorType": "client-secret",
@@ -100,13 +100,15 @@
       ],
       "webOrigins": [],
       "attributes": {
+        "cimd.cache.expiry.time.in.sec": "2147483647",
         "pkce.code.challenge.method": "S256"
       },
       "defaultClientScopes": [
         "basic"
       ],
       "optionalClientScopes": [
-        "aiqt:research:read"
+        "aiqt:research:read",
+        "offline_access"
       ]
     }
   ],

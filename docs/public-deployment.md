@@ -63,7 +63,7 @@ OIDC issuer   https://auth.example.com/realms/aiqt
 提交的 realm bootstrap 固定以下边界：
 
 - `aiqt-web` 是 confidential Web client，只启用 Authorization Code，callback 精确为 `${AIQT_PUBLIC_ORIGIN}/api/auth/callback`，强制 PKCE S256；
-- `aiqt-mcp` 是 public client，只启用 Authorization Code + PKCE，Direct Access Grant 与 Implicit Flow 关闭；
+- Claude Hosted 官方 URL 型 Client ID 是预注册 public client，只启用 Authorization Code + PKCE，Direct Access Grant 与 Implicit Flow 关闭；
 - optional scope `aiqt:research:read` 的 Audience mapper 只给 MCP access token 添加 `${AIQT_PUBLIC_ORIGIN}/mcp`；
 - 自助注册关闭，账号由后台管理员创建并将邮箱标记为已验证；
 - 内建 `admin-cli` 明确禁用，realm 中不存在可用的用户名密码 token grant；
@@ -142,9 +142,9 @@ docker compose -f compose.yaml -f compose.public.yaml up -d \
   --force-recreate keycloak
 ```
 
-永久管理员只持有 `aiqt-realm` 的用户、客户端和 realm 管理角色，不持有 master 全局 `admin`；它已通过实机命令验证能创建业务用户、更新 `aiqt-mcp` client 和维护 `aiqt` realm 安全策略。永久管理员凭据只进入独立密钥管理系统，不保留在 Compose 环境；临时 bootstrap 管理员不得继续存在。业务用户首次登录必须更换临时密码。任何密码都不得写入 Git、命令历史、Compose 文件或工单。realm import 只用于新数据库 bootstrap；已有 realm 的安全策略和 client secret 变更必须通过受控管理命令应用并备份。
+永久管理员只持有 `aiqt-realm` 的用户、客户端和 realm 管理角色，不持有 master 全局 `admin`；它已通过实机命令验证能创建业务用户、更新 MCP client 和维护 `aiqt` realm 安全策略。永久管理员凭据只进入独立密钥管理系统，不保留在 Compose 环境；临时 bootstrap 管理员不得继续存在。业务用户首次登录必须更换临时密码。任何密码都不得写入 Git、命令历史、Compose 文件或工单。realm import 只用于新数据库 bootstrap；已有 realm 的安全策略和 client secret 变更必须通过受控管理命令应用并备份。
 
-Claude 接入不再要求管理员逐用户登记 callback。稳态 Keycloak 以固定 `--features=cimd` 启动；fresh realm import 会创建只信任 `https://claude.ai/...` metadata 的 Client Policy，并继续强制 public client、Authorization Code、PKCE S256、用户同意、禁用 Implicit/ROPC 与 full scope。Claude hosted callback 和 Claude Code 临时 loopback callback 都必须由该受信任 metadata 声明。预注册 `aiqt-mcp` 只保留 Claude hosted 的精确 HTTPS callback 作为兼容路径，不使用通配 URI。
+Claude 接入不再要求管理员逐用户登记 callback。Claude Hosted 固定预注册官方 URL 型 Client ID 与精确 HTTPS callback；Claude Code 由 Keycloak `--features=cimd` 和只信任 `https://claude.ai/...` metadata 的 Client Policy处理。两条路径都强制 public client、Authorization Code、PKCE S256、用户同意、禁用 Implicit/ROPC 与 full scope，不使用通配 URI。
 
 CIMD 不调用 Dynamic Client Registration endpoint；Caddy 必须继续对 `/realms/aiqt/clients-registrations*` 返回 404。当前 Keycloak 把 CIMD 标记为 experimental，因此固定镜像升级前必须重新执行真实 metadata、redirect、PKCE、scope 和 audience 负向测试，不能只依赖静态 realm JSON。
 
@@ -179,7 +179,7 @@ docker compose -f compose.yaml -f compose.public.yaml run --rm --no-deps api \
   --check --username aiqt-admin-ops
 ```
 
-第一条只更新 `clientProfiles`、`clientPolicies`、realm default scopes、`basic`/`aiqt:research:read` scope 及其冻结 mapper，以及 `aiqt-mcp` 的冻结安全字段；其它 realm/user/client 数据保持不变。工具会把 Audience mapper 精确校验为 `${AIQT_PUBLIC_ORIGIN}/mcp`，任何缺失、额外 mapper 或 audience 漂移都会失败关闭并在 `--apply` 时收敛。重复执行应返回 `ready`，检查漂移时必须非零退出。只有两条均成功后，才把 `.env` 中 `AIQT_CLAUDE_CONNECT_ENABLED` 改为 `true` 并重建 API：
+第一条只更新 `clientProfiles`、`clientPolicies`、realm default scopes、`basic`/`aiqt:research:read` scope 及其冻结 mapper，并把旧 `aiqt-mcp` 原地收敛为 Claude Hosted 官方 URL 型 Client ID；其它 realm/user/client 数据保持不变。工具会把 Audience mapper 精确校验为 `${AIQT_PUBLIC_ORIGIN}/mcp`，任何缺失、额外 mapper 或 audience 漂移都会失败关闭并在 `--apply` 时收敛。重复执行应返回 `ready`，检查漂移时必须非零退出。只有两条均成功后，才把 `.env` 中 `AIQT_CLAUDE_CONNECT_ENABLED` 改为 `true` 并重建 API：
 
 ```shell
 docker compose -f compose.yaml -f compose.public.yaml up -d \
@@ -403,7 +403,7 @@ docker compose -f compose.yaml -f compose.public.yaml exec -T keycloak-postgres 
   "select id,name,enabled from keycloak.realm where name='aiqt'"
 docker compose -f compose.yaml -f compose.public.yaml exec -T keycloak-postgres \
   psql -U keycloak -d keycloak_restore_verify -c \
-  "select client_id,enabled from keycloak.client where realm_id=(select id from keycloak.realm where name='aiqt') and client_id in ('aiqt-web','aiqt-mcp') order by client_id"
+  "select client_id,enabled from keycloak.client where realm_id=(select id from keycloak.realm where name='aiqt') and client_id in ('aiqt-web','https://claude.ai/oauth/mcp-oauth-client-metadata') order by client_id"
 docker compose -f compose.yaml -f compose.public.yaml exec -T keycloak-postgres \
   psql -U keycloak -d keycloak_restore_verify -c \
   "select id,username from keycloak.user_entity where realm_id=(select id from keycloak.realm where name='aiqt') order by id"

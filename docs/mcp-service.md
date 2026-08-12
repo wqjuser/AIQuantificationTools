@@ -28,7 +28,7 @@ MCP v1 **没有** promotion、任意策略上传/保存/删除、策略绑定、
 
 完成后 Claude 只能读取当前账号的八个研究工具。页面不会索取 Client ID、Client Secret、callback、Keycloak 地址或 CLI 命令。本机 HTTP/localhost 不会生成安装链接，因为 Claude 远程连接器只能访问公网 HTTPS 服务。
 
-该入口使用 Claude 官方 custom connector 安装深链。Keycloak 通过受限 Client ID Metadata Document（CIMD）识别由 `claude.ai` 托管的 public client，并强制 Authorization Code、PKCE S256、用户同意、精确 `aiqt:research:read` scope 与 `/mcp` audience。匿名 Dynamic Client Registration（DCR）继续由 Caddy 阻断。已有 `(issuer, subject)` 身份仍是硬门槛；连接页先经过现有 AuthGate，确保本站登录完成后才展示安装动作。
+该入口使用 Claude 官方 custom connector 安装深链。Claude Hosted 使用官方 URL 型预注册 public client；Claude Code 使用受限 Client ID Metadata Document（CIMD）。两条路径都强制 Authorization Code、PKCE S256、用户同意、精确 `aiqt:research:read` scope 与 `/mcp` audience。匿名 Dynamic Client Registration（DCR）继续由 Caddy 阻断。已有 `(issuer, subject)` 身份仍是硬门槛；连接页先经过现有 AuthGate，确保本站登录完成后才展示安装动作。
 
 公网部署还必须显式设置 `AIQT_CLAUDE_CONNECT_ENABLED=true`。该开关默认关闭，只能在管理员执行版本库内的 Keycloak CIMD 幂等迁移与只读检查后，于受控维护窗口开启真实协议验收；验收失败必须立即关闭，验收通过后才可向普通用户发布。否则侧栏入口和安装动作保持隐藏。它不是 OAuth 授权替代品，只是防止已有 realm 在尚未迁移时向用户暴露一条必然失败的安装链。
 
@@ -119,7 +119,7 @@ Caddy 是唯一公网入口；MCP 容器没有宿主端口。公网 Streamable H
 
 公网首版只发现八个只读工具：系统/Paper 状态、标的搜索、市场上下文、研究运行列表/详情、策略研发详情和研究审计查询。AI 选股、P0、proposal、formal launch 与 AI Review 创建工具不会注册；环境中即使误设研究写开关也不能扩大能力。
 
-public Compose 使用本站自托管 Keycloak 同时承载网页登录与 MCP token 签发，不依赖 Google。Keycloak 固定启用 CIMD feature，并用 Client Policy 把 URL 型 client ID 限制到 `https://claude.ai/...`；CIMD public client 必须使用 Authorization Code + PKCE S256 并请求 `aiqt:research:read`。该 optional client scope 的 Audience mapper 固定加入 `aud=https://<domain>/mcp`。`aiqt-mcp` 预注册 public client只保留精确的 Claude hosted callback 作为受控兼容路径，不使用通配 redirect。不得使用用户名密码授权、匿名 DCR、把 ID token 当 access token，或把 audience 放宽为 Web client ID。
+public Compose 使用本站自托管 Keycloak 同时承载网页登录与 MCP token 签发，不依赖 Google。Claude Hosted 预注册 Client ID 为 `https://claude.ai/oauth/mcp-oauth-client-metadata`，只保留精确 hosted callback；Claude Code 继续通过只信任 `https://claude.ai/...` 的受限 CIMD Client Policy。两者都是 public client，必须使用 Authorization Code + PKCE S256 并请求 `aiqt:research:read`。该 optional client scope 的 Audience mapper 固定加入 `aud=https://<domain>/mcp`。不得使用通配 redirect、用户名密码授权、匿名 DCR、把 ID token 当 access token，或把 audience 放宽为 Web client ID。
 
 Keycloak 当前不能完整处理 RFC 8707 `resource` 参数，所以上述配置是单一 MCP resource 的固定 audience 兼容模式：它能产生本站 verifier 要求的精确 `aud`，但不能宣称支持任意多个 resource。CIMD 在当前固定 Keycloak 版本中仍标记为 experimental，升级 Keycloak 前必须重新执行真实 Claude metadata、loopback callback、hosted callback、PKCE、scope 与 audience 验收。不能使用通配 HTTPS redirect，也不能开启无约束匿名 DCR。
 

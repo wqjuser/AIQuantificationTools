@@ -96,7 +96,14 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         )
 
         clients = {client["clientId"]: client for client in realm["clients"]}
-        self.assertEqual(set(clients), {"admin-cli", "aiqt-web", "aiqt-mcp"})
+        self.assertEqual(
+            set(clients),
+            {
+                "admin-cli",
+                "aiqt-web",
+                "https://claude.ai/oauth/mcp-oauth-client-metadata",
+            },
+        )
 
         admin_cli = clients["admin-cli"]
         self.assertFalse(admin_cli["enabled"])
@@ -117,7 +124,7 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
             "${AIQT_PUBLIC_ORIGIN}",
         )
 
-        mcp = clients["aiqt-mcp"]
+        mcp = clients["https://claude.ai/oauth/mcp-oauth-client-metadata"]
         self.assertTrue(mcp["publicClient"])
         self.assertNotIn("secret", mcp)
         self.assertEqual(
@@ -128,6 +135,11 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         )
         self.assertNotIn("*", "".join(mcp["redirectUris"]))
         self.assertIn("aiqt:research:read", mcp["optionalClientScopes"])
+        self.assertIn("offline_access", mcp["optionalClientScopes"])
+        self.assertEqual(
+            mcp["attributes"]["cimd.cache.expiry.time.in.sec"],
+            "2147483647",
+        )
 
         for client in (web, mcp):
             with self.subTest(client=client["clientId"]):
@@ -332,7 +344,9 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
             ["basic", "profile", "email"],
         )
         self.assertEqual(
-            clients["aiqt-mcp"]["defaultClientScopes"],
+            clients["https://claude.ai/oauth/mcp-oauth-client-metadata"][
+                "defaultClientScopes"
+            ],
             ["basic"],
         )
 

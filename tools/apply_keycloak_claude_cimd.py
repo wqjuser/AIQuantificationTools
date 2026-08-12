@@ -16,13 +16,15 @@ from urllib.request import Request, urlopen
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TEMPLATE = PROJECT_ROOT / "deploy" / "keycloak" / "realm-aiqt.json"
 _REALM_PATH = "/admin/realms/aiqt"
-_MCP_CLIENT_LOOKUP_PATH = "/admin/realms/aiqt/clients?clientId=aiqt-mcp"
+_CLAUDE_HOSTED_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata"
+_LEGACY_MCP_CLIENT_ID = "aiqt-mcp"
 
 _REALM_FIELDS = (
     "clientProfiles",
     "clientPolicies",
 )
 _CLIENT_FIELDS = (
+    "clientId",
     "enabled",
     "protocol",
     "clientAuthenticatorType",
@@ -60,6 +62,8 @@ class CurrentConfiguration(NamedTuple):
     client_id: str
     scope_ids: dict[str, str]
     scope_payloads: dict[str, dict[str, Any]]
+    client_default_scope_names: frozenset[str]
+    client_optional_scope_names: frozenset[str]
     default_scope_names: frozenset[str]
     optional_scope_names: frozenset[str]
 
@@ -111,7 +115,7 @@ def desired_configuration(
     mcp_clients = [
         item
         for item in clients
-        if isinstance(item, dict) and item.get("clientId") == "aiqt-mcp"
+        if isinstance(item, dict) and item.get("clientId") == _CLAUDE_HOSTED_CLIENT_ID
     ]
     if len(mcp_clients) != 1:
         raise ValueError("keycloak_realm_template_invalid")
@@ -309,14 +313,30 @@ def _read_current(
     desired: DesiredConfiguration,
 ) -> CurrentConfiguration:
     realm = client.get_json(_REALM_PATH)
-    found = client.get_json(_MCP_CLIENT_LOOKUP_PATH)
-    if not isinstance(realm, dict) or not isinstance(found, list) or len(found) != 1:
+    found = client.get_json(
+        f"{_REALM_PATH}/clients?clientId={_CLAUDE_HOSTED_CLIENT_ID}",
+    )
+    legacy = client.get_json(
+        f"{_REALM_PATH}/clients?clientId={_LEGACY_MCP_CLIENT_ID}",
+    )
+    if (
+        not isinstance(realm, dict)
+        or not isinstance(found, list)
+        or not isinstance(legacy, list)
+    ):
         raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
-    client_id = found[0].get("id") if isinstance(found[0], dict) else None
+    candidates = [*found, *legacy]
+    if len(candidates) != 1:
+        raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
+    client_id = candidates[0].get("id") if isinstance(candidates[0], dict) else None
     if not isinstance(client_id, str) or not client_id:
         raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
     current_client = client.get_json(f"{_REALM_PATH}/clients/{client_id}")
-    if not isinstance(current_client, dict) or current_client.get("clientId") != "aiqt-mcp":
+    if (
+        not isinstance(current_client, dict)
+        or current_client.get("clientId")
+        not in {_CLAUDE_HOSTED_CLIENT_ID, _LEGACY_MCP_CLIENT_ID}
+    ):
         raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
     scope_ids = _scope_map(client.get_json(f"{_REALM_PATH}/client-scopes"))
     scope_payloads: dict[str, dict[str, Any]] = {}
@@ -340,6 +360,14 @@ def _read_current(
         client_id=client_id,
         scope_ids=scope_ids,
         scope_payloads=scope_payloads,
+        client_default_scope_names=_string_set(
+            current_client.get("defaultClientScopes"),
+            "keycloak_aiqt_mcp_client_invalid",
+        ),
+        client_optional_scope_names=_string_set(
+            current_client.get("optionalClientScopes"),
+            "keycloak_aiqt_mcp_client_invalid",
+        ),
         default_scope_names=frozenset(default_scopes),
         optional_scope_names=frozenset(optional_scopes),
     )
@@ -351,6 +379,8 @@ def _matches(current: Mapping[str, Any], desired: Mapping[str, Any]) -> bool:
 
 def _client_matches(current: Mapping[str, Any], desired: Mapping[str, Any]) -> bool:
     for field, value in desired.items():
+        if field in {"defaultClientScopes", "optionalClientScopes"}:
+            continue
         current_value = current.get(field)
         if field == "attributes":
             if not isinstance(current_value, Mapping) or not isinstance(value, Mapping):
@@ -510,7 +540,11 @@ def reconcile(
     realm_ready = _matches(current.realm, desired.realm_fields)
     client_ready = _client_matches(current.client, desired.client_fields)
     scopes_ready = (
-        current.default_scope_names == desired.default_scope_names
+        current.client_default_scope_names
+        == frozenset(desired.client_fields["defaultClientScopes"])
+        and current.client_optional_scope_names
+        == frozenset(desired.client_fields["optionalClientScopes"])
+        and current.default_scope_names == desired.default_scope_names
         and current.optional_scope_names == desired.optional_scope_names
         and _scope_payloads_match(current.scope_payloads, desired.scope_fields)
     )
@@ -544,6 +578,20 @@ def reconcile(
             current=current,
             desired=desired.scope_fields,
         )
+    _sync_default_scopes(
+        client,
+        prefix=f"clients/{current.client_id}/default-client-scopes",
+        current=current.client_default_scope_names,
+        desired=frozenset(desired.client_fields["defaultClientScopes"]),
+        scope_ids=current.scope_ids,
+    )
+    _sync_default_scopes(
+        client,
+        prefix=f"clients/{current.client_id}/optional-client-scopes",
+        current=current.client_optional_scope_names,
+        desired=frozenset(desired.client_fields["optionalClientScopes"]),
+        scope_ids=current.scope_ids,
+    )
     if not scopes_ready:
         _sync_default_scopes(
             client,
@@ -565,6 +613,10 @@ def reconcile(
         not _matches(verified.realm, desired.realm_fields)
         or not _client_matches(verified.client, desired.client_fields)
         or not _scope_payloads_match(verified.scope_payloads, desired.scope_fields)
+        or verified.client_default_scope_names
+        != frozenset(desired.client_fields["defaultClientScopes"])
+        or verified.client_optional_scope_names
+        != frozenset(desired.client_fields["optionalClientScopes"])
         or verified.default_scope_names != desired.default_scope_names
         or verified.optional_scope_names != desired.optional_scope_names
     ):

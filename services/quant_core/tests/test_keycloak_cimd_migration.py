@@ -34,6 +34,8 @@ class FakeKeycloakAdminClient:
     ) -> None:
         self.realm = copy.deepcopy(realm)
         self.client = copy.deepcopy(client)
+        self.client_default_scopes = set(client.get("defaultClientScopes", []))
+        self.client_optional_scopes = set(client.get("optionalClientScopes", []))
         self.scopes = {
             "basic": "scope-basic",
             "profile": "scope-profile",
@@ -50,10 +52,19 @@ class FakeKeycloakAdminClient:
     def get_json(self, path: str):
         if path == "/admin/realms/aiqt":
             return copy.deepcopy(self.realm)
-        if path == "/admin/realms/aiqt/clients?clientId=aiqt-mcp":
-            return [{"id": self.client["id"], "clientId": "aiqt-mcp"}]
+        if path.startswith("/admin/realms/aiqt/clients?clientId="):
+            requested_id = path.partition("=")[2]
+            return (
+                [{"id": self.client["id"], "clientId": self.client["clientId"]}]
+                if requested_id == self.client["clientId"]
+                else []
+            )
         if path == f"/admin/realms/aiqt/clients/{self.client['id']}":
-            return copy.deepcopy(self.client)
+            return {
+                **copy.deepcopy(self.client),
+                "defaultClientScopes": sorted(self.client_default_scopes),
+                "optionalClientScopes": sorted(self.client_optional_scopes),
+            }
         if path == "/admin/realms/aiqt/client-scopes":
             return [
                 {"id": scope_id, "name": name}
@@ -82,7 +93,11 @@ class FakeKeycloakAdminClient:
             return
         if path == f"/admin/realms/aiqt/clients/{self.client['id']}":
             assert payload is not None
-            self.client = copy.deepcopy(payload)
+            self.client = {
+                **copy.deepcopy(payload),
+                "defaultClientScopes": sorted(self.client_default_scopes),
+                "optionalClientScopes": sorted(self.client_optional_scopes),
+            }
             return
         for name, scope_id in self.scopes.items():
             scope_path = f"/admin/realms/aiqt/client-scopes/{scope_id}"
@@ -107,6 +122,14 @@ class FakeKeycloakAdminClient:
                 mappers[index] = copy.deepcopy(payload)
                 return
         for collection, prefix in (
+            (
+                self.client_default_scopes,
+                f"/admin/realms/aiqt/clients/{self.client['id']}/default-client-scopes/",
+            ),
+            (
+                self.client_optional_scopes,
+                f"/admin/realms/aiqt/clients/{self.client['id']}/optional-client-scopes/",
+            ),
             (self.default_scopes, "/admin/realms/aiqt/default-default-client-scopes/"),
             (self.optional_scopes, "/admin/realms/aiqt/default-optional-client-scopes/"),
         ):
@@ -145,6 +168,14 @@ class FakeKeycloakAdminClient:
                 ]
                 return
         for collection, prefix in (
+            (
+                self.client_default_scopes,
+                f"/admin/realms/aiqt/clients/{self.client['id']}/default-client-scopes/",
+            ),
+            (
+                self.client_optional_scopes,
+                f"/admin/realms/aiqt/clients/{self.client['id']}/optional-client-scopes/",
+            ),
             (self.default_scopes, "/admin/realms/aiqt/default-default-client-scopes/"),
             (self.optional_scopes, "/admin/realms/aiqt/default-optional-client-scopes/"),
         ):
@@ -207,11 +238,15 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         template_client = next(
             item
             for item in self.template["clients"]
-            if item["clientId"] == "aiqt-mcp"
+            if item["clientId"]
+            == "https://claude.ai/oauth/mcp-oauth-client-metadata"
         )
         client = copy.deepcopy(template_client)
         client["id"] = "client-uuid"
+        client["clientId"] = "aiqt-mcp"
+        client["attributes"].pop("cimd.cache.expiry.time.in.sec")
         client["redirectUris"] = []
+        client["optionalClientScopes"] = ["aiqt:research:read"]
         client["attributes"] = {
             **client["attributes"],
             "client.use.lightweight.access.token.enabled": "false",
@@ -251,20 +286,30 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         self.assertEqual(first, "updated")
         self.assertEqual(second, "ready")
         self.assertEqual(checked, "ready")
-        self.assertEqual(len(client.puts), 4)
+        self.assertEqual(len(client.puts), 5)
         self.assertEqual(len(client.deletes), 1)
         for field, value in self.desired.realm_fields.items():
             self.assertEqual(client.realm[field], value)
         for field, value in self.desired.client_fields.items():
+            if field in {"defaultClientScopes", "optionalClientScopes"}:
+                continue
             if field == "attributes":
                 for attribute, attribute_value in value.items():
                     self.assertEqual(client.client[field][attribute], attribute_value)
             else:
                 self.assertEqual(client.client[field], value)
         self.assertEqual(client.default_scopes, {"basic"})
+        self.assertEqual(
+            client.client_optional_scopes,
+            {"aiqt:research:read", "offline_access"},
+        )
         self.assertEqual(client.optional_scopes, {"aiqt:research:read"})
         self.assertEqual(client.realm["displayName"], "existing")
         self.assertEqual(client.client["id"], "client-uuid")
+        self.assertEqual(
+            client.client["clientId"],
+            "https://claude.ai/oauth/mcp-oauth-client-metadata",
+        )
         self.assertEqual(
             client.scope_payloads["aiqt:research:read"]["protocolMappers"][0][
                 "config"
@@ -279,7 +324,7 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         }
         client_payload = {
             "id": "client-uuid",
-            "clientId": "aiqt-mcp",
+            "clientId": "https://claude.ai/oauth/mcp-oauth-client-metadata",
             **copy.deepcopy(self.desired.client_fields),
         }
         client_payload["attributes"]["client.use.lightweight.access.token.enabled"] = "false"
@@ -302,7 +347,7 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         realm = {"realm": "aiqt", **copy.deepcopy(self.desired.realm_fields)}
         client_payload = {
             "id": "client-uuid",
-            "clientId": "aiqt-mcp",
+            "clientId": "https://claude.ai/oauth/mcp-oauth-client-metadata",
             **copy.deepcopy(self.desired.client_fields),
         }
         client = FakeKeycloakAdminClient(
@@ -340,7 +385,7 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         realm = {"realm": "aiqt", **copy.deepcopy(self.desired.realm_fields)}
         client_payload = {
             "id": "client-uuid",
-            "clientId": "aiqt-mcp",
+            "clientId": "https://claude.ai/oauth/mcp-oauth-client-metadata",
             **copy.deepcopy(self.desired.client_fields),
         }
         scope_payloads = self._scope_payloads()
