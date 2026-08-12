@@ -7,7 +7,7 @@ import hashlib
 import json
 import secrets
 import warnings
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote_plus, urlencode, urlparse
 
 from authlib.deprecate import AuthlibDeprecationWarning
 with warnings.catch_warnings():
@@ -264,7 +264,7 @@ class OidcProvider:
                     "redirect_uri": redirect_uri,
                     "code_verifier": code_verifier,
                 },
-                auth=(self.client_id, self.client_secret),
+                auth=(quote_plus(self.client_id, safe=""), quote_plus(self.client_secret, safe="")),
                 headers={"Accept": "application/json"},
             )
             token_response.raise_for_status()

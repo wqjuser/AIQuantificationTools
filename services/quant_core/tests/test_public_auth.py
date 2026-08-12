@@ -277,6 +277,15 @@ class OidcProviderValidationTest(unittest.TestCase):
                     },
                 )
             if request.url.path == "/token":
+                token_parameters = parse_qs(request.content.decode())
+                self.assertNotIn("client_id", token_parameters)
+                self.assertNotIn("client_secret", token_parameters)
+                scheme, encoded_credentials = request.headers["authorization"].split(" ", 1)
+                self.assertEqual(scheme, "Basic")
+                self.assertEqual(
+                    base64.b64decode(encoded_credentials).decode(),
+                    "aiqt:reserved%25%2B%3A%2F%3F%26%3D",
+                )
                 return httpx.Response(
                     200,
                     json={
@@ -293,7 +302,7 @@ class OidcProviderValidationTest(unittest.TestCase):
         provider = OidcProvider(
             issuer="https://identity.example.com",
             client_id="aiqt",
-            client_secret="secret",
+            client_secret="reserved%+:/?&=",
             http_client=client,
         )
         try:
