@@ -101,6 +101,7 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
             {
                 "admin-cli",
                 "aiqt-web",
+                "aiqt-codex-cli",
                 "https://claude.ai/oauth/mcp-oauth-client-metadata",
             },
         )
@@ -141,7 +142,27 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
             "2147483647",
         )
 
-        for client in (web, mcp):
+        codex = clients["aiqt-codex-cli"]
+        self.assertTrue(codex["publicClient"])
+        self.assertNotIn("secret", codex)
+        self.assertEqual(
+            codex["redirectUris"],
+            ["http://127.0.0.1:5555/callback/sbmemyhC9-Ja"],
+        )
+        self.assertEqual(
+            codex["optionalClientScopes"],
+            ["aiqt:research:read", "offline_access"],
+        )
+        self.assertEqual(
+            codex["attributes"]["oauth2.device.authorization.grant.enabled"],
+            "false",
+        )
+        self.assertEqual(
+            codex["attributes"]["oidc.ciba.grant.enabled"],
+            "false",
+        )
+
+        for client in (web, mcp, codex):
             with self.subTest(client=client["clientId"]):
                 self.assertTrue(client["standardFlowEnabled"])
                 self.assertFalse(client["implicitFlowEnabled"])

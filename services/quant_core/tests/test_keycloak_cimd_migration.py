@@ -29,13 +29,21 @@ class FakeKeycloakAdminClient:
         realm: dict,
         client: dict,
         scope_payloads: dict[str, dict],
+        codex_client: dict | None = None,
         default_scopes: set[str] | None = None,
         optional_scopes: set[str] | None = None,
     ) -> None:
         self.realm = copy.deepcopy(realm)
         self.client = copy.deepcopy(client)
+        self.codex_client = copy.deepcopy(codex_client)
         self.client_default_scopes = set(client.get("defaultClientScopes", []))
         self.client_optional_scopes = set(client.get("optionalClientScopes", []))
+        self.codex_default_scopes = set(
+            codex_client.get("defaultClientScopes", []) if codex_client else []
+        )
+        self.codex_optional_scopes = set(
+            codex_client.get("optionalClientScopes", []) if codex_client else []
+        )
         self.scopes = {
             "basic": "scope-basic",
             "profile": "scope-profile",
@@ -54,6 +62,13 @@ class FakeKeycloakAdminClient:
             return copy.deepcopy(self.realm)
         if path.startswith("/admin/realms/aiqt/clients?clientId="):
             requested_id = path.partition("=")[2]
+            if self.codex_client and requested_id == self.codex_client["clientId"]:
+                return [
+                    {
+                        "id": self.codex_client["id"],
+                        "clientId": self.codex_client["clientId"],
+                    }
+                ]
             return (
                 [{"id": self.client["id"], "clientId": self.client["clientId"]}]
                 if requested_id == self.client["clientId"]
@@ -64,6 +79,14 @@ class FakeKeycloakAdminClient:
                 **copy.deepcopy(self.client),
                 "defaultClientScopes": sorted(self.client_default_scopes),
                 "optionalClientScopes": sorted(self.client_optional_scopes),
+            }
+        if self.codex_client and path == (
+            f"/admin/realms/aiqt/clients/{self.codex_client['id']}"
+        ):
+            return {
+                **copy.deepcopy(self.codex_client),
+                "defaultClientScopes": sorted(self.codex_default_scopes),
+                "optionalClientScopes": sorted(self.codex_optional_scopes),
             }
         if path == "/admin/realms/aiqt/client-scopes":
             return [
@@ -99,6 +122,16 @@ class FakeKeycloakAdminClient:
                 "optionalClientScopes": sorted(self.client_optional_scopes),
             }
             return
+        if self.codex_client and path == (
+            f"/admin/realms/aiqt/clients/{self.codex_client['id']}"
+        ):
+            assert payload is not None
+            self.codex_client = {
+                **copy.deepcopy(payload),
+                "defaultClientScopes": sorted(self.codex_default_scopes),
+                "optionalClientScopes": sorted(self.codex_optional_scopes),
+            }
+            return
         for name, scope_id in self.scopes.items():
             scope_path = f"/admin/realms/aiqt/client-scopes/{scope_id}"
             mapper_prefix = f"{scope_path}/protocol-mappers/models/"
@@ -130,6 +163,20 @@ class FakeKeycloakAdminClient:
                 self.client_optional_scopes,
                 f"/admin/realms/aiqt/clients/{self.client['id']}/optional-client-scopes/",
             ),
+            *(
+                (
+                    (
+                        self.codex_default_scopes,
+                        f"/admin/realms/aiqt/clients/{self.codex_client['id']}/default-client-scopes/",
+                    ),
+                    (
+                        self.codex_optional_scopes,
+                        f"/admin/realms/aiqt/clients/{self.codex_client['id']}/optional-client-scopes/",
+                    ),
+                )
+                if self.codex_client
+                else ()
+            ),
             (self.default_scopes, "/admin/realms/aiqt/default-default-client-scopes/"),
             (self.optional_scopes, "/admin/realms/aiqt/default-optional-client-scopes/"),
         ):
@@ -147,6 +194,11 @@ class FakeKeycloakAdminClient:
 
     def post_json(self, path: str, payload: dict) -> None:
         self.posts.append((path, copy.deepcopy(payload)))
+        if path == "/admin/realms/aiqt/clients":
+            self.codex_client = {"id": "client-codex-uuid", **copy.deepcopy(payload)}
+            self.codex_default_scopes = set(self.default_scopes)
+            self.codex_optional_scopes = set(self.optional_scopes)
+            return
         for name, scope_id in self.scopes.items():
             if path == f"/admin/realms/aiqt/client-scopes/{scope_id}/protocol-mappers/models":
                 mappers = self.scope_payloads[name].setdefault("protocolMappers", [])
@@ -175,6 +227,20 @@ class FakeKeycloakAdminClient:
             (
                 self.client_optional_scopes,
                 f"/admin/realms/aiqt/clients/{self.client['id']}/optional-client-scopes/",
+            ),
+            *(
+                (
+                    (
+                        self.codex_default_scopes,
+                        f"/admin/realms/aiqt/clients/{self.codex_client['id']}/default-client-scopes/",
+                    ),
+                    (
+                        self.codex_optional_scopes,
+                        f"/admin/realms/aiqt/clients/{self.codex_client['id']}/optional-client-scopes/",
+                    ),
+                )
+                if self.codex_client
+                else ()
             ),
             (self.default_scopes, "/admin/realms/aiqt/default-default-client-scopes/"),
             (self.optional_scopes, "/admin/realms/aiqt/default-optional-client-scopes/"),
@@ -253,10 +319,106 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         }
         return client
 
+    def _codex_client(self) -> dict:
+        return {
+            "id": "client-codex-uuid",
+            **copy.deepcopy(self.desired.codex_client_fields),
+        }
+
+    def test_desired_configuration_includes_the_fixed_codex_cli_client(self) -> None:
+        self.assertEqual(
+            self.desired.codex_client_fields["clientId"],
+            "aiqt-codex-cli",
+        )
+        self.assertEqual(
+            self.desired.codex_client_fields["redirectUris"],
+            ["http://127.0.0.1:5555/callback/bu3ea_gsmDzo"],
+        )
+        self.assertEqual(
+            self.desired.codex_client_fields["optionalClientScopes"],
+            ["aiqt:research:read", "offline_access"],
+        )
+
+    def test_check_fails_when_codex_is_missing_and_apply_creates_it_once(self) -> None:
+        realm = {"realm": "aiqt", **copy.deepcopy(self.desired.realm_fields)}
+        client_payload = {
+            "id": "client-uuid",
+            **copy.deepcopy(self.desired.client_fields),
+        }
+        client = FakeKeycloakAdminClient(
+            realm=realm,
+            client=client_payload,
+            scope_payloads=self._scope_payloads(),
+            default_scopes={"basic"},
+            optional_scopes={"aiqt:research:read"},
+        )
+
+        with self.assertRaisesRegex(
+            self.script.CimdConfigurationDrift,
+            "keycloak_claude_cimd_migration_required",
+        ):
+            self.script.reconcile(client, self.desired, apply=False)
+
+        self.assertEqual(
+            self.script.reconcile(client, self.desired, apply=True),
+            "updated",
+        )
+        self.assertEqual(self.script.reconcile(client, self.desired, apply=True), "ready")
+        self.assertEqual(
+            [path for path, _ in client.posts if path == "/admin/realms/aiqt/clients"],
+            ["/admin/realms/aiqt/clients"],
+        )
+        self.assertEqual(client.codex_default_scopes, {"basic"})
+        self.assertEqual(
+            client.codex_optional_scopes,
+            {"aiqt:research:read", "offline_access"},
+        )
+
+    def test_apply_repairs_the_existing_codex_client_in_place(self) -> None:
+        codex = self._codex_client()
+        codex["redirectUris"] = ["http://127.0.0.1:5555/wrong"]
+        codex["attributes"]["pkce.code.challenge.method"] = "plain"
+        codex["attributes"]["oauth2.device.authorization.grant.enabled"] = "true"
+        codex["attributes"]["oidc.ciba.grant.enabled"] = "true"
+        codex["optionalClientScopes"] = ["aiqt:research:read"]
+        client = FakeKeycloakAdminClient(
+            realm={"realm": "aiqt", **copy.deepcopy(self.desired.realm_fields)},
+            client={"id": "client-uuid", **copy.deepcopy(self.desired.client_fields)},
+            codex_client=codex,
+            scope_payloads=self._scope_payloads(),
+            default_scopes={"basic"},
+            optional_scopes={"aiqt:research:read"},
+        )
+
+        self.assertEqual(
+            self.script.reconcile(client, self.desired, apply=True),
+            "updated",
+        )
+        self.assertEqual(
+            self.script.reconcile(client, self.desired, apply=False),
+            "ready",
+        )
+        self.assertIn(
+            "/admin/realms/aiqt/clients/client-codex-uuid",
+            [path for path, _ in client.puts],
+        )
+        self.assertEqual(
+            client.codex_client["attributes"]["oauth2.device.authorization.grant.enabled"],
+            "false",
+        )
+        self.assertEqual(
+            client.codex_client["attributes"]["oidc.ciba.grant.enabled"],
+            "false",
+        )
+        self.assertFalse(
+            any(path == "/admin/realms/aiqt/clients/client-codex-uuid" for path in client.deletes)
+        )
+
     def test_check_fails_closed_when_an_existing_realm_has_not_been_migrated(self) -> None:
         client = FakeKeycloakAdminClient(
             realm={"realm": "aiqt", "displayName": "existing"},
             client=self._legacy_client(),
+            codex_client=self._codex_client(),
             scope_payloads=self._scope_payloads(
                 research_audience="https://evil.example/mcp",
             ),
@@ -274,6 +436,7 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         client = FakeKeycloakAdminClient(
             realm={"realm": "aiqt", "displayName": "existing"},
             client=self._legacy_client(),
+            codex_client=self._codex_client(),
             scope_payloads=self._scope_payloads(
                 research_audience="https://evil.example/mcp",
             ),
@@ -331,6 +494,7 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         client = FakeKeycloakAdminClient(
             realm=realm,
             client=client_payload,
+            codex_client=self._codex_client(),
             scope_payloads=self._scope_payloads(),
             default_scopes={"basic"},
             optional_scopes={"aiqt:research:read"},
@@ -353,6 +517,7 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         client = FakeKeycloakAdminClient(
             realm=realm,
             client=client_payload,
+            codex_client=self._codex_client(),
             scope_payloads=self._scope_payloads(
                 research_audience="https://evil.example/mcp",
             ),
@@ -403,6 +568,7 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
         client = FakeKeycloakAdminClient(
             realm=realm,
             client=client_payload,
+            codex_client=self._codex_client(),
             scope_payloads=scope_payloads,
             default_scopes={"basic"},
             optional_scopes={"aiqt:research:read"},

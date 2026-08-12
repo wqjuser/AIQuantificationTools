@@ -179,7 +179,7 @@ docker compose -f compose.yaml -f compose.public.yaml run --rm --no-deps api \
   --check --username aiqt-admin-ops
 ```
 
-第一条只更新 `clientProfiles`、`clientPolicies`、realm default scopes、`basic`/`aiqt:research:read` scope 及其冻结 mapper，并把旧 `aiqt-mcp` 原地收敛为 Claude Hosted 官方 URL 型 Client ID；其它 realm/user/client 数据保持不变。工具会把 Audience mapper 精确校验为 `${AIQT_PUBLIC_ORIGIN}/mcp`，任何缺失、额外 mapper 或 audience 漂移都会失败关闭并在 `--apply` 时收敛。重复执行应返回 `ready`，检查漂移时必须非零退出。只有两条均成功后，才把 `.env` 中 `AIQT_CLAUDE_CONNECT_ENABLED` 改为 `true` 并重建 API：
+第一条只更新 `clientProfiles`、`clientPolicies`、realm default scopes、`basic`/`aiqt:research:read` scope 及其冻结 mapper，把旧 `aiqt-mcp` 原地收敛为 Claude Hosted 官方 URL 型 Client ID，并创建或原位校正固定 PKCE 的 `aiqt-codex-cli`；其它 realm/user/client 数据保持不变。工具会把 Audience mapper 精确校验为 `${AIQT_PUBLIC_ORIGIN}/mcp`，并按该 URL 派生 Codex 固定端口的精确 loopback callback；任何缺失、额外 mapper、callback 或 audience 漂移都会失败关闭并在 `--apply` 时收敛。重复执行应返回 `ready`，检查漂移时必须非零退出。只有两条均成功后，才把 `.env` 中 `AIQT_CLAUDE_CONNECT_ENABLED` 改为 `true` 并重建 API：
 
 ```shell
 docker compose -f compose.yaml -f compose.public.yaml up -d \

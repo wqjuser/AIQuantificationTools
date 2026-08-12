@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
 from getpass import getpass
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TEMPLATE = PROJECT_ROOT / "deploy" / "keycloak" / "realm-aiqt.json"
 _REALM_PATH = "/admin/realms/aiqt"
 _CLAUDE_HOSTED_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata"
+_CODEX_CLI_CLIENT_ID = "aiqt-codex-cli"
 _LEGACY_MCP_CLIENT_ID = "aiqt-mcp"
 
 _REALM_FIELDS = (
@@ -25,6 +28,7 @@ _REALM_FIELDS = (
 )
 _CLIENT_FIELDS = (
     "clientId",
+    "name",
     "enabled",
     "protocol",
     "clientAuthenticatorType",
@@ -51,6 +55,7 @@ class CimdConfigurationDrift(RuntimeError):
 class DesiredConfiguration(NamedTuple):
     realm_fields: dict[str, Any]
     client_fields: dict[str, Any]
+    codex_client_fields: dict[str, Any]
     scope_fields: dict[str, dict[str, Any]]
     default_scope_names: frozenset[str]
     optional_scope_names: frozenset[str]
@@ -64,6 +69,10 @@ class CurrentConfiguration(NamedTuple):
     scope_payloads: dict[str, dict[str, Any]]
     client_default_scope_names: frozenset[str]
     client_optional_scope_names: frozenset[str]
+    codex_client: dict[str, Any] | None
+    codex_client_id: str | None
+    codex_default_scope_names: frozenset[str]
+    codex_optional_scope_names: frozenset[str]
     default_scope_names: frozenset[str]
     optional_scope_names: frozenset[str]
 
@@ -120,6 +129,14 @@ def desired_configuration(
     if len(mcp_clients) != 1:
         raise ValueError("keycloak_realm_template_invalid")
     mcp_client = mcp_clients[0]
+    codex_clients = [
+        item
+        for item in clients
+        if isinstance(item, dict) and item.get("clientId") == _CODEX_CLI_CLIENT_ID
+    ]
+    if len(codex_clients) != 1:
+        raise ValueError("keycloak_realm_template_invalid")
+    codex_client = codex_clients[0]
     client_scopes = template.get("clientScopes")
     if not isinstance(client_scopes, list):
         raise ValueError("keycloak_realm_template_invalid")
@@ -132,8 +149,18 @@ def desired_configuration(
             field: copy.deepcopy(mcp_client[field])
             for field in _CLIENT_FIELDS
         }
+        codex_client_fields = {
+            field: copy.deepcopy(codex_client[field])
+            for field in _CLIENT_FIELDS
+        }
     except KeyError as error:
         raise ValueError("keycloak_realm_template_invalid") from error
+    callback_id = base64.urlsafe_b64encode(
+        hashlib.sha256(f"{canonical_origin}/mcp".encode()).digest()[:9]
+    ).decode("ascii").rstrip("=")
+    codex_client_fields["redirectUris"] = [
+        f"http://127.0.0.1:5555/callback/{callback_id}"
+    ]
     desired_scope_names = _string_set(
         [
             *_string_set(
@@ -164,6 +191,7 @@ def desired_configuration(
     return DesiredConfiguration(
         realm_fields=realm_fields,
         client_fields=client_fields,
+        codex_client_fields=codex_client_fields,
         scope_fields=scope_fields,
         default_scope_names=_string_set(
             template.get("defaultDefaultClientScopes"),
@@ -319,10 +347,15 @@ def _read_current(
     legacy = client.get_json(
         f"{_REALM_PATH}/clients?clientId={_LEGACY_MCP_CLIENT_ID}",
     )
+    codex_found = client.get_json(
+        f"{_REALM_PATH}/clients?clientId={_CODEX_CLI_CLIENT_ID}",
+    )
     if (
         not isinstance(realm, dict)
         or not isinstance(found, list)
         or not isinstance(legacy, list)
+        or not isinstance(codex_found, list)
+        or len(codex_found) > 1
     ):
         raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
     candidates = [*found, *legacy]
@@ -338,6 +371,22 @@ def _read_current(
         not in {_CLAUDE_HOSTED_CLIENT_ID, _LEGACY_MCP_CLIENT_ID}
     ):
         raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
+    codex_client_id = None
+    codex_client = None
+    if codex_found:
+        codex_client_id = (
+            codex_found[0].get("id") if isinstance(codex_found[0], dict) else None
+        )
+        if not isinstance(codex_client_id, str) or not codex_client_id:
+            raise CimdConfigurationDrift("keycloak_codex_cli_client_invalid")
+        codex_client = client.get_json(
+            f"{_REALM_PATH}/clients/{codex_client_id}",
+        )
+        if (
+            not isinstance(codex_client, dict)
+            or codex_client.get("clientId") != _CODEX_CLI_CLIENT_ID
+        ):
+            raise CimdConfigurationDrift("keycloak_codex_cli_client_invalid")
     scope_ids = _scope_map(client.get_json(f"{_REALM_PATH}/client-scopes"))
     scope_payloads: dict[str, dict[str, Any]] = {}
     for name in desired.scope_fields:
@@ -367,6 +416,24 @@ def _read_current(
         client_optional_scope_names=_string_set(
             current_client.get("optionalClientScopes"),
             "keycloak_aiqt_mcp_client_invalid",
+        ),
+        codex_client=codex_client,
+        codex_client_id=codex_client_id,
+        codex_default_scope_names=(
+            _string_set(
+                codex_client.get("defaultClientScopes"),
+                "keycloak_codex_cli_client_invalid",
+            )
+            if codex_client is not None
+            else frozenset()
+        ),
+        codex_optional_scope_names=(
+            _string_set(
+                codex_client.get("optionalClientScopes"),
+                "keycloak_codex_cli_client_invalid",
+            )
+            if codex_client is not None
+            else frozenset()
         ),
         default_scope_names=frozenset(default_scopes),
         optional_scope_names=frozenset(optional_scopes),
@@ -539,6 +606,14 @@ def reconcile(
     current = _read_current(client, desired)
     realm_ready = _matches(current.realm, desired.realm_fields)
     client_ready = _client_matches(current.client, desired.client_fields)
+    codex_ready = (
+        current.codex_client is not None
+        and _client_matches(current.codex_client, desired.codex_client_fields)
+        and current.codex_default_scope_names
+        == frozenset(desired.codex_client_fields["defaultClientScopes"])
+        and current.codex_optional_scope_names
+        == frozenset(desired.codex_client_fields["optionalClientScopes"])
+    )
     scopes_ready = (
         current.client_default_scope_names
         == frozenset(desired.client_fields["defaultClientScopes"])
@@ -548,7 +623,7 @@ def reconcile(
         and current.optional_scope_names == desired.optional_scope_names
         and _scope_payloads_match(current.scope_payloads, desired.scope_fields)
     )
-    if realm_ready and client_ready and scopes_ready:
+    if realm_ready and client_ready and codex_ready and scopes_ready:
         return "ready"
     if not apply:
         raise CimdConfigurationDrift("keycloak_claude_cimd_migration_required")
@@ -572,6 +647,26 @@ def reconcile(
             f"{_REALM_PATH}/clients/{current.client_id}",
             {**current.client, **desired_client},
         )
+    if current.codex_client is None:
+        client.post_json(
+            f"{_REALM_PATH}/clients",
+            copy.deepcopy(desired.codex_client_fields),
+        )
+        current = _read_current(client, desired)
+    elif not codex_ready:
+        desired_codex = copy.deepcopy(desired.codex_client_fields)
+        desired_codex["attributes"] = {
+            **(
+                current.codex_client.get("attributes")
+                if isinstance(current.codex_client.get("attributes"), dict)
+                else {}
+            ),
+            **desired_codex["attributes"],
+        }
+        client.put_json(
+            f"{_REALM_PATH}/clients/{current.codex_client_id}",
+            {**current.codex_client, **desired_codex},
+        )
     if not _scope_payloads_match(current.scope_payloads, desired.scope_fields):
         _sync_scope_payloads(
             client,
@@ -590,6 +685,22 @@ def reconcile(
         prefix=f"clients/{current.client_id}/optional-client-scopes",
         current=current.client_optional_scope_names,
         desired=frozenset(desired.client_fields["optionalClientScopes"]),
+        scope_ids=current.scope_ids,
+    )
+    if current.codex_client_id is None:
+        raise CimdConfigurationDrift("keycloak_codex_cli_client_invalid")
+    _sync_default_scopes(
+        client,
+        prefix=f"clients/{current.codex_client_id}/default-client-scopes",
+        current=current.codex_default_scope_names,
+        desired=frozenset(desired.codex_client_fields["defaultClientScopes"]),
+        scope_ids=current.scope_ids,
+    )
+    _sync_default_scopes(
+        client,
+        prefix=f"clients/{current.codex_client_id}/optional-client-scopes",
+        current=current.codex_optional_scope_names,
+        desired=frozenset(desired.codex_client_fields["optionalClientScopes"]),
         scope_ids=current.scope_ids,
     )
     if not scopes_ready:
@@ -612,11 +723,17 @@ def reconcile(
     if (
         not _matches(verified.realm, desired.realm_fields)
         or not _client_matches(verified.client, desired.client_fields)
+        or verified.codex_client is None
+        or not _client_matches(verified.codex_client, desired.codex_client_fields)
         or not _scope_payloads_match(verified.scope_payloads, desired.scope_fields)
         or verified.client_default_scope_names
         != frozenset(desired.client_fields["defaultClientScopes"])
         or verified.client_optional_scope_names
         != frozenset(desired.client_fields["optionalClientScopes"])
+        or verified.codex_default_scope_names
+        != frozenset(desired.codex_client_fields["defaultClientScopes"])
+        or verified.codex_optional_scope_names
+        != frozenset(desired.codex_client_fields["optionalClientScopes"])
         or verified.default_scope_names != desired.default_scope_names
         or verified.optional_scope_names != desired.optional_scope_names
     ):
