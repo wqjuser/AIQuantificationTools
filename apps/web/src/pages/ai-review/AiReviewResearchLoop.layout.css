@@ -13,6 +13,7 @@
 }
 
 .ai-research-m4-config {
+  display: grid;
   align-content: start;
   gap: 8px;
 }

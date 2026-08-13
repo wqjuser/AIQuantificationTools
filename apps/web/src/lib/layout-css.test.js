@@ -1017,6 +1017,10 @@ describe("terminal layout css", () => {
   });
 
   test("keeps AI research controls theme-aware and vertically centered", () => {
+    expect(hasCssBlockWith(".ai-research-m4-config", [
+      "display: grid;",
+      "gap: 8px;",
+    ])).toBe(true);
     expect(hasCssBlockWith(".locale-control,\n.timeframe-control", [
       "border: 1px solid var(--border);",
       "background: var(--surface);",
