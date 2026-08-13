@@ -86,6 +86,7 @@ services:
       - "8080"
     volumes:
       - ./deploy/keycloak/realm-aiqt.json:/opt/keycloak/data/import/aiqt-realm.json:ro
+      - ./deploy/keycloak/themes/aiqt:/opt/keycloak/themes/aiqt:ro
     healthcheck:
       test: ["CMD-SHELL", "{ printf 'HEAD /health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/9000"]
       interval: 10s

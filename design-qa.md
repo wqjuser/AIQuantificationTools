@@ -135,6 +135,15 @@
 
 final result: passed
 
+## 2026-08-13 登录与注册系统主题、中文化复验
+
+- 参考图：`/Users/wenqingjie/.codex/generated_images/019fe3c6-5e6f-7410-8365-62411ae5891e/exec-5961513d-e295-4937-bc42-4a4b908f7175.png`；本站实现继续保留 62/38 研究终端分栏，认证页复用相同真实 Logo 与研究图表资产。
+- 系统主题：本站入口与 Keycloak 登录、注册、找回密码均以 `prefers-color-scheme` 切换同构明暗 token；亮色实测为白色认证面板、`#f4f7f9` 画布与亮色研究图，暗色恢复原深蓝终端与暗色研究图。
+- 中文化：真实 Keycloak 26.7 fresh realm 的页面 `lang=zh-CN`，登录标题、邮箱、密码、忘记密码、本站登录、Google、注册均为中文；注册与找回密码使用同一继承式主题，不新增应用密码表单或第二套认证状态机。
+- 自动化：Keycloak 部署/迁移 `30 / 30`、Web 布局 `121 / 121`、生产构建与 `git diff --check` 通过；真实 Keycloak 26.7 登录页和本站入口完成明暗双态浏览器截图对照，无 P0/P1/P2 遗留。
+
+final result: passed
+
 ## 2026-08-13 登录页终端分栏视觉复验
 
 - 参考图：`/Users/wenqingjie/.codex/generated_images/019fe3c6-5e6f-7410-8365-62411ae5891e/exec-5961513d-e295-4937-bc42-4a4b908f7175.png`（1487 × 1058）；实现截图：`/tmp/aiqt-login-qa/login-desktop.png`（1440 × 1024）、`/tmp/aiqt-login-qa/login-mobile.png`（390 × 876）；同屏对比：`/tmp/aiqt-login-qa/reference-vs-implementation.png`。

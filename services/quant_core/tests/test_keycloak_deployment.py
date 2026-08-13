@@ -32,6 +32,7 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         self.assertNotIn("KC_BOOTSTRAP_ADMIN_PASSWORD", overlay)
         self.assertIn("AIQT_KEYCLOAK_WEB_CLIENT_SECRET", overlay)
         self.assertIn("./deploy/keycloak/realm-aiqt.json:/opt/keycloak/data/import/aiqt-realm.json:ro", overlay)
+        self.assertIn("./deploy/keycloak/themes/aiqt:/opt/keycloak/themes/aiqt:ro", overlay)
         self.assertIn('entrypoint: ["/bin/sh", "-ec"]', overlay)
         self.assertIn(
             "exec /opt/keycloak/bin/kc.sh start --features=cimd --import-realm",
@@ -397,6 +398,38 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
                 "ssl": "${AIQT_KEYCLOAK_SMTP_SSL}",
             },
         )
+
+    def test_login_registration_and_recovery_use_the_aiqt_chinese_theme(self) -> None:
+        realm = json.loads(
+            (self.root / "deploy" / "keycloak" / "realm-aiqt.json").read_text()
+        )
+        theme = self.root / "deploy" / "keycloak" / "themes" / "aiqt" / "login"
+
+        self.assertTrue(realm["internationalizationEnabled"])
+        self.assertEqual(realm["supportedLocales"], ["zh-CN"])
+        self.assertEqual(realm["defaultLocale"], "zh-CN")
+        self.assertEqual(realm["loginTheme"], "aiqt")
+        self.assertIn("parent=keycloak.v2", (theme / "theme.properties").read_text())
+        self.assertIn("locales=zh-CN", (theme / "theme.properties").read_text())
+        css = (theme / "resources" / "css" / "login.css").read_text()
+        self.assertIn("auth-research-chart.png", css)
+        self.assertIn("auth-research-chart-light.png", css)
+        self.assertIn("aiqt-logo.png", css)
+        self.assertIn("@media (prefers-color-scheme: dark)", css)
+        self.assertNotIn("background: rgb(8 19 31", css)
+        messages = (theme / "messages" / "messages_zh_CN.properties").read_text()
+        self.assertIn("loginAccountTitle=进入 AIQT 研究终端", messages)
+        self.assertIn("registerTitle=创建 AIQT 研究账号", messages)
+        self.assertIn("emailForgotTitle=找回密码", messages)
+        password_validation = (theme / "password-validation.ftl").read_text()
+        self.assertIn("passwordRequired??", password_validation)
+        self.assertIn("input?.addEventListener", password_validation)
+        for asset in (
+            "aiqt-logo.png",
+            "auth-research-chart.png",
+            "auth-research-chart-light.png",
+        ):
+            self.assertTrue((theme / "resources" / "img" / asset).is_file())
 
     def test_google_is_a_non_default_keycloak_broker_without_stored_tokens(self) -> None:
         realm = json.loads(

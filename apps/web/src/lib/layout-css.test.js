@@ -238,14 +238,17 @@ describe("terminal layout css", () => {
       "min-height: 100svh;",
     ])).toBe(true);
     expect(hasCssBlockWith(".auth-gate-story", [
-      "background-image: url(\"/auth-research-chart.png\");",
+      "background-image: var(--auth-chart);",
       "background-size: cover;",
     ])).toBe(true);
     expect(hasCssBlockWith(".auth-gate-panel", ["display: grid;", "place-items: center;"])).toBe(true);
     expect(globalStyles).toContain("@media (max-width: 859px)");
     expect(hasCssBlockWith(".auth-gate", ["grid-template-columns: minmax(0, 1fr);"])).toBe(true);
     expect(hasCssBlockWith(".auth-gate-actions", ["display: grid;", "gap: 14px;"])).toBe(true);
-    expect(hasCssBlockWith(".auth-gate-action-secondary", ["background: transparent;", "color: #e8eef3;"])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate-action-secondary", ["background: transparent;", "color: var(--auth-text);"])).toBe(true);
+    expect(globalStyles).toContain("@media (prefers-color-scheme: dark)");
+    expect(hasCssBlockWith(".auth-gate", ["--auth-canvas: #f4f7f9;", "--auth-text: #172333;"])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate", ["--auth-canvas: #070d13;", "--auth-text: #e8eef3;"])).toBe(true);
   });
 
   test("describes self-hosted and Google account session handling in the privacy policy", () => {

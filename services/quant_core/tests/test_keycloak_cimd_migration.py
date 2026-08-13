@@ -438,6 +438,10 @@ class KeycloakClaudeCimdMigrationTest(unittest.TestCase):
                 "registrationEmailAsUsername": True,
                 "verifyEmail": True,
                 "resetPasswordAllowed": True,
+                "internationalizationEnabled": True,
+                "supportedLocales": ["zh-CN"],
+                "defaultLocale": "zh-CN",
+                "loginTheme": "aiqt",
                 "smtpServer": {
                     "host": "smtp.example.com",
                     "port": "587",

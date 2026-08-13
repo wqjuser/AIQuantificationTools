@@ -2,6 +2,12 @@
   "realm": "aiqt",
   "enabled": true,
   "sslRequired": "external",
+  "internationalizationEnabled": true,
+  "supportedLocales": [
+    "zh-CN"
+  ],
+  "defaultLocale": "zh-CN",
+  "loginTheme": "aiqt",
   "registrationAllowed": true,
   "registrationEmailAsUsername": true,
   "rememberMe": false,
