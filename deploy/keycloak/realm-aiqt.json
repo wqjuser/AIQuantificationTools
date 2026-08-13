@@ -2,13 +2,13 @@
   "realm": "aiqt",
   "enabled": true,
   "sslRequired": "external",
-  "registrationAllowed": false,
-  "registrationEmailAsUsername": false,
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
   "rememberMe": false,
-  "verifyEmail": false,
+  "verifyEmail": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "resetPasswordAllowed": false,
+  "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "permanentLockout": false,
@@ -21,11 +21,43 @@
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 43200,
   "passwordPolicy": "hashAlgorithm(argon2) and length(15) and notUsername and notEmail and passwordHistory(5)",
+  "smtpServer": {
+    "host": "${AIQT_KEYCLOAK_SMTP_HOST}",
+    "port": "${AIQT_KEYCLOAK_SMTP_PORT}",
+    "from": "${AIQT_KEYCLOAK_SMTP_FROM}",
+    "auth": "true",
+    "user": "${AIQT_KEYCLOAK_SMTP_USERNAME}",
+    "password": "${AIQT_KEYCLOAK_SMTP_PASSWORD}",
+    "starttls": "${AIQT_KEYCLOAK_SMTP_STARTTLS}",
+    "ssl": "${AIQT_KEYCLOAK_SMTP_SSL}"
+  },
   "defaultDefaultClientScopes": [
     "basic"
   ],
   "defaultOptionalClientScopes": [
     "aiqt:research:read"
+  ],
+  "identityProviders": [
+    {
+      "alias": "google",
+      "displayName": "Google",
+      "providerId": "google",
+      "enabled": true,
+      "trustEmail": true,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "hideOnLogin": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "${AIQT_KEYCLOAK_GOOGLE_CLIENT_ID}",
+        "clientSecret": "${AIQT_KEYCLOAK_GOOGLE_CLIENT_SECRET}",
+        "defaultScope": "openid profile email",
+        "syncMode": "IMPORT",
+        "useJwksUrl": "true"
+      }
+    }
   ],
   "clients": [
     {

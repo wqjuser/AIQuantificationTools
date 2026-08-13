@@ -17,7 +17,7 @@
 `AIQT_PUBLIC_ORIGIN` 指向 Caddy 对外提供的唯一 HTTPS Origin。浏览器、Cookie、CORS、Origin/Host 校验和 OIDC callback 都以它为准；API 不独立暴露宿主端口。
 
 **自托管认证 Origin**
-`AIQT_AUTH_ORIGIN` 指向同一服务器上由 Caddy 暴露的 Keycloak HTTPS Origin。公网只代理 `aiqt` realm 与静态资源，不代理管理 API、master realm 或管理端口。账号默认由管理员创建，不开放匿名注册或密码直授 token。所有网页登录都要求 `prompt=login + max_age=0` 并验证新鲜 `auth_time`；退出必须先撤销应用会话，再在 Keycloak 可用时进入 RP-Initiated Logout。认证服务临时不可用只能降级回本站，不能阻止本地撤销，之后也不能靠旧 SSO Cookie 静默恢复账号。
+`AIQT_AUTH_ORIGIN` 指向同一服务器上由 Caddy 暴露的 Keycloak HTTPS Origin。公网只代理 `aiqt` realm 与静态资源，不代理管理 API、master realm 或管理端口。Keycloak 提供本站邮箱注册、邮箱验证、密码重置和登录；SMTP 是开放这些流程的上线前置。公网同时启用 Google Keycloak identity broker，作为用户可选登录方式；国内用户始终可以只使用本站账号。普通登录与重新认证要求 `prompt=login + max_age=0` 并验证新鲜 `auth_time`；注册使用标准 `prompt=create`。退出必须先撤销应用会话，再在 Keycloak 可用时进入 RP-Initiated Logout。认证服务临时不可用只能降级回本站，不能阻止本地撤销，之后也不能靠旧 SSO Cookie 静默恢复账号。
 
 **研究型 MCP 服务**
 把既有 Quant Core 研究主线投影给兼容 AI Host 的受控协议层。它只拥有固定研究 tools/resources，不是通用 HTTP proxy，也不新增行情、回测或交易状态机。本机 stdio/loopback 研究写入默认关闭，进程外开关只授权受监督 MCP 会话的研究副作用；模型不能上传确认、操作者、租户或外发批准。公网 Streamable HTTP 是独立 OAuth Resource Server：Bearer 必须精确绑定 canonical `/mcp` resource，服务端用已验证且已存在的 `(issuer, subject)` 映射 `TenantContext`，再进入当前租户 Store；公网使用无状态 HTTP，只注册只读研究工具，按租户限流，不接收设置主密钥，并在进程内网关拒绝非研究 GET 路径。Claude 用户通过 AuthGate 保护的 `/connect/claude` 安装页进入官方预填连接流程；Keycloak 只接受受信任 Claude HTTPS Client ID Metadata，匿名 Dynamic Client Registration 继续关闭。该入口的服务端 readiness 默认关闭；版本化 realm 迁移与只读检查通过后只能在受控窗口开启协议验收，验收失败立即关闭，通过后才向普通用户发布。两种入口都不提供 promotion、绑定、监控控制、Testnet、Live、下单、密钥或 Stage 6–10 能力。
@@ -28,8 +28,8 @@
 **认证操作者**
 当前 OIDC 会话中的已验证邮箱。public 模式下浏览器顶层操作者字段必须等于该身份；它证明 OIDC 账户身份，不宣称法律实名、KYC 或金融合规身份。
 
-**后台账号**
-管理员先在自托管 Keycloak 创建账号并标记邮箱已验证。固定 Issuer 下首次成功登录、具有稳定 subject 和已验证邮箱的用户会创建个人账户。首版不开放自助注册、匿名动态客户端注册、团队、角色、邀请、计费或产品内账号管理；应用用户状态只有 `active/disabled`。
+**本站账号**
+用户在自托管 Keycloak 自助注册，以邮件完成邮箱验证，并可通过邮件重置密码；管理员仍可创建或禁用账号。用户也可选择 Google 登录，但必须先进入 Keycloak broker，Quant API、MCP 和租户 Store 只看到固定 Keycloak `issuer + subject`，不接收 Google token。相同邮箱不得自动创建链接或合并租户；关联既有本站账号必须由用户先证明该账号控制权并显式确认。匿名动态客户端注册、团队、角色、邀请、计费和产品内账号管理仍不开放；应用用户状态只有 `active/disabled`。
 
 **近期重新认证**
 最近 5 分钟内完成 OIDC 重新认证。重新认证必须向自托管认证服务发送 `prompt=login + max_age=0`，并验证 ID token 的新鲜 `auth_time`；已有 SSO Cookie 不能静默替代。修改生产密钥、开启/续期实盘和恢复 Stage 10 控制必须同时具备该证据；普通登录会话不足以替代。

@@ -328,6 +328,11 @@ button {
   gap: 14px;
 }
 
+.auth-gate-actions {
+  display: grid;
+  gap: 10px;
+}
+
 .auth-gate-action {
   display: flex;
   align-items: center;
@@ -348,7 +353,21 @@ button {
   border-color: var(--teal);
 }
 
+.auth-gate-action-secondary {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text);
+}
+
+.auth-gate-register {
+  margin-left: 6px;
+  color: var(--teal);
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
+
 .auth-gate-action:focus-visible,
+.auth-gate-register:focus-visible,
 .auth-gate-footer a:focus-visible {
   outline: 2px solid var(--teal);
   outline-offset: 3px;

@@ -4,6 +4,8 @@
 
 Accepted
 
+2026-08-13 补充：本 ADR 关于“账号默认由管理员创建、关闭自助注册”和旧外部 Google 身份迁移的结论记录当时上线边界；自助注册、邮件流程与 Google broker 的当前决定由 [ADR-0040](0040-keycloak-self-registration-and-google-broker.md) 取代。自托管 Keycloak 作为唯一规范 issuer 的架构不变。
+
 ## 背景
 
 公网早期配置使用外部 Google OIDC。该入口在中国大陆不可稳定访问，也不能为本站 `/mcp` resource 签发所需的 audience-bound access token。把邮箱密码、重置流程和完整 OAuth Authorization Server 直接实现进 Quant API，会让量化领域服务承担密码哈希、暴力破解防护、PKCE、授权码、JWKS、密钥轮换和客户端注册等高风险协议责任。

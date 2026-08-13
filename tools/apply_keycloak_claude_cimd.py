@@ -21,8 +21,18 @@ _REALM_PATH = "/admin/realms/aiqt"
 _CLAUDE_HOSTED_CLIENT_ID = "https://claude.ai/oauth/mcp-oauth-client-metadata"
 _CODEX_CLI_CLIENT_ID = "aiqt-codex-cli"
 _LEGACY_MCP_CLIENT_ID = "aiqt-mcp"
+_GOOGLE_IDENTITY_PROVIDER_ALIAS = "google"
+_FIRST_BROKER_LOGIN_EXECUTIONS_PATH = (
+    f"{_REALM_PATH}/authentication/flows/first%20broker%20login/executions"
+)
+_MASKED_SECRET = "**********"
 
 _REALM_FIELDS = (
+    "registrationAllowed",
+    "registrationEmailAsUsername",
+    "verifyEmail",
+    "resetPasswordAllowed",
+    "smtpServer",
     "clientProfiles",
     "clientPolicies",
 )
@@ -54,6 +64,7 @@ class CimdConfigurationDrift(RuntimeError):
 
 class DesiredConfiguration(NamedTuple):
     realm_fields: dict[str, Any]
+    identity_provider_fields: dict[str, Any]
     client_fields: dict[str, Any]
     codex_client_fields: dict[str, Any]
     scope_fields: dict[str, dict[str, Any]]
@@ -63,6 +74,7 @@ class DesiredConfiguration(NamedTuple):
 
 class CurrentConfiguration(NamedTuple):
     realm: dict[str, Any]
+    identity_provider: dict[str, Any] | None
     client: dict[str, Any]
     client_id: str
     scope_ids: dict[str, str]
@@ -112,12 +124,63 @@ def _materialize_public_origin(value: Any, public_origin: str) -> Any:
     return copy.deepcopy(value)
 
 
+def _deployment_environment(source: Mapping[str, str]) -> dict[str, str]:
+    required = (
+        "AIQT_KEYCLOAK_SMTP_HOST",
+        "AIQT_KEYCLOAK_SMTP_PORT",
+        "AIQT_KEYCLOAK_SMTP_FROM",
+        "AIQT_KEYCLOAK_SMTP_USERNAME",
+        "AIQT_KEYCLOAK_SMTP_PASSWORD",
+        "AIQT_KEYCLOAK_GOOGLE_CLIENT_ID",
+        "AIQT_KEYCLOAK_GOOGLE_CLIENT_SECRET",
+    )
+    values = {
+        name: value
+        for name in required
+        if isinstance((value := source.get(name)), str) and value
+    }
+    if len(values) != len(required):
+        raise ValueError("keycloak_deployment_environment_required")
+    try:
+        port = int(values["AIQT_KEYCLOAK_SMTP_PORT"])
+    except ValueError as error:
+        raise ValueError("keycloak_smtp_port_invalid") from error
+    if not 1 <= port <= 65535:
+        raise ValueError("keycloak_smtp_port_invalid")
+    tls_mode = source.get("AIQT_KEYCLOAK_SMTP_TLS_MODE")
+    if tls_mode not in {"starttls", "ssl"}:
+        raise ValueError("keycloak_smtp_tls_mode_invalid")
+    return {
+        **values,
+        "AIQT_KEYCLOAK_SMTP_STARTTLS": str(tls_mode == "starttls").lower(),
+        "AIQT_KEYCLOAK_SMTP_SSL": str(tls_mode == "ssl").lower(),
+    }
+
+
+def _materialize_environment(value: Any, environment: Mapping[str, str]) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _materialize_environment(item, environment)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_materialize_environment(item, environment) for item in value]
+    if isinstance(value, str):
+        for name, replacement in environment.items():
+            value = value.replace(f"${{{name}}}", replacement)
+    return copy.deepcopy(value)
+
+
 def desired_configuration(
     template: Mapping[str, Any],
     *,
     public_origin: str,
+    environment: Mapping[str, str] | None = None,
 ) -> DesiredConfiguration:
     canonical_origin = validate_public_origin(public_origin)
+    deployment_environment = _deployment_environment(
+        os.environ if environment is None else environment
+    )
     clients = template.get("clients")
     if not isinstance(clients, list):
         raise ValueError("keycloak_realm_template_invalid")
@@ -137,14 +200,34 @@ def desired_configuration(
     if len(codex_clients) != 1:
         raise ValueError("keycloak_realm_template_invalid")
     codex_client = codex_clients[0]
+    identity_providers = template.get("identityProviders")
+    google_providers = (
+        [
+            item
+            for item in identity_providers
+            if isinstance(item, dict)
+            and item.get("alias") == _GOOGLE_IDENTITY_PROVIDER_ALIAS
+        ]
+        if isinstance(identity_providers, list)
+        else []
+    )
+    if len(google_providers) != 1:
+        raise ValueError("keycloak_realm_template_invalid")
     client_scopes = template.get("clientScopes")
     if not isinstance(client_scopes, list):
         raise ValueError("keycloak_realm_template_invalid")
     try:
         realm_fields = {
-            field: copy.deepcopy(template[field])
+            field: _materialize_environment(
+                template[field],
+                deployment_environment,
+            )
             for field in _REALM_FIELDS
         }
+        identity_provider_fields = _materialize_environment(
+            google_providers[0],
+            deployment_environment,
+        )
         client_fields = {
             field: copy.deepcopy(mcp_client[field])
             for field in _CLIENT_FIELDS
@@ -190,6 +273,7 @@ def desired_configuration(
     }
     return DesiredConfiguration(
         realm_fields=realm_fields,
+        identity_provider_fields=identity_provider_fields,
         client_fields=client_fields,
         codex_client_fields=codex_client_fields,
         scope_fields=scope_fields,
@@ -350,14 +434,30 @@ def _read_current(
     codex_found = client.get_json(
         f"{_REALM_PATH}/clients?clientId={_CODEX_CLI_CLIENT_ID}",
     )
+    identity_providers = client.get_json(
+        f"{_REALM_PATH}/identity-provider/instances",
+    )
+    first_broker_login_executions = client.get_json(
+        _FIRST_BROKER_LOGIN_EXECUTIONS_PATH,
+    )
     if (
         not isinstance(realm, dict)
         or not isinstance(found, list)
         or not isinstance(legacy, list)
         or not isinstance(codex_found, list)
+        or not isinstance(identity_providers, list)
         or len(codex_found) > 1
     ):
         raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
+    google_providers = [
+        item
+        for item in identity_providers
+        if isinstance(item, dict)
+        and item.get("alias") == _GOOGLE_IDENTITY_PROVIDER_ALIAS
+    ]
+    if len(google_providers) > 1:
+        raise CimdConfigurationDrift("keycloak_google_identity_provider_invalid")
+    _validate_first_broker_login_executions(first_broker_login_executions)
     candidates = [*found, *legacy]
     if len(candidates) != 1:
         raise CimdConfigurationDrift("keycloak_aiqt_mcp_client_invalid")
@@ -405,6 +505,7 @@ def _read_current(
     )
     return CurrentConfiguration(
         realm=realm,
+        identity_provider=(google_providers[0] if google_providers else None),
         client=current_client,
         client_id=client_id,
         scope_ids=scope_ids,
@@ -440,8 +541,99 @@ def _read_current(
     )
 
 
-def _matches(current: Mapping[str, Any], desired: Mapping[str, Any]) -> bool:
-    return all(current.get(field) == value for field, value in desired.items())
+def _validate_first_broker_login_executions(value: Any) -> None:
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(item, Mapping) for item in value)
+    ):
+        raise CimdConfigurationDrift("keycloak_first_broker_login_flow_unsafe")
+    executions: list[Mapping[str, Any]] = value
+    if any(
+        execution.get("providerId") == "idp-auto-link"
+        or (
+            isinstance(execution.get("displayName"), str)
+            and execution["displayName"].casefold()
+            == "automatically set existing user"
+        )
+        for execution in executions
+    ):
+        raise CimdConfigurationDrift("keycloak_first_broker_login_flow_unsafe")
+
+    def has_execution(
+        *,
+        provider_id: str | None = None,
+        display_name: str | None = None,
+        authentication_flow: bool,
+        level: int,
+        requirement: str,
+    ) -> bool:
+        matches = [
+            execution
+            for execution in executions
+            if (
+                execution.get("authenticationFlow") is True
+                if authentication_flow
+                else execution.get("authenticationFlow") is not True
+            )
+            and execution.get("level") == level
+            and execution.get("requirement") == requirement
+            and (provider_id is None or execution.get("providerId") == provider_id)
+            and (display_name is None or execution.get("displayName") == display_name)
+        ]
+        return len(matches) == 1
+
+    safe = (
+        has_execution(
+            display_name="User creation or linking",
+            authentication_flow=True,
+            level=0,
+            requirement="REQUIRED",
+        )
+        and has_execution(
+            display_name="Handle Existing Account",
+            authentication_flow=True,
+            level=1,
+            requirement="ALTERNATIVE",
+        )
+        and has_execution(
+            provider_id="idp-confirm-link",
+            authentication_flow=False,
+            level=2,
+            requirement="REQUIRED",
+        )
+        and has_execution(
+            display_name="Account verification options",
+            authentication_flow=True,
+            level=2,
+            requirement="REQUIRED",
+        )
+        and has_execution(
+            provider_id="idp-email-verification",
+            authentication_flow=False,
+            level=3,
+            requirement="ALTERNATIVE",
+        )
+    )
+    if not safe:
+        raise CimdConfigurationDrift("keycloak_first_broker_login_flow_unsafe")
+
+
+def _realm_matches(current: Mapping[str, Any], desired: Mapping[str, Any]) -> bool:
+    for field, value in desired.items():
+        current_value = current.get(field)
+        if field != "smtpServer":
+            if current_value != value:
+                return False
+            continue
+        if not isinstance(current_value, Mapping) or not isinstance(value, Mapping):
+            return False
+        for key, item in value.items():
+            if key == "password" and current_value.get(key) == _MASKED_SECRET:
+                continue
+            if current_value.get(key) != item:
+                return False
+    return True
 
 
 def _client_matches(current: Mapping[str, Any], desired: Mapping[str, Any]) -> bool:
@@ -456,6 +648,26 @@ def _client_matches(current: Mapping[str, Any], desired: Mapping[str, Any]) -> b
                 return False
         elif current_value != value:
             return False
+    return True
+
+
+def _identity_provider_matches(
+    current: Mapping[str, Any],
+    desired: Mapping[str, Any],
+) -> bool:
+    for field, value in desired.items():
+        current_value = current.get(field)
+        if field != "config":
+            if current_value != value:
+                return False
+            continue
+        if not isinstance(current_value, Mapping) or not isinstance(value, Mapping):
+            return False
+        for key, item in value.items():
+            if key == "clientSecret" and current_value.get(key) == _MASKED_SECRET:
+                continue
+            if current_value.get(key) != item:
+                return False
     return True
 
 
@@ -604,7 +816,24 @@ def reconcile(
     apply: bool,
 ) -> str:
     current = _read_current(client, desired)
-    realm_ready = _matches(current.realm, desired.realm_fields)
+    realm_ready = _realm_matches(current.realm, desired.realm_fields)
+    smtp_secret_masked = (
+        isinstance(current.realm.get("smtpServer"), Mapping)
+        and current.realm["smtpServer"].get("password") == _MASKED_SECRET
+    )
+    identity_provider_ready = (
+        current.identity_provider is not None
+        and _identity_provider_matches(
+            current.identity_provider,
+            desired.identity_provider_fields,
+        )
+    )
+    google_secret_masked = (
+        current.identity_provider is not None
+        and isinstance(current.identity_provider.get("config"), Mapping)
+        and current.identity_provider["config"].get("clientSecret")
+        == _MASKED_SECRET
+    )
     client_ready = _client_matches(current.client, desired.client_fields)
     codex_ready = (
         current.codex_client is not None
@@ -623,15 +852,44 @@ def reconcile(
         and current.optional_scope_names == desired.optional_scope_names
         and _scope_payloads_match(current.scope_payloads, desired.scope_fields)
     )
-    if realm_ready and client_ready and codex_ready and scopes_ready:
+    if (
+        realm_ready
+        and identity_provider_ready
+        and client_ready
+        and codex_ready
+        and scopes_ready
+        and (not apply or not smtp_secret_masked)
+        and (not apply or not google_secret_masked)
+    ):
         return "ready"
     if not apply:
         raise CimdConfigurationDrift("keycloak_claude_cimd_migration_required")
 
-    if not realm_ready:
+    if not realm_ready or smtp_secret_masked:
         client.put_json(
             _REALM_PATH,
             {**current.realm, **copy.deepcopy(desired.realm_fields)},
+        )
+    if current.identity_provider is None:
+        client.post_json(
+            f"{_REALM_PATH}/identity-provider/instances",
+            copy.deepcopy(desired.identity_provider_fields),
+        )
+        current = _read_current(client, desired)
+    elif not identity_provider_ready or google_secret_masked:
+        desired_provider = copy.deepcopy(desired.identity_provider_fields)
+        desired_provider["config"] = {
+            **(
+                current.identity_provider.get("config")
+                if isinstance(current.identity_provider.get("config"), dict)
+                else {}
+            ),
+            **desired_provider["config"],
+        }
+        client.put_json(
+            f"{_REALM_PATH}/identity-provider/instances/"
+            f"{_GOOGLE_IDENTITY_PROVIDER_ALIAS}",
+            {**current.identity_provider, **desired_provider},
         )
     if not client_ready:
         desired_client = copy.deepcopy(desired.client_fields)
@@ -721,7 +979,12 @@ def reconcile(
 
     verified = _read_current(client, desired)
     if (
-        not _matches(verified.realm, desired.realm_fields)
+        not _realm_matches(verified.realm, desired.realm_fields)
+        or verified.identity_provider is None
+        or not _identity_provider_matches(
+            verified.identity_provider,
+            desired.identity_provider_fields,
+        )
         or not _client_matches(verified.client, desired.client_fields)
         or verified.codex_client is None
         or not _client_matches(verified.codex_client, desired.codex_client_fields)

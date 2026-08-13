@@ -4,6 +4,7 @@ import base64
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import unittest
+from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import create_engine, update
 from sqlalchemy.pool import StaticPool
@@ -95,6 +96,7 @@ class PublicApiSecurityTest(unittest.TestCase):
         self.assertIn("Secure", state_cookie)
         self.assertIn("HttpOnly", state_cookie)
         self.assertIn("SameSite=lax", state_cookie)
+        self.assertIn("Max-Age=1800", state_cookie)
 
         callback = self.client.get(
             f"/api/auth/callback?state={state}&code=code",
@@ -147,6 +149,65 @@ class PublicApiSecurityTest(unittest.TestCase):
             },
         )
         self.assertEqual(self.client.get("/api/auth/session").json(), {"authenticated": False})
+
+    def test_login_routes_google_and_registration_flows_to_keycloak(self) -> None:
+        google = self.client.get(
+            "/api/auth/login?flow=google&returnTo=/research",
+            follow_redirects=False,
+        )
+        registration = self.client.get(
+            "/api/auth/login?flow=register&returnTo=/research",
+            follow_redirects=False,
+        )
+        google_query = parse_qs(urlparse(google.headers["location"]).query)
+        registration_query = parse_qs(urlparse(registration.headers["location"]).query)
+
+        self.assertEqual(google_query["kc_idp_hint"], ["google"])
+        self.assertEqual(google_query["prompt"], ["login"])
+        self.assertEqual(google_query["max_age"], ["0"])
+        self.assertEqual(registration_query["prompt"], ["create"])
+        self.assertNotIn("max_age", registration_query)
+
+    def test_login_rejects_unknown_or_repeated_flow(self) -> None:
+        unknown = self.client.get(
+            "/api/auth/login?flow=enterprise",
+            follow_redirects=False,
+        )
+        repeated = self.client.get(
+            "/api/auth/login?flow=google&flow=register",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(unknown.status_code, 400)
+        self.assertEqual(unknown.json(), {"error": "invalid_auth_flow"})
+        self.assertEqual(repeated.status_code, 400)
+        self.assertEqual(repeated.json(), {"error": "invalid_auth_flow"})
+
+    def test_reauthentication_rejects_login_flow_selection(self) -> None:
+        self.client.get("/api/auth/login", follow_redirects=False)
+        state = self.client.cookies.get("aiqt_oidc_state")
+        self.client.get(
+            f"/api/auth/callback?state={state}&code=code",
+            follow_redirects=False,
+        )
+
+        reauthentication = self.client.get(
+            "/api/auth/reauthenticate?returnTo=/execution",
+            follow_redirects=False,
+        )
+        query = parse_qs(urlparse(reauthentication.headers["location"]).query)
+
+        response = self.client.get(
+            "/api/auth/reauthenticate?flow=google",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(reauthentication.status_code, 307)
+        self.assertEqual(query["prompt"], ["login"])
+        self.assertEqual(query["max_age"], ["0"])
+        self.assertIn("Max-Age=1800", reauthentication.headers["set-cookie"])
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "invalid_auth_flow"})
 
     def test_authenticated_session_projects_the_server_claude_connection_gate(self) -> None:
         def authenticate(client: TestClient) -> dict[str, object]:

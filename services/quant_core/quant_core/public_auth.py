@@ -30,6 +30,9 @@ from quant_core.tenant_crypto import TenantSecretCipher
 from quant_core.tenancy import _aware
 
 
+OIDC_LOGIN_LIFESPAN_SECONDS = 1800
+
+
 @dataclass(frozen=True)
 class OidcIdentity:
     issuer: str
@@ -62,7 +65,7 @@ class _OidcTransaction:
 
 
 class OidcTransactionStore:
-    ttl = timedelta(minutes=10)
+    ttl = timedelta(seconds=OIDC_LOGIN_LIFESPAN_SECONDS)
     max_pending = 10_000
 
     def __init__(self, engine: Engine, cipher: TenantSecretCipher):
@@ -364,10 +367,18 @@ class PublicAuthService:
             client_secret=config.oidc_client_secret or "",
         )
 
-    def begin_login(self, *, return_to: str = "/", now: datetime | None = None) -> AuthLogin:
+    def begin_login(
+        self,
+        *,
+        return_to: str = "/",
+        flow: str = "local",
+        now: datetime | None = None,
+    ) -> AuthLogin:
+        if flow not in {"local", "google", "register"}:
+            raise AuthenticationError("invalid_auth_flow")
         timestamp = now or datetime.now(timezone.utc)
         transaction = self.transactions.begin(return_to=return_to, now=timestamp)
-        return self._authorization(transaction)
+        return self._authorization(transaction, flow=flow)
 
     def begin_reauthentication(
         self,
@@ -386,7 +397,12 @@ class PublicAuthService:
         )
         return self._authorization(transaction)
 
-    def _authorization(self, transaction: _OidcTransaction) -> AuthLogin:
+    def _authorization(
+        self,
+        transaction: _OidcTransaction,
+        *,
+        flow: str = "local",
+    ) -> AuthLogin:
         challenge = base64.urlsafe_b64encode(hashlib.sha256(transaction.code_verifier.encode()).digest()).decode().rstrip("=")
         parameters = {
             "response_type": "code",
@@ -398,7 +414,12 @@ class PublicAuthService:
             "code_challenge": challenge,
             "code_challenge_method": "S256",
         }
-        parameters.update({"prompt": "login", "max_age": "0"})
+        if flow == "register":
+            parameters["prompt"] = "create"
+        else:
+            parameters.update({"prompt": "login", "max_age": "0"})
+        if flow == "google":
+            parameters["kc_idp_hint"] = "google"
         return AuthLogin(
             authorization_url=self.provider.authorization_url(**parameters),
             state_cookie=transaction.state,

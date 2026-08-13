@@ -22,7 +22,7 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
 from quant_core.deployment import DeploymentConfig
-from quant_core.public_auth import PublicAuthService
+from quant_core.public_auth import OIDC_LOGIN_LIFESPAN_SECONDS, PublicAuthService
 from quant_core.public_background import PublicBackgroundRunner
 from quant_core.public_coordination import PublicRateLimiter, RateLimitPolicy
 from quant_core.public_identity import AuthenticationError
@@ -122,15 +122,24 @@ def create_public_app(
         blocked = _rate_limit(limiter, "login", _client_ip(request), policies["login"])
         if blocked:
             return blocked
+        flows = request.query_params.getlist("flow")
+        if len(flows) > 1:
+            return _error("invalid_auth_flow", 400)
         try:
-            result = auth.begin_login(return_to=request.query_params.get("returnTo", "/"))
+            result = auth.begin_login(
+                return_to=request.query_params.get("returnTo", "/"),
+                flow=flows[0] if flows else "local",
+            )
         except AuthenticationError as error:
-            return _error(str(error), 503)
+            return _error(
+                str(error),
+                400 if str(error) == "invalid_auth_flow" else 503,
+            )
         response = RedirectResponse(result.authorization_url, status_code=307)
         response.set_cookie(
             OIDC_STATE_COOKIE,
             result.state_cookie,
-            max_age=600,
+            max_age=OIDC_LOGIN_LIFESPAN_SECONDS,
             path="/api/auth",
             secure=True,
             httponly=True,
@@ -142,6 +151,8 @@ def create_public_app(
         blocked = _rate_limit(limiter, "login", _client_ip(request), policies["login"])
         if blocked:
             return blocked
+        if request.query_params.getlist("flow"):
+            return _error("invalid_auth_flow", 400)
         session_token = request.cookies.get(SESSION_COOKIE, "")
         if not session_token:
             return _error("authentication_required", 401)
@@ -159,7 +170,7 @@ def create_public_app(
         response.set_cookie(
             OIDC_STATE_COOKIE,
             result.state_cookie,
-            max_age=600,
+            max_age=OIDC_LOGIN_LIFESPAN_SECONDS,
             path="/api/auth",
             secure=True,
             httponly=True,

@@ -216,19 +216,26 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
-  test("presents the self-hosted account service in user-facing language", () => {
+  test("offers self-hosted login, Google login, and registration without losing returnTo", () => {
     expect(authGateSource).toContain("使用本站账号登录");
-    expect(authGateSource).toContain("账号由管理员创建");
+    expect(authGateSource).toContain("使用 Google 登录");
+    expect(authGateSource).toContain("注册本站账号");
     expect(authGateSource).toContain("认证服务由本站托管");
+    expect(authGateSource).toContain('const returnTo = state === "unauthenticated"');
+    expect(authGateSource).toContain("encodeURIComponent(window.location.pathname + window.location.search)");
+    expect(authGateSource).toContain('href={`/api/auth/login?returnTo=${returnTo}`}');
+    expect(authGateSource).toContain('href={`/api/auth/login?returnTo=${returnTo}&flow=google`}');
+    expect(authGateSource).toContain('href={`/api/auth/login?returnTo=${returnTo}&flow=register`}');
     expect(authGateSource).toContain('href="/privacy.html"');
-    expect(authGateSource).not.toContain("Google");
+    expect(hasCssBlockWith(".auth-gate-actions", ["display: grid;", "gap: 10px;"])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate-action-secondary", ["background: transparent;", "color: var(--text);"])).toBe(true);
   });
 
-  test("describes self-hosted account and session handling in the privacy policy", () => {
+  test("describes self-hosted and Google account session handling in the privacy policy", () => {
     expect(privacyPolicySource).toContain("本站自托管的账号与身份认证服务");
+    expect(privacyPolicySource).toContain("Google 登录");
     expect(privacyPolicySource).toContain("账号标识、已验证邮箱和登录会话安全信息");
     expect(privacyPolicySource).toContain("登录凭据由本站自托管的认证服务处理");
-    expect(privacyPolicySource).not.toContain("Google");
   });
 
   test("keeps each workspace page beside its layout stylesheet", () => {

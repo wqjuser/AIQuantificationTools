@@ -6,6 +6,7 @@
 
 - `AIQT_PUBLIC_ORIGIN` 与独立的 `AIQT_AUTH_ORIGIN` 均已配置国内可达的 DNS/TLS。
 - 自托管 Keycloak `aiqt` realm 可用，callback 精确为 `${AIQT_PUBLIC_ORIGIN}/api/auth/callback`。
+- SMTP 已通过真实验证邮件和密码重置邮件验收；Google broker 已配置并验收，同时本站注册和登录不依赖 Google 可用性。
 - 若启用公网 MCP，同一 issuer 必须能为 `https://<domain>/mcp` 签发 audience-bound access token，并支持 `aiqt:research:read`。
 - PostgreSQL migration、备份恢复和双用户隔离测试通过。
 - Caddy 是唯一公网入口；API 和 PostgreSQL 没有宿主公网端口。
@@ -34,6 +35,15 @@ AIQT_KEYCLOAK_DATABASE_PASSWORD=replace-with-another-long-random-password
 AIQT_KEYCLOAK_BOOTSTRAP_ADMIN_USERNAME=aiqt-bootstrap-admin
 AIQT_KEYCLOAK_BOOTSTRAP_ADMIN_PASSWORD=replace-with-one-time-bootstrap-password
 AIQT_KEYCLOAK_WEB_CLIENT_SECRET=replace-with-random-web-client-secret
+AIQT_KEYCLOAK_SMTP_HOST=smtp.example.com
+AIQT_KEYCLOAK_SMTP_PORT=587
+AIQT_KEYCLOAK_SMTP_FROM=no-reply@example.com
+AIQT_KEYCLOAK_SMTP_USERNAME=no-reply@example.com
+AIQT_KEYCLOAK_SMTP_TLS_MODE=starttls
+# AIQT_KEYCLOAK_SMTP_PASSWORD 由密钥管理注入，不在文件、命令或日志中输出。
+# 以下两项也由密钥管理注入，不写示例 secret。
+# AIQT_KEYCLOAK_GOOGLE_CLIENT_ID
+# AIQT_KEYCLOAK_GOOGLE_CLIENT_SECRET
 AIQT_SETTINGS_MASTER_KEY=replace-with-urlsafe-base64-32-byte-key
 AIQT_OUTBOUND_ORIGIN_ALLOWLIST=https://api.openai.com,https://approved-provider.example
 AIQT_MCP_PUBLIC_RESOURCE_URL=https://research.example.com/mcp
@@ -42,13 +52,15 @@ AIQT_MCP_RATE_LIMIT_REQUESTS_1M=120
 AIQT_CLAUDE_CONNECT_ENABLED=false
 ```
 
+`AIQT_KEYCLOAK_SMTP_TLS_MODE` 只能是 `starttls` 或 `ssl`。SMTP 密码和 `AIQT_KEYCLOAK_GOOGLE_CLIENT_ID` / `AIQT_KEYCLOAK_GOOGLE_CLIENT_SECRET` 都是 public 上线必需配置，只传给 Keycloak；Google 两项缺少任一项都必须拒绝启动。不要在 shell 展开、打印或检查这些 secret 的值。
+
 生成主密钥：
 
 ```shell
 python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'
 ```
 
-两个 Origin 都必须是无路径 HTTPS Origin，且不能相同。public Compose 会把 API/MCP 的 issuer 固定为 `${AIQT_AUTH_ORIGIN}/realms/aiqt`，不会读取 Google 或其它第三方 client 配置。不要在 public 环境填写服务器级 OpenAI、OpenAI-compatible、Sandbox 或生产交易凭据；Compose 会显式清空这些变量。`.env` 不得写入 Git、终端输出、CI 日志或工单；每次部署前都要重新验证它仍是 `0600`。
+两个 Origin 都必须是无路径 HTTPS Origin，且不能相同。public Compose 会把 API/MCP 的 issuer 固定为 `${AIQT_AUTH_ORIGIN}/realms/aiqt`；Google 凭据只进入 Keycloak broker，不会改变 issuer，也不会传给 API、Web 或 MCP。不要在 public 环境填写服务器级 OpenAI、OpenAI-compatible、Sandbox 或生产交易凭据；Compose 会显式清空这些变量。`.env` 不得写入 Git、终端输出、CI 日志或工单；每次部署前都要重新验证它仍是 `0600`。
 
 ## 2. 准备自托管 Keycloak
 
@@ -65,7 +77,8 @@ OIDC issuer   https://auth.example.com/realms/aiqt
 - `aiqt-web` 是 confidential Web client，只启用 Authorization Code，callback 精确为 `${AIQT_PUBLIC_ORIGIN}/api/auth/callback`，强制 PKCE S256；
 - Claude Hosted 官方 URL 型 Client ID 是预注册 public client，只启用 Authorization Code + PKCE，Direct Access Grant 与 Implicit Flow 关闭；
 - optional scope `aiqt:research:read` 的 Audience mapper 只给 MCP access token 添加 `${AIQT_PUBLIC_ORIGIN}/mcp`；
-- 自助注册关闭，账号由后台管理员创建并将邮箱标记为已验证；
+- 自助注册使用邮箱作为用户名，登录前必须验证邮箱，并提供邮件密码重置；
+- Google broker 向用户提供可选登录方式；本站账号不依赖 Google，所有应用 token 的 issuer/sub 仍来自 Keycloak；
 - 内建 `admin-cli` 明确禁用，realm 中不存在可用的用户名密码 token grant；
 - Caddy 不暴露 Keycloak `/admin`、master realm、health 或 management port。
 
@@ -113,7 +126,7 @@ docker compose -f compose.yaml -f compose.public.yaml exec keycloak \
   /opt/keycloak/bin/kcadm.sh get users -r aiqt \
   --config /tmp/aiqt-ops-kcadm.config --fields id,username
 
-# 业务账号只由受限的 aiqt realm 管理员创建；密码通过交互提示输入。
+# 管理员仍可创建预置业务账号；普通用户也可走自助注册与邮箱验证。
 docker compose -f compose.yaml -f compose.public.yaml exec keycloak \
   /opt/keycloak/bin/kcadm.sh create users -r aiqt \
   --config /tmp/aiqt-ops-kcadm.config \
@@ -142,7 +155,17 @@ docker compose -f compose.yaml -f compose.public.yaml up -d \
   --force-recreate keycloak
 ```
 
-永久管理员只持有 `aiqt-realm` 的用户、客户端和 realm 管理角色，不持有 master 全局 `admin`；它已通过实机命令验证能创建业务用户、更新 MCP client 和维护 `aiqt` realm 安全策略。永久管理员凭据只进入独立密钥管理系统，不保留在 Compose 环境；临时 bootstrap 管理员不得继续存在。业务用户首次登录必须更换临时密码。任何密码都不得写入 Git、命令历史、Compose 文件或工单。realm import 只用于新数据库 bootstrap；已有 realm 的安全策略和 client secret 变更必须通过受控管理命令应用并备份。
+永久管理员只持有 `aiqt-realm` 的用户、客户端和 realm 管理角色，不持有 master 全局 `admin`；它已通过实机命令验证能创建业务用户、更新 MCP client 和维护 `aiqt` realm 安全策略。永久管理员凭据只进入独立密钥管理系统，不保留在 Compose 环境；临时 bootstrap 管理员不得继续存在。管理员预置的业务用户首次登录必须更换临时密码；自助注册用户必须先验证邮箱。任何密码都不得写入 Git、命令历史、Compose 文件或工单。realm import 只用于新数据库 bootstrap；已有 realm 的注册、SMTP、broker、安全策略和 client 变更必须通过受控管理命令应用并备份。
+
+### Google broker
+
+Google 只能作为 Keycloak 中由用户选择的登录方式，不能替代本站注册/登录。在 Google Console 精确登记以下 Authorized redirect URI，不允许 Origin 通配或回调路径变体：
+
+```text
+https://auth.example.com/realms/aiqt/broker/google/endpoint
+```
+
+该地址必须由 `${AIQT_AUTH_ORIGIN}` 逐字派生。Keycloak provider 必须保持 `storeToken=false`、`trustEmail=true`、`authenticateByDefault=false`；`trustEmail` 只信任 Google 返回的 `email_verified`，不能把 Google token 存入或转发给应用，也不授权按邮箱合并身份。默认 First Broker Login 不得加入 auto-link authenticator；相同邮箱必须要求用户证明已有本站账号控制权并显式确认关联。缺少 Google 配置时 public 部署不得上线；Google 运行时访问失败也不能影响本站注册、登录、验证、重置与 MCP OAuth。
 
 Claude 接入不再要求管理员逐用户登记 callback。Claude Hosted 固定预注册官方 URL 型 Client ID 与精确 HTTPS callback；Claude Code 由 Keycloak `--features=cimd` 和只信任 `https://claude.ai/...` metadata 的 Client Policy处理。两条路径都强制 public client、Authorization Code、PKCE S256、用户同意、禁用 Implicit/ROPC 与 full scope，不使用通配 URI。
 
@@ -150,7 +173,7 @@ CIMD 不调用 Dynamic Client Registration endpoint；Caddy 必须继续对 `/re
 
 realm import 对已有数据库采用 `IGNORE_EXISTING`，不会替正在运行的 realm 更新 Client Policy。已有 public 部署必须先备份 Keycloak 数据库，并在维护窗口执行第 3 节的版本化迁移工具；不得靠手抄 JSON、重建 realm 或开放匿名 DCR 绕过迁移，因为重建会改变用户 `sub`。
 
-以上都是平台管理员的一次性部署职责。终端用户只需登录 `https://<domain>/connect/claude` 并点击“连接到 Claude”，不得要求其接触 Keycloak、Client ID、Secret、callback 或 CLI。
+以上都是平台管理员的一次性部署职责。终端用户可注册并验证本站账号，再登录 `https://<domain>/connect/claude` 点击“连接到 Claude”；若管理员启用 Google，也只是增加一个登录按钮。不得要求用户接触 Keycloak、Client ID、Secret、callback 或 CLI。
 
 ## 3. 构建内部服务，暂不启动公网入口
 
@@ -167,19 +190,21 @@ docker compose -f compose.yaml -f compose.public.yaml ps
 
 `migrate` 必须成功退出，Keycloak、API、Web 和 MCP 必须 healthy。Keycloak、API、Web、MCP 与两个 PostgreSQL 都不发布宿主公网端口。此阶段只能完成容器内健康与离线测试；OIDC issuer 和 MCP resource 都是 HTTPS 公网 Origin，完整浏览器/OAuth 验收必须等第 5 节启动 Caddy 后进行，不能在这里声称已经验收。
 
-随后用永久 realm 管理员把 fresh/existing realm 收敛到版本库冻结的 Claude CIMD 配置。密码只输入到交互提示，不写入命令参数、环境变量或日志：
+随后用永久 realm 管理员把 fresh/existing realm 收敛到版本库冻结的注册、SMTP、Google broker 和 Claude CIMD 配置。先备份 Keycloak 数据库，并让运行环境从密钥管理注入 SMTP 与 Google 凭据；密码只输入交互提示，不写入命令参数或日志：
 
 ```shell
-docker compose -f compose.yaml -f compose.public.yaml run --rm --no-deps api \
+docker compose -f compose.yaml -f compose.public.yaml \
+  --profile keycloak-admin run --rm --no-deps keycloak-config \
   python tools/apply_keycloak_claude_cimd.py \
   --apply --username aiqt-admin-ops
 
-docker compose -f compose.yaml -f compose.public.yaml run --rm --no-deps api \
+docker compose -f compose.yaml -f compose.public.yaml \
+  --profile keycloak-admin run --rm --no-deps keycloak-config \
   python tools/apply_keycloak_claude_cimd.py \
   --check --username aiqt-admin-ops
 ```
 
-第一条只更新 `clientProfiles`、`clientPolicies`、realm default scopes、`basic`/`aiqt:research:read` scope 及其冻结 mapper，把旧 `aiqt-mcp` 原地收敛为 Claude Hosted 官方 URL 型 Client ID，并创建或原位校正固定 PKCE 的 `aiqt-codex-cli`；其它 realm/user/client 数据保持不变。工具会把 Audience mapper 精确校验为 `${AIQT_PUBLIC_ORIGIN}/mcp`，并按该 URL 派生 Codex 固定端口的精确 loopback callback；任何缺失、额外 mapper、callback 或 audience 漂移都会失败关闭并在 `--apply` 时收敛。重复执行应返回 `ready`，检查漂移时必须非零退出。只有两条均成功后，才把 `.env` 中 `AIQT_CLAUDE_CONNECT_ENABLED` 改为 `true` 并重建 API：
+专用 `keycloak-config` profile 只在本次管理操作中接收 SMTP/Google 配置；常驻 API、Web 和 MCP 不接收这些 secret。第一条更新 realm 的注册/邮件策略和 SMTP、创建或原位收敛 Google provider，并继续收敛 `clientProfiles`、`clientPolicies`、realm default scopes、`basic`/`aiqt:research:read` scope 及冻结 mapper、Claude Hosted 与固定 PKCE 的 `aiqt-codex-cli`。它不得重建 realm、改变现有用户 UUID，或按邮箱链接身份；Google provider 既有内部身份也必须原位保留。工具会把 Audience mapper 精确校验为 `${AIQT_PUBLIC_ORIGIN}/mcp`，并按该 URL 派生 Codex 固定端口的精确 loopback callback；任何注册、SMTP、broker、mapper、callback 或 audience 漂移都会失败关闭并在 `--apply` 时收敛。Keycloak 的管理 API 永远掩码返回 SMTP/Google secret，因此 `--check` 只验证其已配置及其它字段，显式 `--apply` 会安全重写两项 secret 并可能每次返回 `updated`；随后 `--check` 必须返回 `ready`，真实邮件和 Google 登录验收仍不可省略。只有迁移、只读检查与第 5 节真实验收均成功后，才把 `.env` 中 `AIQT_CLAUDE_CONNECT_ENABLED` 改为 `true` 并重建 API：
 
 ```shell
 docker compose -f compose.yaml -f compose.public.yaml up -d \
@@ -220,6 +245,8 @@ apply 前会备份整个 `data/`，并在一个 PostgreSQL 事务内写入、校
 `--master-key` 只加密 public 租户数据，不会被当成本机旧设置密钥。仅当旧本机设置曾通过环境变量密钥加密时，额外传入 `--source-master-key`（或 `AIQT_SOURCE_SETTINGS_MASTER_KEY`）。
 
 ### 从旧 Google 身份保留原租户
+
+本节只适用于历史上由 `https://accounts.google.com` 直接作为应用 issuer 的部署。新的 Google broker 对应用始终表现为 Keycloak issuer/sub，不使用本节迁移。
 
 旧 Google `iss + sub` 与 Keycloak 身份完全不同，不能按邮箱合并。若已有 public 数据，必须在维护窗口执行以下顺序：
 
@@ -264,10 +291,14 @@ docker compose -f compose.yaml -f compose.public.yaml ps
 此时立即在受控公网环境验证：
 
 - 未登录 API 为 401，跨站 Origin、伪造 Host、缺 CSRF 和非 JSON 修改请求被拒绝。
-- 自助注册、Direct Access Grant、Implicit Flow、公开管理 API 和匿名 DCR 不可用。
+- 自助注册后未验证邮箱不能登录；验证邮件、忘记密码邮件和重置链接均真实可用，过期或复用链接失败关闭。
+- Google callback 精确、`storeToken=false`、`trustEmail=true`；只接受 Google 的 `email_verified` 语义，Google 不可达也不阻断本站登录。
+- Google 新用户得到 Keycloak issuer/sub；默认 First Broker Login 不含 auto-link authenticator，与本站账号邮箱相同不会自动链接，只有证明账号控制权并显式确认后才关联，且不会创建第二租户。
+- Direct Access Grant、Implicit Flow、公开管理 API 和匿名 DCR 不可用。
 - 登录 state/nonce/PKCE、退出、禁用用户、12 小时绝对和 30 分钟空闲会话有效；普通登录和重新认证都必须强制登录并拒绝旧 `auth_time`，应用退出必须继续命中 Keycloak `end_session_endpoint` 且旧 SSO Cookie 不能静默恢复账号。
 - 两个用户创建相同 run/event ID 后仍只能看到自己的记录。
 - 公网 MCP 无 token、坏签名、错 issuer/audience、过期 token 为 401；缺 read scope 为 403；Protected Resource Metadata 无需认证。
+- 本站密码或 Google broker 登录后，Web/MCP token 的 issuer 都只能是 `${AIQT_AUTH_ORIGIN}/realms/aiqt`；Google token 不出现在 API、MCP、数据库或日志。
 - 两个 MCP token 并发读取相同 run ID 仍严格隔离；发现结果只有八个只读工具，且没有任何写入、promotion、绑定或交易工具。
 - MCP 伪造 Host 返回 421、伪造 Origin 返回 403；token 中的 owner/email/operator 不影响租户映射。
 - 设置、研究包、AI、审计、组合、生产密钥、Stage 10 和后台任务全部隔离。

@@ -42,7 +42,7 @@ Browser
   → PostgreSQL
 ```
 
-认证使用自托管 Keycloak 的固定单一 OIDC Issuer 与 Authorization Code + PKCE S256。服务端校验 state、nonce、issuer、audience、expiry 和 JWKS 签名；管理员创建且邮箱已验证的账号首次成功登录时创建个人用户。Quant API 不接收或存储密码，用户只有 `active/disabled` 两种应用状态。
+认证使用自托管 Keycloak 的固定单一 OIDC Issuer 与 Authorization Code + PKCE S256。Keycloak 提供本站邮箱注册、验证、密码重置，并可选择通过 Google broker 登录；服务端校验 state、nonce、issuer、audience、expiry 和 JWKS 签名，首次成功登录时按 Keycloak `issuer + subject` 创建个人用户。Quant API 不接收或存储密码、Google token，也不按邮箱自动链接身份；用户只有 `active/disabled` 两种应用状态。
 
 会话令牌与 CSRF 令牌在数据库中只保存不可逆哈希。Cookie 使用 `Secure`、`HttpOnly`（会话）、`SameSite=Lax`；会话绝对有效期 12 小时、空闲有效期 30 分钟。修改请求必须满足同源 Origin、JSON Content-Type、会话绑定 CSRF 和限流。登录/回调按 IP 限制，普通修改、AI/选股和研究包导入按租户分别限制。
 

@@ -32,8 +32,9 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         self.assertNotIn("KC_BOOTSTRAP_ADMIN_PASSWORD", overlay)
         self.assertIn("AIQT_KEYCLOAK_WEB_CLIENT_SECRET", overlay)
         self.assertIn("./deploy/keycloak/realm-aiqt.json:/opt/keycloak/data/import/aiqt-realm.json:ro", overlay)
+        self.assertIn('entrypoint: ["/bin/sh", "-ec"]', overlay)
         self.assertIn(
-            'command: ["start", "--features=cimd", "--import-realm"]',
+            "exec /opt/keycloak/bin/kc.sh start --features=cimd --import-realm",
             overlay,
         )
         self.assertIn(
@@ -64,7 +65,7 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
         api_dockerfile = (self.root / "Dockerfile.api").read_text()
 
         self.assertIn(
-            'command: ["start", "--features=cimd", "--import-realm"]',
+            "exec /opt/keycloak/bin/kc.sh start --features=cimd --import-realm",
             overlay,
         )
         self.assertIn(
@@ -89,7 +90,7 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
 
         self.assertEqual(realm["realm"], "aiqt")
         self.assertTrue(realm["enabled"])
-        self.assertFalse(realm["registrationAllowed"])
+        self.assertTrue(realm["registrationAllowed"])
         self.assertEqual(
             realm["passwordPolicy"],
             "hashAlgorithm(argon2) and length(15) and notUsername and notEmail and passwordHistory(5)",
@@ -196,7 +197,7 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
             (self.root / "deploy" / "keycloak" / "realm-aiqt.json").read_text()
         )
 
-        self.assertFalse(realm["registrationAllowed"])
+        self.assertTrue(realm["registrationAllowed"])
         self.assertEqual(realm["defaultDefaultClientScopes"], ["basic"])
         self.assertEqual(
             realm["defaultOptionalClientScopes"],
@@ -370,6 +371,109 @@ class KeycloakDeploymentContractTest(unittest.TestCase):
             ],
             ["basic"],
         )
+
+    def test_realm_requires_verified_email_for_self_registration_and_recovery(self) -> None:
+        realm = json.loads(
+            (self.root / "deploy" / "keycloak" / "realm-aiqt.json").read_text()
+        )
+
+        self.assertTrue(realm["registrationAllowed"])
+        self.assertTrue(realm["registrationEmailAsUsername"])
+        self.assertTrue(realm["verifyEmail"])
+        self.assertTrue(realm["resetPasswordAllowed"])
+        self.assertTrue(realm["loginWithEmailAllowed"])
+        self.assertFalse(realm["duplicateEmailsAllowed"])
+        self.assertFalse(realm["editUsernameAllowed"])
+        self.assertEqual(
+            realm["smtpServer"],
+            {
+                "host": "${AIQT_KEYCLOAK_SMTP_HOST}",
+                "port": "${AIQT_KEYCLOAK_SMTP_PORT}",
+                "from": "${AIQT_KEYCLOAK_SMTP_FROM}",
+                "auth": "true",
+                "user": "${AIQT_KEYCLOAK_SMTP_USERNAME}",
+                "password": "${AIQT_KEYCLOAK_SMTP_PASSWORD}",
+                "starttls": "${AIQT_KEYCLOAK_SMTP_STARTTLS}",
+                "ssl": "${AIQT_KEYCLOAK_SMTP_SSL}",
+            },
+        )
+
+    def test_google_is_a_non_default_keycloak_broker_without_stored_tokens(self) -> None:
+        realm = json.loads(
+            (self.root / "deploy" / "keycloak" / "realm-aiqt.json").read_text()
+        )
+
+        self.assertEqual(len(realm["identityProviders"]), 1)
+        google = realm["identityProviders"][0]
+        self.assertEqual(google["alias"], "google")
+        self.assertEqual(google["providerId"], "google")
+        self.assertTrue(google["enabled"])
+        self.assertTrue(google["trustEmail"])
+        self.assertNotIn("updateProfileFirstLoginMode", google)
+        self.assertFalse(google["storeToken"])
+        self.assertFalse(google["addReadTokenRoleOnCreate"])
+        self.assertFalse(google["authenticateByDefault"])
+        self.assertFalse(google["linkOnly"])
+        self.assertFalse(google["hideOnLogin"])
+        self.assertEqual(google["firstBrokerLoginFlowAlias"], "first broker login")
+        self.assertEqual(
+            google["config"],
+            {
+                "clientId": "${AIQT_KEYCLOAK_GOOGLE_CLIENT_ID}",
+                "clientSecret": "${AIQT_KEYCLOAK_GOOGLE_CLIENT_SECRET}",
+                "defaultScope": "openid profile email",
+                "syncMode": "IMPORT",
+                "useJwksUrl": "true",
+            },
+        )
+
+    def test_public_compose_requires_mail_and_google_secrets_only_in_keycloak(self) -> None:
+        overlay = (self.root / "compose.public.yaml").read_text()
+        keycloak = overlay.split("\n  keycloak:\n", 1)[1].split("\n  migrate:\n", 1)[0]
+        keycloak_config = overlay.split("\n  keycloak-config:\n", 1)[1].split(
+            "\n  api:\n", 1
+        )[0]
+        api = overlay.split("\n  api:\n", 1)[1].split("\n  web:\n", 1)[0]
+        mcp = overlay.split("\n  mcp:\n", 1)[1].split("\n  caddy:\n", 1)[0]
+        env_example = (self.root / ".env.example").read_text()
+
+        for name in (
+            "AIQT_KEYCLOAK_SMTP_HOST",
+            "AIQT_KEYCLOAK_SMTP_PORT",
+            "AIQT_KEYCLOAK_SMTP_FROM",
+            "AIQT_KEYCLOAK_SMTP_USERNAME",
+            "AIQT_KEYCLOAK_SMTP_PASSWORD",
+        ):
+            self.assertIn(f"{name}: ${{{name}:?set {name}}}", keycloak)
+            self.assertIn(f"{name}=", env_example)
+            self.assertIn(f"{name}: ${{{name}:?set {name}}}", keycloak_config)
+            self.assertNotIn(name, api)
+            self.assertNotIn(name, mcp)
+        for name in (
+            "AIQT_KEYCLOAK_GOOGLE_CLIENT_ID",
+            "AIQT_KEYCLOAK_GOOGLE_CLIENT_SECRET",
+        ):
+            self.assertIn(f"{name}: ${{{name}:?set {name}}}", keycloak)
+            self.assertIn(f"{name}=", env_example)
+            self.assertIn(f"{name}: ${{{name}:?set {name}}}", keycloak_config)
+            self.assertNotIn(name, api)
+            self.assertNotIn(name, mcp)
+        self.assertIn(
+            "AIQT_KEYCLOAK_SMTP_TLS_MODE: "
+            "${AIQT_KEYCLOAK_SMTP_TLS_MODE:?set AIQT_KEYCLOAK_SMTP_TLS_MODE}",
+            keycloak,
+        )
+        self.assertIn("AIQT_KEYCLOAK_SMTP_TLS_MODE=starttls", env_example)
+        self.assertIn('starttls) export AIQT_KEYCLOAK_SMTP_STARTTLS=true AIQT_KEYCLOAK_SMTP_SSL=false', keycloak)
+        self.assertIn('ssl) export AIQT_KEYCLOAK_SMTP_STARTTLS=false AIQT_KEYCLOAK_SMTP_SSL=true', keycloak)
+        self.assertIn('*) echo "AIQT_KEYCLOAK_SMTP_TLS_MODE must be starttls or ssl" >&2; exit 2', keycloak)
+        self.assertIn("exec /opt/keycloak/bin/kc.sh start --features=cimd --import-realm", keycloak)
+        self.assertIn(
+            "AIQT_OIDC_ISSUER: ${AIQT_AUTH_ORIGIN:?set AIQT_AUTH_ORIGIN}/realms/aiqt",
+            api,
+        )
+        self.assertIn('profiles: ["keycloak-admin"]', keycloak_config)
+        self.assertNotIn("ports:", keycloak_config)
 
     def test_caddy_exposes_login_but_blocks_admin_and_dynamic_registration(self) -> None:
         caddy = (self.root / "deploy" / "Caddyfile").read_text()

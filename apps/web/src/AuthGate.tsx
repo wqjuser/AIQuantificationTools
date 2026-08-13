@@ -35,6 +35,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   if (state === "local" || state === "authenticated") return children;
+  const returnTo = state === "unauthenticated"
+    ? encodeURIComponent(window.location.pathname + window.location.search)
+    : "";
   return (
     <main className="auth-gate">
       <section aria-labelledby="auth-gate-title" className="auth-gate-card">
@@ -54,10 +57,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <div aria-live="polite" className="auth-gate-state">
           {state === "unauthenticated" ? (
             <>
-              <a className="primary auth-gate-action" href={`/api/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}>
-                使用本站账号登录
-              </a>
-              <p className="auth-gate-note">账号由管理员创建。认证服务由本站托管；登录不会授权实盘，也不会自动提交订单。</p>
+              <div className="auth-gate-actions">
+                <a className="primary auth-gate-action" href={`/api/auth/login?returnTo=${returnTo}`}>
+                  使用本站账号登录
+                </a>
+                <a className="auth-gate-action auth-gate-action-secondary" href={`/api/auth/login?returnTo=${returnTo}&flow=google`}>
+                  使用 Google 登录
+                </a>
+              </div>
+              <p className="auth-gate-note">
+                还没有账号？<a className="auth-gate-register" href={`/api/auth/login?returnTo=${returnTo}&flow=register`}>注册本站账号</a>
+              </p>
+              <p className="auth-gate-note">认证服务由本站托管；登录不会授权实盘，也不会自动提交订单。</p>
             </>
           ) : state === "error" ? (
             <>

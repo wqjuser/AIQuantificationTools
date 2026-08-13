@@ -128,6 +128,91 @@ class PublicAuthServiceTest(unittest.TestCase):
         self.assertEqual(replayed, completed)
         self.assertEqual(len(self.provider.exchanges), 1)
 
+    def test_google_login_selects_google_and_preserves_the_oidc_transaction(self) -> None:
+        login = self.service.begin_login(
+            flow="google",
+            return_to="/research",
+            now=self.now,
+        )
+        query = parse_qs(urlparse(login.authorization_url).query)
+
+        self.assertEqual(query["kc_idp_hint"], ["google"])
+        self.assertEqual(query["prompt"], ["login"])
+        self.assertEqual(query["max_age"], ["0"])
+        self.assertEqual(query["state"], [login.state_cookie])
+        self.assertTrue(query["nonce"][0])
+        self.assertEqual(query["code_challenge_method"], ["S256"])
+
+        completed = self.service.complete_callback(
+            state=query["state"][0],
+            state_cookie=login.state_cookie,
+            code="authorization-code",
+            now=self.now + timedelta(seconds=5),
+        )
+        exchanged = self.provider.exchanges[0]
+        expected_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(str(exchanged["code_verifier"]).encode()).digest()
+        ).decode().rstrip("=")
+        self.assertEqual(query["code_challenge"], [expected_challenge])
+        self.assertEqual(exchanged["nonce"], query["nonce"][0])
+        self.assertEqual(completed.return_to, "/research")
+
+    def test_registration_uses_prompt_create_without_login_prompt(self) -> None:
+        login = self.service.begin_login(
+            flow="register",
+            return_to="/research",
+            now=self.now,
+        )
+        query = parse_qs(urlparse(login.authorization_url).query)
+
+        self.assertEqual(query["prompt"], ["create"])
+        self.assertNotIn("max_age", query)
+        self.assertNotIn("kc_idp_hint", query)
+        self.assertEqual(query["state"], [login.state_cookie])
+        self.assertTrue(query["nonce"][0])
+        self.assertEqual(query["code_challenge_method"], ["S256"])
+
+        completed = self.service.complete_callback(
+            state=query["state"][0],
+            state_cookie=login.state_cookie,
+            code="authorization-code",
+            now=self.now + timedelta(seconds=5),
+        )
+        exchanged = self.provider.exchanges[0]
+        expected_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(str(exchanged["code_verifier"]).encode()).digest()
+        ).decode().rstrip("=")
+        self.assertEqual(query["code_challenge"], [expected_challenge])
+        self.assertEqual(exchanged["nonce"], query["nonce"][0])
+        self.assertEqual(completed.return_to, "/research")
+
+    def test_login_rejects_unknown_flow(self) -> None:
+        with self.assertRaisesRegex(AuthenticationError, "invalid_auth_flow"):
+            self.service.begin_login(flow="enterprise", now=self.now)
+
+    def test_registration_callback_remains_valid_beyond_ten_minutes(self) -> None:
+        login = self.service.begin_login(flow="register", now=self.now)
+
+        completed = self.service.complete_callback(
+            state=login.state_cookie,
+            state_cookie=login.state_cookie,
+            code="authorization-code",
+            now=self.now + timedelta(minutes=20),
+        )
+
+        self.assertTrue(completed.session.session_token)
+
+    def test_oidc_transaction_expires_after_thirty_minutes(self) -> None:
+        login = self.service.begin_login(now=self.now)
+
+        with self.assertRaisesRegex(AuthenticationError, "oidc_state_expired"):
+            self.service.complete_callback(
+                state=login.state_cookie,
+                state_cookie=login.state_cookie,
+                code="authorization-code",
+                now=self.now + timedelta(seconds=1801),
+            )
+
     def test_logout_uses_the_exact_registered_public_origin(self) -> None:
         self.assertEqual(
             self.service.logout_url(),
