@@ -47,21 +47,22 @@ export function buildClaudeCustomConnectorUrl(origin: string): string | null {
   );
 }
 
-export function McpConnectPage({ origin }: { origin: string }) {
+export function McpConnectPage({ embedded = false, origin }: { embedded?: boolean; origin: string }) {
   const connectEnabled = isClaudeConnectEnabled();
   const publicSession = hasPublicSession();
   const publicOrigin = trustedPublicHttpsOrigin(origin);
   const resourceUrl = publicOrigin ? `${publicOrigin}/mcp` : null;
   const installUrl = buildClaudeCustomConnectorUrl(origin);
 
+  const Page = embedded ? "div" : "main";
   return (
-    <main className="mcp-connect-page">
+    <Page className={`mcp-connect-page${embedded ? " is-dialog" : ""}`}>
       <section aria-labelledby="mcp-connect-title" className="mcp-connect-card">
         <header className="mcp-connect-brand">
           <img alt="" src="/aiqt-logo.png" />
           <div>
             <strong>AIQuantificationTools</strong>
-            <span>Claude 研究连接器</span>
+            <span>第三方 AI · 只读 MCP</span>
           </div>
         </header>
 
@@ -74,30 +75,50 @@ export function McpConnectPage({ origin }: { origin: string }) {
         ) : !connectEnabled ? (
           <div className="mcp-connect-intro mcp-connect-deployment-required" role="status">
             <span className="mcp-connect-kicker">暂未开放</span>
-            <h1 id="mcp-connect-title">管理员尚未启用 Claude 连接</h1>
-            <p>当前部署尚未完成 Claude 连接验收。管理员启用后，此处会显示一键连接按钮。</p>
+            <h1 id="mcp-connect-title">管理员尚未启用第三方 AI 连接</h1>
+            <p>当前部署尚未完成 AI 客户端连接验收。管理员启用后，此处会显示可用的连接方式。</p>
           </div>
         ) : installUrl && resourceUrl ? (
           <>
             <div className="mcp-connect-intro">
-              <span className="mcp-connect-kicker">一步接入</span>
-              <h1 id="mcp-connect-title">把你的量化研究空间连接到 Claude</h1>
+              <span className="mcp-connect-kicker">只读研究连接</span>
+              <h1 id="mcp-connect-title">连接第三方 AI</h1>
               <p>
-                点击后会打开 Claude，并预填本站连接器名称和地址。检查信息并确认，即可在对话中读取你的研究证据。
+                选择你的 AI 客户端，通过同一个安全 MCP 地址读取当前账号的研究证据。
               </p>
               <code className="mcp-connect-resource">{resourceUrl}</code>
             </div>
 
-            <a
-              className="mcp-connect-install"
-              data-testid="claude-connector-install"
-              href={installUrl}
-              rel="noopener noreferrer"
-              target="_blank"
-            >
-              连接到 Claude
-              <ExternalLink aria-hidden="true" size={17} strokeWidth={2} />
-            </a>
+            <section aria-label="支持的 AI 客户端" className="mcp-connect-clients">
+              <article className="mcp-connect-client">
+                <div>
+                  <span className="mcp-connect-client-kind">网页端 / Desktop</span>
+                  <h2>Claude</h2>
+                  <p>一键预填连接器名称和地址，确认并登录即可使用。</p>
+                </div>
+                <a
+                  className="mcp-connect-install"
+                  data-testid="claude-connector-install"
+                  href={installUrl}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  连接到 Claude
+                  <ExternalLink aria-hidden="true" size={17} strokeWidth={2} />
+                </a>
+                <h3>Claude Code</h3>
+                <pre><code>{`claude mcp add --transport http --scope user aiqt ${resourceUrl}\nclaude mcp login aiqt`}</code></pre>
+              </article>
+
+              <article className="mcp-connect-client">
+                <div>
+                  <span className="mcp-connect-client-kind">命令行</span>
+                  <h2>Codex CLI</h2>
+                  <p>添加本站 MCP 后，通过浏览器完成账号登录和授权。</p>
+                </div>
+                <pre><code>{`codex mcp add aiqt --url ${resourceUrl} --oauth-client-id aiqt-codex-cli --oauth-resource ${resourceUrl}\ncodex mcp login aiqt --scopes aiqt:research:read,offline_access -c mcp_oauth_callback_port=5555`}</code></pre>
+              </article>
+            </section>
           </>
         ) : (
           <div className="mcp-connect-intro mcp-connect-deployment-required" role="status">
@@ -130,6 +151,6 @@ export function McpConnectPage({ origin }: { origin: string }) {
           <p>不提供策略晋级、策略绑定、自动交易控制、Testnet、Live 或任何下单能力。</p>
         </aside>
       </section>
-    </main>
+    </Page>
   );
 }

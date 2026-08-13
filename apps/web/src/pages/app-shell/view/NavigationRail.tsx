@@ -1,5 +1,8 @@
+import { useRef } from "react";
+import { Radar, X } from "lucide-react";
+
+import { McpConnectPage } from "../../mcp-connect/McpConnectPage";
 import { productWorkAreaGroups, workAreaIcons } from "../navigation";
-import { Radar } from "lucide-react";
 import type { AppControllerBindings } from "../controller/bindings";
 import {
   authenticatedActor,
@@ -21,6 +24,7 @@ export function NavigationRail({ controller }: NavigationRailProps) {
   const actor = authenticatedActor();
   const publicSession = hasPublicSession();
   const claudeConnectEnabled = isClaudeConnectEnabled();
+  const connectDialogRef = useRef<HTMLDialogElement>(null);
   const renderItems = (workAreaIds: typeof productWorkAreaGroups[number]["workAreaIds"]) => (
     <div className="work-area-group-items">
       {workAreaIds.map((workAreaId) => {
@@ -87,9 +91,31 @@ export function NavigationRail({ controller }: NavigationRailProps) {
                     : "Waiting for first run"}
                 <br />{i18n.strategyText("Asia/Shanghai")}
               </time>
-              {claudeConnectEnabled ? <a className="rail-connect-claude" href="/connect/claude">连接 Claude</a> : null}
+              {claudeConnectEnabled ? (
+                <button
+                  aria-haspopup="dialog"
+                  className="rail-connect-ai"
+                  onClick={() => connectDialogRef.current?.showModal()}
+                  type="button"
+                >
+                  连接第三方 AI
+                </button>
+              ) : null}
               {publicSession ? <button className="rail-logout" onClick={() => void logoutPublicSession()} type="button">退出登录</button> : null}
             </section>
+            {claudeConnectEnabled ? (
+              <dialog aria-labelledby="mcp-connect-title" className="mcp-connect-dialog" ref={connectDialogRef}>
+                <form method="dialog">
+                  <button aria-label="关闭第三方 AI 连接窗口" className="mcp-connect-dialog-close" type="submit">
+                    <X aria-hidden="true" size={18} />
+                  </button>
+                </form>
+                <McpConnectPage
+                  embedded
+                  origin={typeof window === "undefined" ? "" : window.location.origin}
+                />
+              </dialog>
+            ) : null}
           </aside>
   );
 }

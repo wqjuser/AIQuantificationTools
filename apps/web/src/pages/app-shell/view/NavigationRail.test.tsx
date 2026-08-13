@@ -21,7 +21,7 @@ const controller = {
 describe("NavigationRail public account links", () => {
   afterEach(() => bindPublicSession({ authenticated: false }));
 
-  test("offers the Claude connection page from a public research session", () => {
+  test("offers the third-party AI connection page from a public research session", () => {
     bindPublicSession({
       authenticated: true,
       ownerId: "owner-a",
@@ -33,11 +33,14 @@ describe("NavigationRail public account links", () => {
 
     const markup = renderToStaticMarkup(<NavigationRail controller={controller} />);
 
-    expect(markup).toContain('href="/connect/claude"');
-    expect(markup).toContain("连接 Claude");
+    expect(markup).toContain('class="rail-connect-ai"');
+    expect(markup).toContain("连接第三方 AI");
+    expect(markup).toContain('class="mcp-connect-dialog"');
+    expect(markup).not.toContain('href="/connect/ai"');
+    expect(markup).not.toContain(">连接 Claude<");
   });
 
-  test("hides the Claude connection page until the server gate is enabled", () => {
+  test("hides the third-party AI connection page until the server gate is enabled", () => {
     bindPublicSession({
       authenticated: true,
       ownerId: "owner-a",
@@ -49,16 +52,16 @@ describe("NavigationRail public account links", () => {
 
     const markup = renderToStaticMarkup(<NavigationRail controller={controller} />);
 
-    expect(markup).not.toContain('href="/connect/claude"');
-    expect(markup).not.toContain("连接 Claude");
+    expect(markup).not.toContain('class="rail-connect-ai"');
+    expect(markup).not.toContain("连接第三方 AI");
   });
 
-  test("does not offer a remote Claude connection from a local session", () => {
+  test("does not offer a remote AI connection from a local session", () => {
     bindPublicSession({ authenticated: false });
 
     const markup = renderToStaticMarkup(<NavigationRail controller={controller} />);
 
-    expect(markup).not.toContain('href="/connect/claude"');
-    expect(markup).not.toContain("连接 Claude");
+    expect(markup).not.toContain('class="rail-connect-ai"');
+    expect(markup).not.toContain("连接第三方 AI");
   });
 });

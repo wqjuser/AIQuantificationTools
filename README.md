@@ -67,7 +67,7 @@ docker compose --profile mcp up -d --build mcp
 
 AI 客户端连接 `http://127.0.0.1:8766/mcp`。MCP 默认只读，不包含 promotion、策略绑定、自动交易控制、Testnet、Live 或下单工具；完整接入方式见 [MCP 服务](docs/mcp-service.md)。
 
-public Compose 由 Keycloak 提供本站邮箱注册、验证、密码重置和登录，同时提供 Google identity broker；用户可以任选登录方式，本站账号始终是国内可用的主入口。Quant API 与 MCP 只信任 Keycloak issuer/subject，不接收 Google token，也不按邮箱自动链接身份。受 OAuth Bearer 保护的 `https://<domain>/mcp` 按已存在的本站身份绑定租户，只发现八个只读研究工具。管理员完成 realm/CIMD 迁移与验收后，Claude 用户可从 `https://<domain>/connect/claude` 一键连接；部署前置与兼容边界见 [MCP 服务](docs/mcp-service.md) 和 [公网部署](docs/public-deployment.md)。
+public Compose 由 Keycloak 提供本站邮箱注册、验证、密码重置和登录，同时提供 Google identity broker；用户可以任选登录方式，本站账号始终是国内可用的主入口。Quant API 与 MCP 只信任 Keycloak issuer/subject，不接收 Google token，也不按邮箱自动链接身份。受 OAuth Bearer 保护的 `https://<domain>/mcp` 按已存在的本站身份绑定租户，只发现八个只读研究工具。管理员完成 realm/CIMD 迁移与验收后，用户可从工作台侧栏的“连接第三方 AI”弹窗接入 Claude、Claude Code 或 Codex CLI；旧 `/connect/claude` 地址继续兼容。部署前置与兼容边界见 [MCP 服务](docs/mcp-service.md) 和 [公网部署](docs/public-deployment.md)。
 
 公网模式需要先完成 [公网部署手册](docs/public-deployment.md)，再运行：
 

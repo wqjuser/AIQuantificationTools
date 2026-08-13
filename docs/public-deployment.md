@@ -173,7 +173,7 @@ CIMD 不调用 Dynamic Client Registration endpoint；Caddy 必须继续对 `/re
 
 realm import 对已有数据库采用 `IGNORE_EXISTING`，不会替正在运行的 realm 更新 Client Policy。已有 public 部署必须先备份 Keycloak 数据库，并在维护窗口执行第 3 节的版本化迁移工具；不得靠手抄 JSON、重建 realm 或开放匿名 DCR 绕过迁移，因为重建会改变用户 `sub`。
 
-以上都是平台管理员的一次性部署职责。终端用户可注册并验证本站账号，再登录 `https://<domain>/connect/claude` 点击“连接到 Claude”；若管理员启用 Google，也只是增加一个登录按钮。不得要求用户接触 Keycloak、Client ID、Secret、callback 或 CLI。
+以上都是平台管理员的一次性部署职责。终端用户可注册并验证本站账号，再从工作台侧栏的“连接第三方 AI”弹窗接入 Claude、Claude Code 或 Codex CLI；若管理员启用 Google，也只是增加一个登录按钮。不得要求用户接触 Keycloak、Client Secret 或 callback；Codex 的预注册 public client ID 可由弹窗命令直接提供。
 
 ## 3. 构建内部服务，暂不启动公网入口
 
@@ -319,7 +319,7 @@ curl -i -X POST https://research.example.com/mcp \
 
 第一条必须返回 resource=`https://research.example.com/mcp`、正确 issuer 和 `aiqt:research:read`；Authorization Server metadata 必须声明 `client_id_metadata_document_supported=true`、`token_endpoint_auth_methods_supported` 包含 `none`、`code_challenge_methods_supported` 包含 `S256`，且 Claude Client Policy 必须拒绝缺失或非 S256 的 PKCE；未认证 MCP 请求必须返回 401 且 `WWW-Authenticate` 带同一 metadata URL。
 
-最后以真实业务账号登录 `https://research.example.com/connect/claude`，确认页面只有一个“连接到 Claude”安装动作，并在 Claude 中完成确认、OAuth 同意和工具发现。结果必须恰好只有八个只读工具；用户全程不得填写 Client ID、Secret、callback 或 Keycloak 地址。再用 Claude Code 的临时 localhost callback 复测一次。不要把 access token 写入命令历史或日志。
+最后以真实业务账号登录工作台，点击侧栏“连接第三方 AI”，确认弹窗内同时提供 Claude、Claude Code 与 Codex CLI，并在 Claude 中完成确认、OAuth 同意和工具发现。结果必须恰好只有八个只读工具；用户全程不得填写 Secret、callback 或 Keycloak 地址。再用弹窗中的 Claude Code 与 Codex CLI 命令各复测一次。不要把 access token 写入命令历史或日志。
 
 ## 限流
 

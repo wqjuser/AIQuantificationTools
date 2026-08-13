@@ -14,7 +14,7 @@ const expectedClaudeUrl =
   "&connectorName=AIQuantificationTools" +
   "&connectorUrl=https%3A%2F%2Fresearch.example.com%2Fmcp";
 
-describe("Claude MCP connection", () => {
+describe("third-party AI MCP connection", () => {
   afterEach(() => bindPublicSession({ authenticated: false }));
 
   function enableClaudeConnection() {
@@ -48,11 +48,17 @@ describe("Claude MCP connection", () => {
     expect(markup).not.toContain('data-testid="claude-connector-install"');
   });
 
-  test("presents one install action, eight read-only tools, and no trading capability", () => {
+  test("presents Claude and CLI connection options with the same read-only boundary", () => {
     enableClaudeConnection();
     const markup = renderToStaticMarkup(<McpConnectPage origin={publicOrigin} />);
 
+    expect(markup).toContain("连接第三方 AI");
     expect(markup).toContain("连接到 Claude");
+    expect(markup).toContain("Claude Code");
+    expect(markup).toContain("claude mcp add --transport http --scope user aiqt https://research.example.com/mcp");
+    expect(markup).toContain("Codex CLI");
+    expect(markup).toContain("codex mcp add aiqt --url https://research.example.com/mcp --oauth-client-id aiqt-codex-cli --oauth-resource https://research.example.com/mcp");
+    expect(markup).toContain("codex mcp login aiqt --scopes aiqt:research:read,offline_access -c mcp_oauth_callback_port=5555");
     expect(markup).toContain(
       "href=\"https://claude.ai/customize/connectors?modal=add-custom-connector",
     );
@@ -71,11 +77,8 @@ describe("Claude MCP connection", () => {
     }
     expect(markup).toContain("仅限读取研究数据");
     expect(markup).toContain("不提供策略晋级、策略绑定、自动交易控制、Testnet、Live 或任何下单能力");
-    expect(markup).not.toContain("Client ID");
     expect(markup).not.toContain("Client Secret");
-    expect(markup).not.toContain("callback");
     expect(markup).not.toContain("Keycloak");
-    expect(markup).not.toContain("CLI");
     expect(markup).not.toContain("<form");
     expect(markup).not.toContain("<input");
   });
@@ -96,7 +99,7 @@ describe("Claude MCP connection", () => {
       <McpConnectPage origin="http://localhost:5173" />,
     );
 
-    expect(markup).toContain("管理员尚未启用 Claude 连接");
+    expect(markup).toContain("管理员尚未启用第三方 AI 连接");
     expect(markup).not.toContain("href=\"https://claude.ai");
     expect(markup).not.toContain('data-testid="claude-connector-install"');
     expect(localMarkup).toContain("需要公网 HTTPS 部署");
@@ -104,23 +107,23 @@ describe("Claude MCP connection", () => {
     expect(localMarkup).not.toContain('data-testid="claude-connector-install"');
   });
 
-  test("routes only the exact connection path to the connection page", () => {
+  test("keeps the legacy Claude route compatible without adding a new generic page", () => {
     enableClaudeConnection();
-    const connection = renderToStaticMarkup(
+    const legacyConnection = renderToStaticMarkup(
       <AuthenticatedRoute origin={publicOrigin} pathname="/connect/claude">
         <p>研究工作台</p>
       </AuthenticatedRoute>,
     );
     const workspace = renderToStaticMarkup(
-      <AuthenticatedRoute origin={publicOrigin} pathname="/connect/claude/">
+      <AuthenticatedRoute origin={publicOrigin} pathname="/connect/ai">
         <p>研究工作台</p>
       </AuthenticatedRoute>,
     );
 
-    expect(connection).toContain("连接到 Claude");
-    expect(connection).not.toContain("研究工作台");
+    expect(legacyConnection).toContain("连接第三方 AI");
+    expect(legacyConnection).not.toContain("研究工作台");
     expect(workspace).toContain("研究工作台");
-    expect(workspace).not.toContain("连接到 Claude");
+    expect(workspace).not.toContain("连接第三方 AI");
   });
 
   test("keeps the public connection URL behind the existing authentication gate", () => {
@@ -129,6 +132,6 @@ describe("Claude MCP connection", () => {
     );
 
     expect(markup).toContain("正在确认登录状态");
-    expect(markup).not.toContain("连接到 Claude");
+    expect(markup).not.toContain("连接第三方 AI");
   });
 });

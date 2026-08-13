@@ -9,6 +9,56 @@
   color: var(--text);
 }
 
+.mcp-connect-dialog {
+  width: min(920px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100svh - 32px);
+  overflow: visible;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.mcp-connect-dialog::backdrop {
+  background: rgb(2 8 14 / 72%);
+  backdrop-filter: blur(5px);
+}
+
+.mcp-connect-dialog-close {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mcp-connect-dialog-close:hover {
+  border-color: var(--teal);
+  color: var(--text);
+}
+
+.mcp-connect-page.is-dialog {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.mcp-connect-page.is-dialog .mcp-connect-card {
+  width: 100%;
+  max-height: calc(100svh - 32px);
+  overflow: auto;
+  box-shadow: none;
+}
+
 .mcp-connect-card {
   display: grid;
   width: min(100%, 760px);
@@ -51,6 +101,7 @@
 .mcp-connect-intro p,
 .mcp-connect-section-heading p,
 .mcp-connect-capabilities li span,
+.mcp-connect-client p,
 .mcp-connect-boundary p {
   color: var(--muted);
 }
@@ -129,6 +180,70 @@
 .mcp-connect-install:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--teal) 32%, transparent);
   outline-offset: 3px;
+}
+
+.mcp-connect-clients {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mcp-connect-client {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--surface-raised);
+}
+
+.mcp-connect-client h2,
+.mcp-connect-client h3,
+.mcp-connect-client p {
+  margin: 0;
+}
+
+.mcp-connect-client h2 {
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.mcp-connect-client h3,
+.mcp-connect-client-kind {
+  font-size: 11px;
+}
+
+.mcp-connect-client-kind {
+  color: var(--teal);
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.mcp-connect-client p {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mcp-connect-client pre {
+  max-width: 100%;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--canvas);
+  user-select: all;
+  white-space: pre-wrap;
+}
+
+.mcp-connect-client pre code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 10px;
+  line-height: 1.55;
 }
 
 .mcp-connect-capabilities {
@@ -210,6 +325,10 @@
   }
 
   .mcp-connect-capabilities ul {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-connect-clients {
     grid-template-columns: 1fr;
   }
 }

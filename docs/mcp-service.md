@@ -18,15 +18,15 @@ MCP v1 提供：
 
 MCP v1 **没有** promotion、任意策略上传/保存/删除、策略绑定、监控启停、Paper 立即评估/对账、Testnet、Live、委托、密钥、通用审计写入或 Stage 6–10 工具。注册模板 P0 会沿用现有 pipeline 持久化服务端生成的 draft，但调用方不能提供策略正文，也不能把 draft 晋级、绑定或启动。工具输出只表示研究证据，不构成投资建议或收益保证。
 
-## Claude：一键连接
+## 第三方 AI：统一连接入口
 
 公网终端用户不需要理解或填写 OAuth 配置：
 
-1. 打开 `https://<domain>/connect/claude`；
-2. 使用已验证的本站账号登录；没有账号时可先注册并验证邮箱，也可选择 Google 登录；
-3. 点击“连接到 Claude”，在已经预填名称与 MCP 地址的 Claude 页面确认连接。
+1. 使用已验证的本站账号登录；没有账号时可先注册并验证邮箱，也可选择 Google 登录；
+2. 在工作台侧栏点击“连接第三方 AI”；
+3. Claude 用户点击一键连接；Claude Code 或 Codex CLI 用户复制弹窗中的对应命令并完成浏览器授权。
 
-完成后 Claude 只能读取当前账号的八个研究工具。页面不会索取 Client ID、Client Secret、callback、Keycloak 地址或 CLI 命令。本机 HTTP/localhost 不会生成安装链接，因为 Claude 远程连接器只能访问公网 HTTPS 服务。
+完成后第三方 AI 只能读取当前账号的八个研究工具。弹窗不会索取 Client Secret、callback 或 Keycloak 地址；Codex 所显示的是预注册 public client ID，不是秘密。本机 HTTP/localhost 不会生成安装链接或命令，因为远程连接器只能访问公网 HTTPS 服务。旧 `/connect/claude` 地址继续兼容已有书签。
 
 该入口使用 Claude 官方 custom connector 安装深链。Claude Hosted 使用官方 URL 型预注册 public client；Claude Code 使用受限 Client ID Metadata Document（CIMD）。两条路径都强制 Authorization Code、PKCE S256、用户同意、精确 `aiqt:research:read` scope 与 `/mcp` audience。匿名 Dynamic Client Registration（DCR）继续由 Caddy 阻断。已有 Keycloak `(issuer, subject)` 身份仍是硬门槛；连接页先经过现有 AuthGate，确保本站登录完成并创建租户映射后才展示安装动作。
 

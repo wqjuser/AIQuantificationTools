@@ -10,7 +10,7 @@ Accepted
 
 ## 决策
 
-Claude 用户统一从 AuthGate 保护的 `/connect/claude` 页面接入。页面只从当前可信 HTTPS Origin 构造 canonical `/mcp` 地址，并跳转到 Claude 官方的预填 custom connector 安装页；本机、HTTP 与 loopback Origin 不生成安装链接。用户接口不出现 Client ID、Secret、callback、Keycloak 或 CLI。
+用户统一从工作台侧栏的“连接第三方 AI”弹窗接入；旧 `/connect/claude` 页面仅作兼容。弹窗只从当前可信 HTTPS Origin 构造 canonical `/mcp` 地址，提供 Claude 官方预填 custom connector 安装页以及 Claude Code、Codex CLI 命令；本机、HTTP 与 loopback Origin 不生成安装链接或命令。用户接口不出现 Secret、callback 或 Keycloak；Codex 命令中的固定 public client ID 不属于凭据。
 
 连接能力默认关闭。只有管理员用版本库内的确定性迁移工具把现有 `aiqt` realm 收敛到同一 Client Profile、Client Policy、scope 与 Claude Hosted 预注册客户端配置，并通过只读检查，才可在受控维护窗口设置 `AIQT_CLAUDE_CONNECT_ENABLED=true` 进行真实协议验收；验收失败必须立即关闭，验收通过后才可对普通用户发布。未设置、迁移漂移或验收失败时，认证会话投影必须让侧栏入口和安装动作保持不可用；不能只凭 HTTPS Origin 推断授权服务已经就绪。
 
