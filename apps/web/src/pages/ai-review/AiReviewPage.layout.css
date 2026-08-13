@@ -51,14 +51,24 @@
 
 .ai-review-stage3-boundary,
 .ai-review-stage3-boundary-detail {
-  border: 1px solid #654f2a;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border));
   border-radius: 999px;
-  background: #2a2317;
-  color: #e8be62;
+  background: color-mix(in srgb, var(--amber) 9%, var(--surface-raised));
+  color: var(--amber);
   font-size: calc(10px * var(--aiqt-text-scale, 1));
   font-weight: 900;
   line-height: 1.4;
   padding: 5px 8px;
+}
+
+.ai-review-stage3-boundary-detail {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ai-review-stage3-boundary-detail > svg {
+  flex: 0 0 auto;
 }
 
 .ai-review-stage3-grid,
@@ -226,7 +236,15 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 7px;
-  align-items: start;
+  align-items: center;
+}
+
+.ai-review-stage3-approval input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--teal);
 }
 
 .ai-review-stage3-actions {
@@ -396,17 +414,17 @@
 .ai-review-stage3-error,
 .ai-review-stage3-empty {
   margin: 0;
-  border: 1px dashed #27364a;
+  border: 1px dashed var(--border-strong);
   border-radius: 7px;
-  color: #8fa0b2;
+  color: var(--muted);
   font-size: calc(11px * var(--aiqt-text-scale, 1));
   line-height: 1.5;
   padding: 9px;
 }
 
 .ai-review-stage3-error {
-  border-color: #713f42;
-  color: #ff9c8f;
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
 }
 
 @media (max-width: 720px) {

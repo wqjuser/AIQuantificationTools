@@ -17,7 +17,7 @@
   gap: 8px;
 }
 
-.ai-research-m4-config input,
+.ai-research-m4-config input:not([type="checkbox"]),
 .ai-research-m4-financial input,
 .ai-research-m4-financial select,
 .ai-research-m4-outcome select {

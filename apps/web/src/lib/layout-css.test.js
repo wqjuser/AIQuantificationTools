@@ -1016,6 +1016,29 @@ describe("terminal layout css", () => {
     );
   });
 
+  test("keeps AI research controls theme-aware and vertically centered", () => {
+    expect(hasCssBlockWith(".locale-control,\n.timeframe-control", [
+      "border: 1px solid var(--border);",
+      "background: var(--surface);",
+      "color: var(--muted);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".ai-review-stage3-boundary,\n.ai-review-stage3-boundary-detail", [
+      "background: color-mix(in srgb, var(--amber) 9%, var(--surface-raised));",
+      "color: var(--amber);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".ai-review-stage3-boundary-detail", [
+      "display: flex;",
+      "align-items: center;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".ai-review-stage3-approval", ["align-items: center;"])).toBe(true);
+    expect(hasCssBlockWith('.ai-review-stage3-approval input[type="checkbox"]', [
+      "width: 14px;",
+      "height: 14px;",
+      "margin: 0;",
+    ])).toBe(true);
+    expect(styles).toContain('.ai-research-m4-config input:not([type="checkbox"]),');
+  });
+
   test("aligns AI review decision and M4 typography with the compact page scale", () => {
     expect(cssBlock(
       ".surface-ai-review .design-ai-decision-form input,\n.surface-ai-review .design-ai-decision-form select,\n.surface-ai-review .design-ai-decision-form textarea"

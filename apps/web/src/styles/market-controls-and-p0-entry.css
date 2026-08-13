@@ -158,11 +158,11 @@
   align-items: center;
   gap: 5px;
   min-height: 30px;
-  border: 1px solid #27364a;
+  border: 1px solid var(--border);
   border-radius: 7px;
-  background: #0f1722;
+  background: var(--surface);
   padding: 4px 5px;
-  color: #8fa0b2;
+  color: var(--muted);
 }
 
 .timeframe-control button {
