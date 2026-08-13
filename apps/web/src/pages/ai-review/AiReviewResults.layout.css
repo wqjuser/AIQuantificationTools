@@ -198,6 +198,16 @@
   overflow-x: auto;
 }
 
+.surface-ai-review .design-ai-evidence:has(> .design-panel-body > .design-empty-state) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.surface-ai-review .design-ai-evidence > .design-panel-body:has(> .design-empty-state) {
+  display: grid;
+  place-items: center;
+}
+
 .surface-ai-review .design-ai-evidence .design-table th:first-child,
 .surface-ai-review .design-ai-evidence .design-table td:first-child {
   padding-left: 14px;

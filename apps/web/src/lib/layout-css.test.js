@@ -921,6 +921,14 @@ describe("terminal layout css", () => {
       "display: grid;",
       "gap: 2px;",
     ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-evidence:has(> .design-panel-body > .design-empty-state)", [
+      "display: grid;",
+      "grid-template-rows: auto minmax(0, 1fr);",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".surface-ai-review .design-ai-evidence > .design-panel-body:has(> .design-empty-state)", [
+      "display: grid;",
+      "place-items: center;",
+    ])).toBe(true);
     expect(hasCssBlockWith("  .surface-ai-review .design-ai-overview,\n  .surface-ai-review .design-ai-verdicts,\n  .surface-ai-review .design-ai-side", [
       "grid-template-columns: minmax(0, 1fr);",
     ])).toBe(true);
