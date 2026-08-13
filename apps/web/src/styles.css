@@ -1,4 +1,5 @@
 @import "./styles/foundation-shell.css";
+@import "./styles/auth-gate.css";
 @import "./styles/market-controls-and-p0-entry.css";
 @import "./styles/p0-golden-path-readiness.css";
 @import "./styles/p0-acceptance-completion.css";

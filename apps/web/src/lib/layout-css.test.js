@@ -216,19 +216,36 @@ function i18nSnippet(zh, en) {
 }
 
 describe("terminal layout css", () => {
-  test("offers self-hosted login, Google login, and registration without losing returnTo", () => {
-    expect(authGateSource).toContain("使用本站账号登录");
+  test("offers a responsive research-terminal login without losing any authentication path", () => {
+    expect(authGateSource).toContain("从数据到结论");
+    expect(authGateSource).toContain("进入 AIQT 研究终端");
+    expect(authGateSource).toContain("使用本站账号继续");
     expect(authGateSource).toContain("使用 Google 登录");
-    expect(authGateSource).toContain("注册本站账号");
-    expect(authGateSource).toContain("认证服务由本站托管");
+    expect(authGateSource).toContain('src="/google-g.svg"');
+    expect(authGateSource).toContain("创建本站账号");
+    expect(authGateSource).toContain("登录仅用于身份验证，不连接实盘，不自动提交订单");
+    expect(authGateSource).toContain("Research-only · Paper-only · Live blocked");
+    expect(authGateSource).toContain("系统正常");
+    expect(authGateSource).toContain('aria-label="研究流程"');
     expect(authGateSource).toContain('const returnTo = state === "unauthenticated"');
     expect(authGateSource).toContain("encodeURIComponent(window.location.pathname + window.location.search)");
     expect(authGateSource).toContain('href={`/api/auth/login?returnTo=${returnTo}`}');
     expect(authGateSource).toContain('href={`/api/auth/login?returnTo=${returnTo}&flow=google`}');
     expect(authGateSource).toContain('href={`/api/auth/login?returnTo=${returnTo}&flow=register`}');
     expect(authGateSource).toContain('href="/privacy.html"');
-    expect(hasCssBlockWith(".auth-gate-actions", ["display: grid;", "gap: 10px;"])).toBe(true);
-    expect(hasCssBlockWith(".auth-gate-action-secondary", ["background: transparent;", "color: var(--text);"])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate", [
+      "grid-template-columns: minmax(0, 62%) minmax(380px, 38%);",
+      "min-height: 100svh;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate-story", [
+      "background-image: url(\"/auth-research-chart.png\");",
+      "background-size: cover;",
+    ])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate-panel", ["display: grid;", "place-items: center;"])).toBe(true);
+    expect(globalStyles).toContain("@media (max-width: 859px)");
+    expect(hasCssBlockWith(".auth-gate", ["grid-template-columns: minmax(0, 1fr);"])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate-actions", ["display: grid;", "gap: 14px;"])).toBe(true);
+    expect(hasCssBlockWith(".auth-gate-action-secondary", ["background: transparent;", "color: #e8eef3;"])).toBe(true);
   });
 
   test("describes self-hosted and Google account session handling in the privacy policy", () => {

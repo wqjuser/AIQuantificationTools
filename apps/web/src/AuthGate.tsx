@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ArrowRight, Circle, ShieldCheck } from "lucide-react";
 import { bindPublicSession, parseDeploymentSession } from "./lib/public-auth";
 
 type GateState = "loading" | "local" | "unauthenticated" | "authenticated" | "error";
@@ -40,7 +41,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     : "";
   return (
     <main className="auth-gate">
-      <section aria-labelledby="auth-gate-title" className="auth-gate-card">
+      <section aria-labelledby="auth-gate-title" className="auth-gate-story">
         <header className="auth-gate-brand">
           <img alt="" src="/aiqt-logo.png" />
           <div>
@@ -50,38 +51,64 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </header>
 
         <div className="auth-gate-copy">
-          <h1 className="auth-gate-title" id="auth-gate-title">登录你的研究空间</h1>
-          <p>完成行情筛选、研究、策略、回测与 AI 评审。每个账号拥有独立的数据与设置。</p>
+          <h1 className="auth-gate-title" id="auth-gate-title">从数据到结论，<br />进入你的研究空间</h1>
+          <p>行情筛选、策略研究、回测实验与 AI 评审，<br />在一个隔离的研究工作台中完成。</p>
         </div>
 
-        <div aria-live="polite" className="auth-gate-state">
+        <ol aria-label="研究流程" className="auth-gate-workflow">
+          <li className="active"><span>行情</span><ArrowRight aria-hidden="true" /><Circle aria-hidden="true" /></li>
+          <li><span>策略</span><ArrowRight aria-hidden="true" /><Circle aria-hidden="true" /></li>
+          <li><span>回测</span><ArrowRight aria-hidden="true" /><Circle aria-hidden="true" /></li>
+          <li><span>AI 评审</span><Circle aria-hidden="true" /></li>
+        </ol>
+
+        <p className="auth-gate-boundary">
+          <ShieldCheck aria-hidden="true" size={18} />
+          Research-only · Paper-only · Live blocked
+        </p>
+      </section>
+
+      <section aria-labelledby="auth-gate-panel-title" className="auth-gate-panel">
+        <div className="auth-gate-card">
+          <header className="auth-gate-panel-header">
+            <h2 id="auth-gate-panel-title">进入 AIQT 研究终端</h2>
+            <p>使用你的账号继续</p>
+          </header>
+
+          <div className="auth-gate-state">
           {state === "unauthenticated" ? (
             <>
               <div className="auth-gate-actions">
                 <a className="primary auth-gate-action" href={`/api/auth/login?returnTo=${returnTo}`}>
-                  使用本站账号登录
-                </a>
-                <a className="auth-gate-action auth-gate-action-secondary" href={`/api/auth/login?returnTo=${returnTo}&flow=google`}>
-                  使用 Google 登录
+                  使用本站账号继续
                 </a>
               </div>
               <p className="auth-gate-note">
-                还没有账号？<a className="auth-gate-register" href={`/api/auth/login?returnTo=${returnTo}&flow=register`}>注册本站账号</a>
+                没有账号？<a className="auth-gate-register" href={`/api/auth/login?returnTo=${returnTo}&flow=register`}>创建本站账号</a>
               </p>
-              <p className="auth-gate-note">认证服务由本站托管；登录不会授权实盘，也不会自动提交订单。</p>
+              <div className="auth-gate-divider"><span>其他登录方式</span></div>
+              <a className="auth-gate-action auth-gate-action-secondary" href={`/api/auth/login?returnTo=${returnTo}&flow=google`}>
+                <img alt="" src="/google-g.svg" />
+                使用 Google 登录
+              </a>
+              <p className="auth-gate-safety">
+                <ShieldCheck aria-hidden="true" size={18} />
+                登录仅用于身份验证，不连接实盘，不自动提交订单
+              </p>
             </>
           ) : state === "error" ? (
             <>
-              <p className="auth-gate-error">无法确认登录状态，请检查网络后重试。</p>
+              <p className="auth-gate-error" role="alert">无法确认登录状态，请检查网络后重试。</p>
               <button className="primary auth-gate-action" onClick={() => void refresh()} type="button">重新检查</button>
             </>
-          ) : <p className="auth-gate-loading">正在确认登录状态…</p>}
-        </div>
+          ) : <p className="auth-gate-loading" role="status">正在确认登录状态…</p>}
+          </div>
 
-        <footer className="auth-gate-footer">
-          <span>本站账号仅用于身份验证与数据隔离</span>
-          <a href="/privacy.html">隐私政策</a>
-        </footer>
+          <footer className="auth-gate-footer">
+            <a href="/privacy.html"><ShieldCheck aria-hidden="true" size={15} />隐私政策</a>
+            <span className="auth-gate-system-status"><i aria-hidden="true" />系统正常</span>
+          </footer>
+        </div>
       </section>
     </main>
   );

@@ -135,6 +135,16 @@
 
 final result: passed
 
+## 2026-08-13 登录页终端分栏视觉复验
+
+- 参考图：`/Users/wenqingjie/.codex/generated_images/019fe3c6-5e6f-7410-8365-62411ae5891e/exec-5961513d-e295-4937-bc42-4a4b908f7175.png`（1487 × 1058）；实现截图：`/tmp/aiqt-login-qa/login-desktop.png`（1440 × 1024）、`/tmp/aiqt-login-qa/login-mobile.png`（390 × 876）；同屏对比：`/tmp/aiqt-login-qa/reference-vs-implementation.png`。
+- Iteration 1：实现了 62/38 研究终端分栏、研究流程、主登录/注册/Google/安全边界；对比后补入官方 Google G 图标，并将研究图表作为单独位图资产而非 CSS 绘制。
+- Iteration 2：移动端发现全局标题不换行导致 `scrollWidth 506 > 390`；局部恢复标题换行并给单列网格 `minmax(0, 1fr)`，最终 `scrollWidth = clientWidth = 390`，页面自然纵向滚动。
+- 最终对比：桌面品牌、标题层级、分栏比例、研究图表、登录操作、边界与页脚与参考一致；移动端四个可交互入口按 Tab 顺序排列，主按钮 54px，两个文本链接 24px；控制台 0 error / 0 warning。
+- Web 布局聚焦测试 121 / 121、生产构建和 `git diff --check` 通过；完整 Web 回归 1179 / 1180，唯一失败来自用户既有未跟踪且未导入的 `editorial-finance-system.css`，与本次改动无关。
+
+final result: passed
+
 ## 2026-07-30 行情中心全市场概览与条件选股复验
 
 - 本轮只扩展既有行情中心，没有新增第十二个页面。核心服务新增只读 `GET /api/market/discovery`：优先读取东方财富 A 股全市场快照，失败时降级为 AKShare 新浪实时行情，再失败才使用最近成功快照；筛选、排序和最多 `100` 条返回均由服务端完成，不触发研究、AI、配置保存或交易。
