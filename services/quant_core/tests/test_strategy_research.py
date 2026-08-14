@@ -38,6 +38,7 @@ from quant_core.strategy_research import (
 from quant_core.strategy_experiments import (
     formal_scoring_metadata,
     strategy_experiment_id_from_idempotency_key,
+    strategy_research_launch_definition_identity,
 )
 
 
@@ -409,6 +410,26 @@ def _source_run() -> ResearchRunAudit:
 
 
 class StrategyResearchProposalTests(unittest.TestCase):
+    def test_launch_definition_identity_ignores_dimension_order(self):
+        definition = {
+            "strategyRevision": "revision-1",
+            "sourceRunId": "run-1",
+            "assumptions": {"initialCash": 10},
+            "dimensions": [
+                {"policyPath": "regime.closeAboveSmaWindow", "values": [180, 200]},
+                {"policyPath": "breakout.lookbackBars", "values": [18, 20]},
+            ],
+            "guardrails": {"development": {"minimumRoundTripCount": 30}},
+            "walkForward": {"trainBars": 43_200},
+        }
+
+        reordered = {**definition, "dimensions": list(reversed(definition["dimensions"]))}
+
+        self.assertEqual(
+            strategy_research_launch_definition_identity(definition),
+            strategy_research_launch_definition_identity(reordered),
+        )
+
     def test_proposal_fails_closed_without_server_sealed_dataset_store(self) -> None:
         run = _source_run()
         with tempfile.TemporaryDirectory() as directory:

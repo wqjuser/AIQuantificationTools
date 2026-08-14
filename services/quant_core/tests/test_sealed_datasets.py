@@ -330,6 +330,55 @@ class SealedDatasetStoreTests(unittest.TestCase):
             )
         self.assertEqual(len(adapter.calls), calls_before_rejection)
 
+    def test_development_bar_source_pins_the_first_upstream_source(self):
+        start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+        class SwitchingAdapter:
+            def __init__(self) -> None:
+                self.normal_calls = 0
+                self.pinned_calls: list[str] = []
+
+            def fetch_ohlcv(self, request, limit=500):
+                self.normal_calls += 1
+                return _bars(request.start, limit), DataQuality(
+                    source="binance" if self.normal_calls == 1 else "coinbase",
+                    origin_source="binance" if self.normal_calls == 1 else "coinbase",
+                    is_complete=True,
+                    rows=limit,
+                    adjustment_mode="none",
+                )
+
+            def fetch_ohlcv_from_source(self, request, *, limit, source):
+                self.pinned_calls.append(source)
+                return _bars(request.start, limit), DataQuality(
+                    source=source,
+                    origin_source=source,
+                    is_complete=True,
+                    rows=limit,
+                    adjustment_mode="none",
+                )
+
+        adapter = SwitchingAdapter()
+        with tempfile.TemporaryDirectory() as directory:
+            summary = SealedDevelopmentBarSource(
+                store=SealedDatasetStore(Path(directory) / "sealed.sqlite"),
+                adapter=adapter,
+                page_size=1_000,
+            ).seal(
+                MarketDataRequest(
+                    market="crypto",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                    start=start,
+                    end=start + timedelta(minutes=2_500),
+                ),
+                development_end_exclusive=start + timedelta(minutes=2_000),
+            )
+
+        self.assertEqual(summary.source, "binance")
+        self.assertEqual(adapter.normal_calls, 1)
+        self.assertEqual(adapter.pinned_calls, ["binance", "binance"])
+
     def test_development_bar_source_does_not_sort_away_upstream_disorder(self):
         start = datetime(2026, 7, 1, tzinfo=timezone.utc)
 

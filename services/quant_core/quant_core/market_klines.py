@@ -120,6 +120,42 @@ class QuantDingerKlineAdapter:
         quality = replace(quality, rows=len(bars))
         return self.cache.set(key, bars, quality)
 
+    def fetch_ohlcv_from_source(
+        self,
+        request: MarketDataRequest,
+        *,
+        limit: int,
+        source: str,
+    ) -> tuple[list[OHLCVBar], DataQuality]:
+        ccxt_source = f"ccxt:{getattr(self.ccxt_adapter, 'exchange_id', '')}"
+        if request.market != "crypto" or source not in {"binance", "coinbase", ccxt_source}:
+            raise ValueError("unsupported pinned K-line source")
+        bounded_limit = max(1, min(int(limit), 1_000))
+        for attempt in range(3):
+            try:
+                if source == "binance":
+                    bars = self._fetch_binance_crypto_bars(request, bounded_limit)
+                    quality = DataQuality(source=source, origin_source=source, is_complete=True)
+                elif source == "coinbase":
+                    bars = self._fetch_coinbase_crypto_bars(request, bounded_limit)
+                    quality = DataQuality(source=source, origin_source=source, is_complete=True)
+                else:
+                    bars, quality = self.ccxt_adapter.fetch_ohlcv(request, limit=bounded_limit)
+                bars = [
+                    bar
+                    for bar in bars
+                    if (request.start is None or bar.timestamp >= request.start)
+                    and (request.end is None or bar.timestamp <= request.end)
+                ][-bounded_limit:]
+                if not bars:
+                    raise RuntimeError("pinned K-line source returned no bars")
+                return bars, replace(quality, rows=len(bars))
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(0.2 * (attempt + 1))
+        raise AssertionError("unreachable")
+
     def _fetch_ashare_bars(self, request: MarketDataRequest, limit: int) -> tuple[list[OHLCVBar], DataQuality]:
         if request.timeframe not in {"1d", "1w"}:
             bars = self._fetch_eastmoney_ashare_minute_bars(request, limit)
@@ -347,7 +383,7 @@ class QuantDingerKlineAdapter:
         query: dict[str, object] = {
             "symbol": binance_symbol(request.symbol),
             "interval": ccxt_timeframe(request.timeframe),
-            "limit": max(1, min(limit, 500)),
+            "limit": max(1, min(limit, 1_000)),
         }
         if request.end:
             query["endTime"] = int(request.end.timestamp() * 1000)

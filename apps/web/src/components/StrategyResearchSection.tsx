@@ -213,14 +213,18 @@ export function StrategyResearchSection({
   baseUrl,
   capabilities: providedCapabilities,
   onOpenFormalP0,
+  onSelectFormalP0Template,
   providers,
+  selectedFormalP0TemplateId,
   sourceMetadata,
   sourceRunId,
 }: {
   baseUrl: string;
   capabilities?: readonly StrategyResearchCapability[];
   onOpenFormalP0: () => void;
+  onSelectFormalP0Template: (templateId: string) => void;
   providers: AiReviewProviderStatus[];
+  selectedFormalP0TemplateId: string;
   sourceMetadata: StrategyResearchSourceMetadata | null;
   sourceRunId: string | null;
 }) {
@@ -280,6 +284,8 @@ export function StrategyResearchSection({
   const usesExternalProvider = providerId !== "local";
   const externalDataApproved = approval.context === approvalContext && approval.approved;
   const sourceQualification = strategyResearchSourceQualification(sourceRunId, sourceMetadata);
+  const canOpenFormalP0 = registeredTemplateIds.includes(selectedFormalP0TemplateId)
+    && !capabilitiesLoading;
   const canPropose = Boolean(
     sourceRunId
     && sourceQualification.eligible
@@ -537,12 +543,30 @@ export function StrategyResearchSection({
         <p className="ai-review-stage3-error" role="alert">{capabilityError}</p>
       ) : null}
       {!sourceQualification.eligible ? (
-        <div className="ai-review-stage3-empty">
+        <div className="ai-review-stage3-empty ai-research-m4-config">
           {sourceQualification.detail}
+          <label>
+            <span>正式 P0 源策略</span>
+            <select
+              data-testid="strategy-research-p0-template-select"
+              disabled={capabilitiesLoading || registeredCapabilities.length === 0}
+              onChange={(event) => onSelectFormalP0Template(event.currentTarget.value)}
+              value={selectedFormalP0TemplateId}
+            >
+              <option value="">请选择正式 P0 源策略</option>
+              {registeredCapabilities.map((capability) => (
+                <option key={capability.templateId} value={capability.templateId}>
+                  {strategyResearchCapabilityDisplayName(capability)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <small>进入研究页后点击“运行研究”，系统才会生成正式密封 P0。</small>
           <div className="ai-review-stage3-actions">
             <button
               className="design-secondary-action"
               data-testid="strategy-research-open-p0"
+              disabled={!canOpenFormalP0}
               onClick={onOpenFormalP0}
               type="button"
             >

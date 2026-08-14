@@ -452,6 +452,7 @@ describe("docker deployment contract", () => {
     expect(nginx).toContain("location /api/");
     expect(nginx).toContain("proxy_pass http://api:8765;");
     expect(nginx).toContain("proxy_read_timeout 90s;");
+    expect(nginx).toContain("proxy_read_timeout 300s;");
     expect(nginx).toContain("location = /health");
     expect(nginx).toContain("proxy_pass http://api:8765/health;");
   });

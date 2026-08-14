@@ -81,10 +81,12 @@ describe("StrategyResearchSection", () => {
         baseUrl="/"
         capabilities={capabilities}
         onOpenFormalP0={() => undefined}
+        onSelectFormalP0Template={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
           { providerId: "openai", configured: true, model: "gpt-test", sanitizedBaseUrl: "https://api.example.com" },
         ]}
+        selectedFormalP0TemplateId=""
         sourceMetadata={eligibleSource}
         sourceRunId="run-source"
       />,
@@ -122,9 +124,11 @@ describe("StrategyResearchSection", () => {
         baseUrl="/"
         capabilities={capabilities}
         onOpenFormalP0={() => undefined}
+        onSelectFormalP0Template={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
         ]}
+        selectedFormalP0TemplateId=""
         sourceMetadata={null}
         sourceRunId={null}
       />,
@@ -146,9 +150,11 @@ describe("StrategyResearchSection", () => {
         baseUrl="/"
         capabilities={capabilities}
         onOpenFormalP0={() => undefined}
+        onSelectFormalP0Template={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
         ]}
+        selectedFormalP0TemplateId=""
         sourceMetadata={{
           ...eligibleSource,
           snapshotHashVersion: "aiqt-data-v2",
@@ -159,9 +165,32 @@ describe("StrategyResearchSection", () => {
     );
 
     expect(tag(markup, "strategy-research-propose")).toContain("disabled");
-    expect(tag(markup, "strategy-research-open-p0")).not.toContain("disabled");
-    expect(markup).toContain("前往研究页生成正式 P0");
+    expect(tag(markup, "strategy-research-open-p0")).toContain("disabled");
+    expect(tag(markup, "strategy-research-p0-template-select")).not.toBe("");
+    expect(markup).toContain("请选择正式 P0 源策略");
+    expect(markup).toContain("进入研究页后点击“运行研究”");
     expect(markup).toContain("当前运行不是正式密封 P0");
+
+    const selectedMarkup = renderToStaticMarkup(
+      <StrategyResearchSection
+        baseUrl="/"
+        capabilities={capabilities}
+        onOpenFormalP0={() => undefined}
+        onSelectFormalP0Template={() => undefined}
+        providers={[
+          { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
+        ]}
+        selectedFormalP0TemplateId="regime-breakout-v2"
+        sourceMetadata={{
+          ...eligibleSource,
+          snapshotHashVersion: "aiqt-data-v2",
+          snapshotBarsExposed: true,
+        }}
+        sourceRunId="run-source"
+      />,
+    );
+    expect(tag(selectedMarkup, "strategy-research-open-p0")).not.toContain("disabled");
+    expect(selectedMarkup).toContain("市场状态突破策略");
   });
 
   it("submits only proposal intent so the server owns template matching", () => {
@@ -185,9 +214,11 @@ describe("StrategyResearchSection", () => {
         baseUrl="/"
         capabilities={serverOnly}
         onOpenFormalP0={() => undefined}
+        onSelectFormalP0Template={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
         ]}
+        selectedFormalP0TemplateId=""
         sourceMetadata={eligibleSource}
         sourceRunId="run-source"
       />,

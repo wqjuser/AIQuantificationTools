@@ -338,6 +338,7 @@ def post_p0_pipeline(self, parsed):
             sealed_summary = SealedDevelopmentBarSource(
                 store=sealed_store,
                 adapter=self.kline_adapter,
+                page_size=1_000,
                 minimum_rows=self.sealed_dataset_minimum_rows,
             ).seal(
                 MarketDataRequest(

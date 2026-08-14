@@ -298,7 +298,7 @@ class SealedDevelopmentBarSource:
     ) -> None:
         self.store = store
         self.adapter = adapter
-        self.page_size = max(1, min(int(page_size), 500))
+        self.page_size = max(1, min(int(page_size), 1_000))
         self.minimum_rows = max(1, int(minimum_rows))
 
     def seal(
@@ -325,9 +325,16 @@ class SealedDevelopmentBarSource:
         reverse_chunks: list[list[OHLCVBar]] = []
         reverse_qualities: list[DataQuality] = []
         cursor_end = end_exclusive
+        pinned_source: str | None = None
+        pinned_fetch = getattr(self.adapter, "fetch_ohlcv_from_source", None)
         while cursor_end > start:
             remaining_rows = int((cursor_end - start) // step)
-            page_rows = min(self.page_size, remaining_rows)
+            page_rows = min(
+                self.page_size
+                if pinned_source is not None and callable(pinned_fetch)
+                else min(self.page_size, 500),
+                remaining_rows,
+            )
             page_start = cursor_end - step * page_rows
             page_end_inclusive = cursor_end - step
             page_request = MarketDataRequest(
@@ -337,10 +344,18 @@ class SealedDevelopmentBarSource:
                 start=page_start,
                 end=page_end_inclusive,
             )
-            page, quality = self.adapter.fetch_ohlcv(  # type: ignore[attr-defined]
-                page_request,
-                limit=page_rows,
-            )
+            if pinned_source is not None and callable(pinned_fetch):
+                page, quality = pinned_fetch(
+                    page_request,
+                    limit=page_rows,
+                    source=pinned_source,
+                )
+            else:
+                page, quality = self.adapter.fetch_ohlcv(  # type: ignore[attr-defined]
+                    page_request,
+                    limit=page_rows,
+                )
+                pinned_source = quality.origin_source or quality.source
             bounded = [
                 bar
                 for bar in page
@@ -353,24 +368,35 @@ class SealedDevelopmentBarSource:
                 for previous, current in zip(bounded, bounded[1:])
             ):
                 raise ValueError("sealed_dataset_page_timestamp_disorder")
-            reverse_chunks.append(bounded)
-            reverse_qualities.append(
+            page_chunks = [
+                bounded[index : index + 500]
+                for index in range(0, len(bounded), 500)
+            ]
+            page_qualities = [
                 DataQuality(
                     source=quality.source,
                     origin_source=quality.origin_source,
                     is_complete=quality.is_complete,
-                    warnings=list(quality.warnings),
-                    rows=len(bounded),
+                    warnings=list(quality.warnings) if index == 0 else [],
+                    rows=len(chunk),
                     observed_at=quality.observed_at,
-                    market_time=quality.market_time,
+                    market_time=chunk[-1].timestamp,
                     calendar_id=quality.calendar_id,
                     adjustment_mode=quality.adjustment_mode,
                     freshness=quality.freshness,
-                    coverage=dict(quality.coverage),
-                    canonical_hash=quality.canonical_hash,
-                    issues=[dict(issue) for issue in quality.issues],
+                    coverage={
+                        "actualRows": len(chunk),
+                        "expectedRows": len(chunk),
+                        "gapCount": 0,
+                        "ratio": 1.0,
+                    },
+                    canonical_hash=canonical_data_hash(normalize_snapshot_bars(chunk)),
+                    issues=[dict(issue) for issue in quality.issues] if index == 0 else [],
                 )
-            )
+                for index, chunk in enumerate(page_chunks)
+            ]
+            reverse_chunks.extend(reversed(page_chunks))
+            reverse_qualities.extend(reversed(page_qualities))
             cursor_end = page_start
 
         return self.store.seal_dataset(

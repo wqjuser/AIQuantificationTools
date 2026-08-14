@@ -3397,12 +3397,15 @@ def strategy_research_launch_definition_identity(value: Mapping[str, Any]) -> st
         field not in value for field in _STRATEGY_RESEARCH_LAUNCH_DEFINITION_FIELDS
     ):
         raise ValueError("strategy_research_launch_definition_invalid")
-    return canonical_sha256(
-        {
-            field: value[field]
-            for field in _STRATEGY_RESEARCH_LAUNCH_DEFINITION_FIELDS
-        }
-    )
+    identity = {
+        field: value[field]
+        for field in _STRATEGY_RESEARCH_LAUNCH_DEFINITION_FIELDS
+    }
+    dimensions = identity["dimensions"]
+    if not isinstance(dimensions, list):
+        raise ValueError("strategy_research_launch_definition_invalid")
+    identity["dimensions"] = sorted(dimensions, key=canonical_json)
+    return canonical_sha256(identity)
 
 
 def strategy_experiment_id_from_idempotency_key(value: Any) -> str:
