@@ -7,11 +7,12 @@ import json
 import os
 import base64
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 from http.server import HTTPServer
 from pathlib import Path
-from threading import Thread
+from threading import Lock, Thread
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
@@ -378,6 +379,60 @@ class SealedDatasetStoreTests(unittest.TestCase):
         self.assertEqual(summary.source, "binance")
         self.assertEqual(adapter.normal_calls, 1)
         self.assertEqual(adapter.pinned_calls, ["binance", "binance"])
+
+    def test_development_bar_source_fetches_pinned_binance_pages_concurrently(self):
+        start = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+        class SlowPinnedAdapter:
+            def __init__(self) -> None:
+                self.active = 0
+                self.max_active = 0
+                self.lock = Lock()
+
+            def fetch_ohlcv(self, request, limit=500):
+                return _bars(request.start, limit), DataQuality(
+                    source="binance",
+                    origin_source="binance",
+                    is_complete=True,
+                    rows=limit,
+                    adjustment_mode="none",
+                )
+
+            def fetch_ohlcv_from_source(self, request, *, limit, source):
+                with self.lock:
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                try:
+                    time.sleep(0.05)
+                    return _bars(request.start, limit), DataQuality(
+                        source=source,
+                        origin_source=source,
+                        is_complete=True,
+                        rows=limit,
+                        adjustment_mode="none",
+                    )
+                finally:
+                    with self.lock:
+                        self.active -= 1
+
+        adapter = SlowPinnedAdapter()
+        with tempfile.TemporaryDirectory() as directory:
+            SealedDevelopmentBarSource(
+                store=SealedDatasetStore(Path(directory) / "sealed.sqlite"),
+                adapter=adapter,
+                page_size=1_000,
+            ).seal(
+                MarketDataRequest(
+                    market="crypto",
+                    symbol="BTC/USDT",
+                    timeframe="1m",
+                    start=start,
+                    end=start + timedelta(minutes=3_000),
+                ),
+                development_end_exclusive=start + timedelta(minutes=2_000),
+            )
+
+        self.assertGreater(adapter.max_active, 1)
 
     def test_development_bar_source_does_not_sort_away_upstream_disorder(self):
         start = datetime(2026, 7, 1, tzinfo=timezone.utc)
@@ -852,7 +907,18 @@ class SealedP0HttpTests(unittest.TestCase):
             response = asyncio.run(
                 send("POST", "/api/p0/pipeline", tenant_a, request_payload)
             )
-            response_payload = json.loads(response.body.decode("utf-8"))
+            queued_payload = json.loads(response.body.decode("utf-8"))
+            processed = tenant_api.process_p0_pipeline_jobs(tenant_a)
+            job_response = asyncio.run(
+                send(
+                    "GET",
+                    f"/api/p0/pipeline/jobs/{queued_payload['jobId']}",
+                    tenant_a,
+                )
+            )
+            job_payload = json.loads(job_response.body.decode("utf-8"))
+            self.assertEqual(job_payload.get("status"), "completed", job_payload)
+            response_payload = job_payload["result"]
             run_id = str(response_payload.get("runId") or "")
             owner_detail = asyncio.run(
                 send("GET", f"/api/research/runs/{run_id}", tenant_a)
@@ -860,10 +926,20 @@ class SealedP0HttpTests(unittest.TestCase):
             other_detail = asyncio.run(
                 send("GET", f"/api/research/runs/{run_id}", tenant_b)
             )
+            other_job = asyncio.run(
+                send(
+                    "GET",
+                    f"/api/p0/pipeline/jobs/{queued_payload['jobId']}",
+                    tenant_b,
+                )
+            )
 
-        self.assertEqual(response.status_code, 200, response_payload)
+        self.assertEqual(response.status_code, 202, queued_payload)
+        self.assertEqual(processed, {"processed": 1, "completed": 1, "failed": 0})
+        self.assertEqual(job_response.status_code, 200, job_response.body)
         self.assertEqual(owner_detail.status_code, 200, owner_detail.body)
         self.assertEqual(other_detail.status_code, 404, other_detail.body)
+        self.assertEqual(other_job.status_code, 404, other_job.body)
         self.assertEqual(len(backtest_engine.seen), 1_000)
         dataset_id = response_payload["sealedDatasetId"]
         self.assertIsNotNone(runtime_a.stores.sealed_dataset_store.get_summary(dataset_id))

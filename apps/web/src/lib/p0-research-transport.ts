@@ -177,6 +177,10 @@ export function buildP0PipelineUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p0/pipeline");
 }
 
+function buildP0PipelineJobUrl(baseUrl: string, jobId: string): string {
+  return buildApiUrl(baseUrl, `api/p0/pipeline/jobs/${encodeURIComponent(jobId)}`);
+}
+
 export function buildP0AiReviewUrl(baseUrl: string): string {
   return buildApiUrl(baseUrl, "api/p0/ai-reviews");
 }
@@ -391,14 +395,24 @@ export async function runP0Pipeline(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(buildP0PipelineRequest(params, currentWorkspace))
     });
-    const payload = await response.json();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(response.ok
+        ? "Invalid P0 pipeline contract"
+        : `HTTP ${response.status ?? "error"}`);
+    }
     if (!response.ok) {
       throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
     }
-    if (!isP0PipelineResponsePayload(payload)) {
+    const pipeline = isP0PipelineJobAccepted(payload)
+      ? await waitForP0PipelineJob(baseUrl, payload.jobId, fetcher)
+      : payload;
+    if (!isP0PipelineResponsePayload(pipeline)) {
       throw new Error("Invalid P0 pipeline contract");
     }
-    const detail = await loadResearchRunDetail(baseUrl, payload.runId, fetcher);
+    const detail = await loadResearchRunDetail(baseUrl, pipeline.runId, fetcher);
     if (detail.source !== "core" || !detail.run) {
       throw new Error(detail.error ?? "P0 pipeline audit run detail unavailable");
     }
@@ -406,7 +420,7 @@ export async function runP0Pipeline(
       workspace: workspaceWithPrimaryWorkflows(workspaceFromResearchRunAudit(currentWorkspace, detail.run)),
       source: "core",
       statusLabel: "P0 pipeline run complete",
-      pipeline: payload
+      pipeline
     };
   } catch (error) {
     return {
@@ -416,6 +430,40 @@ export async function runP0Pipeline(
       error: error instanceof Error ? error.message : "Unknown P0 pipeline error"
     };
   }
+}
+
+async function waitForP0PipelineJob(
+  baseUrl: string,
+  jobId: string,
+  fetcher: WorkspaceFetcher
+): Promise<unknown> {
+  for (let attempt = 0; attempt < 360; attempt += 1) {
+    const response = await fetcher(buildP0PipelineJobUrl(baseUrl, jobId));
+    const payload = await response.json();
+    if (!response.ok || !payload || typeof payload !== "object") {
+      throw new Error(coreErrorDetail(payload) ?? `HTTP ${response.status ?? "error"}`);
+    }
+    const job = payload as { status?: unknown; result?: unknown; error?: unknown };
+    if (job.status === "completed") {
+      return job.result;
+    }
+    if (job.status === "failed") {
+      throw new Error(typeof job.error === "string" ? job.error : "P0 pipeline execution failed");
+    }
+    if (job.status !== "pending") {
+      throw new Error("Invalid P0 pipeline job contract");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error("P0 pipeline execution timed out");
+}
+
+function isP0PipelineJobAccepted(value: unknown): value is { status: "accepted"; jobId: string } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const job = value as { status?: unknown; jobId?: unknown };
+  return job.status === "accepted" && typeof job.jobId === "string" && job.jobId.length > 0;
 }
 
 function isP0PipelineResponsePayload(value: unknown): value is P0PipelineResponse {

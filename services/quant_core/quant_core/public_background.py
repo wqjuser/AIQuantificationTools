@@ -108,6 +108,14 @@ class PublicBackgroundRunner:
             ),
         )
 
+    def run_p0_pipeline_jobs_once(self) -> int:
+        return self._run_for_active_tenants(
+            "p0-pipeline-jobs",
+            lambda tenant, guard, fence: self.tenant_api.process_p0_pipeline_jobs(
+                tenant, lease_guard=guard, lease_fence=fence
+            ),
+        )
+
     def _run_for_active_tenants(
         self,
         task_key: str,
@@ -183,6 +191,7 @@ class PublicBackgroundRunner:
         next_selection = 0.0
         next_auto = 0.0
         next_strategy_experiment = 0.0
+        next_p0_pipeline = 0.0
         while not self._stopped.is_set():
             now = time.monotonic()
             if now >= next_selection:
@@ -213,10 +222,25 @@ class PublicBackgroundRunner:
                 next_strategy_experiment = (
                     time.monotonic() + self.strategy_experiment_interval
                 )
+            if now >= next_p0_pipeline:
+                try:
+                    self.run_p0_pipeline_jobs_once()
+                except Exception as error:
+                    _log_task_failure(
+                        "p0-pipeline-jobs",
+                        error,
+                        scope="scheduler",
+                    )
+                next_p0_pipeline = time.monotonic() + self.strategy_experiment_interval
             self._stopped.wait(
                 max(
                     0.1,
-                    min(next_selection, next_auto, next_strategy_experiment)
+                    min(
+                        next_selection,
+                        next_auto,
+                        next_strategy_experiment,
+                        next_p0_pipeline,
+                    )
                     - time.monotonic(),
                 )
             )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -324,17 +325,9 @@ class SealedDevelopmentBarSource:
 
         reverse_chunks: list[list[OHLCVBar]] = []
         reverse_qualities: list[DataQuality] = []
-        cursor_end = end_exclusive
-        pinned_source: str | None = None
         pinned_fetch = getattr(self.adapter, "fetch_ohlcv_from_source", None)
-        while cursor_end > start:
-            remaining_rows = int((cursor_end - start) // step)
-            page_rows = min(
-                self.page_size
-                if pinned_source is not None and callable(pinned_fetch)
-                else min(self.page_size, 500),
-                remaining_rows,
-            )
+
+        def fetch_page(cursor_end: datetime, page_rows: int, source: str | None):
             page_start = cursor_end - step * page_rows
             page_end_inclusive = cursor_end - step
             page_request = MarketDataRequest(
@@ -344,18 +337,17 @@ class SealedDevelopmentBarSource:
                 start=page_start,
                 end=page_end_inclusive,
             )
-            if pinned_source is not None and callable(pinned_fetch):
+            if source is not None and callable(pinned_fetch):
                 page, quality = pinned_fetch(
                     page_request,
                     limit=page_rows,
-                    source=pinned_source,
+                    source=source,
                 )
             else:
                 page, quality = self.adapter.fetch_ohlcv(  # type: ignore[attr-defined]
                     page_request,
                     limit=page_rows,
                 )
-                pinned_source = quality.origin_source or quality.source
             bounded = [
                 bar
                 for bar in page
@@ -395,9 +387,36 @@ class SealedDevelopmentBarSource:
                 )
                 for index, chunk in enumerate(page_chunks)
             ]
-            reverse_chunks.extend(reversed(page_chunks))
-            reverse_qualities.extend(reversed(page_qualities))
-            cursor_end = page_start
+            return page_start, page_chunks, page_qualities, quality
+
+        first_rows = min(min(self.page_size, 500), total_rows)
+        cursor_end = end_exclusive
+        page_start, page_chunks, page_qualities, first_quality = fetch_page(
+            cursor_end,
+            first_rows,
+            None,
+        )
+        reverse_chunks.extend(reversed(page_chunks))
+        reverse_qualities.extend(reversed(page_qualities))
+        cursor_end = page_start
+        pinned_source = first_quality.origin_source or first_quality.source
+
+        page_specs: list[tuple[datetime, int, str | None]] = []
+        while cursor_end > start:
+            remaining_rows = int((cursor_end - start) // step)
+            page_rows = min(
+                self.page_size if callable(pinned_fetch) else min(self.page_size, 500),
+                remaining_rows,
+            )
+            page_specs.append((cursor_end, page_rows, pinned_source))
+            cursor_end -= step * page_rows
+
+        workers = min(8, len(page_specs)) if pinned_source == "binance" else 1
+        with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+            pages = executor.map(lambda spec: fetch_page(*spec), page_specs)
+            for _, page_chunks, page_qualities, _ in pages:
+                reverse_chunks.extend(reversed(page_chunks))
+                reverse_qualities.extend(reversed(page_qualities))
 
         return self.store.seal_dataset(
             request,

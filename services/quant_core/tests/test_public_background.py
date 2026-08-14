@@ -22,6 +22,7 @@ class FakeTenantApi:
     def __init__(self):
         self.reviews = []
         self.trading = []
+        self.pipelines = []
 
     def review_due_selections(self, tenant, *, lease_guard=None, lease_fence=None):
         if lease_guard is not None and not lease_guard():
@@ -32,6 +33,11 @@ class FakeTenantApi:
         if lease_guard is not None and not lease_guard():
             raise RuntimeError("public_lease_lost")
         self.trading.append(tenant)
+
+    def process_p0_pipeline_jobs(self, tenant, *, lease_guard=None, lease_fence=None):
+        if lease_guard is not None and not lease_guard():
+            raise RuntimeError("public_lease_lost")
+        self.pipelines.append(tenant)
 
 
 class PublicBackgroundRunnerTest(unittest.TestCase):
@@ -62,8 +68,10 @@ class PublicBackgroundRunnerTest(unittest.TestCase):
 
         self.assertEqual(runner.run_selection_reviews_once(), 2)
         self.assertEqual(runner.run_auto_trading_once(), 2)
+        self.assertEqual(runner.run_p0_pipeline_jobs_once(), 2)
         self.assertEqual({item.email for item in api.reviews}, {"a@example.com", "b@example.com"})
         self.assertTrue(all(not item.reauthenticated_recently() for item in api.trading))
+        self.assertEqual({item.email for item in api.pipelines}, {"a@example.com", "b@example.com"})
 
     def test_selection_review_cycle_reports_successes_and_failures(self):
         class PartiallyFailingTenantApi(FakeTenantApi):
