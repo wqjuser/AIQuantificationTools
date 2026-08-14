@@ -286,6 +286,7 @@ export function WorkspaceHost({ controller }: WorkspaceHostProps) {
                   {renderStrategyWorkbench(false)}
                   <StrategyResearchSection
                     baseUrl={quantCoreBaseUrl}
+                    onOpenFormalP0={() => selectProductWorkArea("research")}
                     providers={researchNoteProviders}
                     sourceMetadata={strategyResearchSource ? {
                       runId: strategyResearchSource.runId,

@@ -212,12 +212,14 @@ export function StrategyResearchPaperBoundaryNotice({
 export function StrategyResearchSection({
   baseUrl,
   capabilities: providedCapabilities,
+  onOpenFormalP0,
   providers,
   sourceMetadata,
   sourceRunId,
 }: {
   baseUrl: string;
   capabilities?: readonly StrategyResearchCapability[];
+  onOpenFormalP0: () => void;
   providers: AiReviewProviderStatus[];
   sourceMetadata: StrategyResearchSourceMetadata | null;
   sourceRunId: string | null;
@@ -535,7 +537,19 @@ export function StrategyResearchSection({
         <p className="ai-review-stage3-error" role="alert">{capabilityError}</p>
       ) : null}
       {!sourceQualification.eligible ? (
-        <p className="ai-review-stage3-empty">{sourceQualification.detail}</p>
+        <div className="ai-review-stage3-empty">
+          {sourceQualification.detail}
+          <div className="ai-review-stage3-actions">
+            <button
+              className="design-secondary-action"
+              data-testid="strategy-research-open-p0"
+              onClick={onOpenFormalP0}
+              type="button"
+            >
+              前往研究页生成正式 P0
+            </button>
+          </div>
+        </div>
       ) : null}
 
       <div className="ai-review-stage3-grid">

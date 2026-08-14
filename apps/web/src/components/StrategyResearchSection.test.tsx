@@ -80,6 +80,7 @@ describe("StrategyResearchSection", () => {
       <StrategyResearchSection
         baseUrl="/"
         capabilities={capabilities}
+        onOpenFormalP0={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
           { providerId: "openai", configured: true, model: "gpt-test", sanitizedBaseUrl: "https://api.example.com" },
@@ -120,6 +121,7 @@ describe("StrategyResearchSection", () => {
       <StrategyResearchSection
         baseUrl="/"
         capabilities={capabilities}
+        onOpenFormalP0={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
         ]}
@@ -143,6 +145,7 @@ describe("StrategyResearchSection", () => {
       <StrategyResearchSection
         baseUrl="/"
         capabilities={capabilities}
+        onOpenFormalP0={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
         ]}
@@ -156,6 +159,8 @@ describe("StrategyResearchSection", () => {
     );
 
     expect(tag(markup, "strategy-research-propose")).toContain("disabled");
+    expect(tag(markup, "strategy-research-open-p0")).not.toContain("disabled");
+    expect(markup).toContain("前往研究页生成正式 P0");
     expect(markup).toContain("当前运行不是正式密封 P0");
   });
 
@@ -179,6 +184,7 @@ describe("StrategyResearchSection", () => {
       <StrategyResearchSection
         baseUrl="/"
         capabilities={serverOnly}
+        onOpenFormalP0={() => undefined}
         providers={[
           { providerId: "local", configured: true, model: null, sanitizedBaseUrl: null },
         ]}
