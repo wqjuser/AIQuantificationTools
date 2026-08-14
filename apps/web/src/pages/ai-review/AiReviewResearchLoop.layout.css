@@ -298,48 +298,48 @@
   }
 }
 
-.surface-ai-review .ai-research-m4-section {
+.ai-research-m4-section {
   font-size: calc(10px * var(--aiqt-text-scale, 1));
 }
 
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading span,
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-card label > span {
+.ai-research-m4-section .ai-review-stage3-heading span,
+.ai-research-m4-section .ai-review-stage3-card label > span {
   color: var(--muted);
   font-size: calc(9.5px * var(--aiqt-text-scale, 1));
 }
 
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong,
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3 {
+.ai-research-m4-section .ai-review-stage3-heading strong,
+.ai-research-m4-section .ai-review-stage3-card h3 {
   color: var(--text);
 }
 
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong {
+.ai-research-m4-section .ai-review-stage3-heading strong {
   font-size: calc(13.5px * var(--aiqt-text-scale, 1));
 }
 
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3 {
+.ai-research-m4-section .ai-review-stage3-card h3 {
   font-size: calc(10.5px * var(--aiqt-text-scale, 1));
 }
 
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-boundary {
+.ai-research-m4-section .ai-review-stage3-boundary {
   border-color: var(--border);
   background: var(--surface-raised);
   color: var(--amber);
 }
 
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-card {
+.ai-research-m4-section .ai-review-stage3-card {
   border-color: var(--border);
   background: var(--surface-raised);
   color: var(--text);
 }
 
-.surface-ai-review .ai-research-m4-section .ai-research-m4-config select {
+.ai-research-m4-section .ai-research-m4-config select {
   border-color: var(--border);
   background: var(--surface-raised);
   color: var(--text);
 }
 
-.surface-ai-review .ai-research-m4-section .ai-review-stage3-actions .design-primary-action {
+.ai-research-m4-section .ai-review-stage3-actions .design-primary-action {
   min-height: 38px;
   border-radius: 5px;
   font-size: calc(11.5px * var(--aiqt-text-scale, 1));

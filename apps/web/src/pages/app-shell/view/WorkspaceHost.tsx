@@ -102,37 +102,14 @@ export function WorkspaceHost({ controller }: WorkspaceHostProps) {
                 providerId: aiReviewStage3ProviderId,
                 providers: aiReviewStage3Providers,
                 researchLoop: (
-                  <>
-                    <StrategyResearchSection
-                      baseUrl={quantCoreBaseUrl}
-                      providers={aiReviewStage3Providers}
-                      sourceMetadata={strategyResearchSource ? {
-                        runId: strategyResearchSource.runId,
-                        market: strategyResearchSource.market ?? null,
-                        symbol: strategyResearchSource.symbol ?? null,
-                        timeframe: strategyResearchSource.timeframe ?? null,
-                        executionMode: strategyResearchSource.executionMode ?? null,
-                        snapshotHashVersion: strategyResearchSource.dataSnapshot?.hashVersion ?? null,
-                        snapshotComplete: strategyResearchSource.dataSnapshot?.isComplete === true,
-                        snapshotBarsExposed: Boolean(
-                          strategyResearchSource.dataSnapshot
-                          && Object.prototype.hasOwnProperty.call(
-                            strategyResearchSource.dataSnapshot,
-                            "bars",
-                          )
-                        ),
-                      } : null}
-                      sourceRunId={currentResearchRunId ?? null}
-                    />
-                    <AiResearchM4Section
-                      baseUrl={quantCoreBaseUrl}
-                      currentReview={isRunningAiReviewStage3 || isStrategyExperimentRunning
-                        ? null
-                        : aiReviewStage3CurrentReview}
-                      i18n={i18n}
-                      runHistory={runHistory}
-                    />
-                  </>
+                  <AiResearchM4Section
+                    baseUrl={quantCoreBaseUrl}
+                    currentReview={isRunningAiReviewStage3 || isStrategyExperimentRunning
+                      ? null
+                      : aiReviewStage3CurrentReview}
+                    i18n={i18n}
+                    runHistory={runHistory}
+                  />
                 )
               }}
               chart={
@@ -304,7 +281,32 @@ export function WorkspaceHost({ controller }: WorkspaceHostProps) {
                 onWalkForwardChange: configureStrategyExperimentWalkForward,
                 walkForward: strategyExperimentWalkForward
               }}
-              strategyWorkbench={renderStrategyWorkbench(false)}
+              strategyWorkbench={(
+                <>
+                  {renderStrategyWorkbench(false)}
+                  <StrategyResearchSection
+                    baseUrl={quantCoreBaseUrl}
+                    providers={aiReviewStage3Providers}
+                    sourceMetadata={strategyResearchSource ? {
+                      runId: strategyResearchSource.runId,
+                      market: strategyResearchSource.market ?? null,
+                      symbol: strategyResearchSource.symbol ?? null,
+                      timeframe: strategyResearchSource.timeframe ?? null,
+                      executionMode: strategyResearchSource.executionMode ?? null,
+                      snapshotHashVersion: strategyResearchSource.dataSnapshot?.hashVersion ?? null,
+                      snapshotComplete: strategyResearchSource.dataSnapshot?.isComplete === true,
+                      snapshotBarsExposed: Boolean(
+                        strategyResearchSource.dataSnapshot
+                        && Object.prototype.hasOwnProperty.call(
+                          strategyResearchSource.dataSnapshot,
+                          "bars",
+                        )
+                      ),
+                    } : null}
+                    sourceRunId={currentResearchRunId ?? null}
+                  />
+                </>
+              )}
               surfaceRef={activeWorkspaceSurfaceRef}
               workflowGuide={
                 activeWorkAreaId === "market-information"

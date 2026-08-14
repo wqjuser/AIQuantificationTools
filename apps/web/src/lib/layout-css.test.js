@@ -1014,12 +1014,23 @@ describe("terminal layout css", () => {
     );
   });
 
-  test("keeps the M4 research loop inside the real AI review surface without horizontal overflow", () => {
+  test("keeps strategy research in the strategy workbench and M4 evidence in AI review", () => {
     expect(appSource).toContain('import { AiResearchM4Section } from "../../../components/AiResearchM4Section";');
     expect(appSource).toContain('import { StrategyResearchSection } from "../../../components/StrategyResearchSection";');
-    expect(appSource).toContain("researchLoop: (");
-    expect(appSource).toContain("<StrategyResearchSection");
-    expect(appSource).toContain("sourceRunId={currentResearchRunId ?? null}");
+    const researchLoopStart = appSource.indexOf("researchLoop: (");
+    const strategyWorkbenchStart = appSource.indexOf("strategyWorkbench={");
+    const researchLoopSource = appSource.slice(
+      researchLoopStart,
+      appSource.indexOf("chart={", researchLoopStart)
+    );
+    const strategyWorkbenchSource = appSource.slice(
+      strategyWorkbenchStart,
+      appSource.indexOf("surfaceRef=", strategyWorkbenchStart)
+    );
+    expect(researchLoopSource).toContain("<AiResearchM4Section");
+    expect(researchLoopSource).not.toContain("<StrategyResearchSection");
+    expect(strategyWorkbenchSource).toContain("<StrategyResearchSection");
+    expect(strategyWorkbenchSource).toContain("sourceRunId={currentResearchRunId ?? null}");
     expect(aiReviewContractSource).toContain("researchLoop?: ReactNode;");
     expect(aiReviewPanelSource).toContain("{aiReview.researchLoop}");
     expect(aiResearchM4SectionSource).toContain("researchContextOnly=true");
@@ -1033,13 +1044,15 @@ describe("terminal layout css", () => {
     expect(cssBlock(
       "  .ai-research-m4-financial-grid,\n  .ai-research-m4-score-grid,\n  .ai-research-m4-claims,\n  .ai-research-m4-views,\n  .ai-research-m4-outcomes dl"
     )).toContain("grid-template-columns: 1fr;");
-    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-review-stage3-card")).toContain(
+    expect(cssBlock(".ai-research-m4-section .ai-review-stage3-card")).toContain(
       "background: var(--surface-raised);"
     );
-    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-review-stage3-boundary")).toContain(
+    expect(styles).toContain("\n.ai-research-m4-section .ai-review-stage3-card {");
+    expect(styles).not.toContain(".surface-ai-review .ai-research-m4-section .ai-review-stage3-card {");
+    expect(cssBlock(".ai-research-m4-section .ai-review-stage3-boundary")).toContain(
       "background: var(--surface-raised);"
     );
-    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-research-m4-config select")).toContain(
+    expect(cssBlock(".ai-research-m4-section .ai-research-m4-config select")).toContain(
       "background: var(--surface-raised);"
     );
   });
@@ -1082,17 +1095,17 @@ describe("terminal layout css", () => {
     expect(cssBlock(
       ".surface-ai-review .design-ai-decision-form input,\n.surface-ai-review .design-ai-decision-form select,\n.surface-ai-review .design-ai-decision-form textarea"
     )).toContain("font-size: calc(10.5px * var(--aiqt-text-scale, 1));");
-    expect(cssBlock(".surface-ai-review .ai-research-m4-section")).toContain(
+    expect(hasCssBlockWith(".ai-research-m4-section", [
       "font-size: calc(10px * var(--aiqt-text-scale, 1));"
-    );
+    ])).toBe(true);
     expect(cssBlock(
-      ".surface-ai-review .ai-research-m4-section .ai-review-stage3-heading span,\n.surface-ai-review .ai-research-m4-section .ai-review-stage3-card label > span"
+      ".ai-research-m4-section .ai-review-stage3-heading span,\n.ai-research-m4-section .ai-review-stage3-card label > span"
     )).toContain("font-size: calc(9.5px * var(--aiqt-text-scale, 1));");
-    expect(cssBlock(".surface-ai-review .ai-research-m4-section .ai-review-stage3-heading strong")).toContain(
+    expect(cssBlock(".ai-research-m4-section .ai-review-stage3-heading strong")).toContain(
       "font-size: calc(13.5px * var(--aiqt-text-scale, 1));"
     );
     expect(hasCssBlockWith(
-      ".surface-ai-review .ai-research-m4-section .ai-review-stage3-card h3",
+      ".ai-research-m4-section .ai-review-stage3-card h3",
       ["font-size: calc(10.5px * var(--aiqt-text-scale, 1));"]
     )).toBe(true);
   });
@@ -1102,7 +1115,7 @@ describe("terminal layout css", () => {
       'className="design-primary-action"\n              data-testid="ai-research-m4-create"'
     );
     expect(cssBlock(
-      ".surface-ai-review .ai-research-m4-section .ai-review-stage3-actions .design-primary-action"
+      ".ai-research-m4-section .ai-review-stage3-actions .design-primary-action"
     )).toContain("font-size: calc(11.5px * var(--aiqt-text-scale, 1));");
   });
 
@@ -2230,7 +2243,7 @@ describe("terminal layout css", () => {
     expect(appSource).toContain("strategy-generated-snapshot");
     expect(appSource).toContain("readinessGates={strategyReadinessGates}");
     expect(appSource).toContain("validationSource={strategyValidationState.source}");
-    expect(appSource).toContain("strategyWorkbench={renderStrategyWorkbench(false)}");
+    expect(appSource).toContain("{renderStrategyWorkbench(false)}");
     expect(appSource).toContain("showSaveAction={showSaveAction}");
     expect(appSource).toContain("onApplyStrategyTemplate={applyStrategyTemplate}");
     expect(appSource).toContain("onUpdateStrategyRuleDraftField={updateStrategyRuleDraftField}");
