@@ -3465,6 +3465,108 @@ describe("terminal workspace API client", () => {
     expect(result.workspace.strategy.entry).toBe("Close > SMA20");
   });
 
+  test("preserves a P0 pipeline HTTP error when the proxy response is not JSON", async () => {
+    const result = await runP0Pipeline(
+      "/",
+      { market: "crypto", symbol: "BTC/USDT", timeframe: "1m" },
+      buildTerminalWorkspace(),
+      async () => ({
+        ok: false,
+        status: 524,
+        json: async () => { throw new SyntaxError("Unexpected token '<'"); }
+      })
+    );
+
+    expect(result.source).toBe("fallback");
+    expect(result.error).toBe("HTTP 524");
+  });
+
+  test("polls an accepted public P0 pipeline job before loading the audited run", async () => {
+    const currentWorkspace = buildTerminalWorkspace();
+    const auditedRun = {
+      runId: "run-background123",
+      createdAt: "2026-08-14T08:00:00+00:00",
+      market: "crypto",
+      symbol: "BTC/USDT",
+      timeframe: "1m",
+      strategyName: "Market breakout",
+      strategyRevision: "revision-1",
+      dataRows: 116999,
+      metrics: {
+        total_return_pct: 1.2,
+        annual_return_pct: 24,
+        max_drawdown_pct: 0.8,
+        win_rate_pct: 50,
+        profit_factor: 1.1,
+        trade_count: 2,
+        bar_count: 116999
+      },
+      decisions: [],
+      executionMode: "paper_only",
+      dataQuality: { source: "binance", isComplete: true, warnings: [], rows: 116999 },
+      dataSnapshot: {
+        source: "binance",
+        isComplete: true,
+        warnings: [],
+        rows: 116999,
+        start: "2026-05-14T08:00:00+00:00",
+        end: "2026-08-14T08:00:00+00:00",
+        hash: "abc123def456",
+        bars: []
+      },
+      strategyConfig: {
+        name: "Market breakout",
+        revision: "revision-1",
+        market: "crypto",
+        symbols: ["BTC/USDT"],
+        timeframe: "1m",
+        version: 1,
+        entryConditions: [{ kind: "close_above_sma", params: { window: 20 } }],
+        exitConditions: [{ kind: "close_below_sma", params: { window: 20 } }],
+        risk: { positionPct: 0.2, stopLossPct: 0.08, takeProfitPct: 0.18, maxDrawdownPct: 0.12 }
+      },
+      backtestAssumptions: { initialCash: 100000, feeBps: 3, slippageBps: 2 },
+      backtestTrades: [],
+      backtestEquityCurve: [],
+      backtestDiagnostics: []
+    };
+    const pipeline = {
+      status: "audited_run_created",
+      runId: "run-background123",
+      strategyRevisionId: "revision-1",
+      dataSnapshotId: "snapshot-1",
+      metrics: { totalReturnPct: 1.2, maxDrawdownPct: 0.8, tradeCount: 2 },
+      paperOnly: true,
+      liveTradingAllowed: false
+    };
+    const calls: string[] = [];
+    const fetcher = async (url: string, init?: RequestInit) => {
+      calls.push(url);
+      if (init?.method === "POST") {
+        return { ok: true, status: 202, json: async () => ({ status: "accepted", jobId: "p0-job-1" }) };
+      }
+      if (url === "/api/p0/pipeline/jobs/p0-job-1") {
+        return { ok: true, status: 200, json: async () => ({ jobId: "p0-job-1", status: "completed", result: pipeline }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ run: auditedRun }) };
+    };
+
+    const result = await runP0Pipeline(
+      "/",
+      { market: "crypto", symbol: "BTC/USDT", timeframe: "1m" },
+      currentWorkspace,
+      fetcher
+    );
+
+    expect(calls).toEqual([
+      "/api/p0/pipeline",
+      "/api/p0/pipeline/jobs/p0-job-1",
+      "/api/research/runs/run-background123"
+    ]);
+    expect(result.source).toBe("core");
+    expect(result.pipeline?.runId).toBe("run-background123");
+  });
+
   test("generates a validated AI strategy candidate without applying or saving it", async () => {
     const currentDraft = {
       name: "银行趋势草稿",

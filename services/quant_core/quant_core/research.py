@@ -81,6 +81,7 @@ def run_terminal_research(
     sealed_dataset_id: str | None = None,
     backtest_evaluation_start_index: int = 0,
     formal_scoring: dict[str, Any] | None = None,
+    audit_run_id: str | None = None,
 ) -> TerminalWorkspace:
     data_adapter = adapter or DemoMarketDataAdapter()
     research_assistant = assistant or LocalResearchAssistant()
@@ -212,7 +213,7 @@ def run_terminal_research(
         DecisionLogEntry(agent="Technical Analyst", message=f"Backtest replay completed on {quality.rows} bars.", tone="positive"),
         DecisionLogEntry(agent="Portfolio Manager", message=report.improvements[0], tone="warning"),
     ]
-    run_id = f"run-{uuid4().hex[:12]}"
+    run_id = audit_run_id or f"run-{uuid4().hex[:12]}"
     backtest_trade_rows = _backtest_trade_replay_rows(backtest, initial_cash=backtest_engine.initial_cash)
     backtest_equity_curve = _backtest_equity_curve_rows(backtest)
     backtest_diagnostics = _backtest_diagnostics(

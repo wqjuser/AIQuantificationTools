@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from datetime import datetime, timezone
 import socket
 import time
 from threading import Event, RLock
@@ -18,9 +19,10 @@ from quant_core.deployment import load_deployment_config
 from quant_core.public_api import create_public_app
 from quant_core.public_auth import OidcIdentity, PublicAuthService
 from quant_core.public_schema import create_public_schema
-from quant_core.public_tenant_api import PublicTenantApi
+from quant_core.public_tenant_api import PublicBridgeHandler, PublicTenantApi
 from quant_core.stage10_production_execution import BinanceSpotProductionTradingRoute
 from quant_core.tenant_crypto import TenantSecretCipher
+from quant_core.tenancy import TenantContext
 
 
 class MultiUserProvider:
@@ -196,6 +198,59 @@ class PublicTenantApiTest(unittest.TestCase):
         self.assertEqual(second.json()["watchlist"][0]["name"], "浦发银行")
         self.assertEqual(stage10.status_code, 200)
         self.assertEqual(stage10.json()["productionExecutionControl"]["status"], "revoked")
+
+    def test_p0_pipeline_is_queued_and_polled_without_holding_the_http_request(self) -> None:
+        csrf = self._login(self.first, "first")
+        headers = {
+            "Origin": "https://research.example.com",
+            "X-AIQT-CSRF": csrf,
+        }
+
+        queued = self.first.post(
+            "/api/p0/pipeline",
+            json={"market": "ashare", "symbol": "600000", "timeframe": "1d"},
+            headers=headers,
+        )
+
+        self.assertEqual(queued.status_code, 202)
+        job_id = queued.json()["jobId"]
+        self.assertEqual(
+            self.first.get(f"/api/p0/pipeline/jobs/{job_id}").json()["status"],
+            "pending",
+        )
+
+        result = {
+            "status": "audited_run_created",
+            "runId": queued.json()["runId"],
+            "strategyRevisionId": "strategy-revision",
+            "dataSnapshotId": "snapshot-id",
+            "metrics": {
+                "totalReturnPct": 1.0,
+                "maxDrawdownPct": 0.5,
+                "tradeCount": 2,
+            },
+            "paperOnly": True,
+            "liveTradingAllowed": False,
+        }
+
+        def complete(handler, _parsed):
+            handler._send_json(result)
+            return True
+
+        tenant = TenantContext(
+            owner_id=self.first.get("/api/auth/session").json()["ownerId"],
+            issuer="https://identity.example.com",
+            subject="subject-first",
+            email="first@example.com",
+            reauthenticated_at=datetime.now(timezone.utc),
+        )
+        with patch.object(PublicBridgeHandler, "_dispatch_post", complete):
+            processed = self.tenant_api.process_p0_pipeline_jobs(tenant)
+
+        self.assertEqual(processed, {"processed": 1, "completed": 1, "failed": 0})
+        completed = self.first.get(f"/api/p0/pipeline/jobs/{job_id}")
+        self.assertEqual(completed.status_code, 200)
+        self.assertEqual(completed.json(), {"jobId": job_id, "status": "completed", "result": result})
 
     def test_cors_preflight_does_not_require_a_session_but_rejects_other_origins(self) -> None:
         allowed = self.first.options(

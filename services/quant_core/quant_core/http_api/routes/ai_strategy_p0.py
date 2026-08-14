@@ -380,6 +380,7 @@ def post_p0_pipeline(self, parsed):
             sealed_dataset_id=sealed_dataset_id,
             backtest_evaluation_start_index=backtest_evaluation_start_index,
             formal_scoring=formal_scoring,
+            audit_run_id=getattr(self, "p0_pipeline_run_id", None),
         )
         if not workspace.research_run:
             raise ValueError("p0_pipeline_run_missing")

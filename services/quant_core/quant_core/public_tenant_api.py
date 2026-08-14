@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from contextlib import nullcontext
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
 import json
@@ -14,7 +14,7 @@ import socket
 import tempfile
 from threading import RLock
 from typing import Any, Callable, Mapping
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
 from sqlalchemy.engine import Connection, Engine
@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from quant_core.canonical import canonical_sha256
 from quant_core.deployment import DeploymentConfig
 from quant_core.ai_review_providers import AiReviewProviderRegistry
 from quant_core.http_api.handler import ComposedQuantApiHandler
@@ -63,6 +64,8 @@ _PUBLIC_LOCAL_FILE_ROUTES = {
     "/api/audit/signing-keys/environment-bindings",
 }
 _ACTOR_FIELDS = ("operator", "reviewer", "author", "approvedBy", "liveOperator")
+_P0_PIPELINE_JOB_KIND = "p0_pipeline_job"
+_P0_PIPELINE_JOB_PREFIX = "/api/p0/pipeline/jobs/"
 
 
 @dataclass
@@ -175,6 +178,14 @@ class PublicTenantApi:
             )
         runtime = self._runtime(tenant)
         body = await request.body()
+        if request.method == "POST" and request.url.path == "/api/p0/pipeline":
+            return await run_in_threadpool(self._queue_p0_pipeline, runtime, body)
+        if request.method == "GET" and request.url.path.startswith(_P0_PIPELINE_JOB_PREFIX):
+            return await run_in_threadpool(
+                self._read_p0_pipeline_job,
+                runtime,
+                request.url.path,
+            )
         return await run_in_threadpool(
             self._dispatch_request,
             runtime,
@@ -182,6 +193,145 @@ class PublicTenantApi:
             tenant,
             body,
         )
+
+    @staticmethod
+    def _queue_p0_pipeline(runtime: _TenantRuntime, body: bytes) -> Response:
+        try:
+            request_payload = json.loads(body)
+        except (TypeError, ValueError):
+            request_payload = None
+        if not isinstance(request_payload, dict):
+            return JSONResponse({"error": "invalid_p0_pipeline"}, status_code=400)
+        suffix = uuid4().hex[:12]
+        job_id = f"p0-job-{suffix}"
+        run_id = f"run-{suffix}"
+        now = datetime.now(timezone.utc).isoformat()
+        job = {
+            "jobId": job_id,
+            "runId": run_id,
+            "status": "pending",
+            "request": request_payload,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        runtime.stores.records.put(
+            _P0_PIPELINE_JOB_KIND,
+            job_id,
+            job,
+            canonical_hash=canonical_sha256(job),
+        )
+        return JSONResponse(
+            {"status": "accepted", "jobId": job_id, "runId": run_id},
+            status_code=202,
+        )
+
+    @staticmethod
+    def _read_p0_pipeline_job(runtime: _TenantRuntime, path: str) -> Response:
+        job_id = unquote(path.removeprefix(_P0_PIPELINE_JOB_PREFIX)).strip()
+        if not job_id.startswith("p0-job-") or "/" in job_id:
+            return JSONResponse({"error": "p0_pipeline_job_not_found"}, status_code=404)
+        job = runtime.stores.records.get(_P0_PIPELINE_JOB_KIND, job_id)
+        if job is None:
+            return JSONResponse({"error": "p0_pipeline_job_not_found"}, status_code=404)
+        projection = {"jobId": job_id, "status": job.get("status")}
+        if job.get("status") == "completed":
+            projection["result"] = job.get("result")
+        elif job.get("status") == "failed":
+            projection["error"] = job.get("error") or "P0 pipeline execution failed."
+        return JSONResponse(projection)
+
+    def process_p0_pipeline_jobs(
+        self,
+        tenant: TenantContext,
+        *,
+        lease_guard: Callable[[], bool] | None = None,
+        lease_fence: Callable[[Connection], bool] | None = None,
+    ) -> dict[str, int]:
+        runtime = self._runtime(tenant)
+        completed = failed = 0
+        with runtime.lock:
+            runtime.stores.records.write_fence = lease_fence
+            try:
+                pending = [
+                    job
+                    for job in runtime.stores.records.list(
+                        _P0_PIPELINE_JOB_KIND,
+                        limit=100_000,
+                    )
+                    if job.get("status") == "pending"
+                ]
+                pending.sort(key=lambda job: str(job.get("createdAt") or ""))
+                for job in pending:
+                    _require_lease(lease_guard)
+                    status, payload = self._run_p0_pipeline_job(runtime, tenant, job)
+                    now = datetime.now(timezone.utc).isoformat()
+                    if status < 400 and isinstance(payload, dict):
+                        updated = {
+                            **job,
+                            "status": "completed",
+                            "result": payload,
+                            "updatedAt": now,
+                        }
+                        completed += 1
+                    else:
+                        detail = payload.get("detail") if isinstance(payload, dict) else None
+                        updated = {
+                            **job,
+                            "status": "failed",
+                            "error": str(detail or "P0 pipeline execution failed."),
+                            "updatedAt": now,
+                        }
+                        failed += 1
+                    runtime.stores.records.put(
+                        _P0_PIPELINE_JOB_KIND,
+                        str(job["jobId"]),
+                        updated,
+                        canonical_hash=canonical_sha256(updated),
+                    )
+            finally:
+                runtime.stores.records.write_fence = None
+        return {"processed": completed + failed, "completed": completed, "failed": failed}
+
+    def _run_p0_pipeline_job(
+        self,
+        runtime: _TenantRuntime,
+        tenant: TenantContext,
+        job: dict[str, object],
+    ) -> tuple[int, object]:
+        request_body = _response(job.get("request") or {})
+        request = Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/p0/pipeline",
+                "raw_path": b"/api/p0/pipeline",
+                "query_string": b"",
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(request_body)).encode()),
+                ],
+                "client": ("public-background", 0),
+                "server": ("public-background", 0),
+                "scheme": "http",
+                "root_path": "",
+            }
+        )
+        handler = self._handler(runtime.handler_type, request, request_body, tenant)
+        handler.p0_pipeline_run_id = str(job["runId"])
+        try:
+            parsed = urlparse(handler.path)
+            if not handler._dispatch_post(parsed):
+                handler._send_json({"error": "not_found"}, status=404)
+            try:
+                payload = json.loads(handler._captured_body)
+            except (TypeError, ValueError):
+                payload = {"error": "p0_pipeline_invalid_response"}
+            return handler._captured_status, payload
+        except Exception:
+            return 500, {"error": "public_tenant_route_failed"}
+        finally:
+            handler.connection.close()
+            handler._connection_peer.close()
 
     def _dispatch_request(
         self,
