@@ -29089,19 +29089,22 @@ class QuantCoreContractTest(unittest.TestCase):
         self.assertEqual(payload["runs"][0]["runId"], "run-new")
         self.assertEqual(payload["runs"][0]["createdAt"], "2026-05-26T08:00:00+00:00")
         self.assertEqual(payload["runs"][0]["strategyRevision"], "rev-new")
-        self.assertEqual(payload["runs"][0]["aiReport"]["summary"], "History AI summary")
-        self.assertEqual(payload["runs"][0]["aiReport"]["risks"], ["History risk"])
-        self.assertEqual(payload["runs"][0]["aiReport"]["improvements"], ["History improvement"])
-        self.assertEqual(payload["runs"][0]["aiReport"]["disclaimer"], "No investment promise")
-        self.assertNotIn("dataSnapshot", payload["runs"][0])
-        self.assertEqual(payload["runs"][0]["dataQuality"], {"source": "yahoo", "isComplete": True, "warnings": [], "rows": 120})
-        self.assertEqual(payload["runs"][0]["strategyConfig"]["entryConditions"][0]["params"], {"window": 20})
-        self.assertEqual(payload["runs"][0]["strategyConfig"]["risk"]["positionPct"], 0.8)
-        self.assertEqual(payload["runs"][0]["backtestAssumptions"], {"initialCash": 250000, "feeBps": 8, "slippageBps": 4})
-        self.assertEqual(payload["runs"][0]["backtestTrades"][0]["symbol"], "AAPL")
-        self.assertEqual(payload["runs"][0]["backtestTrades"][0]["side"], "BUY")
-        self.assertEqual(payload["runs"][0]["backtestEquityCurve"][-1]["equity"], 254000.0)
-        self.assertEqual(payload["runs"][0]["backtestDiagnostics"][0]["label"], "Return profile")
+        self.assertEqual(
+            set(payload["runs"][0]),
+            {
+                "runId",
+                "createdAt",
+                "market",
+                "symbol",
+                "timeframe",
+                "strategyName",
+                "strategyRevision",
+                "dataRows",
+                "metrics",
+                "decisions",
+                "executionMode",
+            },
+        )
         self.assertEqual(payload["runs"][0]["metrics"]["trade_count"], 8)
         self.assertEqual(payload["runs"][1]["symbol"], "600000")
 
