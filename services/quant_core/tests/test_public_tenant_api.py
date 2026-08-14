@@ -20,6 +20,7 @@ from quant_core.public_api import create_public_app
 from quant_core.public_auth import OidcIdentity, PublicAuthService
 from quant_core.public_schema import create_public_schema
 from quant_core.public_tenant_api import PublicBridgeHandler, PublicTenantApi
+from quant_core.runs import ResearchRunAudit
 from quant_core.stage10_production_execution import BinanceSpotProductionTradingRoute
 from quant_core.tenant_crypto import TenantSecretCipher
 from quant_core.tenancy import TenantContext
@@ -251,6 +252,64 @@ class PublicTenantApiTest(unittest.TestCase):
         completed = self.first.get(f"/api/p0/pipeline/jobs/{job_id}")
         self.assertEqual(completed.status_code, 200)
         self.assertEqual(completed.json(), {"jobId": job_id, "status": "completed", "result": result})
+
+    def test_research_run_history_is_a_compact_reload_safe_summary(self) -> None:
+        self._login(self.first, "first")
+        owner_id = self.first.get("/api/auth/session").json()["ownerId"]
+        tenant = TenantContext(
+            owner_id=owner_id,
+            issuer="https://identity.example.com",
+            subject="subject-first",
+            email="first@example.com",
+            reauthenticated_at=datetime.now(timezone.utc),
+        )
+        self.tenant_api._runtime(tenant).stores.run_store.record(
+            ResearchRunAudit(
+                run_id="run-reload-safe",
+                created_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+                market="crypto",
+                symbol="BTC/USDT",
+                timeframe="1m",
+                strategy_name="Reload-safe strategy",
+                strategy_revision="revision-1",
+                data_rows=5_000,
+                metrics={"total_return_pct": 1.0, "trade_count": 2},
+                decisions=[],
+                execution_mode="paper_only",
+                backtest_equity_curve=[
+                    {"timestamp": f"2026-08-15T00:{index % 60:02d}:00+00:00", "equity": 100_000 + index}
+                    for index in range(5_000)
+                ],
+                research_note={
+                    "market": "crypto",
+                    "symbol": "BTC/USDT",
+                    "timeframe": "1m",
+                    "body": "private note" * 1_000,
+                    "updatedAt": "2026-08-15T00:00:00+00:00",
+                },
+            )
+        )
+
+        response = self.first.get("/api/research/runs?limit=50")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.json()["runs"][0]),
+            {
+                "runId",
+                "createdAt",
+                "market",
+                "symbol",
+                "timeframe",
+                "strategyName",
+                "strategyRevision",
+                "dataRows",
+                "metrics",
+                "decisions",
+                "executionMode",
+            },
+        )
+        self.assertLess(len(response.content), 2_000)
 
     def test_cors_preflight_does_not_require_a_session_but_rejects_other_origins(self) -> None:
         allowed = self.first.options(

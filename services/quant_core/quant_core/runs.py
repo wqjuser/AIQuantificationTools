@@ -533,7 +533,24 @@ def research_run_audit_to_payload(audit: ResearchRunAudit, *, include_data_snaps
 
 
 def research_run_audits_to_payload(audits: list[ResearchRunAudit]) -> dict[str, Any]:
-    return {"runs": [research_run_audit_to_payload(audit) for audit in audits]}
+    return {
+        "runs": [
+            {
+                "runId": audit.run_id,
+                "createdAt": audit.created_at.isoformat(),
+                "market": audit.market,
+                "symbol": audit.symbol,
+                "timeframe": audit.timeframe,
+                "strategyName": audit.strategy_name,
+                "strategyRevision": audit.strategy_revision,
+                "dataRows": audit.data_rows,
+                "metrics": audit.metrics,
+                "decisions": audit.decisions,
+                "executionMode": audit.execution_mode,
+            }
+            for audit in audits
+        ]
+    }
 
 
 def build_p0_package_completeness(payload: dict[str, Any]) -> dict[str, Any]:
