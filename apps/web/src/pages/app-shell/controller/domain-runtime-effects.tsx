@@ -175,7 +175,7 @@ export function useDomainRuntimeEffects(controller: Dependencies): Result {
       return () => aiReviewRunRestoreAbortControllerRef.current?.abort();
     }, [refreshWorkspace]);
   useEffect(() => {
-      if (activeWorkAreaId !== "research" && activeWorkAreaId !== "backtest" && activeWorkAreaId !== "ai-review") {
+      if (activeWorkAreaId !== "research" && activeWorkAreaId !== "strategy" && activeWorkAreaId !== "backtest" && activeWorkAreaId !== "ai-review") {
         return;
       }
       const latestRun = findLatestResearchRunForContext(runHistory, {

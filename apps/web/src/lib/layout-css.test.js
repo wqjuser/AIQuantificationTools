@@ -2688,7 +2688,7 @@ describe("terminal layout css", () => {
 
   test("hydrates the selected research evidence from its audited run detail", () => {
     expect(appSource).toContain(
-      'if (activeWorkAreaId !== "research" && activeWorkAreaId !== "backtest" && activeWorkAreaId !== "ai-review")'
+      'if (activeWorkAreaId !== "research" && activeWorkAreaId !== "strategy" && activeWorkAreaId !== "backtest" && activeWorkAreaId !== "ai-review")'
     );
     expect(appSource).toContain("latestRun.dataSnapshot?.snapshotHash");
     expect(appSource).toContain("loadResearchRunDetail(quantCoreBaseUrl, latestRun.runId)");
