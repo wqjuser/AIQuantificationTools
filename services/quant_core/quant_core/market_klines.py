@@ -21,6 +21,7 @@ from quant_core.adapters import (
 from quant_core.domain import DataQuality, Market, MarketDataRequest, OHLCVBar, Timeframe
 from quant_core.data_foundation import data_quality_to_payload
 from quant_core.live_quotes import normalize_ashare_tencent_code, normalize_crypto_symbol
+from quant_core.market_discovery import BINANCE_MARKET_DATA_BASE_URL
 
 FetchText = Callable[[str, str], str]
 Now = Callable[[], float]
@@ -388,7 +389,7 @@ class QuantDingerKlineAdapter:
         if request.end:
             query["endTime"] = int(request.end.timestamp() * 1000)
         params = urlencode(query)
-        payload = json.loads(self.fetch_text(f"https://api.binance.com/api/v3/klines?{params}", "utf-8"))
+        payload = json.loads(self.fetch_text(f"{BINANCE_MARKET_DATA_BASE_URL}/api/v3/klines?{params}", "utf-8"))
         return binance_klines_to_bars(payload, symbol=request.symbol, timeframe=request.timeframe)
 
     def _fetch_coinbase_crypto_bars(self, request: MarketDataRequest, limit: int) -> list[OHLCVBar]:

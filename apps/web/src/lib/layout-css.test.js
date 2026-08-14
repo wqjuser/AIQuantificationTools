@@ -2399,6 +2399,9 @@ describe("terminal layout css", () => {
     expect(cssBlock(':root[data-theme="light"] .research-completion-notice')).toContain(
       "background: var(--surface);"
     );
+    expect(appShellWorkflowControllerSource).toContain('activeWorkAreaId === "research" && error');
+    expect(appShellWorkflowControllerSource).toContain('workflowStatus: "blocked"');
+    expect(appShellRuntimeEffectsSource).not.toContain("current?.runId === researchCompletionNotice.runId");
   });
 
   test("keeps the current AI review mounted while a replacement review is running", () => {
