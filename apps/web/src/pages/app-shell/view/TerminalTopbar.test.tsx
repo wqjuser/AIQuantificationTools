@@ -64,8 +64,10 @@ describe("Research P0 template control", () => {
     expect(markup).toContain("data-testid=\"research-p0-template-select\"");
     expect(markup).toContain("research-template-control");
     expect(markup).toContain("当前工作区策略（默认）");
-    expect(markup).toContain("regime-breakout-v2");
-    expect(markup).toContain("cost-aware-range-reversion-v1-1");
+    expect(markup).toContain("市场状态突破策略");
+    expect(markup).toContain("成本约束区间回归策略");
+    expect(markup).not.toContain(">regime-breakout-v2<");
+    expect(markup).not.toContain(">cost-aware-range-reversion-v1-1<");
     expect(markup).not.toContain("晋级");
     expect(markup).not.toContain("绑定");
     expect(markup).not.toContain("启动监控");

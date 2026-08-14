@@ -1,5 +1,8 @@
 import { Locale, supportedLocales } from "../../../lib/i18n";
-import type { StrategyResearchCapability } from "../../../lib/strategy-research";
+import {
+  strategyResearchCapabilityDisplayName,
+  type StrategyResearchCapability,
+} from "../../../lib/strategy-research";
 import { Market } from "../../../lib/terminal-workbench";
 import { DEFAULT_TEXT_SCALE, MAX_TEXT_SCALE, MIN_TEXT_SCALE } from "../../../lib/theme";
 import { researchPipelineLockedEvidenceLabel, researchPipelineLockedEvidenceTitle, researchPipelinePreflightStatusLabel } from "../../research/ResearchPipelineFormatters";
@@ -300,7 +303,7 @@ export function ResearchP0TemplateSelector({
         <option value="">当前工作区策略（默认）</option>
         {capabilities.map((capability) => (
           <option key={capability.templateId} value={capability.templateId}>
-            {capability.templateId}
+            {strategyResearchCapabilityDisplayName(capability)}
           </option>
         ))}
       </select>

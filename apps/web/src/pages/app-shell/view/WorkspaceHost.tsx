@@ -286,7 +286,7 @@ export function WorkspaceHost({ controller }: WorkspaceHostProps) {
                   {renderStrategyWorkbench(false)}
                   <StrategyResearchSection
                     baseUrl={quantCoreBaseUrl}
-                    providers={aiReviewStage3Providers}
+                    providers={researchNoteProviders}
                     sourceMetadata={strategyResearchSource ? {
                       runId: strategyResearchSource.runId,
                       market: strategyResearchSource.market ?? null,

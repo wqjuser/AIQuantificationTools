@@ -8,6 +8,7 @@ import {
   launchStrategyResearchExperiment,
   loadStrategyResearchCapabilities,
   loadStrategyResearchExperiment,
+  strategyResearchCapabilityDisplayName,
   type StrategyResearchCapability,
   type StrategyResearchAggregate,
   type StrategyResearchLaunch,
@@ -560,7 +561,7 @@ export function StrategyResearchSection({
             {!capabilitiesLoading && registeredCapabilities.length ? (
               <ul>
                 {registeredCapabilities.map((item) => (
-                  <li key={item.templateId}>{strategyResearchCapabilityLabel(item)}</li>
+                  <li key={item.templateId}>{strategyResearchCapabilityDisplayName(item)}</li>
                 ))}
               </ul>
             ) : null}
@@ -703,10 +704,6 @@ export function StrategyResearchSection({
       </div>
     </section>
   );
-}
-
-function strategyResearchCapabilityLabel(capability: StrategyResearchCapability): string {
-  return `${capability.templateId} · ${capability.policyKind}`;
 }
 
 function strategyResearchNextActionLabel(value: string): string {

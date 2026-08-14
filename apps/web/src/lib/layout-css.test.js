@@ -1030,6 +1030,7 @@ describe("terminal layout css", () => {
     expect(researchLoopSource).toContain("<AiResearchM4Section");
     expect(researchLoopSource).not.toContain("<StrategyResearchSection");
     expect(strategyWorkbenchSource).toContain("<StrategyResearchSection");
+    expect(strategyWorkbenchSource).toContain("providers={researchNoteProviders}");
     expect(strategyWorkbenchSource).toContain("sourceRunId={currentResearchRunId ?? null}");
     expect(aiReviewContractSource).toContain("researchLoop?: ReactNode;");
     expect(aiReviewPanelSource).toContain("{aiReview.researchLoop}");

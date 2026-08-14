@@ -38,6 +38,15 @@ export interface StrategyResearchCapability {
   evaluatorVersion: string;
 }
 
+export function strategyResearchCapabilityDisplayName(
+  capability: StrategyResearchCapability,
+): string {
+  return {
+    regime_breakout_v2: "市场状态突破策略",
+    cost_aware_range_reversion_v1_1: "成本约束区间回归策略",
+  }[capability.policyKind] ?? "服务端注册策略";
+}
+
 export interface StrategyResearchCapabilitiesResult {
   capabilities?: StrategyResearchCapability[];
   source: WorkspaceSource;

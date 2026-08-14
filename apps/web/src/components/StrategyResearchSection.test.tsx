@@ -90,8 +90,10 @@ describe("StrategyResearchSection", () => {
     );
 
     expect(markup).toContain("AI 策略研发");
-    expect(markup).toContain("regime-breakout-v2");
-    expect(markup).toContain("cost-aware-range-reversion-v1-1");
+    expect(markup).toContain("市场状态突破策略");
+    expect(markup).toContain("成本约束区间回归策略");
+    expect(markup).not.toContain(">regime-breakout-v2<");
+    expect(markup).not.toContain(">cost-aware-range-reversion-v1-1<");
     expect(markup).toContain("服务端按当前策略族自动匹配");
     expect(markup).toContain("提升样本外稳健性");
     expect(markup).toContain("仅注册模板");
@@ -185,8 +187,8 @@ describe("StrategyResearchSection", () => {
       />,
     );
 
-    expect(markup).toContain("cost-aware-range-reversion-v1-1");
-    expect(markup).not.toContain("regime-breakout-v2");
+    expect(markup).toContain("成本约束区间回归策略");
+    expect(markup).not.toContain("市场状态突破策略");
   });
 
   it("consumes external approval before every attempt and scopes it to the full outbound context", () => {
