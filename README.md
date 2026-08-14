@@ -4,6 +4,12 @@ AIQuantificationTools 是一个面向个人研究者的量化研究工作台。�
 
 项目默认运行在本机。AI 选股只用于确定研究优先级，不会自动研究、加入观察池或连接订单。任何生产交易仍需独立凭据、近期重新认证、人工授权、风险检查和急停控制。
 
+## 完整操作演示
+
+[![AIQuantificationTools 完整操作流程](docs/assets/demos/aiqt-complete-workflow-cover.jpg)](docs/assets/demos/aiqt-complete-workflow-2026-08-15.mp4)
+
+点击封面查看从行情筛选、审计研究、回测、策略提案到正式实验与第三方 AI/MCP 接入的完整操作流程。
+
 ## 主要能力
 
 - A 股、美股自选池和 Binance USDT 现货行情与日 K。
