@@ -2325,6 +2325,10 @@ describe("terminal layout css", () => {
       "function StrategyVolumeConfirmField"
     );
     const desktopGrid = cssBlock(".design-strategy-workbench .strategy-draft-grid");
+    expect(hasCssBlockWith(".design-strategy-workbench", [
+      "display: grid;",
+      "gap: 12px;",
+    ])).toBe(true);
     expect(strategySummarySource.indexOf('field="entryKind"')).toBeLessThan(
       strategySummarySource.indexOf('field="exitKind"')
     );
