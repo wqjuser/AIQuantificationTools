@@ -345,7 +345,7 @@ class BacktestEngine:
         entry_group_times = []
 
         for index, bar in enumerate(ordered_bars):
-            context = context_session.ingest(bar)
+            context = context_session.ingest(bar, include_context_hash=False)
             if pending is not None and bar.timestamp > pending.evaluation.evaluated_at:
                 if pending.signal["action"] == "buy" and position.quantity <= 0:
                     execution_price = bar.open * (1 + self.slippage_rate)
@@ -453,6 +453,16 @@ class BacktestEngine:
                     PositionSnapshot(quantity=position.quantity, entry_price=position.entry_price),
                     state,
                 )
+                if evaluation.action != "hold":
+                    evaluation = evaluate_strategy(
+                        strategy,
+                        context_session.latest_context(),
+                        PositionSnapshot(
+                            quantity=position.quantity,
+                            entry_price=position.entry_price,
+                        ),
+                        state,
+                    )
                 state = evaluation.state_after
                 expected_fill_at = evaluation.evaluated_at + timedelta(minutes=1)
                 recent_entry_groups = [

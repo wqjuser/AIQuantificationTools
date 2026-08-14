@@ -1185,6 +1185,24 @@ class RegimeBreakoutBacktestContractTests(unittest.TestCase):
         self.assertEqual(result.data_quality.rows, 1_001)
         self.assertEqual(result.trades, [])
 
+    def test_policy_backtest_skips_context_hashes_for_hold_only_bars(self):
+        context_hashes = 0
+
+        def count_context_hashes(value):
+            nonlocal context_hashes
+            if isinstance(value, dict) and value.get("aggregationVersion") == "ohlcv-utc-v1":
+                context_hashes += 1
+            return canonical_sha256(value)
+
+        with patch(
+            "quant_core.strategy_evaluator.canonical_sha256",
+            side_effect=count_context_hashes,
+        ):
+            result = BacktestEngine().run(_strategy(), _experiment_bars(1_001))
+
+        self.assertEqual(result.trades, [])
+        self.assertEqual(context_hashes, 0)
+
     def test_formal_profitability_gate_reads_only_the_winners_test_partition(self):
         with tempfile.TemporaryDirectory() as directory:
             strategy = _strategy()

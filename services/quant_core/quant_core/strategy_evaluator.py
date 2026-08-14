@@ -109,7 +109,12 @@ class PolicyMarketContextSession:
         self._z_score_value: float | None = None
         self._z_score_mean_value: float | None = None
 
-    def ingest(self, bar: OHLCVBar) -> MarketContext | None:
+    def ingest(
+        self,
+        bar: OHLCVBar,
+        *,
+        include_context_hash: bool = True,
+    ) -> MarketContext | None:
         if (
             bar.market != self.strategy.market
             or bar.symbol != self.strategy.symbols[0]
@@ -166,13 +171,13 @@ class PolicyMarketContextSession:
                 policy.atr.window + 1,
             )
             self._decision_bars = self._decision_bars[-keep:]
-        return self.latest_context()
+        return self.latest_context(include_context_hash=include_context_hash)
 
-    def latest_context(self) -> MarketContext:
+    def latest_context(self, *, include_context_hash: bool = True) -> MarketContext:
         if self._latest_base_bar is None:
             raise ValueError("strategy_market_context_incomplete")
         policy = self.strategy.policy
-        if isinstance(policy, CostAwareRangeReversionPolicy):
+        if include_context_hash and isinstance(policy, CostAwareRangeReversionPolicy):
             evidence = {
                 "aggregationVersion": "ohlcv-utc-v1",
                 "baseLatest": _bar_payload(self._latest_base_bar),
@@ -184,7 +189,7 @@ class PolicyMarketContextSession:
                 "zScoreMean": self._z_score_mean_value,
                 "decisionBarCount": self._decision_bar_count,
             }
-        else:
+        elif include_context_hash:
             evidence = {
                 "aggregationVersion": "ohlcv-utc-v1",
                 "baseLatest": _bar_payload(self._latest_base_bar),
@@ -198,7 +203,7 @@ class PolicyMarketContextSession:
             base_bars=(self._latest_base_bar,),
             decision_bars=tuple(self._decision_bars),
             regime_bars=tuple(self._regime_bars),
-            context_hash=canonical_sha256(evidence),
+            context_hash=canonical_sha256(evidence) if include_context_hash else "",
             atr_value=self._atr_value,
             decision_bar_count=self._decision_bar_count,
             regime_bar_count=self._regime_bar_count,
