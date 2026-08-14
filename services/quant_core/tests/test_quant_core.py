@@ -32770,7 +32770,7 @@ class QuantCoreContractTest(unittest.TestCase):
                 ], DataQuality(source="ccxt:testexchange", is_complete=True, warnings=[], rows=1)
 
         def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
-            if "api.binance.com" in url:
+            if "data-api.binance.vision" in url:
                 return '{"code":451,"msg":"restricted"}'
             if "api.exchange.coinbase.com" in url:
                 return "[]"
@@ -32815,7 +32815,7 @@ class QuantCoreContractTest(unittest.TestCase):
 
         def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
             requested_urls.append(url)
-            if "api.binance.com" in url:
+            if "data-api.binance.vision" in url:
                 return '{"code":451,"msg":"restricted"}'
             raise AssertionError(f"unexpected url {url}")
 
@@ -32838,7 +32838,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.market_klines import QuantDingerKlineAdapter
 
         def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
-            self.assertIn("api.binance.com", url)
+            self.assertIn("data-api.binance.vision", url)
             self.assertIn("symbol=BTCUSDT", url)
             self.assertIn("interval=1d", url)
             return (
@@ -32889,7 +32889,7 @@ class QuantCoreContractTest(unittest.TestCase):
         from quant_core.market_klines import QuantDingerKlineAdapter
 
         def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
-            if "api.binance.com" in url:
+            if "data-api.binance.vision" in url:
                 return '{"code":451,"msg":"restricted"}'
             self.assertIn("api.exchange.coinbase.com", url)
             self.assertIn("/products/BTC-USD/candles", url)
@@ -32922,7 +32922,7 @@ class QuantCoreContractTest(unittest.TestCase):
         step_seconds = 86_400
 
         def fake_fetch_text(url: str, encoding: str = "utf-8") -> str:
-            if "api.binance.com" in url:
+            if "data-api.binance.vision" in url:
                 return '{"code":451,"msg":"restricted"}'
             self.assertIn("api.exchange.coinbase.com", url)
             query = parse_qs(urlparse(url).query)

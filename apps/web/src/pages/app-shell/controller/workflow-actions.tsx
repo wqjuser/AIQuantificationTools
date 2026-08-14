@@ -344,7 +344,13 @@ export function useWorkflowActions(controller: Dependencies): Result {
       }
     })();
   const terminalSurfaceDisplayAction =
-      terminalSurfaceAction && activeWorkspaceContext
+      terminalSurfaceAction && activeWorkAreaId === "research" && error && !isRunning
+        ? {
+            ...terminalSurfaceAction,
+            workflowReason: error,
+            workflowStatus: "blocked" as const
+          }
+        : terminalSurfaceAction && activeWorkspaceContext
         ? {
             ...terminalSurfaceAction,
             workflowReason: translateGoldenPathDetail(
