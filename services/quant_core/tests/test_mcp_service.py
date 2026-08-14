@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import sys
 import unittest
 
 import httpx
@@ -647,7 +648,7 @@ class McpServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_entrypoint_is_discoverable_by_a_real_client(self) -> None:
         root = Path(__file__).resolve().parents[3]
         params = StdioServerParameters(
-            command=str(root / ".venv" / "bin" / "python"),
+            command=sys.executable,
             args=[str(root / "tools" / "run_quant_mcp.py")],
             env={
                 **os.environ,
