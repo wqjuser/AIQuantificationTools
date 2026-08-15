@@ -6,7 +6,7 @@ AIQuantificationTools 是一个面向个人研究者的量化研究工作台。�
 
 ## 完整操作演示
 
-[![AIQuantificationTools 完整操作流程](docs/assets/demos/aiqt-complete-workflow-cover.jpg)](docs/assets/demos/aiqt-complete-workflow-2026-08-15.mp4)
+[![AIQuantificationTools 完整操作流程](docs/assets/demos/aiqt-complete-workflow-cover.jpg)](https://wqjuser.github.io/AIQuantificationTools/assets/demos/)
 
 点击封面查看从行情筛选、审计研究、回测、策略提案到正式实验与第三方 AI/MCP 接入的完整操作流程。
 
