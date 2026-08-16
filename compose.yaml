@@ -1,5 +1,6 @@
 services:
   api:
+    image: ${AIQT_API_IMAGE:-ghcr.io/wqjuser/aiquantificationtools-api}:${AIQT_IMAGE_TAG:-v0.1.0}
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -46,6 +47,7 @@ services:
       start_period: 10s
 
   web:
+    image: ${AIQT_WEB_IMAGE:-ghcr.io/wqjuser/aiquantificationtools-web}:${AIQT_IMAGE_TAG:-v0.1.0}
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -66,6 +68,7 @@ services:
 
   mcp:
     profiles: ["mcp"]
+    image: ${AIQT_API_IMAGE:-ghcr.io/wqjuser/aiquantificationtools-api}:${AIQT_IMAGE_TAG:-v0.1.0}
     build:
       context: .
       dockerfile: Dockerfile.api

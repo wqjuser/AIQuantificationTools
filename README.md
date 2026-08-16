@@ -56,14 +56,22 @@ npm run dev
 
 ## Docker 启动
 
-本机模式：
+已发布的多架构镜像（macOS Apple Silicon、Linux amd64/arm64）无需构建：
 
 ```shell
-INSTALL_DATA_DEPS=true docker compose build
+cp .env.example .env
+docker compose pull
 docker compose up -d --no-build
 ```
 
 默认页面为 `http://127.0.0.1:5173`；API 只在 Compose 网络内暴露。
+
+`.env.example` 默认固定到 `v0.1.0`；需要最新发布版本时设为 `AIQT_IMAGE_TAG=latest`。本地修改源码才需要构建：
+
+```shell
+AIQT_IMAGE_TAG=local INSTALL_DATA_DEPS=true docker compose build
+AIQT_IMAGE_TAG=local docker compose up -d --no-build
+```
 
 可选启动本机 Streamable HTTP MCP：
 
@@ -78,7 +86,7 @@ public Compose 由 Keycloak 提供本站邮箱注册、验证、密码重置和�
 公网模式需要先完成 [公网部署手册](docs/public-deployment.md)，再运行：
 
 ```shell
-docker compose -f compose.yaml -f compose.public.yaml build
+docker compose -f compose.yaml -f compose.public.yaml pull
 docker compose -f compose.yaml -f compose.public.yaml up -d --no-build
 ```
 
